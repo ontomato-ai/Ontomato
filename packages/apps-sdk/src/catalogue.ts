@@ -186,10 +186,10 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectList",
     role: "control",
     meaning:
-      "Lists or tabulates platform objects of the bound type through its resource adapter's query or list port, providing search, faceted filters, safe highlight rendering, paging, single viewing selection, optional explicit multi-selection and clickable reference navigation without embedding business query rules.",
+      "Lists or tabulates platform objects or declared child collections of the bound type through its resource adapter's query or list port, providing search, faceted filters (two-way bindable to scalar panel state via slot inputs/outputs), safe highlight rendering, paging, single viewing selection, optional explicit multi-selection and clickable reference navigation without embedding business query rules.",
     effects: "Reads the bound type's list or query as the reader; it writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*"],
-    outputs: ["selected", "checked", "navigate"],
+    outputs: ["selected", "checked", "navigate", "search"],
   }),
   defineComponentMeta({
     componentId: "ObjectSummary",
@@ -369,5 +369,15 @@ export const components: readonly ComponentMetadata[] = [
       "Uploads a reader-chosen file through the declared PlatformOperation handler (optionally showing format rules first, checking file extensions and confirming overwrite when the owner reports a conflict). It sends nothing outside the bound operation's declared requests.",
     effects: "Runs the projection's upload operation with the chosen file as the reader and refreshes panel objects on success.",
     bindsElement: ["PlatformOperation:*"],
+  }),
+  defineComponentMeta({
+    componentId: "ConversationEntry",
+    module: "@ontomato/sdk/base",
+    exportName: "ConversationEntry",
+    role: "control",
+    meaning:
+      "Renders a generic button for a projection's declared conversationEntry. Clicking it asks the platform host to expand the page's composer with the declared agent target and optional prefill text without sending a message.",
+    effects: "Requests the host to expand the page's composer with the projection's declared conversationEntry; performs no writes and never sends messages.",
+    bindsElement: ["PlatformObjectType:platform:AgentDefinition"],
   }),
 ];

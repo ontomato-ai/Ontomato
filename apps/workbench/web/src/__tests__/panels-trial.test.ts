@@ -257,6 +257,7 @@ describe("a panel's module", () => {
       holdUnsaved: () => () => {},
       t: (key: string) => key,
       resources: async () => {},
+      expandPageComposer: async () => {},
     });
     app.mount(document.createElement("div"));
     await nextTick();

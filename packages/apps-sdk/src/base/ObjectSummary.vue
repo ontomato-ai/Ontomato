@@ -135,7 +135,7 @@ function navigateTo(reference: PlatformFieldReference, fieldName: string) {
         </h3>
         <dl>
           <template v-for="name in shown" :key="name">
-            <dt>{{ name }}</dt>
+            <dt>{{ current.fieldLabels?.[name] ?? name }}</dt>
             <dd>
               <button
                 v-if="current.references?.[name]"

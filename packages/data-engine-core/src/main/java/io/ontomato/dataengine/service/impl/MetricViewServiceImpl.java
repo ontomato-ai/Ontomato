@@ -35,6 +35,7 @@ import io.ontomato.dataengine.service.BackendSessionEntrance;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.MetricViewService;
+import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.SubjectReference;
 import io.ontomato.dataengine.service.SubjectValueResolver;
 import io.ontomato.dataengine.service.ParameterForms;
@@ -222,16 +223,16 @@ public class MetricViewServiceImpl implements MetricViewService {
       metricViewDao.lock(metric.getId(), domain);
       previous = queryById(metric.getId(), domain);
       if (previous == null && (kind != WriteKind.IMPORT || metricViewDao.exists(metric.getId())))
-        throw new IllegalArgumentException("MetricView not found");
+        throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
       if (previous != null && MetricView.ORIGIN_SYSTEM.equals(previous.getOrigin()))
-        throw new IllegalArgumentException("Cannot modify a system MetricView");
+        throw new OwnerRefusal("METRIC_VIEW_SYSTEM", "Cannot modify a system MetricView");
     }
     if (kind != WriteKind.WORKFLOW_PUBLICATION) {
       var source = previous == null ? null : previous.getWorkflowSource();
       if (previous != null && previous.isWorkflowPending())
-        throw new IllegalArgumentException("Edit the workflow to change its pending query");
+        throw new OwnerRefusal("METRIC_VIEW_WORKFLOW_PENDING", "Edit the workflow to change its pending query");
       if (metric.getWorkflowSource() != null && !metric.getWorkflowSource().equals(source))
-        throw new IllegalArgumentException("Only workflow publication can assign a metric source");
+        throw new OwnerRefusal("METRIC_VIEW_WORKFLOW_SOURCE", "Only workflow publication can assign a metric source");
       metric.setWorkflowSource(source);
     }
     if (metric.getBindings() == null)
@@ -241,16 +242,17 @@ public class MetricViewServiceImpl implements MetricViewService {
       if (previous != null) for (var binding : previous.getBindings()) owned.add(binding.getId());
       for (var binding : metric.getBindings())
         if (binding.getId() != null && !owned.contains(binding.getId()))
-          throw new IllegalArgumentException("Metric binding not found");
+          throw new OwnerRefusal("METRIC_VIEW_BINDING_NOT_FOUND", "Metric binding not found");
     }
     Function function = Objects.requireNonNull(metric.getFunction(), "Function is required");
     if (!Function.OPERATION_READ.equals(function.getOperation()))
-      throw new IllegalArgumentException("MetricView requires a read Function");
+      throw new OwnerRefusal("METRIC_VIEW_FUNCTION_INVALID", "MetricView requires a read Function");
     if (function.getId() != null) {
       Function stored = functionDao.queryById(function.getId());
-      if (stored == null && kind != WriteKind.IMPORT) throw new IllegalArgumentException("Function not found");
+      if (stored == null && kind != WriteKind.IMPORT)
+        throw new OwnerRefusal("METRIC_VIEW_FUNCTION_INVALID", "Function not found");
       if (stored != null && (!domain.equals(stored.getDomainId()) || !Function.OPERATION_READ.equals(stored.getOperation())))
-        throw new IllegalArgumentException("Read Function not found");
+        throw new OwnerRefusal("METRIC_VIEW_FUNCTION_INVALID", "Read Function not found");
       if (stored != null) {
         function.setOrigin(stored.getOrigin());
         function.setCreateTimestamp(stored.getCreateTimestamp());
@@ -260,12 +262,12 @@ public class MetricViewServiceImpl implements MetricViewService {
     QueryPackage.prepareReadFunction(function,
         (List<Map<String, Object>>) adminService.getJSONRule(domain).get("classDef"));
     if (function.getOrigin() == null) function.setOrigin(Function.ORIGIN_USER);
-    MetricViewBindings.validate(function, metric.getBindings());
+    validateBindings(function, metric.getBindings());
     validateSubjectReferences(function, metric.getBindings());
     List<MetricView> sharing = function.getId() == null ? List.of() : queryList(null, function.getId(), null, domain);
     for (MetricView other : sharing)
       if (!Objects.equals(other.getId(), metric.getId())) {
-        MetricViewBindings.validate(function, other.getBindings());
+        validateBindings(function, other.getBindings());
         validateSubjectReferences(function, other.getBindings());
       }
     metric.setOrigin(previous == null ? MetricView.ORIGIN_USER : previous.getOrigin());
@@ -308,15 +310,28 @@ public class MetricViewServiceImpl implements MetricViewService {
         try {
           subjectValues.validate(parameter.getValue());
         } catch (IllegalArgumentException error) {
-          throw new IllegalArgumentException(
-              "Parameter '" + parameter.getName() + "': " + error.getMessage(), error);
+          throw new OwnerRefusal("METRIC_VIEW_PARAMETER_INVALID",
+              "Parameter '" + parameter.getName() + "': " + error.getMessage());
         }
       }
     }
     if (bindings == null) return;
     for (MetricViewBinding binding : bindings) {
       if (binding.getParameters() == null) continue;
-      subjectValues.validateValues(binding.getParameters());
+      try {
+        subjectValues.validateValues(binding.getParameters());
+      } catch (IllegalArgumentException error) {
+        throw new OwnerRefusal("METRIC_VIEW_PARAMETER_INVALID", error.getMessage());
+      }
+    }
+  }
+
+  /** The binding rules as this owner's refusal; {@link MetricViewBindings} stays the single judge. */
+  private static void validateBindings(Function function, List<MetricViewBinding> bindings) {
+    try {
+      MetricViewBindings.validate(function, bindings);
+    } catch (IllegalArgumentException error) {
+      throw new OwnerRefusal("METRIC_VIEW_BINDING_INVALID", error.getMessage());
     }
   }
 
@@ -361,9 +376,9 @@ public class MetricViewServiceImpl implements MetricViewService {
   @Override
   public void delete(String id, String domainId, String lang) {
     MetricView metric = queryById(id, domainId);
-    if (metric == null) throw new IllegalArgumentException("MetricView not found");
+    if (metric == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
     if (MetricView.ORIGIN_SYSTEM.equals(metric.getOrigin()))
-      throw new IllegalArgumentException("Cannot delete a system MetricView");
+      throw new OwnerRefusal("METRIC_VIEW_SYSTEM", "Cannot delete a system MetricView");
     metricViewDao.delete(id, domainId);
   }
 
@@ -405,11 +420,16 @@ public class MetricViewServiceImpl implements MetricViewService {
   }
 
   private void requireExecutableState(MetricView metric, User user) {
+    if (!executable(metric, user))
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Executable read metric not found");
+  }
+
+  /** Published, or the caller's own pending candidate; the one rule both execution entrances read. */
+  private static boolean executable(MetricView metric, User user) {
     boolean ownCandidate = metric.getId() != null
         && MetricView.STATUS_PENDING_REVIEW.equals(metric.getStatus())
         && user.getId().equals(metric.getCreatedBy());
-    if (!MetricView.STATUS_PUBLISHED.equals(metric.getStatus()) && !ownCandidate)
-      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Executable read metric not found");
+    return MetricView.STATUS_PUBLISHED.equals(metric.getStatus()) || ownCandidate;
   }
 
   @Override
@@ -432,7 +452,7 @@ public class MetricViewServiceImpl implements MetricViewService {
       if (primaryKey == null || primaryKey.isBlank())
         throw new IllegalArgumentException("target.primaryKey: expected a metric id");
       metric = queryById(primaryKey, domainId);
-      if (metric == null) throw new IllegalArgumentException("MetricView not found");
+      if (metric == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
       existing = true;
     } else if ("draft".equals(kind)) {
       metric = MetricViewForm.defaults().to(MetricView.class);
@@ -454,22 +474,25 @@ public class MetricViewServiceImpl implements MetricViewService {
 
   @Override
   public List<StatusResult> setStatus(String domainId, List<String> ids, String status, String lang) {
-    if (ids == null || ids.isEmpty()) throw new IllegalArgumentException("ids: expected at least one metric id");
+    if (ids == null || ids.isEmpty())
+      throw new OwnerRefusal("METRIC_VIEW_STATUS_INVALID", "ids: expected at least one metric id");
     if (status == null
         || !Set.of(MetricView.STATUS_PENDING_REVIEW, MetricView.STATUS_PUBLISHED, MetricView.STATUS_UNUSED).contains(status))
-      throw new IllegalArgumentException("status: expected PENDING_REVIEW, PUBLISHED or UNUSED");
+      throw new OwnerRefusal("METRIC_VIEW_STATUS_INVALID", "status: expected PENDING_REVIEW, PUBLISHED or UNUSED");
     List<StatusResult> results = new ArrayList<>();
     for (String id : new LinkedHashSet<>(ids)) {
       try {
         MetricView saved = new TransactionTemplate(transactionManager).execute(transaction -> {
           MetricView metric = queryById(id, domainId);
-          if (metric == null) throw new IllegalArgumentException("MetricView not found");
+          if (metric == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
           metric.setStatus(status);
           return persist(metric, WriteKind.SAVE, lang);
         });
-        results.add(new StatusResult(id, saved, null));
+        results.add(new StatusResult(id, saved, null, null));
+      } catch (OwnerRefusal refusal) {
+        results.add(new StatusResult(id, null, refusal, null));
       } catch (Exception error) {
-        results.add(new StatusResult(id, null, failureMessage(error)));
+        results.add(new StatusResult(id, null, null, failureMessage(error)));
       }
     }
     return results;
@@ -621,13 +644,20 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
   @Override
   public Object[] testExecute(MetricView metric,String bindingId,JSONObject param,String lang,User user,UserDataPermission permission,int timeoutMinutes,ExecutionTarget target) throws Exception {
     if (metric == null) throw new IllegalArgumentException("MetricView not found");
-    MetricView stored = metric.getId() == null ? null : requireExecutable(metric.getId(), user);
-    if (stored == null) requireExecutableState(metric, user);
+    MetricView stored = null;
+    if (metric.getId() != null) {
+      stored = queryById(metric.getId(), user.getDomainId());
+      if (stored == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
+      if (!executable(stored, user))
+        throw new OwnerRefusal("METRIC_VIEW_NOT_EXECUTABLE", "Executable read metric not found");
+    } else if (!executable(metric, user)) {
+      throw new OwnerRefusal("METRIC_VIEW_NOT_EXECUTABLE", "Executable read metric not found");
+    }
     metric = validateDraftDomain(metric, user.getDomainId(), stored);
     if (metric.isWorkflowPending()) return executePending(metric, bindingId, param, lang, user, permission, target);
     QueryPackage.prepareReadFunction(metric.getFunction(),
         (List<Map<String, Object>>) adminService.getJSONRule(user.getDomainId()).get("classDef"));
-    MetricViewBindings.validate(metric.getFunction(), metric.getBindings());
+    validateBindings(metric.getFunction(), metric.getBindings());
     JSONObject values = subjectValues.metricParameters(metric, bindingId, param, user);
     Function execution = MetricViewBindings.executionFunction(metric.getFunction(), values);
     return abcProgramService.execute(UUID.randomUUID().toString(), execution, user.getId(), permission, target.sandboxId(), lang, timeoutMinutes, user.getDomainId(), new ABCProgramService.ExecutionContext(null, null, target));
@@ -642,24 +672,24 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
 
   private MetricView validateDraftDomain(MetricView metric, String domain, MetricView storedMetric) {
     if (metric.getId() != null) {
-      if (storedMetric == null) throw new IllegalArgumentException("MetricView not found");
+      if (storedMetric == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
       if (storedMetric.isWorkflowPending()) return storedMetric;
       Set<String> ids = new HashSet<>();
       for (var binding : storedMetric.getBindings()) ids.add(binding.getId());
       if (metric.getBindings() != null) for (var binding : metric.getBindings())
         if (binding.getId() != null && !ids.contains(binding.getId()))
-          throw new IllegalArgumentException("Metric binding not found");
+          throw new OwnerRefusal("METRIC_VIEW_BINDING_NOT_FOUND", "Metric binding not found");
     }
     if (metric.isWorkflowPending()) throw new IllegalArgumentException("Published workflow metric required");
     if (metric.getDomainId() != null && !domain.equals(metric.getDomainId()))
-      throw new IllegalArgumentException("MetricView not found");
+      throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
     Function function = Objects.requireNonNull(metric.getFunction(), "Function is required");
     if (!Function.OPERATION_READ.equals(function.getOperation()))
-      throw new IllegalArgumentException("MetricView requires a read Function");
+      throw new OwnerRefusal("METRIC_VIEW_FUNCTION_INVALID", "MetricView requires a read Function");
     if (function.getId() != null) {
       Function stored = functionDao.queryById(function.getId());
       if (stored == null || !domain.equals(stored.getDomainId()) || !Function.OPERATION_READ.equals(stored.getOperation()))
-        throw new IllegalArgumentException("Read Function not found");
+        throw new OwnerRefusal("METRIC_VIEW_FUNCTION_INVALID", "Read Function not found");
     }
     return metric;
   }

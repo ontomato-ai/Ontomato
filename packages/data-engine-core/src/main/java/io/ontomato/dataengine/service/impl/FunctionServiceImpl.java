@@ -19,6 +19,7 @@ import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.FunctionForm;
 import io.ontomato.dataengine.service.FunctionService;
 import io.ontomato.dataengine.service.LangService;
+import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.PanelFormFields;
 import io.ontomato.dataengine.service.agent.OntologyGenerationPrompts;
 import io.ontomato.dataengine.service.agent.OntologyGenerationService;
@@ -193,15 +194,15 @@ public class FunctionServiceImpl implements FunctionService {
 		if (function.getId() != null) {
 			functionDao.lock(function.getId());
 			Function existFunction = functionDao.queryById(function.getId());
-			if(existFunction!=null&&Function.OPERATION_PRODUCT.equals(existFunction.getOperation()))throw new IllegalArgumentException("Published product Function artifacts are immutable");
+			if(existFunction!=null&&Function.OPERATION_PRODUCT.equals(existFunction.getOperation()))throw new OwnerRefusal("FUNCTION_PRODUCT_IMMUTABLE", "Published product Function artifacts are immutable");
 			if (existFunction == null) {
-				throw new Exception(langService.get(lang, "Function.notFound"));
+				throw new OwnerRefusal("FUNCTION_NOT_FOUND", langService.get(lang, "Function.notFound"));
 			} else {
 				if (Function.ORIGIN_SYSTEM.equals(function.getOrigin())) {
-					throw new Exception(langService.get(lang, "Function.cannotModifySystem"));
+					throw new OwnerRefusal("FUNCTION_SYSTEM", langService.get(lang, "Function.cannotModifySystem"));
 				}
 				if (!function.getDomainId().equals(existFunction.getDomainId())) {
-					throw new Exception(langService.get(lang, "Function.domainMismatch"));
+					throw new OwnerRefusal("FUNCTION_DOMAIN_MISMATCH", langService.get(lang, "Function.domainMismatch"));
 				}
 			}
 			// A referenced Function cannot be modified or deleted
@@ -212,7 +213,7 @@ public class FunctionServiceImpl implements FunctionService {
 
 	private void isReferenced(String functionId, String lang) throws Exception {
 		String reason = referenceReason(functionId, lang);
-		if (reason != null) throw new Exception(reason);
+		if (reason != null) throw new OwnerRefusal("FUNCTION_REFERENCED", reason);
 	}
 
 	/** Why a Function cannot change, or null when no MetricView, Action or WriteTask references it. */
@@ -232,9 +233,9 @@ public class FunctionServiceImpl implements FunctionService {
 		functionDao.lock(id);
 		Function function = functionDao.queryById(id);
 		if (function != null) {
-			if(Function.OPERATION_PRODUCT.equals(function.getOperation()))throw new IllegalArgumentException("Published product Function artifacts are retained by their release records");
+			if(Function.OPERATION_PRODUCT.equals(function.getOperation()))throw new OwnerRefusal("FUNCTION_PRODUCT_IMMUTABLE", "Published product Function artifacts are retained by their release records");
 			if (Function.ORIGIN_SYSTEM.equals(function.getOrigin())) {
-				throw new Exception(langService.get(lang, "Function.cannotDeleteSystem"));
+				throw new OwnerRefusal("FUNCTION_SYSTEM", langService.get(lang, "Function.cannotDeleteSystem"));
 			}
 			// A referenced Function cannot be modified or deleted
 			isReferenced(function.getId(), lang);
@@ -267,7 +268,7 @@ public class FunctionServiceImpl implements FunctionService {
         throw new IllegalArgumentException("target.primaryKey: expected a function id");
       function = functionDao.queryById(primaryKey);
       if (function == null || !domainId.equals(function.getDomainId()))
-        throw new IllegalArgumentException("Function not found");
+        throw new OwnerRefusal("FUNCTION_NOT_FOUND", "Function not found");
       existing = true;
     } else if ("draft".equals(kind)) {
       function = FunctionForm.defaultValues().to(Function.class);

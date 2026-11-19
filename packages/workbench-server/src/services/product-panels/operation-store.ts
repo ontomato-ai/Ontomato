@@ -1,4 +1,4 @@
-import { readStoredPanelOperationIntent, type PanelOperationIntent, type PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
+import { isPanelHumanOperationIntent, readStoredPanelOperationIntent, type PanelOperationIntent, type PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import type { AgentSessionRef } from "@ontomato/contracts/agent-channel";
 import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
 import { HttpError } from "../../utils/errors";
@@ -18,7 +18,8 @@ export const panelOperationStore = {
     return readStoredPanelOperationIntent(row.intent);
   },
   async insert(owner: AssistantOwner, intent: PanelOperationIntent) {
-    await db().query(`INSERT INTO ${t("panel_operation_intents")} (domain_id,id,owner_id,question_id,intent) VALUES($1,$2,$3,$4,$5) ON CONFLICT(domain_id,id) DO NOTHING`, [owner.domainId,intent.intentId,owner.userId,intent.questionId,intent]);
+    const questionId = isPanelHumanOperationIntent(intent) ? null : intent.questionId;
+    await db().query(`INSERT INTO ${t("panel_operation_intents")} (domain_id,id,owner_id,question_id,intent) VALUES($1,$2,$3,$4,$5) ON CONFLICT(domain_id,id) DO NOTHING`, [owner.domainId,intent.intentId,owner.userId,questionId,intent]);
     return this.get(owner,intent.intentId);
   },
   async claim(owner: AssistantOwner, intent: PanelOperationIntent) {

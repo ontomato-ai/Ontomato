@@ -86,7 +86,7 @@ it("draws a declared projection in a frame from this version's task module, and 
         projection: (id: string) => instance.projection(id),
         invoke: (handlerRef: string, call) => instance.runHandler(handlerRef, call),
         projectionsChanged: () => () => {}, draft: instance.draft, holdUnsaved: () => () => {},
-        t: (key: string) => key, resources: async () => {},
+        t: (key: string) => key, resources: async () => {}, expandPageComposer: async () => {},
       });
       return () => h("div", [h(Projection, { slot: "form" }), h(Projection, { slot: "run" })]);
     },

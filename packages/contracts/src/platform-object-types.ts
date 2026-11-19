@@ -42,6 +42,8 @@ export interface PlatformObjectTypeDeclaration {
   layer?: typeof platformOntologyLayers[number];
   reads?: Readonly<Record<string, PlatformReadDeclaration>>;
   operations?: readonly string[];
+  /** Named child collections owned by each instance of this type. */
+  childCollections?: readonly string[];
 }
 
 const describeType = (name: string, layer?: PlatformObjectTypeDeclaration["layer"]): PlatformObjectTypeDeclaration => ({
@@ -73,7 +75,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [ACTION]: describeType("action", "capability"),
   [WORKFLOW]: describeType("workflow", "capability"),
   [TRIGGER]: describeType("trigger", "capability"),
-  [SKILL]: describeType("skill", "capability"),
+  [SKILL]: { ...describeType("skill", "capability"), childCollections: ["files"] },
   [BUSINESS_KNOWLEDGE]: describeType("businessKnowledge", "capability"),
   [DEFINITION]: describeType("definition", "capability"),
   [USER]: describeType("user", "governance"),
@@ -85,9 +87,13 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [AGENT_DEFINITION]: describeType("agentDefinition", "product"),
   [ONTOLOGY_TYPE]: describeType("ontologyType"),
   [ONTOLOGY_RELATION_KIND]: describeType("ontologyRelationKind"),
-  [KNOWLEDGE_GOVERNANCE_RECORD]: describeType("knowledgeGovernanceRecord"),
+  [KNOWLEDGE_GOVERNANCE_RECORD]: { ...describeType("knowledgeGovernanceRecord"), childCollections: ["issues", "sources"] },
   [FEEDBACK_RECORD]: describeType("feedbackRecord"),
 };
+
+export function platformHasChildCollection(parentType: string, collection: string): boolean {
+  return platformObjectTypes[parentType]?.childCollections?.includes(collection) ?? false;
+}
 
 const identifier = z.string().min(1);
 export const platformRelationKindDeclarationSchema = z.object({
