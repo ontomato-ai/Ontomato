@@ -1,6 +1,8 @@
 import { z } from "zod";
+import { defaultAgentSchema } from "./default-agent";
+import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
-import { ontologyParameterTypeSchema, panelManifestSchema } from "./panel-manifest";
+import { ontologyObjectUnionTypeSchema, ontologyParameterTypeSchema, panelManifestSchema } from "./panel-manifest";
 import { applicationMetadataSchema } from "./application-metadata";
 import { appsSdkBuildSchema } from "./apps-sdk";
 import { formFieldErrorSchema } from "./form-fields";
@@ -48,11 +50,13 @@ const currentRecordFields = {
 
 /** A graph uses its primary binding for nodes and this second binding for edges. */
 export const projectionGraphSchema = z.object({
+  /** Mixed node records carry their complete identities and these allowed types. */
+  nodeIdentity: ontologyObjectUnionTypeSchema.optional(),
   edges: z.object({
     binding: ontologyElementRefSchema.extend({
       kind: ontologyElementRefSchema.shape.kind.extract(["PlatformObjectType", "Relationship"]),
     }),
-    /** JSON Pointers inside the edge record's fields, each resolving to a node primary key. */
+    /** JSON Pointers inside the edge record's fields, each resolving to a node key, or a complete identity for a mixed graph. */
     sourcePath: formFieldErrorSchema.shape.field,
     targetPath: formFieldErrorSchema.shape.field,
   }).strict(),
@@ -68,6 +72,7 @@ const projectionDefinitionSchema = z.object({
   componentId: id,
   binding: ontologyElementRefSchema,
   graph: projectionGraphSchema.optional(),
+  conversationEntry: panelConversationEntrySchema.optional(),
   inputs: z.record(id, ontologyParameterTypeSchema),
   display: z.record(z.unknown()),
 }).strict();
@@ -142,7 +147,7 @@ export const applicationPanelUseSchema = z.object({
     z.object({ permissionCode: id }).strict(),
     z.object({ kind: z.literal("domain-member") }).strict(),
   ]),
-  defaultAgentId: id.optional(),
+  defaultAgent: defaultAgentSchema.optional(),
   names: applicationMetadataSchema.shape.names.optional(),
 }).strict();
 export type ApplicationPanelUse = z.infer<typeof applicationPanelUseSchema>;

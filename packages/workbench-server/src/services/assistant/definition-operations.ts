@@ -4,9 +4,8 @@ import { assistantAgentDefinitionSchema } from "@ontomato/contracts/assistant-ch
 import { AGENT_DEFINITION, DELETE_AGENT } from "@ontomato/contracts/panel-client-requests";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
-import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { HttpError } from "../../utils/errors";
-import type { PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelServerOperation } from "../product-panels/server-operations";
+import type { PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelServerOperation, SinglePanelOperationOutcome } from "../product-panels/server-operations";
 import { agentDefinitionSave, parseAgentDefinitionForm } from "./definition-form-schema";
 import { resolveAssistantSkillReferences } from "./skill-references";
 
@@ -15,6 +14,11 @@ const targetSchema = panelFormTargetSchema.options[0].extend({
   primaryKey: z.string().uuid(),
 }).strict();
 const inputSchema = panelFormSaveInputSchema.omit({ revision: true }).strict();
+const emptyResultSchema = z.object({}).strict();
+const affectedDefinition = (id: string) => ({
+  objects: [{ objectType: AGENT_DEFINITION, primaryKey: id }],
+  objectTypes: [AGENT_DEFINITION],
+});
 
 async function refusal(response: Response) {
   return agentHostErrorSchema.parse(await response.json()).error;
@@ -25,9 +29,12 @@ export const agentDefinitionOperations = [
     handlerRef: `${AGENT_DEFINITION}.save`,
     kind: "form.save",
     binding: { kind: "PlatformObjectType", id: AGENT_DEFINITION },
+    effect: "write",
+    batch: false,
     targetType: AGENT_DEFINITION,
     targetSchema: z.discriminatedUnion("kind", [targetSchema, panelFormTargetSchema.options[1]]),
     inputSchema,
+    resultSchema: assistantAgentDefinitionSchema,
     draftOperation: (target: PanelOperationTarget) => agentDefinitionSave(target).draftOperation,
     draftInput: (input: Record<string, unknown>) => parseAgentDefinitionForm(inputSchema.parse(input).values),
     formInstructions: "Read the definition form for the intended target. Use its fields and option sources, save.bodySchema for the values, and save.draftOperation for the draft. Carry the complete form values in call.input.",
@@ -38,7 +45,7 @@ export const agentDefinitionOperations = [
       },
       createdObject: (data: unknown) => ({ objectType: AGENT_DEFINITION, primaryKey: assistantAgentDefinitionSchema.parse(data).id }),
     },
-    async execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>, intentId: string): Promise<PanelOperationOutcome> {
+    async execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>, intentId: string): Promise<SinglePanelOperationOutcome> {
       const save = agentDefinitionSave(target);
       const response = await host.requestWorkbench(save.path, {
         method: save.method,
@@ -46,16 +53,21 @@ export const agentDefinitionOperations = [
         body: JSON.stringify(parseAgentDefinitionForm(inputSchema.parse(input).values)),
       });
       if (!response.ok) return { kind: "failure", ...await refusal(response) };
-      return { kind: "success", data: assistantAgentDefinitionSchema.parse(await response.json()) };
+      const data = assistantAgentDefinitionSchema.parse(await response.json());
+      return { kind: "success", data, affected: affectedDefinition(data.id) };
     },
   },
   {
     handlerRef: DELETE_AGENT,
     kind: "action",
     binding: { kind: "PlatformOperation", id: DELETE_AGENT },
+    effect: "write",
+    batch: false,
     targetType: AGENT_DEFINITION,
     targetSchema,
     inputSchema: z.object({}).strict(),
+    resultSchema: emptyResultSchema,
+    targetInput: "agent",
     async targetLabel(host: PanelOperationHost, target: PanelRecordTarget) {
       const response = await host.requestWorkbench(agentDefinitionSave(target).path, { method: "GET" });
       if (!response.ok) {
@@ -64,9 +76,11 @@ export const agentDefinitionOperations = [
       }
       return assistantAgentDefinitionSchema.parse(await response.json()).name;
     },
-    async execute(host: PanelOperationHost, target: PanelOperationTarget): Promise<PanelOperationOutcome> {
+    async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const response = await host.requestWorkbench(agentDefinitionSave(target).path, { method: "DELETE" });
-      return response.ok ? { kind: "success", data: {} } : { kind: "failure", ...await refusal(response) };
+      return response.ok
+        ? { kind: "success", data: {}, affected: affectedDefinition(target.primaryKey) }
+        : { kind: "failure", ...await refusal(response) };
     },
   },
 ] satisfies readonly PanelServerOperation[];

@@ -17,6 +17,8 @@ import io.ontomato.dataengine.bean.function.ReturnDef;
 import io.ontomato.dataengine.bean.metricView.MetricView;
 import io.ontomato.dataengine.bean.metricView.MetricViewBinding;
 import io.ontomato.dataengine.service.MetricViewBindings;
+import io.ontomato.dataengine.service.MetricViewForm;
+import io.ontomato.dataengine.service.PanelFormFields;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import java.util.Objects;
@@ -50,6 +52,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -413,6 +416,69 @@ public class MetricViewServiceImpl implements MetricViewService {
   public List<MetricView> queryList(String status, String functionId, String className, String domainId) {
     Objects.requireNonNull(domainId, "Current domain is required");
     return metricViewDao.queryList(status, functionId, className, domainId).stream().map(row -> hydrate(row, domainId)).toList();
+  }
+
+  @Override
+  public JSONObject form(JSONObject request, String lang, String domainId) {
+    JSONObject target = request.getJSONObject("target");
+    if (target == null) throw new IllegalArgumentException("target is required");
+    String kind = target.getString("kind");
+    boolean existing;
+    MetricView metric;
+    if ("object".equals(kind)) {
+      if (!"platform:MetricView".equals(target.getString("objectType")))
+        throw new IllegalArgumentException("target.objectType: expected platform:MetricView");
+      String primaryKey = target.getString("primaryKey");
+      if (primaryKey == null || primaryKey.isBlank())
+        throw new IllegalArgumentException("target.primaryKey: expected a metric id");
+      metric = queryById(primaryKey, domainId);
+      if (metric == null) throw new IllegalArgumentException("MetricView not found");
+      existing = true;
+    } else if ("draft".equals(kind)) {
+      metric = MetricViewForm.defaults().to(MetricView.class);
+      metric.setDomainId(domainId);
+      metric.getFunction().setDomainId(domainId);
+      existing = false;
+    } else {
+      throw new IllegalArgumentException("target.kind: expected object or draft");
+    }
+    JSONObject values = request.getJSONObject("values");
+    if (values == null) values = PanelFormFields.asset(metric);
+    else if (request.get("changedField") == null) MetricViewForm.checkDraft(values);
+    String readOnlyReason = null;
+    if (metric.isWorkflowPending()) readOnlyReason = langService.get(lang, "PanelForm.readOnly.workflowPending");
+    else if (MetricView.ORIGIN_SYSTEM.equals(metric.getOrigin()))
+      readOnlyReason = langService.get(lang, "MetricView.cannotModifySystem");
+    return MetricViewForm.describe(values, existing, readOnlyReason, lang, langService);
+  }
+
+  @Override
+  public List<StatusResult> setStatus(String domainId, List<String> ids, String status, String lang) {
+    if (ids == null || ids.isEmpty()) throw new IllegalArgumentException("ids: expected at least one metric id");
+    if (status == null
+        || !Set.of(MetricView.STATUS_PENDING_REVIEW, MetricView.STATUS_PUBLISHED, MetricView.STATUS_UNUSED).contains(status))
+      throw new IllegalArgumentException("status: expected PENDING_REVIEW, PUBLISHED or UNUSED");
+    List<StatusResult> results = new ArrayList<>();
+    for (String id : new LinkedHashSet<>(ids)) {
+      try {
+        MetricView saved = new TransactionTemplate(transactionManager).execute(transaction -> {
+          MetricView metric = queryById(id, domainId);
+          if (metric == null) throw new IllegalArgumentException("MetricView not found");
+          metric.setStatus(status);
+          return persist(metric, WriteKind.SAVE, lang);
+        });
+        results.add(new StatusResult(id, saved, null));
+      } catch (Exception error) {
+        results.add(new StatusResult(id, null, failureMessage(error)));
+      }
+    }
+    return results;
+  }
+
+  private static String failureMessage(Exception error) {
+    String message = error.getMessage();
+    if (message == null || message.isBlank()) return error.getClass().getName();
+    return message;
   }
 
   @Override

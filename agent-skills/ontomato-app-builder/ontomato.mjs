@@ -73,9 +73,9 @@ function send(api, method, backendPath, body) {
 
 async function readJson(res) {
   const text = await res.text();
-  if (!res.ok) die(`${res.status}\n${text}`);
+  if (!res.ok) throw new Error(`${res.status}\n${text}`);
   const json = JSON.parse(text);
-  if (json?.success === false || json?.error) die(json.message ?? json.error?.message ?? json.error);
+  if (json?.success === false || json?.error) throw new Error(json.message ?? json.error?.message ?? json.error);
   return json;
 }
 
@@ -130,24 +130,95 @@ async function vectorDelete(api, argv) {
   console.log("ok");
 }
 
-// MetricView (read interface) and Action (write interface) share the same seven endpoints under their own prefix.
-async function assetCommand(api, prefix, argv) {
+function isPlatformAuthoring() {
+  return process.env.ONTOMATO_SKILL_SCENARIO === "platform" ||
+    Boolean(process.env.ONTOMATO_RUN_ID || process.env.ONTOMATO_AUTHORING_URL || process.env.ONTOMATO_EXECUTION_CALLBACK);
+}
+
+async function withAuthoring(api, kind, workspaceId, work) {
+  if (isPlatformAuthoring()) {
+    const { ONTOMATO_AUTHORING_URL: base, ONTOMATO_EXECUTION_CALLBACK: callback, ONTOMATO_RUN_ID: runId } = process.env;
+    if (!base || !callback || !runId) throw new Error("The current platform run must supply its authoring callback");
+    return work(async (operation, input) => readJson(await fetch(`${base.replace(/\/$/, "")}/${kind}/${operation}`, {
+      method: input === undefined ? "GET" : "POST",
+      headers: {
+        "Accept-Language": api.lang,
+        "Content-Type": "application/json",
+        "X-Ontomato-Callback-Credential": callback,
+        "X-Ontomato-Run-Id": runId,
+      },
+      body: input === undefined ? undefined : JSON.stringify(input),
+      redirect: "error",
+    })));
+  }
+
+  if (workspaceId || process.env.ONTOMATO_EXECUTION_KIND === "build-test") {
+    await bindTestTarget(api, workspaceId);
+  }
+  const root = "/ontology/ai/generation";
+  const { runId } = await requestJson(api, "POST", `${root}/gates`, { kind: kind === "action" ? "action" : "metric" });
+  try {
+    return await work((operation, input = {}) =>
+      requestJson(api, "POST", `${root}/${runId}/authoring/${kind}/${operation}`, input));
+  } finally {
+    await requestJson({ ...api, executionContext: undefined }, "POST", `${root}/${runId}/close`, {});
+  }
+}
+
+async function runAuthorTest(author, input) {
+  const { result } = await author("test", input);
+  if (result.error) throw new Error(result.error);
+}
+
+async function generateAsset(api, prefix, args, workspaceId) {
+  const kind = prefix === "action" ? "action" : "metric-view";
+  const save = takeFlag(args, "--save");
+  const sample = kind === "action" ? takeOption(args, "--sample") : null;
+  if (args.length !== 1 || (kind === "action" && sample === null)) {
+    const sampleOption = kind === "action" ? " --sample <JSON or @file>" : "";
+    die(`Usage: ${kind} generate [--save]${sampleOption} <definition JSON or @file>`);
+  }
+  const definition = JSON.parse(readInput(args[0]));
+  const fixtures = kind === "action" ? JSON.parse(readInput(sample)) : undefined;
+  const accepted = await withAuthoring(api, kind, workspaceId, async author => {
+    const definitionFunction = definition.function;
+    if (kind === "action") {
+      const input = { code: definitionFunction.code, parameterDefs: definitionFunction.parameters ?? [] };
+      await author("prepare", fixtures);
+      await author("reset", {});
+      await runAuthorTest(author, input);
+      const { explanationRef } = await author("explain-draft", input);
+      definition.explanationRef = explanationRef;
+    } else {
+      const { queryPackage } = definitionFunction;
+      const columnLabels = definitionFunction.returnDef?.columnLabels;
+      await runAuthorTest(author, { queryPackage, columnLabels });
+      for (const binding of definition.bindings ?? []) {
+        const bound = structuredClone(queryPackage);
+        for (const parameter of bound.manifest.parameterDefs) {
+          parameter.value = binding.parameters[parameter.name];
+        }
+        await runAuthorTest(author, { queryPackage: bound, columnLabels });
+      }
+    }
+    return (await author("adopt", { definition })).definition;
+  });
+  if (save) {
+    printData(await requestJson({ ...api, executionContext: undefined }, "POST", `/${prefix}/save`, accepted));
+  } else {
+    print(accepted);
+  }
+}
+
+async function assetCommand(api, prefix, argv, workspaceId) {
   const sub = argv[0];
   const rest = argv.slice(1);
-  if (sub === "generate") {
-    const save = takeFlag(rest, "--save");
-    if (rest.length === 0) die(`${prefix} generate requires a description`);
-    const body = { question: rest.join(" "), persistence: save };
-    printData(
-      await requestJson(
-        api,
-        "POST",
-        `/${prefix}/generateFromNatureLanguage`,
-        body,
-      ),
-    );
-    return;
+  if (sub === "context") {
+    if (rest.length) die(`Usage: ${prefix === "action" ? "action" : "metric-view"} context`);
+    const kind = prefix === "action" ? "action" : "metric-view";
+    return print(await withAuthoring(api, kind, workspaceId, author => author("context")));
   }
+  if (sub === "generate") return generateAsset(api, prefix, rest, workspaceId);
   if (sub === "execute") {
     const bindingId = prefix === "metricView" ? takeOption(rest, "--binding") : null;
     const files = [];
@@ -384,14 +455,17 @@ function usage() {
   vector-delete <class> <attribute> <objectId> <path>
   distinct-values <class> <attribute> [--like <pattern>] [--limit <n>]
   execute-dsl <json|@file>
-  metric-view generate [--save] <description>
+  metric-view context [--workspace <id>]
+  metric-view generate [--save] <definition JSON or @file>
   metric-view execute <id> [<param json|@file>]
   metric-view find <class> [<question>]
   metric-view get <id>
   metric-view save <json|@file>
   metric-view publish <id>
   metric-view delete <id>
-  action generate|execute|find|get|save|publish|delete ...   (same arguments as metric-view)
+  action context [--workspace <id>]
+  action generate [--save] --sample <JSON or @file> <definition JSON or @file>
+  action find|get|save|publish|delete ...   (same arguments as metric-view)
   action re-explain [--missing] [--id <id> ...]
   action execute <id> [<param json|@file>] [--file <path> ...]`);
 }
@@ -407,10 +481,14 @@ async function main() {
   const lang = takeOption(argv, "--lang") ?? "en";
   const workspaceId=takeOption(argv,"--workspace") ?? process.env.ONTOMATO_WORKSPACE_ID;
   const cmd = argv[0];
+  if (!cmd || cmd === "--help") return usage();
+  const platformAuthoring = ["action", "metric-view"].includes(cmd) && ["context", "generate"].includes(argv[1])
+    && isPlatformAuthoring();
   const cfg = loadConfig();
   if (!cfg.envUrl) die("Set ONTOMATO_URL or envUrl in application.yml");
   const identity = process.env.ONTOMATO_API_KEY ? { apiKey: process.env.ONTOMATO_API_KEY }
-    : process.env.ONTOMATO_TK ? { tk: process.env.ONTOMATO_TK } : await authenticate(cfg, lang);
+    : process.env.ONTOMATO_TK ? { tk: process.env.ONTOMATO_TK }
+      : platformAuthoring ? {} : await authenticate(cfg, lang);
   const api = { ...cfg, lang, ...identity };
   if(cmd==="test") {
     if(!workspaceId) die("BUILD_TEST_WORKSPACE_REQUIRED: pass --workspace <id>");
@@ -474,14 +552,13 @@ async function main() {
     return;
   }
   if (cmd === "metric-view") {
-    await assetCommand(api, "metricView", argv.slice(1));
+    await assetCommand(api, "metricView", argv.slice(1), workspaceId);
     return;
   }
   if (cmd === "action") {
-    await assetCommand(api, "action", argv.slice(1));
+    await assetCommand(api, "action", argv.slice(1), workspaceId);
     return;
   }
-  if(!cmd) return usage();
   die(`BUILD_TEST_UNSUPPORTED: command not supported: ${cmd}`);
 }
 
