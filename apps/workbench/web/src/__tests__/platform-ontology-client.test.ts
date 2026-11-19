@@ -68,9 +68,7 @@ describe("platform-ontology SDK client & adapters", () => {
       }
       if (path === "/platform-ontology/start") {
         return Response.json({
-          node: { className: USER, primaryKey: "u-1" },
-          label: "Alice",
-          layer: "governance",
+          node: { className: USER, primaryKey: "u-1", label: "Alice", layer: "governance" },
         });
       }
       if (path === "/platform-ontology/neighbors") {

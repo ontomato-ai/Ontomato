@@ -6,7 +6,7 @@ import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/
 import { AGENT_DEFINITION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SKILL } from "@ontomato/contracts/panel-client-requests";
 import { PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import {
+import { ignoreChanges,
   inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
@@ -101,8 +101,9 @@ function owner(request: Sent): Response | undefined {
     return Response.json({ fields, values: shown, save: save(create ? "agent.create" : "agent.update") });
   }
   if (request.path === `/api/assistant/agent-definitions/${AGENT}` && request.method === "GET") return Response.json(definition(AGENT, stored));
+  // The service keeps what an update omits (skills the reader did not submit), and answers with the whole definition.
   if (request.path === `/api/assistant/agent-definitions/${AGENT}` && request.method === "PUT")
-    return Response.json(definition(AGENT, request.body as PanelFormValues));
+    return Response.json(definition(AGENT, { ...stored, ...(request.body as PanelFormValues) }));
   if (request.path === "/api/assistant/agent-definitions" && request.method === "POST")
     return Response.json(definition(CREATED, request.body as PanelFormValues));
   if (request.path === "/api/assistant/agent-skills")
@@ -124,8 +125,8 @@ async function open(address: string, state: Record<string, unknown>, override?: 
   const sent = installPlatform((request) => override?.(request) ?? owner(request) ?? nothingAt(request));
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
-  platformPanelHost("ontology", use).frame(frame, registered("ontology", use, panel), true);
-  writePanelDocument(panel, use, address, state as never);
+  platformPanelHost("ontology", use, ignoreChanges).frame(frame, registered("ontology", use, panel), true);
+  writePanelDocument(registered("ontology", use, panel), address, state as never);
   inside(frame);
   const failed: string[] = [];
   window.addEventListener("message", (event) => {
@@ -174,8 +175,10 @@ it("edits the owner's JSON through one form, with the skill picker and the data 
   await context.instance.invoke("definition.save");
   const put = sent.find((request) => request.method === "PUT")!;
   expect(put.path).toBe(`/api/assistant/agent-definitions/${AGENT}`);
-  // The owner's own value shape: the nested model, the skill reference objects, false and null, nothing as text.
-  expect(put.body).toEqual({ ...stored, classNames: ["Order", "Invoice", "Customer"] });
+  // The owner's own value shape: the nested model, false and null, nothing as text. The skills were not submitted, so
+  // whether they travel is the owner adapter's choice (the service keeps what an update omits).
+  const { skills: _skills, ...unsubmittedSkills } = stored;
+  expect(put.body).toMatchObject({ ...unsubmittedSkills, classNames: ["Order", "Invoice", "Customer"] });
   await vi.waitFor(() => expect(context.instance.dirty()).toBe(false));
   // Every request went through the frame's admission as the reader's own.
   expect(sent.every((request) => request.credential !== null)).toBe(true);
@@ -212,8 +215,8 @@ async function openWithDraft(form: PanelFormValues, envelope: { operation: strin
   });
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
-  platformPanelHost("ontology", use).frame(frame, registered("ontology", use, panel), true);
-  writePanelDocument(panel, use, `/ontology/agents?${query}`, { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } });
+  platformPanelHost("ontology", use, ignoreChanges).frame(frame, registered("ontology", use, panel), true);
+  writePanelDocument(registered("ontology", use, panel), `/ontology/agents?${query}`, { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } });
   inside(frame);
   const failed: string[] = [];
   const settled: unknown[] = [];

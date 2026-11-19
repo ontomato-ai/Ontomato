@@ -3,6 +3,7 @@ import {
   matchesObjectType,
   objectUnionTypes,
   panelStateValueSchema,
+  type PanelDeepLinkStateValue,
   type PanelManifest,
   type PanelStateValue,
 } from "@ontomato/contracts/panel-manifest";
@@ -19,8 +20,24 @@ import type { PanelSelection } from "./types";
  * panel author writes neither.
  */
 
-/** One field's value as the panel reads it: the object reference, the scalar, or null while nothing is set. */
-export type PanelFieldValue = PanelStateValue;
+/** A reference to one ontology object, as a state field holds it. */
+export interface PanelObjectRef {
+  readonly className: string;
+  readonly primaryKey: string;
+}
+
+/** One field's value as the panel reads it: an object reference, a collection of them, a scalar, or null while unset. */
+export type PanelFieldValue = Exclude<PanelStateValue, readonly unknown[]> | readonly PanelObjectRef[];
+
+/** The one object a state value names; null for a scalar, a collection or nothing. */
+export function stateObject(value: DeepReadonly<PanelFieldValue> | undefined): PanelObjectRef | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as PanelObjectRef : null;
+}
+
+/** The objects a collection state value holds; none for anything else. */
+export function stateObjects(value: DeepReadonly<PanelFieldValue> | undefined): readonly PanelObjectRef[] {
+  return Array.isArray(value) ? value as readonly PanelObjectRef[] : [];
+}
 
 /**
  * What a panel instance starts with: values for the fields an open request or a link named. A field it leaves out starts
@@ -43,21 +60,28 @@ export interface PanelStateStore {
    */
   setState(patch: Readonly<Record<string, PanelFieldValue>>): void;
   /** The fields an address or an open request may carry, with the values they hold now. */
-  deepLinkable(): Record<string, PanelFieldValue>;
+  deepLinkable(): Record<string, PanelDeepLinkStateValue>;
 }
 
 /**
  * Checks a value against the field a panel declared. `object` takes a reference to one object of the declared ontology
- * type; a scalar takes its own type. Null clears the field.
+ * type, `objects` a collection of such references (an instance's checked objects); a scalar takes its own type. Null
+ * clears the field.
  */
 export function checkPanelValue(manifest: PanelManifest, name: string, value: PanelFieldValue): PanelFieldValue {
   const field = manifest.state[name];
   if (!field) throw new Error(`Panel state has no field '${name}'`);
   const parsed = panelStateValueSchema.parse(value);
   if (parsed === null) return null;
+  if (field.kind === "objects") {
+    if (!Array.isArray(parsed)) throw new TypeError(`Panel state '${name}' is a collection of ${field.objectType} references`);
+    const other = parsed.find((member) => member.className !== field.objectType);
+    if (other) throw new TypeError(`Panel state '${name}' holds ${field.objectType} references, not ${other.className}`);
+    return parsed;
+  }
   if (field.kind === "object" || field.kind === "object-union") {
     const expected = field.kind === "object" ? field.objectType : objectUnionTypes(field).join(" | ");
-    if (typeof parsed !== "object") throw new TypeError(`Panel state '${name}' is a ${expected} reference`);
+    if (typeof parsed !== "object" || Array.isArray(parsed)) throw new TypeError(`Panel state '${name}' is a ${expected} reference`);
     if (!matchesObjectType(field, parsed.className))
       throw new TypeError(`Panel state '${name}' is a ${expected} reference, not ${parsed.className}`);
     return parsed;
@@ -104,9 +128,9 @@ export function createPanelState(manifest: PanelManifest, initial: PanelInitialS
       values.value = { ...values.value, ...checked };
     },
     deepLinkable() {
-      return Object.fromEntries(
-        Object.entries(values.value).filter(([name, value]) => value !== null && manifest.state[name]!.deepLink),
-      );
+      // A collection is the instance's own and never deep-links; the declaration already refuses that.
+      return Object.fromEntries(Object.entries(values.value).filter((entry): entry is [string, PanelDeepLinkStateValue] =>
+        entry[1] !== null && !Array.isArray(entry[1]) && manifest.state[entry[0]]!.deepLink));
     },
   };
 }
@@ -129,8 +153,8 @@ export function panelSelection(
   translate: (key: string) => string,
 ): PanelSelection[] {
   return Object.entries(manifest.state).flatMap(([name, field]) => {
-    const value = values[name];
-    if ((field.kind !== "object" && field.kind !== "object-union") || !value || typeof value !== "object") return [];
+    const value = stateObject(values[name]);
+    if ((field.kind !== "object" && field.kind !== "object-union") || !value) return [];
     const objectType = field.kind === "object" ? field.objectType : value.className;
     const reference = `${objectType} ${value.primaryKey}`;
     const named = names.get(objectNameKey(objectType, value.primaryKey));

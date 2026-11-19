@@ -5,6 +5,7 @@
  * `@ontomato/contracts/platform-object-types`. This module re-exports them and
  * derives the layered type index used by the composite query service.
  */
+import type { PlatformOntologyLayer, PlatformOntologyType } from "@ontomato/contracts/platform-ontology";
 import {
   ACTION,
   AGENT_DEFINITION,
@@ -51,32 +52,22 @@ export {
   WORKFLOW,
 };
 
-export type PlatformOntologyLayer = (typeof platformOntologyLayers)[number];
-
 export const PLATFORM_ONTOLOGY_LAYERS: readonly PlatformOntologyLayer[] = platformOntologyLayers;
 
-export interface PlatformOntologyTypeSpec {
-  readonly id: string;
-  readonly layer: PlatformOntologyLayer;
-  readonly labelKey: string;
-}
-
-export type PlatformOntologyRelationKindSpec = PlatformRelationKindDeclaration;
-
-export const PLATFORM_ONTOLOGY_TYPES: readonly PlatformOntologyTypeSpec[] = Object.entries(platformObjectTypes)
+export const PLATFORM_ONTOLOGY_TYPES: readonly PlatformOntologyType[] = Object.entries(platformObjectTypes)
   .flatMap(([id, decl]) =>
     decl.layer
       ? [{ id, layer: decl.layer, labelKey: decl.labelKey ?? id }]
       : [],
   );
 
-export const PLATFORM_ONTOLOGY_TYPE_MAP: ReadonlyMap<string, PlatformOntologyTypeSpec> = new Map(
+export const PLATFORM_ONTOLOGY_TYPE_MAP: ReadonlyMap<string, PlatformOntologyType> = new Map(
   PLATFORM_ONTOLOGY_TYPES.map((spec) => [spec.id, spec]),
 );
 
-export const PLATFORM_ONTOLOGY_RELATION_KINDS: readonly PlatformOntologyRelationKindSpec[] =
+export const PLATFORM_ONTOLOGY_RELATION_KINDS: readonly PlatformRelationKindDeclaration[] =
   platformRelationKinds;
 
-export function relationTargets(spec: PlatformOntologyRelationKindSpec): readonly string[] {
+export function relationTargets(spec: PlatformRelationKindDeclaration): readonly string[] {
   return typeof spec.to === "string" ? [spec.to] : spec.to;
 }

@@ -1,0 +1,39 @@
+import { pageDraftReadSchema } from "@ontomato/contracts/page-draft";
+import type { PageDraftLink } from "@ontomato/contracts/page-draft";
+import type { PlatformRequests } from "./platform-objects";
+
+/*
+ * The platform requests a panel instance makes for itself, as the reader, whether it runs in a frame (over the bridge)
+ * or in the platform's own document (over the platform's request path): one implementation of each.
+ */
+
+/** Reads the draft one run wrote. */
+export async function readPageDraft(requests: PlatformRequests, sessionId: string, runId: string, path: string) {
+  const query = new URLSearchParams({ path }).toString();
+  const response = await requests.request(
+    `/assistant/sessions/${encodeURIComponent(sessionId)}/runs/${encodeURIComponent(runId)}/page-draft?${query}`,
+    {},
+    "",
+  );
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error?.message ?? `The draft at ${path} could not be read`);
+  return pageDraftReadSchema.parse(body);
+}
+
+/** Records the object a create draft's save created, so the draft addresses it from then on. */
+export async function recordDraftCreated(requests: PlatformRequests, link: PageDraftLink, id: string) {
+  const response = await requests.request(
+    `/assistant/sessions/${encodeURIComponent(link.sessionId)}/runs/${encodeURIComponent(link.runId)}/page-draft/created`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: link.path, id }) },
+    "",
+  );
+  if (!response.ok) throw new Error(`The draft at ${link.path} could not record the object it created`);
+}
+
+/** Reads a projection's current record by ID; the caller checks it as the record it expects. */
+export async function readProjectionRecord(requests: PlatformRequests, id: string): Promise<unknown> {
+  const response = await requests.request(`/product-projections/${encodeURIComponent(id)}`, {}, "");
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error?.message ?? `Projection ${id} is unavailable`);
+  return body.projection;
+}

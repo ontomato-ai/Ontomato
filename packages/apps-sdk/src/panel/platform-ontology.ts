@@ -1,13 +1,18 @@
-import { ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE } from "@ontomato/contracts/platform-object-types";
+import {
+  platformOntologyCountsResponseSchema,
+  platformOntologyNeighborsRequestSchema,
+  platformOntologyNeighborsResponseSchema,
+  platformOntologyObjectsResponseSchema,
+  platformOntologySchemaResponseSchema,
+  platformOntologyStartResponseSchema,
+  type PlatformOntologyObjectItem,
+  type PlatformOntologyObjectsRequest,
+  type PlatformOntologySchemaResponse,
+  type PlatformOntologyType,
+} from "@ontomato/contracts/platform-ontology";
+import { ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, type PlatformRelationKindDeclaration } from "@ontomato/contracts/platform-object-types";
 import type {
   PlatformGraphNeighborsQuery,
-  PlatformGraphNeighborsResult,
-  PlatformGraphNode,
-  PlatformGraphRelationKindSpec,
-  PlatformGraphSchema,
-  PlatformGraphStatus,
-  PlatformGraphTypeCount,
-  PlatformGraphTypeSpec,
   PlatformObjectAdapter,
   PlatformObjectAdapterFactory,
   PlatformObjectGraph,
@@ -19,39 +24,11 @@ import type {
 
 const base = "/platform-ontology";
 
-export interface PlatformOntologyObjectsQuery {
-  readonly type: string;
-  readonly keyword?: string;
-  readonly page?: number;
-  readonly pageSize?: number;
-}
-
-export interface PlatformOntologyObjectItem {
-  readonly node: { readonly className: string; readonly primaryKey: string };
-  readonly label: string;
-  readonly detail?: string;
-}
-
-export interface PlatformOntologyObjectsResult {
-  readonly type: string;
-  readonly layer: string;
-  readonly status: PlatformGraphStatus;
-  readonly reason?: string;
-  readonly items: readonly PlatformOntologyObjectItem[];
-  readonly total: number;
-  readonly page: number;
-  readonly pageSize: number;
-}
-
-/** Full client over the five read-only `/platform-ontology/*` endpoints. */
-export interface PlatformOntologyClient extends Required<PlatformObjectGraph> {
-  objects(query: PlatformOntologyObjectsQuery): Promise<PlatformOntologyObjectsResult>;
-}
-
 async function readJson<T>(
   requests: PlatformRequests,
   path: string,
   init: NonNullable<Parameters<typeof fetch>[1]>,
+  schema: { parse(body: unknown): T },
 ): Promise<T> {
   const response = await requests.request(path, init, "");
   const body = await response.json();
@@ -63,7 +40,7 @@ async function readJson<T>(
       ?? `Request failed (${response.status})`;
     throw new Error(message);
   }
-  return body as T;
+  return schema.parse(body);
 }
 
 /**
@@ -71,89 +48,73 @@ async function readJson<T>(
  * Sends only the five `/platform-ontology/*` requests declared in `@ontomato/contracts/panel-client-requests`
  * for `ONTOLOGY_TYPE` and `ONTOLOGY_RELATION_KIND`.
  */
-export function createPlatformOntologyClient(requests: PlatformRequests): PlatformOntologyClient {
-  let pendingSchema: Promise<PlatformGraphSchema> | undefined;
+export function createPlatformOntologyClient(requests: PlatformRequests) {
+  let pendingSchema: Promise<PlatformOntologySchemaResponse> | undefined;
 
   const schema = () =>
-    (pendingSchema ??= readJson<PlatformGraphSchema>(requests, `${base}/schema`, { method: "GET" }).finally(() => {
-      pendingSchema = undefined;
-    }));
+    (pendingSchema ??= readJson(requests, `${base}/schema`, { method: "GET" }, platformOntologySchemaResponseSchema)
+      .finally(() => {
+        pendingSchema = undefined;
+      }));
 
-  const counts = async (): Promise<readonly PlatformGraphTypeCount[]> => {
-    const body = await readJson<{ counts: readonly PlatformGraphTypeCount[] }>(requests, `${base}/counts`, {
-      method: "GET",
-    });
+  const counts = async () => {
+    const body = await readJson(requests, `${base}/counts`, { method: "GET" }, platformOntologyCountsResponseSchema);
     return body.counts;
   };
 
-  const start = async (): Promise<PlatformGraphNode | null> => {
-    const body = await readJson<{
-      node?: { className: string; primaryKey: string; label?: string; layer?: string; detail?: string } | null;
-      label?: string;
-      layer?: string;
-      detail?: string;
-    } | null>(requests, `${base}/start`, { method: "GET" });
-    if (!body?.node) return null;
-    const layer = body.node.layer ?? body.layer;
-    const detail = body.node.detail ?? body.detail;
-    return {
-      className: body.node.className,
-      primaryKey: body.node.primaryKey,
-      label: body.node.label ?? body.label ?? body.node.primaryKey,
-      ...(layer ? { layer } : {}),
-      ...(detail ? { detail } : {}),
-    };
+  const start = async () => {
+    const body = await readJson(requests, `${base}/start`, { method: "GET" }, platformOntologyStartResponseSchema);
+    return body.node;
   };
 
-  const neighbors = (query: PlatformGraphNeighborsQuery): Promise<PlatformGraphNeighborsResult> =>
-    readJson<PlatformGraphNeighborsResult>(requests, `${base}/neighbors`, {
+  const neighbors = async (query: PlatformGraphNeighborsQuery) => {
+    const body = platformOntologyNeighborsRequestSchema.parse({
+      node: { className: query.node.className, primaryKey: query.node.primaryKey },
+      relationKinds: query.relationKinds,
+      layers: query.layers,
+    });
+    return readJson(requests, `${base}/neighbors`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        node: { className: query.node.className, primaryKey: query.node.primaryKey },
-        ...(query.relationKinds ? { relationKinds: [...query.relationKinds] } : {}),
-        ...(query.layers ? { layers: [...query.layers] } : {}),
-      }),
-    });
+      body: JSON.stringify(body),
+    }, platformOntologyNeighborsResponseSchema);
+  };
 
-  const objects = (query: PlatformOntologyObjectsQuery): Promise<PlatformOntologyObjectsResult> =>
-    readJson<PlatformOntologyObjectsResult>(requests, `${base}/objects`, {
+  const objects = ({ type, keyword, page, pageSize }: PlatformOntologyObjectsRequest) =>
+    readJson(requests, `${base}/objects`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        type: query.type,
-        ...(query.keyword ? { keyword: query.keyword } : {}),
-        ...(query.page !== undefined ? { page: query.page } : {}),
-        ...(query.pageSize !== undefined ? { pageSize: query.pageSize } : {}),
-      }),
-    });
+      body: JSON.stringify({ type, keyword, page, pageSize }),
+    }, platformOntologyObjectsResponseSchema);
 
   return { schema, counts, start, neighbors, objects };
 }
 
-function typeRecord(spec: PlatformGraphTypeSpec): PlatformObjectRecord {
+export type PlatformOntologyClient = ReturnType<typeof createPlatformOntologyClient>;
+
+function typeRecord(spec: PlatformOntologyType): PlatformObjectRecord {
   return {
     primaryKey: spec.id,
-    label: spec.label ?? spec.labelKey ?? spec.id,
+    label: spec.labelKey,
     fields: {
       id: spec.id,
-      ...(spec.layer ? { layer: spec.layer } : {}),
-      ...(spec.labelKey ? { labelKey: spec.labelKey } : {}),
+      layer: spec.layer,
+      labelKey: spec.labelKey,
     },
   };
 }
 
-function relationKindRecord(spec: PlatformGraphRelationKindSpec): PlatformObjectRecord {
+function relationKindRecord(spec: PlatformRelationKindDeclaration): PlatformObjectRecord {
   const target = typeof spec.to === "string" ? spec.to : spec.to.join(",");
   return {
     primaryKey: spec.id,
-    label: spec.label ?? spec.labelKey ?? spec.id,
+    label: spec.labelKey,
     fields: {
       id: spec.id,
       from: spec.from,
       to: target,
-      derived: String(Boolean(spec.derived)),
-      ...(spec.labelKey ? { labelKey: spec.labelKey } : {}),
+      derived: String(spec.derived),
+      labelKey: spec.labelKey,
     },
   };
 }
@@ -173,7 +134,7 @@ function objectItemRecord(item: PlatformOntologyObjectItem): PlatformObjectRecor
 }
 
 function queryTypeSpecs(
-  specs: readonly PlatformGraphTypeSpec[],
+  specs: readonly PlatformOntologyType[],
   query: PlatformObjectQuery,
 ): PlatformObjectQueryResult {
   const search = query.search?.trim().toLowerCase();
@@ -181,11 +142,7 @@ function queryTypeSpecs(
   const matched = specs.filter((spec) => {
     if (layer && spec.layer !== layer) return false;
     if (!search) return true;
-    return (
-      spec.id.toLowerCase().includes(search)
-      || (spec.label ?? "").toLowerCase().includes(search)
-      || (spec.labelKey ?? "").toLowerCase().includes(search)
-    );
+    return spec.id.toLowerCase().includes(search) || spec.labelKey.toLowerCase().includes(search);
   });
   const offset = query.page?.offset ?? 0;
   const limit = query.page?.limit ?? matched.length;

@@ -15,23 +15,32 @@ function files(root, prefix = "") {
   }).sort();
 }
 
+/**
+ * The SHA-256 of a directory's files, in lowercase hex: each file, in path order, framed by its relative path and byte
+ * length, so additions, removals and binary assets count without ambiguity.
+ */
+function digestOf(dir, names) {
+  const hash = createHash("sha256");
+  for (const name of names) {
+    const bytes = readFileSync(join(dir, name));
+    hash.update(JSON.stringify([name, bytes.length]) + "\n").update(bytes);
+  }
+  return hash.digest("hex");
+}
+
 // Hash the actual output before inserting its own version into docs, examples and manifests.
-// Framed paths and bytes include additions, removals and binary assets without ambiguity.
 export function finalizeSdk(root, base, release) {
   const staged = join(root, VERSION_PLACEHOLDER);
   const names = files(staged);
-  const hash = createHash("sha256");
-  for (const name of names) {
-    const bytes = readFileSync(join(staged, name));
-    hash.update(JSON.stringify([name, bytes.length]) + "\n").update(bytes);
-  }
-  const version = release ? base : `${base}-dev.${hash.digest("hex")}`;
+  const version = release ? base : `${base}-dev.${digestOf(staged, names)}`;
   for (const name of names.filter((name) => name === "sdk.json" || name === "components.json" ||
     name.startsWith("docs/") || name.startsWith("examples/"))) {
     const file = join(staged, name);
     writeFileSync(file, readFileSync(file, "utf8").replaceAll(VERSION_PLACEHOLDER, version));
   }
   renameSync(staged, join(root, version));
+  // What the deployment serves for this version: its files once they name their version, before any compressed copy.
+  const digest = digestOf(join(root, version), names);
   // Compression artifacts are delivery-only: they are written after the content hash above, so the same
   // output always names the same version however it is compressed.
   for (const name of names) {
@@ -40,6 +49,6 @@ export function finalizeSdk(root, base, release) {
     writeFileSync(join(root, version, `${name}.br`), brotliCompressSync(bytes));
     writeFileSync(join(root, version, `${name}.gz`), gzipSync(bytes, { level: 9 }));
   }
-  writeFileSync(join(root, "current.json"), JSON.stringify({ version }) + "\n");
+  writeFileSync(join(root, "current.json"), JSON.stringify({ version, digest }) + "\n");
   return version;
 }

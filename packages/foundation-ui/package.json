@@ -17,7 +17,8 @@
     "./graph/g6": "./src/graph/g6.ts",
     "./reader": "./src/reader/index.ts",
     "./tree": "./src/tree/index.ts",
-    "./visibility": "./src/visibility.ts"
+    "./visibility": "./src/visibility.ts",
+    "./data-state": "./src/data-state/index.ts"
   },
   "scripts": {
     "typecheck": "vue-tsc --noEmit",

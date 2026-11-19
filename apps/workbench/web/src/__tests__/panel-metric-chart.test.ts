@@ -12,7 +12,7 @@ import { platformResourceLoader, type PlatformRequests } from "../../../../../pa
 import { platformResources } from "../../../../../packages/apps-sdk/src/resources";
 import Projection from "../../../../../packages/apps-sdk/src/panel/Projection.vue";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument } from "./panel-frame";
+import { ignoreChanges, inside, installPlatform, leaveFrame, noOperations, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument } from "./panel-frame";
 
 /*
  * A chart projection is the chart on its dashboard (M2 ruling 2026-11-19): it draws its source card's chart file with the
@@ -83,6 +83,8 @@ function owners(template: () => Response) {
 
 function mounted(requests: PlatformRequests, customer: string | null) {
   const instance = createPanelInstance(manifest, {
+    text: (key) => key,
+    ...noOperations,
     pageKey: "charts", url: () => "/charts", label: () => "Charts",
     initial: customer ? { customer: { className: "Customer", primaryKey: customer } } : {},
     recordDraftCreated: async () => {},
@@ -177,8 +179,8 @@ it("draws a chart through the platform's bridge as the reader", async () => {
   });
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
-  platformPanelHost("app-charts", use).frame(frame, registered("app-charts", use, panel), true);
-  writePanelDocument(panel, use, "/applications/app-charts/charts", { customer: { className: "Customer", primaryKey: "c-9" } });
+  platformPanelHost("app-charts", use, ignoreChanges).frame(frame, registered("app-charts", use, panel), true);
+  writePanelDocument(registered("app-charts", use, panel), "/applications/app-charts/charts", { customer: { className: "Customer", primaryKey: "c-9" } });
   inside(frame);
   await mountPanel(panelOf("revenue"));
   await vi.waitFor(() => expect(document.querySelector("#app .drawn")).not.toBeNull(), { timeout: 3000 });

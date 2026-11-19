@@ -16,7 +16,8 @@ import {
   type PanelHostMessage,
   type PanelRefreshPort,
 } from "@ontomato/contracts/panel-host";
-import type { PanelOperation, PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import type { PanelOperation, PanelDeepLinkStateValue } from "@ontomato/contracts/panel-manifest";
+import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
 import type { PanelDefinitionContent, ProductPanel } from "@ontomato/contracts/product-panels";
 import { randomId } from "@ontomato/contracts/random-id";
 
@@ -42,6 +43,8 @@ export interface PanelHostPort<Source extends PanelHostSource = PanelHostSource>
   source(): Promise<Source>;
   /** The page key a draft for this page names: the use relation's, or the one the candidate is previewed as. */
   readonly pageKey: string;
+  /** The application use this instance shows, as the message names it to the frame; a candidate preview has none. */
+  readonly use: PanelUseRef | null;
   /** A registered panel's current record, read again when its revision moves. */
   panel(panelId: string): Promise<ProductPanel>;
   /** Where the platform serves its SDK builds, e.g. `/apps-sdk`: a definition's frame loads `<root>/<its sdkVersion>`. */
@@ -85,7 +88,7 @@ export interface PanelInstanceView extends PanelRefreshPort {
   /** The message written into the frame's document; null while the record is being read. */
   readonly document: Readonly<Ref<string>>;
   /** The reader's deep-linkable state, as the address carries it. */
-  readonly state: Ref<Record<string, PanelStateValue>>;
+  readonly state: Ref<Record<string, PanelDeepLinkStateValue>>;
   /** The instance's address, with its state; never a credential or a form value. */
   readonly address: Ref<string>;
   /** The operations the instance offers, as its frame reported them. */
@@ -172,7 +175,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const error = shallowRef("");
   const displayLoad = shallowRef(loading);
   const dirty = shallowRef(false);
-  const state = shallowRef<Record<string, PanelStateValue>>({});
+  const state = shallowRef<Record<string, PanelDeepLinkStateValue>>({});
   const address = shallowRef("");
   const operations = shallowRef<readonly PanelOperation[]>([]);
   let frame: Window | null = null;
@@ -232,7 +235,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
 
   function adopt(next: PanelHostSource) {
     error.value = "";
-    const requested = requestedState(next.panel) as Record<string, PanelStateValue>;
+    const requested = requestedState(next.panel) as Record<string, PanelDeepLinkStateValue>;
     const requestedAddress = panelAddress(pageAddress(), requested);
     const { content, manifest, sdkVersion } = next.panel;
     // Only the renderable definition crosses into the frame; the record's identity and a candidate's preview context stay
@@ -241,6 +244,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       kind: "panel-host-message",
       panel: { content, manifest, sdkVersion },
       pageKey: port.pageKey,
+      use: port.use,
       url: requestedAddress,
       // What a message calls the page: the panel's own registered name, which its author wrote, with the application's
       // when the page passes one.

@@ -9,7 +9,7 @@ import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import type { DisplayObjectRefresh } from "@ontomato/agent-shell-ui";
 import type { PageContext } from "@ontomato/contracts/page-context";
-import { panelUsesOf, platformPanelHost } from "../panel-host";
+import { panelUsesOf, platformPanelHost, type PanelObjectChange } from "../panel-host";
 
 /**
  * One page of an application whose entry is `renderer:'panels'`: the panel that one of its use relations names, shown
@@ -58,8 +58,12 @@ const { t, locale } = useI18n();
 const uses = ref<readonly ApplicationPanelUse[] | null>(null);
 /** The shown page's instance, which the conversation's object signal reaches; kept pages are reconciled when shown again. */
 const host = ref<PanelRefreshPort | null>(null);
+/** A change to objects the page shows, from the conversation or from a receipt for an operation in the shown frame. */
+function changed(change: PanelObjectChange) {
+  host.value?.refresh(change.target);
+}
 watch(() => props.objectRefresh?.seq, () => {
-  if (props.objectRefresh) host.value?.refresh(props.objectRefresh.target);
+  if (props.objectRefresh) changed(props.objectRefresh);
 }, { flush: "post" });
 
 /**
@@ -194,7 +198,7 @@ watch(use, (next, previous) => {
   }
   const page = found ?? {
     use: next,
-    port: markRaw(platformPanelHost(props.applicationId, next)),
+    port: markRaw(platformPanelHost(props.applicationId, next, changed)),
     reported: panelAddress(pageAddress.value, requestedState.value),
     context: null,
     dirty: false,
