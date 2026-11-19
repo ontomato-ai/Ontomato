@@ -7,7 +7,7 @@ import { agentQuestionAnswerReceiptSchema, agentUserQuestionReceiptSchema } from
 import { applicationPanelUsesResponseSchema, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import {
   PANEL_CONFIRMATION_EXPIRED, panelOperationOutcomeSchema, type inspectPanelOperationImpactRequestSchema,
-  type CreatePanelOperationIntentRequest, type PanelOperationIntent, type PanelOperateResponse,
+  type CreatePanelOperationIntentRequest, type PanelOperationIntent, type PanelOperateResponse, type PanelOperationRef,
   type PanelUseRef, type PanelOperationOutcome, type StoredPanelOperationIntent,
 } from "@ontomato/contracts/panel-agent";
 import { panelOperationImpactSchema } from "@ontomato/contracts/panel-operations";
@@ -87,11 +87,11 @@ async function declaredOperation(owner: AssistantOwner, credentials: AssistantCr
   throw new HttpError(422,"No supported declared operation has that ID","OPERATION_UNAVAILABLE");
 }
 
-async function operationForUse(owner: AssistantOwner, credentials: AssistantCredentials, ref: PanelUseRef & { operationId: string }) {
+async function operationForUse(owner: AssistantOwner, credentials: AssistantCredentials, ref: PanelOperationRef) {
   return declaredOperation(owner, credentials, await requirePanelUse(credentials, ref), ref.operationId);
 }
 
-export async function readPanelOperationDescriptor(owner: AssistantOwner, credentials: AssistantCredentials, ref: PanelUseRef & { operationId: string }) {
+export async function readPanelOperationDescriptor(owner: AssistantOwner, credentials: AssistantCredentials, ref: PanelOperationRef) {
   const { operation } = await operationForUse(owner, credentials, ref);
   const { id: _id, label: _label, kind: _kind, slot: _slot, ...descriptor } = operation;
   return descriptor;
