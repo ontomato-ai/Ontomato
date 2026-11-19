@@ -578,12 +578,14 @@ it("opens the saved draft's old link as an ordinary panel", async () => {
       expect(sent.filter(request => request.path.endsWith("/form")).at(-1)?.body).toMatchObject({ values: current.content });
     });
     // Let the adapter consume the reread owner's form before checking that the draft stayed empty.
+    // It changes nothing, so nothing is marked or unsaved; the fields it writes are still what it submits, whatever their
+    // values, so the reader may save or discard them (submittedFields, 11-19 review).
     await vi.waitFor(() => {
       expect(context.draft.value).toBeNull();
       expect(context.instance.dirty()).toBe(false);
       expect(document.querySelector(".sdk-owner-form-changed")).toBeNull();
       expect([...document.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")].map(button => button.disabled))
-        .toEqual([true, true]);
+        .toEqual([false, false]);
     });
     expect(element.querySelector(".panel-host-error")?.textContent).toBeUndefined();
     expect(element.querySelector("iframe.panel-host-frame")).toBe(frame);

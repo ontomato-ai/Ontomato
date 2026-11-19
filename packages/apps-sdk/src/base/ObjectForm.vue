@@ -77,13 +77,15 @@ const drawn = computed(() => fields.value.filter((field) => !["reference", "avat
 /** Changed values, or text a reader typed that is no value yet (JSON that does not parse): either is unsaved. */
 const dirty = computed(() => opened.value !== null
   && (JSON.stringify(values.value) !== JSON.stringify(opened.value.values) || Object.keys(invalid.value).length > 0));
-const canSettle = computed(() => dirty.value || panel.instance.draft.value?.slot === slot.slot);
-
 /**
  * The described fields this edit submits, by path: those the reader set (whatever value they end on) and those a received
- * draft wrote. The owner keeps a field not named here as it is, so a field nobody touched is never added.
+ * draft wrote. The owner keeps a field not named here as it is, so a field nobody touched is never added. Whether a
+ * value ended where it began does not matter: a field set back to the value shown is still submitted, and can be saved.
  */
-let submitted: ReadonlySet<string> = new Set();
+const submitted = shallowRef<ReadonlySet<string>>(new Set());
+/** Whether the form has something to save or discard: changed values, a received draft, or fields set on purpose. */
+const canSettle = computed(() => dirty.value || panel.instance.draft.value?.slot === slot.slot || submitted.value.size > 0);
+
 /** A draft this form took, for the target it addresses, shown once the form is on that target. */
 let held: {
   target: string; baseline: PanelFormDescription; checked: PanelFormDescription; changed: ReadonlySet<string>; submitted: ReadonlySet<string>;
@@ -97,7 +99,7 @@ function adopt(
   marked: ReadonlySet<string> = new Set(),
   written: ReadonlySet<string> = new Set(),
 ) {
-  submitted = written;
+  submitted.value = written;
   opened.value = baseline;
   description.value = shown;
   values.value = shown.values;
@@ -180,7 +182,7 @@ watch([canSettle, saving], refreshWhenClean);
 function set(path: string, value: RuntimeJsonValue) {
   // The described field the edit is in: a row's or an object's field submits the array or object it belongs to.
   const described = fields.value.find((item) => path === item.path || path.startsWith(`${item.path}/`));
-  if (described) submitted = new Set([...submitted, described.path]);
+  if (described) submitted.value = new Set([...submitted.value, described.path]);
   values.value = withValueAt(values.value, path, value);
   const field = fieldAt(fields.value, path);
   if (!field?.refreshOnChange) return;
@@ -246,7 +248,8 @@ useProjectionForm({
     const marked = changedPaths(checked.fields, baseline.values, checked.values);
     // What the draft wrote, by its presence: a field it left out is not submitted, though the owner's check returns it.
     const written = new Set(checked.fields.filter((item) => valueAt(draft.form as PanelFormValues, item.path) !== undefined).map((item) => item.path));
-    held = marked.size ? { target: targetKey(into), baseline, checked, changed: marked, submitted: written } : null;
+    // A draft is held for what it changed and for what it wrote: one that writes a field as it already is still submits it.
+    held = marked.size || written.size ? { target: targetKey(into), baseline, checked, changed: marked, submitted: written } : null;
     const selected = into.kind === "object" ? { className: objectType, primaryKey: into.primaryKey } : null;
     if (targetKey(target.value) === targetKey(into)) load(into);
     else panel.instance.state.set(state.value, selected);
@@ -293,9 +296,9 @@ async function write(): Promise<unknown> {
   try {
     const revision = opened.value!.revision;
     const saved = await forms.save(into, {
-      values: values.value, submittedFields: [...submitted], ...(revision === undefined ? {} : { revision }),
+      values: values.value, submittedFields: [...submitted.value], ...(revision === undefined ? {} : { revision }),
     });
-    submitted = new Set();
+    submitted.value = new Set();
     held = null;
     opened.value = { ...description.value!, values: values.value };
     changed.value = new Set();

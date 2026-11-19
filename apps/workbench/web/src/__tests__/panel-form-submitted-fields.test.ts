@@ -56,22 +56,26 @@ const use = panelUse("use-submitted", "submitted", panel.id, "/ontology/agents")
 const link = { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/drafts/agent.page-draft.json" };
 const draftAt = `/api/assistant/sessions/${link.sessionId}/runs/${link.runId}/page-draft`;
 
+/** What the definitions service holds for the agent in this test. */
+let held: PanelFormValues = stored;
+
 /** The definitions service: a checked draft comes back whole, the fields it did not write as they are stored. */
 function owner(request: Sent): Response {
   const projected = /^\/api\/product-projections\/(.+)$/.exec(request.path);
   if (projected) return Response.json({ projection: projections[projected[1]!] });
   if (request.path === "/api/assistant/agent-definitions/form") {
     const { values } = request.body as { values?: PanelFormValues };
-    return Response.json({ fields, values: { ...stored, ...values }, save });
+    return Response.json({ fields, values: { ...held, ...values }, save });
   }
   if (request.path === `/api/assistant/agent-definitions/${AGENT}` && request.method === "PUT")
-    return Response.json({ id: AGENT, sortOrder: 0, ...stored, ...(request.body as PanelFormValues) });
+    return Response.json({ id: AGENT, sortOrder: 0, ...held, ...(request.body as PanelFormValues) });
   if (request.path === "/api/assistant/agent-skills")
     return Response.json({ skills: [{ skill: sql, title: "SQL", description: "" }, { skill: chart, title: "Charts", description: "" }] });
   return nothingAt(request);
 }
 
-async function open(draft?: PanelFormValues) {
+async function open(draft?: PanelFormValues, shown: PanelFormValues = stored) {
+  held = shown;
   installPlatform((request) => {
     if (draft && request.path === draftAt) return Response.json({ pageKey: use.pageKey, operation: "agent.update", target: { id: AGENT }, form: draft });
     return owner(request);
@@ -89,8 +93,12 @@ async function open(draft?: PanelFormValues) {
   const forms = platformObjectAdapter(AGENT_DEFINITION).forms!;
   const saved = vi.spyOn(forms, "save");
   const submitted = (call: number) => (saved.mock.calls[call]![1] as PanelFormSaveInput).submittedFields;
-  return { ...mounted, form: mounted.context.instance.forms.handle("definition")!, submitted };
+  return { ...mounted, form: mounted.context.instance.forms.handle("definition")!, saved, submitted };
 }
+
+/** The form's own save button, as the reader sees and clicks it. */
+const saveButton = () => [...document.querySelectorAll<HTMLButtonElement>("#app .sdk-owner-form-actions button")]
+  .find((button) => button.textContent?.trim() === "Save")!;
 
 afterEach(() => {
   leaveFrame();
@@ -142,4 +150,24 @@ it("forgets what was submitted once the reader discards", async () => {
   form.set("/name", "Analyst v3");
   await context.instance.invoke("definition.save");
   expect(submitted(0)).toEqual(["/name"]);
+});
+
+it("lets the reader save a field set back to the value shown, such as skills cleared to the empty list they showed", async () => {
+  const { form, saved, submitted } = await open(undefined, { ...stored, skills: [] });
+  form.set("/skills", [sql]);
+  form.set("/skills", []);
+  await nextTick();
+  // The values are as they were read, and the reader's intent to submit the skills still stands.
+  expect(saveButton().disabled).toBe(false);
+  saveButton().click();
+  await vi.waitFor(() => expect(saved).toHaveBeenCalledTimes(1));
+  expect(submitted(0)).toEqual(["/skills"]);
+});
+
+it("keeps a draft's field written as the value shown, and saves it from the button", async () => {
+  const { saved, submitted } = await open({ skills: [] }, { ...stored, skills: [] });
+  await vi.waitFor(() => expect(saveButton().disabled).toBe(false), { timeout: 5000 });
+  saveButton().click();
+  await vi.waitFor(() => expect(saved).toHaveBeenCalledTimes(1));
+  expect(submitted(0)).toEqual(["/skills"]);
 });
