@@ -148,8 +148,9 @@ export const SDK_VERSION = `1.1.1-dev.${"0123456789abcdef".repeat(4)}`;
 
 /** What Node answers for the SDK it currently serves; a panel's frame loads the version its record names instead. */
 export const currentSdk = () => Response.json({
-  version: "1.2.0", publicBasePath: "", sdkBasePath: "/apps-sdk/1.2.0",
-  manifestPath: "/apps-sdk/1.2.0/sdk.json", docsPath: "/apps-sdk/1.2.0/docs/index.md", referencePath: "/apps-sdk/1.2.0/docs/reference.md",
+  version: "1.2.0", digest: "a".repeat(64), publicBasePath: "", sdkBasePath: "/apps-sdk/1.2.0",
+  manifestPath: "/apps-sdk/1.2.0/sdk.json", componentsPath: "/apps-sdk/1.2.0/components.json",
+  docsPath: "/apps-sdk/1.2.0/docs/index.md", referencePath: "/apps-sdk/1.2.0/docs/reference.md",
 });
 
 /** A panel's current record; its HTML has the element the SDK mounts into, and the test supplies the component. */

@@ -61,7 +61,7 @@ async function open() {
     if (projected) return Response.json({ projection: projections[projected[1]!] });
     if (request.path === "/api/data-query/function/form")
       return Response.json({ success: true, data: {
-        fields, values: { id: "fn-1", name: "Revenue", sample: 3, parameters: { month: "2026-10", limit: 5 } },
+        fields, values: { id: "fn-1", name: "Revenue", sample: 3, parameters: { month: "2026-10", limit: 5 } }, errors: [],
         save: { method: "POST", path: "/function/save", bodySchema: {}, draftOperation: "function.update" },
       } });
     return nothingAt(request);
