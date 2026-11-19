@@ -13,7 +13,7 @@ import { productPanelContentSchema, productPanelInputSchema, productProjectionIn
 import { installedAppsSdkDir } from "../../content/layout";
 import type { SkillOffering } from "../../core/skills";
 import { findCurrentProduct, type CurrentProductKind } from "../../infrastructure/product-current";
-import { panelServerOperation } from "./server-operations";
+import { panelServerOperation, panelServerOperationSupportsBatch } from "./server-operations";
 
 const catalogue = z.object({
   version: z.string(),
@@ -144,6 +144,9 @@ function describeUse(use: Use, { name, description, content, manifest, projectio
       ...operations.map(describeOperation),
       ...(operations.length ? [] : ["No operations."]),
       "Call the declared operation with POST `$ONTOMATO_PANEL_OPERATIONS_URL/operate`, JSON `{intentId:<new UUID>,applicationId,useId,operationId,call:{target,input}}`. Send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. Never call a write owner endpoint directly from a platform panel skill.",
+      ...(operations.some(operation => panelServerOperationSupportsBatch(operation.handlerRef)) ? [
+        "For an operation marked as batch-capable, use `calls:[{target,input},...]` in place of `call`. Submit all concrete targets and their inputs under one intent for one confirmation. A batch result reports the owner's outcome for each item when available.",
+      ] : []),
       `Use applicationId ${JSON.stringify(use.applicationId)} and useId ${JSON.stringify(use.useId)}. The operationId is the declared ID above.`,
       "Default form.save returns an unsaved page-draft envelope: write it to the draft artifact and link the reader to review/save. Session automatic mode allows the same declared save to execute directly. Only the authenticated session owner changes that setting.",
       "An action can return confirmation-required with intentId. End this tool call immediately; do not wait or poll. Continue independent work or finish the round. A genuine user agent-answer is delivered back to this conversation and can wake a later run. Then POST `{}` to `$ONTOMATO_PANEL_OPERATIONS_URL/intents/<intentId>/dispatch` using THAT RUN's callback and run ID. Node verifies the real selected option and the current executor. Free text, defaults, parent answers, questionId or a different toolCallId never authorize execution. Changed parameters/target/executor require a new intent and confirmation.",
@@ -155,7 +158,10 @@ function describeUse(use: Use, { name, description, content, manifest, projectio
 
 function describeOperation(operation: PanelOperation): string {
   const summary = `- ${operation.label} (${operation.id}), kind ${operation.kind}, handlerRef ${operation.handlerRef}, target ${JSON.stringify(operation.target ?? null)}.`;
-  if (operation.kind !== "form.save") return `${summary} Input ${JSON.stringify(operation.inputSchema)}.`;
+  if (operation.kind !== "form.save") {
+    const batch = panelServerOperationSupportsBatch(operation.handlerRef) ? " Batch-capable." : "";
+    return `${summary} Input ${JSON.stringify(operation.inputSchema)}.${batch}`;
+  }
   const owner = panelServerOperation(operation.handlerRef);
   if (owner.kind !== "form.save") throw new Error(`Expected a form owner for ${operation.handlerRef}`);
   const schema = (value: z.ZodTypeAny) => JSON.stringify(zodToJsonSchema(value, { $refStrategy: "none" }));
