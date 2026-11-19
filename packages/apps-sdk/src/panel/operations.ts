@@ -41,7 +41,7 @@ export function panelOperations(
     ...manifest.operations.map((operation) => ({
       ...panelStateOperation(operation),
       invoke: async () => {
-        for (const [name, value] of Object.entries(operation.sets)) state.set(name, value);
+        state.setState(operation.sets);
         return operation.sets;
       },
     })),

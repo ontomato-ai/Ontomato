@@ -279,10 +279,30 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "OntologyGraph",
     role: "control",
     meaning:
-      "Draws an interactive G6 graph from the bound resource's graph source port: type mode arranges declared object types and relation kinds by layer with per-type readable counts and access statuses; instance mode starts from a node and expands one hop of neighbors on click, preserving complete object identities, highlighting drawn query matches, keeping layer filter and viewport as internal view state, distinguishing no-neighbors, owner-refused and read-failed outcomes, and exposing fit, relayout and host-delegated PNG export when available.",
+      "Draws an interactive G6 graph from the bound resource's graph source port: type mode arranges declared object types and relation kinds by layer with per-type readable counts and access statuses; instance mode starts from a node and expands one hop of neighbors on click, preserving complete object identities, highlighting drawn query matches, keeping layer filter and viewport as internal view state, distinguishing no-neighbors, owner-refused and read-failed outcomes, and exposing fit and relayout controls.",
     effects: "Reads the bound graph source's schema, counts, starting node and one-hop neighbors as the reader; writes only the panel's own selection state.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     outputs: ["selectedNode", "selected", "selectedType"],
+  }),
+  defineComponentMeta({
+    componentId: "ObjectRelations",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectRelations",
+    role: "control",
+    meaning:
+      "Lists one-hop relations of the selected node from the bound resource's graph neighbors port, grouped by relation kind with distinct no-neighbors, owner-refused, read-failed and unavailable states, showing edge direction and stored/derived line semantics, and moving selection to a clicked peer node with its complete identity.",
+    effects: "Reads the bound graph source's one-hop neighbors as the reader; writes only the panel's own selection state.",
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
+    outputs: ["selected"],
+  }),
+  defineComponentMeta({
+    componentId: "SegmentedControl",
+    module: "@ontomato/sdk/base",
+    exportName: "SegmentedControl",
+    role: "control",
+    meaning:
+      "Switches one declared scalar panel state between mutually exclusive options supplied by the panel template or display configuration. It binds no ontology element and performs no platform reads.",
+    outputs: ["value"],
   }),
   defineComponentMeta({
     componentId: "TwoPaneLayout",
@@ -299,5 +319,55 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     meaning:
       "One titled group of a page's content, with one line of what it is for and the platform's spacing and hairline between groups that follow one another. It binds nothing.",
+  }),
+  defineComponentMeta({
+    componentId: "PathTree",
+    module: "@ontomato/sdk/base",
+    exportName: "PathTree",
+    role: "control",
+    meaning:
+      "Arranges a flat list of slash-separated paths into a folder-first, name-sorted, default-expanded tree; clicking a folder only collapses or expands it, while clicking a file emits its key and highlights the active row. It reads nothing and carries no business rules.",
+    outputs: ["selectedKey"],
+  }),
+  defineComponentMeta({
+    componentId: "ObjectTree",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectTree",
+    role: "control",
+    meaning:
+      "Displays path-bearing objects of the bound type (optionally scoped by a parent object input) as a folder/file tree and writes the selected file's full identity to the slot's output state, honoring an owner-supplied default key when configured.",
+    effects: "Reads the bound type's list or parent-scoped query as the reader; it writes only the panel's own state.",
+    bindsElement: ["PlatformObjectType:*"],
+    outputs: ["selected"],
+  }),
+  defineComponentMeta({
+    componentId: "SegmentedTextReader",
+    module: "@ontomato/sdk/base",
+    exportName: "SegmentedTextReader",
+    role: "control",
+    meaning:
+      "Displays offset-paged plain-text segments for a selected source with a close control and a More button when another offset exists, coordinating shared activeAnchor state so multiple placements on one page expand only one reader at a time.",
+    outputs: ["activeAnchor", "activeSourceId"],
+  }),
+  defineComponentMeta({
+    componentId: "ObjectTextReader",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectTextReader",
+    role: "control",
+    meaning:
+      "Reads offset-paged text segments for sources of the bound type through its resource adapter's readSegment port (optionally scoped by a parent object input), showing More while another offset exists and coordinating single-open across placements.",
+    effects: "Reads source metadata and text segments through the bound adapter as the reader; it changes nothing itself.",
+    bindsElement: ["PlatformObjectType:*"],
+    outputs: ["activeAnchor", "activeSourceId"],
+  }),
+  defineComponentMeta({
+    componentId: "FileUploadControl",
+    module: "@ontomato/sdk/base",
+    exportName: "FileUploadControl",
+    role: "control",
+    meaning:
+      "Uploads a reader-chosen file through the declared PlatformOperation handler (optionally showing format rules first, checking file extensions and confirming overwrite when the owner reports a conflict). It sends nothing outside the bound operation's declared requests.",
+    effects: "Runs the projection's upload operation with the chosen file as the reader and refreshes panel objects on success.",
+    bindsElement: ["PlatformOperation:*"],
   }),
 ];

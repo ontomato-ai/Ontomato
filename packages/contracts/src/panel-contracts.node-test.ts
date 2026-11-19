@@ -5,6 +5,7 @@ import {
 } from "./panel-client-requests";
 import {
   createPanelOperationIntentRequestSchema, inspectPanelOperationImpactRequestSchema, panelOperationOutcomeSchema,
+  panelOperationDescriptorResponseSchema, panelOperationRefSchema,
   panelWriteOperationSnapshotSchema, readPanelOperationRequestSchema, readStoredPanelOperationIntent,
 } from "./panel-agent";
 import { panelOperationImpactSchema, panelReadOperationDescriptorSchema, panelReadOperationResultSchema } from "./panel-operations";
@@ -307,6 +308,26 @@ test("bridge and skill agree about the specific semantic reads", () => {
     assert.ok(clientSends([binding(type)], "POST", "/data-query", "/admin/getMetas"));
   assert.ok(!clientSends([binding(OBJECT_TYPE)], "POST", "/data-query", "/admin/getschemamarkdown"));
   assert.ok(clientSends([binding(USER)], "GET", "/data-query", "/platform/agent-execution/options?selected=u"));
+});
+
+test("a panel operation descriptor admits exactly the three use and operation query keys", () => {
+  const bindings = [bindingKey({ kind: "PlatformOperation", id: "schedules.runNow" })];
+  const path = "/panel-operations/descriptor";
+  const valid = `${path}?useId=tasks&operationId=run%2Enow&applicationId=workbench`;
+  assert.equal(clientSends(bindings, "GET", "", valid), true);
+  for (const bad of [path, `${path}?useId=tasks&applicationId=workbench`, `${valid}&extra=true`, `${valid}&useId=other`, `${path}?useId=tasks&applicationId=workbench&applicationId=other`]) {
+    assert.equal(clientSends(bindings, "GET", "", bad), false);
+  }
+  assert.equal(clientSends(bindings, "POST", "", valid), false);
+  assert.equal(clientSends([], "GET", "", valid), false);
+  const query = { applicationId: "workbench", useId: "tasks", operationId: "run.now" };
+  assert.deepEqual(panelOperationRefSchema.parse(query), query);
+  assert.equal(panelOperationRefSchema.safeParse({ ...query, effect: "read" }).success, false);
+  const description = {
+    handlerRef: "schedules.runNow", effect: "write", target: { source: "input", input: "task" },
+    inputSchema: {}, resultSchema: {}, batch: false,
+  };
+  assert.deepEqual(panelOperationDescriptorResponseSchema.parse(description), description);
 });
 
 

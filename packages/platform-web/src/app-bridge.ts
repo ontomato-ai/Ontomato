@@ -1,5 +1,5 @@
 import {createVNode,render,type App} from 'vue';
-import {APP_BRIDGE_CHANNEL,appBridgeRequestSchema,appBridgeHttpSchema,appBridgeMountSchema,appBridgePlacementSchema,appBridgeUnmountSchema,appBridgePathSchema,appBridgeAuthStatusSchema,appBridgeInvalidationSchema,appBridgeCancelSchema,appBridgePageContextSchema} from '@ontomato/contracts/app-bridge';
+import {APP_BRIDGE_CHANNEL,appBridgeRequestSchema,appBridgeHttpSchema,appBridgeMountSchema,appBridgePlacementSchema,appBridgeUnmountSchema,appBridgePathSchema,appBridgeAuthStatusSchema,appBridgeInvalidationSchema,appBridgeCancelSchema,appBridgePageContextSchema,appBridgeExpandPageComposerSchema,type AppBridgeExpandPageComposer} from '@ontomato/contracts/app-bridge';
 import type {AppHost} from '@ontomato/contracts/app-host';
 import ProductRoute from './pages/ProductRoute.vue';
 
@@ -7,8 +7,10 @@ import ProductRoute from './pages/ProductRoute.vue';
 /**
  * `open` says whether a frame may ask for anything now: a frame kept for a page the reader left may still cancel or
  * unmount what it started, and gets the answer of a call it made before, but asks for nothing new.
+ * `expandComposer` answers a frame's request to expand the page's composer; it checks the request against what the
+ * frame's own declaration allows.
  */
-export function installAppBridge(app:App,host:AppHost,applicationFor:(source:object)=>string|undefined,open:(source:object)=>boolean){
+export function installAppBridge(app:App,host:AppHost,applicationFor:(source:object)=>string|undefined,open:(source:object)=>boolean,expandComposer:(source:object,request:AppBridgeExpandPageComposer)=>void){
   const connections=new Map<object,{dispose:()=>void;pause:()=>void;resume:()=>void}>();
   function connect(event:MessageEvent){
     if(event.data?.channel!==APP_BRIDGE_CHANNEL||event.data?.operation!=='connect'||!event.source||event.ports.length!==1)return;
@@ -56,6 +58,7 @@ export function installAppBridge(app:App,host:AppHost,applicationFor:(source:obj
         else if(operation==='pageContext')host.setPageContext(source,appBridgePageContextSchema.parse(payload));
         else if(operation==='authFailure')host.onAuthFailure(appBridgeAuthStatusSchema.parse(payload));
         else if(operation==='invalidate')host.invalidateProductData!(source,appBridgeInvalidationSchema.parse(payload));
+        else if(operation==='expand-page-composer')expandComposer(source,appBridgeExpandPageComposerSchema.parse(payload));
         else if(operation==='mount'){
           const input=appBridgeMountSchema.parse(payload);
           if(mounts.has(input.id)||mounts.size>=50)throw new Error('Invalid product mount');
