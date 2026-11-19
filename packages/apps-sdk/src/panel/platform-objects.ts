@@ -153,11 +153,17 @@ export type PlatformOperationFactory = (requests: PlatformRequests) => Registere
 export interface PlatformResources {
   objects: Readonly<Record<string, () => Promise<PlatformObjectAdapterFactory>>>;
   operations: Readonly<Record<string, () => Promise<PlatformOperationFactory>>>;
+  /**
+   * The clients a component reads its own resource through, by the component a projection draws (`MetricChart`'s chart
+   * source): the module registers its client with the frame's request path.
+   */
+  components: Readonly<Record<string, () => Promise<(requests: PlatformRequests) => void>>>;
 }
 
 /**
  * What a frame calls before a projection registers its ports: every resource its record binds — its binding and, for a
- * graph, its edges' — fetched and registered with the frame's request path, once per module. A binding this version has
+ * graph, its edges' — and the client its component reads through, fetched and registered with the frame's request
+ * path, once per module. A binding this version has
  * no module for is left to fail where it is used.
  */
 export function platformResourceLoader(requests: PlatformRequests, resources: PlatformResources) {
@@ -171,11 +177,14 @@ export function platformResourceLoader(requests: PlatformRequests, resources: Pl
     }
     return pending;
   };
-  return async (projection: Pick<ProductProjection, "binding" | "graph">): Promise<void> => {
+  return async (projection: Pick<ProductProjection, "componentId" | "binding" | "graph">): Promise<void> => {
     const bindings = [projection.binding, ...(projection.graph ? [projection.graph.edges.binding] : [])];
-    await Promise.all(bindings.map((binding) => binding.kind === "PlatformOperation"
-      ? once(resources.operations[binding.id], (factory) => registerHandler(factory(requests)))
-      : once(resources.objects[binding.id], (factory) => factory(requests).forEach(registerPlatformObjectAdapter))));
+    await Promise.all([
+      ...bindings.map((binding) => binding.kind === "PlatformOperation"
+        ? once(resources.operations[binding.id], (factory) => registerHandler(factory(requests)))
+        : once(resources.objects[binding.id], (factory) => factory(requests).forEach(registerPlatformObjectAdapter))),
+      once(resources.components[projection.componentId], (register) => register(requests)),
+    ]);
   };
 }
 
