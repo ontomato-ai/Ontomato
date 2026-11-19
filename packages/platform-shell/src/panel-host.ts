@@ -1,6 +1,6 @@
 import { displayLoadSchema, PANEL_LOAD_ERROR_CODES, type DisplayLoad } from "@ontomato/contracts/agent-presentation";
 import type { PanelDefinitionSnapshot, ProductDefinitionRevision, ProductDefinitionTarget } from "@ontomato/contracts/product-subscriptions";
-import { inject, onScopeDispose, shallowRef, watch, type InjectionKey, type Ref, type ShallowRef } from "vue";
+import { inject, onScopeDispose, shallowRef, watch, type InjectionKey, type Ref, type ShallowRef, type VNodeChild } from "vue";
 import { onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import { PAGE_DRAFT_QUERY_KEYS, pageDraftLink, type PageDraftLink } from "@ontomato/contracts/page-draft";
@@ -10,22 +10,29 @@ import {
   panelAddressState,
   panelFrameMessageSchema,
   panelMessageOf,
+  type DirectPanelHostSource,
   type PanelDefinitionMode,
   type PanelHostFrameMessage,
   type PanelHostSource,
   type PanelHostMessage,
   type PanelRefreshPort,
 } from "@ontomato/contracts/panel-host";
-import type { PanelOperation, PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import type { PanelObjectIdentity, PanelOperation, PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import type { PanelOperationAffected } from "@ontomato/contracts/panel-operations";
+import { parsePanelLayout, type PanelLayoutNode } from "@ontomato/contracts/panel-layout";
 import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
-import type { PanelDefinitionContent, ProductPanel } from "@ontomato/contracts/product-panels";
+import type { DirectPanel, PanelDefinitionContent, ProductPanel } from "@ontomato/contracts/product-panels";
 import { randomId } from "@ontomato/contracts/random-id";
 
 /*
  * A panel instance in the platform (overall design 3.4, "generic PanelHost"): the same component shows the panel full
  * screen, beside a conversation and inside another application, because all three only need a use relation, the current
- * record and somewhere to show it. The panel's own text runs in a frame of its own, with this SDK version's modules, so
- * a panel is portable across the applications that use it.
+ * record and somewhere to show it.
+ *
+ * Where it runs is the record's (direct rendering design 5): a panel with no code of its own — a layout and a declaration
+ * — is drawn by the platform in its own document; a panel with a module runs that module in a frame of its own, with this
+ * SDK version's modules. Both are one instance with one lifecycle here: the same address state, page context, draft,
+ * operations, refresh and definition changes, reported from the frame's messages or from the direct instance alike.
  *
  * What the host does, and a panel's author therefore does not: read the use relation and the record, keep the declared
  * deep-linkable state in the address, hand the reader's page context to whoever writes the message, pass a changed
@@ -38,7 +45,7 @@ import { randomId } from "@ontomato/contracts/random-id";
  * reader's use themselves — or an author's workspace candidate, which Node reads under the author's workspace access and
  * which has no panel ID, revision or use of its own.
  */
-export interface PanelHostPort<Source extends PanelHostSource = PanelHostSource> {
+export interface PanelHostPort<Source extends HostedPanelSource = HostedPanelSource> {
   /** What this instance shows. A candidate is read again when the reader comes back to the page. */
   source(): Promise<Source>;
   /** The page key a draft for this page names: the use relation's, or the one the candidate is previewed as. */
@@ -46,14 +53,19 @@ export interface PanelHostPort<Source extends PanelHostSource = PanelHostSource>
   /** The application use this instance shows, as the message names it to the frame; a candidate preview has none. */
   readonly use: PanelUseRef | null;
   /** A registered panel's current record, read again when its revision moves. */
-  panel(panelId: string): Promise<ProductPanel>;
+  panel(panelId: string): Promise<ProductPanel | DirectPanel>;
   /** Where the platform serves its SDK builds, e.g. `/apps-sdk`: a definition's frame loads `<root>/<its sdkVersion>`. */
   sdkRoot(): Promise<string>;
   /**
    * Registers the frame the panel runs in: the execution context and identity for the page it shows, what the frame
    * may ask the platform for, which the source's manifest declares, and whether it may ask for anything now.
    */
-  frame(frame: Window, source: Source, open: boolean): PanelFrameRegistration;
+  frame(frame: Window, source: Extract<Source, PanelHostSource>, open: boolean): PanelFrameRegistration;
+  /**
+   * Starts a panel without code in the platform's own document: its instance, which reads what its members show through
+   * the platform as the reader, and draws each member the layout places. The host keeps the instance's lifecycle.
+   */
+  direct(source: Extract<Source, DirectPanelHostSource>, run: DirectPanelRun): DirectPanelMount;
   snapshot(panelId: string): Promise<PanelDefinitionSnapshot>;
   /**
    * Whether the use relation this host opens is still the application's, bound to the same panel: what a kept page is
@@ -61,6 +73,57 @@ export interface PanelHostPort<Source extends PanelHostSource = PanelHostSource>
    */
   current?(): Promise<boolean>;
   mode: PanelDefinitionMode;
+}
+
+/** What a host shows: a panel written with code, or a direct panel the platform draws. */
+export type HostedPanelSource = PanelHostSource | DirectPanelHostSource;
+
+/** The projections a source places: a direct panel's members, or a coded panel's slots. */
+function projectionIdsOf(shown: HostedPanelSource): string[] {
+  return runsDirect(shown)
+    ? Object.values(shown.panel.manifest.members).map(member => member.target.projectionId)
+    : Object.values(shown.panel.manifest.slots).map(slot => slot.projectionId);
+}
+
+/** Whether the platform draws this source itself: a record with no module of its own. */
+export function runsDirect(source: HostedPanelSource): source is DirectPanelHostSource {
+  return !("module" in source.panel.content);
+}
+
+/** What the host hands a direct instance: where it is, what its address asks for, and where it reports. */
+export interface DirectPanelRun {
+  /** The page's registration key, which a draft names. */
+  pageKey: string;
+  /** The instance's address, with its state, as the reader and a message see it. */
+  url: () => string;
+  label: () => string;
+  /** The declared deep-linkable state the address asks for. */
+  initial: Record<string, PanelStateValue>;
+  /** Its deep-linkable state changed: the host carries it into the address. */
+  state(state: Record<string, PanelStateValue>): void;
+  context(context: PageContext): void;
+  operations(operations: readonly PanelOperation[]): void;
+  dirty(dirty: boolean): void;
+  /** The reader saved or discarded the draft the address links. */
+  draftSettled(draft: PageDraftLink): void;
+}
+
+/** A started direct instance. */
+export interface DirectPanelMount {
+  /** Draws a member the layout places. */
+  member(ref: string): VNodeChild;
+  /** The instance's state, as its layout's conditions read it. */
+  readonly values: Readonly<Ref<Readonly<Record<string, unknown>>>>;
+  /** The address changed outside the instance (the reader went back, a link was followed): its state follows. */
+  address(url: string, state: Record<string, PanelStateValue>): void;
+  /** Objects it may show changed: it reads again what it shows of them. */
+  refresh(target: PanelObjectIdentity | null, affected?: PanelOperationAffected): void;
+  /** Projections it places have newer definitions: it reads them again. */
+  projectionsChanged(projections: readonly { id: string; revision: number }[]): void;
+  /** Whether its reads may run: not while its page is out of the reader's view. */
+  activate(active: boolean): void;
+  invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
+  dispose(): void;
 }
 
 /** A registered frame: ended with the instance, and closed to new requests while its page is not the reader's. */
@@ -80,13 +143,15 @@ export function usePanelHostPort(): PanelHostPort | null {
 }
 
 /** One running panel instance: its source, the frame it runs in and what it reports. */
-export interface PanelInstanceView extends PanelRefreshPort {
+export interface PanelInstanceView {
   /** What the instance shows, once read: the registered use and record, or the workspace candidate. */
-  readonly source: Ref<PanelHostSource | null>;
+  readonly source: Ref<HostedPanelSource | null>;
   /** What a message from this instance carries now; null until the panel's module reports. */
   readonly pageContext: Readonly<ShallowRef<PageContext | null>>;
-  /** The message written into the frame's document; null while the record is being read. */
+  /** The message written into the frame's document; empty while the record is being read or when no frame runs it. */
   readonly document: Readonly<Ref<string>>;
+  /** A panel the platform draws: its layout and its started instance; null when a frame runs the panel. */
+  readonly direct: Readonly<ShallowRef<{ layout: PanelLayoutNode[]; mount: DirectPanelMount } | null>>;
   /** The reader's deep-linkable state, as the address carries it. */
   readonly state: Ref<Record<string, PanelStateValue>>;
   /** The instance's address, with its state; never a credential or a form value. */
@@ -98,7 +163,12 @@ export interface PanelInstanceView extends PanelRefreshPort {
   readonly dirty: Readonly<ShallowRef<boolean>>;
   /** Resolves once the source is read. */
   readonly ready: Promise<void>;
-  /** A person clicked one of those operations: the frame runs it, and the promise settles with its answer. */
+  /**
+   * Objects the instance may show changed (U10): what it shows of the target is read again — everything it shows when
+   * there is none — and a direct instance also matches the owner's affected objects and types against what it read.
+   */
+  refresh(target: PanelObjectIdentity | null, affected?: PanelOperationAffected): void;
+  /** A person clicked one of those operations: the instance runs it, and the promise settles with its answer. */
   invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
   /** The frame's content window, once it exists. */
   frame(window: Window | null): void;
@@ -122,7 +192,7 @@ export interface PanelInstanceOptions {
   /** The words the host shows the reader. */
   labels: PanelHostLabels;
   /** What a message calls the page: the registered panel's own name, and whatever the page adds to it, or the page's word for a candidate. */
-  label: (source: PanelHostSource) => string;
+  label: (source: HostedPanelSource) => string;
   /**
    * The page's address as the reader and a message see it — the use relation's full path, or the candidate preview's
    * address — without any state. The instance's declared deep-linkable state is added to it here, and that is the only thing the address
@@ -169,7 +239,8 @@ const loading: DisplayLoad = { status: "loading" };
  * callers of the same panel hold two states, and neither sees the other's selection.
  */
 export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOptions): PanelInstanceView {
-  const source = shallowRef<PanelHostSource | null>(null);
+  const source = shallowRef<HostedPanelSource | null>(null);
+  const direct = shallowRef<{ layout: PanelLayoutNode[]; mount: DirectPanelMount } | null>(null);
   const pageContext = shallowRef<PageContext | null>(null);
   const document = shallowRef("");
   const error = shallowRef("");
@@ -179,7 +250,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const address = shallowRef("");
   const operations = shallowRef<readonly PanelOperation[]>([]);
   let frame: Window | null = null;
-  let sdkRoot = "";
+  /** Whether the instance runs: its frame reported its first state, or its direct instance started. */
   let frameReady = false;
   let frameAddress = "";
   let registration: PanelFrameRegistration | undefined;
@@ -189,7 +260,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   let author: ReturnType<Extract<PanelDefinitionMode, { kind: "author" }>["definitions"]["observe"]> | undefined;
   const pending = new Map<string, ProductDefinitionRevision>();
   /** A candidate read again whose definition differs from the one shown; it waits like a changed record does. */
-  let pendingCandidate: PanelHostSource | null = null;
+  let pendingCandidate: HostedPanelSource | null = null;
   let pendingObjectRefresh = false;
   /** The draft the reader settled while the page's address still linked it. */
   let settledDraft: PageDraftLink | null = null;
@@ -217,10 +288,9 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
    */
   async function load() {
     try {
-      const [read, root] = await Promise.all([port.source(), port.sdkRoot()]);
+      const read = await port.source();
       if (!active) return;
-      sdkRoot = root;
-      adopt(read);
+      await adopt(read);
       if (port.mode.kind === "author") follow(read);
       // A viewer's panel is reconciled with a short read; the frame does not wait for it.
       else if (read.kind === "registered")
@@ -233,10 +303,20 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
   }
 
-  function adopt(next: PanelHostSource) {
+  /** Where the platform serves its SDK builds: read once, and only for a panel that runs in a frame. */
+  let sdkRoot: Promise<string> | undefined;
+
+  /** Shows a source: drawn by the platform when it has no code, in a frame when it has. */
+  async function adopt(next: HostedPanelSource) {
     error.value = "";
     const requested = requestedState(next.panel) as Record<string, PanelStateValue>;
     const requestedAddress = panelAddress(pageAddress(), requested);
+    if (runsDirect(next)) {
+      adoptDirect(next, requested, requestedAddress);
+      return;
+    }
+    const root = await (sdkRoot ??= port.sdkRoot());
+    if (!active) return;
     const { content, manifest, sdkVersion } = next.panel;
     // Only the renderable definition crosses into the frame; the record's identity and a candidate's preview context stay
     // with the host.
@@ -251,10 +331,11 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       label: options.label(next),
       state: requested,
     };
-    const written = panelFrameDocument(message.panel, `${sdkRoot}/${sdkVersion}`, message, options.labels.failures);
+    const written = panelFrameDocument(message.panel, `${root}/${sdkVersion}`, message, options.labels.failures);
     source.value = next;
     // A new revision with the same definition is the document the frame already runs: it keeps its instance.
     if (written === document.value) return;
+    endDirect();
     state.value = requested;
     address.value = requestedAddress;
     frameAddress = address.value;
@@ -267,6 +348,61 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
   }
 
+  /**
+   * Starts a panel the platform draws: its layout, parsed against its declaration, and its instance, which reports here
+   * what a frame would report in its messages. A new revision with the same definition keeps the running instance.
+   */
+  function adoptDirect(next: DirectPanelHostSource, requested: Record<string, PanelStateValue>, requestedAddress: string) {
+    const shown = source.value;
+    source.value = next;
+    if (direct.value && shown && JSON.stringify(definitionOf(shown)) === JSON.stringify(definitionOf(next))) return;
+    endDirect();
+    document.value = "";
+    registration?.dispose();
+    registration = undefined;
+    state.value = requested;
+    address.value = requestedAddress;
+    frameAddress = requestedAddress;
+    const layout = parsePanelLayout(next.panel.content.html, next.panel.manifest);
+    const mount = port.direct(next, {
+      pageKey: port.pageKey,
+      url: () => address.value,
+      label: () => options.label(next),
+      initial: requested,
+      state: reportState,
+      context: context => (pageContext.value = context),
+      operations: offered => (operations.value = offered),
+      dirty: reportDirty,
+      draftSettled: settleDraft,
+    });
+    mount.activate(bridgeOpen);
+    direct.value = { layout, mount };
+    frameReady = true;
+    displayLoad.value = { status: "ready" };
+  }
+
+  function endDirect() {
+    direct.value?.mount.dispose();
+    direct.value = null;
+  }
+
+  /** What decides how a source is drawn: its content and declaration, not its revision or identity. */
+  function definitionOf(shown: HostedPanelSource) {
+    return { content: shown.panel.content, manifest: shown.panel.manifest };
+  }
+
+  /** The instance's deep-linkable state changed: the address carries it. */
+  function reportState(next: Record<string, PanelStateValue>) {
+    state.value = next;
+    address.value = panelAddress(pageAddress(), next);
+  }
+
+  /** The instance holds unsaved changes, or no longer does: a definition change waits for them. */
+  function reportDirty(now: boolean) {
+    dirty.value = now;
+    if (!now && (pending.size || pendingCandidate)) void applyPending();
+  }
+
   function snapshotRevisions(snapshot: PanelDefinitionSnapshot): ProductDefinitionRevision[] {
     return [
       { kind: "panel", ...snapshot.panel },
@@ -275,10 +411,10 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   }
 
   /** A registered panel and its projections; a candidate has no panel record, only the registered projections it names. */
-  function targetsOf(shown: PanelHostSource): ProductDefinitionTarget[] {
+  function targetsOf(shown: HostedPanelSource): ProductDefinitionTarget[] {
     return [
       ...(shown.kind === "registered" ? [{ kind: "panel" as const, id: shown.panel.id }] : []),
-      ...Object.values(shown.panel.manifest.slots).map(({ projectionId }) => ({ kind: "projection" as const, id: projectionId })),
+      ...projectionIdsOf(shown).map(id => ({ kind: "projection" as const, id })),
     ];
   }
 
@@ -298,7 +434,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       if (pendingCandidate) {
         const next = pendingCandidate;
         pendingCandidate = null;
-        adopt(next);
+        await adopt(next);
         author?.replace(targetsOf(next));
         return;
       }
@@ -309,24 +445,26 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
           if (!active || source.value !== shown || dirty.value) return;
           if (record.revision < pending.get(key)!.revision) return;
           pending.delete(key);
-          const next = { ...shown, panel: record };
-          adopt(next);
+          const next = { ...shown, panel: record } as HostedPanelSource;
+          await adopt(next);
           author?.replace(targetsOf(next));
           return;
         }
       }
-      const projectionIds = new Set(Object.values(shown.panel.manifest.slots).map(slot => slot.projectionId));
+      const projectionIds = new Set(projectionIdsOf(shown));
       const projections = [...pending.values()]
         .filter(revision => revision.kind === "projection" && projectionIds.has(revision.id))
         .map(({ id, revision }) => ({ id, revision }));
       pending.clear();
-      if (projections.length) post({ kind: "projections-changed", projections });
+      if (!projections.length) return;
+      if (direct.value) direct.value.mount.projectionsChanged(projections);
+      else post({ kind: "projections-changed", projections });
     }).catch(failure => { if (active) reportPanelUnavailable(failure); });
     return applying;
   }
 
   /** A viewer coming back reconciles the registered panel's revisions with a short read. */
-  async function restore(shown: Extract<PanelHostSource, { kind: "registered" }>) {
+  async function restore(shown: Extract<HostedPanelSource, { kind: "registered" }>) {
     try {
       const snapshot = await port.snapshot(shown.panel.id);
       if (active) await advance(snapshotRevisions(snapshot));
@@ -340,7 +478,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
    * changed definition waits for an unsaved form like a changed record does. The frame's execution context is fixed when
    * it is registered, so a test context started since takes reopening the preview.
    */
-  async function rereadCandidate(shown: PanelHostSource) {
+  async function rereadCandidate(shown: HostedPanelSource) {
     try {
       const next = await port.source();
       if (!active) return;
@@ -355,7 +493,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   }
 
   /** An author's instance follows its definitions on the document's stream while it is shown, and only then. */
-  function follow(shown: PanelHostSource) {
+  function follow(shown: HostedPanelSource) {
     if (shownToReader()) author = port.mode.kind === "author" ? port.mode.definitions.observe(targetsOf(shown), advance, reportPanelUnavailable) : undefined;
   }
 
@@ -364,7 +502,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
    * definition revisions are checked beside that read; a changed definition is adopted as any is, never over an unsaved
    * form.
    */
-  function resume(shown: PanelHostSource) {
+  function resume(shown: HostedPanelSource) {
     if (shown.kind === "candidate") {
       void rereadCandidate(shown);
       return;
@@ -373,9 +511,11 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     if (port.mode.kind === "view") void restore(shown);
   }
 
+  /** Whether the instance may ask the platform for anything: its frame's bridge, or its direct instance's reads. */
   function openBridge(open: boolean) {
     bridgeOpen = open;
     registration?.open(open);
+    direct.value?.mount.activate(open);
   }
 
   /**
@@ -384,7 +524,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
    * objects it shows are read again, whether or not anything changed, and a changed definition is adopted as any is. A
    * relation withdrawn or bound elsewhere ends the instance; a refused check is shown where the panel is.
    */
-  async function reopen(shown: PanelHostSource) {
+  async function reopen(shown: HostedPanelSource) {
     if (shown.kind === "candidate") {
       openBridge(true);
       follow(shown);
@@ -437,22 +577,22 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     frame?.postMessage({ channel: PANEL_HOST_CHANNEL, ...message }, "*");
   }
 
-  const refresh: PanelRefreshPort["refresh"] = target => {
-    if (frameReady) post({ kind: "object-changed", target: target && { ...target } });
+  function refresh(target: PanelObjectIdentity | null, affected?: PanelOperationAffected) {
+    if (direct.value) direct.value.mount.refresh(target, affected);
+    else if (frameReady) post({ kind: "object-changed", target: target && { ...target } });
     else pendingObjectRefresh = true;
-  };
+  }
 
-  function requestedState(panel: PanelDefinitionContent) {
+  function requestedState(panel: HostedPanelSource["panel"]) {
     return Object.fromEntries(Object.entries(options.initial()).filter(([name]) => panel.manifest.state[name]?.deepLink));
   }
 
   function syncAddress(): boolean {
     if (!frameReady || !source.value) return false;
-    const requested = panelAddress(pageAddress(), requestedState(source.value.panel));
+    const wanted = requestedState(source.value.panel) as Record<string, PanelStateValue>;
+    const requested = panelAddress(pageAddress(), wanted);
     if (requested === address.value) return false;
-    frameAddress = requested;
-    address.value = requested;
-    post({ kind: "address", address: requested });
+    tellAddress(requested, wanted);
     return true;
   }
   watch([options.address, options.initial], syncAddress);
@@ -465,10 +605,15 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   function settleDraft(draft: PageDraftLink) {
     if (!linksDraft(address.value, draft)) return;
     settledDraft = draft;
-    const settled = panelAddress(pageAddress(), state.value);
-    frameAddress = settled;
-    address.value = settled;
-    post({ kind: "address", address: settled });
+    tellAddress(panelAddress(pageAddress(), state.value), state.value);
+  }
+
+  /** The instance's address changed outside it: the frame hears it as a message, a direct instance as a call. */
+  function tellAddress(next: string, wanted: Record<string, PanelStateValue>) {
+    frameAddress = next;
+    address.value = next;
+    if (direct.value) direct.value.mount.address(next, wanted);
+    else post({ kind: "address", address: next });
   }
 
   function reportFrameFailure(failure: NonNullable<DisplayLoad["error"]>) {
@@ -497,15 +642,11 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
         }
         if (syncAddress()) return;
       }
-      state.value = payload.state;
-      address.value = panelAddress(pageAddress(), payload.state);
+      reportState(payload.state);
     }
     if (payload.kind === "draft-settled") settleDraft(payload.draft);
     if (payload.kind === "operations") operations.value = payload.operations;
-    if (payload.kind === "dirty") {
-      dirty.value = payload.dirty;
-      if (!dirty.value && (pending.size || pendingCandidate)) void applyPending();
-    }
+    if (payload.kind === "dirty") reportDirty(payload.dirty);
     if (payload.kind === "failed") {
       // The frame could not run its panel. The reason goes where the panel would have been, and no frame is drawn over it.
       reportFrameFailure({ code: PANEL_LOAD_ERROR_CODES.scriptThrew, message: payload.message });
@@ -523,6 +664,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   onScopeDispose(() => {
     window.removeEventListener("message", message);
     registration?.dispose();
+    endDirect();
   });
 
   return {
@@ -537,7 +679,9 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     dirty,
     ready,
     refresh,
+    direct,
     invoke(id, input) {
+      if (direct.value) return direct.value.mount.invoke(id, input);
       if (!frame) return Promise.reject(new Error(options.labels.notStarted));
       const requestId = randomId();
       return new Promise((resolve, reject) => {
@@ -548,7 +692,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     frame(window) {
       frame = window;
       registration?.dispose();
-      registration = window && source.value ? port.frame(window, source.value, bridgeOpen) : undefined;
+      registration = window && source.value && !runsDirect(source.value) ? port.frame(window, source.value, bridgeOpen) : undefined;
     },
   };
 }
