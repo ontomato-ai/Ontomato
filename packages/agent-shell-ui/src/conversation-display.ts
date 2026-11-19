@@ -9,6 +9,7 @@ import type {
 import type { PageContext } from "@ontomato/contracts/page-context";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
+import type { PanelOperationAffected } from "@ontomato/contracts/panel-operations";
 import { fileName } from "./artifacts";
 import type { OpenArtifact, ShellFeatureDeclaration } from "./types";
 
@@ -73,12 +74,19 @@ interface Shown {
 const READY: DisplayLoad = { status: "ready" };
 
 /**
- * The signal a shown page reads its objects again by (design "long connections" 4): each change counts up `seq`. A
- * `target` is the object an agent changed in this conversation; null asks for everything shown, because what changed
- * while nothing was listening is not known — the page was just opened, or the view's stream is ready again. The same
- * signal reaches the page wherever it sits: beside the conversation, over it, or full.
+ * What changed for a shown page to read again (design "long connections" 4, shared components U10). A `target` is the
+ * object an agent changed in this conversation; null asks for everything shown — because what changed while nothing was
+ * listening is not known (the page was just opened, or the view's stream is ready again), or because the owner's result
+ * names no single object (a batch). `affected` is the owner's own account of the objects and types the write touched,
+ * passed through as the owner gave it; the host reads it to refresh what depends on them, such as a menu's counts.
  */
-export type DisplayObjectRefresh = { seq: number; target: PanelObjectIdentity | null };
+export type DisplayObjectChange = { target: PanelObjectIdentity | null; affected?: PanelOperationAffected };
+
+/**
+ * The signal a shown page reads its objects again by: each change counts up `seq`. The same signal reaches the page
+ * wherever it sits: beside the conversation, over it, or full.
+ */
+export type DisplayObjectRefresh = { seq: number } & DisplayObjectChange;
 
 /** Where the side's own outlet sits now, as the outlet itself sees it: beside the conversation or over it. */
 export type DisplayPlacementProbe = () => "side" | "overlay";
@@ -97,8 +105,8 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
   const reported = shallowRef<PageContext | null>(null);
   const load = shallowRef<DisplayLoad>(READY);
   const objectRefresh = shallowRef<DisplayObjectRefresh | null>(null);
-  function refreshObjects(target: PanelObjectIdentity | null) {
-    objectRefresh.value = { seq: (objectRefresh.value?.seq ?? 0) + 1, target };
+  function refreshObjects(change: DisplayObjectChange) {
+    objectRefresh.value = { seq: (objectRefresh.value?.seq ?? 0) + 1, ...change };
   }
   /** Whether the shown page instance (a panel) holds unsaved changes; native pages answer through `host.leave`. */
   let unsaved = false;
@@ -133,7 +141,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     }
     shown.value = next;
     // A page opened anew reads what it shows from its owner, whatever happened while it was not open.
-    if (!sameInstance && next.target?.kind === "page") refreshObjects(null);
+    if (!sameInstance && next.target?.kind === "page") refreshObjects({ target: null });
   }
 
   /** Whether going to `next` leaves the shown page instance while it holds unsaved changes. */

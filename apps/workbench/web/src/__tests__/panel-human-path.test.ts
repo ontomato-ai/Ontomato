@@ -15,7 +15,7 @@ import { useConversationDisplay } from "../../../../../packages/agent-shell-ui/s
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { platformLayoutRoute } from "../../../../../packages/platform-web/src/layout-route";
-import {
+import { ignoreChanges,
   hostMessageOf, inspectionTaskForm, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt,
   currentSdk, panelHostFrame, panelRecord, panelSnapshot, panelUse, projections, READER, run, SCHEDULED_TASK, SDK_VERSION, task, taskForm,
   writeFrameDocument,
@@ -98,7 +98,8 @@ afterEach(() => {
 it("opens the first visible use at its own URL when entering a panel application", async () => {
   const { app, frame, router, sent } = await open(`/applications/${appB}`, true);
   try {
-    expect(hostMessageOf(frame.srcdoc).pageKey).toBe(useQ.pageKey);
+    // The frame is told which application use it shows: the one this address opened.
+    expect(hostMessageOf(frame.srcdoc)).toMatchObject({ pageKey: useQ.pageKey, use: { applicationId: appB, useId: useQ.id } });
     await vi.waitFor(() => expect(router.currentRoute.value.path).toBe(`/applications/${appB}/summary`));
     expect(sent.some(request => request.path.endsWith("/policy"))).toBe(false);
   } finally {
@@ -757,8 +758,8 @@ it("shares one definition stream across author panels, restores a changed collec
     notStarted: "Panel has not started",
     failures: { fileUnavailable: "File unavailable", scriptThrew: "Script threw", scriptRejected: "Script rejected" },
   };
-  const portA = platformPanelHost(appA, useP, mode);
-  const portB = platformPanelHost(appB, useQ, mode);
+  const portA = platformPanelHost(appA, useP, ignoreChanges, mode);
+  const portB = platformPanelHost(appB, useQ, ignoreChanges, mode);
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/", component: { render: () => null } }] });
   await router.push("/");
   const page = mountPlatformPage(() => h("main", [
