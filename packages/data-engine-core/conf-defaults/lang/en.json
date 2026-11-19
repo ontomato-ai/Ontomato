@@ -680,6 +680,22 @@
     "value": "Return classes"
   },
   {
+    "key": "PanelForm.action.target",
+    "value": "Target object"
+  },
+  {
+    "key": "PanelForm.action.targetHelp",
+    "value": "The action changes one existing object of this class, identified by the primary key given in a string parameter."
+  },
+  {
+    "key": "PanelForm.action.targetClass",
+    "value": "Target class"
+  },
+  {
+    "key": "PanelForm.action.targetKey",
+    "value": "Primary key parameter"
+  },
+  {
     "key": "PanelForm.code",
     "value": "Python code"
   },
