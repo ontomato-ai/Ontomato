@@ -268,7 +268,7 @@ watch(display.page, (current, previous) => {
  * opening that page later does.
  */
 watch(
-  () => currentFeature.value?.pageSkill ?? null,
+  () => display.pageSkill.value ?? currentFeature.value?.pageSkill ?? null,
   (page) => void nav.setPage(page).catch(report),
   { immediate: true },
 );

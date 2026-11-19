@@ -1,9 +1,10 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick, ref, type App } from "vue";
+import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import AgentShell from "../components/AgentShell.vue";
 import { testDisplay } from "./display";
 import { useAgentNav } from "../useAgentNav";
-import type { AgentHostClient } from "../host";
+import { createAgentHostClient, type AgentHostClient } from "../host";
 import type { ShellFeatureDeclaration, ShellLabels, ShellWorkbenchDeclaration } from "../types";
 
 /*
@@ -24,9 +25,12 @@ const every = [
 ];
 const board: ShellFeatureDeclaration = {
   id: "dashboards", label: "Dashboards", icon: "dashboard", availability: "page", listed: false, withConversation: true,
-  pageSkill: { pageKey: "dashboard", access: "domain-member" },
+  pageSkill: { mode: "public", locator: { pageKey: "dashboard", access: "domain-member" } },
 };
-const workbench: ShellWorkbenchDeclaration = { id: "agents", label: "OntoPlato", features: [board] };
+const panel: ShellFeatureDeclaration = {
+  id: "panel-application", label: "Panel", icon: "dashboard", availability: "page", listed: false, withConversation: true,
+};
+const workbench: ShellWorkbenchDeclaration = { id: "agents", label: "OntoPlato", features: [board, panel] };
 
 let app: App | null = null;
 afterEach(() => {
@@ -166,4 +170,116 @@ it("keeps the conversation's own composer when only the conversation is open", a
   await settle();
   expect(root.querySelector(".shell-main .composer")).not.toBeNull();
   expect(root.querySelector(".shell-main .composer.floating")).toBeNull();
+});
+
+it("narrows candidates from display-skill, re-queries on member switch, skips requests for member: null, and clears on close or instance switch", async () => {
+  const requests: string[] = [];
+  const homeSkill: PageSkillContext = {
+    mode: "member",
+    locator: { pageKey: "home", access: "domain-member" },
+    member: { source: { kind: "home" }, memberKey: "pvt-home-panel" },
+  };
+  const drawerSkill: PageSkillContext = {
+    mode: "member",
+    locator: { pageKey: "home", access: "domain-member" },
+    member: { source: { kind: "object-detail", useId: "use-1", object: { className: "Order", primaryKey: "1" } }, memberKey: "pvt-drawer-panel" },
+  };
+  const nullSkill: PageSkillContext = {
+    mode: "member",
+    locator: { pageKey: "home", access: "domain-member" },
+    member: null,
+  };
+  const wire = (items: typeof every) => items.map((item) => ({ ...item, effectiveSkills: [] }));
+  const request = vi.fn(async (path: string) => {
+    requests.push(path);
+    const url = new URL(path, "http://host.test");
+    if (url.pathname.endsWith("/sessions")) {
+      return new Response(JSON.stringify({ sessions: [], nextCursor: null }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    const memberKey = url.searchParams.get("memberKey");
+    if (memberKey === "pvt-home-panel") {
+      return new Response(JSON.stringify({ agents: wire([every[0]]), defaultAgentId: assistant }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (memberKey === "pvt-drawer-panel") {
+      return new Response(JSON.stringify({ agents: wire([every[2]]), defaultAgentId: governance }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.searchParams.get("pageKey") === "dashboard") {
+      return new Response(JSON.stringify({ agents: wire([every[0]]), defaultAgentId: assistant }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ agents: wire(every) }), { status: 200, headers: { "Content-Type": "application/json" } });
+  });
+  const host = createAgentHostClient({ request });
+  const display = testDisplay(workbench, {
+    resolve: (address) =>
+      address.startsWith("/applications/")
+        ? { featureId: "panel-application", address, instance: address.split("?")[0]! }
+        : address === "/dashboards"
+          ? { featureId: "dashboards", address, instance: "dashboards" }
+          : null,
+    initial: { page: { featureId: "panel-application", address: "/applications/app/home", instance: "/applications/app/home" }, view: "side" },
+  });
+  const agentId = ref<string | null>(analyst);
+  const leftConversation = vi.fn();
+  const Host = defineComponent({
+    setup() {
+      const nav = useAgentNav({
+        client: () => host,
+        agentId: () => agentId.value,
+        setAgentId: (id) => (agentId.value = id),
+        sessionId: () => null,
+        setSessionId: () => {},
+        onLeaveConversation: leftConversation,
+      });
+      void nav.loadAgents();
+      return () =>
+        h(AgentShell, {
+          workbench, client: host, labels, nav, agentPicker: true, title: workbench.label,
+          agentId: agentId.value, "onUpdate:agentId": (id: string | null) => (agentId.value = id),
+          display,
+        });
+    },
+  });
+  app = createApp(Host);
+  const root = document.createElement("div");
+  document.body.append(root);
+  app.mount(root);
+  await settle();
+
+  // Panel reports its home member skill: candidates narrow to the home member's agents.
+  display.skill(homeSkill);
+  await settle();
+  expect((await head(root)).listed).toEqual(["Assistant"]);
+  expect(agentId.value).toBe(assistant);
+  expect(requests.some((url) => url.includes("memberKey=pvt-home-panel"))).toBe(true);
+  expect(leftConversation).not.toHaveBeenCalled();
+
+  // Switching to an object drawer re-emits display-skill with the drawer member and re-queries.
+  display.skill(drawerSkill);
+  await settle();
+  expect((await head(root)).listed).toEqual(["Knowledge governance"]);
+  expect(agentId.value).toBe(governance);
+  expect(requests.some((url) => url.includes("memberKey=pvt-drawer-panel"))).toBe(true);
+  expect(leftConversation).not.toHaveBeenCalled();
+
+  // Reporting member: null sends no /agents request, clears candidates, and keeps the panel open.
+  const agentRequestsBeforeNull = requests.filter((url) => url.includes("/agents")).length;
+  display.skill(nullSkill);
+  await settle();
+  expect(requests.filter((url) => url.includes("/agents")).length).toBe(agentRequestsBeforeNull);
+  expect((await head(root)).listed).toEqual([]);
+  expect(agentId.value).toBeNull();
+  expect(display.page.value?.address).toBe("/applications/app/home");
+  expect(leftConversation).not.toHaveBeenCalled();
+
+  // Navigating to a different instance (native dashboards) clears display.pageSkill and falls back to the feature's public pageSkill.
+  await display.navigate("/dashboards", { view: "side", history: "push" });
+  await settle();
+  expect(display.pageSkill.value).toBeNull();
+  expect((await head(root)).listed).toEqual(["Assistant"]);
+  expect(requests.some((url) => url.includes("pageKey=dashboard&access=domain-member"))).toBe(true);
+
+  // Closing the page lists every agent again.
+  await display.close();
+  await settle();
+  expect((await head(root)).listed).toEqual(["Assistant", "Analyst", "Knowledge governance"]);
 });
