@@ -59,15 +59,17 @@ export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workben
       await apply("panel", panels, async item => {
         const body = productBody(item);
         const version = body.sdkVersion;
-        if (typeof version !== "string" || !/^\d+\.\d+\.\d+(?:[-+][\w.-]+)*$/.test(version)) {
-          throw new Error("sdkVersion must be the exact installed SDK version");
-        }
-        if (!checkedVersions.has(version)) {
-          const path = `/apps-sdk/${encodeURIComponent(version)}/sdk.json`;
-          const sdk = await send(workbenchUrl, "GET", path);
-          if (!sdk.ok) await readAnswer(sdk, "GET", path);
-          await sdk.arrayBuffer();
-          checkedVersions.add(version);
+        if (version !== undefined || body.content?.module !== undefined) {
+          if (typeof version !== "string" || !/^\d+\.\d+\.\d+(?:[-+][\w.-]+)*$/.test(version)) {
+            throw new Error("sdkVersion must be the exact installed SDK version");
+          }
+          if (!checkedVersions.has(version)) {
+            const path = `/apps-sdk/${encodeURIComponent(version)}/sdk.json`;
+            const sdk = await send(workbenchUrl, "GET", path);
+            if (!sdk.ok) await readAnswer(sdk, "GET", path);
+            await sdk.arrayBuffer();
+            checkedVersions.add(version);
+          }
         }
         await call(workbenchUrl, "PUT", productPath("panel", item.id), body);
       });
