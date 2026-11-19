@@ -60,22 +60,25 @@ export type PageSkillContext = z.infer<typeof pageSkillContextSchema>;
 
 const pageSkillFields = {
   skill: runtimeSkillRefSchema,
-  defaults: z.array(z.object({
-    pageKey: z.string().min(1),
-    agentKey: z.string().min(1),
-  }).strict()).optional(),
+  defaults: z.array(pageSkillDefaultSchema).optional(),
 };
 
 /** The application owns the mapping; leaf pages retain their existing menu codes. */
-export const pageSkillSchema = z.union([
+const pageSkillMappings = [
   z.object({ permissionCode: z.string().min(1), ...pageSkillFields }).strict(),
   z.object({ access: z.literal("domain-member"), pageKey: z.string().min(1), ...pageSkillFields }).strict(),
-]);
+] as const;
+export const pageSkillSchema = z.union(pageSkillMappings);
 export type PageSkill = z.infer<typeof pageSkillSchema>;
 
+/** Java's initiator projection carries a public skill only when the admitted group has one. */
 export const pageSkillsProjectionSchema = z.object({
-  pageSkills: z.array(pageSkillSchema),
+  pageSkills: z.array(z.union([
+    pageSkillMappings[0].partial({ skill: true }),
+    pageSkillMappings[1].partial({ skill: true }),
+  ])),
   registeredSkills: z.array(runtimeSkillRefSchema),
+  admittedEntrances: z.array(pageSkillEntranceSchema).optional(),
 }).strict();
 export type PageSkillsProjection = z.infer<typeof pageSkillsProjectionSchema>;
 

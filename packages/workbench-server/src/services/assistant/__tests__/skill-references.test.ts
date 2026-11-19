@@ -33,6 +33,6 @@ describe("assistant skill ownership boundary", () => {
       namespace: { kind: "domain", domainId: "domain-b" },
     });
     expect(() => resolveAssistantSkillReferences([foreign], "domain-a"))
-      .toThrow(expect.objectContaining({ status: 403 }));
+      .toThrow(expect.objectContaining({ status: 400, code: "SKILL_NOT_FOUND" }));
   });
 });
