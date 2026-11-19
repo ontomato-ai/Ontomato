@@ -4,7 +4,11 @@ import {
   FEEDBACK_RECORD, IMPORT_SKILL, KNOWLEDGE_GOVERNANCE_RECORD, SKILL,
 } from "./panel-client-requests";
 import {
-  createPanelOperationIntentRequestSchema, inspectPanelOperationImpactRequestSchema, panelOperationOutcomeSchema,
+  createPanelHumanOperationIntentRequestSchema, createPanelOperationIntentRequestSchema,
+  dispatchPanelHumanOperationIntentRequestSchema, inspectPanelOperationImpactRequestSchema,
+  isPanelHumanOperationIntent, panelHumanOperationDispatchResponseSchema, panelHumanOperationPreparationSchema,
+  panelOperationOutcomeSchema,
+  panelOperationDescriptorResponseSchema, panelOperationRefSchema,
   panelWriteOperationSnapshotSchema, readPanelOperationRequestSchema, readStoredPanelOperationIntent,
 } from "./panel-agent";
 import { panelOperationImpactSchema, panelReadOperationDescriptorSchema, panelReadOperationResultSchema } from "./panel-operations";
@@ -106,7 +110,7 @@ test("declared delete operations can read a named impact with the total count", 
 
 test("an operation asks the host for a user decision using the owner impact", () => {
   const objects = [{ target: { objectType: AGENT_DEFINITION, primaryKey: "a" }, label: "Assistant A" }];
-  const payload = { operationId: "remove.delete", label: "Delete", impact: { summary: "Agent removal", objects, total: 1 } };
+  const payload = { intentId: operationIntentId, operationId: "remove.delete", label: "Delete", impact: { summary: "Agent removal", objects, total: 1 } };
   const request = { channel: APP_BRIDGE_CHANNEL, id: "confirmation", operation: "confirm-panel-operation", payload };
   assert.deepEqual(appBridgeRequestSchema.parse(request), request);
   assert.deepEqual(appBridgeConfirmPanelOperationSchema.parse(payload), payload);
@@ -307,6 +311,26 @@ test("bridge and skill agree about the specific semantic reads", () => {
     assert.ok(clientSends([binding(type)], "POST", "/data-query", "/admin/getMetas"));
   assert.ok(!clientSends([binding(OBJECT_TYPE)], "POST", "/data-query", "/admin/getschemamarkdown"));
   assert.ok(clientSends([binding(USER)], "GET", "/data-query", "/platform/agent-execution/options?selected=u"));
+});
+
+test("a panel operation descriptor admits exactly the three use and operation query keys", () => {
+  const bindings = [bindingKey({ kind: "PlatformOperation", id: "schedules.runNow" })];
+  const path = "/panel-operations/descriptor";
+  const valid = `${path}?useId=tasks&operationId=run%2Enow&applicationId=workbench`;
+  assert.equal(clientSends(bindings, "GET", "", valid), true);
+  for (const bad of [path, `${path}?useId=tasks&applicationId=workbench`, `${valid}&extra=true`, `${valid}&useId=other`, `${path}?useId=tasks&applicationId=workbench&applicationId=other`]) {
+    assert.equal(clientSends(bindings, "GET", "", bad), false);
+  }
+  assert.equal(clientSends(bindings, "POST", "", valid), false);
+  assert.equal(clientSends([], "GET", "", valid), false);
+  const query = { applicationId: "workbench", useId: "tasks", operationId: "run.now" };
+  assert.deepEqual(panelOperationRefSchema.parse(query), query);
+  assert.equal(panelOperationRefSchema.safeParse({ ...query, effect: "read" }).success, false);
+  const description = {
+    handlerRef: "schedules.runNow", effect: "write", target: { source: "input", input: "task" },
+    inputSchema: {}, resultSchema: {}, batch: false,
+  };
+  assert.deepEqual(panelOperationDescriptorResponseSchema.parse(description), description);
 });
 
 
@@ -664,6 +688,47 @@ test("legacy confirmations expire while dispatched and unknown records preserve 
   ]) {
     assert.deepEqual(readStoredPanelOperationIntent(record), { kind: "historical", intent: record });
   }
+});
+
+test("an authenticated human intent retains its frozen calls without agent question facts", () => {
+  const intent = {
+    intentId: operationIntentId, source: { kind: "human" }, use: { applicationId: "ontology", useId: "knowledge" },
+    panelId: "panel", projectionId: "projection", binding: { kind: "PlatformOperation", id: "knowledge.delete" },
+    initiator: { domainId: "domain", userId: "reader" }, dispatched: false, outcome: null,
+    impact: { summary: "Knowledge removal", objects: [{ target: operationTarget, label: "Example" }], total: 1 },
+    operation: { id: "list.delete", label: "Delete", kind: "action", slot: "list", handlerRef: "knowledge.delete",
+      effect: "write", target: { source: "input", input: "selection" }, inputSchema: {}, resultSchema: {}, batch: true },
+    calls: [{ target: { ...operationTarget, kind: "object" }, input: {} }],
+  };
+  const read = readStoredPanelOperationIntent(intent);
+  assert.deepEqual(read, { kind: "current", intent });
+  assert.ok(read.kind === "current" && isPanelHumanOperationIntent(read.intent));
+  const attempted = { ...intent, dispatched: true, outcome: { kind: "unknown", message: "No owner receipt" } };
+  assert.deepEqual(readStoredPanelOperationIntent(attempted), { kind: "current", intent: attempted });
+});
+
+test("a frame can prepare a human intent and only the host can dispatch it", () => {
+  const ref = { applicationId: "ontology", useId: "knowledge", operationId: "list.delete" };
+  const call = { target: { ...operationTarget, kind: "object" }, input: {} };
+  assert.deepEqual(createPanelHumanOperationIntentRequestSchema.parse({ ...ref, call }), { ...ref, call });
+  assert.deepEqual(createPanelHumanOperationIntentRequestSchema.parse({ ...ref, calls: [call] }), { ...ref, calls: [call] });
+  assert.equal(createPanelHumanOperationIntentRequestSchema.safeParse({ ...ref, call, calls: [call] }).success, false);
+  assert.equal(createPanelHumanOperationIntentRequestSchema.safeParse({ ...ref, call, intentId: operationIntentId }).success, false);
+  assert.equal(createPanelHumanOperationIntentRequestSchema.safeParse({ ...ref, call: { ...call, draft: {} } }).success, false);
+  assert.equal(createPanelHumanOperationIntentRequestSchema.safeParse({ ...ref, call, executionUserId: "other" }).success, false);
+  const impact = { summary: "", objects: [{ target: operationTarget, label: "Example" }], total: 1 };
+  const prepared = { intentId: operationIntentId, operationId: ref.operationId, label: "Delete", impact };
+  assert.deepEqual(panelHumanOperationPreparationSchema.parse(prepared), prepared);
+
+  const bindings = [bindingKey({ kind: "PlatformOperation", id: "knowledge.delete" })];
+  const create = "/panel-operations/intents";
+  assert.equal(clientSends(bindings, "POST", "", create), true);
+  assert.equal(clientSends(bindings, "GET", "", `/panel-operation-intents/${operationIntentId}`), false);
+  assert.equal(clientSends(bindings, "POST", "", `${create}/${operationIntentId}/dispatch`), false);
+  assert.deepEqual(dispatchPanelHumanOperationIntentRequestSchema.parse({}), {});
+  assert.equal(dispatchPanelHumanOperationIntentRequestSchema.safeParse({ confirmed: true }).success, false);
+  const reply = { kind: "dispatched", intentId: operationIntentId, outcome: { kind: "unknown", message: "No receipt" } };
+  assert.deepEqual(panelHumanOperationDispatchResponseSchema.parse(reply), reply);
 });
 
 test("application uses and page-skill defaults share the explicit agent target", () => {
