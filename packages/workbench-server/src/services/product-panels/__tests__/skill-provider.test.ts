@@ -11,7 +11,6 @@ import { installContentLayout } from "../../../content/layout";
 import { parseSkillMarkdown } from "../../../core/skills/manifest";
 import { backendGet } from "../../../utils/backend-client";
 import { findCurrentProduct, type CurrentProductRow } from "../../../infrastructure/product-current";
-import { panelSkillProvider } from "../skill-provider";
 
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://java.test" } } }));
 vi.mock("../../../config/environment", () => ({ environment: { agentRuntime: () => ({ queryServiceToken: "fixture-platform-service" }) } }));
@@ -51,6 +50,7 @@ const panels = new Map(trial.panels.map(panel => [panel.id, {
 
 const extraProjections = new Map<string, Record<string, unknown>>();
 let root: string;
+let panelSkillProvider: typeof import("../skill-provider").panelSkillProvider;
 beforeEach(async () => {
   vi.clearAllMocks();
   extraProjections.clear();
@@ -59,6 +59,7 @@ beforeEach(async () => {
   await mkdir(path.join(sdk, version), { recursive: true });
   await writeFile(path.join(sdk, version, "components.json"), JSON.stringify({ version, components }));
   installContentLayout({ runtimeRoot: root, prompts: [], publicSkillsRoot: root, runtimeResources: [] });
+  ({ panelSkillProvider } = await import("../skill-provider"));
   vi.mocked(findCurrentProduct).mockImplementation(async (requestedDomain, kind, id) => {
     const definition = kind === "panel" ? panels.get(id) : extraProjections.get(id) ?? trial.projections.find(projection => projection.id === id)?.input;
     return requestedDomain === domainId && definition

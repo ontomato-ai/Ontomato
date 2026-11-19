@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, METRIC_VIEW, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW,
 } from "@ontomato/contracts/panel-client-requests";
+import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import type { PanelOperationHost } from "../../product-panels/server-operations";
 import { SkillScanner } from "../../../core/skills/discovery/scanner";
 import { SkillRegistryManager } from "../../../core/skills/registry/manager";
@@ -33,23 +34,24 @@ function hostWith(answer: (path: string, init: NonNullable<Parameters<typeof fet
   const sent: { path: string; init: NonNullable<Parameters<typeof fetch>[1]> }[] = [];
   const actor = { owner: { domainId: "metrics-domain", userId: "metric-reader" }, credentials: { token: "reader-token", locale: "en" } };
   const root = process.cwd();
+  const skillView = {
+    registry: new SkillRegistryManager(root, new SkillScanner(root, true), actor.owner.domainId, []),
+    pageSkills: [],
+    options: [],
+    hasSkill: () => false,
+    hasPageAccess: () => false,
+    publicPageSkill: () => null,
+    pageSkillIsAvailable: () => false,
+    expandStoredRefs: (refs: readonly RuntimeSkillRef[]) => [...refs],
+    unavailableStoredPageSkill: () => false,
+    hiddenStoredSkill: () => false,
+    storedRefsTo: (skill: RuntimeSkillRef) => [skill],
+    resolveSource: async () => null,
+  };
   const host: PanelOperationHost = {
     initiator: actor,
     executor: actor,
-    skillView: {
-      registry: new SkillRegistryManager(root, new SkillScanner(root, true), actor.owner.domainId, []),
-      pageSkills: [],
-      options: [],
-      hasSkill: () => false,
-      hasPageAccess: () => false,
-      publicPageSkill: () => null,
-      pageSkillIsAvailable: () => false,
-      expandStoredRefs: refs => [...refs],
-      unavailableStoredPageSkill: () => false,
-      hiddenStoredSkill: () => false,
-      storedRefsTo: skill => [skill],
-      resolveSource: async () => null,
-    },
+    skillView,
     async request(path, init) {
       sent.push({ path, init });
       return answer(path, init);
