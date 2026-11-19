@@ -9,7 +9,7 @@ import { slotState, usePanelContext, useProjectionSlot } from "../panel/context"
 import type { PanelOperationDescriptor } from "../panel/human-operations";
 import { readOperationInput } from "../panel/read-operation-input";
 import OperationResult from "./OperationResult.vue";
-import { stateObject } from "../panel/state";
+import { stateObject, stateObjects } from "../panel/state";
 
 /**
  * The button of one operation a projection publishes, run as the reader the way an agent's call runs: the platform's
@@ -70,12 +70,10 @@ const target = computed<PanelOperationCall["target"]>(() => {
   return selected && { kind: "object", objectType: selected.className, primaryKey: selected.primaryKey };
 });
 const checkedState = computed(() => (props.checked ? slotState(panel.manifest, slot.slot, props.checked) : null));
-/** The checked objects, as the list holds them in the panel's state. */
-const checkedTargets = computed(() => {
-  const held = checkedState.value === null ? null : values.value[checkedState.value] as unknown;
-  return (Array.isArray(held) ? held as { className: string; primaryKey: string }[] : [])
-    .map(({ className, primaryKey }) => ({ kind: "object" as const, objectType: className, primaryKey }));
-});
+/** The checked objects: the collection the panel's state holds for the slot's `checked` input. */
+const checked = computed(() => (checkedState.value === null ? [] : stateObjects(values.value[checkedState.value])));
+const checkedTargets = computed(() =>
+  checked.value.map(({ className, primaryKey }) => ({ kind: "object" as const, objectType: className, primaryKey })));
 const ready = computed(() => {
   if (!descriptor.value || running.value) return false;
   if (checkedState.value !== null) return checkedTargets.value.length > 0;
@@ -115,9 +113,8 @@ function keepUnchanged(response: PanelHumanOperationDispatchResponse) {
   if (checkedState.value === null || response.kind !== "dispatched" || response.outcome?.kind !== "batch") return;
   const changed = new Set(response.outcome.items.filter(({ outcome }) => outcome.kind === "success")
     .map(({ target: done }) => JSON.stringify([done.objectType, done.primaryKey])));
-  const held = values.value[checkedState.value] as unknown as { className: string; primaryKey: string }[];
-  panel.instance.state.set(checkedState.value, held.filter(({ className, primaryKey }) =>
-    !changed.has(JSON.stringify([className, primaryKey]))) as never);
+  panel.instance.state.set(checkedState.value, checked.value.filter(({ className, primaryKey }) =>
+    !changed.has(JSON.stringify([className, primaryKey]))));
 }
 
 type Outcome = NonNullable<Extract<PanelHumanOperationDispatchResponse, { kind: "dispatched" }>["outcome"]>;

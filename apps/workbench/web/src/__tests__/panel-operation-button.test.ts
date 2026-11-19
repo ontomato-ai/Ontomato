@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { nextTick } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { AGENT_DEFINITION, DELETE_AGENT, FUNCTION, TEST_EXECUTE_METRIC_VIEW } from "@ontomato/contracts/panel-client-requests";
@@ -30,7 +31,7 @@ const remove = { kind: "PlatformOperation" as const, id: DELETE_AGENT };
 const projections: Record<string, ProductProjection> = {
   "agent-remove": record("agent-remove", "OperationButton", remove, { agent: { kind: "object", objectType: AGENT_DEFINITION } }),
   "agents-remove": record("agents-remove", "OperationButton", remove,
-    { agents: { kind: "object", objectType: AGENT_DEFINITION } }, { checked: "agents" }),
+    { agents: { kind: "objects", objectType: AGENT_DEFINITION } }, { checked: "agents" }),
   "function-form": record("function-form", "ObjectForm", { kind: "PlatformObjectType", id: FUNCTION }, { fn: { kind: "object", objectType: FUNCTION } }),
   "function-trial": record("function-trial", "OperationButton", { kind: "PlatformOperation", id: TEST_EXECUTE_METRIC_VIEW },
     { fn: { kind: "object", objectType: FUNCTION } }),
@@ -38,7 +39,7 @@ const projections: Record<string, ProductProjection> = {
 const manifest = definePanel({
   state: {
     selectedAgent: { kind: "object", objectType: AGENT_DEFINITION, deepLink: false },
-    checkedAgents: { kind: "object", objectType: AGENT_DEFINITION, deepLink: false },
+    checkedAgents: { kind: "objects", objectType: AGENT_DEFINITION },
     selectedFunction: { kind: "object", objectType: FUNCTION, deepLink: false },
     month: { kind: "scalar", type: "string", deepLink: false },
   },
@@ -196,4 +197,25 @@ it("names what a delete removes in the host's dialog first, writes nothing on ca
   expect(writes(sent).filter((path) => path.endsWith("/dispatch"))).toHaveLength(1);
   // What the owner reported it changed is read again.
   expect(changed).toEqual([agent("a")]);
+});
+
+it("runs one batch over the checked objects, reports each, and keeps checked the ones it did not change", async () => {
+  const checked = ["a", "b", "c"].map((primaryKey) => ({ className: AGENT_DEFINITION, primaryKey }));
+  const { context, sent } = await open({}, "removeAll");
+  context.instance.state.set("checkedAgents", checked);
+  await nextTick();
+  await click(0);
+  dialogButton(await dialog(), "Delete").click();
+  await vi.waitFor(() => expect(buttonOf(0).querySelector(".sdk-operation-batch")?.textContent).toContain("1 of 3 done"));
+  // One intent, one dispatch, all three calls.
+  expect(sent.filter((request) => request.path === "/api/panel-operations/intents").map((request) => request.body)).toEqual([{
+    applicationId: APPLICATION, useId: use.id, operationId: "removeAll.delete",
+    calls: ["a", "b", "c"].map((primaryKey) => ({ target: { kind: "object", ...agent(primaryKey) }, input: {} })),
+  }]);
+  expect(writes(sent).filter((path) => path.endsWith("/dispatch"))).toHaveLength(1);
+  const items = [...buttonOf(0).querySelectorAll("li")].map((item) => [item.getAttribute("data-outcome"), item.textContent]);
+  expect(items).toEqual([
+    ["success", "a: Done"], ["refusal", "b: Planner runs two schedules"], ["failure", "c: The definitions service failed"],
+  ]);
+  expect(context.instance.state.values.value.checkedAgents).toEqual(checked.slice(1));
 });
