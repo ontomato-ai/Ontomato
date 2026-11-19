@@ -1,5 +1,5 @@
 import { computed, inject, onBeforeUnmount, type ComputedRef, type InjectionKey, type Ref } from "vue";
-import type { PanelManifest, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import { panelChildCollectionQuerySchema, type PanelManifest, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelDefinitionContent, ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PanelInstance } from "./instance";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
@@ -189,6 +189,7 @@ export interface ProjectionObjects extends Required<Pick<PlatformObjectAdapter, 
 function hasQueryParams(query: PlatformObjectQuery): boolean {
   return Boolean(
     query.parent
+    || query.collection
     || query.objectType
     || query.search?.trim()
     || query.page
@@ -211,9 +212,16 @@ export function useProjectionObjects(objectType?: string): ProjectionObjects {
       return listed;
     },
     async query(query = {}) {
+      const childQuery = query.parent || query.collection
+        ? panelChildCollectionQuerySchema.parse({ parent: query.parent, collection: query.collection })
+        : null;
       const adapter = platformObjectAdapter(type);
       if (adapter.query) {
-        const result = await adapter.query(query);
+        const result = await adapter.query(childQuery ? { ...query, ...childQuery } : query);
+        if (childQuery) {
+          instance.nameChildObjects(childQuery.parent, childQuery.collection, result.items);
+          return result;
+        }
         const byType = new Map<string, { primaryKey: string; label: string }[]>();
         for (const item of result.items) {
           const itemType = item.className ?? query.objectType ?? type;

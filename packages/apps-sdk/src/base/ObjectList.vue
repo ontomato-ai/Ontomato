@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import type { PanelChildObjectIdentity, PanelObjectIdentity, PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import { ElEmpty } from "element-plus/es/components/empty/index";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
 import {
@@ -19,10 +19,12 @@ import {
   type PlatformObjectQuery,
   type PlatformObjectQueryResult,
   type PlatformObjectRecord,
-  type PlatformObjectRef,
 } from "../panel/platform-objects";
+import { isPanelChildObjectValue, isPanelObjectValue } from "../panel/state";
 import type { ObjectListColumn, ObjectListFilter, ObjectListRef } from "./object-list-types";
 import { textHighlightSegments } from "./text-highlight";
+
+type ObjectListSelection = ObjectListRef | PanelChildObjectIdentity;
 
 /**
  * Platform objects of the bound type as an interactive list or multi-column table. The resource adapter owns all query
@@ -35,8 +37,10 @@ const props = withDefaults(
     type?: string | null;
     /** Slot input whose panel state holds the single selected object when `outputs.selected` is not declared. */
     input?: string;
-    /** Slot input whose panel state holds the parent object when listing child objects of a selected parent. */
+    /** Slot input whose panel state holds the parent object when listing a declared child collection. */
     parentInput?: string;
+    /** Declared child collection name owned by the parent type (e.g. `"issues"`). */
+    collection?: string;
     /** Panel state fields cleared in the same atomic `setState` update whenever this list changes its selection. */
     clears?: readonly string[];
     /** Multi-column table definition; when absent, renders a compact selectable list. */
@@ -78,6 +82,7 @@ const props = withDefaults(
     type: undefined,
     input: undefined,
     parentInput: undefined,
+    collection: undefined,
     clears: undefined,
     columns: undefined,
     statusField: undefined,
@@ -101,7 +106,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   /** Emitted when the single viewing selection changes. */
-  "update:selected": [value: ObjectListRef | null];
+  "update:selected": [value: ObjectListSelection | null];
   /** Emitted when the explicit multi-selection set changes. */
   "update:checked": [value: readonly ObjectListRef[]];
   /** Emitted when a reader clicks a reference cell carrying an owner-supplied object reference. */
@@ -156,20 +161,26 @@ const selectedState = computed(() => {
   const output = slotOutputState(panel.manifest, slot.slot, "selected");
   if (output) return output;
   if (props.input) return slotInputState(panel.manifest, slot.slot, props.input);
-  if (dynamicTypeMode.value || props.parentInput) return slotInputState(panel.manifest, slot.slot, "selected");
+  if (dynamicTypeMode.value || props.parentInput || props.collection) return slotInputState(panel.manifest, slot.slot, "selected");
   return slotInputState(panel.manifest, slot.slot);
 });
+const selectedField = computed(() => (selectedState.value ? panel.manifest.state[selectedState.value] : undefined));
+const childCollection = computed<string | null>(() => {
+  if (props.collection) return props.collection;
+  return selectedField.value?.kind === "child-object" ? selectedField.value.collection : null;
+});
+const childMode = computed(() => Boolean(props.parentInput || childCollection.value));
 const parentState = computed(
   () => (props.parentInput ? slotInputState(panel.manifest, slot.slot, props.parentInput) : null),
 );
-const parentRef = computed<PlatformObjectRef | null>(() => {
+const parentRef = computed<PanelObjectIdentity | null>(() => {
   if (!parentState.value) return null;
   const value = panel.instance.state.values.value[parentState.value];
-  return value && typeof value === "object" ? { className: value.className, primaryKey: value.primaryKey } : null;
+  return isPanelObjectValue(value) ? { objectType: value.className, primaryKey: value.primaryKey } : null;
 });
-const parentIdentity = computed(() => (parentRef.value ? `${parentRef.value.className}\u0000${parentRef.value.primaryKey}` : ""));
+const parentIdentity = computed(() => (parentRef.value ? `${parentRef.value.objectType}\u0000${parentRef.value.primaryKey}` : ""));
 const checkedState = computed(() => slotOutputState(panel.manifest, slot.slot, "checked"));
-const localSelected = shallowRef<ObjectListRef | null>(null);
+const localSelected = shallowRef<ObjectListSelection | null>(null);
 const localChecked = shallowRef<readonly ObjectListRef[]>([]);
 
 function rowClassName(row: PlatformObjectRecord): string {
@@ -180,18 +191,33 @@ function refKey(refValue: ObjectListRef): string {
   return `${refValue.className}\u0000${refValue.primaryKey}`;
 }
 
-function rowIdentityKey(row: PlatformObjectRecord): string {
-  return `${rowClassName(row)}\u0000${row.primaryKey}`;
+function selectionIdentity(value: ObjectListSelection | null): string | null {
+  if (!value) return null;
+  if ("parent" in value) return `child\u0000${value.parent.objectType}\u0000${value.parent.primaryKey}\u0000${value.primaryKey}`;
+  return refKey(value);
 }
 
-const chosenRef = computed<ObjectListRef | null>(() => {
+function rowSelectionValue(row: PlatformObjectRecord): ObjectListSelection {
+  if (childMode.value && parentRef.value) {
+    return { parent: parentRef.value, primaryKey: row.primaryKey };
+  }
+  return { className: rowClassName(row), primaryKey: row.primaryKey };
+}
+
+function rowIdentityKey(row: PlatformObjectRecord): string {
+  return selectionIdentity(rowSelectionValue(row))!;
+}
+
+const chosenRef = computed<ObjectListSelection | null>(() => {
   if (selectedState.value) {
     const value = panel.instance.state.values.value[selectedState.value];
-    return value && typeof value === "object" ? { className: value.className, primaryKey: value.primaryKey } : null;
+    if (isPanelChildObjectValue(value)) return value;
+    if (isPanelObjectValue(value)) return value;
+    return null;
   }
   return localSelected.value;
 });
-const chosenIdentity = computed<string | null>(() => (chosenRef.value ? refKey(chosenRef.value) : null));
+const chosenIdentity = computed<string | null>(() => selectionIdentity(chosenRef.value));
 
 function isRefList(value: unknown): value is readonly ObjectListRef[] {
   return Array.isArray(value);
@@ -214,7 +240,7 @@ const someVisibleChecked = computed(
 );
 
 const requiresQuery = computed(
-  () => dynamicTypeMode.value || Boolean(props.parentInput) || props.searchable || Boolean(props.filters?.length) || (props.pageSize !== undefined && props.pageSize > 0),
+  () => dynamicTypeMode.value || childMode.value || props.searchable || Boolean(props.filters?.length) || (props.pageSize !== undefined && props.pageSize > 0),
 );
 const isTable = computed(() => Boolean(props.columns?.length));
 const totalPages = computed(() => (props.pageSize && props.pageSize > 0 ? Math.max(1, Math.ceil(total.value / props.pageSize)) : 1));
@@ -285,9 +311,9 @@ const showToolbar = computed(
   () => props.searchable || resolvedFilters.value.length > 0 || props.refreshable || props.showCount,
 );
 
-function setSelected(next: ObjectListRef | null) {
+function setSelected(next: ObjectListSelection | null) {
   if (selectedState.value) {
-    const changed = (next ? refKey(next) : null) !== chosenIdentity.value;
+    const changed = selectionIdentity(next) !== chosenIdentity.value;
     if (changed && props.clears?.length) {
       const patch: Record<string, PanelStateValue> = { [selectedState.value]: next };
       for (const field of props.clears) patch[field] = null;
@@ -324,7 +350,8 @@ function buildQuery(): PlatformObjectQuery {
       }
     : undefined;
   return {
-    ...(parentRef.value ? { parent: parentRef.value } : {}),
+    ...(childMode.value && parentRef.value ? { parent: parentRef.value } : {}),
+    ...(childMode.value && childCollection.value ? { collection: childCollection.value } : {}),
     ...(dynamicTypeMode.value && activeType.value ? { objectType: activeType.value } : {}),
     ...(search ? { search } : {}),
     ...(Object.keys(activeFilters).length ? { filters: activeFilters } : {}),
@@ -339,7 +366,7 @@ function load() {
   failure.value = null;
   queryStatus.value = "ok";
   queryReason.value = undefined;
-  if ((dynamicTypeMode.value && !activeType.value) || (props.parentInput && !parentRef.value)) {
+  if ((dynamicTypeMode.value && !activeType.value) || (childMode.value && !parentRef.value)) {
     rows.value = [];
     total.value = 0;
     nextCursor.value = undefined;
@@ -376,8 +403,8 @@ function load() {
             ? result.items.find((item) => item.primaryKey === result.defaultPrimaryKey)
             : undefined;
           const fallback = preferred ?? result.items[0];
-          const next = fallback ? { className: rowClassName(fallback), primaryKey: fallback.primaryKey } : null;
-          if ((next ? refKey(next) : null) !== chosenIdentity.value) setSelected(next);
+          const next = fallback ? rowSelectionValue(fallback) : null;
+          if (selectionIdentity(next) !== chosenIdentity.value) setSelected(next);
         }
       }
     },
@@ -391,7 +418,7 @@ function load() {
 
 onMounted(load);
 watch(parentIdentity, () => {
-  if (!props.parentInput) return;
+  if (!childMode.value) return;
   resetPaging();
   load();
 });
@@ -453,12 +480,12 @@ function choose(row: PlatformObjectRecord) {
   const identity = rowIdentityKey(row);
   const next = props.toggleable && chosenIdentity.value === identity
     ? null
-    : { className: rowClassName(row), primaryKey: row.primaryKey };
+    : rowSelectionValue(row);
   setSelected(next);
 }
 
 function selectWithoutToggle(row: PlatformObjectRecord) {
-  setSelected({ className: rowClassName(row), primaryKey: row.primaryKey });
+  setSelected(rowSelectionValue(row));
 }
 
 function toggleChecked(row: PlatformObjectRecord, checked: boolean) {

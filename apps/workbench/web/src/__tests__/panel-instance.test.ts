@@ -33,7 +33,7 @@ const panel = definePanel({
     taskForm: { projectionId: "projection-task-form", inputs: { task: { state: "selectedTask" } } },
     runTask: { projectionId: "projection-run-task", inputs: { task: { state: "selectedTask" } } },
   },
-  operations: [{ id: "task.clear", label: "Clear", kind: "state", sets: { selectedTask: null } }],
+  operations: [{ id: "task.clear", labelKey: "ops.clear", kind: "state", sets: { selectedTask: null } }],
 });
 
 /** What the host handed the frame: the panel's content, declaration and SDK version, without the record's identity. */
@@ -69,12 +69,13 @@ const records = new Map<string, ProductProjection>([
   ["projection-run-task", record("projection-run-task", "MarkdownView", { kind: "PlatformOperation", id: "schedules.runNow" })],
 ]);
 
-function instance(initial?: Record<string, unknown>) {
+function instance(initial?: Record<string, unknown>, panelText?: (key: string) => string) {
   return createPanelInstance(panel, {
     pageKey: "schedules",
     url: () => "/a/schedules",
     label: () => "Scheduled tasks",
     initial: initial as never,
+    panelText: panelText ?? ((key) => (key === "ops.clear" ? "Clear" : key)),
     recordDraftCreated: async () => {},
     readProjection: async (id) => records.get(id)!,
   });

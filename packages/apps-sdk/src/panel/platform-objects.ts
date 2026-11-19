@@ -1,5 +1,10 @@
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import { panelFormTargetSchema, type PanelFormTarget, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import {
+  panelFormTargetSchema,
+  type PanelFormTarget,
+  type PanelObjectIdentity,
+  type PanelStateValue,
+} from "@ontomato/contracts/panel-manifest";
 import {
   panelFormSaveInputSchema,
   type PanelFormDescription,
@@ -70,9 +75,12 @@ export interface PlatformObjectRef {
   readonly primaryKey: string;
 }
 
-/** Search, filter, parent-scope and paging parameters handed to a resource adapter; the adapter owns all query semantics. */
+/** Search, filter, child-collection and paging parameters handed to a resource adapter; the adapter owns all query semantics. */
 export interface PlatformObjectQuery {
-  readonly parent?: PlatformObjectRef;
+  /** Parent object identity when querying a declared child collection (paired with `collection`). */
+  readonly parent?: PanelObjectIdentity;
+  /** Declared child collection name owned by `parent.objectType` (e.g. `"files"`, `"issues"`, `"sources"`). */
+  readonly collection?: string;
   /** Dynamic object type selected at runtime when listing objects across types (e.g. `platform:Action`). */
   readonly objectType?: string;
   readonly search?: string;
@@ -213,7 +221,8 @@ export interface PlatformObjectOptions {
 
 /** Offset-paged read request for a long-text source through a resource adapter. */
 export interface PlatformObjectSegmentQuery {
-  readonly parent?: PlatformObjectRef;
+  readonly parent?: PanelObjectIdentity;
+  readonly collection?: string;
   readonly sourceId: string;
   readonly offset: number;
 }

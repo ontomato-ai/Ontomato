@@ -3,6 +3,7 @@ import { computed, ref, shallowRef } from "vue";
 import { ElButton } from "element-plus/es/components/button/index";
 import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import { slotState, usePanelContext, useProjectionSlot } from "../panel/context";
+import { isPanelObjectValue } from "../panel/state";
 
 /**
  * The button of one operation a projection publishes: it shows the operation's own label and runs that operation on the
@@ -42,7 +43,7 @@ const published = computed(() => {
 const call = computed<PanelOperationCall>(() => {
   const selected = panel.instance.state.values.value[slotState(panel.manifest, slot.slot, props.input)];
   return {
-    target: selected && typeof selected === "object"
+    target: isPanelObjectValue(selected)
       ? { kind: "object", objectType: selected.className, primaryKey: selected.primaryKey } : null,
     input: {},
   };

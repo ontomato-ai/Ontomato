@@ -10,6 +10,7 @@ import {
   useProjectionGraph,
   useProjectionSlot,
 } from "../panel/context";
+import { isPanelObjectValue } from "../panel/state";
 import type {
   PlatformGraphEdge,
   PlatformGraphNeighborsResult,
@@ -68,7 +69,7 @@ const activeSelected = computed<PanelObjectValue | null>(() => {
   if (props.selected !== undefined) return props.selected;
   if (!selectedStateName.value) return null;
   const value = panel.instance.state.values.value[selectedStateName.value];
-  return value && typeof value === "object" ? { className: value.className, primaryKey: value.primaryKey } : null;
+  return isPanelObjectValue(value) ? { className: value.className, primaryKey: value.primaryKey } : null;
 });
 
 function nodeKey(ref: PanelObjectValue): string {

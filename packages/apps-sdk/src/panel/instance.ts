@@ -3,7 +3,7 @@ import { computed, readonly, shallowReactive, shallowRef, type DeepReadonly, typ
 import type { PageContext } from "@ontomato/contracts/page-context";
 import { panelOpenRequestSchema, type PanelManifest, type PanelOperationCall, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import { createPanelState, objectNameKey, panelSelection, type PanelInitialState, type PanelStateStore } from "./state";
+import { childObjectNameKey, createPanelState, objectNameKey, panelSelection, type PanelInitialState, type PanelStateStore } from "./state";
 import { panelOperations } from "./operations";
 import type { PanelProjectionRegistration } from "./ports";
 import { PanelFormAdapters, type PageDraftLink, type ReceivedPanelDraft } from "./draft";
@@ -33,6 +33,8 @@ export interface PanelInstanceOptions {
   recordDraftCreated: (link: PageDraftLink, id: string) => Promise<void>;
   /** Translates platform message keys (such as object-union type display names) in the current locale. */
   translate?: (key: string) => string;
+  /** Resolves panel-authored message keys (such as state operation labelKeys) in the current locale. */
+  panelText?: (key: string) => string;
   reportDraftError?: (reason: unknown) => void;
 }
 
@@ -78,6 +80,8 @@ export interface PanelInstance {
    * by its owner's label. Only reads call it: a name is never typed in, guessed or carried in an address.
    */
   nameObjects(objectType: string, objects: readonly { primaryKey: string; label: string }[]): void;
+  /** Keeps owner labels for child objects read under a parent identity and declared collection. */
+  nameChildObjects(parent: PanelObjectIdentity, collection: string, objects: readonly { primaryKey: string; label: string }[]): void;
   /** Whether this instance holds unsaved changes: a received draft, or a form the reader edited. */
   dirty(): boolean;
   /** The state an address or an open request may carry, for this instance. */
@@ -96,7 +100,8 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     for (const listener of objectListeners) listener(object);
   };
   const registrations = shallowRef<readonly PanelProjectionRegistration[]>([]);
-  const operations = computed(() => panelOperations(manifest, registrations.value, state, forms));
+  const resolvePanelText = options.panelText ?? ((key: string) => key);
+  const operations = computed(() => panelOperations(manifest, registrations.value, state, forms, resolvePanelText));
   const forms = new PanelFormAdapters(options.reportDraftError);
   const draft = shallowRef<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
   const names = shallowReactive(new Map<string, string>());
@@ -165,6 +170,9 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     projection: (id) => options.readProjection(id),
     nameObjects(objectType, objects) {
       for (const { primaryKey, label } of objects) names.set(objectNameKey(objectType, primaryKey), label);
+    },
+    nameChildObjects(parent, collection, objects) {
+      for (const { primaryKey, label } of objects) names.set(childObjectNameKey(parent, collection, primaryKey), label);
     },
     dirty: () => draft.value !== null || forms.dirty(),
     deepLink: () => state.deepLinkable(),

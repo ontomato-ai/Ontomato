@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { PANEL_HOST_CHANNEL, panelAddressState } from "@ontomato/contracts/panel-host";
+import { KNOWLEDGE_GOVERNANCE_RECORD, SKILL } from "@ontomato/contracts/platform-object-types";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
@@ -10,18 +11,15 @@ import {
 
 /*
  * U6 child object selection through the platform's real host and bridge:
- * - Child objects carry their own full typed identity (`className` + opaque parent-scoped `primaryKey`).
+ * - Child projections bind their parent platform object type and declare a valid `collection` from
+ *   `platformObjectTypes[parent].childCollections`.
+ * - Child state holds `PanelChildObjectIdentity` (`{ parent: { objectType, primaryKey }, primaryKey }`), and
+ *   `pageContext.selection` emits `kind: "child-object"` with parent, collection, id and readable parent+child label.
  * - Switching the parent clears the child in ONE atomic `state.setState` update, so neither `pageContext` nor the host
  *   address bridge ever observes a cross-parent `(parentB, childOfParentA)` state.
- * - Child list projections re-query automatically with `query.parent` when the parent changes, support toggle-off
- *   (governance issue) and owner-declared `defaultPrimaryKey` with first-item fallback (skill files).
- * - `state.setState` validates all fields before mutating any of them, and host `address` updates apply atomically.
+ * - Child list projections query with validated `{ parent: { objectType, primaryKey }, collection }`, support
+ *   toggle-off, owner-declared `defaultPrimaryKey` with first-item fallback, and fail visibly on undeclared collections.
  */
-
-const RECORD = "test:GovernanceRecord";
-const ISSUE = "test:GovernanceIssue";
-const SKILL = "test:Skill";
-const SKILL_FILE = "test:SkillFile";
 
 const current = {
   domainId: "domain-1", ownerId: "owner-1", revision: 1, createdAt: "2026-11-19T00:00:00.000Z",
@@ -51,20 +49,21 @@ afterEach(() => {
   vi.resetModules();
 });
 
-it("clears child selection atomically when switching parent and never emits cross-parent state over the bridge", async () => {
+it("clears child selection atomically when switching parent and carries child-object selection in pageContext", async () => {
   const projections = {
-    "record-list": projection("record-list", RECORD, {
+    "record-list": projection("record-list", KNOWLEDGE_GOVERNANCE_RECORD, {
       clears: ["selectedIssue"],
       toggleable: false,
     }),
-    "issue-list": projection("issue-list", ISSUE, {
+    "issue-list": projection("issue-list", KNOWLEDGE_GOVERNANCE_RECORD, {
       parentInput: "record",
-    }, { record: { kind: "object", objectType: RECORD } }),
+      collection: "issues",
+    }, { record: { kind: "object", objectType: KNOWLEDGE_GOVERNANCE_RECORD } }),
   };
   const manifest = definePanel({
     state: {
-      selectedRecord: { kind: "object", objectType: RECORD, deepLink: true },
-      selectedIssue: { kind: "object", objectType: ISSUE, deepLink: true },
+      selectedRecord: { kind: "object", objectType: KNOWLEDGE_GOVERNANCE_RECORD, deepLink: true },
+      selectedIssue: { kind: "child-object", parentType: KNOWLEDGE_GOVERNANCE_RECORD, collection: "issues", deepLink: true },
     },
     slots: {
       records: { projectionId: "record-list", inputs: {}, outputs: { selected: { state: "selectedRecord" } } },
@@ -104,19 +103,19 @@ it("clears child selection atomically when switching parent and never emits cros
       { primaryKey: "opaque-r2-i1", label: "Issue 2A", fields: {} },
     ],
   };
-  const issueParentQueries: unknown[] = [];
+  const childQueries: unknown[] = [];
   registerPlatformObjectAdapter({
-    objectType: RECORD,
-    list: async () => [
-      { primaryKey: "rec-1", label: "Record 1", fields: {} },
-      { primaryKey: "rec-2", label: "Record 2", fields: {} },
-    ],
-  });
-  registerPlatformObjectAdapter({
-    objectType: ISSUE,
+    objectType: KNOWLEDGE_GOVERNANCE_RECORD,
     query: async (q) => {
-      issueParentQueries.push(q.parent);
-      const items = q.parent ? (issuesByRecord[q.parent.primaryKey] ?? []) : [];
+      if (q.collection === "issues") {
+        childQueries.push({ parent: q.parent, collection: q.collection });
+        const items = q.parent ? (issuesByRecord[q.parent.primaryKey] ?? []) : [];
+        return { items, total: items.length };
+      }
+      const items = [
+        { primaryKey: "rec-1", label: "Record 1", fields: {} },
+        { primaryKey: "rec-2", label: "Record 2", fields: {} },
+      ];
       return { items, total: items.length };
     },
   });
@@ -125,29 +124,40 @@ it("clears child selection atomically when switching parent and never emits cros
   const mounted = await mountPanel({});
   await vi.waitFor(() => expect(document.querySelectorAll(".records-pane [role='option']").length).toBe(2));
 
-  // Select parent rec-1 -> issues list queries with parent rec-1.
+  // Select parent rec-1 -> issues list queries with PanelChildCollectionQuery ({ parent: { objectType, primaryKey }, collection }).
   document.querySelectorAll<HTMLButtonElement>(".records-pane [role='option']")[0]!.click();
   await vi.waitFor(() => expect(document.querySelectorAll(".issues-pane [role='option']").length).toBe(2));
-  expect(issueParentQueries).toEqual([{ className: RECORD, primaryKey: "rec-1" }]);
+  expect(childQueries).toEqual([
+    { parent: { objectType: KNOWLEDGE_GOVERNANCE_RECORD, primaryKey: "rec-1" }, collection: "issues" },
+  ]);
 
-  // Select child opaque-r1-i2 -> both parent and child hold full typed identities; pageContext carries both labels.
+  // Select child opaque-r1-i2 -> state holds PanelChildObjectIdentity; pageContext emits kind: "child-object".
   const issueButtons = document.querySelectorAll<HTMLButtonElement>(".issues-pane [role='option']");
   issueButtons[1]!.click();
   await nextTick();
   expect(mounted.context.instance.state.values.value).toEqual({
-    selectedRecord: { className: RECORD, primaryKey: "rec-1" },
-    selectedIssue: { className: ISSUE, primaryKey: "opaque-r1-i2" },
+    selectedRecord: { className: KNOWLEDGE_GOVERNANCE_RECORD, primaryKey: "rec-1" },
+    selectedIssue: { parent: { objectType: KNOWLEDGE_GOVERNANCE_RECORD, primaryKey: "rec-1" }, primaryKey: "opaque-r1-i2" },
   });
   expect(mounted.context.instance.pageContext.value.selection).toEqual([
-    { kind: RECORD, id: "rec-1", label: `Record 1 (${RECORD} rec-1)` },
-    { kind: ISSUE, id: "opaque-r1-i2", label: `Issue 1B (${ISSUE} opaque-r1-i2)` },
+    { kind: KNOWLEDGE_GOVERNANCE_RECORD, id: "rec-1", label: `Record 1 (${KNOWLEDGE_GOVERNANCE_RECORD} rec-1)` },
+    {
+      kind: "child-object",
+      parent: { objectType: KNOWLEDGE_GOVERNANCE_RECORD, primaryKey: "rec-1" },
+      collection: "issues",
+      id: "opaque-r1-i2",
+      label: expect.stringContaining("Record 1 / Issue 1B (opaque-r1-i2)"),
+    },
   ]);
 
   // Clicking the same issue again toggles child off while keeping parent.
   issueButtons[1]!.click();
   await nextTick();
   expect(mounted.context.instance.state.values.value.selectedIssue).toBeNull();
-  expect(mounted.context.instance.state.values.value.selectedRecord).toEqual({ className: RECORD, primaryKey: "rec-1" });
+  expect(mounted.context.instance.state.values.value.selectedRecord).toEqual({
+    className: KNOWLEDGE_GOVERNANCE_RECORD,
+    primaryKey: "rec-1",
+  });
 
   // Re-select child, then switch parent to rec-2 -> child clears in ONE atomic state update!
   issueButtons[1]!.click();
@@ -157,10 +167,13 @@ it("clears child selection atomically when switching parent and never emits cros
   document.querySelectorAll<HTMLButtonElement>(".records-pane [role='option']")[1]!.click();
   await vi.waitFor(() => expect(document.querySelectorAll(".issues-pane [role='option']").length).toBe(1));
   expect(mounted.context.instance.state.values.value).toEqual({
-    selectedRecord: { className: RECORD, primaryKey: "rec-2" },
+    selectedRecord: { className: KNOWLEDGE_GOVERNANCE_RECORD, primaryKey: "rec-2" },
     selectedIssue: null,
   });
-  expect(issueParentQueries[1]).toEqual({ className: RECORD, primaryKey: "rec-2" });
+  expect(childQueries[1]).toEqual({
+    parent: { objectType: KNOWLEDGE_GOVERNANCE_RECORD, primaryKey: "rec-2" },
+    collection: "issues",
+  });
 
   // No bridge state/context message ever combined rec-2 with rec-1's child opaque-r1-i2.
   const invalidState = observedBridgeMessages.some(
@@ -176,25 +189,35 @@ it("clears child selection atomically when switching parent and never emits cros
   expect(invalidState).toBe(false);
   expect(invalidContext).toBe(false);
 
-  // All-or-nothing validation in state.setState: invalid child className refuses whole update without mutating parent.
+  // All-or-nothing validation in state.setState: invalid child value refuses whole update without mutating parent.
   expect(() => mounted.context.instance.state.setState({
-    selectedRecord: { className: RECORD, primaryKey: "rec-1" },
-    selectedIssue: { className: RECORD, primaryKey: "wrong-type" },
+    selectedRecord: { className: KNOWLEDGE_GOVERNANCE_RECORD, primaryKey: "rec-1" },
+    selectedIssue: { className: KNOWLEDGE_GOVERNANCE_RECORD, primaryKey: "not-a-child-identity" },
   })).toThrow(TypeError);
-  expect(mounted.context.instance.state.values.value.selectedRecord).toEqual({ className: RECORD, primaryKey: "rec-2" });
+  expect(() => mounted.context.instance.state.setState({
+    selectedRecord: { className: KNOWLEDGE_GOVERNANCE_RECORD, primaryKey: "rec-1" },
+    selectedIssue: { parent: { objectType: SKILL, primaryKey: "skill-1" }, primaryKey: "wrong-parent-type" },
+  })).toThrow(TypeError);
+  expect(mounted.context.instance.state.values.value.selectedRecord).toEqual({
+    className: KNOWLEDGE_GOVERNANCE_RECORD,
+    primaryKey: "rec-2",
+  });
 
   // Host address change from rec-2 + opaque-r2-i1 to rec-1 (no issue) applies in one atomic update too.
   document.querySelectorAll<HTMLButtonElement>(".issues-pane [role='option']")[0]!.click();
   await nextTick();
-  expect(mounted.context.instance.state.values.value.selectedIssue).toEqual({ className: ISSUE, primaryKey: "opaque-r2-i1" });
+  expect(mounted.context.instance.state.values.value.selectedIssue).toEqual({
+    parent: { objectType: KNOWLEDGE_GOVERNANCE_RECORD, primaryKey: "rec-2" },
+    primaryKey: "opaque-r2-i1",
+  });
   observedBridgeMessages.length = 0;
-  const nextAddress = `${use.path}?state=${encodeURIComponent(JSON.stringify({ selectedRecord: { className: RECORD, primaryKey: "rec-1" } }))}`;
+  const nextAddress = `${use.path}?state=${encodeURIComponent(JSON.stringify({ selectedRecord: { className: KNOWLEDGE_GOVERNANCE_RECORD, primaryKey: "rec-1" } }))}`;
   window.dispatchEvent(new MessageEvent("message", {
     source: window.parent,
     data: { channel: PANEL_HOST_CHANNEL, kind: "address", address: nextAddress },
   }));
   await vi.waitFor(() => expect(mounted.context.instance.state.values.value).toEqual({
-    selectedRecord: { className: RECORD, primaryKey: "rec-1" },
+    selectedRecord: { className: KNOWLEDGE_GOVERNANCE_RECORD, primaryKey: "rec-1" },
     selectedIssue: null,
   }));
   const invalidAddressContext = observedBridgeMessages.some((msg) => {
@@ -207,8 +230,9 @@ it("clears child selection atomically when switching parent and never emits cros
 
 it("selects owner-declared defaultPrimaryKey or falls back to first child on parent switch (skill detail pattern)", async () => {
   const projections = {
-    "file-list": projection("file-list", SKILL_FILE, {
+    "file-list": projection("file-list", SKILL, {
       parentInput: "skill",
+      collection: "files",
       fallbackToFirst: true,
       toggleable: false,
     }, { skill: { kind: "object", objectType: SKILL } }),
@@ -216,7 +240,7 @@ it("selects owner-declared defaultPrimaryKey or falls back to first child on par
   const manifest = definePanel({
     state: {
       selectedSkill: { kind: "object", objectType: SKILL, deepLink: true },
-      selectedFile: { kind: "object", objectType: SKILL_FILE, deepLink: true },
+      selectedFile: { kind: "child-object", parentType: SKILL, collection: "files", deepLink: true },
     },
     slots: {
       files: {
@@ -238,39 +262,41 @@ it("selects owner-declared defaultPrimaryKey or falls back to first child on par
   writePanelDocument(panel, use, initialPath, panelAddressState(initialPath));
   inside(frame);
 
-  const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
-  registerPlatformObjectAdapter({
-    objectType: SKILL_FILE,
-    query: async (q) => {
-      if (q.parent?.primaryKey === "skill-a") {
-        return {
-          items: [
-            { primaryKey: "opaque:skill-a:notes.txt", label: "notes.txt", fields: {} },
-            { primaryKey: "opaque:skill-a:SKILL.md", label: "SKILL.md", fields: {} },
-          ],
-          total: 2,
-          defaultPrimaryKey: "opaque:skill-a:SKILL.md",
-        };
-      }
-      if (q.parent?.primaryKey === "skill-b") {
-        return {
-          items: [
-            { primaryKey: "opaque:skill-b:README.md", label: "README.md", fields: {} },
-            { primaryKey: "opaque:skill-b:run.py", label: "run.py", fields: {} },
-          ],
-          total: 2,
-        };
-      }
-      return { items: [], total: 0 };
-    },
-  });
+  vi.doMock("../../../../../packages/apps-sdk/src/panel/skill", () => ({
+    skillAdapters: () => [{
+      objectType: SKILL,
+      query: async (q: { parent?: { objectType: string; primaryKey: string }; collection?: string }) => {
+        if (q.collection === "files" && q.parent?.primaryKey === "skill-a") {
+          return {
+            items: [
+              { primaryKey: "notes.txt", label: "notes.txt", fields: {} },
+              { primaryKey: "SKILL.md", label: "SKILL.md", fields: {} },
+            ],
+            total: 2,
+            defaultPrimaryKey: "SKILL.md",
+          };
+        }
+        if (q.collection === "files" && q.parent?.primaryKey === "skill-b") {
+          return {
+            items: [
+              { primaryKey: "README.md", label: "README.md", fields: {} },
+              { primaryKey: "run.py", label: "run.py", fields: {} },
+            ],
+            total: 2,
+          };
+        }
+        return { items: [], total: 0 };
+      },
+    }],
+  }));
 
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const mounted = await mountPanel({});
 
-  // Entering skill-a selects owner's defaultPrimaryKey (SKILL.md) rather than blindly picking index 0.
+  // Entering skill-a selects owner's defaultPrimaryKey (SKILL.md) with complete child identity.
   await vi.waitFor(() => expect(mounted.context.instance.state.values.value.selectedFile).toEqual({
-    className: SKILL_FILE, primaryKey: "opaque:skill-a:SKILL.md",
+    parent: { objectType: SKILL, primaryKey: "skill-a" },
+    primaryKey: "SKILL.md",
   }));
 
   // Switching to skill-b atomically clears child and falls back to first file (README.md) when no defaultPrimaryKey.
@@ -279,6 +305,49 @@ it("selects owner-declared defaultPrimaryKey or falls back to first child on par
     selectedFile: null,
   });
   await vi.waitFor(() => expect(mounted.context.instance.state.values.value.selectedFile).toEqual({
-    className: SKILL_FILE, primaryKey: "opaque:skill-b:README.md",
+    parent: { objectType: SKILL, primaryKey: "skill-b" },
+    primaryKey: "README.md",
   }));
+});
+
+it("fails visibly when a child list queries an undeclared child collection", async () => {
+  const projections = {
+    "bad-collection": projection("bad-collection", KNOWLEDGE_GOVERNANCE_RECORD, {
+      parentInput: "record",
+      collection: "files",
+    }, { record: { kind: "object", objectType: KNOWLEDGE_GOVERNANCE_RECORD } }),
+  };
+  const manifest = definePanel({
+    state: {
+      selectedRecord: { kind: "object", objectType: KNOWLEDGE_GOVERNANCE_RECORD, deepLink: true },
+    },
+    slots: {
+      bad: {
+        projectionId: "bad-collection",
+        inputs: { record: { state: "selectedRecord" } },
+      },
+    },
+    operations: [],
+  });
+  const panel = panelRecord("panel-bad-child", "Bad child", manifest);
+  panel.content.html = `<div id="app"><Projection slot="bad"></Projection></div>`;
+  const use = panelUse("use-bad-child", "bad-child", panel.id, "/applications/app-test/bad-child");
+
+  installPlatform(hostWith(projections));
+  const frame = panelFrame();
+  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  const initialPath = `${use.path}?state=${encodeURIComponent(JSON.stringify({ selectedRecord: { className: KNOWLEDGE_GOVERNANCE_RECORD, primaryKey: "rec-1" } }))}`;
+  writePanelDocument(panel, use, initialPath, panelAddressState(initialPath));
+  inside(frame);
+
+  const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
+  registerPlatformObjectAdapter({
+    objectType: KNOWLEDGE_GOVERNANCE_RECORD,
+    query: async () => ({ items: [], total: 0 }),
+  });
+
+  const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
+  await mountPanel({});
+
+  await vi.waitFor(() => expect(document.querySelector("[role='alert']")?.textContent).toContain("Undeclared child collection"));
 });

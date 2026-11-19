@@ -1,6 +1,6 @@
 import { type PanelManifest, type PanelOperation, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { ProjectionPorts } from "@ontomato/contracts/panel-projection";
-import type { PanelFieldValue } from "./state";
+import { isPanelObjectValue, type PanelFieldValue } from "./state";
 
 export type { ProjectionOperation, ProjectionPorts } from "@ontomato/contracts/panel-projection";
 
@@ -57,7 +57,7 @@ function operationTarget(
   if (!operation.target) return null;
   if (operation.target.source === "draft") return { kind: "draft" };
   const value = state[operation.target.state];
-  if (!value || typeof value !== "object") return null;
+  if (!isPanelObjectValue(value)) return null;
   return { kind: "object", objectType: value.className, primaryKey: value.primaryKey };
 }
 

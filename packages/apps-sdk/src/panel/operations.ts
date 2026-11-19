@@ -22,6 +22,7 @@ export function panelOperations(
   registrations: readonly PanelProjectionRegistration[],
   state: PanelStateStore,
   forms: PanelFormAdapters,
+  resolveLabel: (key: string) => string = (key) => key,
 ): PanelOperationBinding[] {
   return [
     ...registrations.flatMap((registration) =>
@@ -39,7 +40,7 @@ export function panelOperations(
       })),
     ),
     ...manifest.operations.map((operation) => ({
-      ...panelStateOperation(operation),
+      ...panelStateOperation(operation, resolveLabel),
       invoke: async () => {
         state.setState(operation.sets);
         return operation.sets;

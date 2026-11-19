@@ -3,7 +3,9 @@ import {
   matchesObjectType,
   objectUnionTypes,
   panelStateValueSchema,
+  type PanelChildObjectIdentity,
   type PanelManifest,
+  type PanelObjectIdentity,
   type PanelStateValue,
 } from "@ontomato/contracts/panel-manifest";
 import { platformObjectTypes } from "@ontomato/contracts/platform-object-types";
@@ -46,9 +48,20 @@ export interface PanelStateStore {
   deepLinkable(): Record<string, PanelFieldValue>;
 }
 
+/** Whether a state value holds a top-level ontology object reference (`{ className, primaryKey }`). */
+export function isPanelObjectValue(value: PanelFieldValue | undefined): value is { className: string; primaryKey: string } {
+  return value !== null && value !== undefined && typeof value === "object" && "className" in value;
+}
+
+/** Whether a state value holds a parent-scoped child object reference (`{ parent, primaryKey }`). */
+export function isPanelChildObjectValue(value: PanelFieldValue | undefined): value is PanelChildObjectIdentity {
+  return value !== null && value !== undefined && typeof value === "object" && "parent" in value;
+}
+
 /**
- * Checks a value against the field a panel declared. `object` takes a reference to one object of the declared ontology
- * type; a scalar takes its own type. Null clears the field.
+ * Checks a value against the field a panel declared. `object` and `object-union` take a top-level reference,
+ * `child-object` takes a parent-scoped child identity matching the declared parent type, and `scalar` takes its own
+ * primitive type. Null clears the field.
  */
 export function checkPanelValue(manifest: PanelManifest, name: string, value: PanelFieldValue): PanelFieldValue {
   const field = manifest.state[name];
@@ -57,9 +70,16 @@ export function checkPanelValue(manifest: PanelManifest, name: string, value: Pa
   if (parsed === null) return null;
   if (field.kind === "object" || field.kind === "object-union") {
     const expected = field.kind === "object" ? field.objectType : objectUnionTypes(field).join(" | ");
-    if (typeof parsed !== "object") throw new TypeError(`Panel state '${name}' is a ${expected} reference`);
+    if (!isPanelObjectValue(parsed)) throw new TypeError(`Panel state '${name}' is a ${expected} reference`);
     if (!matchesObjectType(field, parsed.className))
       throw new TypeError(`Panel state '${name}' is a ${expected} reference, not ${parsed.className}`);
+    return parsed;
+  }
+  if (field.kind === "child-object") {
+    if (!isPanelChildObjectValue(parsed))
+      throw new TypeError(`Panel state '${name}' is a ${field.parentType}/${field.collection} child reference`);
+    if (parsed.parent.objectType !== field.parentType)
+      throw new TypeError(`Panel state '${name}' is a ${field.parentType}/${field.collection} child reference, not ${parsed.parent.objectType}`);
     return parsed;
   }
   if (typeof parsed === "object") throw new TypeError(`Panel state '${name}' is a ${field.type}`);
@@ -116,11 +136,17 @@ export function objectNameKey(objectType: string, primaryKey: string): string {
   return `${objectType}\u0000${primaryKey}`;
 }
 
+/** How an instance keeps the name of one child object it has read: scoped by parent identity and collection. */
+export function childObjectNameKey(parent: PanelObjectIdentity, collection: string, primaryKey: string): string {
+  return `child\u0000${parent.objectType}\u0000${parent.primaryKey}\u0000${collection}\u0000${primaryKey}`;
+}
+
 /**
- * The objects a panel instance holds, as a message names them: one entry per declared object field that has a value, in
- * declaration order. The entry's label is the name the object's owner gave it, from a read this instance already made,
- * followed by its type and key, so an agent reads which object it is from the same line as the page; an object not read
- * yet is named by its type and key alone. The name lives here and nowhere else: the state and the address hold the key.
+ * The objects a panel instance holds, as a message names them: one entry per declared object or child-object field
+ * that has a value, in declaration order. The entry's label is the name the object's owner gave it, from a read this
+ * instance already made, followed by its type and key, so an agent reads which object it is from the same line as the
+ * page; an object not read yet is named by its type and key alone. The name lives here and nowhere else: the state and
+ * the address hold the key.
  */
 export function panelSelection(
   manifest: PanelManifest,
@@ -130,7 +156,27 @@ export function panelSelection(
 ): PanelSelection[] {
   return Object.entries(manifest.state).flatMap(([name, field]) => {
     const value = values[name];
-    if ((field.kind !== "object" && field.kind !== "object-union") || !value || typeof value !== "object") return [];
+    if (field.kind === "child-object") {
+      if (!isPanelChildObjectValue(value)) return [];
+      const parentTypeMeta = platformObjectTypes[value.parent.objectType];
+      const parentTypeLabel = parentTypeMeta?.labelKey ? translate(parentTypeMeta.labelKey) : value.parent.objectType;
+      const parentNamed = names.get(objectNameKey(value.parent.objectType, value.parent.primaryKey));
+      const parentPart = parentNamed
+        ? `${parentTypeLabel} ${parentNamed}`
+        : `${parentTypeLabel} ${value.parent.primaryKey}`;
+      const childNamed = names.get(childObjectNameKey(value.parent, field.collection, value.primaryKey));
+      const childPart = childNamed && childNamed !== value.primaryKey
+        ? `${childNamed} (${value.primaryKey})`
+        : (childNamed ?? value.primaryKey);
+      return [{
+        kind: "child-object",
+        parent: value.parent,
+        collection: field.collection,
+        id: value.primaryKey,
+        label: `${parentPart} / ${childPart}`,
+      }];
+    }
+    if ((field.kind !== "object" && field.kind !== "object-union") || !isPanelObjectValue(value)) return [];
     const objectType = field.kind === "object" ? field.objectType : value.className;
     const reference = `${objectType} ${value.primaryKey}`;
     const named = names.get(objectNameKey(objectType, value.primaryKey));

@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import { slotInputState, usePanelContext, useProjectionSlot } from "../panel/context";
 import { PlatformUploadConflict } from "../panel/platform-objects";
+import { isPanelObjectValue } from "../panel/state";
 
 /**
  * File upload/import control bound to a declared `PlatformOperation`. Optionally presents format rules before opening
@@ -88,7 +89,7 @@ const targetState = computed(() => slotInputState(panel.manifest, slot.slot, pro
 const target = computed<PanelOperationCall["target"]>(() => {
   if (!targetState.value) return null;
   const selected = panel.instance.state.values.value[targetState.value];
-  return selected && typeof selected === "object"
+  return isPanelObjectValue(selected)
     ? { kind: "object", objectType: selected.className, primaryKey: selected.primaryKey }
     : null;
 });
