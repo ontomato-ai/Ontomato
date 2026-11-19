@@ -9,7 +9,7 @@ import { isPanelHumanOperationIntent, type PanelOperationIntent } from "@ontomat
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { panelReadOperationInputSchema, panelReadOperationResultSchema } from "@ontomato/contracts/panel-operations";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
-const mocks = vi.hoisted(() => ({draft:vi.fn(),recordCreated:vi.fn(),query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),catalogue:vi.fn(),pages:vi.fn(),restore:vi.fn(),sessionActor:vi.fn(),notify:vi.fn()}));
+const mocks = vi.hoisted(() => ({draft:vi.fn(),recordCreated:vi.fn(),query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),catalogue:vi.fn(),pages:vi.fn(),resolveMember:vi.fn(),loadedMember:vi.fn(),restore:vi.fn(),sessionActor:vi.fn(),notify:vi.fn()}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
 vi.mock("../../assistant/service",()=>({assistantService:{pageDraft:mocks.draft,recordPageDraftCreated:mocks.recordCreated}}));
 vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({callbackUrl:"http://workbench.test"})}}));
@@ -17,7 +17,10 @@ vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://o
 vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class{run=mocks.run;session=mocks.session;request=mocks.request;}}));
 vi.mock("../../assistant/store",()=>({assistantStore:{turn:async()=>({})}}));
 vi.mock("../../assistant/execution-setting",()=>({resolveAgentExecution:mocks.resolve}));
-vi.mock("../../assistant/skills",()=>({readPageSkills:mocks.pages}));
+vi.mock("../../assistant/skills",()=>({
+  readAssistantSkillView: mocks.pages,
+  loadedPageSkillVersion: mocks.loadedMember,
+}));
 vi.mock("../../../utils/backend-client",()=>({backendGet:mocks.backend,buildBackendHeaders:(token:string,_x:unknown,_l:unknown,key:string,headers:object)=>({...headers,...(token?{tk:token}:{}),...(key?{"X-API-Key":key}:{})})}));
 vi.mock("../../agent-host/caller",()=>({restoreAgentCaller:mocks.restore,readAgentSessionActor:mocks.sessionActor}));
 vi.mock("../../agent-host/presentation",()=>({publishObjectChanged:mocks.notify}));
@@ -45,7 +48,7 @@ function agentQuestionId() {
 }
 beforeEach(()=>{
  vi.resetAllMocks();intents=new Map();automatic=false;human=null;
- current={id:uuid(3),sessionId:session.sessionId,status:"running",executionUserId:"V",channel:{agent:{providerId:"workbench",agentId:"agent"},actor:{id:uuid(4),domainId:"d"},authority:{classNames:[],executionKind:"live"},root:{session:root,runId:uuid(10)},requestedBy:null,userRecipient:{session:root,actor:{id:uuid(4),domainId:"d"}}},resolvedSkills:[{skill}]} as unknown as RuntimeRun;
+ current={id:uuid(3),sessionId:session.sessionId,status:"running",executionUserId:"V",channel:{agent:{providerId:"workbench",agentId:"agent"},actor:{id:uuid(4),domainId:"d"},authority:{classNames:[],executionKind:"live"},root:{session:root,runId:uuid(10)},requestedBy:null,userRecipient:{session:root,actor:{id:uuid(4),domainId:"d"}}},resolvedSkills:[{skill,digest:"sha256:" + "a".repeat(64)}]} as unknown as RuntimeRun;
  mocks.run.mockImplementation(async()=>({run:current}));
  mocks.resolve.mockImplementation(async()=>({credentials:{apiKey:"V-key"}}));
  mocks.backend.mockImplementation(async(_name:string,url:string,options:{headers:object})=>{
@@ -56,7 +59,10 @@ beforeEach(()=>{
    }
    return {text:JSON.stringify({success:true,data:{applicationId:"A",entry:{path:"/panels/A",renderer:"panels"},panelUses:[use]}})};
  });
- mocks.pages.mockResolvedValue({pageSkills:[{access:"domain-member",pageKey:"tasks",skill}]});
+ mocks.pages.mockResolvedValue({ resolveSource: mocks.resolveMember });
+ mocks.resolveMember.mockResolvedValue(skill);
+ mocks.loadedMember.mockImplementation((ref, loaded: RuntimeRun["resolvedSkills"]) =>
+   loaded.find(entry => JSON.stringify(entry.skill) === JSON.stringify(ref)) ?? null);
  mocks.panel.mockResolvedValue({id:"P",sdkVersion:"1.0.0",manifest:{state:{task:{kind:"object",objectType:"platform:ScheduledTask"}},slots:{run:{projectionId:"run",inputs:{task:{state:"task"}}},form:{projectionId:"form",inputs:{task:{state:"task"}}}},operations:[]}});
  mocks.projection.mockImplementation(async(_o:unknown,c:unknown,id:string)=>{expect(c).toBe(credentials);return {id,name:"Run now",componentId:id,binding:id==="run"?{kind:"PlatformOperation",id:"schedules.runNow"}:{kind:"PlatformObjectType",id:"platform:ScheduledTask"},inputs:{task:{kind:"object",objectType:"platform:ScheduledTask"}}};});
  mocks.catalogue.mockResolvedValue(new Map([["run",{}],["form",{operations:[{client:"@binding",name:"save",label:"Save",kind:"form.save",inputSchema:{}}]}]]));
@@ -616,4 +622,18 @@ it("runs a registered read using the reader and preview context without creating
   expect(ownerRead).toHaveBeenCalledOnce();
   expect(intents.size).toBe(0);
   expect(mocks.notify).not.toHaveBeenCalled();
+});
+
+it("resolves the actual panel-use member and refuses a run that only loaded a sibling", async () => {
+  mocks.resolveMember.mockResolvedValue({ ...skill, name: "other-panel-in-the-same-group" });
+  await expect(operatePanel(owner, credentials, current.id, action())).rejects.toMatchObject({ code: "FORBIDDEN" });
+  expect(mocks.pages).toHaveBeenCalledWith(owner.domainId, credentials);
+  expect(mocks.resolveMember).toHaveBeenCalledWith(
+    { access: "domain-member", pageKey: "tasks" },
+    { kind: "application-use", applicationId: "A", useId: "tasks" }, { id: use.panelId },
+  );
+  expect(mocks.loadedMember).toHaveBeenCalledWith(
+    { ...skill, name: "other-panel-in-the-same-group" }, current.resolvedSkills,
+  );
+  expect(ownerWrites()).toHaveLength(0);
 });

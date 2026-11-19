@@ -17,7 +17,7 @@ import {
 import { panelOperationImpactSchema } from "@ontomato/contracts/panel-operations";
 import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import { projectionOperations, projectionPorts } from "@ontomato/contracts/panel-projection";
-import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
+import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
 import { environment } from "../../config/environment";
 import { assistantService } from "../assistant/service";
@@ -27,7 +27,7 @@ import { HttpError } from "../../utils/errors";
 import { buildBackendHeaders } from "../../utils/backend-client";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { credentialsForRun, runForOwner } from "../assistant/execution";
-import { readPageSkills } from "../assistant/skills";
+import { loadedPageSkillVersion, readAssistantSkillView } from "../assistant/skills";
 import type { AssistantOwner } from "../assistant/store";
 import { restoreAgentCaller, readAgentSessionActor } from "../agent-host/caller";
 import { readCurrentPanelRecord, readCurrentProjectionRecord } from "./current";
@@ -49,11 +49,14 @@ type ReadableAgentIntent = Extract<AgentRecord, { intent: unknown }>["intent"];
 
 async function admitted(owner: AssistantOwner, credentials: AssistantCredentials, run: PanelRun, ref: PanelUseRef, operationId: string) {
   const use = await requirePanelUse(credentials, ref);
-  const pages = await readPageSkills(credentials);
-  const mapping = pages.pageSkills.find(mapping => "permissionCode" in use.access
-    ? "permissionCode" in mapping && mapping.permissionCode === use.access.permissionCode
-    : "access" in mapping && mapping.pageKey === use.pageKey);
-  if (!mapping || !run.resolvedSkills.some(entry => runtimeSkillKey(entry.skill) === runtimeSkillKey(mapping.skill)))
+  const view = await readAssistantSkillView(owner.domainId, credentials);
+  const entrance: PageSkillEntrance = "permissionCode" in use.access
+    ? { permissionCode: use.access.permissionCode, pageKey: use.pageKey }
+    : { access: "domain-member", pageKey: use.pageKey };
+  const skill = await view.resolveSource(entrance, {
+    kind: "application-use", applicationId: ref.applicationId, useId: use.id,
+  }, { id: use.panelId });
+  if (!skill || !loadedPageSkillVersion(skill, run.resolvedSkills))
     throw new HttpError(403,"This run does not have this panel's skill","FORBIDDEN");
   return writeOperation(await declaredOperation(owner, credentials, use, operationId));
 }
