@@ -11,7 +11,7 @@ import {
 } from "@ontomato/contracts/platform-object-types";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import {
+import { ignoreChanges,
   inside,
   installPlatform,
   leaveFrame,
@@ -99,7 +99,7 @@ it("renders ObjectRelations grouped by relation kind with distinct statuses and 
 
   installPlatform(hostWith([relProj]));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
   writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
@@ -243,7 +243,7 @@ it("supports dynamic type queries, status separation, search/paging reset and fu
 
   installPlatform(hostWith([pickerProj]));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
   writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
@@ -404,7 +404,7 @@ it("switches declared scalar panel state with SegmentedControl (unbound in catal
 
   installPlatform(hostWith([]));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
   writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 

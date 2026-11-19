@@ -3,7 +3,7 @@ import { nextTick, ref } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import {
+import { ignoreChanges,
   inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
@@ -105,7 +105,7 @@ it("renders multi-column ObjectList with status tags, text search, count, separa
 
   installPlatform(hostWith(projections));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
   writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
@@ -237,7 +237,7 @@ it("renders faceted count tabs, escaped highlights, fallback-to-first selection,
 
   installPlatform(hostWith(projections));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
   writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
@@ -375,7 +375,7 @@ it("supports server-side pagination, submit-mode filters resetting to page 1, re
 
   installPlatform(hostWith(projections));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
   writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
@@ -468,7 +468,7 @@ it("fails visibly when query features are enabled on a list-only adapter", async
 
   installPlatform(hostWith(projections));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
   writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 

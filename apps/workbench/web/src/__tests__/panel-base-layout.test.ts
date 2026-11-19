@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ref } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, writePanelDocument } from "./panel-frame";
+import { ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, writePanelDocument } from "./panel-frame";
 
 /*
  * A panel's own HTML lays out its page with the SDK's layouts and draws a graph with its canvas, through the platform's
@@ -36,7 +36,7 @@ afterEach(() => {
 it("lays out the panel's HTML and draws its graph from the panel's own values, ready when the panel first draws", async () => {
   installPlatform(nothingAt);
   const frame = panelFrame();
-  platformPanelHost(application, use).frame(frame, registered(application, use, panel), true);
+  platformPanelHost(application, use, ignoreChanges).frame(frame, registered(application, use, panel), true);
   writePanelDocument(registered(application, use, panel), `/applications/${application}/layout`, {});
   inside(frame);
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");

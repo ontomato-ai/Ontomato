@@ -4,7 +4,7 @@ import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { IMPORT_SKILL } from "@ontomato/contracts/panel-client-requests";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import {
+import { ignoreChanges,
   inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
@@ -155,7 +155,7 @@ it("shows format rules dialog, rejects non-zip files, uploads multipart FormData
   }));
 
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
   writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 

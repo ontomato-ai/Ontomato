@@ -3,7 +3,7 @@ import { platformPanelHost } from "../../../../../packages/platform-web/src/pane
 import { contextTransport } from "../../../../../packages/apps-sdk/src/context";
 import { connectAppContext } from "../../../../../packages/apps-sdk/src/hosted-context";
 import { mountPanel } from "../../../../../packages/apps-sdk/src/panel/mount";
-import {
+import { ignoreChanges,
   READER,
   SCHEDULED_TASK,
   inside,
@@ -61,7 +61,7 @@ describe("a panel frame and the platform's message bridge", () => {
     const sent = installPlatform(answer);
     const frame = panelFrame();
     // B's page shows Q: B's panel host registers the frame it draws, and writes Q opened at one task into it.
-    platformPanelHost("app-panels-trial-b", useOfQ).frame(frame, registered("app-panels-trial-b", useOfQ, panelQ), true);
+    platformPanelHost("app-panels-trial-b", useOfQ, ignoreChanges).frame(frame, registered("app-panels-trial-b", useOfQ, panelQ), true);
     writePanelDocument(registered("app-panels-trial-b", useOfQ, panelQ), "/applications/app-panels-trial-b/summary", {
       selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id },
     });
@@ -104,20 +104,20 @@ describe("a panel frame and the platform's message bridge", () => {
     expect(sent).toEqual([]);
 
     // The same frame, once A's panel host has drawn it.
-    platformPanelHost("app-panels-trial-a", useOfP).frame(frame, registered("app-panels-trial-a", useOfP, panelQ), true);
+    platformPanelHost("app-panels-trial-a", useOfP, ignoreChanges).frame(frame, registered("app-panels-trial-a", useOfP, panelQ), true);
     expect(await connectWithin(5000)).toBe("connected");
   });
 
   it("stops answering for one application once the frame is another's", { timeout: 15000 }, async () => {
     const sent = installPlatform(answer);
     const frame = panelFrame();
-    platformPanelHost("app-panels-trial-b", useOfQ).frame(frame, registered("app-panels-trial-b", useOfQ, panelQ), true);
+    platformPanelHost("app-panels-trial-b", useOfQ, ignoreChanges).frame(frame, registered("app-panels-trial-b", useOfQ, panelQ), true);
     inside(frame);
     const asB = contextTransport(await connectAppContext());
     expect(await (await asB.request(`/product-projections/${summary.id}`, {}, "")).json()).toEqual({ projection: summary });
 
     // The frame is now A's: the port B's page was given refuses, and nothing more goes out for it.
-    platformPanelHost("app-panels-trial-a", useOfP).frame(frame, registered("app-panels-trial-a", useOfP, panelQ), true);
+    platformPanelHost("app-panels-trial-a", useOfP, ignoreChanges).frame(frame, registered("app-panels-trial-a", useOfP, panelQ), true);
     await expect(asB.request(`/product-projections/${summary.id}`, {}, "")).rejects.toThrow("no longer registered");
     expect(sent).toHaveLength(1);
 

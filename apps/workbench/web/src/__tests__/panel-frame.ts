@@ -167,6 +167,9 @@ export function panelUse(id: string, pageKey: string, panelId: string, path: str
 }
 
 /** What a panel application's host shows for one use relation: the relation and the panel's current record. */
+/** What a frame registered outside any page does with a change its operations report: no page hears of it. */
+export const ignoreChanges = () => {};
+
 export const registered = (applicationId: string, use: ApplicationPanelUse, panel: ProductPanel) =>
   ({ kind: "registered", applicationId, use, panel }) as const;
 

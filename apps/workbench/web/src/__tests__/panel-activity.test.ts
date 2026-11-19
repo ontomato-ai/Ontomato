@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import {
+import { ignoreChanges,
   SCHEDULED_TASK, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, projections,
   registered, task, writePanelDocument, type Sent,
 } from "./panel-frame";
@@ -30,7 +30,7 @@ async function opened() {
     return nothingAt(request);
   });
   const frame = panelFrame();
-  platformPanelHost("app-panels-trial-b", use).frame(frame, registered("app-panels-trial-b", use, panel), true);
+  platformPanelHost("app-panels-trial-b", use, ignoreChanges).frame(frame, registered("app-panels-trial-b", use, panel), true);
   writePanelDocument(registered("app-panels-trial-b", use, panel), "/applications/app-panels-trial-b/summary", { selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id } });
   inside(frame);
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");

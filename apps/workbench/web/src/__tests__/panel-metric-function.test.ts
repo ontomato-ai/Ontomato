@@ -4,7 +4,7 @@ import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { METRIC_VIEW } from "@ontomato/contracts/panel-client-requests";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import {
+import { ignoreChanges,
   inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
@@ -89,7 +89,7 @@ async function open() {
   const sent = installPlatform(answer);
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
-  platformPanelHost("app-metric", use).frame(frame, registered("app-metric", use, panel), true);
+  platformPanelHost("app-metric", use, ignoreChanges).frame(frame, registered("app-metric", use, panel), true);
   writePanelDocument(registered("app-metric", use, panel), use.path, {});
   inside(frame);
   return { ...(await mountPanel(panelOf("list", "form"))), sent };

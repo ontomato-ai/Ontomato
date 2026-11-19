@@ -15,7 +15,7 @@ import {
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import type { GraphCanvasEdge, GraphCanvasNode, GraphCanvasPoint } from "@ontomato/foundation-ui/graph/g6";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import {
+import { ignoreChanges,
   inside,
   installPlatform,
   leaveFrame,
@@ -249,7 +249,7 @@ it("renders type mode in four-layer columns with count statuses, internal layer 
 
   installPlatform(hostWith(projections));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
   writePanelDocument(registered("app-test", use, panel), use.path, { mode: "type" });
   inside(frame);
 
@@ -376,7 +376,7 @@ it("runs instance mode with default start, incremental neighbor expand, full obj
 
   installPlatform(hostWith(projections));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
   writePanelDocument(registered("app-test", use, panel), use.path, { mode: "instance" });
   inside(frame);
 
@@ -531,7 +531,7 @@ it("separates no-neighbors, owner-refused and read-failed states without collaps
 
   installPlatform(hostWith(projections));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
   writePanelDocument(registered("app-test", use, panel), use.path, { mode: "instance" });
   inside(frame);
 

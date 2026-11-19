@@ -5,7 +5,7 @@ import { AGENT_DEFINITION, DELETE_AGENT, RUN_NOW } from "@ontomato/contracts/pan
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, type Sent } from "./panel-frame";
+import { ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, type Sent } from "./panel-frame";
 
 /*
  * A person's confirmation before an operation that cannot be undone (shared parts design U9, §3): the frame has prepared
@@ -102,7 +102,7 @@ function connect() {
 function shownFrame() {
   const sent = installPlatform(answer);
   const frame = panelFrame();
-  const registration = platformPanelHost("app-agents", use).frame(frame, registered("app-agents", use, panel), true);
+  const registration = platformPanelHost("app-agents", use, ignoreChanges).frame(frame, registered("app-agents", use, panel), true);
   inside(frame);
   const invoke = connect();
   const read = (id: string) => invoke("request", { path: `/product-projections/${id}`, service: "", method: "GET", headers: [], body: null });

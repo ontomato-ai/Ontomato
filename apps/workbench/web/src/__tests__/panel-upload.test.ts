@@ -4,7 +4,7 @@ import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { IMPORT_SKILL } from "@ontomato/contracts/panel-client-requests";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { READER, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, type Sent } from "./panel-frame";
+import { ignoreChanges, READER, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, type Sent } from "./panel-frame";
 
 /*
  * A panel's upload (shared parts design, U11) through the platform's real host and bridge: the frame hands the bridge
@@ -70,7 +70,7 @@ describe("a panel's upload", () => {
   it("goes to the declared owner path as multipart whose boundary only the browser writes", async () => {
     installPlatform(answer);
     const frame = panelFrame();
-    platformPanelHost("app-skills", use).frame(frame, registered("app-skills", use, panel), true);
+    platformPanelHost("app-skills", use, ignoreChanges).frame(frame, registered("app-skills", use, panel), true);
     inside(frame);
     const invoke = connect();
     await invoke("request", { path: `/product-projections/${importProjection.id}`, service: "", method: "GET", headers: [], body: null });

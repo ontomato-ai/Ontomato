@@ -3,7 +3,7 @@ import { nextTick } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import {
+import { ignoreChanges,
   SCHEDULED_TASK, inside, inspectionTaskForm, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord,
   panelUse, projections, registered, task, writePanelDocument, type Sent,
 } from "./panel-frame";
@@ -44,7 +44,7 @@ function opened() {
     return nothingAt(request);
   });
   const frame = panelFrame();
-  platformPanelHost("app-panels-trial-a", use).frame(frame, registered("app-panels-trial-a", use, panel), true);
+  platformPanelHost("app-panels-trial-a", use, ignoreChanges).frame(frame, registered("app-panels-trial-a", use, panel), true);
   writePanelDocument(registered("app-panels-trial-a", use, panel), "/applications/app-panels-trial-a/tasks", { selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id } });
   inside(frame);
   return {

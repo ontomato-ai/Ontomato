@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import { contextTransport } from "../../../../../packages/apps-sdk/src/context";
 import { mountPanel } from "../../../../../packages/apps-sdk/src/panel/mount";
-import {
+import { ignoreChanges,
   READER,
   SCHEDULED_TASK,
   inside,
@@ -68,7 +68,7 @@ describe("what a panel's frame may ask the platform for", () => {
     const sent = installPlatform(answer);
     const frame = panelFrame();
     // A's page shows P: A's panel host registers the frame with P's current record.
-    platformPanelHost("app-panels-trial-a", useOfP).frame(frame, registered("app-panels-trial-a", useOfP, panelP), true);
+    platformPanelHost("app-panels-trial-a", useOfP, ignoreChanges).frame(frame, registered("app-panels-trial-a", useOfP, panelP), true);
     writePanelDocument(registered("app-panels-trial-a", useOfP, panelP), "/applications/app-panels-trial-a/tasks", {
       selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id },
     });
@@ -146,7 +146,7 @@ describe("what a panel's frame may ask the platform for", () => {
   it("records the object a create draft of its own page created, and no other draft's", { timeout: 20000 }, async () => {
     const sent = installPlatform(answer);
     const frame = panelFrame();
-    platformPanelHost("app-panels-trial-a", useOfP).frame(frame, registered("app-panels-trial-a", useOfP, panelP), true);
+    platformPanelHost("app-panels-trial-a", useOfP, ignoreChanges).frame(frame, registered("app-panels-trial-a", useOfP, panelP), true);
     writePanelDocument(registered("app-panels-trial-a", useOfP, panelP), "/applications/app-panels-trial-a/tasks", {});
     inside(frame);
     const { appContext } = await mountPanel(panelOf());
