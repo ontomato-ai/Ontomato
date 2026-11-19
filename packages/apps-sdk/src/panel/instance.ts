@@ -44,6 +44,11 @@ export interface PanelInstanceOptions {
   operations: PanelHumanOperations;
   /** The host's confirmation and single dispatch of a prepared write. */
   confirmOperation: ConfirmPanelOperation;
+  /**
+   * What the objects and types a successful write reports changed are read again by: each changed object, by default;
+   * a directly rendered panel reads again the named data they concern.
+   */
+  affected?: (affected: { objects: PanelObjectIdentity[]; objectTypes: string[] }) => void;
   reportDraftError?: (reason: unknown) => void;
 }
 
@@ -117,12 +122,12 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     for (const listener of objectListeners) listener(object);
   };
   const registrations = shallowRef<readonly PanelProjectionRegistration[]>([]);
+  const reportAffected = options.affected ?? ((affected) => { for (const object of affected.objects) objectChanged(object); });
   async function writeOperation(operationId: string, invocation: PanelWriteInvocation) {
     const result = await options.confirmOperation(await options.operations.prepare(operationId, invocation));
     // Only the objects the owner reports a successful write changed; a refusal, a failure or an unknown result changes none.
     const outcome = result.decision === "confirm" && result.response.kind === "dispatched" ? result.response.outcome : null;
-    if (outcome?.kind === "success" || outcome?.kind === "batch")
-      for (const object of outcome.affected?.objects ?? []) objectChanged(object);
+    if ((outcome?.kind === "success" || outcome?.kind === "batch") && outcome.affected) reportAffected(outcome.affected);
     return result;
   }
   const operations = computed(() => panelOperations(manifest, registrations.value, state, forms, options.text, writeOperation));

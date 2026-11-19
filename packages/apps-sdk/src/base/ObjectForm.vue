@@ -2,15 +2,16 @@
 import { computed, onMounted, provide, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
-import { ElEmpty } from "element-plus/es/components/empty/index";
 import { ElForm } from "element-plus/es/components/form/index";
-import { ElSkeleton } from "element-plus/es/components/skeleton/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import { slotState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
 import { adapterPart, PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
 import { changedPaths, fieldAt, movedPath, valueAt, withValueAt } from "../panel/form-values";
+import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
+import { useMember } from "../panel/member";
+import { memberFormSource, MemberDataUnavailable, type FormSource } from "../panel/member-forms";
 import { formControlsKey, rowControlKey, rowControlsOf } from "./form-controls";
 import FormFieldControl from "./FormFieldControl.vue";
 
@@ -51,7 +52,10 @@ const { t } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
 const objectType = slot.projection.binding.id;
-const forms = adapterPart(objectType, "forms");
+const member = useMember();
+// A directly rendered member's form is read by the instance and saved through its owner's operation; a frame's, by
+// the bound type's resource module.
+const forms: FormSource = member ? memberFormSource(member, panel.instance) : adapterPart(objectType, "forms");
 
 const state = computed(() => slotState(panel.manifest, slot.slot, props.inputName));
 const key = computed(() => selectedKey(panel.instance.state.values.value[state.value]));
@@ -345,18 +349,28 @@ async function write(): Promise<unknown> {
   }
 }
 
+/**
+ * The form's state, in the product's one presentation: the owner's form once read, a selection needed first, loading,
+ * no permission, or the reason it could not be read.
+ */
+const shown = computed<DataStateResult<PanelFormDescription>>(() => {
+  const reason = failure.value;
+  if (reason) return reason instanceof MemberDataUnavailable && reason.state.status !== "error" ? reason.state : { status: "error", message: reason.message };
+  if (loading.value) return { status: "loading" };
+  return description.value ? { status: "ready", value: description.value } : { status: "awaiting" };
+});
+const labels = computed(() => ({ empty: t("platform.dataEmpty"), forbidden: t("platform.dataForbidden"), awaiting: t("platform.dataAwaiting") }));
+
 /** The fields a received draft changed, by the owner's labels, in the form's order — those other slots draw included. */
 const changedLabels = computed(() => fields.value.filter((field) => changed.value.has(field.path)).map((field) => field.label).join(", "));
 </script>
 
 <template>
   <div class="sdk-owner-form">
-    <p v-if="failure" role="alert">{{ failure.message }}</p>
-    <el-skeleton v-else-if="loading" :rows="4" animated></el-skeleton>
-    <el-empty v-else-if="!description" :image-size="48"></el-empty>
+    <data-state :result="shown" :labels="labels">
     <!-- The panel frame is sandboxed without allow-forms, so the browser drops a native form submission before any
          submit handler runs: the reader's save is the button's own click. -->
-    <el-form v-else label-position="top">
+    <el-form label-position="top">
       <form-field-control v-for="field in drawn" :key="field.path" :field="field" :path="field.path"></form-field-control>
       <p v-if="changed.size" class="sdk-owner-form-changed" role="status">
         {{ t("platform.panelDraftChanged", { fields: changedLabels }) }}
@@ -367,6 +381,7 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
         <el-button type="primary" :disabled="!canSettle" :loading="saving" @click="saveFromForm">{{ t("platform.save") }}</el-button>
       </div>
     </el-form>
+    </data-state>
   </div>
 </template>
 

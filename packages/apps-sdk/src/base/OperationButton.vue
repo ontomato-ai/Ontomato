@@ -9,6 +9,8 @@ import { slotState, usePanelContext, useProjectionSlot } from "../panel/context"
 import type { PanelOperationDescriptor } from "../panel/human-operations";
 import { readOperationInput } from "../panel/read-operation-input";
 import OperationResult from "./OperationResult.vue";
+import { DataState } from "@ontomato/foundation-ui/data-state";
+import { useMember, useMemberData } from "../panel/member";
 import { stateObject, stateObjects } from "../panel/state";
 
 /**
@@ -40,7 +42,14 @@ const slot = useProjectionSlot();
 const panel = usePanelContext();
 const running = ref(false);
 const failure = shallowRef<Error | null>(null);
-const descriptor = shallowRef<PanelOperationDescriptor | null>(null);
+const member = useMember();
+/** In a directly rendered panel, the owner's description is the member's `operation` datum, read by the instance. */
+const operationData = member ? useMemberData("operation") : null;
+const frameDescriptor = shallowRef<PanelOperationDescriptor | null>(null);
+const descriptor = computed(() => {
+  if (!operationData) return frameDescriptor.value;
+  return operationData.value.status === "ready" ? operationData.value.value as PanelOperationDescriptor : null;
+});
 const read = shallowRef<PanelReadOperationResult | null>(null);
 const receipt = shallowRef<PanelHumanOperationDispatchResponse | null>(null);
 
@@ -60,7 +69,7 @@ const fail = (reason: unknown) => {
   failure.value = reason instanceof Error ? reason : new Error(String(reason));
 };
 onMounted(() => {
-  panel.instance.describeOperation(operationId.value).then((described) => { descriptor.value = described; }, fail);
+  if (!operationData) panel.instance.describeOperation(operationId.value).then((described) => { frameDescriptor.value = described; }, fail);
 });
 
 const values = computed(() => panel.instance.state.values.value);
@@ -117,6 +126,8 @@ function keepUnchanged(response: PanelHumanOperationDispatchResponse) {
     !changed.has(JSON.stringify([className, primaryKey]))));
 }
 
+const labels = computed(() => ({ empty: t("platform.dataEmpty"), forbidden: t("platform.dataForbidden"), awaiting: t("platform.dataAwaiting") }));
+
 type Outcome = NonNullable<Extract<PanelHumanOperationDispatchResponse, { kind: "dispatched" }>["outcome"]>;
 type Single = Exclude<Outcome, { kind: "batch" }>;
 /** One result in words: the owner's own message where it gave one. */
@@ -134,7 +145,8 @@ const done = computed(() => items.value.filter((item) => item.outcome.kind === "
 
 <template>
   <div class="sdk-operation-button">
-    <el-button :type="type" :loading="running" :disabled="!ready" @click="run">{{ published.label }}</el-button>
+    <data-state v-if="operationData && operationData.status !== 'ready'" :result="operationData" :labels="labels"></data-state>
+    <el-button v-else :type="type" :loading="running" :disabled="!ready" @click="run">{{ published.label }}</el-button>
     <p v-if="failure" role="alert">{{ failure.message }}</p>
     <operation-result v-if="read" :result="read"></operation-result>
     <template v-if="receipt">
