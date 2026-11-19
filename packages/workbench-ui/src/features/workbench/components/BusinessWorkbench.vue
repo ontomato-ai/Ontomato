@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
-import { useRoute, useRouter, type RouteLocationRaw } from "vue-router";
+import { isNavigationFailure, NavigationFailureType, useRoute, useRouter, type RouteLocationRaw } from "vue-router";
 import {
   AgentShell, useAgentNav, useConversationDisplay, useSessionRunFeed,
   type DisplayHistory, type DisplayPage, type DisplayView, type PageContext, type PageSelection,
@@ -114,10 +114,9 @@ async function serialize(page: DisplayPage | null, view: DisplayView, history: D
       : atSettings.value
         ? { name: routes.chat.name, query: page ? { page: page.address } : {} }
         : { query: page ? { ...route.query, page: page.address } : rest };
-  const target = router.resolve(to);
-  if (target.fullPath === route.fullPath) return true;
-  const failure = await (history === "push" || target.path !== route.path ? router.push(to) : router.replace(to));
-  return !failure;
+  const failure = await (history === "push" || router.resolve(to).path !== route.path ? router.push(to) : router.replace(to));
+  // The address already saying this is the router's duplicated navigation, however the link that wrote it encoded it.
+  return !failure || isNavigationFailure(failure, NavigationFailureType.duplicated);
 }
 
 /** Leaving a native page's draft asks first, by the platform's own question; a panel answers for itself. */

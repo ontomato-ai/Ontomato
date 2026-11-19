@@ -7,17 +7,15 @@ import { dashboardGroupsSchema } from "@ontomato/contracts/dashboard";
 import { HttpError } from "../../utils/errors";
 import { randomUUID } from "node:crypto";
 import { t, tApp } from "../../i18n";
-import pg from "pg";
+import type { PoolClient } from "pg";
 
 import { createLogger } from "../../logging/logger";
 
 import { getPostgresPool, qualifiedTable } from "../../infrastructure/postgres";
+import { transaction } from "../../infrastructure/postgres-transaction";
+import { deleteChartProjectionsForDashboards } from "./projection-references";
 
 const logger = createLogger("dashboard-store");
-
-function getPool(): pg.Pool {
-  return getPostgresPool();
-}
 
 function readGroups(groups: unknown): DashboardGroup[] {
   const result = dashboardGroupsSchema.safeParse(groups);
@@ -31,7 +29,7 @@ export async function listDashboards(
   ownerId: string,
   domainId: string
 ): Promise<DashboardListItem[]> {
-  const pool = getPool();
+  const pool = getPostgresPool();
   const result = await pool.query(
     `SELECT id, name, created_at, updated_at
      FROM ${qualifiedTable("dashboards")}
@@ -50,11 +48,11 @@ export async function listDashboards(
 export async function getDashboard(
   ownerId: string,
   domainId: string,
-  id: string
+  id: string,
+  lock?: PoolClient,
 ): Promise<DashboardDetail | null> {
-  const pool = getPool();
-  const result = await pool.query(
-    `SELECT * FROM ${qualifiedTable("dashboards")} WHERE owner_id = $1 AND id = $2 AND domain_id = $3`,
+  const result = await (lock ?? getPostgresPool()).query(
+    `SELECT * FROM ${qualifiedTable("dashboards")} WHERE owner_id = $1 AND id = $2 AND domain_id = $3${lock ? " FOR UPDATE" : ""}`,
     [ownerId, id, domainId]
   );
   if (result.rows.length === 0) return null;
@@ -81,7 +79,7 @@ export async function createDashboard(params: {
   groups?: DashboardGroup[];
   id?: string;
 }) {
-  const pool = getPool();
+  const pool = getPostgresPool();
   const now = Date.now();
   const detail: DashboardDetail = {
     id: String(params.id || randomUUID()),
@@ -113,10 +111,9 @@ export async function createDashboard(params: {
   return detail;
 }
 
-export async function saveDashboard(ownerId: string, domainId: string, detail: DashboardDetail) {
-  const pool = getPool();
+export async function saveDashboard(ownerId: string, domainId: string, detail: DashboardDetail, client: Pick<PoolClient, "query"> = getPostgresPool()) {
   detail.updatedAt = Date.now();
-  const result = await pool.query(
+  const result = await client.query(
     `UPDATE ${qualifiedTable("dashboards")}
      SET name = $1, groups = $2, source = $3, updated_at = $4
      WHERE owner_id = $5 AND id = $6 AND domain_id = $7`,
@@ -136,12 +133,17 @@ export async function saveDashboard(ownerId: string, domainId: string, detail: D
 }
 
 export async function deleteUserDashboards(userId: string): Promise<void> {
-  await getPostgresPool().query(`DELETE FROM ${qualifiedTable("dashboards")} WHERE owner_id = $1 AND domain_id <> ''`, [userId]);
+  await transaction(async client => {
+    const { rows } = await client.query<{ domainId: string; dashboardId: string }>(
+      `DELETE FROM ${qualifiedTable("dashboards")} WHERE owner_id = $1 AND domain_id <> ''
+       RETURNING domain_id AS "domainId", id AS "dashboardId"`, [userId],
+    );
+    await deleteChartProjectionsForDashboards(client, rows);
+  });
 }
 
-export async function deleteDashboard(ownerId: string, domainId: string, id: string) {
-  const pool = getPool();
-  await pool.query(
+export async function deleteDashboard(ownerId: string, domainId: string, id: string, client: PoolClient) {
+  await client.query(
     `DELETE FROM ${qualifiedTable("dashboards")} WHERE owner_id = $1 AND id = $2 AND domain_id = $3`,
     [ownerId, id, domainId]
   );
