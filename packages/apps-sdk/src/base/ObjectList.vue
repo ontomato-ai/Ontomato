@@ -2,8 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { PanelChildObjectIdentity, PanelObjectIdentity, PanelStateValue } from "@ontomato/contracts/panel-manifest";
-import { ElEmpty } from "element-plus/es/components/empty/index";
-import { ElSkeleton } from "element-plus/es/components/skeleton/index";
+import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import {
   slotInputState,
   slotOutputState,
@@ -11,6 +10,7 @@ import {
   useProjectionObjects,
   useProjectionSlot,
 } from "../panel/context";
+import { useMember, useMemberData } from "../panel/member";
 import {
   adapterPart,
   type PlatformFieldReference,
@@ -27,9 +27,10 @@ import { textHighlightSegments } from "./text-highlight";
 type ObjectListSelection = ObjectListRef | PanelChildObjectIdentity;
 
 /**
- * Platform objects of the bound type as an interactive list or multi-column table. The resource adapter owns all query
- * semantics (search, filtering, facet counts, highlight ranges and pagination); this component only provides UI
- * interaction and keeps the viewing selection (`selected`) separate from explicit multi-selection (`checked`).
+ * Platform objects of the bound type as an interactive list or multi-column table. In a directly rendered panel the
+ * instance supplies its `rows` datum through the host read port; in a panel frame the resource adapter owns all query
+ * semantics (search, filtering, facet counts, highlight ranges and pagination). This component provides UI interaction
+ * and keeps the viewing selection (`selected`) separate from explicit multi-selection (`checked`).
  */
 const props = withDefaults(
   defineProps<{
@@ -121,18 +122,27 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
-const objects = useProjectionObjects();
 const objectType = slot.projection.binding.id;
+const member = useMember();
+/** In a directly rendered panel, the list's items are the member's `rows` datum, read by the instance. */
+const rowsData = member ? useMemberData("rows") : null;
+const objects = rowsData ? null : useProjectionObjects();
 
-const rows = shallowRef<readonly PlatformObjectRecord[]>([]);
-const total = ref(0);
+const frameRows = shallowRef<readonly PlatformObjectRecord[]>([]);
+const frameTotal = ref(0);
 const resultFieldLabels = shallowRef<Readonly<Record<string, string>>>({});
 const dynamicFacets = shallowRef<readonly PlatformObjectFacet[]>([]);
 const nextCursor = ref<string | undefined>(undefined);
-const loading = ref(true);
-const failure = shallowRef<Error | null>(null);
+const frameLoading = ref(true);
+const frameFailure = shallowRef<Error | null>(null);
 const queryStatus = ref<PlatformGraphStatus>("ok");
 const queryReason = ref<string | undefined>(undefined);
+
+const rows = computed<readonly PlatformObjectRecord[]>(() => {
+  if (!rowsData) return frameRows.value;
+  return rowsData.value.status === "ready" ? (rowsData.value.value as unknown as readonly PlatformObjectRecord[]) : [];
+});
+const total = computed(() => (rowsData ? rows.value.length : frameTotal.value));
 
 const currentPage = ref(1);
 const cursorHistory = ref<(string | undefined)[]>([undefined]);
@@ -466,24 +476,36 @@ function buildQuery(): PlatformObjectQuery {
 
 let requestSeq = 0;
 
+function applyFallback(items: readonly PlatformObjectRecord[], defaultPrimaryKey?: string) {
+  if (!props.fallbackToFirst) return;
+  const stillVisible = chosenIdentity.value !== null && items.some((item) => rowIdentityKey(item) === chosenIdentity.value);
+  if (stillVisible) return;
+  const preferred = defaultPrimaryKey ? items.find((item) => item.primaryKey === defaultPrimaryKey) : undefined;
+  const fallback = preferred ?? items[0];
+  const next = fallback ? rowSelectionValue(fallback) : null;
+  if (selectionIdentity(next) !== chosenIdentity.value) setSelected(next);
+}
+
 function load() {
+  if (!objects) return;
   const seq = ++requestSeq;
-  failure.value = null;
+  frameFailure.value = null;
   queryStatus.value = "ok";
   queryReason.value = undefined;
   if ((dynamicTypeMode.value && !activeType.value) || (childMode.value && !parentRef.value)) {
-    rows.value = [];
-    total.value = 0;
+    frameRows.value = [];
+    frameTotal.value = 0;
+    resultFieldLabels.value = {};
     nextCursor.value = undefined;
-    loading.value = false;
+    frameLoading.value = false;
     return;
   }
   if (requiresQuery.value) {
     try {
       adapterPart(objectType, "query");
     } catch (reason: unknown) {
-      failure.value = reason instanceof Error ? reason : new Error(String(reason));
-      loading.value = false;
+      frameFailure.value = reason instanceof Error ? reason : new Error(String(reason));
+      frameLoading.value = false;
       return;
     }
   }
@@ -494,33 +516,47 @@ function load() {
       const status = result.status ?? "ok";
       queryStatus.value = status;
       queryReason.value = result.reason;
-      rows.value = status === "ok" ? result.items : [];
-      total.value = status === "ok" ? result.total : 0;
+      frameRows.value = status === "ok" ? result.items : [];
+      frameTotal.value = status === "ok" ? result.total : 0;
       resultFieldLabels.value = status === "ok" ? (result.fieldLabels ?? {}) : {};
       if (result.facets) dynamicFacets.value = result.facets;
       nextCursor.value = status === "ok" ? result.nextCursor : undefined;
-      loading.value = false;
+      frameLoading.value = false;
       emit("query", activeQuery, result);
-
-      if (props.fallbackToFirst && status === "ok") {
-        const stillVisible = chosenIdentity.value !== null && result.items.some((item) => rowIdentityKey(item) === chosenIdentity.value);
-        if (!stillVisible) {
-          const preferred = result.defaultPrimaryKey
-            ? result.items.find((item) => item.primaryKey === result.defaultPrimaryKey)
-            : undefined;
-          const fallback = preferred ?? result.items[0];
-          const next = fallback ? rowSelectionValue(fallback) : null;
-          if (selectionIdentity(next) !== chosenIdentity.value) setSelected(next);
-        }
-      }
+      if (status === "ok") applyFallback(result.items, result.defaultPrimaryKey);
     },
     (reason: unknown) => {
       if (seq !== requestSeq) return;
-      failure.value = reason instanceof Error ? reason : new Error(String(reason));
-      loading.value = false;
+      frameFailure.value = reason instanceof Error ? reason : new Error(String(reason));
+      frameLoading.value = false;
     },
   );
 }
+
+const isCountReady = computed(() =>
+  rowsData
+    ? rowsData.value.status === "ready" || rowsData.value.status === "empty"
+    : hasActiveType.value && queryStatus.value === "ok" && !frameLoading.value && !frameFailure.value,
+);
+
+const listResult = computed<DataStateResult<readonly PlatformObjectRecord[]>>(() => {
+  if (rowsData) {
+    if (rowsData.value.status === "ready") {
+      return rows.value.length ? { status: "ready", value: rows.value } : { status: "empty" };
+    }
+    return rowsData.value as DataStateResult<readonly PlatformObjectRecord[]>;
+  }
+  if (frameFailure.value) return { status: "error", message: frameFailure.value.message };
+  if (frameLoading.value) return { status: "loading" };
+  if (childMode.value && !parentRef.value) return { status: "awaiting" };
+  return rows.value.length ? { status: "ready", value: rows.value } : { status: "empty" };
+});
+
+const dataStateLabels = computed(() => ({
+  empty: props.emptyText ? panelText(props.emptyText) : t("platform.dataEmpty"),
+  forbidden: t("platform.dataForbidden"),
+  awaiting: t("platform.dataAwaiting"),
+}));
 
 function syncQueryToState() {
   const patch: Record<string, PanelStateValue> = {};
@@ -580,40 +616,63 @@ watch(
   { deep: true },
 );
 
-onMounted(load);
-watch(parentIdentity, () => {
-  if (!childMode.value) return;
-  resetPaging();
-  load();
-});
-watch(activeType, (next, prev) => {
-  if (next === prev) return;
-  draftSearch.value = "";
-  appliedSearch.value = "";
-  const defaults = Object.fromEntries(
-    (props.filters ?? [])
-      .filter((filter) => filter.defaultValue !== undefined)
-      .map((filter) => [filter.key, filter.defaultValue!]),
-  );
-  draftFilters.value = defaults;
-  appliedFilters.value = { ...defaults };
-  syncQueryToState();
-  dynamicFacets.value = [];
-  resultFieldLabels.value = {};
-  resetPaging();
-  rows.value = [];
-  total.value = 0;
-  nextCursor.value = undefined;
-  loading.value = Boolean(next);
-  load();
-});
-onBeforeUnmount(
-  panel.instance.onObjectChanged((object) => {
-    if (!object || object.objectType === objectType || (activeType.value && object.objectType === activeType.value)) {
-      load();
+if (rowsData) {
+  watch(rowsData, (state) => {
+    if (state.status === "empty") {
+      applyFallback([]);
+      return;
     }
-  }),
-);
+    if (state.status !== "ready") return;
+    const listed = rows.value;
+    const byType = new Map<string, { primaryKey: string; label: string }[]>();
+    for (const item of listed) {
+      const itemType = rowClassName(item);
+      let bucket = byType.get(itemType);
+      if (!bucket) {
+        bucket = [];
+        byType.set(itemType, bucket);
+      }
+      bucket.push(item);
+    }
+    for (const [itemType, items] of byType) panel.instance.nameObjects(itemType, items);
+    applyFallback(listed);
+  }, { immediate: true });
+} else {
+  onMounted(load);
+  watch(parentIdentity, () => {
+    if (!childMode.value) return;
+    resetPaging();
+    load();
+  });
+  watch(activeType, (next, prev) => {
+    if (next === prev) return;
+    draftSearch.value = "";
+    appliedSearch.value = "";
+    const defaults = Object.fromEntries(
+      (props.filters ?? [])
+        .filter((filter) => filter.defaultValue !== undefined)
+        .map((filter) => [filter.key, filter.defaultValue!]),
+    );
+    draftFilters.value = defaults;
+    appliedFilters.value = { ...defaults };
+    syncQueryToState();
+    dynamicFacets.value = [];
+    resultFieldLabels.value = {};
+    resetPaging();
+    frameRows.value = [];
+    frameTotal.value = 0;
+    nextCursor.value = undefined;
+    frameLoading.value = Boolean(next);
+    load();
+  });
+  onBeforeUnmount(
+    panel.instance.onObjectChanged((object) => {
+      if (!object || object.objectType === objectType || (activeType.value && object.objectType === activeType.value)) {
+        load();
+      }
+    }),
+  );
+}
 
 function resetPaging() {
   currentPage.value = 1;
@@ -779,7 +838,7 @@ watch(someVisibleChecked, () => {
       >
         {{ t("platform.listRefresh") }}
       </button>
-      <span v-if="showCount && hasActiveType && queryStatus === 'ok' && !loading && !failure" class="sdk-object-list-count" role="status">
+      <span v-if="showCount && isCountReady" class="sdk-object-list-count" role="status">
         {{ t("platform.listTotal", { count: total }) }}
       </span>
       <slot name="toolbar-actions"></slot>
@@ -808,13 +867,11 @@ watch(someVisibleChecked, () => {
       </div>
     </div>
 
-    <p v-if="failure" role="alert" class="sdk-object-list-error">{{ failure.message }}</p>
-    <p v-else-if="dynamicTypeMode && !activeType" class="sdk-object-list-status" data-status="no-type">
+    <p v-if="!rowsData && !frameFailure && dynamicTypeMode && !activeType" class="sdk-object-list-status" data-status="no-type">
       {{ emptyTypeText ? panel.t(emptyTypeText) : t("platform.listSelectTypePrompt") }}
     </p>
-    <el-skeleton v-else-if="loading" :rows="3" animated></el-skeleton>
     <p
-      v-else-if="queryStatus !== 'ok'"
+      v-else-if="!rowsData && !frameFailure && !frameLoading && queryStatus !== 'ok'"
       class="sdk-object-list-status"
       :data-status="queryStatus"
       :role="queryStatus === 'failed' ? 'alert' : 'status'"
@@ -822,9 +879,8 @@ watch(someVisibleChecked, () => {
       <span class="sdk-object-list-status-label">{{ queryStatusLabel }}</span>
       <span v-if="queryReason" class="sdk-object-list-status-reason">{{ queryReason }}</span>
     </p>
-    <el-empty v-else-if="!rows.length" :description="emptyText ? panel.t(emptyText) : undefined" :image-size="48"></el-empty>
-
-    <div v-else-if="isTable" class="sdk-object-list-table-wrap">
+    <data-state v-else :result="listResult" :labels="dataStateLabels">
+    <div v-if="isTable" class="sdk-object-list-table-wrap">
       <table class="sdk-object-list-table">
         <thead>
           <tr>
@@ -966,8 +1022,9 @@ watch(someVisibleChecked, () => {
         </button>
       </li>
     </ul>
+    </data-state>
 
-    <nav v-if="showPagination && !loading && !failure" class="sdk-object-list-pagination">
+    <nav v-if="showPagination && !rowsData && !frameLoading && !frameFailure" class="sdk-object-list-pagination">
       <button
         type="button"
         class="sdk-object-list-btn sdk-object-list-prev"
@@ -1233,10 +1290,6 @@ watch(someVisibleChecked, () => {
   gap: 8px;
   justify-content: flex-end;
   padding-top: 4px;
-}
-.sdk-object-list-error {
-  color: var(--el-color-danger);
-  margin: 0;
 }
 .sdk-object-list-status {
   align-items: center;
