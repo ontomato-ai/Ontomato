@@ -92,6 +92,46 @@
       ],
       "additionalProperties": false
     },
+    "historicalRun": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "$ref": "#/definitions/hostRun/properties/sessionId"
+        },
+        "runId": {
+          "$ref": "#/definitions/hostRun/properties/sessionId"
+        },
+        "hostId": {
+          "$ref": "#/definitions/hostRun/properties/hostId"
+        },
+        "ownerId": {
+          "$ref": "#/definitions/hostRun/properties/ownerId"
+        },
+        "executionUserId": {
+          "$ref": "#/definitions/hostRun/properties/ownerId"
+        },
+        "domainId": {
+          "$ref": "#/definitions/hostRun/properties/ownerId"
+        },
+        "classNames": {
+          "$ref": "#/definitions/hostRun/properties/classNames"
+        },
+        "expiresAt": {
+          "$ref": "#/definitions/hostRun/properties/expiresAt"
+        }
+      },
+      "required": [
+        "sessionId",
+        "runId",
+        "hostId",
+        "ownerId",
+        "executionUserId",
+        "domainId",
+        "classNames",
+        "expiresAt"
+      ],
+      "additionalProperties": false
+    },
     "runRef": {
       "type": "object",
       "properties": {
@@ -343,19 +383,25 @@
                   "TYPE_VECTOR"
                 ]
               },
+              "value": {
+                "$ref": "#/definitions/context/properties/ontology"
+              },
               "description": {
                 "type": [
                   "string",
                   "null"
                 ]
               },
-              "value": {
+              "sample": {
                 "$ref": "#/definitions/context/properties/ontology"
               },
-              "className": {
+              "classNames": {
                 "anyOf": [
                   {
-                    "$ref": "#/definitions/hostRun/properties/ownerId"
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
                   },
                   {
                     "type": "null"
@@ -815,20 +861,10 @@
                         "$ref": "#/definitions/actionTestRequest/properties/parameterDefs/items/properties/description"
                       },
                       "sample": {
-                        "$ref": "#/definitions/context/properties/ontology"
+                        "$ref": "#/definitions/actionTestRequest/properties/parameterDefs/items/properties/sample"
                       },
                       "classNames": {
-                        "anyOf": [
-                          {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            }
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
+                        "$ref": "#/definitions/actionTestRequest/properties/parameterDefs/items/properties/classNames"
                       }
                     },
                     "required": [
@@ -1054,6 +1090,22 @@
       ],
       "additionalProperties": false
     },
+    "readTestRequest": {
+      "type": "object",
+      "properties": {
+        "run": {
+          "$ref": "#/definitions/historicalRun"
+        },
+        "input": {
+          "$ref": "#/definitions/readTestParams"
+        }
+      },
+      "required": [
+        "run",
+        "input"
+      ],
+      "additionalProperties": false
+    },
     "testRecord": {
       "type": "object",
       "properties": {
@@ -1115,26 +1167,99 @@
       "properties": {
         "code": {
           "$ref": "#/definitions/actionTestRequest/properties/code"
+        },
+        "parameterDefs": {
+          "$ref": "#/definitions/actionTestRequest/properties/parameterDefs"
         }
       },
       "required": [
-        "code"
+        "code",
+        "parameterDefs"
       ],
       "additionalProperties": false
     },
     "explainDraftResponse": {
       "type": "object",
       "properties": {
-        "explanation": {
-          "$ref": "#/definitions/querySandboxResponse"
+        "codeSegments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/querySandboxResponse"
+          },
+          "minItems": 1
+        },
+        "businessMeaning": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "operations": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "negativeEffect": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "operations",
+                "negativeEffect"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "explanationRef": {
           "$ref": "#/definitions/hostRun/properties/sessionId"
         }
       },
       "required": [
-        "explanation",
+        "codeSegments",
+        "businessMeaning",
         "explanationRef"
+      ],
+      "additionalProperties": false
+    },
+    "actionExplanationEvidence": {
+      "type": "object",
+      "properties": {
+        "sourceDigest": {
+          "$ref": "#/definitions/testRecord/properties/digest"
+        },
+        "explanationVersion": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "acceptedResultRef": {
+          "$ref": "#/definitions/hostRun/properties/sessionId"
+        },
+        "acceptedResult": {
+          "type": "object",
+          "properties": {
+            "codeSegments": {
+              "$ref": "#/definitions/explainDraftResponse/properties/codeSegments"
+            },
+            "businessMeaning": {
+              "$ref": "#/definitions/explainDraftResponse/properties/businessMeaning"
+            }
+          },
+          "required": [
+            "codeSegments",
+            "businessMeaning"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "sourceDigest",
+        "explanationVersion",
+        "acceptedResultRef",
+        "acceptedResult"
       ],
       "additionalProperties": false
     },
@@ -1178,11 +1303,43 @@
       ],
       "additionalProperties": false
     },
+    "adoptionRequest": {
+      "type": "object",
+      "properties": {
+        "run": {
+          "$ref": "#/definitions/historicalRun"
+        },
+        "input": {
+          "type": "object",
+          "properties": {
+            "definition": {
+              "$ref": "#/definitions/querySandboxResponse"
+            }
+          },
+          "required": [
+            "definition"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "run",
+        "input"
+      ],
+      "additionalProperties": false
+    },
     "adoptionResponse": {
       "type": "object",
       "properties": {
         "executionId": {
-          "$ref": "#/definitions/hostRun/properties/sessionId"
+          "anyOf": [
+            {
+              "$ref": "#/definitions/hostRun/properties/sessionId"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "digest": {
           "$ref": "#/definitions/testRecord/properties/digest"

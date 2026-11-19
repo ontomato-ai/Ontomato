@@ -29,6 +29,10 @@ export const authoringHostRunSchema = authoringRunRefSchema.extend({
 });
 export type AuthoringHostRun = z.infer<typeof authoringHostRunSchema>;
 
+/** An evidence read uses the originating run's host facts and its recorded target. */
+export const authoringHistoricalRunSchema = authoringHostRunSchema.omit({ target: true });
+export type AuthoringHistoricalRun = z.infer<typeof authoringHistoricalRunSchema>;
+
 export const authoringContextSchema = z.object({
   ontology: runtimeJsonValueSchema,
   knowledge: runtimeJsonValueSchema,
@@ -59,15 +63,17 @@ export const authoringQuerySandboxRequestSchema = z.object({ dsl: runtimeJsonObj
 export const authoringQuerySandboxResponseSchema = runtimeJsonObjectSchema;
 
 const authoringCodeSchema = z.string().regex(/\S/u, "Source code is required");
-const actionParameterSchema = queryParameterSchema.pick({ name: true, type: true, description: true, value: true })
-  .partial({ value: true })
-  .extend({ className: runtimeKeySchema.nullable().optional() });
+/** Action authoring carries the asset parameter shape and the shared function parameter types. */
+export const actionAuthoringParameterDefsSchema = z.array(queryParameterSchema.partial({ value: true }));
 
-export const actionAuthoringTestRequestSchema = z.object({
+export const authoringExplainDraftRequestSchema = z.object({
   code: authoringCodeSchema,
-  parameterDefs: z.array(actionParameterSchema),
-  sourceAnalysis: querySubgraphSchema.optional(),
+  parameterDefs: actionAuthoringParameterDefsSchema,
 }).strict();
+
+export const actionAuthoringTestRequestSchema = authoringExplainDraftRequestSchema.extend({
+  sourceAnalysis: querySubgraphSchema.optional(),
+});
 
 export const metricViewAuthoringTestRequestSchema = z.object({
   queryPackage: queryPackageSchema,
@@ -75,6 +81,10 @@ export const metricViewAuthoringTestRequestSchema = z.object({
 }).strict();
 
 export const authoringReadTestParamsSchema = z.object({ executionId: runtimeIdSchema }).strict();
+export const authoringReadTestRequestSchema = z.object({
+  run: authoringHistoricalRunSchema,
+  input: authoringReadTestParamsSchema,
+}).strict();
 const authoringEvidenceSchema = authoringReadTestParamsSchema.extend({ digest: runtimeFileMetadataSchema.shape.sha256 });
 
 /** The business test result preserves the Python result text and partial-query metadata. */
@@ -88,11 +98,27 @@ export const authoringTestResultSchema = z.object({
 export const authoringTestRecordSchema = authoringEvidenceSchema.extend({ result: authoringTestResultSchema });
 export type AuthoringTestRecord = z.infer<typeof authoringTestRecordSchema>;
 
-export const authoringExplainDraftRequestSchema = z.object({ code: authoringCodeSchema }).strict();
+/** The UUID of the explanation business run that holds the accepted result. */
 export const actionExplanationRefSchema = runtimeIdSchema;
-export const authoringExplainDraftResponseSchema = z.object({
-  explanation: runtimeJsonObjectSchema,
+
+const acceptedActionExplanationSchema = z.object({
+  codeSegments: z.array(runtimeJsonObjectSchema).nonempty(),
+  businessMeaning: z.object({
+    operations: z.array(z.string()),
+    negativeEffect: z.string(),
+  }).strict().nullable(),
+}).strict();
+
+export const authoringExplainDraftResponseSchema = acceptedActionExplanationSchema.extend({
   explanationRef: actionExplanationRefSchema,
+});
+
+/** The accepted JSON and its evidence are retained on the same immutable explanation business run. */
+export const actionExplanationEvidenceSchema = z.object({
+  sourceDigest: runtimeFileMetadataSchema.shape.sha256,
+  explanationVersion: z.number().int().positive(),
+  acceptedResultRef: actionExplanationRefSchema,
+  acceptedResult: acceptedActionExplanationSchema,
 }).strict();
 
 /** The Action owner recognizes the explanation reference on the ordinary page draft form. */
@@ -100,8 +126,30 @@ export const actionAuthoringPageDraftSchema = pageDraftSchema.extend({
   form: z.object({ explanationRef: actionExplanationRefSchema.optional() }).catchall(runtimeJsonValueSchema),
 });
 
-export const authoringAdoptionResponseSchema = authoringEvidenceSchema.extend({ definition: runtimeJsonObjectSchema });
+/** The host extracts a draft's form from its immutable artifact, or supplies the actual definition to be saved. */
+const authoringAdoptionInputSchema = z.object({ definition: runtimeJsonObjectSchema }).strict();
+
+export const authoringAdoptionRequestSchema = z.object({
+  run: authoringHistoricalRunSchema,
+  input: authoringAdoptionInputSchema,
+}).strict();
+
+export const authoringAdoptionResponseSchema = authoringEvidenceSchema.extend({
+  definition: authoringAdoptionInputSchema.shape.definition,
+  /** Null when the actual input matches the current saved definition's digest. */
+  executionId: authoringEvidenceSchema.shape.executionId.nullable(),
+});
 export type AuthoringAdoptionResponse = z.infer<typeof authoringAdoptionResponseSchema>;
+
+const platformAuthoringPath = "/ontology/ai/generation/platform/:kind";
+export const platformAuthoringEvidenceOperations = {
+  "read-test": {
+    method: "POST", path: `${platformAuthoringPath}/read-test`, body: authoringReadTestRequestSchema, response: authoringTestRecordSchema,
+  },
+  adopt: {
+    method: "POST", path: `${platformAuthoringPath}/adopt`, body: authoringAdoptionRequestSchema, response: authoringAdoptionResponseSchema,
+  },
+} as const;
 
 /** Paths are relative to /api/assistant/executions/:runId/authoring. */
 export const authoringOperations = {
@@ -125,6 +173,7 @@ export const authoringOperations = {
 export const authoringWireSchemas = {
   kind: authoringKindSchema,
   hostRun: authoringHostRunSchema,
+  historicalRun: authoringHistoricalRunSchema,
   runRef: authoringRunRefSchema,
   artifactRef: authoringArtifactRefSchema,
   context: authoringContextSchema,
@@ -137,9 +186,12 @@ export const authoringWireSchemas = {
   actionTestRequest: actionAuthoringTestRequestSchema,
   metricViewTestRequest: metricViewAuthoringTestRequestSchema,
   readTestParams: authoringReadTestParamsSchema,
+  readTestRequest: authoringReadTestRequestSchema,
   testRecord: authoringTestRecordSchema,
   explainDraftRequest: authoringExplainDraftRequestSchema,
   explainDraftResponse: authoringExplainDraftResponseSchema,
+  actionExplanationEvidence: actionExplanationEvidenceSchema,
   actionPageDraft: actionAuthoringPageDraftSchema,
+  adoptionRequest: authoringAdoptionRequestSchema,
   adoptionResponse: authoringAdoptionResponseSchema,
 };
