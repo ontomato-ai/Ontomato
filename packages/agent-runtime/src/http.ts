@@ -35,6 +35,14 @@ import { runtimeEmbeddingsRequestSchema } from "@ontomato/contracts/runtime-embe
 import { embedTexts, discoverModels } from "./model-provider";
 import { testModel } from "./model";
 
+function readEventSubscription(query: Request["query"]) {
+  const { afterSeq } = query;
+  return runtimeEventSubscriptionSchema.parse({
+    ...query,
+    afterSeq: typeof afterSeq === "string" && afterSeq.trim() !== "" ? Number(afterSeq) : afterSeq,
+  });
+}
+
 export function createRuntimeHttp(runtime: AgentRuntime) {
   const app = express();
   app.disable("x-powered-by");
@@ -402,7 +410,7 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
   }));
   app.get("/v1/channel/sessions/:sessionId/tasks/:taskId/process/events", route(async (req, res) => {
     const target = await runtime.channel.process(scope(req).scope, runtimeIdSchema.parse(req.params.sessionId), runtimeIdSchema.parse(req.params.taskId));
-    const after = runtimeEventSubscriptionSchema.parse(req.query);
+    const after = readEventSubscription(req.query);
     res.set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" }); res.flushHeaders();
     const detach = await runtime.subscribe(target.scope, target.runId, after.afterSeq, after.streamId, frame => res.write(`event: runtime\ndata: ${JSON.stringify(frame)}\n\n`));
     const timer = setInterval(() => res.write(": heartbeat\n\n"),15000); timer.unref();
@@ -598,10 +606,7 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     route(async (req, res) => {
       const ctx = scope(req);
       const runId = runtimeIdSchema.parse(req.params.runId);
-      const cursor = runtimeEventSubscriptionSchema.parse({
-        ...req.query,
-        afterSeq: Number(req.query.afterSeq),
-      });
+      const cursor = readEventSubscription(req.query);
       const state = await runtime.store.run(ctx.scope, runId);
       if (cursor.afterSeq > state.seq)
         throw new RuntimeError(
