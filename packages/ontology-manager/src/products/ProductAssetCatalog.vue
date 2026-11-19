@@ -6,6 +6,7 @@ import { ArrowLeft, Plus, RefreshCw, ChevronRight, MoreHorizontal } from "lucide
 import { randomId } from "@ontomato/contracts/random-id";
 import { ElMessageBox } from "element-plus";
 import { productAssetInputSchema, productWidgets, type ProductAsset, type ProductDocument } from "@ontomato/contracts/product-assets";
+import type { ProductGrantRecord } from "@ontomato/contracts/product-governance";
 import {isMetricChartProjection} from '@ontomato/contracts/product-projections';
 import type {MetricReferenceChartEntry} from '@ontomato/contracts/dashboard';
 import { defaultPersonalWorkspace } from "@ontomato/contracts/personal-workspace";
@@ -46,7 +47,7 @@ const error = ref(""), busy = ref(false), editing = ref(false), showTypes=ref(fa
 const profileReleases=ref<{releaseId:string;createdAt:string;active:boolean}[]>([]);
 const upgrade=ref<Awaited<ReturnType<typeof client.products.upgrade>>|null>(null);
 async function reviewUpgrade(){if(selected.value)await run(async()=>{upgrade.value=await client.products.upgrade(selected.value!.id);});}
-const grantRecords=ref<{principalKind:string;principalId:string;verb:string}[]>([]);
+const grantRecords=ref<ProductGrantRecord[]>([]);
 const grantPrincipal=ref(''),grantKind=ref<'principal'|'role'>('role'),grantVerb=ref<'use'|'edit'>('use');
 async function loadGrants(){if(selected.value)await run(async()=>{grantRecords.value=(await client.products.grants(selected.value!.id)).grants;});}
 async function changeGrant(principalKind:'principal'|'role',principalId:string,verb:'use'|'edit',remove=false){if(!selected.value)return;await run(async()=>{await client.products.changeGrant(selected.value!.id,{principalKind,principalId,verb,remove});grantRecords.value=(await client.products.grants(selected.value!.id)).grants;});}

@@ -3,7 +3,7 @@ import {config} from '../../config/application';
 import {environment} from '../../config/environment';
 import {HttpError} from '../../utils/errors';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
-import {z} from 'zod';
+import {productGrantsResponseSchema,type ChangeProductGrantRequest} from '@ontomato/contracts/product-governance';
 
 export interface ProductOwner { domainId: string; userId: string }
 
@@ -37,9 +37,9 @@ export async function productGrantIdsForOwner(owner:ProductOwner,verb:'use'|'edi
 }
 export async function readProductGrantRecords(id:string,credentials:AssistantCredentials){
   const response=await backendPost('product-grant-records',config.dataQuery.baseUrl+'/product-governance/grants',{id},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});
-  return z.object({grants:z.array(z.object({principalKind:z.enum(['principal','role','domain']),principalId:z.string(),verb:z.enum(['use','edit'])}))}).parse(JSON.parse(response.text));
+  return productGrantsResponseSchema.parse(JSON.parse(response.text));
 }
-export async function changeProductGrant(id:string,grant:{principalKind:'principal'|'role';principalId:string;verb:'use'|'edit';remove:boolean},credentials:AssistantCredentials){
+export async function changeProductGrant(id:string,grant:ChangeProductGrantRequest,credentials:AssistantCredentials){
   const response=await backendPost('product-grant-mutation',config.dataQuery.baseUrl+'/product-governance/grant',{id,...grant},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});
   if(JSON.parse(response.text).success!==true)throw new HttpError(503,'Product Grant update failed','PRODUCT_GOVERNANCE_UNAVAILABLE');
 }
