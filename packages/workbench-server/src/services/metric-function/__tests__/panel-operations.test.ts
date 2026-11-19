@@ -279,7 +279,7 @@ describe("metric and function panel server operations", () => {
     ] });
   });
 
-  it("keeps the answered status requests of a batch when another gets no answer, and fails only when none does", async () => {
+  it("keeps the answered status requests of a batch when another gets no answer, and answers unknown when none does", async () => {
     const operation = batchAction(SET_METRIC_VIEW_STATUS);
     const secondMetric = { kind: "object" as const, objectType: METRIC_VIEW, primaryKey: "m2" };
     const calls = [
@@ -297,7 +297,8 @@ describe("metric and function panel server operations", () => {
       ["m1", "success"], ["m2", "unknown"],
     ]);
     const unanswered = hostWith(() => new Response("upstream down", { status: 502 }));
-    await expect(operation.executeBatch(unanswered.host, calls)).rejects.toMatchObject({ status: 502, code: "OWNER_UNAVAILABLE" });
+    expect(await operation.executeBatch(unanswered.host, calls))
+      .toEqual({ kind: "unknown", message: "Owner request failed: /metricView/setStatus" });
   });
 
   it("binds a function save to its target and refuses another id", async () => {

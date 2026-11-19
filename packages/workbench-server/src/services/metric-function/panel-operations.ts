@@ -224,20 +224,21 @@ export const m5ServerOperations = [
     async executeBatch(host: Host, calls: readonly PanelBatchCalls[number][]): Promise<PanelOperationOutcome> {
       // Each call may set its own status; the owner takes one status per request, so the calls go in one request per
       // status and every call reads its own answer. A request with no authoritative answer leaves its calls unknown
-      // while the other requests' answers stand; when no request got one, the whole batch is unknown.
+      // while the other requests' answers stand; when no request got one, the batch answers unknown as a whole.
       const statuses = calls.map(call => statusInputSchema.parse(call.input).status);
       const answers = new Map<string, StatusAnswer>();
-      let unanswered: unknown;
+      let unanswered = "";
       for (const status of new Set(statuses)) {
         const ids = calls.filter((_, index) => statuses[index] === status).map(call => call.target.primaryKey);
         try {
           answers.set(status, await changeStatus(host, ids, status));
         } catch (error) {
-          unanswered = error;
-          answers.set(status, { whole: { kind: "unknown", message: error instanceof Error ? error.message : String(error) } });
+          unanswered = error instanceof Error ? error.message : String(error);
+          answers.set(status, { whole: { kind: "unknown", message: unanswered } });
         }
       }
-      if ([...answers.values()].every(answer => "whole" in answer && answer.whole.kind === "unknown")) throw unanswered;
+      if ([...answers.values()].every(answer => "whole" in answer && answer.whole.kind === "unknown"))
+        return { kind: "unknown", message: unanswered };
       // A batch invocation is nonempty, so the items tuple starts with the first call's answer and spreads the rest.
       const [first, ...rest] = calls.map((call, index) => ({
         target: { objectType: call.target.objectType, primaryKey: call.target.primaryKey },
