@@ -70,7 +70,7 @@ export interface PanelContext {
    * Fetches and registers the resource clients a projection record binds — its type or operation, and a graph's edge
    * type — before the projection registers its ports, so a panel downloads only the clients of what it shows.
    */
-  resources(projection: Pick<ProductProjection, "binding" | "graph">): Promise<void>;
+  resources(projection: Pick<ProductProjection, "componentId" | "binding" | "graph">): Promise<void>;
 }
 
 /**

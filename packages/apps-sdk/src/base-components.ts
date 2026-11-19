@@ -8,4 +8,5 @@ export const baseComponents = {
   SectionGroup: () => import("./base/SectionGroup.vue").then(module => module.default),
   ReferencePicker: () => import("./base/ReferencePicker.vue").then(module => module.default),
   ObjectGraph: () => import("./base/ObjectGraph.vue").then(module => module.default),
+  MetricChart: () => import("./base/MetricChart.vue").then(module => module.default),
 };

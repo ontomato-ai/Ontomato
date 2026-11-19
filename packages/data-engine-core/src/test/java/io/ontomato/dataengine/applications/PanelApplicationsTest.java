@@ -164,13 +164,13 @@ class PanelApplicationsTest {
             {"entry":{"path":"/applications/app-panel-a/","renderer":"panels"},"entryAccess":["domain-member"],
              "declaration":{"names":{"en":"Example"},"descriptions":{},"icon":"calendar","groups":[],"permissions":[]},
              "panelUses":[{"id":"use-a","pageKey":"schedules-a","panelId":"panel-p","path":"/applications/app-panel-a/%73chedules-a/",
-               "access":{"kind":"domain-member"},"defaultAgentId":"preferred-agent","names":{"en":"Tasks","zh-CN":"任务"}}]}
+               "access":{"kind":"domain-member"},"defaultAgent":{"kind":"id","id":"preferred-agent"},"names":{"en":"Tasks","zh-CN":"任务"}}]}
             """)).andExpect(status().isOk()).andReturn();
         assertEquals("panels", JSONObject.parseObject(result.getResponse().getContentAsString()).getJSONObject("data").getJSONObject("entry").getString("renderer"));
         var savedUse = JSONObject.parseObject(result.getResponse().getContentAsString()).getJSONObject("data").getJSONArray("panelUses").getJSONObject(0);
         assertFalse(savedUse.containsKey("skill"));
         assertEquals("/applications/app-panel-a/schedules-a", savedUse.getString("path"));
-        assertEquals("preferred-agent", savedUse.getString("defaultAgentId"));
+        assertEquals("preferred-agent", savedUse.getJSONObject("defaultAgent").getString("id"));
         assertEquals("任务", savedUse.getJSONObject("names").getString("zh-CN"));
         var dashboard = new PageSkills.Mapping(null, "domain-member", "dashboard",
             new PageSkills.Skill(new PageSkills.Namespace("provider", "workbench", null), "dashboard-pages"), null);
@@ -231,7 +231,7 @@ class PanelApplicationsTest {
 
     @Test void sharesOneDerivedSkillAcrossPanelsWithTheSameMenu() {
         var first = app("app-panel-a", "panels", List.of(use("schedules-a", "menu")));
-        var second = app("app-panel-b", "panels", List.of(new ApplicationPanelUse("use-b", "schedules-b", "panel-q", "/applications/app-panel-b/tasks", new ApplicationPanelUse.Access("menu", null), "summary-agent", null)));
+        var second = app("app-panel-b", "panels", List.of(new ApplicationPanelUse("use-b", "schedules-b", "panel-q", "/applications/app-panel-b/tasks", new ApplicationPanelUse.Access("menu", null), new DefaultAgentTarget("id", "summary-agent", null), null)));
         doReturn(List.of(first)).when(catalog).all(); doReturn(second).when(catalog).require("app-panel-b");
         catalog.putPanelUses("app-panel-b", body("app-panel-b", second.getList("panelUses", ApplicationPanelUse.class), true), user);
         doReturn(List.of(first, second)).when(catalog).all();
@@ -239,7 +239,7 @@ class PanelApplicationsTest {
         assertEquals(List.of("panel-p", "panel-q"), source.uses().stream().map(PanelSkills.Use::panelId).toList());
         assertEquals("panel-menu-menu-c661d73dba966285774f9f15", source.skill().name());
         var mapping = new PageSkills.Mapping("menu", null, null, source.skill(),
-            List.of(new PageSkills.Default("schedules-b", "summary-agent")));
+            List.of(new PageSkills.Default("schedules-b", new DefaultAgentTarget("id", "summary-agent", null))));
         when(access.pageSkills(List.of(mapping), user)).thenReturn(List.of());
         assertEquals(new PageSkills.Projection(List.of(), List.of(source.skill())), catalog.pageSkills(user));
         when(access.pageSkills(List.of(mapping), user)).thenReturn(List.of(mapping));

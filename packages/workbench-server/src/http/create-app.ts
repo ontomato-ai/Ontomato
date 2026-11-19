@@ -42,7 +42,10 @@ import preferencesRouter from "../api/routes/preferences";
 import personalWorkspaceRouter from "../api/routes/personal-workspace";
 import productAssetsRouter from "../api/routes/product-assets";
 import {businessDefinitionsRouter,definitionTriggersRouter} from "../api/routes/business-definitions";
-import { productPanelsRouter, productProjectionsRouter, productPanelsInternalRouter, panelOperationsRouter } from "../api/routes/product-panels";
+import { createChartProjectionsRouter, productPanelsRouter, productProjectionsRouter, productPanelsInternalRouter, panelOperationsRouter } from "../api/routes/product-panels";
+import { dashboardChartSources } from "../services/dashboard/chart-sources";
+import { installDashboardChartProjectionReferences } from "../services/dashboard/projection-references";
+import { createChartProjectionService, deleteChartProjectionsForDashboards, findChartProjectionsForCards } from "../services/product-panels/chart-sources";
 import {installPlatformObjectProviders} from '../services/product-assets/platform-object-builtins';
 import platformHomeRouter from "../api/routes/platform-home";
 import queryHistoryRouter from "../api/routes/query-history";
@@ -88,6 +91,7 @@ function bindRuntime(): void {
 
 export function createWorkbenchApp(): Express {
   installPlatformObjectProviders();
+  installDashboardChartProjectionReferences({ find: findChartProjectionsForCards, remove: deleteChartProjectionsForDashboards });
   bindRuntime();
   const identity = workbenchIdentity();
   const app: Express = express();
@@ -216,6 +220,7 @@ export function createWorkbenchApp(): Express {
   app.use("/api/product-assets", productAssetsRouter);
   app.use("/api", panelOperationsRouter);
   app.use("/api/product-panels", productPanelsRouter);
+  app.use("/api/product-projections", createChartProjectionsRouter(createChartProjectionService(dashboardChartSources)));
   app.use("/api/product-projections", productProjectionsRouter);
   app.use("/api/memories", memoriesRouter);
 

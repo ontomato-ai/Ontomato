@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { defaultAgentSchema } from "./default-agent";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
 
 const pageKeySchema = z.string().min(1);
@@ -17,7 +18,7 @@ export const pageSkillEntranceSchema = z.union([
 ]);
 export type PageSkillEntrance = z.infer<typeof pageSkillEntranceSchema>;
 
-export const pageSkillDefaultSchema = z.object({ pageKey: pageKeySchema, agentKey: z.string().min(1) }).strict();
+export const pageSkillDefaultSchema = z.object({ pageKey: pageKeySchema, defaultAgent: defaultAgentSchema }).strict();
 export const pageSkillGroupSchema = z.object({
   locator: pageSkillLocatorSchema,
   skills: z.array(runtimeSkillRefSchema),

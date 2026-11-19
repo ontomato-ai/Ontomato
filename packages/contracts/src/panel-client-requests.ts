@@ -1,7 +1,9 @@
+import { z } from "zod";
+import { runtimeJsonObjectSchema } from "./agent-runtime-values";
 import { platformSchedulesPath } from "./platform-schedules";
-import { AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER } from "./platform-object-types";
+import { AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, KNOWLEDGE_GOVERNANCE_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE } from "./platform-object-types";
 
-export { AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER } from "./platform-object-types";
+export { AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, KNOWLEDGE_GOVERNANCE_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE } from "./platform-object-types";
 
 /*
  * The requests the SDK's platform clients send, by the binding that reaches each client (overall design 3.2, 5.1). A
@@ -22,6 +24,12 @@ export const SET_METRIC_VIEW_STATUS = "metricViews.setStatus";
 export const TEST_METRIC_VIEW = "metricViews.test";
 export const TEST_EXECUTE_METRIC_VIEW = "metricViews.testExecute";
 export const DELETE_FUNCTION = "functions.delete";
+export const APPROVE_KNOWLEDGE = "knowledge.approve";
+export const DELETE_KNOWLEDGE = "knowledge.delete";
+export const DELETE_SKILL = "skills.delete";
+export const IMPORT_SKILL = "skills.import";
+export const EXPORT_SKILL = "skills.export";
+export const EXPORT_FEEDBACK = "feedback.export";
 
 /**
  * The gateway prefix the scheduled tasks' contract spells its paths with. A frame's request names the service and the
@@ -47,6 +55,64 @@ const task = `${tasks}/${uuidPattern}`;
 interface PanelClientRead extends ClientRequest {
   template: string;
   instructions?: string;
+}
+
+/** POST registers a card; GET looks up a projection by dashboardId and cardId. */
+export const CHART_PROJECTION_SOURCES_PATH = "/product-projections/chart-sources";
+
+/** Both operations resolve the source from this registered projection. */
+export function chartProjectionSourcePath(projectionId: string): string {
+  return `/product-projections/${encodeURIComponent(projectionId)}/chart-source`;
+}
+
+const chartProjectionSource = {
+  service: "",
+  path: /^\/product-projections\/[^/?#]+\/chart-source$/,
+  template: "/product-projections/:projectionId/chart-source",
+} as const;
+
+export const chartProjectionSourceRead = { method: "GET", ...chartProjectionSource } as const satisfies PanelClientRead;
+export const chartProjectionSourceEdit = { method: "PUT", ...chartProjectionSource } as const satisfies ClientRequest;
+
+/** The picker looks up an accessible card. A metric binding alone does not grant this request to a frame. */
+export const chartProjectionLookupRead = {
+  method: "GET", service: "", path: /^\/product-projections\/chart-sources(?:\?[^#]+)?$/,
+  template: CHART_PROJECTION_SOURCES_PATH,
+} as const satisfies PanelClientRead;
+
+/** Use only the projection IDs read as registered chart projections of this frame. The owner checks use or edit. */
+export function chartProjectionSourceSends(
+  projectionIds: Iterable<string>, method: string, service: string, path: string,
+): boolean {
+  if (service !== chartProjectionSource.service || !chartProjectionSource.path.test(path)
+    || (method !== chartProjectionSourceRead.method && method !== chartProjectionSourceEdit.method)) return false;
+  for (const id of projectionIds)
+    if (path === chartProjectionSourcePath(id)) return true;
+  return false;
+}
+
+const metricIdBodySchema = z.object({ id: z.string().min(1) }).strict();
+
+const metricViewReads = [
+  {
+    method: "POST", service: "/data-query", path: /^\/ontology\/query\/metrics\/describe$/,
+    template: "/ontology/query/metrics/describe", bodySchema: metricIdBodySchema,
+    instructions: "Use the bound MetricView id in the JSON body and read defaults from parameterDefs.",
+  },
+  {
+    method: "POST", service: "/data-query", path: /^\/metricView\/execute$/,
+    template: "/metricView/execute", bodySchema: metricIdBodySchema.extend({
+      param: runtimeJsonObjectSchema,
+      parameterTexts: z.record(z.string()).optional(),
+    }),
+    instructions: "Use the bound MetricView id. Start `param` with the source card parameters returned with the chart template and override them with this panel instance's bound inputs.",
+  },
+] as const satisfies readonly (PanelClientRead & { bodySchema: z.ZodTypeAny })[];
+
+const metricViewBindingPrefix = bindingKey({ kind: "MetricView", id: "" });
+
+function boundMetricId(binding: string): string | undefined {
+  return binding.startsWith(metricViewBindingPrefix) ? binding.slice(metricViewBindingPrefix.length) : undefined;
 }
 
 /** The owner reads shared by frames, the execution callback and the generated panel skill. */
@@ -99,13 +165,79 @@ const functionDefinitionReads = [
   { ...dataQueryPost("/function/form"), instructions: formReadInstructions },
 ] as const satisfies readonly PanelClientRead[];
 
+const knowledgeReads = [
+  { method: "POST", service: "/data-query", path: /^\/admin\/getBussinessKnowledge$/, template: "/admin/getBussinessKnowledge" },
+  {
+    method: "POST", service: "/data-query", path: /^\/admin\/bussinessKnowledge\/form$/, template: "/admin/bussinessKnowledge/form",
+    instructions: "POST a form target, changedField, and optional values. Use the owner's returned form description.",
+  },
+] as const satisfies readonly PanelClientRead[];
+
+const governanceRecordReads = [
+  {
+    method: "GET", service: "/data-query", path: /^\/ontology\/ai\/knowledge-governance\/[^/?#]+\/work$/,
+    template: "/ontology/ai/knowledge-governance/:id/work",
+  },
+  {
+    method: "GET", service: "/data-query",
+    path: /^\/ontology\/ai\/knowledge-governance\/[^/?#]+\/sources\/[^/?#]+(?:\?offset=\d+)?$/,
+    template: "/ontology/ai/knowledge-governance/:id/sources/:source",
+    instructions: "Use the record's source ID and the returned offset to read more source material.",
+  },
+] as const satisfies readonly PanelClientRead[];
+
+const skillReads = [
+  { method: "GET", service: "", path: /^\/assistant\/agent-skills$/, template: "/assistant/agent-skills" },
+  { method: "GET", service: "", path: /^\/skills$/, template: "/skills" },
+  { method: "GET", service: "", path: /^\/skills\/[^/?#]+\/references$/, template: "/skills/:id/references" },
+  { method: "GET", service: "", path: /^\/skills\/[^/?#]+\/files$/, template: "/skills/:id/files" },
+  {
+    method: "GET", service: "", path: /^\/skills\/[^/?#]+\/file\?path=[^&#]+$/, template: "/skills/:id/file?path=:path",
+    instructions: "Use the skill ID and the file path returned by its file list.",
+  },
+] as const satisfies readonly PanelClientRead[];
+
+const feedbackReads = [
+  {
+    method: "GET", service: "", path: /^\/feedback(?:\?[^#]+)?$/, template: "/feedback",
+    instructions: "Use sourceType, rating, and keyword to filter and limit and offset to page.",
+  },
+  { method: "GET", service: "", path: new RegExp(`^/feedback/${uuidPattern}$`), template: "/feedback/:id" },
+] as const satisfies readonly PanelClientRead[];
+
+const saveKnowledge = { method: "POST", service: "/data-query", path: /^\/admin\/editBussinessKnowledge$/ } as const satisfies ClientRequest;
+
+const platformOntologyReads = [
+  {
+    method: "GET", service: "", path: /^\/platform-ontology\/schema$/, template: "/platform-ontology/schema",
+    instructions: "Read the four-layer platform ontology schema: declared platform object types (with layers and label keys) and relation kinds (from/to types, stored vs derived, owner).",
+  },
+  {
+    method: "GET", service: "", path: /^\/platform-ontology\/counts$/, template: "/platform-ontology/counts",
+    instructions: "Read per-type readable object counts for the current caller across the four layers. Each type reports status 'ok' with count, 'refused' when the owner denies access, or 'failed' on upstream error.",
+  },
+  {
+    method: "GET", service: "", path: /^\/platform-ontology\/start$/, template: "/platform-ontology/start",
+    instructions: "Read the default starting node for instance mode: the current caller's User identity ({ className: 'platform:User', primaryKey }, aligned via hostOwner in OSS) and display label.",
+  },
+  {
+    method: "POST", service: "", path: /^\/platform-ontology\/neighbors$/, template: "/platform-ontology/neighbors",
+    instructions: "POST JSON { node: { className, primaryKey }, relationKinds?: string[], layers?: ('fact'|'capability'|'governance'|'product')[] }. Queries owners for all declared relation kinds touching node.className and returns neighbor nodes (full identity, label, layer), edges (relationKind, direction, derived), and per-relation-kind status ('ok' | 'refused' | 'failed').",
+  },
+  {
+    method: "POST", service: "", path: /^\/platform-ontology\/objects$/, template: "/platform-ontology/objects",
+    instructions: "POST JSON { type: string, keyword?: string, page?: number, pageSize?: number }. Lists caller-readable objects of a single declared platform type so a reader can pick a starting node from type mode; returns status 'refused' if the owner denies access.",
+  },
+] as const satisfies readonly PanelClientRead[];
+
 const objectBinding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
 const readRequests: Readonly<Record<string, readonly PanelClientRead[]>> = {
   [objectBinding(SCHEDULED_TASK)]: scheduledTaskReads,
   [objectBinding(AGENT_DEFINITION)]: agentDefinitionReads,
-  [objectBinding(SKILL)]: [
-    { method: "GET", service: "", path: /^\/assistant\/agent-skills$/, template: "/assistant/agent-skills" },
-  ],
+  [objectBinding(SKILL)]: skillReads,
+  [objectBinding(BUSINESS_KNOWLEDGE)]: knowledgeReads,
+  [objectBinding(KNOWLEDGE_GOVERNANCE_RECORD)]: governanceRecordReads,
+  [objectBinding(FEEDBACK_RECORD)]: feedbackReads,
   [objectBinding(MODEL_OPTION)]: [
     { method: "GET", service: "/data-query", path: /^\/model-options$/, template: "/model-options" },
   ],
@@ -124,9 +256,12 @@ const readRequests: Readonly<Record<string, readonly PanelClientRead[]>> = {
   [objectBinding(RELATIONSHIP)]: [ontologyMetadataRead],
   [objectBinding(METRIC_VIEW)]: metricViewDefinitionReads,
   [objectBinding(FUNCTION)]: functionDefinitionReads,
+  [objectBinding(ONTOLOGY_TYPE)]: platformOntologyReads,
+  [objectBinding(ONTOLOGY_RELATION_KIND)]: platformOntologyReads,
 };
 
-export const panelClientReads = (binding: string): readonly PanelClientRead[] => readRequests[binding] ?? [];
+export const panelClientReads = (binding: string): readonly PanelClientRead[] =>
+  boundMetricId(binding) ? metricViewReads : readRequests[binding] ?? [];
 
 /** Each binding's requests: what its client sends, and nothing more. */
 export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> = {
@@ -154,12 +289,40 @@ export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> 
   [bindingKey({ kind: "PlatformOperation", id: TEST_METRIC_VIEW })]: [dataQueryPost("/metricView/test")],
   [bindingKey({ kind: "PlatformOperation", id: TEST_EXECUTE_METRIC_VIEW })]: [dataQueryPost("/metricView/testExecute")],
   [bindingKey({ kind: "PlatformOperation", id: DELETE_FUNCTION })]: [dataQueryPost("/function/delete")],
+  [objectBinding(BUSINESS_KNOWLEDGE)]: [
+    ...knowledgeReads,
+    { method: "POST", service: "/data-query", path: /^\/admin\/addBussinessKnowledge$/ },
+    saveKnowledge,
+  ],
+  [bindingKey({ kind: "PlatformOperation", id: APPROVE_KNOWLEDGE })]: [saveKnowledge],
+  [bindingKey({ kind: "PlatformOperation", id: DELETE_KNOWLEDGE })]: [
+    { method: "POST", service: "/data-query", path: /^\/admin\/delBussinessKnowledge$/ },
+  ],
+  [bindingKey({ kind: "PlatformOperation", id: DELETE_SKILL })]: [
+    { method: "DELETE", service: "", path: /^\/skills\/[^/?#]+$/ },
+  ],
+  [bindingKey({ kind: "PlatformOperation", id: IMPORT_SKILL })]: [
+    { method: "POST", service: "", path: /^\/skills\/import(?:\?overwrite=true)?$/ },
+  ],
+  [bindingKey({ kind: "PlatformOperation", id: EXPORT_SKILL })]: [
+    { method: "GET", service: "", path: /^\/skills\/[^/?#]+\/export$/ },
+  ],
+  [bindingKey({ kind: "PlatformOperation", id: EXPORT_FEEDBACK })]: [
+    { method: "GET", service: "", path: /^\/feedback\/export(?:\?[^#]+)?$/ },
+  ],
 };
 
-/** Whether one of the given bindings' clients sends this request. */
-export function clientSends(bindings: Iterable<string>, method: string, service: string, path: string): boolean {
-  for (const binding of bindings)
-    if (clientRequests[binding]?.some((request) => request.method === method && request.service === service && request.path.test(path)))
+/** The host supplies the decoded JSON body for requests scoped to the specific object in a binding. */
+export function clientSends(bindings: Iterable<string>, method: string, service: string, path: string, body?: unknown): boolean {
+  for (const binding of bindings) {
+    if (clientRequests[binding]?.some(request => request.method === method && request.service === service && request.path.test(path)))
       return true;
+    const metricId = boundMetricId(binding);
+    if (metricId && metricViewReads.some(request => {
+      if (request.method !== method || request.service !== service || !request.path.test(path)) return false;
+      const parsed = request.bodySchema.safeParse(body);
+      return parsed.success && parsed.data.id === metricId;
+    })) return true;
+  }
   return false;
 }

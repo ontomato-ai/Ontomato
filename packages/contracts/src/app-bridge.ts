@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {panelConversationEntrySchema} from './panel-conversation-entry';
 
 export const APP_BRIDGE_CHANNEL='ontomato-app-v2';
 
@@ -8,7 +9,7 @@ export const APP_BRIDGE_CHANNEL='ontomato-app-v2';
  * `PageContext` with the frame's own address, at that single boundary.
  */
 export const appBridgePageContextSchema=z.object({page:z.string().trim().min(1).max(500),selection:z.object({className:z.string().min(1).max(200),primaryKey:z.string().min(1).max(1000),name:z.string().min(1).max(500)}).strict().nullable()}).strict();
-export const appBridgeRequestSchema=z.object({channel:z.literal(APP_BRIDGE_CHANNEL),id:z.string().min(1).max(100),operation:z.enum(['initialize','request','cancel','navigate','navigateProduct','pageContext','authFailure','invalidate','mount','unmount','placement']),payload:z.unknown()}).strict();
+export const appBridgeRequestSchema=z.object({channel:z.literal(APP_BRIDGE_CHANNEL),id:z.string().min(1).max(100),operation:z.enum(['initialize','request','cancel','navigate','navigateProduct','pageContext','authFailure','invalidate','mount','unmount','placement','expand-page-composer']),payload:z.unknown()}).strict();
 export const appBridgeCancelSchema=z.object({requestId:z.string().min(1).max(100)}).strict();
 export type AppBridgeRequest=z.infer<typeof appBridgeRequestSchema>;
 export interface AppBridgeResponse {channel:typeof APP_BRIDGE_CHANNEL;id:string;result?:unknown;error?:string}
@@ -19,3 +20,17 @@ export const appBridgeUnmountSchema=z.object({id:z.string().uuid()}).strict();
 export const appBridgePathSchema=z.string().max(2000);
 export const appBridgeAuthStatusSchema=z.union([z.literal(401),z.literal(402)]);
 export const appBridgeInvalidationSchema=z.object({actionId:z.string(),objectTypes:z.array(z.string())}).strict();
+
+
+/**
+ * An explicit user action can expand the composer and fill the declared text; sending is a separate user action.
+ * The host accepts the exact target and prefill of this instance's registered slot declaration.
+ * The selection is limited to current page candidates. An unavailable target only expands the composer and
+ * reveals no private information.
+ * A current conversation keeps its existing agent.
+ * Expanding for this action leaves the user's saved collapse preference alone.
+ */
+export const appBridgeExpandPageComposerSchema = panelConversationEntrySchema.extend({
+  slot: z.string().min(1).max(200),
+});
+export type AppBridgeExpandPageComposer = z.infer<typeof appBridgeExpandPageComposerSchema>;
