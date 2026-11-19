@@ -1,3 +1,4 @@
+import { formOptionSchema } from "./form-fields";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -266,4 +267,26 @@ test("MetricView and Function management reads do not grant operation or concret
     assert.ok(!clientSends([operationKey], "GET", "/data-query", path));
     assert.ok(!clientSends([operationKey], "POST", "", path));
   }
+});
+
+
+test("owner select options preserve integer status and customizable string tags", () => {
+  const option = { description: null, disabled: false, disabledReason: null };
+  const fields = [
+    {
+      ...editableField, path: "/status", label: "Status", valueSchema: { type: "integer", enum: [0, 1] },
+      control: { kind: "select", options: [
+        { ...option, value: 0, label: "Pending" }, { ...option, value: 1, label: "Approved" },
+      ] },
+    },
+    {
+      ...editableField, path: "/knowledgeTags", label: "Tags", valueSchema: { type: "array", items: { type: "string" } },
+      control: { kind: "select", multiple: true, allowCreate: true, options: [{ ...option, value: "policy", label: "Policy" }] },
+    },
+  ];
+  const values = { status: 0, knowledgeTags: ["policy", "new tag"] };
+  const form = panelFormDescriptionSchema.parse({ fields, values, save: ownerSave });
+  assert.deepEqual(form.fields, fields);
+  assert.deepEqual(panelFormSaveInputSchema.parse({ values: form.values }).values, values);
+  assert.equal(formOptionSchema.safeParse({ ...option, value: 0, label: "Pending" }).success, false);
 });

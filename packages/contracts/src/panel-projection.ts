@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
-import { formFieldErrorSchema, formOptionSchema } from "./form-fields";
+import { formFieldErrorSchema, panelFormOptionSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
 import { ontologyParameterTypeSchema, panelFormTargetSchema, panelOperationId, type OntologyParameterType, type PanelManifest, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
 import type { ProductProjectionInput } from "./product-panels";
@@ -25,7 +25,7 @@ const simpleControls = [
   }).strict(),
   z.object({
     kind: z.literal("select"),
-    options: z.array(formOptionSchema),
+    options: z.array(panelFormOptionSchema),
     multiple: z.boolean().optional(),
     /** The owner permits adding a value to the selection. */
     allowCreate: z.boolean().optional(),
