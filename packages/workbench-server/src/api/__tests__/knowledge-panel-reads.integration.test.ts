@@ -391,8 +391,11 @@ it("serves business knowledge panel reads over real HTTP routes backed by Postgr
   });
   expect(page2.value.nextCursor).toBeUndefined();
 
-  // counts: status tabs with and without search.
-  expect(await (await read("counts", "counts", {})).json()).toEqual({
+  // Clearing the panel's search state behaves the same as omitting the parameter.
+  expect(await (await read("list", "rows", { search: null })).json()).toEqual(
+    await (await read("list", "rows", {})).json(),
+  );
+  expect(await (await read("counts", "counts", { search: null })).json()).toEqual({
     status: "ready",
     value: { all: 4, pending: 2, approved: 2 },
   });

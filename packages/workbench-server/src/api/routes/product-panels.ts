@@ -15,7 +15,8 @@ import { panelOperationStore } from "../../services/product-panels/operation-sto
 import { Router } from "express";
 import { z } from "zod";
 import {
-  applicationPanelReferencesRequestSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema, productCurrentIdParamsSchema, productPanelReadQuerySchema,
+  applicationPanelReferencesRequestSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema, METRIC_CHART_COMPONENT,
+  productCurrentIdParamsSchema, productPanelReadQuerySchema,
   type ProductPanelReadQuery,
   registerChartProjectionRequestSchema, registerChartProjectionResponseSchema,
   registerProductPanelRequestSchema,
@@ -47,6 +48,29 @@ async function withPageSkillContext<T extends { panel: { id: string } }>(
     view, entrance, { kind: "application-use", applicationId, useId }, response.panel,
   );
   return { ...response, pageSkillContext };
+}
+
+function registrationIssue(issue: z.ZodIssue, branch?: number): string {
+  if (issue.code === z.ZodIssueCode.invalid_union) {
+    const choices = issue.unionErrors;
+    const closest = branch === undefined
+      ? choices.reduce((best, choice) => choice.issues.length < best.issues.length ? choice : best)
+      : choices[branch];
+    return registrationIssue(closest.issues[0]!);
+  }
+  const field = (path: (string | number)[]) => path.length ? `field '${path.join(".")}'` : "request body";
+  if (issue.code === z.ZodIssueCode.unrecognized_keys)
+    return issue.keys.map(key => `${field([...issue.path, key])} is not allowed`).join(", ");
+  if (issue.code === z.ZodIssueCode.invalid_type && issue.received === "undefined")
+    return `${field(issue.path)} is required`;
+  return `${field(issue.path)} – ${issue.message}`;
+}
+
+function parseRegistration<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, body: unknown, record: string, branch?: number): T {
+  const request = schema.safeParse(body);
+  if (!request.success)
+    throw new HttpError(400, `${record}, ${registrationIssue(request.error.issues[0]!, branch)}`, "INVALID_REQUEST");
+  return request.data;
 }
 
 export const productPanelsRouter = Router();
@@ -87,9 +111,7 @@ productPanelsRouter.get("/:id", wrap(async (req, res) => {
 }));
 productPanelsRouter.put("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
-  const request = registerProductPanelRequestSchema.safeParse(req.body);
-  if (!request.success) throw new HttpError(400, request.error.issues[0]!.message, "INVALID_REQUEST");
-  const { revision, ...input } = request.data;
+  const { revision, ...input } = parseRegistration(registerProductPanelRequestSchema, req.body, `Panel '${id}'`);
   const panel = await saveCurrentPanel(c.owner, c.credentials, id, input, revision);
   res.json({ panel });
 }));
@@ -133,7 +155,8 @@ productProjectionsRouter.get("/:id", wrap(async (req, res) => {
 }));
 productProjectionsRouter.put("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
-  const request = registerProductProjectionRequestSchema.parse(req.body);
+  const branch = req.body?.componentId === METRIC_CHART_COMPONENT ? 1 : 0;
+  const request = parseRegistration(registerProductProjectionRequestSchema, req.body, `Projection '${id}'`, branch);
   const projection = await saveCurrentProjection(c.owner, c.credentials, id, request);
   res.json({ projection });
 }));

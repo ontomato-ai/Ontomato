@@ -13,6 +13,7 @@ import { lockProducts } from "../../infrastructure/product-write-lock";
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
 import { grantedProductIds, registerProductResource, requireProductGrant } from "../product-governance/grants";
+import { assertAppBuilderAccess } from "../app-builder/access";
 import { notifyProductDefinitionChanged } from "./definition-stream";
 import { validateCurrentProductReferences } from "./references";
 import { validateProjectionComponent } from "./component-catalogue";
@@ -36,7 +37,12 @@ export function requireOrdinaryProjection(input: Pick<ProductProjectionInput, "c
     throw new HttpError(400, "Register a chart through its source card", "CHART_SOURCE_REGISTRATION_REQUIRED");
 }
 async function readCurrentRecord(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string) {
-  const row = await requireCurrentProduct(owner, credentials, kind, id, "use");
+  const row = await findCurrentProduct(owner.domainId, kind, id);
+  if (!row) {
+    await assertAppBuilderAccess(credentials);
+    throw new HttpError(404, `${kind === "panel" ? "Panel" : "Projection"} '${id}' does not exist`, "PRODUCT_UNAVAILABLE");
+  }
+  await requireProductGrant(id, "use", credentials);
   return currentProductRecord(row, (await grantedProductIds("edit", credentials)).includes(id));
 }
 export async function readCurrentProjection(owner: ProductOwner, credentials: AssistantCredentials, id: string) {
@@ -75,7 +81,7 @@ export async function insertCurrentProduct(client: PoolClient, owner: ProductOwn
     [owner.domainId, id],
   );
   if (collision.rows.length) throw new HttpError(409, "Product identity already belongs to another collection", "PRODUCT_ID_CONFLICT");
-  if ("componentId" in input) await validateProjectionComponent(input);
+  if ("componentId" in input) await validateProjectionComponent(id, input);
   await registerProductResource(owner, id, input.visibility === "domain");
   await requireProductGrant(id, "edit", credentials);
   const result = await client.query(`INSERT INTO ${t(currentProductTables[kind])} (domain_id,id,owner_id,definition) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT DO NOTHING RETURNING ${currentProductColumns}`, [owner.domainId, id, owner.userId, JSON.stringify(input)]);
@@ -85,7 +91,7 @@ export async function insertCurrentProduct(client: PoolClient, owner: ProductOwn
 
 async function save(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string,
   input: CurrentDefinition, revision: number) {
-  if (revision !== 0 && "componentId" in input) await validateProjectionComponent(input);
+  if (revision !== 0 && "componentId" in input) await validateProjectionComponent(id, input);
   const row = await transaction(async client => {
     await lockProducts(client, owner);
     await validateCurrentProductReferences(owner, credentials, kind, id, input, client);

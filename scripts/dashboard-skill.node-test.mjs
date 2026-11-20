@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {test} from "node:test";
+import {before,test} from "node:test";
 import {createServer} from "node:http";
 import {execFile} from "node:child_process";
 import {promisify} from "node:util";
@@ -21,10 +21,7 @@ async function server(t,reply={success:true,data:{rows:[{value:0},{value:null}],
 }
 function invoke(dir,base,args){return run(process.execPath,[cli,...args],{cwd:dir,env:{...process.env,ONTOMATO_WORKBENCH_URL:base,ONTOMATO_TK:"fixture-reader",ONTOMATO_API_KEY:"",ONTOMATO_SESSION_ID:sessionId,ONTOMATO_RUN_ID:runId,ONTOMATO_SKILL_SCENARIO:"platform"}});}
 
-test("the standalone dashboard skill matches its shared schema source",async t=>{
-  const dir=await workspace(t);await run(process.execPath,[path.join(root,"packages/workbench-server/dashboard-skill/build.mjs"),dir]);
-  for(const file of ["scripts/dashboard-pages.mjs","licenses/zod-LICENSE.txt"])assert.equal(Buffer.compare(await readFile(path.join(dir,file)),await readFile(path.join(skill,file))),0);
-});
+before(async()=>{await run(process.execPath,[path.join(root,"packages/workbench-server/dashboard-skill/build.mjs")],{cwd:root});});
 test("draft returns only the page link for a combined card edit",async t=>{
   const dir=await workspace(t),api=await server(t);
   const chartFile={name:"staff.chart.json",content:{

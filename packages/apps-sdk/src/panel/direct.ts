@@ -96,7 +96,8 @@ export function awaitsInputs(projection: DirectProjection, data: DirectProjectio
   const values = paramValues(data, inputs);
   const declaration = directReadDeclaration(projection, data);
   const required = declaration?.parameterMode === "fixed" ? declaration.requiredParams ?? [] : [];
-  return required.some((param) => values[param] === null);
+  // An empty state, an unmapped parameter and a literal null all leave a required parameter without a value.
+  return required.some((param) => values[param] === null || values[param] === undefined);
 }
 
 /** The object a datum is read from now, when its source is one: the literal, or the input that holds it. */
