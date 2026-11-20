@@ -207,8 +207,11 @@ export const ignoreChanges = () => {};
 export const registered = (applicationId: string, use: ApplicationPanelUse, panel: ProductPanel) =>
   ({ kind: "registered", applicationId, use, panel }) as const;
 
-/** The page skill member Node names for a panel read for one page, by a name derived from the panel alone. */
-export const memberKeyOf = (panelId: string) => `pvt-${[...panelId].map(char => char.charCodeAt(0).toString(16)).join("").slice(0, 48).padEnd(48, "0")}`;
+/** The page skill ref Node names for a panel read for one page: one ref per panel, by a name derived from the panel alone. */
+export const memberRefOf = (panelId: string) => ({
+  namespace: { kind: "domain" as const, domainId: "domain-test" },
+  name: `pvt-${[...panelId].map(char => char.charCodeAt(0).toString(16)).join("").slice(0, 48).padEnd(48, "0")}`,
+});
 
 /**
  * The page skill context Node answers for a panel read or a snapshot read made for one page: which member a message
@@ -223,7 +226,7 @@ export function pageSkillContextFor(panel: Pick<ProductPanel, "id">, request: Se
   const locator = permissionCode ? { permissionCode, pageKey } : { access: "domain-member", pageKey };
   return {
     mode: "member", locator,
-    member: { source: { kind: "application-use", applicationId, useId: query.get("useId")! }, memberKey: memberKeyOf(panel.id) },
+    member: { source: { kind: "application-use", applicationId, useId: query.get("useId")! }, memberPath: [], ref: memberRefOf(panel.id) },
   };
 }
 
