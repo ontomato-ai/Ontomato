@@ -1,11 +1,12 @@
 import { BUILD_TEST_SDK_CAPABILITY } from "../contracts/src/build-tests.ts";
 // Builds one product's apps SDK: `node build.mjs <edition module> <output root>`. The output root then holds exactly
-// current.json and one version directory with the browser modules, the stylesheet, the docs and the examples of that version. The source
+// current.json and one version directory with the browser modules, the stylesheet, the docs, the examples and the Node
+// module a check of panel sources runs (`node/panel-check.mjs`) of that version. The source
 // facts come from the image builder in APPS_SDK_BUILD (scripts/workbench/build-images.mjs).
 import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import vue from "@vitejs/plugin-vue";
 import { build, normalizePath } from "vite";
 import { finalizeSdk, VERSION_PLACEHOLDER } from "./content-version.mjs";
@@ -34,6 +35,13 @@ const ENTRIES = [
   { specifier: "@ontomato/sdk/graph", file: "graph.js", source: "src/entries/graph.ts" },
 ];
 const STYLESHEET = "styles/sdk.css";
+/** The Node module of the parsers and schemas a check of no-code panel sources runs (the contracts' `panel-check.ts`). */
+const CHECK = "node/panel-check.mjs";
+/** What a check of no-code panel sources takes from it, by these names. */
+const CHECK_EXPORTS = [
+  "directPanelDefinitionContentSchema", "directPanelManifestSchema", "directProjectionInputSchema",
+  "registerDirectPanelRequestSchema", "registerDirectProjectionRequestSchema", "parsePanelLayout", "PanelLayoutError",
+];
 /** The third-party libraries apps program against directly; their versions are part of an SDK version's contract. */
 const LIBRARIES = ["vue", "element-plus", "echarts"];
 
@@ -78,6 +86,32 @@ function render(text, version) {
 }
 
 const libraryVersion = (name) => JSON.parse(readFileSync(require.resolve(`${name}/package.json`), "utf8")).version;
+
+/**
+ * The contracts' panel check as one Node module with its dependencies inside, so a command line checks a panel's sources
+ * with this version's own parsers and schemas, without the platform's sources. It is loaded once here, as a command line
+ * loads it.
+ */
+async function buildCheck(outDir) {
+  await build({
+    configFile: false,
+    root: HERE,
+    logLevel: "warn",
+    ssr: { noExternal: true, target: "node" },
+    build: {
+      ssr: join(HERE, "../contracts/src/panel-check.ts"),
+      outDir: join(outDir, dirname(CHECK)),
+      emptyOutDir: false,
+      target: "node22",
+      minify: false,
+      reportCompressedSize: false,
+      rollupOptions: { output: { format: "es", entryFileNames: CHECK.slice(dirname(CHECK).length + 1), inlineDynamicImports: true } },
+    },
+  });
+  const check = await import(pathToFileURL(join(outDir, CHECK)).href);
+  const missing = CHECK_EXPORTS.filter((name) => !(name in check));
+  if (missing.length) throw new Error(`${CHECK} does not export ${missing.join(", ")}`);
+}
 
 async function main() {
   const [editionArg, outArg] = process.argv.slice(2);
@@ -130,6 +164,7 @@ async function main() {
     },
   });
 
+  await buildCheck(outDir);
   mkdirSync(join(outDir, "docs"), { recursive: true });
   writeFileSync(join(outDir, "docs/index.md"), render(readFileSync(join(HERE, "resources/docs/index.md"), "utf8"), version));
   const components = componentMetadata({ tsconfig: join(HERE, "tsconfig.json"), source: join(HERE, "src/catalogue.ts") });
@@ -164,6 +199,7 @@ async function main() {
     entries: Object.fromEntries(ENTRIES.map((entry) => [entry.specifier, entry.file])),
     stylesheet: STYLESHEET,
     components: "components.json",
+    check: CHECK,
     libraries: Object.fromEntries(LIBRARIES.map((name) => [name, libraryVersion(name)])),
     docs: "docs/index.md",
   }, null, 2)}\n`);
