@@ -23,6 +23,9 @@ export const en = {
   "panels.confirmation.deleteFunctionImpact": "This deletes the selected function; the owner refuses one referenced by a metric, an action or a write task.",
   "panels.confirmation.deleteActionImpact": "This deletes the selected action; the owner refuses a system action or one referenced by a scheduled task.",
   "panels.confirmation.deleteObjectTypeImpact": "This deletes the selected object type, together with the relationships that touch it ({relationships} in total).",
+  "panels.confirmation.deleteKnowledgeImpact": "This deletes the selected business knowledge ({count} in total).",
+  "panels.knowledge.approve": "Approve",
+  "panels.knowledge.delete": "Delete",
   "panels.action.fields.status": "Status",
   "panels.action.fields.origin": "Origin",
   "panels.action.fields.createdBy": "Created by",
@@ -433,6 +436,8 @@ export const en = {
   "assistant.skills.report.description": "Write an evidence-based report and turn it into a PowerPoint presentation on request.",
   "assistant.skills.analyst.title": "Ontology analyst",
   "assistant.skills.analyst.description": "Read ontology metadata and ask data questions",
+  "assistant.skills.unavailable.name": "Unavailable skill",
+  "assistant.skills.unavailable.reason": "This skill is not available to you.",
   "mcp.catalog.analysisTitle": "Agent Platform Agents MCP",
   "mcp.catalog.opsTitle": "Agent Platform Ops Agent MCP",
 } satisfies import("../index").TranslationMessages;

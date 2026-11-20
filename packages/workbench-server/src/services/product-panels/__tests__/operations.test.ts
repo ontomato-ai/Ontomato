@@ -6,10 +6,11 @@ import rawExamples from "../../../../../contracts/examples/platform-schedules.js
 import {platformTaskSchema,platformScheduleFormSchema} from "@ontomato/contracts/platform-schedules";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { isPanelHumanOperationIntent, type PanelOperationIntent } from "@ontomato/contracts/panel-agent";
+import { APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE } from "@ontomato/contracts/panel-client-requests";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { panelReadOperationInputSchema, panelReadOperationResultSchema } from "@ontomato/contracts/panel-operations";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
-const mocks = vi.hoisted(() => ({draft:vi.fn(), createDefinition:vi.fn(), projectDefinition:vi.fn(), assertPermission:vi.fn(),recordCreated:vi.fn(),query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),catalogue:vi.fn(),pages:vi.fn(),resolveMember:vi.fn(),loadedMember:vi.fn(),restore:vi.fn(),sessionActor:vi.fn(),notify:vi.fn()}));
+const mocks = vi.hoisted(() => ({draft:vi.fn(), createDefinition:vi.fn(), projectDefinition:vi.fn(), assertPermission:vi.fn(),recordCreated:vi.fn(),query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),pages:vi.fn(),resolveMember:vi.fn(),loadedMember:vi.fn(),restore:vi.fn(),sessionActor:vi.fn(),notify:vi.fn()}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
 vi.mock("../../assistant/service",()=>({assistantService:{pageDraft:mocks.draft,recordPageDraftCreated:mocks.recordCreated}}));
 vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({callbackUrl:"http://workbench.test"})}}));
@@ -26,13 +27,29 @@ vi.mock("../../assistant/definitions", () => ({
 
 vi.mock("../../assistant/skills",()=>({
   readAssistantSkillView: mocks.pages,
+  resolvePageSkillSource: mocks.resolveMember,
   loadedPageSkillVersion: mocks.loadedMember,
 }));
 vi.mock("../../../utils/backend-client",()=>({backendGet:mocks.backend,buildBackendHeaders:(token:string,_x:unknown,_l:unknown,key:string,headers:object)=>({...headers,...(token?{tk:token}:{}),...(key?{"X-API-Key":key}:{})})}));
 vi.mock("../../agent-host/caller",()=>({restoreAgentCaller:mocks.restore,readAgentSessionActor:mocks.sessionActor}));
 vi.mock("../../agent-host/presentation",()=>({publishObjectChanged:mocks.notify}));
-vi.mock("../current",()=>({readCurrentPanelRecord:mocks.panel,readCurrentProjectionRecord:mocks.projection}));
-vi.mock("../skill-package",()=>({readComponentCatalogue:mocks.catalogue}));
+vi.mock("../current",()=>({
+  readCurrentPanelRecord: mocks.panel,
+  async requireDirectPanelMember(...[owner, credentials, panel, key]: Parameters<typeof import("../current").requireDirectPanelMember>) {
+    const member = panel.manifest.members[key];
+    if (!("projectionId" in member.target)) throw new Error("Expected a projection in this fixture");
+    const { binding, ...projection } = await mocks.projection(owner, credentials, member.target.projectionId);
+    const form = Object.keys(projection.inputs)[0];
+    const data = binding.kind === "PlatformOperation"
+      ? { operation: { source: { operation: binding }, read: "describe", params: {} } }
+      : form
+        ? { form: { source: { object: { input: form } }, read: "form", params: {} } }
+        : { createForm: { source: { type: binding }, read: "createForm", params: {} } };
+    return { member, projection: {
+      ...projection, data, componentId: binding.kind === "PlatformOperation" ? "@ontomato/sdk:OperationButton" : "@ontomato/sdk:ObjectForm",
+    } };
+  },
+}));
 import {
   operatePanel as realOperatePanel, dispatchPanel, dispatchHumanPanelOperation, inspectPanelOperationImpact, ownPanelSettings,
   prepareHumanPanelOperation, projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor,
@@ -72,9 +89,17 @@ beforeEach(()=>{
  mocks.resolveMember.mockResolvedValue(skill);
  mocks.loadedMember.mockImplementation((ref, loaded: RuntimeRun["resolvedSkills"]) =>
    loaded.find(entry => JSON.stringify(entry.skill) === JSON.stringify(ref)) ?? null);
- mocks.panel.mockResolvedValue({id:"P",sdkVersion:"1.0.0",manifest:{state:{task:{kind:"object",objectType:"platform:ScheduledTask"}},slots:{run:{projectionId:"run",inputs:{task:{state:"task"}}},form:{projectionId:"form",inputs:{task:{state:"task"}}}},operations:[]}});
+ mocks.panel.mockResolvedValue({
+   id: "P", manifest: {
+     state: { task: { type: { kind: "object", objectType: "platform:ScheduledTask" } } },
+     members: {
+       run: { target: { projectionId: "run" }, inputs: { task: { state: "task" } } },
+       form: { target: { projectionId: "form" }, inputs: { task: { state: "task" } } },
+     },
+     events: {},
+   },
+ });
  mocks.projection.mockImplementation(async(_o:unknown,c:unknown,id:string)=>{expect(c).toBe(credentials);return {id,name:"Run now",componentId:id,binding:id==="run"?{kind:"PlatformOperation",id:"schedules.runNow"}:{kind:"PlatformObjectType",id:"platform:ScheduledTask"},inputs:{task:{kind:"object",objectType:"platform:ScheduledTask"}}};});
- mocks.catalogue.mockResolvedValue(new Map([["run",{}],["form",{operations:[{client:"@binding",name:"save",label:"Save",kind:"form.save",inputSchema:{}}]}]]));
  mocks.restore.mockResolvedValue({owner});
  mocks.session.mockImplementation(async()=>({messages:human?[{message:human}]:[]}));
  mocks.request.mockImplementation(async(path:string,_method:string,body:{source:unknown})=>path==="/v1/channel/user-questions"?{questionId:agentQuestionId(),source:body.source,recipient:{session:root,actor:{id:uuid(4),domainId:"d"}}}:{questionId:agentQuestionId(),answerId:uuid(11),source:{kind:"user"},respondent:{id:uuid(12),domainId:"d"},recipientSession:root,selectedOption:1,text:"Execute"});
@@ -206,7 +231,7 @@ it("notifies the initiator once after the later run dispatches an approved actio
  }]]);
 });
 it("rejects a declaration whose target type does not match its platform operation",async()=>{
- const panel=await mocks.panel();panel.manifest.state.task.objectType="customer:Account";
+ const panel=await mocks.panel();panel.manifest.state.task.type.objectType="customer:Account";
  await expect(operatePanel(owner,credentials,current.id,action())).rejects.toMatchObject({code:"OPERATION_UNAVAILABLE"});
  expect(ownerWrites()).toHaveLength(0);
 });
@@ -244,7 +269,7 @@ it("dispatches through the registered owner without a resource-specific coordina
    targetSchema:z.object({kind:z.literal("object"),objectType:z.literal("test:Thing"),primaryKey:z.string()}),inputSchema:z.object({value:z.number()}),resultSchema:z.object({done:z.boolean()}),
    targetLabel:vi.fn(),execute:vi.fn(async()=>({kind:"success" as const,data:{done:true}}))};
  vi.spyOn(serverOperations,"panelServerOperation").mockReturnValue(handler);
- const panel=await mocks.panel();panel.manifest.state.task.objectType="test:Thing";
+ const panel=await mocks.panel();panel.manifest.state.task.type.objectType="test:Thing";
  mocks.projection.mockResolvedValue({id:"run",name:"Perform",componentId:"run",binding:handler.binding,inputs:{task:{kind:"object",objectType:handler.targetType}}});
  const input={...action(),operationId:"run.perform",call:{target:{kind:"object" as const,objectType:handler.targetType,primaryKey:"opaque-key"},input:{value:7}}};
  expect(await operatePanel(owner,credentials,current.id,input)).toMatchObject({kind:"dispatched",outcome:{kind:"success",data:{done:true}}});
@@ -295,6 +320,46 @@ it("reuses the original creation artifact as the initiator and saves as the exec
   });
   expect(mocks.projectDefinition).toHaveBeenLastCalledWith(expect.objectContaining({ skills: values.skills }), currentView);
   expect(mocks.createDefinition).toHaveBeenCalledTimes(1);
+});
+
+it("asks by the entry's title and approves the whole entry as the executor", async () => {
+  const key = uuid(9);
+  const entry = { knowledgeID: key, knowledgeTitle: "Order rule", knowledgeText: "Orders need a customer", knowledgeTags: ["Business"], status: 0, creatorType: 1 };
+  mocks.panel.mockResolvedValue({ id: "P", manifest: {
+    state: { task: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE } } },
+    members: { run: { target: { projectionId: "run" }, inputs: { knowledge: { state: "task" } } } }, events: {},
+  } });
+  mocks.projection.mockResolvedValue({ id: "run", name: "Approve", componentId: "@ontomato/sdk:OperationButton",
+    binding: { kind: "PlatformOperation", id: APPROVE_KNOWLEDGE }, inputs: { knowledge: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+    data: { describe: { source: { operation: APPROVE_KNOWLEDGE }, read: "describe", params: {} } },
+  });
+  // The label is read as the initiator; the dispatch's list read and the write go as the executor.
+  const reads: Headers[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+    const headers = new Headers(init.headers);
+    if (String(url).endsWith("/admin/getBussinessKnowledge")) {
+      reads.push(headers);
+      return Response.json({ success: true, data: { [key]: entry } });
+    }
+    expect(String(url).endsWith("/admin/editBussinessKnowledge")).toBe(true);
+    expect(headers.get("X-API-Key")).toBe("V-key");
+    expect(headers.get("tk")).toBeNull();
+    // Approval rewrites the whole entry as the owner read it, with status 1.
+    expect(JSON.parse(String(init.body))).toEqual({ ...entry, status: 1 });
+    return Response.json({ success: true });
+  }));
+  const input = { ...action(), operationId: "run.approve", call: { target: { kind: "object" as const, objectType: BUSINESS_KNOWLEDGE, primaryKey: key }, input: {} } };
+  const response = await operatePanel(owner, credentials, current.id, input);
+  expect(response.kind).toBe("confirmation-required");
+  expect(mocks.request.mock.calls[0][2].message).toBe('Run “Approve” on “Order rule” as Victor?');
+  answer();
+  current = { ...current, id: uuid(6) };
+  expect(await dispatchPanel(owner, credentials, current.id, input.intentId)).toMatchObject({ kind: "dispatched", outcome: { kind: "success", data: {} } });
+  expect(reads.map((headers) => [headers.get("tk"), headers.get("X-API-Key")])).toEqual([["U-token", null], [null, "V-key"]]);
+  const target = { objectType: BUSINESS_KNOWLEDGE, primaryKey: key };
+  expect(mocks.notify.mock.calls).toEqual([[{ domainId: owner.domainId, initiator: owner.userId, rootSession: root,
+    target, affected: { objects: [target], objectTypes: [BUSINESS_KNOWLEDGE] },
+  }]]);
 });
 
 it("freezes the owner write description with a named target and a result schema", async () => {
@@ -349,8 +414,8 @@ it.each([
   automatic = true;
   const objectType = "platform:AgentDefinition";
   const panel = await mocks.panel();
-  panel.manifest.state.task.objectType = objectType;
-  panel.manifest.slots.run.inputs = { agent: { state: "task" } };
+  panel.manifest.state.task.type.objectType = objectType;
+  panel.manifest.members.run.inputs = { agent: { state: "task" } };
   mocks.projection.mockResolvedValue({
     id: "run", componentId: "run", name: "Delete agent", binding: { kind: "PlatformOperation", id: "agents.delete" },
     inputs: { agent: { kind: "object", objectType } },
@@ -370,8 +435,8 @@ it.each([
 it("inspects the actual agent delete using the initiator's definition read", async () => {
   const objectType = "platform:AgentDefinition", primaryKey = uuid(9);
   const panel = await mocks.panel();
-  panel.manifest.state.task.objectType = objectType;
-  panel.manifest.slots.run.inputs = { agent: { state: "task" } };
+  panel.manifest.state.task.type.objectType = objectType;
+  panel.manifest.members.run.inputs = { agent: { state: "task" } };
   mocks.projection.mockResolvedValue({
     id: "run", componentId: "run", name: "Delete agent", binding: { kind: "PlatformOperation", id: "agents.delete" },
     inputs: { agent: { kind: "object", objectType } },
@@ -613,13 +678,8 @@ it("runs a registered read using the reader and preview context without creating
     target: { source: "draft", slot: "form" }, targetSchema: z.object({ kind: z.literal("draft") }).strict(),
     inputSchema: panelReadOperationInputSchema, resultSchema: panelReadOperationResultSchema, execute,
   });
-  mocks.projection.mockResolvedValue({
-    id: "run", name: "Trial", componentId: "run", binding, inputs: {},
-  });
   const label = "Preview the metric results";
-  mocks.catalogue.mockResolvedValue(new Map([["run", {
-    operations: [{ client: "metricViews", name: "testExecute", label, kind: "action", inputSchema: {} }],
-  }]]));
+  mocks.projection.mockResolvedValue({ id: "run", name: label, componentId: "run", binding, inputs: {} });
   const ownerRead = vi.fn(async (url, init) => {
     expect(url).toBe("http://owner.test/metricView/testExecute");
     expect(new Headers(init.headers).get("tk")).toBe("U-token");
@@ -643,8 +703,9 @@ it("resolves the actual panel-use member and refuses a run that only loaded a si
   await expect(operatePanel(owner, credentials, current.id, action())).rejects.toMatchObject({ code: "FORBIDDEN" });
   expect(mocks.pages).toHaveBeenCalledWith(owner.domainId, credentials);
   expect(mocks.resolveMember).toHaveBeenCalledWith(
+    expect.objectContaining({ resolveSource: mocks.resolveMember }),
     { access: "domain-member", pageKey: "tasks" },
-    { kind: "application-use", applicationId: "A", useId: "tasks" }, { id: use.panelId },
+    { kind: "application-use", applicationId: "A", useId: "tasks" }, [], { id: use.panelId },
   );
   expect(mocks.loadedMember).toHaveBeenCalledWith(
     { ...skill, name: "other-panel-in-the-same-group" }, current.resolvedSkills,

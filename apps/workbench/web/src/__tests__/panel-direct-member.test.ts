@@ -36,7 +36,7 @@ const projections: Record<string, DirectProjection> = {
   "task-run": {
     ...record, id: "task-run", name: "Run now", componentId: "@ontomato/sdk:OperationButton",
     inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: {},
-    data: { operation: { source: { operation: "schedules.runNow" }, read: "describe", params: {} } },
+    data: { operation: { source: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, read: "describe", params: {} } },
   },
 };
 const manifest: DirectPanelManifest = {

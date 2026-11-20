@@ -14,7 +14,7 @@ and MCP services are kept as they are when it is saved.
 
 The list is the domain's `platform:AgentDefinition` objects in the service's order. Choosing one writes it into
 `selectedAgent` and the panel edits it (`mode` is `edit`); choosing it again lets go and the panel returns to the list.
-The `newAgent` operation clears the selection and sets `mode` to `create`: the form then holds the service's defaults for
+The `newAgent` event clears the selection and sets `mode` to `create`: the form then holds the service's defaults for
 a new agent, and saving creates it and selects it.
 
 ## One form, several groups

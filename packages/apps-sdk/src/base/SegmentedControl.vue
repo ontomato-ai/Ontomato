@@ -7,13 +7,15 @@ import {
   slotInputState,
   slotOutputState,
 } from "../panel/context";
+import { panelMemberKey, useMemberData } from "../panel/member";
 import type { SegmentedControlOption } from "./segmented-control-types";
 
 type ScalarValue = string | number | boolean;
 
 /**
- * Unbound segmented switcher that reads and writes one declared scalar panel state (or a controlled `modelValue` when
- * used outside a panel state binding). It binds no ontology element and performs no platform reads.
+ * Segmented switcher that reads and writes one declared scalar panel state (or a controlled `modelValue` when used
+ * outside a panel state binding). When drawn as a projection member declaring a `counts` (`panelGroupCounts`) datum,
+ * it renders each option's count beside its label while remaining interactive across all datum states.
  */
 const props = withDefaults(
   defineProps<{
@@ -47,7 +49,16 @@ const emit = defineEmits<{
 const { t, te } = useI18n();
 const panel = inject(panelContextKey, null);
 const slot = inject(projectionKey, null);
+const memberGetter = inject(panelMemberKey, null);
+const member = memberGetter ? memberGetter() : null;
+const countsData = member && "counts" in member.projection.data ? useMemberData("counts") : null;
 const buttonRefs = ref<HTMLButtonElement[]>([]);
+
+const groupCounts = computed<Readonly<Record<string, number>> | null>(() =>
+  countsData?.value.status === "ready"
+    ? (countsData.value.value as unknown as Readonly<Record<string, number>>)
+    : null,
+);
 
 const boundState = computed<string | null>(() => {
   if (props.state) return props.state;
@@ -67,6 +78,10 @@ const currentValue = computed<ScalarValue | null>(() => {
     if (raw !== null && raw !== undefined && typeof raw !== "object") return raw;
     return props.defaultValue ?? null;
   }
+  if (member && "value" in member.inputs.value) {
+    const raw = member.inputs.value.value;
+    if (raw !== null && raw !== undefined && typeof raw !== "object") return raw;
+  }
   return props.modelValue ?? props.defaultValue ?? null;
 });
 
@@ -83,11 +98,21 @@ function optionLabel(option: SegmentedControlOption<ScalarValue>): string {
   return String(option.value);
 }
 
+function optionCount(option: SegmentedControlOption<ScalarValue>): number | undefined {
+  const count = groupCounts.value?.[String(option.value)];
+  return typeof count === "number" ? count : undefined;
+}
+
 function select(option: SegmentedControlOption<ScalarValue>) {
   if (props.disabled || option.disabled || option.value === currentValue.value) return;
-  if (boundState.value) {
-    if (!panel) throw new Error(`SegmentedControl state '${boundState.value}' requires a panel context`);
-    panel.instance.state.set(boundState.value, option.value);
+  if (props.state) {
+    if (!panel) throw new Error(`SegmentedControl state '${props.state}' requires a panel context`);
+    panel.instance.state.set(props.state, option.value);
+  } else if (panel && slot) {
+    if (!slotOutputState(panel.manifest, slot.slot, "value") && boundState.value) {
+      panel.instance.state.set(boundState.value, option.value);
+    }
+    void panel.instance.output(slot.slot, "value", option.value);
   }
   emit("update:modelValue", option.value);
   emit("change", option.value);
@@ -148,7 +173,8 @@ function onKeydown(event: KeyboardEvent, currentIndex: number) {
       @click="select(option)"
       @keydown="onKeydown($event, index)"
     >
-      {{ optionLabel(option) }}
+      <span>{{ optionLabel(option) }}</span>
+      <span v-if="optionCount(option) !== undefined" class="sdk-segmented-count">{{ optionCount(option) }}</span>
     </button>
   </div>
 </template>
@@ -164,17 +190,25 @@ function onKeydown(event: KeyboardEvent, currentIndex: number) {
   padding: 2px;
 }
 .sdk-segmented-option {
+  align-items: center;
   background: transparent;
   border: 0;
   border-radius: calc(var(--radius-md, 6px) - 2px);
   color: var(--el-text-color-regular);
   cursor: pointer;
+  display: inline-flex;
   font-size: var(--text-sm, 13px);
   font-weight: 500;
+  gap: 6px;
   line-height: 1.4;
   padding: 4px 12px;
   transition: background-color 0.15s ease, color 0.15s ease;
   white-space: nowrap;
+}
+.sdk-segmented-count {
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs, 12px);
+  font-variant-numeric: tabular-nums;
 }
 .sdk-segmented-option:hover:not(:disabled):not(.active) {
   color: var(--el-text-color-primary);

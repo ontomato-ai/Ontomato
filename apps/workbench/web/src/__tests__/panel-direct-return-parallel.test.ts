@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { h, nextTick } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
-import { directPanelSchema, productProjectionResponseSchema } from "@ontomato/contracts/product-panels";
+import { productPanelSchema, productProjectionResponseSchema } from "@ontomato/contracts/product-panels";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import recorded from "./fixtures/direct-panel-host-http.json";
@@ -40,7 +40,7 @@ async function open(relations: Promise<readonly unknown[]>) {
     }] });
     if (request.path === `/api/data-query/platform/applications/${application}/panel-uses`)
       return Response.json({ data: { applicationId: application, entry: { path: "/", renderer: "panels" }, panelUses: await relations } });
-    if (request.path === "/api/product-panels/panel-schedules-trial") return panelAnswer(directPanelSchema.parse(recorded.panel.panel), request);
+    if (request.path === "/api/product-panels/panel-schedules-trial") return panelAnswer(productPanelSchema.parse(recorded.panel.panel), request);
     if (request.path === "/api/product-panels/panel-schedules-trial/snapshot") return Response.json({ ...recorded.snapshot, pageSkillContext: pageSkillContextFor(recorded.panel.panel, request) });
     const projection = /^\/api\/product-projections\/(.+)$/.exec(request.path);
     if (projection)

@@ -86,8 +86,8 @@
       "domainId": "pilot",
       "ownerId": "reader",
       "revision": 1,
-      "createdAt": "2026-11-19T23:00:24.836Z",
-      "updatedAt": "2026-11-19T23:00:24.836Z",
+      "createdAt": "2026-11-20T06:03:59.547Z",
+      "updatedAt": "2026-11-20T06:03:59.547Z",
       "editable": true
     }
   },
@@ -96,6 +96,60 @@
       "id": "panel-schedules-trial",
       "revision": 1
     },
+    "members": [
+      {
+        "status": "ready",
+        "memberPath": [
+          {
+            "member": "run"
+          }
+        ],
+        "target": {
+          "kind": "projection",
+          "id": "projection-schedules-run"
+        },
+        "revision": 1
+      },
+      {
+        "status": "ready",
+        "memberPath": [
+          {
+            "member": "form"
+          }
+        ],
+        "target": {
+          "kind": "projection",
+          "id": "projection-schedules-form"
+        },
+        "revision": 1
+      },
+      {
+        "status": "ready",
+        "memberPath": [
+          {
+            "member": "tasks"
+          }
+        ],
+        "target": {
+          "kind": "projection",
+          "id": "projection-schedules-tasks"
+        },
+        "revision": 1
+      },
+      {
+        "status": "ready",
+        "memberPath": [
+          {
+            "member": "summary"
+          }
+        ],
+        "target": {
+          "kind": "projection",
+          "id": "projection-schedules-summary"
+        },
+        "revision": 1
+      }
+    ],
     "projections": [
       {
         "id": "projection-schedules-run",
@@ -129,7 +183,10 @@
         "data": {
           "operation": {
             "source": {
-              "operation": "schedules.runNow"
+              "operation": {
+                "kind": "PlatformOperation",
+                "id": "schedules.runNow"
+              }
             },
             "read": "describe",
             "params": {}
@@ -143,8 +200,8 @@
         "domainId": "pilot",
         "ownerId": "reader",
         "revision": 1,
-        "createdAt": "2026-11-19T23:00:24.827Z",
-        "updatedAt": "2026-11-19T23:00:24.827Z",
+        "createdAt": "2026-11-20T06:03:59.524Z",
+        "updatedAt": "2026-11-20T06:03:59.524Z",
         "editable": true
       }
     },
@@ -191,8 +248,8 @@
         "domainId": "pilot",
         "ownerId": "reader",
         "revision": 1,
-        "createdAt": "2026-11-19T23:00:24.818Z",
-        "updatedAt": "2026-11-19T23:00:24.818Z",
+        "createdAt": "2026-11-20T06:03:59.503Z",
+        "updatedAt": "2026-11-20T06:03:59.503Z",
         "editable": true
       }
     },
@@ -214,7 +271,10 @@
         "data": {
           "rows": {
             "source": {
-              "type": "platform:ScheduledTask"
+              "type": {
+                "kind": "PlatformObjectType",
+                "id": "platform:ScheduledTask"
+              }
             },
             "read": "list",
             "params": {}
@@ -228,8 +288,8 @@
         "domainId": "pilot",
         "ownerId": "reader",
         "revision": 1,
-        "createdAt": "2026-11-19T23:00:24.808Z",
-        "updatedAt": "2026-11-19T23:00:24.808Z",
+        "createdAt": "2026-11-20T06:03:59.478Z",
+        "updatedAt": "2026-11-20T06:03:59.478Z",
         "editable": true
       }
     },
@@ -269,8 +329,8 @@
         "domainId": "pilot",
         "ownerId": "reader",
         "revision": 1,
-        "createdAt": "2026-11-19T23:00:24.792Z",
-        "updatedAt": "2026-11-19T23:00:24.792Z",
+        "createdAt": "2026-11-20T06:03:59.444Z",
+        "updatedAt": "2026-11-20T06:03:59.444Z",
         "editable": true
       }
     }

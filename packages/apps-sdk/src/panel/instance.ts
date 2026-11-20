@@ -1,7 +1,9 @@
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import { computed, readonly, shallowReactive, shallowRef, type DeepReadonly, type Ref } from "vue";
 import type { PageContext } from "@ontomato/contracts/page-context";
-import { panelOpenRequestSchema, type PanelDeepLinkStateValue, type PanelManifest, type PanelOperationCall, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import { panelOpenRequestSchema, panelOperationId, type PanelDeepLinkStateValue, type PanelManifest, type PanelOperationCall, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import { createPanelEvents } from "./events";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { childObjectNameKey, createPanelState, objectNameKey, panelSelection, type PanelInitialState, type PanelStateStore } from "./state";
 import type { PanelText } from "./text";
@@ -53,6 +55,11 @@ export interface PanelInstance {
   readonly pageContext: DeepReadonly<Ref<PageContext>>;
   /** Computed afresh from the registered projections; a reader never changes it. */
   readonly operations: Readonly<Ref<readonly PanelOperationBinding[]>>;
+  /**
+   * A member handed over a value at one of its outputs: the state field the member binds it to takes it, then every
+   * event the declaration runs on that output runs.
+   */
+  output(member: string, output: string, value: RuntimeJsonValue, item?: RuntimeJsonValue): Promise<void>;
   readonly projections: DeepReadonly<Ref<readonly PanelProjectionRegistration[]>>;
   /** The form adapters its projections registered, for the draft its address names. */
   readonly forms: PanelFormAdapters;
@@ -124,7 +131,19 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     // write does, and is read again from there; the receipt itself rereads nothing.
     return options.confirmOperation(await options.operations.prepare(operationId, invocation));
   }
-  const operations = computed(() => panelOperations(manifest, registrations.value, state, forms, options.text, writeOperation));
+  const events = createPanelEvents(manifest, {
+    state,
+    invokeMember: (member, operation, input) => invoke(panelOperationId(member, operation), input),
+    // Another member placed in a mode and an application entry are a later stage's; this release opens neither.
+    open: (request) => Promise.reject(new Error(`This SDK release opens no ${request.mode === "entry" ? "application entry" : "member"} from an event`)),
+    text: options.text,
+  });
+  const operations = computed(() => panelOperations(manifest, registrations.value, state, forms, events, writeOperation));
+  async function invoke(id: string, input?: Readonly<Record<string, unknown>>) {
+    const found = operations.value.find((operation) => operation.id === id);
+    if (!found) throw new Error(`The panel offers no operation '${id}'`);
+    return found.invoke(input);
+  }
   const forms = new PanelFormAdapters(options.reportDraftError);
   const draft = shallowRef<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
   const names = shallowReactive(new Map<string, string>());
@@ -157,7 +176,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     },
     unclaimedDraft: computed(() => {
       const registered = registrations.value;
-      if (!Object.keys(manifest.slots).every((slot) => registered.some((registration) => registration.slot === slot))) return false;
+      if (!Object.keys(manifest.members).every((member) => registered.some((registration) => registration.slot === member))) return false;
       const formSlots = registered
         .filter((registration) => registration.ports.operations.some((operation) => operation.kind === "form.save"))
         .map((registration) => registration.slot);
@@ -167,17 +186,20 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     register(registration) {
       // In the declaration's slot order, whichever projection finished loading first: the operations an agent lists and
       // the header draws, and the forms a draft is offered to, keep the panel's own order.
-      const order = Object.keys(manifest.slots);
+      const order = Object.keys(manifest.members);
       registrations.value = [...registrations.value, registration]
         .sort((a, b) => order.indexOf(a.slot) - order.indexOf(b.slot));
       return () => {
         registrations.value = registrations.value.filter((item) => item !== registration);
       };
     },
-    invoke(id, input) {
-      const found = operations.value.find((operation) => operation.id === id);
-      if (!found) throw new Error(`The panel offers no operation '${id}'`);
-      return found.invoke(input);
+    invoke,
+    async output(member, output, value, item) {
+      const declaration = manifest.members[member];
+      if (!declaration) throw new Error(`The panel declares no member '${member}'`);
+      const bound = declaration.outputs?.[output];
+      if (bound) state.set(bound.state, value as never);
+      await events.emitted(member, output, value, item);
     },
     async runHandler(handlerRef, call) {
       const result = await handlerFor(handlerRef).invoke(call);

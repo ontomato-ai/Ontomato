@@ -16,7 +16,6 @@ import {
 } from "@ontomato/contracts/panel-agent";
 import { panelOperationImpactSchema } from "@ontomato/contracts/panel-operations";
 import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
-import { projectionOperations, projectionPorts } from "@ontomato/contracts/panel-projection";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
 import { environment } from "../../config/environment";
@@ -27,16 +26,15 @@ import { HttpError } from "../../utils/errors";
 import { buildBackendHeaders } from "../../utils/backend-client";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { credentialsForRun, runForOwner } from "../assistant/execution";
-import { loadedPageSkillVersion, readAssistantSkillView, type AssistantSkillView } from "../assistant/skills";
+import { loadedPageSkillVersion, readAssistantSkillView, resolvePageSkillSource, type AssistantSkillView } from "../assistant/skills";
 import type { AssistantOwner } from "../assistant/store";
 import { restoreAgentCaller, readAgentSessionActor } from "../agent-host/caller";
-import { readCurrentPanelRecord, readCurrentProjectionRecord } from "./current";
-import { declaredDirectOperation, declaredDirectProjectionOperation } from "./direct-operations";
-import { readComponentCatalogue } from "./skill-package";
+import { readCurrentPanelRecord } from "./current";
+import { declaredDirectOperation } from "./direct-operations";
 import { requirePanelUse } from "./application-use";
 import {
-  describePanelRead, panelResultProjection, panelServerOperation, snapshotPanelWrite, type PanelBatchCalls, type PanelOperationInvocation,
-  type PanelWriteServerOperation, type PanelOperationActor, type PanelOperationHost, type PanelRecordTarget, type PanelImpactInspector,
+  describePanelRead, panelResultProjection, type PanelBatchCalls, type PanelOperationInvocation,
+  type PanelWriteServerOperation, type PanelOperationActor, type PanelOperationHost, type PanelOperationTarget, type PanelRecordTarget, type PanelImpactInspector,
 } from "./server-operations";
 import { panelConfirmation } from "./confirmation";
 import { publishObjectChanged } from "../agent-host/presentation";
@@ -53,9 +51,9 @@ async function admitted(owner: AssistantOwner, credentials: AssistantCredentials
   const entrance: PageSkillEntrance = "permissionCode" in use.access
     ? { permissionCode: use.access.permissionCode, pageKey: use.pageKey }
     : { access: "domain-member", pageKey: use.pageKey };
-  const skill = await view.resolveSource(entrance, {
+  const skill = await resolvePageSkillSource(view, entrance, {
     kind: "application-use", applicationId: ref.applicationId, useId: use.id,
-  }, { id: use.panelId });
+  }, [], { id: use.panelId });
   if (!skill || !loadedPageSkillVersion(skill, run.resolvedSkills))
     throw new HttpError(403,"This run does not have this panel's skill","FORBIDDEN");
   return { ...writeOperation(await declaredOperation(owner, credentials, use, operationId)), view };
@@ -63,43 +61,7 @@ async function admitted(owner: AssistantOwner, credentials: AssistantCredentials
 
 async function declaredOperation(owner: AssistantOwner, credentials: AssistantCredentials, use: ApplicationPanelUse, operationId: string) {
   const panel = await readCurrentPanelRecord(owner, credentials, use.panelId);
-  if (!("sdkVersion" in panel)) return declaredDirectOperation(owner, credentials, use, panel, operationId);
-  let catalogue: Awaited<ReturnType<typeof readComponentCatalogue>> | undefined;
-  for (const [slot,declaration] of Object.entries(panel.manifest.slots)) {
-    const projection = await readCurrentProjectionRecord(owner, credentials, declaration.projectionId);
-    if ("data" in projection) {
-      const operation = declaredDirectProjectionOperation(use, projection, declaration.inputs, slot, operationId);
-      if (operation) return operation;
-      continue;
-    }
-    catalogue ??= await readComponentCatalogue(panel.sdkVersion);
-    const metadata = catalogue.get(projection.componentId);
-    if (!metadata) throw new HttpError(422,"Projection component is unavailable","COMPONENT_UNAVAILABLE");
-    const ports = projectionPorts(projection, metadata);
-    const operation = projectionOperations(panel.manifest, { slot, ports }).find(op => op.id === operationId);
-    if (operation) {
-      const handler = panelServerOperation(operation.handlerRef);
-      if (!isDeepStrictEqual(projection.binding, handler.binding) || operation.kind !== handler.kind)
-        throw new HttpError(422,"Operation binding or kind has no server client","OPERATION_UNAVAILABLE");
-      if (handler.effect === "read") {
-        if (!Object.hasOwn(panel.manifest.slots, handler.target.slot))
-          throw new HttpError(422, "The operation's draft slot is unavailable", "OPERATION_UNAVAILABLE");
-        return { effect: "read" as const, handler, label: operation.label };
-      }
-      let targetMatches = operation.target?.source === "draft" && operation.target.slot === slot;
-      if (handler.kind === "action") {
-        const binding = declaration.inputs[handler.targetInput];
-        const targetType = binding && panel.manifest.state[binding.state];
-        const inputType = ports.inputs[handler.targetInput];
-        targetMatches = inputType?.kind === "object" && inputType.objectType === handler.targetType &&
-          targetType?.kind === "object" && targetType.objectType === handler.targetType;
-      }
-      if (!targetMatches)
-        throw new HttpError(422,"Operation target type has no server client","OPERATION_UNAVAILABLE");
-      return { effect: "write" as const, use, projection, operation: snapshotPanelWrite(handler, operation, slot), handler, fixedTarget: undefined };
-    }
-  }
-  throw new HttpError(422,"No supported declared operation has that ID","OPERATION_UNAVAILABLE");
+  return declaredDirectOperation(owner, credentials, use, panel, operationId);
 }
 
 async function operationForUse(owner: AssistantOwner, credentials: AssistantCredentials, ref: PanelOperationRef) {
@@ -114,7 +76,7 @@ function writeOperation(current: Awaited<ReturnType<typeof declaredOperation>>) 
 export async function readPanelOperationDescriptor(owner: AssistantOwner, credentials: AssistantCredentials, ref: PanelOperationRef) {
   const current = await operationForUse(owner, credentials, ref);
   if (current.effect === "read") return describePanelRead(current.handler, current.label);
-  const { id: _id, kind: _kind, slot: _slot, ...descriptor } = current.operation;
+  const { id: _id, kind: _kind, slot: _slot, action: _action, ...descriptor } = current.operation;
   return descriptor;
 }
 
@@ -135,7 +97,7 @@ function requireFrozenOperation(
     throw new HttpError(409, "Operation definition changed; create a new intent", "INTENT_CHANGED");
 }
 
-function validateCall(handler: PanelWriteServerOperation, call: PanelOperationCall, fixedTarget?: PanelRecordTarget | null) {
+function validateCall(handler: PanelWriteServerOperation, call: PanelOperationCall, fixedTarget?: PanelOperationTarget | null) {
   const target = handler.targetSchema.parse(call.target);
   if (fixedTarget !== undefined && !isDeepStrictEqual(target, fixedTarget))
     throw new HttpError(400, "Operation target does not match this panel member", "TARGET_ID_MISMATCH");
@@ -214,7 +176,7 @@ type CheckedInvocation =
   | { call: PanelOperationCall; target: ReturnType<typeof validateCall> }
   | { calls: PanelBatchCalls; owner: Extract<PanelWriteServerOperation, { batch: true }> };
 
-function validateInvocation(handler: PanelWriteServerOperation, input: PanelOperationInvocation, fixedTarget?: PanelRecordTarget | null): CheckedInvocation {
+function validateInvocation(handler: PanelWriteServerOperation, input: PanelOperationInvocation, fixedTarget?: PanelOperationTarget | null): CheckedInvocation {
   if ("calls" in input) {
     if (!handler.batch) throw new HttpError(422, "This operation does not support a batch", "OPERATION_BATCH_UNSUPPORTED");
     for (const call of input.calls) validateCall(handler, call, fixedTarget);

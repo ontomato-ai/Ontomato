@@ -5,7 +5,8 @@ import { DataState } from "@ontomato/foundation-ui/data-state";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { componentFor } from "../catalogue-components";
 import { panelContextKey, projectionKey, type ProjectionSlot } from "./context";
-import { directPanelContext, memberComponentId, memberRecord, type DirectPanelInstance, type MemberInputs } from "./direct";
+import { directPanelContext, type DirectPanelInstance, type MemberInputs } from "./direct";
+import { memberComponentId } from "./projection-element";
 import { panelMemberKey, type PanelMemberContext } from "./member";
 import { portsOf } from "./ports-of";
 
@@ -30,16 +31,20 @@ const loaded = shallowRef<{ component: Component; slot: ProjectionSlot; member: 
 /** What the placement gives each input now: the state it names, or its literal. */
 const inputs = computed<MemberInputs>(() => Object.fromEntries(Object.entries(declaration.inputs ?? {}).map(([name, source]) =>
   // A state value is JSON as it is: an object reference, a collection of them, a scalar, or null.
-  [name, "state" in source ? (props.instance.state.values.value[source.state] ?? null) as RuntimeJsonValue : source.literal])));
+  [name, "state" in source ? (props.instance.state.values.value[source.state] ?? null) as RuntimeJsonValue : memberLiteral(name, source)])));
+
+function memberLiteral(input: string, source: { literal: RuntimeJsonValue } | { item: true }): RuntimeJsonValue {
+  if ("item" in source) throw new Error(`Member '${props.member}' fills '${input}' from a repeated item, which this SDK release does not place`);
+  return source.literal;
+}
 
 let release: (() => void) | undefined;
 void props.instance.projectionOf(props.member).then(async (projection) => {
   const component = await componentFor(memberComponentId(projection));
-  const record = memberRecord(projection);
-  release = props.instance.register({ slot: props.member, projectionId: projection.id, ports: portsOf(record) });
+  release = props.instance.register({ slot: props.member, projectionId: projection.id, ports: portsOf(projection) });
   loaded.value = {
     component,
-    slot: { slot: props.member, projection: record, get inputs() { return inputs.value; } },
+    slot: { slot: props.member, projection, get inputs() { return inputs.value; } },
     member: { key: props.member, projection, inputs, data: props.instance.memberData(props.member, projection, () => inputs.value) },
   };
 }).catch((reason: unknown) => {
@@ -56,5 +61,5 @@ const labels = computed(() => ({ empty: t("platform.dataEmpty"), forbidden: t("p
 <template>
   <data-state v-if="failure" :result="{ status: 'error', message: failure.message }" :labels="labels"></data-state>
   <data-state v-else-if="!loaded" :result="{ status: 'loading' }" :labels="labels"></data-state>
-  <component :is="loaded.component" v-else v-bind="{ ...loaded.slot.projection.display, ...inputs }"></component>
+  <component :is="loaded.component" v-else v-bind="{ ...loaded.slot.projection.config, ...inputs }"></component>
 </template>

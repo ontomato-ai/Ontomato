@@ -62,8 +62,9 @@ const legacyOrderRef: RuntimeSkillRef = {
   name: "panel-menu-orders-123456789012345678901234",
 };
 
-const panelOrderRef = protectedSkillRef("product-panels", domain, "panel-order", "analysis-agent");
-const panelInvoiceRef = protectedSkillRef("product-panels", domain, "panel-invoice", "analysis-agent");
+// One ref per panel, whatever entrance or placement shows it.
+const panelOrderRef = protectedSkillRef("product-panels", domain, "panel-order");
+const panelInvoiceRef = protectedSkillRef("product-panels", domain, "panel-invoice");
 
 const menuEntrance: PageSkillEntrance = { permissionCode: "orders-menu", pageKey: "orders-page" };
 const dataBrowserEntrance: PageSkillEntrance = { access: "domain-member", pageKey: "data-browser" };
@@ -107,16 +108,13 @@ function protectedOffering(
   options: {
     entrances: readonly PageSkillEntrance[];
     resourceIds: readonly string[];
-    legacyAggregateRefs?: readonly RuntimeSkillRef[];
   },
 ): ProtectedSkillOffering {
   return {
     kind: "protected",
     sourceKey,
-    scopeKey: "analysis-agent",
     entrances: options.entrances,
     resourceIds: options.resourceIds,
-    legacyAggregateRefs: options.legacyAggregateRefs,
     readManifest: async (ref) => ({ name: ref.name, description: `Protected ${sourceKey}` }),
     provide: async (ref) => ({
       skill: ref,
@@ -164,7 +162,6 @@ beforeEach(() => {
     protectedOffering("panel-order", {
       entrances: [menuEntrance],
       resourceIds: ["panel-order", "proj-order"],
-      legacyAggregateRefs: [legacyOrderRef],
     }),
     protectedOffering("panel-invoice", {
       entrances: [menuEntrance],
@@ -174,19 +171,19 @@ beforeEach(() => {
   dynamicAssociations = [
     {
       entrance: dataBrowserEntrance,
-      identity: { providerId: "product-panels", sourceKey: "panel-order", scopeKey: "analysis-agent" },
+      identity: { providerId: "product-panels", sourceKey: "panel-order" },
     },
     {
       entrance: dataBrowserEntrance,
-      identity: { providerId: "product-panels", sourceKey: "panel-invoice", scopeKey: "analysis-agent" },
+      identity: { providerId: "product-panels", sourceKey: "panel-invoice" },
     },
   ];
   resolveDynamic = async ({ source }) => {
     if (source.kind === "object-detail" && source.object.className === "Order") {
-      return { providerId: "product-panels", sourceKey: "panel-order", scopeKey: "analysis-agent" };
+      return { providerId: "product-panels", sourceKey: "panel-order" };
     }
     if (source.kind === "object-detail" && source.object.className === "Invoice") {
-      return { providerId: "product-panels", sourceKey: "panel-invoice", scopeKey: "analysis-agent" };
+      return { providerId: "product-panels", sourceKey: "panel-invoice" };
     }
     return null;
   };
@@ -284,18 +281,17 @@ it("resolves application-use member queries through one view, filters by effecti
     queryFromSearch({
       pageKey: "orders-page",
       permissionCode: "orders-menu",
-      source: JSON.stringify(source),
-      memberKey: panelOrderRef.name,
+      member: JSON.stringify({ source: source, memberPath: [], ref: panelOrderRef }),
     }),
   );
 
   expect(pageSkillsFetches).toBe(1);
-  // Regular (admitted member), direct protected ref, and expanded legacy ref match;
-  // public-only, sibling protected, disabled, and product-profile agents are excluded.
+  // Regular (admitted member) and the direct protected ref match. An agent that chose the old aggregate ref no longer
+  // carries the panel's skill: that selection is void and is chosen again under the panel's own ref. Public-only, sibling
+  // protected, disabled, and product-profile agents are excluded.
   expect(result.agents.map((agent) => agent.id)).toEqual([
     agentIds.regular,
     agentIds.orderCustom,
-    agentIds.legacyOrderCustom,
   ]);
   expect(result.defaultAgentId).toBe(agentIds.orderCustom);
 
@@ -307,8 +303,7 @@ it("resolves application-use member queries through one view, filters by effecti
     queryFromSearch({
       pageKey: "orders-page",
       permissionCode: "orders-menu",
-      source: JSON.stringify(source),
-      memberKey: panelOrderRef.name,
+      member: JSON.stringify({ source: source, memberPath: [], ref: panelOrderRef }),
     }),
   );
   expect(fallbackDefault.defaultAgentId).toBe(agentIds.regular);
@@ -326,8 +321,7 @@ it("resolves dynamic-owner member queries on a multi-member group to the exact p
     queryFromSearch({
       pageKey: "data-browser",
       access: "domain-member",
-      source: JSON.stringify(orderSource),
-      memberKey: panelOrderRef.name,
+      member: JSON.stringify({ source: orderSource, memberPath: [], ref: panelOrderRef }),
     }),
   );
 
@@ -335,7 +329,6 @@ it("resolves dynamic-owner member queries on a multi-member group to the exact p
   expect(orderResult.agents.map((agent) => agent.id)).toEqual([
     agentIds.regular,
     agentIds.orderCustom,
-    agentIds.legacyOrderCustom,
   ]);
   expect(orderResult.defaultAgentId).toBe(agentIds.regular);
 
@@ -350,8 +343,7 @@ it("resolves dynamic-owner member queries on a multi-member group to the exact p
     queryFromSearch({
       pageKey: "data-browser",
       access: "domain-member",
-      source: JSON.stringify(invoiceSource),
-      memberKey: panelInvoiceRef.name,
+      member: JSON.stringify({ source: invoiceSource, memberPath: [], ref: panelInvoiceRef }),
     }),
   );
   expect(invoiceResult.agents.map((agent) => agent.id)).toEqual([agentIds.regular, agentIds.invoiceCustom]);
@@ -372,8 +364,7 @@ it("rejects member queries with 403 and never falls back to the group's public m
       queryFromSearch({
         pageKey: "data-browser",
         access: "domain-member",
-        source: JSON.stringify(detailSource),
-        memberKey: panelInvoiceRef.name,
+        member: JSON.stringify({ source: detailSource, memberPath: [], ref: panelInvoiceRef }),
       }),
     ),
   ).rejects.toMatchObject({ status: 403, code: "PAGE_SKILL_FORBIDDEN" });
@@ -387,8 +378,7 @@ it("rejects member queries with 403 and never falls back to the group's public m
       queryFromSearch({
         pageKey: "data-browser",
         access: "domain-member",
-        source: JSON.stringify(detailSource),
-        memberKey: panelOrderRef.name,
+        member: JSON.stringify({ source: detailSource, memberPath: [], ref: panelOrderRef }),
       }),
     ),
   ).rejects.toMatchObject({ status: 403, code: "PAGE_SKILL_FORBIDDEN" });
@@ -419,8 +409,7 @@ it("rejects member queries with 403 and never falls back to the group's public m
       queryFromSearch({
         pageKey: "orders-page",
         permissionCode: "orders-menu",
-        source: JSON.stringify(appSource),
-        memberKey: panelOrderRef.name,
+        member: JSON.stringify({ source: appSource, memberPath: [], ref: panelOrderRef }),
       }),
     ),
   ).rejects.toMatchObject({ status: 403, code: "PAGE_SKILL_FORBIDDEN" });
@@ -451,8 +440,7 @@ it("rejects member queries with 403 and never falls back to the group's public m
       queryFromSearch({
         pageKey: "orders-page",
         permissionCode: "orders-menu",
-        source: JSON.stringify(appSource),
-        memberKey: panelOrderRef.name,
+        member: JSON.stringify({ source: appSource, memberPath: [], ref: panelOrderRef }),
       }),
     ),
   ).rejects.toMatchObject({ status: 403, code: "PAGE_SKILL_FORBIDDEN" });
@@ -467,8 +455,7 @@ it("rejects member queries with 403 and never falls back to the group's public m
       queryFromSearch({
         pageKey: "orders-page",
         permissionCode: "orders-menu",
-        source: JSON.stringify(appSource),
-        memberKey: panelOrderRef.name,
+        member: JSON.stringify({ source: appSource, memberPath: [], ref: panelOrderRef }),
       }),
     ),
   ).rejects.toMatchObject({ status: 403, code: "PAGE_SKILL_FORBIDDEN" });
@@ -483,8 +470,7 @@ it("rejects member queries with 403 and never falls back to the group's public m
       queryFromSearch({
         pageKey: "orders-page",
         permissionCode: "orders-menu",
-        source: JSON.stringify(appSource),
-        memberKey: panelOrderRef.name,
+        member: JSON.stringify({ source: appSource, memberPath: [], ref: panelOrderRef }),
       }),
     ),
   ).rejects.toMatchObject({ status: 403, code: "PAGE_SKILL_FORBIDDEN" });
@@ -500,8 +486,7 @@ it("propagates source resolution errors instead of treating them as null", async
       queryFromSearch({
         pageKey: "orders-page",
         permissionCode: "orders-menu",
-        source: JSON.stringify(appSource),
-        memberKey: panelOrderRef.name,
+        member: JSON.stringify({ source: appSource, memberPath: [], ref: panelOrderRef }),
       }),
     ),
   ).rejects.toMatchObject({ status: 500 });
@@ -521,8 +506,7 @@ it("propagates source resolution errors instead of treating them as null", async
       queryFromSearch({
         pageKey: "data-browser",
         access: "domain-member",
-        source: JSON.stringify(detailSource),
-        memberKey: panelOrderRef.name,
+        member: JSON.stringify({ source: detailSource, memberPath: [], ref: panelOrderRef }),
       }),
     ),
   ).rejects.toThrow("source owner unavailable");

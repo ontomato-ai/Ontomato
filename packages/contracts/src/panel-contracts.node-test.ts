@@ -34,7 +34,7 @@ import {
 import {
   matchesObjectType, objectUnionTypes, ontologyObjectUnionTypeSchema, ontologyParameterTypeSchema,
   panelChildCollectionQuerySchema, panelChildObjectIdentitySchema, panelManifestSchema, panelOpenRequestSchema, panelStateFieldSchema,
-  panelStateOperationSchema, panelStateValueSchema, singleOntologyParameterTypeSchema,
+  panelOperationSchema, panelStateOperationSchema, panelStateValueSchema, singleOntologyParameterTypeSchema,
 } from "./panel-manifest";
 import { pageSelectionSchema } from "./page-context";
 import { pageDraftSchema } from "./page-draft";
@@ -115,6 +115,19 @@ test("the SDK catalogue separates supply, configuration and run inputs", async (
   }
   const { data: _data, ...displayOnly } = component;
   assert.equal(appsSdkComponentCatalogSchema.safeParse({ ...catalogue, components: [displayOnly] }).success, true);
+});
+
+test("projection registration accepts package-qualified components and leaves data keys to the catalogue", () => {
+  const input = {
+    name: "Task list", description: "", visibility: "domain", revision: 0, inputs: {}, outputs: {}, config: {},
+    data: { items: { source: { type: platformType(SCHEDULED_TASK) }, read: "list", params: {} } },
+  };
+  for (const componentId of ["@school/panels:InventoryList", "local-kit:list-view"]) {
+    assert.deepEqual(registerProductProjectionRequestSchema.parse({ ...input, componentId }), { ...input, componentId });
+  }
+  for (const componentId of ["InventoryList", "@school:InventoryList", "local-kit:", "local-kit:list:view", "local-kit:two words"]) {
+    assert.equal(registerProductProjectionRequestSchema.safeParse({ ...input, componentId }).success, false);
+  }
 });
 
 test("ontology object lists and reference pickers declare the named reads they use", async () => {
@@ -335,7 +348,7 @@ test("entry resolution and personal-state scope use the actual use and nested pa
     inputs: { term: { frameState: "term" }, role: { literal: null } },
   };
   const response = {
-    applicationId: "app-tasks", use, framePanelId: "site-frame", theme: { dark: { "--el-color-primary": "#0084ff" } },
+    applicationId: "app-tasks", use, framePanelId: "site-frame", theme: { dark: { "--test-accent": "#0084ff" } },
     menu: { groups: [{ key: "plan", names: { en: "Plan" }, sort: 0 }], panelUses: [use] },
   };
   assert.deepEqual(applicationEntryResolutionSchema.parse(response), response);
@@ -559,6 +572,23 @@ test("named operation reads publish buttons and form metadata binds to its real 
     { client: "@binding", name: "delete", label: "Delete", kind: "action", inputSchema: {} },
   ] });
   assert.deepEqual(formPorts.operations.map(op => op.handlerRef), [`${SCHEDULED_TASK}.save`]);
+});
+
+test("a batch operation can target the checked object list", () => {
+  const selection = { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } };
+  const projection = productProjectionInputSchema.parse({
+    name: "Delete checked", description: "", visibility: "domain", componentId: "@ontomato/sdk:OperationButton",
+    inputs: { selection }, outputs: {}, config: { checked: "selection" },
+    data: { operation: { source: { operation: platformOperation(DELETE_KNOWLEDGE) }, read: "describe", params: {} } },
+  });
+  const manifest = panelManifestSchema.parse({
+    state: { checked: { type: selection, default: [] } },
+    members: { removeAll: { target: { projectionId: "delete-checked" }, inputs: { selection: { state: "checked" } } } },
+    events: {},
+  });
+  const ports = projectionPorts(projection, {});
+  const [remove] = projectionOperations(manifest, { slot: "removeAll", ports });
+  assert.deepEqual(panelOperationSchema.parse(remove).target, { source: "state", state: "checked" });
 });
 
 test("read operation inputs can take parameter values and a binding from this panel instance", () => {
@@ -1005,6 +1035,14 @@ test("the chart reads its registered source card with per-metric overrides", () 
     revision: 1, createdAt: "2026-11-19T00:00:00Z", updatedAt: "2026-11-19T00:00:00Z", editable: true,
   };
   assert.deepEqual(registerChartProjectionResponseSchema.parse({ projection }).projection.chartSource, chartSource);
+  const renamed = { ...projection, data: { drawing: projection.data.template, points: projection.data.result } };
+  assert.deepEqual(registerChartProjectionResponseSchema.parse({ projection: renamed }).projection.data, renamed.data);
+  const wrongCard = { object: { literal: {
+    className: DASHBOARD_CARD, primaryKey: dashboardCardPrimaryKey({ ...chartSource, cardId: "different-card" }),
+  } } };
+  assert.equal(registerChartProjectionResponseSchema.safeParse({ projection: {
+    ...projection, data: { ...projection.data, extra: { source: wrongCard, read: "chartTemplate", params: {} } },
+  } }).success, false);
   assert.equal(productProjectionInputSchema.safeParse({
     ...chartProjection, chartSource: { ...chartSource, cardId: "different-card" },
   }).success, false);
@@ -1052,16 +1090,25 @@ test("the chart client is restricted to its chart projection and bound metric", 
   assert.ok(!chartProjectionSourceSends(["other"], "GET", "", path));
   assert.ok(!chartProjectionSourceSends(["chart:id"], "DELETE", "", path));
 
+  const projection = productProjectionInputSchema.parse(chartProjection);
+  const bindings = projectionBindingKeys(projection);
   const metric = bindingKey({ kind: "MetricView", id: chartProjection.metricId });
+  assert.deepEqual(bindings, [binding(DASHBOARD_CARD), metric]);
   for (const [path, body] of [
     ["/ontology/query/metrics/describe", { id: "department-metric" }],
-    ["/metricView/execute", { id: "department-metric", param: { department: "sales" } }],
+    ["/ontology/query/metrics/execute", { id: "department-metric", revision: "r7", parameters: { department: "sales" } }],
   ] as const) {
     assert.ok(panelClientReads(metric).some(read => read.method === "POST" && read.path.test(path)));
-    assert.ok(clientSends([metric], "POST", "/data-query", path, body));
-    assert.ok(!clientSends([metric], "POST", "/data-query", path, { ...body, id: "other" }));
-    assert.ok(!clientSends([metric], "POST", "/data-query", path));
+    assert.ok(clientSends(bindings, "POST", "/data-query", path, body));
+    assert.ok(!clientSends(bindings, "POST", "/data-query", path, { ...body, id: "other" }));
+    assert.ok(!clientSends(bindings, "POST", "/data-query", path));
   }
+  assert.ok(!clientSends(bindings, "POST", "/data-query", "/ontology/query/metrics/execute", {
+    id: chartProjection.metricId, parameters: {},
+  }));
+  assert.ok(!clientSends(bindings, "POST", "/data-query", "/metricView/execute", {
+    id: chartProjection.metricId, param: { department: "sales" },
+  }));
   const rawDefinitionPath = "/metricView/queryById";
   assert.ok(!panelClientReads(metric).some(read => read.path.test(rawDefinitionPath)));
   assert.ok(!clientSends([metric], "POST", "/data-query", rawDefinitionPath, { id: "department-metric" }));

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { projectionElement } from "../panel/projection-element";
 import { computed, onMounted, provide, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
@@ -7,7 +8,7 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import { slotState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
-import { adapterPart, PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
+import { PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
 import { changedPaths, fieldAt, movedPath, valueAt, withValueAt } from "../panel/form-values";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMember } from "../panel/member";
@@ -51,11 +52,11 @@ const props = withDefaults(
 const { t } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
-const objectType = slot.projection.binding.id;
-const member = useMember();
-// A directly rendered member's form is read by the instance and saved through its owner's operation; a frame's, by
+const objectType = projectionElement(slot.projection).id;
+// The member's form is read by the instance (through this release's resource module in a frame) and saved through its
+// owner's operation, received by the platform's coordinator.
 // the bound type's resource module.
-const forms: FormSource = member ? memberFormSource(member, panel.instance) : adapterPart(objectType, "forms");
+const forms: FormSource = memberFormSource(useMember(), panel.instance);
 
 const state = computed(() => slotState(panel.manifest, slot.slot, props.inputName));
 const key = computed(() => selectedKey(panel.instance.state.values.value[state.value]));
@@ -266,7 +267,7 @@ provide(formControlsKey, {
   reorder,
   invalid: markInvalid,
   rowControl(path, itemPath) {
-    const declared = Object.values(panel.manifest.slots).some(({ formField }) =>
+    const declared = Object.values(panel.manifest.members).some(({ formField }) =>
       formField?.slot === slot.slot && formField.path === path && formField.itemPath === itemPath);
     if (!declared) return undefined;
     return rowControlsOf(panel.instance).get(rowControlKey(slot.slot, path, itemPath)) ?? null;
@@ -350,9 +351,8 @@ async function write(): Promise<unknown> {
     opened.value = { ...description.value!, values: values.value };
     changed.value = new Set();
     if (into.kind === "draft") moveTo({ kind: "object", objectType, primaryKey: saved.primaryKey });
-    // A frame's save goes straight to the owner, so the frame says what it changed; a member's goes through the
-    // coordinator, whose receipt reaches the host's one refresh port and is read again from there.
-    if (!member) panel.instance.objectChanged({ objectType, primaryKey: saved.primaryKey });
+    // The save went through the coordinator, whose receipt reaches the host's one refresh port and is read again there.
+
     // A received draft ends with its save; a create draft first records the object it created. The save stands either
     // way: a record that fails is shown with the form, on the object the owner created.
     await panel.instance.settleDraft(slot.slot, into.kind === "draft" ? saved.primaryKey : undefined);

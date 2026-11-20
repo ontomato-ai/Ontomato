@@ -1,7 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { readFile } from "node:fs/promises";
 import { WorkspaceBuildTests } from "../build-tests";
 import { backendGet, backendPost } from "../../../utils/backend-client";
 import { RuntimeClient } from "../../../infrastructure/agent-runtime/client";
@@ -9,9 +8,9 @@ import { RuntimeClient } from "../../../infrastructure/agent-runtime/client";
 vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:vi.fn()}));
 vi.mock("../../../utils/backend-client",async original=>({...await original<typeof import("../../../utils/backend-client")>(),backendGet:vi.fn(),backendPost:vi.fn(),backendDelete:vi.fn()}));
 vi.mock("../../../config/data-query-api",()=>({getApiConfig:()=>({}),buildUrl:(_:unknown,url:string)=>"http://java"+url}));
-vi.mock("../../../content/layout",()=>({runtimeDataDir:(...parts:string[])=>"/sdk/"+parts.join("/")}));
-vi.mock("../sdk",()=>({currentAppSdk:async()=>({version:"1.1.0"})}));
-vi.mock("node:fs/promises",()=>({readFile:vi.fn()}));
+vi.mock("../sdk",()=>({readCurrentAppSdkRelease:async()=>({
+  build:{version:"1.1.0"}, manifest:{executionContext:1}, sdkBasePath:"/training/apps-sdk/current",
+})}));
 const fixtures=path.resolve("../data-engine-core/src/test/resources/agent-contracts");
 const sample=JSON.parse(readFileSync(path.join(fixtures,"sample.json"),"utf8"));
 const authorize=vi.fn(),bytes=vi.fn();
@@ -46,16 +45,15 @@ it("returns Java's absent state and rejects old SDK preview references",async()=
   const tests=new WorkspaceBuildTests({userId:"owner",domainId:"domain"},{},"workspace");
   expect(await tests.current()).toBeNull();
   bytes.mockResolvedValue(Buffer.from('<script src="/apps-sdk/1.0.0/sdk.js"></script>'));
-  vi.mocked(readFile).mockResolvedValue('{"version":"1.0.0"}');
   await expect(tests.requirePreviewSdk()).rejects.toMatchObject({code:"BUILD_TEST_SDK_UPGRADE_REQUIRED",status:409,
     message:"Upgrade the workspace SDK references before previewing",
     details:{requiredVersion:"1.1.0",foundVersions:["1.0.0"],upgrade:{kind:"edit-workspace-references",currentCommand:"sdk current",readCommands:["sdk read sdk.json","sdk read docs/index.md","sdk read docs/reference.md"]}}});
-  vi.mocked(readFile).mockResolvedValue('{"executionContext":1}');await tests.requirePreviewSdk();
+  bytes.mockResolvedValue(Buffer.from('<head><!-- ontomato:apps-sdk --></head>'));
+  await expect(tests.requirePreviewSdk()).resolves.toMatchObject({sdkBasePath:"/training/apps-sdk/current"});
 });
 
 it("checks SDK references in separate modules, not just the entry HTML",async()=>{
   authorize.mockImplementation(async(url:string)=>url.endsWith("/tree") ? {files:[{path:"index.html"},{path:"app.js"}]} : {id:"workspace"});
   bytes.mockImplementation(async(url:string)=>Buffer.from(url.includes("app.js") ? 'import "/apps-sdk/1.0.0/sdk.js"' : '<script type="module" src="app.js"></script>'));
-  vi.mocked(readFile).mockResolvedValue('{"version":"1.0.0"}');
   await expect(new WorkspaceBuildTests({userId:"owner",domainId:"domain"},{},"workspace").requirePreviewSdk()).rejects.toMatchObject({code:"BUILD_TEST_SDK_UPGRADE_REQUIRED"});
 });

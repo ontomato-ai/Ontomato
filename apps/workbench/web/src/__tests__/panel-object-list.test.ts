@@ -1,857 +1,1047 @@
+/* eslint-disable vue/one-component-per-file */
 import { afterEach, expect, it, vi } from "vitest";
-import { nextTick, ref } from "vue";
-import { definePanel } from "@ontomato/contracts/panel-manifest";
-import { PANEL_HOST_CHANNEL, panelAddressState } from "@ontomato/contracts/panel-host";
-import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { ignoreChanges,
-  inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, writePanelDocument, type Sent,
-} from "./panel-frame";
+import { createApp, defineComponent, h, nextTick, provide, ref } from "vue";
+import { createI18n } from "vue-i18n";
+import ElementPlus from "element-plus";
+import publicEn from "@ontomato/workbench-ui/locales/en";
+import { definePanel, type DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
+import type { DirectProjection } from "@ontomato/contracts/product-panels";
+import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
+import {
+  ACTION,
+  BUSINESS_KNOWLEDGE,
+  ONTOLOGY_TYPE,
+  platformOntologyLayers,
+  ROLE,
+  SCHEDULED_TASK,
+  USER,
+  WORKFLOW,
+} from "@ontomato/contracts/platform-object-types";
+import { createDirectPanelInstance } from "../../../../../packages/apps-sdk/src/panel/direct";
+import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
+import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
+import { noOperations } from "./panel-frame";
 
 /*
- * U2 ObjectList & ObjectSummary through the platform's real host and bridge:
- * - Multi-column table with status tags, text search, total count, explicit multi-select separated from single
- *   selection, visible-only select-all with indeterminate state, and clickable reference links (M5 + M4 pattern).
- * - Faceted counts, escaped range highlights (no HTML injection), fallback-to-first selection on filter, and
- *   ObjectSummary highlights/tags/references (M7 knowledge pattern).
- * - Server-side offset/limit pagination, submit-mode search + dropdown filters resetting to page 1, refresh, and
- *   per-row detail action (M7 feedback pattern).
- * - Explicit failure when query features are enabled on a list-only adapter.
+ * ObjectList, ObjectSummary and SegmentedControl under the unified member-data contract:
+ * - M7 BusinessKnowledge pattern: SegmentedControl reading `counts` (`panelGroupCounts`), ObjectList reading
+ *   `rows` (`panelRecordQuery`) with escaped UTF-16 highlights, fallback-to-first selection and non-toggleable
+ *   selection, plus ObjectSummary reading `record` with highlights and pre-wrap body text.
+ * - Multi-column table labelKey/emptyKey resolution via `panel.t`, fallback to owner `fieldLabels`, and
+ *   event-based state operations.
+ * - Server-side cursor pagination (`panelRecordQuery`), submit-mode search resetting to page 1, refresh,
+ *   and per-row detail action.
+ * - Two-way search binding with scalar deepLink panel state (restore, submit, clear to null, external update).
+ * - Instance-local checked list (`{ kind: "list", items: { kind: "object", objectType } }`) separate from
+ *   single selection, visible-only select-all across pages, excluded from deepLink & pageContext, atomic
+ *   `clears`, partial retention, and type rejection.
+ * - M3 dynamic type catalog (`data.objects`: `panelOntologyObjects`): awaiting prompt with zero reads,
+ *   offset/page pagination, local keyword search, full `(className, primaryKey)` identity matching, owner
+ *   labels under the real object type, and distinct refused/failed/unavailable statuses.
  */
 
-const METRIC = "test:MetricView";
-const FUNCTION = "test:Function";
-const KNOWLEDGE = "test:BusinessKnowledge";
-const FEEDBACK = "test:Feedback";
-const LEGACY = "test:LegacyListOnly";
-
-const current = {
-  domainId: "domain-1", ownerId: "owner-1", revision: 1, createdAt: "2026-11-19T00:00:00.000Z",
-  updatedAt: "2026-11-19T00:00:00.000Z", editable: false, visibility: "domain" as const,
+const meta = {
+  domainId: "domain-1",
+  ownerId: "owner-1",
+  revision: 1,
+  createdAt: "2026-11-20T00:00:00.000Z",
+  updatedAt: "2026-11-20T00:00:00.000Z",
+  editable: false,
+  visibility: "domain" as const,
+  description: "",
 };
 
-const projection = (
-  id: string,
-  componentId: "ObjectList" | "ObjectSummary",
-  binding: string,
-  display: Record<string, unknown>,
-  inputs: ProductProjection["inputs"] = {},
-): ProductProjection => ({
-  ...current, id, name: id, description: "", componentId,
-  binding: { kind: "PlatformObjectType", id: binding }, inputs, display,
-});
+type Read = Omit<ProductPanelReadRequest, "source">;
 
-function hostWith(projections: Record<string, ProductProjection>) {
-  return (request: Sent) => {
-    const match = /^\/api\/product-projections\/(.+)$/.exec(request.path);
-    if (match && projections[match[1]!]) return Response.json({ projection: projections[match[1]!] });
-    return nothingAt(request);
+const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
+const knowledge = (primaryKey: string) => ({ className: BUSINESS_KNOWLEDGE, primaryKey });
+
+let cleanup: (() => void) | null = null;
+
+function mountDirect(
+  manifest: DirectPanelManifest,
+  projections: Record<string, DirectProjection>,
+  answer: (request: Read) => ProductPanelReadResponse | Promise<ProductPanelReadResponse>,
+  options: {
+    initial?: Record<string, unknown>;
+    messages?: Record<string, Record<string, string>>;
+    members?: readonly string[];
+  } = {},
+) {
+  const memberKeys = options.members ?? Object.keys(manifest.members);
+  const reads: Read[] = [];
+  const instance = createDirectPanelInstance(manifest, {
+    pageKey: "object-list-test",
+    url: () => "/panels/object-list",
+    label: () => "Object list test",
+    initial: options.initial as never,
+    recordDraftCreated: async () => {},
+    text: createPanelText(options.messages ?? {}, ref("en"), "en"),
+    ...noOperations,
+    readProjection: async (id) => projections[id]!,
+    read: async (request) => {
+      reads.push(request);
+      return answer(request);
+    },
+  });
+  const element = document.createElement("div");
+  document.body.appendChild(element);
+  const app = createApp({
+    setup: () => () => h("div", memberKeys.map((member) => h(PanelMember, { instance, member, key: member }))),
+  }).use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus);
+  app.mount(element);
+  cleanup = () => {
+    app.unmount();
+    element.remove();
   };
+  return { instance, element, reads };
 }
 
 afterEach(() => {
-  leaveFrame();
+  cleanup?.();
+  cleanup = null;
+  document.body.innerHTML = "";
   vi.resetModules();
 });
 
-it("renders multi-column ObjectList with status tags, text search, count, separate single/checked selection and reference navigation", async () => {
-  const projections = {
-    "metric-list": projection("metric-list", "ObjectList", METRIC, {
-      columns: [
-        { key: "label", labelKey: "cols.name", subtitleKey: "description" },
-        { key: "functionName", labelKey: "cols.function", kind: "reference" },
-        { key: "status", labelKey: "cols.status", kind: "tag" },
-      ],
-      searchable: true,
-      showCount: true,
-      selectable: true,
-    }),
-    "function-list": projection("function-list", "ObjectList", FUNCTION, {
-      columns: [{ key: "label", labelKey: "cols.function" }],
-    }),
-  };
-  const manifest = definePanel({
-    state: {
-      selectedMetric: { kind: "object", objectType: METRIC, deepLink: true },
-      linkedFunction: { kind: "object", objectType: FUNCTION, deepLink: false },
-    },
-    slots: {
-      metrics: {
-        projectionId: "metric-list",
-        inputs: {},
-        outputs: { selected: { state: "selectedMetric" }, navigate: { state: "linkedFunction" } },
+it("pairs SegmentedControl panelGroupCounts with ObjectList panelRecordQuery highlights, fallback-to-first, and ObjectSummary", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "knowledge-tabs": {
+      ...meta,
+      id: "knowledge-tabs",
+      name: "Status tabs",
+      componentId: "@ontomato/sdk:SegmentedControl",
+      inputs: { search: { kind: "scalar", type: "string" } },
+      outputs: { value: { kind: "scalar", type: "string" } },
+      config: {
+        ariaLabel: "Knowledge status",
+        options: [
+          { value: "all", labelKey: "knowledge.filterAll" },
+          { value: "pending", labelKey: "knowledge.filterPending" },
+          { value: "approved", labelKey: "knowledge.filterApproved" },
+        ],
       },
-      functions: {
-        projectionId: "function-list",
-        inputs: {},
+      data: {
+        counts: {
+          source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } },
+          read: "counts",
+          params: { by: { literal: "status" }, search: { input: "search" } },
+        },
       },
     },
-    operations: [],
-  });
-  const panel = panelRecord("panel-metrics", "Metrics", manifest);
-  panel.content.messages = {
-    en: { "cols.name": "Name", "cols.function": "Function", "cols.status": "Status" },
+    "knowledge-list": {
+      ...meta,
+      id: "knowledge-list",
+      name: "Knowledge list",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {
+        search: { kind: "scalar", type: "string" },
+        status: { kind: "scalar", type: "string" },
+        filter: { kind: "json" },
+      },
+      outputs: {
+        selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE },
+        search: { kind: "scalar", type: "string" },
+      },
+      config: {
+        searchable: true,
+        statusField: "status",
+        fallbackToFirst: true,
+        toggleable: false,
+      },
+      data: {
+        rows: {
+          source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } },
+          read: "query",
+          params: { search: { input: "search" }, filter: { input: "filter" } },
+        },
+      },
+    },
+    "knowledge-summary": {
+      ...meta,
+      id: "knowledge-summary",
+      name: "Knowledge detail",
+      componentId: "@ontomato/sdk:ObjectSummary",
+      inputs: {
+        item: { kind: "object", objectType: BUSINESS_KNOWLEDGE },
+        search: { kind: "scalar", type: "string" },
+      },
+      outputs: {},
+      config: { fields: ["status", "body"] },
+      data: {
+        record: {
+          source: { object: { input: "item" } },
+          read: "record",
+          params: { search: { input: "search" } },
+        },
+      },
+    },
   };
-  panel.content.html = `
-    <div id="app">
-      <section class="metrics-pane">
-        <Projection slot="metrics" v-model:checked="checkedRefs">
-          <template #batch-actions="{ checked, clear }">
-            <button type="button" class="batch-publish" @click="published = checked.map(c => c.primaryKey); clear()">Publish ({{ checked.length }})</button>
-          </template>
-        </Projection>
-      </section>
-      <section class="functions-pane">
-        <Projection slot="functions"></Projection>
-      </section>
-    </div>`;
-  const use = panelUse("use-metrics", "metrics-test", panel.id, "/applications/app-test/metrics");
 
-  installPlatform(hostWith(projections));
-  const frame = panelFrame();
-  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(registered("app-test", use, panel), use.path, {});
-  inside(frame);
-
-  const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
-  const allMetrics = [
-    {
-      primaryKey: "m-1", label: "Revenue", fields: { description: "Gross revenue", functionName: "calc_rev", status: "Published" },
-      tones: { status: "success" as const },
-      references: { functionName: { className: FUNCTION, primaryKey: "fn-1", label: "calc_rev" } },
-    },
-    {
-      primaryKey: "m-2", label: "Churn", fields: { description: "Monthly churn", functionName: "calc_churn", status: "Draft" },
-      tones: { status: "warning" as const },
-      references: { functionName: { className: FUNCTION, primaryKey: "fn-2", label: "calc_churn" } },
-    },
-  ];
-  const queries: unknown[] = [];
-  registerPlatformObjectAdapter({
-    objectType: METRIC,
-    query: async (q) => {
-      queries.push(q);
-      const term = (q.search ?? "").trim().toLowerCase();
-      const items = term ? allMetrics.filter((item) => item.label.toLowerCase().includes(term)) : allMetrics;
-      return { items, total: items.length };
-    },
-  });
-  registerPlatformObjectAdapter({
-    objectType: FUNCTION,
-    list: async () => [{ primaryKey: "fn-1", label: "calc_rev", fields: {} }],
-  });
-
-  const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
-  const checkedRefs = ref<{ className: string; primaryKey: string }[]>([]);
-  const published = ref<string[]>([]);
-  const mounted = await mountPanel({ setup: () => ({ checkedRefs, published }) });
-
-  await vi.waitFor(() => expect(document.querySelectorAll(".metrics-pane tbody tr").length).toBe(2));
-
-  // Function list did NOT enable selectable: zero checkboxes inside it.
-  expect(document.querySelectorAll('.functions-pane input[type="checkbox"]').length).toBe(0);
-
-  // Multi-column headers, status tags with tones, and total count.
-  expect([...document.querySelectorAll(".metrics-pane thead th")].map((th) => th.textContent?.trim()))
-    .toEqual(["", "Name", "Function", "Status"]);
-  expect(document.querySelector('.metrics-pane [data-tone="success"]')?.textContent?.trim()).toBe("Published");
-  expect(document.querySelector(".metrics-pane .sdk-object-list-count")?.textContent).toContain("2");
-
-  // Clicking a row sets single selection without touching checked checkboxes.
-  document.querySelector<HTMLTableRowElement>(".metrics-pane tbody tr")!.click();
-  await nextTick();
-  expect(mounted.context.instance.state.values.value.selectedMetric).toEqual({ className: METRIC, primaryKey: "m-1" });
-  expect(checkedRefs.value).toEqual([]);
-  expect(document.querySelector(".batch-publish")).toBeNull();
-
-  // Checking row 2 updates checkedRefs and shows batch actions without changing selectedMetric.
-  const rowBoxes = document.querySelectorAll<HTMLInputElement>('.metrics-pane tbody input[type="checkbox"]');
-  rowBoxes[1]!.click();
-  await nextTick();
-  expect(mounted.context.instance.state.values.value.selectedMetric).toEqual({ className: METRIC, primaryKey: "m-1" });
-  expect(checkedRefs.value).toEqual([{ className: METRIC, primaryKey: "m-2" }]);
-  const selectAll = document.querySelector<HTMLInputElement>('.metrics-pane thead input[type="checkbox"]')!;
-  expect(selectAll.indeterminate).toBe(true);
-  expect(document.querySelector(".batch-publish")?.textContent).toContain("1");
-
-  // Filtering to "Rev" shows 1 row; clicking select-all checks ONLY the visible row (union with already checked m-2).
-  const searchInput = document.querySelector<HTMLInputElement>('.metrics-pane input[type="search"]')!;
-  searchInput.value = "Rev";
-  searchInput.dispatchEvent(new Event("input", { bubbles: true }));
-  await vi.waitFor(() => expect(document.querySelectorAll(".metrics-pane tbody tr").length).toBe(1));
-  expect(document.querySelector(".metrics-pane .sdk-object-list-count")?.textContent).toContain("1");
-
-  selectAll.click();
-  await nextTick();
-  expect(checkedRefs.value).toEqual([
-    { className: METRIC, primaryKey: "m-2" },
-    { className: METRIC, primaryKey: "m-1" },
-  ]);
-
-  // Clicking a reference cell writes the navigate output state without changing selectedMetric.
-  document.querySelector<HTMLButtonElement>(".metrics-pane .sdk-object-ref-link")!.click();
-  await nextTick();
-  expect(mounted.context.instance.state.values.value.linkedFunction).toEqual({ className: FUNCTION, primaryKey: "fn-1" });
-  expect(mounted.context.instance.state.values.value.selectedMetric).toEqual({ className: METRIC, primaryKey: "m-1" });
-
-  // Batch action runs and clears selection.
-  document.querySelector<HTMLButtonElement>(".batch-publish")!.click();
-  await nextTick();
-  expect(published.value).toEqual(["m-2", "m-1"]);
-  expect(checkedRefs.value).toEqual([]);
-});
-
-it("renders faceted count tabs, escaped highlights, fallback-to-first selection, and ObjectSummary highlights/references", async () => {
-  const projections = {
-    "knowledge-list": projection("knowledge-list", "ObjectList", KNOWLEDGE, {
-      searchable: true,
-      selectable: true,
-      statusField: "status",
-      tagsField: "tags",
-      fallbackToFirst: true,
-      toggleable: false,
-      filters: [{
-        key: "status", label: "knowledge.status", kind: "tabs", defaultValue: "all",
-        options: [{ value: "all", label: "knowledge.filterAll" }],
-      }],
-    }),
-    "knowledge-summary": projection("knowledge-summary", "ObjectSummary", KNOWLEDGE, {
-      fields: ["status", "body", "owner"],
-    }, { item: { kind: "object", objectType: KNOWLEDGE } }),
-  };
   const manifest = definePanel({
     state: {
-      selectedKnowledge: { kind: "object", objectType: KNOWLEDGE, deepLink: true },
-      linkedOwner: { kind: "object", objectType: FUNCTION, deepLink: false },
+      keyword: { type: { kind: "scalar", type: "string" }, deepLink: true },
+      status: { type: { kind: "scalar", type: "string" }, deepLink: true, default: "all" },
+      selectedKnowledge: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE }, deepLink: true },
     },
-    slots: {
-      list: { projectionId: "knowledge-list", inputs: {}, outputs: { selected: { state: "selectedKnowledge" } } },
+    members: {
+      tabs: {
+        target: { projectionId: "knowledge-tabs" },
+        inputs: { search: { state: "keyword" } },
+        outputs: { value: { state: "status" } },
+      },
+      list: {
+        target: { projectionId: "knowledge-list" },
+        inputs: { search: { state: "keyword" }, status: { state: "status" } },
+        outputs: { selected: { state: "selectedKnowledge" }, search: { state: "keyword" } },
+      },
       detail: {
-        projectionId: "knowledge-summary",
-        inputs: { item: { state: "selectedKnowledge" } },
-        outputs: { navigate: { state: "linkedOwner" } },
+        target: { projectionId: "knowledge-summary" },
+        inputs: { item: { state: "selectedKnowledge" }, search: { state: "keyword" } },
       },
     },
-    operations: [],
+    events: {},
   });
-  const panel = panelRecord("panel-knowledge", "Knowledge", manifest);
-  panel.content.html = `<div id="app"><Projection slot="list"></Projection><Projection slot="detail"></Projection></div>`;
-  panel.content.messages = { en: { "knowledge.status": "Status", "knowledge.filterAll": "All" } };
-  const use = panelUse("use-knowledge", "knowledge-test", panel.id, "/applications/app-test/knowledge");
 
-  installPlatform(hostWith(projections));
-  const frame = panelFrame();
-  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(registered("app-test", use, panel), use.path, {});
-  inside(frame);
-
-  const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
   const entries = [
     {
-      primaryKey: "k-1", label: "<img src=x onerror=alert(1)> Order rule", subtitle: "…Order must have customer…",
-      fields: { status: "Approved", body: "Order must have customer", owner: "order_fn" },
-      tones: { status: "success" as const },
-      tags: { tags: ["Business", "Core"] },
-      references: { owner: { className: FUNCTION, primaryKey: "fn-order", label: "order_fn" } },
+      primaryKey: "k-1",
+      label: "<img src=x onerror=alert(1)> Order rule",
+      subtitle: "Order must have customer",
+      fields: { status: "Approved", body: "Order must have customer\nLine 2" },
       statusValue: "approved",
     },
     {
-      primaryKey: "k-2", label: "Pending Order rule", subtitle: "Draft order rule",
-      fields: { status: "Pending", body: "Draft order rule", owner: "draft_fn" },
-      tones: { status: "warning" as const },
-      tags: { tags: ["Draft"] },
+      primaryKey: "k-2",
+      label: "Pending Order rule",
+      subtitle: "Draft order rule",
+      fields: { status: "Pending", body: "Draft order rule" },
       statusValue: "pending",
     },
   ];
-  registerPlatformObjectAdapter({
-    objectType: KNOWLEDGE,
-    query: async (q) => {
-      const search = (q.search ?? "").trim().toLowerCase();
-      const matched = search ? entries.filter((e) => e.label.toLowerCase().includes(search)) : entries;
-      const status = q.filters?.status ?? "all";
-      const visible = status === "all" ? matched : matched.filter((e) => e.statusValue === status);
+
+  const { instance, element } = mountDirect(
+    manifest,
+    projections,
+    (request) => {
+      const search = typeof request.inputs.search === "string" ? request.inputs.search.trim().toLowerCase() : "";
+      const matched = search ? entries.filter((entry) => entry.label.toLowerCase().includes(search)) : entries;
       const rangeOf = (text: string) => {
         if (!search) return [];
         const index = text.toLowerCase().indexOf(search);
         return index >= 0 ? [{ start: index, end: index + search.length }] : [];
       };
-      return {
-        items: visible.map(({ statusValue: _s, ...item }) => ({
-          ...item,
-          highlights: search ? { label: rangeOf(item.label), subtitle: rangeOf(item.subtitle) } : undefined,
-        })),
-        total: visible.length,
-        facets: [{
-          key: "status",
-          label: "Status",
-          options: [
-            { value: "all", count: matched.length },
-            { value: "pending", label: "Pending", count: matched.filter((e) => e.statusValue === "pending").length },
-            { value: "approved", label: "Approved", count: matched.filter((e) => e.statusValue === "approved").length },
-          ],
-        }],
-      };
-    },
-    read: async (primaryKey) => {
-      const found = entries.find((e) => e.primaryKey === primaryKey)!;
-      return {
+      if (request.dataName === "counts") {
+        return ready({
+          all: matched.length,
+          pending: matched.filter((entry) => entry.statusValue === "pending").length,
+          approved: matched.filter((entry) => entry.statusValue === "approved").length,
+        });
+      }
+      if (request.dataName === "rows") {
+        const filter = (request.inputs.filter as { status?: string } | undefined)?.status ?? "all";
+        const visible = filter === "all" ? matched : matched.filter((entry) => entry.statusValue === filter);
+        return ready({
+          rows: visible.map(({ statusValue: _s, ...item }) => {
+            const labelHits = rangeOf(item.label);
+            const subtitleHits = rangeOf(item.subtitle);
+            const highlights = {
+              ...(labelHits.length ? { label: labelHits } : {}),
+              ...(subtitleHits.length ? { subtitle: subtitleHits } : {}),
+            };
+            return {
+              ...item,
+              ...(Object.keys(highlights).length ? { highlights } : {}),
+            };
+          }),
+          total: visible.length,
+        });
+      }
+      const key = (request.inputs.item as { primaryKey: string }).primaryKey;
+      const found = entries.find((entry) => entry.primaryKey === key)!;
+      const bodyHits = rangeOf(found.fields.body);
+      return ready({
         primaryKey: found.primaryKey,
         label: found.label,
         fields: found.fields,
-        tones: found.tones,
-        tags: found.tags,
-        references: found.references,
-        highlights: { body: [{ start: 0, end: 5 }] },
-      };
+        ...(bodyHits.length ? { highlights: { body: bodyHits } } : {}),
+      });
     },
-  });
-
-  const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
-  const mounted = await mountPanel({});
+    {
+      messages: {
+        en: {
+          "knowledge.filterAll": "All",
+          "knowledge.filterPending": "Pending",
+          "knowledge.filterApproved": "Approved",
+        },
+      },
+    },
+  );
 
   // Fallback-to-first selects k-1 automatically on initial load.
-  await vi.waitFor(() => expect(mounted.context.instance.state.values.value.selectedKnowledge).toEqual({
-    className: KNOWLEDGE, primaryKey: "k-1",
-  }));
+  await vi.waitFor(() => expect(instance.state.values.value.selectedKnowledge).toEqual(knowledge("k-1")));
 
-  // Facets show counts; tags render.
-  const tabs = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
-  expect(tabs.map((tab) => tab.textContent?.replace(/\s+/g, " ").trim())).toEqual(["All 2", "Pending 1", "Approved 1"]);
-  expect([...document.querySelectorAll(".sdk-object-list-item-tags .sdk-object-list-tag")].map((t) => t.textContent?.trim()))
-    .toContain("Business");
+  // SegmentedControl shows panelGroupCounts beside each option label.
+  await vi.waitFor(() => {
+    const counts = [...element.querySelectorAll(".sdk-segmented-count")].map((node) => node.textContent?.trim());
+    expect(counts).toEqual(["2", "1", "1"]);
+  });
+  const radios = [...element.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
+  expect(radios[0]!.getAttribute("aria-checked")).toBe("true");
 
-  // Search highlights text safely without injecting HTML.
-  const searchInput = document.querySelector<HTMLInputElement>('input[type="search"]')!;
+  // Re-clicking selected row does not toggle off when toggleable: false.
+  element.querySelector<HTMLButtonElement>(".sdk-object-list-item-btn")!.click();
+  await nextTick();
+  expect(instance.state.values.value.selectedKnowledge).toEqual(knowledge("k-1"));
+
+  // Typing search highlights matched UTF-16 ranges safely (zero raw HTML injection) in both list and summary.
+  const searchInput = element.querySelector<HTMLInputElement>('input[type="search"]')!;
   searchInput.value = "Order";
   searchInput.dispatchEvent(new Event("input", { bubbles: true }));
-  await vi.waitFor(() => expect(document.querySelectorAll(".sdk-object-list mark").length).toBeGreaterThan(0));
-  expect(document.querySelector(".sdk-object-list img")).toBeNull();
-  expect(document.querySelector(".sdk-object-list mark")?.textContent).toBe("Order");
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list mark").length).toBeGreaterThan(0));
+  expect(element.querySelector(".sdk-object-list img")).toBeNull();
+  expect(element.querySelector(".sdk-object-list mark")?.textContent).toBe("Order");
+  await vi.waitFor(() => expect(element.querySelector(".sdk-object-summary mark")?.textContent).toBe("Order"));
+  const summaryTexts = [...element.querySelectorAll(".sdk-object-summary-text")].map((node) => node.textContent);
+  expect(summaryTexts[1]).toContain("Line 2");
 
-  // ObjectSummary renders escaped highlights and clickable reference link.
-  await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary mark")?.textContent).toBe("Order"));
-  document.querySelector<HTMLButtonElement>(".sdk-object-summary .sdk-object-ref-link")!.click();
-  await nextTick();
-  expect(mounted.context.instance.state.values.value.linkedOwner).toEqual({ className: FUNCTION, primaryKey: "fn-order" });
+  // Switching status tab via SegmentedControl updates filter and falls back selection to k-2.
+  radios[1]!.click();
+  await vi.waitFor(() => expect(instance.state.values.value.status).toBe("pending"));
+  await vi.waitFor(() => expect(instance.state.values.value.selectedKnowledge).toEqual(knowledge("k-2")));
+  expect(radios[1]!.getAttribute("aria-checked")).toBe("true");
 
-  // Switching status tab to Pending filters out k-1 -> selection falls back to first visible item k-2.
-  tabs[1]!.click();
-  await vi.waitFor(() => expect(mounted.context.instance.state.values.value.selectedKnowledge).toEqual({
-    className: KNOWLEDGE, primaryKey: "k-2",
-  }));
+  // Keyboard ArrowLeft switches back to "all".
+  radios[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+  await vi.waitFor(() => expect(instance.state.values.value.status).toBe("all"));
 });
 
-it("supports server-side pagination, submit-mode filters resetting to page 1, refresh, and row detail action", async () => {
-  const projections = {
-    "feedback-list": projection("feedback-list", "ObjectList", FEEDBACK, {
-      columns: [
-        { key: "source", labelKey: "cols.source", kind: "tag" },
-        { key: "rating", labelKey: "cols.rating", kind: "tag" },
-        { key: "comment", labelKey: "cols.comment" },
-      ],
-      searchable: true,
-      searchMode: "submit",
-      refreshable: true,
-      showCount: true,
-      pageSize: 2,
-      toggleable: false,
-      rowActionLabel: "Details",
-      filters: [
-        {
-          key: "sourceType", label: "Source", kind: "select",
-          options: [{ value: "qa", label: "Q&A" }, { value: "analysis_task", label: "Analysis" }],
+it("keeps SegmentedControl interactive when its counts datum fails or is loading", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "status-tabs": {
+      ...meta,
+      id: "status-tabs",
+      name: "Status tabs",
+      componentId: "@ontomato/sdk:SegmentedControl",
+      inputs: {},
+      outputs: { value: { kind: "scalar", type: "string" } },
+      config: {
+        options: [
+          { value: "all", label: "All" },
+          { value: "pending", label: "Pending" },
+        ],
+      },
+      data: {
+        counts: {
+          source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } },
+          read: "counts",
+          params: { by: { literal: "status" } },
         },
-        {
-          key: "rating", label: "Rating", kind: "select",
-          options: [{ value: "like", label: "Like" }, { value: "dislike", label: "Dislike" }],
-        },
-      ],
-    }),
+      },
+    },
   };
   const manifest = definePanel({
-    state: { selectedFeedback: { kind: "object", objectType: FEEDBACK, deepLink: false } },
-    slots: { list: { projectionId: "feedback-list", inputs: {}, outputs: { selected: { state: "selectedFeedback" } } } },
-    operations: [],
-  });
-  const panel = panelRecord("panel-feedback", "Feedback", manifest);
-  panel.content.messages = {
-    en: { "cols.source": "Source", "cols.rating": "Rating", "cols.comment": "Comment" },
-  };
-  panel.content.html = `<div id="app"><Projection slot="list" @query="lastQuery = $event"></Projection></div>`;
-  const use = panelUse("use-feedback", "feedback-test", panel.id, "/applications/app-test/feedback");
-
-  installPlatform(hostWith(projections));
-  const frame = panelFrame();
-  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(registered("app-test", use, panel), use.path, {});
-  inside(frame);
-
-  const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
-  const all = [
-    { primaryKey: "f-1", label: "f-1", fields: { source: "Q&A", rating: "Like", comment: "Good 1" }, sourceType: "qa", ratingVal: "like" },
-    { primaryKey: "f-2", label: "f-2", fields: { source: "Q&A", rating: "Dislike", comment: "Bad 2" }, sourceType: "qa", ratingVal: "dislike" },
-    { primaryKey: "f-3", label: "f-3", fields: { source: "Analysis", rating: "Like", comment: "Good 3" }, sourceType: "analysis_task", ratingVal: "like" },
-    { primaryKey: "f-4", label: "f-4", fields: { source: "Q&A", rating: "Dislike", comment: "Bad 4" }, sourceType: "qa", ratingVal: "dislike" },
-    { primaryKey: "f-5", label: "f-5", fields: { source: "Analysis", rating: "Dislike", comment: "Bad 5" }, sourceType: "analysis_task", ratingVal: "dislike" },
-  ];
-  const calls: unknown[] = [];
-  registerPlatformObjectAdapter({
-    objectType: FEEDBACK,
-    query: async (q) => {
-      calls.push(q);
-      let filtered = all;
-      if (q.filters?.sourceType) filtered = filtered.filter((r) => r.sourceType === q.filters!.sourceType);
-      if (q.filters?.rating) filtered = filtered.filter((r) => r.ratingVal === q.filters!.rating);
-      if (q.search) filtered = filtered.filter((r) => r.fields.comment.toLowerCase().includes(q.search!.toLowerCase()));
-      const offset = q.page?.offset ?? 0;
-      const limit = q.page?.limit ?? filtered.length;
-      return {
-        items: filtered.slice(offset, offset + limit).map(({ primaryKey, label, fields }) => ({ primaryKey, label, fields })),
-        total: filtered.length,
-      };
+    state: {
+      status: { type: { kind: "scalar", type: "string" }, default: "all" },
+      cleared: { type: { kind: "scalar", type: "boolean" }, default: false },
+    },
+    members: {
+      tabs: { target: { projectionId: "status-tabs" }, outputs: { value: { state: "status" } } },
+    },
+    events: {
+      onStatusChange: {
+        on: { member: "tabs", output: "value" },
+        do: { set: { fields: { cleared: { literal: true } } } },
+      },
     },
   });
 
-  const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
-  const lastQuery = ref<unknown>(null);
-  const mounted = await mountPanel({ setup: () => ({ lastQuery }) });
+  const { instance, element } = mountDirect(manifest, projections, () => ({ status: "error", message: "Counts failed" }));
+  await vi.waitFor(() => expect(element.querySelectorAll('[role="radio"]')).toHaveLength(2));
+  expect(element.querySelectorAll(".sdk-segmented-count")).toHaveLength(0);
 
-  // Initial load: offset 0, limit 2, total 5.
-  await vi.waitFor(() => expect(document.querySelectorAll("tbody tr").length).toBe(2));
-  expect(calls).toEqual([{ page: { offset: 0, limit: 2 } }]);
-  expect(document.querySelector(".sdk-object-list-count")?.textContent).toContain("5");
+  element.querySelectorAll<HTMLButtonElement>('[role="radio"]')[1]!.click();
+  await vi.waitFor(() => expect(instance.state.values.value.status).toBe("pending"));
+  expect(instance.state.values.value.cleared).toBe(true);
+});
 
-  // Go to page 2 -> offset 2, limit 2.
-  document.querySelector<HTMLButtonElement>(".sdk-object-list-next")!.click();
-  await vi.waitFor(() => expect(calls.length).toBe(2));
-  expect(calls[1]).toEqual({ page: { offset: 2, limit: 2 } });
+it("resolves column labelKey/emptyKey via panel.t, falls back to owner fieldLabels, and resolves state event labelKey", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "labeled-list": {
+      ...meta,
+      id: "labeled-list",
+      name: "Tasks",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK } },
+      config: {
+        columns: [
+          { key: "source" },
+          { key: "comment", labelKey: "cols.notes", emptyKey: "cols.noNotes" },
+          { key: "rawCode" },
+        ],
+      },
+      data: {
+        rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} },
+      },
+    },
+    "labeled-summary": {
+      ...meta,
+      id: "labeled-summary",
+      name: "Summary",
+      componentId: "@ontomato/sdk:ObjectSummary",
+      inputs: { item: { kind: "object", objectType: SCHEDULED_TASK } },
+      outputs: {},
+      config: { fields: ["source", "rawCode"] },
+      data: {
+        record: { source: { object: { input: "item" } }, read: "record", params: {} },
+      },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true },
+    },
+    members: {
+      list: { target: { projectionId: "labeled-list" }, outputs: { selected: { state: "selectedTask" } } },
+      summary: { target: { projectionId: "labeled-summary" }, inputs: { item: { state: "selectedTask" } } },
+    },
+    events: {
+      clearSelection: {
+        labelKey: "ops.clear",
+        do: { set: { fields: { selectedTask: { literal: null } } } },
+      },
+    },
+  });
+  const record = {
+    primaryKey: "t-1",
+    label: "Task 1",
+    fields: { source: "Q&A", comment: "", rawCode: "E-100" },
+    fieldLabels: { source: "Task source", comment: "Owner comment" },
+  };
+  const { instance, element } = mountDirect(
+    manifest,
+    projections,
+    (request) => (request.dataName === "rows" ? ready([record]) : ready(record)),
+    {
+      messages: {
+        en: { "cols.notes": "Reviewer notes", "cols.noNotes": "No notes", "ops.clear": "Clear selection" },
+      },
+    },
+  );
 
-  // Submit mode: changing dropdown & typing search does NOT trigger a query yet.
-  const [sourceSelect, ratingSelect] = document.querySelectorAll<HTMLSelectElement>("select");
-  sourceSelect!.value = "qa";
-  sourceSelect!.dispatchEvent(new Event("change", { bubbles: true }));
-  ratingSelect!.value = "dislike";
-  ratingSelect!.dispatchEvent(new Event("change", { bubbles: true }));
-  const searchInput = document.querySelector<HTMLInputElement>('input[type="search"]')!;
-  searchInput.value = "Bad";
+  await vi.waitFor(() => expect(element.querySelectorAll("thead th").length).toBe(3));
+  const headers = [...element.querySelectorAll("thead th")].map((th) => th.textContent?.trim());
+  expect(headers).toEqual(["Task source", "Reviewer notes", "rawCode"]);
+  const cells = [...element.querySelectorAll("tbody tr td")].map((td) => td.textContent?.trim());
+  expect(cells).toEqual(["Q&A", "No notes", "E-100"]);
+  expect(instance.operations.value.find((op) => op.id === "clearSelection")?.label).toBe("Clear selection");
+
+  element.querySelector<HTMLTableRowElement>("tbody tr")!.click();
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-summary dt").length).toBe(2));
+  const summaryLabels = [...element.querySelectorAll(".sdk-object-summary dt")].map((dt) => dt.textContent?.trim());
+  expect(summaryLabels).toEqual(["Task source", "rawCode"]);
+
+  await instance.invoke("clearSelection");
+  expect(instance.state.values.value.selectedTask).toBeNull();
+});
+
+it("supports cursor pagination, submit-mode search resetting to page 1, refresh, and row detail action", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "knowledge-table": {
+      ...meta,
+      id: "knowledge-table",
+      name: "Knowledge",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {
+        search: { kind: "scalar", type: "string" },
+        cursor: { kind: "scalar", type: "string" },
+        size: { kind: "scalar", type: "number" },
+      },
+      outputs: { selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      config: {
+        columns: [
+          { key: "label", labelKey: "cols.title" },
+          { key: "status", labelKey: "cols.status" },
+        ],
+        searchable: true,
+        searchMode: "submit",
+        refreshable: true,
+        showCount: true,
+        pageSize: 2,
+        toggleable: false,
+        rowActionLabel: "cols.details",
+      },
+      data: {
+        rows: {
+          source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } },
+          read: "query",
+          params: { search: { input: "search" }, cursor: { input: "cursor" }, size: { input: "size" } },
+        },
+      },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      selectedKnowledge: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE }, deepLink: true },
+    },
+    members: {
+      list: { target: { projectionId: "knowledge-table" }, outputs: { selected: { state: "selectedKnowledge" } } },
+    },
+    events: {},
+  });
+
+  const allItems = [
+    { primaryKey: "k-1", label: "Alpha rule", fields: { status: "Approved" } },
+    { primaryKey: "k-2", label: "Beta rule", fields: { status: "Pending" } },
+    { primaryKey: "k-3", label: "Gamma rule", fields: { status: "Approved" } },
+  ];
+
+  const { instance, element, reads } = mountDirect(
+    manifest,
+    projections,
+    (request) => {
+      const search = typeof request.inputs.search === "string" ? request.inputs.search.toLowerCase() : "";
+      const filtered = search ? allItems.filter((item) => item.label.toLowerCase().includes(search)) : allItems;
+      const size = typeof request.inputs.size === "number" ? request.inputs.size : 2;
+      const offset = request.inputs.cursor === "page-2" ? size : 0;
+      const pageRows = filtered.slice(offset, offset + size);
+      const nextCursor = offset + size < filtered.length ? "page-2" : undefined;
+      return ready({
+        rows: pageRows,
+        total: filtered.length,
+        ...(nextCursor ? { nextCursor } : {}),
+      });
+    },
+    { messages: { en: { "cols.title": "Title", "cols.status": "Status", "cols.details": "Details" } } },
+  );
+
+  await vi.waitFor(() => expect(element.querySelectorAll("tbody tr")).toHaveLength(2));
+  expect(reads[0]!.inputs).toEqual({ size: 2 });
+  expect(element.querySelector(".sdk-object-list-count")?.textContent).toContain("3");
+
+  // Next page sends cursor="page-2" and size=2.
+  element.querySelector<HTMLButtonElement>(".sdk-object-list-next")!.click();
+  await vi.waitFor(() => expect(element.querySelectorAll("tbody tr")).toHaveLength(1));
+  expect(reads[1]!.inputs).toEqual({ cursor: "page-2", size: 2 });
+
+  // Typing in submit mode does NOT query until clicking Query button, which resets to page 1 (no cursor).
+  const searchInput = element.querySelector<HTMLInputElement>(".sdk-object-list-search")!;
+  searchInput.value = "beta";
   searchInput.dispatchEvent(new Event("input", { bubbles: true }));
   await nextTick();
-  expect(calls.length).toBe(2);
+  expect(reads).toHaveLength(2);
 
-  // Clicking Query resets to page 1 (offset 0) and sends search + filters.
-  document.querySelector<HTMLButtonElement>(".sdk-object-list-query")!.click();
-  await vi.waitFor(() => expect(lastQuery.value).toEqual({
-    search: "Bad", filters: { sourceType: "qa", rating: "dislike" }, page: { offset: 0, limit: 2 },
-  }));
-  expect(calls[2]).toEqual(lastQuery.value);
+  element.querySelector<HTMLButtonElement>(".sdk-object-list-query")!.click();
+  await vi.waitFor(() => expect(reads).toHaveLength(3));
+  expect(reads[2]!.inputs).toEqual({ search: "beta", size: 2 });
+  await vi.waitFor(() => expect(element.querySelector("tbody tr td")?.textContent?.trim()).toBe("Beta rule"));
 
-  // Clicking Refresh re-runs the same query.
-  document.querySelector<HTMLButtonElement>(".sdk-object-list-refresh")!.click();
-  await vi.waitFor(() => expect(calls.length).toBe(4));
-  expect(calls[3]).toEqual(calls[2]);
+  // Refresh re-runs the same query.
+  element.querySelector<HTMLButtonElement>(".sdk-object-list-refresh")!.click();
+  await vi.waitFor(() => expect(reads).toHaveLength(4));
+  expect(reads[3]!.inputs).toEqual({ search: "beta", size: 2 });
 
-  // Row detail action selects f-2 without toggling off on second click.
-  const detailButton = document.querySelector<HTMLButtonElement>(".sdk-object-list-row-action")!;
+  // Row detail action selects k-2 without toggling off on repeated click.
+  const detailButton = await vi.waitFor(() => {
+    const found = element.querySelector<HTMLButtonElement>(".sdk-object-list-row-action");
+    if (!found) throw new Error("Row action button not rendered yet");
+    return found;
+  });
   detailButton.click();
   await nextTick();
-  expect(mounted.context.instance.state.values.value.selectedFeedback).toEqual({ className: FEEDBACK, primaryKey: "f-2" });
+  expect(instance.state.values.value.selectedKnowledge).toEqual(knowledge("k-2"));
   detailButton.click();
   await nextTick();
-  expect(mounted.context.instance.state.values.value.selectedFeedback).toEqual({ className: FEEDBACK, primaryKey: "f-2" });
+  expect(instance.state.values.value.selectedKnowledge).toEqual(knowledge("k-2"));
 });
 
-it("fails visibly when query features are enabled on a list-only adapter", async () => {
-  const projections = {
-    "legacy-list": projection("legacy-list", "ObjectList", LEGACY, { searchable: true }),
-  };
-  const manifest = definePanel({
-    state: {},
-    slots: { list: { projectionId: "legacy-list", inputs: {} } },
-    operations: [],
-  });
-  const panel = panelRecord("panel-legacy", "Legacy", manifest);
-  panel.content.html = `<div id="app"><Projection slot="list"></Projection></div>`;
-  const use = panelUse("use-legacy", "legacy-test", panel.id, "/applications/app-test/legacy");
-
-  installPlatform(hostWith(projections));
-  const frame = panelFrame();
-  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(registered("app-test", use, panel), use.path, {});
-  inside(frame);
-
-  const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
-  registerPlatformObjectAdapter({
-    objectType: LEGACY,
-    list: async () => [{ primaryKey: "1", label: "One", fields: {} }],
-  });
-
-  const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
-  await mountPanel({});
-
-  await vi.waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toContain("has no query"));
-});
-
-it("resolves column labelKey/emptyKey via panel.t, falls back to owner fieldLabels on ObjectList and ObjectSummary, and resolves state operation labelKey", async () => {
-  const projections = {
-    "labeled-list": projection("labeled-list", "ObjectList", FEEDBACK, {
-      columns: [
-        { key: "source", kind: "tag" },
-        { key: "comment", labelKey: "cols.notes", emptyKey: "cols.noNotes" },
-        { key: "rawCode" },
-      ],
-    }),
-    "labeled-summary": projection("labeled-summary", "ObjectSummary", FEEDBACK, {
-      fields: ["source", "rawCode"],
-    }, { item: { kind: "object", objectType: FEEDBACK } }),
-  };
-  const manifest = definePanel({
-    state: {
-      selectedFeedback: { kind: "object", objectType: FEEDBACK, deepLink: true },
-    },
-    slots: {
-      list: { projectionId: "labeled-list", inputs: {}, outputs: { selected: { state: "selectedFeedback" } } },
-      summary: { projectionId: "labeled-summary", inputs: { item: { state: "selectedFeedback" } } },
-    },
-    operations: [
-      { id: "clearSelection", labelKey: "ops.clear", kind: "state", sets: { selectedFeedback: null } },
-    ],
-  });
-  const panel = panelRecord("panel-labels", "Labels", manifest);
-  panel.content.messages = {
-    en: { "cols.notes": "Reviewer notes", "cols.noNotes": "No notes", "ops.clear": "Clear selection" },
-  };
-  panel.content.html = `
-    <div id="app">
-      <Projection slot="list"></Projection>
-      <Projection slot="summary"></Projection>
-    </div>`;
-  const use = panelUse("use-labels", "labels-test", panel.id, "/applications/app-test/labels");
-
-  installPlatform(hostWith(projections));
-  const frame = panelFrame();
-  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(registered("app-test", use, panel), use.path, {});
-  inside(frame);
-
-  const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
-  const record = {
-    primaryKey: "fb-1",
-    label: "Feedback 1",
-    fields: { source: "Q&A", comment: "", rawCode: "E-100" },
-    fieldLabels: { source: "Feedback source" },
-    tones: { source: "info" as const },
-  };
-  registerPlatformObjectAdapter({
-    objectType: FEEDBACK,
-    query: async () => ({
-      items: [record],
-      total: 1,
-      fieldLabels: { source: "Feedback source", comment: "Owner comment" },
-    }),
-    read: async () => record,
-  });
-
-  const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
-  const mounted = await mountPanel({});
-
-  await vi.waitFor(() => expect(document.querySelectorAll("thead th").length).toBe(3));
-  const headers = [...document.querySelectorAll("thead th")].map((th) => th.textContent?.trim());
-  // source omits labelKey -> uses owner fieldLabels; comment has labelKey -> panel.t wins over owner; rawCode falls back to key.
-  expect(headers).toEqual(["Feedback source", "Reviewer notes", "rawCode"]);
-  // emptyKey resolves through panel.t when cell value is empty.
-  const cells = [...document.querySelectorAll("tbody tr td")].map((td) => td.textContent?.trim());
-  expect(cells).toEqual(["Q&A", "No notes", "E-100"]);
-  // State operation labelKey resolves through panel.t.
-  expect(mounted.context.instance.operations.value.find((op) => op.id === "clearSelection")?.label).toBe("Clear selection");
-
-  // Select row -> ObjectSummary displays owner fieldLabels for "source" and falls back to raw key for "rawCode".
-  document.querySelector<HTMLTableRowElement>("tbody tr")!.click();
-  await vi.waitFor(() => expect(document.querySelectorAll(".sdk-object-summary dt").length).toBe(2));
-  const summaryLabels = [...document.querySelectorAll(".sdk-object-summary dt")].map((dt) => dt.textContent?.trim());
-  expect(summaryLabels).toEqual(["Feedback source", "rawCode"]);
-});
-
-it("two-way binds ObjectList search keyword and filters with scalar deepLink panel state via slot inputs/outputs", async () => {
-  const projections = {
-    "feedback-list": projection("feedback-list", "ObjectList", FEEDBACK, {
-      columns: [
-        { key: "source", labelKey: "cols.source", kind: "tag" },
-        { key: "rating", labelKey: "cols.rating", kind: "tag" },
-        { key: "comment", labelKey: "cols.comment" },
-      ],
-      searchable: true,
-      searchMode: "submit",
-      filters: [
-        {
-          key: "sourceType", label: "filters.sourceType", kind: "select",
-          options: [{ value: "qa", label: "filters.qa" }, { value: "analysis_task", label: "filters.analysis" }],
-        },
-        {
-          key: "rating", label: "filters.rating", kind: "select",
-          options: [{ value: "like", label: "filters.like" }, { value: "dislike", label: "filters.dislike" }],
-        },
-      ],
-    }, {
-      search: { kind: "scalar", type: "string" },
-      sourceType: { kind: "scalar", type: "string" },
-      rating: { kind: "scalar", type: "string" },
-    }),
-  };
-  const manifest = definePanel({
-    state: {
-      selectedFeedback: { kind: "object", objectType: FEEDBACK, deepLink: true },
-      sourceType: { kind: "scalar", type: "string", deepLink: true },
-      rating: { kind: "scalar", type: "string", deepLink: true },
-      keyword: { kind: "scalar", type: "string", deepLink: true },
-    },
-    slots: {
-      list: {
-        projectionId: "feedback-list",
-        inputs: {
-          search: { state: "keyword" },
-          sourceType: { state: "sourceType" },
-          rating: { state: "rating" },
-        },
-        outputs: {
-          selected: { state: "selectedFeedback" },
-          search: { state: "keyword" },
-          sourceType: { state: "sourceType" },
-          rating: { state: "rating" },
+it("two-way binds ObjectList search keyword with scalar deepLink panel state without double reads", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "knowledge-search": {
+      ...meta,
+      id: "knowledge-search",
+      name: "Knowledge search",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {
+        search: { kind: "scalar", type: "string" },
+        size: { kind: "scalar", type: "number" },
+      },
+      outputs: {
+        selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE },
+        search: { kind: "scalar", type: "string" },
+      },
+      config: {
+        searchable: true,
+        searchMode: "submit",
+        pageSize: 10,
+      },
+      data: {
+        rows: {
+          source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } },
+          read: "query",
+          params: { search: { input: "search" }, size: { input: "size" } },
         },
       },
     },
-    operations: [],
-  });
-  const panel = panelRecord("panel-feedback-state", "Feedback", manifest);
-  panel.content.messages = {
-    en: {
-      "cols.source": "Source",
-      "cols.rating": "Rating",
-      "cols.comment": "Comment",
-      "filters.sourceType": "Source",
-      "filters.qa": "Q&A",
-      "filters.analysis": "Analysis",
-      "filters.rating": "Rating",
-      "filters.like": "Like",
-      "filters.dislike": "Dislike",
-    },
   };
-  panel.content.html = `<div id="app"><Projection slot="list"></Projection></div>`;
-  const use = panelUse("use-feedback-state", "feedback-state-test", panel.id, "/applications/app-test/feedback-state");
-
-  installPlatform(hostWith(projections));
-  const frame = panelFrame();
-  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
-  const initialPath = `${use.path}?state=${encodeURIComponent(JSON.stringify({
-    sourceType: "qa",
-    rating: "dislike",
-    keyword: "timeout",
-  }))}`;
-  writePanelDocument(registered("app-test", use, panel), initialPath, panelAddressState(initialPath));
-  inside(frame);
-
-  const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
-  const queries: unknown[] = [];
-  registerPlatformObjectAdapter({
-    objectType: FEEDBACK,
-    query: async (q) => {
-      queries.push(q);
-      return {
-        items: [{ primaryKey: "f-1", label: "Row 1", fields: { source: q.filters?.sourceType ?? "", rating: q.filters?.rating ?? "", comment: q.search ?? "" } }],
-        total: 1,
-      };
+  const manifest = definePanel({
+    state: {
+      selectedKnowledge: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE }, deepLink: true },
+      keyword: { type: { kind: "scalar", type: "string" }, deepLink: true },
     },
+    members: {
+      list: {
+        target: { projectionId: "knowledge-search" },
+        inputs: { search: { state: "keyword" } },
+        outputs: { selected: { state: "selectedKnowledge" }, search: { state: "keyword" } },
+      },
+    },
+    events: {},
   });
 
-  const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
-  const mounted = await mountPanel({});
+  const { instance, element, reads } = mountDirect(
+    manifest,
+    projections,
+    (request) => ready({
+      rows: [{ primaryKey: "k-1", label: `Hit: ${String(request.inputs.search ?? "")}`, fields: {} }],
+      total: 1,
+    }),
+    { initial: { keyword: "timeout" } },
+  );
 
-  // 1. First query immediately carries restored deepLink state; inputs reflect restored values.
-  await vi.waitFor(() => expect(queries).toHaveLength(1));
-  expect(queries[0]).toEqual({ search: "timeout", filters: { sourceType: "qa", rating: "dislike" } });
-  const searchInput = document.querySelector<HTMLInputElement>(".sdk-object-list-search")!;
-  const [sourceSelect, ratingSelect] = [...document.querySelectorAll<HTMLSelectElement>(".sdk-object-list-select")];
+  // 1. Initial read carries restored deepLink keyword; search input reflects it.
+  await vi.waitFor(() => expect(reads).toHaveLength(1));
+  expect(reads[0]!.inputs).toEqual({ search: "timeout", size: 10 });
+  const searchInput = element.querySelector<HTMLInputElement>(".sdk-object-list-search")!;
   expect(searchInput.value).toBe("timeout");
-  expect(sourceSelect!.value).toBe("qa");
-  expect(ratingSelect!.value).toBe("dislike");
 
-  // 2. User edits search and filters and clicks Query -> writes back atomically to panel state & deepLink without double query.
+  // 2. Submitting a new search writes back to panel state & deepLink with exactly ONE new read.
   searchInput.value = "chart";
   searchInput.dispatchEvent(new Event("input"));
-  sourceSelect!.value = "analysis_task";
-  sourceSelect!.dispatchEvent(new Event("change"));
-  ratingSelect!.value = "like";
-  ratingSelect!.dispatchEvent(new Event("change"));
-  document.querySelector<HTMLButtonElement>(".sdk-object-list-query")!.click();
-
-  await vi.waitFor(() => expect(queries).toHaveLength(2));
+  element.querySelector<HTMLButtonElement>(".sdk-object-list-query")!.click();
+  await vi.waitFor(() => expect(reads).toHaveLength(2));
   await nextTick();
-  expect(queries).toHaveLength(2);
-  expect(queries[1]).toEqual({ search: "chart", filters: { sourceType: "analysis_task", rating: "like" } });
-  expect(mounted.context.instance.state.values.value).toEqual({
-    selectedFeedback: null,
-    sourceType: "analysis_task",
-    rating: "like",
-    keyword: "chart",
-  });
-  expect(mounted.context.instance.deepLink()).toEqual({
-    sourceType: "analysis_task",
-    rating: "like",
-    keyword: "chart",
-  });
+  expect(reads).toHaveLength(2);
+  expect(reads[1]!.inputs).toEqual({ search: "chart", size: 10 });
+  expect(instance.deepLink()).toEqual({ keyword: "chart" });
 
-  // 3. Clearing search & rating writes null so deepLink drops cleared keys.
+  // 3. Clearing search writes null so deepLink drops the cleared key.
   searchInput.value = "";
   searchInput.dispatchEvent(new Event("input"));
-  ratingSelect!.value = "";
-  ratingSelect!.dispatchEvent(new Event("change"));
-  document.querySelector<HTMLButtonElement>(".sdk-object-list-query")!.click();
+  element.querySelector<HTMLButtonElement>(".sdk-object-list-query")!.click();
+  await vi.waitFor(() => expect(reads).toHaveLength(3));
+  expect(instance.state.values.value.keyword).toBeNull();
+  expect(instance.deepLink()).toEqual({});
 
-  await vi.waitFor(() => expect(queries).toHaveLength(3));
-  expect(queries[2]).toEqual({ filters: { sourceType: "analysis_task" } });
-  expect(mounted.context.instance.state.values.value).toEqual({
-    selectedFeedback: null,
-    sourceType: "analysis_task",
-    rating: null,
-    keyword: null,
-  });
-  expect(mounted.context.instance.deepLink()).toEqual({ sourceType: "analysis_task" });
-
-  // 4. External host address change restores state into UI controls and re-queries once.
-  const nextAddress = `${use.path}?state=${encodeURIComponent(JSON.stringify({ sourceType: "qa", keyword: "export" }))}`;
-  window.dispatchEvent(new MessageEvent("message", {
-    source: window.parent,
-    data: { channel: PANEL_HOST_CHANNEL, kind: "address", address: nextAddress },
-  }));
-  await vi.waitFor(() => expect(queries).toHaveLength(4));
-  expect(queries[3]).toEqual({ search: "export", filters: { sourceType: "qa" } });
-  expect(searchInput.value).toBe("export");
-  expect(sourceSelect!.value).toBe("qa");
-  expect(ratingSelect!.value).toBe("");
+  // 4. External state update syncs search input and triggers a single re-read.
+  instance.state.set("keyword", "external");
+  await vi.waitFor(() => expect(reads).toHaveLength(4));
+  expect(reads[3]!.inputs).toEqual({ search: "external", size: 10 });
+  expect(searchInput.value).toBe("external");
 });
 
-it("writes outputs.checked to an instance-local objects collection state, freezes only visible rows on select-all, and stays out of deep links", async () => {
-  const projections = {
-    "metric-list": projection("metric-list", "ObjectList", METRIC, {
-      columns: [{ key: "label", labelKey: "cols.name" }],
-      selectable: true,
-      pageSize: 2,
-    }),
-  };
-  const manifest = definePanel({
-    state: {
-      selectedMetric: { kind: "object", objectType: METRIC, deepLink: true },
-      checkedMetrics: { kind: "objects", objectType: METRIC, deepLink: false },
-    },
-    slots: {
-      metrics: {
-        projectionId: "metric-list",
-        inputs: {},
-        outputs: {
-          selected: { state: "selectedMetric" },
-          checked: { state: "checkedMetrics" },
+it("keeps checked list separate from selected, freezes visible rows on select-all, supports clears and excludes checked from deepLink", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "knowledge-checked": {
+      ...meta,
+      id: "knowledge-checked",
+      name: "Knowledge",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: { cursor: { kind: "scalar", type: "string" }, size: { kind: "scalar", type: "number" } },
+      outputs: {
+        selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE },
+        checked: { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      },
+      config: {
+        columns: [{ key: "label", labelKey: "cols.name" }],
+        selectable: true,
+        pageSize: 2,
+      },
+      data: {
+        rows: {
+          source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } },
+          read: "query",
+          params: { cursor: { input: "cursor" }, size: { input: "size" } },
         },
       },
     },
-    operations: [
-      { id: "clearChecked", labelKey: "ops.clearChecked", kind: "state", sets: { checkedMetrics: [] } },
-    ],
-  });
-  const panel = panelRecord("panel-checked-collection", "Checked metrics", manifest);
-  panel.content.messages = {
-    en: { "cols.name": "Metric", "ops.clearChecked": "Clear checked" },
   };
-  panel.content.html = `
-    <div id="app">
-      <Projection slot="metrics">
-        <template #batch-actions="{ checked }">
-          <span class="batch-count">{{ checked.length }}</span>
-        </template>
-      </Projection>
-    </div>`;
-  const use = panelUse("use-checked", "checked-test", panel.id, "/applications/app-test/checked");
-
-  installPlatform(hostWith(projections));
-  const frame = panelFrame();
-  const stateMessages: Record<string, unknown>[] = [];
-  const onMessage = (event: MessageEvent) => {
-    if (event.data?.channel === PANEL_HOST_CHANNEL && event.data?.kind === "state") {
-      stateMessages.push(event.data.state as Record<string, unknown>);
-    }
-  };
-  window.addEventListener("message", onMessage);
-  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(registered("app-test", use, panel), use.path, {});
-  inside(frame);
-
-  try {
-    const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
-    const allItems = [
-      { primaryKey: "m-1", label: "Metric 1", fields: {} },
-      { primaryKey: "m-2", label: "Metric 2", fields: {} },
-      { primaryKey: "m-3", label: "Metric 3", fields: {} },
-      { primaryKey: "m-4", label: "Metric 4", fields: {} },
-    ];
-    registerPlatformObjectAdapter({
-      objectType: METRIC,
-      query: async (q) => {
-        const offset = q.page?.offset ?? 0;
-        const limit = q.page?.limit ?? allItems.length;
-        return { items: allItems.slice(offset, offset + limit), total: allItems.length };
+  const manifest = definePanel({
+    state: {
+      selectedKnowledge: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE }, deepLink: true },
+      checkedKnowledge: { type: { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } } },
+    },
+    members: {
+      list: {
+        target: { projectionId: "knowledge-checked" },
+        outputs: { selected: { state: "selectedKnowledge" }, checked: { state: "checkedKnowledge" } },
       },
-    });
+    },
+    events: {
+      clearChecked: {
+        labelKey: "ops.clearChecked",
+        do: { set: { fields: { checkedKnowledge: { literal: [] } } } },
+      },
+    },
+  });
 
-    const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
-    const mounted = await mountPanel({});
+  const allItems = [
+    { primaryKey: "k-1", label: "Rule 1", fields: {} },
+    { primaryKey: "k-2", label: "Rule 2", fields: {} },
+    { primaryKey: "k-3", label: "Rule 3", fields: {} },
+    { primaryKey: "k-4", label: "Rule 4", fields: {} },
+  ];
 
-    await vi.waitFor(() => expect(document.querySelectorAll("tbody tr").length).toBe(2));
+  const { instance, element } = mountDirect(
+    manifest,
+    projections,
+    (request) => {
+      const offset = request.inputs.cursor === "p2" ? 2 : 0;
+      return ready({
+        rows: allItems.slice(offset, offset + 2),
+        total: allItems.length,
+        ...(offset === 0 ? { nextCursor: "p2" } : {}),
+      });
+    },
+    { messages: { en: { "cols.name": "Knowledge", "ops.clearChecked": "Clear checked" } } },
+  );
 
-    // Selecting row 1 sets selectedMetric (deep-linked) without writing checkedMetrics.
-    document.querySelector<HTMLTableRowElement>("tbody tr")!.click();
-    await nextTick();
-    expect(mounted.context.instance.state.values.value.selectedMetric).toEqual({ className: METRIC, primaryKey: "m-1" });
-    expect(mounted.context.instance.state.values.value.checkedMetrics).toBeNull();
+  await vi.waitFor(() => expect(element.querySelectorAll("tbody tr")).toHaveLength(2));
 
-    // Select-all on page 1 (2 visible out of 4 total) freezes ONLY the 2 visible objects into checkedMetrics.
-    const selectAll = document.querySelector<HTMLInputElement>('thead input[type="checkbox"]')!;
-    selectAll.click();
-    await nextTick();
-    expect(mounted.context.instance.state.values.value.checkedMetrics).toEqual([
-      { className: METRIC, primaryKey: "m-1" },
-      { className: METRIC, primaryKey: "m-2" },
-    ]);
-    expect(document.querySelector(".batch-count")?.textContent).toBe("2");
+  // Selecting row 1 sets selectedKnowledge without touching checkedKnowledge.
+  element.querySelector<HTMLTableRowElement>("tbody tr")!.click();
+  await nextTick();
+  expect(instance.state.values.value.selectedKnowledge).toEqual(knowledge("k-1"));
+  expect(instance.state.values.value.checkedKnowledge).toBeNull();
 
-    // Collection state is instance-local: excluded from deepLink(), host state frame messages, and pageContext.selection.
-    expect(mounted.context.instance.deepLink()).toEqual({
-      selectedMetric: { className: METRIC, primaryKey: "m-1" },
-    });
-    expect(mounted.context.instance.pageContext.value.selection).toEqual([
-      { kind: METRIC, id: "m-1", label: `Metric 1 (${METRIC} m-1)` },
-    ]);
-    await vi.waitFor(() => expect(stateMessages.length).toBeGreaterThan(0));
-    expect(stateMessages.every((state) => !("checkedMetrics" in state))).toBe(true);
+  // Select-all on page 1 (2 visible of 4 total) freezes ONLY the 2 visible objects into checkedKnowledge.
+  const selectAll = element.querySelector<HTMLInputElement>('thead input[type="checkbox"]')!;
+  selectAll.click();
+  await nextTick();
+  expect(instance.state.values.value.checkedKnowledge).toEqual([knowledge("k-1"), knowledge("k-2")]);
 
-    // State operation clearing checkedMetrics to [] syncs checkboxes back to unchecked.
-    await mounted.context.instance.invoke("clearChecked");
-    await nextTick();
-    expect(mounted.context.instance.state.values.value.checkedMetrics).toEqual([]);
-    expect(document.querySelector(".batch-count")).toBeNull();
-    expect([...document.querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]')].every((box) => !box.checked)).toBe(true);
+  // Checked list is instance-local: excluded from deepLink() and pageContext.selection.
+  expect(instance.deepLink()).toEqual({ selectedKnowledge: knowledge("k-1") });
+  expect(instance.pageContext.value.selection).toEqual([
+    { kind: BUSINESS_KNOWLEDGE, id: "k-1", label: `Rule 1 (${BUSINESS_KNOWLEDGE} k-1)` },
+  ]);
 
-    // External partial retention (e.g. failed item left in checkedMetrics after batch write) reflects in UI checkboxes.
-    mounted.context.instance.state.set("checkedMetrics", [{ className: METRIC, primaryKey: "m-2" }]);
-    await nextTick();
-    const rowBoxes = [...document.querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]')];
-    expect(rowBoxes.map((box) => box.checked)).toEqual([false, true]);
-    expect(selectAll.indeterminate).toBe(true);
-    expect(document.querySelector(".batch-count")?.textContent).toBe("1");
+  // Navigating to page 2 and checking k-3 unions with already-checked items from page 1.
+  element.querySelector<HTMLButtonElement>(".sdk-object-list-next")!.click();
+  await vi.waitFor(() => expect(element.querySelector("tbody tr td:nth-child(2)")?.textContent?.trim()).toBe("Rule 3"));
+  element.querySelector<HTMLInputElement>('tbody input[type="checkbox"]')!.click();
+  await nextTick();
+  expect(instance.state.values.value.checkedKnowledge).toEqual([knowledge("k-1"), knowledge("k-2"), knowledge("k-3")]);
 
-    // Wrong objectType inside objects collection is refused by checkPanelValue.
-    expect(() =>
-      mounted.context.instance.state.set("checkedMetrics", [{ className: FUNCTION, primaryKey: "fn-1" }]),
-    ).toThrow(TypeError);
-  } finally {
-    window.removeEventListener("message", onMessage);
-  }
+  // Event clearing checkedKnowledge to [] syncs checkboxes back to unchecked.
+  await instance.invoke("clearChecked");
+  await nextTick();
+  expect(instance.state.values.value.checkedKnowledge).toEqual([]);
+  expect([...element.querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]')].every((box) => !box.checked)).toBe(true);
+
+  // External partial retention (e.g. failed item left checked after batch write) reflects in UI and indeterminate state.
+  instance.state.set("checkedKnowledge", [knowledge("k-4")]);
+  await nextTick();
+  const rowBoxes = [...element.querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]')];
+  expect(rowBoxes.map((box) => box.checked)).toEqual([false, true]);
+  expect(element.querySelector<HTMLInputElement>('thead input[type="checkbox"]')!.indeterminate).toBe(true);
+
+  // Wrong objectType inside list state is rejected by checkPanelValue.
+  expect(() => instance.state.set("checkedKnowledge", [{ className: SCHEDULED_TASK, primaryKey: "t-1" }])).toThrow(TypeError);
+});
+
+it("clears declared list state atomically when ObjectList changes selection with clears", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "clearing-list": {
+      ...meta,
+      id: "clearing-list",
+      name: "Knowledge",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {
+        selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE },
+        checked: { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      },
+      config: { selectable: true, clears: ["checkedKnowledge"] },
+      data: {
+        rows: {
+          source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } },
+          read: "query",
+          params: {},
+        },
+      },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      selectedKnowledge: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE }, deepLink: true },
+      checkedKnowledge: { type: { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } } },
+    },
+    members: {
+      list: {
+        target: { projectionId: "clearing-list" },
+        outputs: { selected: { state: "selectedKnowledge" }, checked: { state: "checkedKnowledge" } },
+      },
+    },
+    events: {},
+  });
+
+  const { instance, element } = mountDirect(
+    manifest,
+    projections,
+    () => ready({
+      rows: [
+        { primaryKey: "k-1", label: "Rule 1", fields: {} },
+        { primaryKey: "k-2", label: "Rule 2", fields: {} },
+      ],
+      total: 2,
+    }),
+    { initial: { selectedKnowledge: knowledge("k-1"), checkedKnowledge: [knowledge("k-1"), knowledge("k-2")] } },
+  );
+
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(2));
+  element.querySelectorAll<HTMLButtonElement>(".sdk-object-list-item-btn")[1]!.click();
+  await nextTick();
+  expect(instance.state.values.value).toEqual({
+    selectedKnowledge: knowledge("k-2"),
+    checkedKnowledge: [],
+  });
+});
+
+it("supports dynamic type queries via data.objects (panelOntologyObjects) with status separation and identity matching", async () => {
+  const pickerProj: DirectProjection = {
+    ...meta,
+    id: "type-object-picker",
+    name: "Type Object Picker",
+    componentId: "@ontomato/sdk:ObjectList",
+    inputs: {
+      type: { kind: "scalar", type: "string" },
+      keyword: { kind: "scalar", type: "string" },
+      page: { kind: "json" },
+    },
+    outputs: { selected: { kind: "object-union", layers: [...platformOntologyLayers] } },
+    config: { searchable: true, showCount: true, pageSize: 2, emptyTypeText: "picker.selectType" },
+    data: {
+      objects: {
+        source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } },
+        read: "objects",
+        params: { type: { input: "type" }, keyword: { input: "keyword" }, page: { input: "page" } },
+      },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      selectedType: { type: { kind: "scalar", type: "string" } },
+      start: { type: { kind: "object-union", layers: [...platformOntologyLayers] } },
+    },
+    members: {
+      picker: {
+        target: { projectionId: pickerProj.id },
+        inputs: { type: { state: "selectedType" } },
+        outputs: { selected: { state: "start" } },
+      },
+    },
+    events: {},
+  });
+
+  const { instance, element, reads } = mountDirect(
+    manifest,
+    { [pickerProj.id]: pickerProj },
+    (request) => {
+      const type = String(request.inputs.type);
+      const keyword = typeof request.inputs.keyword === "string" ? request.inputs.keyword.toLowerCase() : "";
+      const page = (request.inputs.page as { number: number; size: number } | undefined) ?? { number: 1, size: 20 };
+      const offset = (page.number - 1) * page.size;
+      if (type === ROLE) {
+        return ready({ type: ROLE, layer: "governance", status: "refused", reason: "No role permission", items: [], total: 0, page: page.number, pageSize: page.size });
+      }
+      if (type === USER) {
+        return ready({ type: USER, layer: "governance", status: "failed", reason: "Identity service 503", items: [], total: 0, page: page.number, pageSize: page.size });
+      }
+      if (type === "platform:Definition") {
+        return ready({ type: "platform:Definition", layer: "capability", status: "unavailable", reason: "Owner not connected", items: [], total: 0, page: page.number, pageSize: page.size });
+      }
+      if (type === WORKFLOW) {
+        return ready({
+          type: WORKFLOW,
+          layer: "capability",
+          status: "ok",
+          items: [{ node: { className: WORKFLOW, primaryKey: "shared-1" }, label: "Nightly Flow" }],
+          total: 1,
+          page: page.number,
+          pageSize: page.size,
+        });
+      }
+      const all = [
+        { node: { className: ACTION, primaryKey: "shared-1" }, label: "Deploy Action" },
+        { node: { className: ACTION, primaryKey: "act-2" }, label: "Rollback Action" },
+        { node: { className: ACTION, primaryKey: "act-3" }, label: "Audit Action" },
+      ].filter((item) => !keyword || item.label.toLowerCase().includes(keyword));
+      return ready({
+        type,
+        layer: "capability",
+        status: "ok",
+        items: all.slice(offset, offset + page.size),
+        total: all.length,
+        page: page.number,
+        pageSize: page.size,
+      });
+    },
+    { messages: { en: { "picker.selectType": "Choose a type from the graph" } } },
+  );
+
+  // 1) No type selected yet -> prompt shown via panel.t, zero reads, no count/pagination.
+  await vi.waitFor(() => {
+    expect(element.querySelector('[data-status="no-type"]')?.textContent).toContain("Choose a type from the graph");
+  });
+  expect(reads).toHaveLength(0);
+  expect(element.querySelector(".sdk-object-list-count")).toBeNull();
+  expect(element.querySelector(".sdk-object-list-pagination")).toBeNull();
+
+  // 2) Select ACTION -> reads page 1 with pageSize 2, renders 2 items + count 3 + pagination.
+  instance.state.set("selectedType", ACTION);
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(2));
+  expect(reads[0]!.inputs).toEqual({ type: ACTION, page: { number: 1, size: 2 } });
+  expect(element.querySelector(".sdk-object-list-count")?.textContent).toContain("3");
+  expect(element.querySelector(".sdk-object-list-pagination")).not.toBeNull();
+
+  // 3) Next page -> page 2.
+  element.querySelector<HTMLButtonElement>(".sdk-object-list-next")!.click();
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(1));
+  expect(reads[1]!.inputs).toEqual({ type: ACTION, page: { number: 2, size: 2 } });
+
+  // 4) Search resets to page 1 and filters by keyword.
+  const searchInput = element.querySelector<HTMLInputElement>(".sdk-object-list-search")!;
+  searchInput.value = "deploy";
+  searchInput.dispatchEvent(new Event("input"));
+  await vi.waitFor(() => expect(reads).toHaveLength(3));
+  expect(reads[2]!.inputs).toEqual({ type: ACTION, keyword: "deploy", page: { number: 1, size: 2 } });
+  await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-item-btn")?.textContent).toContain("Deploy Action"));
+
+  // 5) Clicking item writes complete { className: ACTION, primaryKey: shared-1 } and registers label under ACTION.
+  element.querySelector<HTMLButtonElement>(".sdk-object-list-item-btn")!.click();
+  await nextTick();
+  expect(instance.state.values.value.start).toEqual({ className: ACTION, primaryKey: "shared-1" });
+  expect(instance.pageContext.value.selection).toEqual([
+    { kind: ACTION, id: "shared-1", label: expect.stringContaining(`Deploy Action (${ACTION} shared-1)`) },
+  ]);
+
+  // 6) Switch to WORKFLOW (same primaryKey "shared-1"): resets search & paging, does not mis-highlight WORKFLOW/shared-1.
+  instance.state.set("selectedType", WORKFLOW);
+  await vi.waitFor(() => expect(reads).toHaveLength(4));
+  expect(reads[3]!.inputs).toEqual({ type: WORKFLOW, page: { number: 1, size: 2 } });
+  expect(searchInput.value).toBe("");
+  await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-item-btn")?.textContent).toContain("Nightly Flow"));
+  expect(element.querySelector(".sdk-object-list-item-btn")?.getAttribute("aria-selected")).toBe("false");
+
+  // 7) Distinct refused / failed / unavailable statuses hide count & pagination and never collapse into empty.
+  instance.state.set("selectedType", ROLE);
+  await vi.waitFor(() => expect(element.querySelector('[data-status="refused"]')?.textContent).toContain("No role permission"));
+  expect(element.querySelector(".sdk-object-list-count")).toBeNull();
+  expect(element.querySelector(".sdk-object-list-pagination")).toBeNull();
+
+  instance.state.set("selectedType", USER);
+  await vi.waitFor(() => expect(element.querySelector('[data-status="failed"]')?.textContent).toContain("Identity service 503"));
+
+  instance.state.set("selectedType", "platform:Definition");
+  await vi.waitFor(() => expect(element.querySelector('[data-status="unavailable"]')?.textContent).toContain("Owner not connected"));
+});
+
+it("draws a declared ObjectList with data.objects in a frame via <Projection> and frameMemberData", async () => {
+  const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
+  const { platformOntologyAdapters } = await import("../../../../../packages/apps-sdk/src/panel/platform-ontology");
+  const { createPanelInstance } = await import("../../../../../packages/apps-sdk/src/panel/instance");
+  const { panelContextKey } = await import("../../../../../packages/apps-sdk/src/panel/context");
+  const { default: Projection } = await import("../../../../../packages/apps-sdk/src/panel/Projection.vue");
+
+  platformOntologyAdapters({
+    async request(path, init) {
+      if (path === "/platform-ontology/objects") {
+        const body = JSON.parse(String(init.body)) as { type: string; page?: number; pageSize?: number };
+        return Response.json({
+          type: body.type,
+          layer: "capability",
+          status: "ok",
+          items: [{ node: { className: body.type, primaryKey: "act-1" }, label: "Deploy Release" }],
+          total: 1,
+          page: body.page ?? 1,
+          pageSize: body.pageSize ?? 20,
+        });
+      }
+      throw new Error(`Unexpected path ${path}`);
+    },
+  }).forEach(registerPlatformObjectAdapter);
+
+  const pickerProj: DirectProjection = {
+    ...meta,
+    id: "frame-type-picker",
+    name: "Picker",
+    componentId: "@ontomato/sdk:ObjectList",
+    inputs: { type: { kind: "scalar", type: "string" }, page: { kind: "json" } },
+    outputs: { selected: { kind: "object-union", layers: [...platformOntologyLayers] } },
+    config: { pageSize: 10, showCount: true },
+    data: {
+      objects: {
+        source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } },
+        read: "objects",
+        params: { type: { input: "type" }, page: { input: "page" } },
+      },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      selectedType: { type: { kind: "scalar", type: "string" } },
+      selectedNode: { type: { kind: "object-union", layers: [...platformOntologyLayers] } },
+    },
+    members: {
+      picker: {
+        target: { projectionId: pickerProj.id },
+        inputs: { type: { state: "selectedType" } },
+        outputs: { selected: { state: "selectedNode" } },
+      },
+    },
+    events: {},
+  });
+  const instance = createPanelInstance(manifest, {
+    text: (key) => key,
+    pageKey: "frame-picker",
+    url: () => "/frame-picker",
+    label: () => "Frame picker",
+    initial: { selectedType: ACTION },
+    ...noOperations,
+    recordDraftCreated: async () => {},
+    readProjection: async () => pickerProj,
+  });
+
+  const element = document.createElement("div");
+  document.body.appendChild(element);
+  const app = createApp(defineComponent({
+    setup: () => {
+      provide(panelContextKey, {
+        panel: { content: { html: "", module: "" }, manifest },
+        manifest,
+        instance,
+        projection: (id: string) => instance.projection(id),
+        invoke: (handlerRef: string, call) => instance.runHandler(handlerRef, call),
+        projectionsChanged: () => () => {},
+        draft: instance.draft,
+        holdUnsaved: () => () => {},
+        t: (key: string) => key,
+        resources: async () => {},
+        expandPageComposer: async () => {},
+      });
+      return () => h(Projection, { slot: "picker" });
+    },
+  })).use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus);
+  app.mount(element);
+  cleanup = () => {
+    app.unmount();
+    element.remove();
+  };
+
+  await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-item-btn")?.textContent).toContain("Deploy Release"));
+  element.querySelector<HTMLButtonElement>(".sdk-object-list-item-btn")!.click();
+  await nextTick();
+  expect(instance.state.values.value.selectedNode).toEqual({ className: ACTION, primaryKey: "act-1" });
 });

@@ -265,6 +265,13 @@ export class RuntimeStore {
       throw new RuntimeError(410, "RESOURCE_DELETED", "Resource was deleted");
     return admission;
   }
+  async lockOpenAdmission(c: PoolClient, scope: Scope, key: string) {
+    // Serialize writes to the same key even across different sessions.
+    await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+      canonical([...values(scope), key]),
+    ]);
+    return this.readOpenAdmission(scope, key, c);
+  }
   async admission(
     c: PoolClient,
     scope: Scope,
@@ -273,11 +280,7 @@ export class RuntimeStore {
     fingerprint: string,
     sessionId: string,
   ) {
-    // Serializes the same key even when two requests target different sessions.
-    await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
-      canonical([...values(scope), key]),
-    ]);
-    const old = await this.readOpenAdmission(scope, key, c);
+    const old = await this.lockOpenAdmission(c, scope, key);
     if (old) {
       if (
         old.operation !== operation ||

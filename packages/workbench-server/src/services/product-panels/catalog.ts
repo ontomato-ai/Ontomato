@@ -16,7 +16,7 @@ import {
 } from "../product-governance/grants";
 import { insertCurrentProduct, loadCurrentProduct, requireCurrentProduct, requireOrdinaryProjection } from "./current";
 import { closeDeletedDefinitionStreams, notifyProductDefinitionChanged } from "./definition-stream";
-import { applicationEntriesUsingPanel, panelsUsingProjection } from "./used-by";
+import { panelsUsingProjection, panelUsers } from "./used-by";
 
 const cursorSchema = z.discriminatedUnion("sort", [
   z.object({ sort: z.literal("name"), key: z.string(), id: productCurrentIdParamsSchema.shape.id }).strict(),
@@ -47,7 +47,6 @@ interface SummaryRow {
 
 interface ProjectionSummaryRow extends SummaryRow {
   componentId: string;
-  binding: unknown;
 }
 
 export async function listCurrentProducts(owner: ProductOwner, credentials: AssistantCredentials,
@@ -60,7 +59,7 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
   const keyType = updated ? "timestamptz" : "text";
   // PostgreSQL provides the exact timestamp key, including sub-millisecond precision.
   const cursorKey = updated ? "to_jsonb(updated_at)#>>'{}'" : order;
-  const projectionColumns = kind === "projection" ? `,definition->>'componentId' AS "componentId",definition->'binding' AS binding` : "";
+  const projectionColumns = kind === "projection" ? `,definition->>'componentId' AS "componentId"` : "";
   const { rows } = await getPostgresPool().query<SummaryRow | ProjectionSummaryRow>(
     `SELECT id,owner_id AS "ownerId",definition->>'name' AS name,definition->>'description' AS description,
        definition->>'visibility' AS visibility,revision,updated_at AS "updatedAt",${cursorKey} AS "sortKey"${projectionColumns}
@@ -86,7 +85,7 @@ export async function currentProductUsedBy(owner: ProductOwner, credentials: Ass
   await requireCurrentProduct(owner, credentials, kind, id, "use");
   return kind === "projection"
     ? panelsUsingProjection(owner.domainId, id, credentials)
-    : applicationEntriesUsingPanel(owner.domainId, id, credentials.locale);
+    : panelUsers(owner.domainId, id, credentials);
 }
 
 export async function deleteCurrentProduct(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string, revision: number) {
@@ -100,8 +99,8 @@ export async function deleteCurrentProduct(owner: ProductOwner, credentials: Ass
       if (usage.panels.length || usage.hiddenCount)
         throw new HttpError(409, "Projection is in use", PRODUCT_IN_USE, usage);
     } else {
-      const usage = await applicationEntriesUsingPanel(owner.domainId, id, credentials.locale);
-      if (usage.applicationEntries.length)
+      const usage = await panelUsers(owner.domainId, id, credentials, client);
+      if (usage.applicationEntries.length || usage.panels.length || usage.hiddenCount || usage.classNames.length)
         throw new HttpError(409, "Panel is in use", PRODUCT_IN_USE, usage);
     }
     await client.query(`DELETE FROM ${t(currentProductTables[kind])} WHERE domain_id=$1 AND id=$2`, [owner.domainId, id]);

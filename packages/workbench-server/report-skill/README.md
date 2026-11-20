@@ -1,11 +1,9 @@
 # Report presentation build
 
-`render.mjs` owns the helper. After changing it or its pinned build dependencies,
-run `pnpm --filter @ontomato/workbench-server build:report-skill` and commit the
-generated `resources/runtime-skills/assistant-report/{scripts,vendor,licenses}`
-with the source, as with the shared analyst client's standalone distributions.
-These committed UTF-8 files go through the existing skill publisher and image
-resource copy; neither startup nor a sandbox installs packages or builds code.
+`render.mjs` owns the helper. Run `pnpm --filter @ontomato/workbench-server build:report-skill`
+(or `build:skills`) to generate `resources/runtime-skills/assistant-report/{scripts,vendor,licenses}`.
+These generated UTF-8 files are ignored by git and built automatically during Docker image builds,
+local dev startup, and tests; neither runtime startup nor a sandbox installs packages or builds code.
 PptxGenJS, JSZip, the product Markdown parser and contracts are bundled into CJS.
 ECharts is a CJS text asset and resvg WASM is base64 text. Licenses travel with them.
 

@@ -3,7 +3,6 @@ import { agentChannelRouter } from "../api/routes/agent-channel";
 import { createHealthRouter } from "../api/routes/health";
 import { appBuilderRouter } from "../api/routes/app-builder";
 import { workspacePreviewRouter, workspaceRouter, mountHostedStatic } from "../api/routes/workspaces";
-import { installAppSdk } from "../services/workspaces/hosted-apps";
 import { startModelMigration, stopModelMigration } from "../platform/agent-runtime/model-migration";
 import assistantRouter from "../api/routes/assistant";
 import { scheduleApplicationsRouter, scheduleExecutionStatus } from "../api/routes/schedule-applications";
@@ -41,6 +40,7 @@ import opsAgentMcpRouter from "../api/routes/ops-agent-mcp";
 import preferencesRouter from "../api/routes/preferences";
 import personalWorkspaceRouter from "../api/routes/personal-workspace";
 import productAssetsRouter from "../api/routes/product-assets";
+import { objectDetailsInternalRouter, objectDetailsRouter } from "../api/routes/object-details";
 import {businessDefinitionsRouter,definitionTriggersRouter} from "../api/routes/business-definitions";
 import { createChartProjectionsRouter, productPanelsRouter, productProjectionsRouter, productPanelsInternalRouter, panelOperationsRouter } from "../api/routes/product-panels";
 import { dashboardChartSources } from "../services/dashboard/chart-sources";
@@ -188,6 +188,7 @@ export function createWorkbenchApp(): Express {
   app.use(["/api/observe/logs", "/api/observe/runtime-logs"], serviceLogAuthResponse);
   app.use("/internal/assistant", assistantInternalRouter);
   app.use("/internal/product-panels", productPanelsInternalRouter);
+  app.use(objectDetailsInternalRouter);
   app.use("/internal/agent-channel", agentChannelRouter);
   app.post("/internal/schedule-applications/:appId/runs/status", scheduleExecutionStatus);
   app.use("/api", identity.authenticate);
@@ -220,6 +221,7 @@ export function createWorkbenchApp(): Express {
   app.use("/api/product-assets/definitions", businessDefinitionsRouter);
   app.use("/api/product-assets/triggers", definitionTriggersRouter);
   app.use("/api/product-assets", productAssetsRouter);
+  app.use("/api/object-details", objectDetailsRouter);
   app.use("/api", panelOperationsRouter);
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", createChartProjectionsRouter(createChartProjectionService(dashboardChartSources)));
@@ -276,7 +278,6 @@ export async function startWorkbench(
   syncDefaultPrompts();
   await initializeConnection();
   // Production images carry the apps SDK next to the web pages; development serves neither from a build.
-  if (!isDev) await installAppSdk();
   startModelMigration();
   getWorkbenchLogStore();
   const stopApplication = await initializeApplication?.();

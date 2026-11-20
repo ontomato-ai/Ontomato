@@ -19,6 +19,7 @@ import {getApplicationProduct} from '../../services/product-assets/store';
 import {backendGet,buildBackendHeaders} from '../../utils/backend-client';
 import {config} from '../../config/application';
 import {SOURCE_APPLICATION_CSP} from '../../services/workspaces/product-admission';
+import { HOSTED_SDK_MARKER, injectHostedSdkHtml } from "../../services/workspaces/hosted-sdk";
 import { mountAppsSdkStatic } from "./apps-sdk";
 import type { AssistantOwner } from "../../services/assistant/store";
 
@@ -34,9 +35,11 @@ workspacePreviewRouter.get("/:id/preview/:token/*", wrap(async (req, res) => {
   if (!preview || preview.workspaceId !== workspaceIdSchema.parse(req.params.id) || preview.expiresAt <= Date.now())
     throw new HttpError(404, "Preview expired", "NOT_FOUND");
   const file = workspacePathSchema.parse(req.params[0] || "index.html");
-  if(path.extname(file).toLowerCase()===".html") await new WorkspaceBuildTests(preview.owner,{},preview.workspaceId).requirePreviewSdk();
+  const sdk = /\.html$/i.test(file) ? await new WorkspaceBuildTests(preview.owner, {}, preview.workspaceId).requirePreviewSdk() : undefined;
+  const bytes = await runtime(preview.owner).bytes(`/v1/workspaces/${preview.workspaceId}/files/content?${new URLSearchParams({ path: file })}`);
+  const source = sdk ? bytes.toString("utf8") : undefined;
   res.type(path.extname(file)).set({ "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff" })
-    .send(await runtime(preview.owner).bytes(`/v1/workspaces/${preview.workspaceId}/files/content?${new URLSearchParams({ path: file })}`));
+    .send(sdk && source?.includes(HOSTED_SDK_MARKER) ? injectHostedSdkHtml(source, sdk, file) : bytes);
 }));
 export const workspaceRouter = Router();
 workspaceRouter.get('/applications/:appId/policy',wrap(async(req,res)=>{

@@ -13,6 +13,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import type { OntologyElementRef } from "@ontomato/contracts/product-panels";
 import { m6ServerOperations } from "../action/panel-operations";
 import { agentDefinitionOperations } from "../assistant/definition-operations";
+import { m7ServerOperations } from "../business-knowledge/panel-operations";
 import { m5ServerOperations } from "../metric-function/panel-operations";
 import { scheduledTaskServerOperations } from "../scheduling/panel-operations";
 import { HttpError } from "../../utils/errors";
@@ -94,6 +95,7 @@ const registrations: readonly PanelServerOperation[] = [
   ...agentDefinitionOperations,
   ...m5ServerOperations,
   ...m6ServerOperations,
+  ...m7ServerOperations,
 ];
 const operations = new Map(registrations.map(operation => [operation.handlerRef, operation]));
 const jsonSchema = (schema: z.ZodTypeAny) => zodToJsonSchema(schema, { effectStrategy: "input" });

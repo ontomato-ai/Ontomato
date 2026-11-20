@@ -344,6 +344,12 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	}
 
 	@Override
+	public FieldLabels fieldLabels(String lang) {
+		return new FieldLabels(labels(OBJECT_TYPE_LABEL_KEYS, lang), labels(ATTRIBUTE_LABEL_KEYS, lang),
+				labels(RELATIONSHIP_LABEL_KEYS, lang));
+	}
+
+	@Override
 	public FormDescription objectTypeForm(FormRequest body, User user, String lang) {
 		Map<String, Object> rule = rule(user);
 		boolean edit = editTarget(body);
@@ -915,11 +921,44 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 				.toList();
 	}
 
+	/*
+	 * The owner's label of each field of the three model objects, by field key. The forms, their save schemas and the
+	 * field-label read all take a field's label from here.
+	 */
+	private static final Map<String, String> OBJECT_TYPE_LABEL_KEYS = Map.of(
+			"className", "Admin.form.className",
+			"primaryKeyName", "Admin.form.primaryKeyName",
+			"showName", "Admin.form.showName",
+			"classDesc", "Admin.form.desc");
+	private static final Map<String, String> ATTRIBUTE_LABEL_KEYS = Map.of(
+			"className", "Admin.form.ownerType",
+			"name", "Admin.form.name",
+			"type", "Admin.form.type",
+			"showName", "Admin.form.showName",
+			"attrDesc", "Admin.form.desc",
+			"enable", "Admin.form.enable",
+			"businessKey", "Admin.form.businessKey",
+			"primaryKey", "Admin.form.primaryKey");
+	private static final Map<String, String> RELATIONSHIP_LABEL_KEYS = Map.of(
+			"relationship", "Admin.form.relationship",
+			"fromclass", "Admin.form.fromclass",
+			"fromField", "Admin.form.fromField",
+			"toclass", "Admin.form.toclass",
+			"toField", "Admin.form.toField",
+			"desc", "Admin.form.desc");
+
+	private Map<String, String> labels(Map<String, String> keys, String lang) {
+		Map<String, String> labels = new LinkedHashMap<>();
+		keys.forEach((field, key) -> labels.put(field, langService.get(lang, key)));
+		return labels;
+	}
+
 	private List<ObjectNode> objectTypeFields(boolean edit, String lang) {
-		String classNameLabel = langService.get(lang, "Admin.form.className");
-		String primaryKeyNameLabel = langService.get(lang, "Admin.form.primaryKeyName");
-		String showNameLabel = langService.get(lang, "Admin.form.showName");
-		String descLabel = langService.get(lang, "Admin.form.desc");
+		Map<String, String> label = labels(OBJECT_TYPE_LABEL_KEYS, lang);
+		String classNameLabel = label.get("className");
+		String primaryKeyNameLabel = label.get("primaryKeyName");
+		String showNameLabel = label.get("showName");
+		String descLabel = label.get("classDesc");
 		List<ObjectNode> fields = new ArrayList<>();
 		fields.add(panelField("/className", classNameLabel, true, textControl(false), stringSchema(classNameLabel),
 				edit, null, false));
@@ -936,14 +975,15 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 
 	private List<ObjectNode> attributeFields(Map<String, Object> rule, boolean edit, Map<String, Object> attrDef,
 			String lang) {
-		String ownerLabel = langService.get(lang, "Admin.form.ownerType");
-		String nameLabel = langService.get(lang, "Admin.form.name");
-		String typeLabel = langService.get(lang, "Admin.form.type");
-		String showNameLabel = langService.get(lang, "Admin.form.showName");
-		String descLabel = langService.get(lang, "Admin.form.desc");
-		String enableLabel = langService.get(lang, "Admin.form.enable");
-		String businessKeyLabel = langService.get(lang, "Admin.form.businessKey");
-		String primaryKeyLabel = langService.get(lang, "Admin.form.primaryKey");
+		Map<String, String> label = labels(ATTRIBUTE_LABEL_KEYS, lang);
+		String ownerLabel = label.get("className");
+		String nameLabel = label.get("name");
+		String typeLabel = label.get("type");
+		String showNameLabel = label.get("showName");
+		String descLabel = label.get("attrDesc");
+		String enableLabel = label.get("enable");
+		String businessKeyLabel = label.get("businessKey");
+		String primaryKeyLabel = label.get("primaryKey");
 		boolean locked = attrDef != null && primaryKey(attrDef);
 		List<ObjectNode> fields = new ArrayList<>();
 		fields.add(panelField("/className", ownerLabel, true, object("kind", "select", "options", objectTypeOptions(rule)),
@@ -966,12 +1006,13 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 
 	private List<ObjectNode> relationshipFields(Map<String, Object> rule, boolean edit, Map<String, Object> values,
 			User user, String lang) {
-		String nameLabel = langService.get(lang, "Admin.form.relationship");
-		String fromClassLabel = langService.get(lang, "Admin.form.fromclass");
-		String fromFieldLabel = langService.get(lang, "Admin.form.fromField");
-		String toClassLabel = langService.get(lang, "Admin.form.toclass");
-		String toFieldLabel = langService.get(lang, "Admin.form.toField");
-		String descLabel = langService.get(lang, "Admin.form.desc");
+		Map<String, String> label = labels(RELATIONSHIP_LABEL_KEYS, lang);
+		String nameLabel = label.get("relationship");
+		String fromClassLabel = label.get("fromclass");
+		String fromFieldLabel = label.get("fromField");
+		String toClassLabel = label.get("toclass");
+		String toFieldLabel = label.get("toField");
+		String descLabel = label.get("desc");
 		boolean joinRequired = joinFieldsRequired(user);
 		List<JsonNode> classOptions = objectTypeOptions(rule);
 		List<ObjectNode> fields = new ArrayList<>();
@@ -992,49 +1033,52 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	}
 
 	private FormSave objectTypeFormSave(boolean edit, String lang) {
+		Map<String, String> label = labels(OBJECT_TYPE_LABEL_KEYS, lang);
 		if (edit) {
 			return new FormSave("POST", "/ontology/model/object-type/update",
 					objectSchema(List.of("className", "showName"), "className",
-							stringSchema(langService.get(lang, "Admin.form.className")), "showName",
-							stringSchema(langService.get(lang, "Admin.form.showName")), "classDesc",
-							stringSchema(langService.get(lang, "Admin.form.desc"))),
+							stringSchema(label.get("className")), "showName",
+							stringSchema(label.get("showName")), "classDesc",
+							stringSchema(label.get("classDesc"))),
 					"objectType.update");
 		}
 		return new FormSave("POST", "/ontology/model/object-type/create",
 				objectSchema(List.of("className", "primaryKeyName", "showName"), "className",
-						stringSchema(langService.get(lang, "Admin.form.className")), "primaryKeyName",
-						stringSchema(langService.get(lang, "Admin.form.primaryKeyName")), "showName",
-						stringSchema(langService.get(lang, "Admin.form.showName")), "classDesc",
-						stringSchema(langService.get(lang, "Admin.form.desc"))),
+						stringSchema(label.get("className")), "primaryKeyName",
+						stringSchema(label.get("primaryKeyName")), "showName",
+						stringSchema(label.get("showName")), "classDesc",
+						stringSchema(label.get("classDesc"))),
 				"objectType.create");
 	}
 
 	private FormSave attributeFormSave(boolean edit, String lang) {
+		Map<String, String> label = labels(ATTRIBUTE_LABEL_KEYS, lang);
 		if (edit) {
 			return new FormSave("POST", "/ontology/model/attribute/update",
 					objectSchema(List.of("className", "name", "showName", "enable", "businessKey"), "className",
-							stringSchema(langService.get(lang, "Admin.form.ownerType")), "name",
-							stringSchema(langService.get(lang, "Admin.form.name")), "showName",
-							stringSchema(langService.get(lang, "Admin.form.showName")), "attrDesc",
-							stringSchema(langService.get(lang, "Admin.form.desc")), "enable",
-							booleanSchema(langService.get(lang, "Admin.form.enable")), "businessKey",
-							booleanSchema(langService.get(lang, "Admin.form.businessKey"))),
+							stringSchema(label.get("className")), "name",
+							stringSchema(label.get("name")), "showName",
+							stringSchema(label.get("showName")), "attrDesc",
+							stringSchema(label.get("attrDesc")), "enable",
+							booleanSchema(label.get("enable")), "businessKey",
+							booleanSchema(label.get("businessKey"))),
 					"attribute.update");
 		}
 		return new FormSave("POST", "/ontology/model/attribute/create",
 				objectSchema(List.of("className", "name", "showName", "type", "enable", "businessKey"), "className",
-						stringSchema(langService.get(lang, "Admin.form.ownerType")), "name",
-						stringSchema(langService.get(lang, "Admin.form.name")), "showName",
-						stringSchema(langService.get(lang, "Admin.form.showName")), "type",
-						enumSchema(langService.get(lang, "Admin.form.type"), ATTRIBUTE_TYPES), "attrDesc",
-						stringSchema(langService.get(lang, "Admin.form.desc")), "enable",
-						booleanSchema(langService.get(lang, "Admin.form.enable")), "businessKey",
-						booleanSchema(langService.get(lang, "Admin.form.businessKey")), "primaryKey",
-						booleanSchema(langService.get(lang, "Admin.form.primaryKey"))),
+						stringSchema(label.get("className")), "name",
+						stringSchema(label.get("name")), "showName",
+						stringSchema(label.get("showName")), "type",
+						enumSchema(label.get("type"), ATTRIBUTE_TYPES), "attrDesc",
+						stringSchema(label.get("attrDesc")), "enable",
+						booleanSchema(label.get("enable")), "businessKey",
+						booleanSchema(label.get("businessKey")), "primaryKey",
+						booleanSchema(label.get("primaryKey"))),
 				"attribute.create");
 	}
 
 	private FormSave relationshipFormSave(boolean edit, boolean joinRequired, String lang) {
+		Map<String, String> label = labels(RELATIONSHIP_LABEL_KEYS, lang);
 		List<String> required = new ArrayList<>(edit
 				? List.of("relationship", "desc")
 				: List.of("relationship", "fromclass", "toclass", "desc"));
@@ -1044,18 +1088,18 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		ObjectNode properties;
 		if (edit) {
 			properties = object(
-					"relationship", stringSchema(langService.get(lang, "Admin.form.relationship")),
-					"desc", stringSchema(langService.get(lang, "Admin.form.desc")),
-					"fromField", stringSchema(langService.get(lang, "Admin.form.fromField")),
-					"toField", stringSchema(langService.get(lang, "Admin.form.toField")));
+					"relationship", stringSchema(label.get("relationship")),
+					"desc", stringSchema(label.get("desc")),
+					"fromField", stringSchema(label.get("fromField")),
+					"toField", stringSchema(label.get("toField")));
 		} else {
 			properties = object(
-					"relationship", stringSchema(langService.get(lang, "Admin.form.relationship")),
-					"fromclass", stringSchema(langService.get(lang, "Admin.form.fromclass")),
-					"toclass", stringSchema(langService.get(lang, "Admin.form.toclass")),
-					"desc", stringSchema(langService.get(lang, "Admin.form.desc")),
-					"fromField", stringSchema(langService.get(lang, "Admin.form.fromField")),
-					"toField", stringSchema(langService.get(lang, "Admin.form.toField")));
+					"relationship", stringSchema(label.get("relationship")),
+					"fromclass", stringSchema(label.get("fromclass")),
+					"toclass", stringSchema(label.get("toclass")),
+					"desc", stringSchema(label.get("desc")),
+					"fromField", stringSchema(label.get("fromField")),
+					"toField", stringSchema(label.get("toField")));
 		}
 		return new FormSave("POST",
 				edit ? "/ontology/model/relationship/update" : "/ontology/model/relationship/create",

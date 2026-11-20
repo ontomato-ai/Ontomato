@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { defineComponent, h } from "vue";
 import { createMemoryHistory, createRouter, RouterView, type RouteRecordRaw } from "vue-router";
+import { appsSdkReleaseManifestSchema } from "@ontomato/contracts/apps-sdk";
 import type { CandidatePanelSource } from "@ontomato/contracts/panel-host";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import { ACTION, APPLICATION, OBJECT_TYPE, ROLE, USER, WORKFLOW } from "@ontomato/contracts/platform-object-types";
@@ -23,7 +24,6 @@ import {
   nothingAt,
   panelHostFrame,
   READER,
-  SDK_VERSION,
   writeFrameDocument,
   type Sent,
 } from "./panel-frame";
@@ -84,7 +84,7 @@ vi.mock("@ontomato/foundation-ui/graph/g6", async () => {
 });
 
 function candidate(): CandidatePanelSource {
-  const files = Object.fromEntries(candidateFiles(SDK_VERSION).map((file) => [file.path, file.content]));
+  const files = Object.fromEntries(candidateFiles().map((file) => [file.path, file.content]));
   const { content, ...descriptor } = JSON.parse(files["panel.json"]!);
   return {
     kind: "candidate",
@@ -116,6 +116,24 @@ const projections: Record<string, ProductProjection> = Object.fromEntries(
 function owners(request: Sent): Response {
   if (request.path === `/api/workspaces/${WORKSPACE}/panel-candidate`) return Response.json(candidate());
   if (request.path === "/api/apps-sdk/current") return currentSdk();
+  const sdkManifest = /^\/apps-sdk\/([^/]+)\/sdk\.json$/.exec(request.path);
+  if (sdkManifest) {
+    return Response.json(
+      appsSdkReleaseManifestSchema.parse({
+        version: sdkManifest[1]!,
+        product: "workbench",
+        executionContext: 1,
+        hostTransport: 1,
+        messageBridge: 2,
+        entries: { vue: "vue.js", "@ontomato/sdk/panel": "panel.js" },
+        stylesheet: "styles/sdk.css",
+        components: "components.json",
+        check: "node/panel-check.mjs",
+        libraries: { vue: "3.5.0" },
+        docs: "docs/index.md",
+      }),
+    );
+  }
   if (request.path === "/api/product-panels/definition-stream") {
     return new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } });
   }
@@ -330,17 +348,22 @@ afterEach(() => {
 it("validates every projection and the capability-map panel input against contracts schemas", () => {
   const { projections: material } = projectionMaterial();
   for (const { input } of material) productProjectionInputSchema.parse(input);
-  const panel = productPanelInputSchema.parse(panelInput(SDK_VERSION));
+  const panel = productPanelInputSchema.parse(panelInput());
   expect(new Set(material.map(({ id }) => id))).toEqual(
-    new Set(Object.values(panel.manifest.slots).map((slot) => slot.projectionId)),
+    new Set(
+      Object.values(panel.manifest.members).flatMap((member) =>
+        "projectionId" in member.target ? [member.target.projectionId] : [],
+      ),
+    ),
   );
   expect(panel.content).toEqual(candidate().panel.content);
   const enMessages = panel.content.messages?.en ?? {};
   const zhMessages = panel.content.messages?.["zh-CN"] ?? {};
   expect(Object.keys(zhMessages).sort()).toEqual(Object.keys(enMessages).sort());
-  for (const operation of panel.manifest.operations) {
-    expect(enMessages[operation.labelKey]).toBeTruthy();
-    expect(zhMessages[operation.labelKey]).toBeTruthy();
+  for (const event of Object.values(panel.manifest.events)) {
+    if (!event.labelKey) continue;
+    expect(enMessages[event.labelKey]).toBeTruthy();
+    expect(zhMessages[event.labelKey]).toBeTruthy();
   }
 });
 

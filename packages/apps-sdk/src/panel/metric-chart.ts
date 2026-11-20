@@ -1,97 +1,51 @@
-import { runtimeJsonObjectSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import type { ChartMetricColumn, ChartRow } from "@ontomato/contracts/chart-data";
-import { dashboardMetricDescriptionSchema } from "@ontomato/contracts/dashboard";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import { chartProjectionTemplateSchema, dashboardMetricDescriptionSchema, dashboardMetricOutputSchema } from "@ontomato/contracts/dashboard";
+import { panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
 import { chartProjectionSourcePath } from "@ontomato/contracts/panel-client-requests";
-import { chartProjectionTemplateSchema, updateChartProjectionSourceRequestSchema } from "@ontomato/contracts/product-panels";
-import type { PlatformRequests } from "./platform-objects";
+import { DASHBOARD_CARD } from "@ontomato/contracts/platform-object-types";
+import type { PlatformObjectAdapterFactory } from "./platform-objects";
 
 /*
- * The chart source client of a MetricChart projection (M2 design 2.1, and the ruling of 2026-11-19): a chart projection
- * is the chart on its dashboard. Its only drawing is its source card's chart file and its parameters are the card's
- * saved query parameters, both handed over by the dashboard owner for this registered projection and read again on
- * every read. The data is the bound MetricView's, read with the reader's own credential, with the values this panel
- * binds laid over the card's parameters. Nothing is cached and nothing merged is kept or written back: the panel's
- * values hold here alone.
- *
- * Every request is one `contracts/panel-client-requests.ts` declares for a chart projection: the template by the
- * projection's ID, and the MetricView's describe and execute by the bound MetricView's ID.
+ * A source card's chart reads in a panel's frame, for the registered chart projection the frame read (M2 design 2.1):
+ * the drawing is the card's chart file and its saved parameters, handed over by the dashboard owner for this
+ * projection; the output is the projection's MetricView, run as the reader at the revision its description names, with
+ * the values this panel binds laid over the card's parameters. On the platform's own read the card's owner answers the
+ * same two reads; here the frame asks the owners directly, until every caller reads through the platform (design 4.2,
+ * step 4). Nothing is cached, kept or written back.
  */
 
-/** A drawing update answers with the source card's chart file as its owner saved it. */
-const savedTemplateSchema = chartProjectionTemplateSchema.pick({ chartFile: true });
-
-export type ChartTemplate = ReturnType<typeof chartProjectionTemplateSchema.parse>["chartFile"];
-
-/** What the chart draws from: the MetricView's declared columns, its rows and a truncation note when it was cut. */
-export interface ChartMetric {
-  columns: ChartMetricColumn[];
-  rows: ChartRow[];
-  truncation?: { truncationHint: string };
+/**
+ * A bound value as a MetricView parameter takes it: an object by its primary key, a checked list by its keys in order,
+ * anything else as it is.
+ */
+function parameterValue(value: RuntimeJsonValue): RuntimeJsonValue {
+  if (Array.isArray(value)) return value.map(parameterValue);
+  const object = panelObjectRefSchema.safeParse(value);
+  return object.success ? object.data.primaryKey : value;
 }
 
-/** One read of a chart: the card's drawing and the MetricView's output for the card's parameters and the panel's. */
-export interface ChartRead {
-  template: ChartTemplate;
-  metric: ChartMetric;
-}
+const json = (body: unknown) => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
-export interface MetricChartClient {
-  /**
-   * Reads the chart now: the source card's template and parameters for this projection, then the bound MetricView with
-   * the card's parameters and `bound` laid over them, as the reader. A refusal — the chart or its source card gone, the
-   * MetricView unreadable or missing a parameter — is the owner's, with the owner's message.
-   */
-  read(projectionId: string, metricId: string, bound: Readonly<Record<string, RuntimeJsonValue>>): Promise<ChartRead>;
-  /** Replaces only the drawing of the source card, as the projection's edit allows; the owner's saved file comes back. */
-  saveTemplate(projectionId: string, content: ChartTemplate["content"]): Promise<ChartTemplate>;
-}
-
-const json = (body: unknown) => ({ headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-const rowsSchema = runtimeJsonObjectSchema.array();
-
-/** The client over a frame's request path. */
-export function createMetricChartClient(requests: PlatformRequests): MetricChartClient {
-  async function body(response: Promise<Response>): Promise<unknown> {
-    return (await response).json();
-  }
-  return {
-    async read(projectionId, metricId, bound) {
-      const [template, description] = await Promise.all([
-        body(requests.request(chartProjectionSourcePath(projectionId), {}, "")).then((answer) => chartProjectionTemplateSchema.parse(answer)),
-        body(requests.request("/ontology/query/metrics/describe", { method: "POST", ...json({ id: metricId }) }, "/data-query"))
-          .then((answer) => dashboardMetricDescriptionSchema.parse(answer)),
-      ]);
-      const answer = await body(requests.request("/metricView/execute", {
-        method: "POST", ...json({ id: metricId, param: { ...template.parameters, ...bound } }),
-      }, "/data-query")) as { success?: unknown; message?: unknown; data?: unknown; truncated?: unknown; truncationHint?: unknown };
-      // The data engine answers a refusal in the body, with its own message: a missing parameter, an unreadable view.
-      if (answer.success !== true) throw new Error(String(answer.message));
-      return {
-        template: template.chartFile,
-        metric: {
-          columns: description.outputColumns,
-          rows: rowsSchema.parse(answer.data) as ChartRow[],
-          ...(answer.truncated === true ? { truncation: { truncationHint: String(answer.truncationHint) } } : {}),
-        },
-      };
+export const dashboardCardAdapters: PlatformObjectAdapterFactory = (requests) => {
+  const body = async (response: Promise<Response>): Promise<unknown> => (await response).json();
+  const template = async (chart: { id: string }) =>
+    chartProjectionTemplateSchema.parse(await body(requests.request(chartProjectionSourcePath(chart.id), {}, "")));
+  return [{
+    objectType: DASHBOARD_CARD,
+    metric: {
+      template,
+      async result(chart, parameters) {
+        const [card, description] = await Promise.all([
+          template(chart),
+          body(requests.request("/ontology/query/metrics/describe", json({ id: chart.metricId }), "/data-query"))
+            .then((answer) => dashboardMetricDescriptionSchema.parse(answer)),
+        ]);
+        // An input with no value leaves the card's own parameter.
+        const bound = Object.entries(parameters).filter(([, value]) => value !== null);
+        const merged = { ...card.parameters, ...Object.fromEntries(bound.map(([name, value]) => [name, parameterValue(value)])) };
+        return dashboardMetricOutputSchema.parse(await body(requests.request("/ontology/query/metrics/execute",
+          json({ id: chart.metricId, revision: description.revision, parameters: merged }), "/data-query")));
+      },
     },
-    async saveTemplate(projectionId, content) {
-      const update = updateChartProjectionSourceRequestSchema.parse({ chartFile: { content } });
-      const saved = await body(requests.request(chartProjectionSourcePath(projectionId), { method: "PUT", ...json(update) }, ""));
-      return savedTemplateSchema.parse(saved).chartFile;
-    },
-  };
-}
-
-let registered: MetricChartClient | undefined;
-
-/** How the frame registers the client when a projection draws a MetricChart: with the frame's request path. */
-export const metricChartClients = (requests: PlatformRequests): void => {
-  registered = createMetricChartClient(requests);
+  }];
 };
-
-/** The chart source client this frame registered. */
-export function metricChartClient(): MetricChartClient {
-  if (!registered) throw new Error("This frame has registered no chart source client");
-  return registered;
-}

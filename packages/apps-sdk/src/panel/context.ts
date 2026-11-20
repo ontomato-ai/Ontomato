@@ -16,6 +16,7 @@ import {
   type PlatformObjectQueryResult,
 } from "./platform-objects";
 import { fieldAt, valueAt } from "./form-values";
+import { projectionElement } from "./projection-element";
 import type { PanelText } from "./text";
 
 /*
@@ -73,7 +74,7 @@ export interface PanelContext {
    * Fetches and registers the resource clients a projection record binds — its type or operation, and a graph's edge
    * type — before the projection registers its ports, so a panel downloads only the clients of what it shows.
    */
-  resources(projection: Pick<ProductProjection, "componentId" | "binding" | "graph">): Promise<void>;
+  resources(projection: ProductProjection): Promise<void>;
   /**
    * Asks the host to expand the page's composer with the slot's declared agent target and optional prefill text.
    * Never sends a message; the host enforces that the request matches the slot's declared projection.
@@ -93,16 +94,18 @@ export function slotState(manifest: PanelManifest, slot: string, input?: string)
 
 /** Like `slotState`, returning `null` when the slot binds no matching input. */
 export function slotInputState(manifest: PanelManifest, slot: string, input?: string): string | null {
-  const declaration = manifest.slots[slot];
-  if (!declaration) throw new Error(`The panel declares no slot '${slot}'`);
-  const [name] = input ? [input] : Object.keys(declaration.inputs);
-  return (name ? declaration.inputs[name]?.state : undefined) ?? null;
+  const declaration = manifest.members[slot];
+  if (!declaration) throw new Error(`The panel declares no member '${slot}'`);
+  const inputs = declaration.inputs ?? {};
+  const [name] = input ? [input] : Object.keys(inputs);
+  const source = name ? inputs[name] : undefined;
+  return source && "state" in source ? source.state : null;
 }
 
 /** The panel state a named projection output port writes to, or `null` when the slot does not bind that output. */
 export function slotOutputState(manifest: PanelManifest, slot: string, output: string): string | null {
-  const declaration = manifest.slots[slot];
-  if (!declaration) throw new Error(`The panel declares no slot '${slot}'`);
+  const declaration = manifest.members[slot];
+  if (!declaration) throw new Error(`The panel declares no member '${slot}'`);
   return declaration.outputs?.[output]?.state ?? null;
 }
 
@@ -157,7 +160,7 @@ export interface ProjectionFormField {
 export function useFormField(): ProjectionFormField {
   const { instance, manifest } = usePanelContext();
   const drawn = useProjectionSlot();
-  const port = manifest.slots[drawn.slot]?.formField;
+  const port = manifest.members[drawn.slot]?.formField;
   if (!port) throw new Error(`Slot '${drawn.slot}' edits no form field: its declaration names no formField`);
   if (port.itemPath) throw new Error(`Slot '${drawn.slot}' edits ${port.itemPath} in each row of ${port.path}, drawn by the form per row`);
   return formFieldAt(instance, port.slot, () => port.path);
@@ -194,7 +197,7 @@ export function useProjectionObjectRefresh(shows: (id: string) => boolean, refre
   const { instance } = usePanelContext();
   const slot = useProjectionSlot();
   onBeforeUnmount(instance.onObjectChanged(object => {
-    if (!object || (slot.projection.binding.id === object.objectType && shows(object.primaryKey))) refresh();
+    if (!object || (projectionElement(slot.projection).id === object.objectType && shows(object.primaryKey))) refresh();
   }));
 }
 
@@ -220,7 +223,7 @@ function hasQueryParams(query: PlatformObjectQuery): boolean {
  */
 export function useProjectionObjects(objectType?: string): ProjectionObjects {
   const { instance } = usePanelContext();
-  const type = objectType ?? useProjectionSlot().projection.binding.id;
+  const type = objectType ?? projectionElement(useProjectionSlot().projection).id;
   return {
     async list() {
       const listed = await adapterPart(type, "list")();
@@ -270,7 +273,7 @@ export function useProjectionObjects(objectType?: string): ProjectionObjects {
  */
 export function useProjectionGraph(objectType?: string): PlatformObjectGraph {
   const { instance } = usePanelContext();
-  const type = objectType ?? useProjectionSlot().projection.binding.id;
+  const type = objectType ?? projectionElement(useProjectionSlot().projection).id;
   const nameNodes = (nodes: readonly PlatformGraphNode[]) => {
     const byType = new Map<string, { primaryKey: string; label: string }[]>();
     for (const node of nodes) {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createApp, defineComponent, h, nextTick, provide } from "vue";
+import { computed, createApp, defineComponent, h, provide } from "vue";
 import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
@@ -8,13 +8,14 @@ import type { FormField } from "@ontomato/contracts/form-fields";
 import { createPanelInstance } from "../../../../../packages/apps-sdk/src/panel/instance";
 import { panelContextKey } from "../../../../../packages/apps-sdk/src/panel/context";
 import { projectionKey, type ProjectionSlot } from "../../../../../packages/apps-sdk/src/panel/context";
-import { registerPlatformObjectAdapter } from "../../../../../packages/apps-sdk/src/panel/platform-objects";
 import { formFieldPointer } from "@ontomato/contracts/form-fields";
-import type { PanelFormDescription } from "@ontomato/contracts/panel-projection";
-import { registeredHandlers } from "../../../../../packages/apps-sdk/src/panel/handlers";
+import { panelFormSaveInputSchema, type PanelFormDescription, type PanelFormSaveInput } from "@ontomato/contracts/panel-projection";
+import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
+import { portsOf } from "../../../../../packages/apps-sdk/src/panel/ports-of";
+import { panelMemberKey, type PanelMemberContext } from "../../../../../packages/apps-sdk/src/panel/member";
 import ObjectForm from "../../../../../packages/apps-sdk/src/base/ObjectForm.vue";
 
-import { noOperations } from "./panel-frame";
+import { noOperations, projections, SCHEDULED_TASK } from "./panel-frame";
 /*
  * The form a panel shows (design 10.3, third and sixth checks): a draft an agent wrote opens in it with its values, its
  * changed fields marked and nothing written; the reader's save is one operation at the revision the form was read at, so
@@ -23,9 +24,6 @@ import { noOperations } from "./panel-frame";
  * The mistakes these catch: a draft that reaches the SDK but never the form (so the reader sees the object's current
  * values and no marker), and a save that re-reads the object first, which makes the owner's own revision check useless.
  */
-
-/** Each test registers its own object type: this version registers a type once, and these tests are one version. */
-let typeCount = 0;
 
 /** The form the owner answers: an operation that decides which other fields exist, as the trial's application does. */
 const fields = (operation: string): readonly FormField[] => [
@@ -47,41 +45,41 @@ const fields = (operation: string): readonly FormField[] => [
 
 function panelFor(objectType: string) {
   return definePanel({
-    state: { selectedTask: { kind: "object", objectType, deepLink: true } },
-    slots: { form: { projectionId: "projection-schedules-form", inputs: { task: { state: "selectedTask" } } } },
-    operations: [],
+    state: { selectedTask: { type: { kind: "object", objectType }, deepLink: true } },
+    members: { form: { target: { projectionId: "projection-schedules-form" }, inputs: { task: { state: "selectedTask" } } } },
+    events: {},
   });
 }
 
-/** Registers the form projection as `<Projection>` does, and mounts the form under its context and slot. */
-function mounted(save: (values: Record<string, string>, revision: number) => Promise<unknown>) {
-  typeCount += 1;
-  const objectType = `test:Task${typeCount}`;
-  const panel = panelFor(objectType);
+/** Mounts the form with the member and coordinator ports a frame supplies. */
+function mounted(save: (input: PanelFormSaveInput) => Promise<PanelOperationOutcome | void>) {
+  const panel = panelFor(SCHEDULED_TASK);
+  const task = { className: SCHEDULED_TASK, primaryKey: "task-1" };
+  const projection = projections["projection-schedules-form"]!;
+  let input: PanelFormSaveInput;
   const instance = createPanelInstance(panel, {
     text: (key) => key,
-    ...noOperations,
+    operations: {
+      ...noOperations.operations,
+      async prepare(operationId, invocation) {
+        if (!("call" in invocation)) throw new Error("A form save prepares one call");
+        input = panelFormSaveInputSchema.parse(invocation.call.input);
+        return {
+          intentId: "5f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d05", operationId,
+          label: "Save", confirmation: { kind: "none" },
+        };
+      },
+    },
+    async confirmOperation({ intentId }) {
+      const outcome = await save(input) ?? { kind: "success" as const, data: {} };
+      return { decision: "confirm", response: { kind: "dispatched", intentId, outcome } };
+    },
     pageKey: "panels-trial-a-tasks",
     url: () => "/applications/app-panels-trial-a/tasks",
     label: () => "Scheduled tasks (trial)",
-    initial: { selectedTask: { className: objectType, primaryKey: "task-1" } },
+    initial: { selectedTask: task },
     recordDraftCreated: async () => {},
-    readProjection: async () => ({
-      id: "projection-schedules-form",
-      domainId: "domain-1",
-      ownerId: "owner-1",
-      revision: 1,
-      createdAt: "2026-11-18T00:00:00.000Z",
-      updatedAt: "2026-11-18T00:00:00.000Z",
-      editable: false,
-      name: "Task form",
-      description: "",
-      visibility: "domain",
-      componentId: "ObjectForm",
-      binding: { kind: "PlatformObjectType", id: objectType },
-      inputs: { task: { kind: "object", objectType } },
-      display: {},
-    }),
+    readProjection: async () => projection,
   });
   // The owner, as the scheduled tasks' typed adapter answers: the operation decides which other fields exist.
   const typed = (operation: string, values: Record<string, string>): PanelFormDescription => ({
@@ -94,64 +92,34 @@ function mounted(save: (values: Record<string, string>, revision: number) => Pro
     values,
     revision: 7,
     errors: [],
-    save: { method: "PUT", path: "/platform/scheduled-tasks/:id", bodySchema: {}, draftOperation: `${objectType}.save` },
+    save: { method: "PUT", path: "/platform/scheduled-tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
   });
   const form = vi.fn(async (_primaryKey: string) => typed("autotest", { operation: "autotest", caseSetId: "cases-1" }));
   const changed = vi.fn(async (values: Record<string, string>) =>
     typed(values.operation!, values.operation === "inspection" ? { operation: "inspection", instruction: values.instruction ?? "" } : values));
-  registerPlatformObjectAdapter({
-    objectType,
-    read: async (primaryKey) => ({ primaryKey, label: "Nightly", fields: {} }),
-    forms: {
-      async describe({ target, values, changedField }) {
-        if (target.kind !== "object") throw new Error("A task form edits a task");
-        if (values === undefined) return form(target.primaryKey);
-        // An incoming draft is checked whole: the form it changes to, with the draft's values.
-        return changed({ ...(values as Record<string, string>) }).then((answer) =>
-          changedField === null ? { ...answer, values: { ...answer.values, ...(values as Record<string, string>) } } : answer);
-      },
-      async save(target, { values, revision }) {
-        await save(values as Record<string, string>, revision!);
-        return { primaryKey: target.kind === "object" ? target.primaryKey : "", label: "Nightly", fields: {} };
-      },
-    },
-  });
+  const unregister = instance.register({ slot: "form", projectionId: projection.id, ports: portsOf(projection) });
 
-  const unregister = instance.register({
-    slot: "form",
-    projectionId: "projection-schedules-form",
-    ports: {
-      binding: `PlatformObjectType:${objectType}`,
-      inputs: { task: { kind: "object", objectType } },
-      operations: [{ name: "save", label: "Save", kind: "form.save", inputSchema: {}, handlerRef: `${objectType}.save` }],
+  const inputs = computed(() => ({ task }));
+  const slot: ProjectionSlot = { slot: "form", projection, inputs: inputs.value };
+  const member: PanelMemberContext = {
+    key: "form", projection, inputs,
+    data: {
+      use() { throw new Error("The form reads its description on demand"); },
+      async read(_name, { task, values, changedField }) {
+        const primaryKey = (task as { primaryKey: string }).primaryKey;
+        if (values === undefined) return { status: "ready", value: await form(primaryKey) };
+        const draft = values as Record<string, string>;
+        const answer = await changed(draft);
+        // An incoming draft is checked whole, with the owner's fields for the changed operation.
+        return { status: "ready", value: changedField === null ? { ...answer, values: { ...answer.values, ...draft } } : answer };
+      },
     },
-  });
-
-  const slot: ProjectionSlot = {
-    slot: "form",
-    projection: {
-      id: "projection-schedules-form",
-      domainId: "domain-1",
-      ownerId: "owner-1",
-      revision: 1,
-      createdAt: "2026-11-18T00:00:00.000Z",
-      updatedAt: "2026-11-18T00:00:00.000Z",
-      editable: false,
-      name: "Task form",
-      description: "",
-      visibility: "domain",
-      componentId: "ObjectForm",
-      binding: { kind: "PlatformObjectType", id: objectType },
-      inputs: { task: { kind: "object", objectType } },
-      display: {},
-    },
-    inputs: {},
   };
   const app = createApp(
     defineComponent({
       setup: () => {
         provide(panelContextKey, {
-          panel: { content: { html: "", module: "" }, manifest: panel, sdkVersion: "1.1.1" },
+          panel: { content: { html: "", module: "" }, manifest: panel },
           manifest: panel,
           instance,
           projection: (id: string) => instance.projection(id),
@@ -164,6 +132,7 @@ function mounted(save: (values: Record<string, string>, revision: number) => Pro
           expandPageComposer: async () => {},
         });
         provide(projectionKey, slot);
+        provide(panelMemberKey, () => member);
         return () => h(ObjectForm);
       },
     }),
@@ -172,7 +141,7 @@ function mounted(save: (values: Record<string, string>, revision: number) => Pro
   // The frame installs Element Plus (apps-sdk panel/mount), so the form draws the same buttons it does there.
   app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus);
   app.mount(element);
-  return { app, element, form, changed, unregister, save, instance, objectType };
+  return { app, element, form, unregister, instance };
 }
 
 /** What each field holds, by its path: a text's own value, or what a choice shows. */
@@ -188,7 +157,7 @@ function shown(element: Element) {
 
 describe("the form a panel shows", () => {
   it("shows what the owner holds, at the revision it was read at", async () => {
-    const { app, element, form } = mounted(async () => ({}));
+    const { app, element, form } = mounted(async () => {});
     await vi.waitFor(() => expect(element.textContent).toContain("Run automated tests"));
     expect(form).toHaveBeenCalledWith("task-1");
     expect(shown(element)).toMatchObject({ "/operation": expect.stringContaining("Run automated tests") });
@@ -206,7 +175,7 @@ describe("the form a panel shows", () => {
     M.forms.hold(
       {
         pageKey: "panels-trial-a-tasks",
-        operation: `${mountedForm.objectType}.save`,
+        operation: `${SCHEDULED_TASK}.save`,
         target: { id: "task-1" },
         form: { operation: "inspection", instruction: "look at tonight's failures" },
       },
@@ -222,7 +191,7 @@ describe("the form a panel shows", () => {
     expect(element.querySelector(".sdk-owner-form-changed")?.textContent?.trim()).toBe("Changed: Operation, Instruction");
     // Nothing was written: the draft is the reader's to save.
     expect(written).toEqual([]);
-    expect(registeredHandlers()).toContain(`${mountedForm.objectType}.save`);
+    expect(M.operations.value).toEqual([expect.objectContaining({ id: "form.save", handlerRef: `${SCHEDULED_TASK}.save` })]);
 
     // The reader saves with the form's own button: one write, at the revision the form was read at. The panel frame is
     // sandboxed without allow-forms, where the browser drops a native form submission, so the button is not a submit.
@@ -230,25 +199,29 @@ describe("the form a panel shows", () => {
     expect(saveButton.type).toBe("button");
     saveButton.click();
     await vi.waitFor(() => expect(written).toHaveLength(1));
-    expect(written[0]).toEqual([expect.objectContaining({ operation: "inspection", instruction: "look at tonight's failures" }), 7]);
+    expect(written[0]).toEqual([{
+      values: { operation: "inspection", instruction: "look at tonight's failures" },
+      revision: 7,
+      submittedFields: ["/operation", "/instruction"],
+    }]);
     mountedForm.unregister();
     app.unmount();
   });
 
   it("saves at the revision the form was opened at, and shows the owner's refusal instead of overwriting", async () => {
-    const save = vi.fn(async (_values: Record<string, string>, _revision: number) => undefined);
+    const save = vi.fn(async (_input: PanelFormSaveInput) => undefined);
     const first = mounted(save);
     const { app, element } = first;
     const M = first.instance;
     await vi.waitFor(() => expect(element.textContent).toContain("Run automated tests"));
     // The form was read at revision 7; the save names that one, whatever the object's revision is by then.
     await M.invoke("form.save");
-    expect(save).toHaveBeenCalledWith(expect.objectContaining({ operation: "autotest" }), 7);
+    expect(save).toHaveBeenCalledWith({ values: { operation: "autotest", caseSetId: "cases-1" }, revision: 7, submittedFields: [] });
 
     // An owner that refuses the write (somebody else changed the task) has its answer shown, and nothing is retried.
-    const refused = vi.fn(async () => {
-      throw new Error("The task changed; reload it before saving");
-    });
+    const refused = vi.fn(async (): Promise<PanelOperationOutcome> => ({
+      kind: "refusal", code: "REVISION_CONFLICT", message: "The task changed; reload it before saving",
+    }));
     first.unregister();
     const second = mounted(refused);
     await vi.waitFor(() => expect(second.element.textContent).toContain("Run automated tests"));

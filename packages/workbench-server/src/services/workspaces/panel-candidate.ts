@@ -1,27 +1,19 @@
-import { access } from "node:fs/promises";
 import { z } from "zod";
 import { candidatePanelSourceSchema, type CandidatePanelSource } from "@ontomato/contracts/panel-host";
+import { panelManifestSchema } from "@ontomato/contracts/panel-manifest";
 import { panelDefinitionContentSchema, productPanelContentSchema } from "@ontomato/contracts/product-panels";
-import { runtimeDataDir } from "../../content/layout";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { assertAppBuilderAccess } from "../app-builder/access";
 import { WorkspaceBuildTests } from "../app-builder/build-tests";
 import type { AssistantOwner } from "../assistant/store";
-import { readCurrentProjection } from "../product-panels/current";
+import { readCurrentPanelRecord, readCurrentProjectionRecord } from "../product-panels/current";
 
-const descriptorSchema = panelDefinitionContentSchema.extend({
+const descriptorSchema = z.object({
+  manifest: panelManifestSchema,
   content: productPanelContentSchema.pick({ messages: true }).optional(),
-});
-const sourceFilesSchema = productPanelContentSchema.omit({ messages: true });
+}).strict();
 const treeSchema = z.object({ files: z.array(z.object({ path: z.string() })) });
-
-async function requireInstalledSdk(version: string) {
-  await access(runtimeDataDir("apps-sdk", version)).catch((error: { code?: string }) => {
-    if (error.code === "ENOENT") throw new HttpError(404, `Panel SDK version is not installed: ${version}`, "PANEL_SDK_UNAVAILABLE");
-    throw error;
-  });
-}
 
 export async function readPanelCandidate(
   owner: AssistantOwner, credentials: AssistantCredentials, { id, ref }: CandidatePanelSource["workspace"],
@@ -34,9 +26,9 @@ export async function readPanelCandidate(
   const tree = treeSchema.parse(await tests.runtime.request(`${workspace}/tree?${new URLSearchParams(revision)}`));
   const read = async (path: string) =>
     (await tests.runtime.bytes(`${workspace}/files/content?${new URLSearchParams({ ...revision, path })}`)).toString("utf8");
+  const readOptional = (path: string) => tree.files.some(file => file.path === path) ? read(path) : undefined;
   const [html, module, descriptorText, recipes] = await Promise.all([
-    read("panel.html"), read("panel.mjs"), read("panel.json"),
-    tree.files.some(file => file.path === "recipes.md") ? read("recipes.md") : undefined,
+    read("panel.html"), readOptional("panel.mjs"), read("panel.json"), readOptional("recipes.md"),
   ]);
   let descriptor: unknown;
   try {
@@ -45,12 +37,18 @@ export async function readPanelCandidate(
     if (!(error instanceof SyntaxError)) throw error;
     throw new HttpError(400, `Invalid panel.json: ${error.message}`, "PANEL_CANDIDATE_INVALID");
   }
-  const { content: inlineContent, ...metadata } = descriptorSchema.parse(descriptor);
-  const files = sourceFilesSchema.parse({ html, module, ...(recipes === undefined ? {} : { recipes }) });
-  const panel = { ...metadata, content: { ...files, ...inlineContent } };
-  await requireInstalledSdk(panel.sdkVersion);
-  const projectionIds = new Set(Object.values(panel.manifest.slots).map(slot => slot.projectionId));
-  await Promise.all([...projectionIds].map(projectionId => readCurrentProjection(owner, credentials, projectionId)));
+  const { manifest, content } = descriptorSchema.parse(descriptor);
+  const panel = panelDefinitionContentSchema.parse({ manifest, content: { html, module, recipes, ...content } });
+  const projectionIds = new Set<string>();
+  const panelIds = new Set<string>();
+  for (const { target } of Object.values(panel.manifest.members)) {
+    if ("projectionId" in target) projectionIds.add(target.projectionId);
+    if ("panelId" in target) panelIds.add(target.panelId);
+  }
+  await Promise.all([
+    ...[...projectionIds].map(id => readCurrentProjectionRecord(owner, credentials, id)),
+    ...[...panelIds].map(id => readCurrentPanelRecord(owner, credentials, id)),
+  ]);
   const test = await tests.current();
   return { kind: "candidate", workspace: { id, ref }, panel, previewContext: { kind: "build-test", test } };
 }

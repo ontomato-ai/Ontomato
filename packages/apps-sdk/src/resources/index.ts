@@ -1,7 +1,6 @@
 import { FUNCTION, METRIC_VIEW } from "@ontomato/contracts/panel-client-requests";
-import { METRIC_CHART_COMPONENT } from "@ontomato/contracts/product-panels";
 import {
-  ACTION, AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, ONTOLOGY_RELATION_KIND,
+  ACTION, AGENT_DEFINITION, DASHBOARD_CARD, ATTRIBUTE, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, ONTOLOGY_RELATION_KIND,
   ONTOLOGY_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER,
 } from "@ontomato/contracts/platform-object-types";
 import type { PlatformResources } from "../panel/platform-objects";
@@ -32,11 +31,9 @@ export const platformResources: PlatformResources = {
     [METRIC_VIEW]: () => import("../panel/metric-view").then((module) => module.metricViewAdapters),
     [FUNCTION]: () => import("../panel/function").then((module) => module.functionAdapters),
     [ACTION]: () => import("../panel/action").then((module) => module.actionAdapters),
+    // A chart's source card: its drawing and its MetricView's output, fetched only by a panel that draws a chart.
+    [DASHBOARD_CARD]: () => import("../panel/metric-chart").then((module) => module.dashboardCardAdapters),
   },
   // A person's action runs through the platform's coordinator, as an agent's does; none runs in the frame.
   operations: {},
-  components: {
-    // A chart's source template and its MetricView's data, fetched only by a panel that draws a chart.
-    [METRIC_CHART_COMPONENT]: () => import("../panel/metric-chart").then((module) => module.metricChartClients),
-  },
 };

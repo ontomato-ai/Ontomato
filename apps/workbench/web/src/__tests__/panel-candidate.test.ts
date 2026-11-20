@@ -10,7 +10,7 @@ import { appBuilderPages } from "../../../../../packages/platform-web/src/workbe
 import PanelCandidateRoute from "../../../../../packages/platform-web/src/pages/PanelCandidateRoute.vue";
 import {
   currentSdk, hostMessageOf, inside, installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelHostFrame, projections,
-  READER, SDK_VERSION, writeFrameDocument, type Sent,
+  READER, writeFrameDocument, type Sent,
 } from "./panel-frame";
 
 /*
@@ -37,10 +37,13 @@ const agentForm: ProductProjection = {
   visibility: "domain",
   name: "Agent definition",
   description: "Agent definition",
-  componentId: "ObjectForm",
-  binding: { kind: "PlatformObjectType", id: "platform:AgentDefinition" },
-  inputs: {},
-  display: {},
+  componentId: "@ontomato/sdk:ObjectForm",
+  inputs: { values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
+  outputs: {},
+  config: {},
+  data: {
+    createForm: { source: { type: { kind: "PlatformObjectType", id: "platform:AgentDefinition" } }, read: "createForm", params: { values: { input: "values" }, changedField: { input: "changedField" } } },
+  },
 };
 const summary = projections["projection-schedules-summary"]!;
 
@@ -51,10 +54,9 @@ const candidateOf = (html: string, test: BuildTestContext | null): CandidatePane
     content: { html, module: "" },
     manifest: definePanel({
       state: {},
-      slots: { definition: { projectionId: agentForm.id, inputs: {} }, summary: { projectionId: summary.id, inputs: {} } },
-      operations: [],
+      members: { definition: { target: { projectionId: agentForm.id }, inputs: {} }, summary: { target: { projectionId: summary.id }, inputs: {} } },
+      events: {},
     }),
-    sdkVersion: SDK_VERSION,
   },
   previewContext: { kind: "build-test", test },
 });
@@ -141,8 +143,8 @@ it("previews the author's candidate through the same panel host, with only its d
     expect(message.panel).toEqual(candidateOf('<div id="app"></div>', null).panel);
     // A candidate is no application's use: the frame is told it has none.
     expect(message).toMatchObject({ pageKey: "agent-settings", use: null, url: previewAddress, label: "Panel preview (working)" });
-    // The frame runs the exact SDK version the candidate names, not the one the platform currently serves.
-    expect(frame.srcdoc).toContain(`"@ontomato/sdk/panel":"/apps-sdk/${SDK_VERSION}/panel.js"`);
+    const { sdkBasePath } = await currentSdk().json();
+    expect(frame.srcdoc).toContain(`"@ontomato/sdk/panel":"${sdkBasePath}/panel.js"`);
     // The preview is an author's host: the registered projections the candidate names follow the definition stream,
     // and no panel is registered for it to follow.
     await vi.waitFor(() => expect(streams).toEqual([[

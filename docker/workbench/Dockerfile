@@ -53,8 +53,10 @@ WORKDIR /build/workspace/${WORKSPACE}/apps/workbench
 # The web bundle needs close to 2 GB of heap. Node's default limit follows host
 # memory and is about 2.2 GB on a 16 GB build host, so set it explicitly.
 RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm build:web
-# The product's apps SDK version, installed into the data volume at startup (APPS_SDK_BUILD names it).
+# The current apps SDK release is staged beside the web bundle in the Workbench image.
 RUN pnpm build:sdk
+# Build standalone workbench skill bundles and third-party license notices into the package resources before staging.
+RUN pnpm --filter @ontomato/workbench-server build:skills
 RUN TARGETPLATFORM=${TARGETPLATFORM} node /tmp/tools/workbench/stage-app.mjs
 RUN cp /tmp/launch.sh /stage/launch.sh \
  && chmod 0755 /stage/launch.sh \

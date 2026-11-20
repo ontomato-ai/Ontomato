@@ -1,4 +1,4 @@
-import { createApp, h, ref, type App, type Ref } from "vue";
+import { createApp, h, ref, type App, type Ref, shallowRef } from "vue";
 import { afterEach, expect, it, vi } from "vitest";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 import { assistantAgentsQuerySchema, type PageSkillContext } from "@ontomato/contracts/page-skills";
@@ -39,14 +39,14 @@ const dashboardSkill: PageSkillContext = { mode: "public", locator: { pageKey: "
 const homeMemberSkill: PageSkillContext = {
   mode: "member",
   locator: { pageKey: "home", access: "domain-member" },
-  member: { source: { kind: "home" }, memberKey: "pvt-home-panel" },
+  member: { source: { kind: "home" }, memberPath: [], ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-home-panel" } },
 };
 const drawerMemberSkill: PageSkillContext = {
   mode: "member",
   locator: { pageKey: "home", access: "domain-member" },
   member: {
     source: { kind: "object-detail", useId: "use-order", object: { className: "Order", primaryKey: "ord-1" } },
-    memberKey: "pvt-order-detail",
+    memberPath: [], ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-order-detail" },
   },
 };
 const unavailableMemberSkill: PageSkillContext = {
@@ -75,10 +75,10 @@ function draw(
   document.body.append(root);
   roots.push(root);
   const skillRef = counter.withoutSkill
-    ? ref<PageSkillContext | undefined>(undefined)
+    ? shallowRef<PageSkillContext | undefined>(undefined)
     : counter.pageSkill && "value" in counter.pageSkill
       ? counter.pageSkill
-      : ref<PageSkillContext | undefined>(counter.pageSkill ?? dashboardSkill);
+      : shallowRef<PageSkillContext | undefined>(counter.pageSkill ?? dashboardSkill);
   // The picker is the composer's own control; reading its props is how the test sees who the message would go to.
   const app = createApp({
     render: () => h(PageComposer, {
@@ -174,14 +174,14 @@ it("offers no candidates and sends no request when a member context has member: 
 });
 
 it("re-queries candidates when the displayed member changes and clears previous candidates on switch", async () => {
-  const skillRef = ref<PageSkillContext | undefined>(homeMemberSkill);
+  const skillRef = shallowRef<PageSkillContext | undefined>(homeMemberSkill);
   const drawn = draw({
     pageSkill: skillRef,
     pageAgents: async (skill) => {
-      if (skill.mode === "member" && skill.member?.memberKey === "pvt-home-panel") {
+      if (skill.mode === "member" && skill.member?.ref.name === "pvt-home-panel") {
         return { agents: [agent("home-agent", "Home")], defaultAgentId: "home-agent" };
       }
-      if (skill.mode === "member" && skill.member?.memberKey === "pvt-order-detail") {
+      if (skill.mode === "member" && skill.member?.ref.name === "pvt-order-detail") {
         return { agents: [agent("order-agent", "Order")], defaultAgentId: "order-agent" };
       }
       return { agents: [] };
@@ -228,11 +228,11 @@ it("encodes public and member queries through the real host client and skips net
   await host.listPageAgents(drawerMemberSkill);
   expect(requestedUrls).toHaveLength(2);
   const memberParams = Object.fromEntries(new URL(requestedUrls[1]!, "http://host.test").searchParams);
+  // The member goes as the snapshot gave it, in one parameter, beside the entrance.
   expect(assistantAgentsQuerySchema.parse(memberParams)).toEqual({
     pageKey: "home",
     access: "domain-member",
-    source: { kind: "object-detail", useId: "use-order", object: { className: "Order", primaryKey: "ord-1" } },
-    memberKey: "pvt-order-detail",
+    member: drawerMemberSkill.mode === "member" ? drawerMemberSkill.member : null,
   });
 
   const empty = await host.listPageAgents(unavailableMemberSkill);

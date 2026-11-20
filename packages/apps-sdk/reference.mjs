@@ -210,7 +210,12 @@ function literalValue(checker, property, type, at) {
 }
 
 function jsonOf(checker, node) {
-  if (ts.isStringLiteral(node) || ts.isNumericLiteral(node)) return node.text;
+  if (ts.isStringLiteral(node)) return node.text;
+  if (ts.isNumericLiteral(node)) return Number(node.text);
+  // A declaration's own words are JSON's: `required: false` is the boolean, not the name of one.
+  if (node.kind === ts.SyntaxKind.TrueKeyword) return true;
+  if (node.kind === ts.SyntaxKind.FalseKeyword) return false;
+  if (node.kind === ts.SyntaxKind.NullKeyword) return null;
   if (ts.isArrayLiteralExpression(node)) return node.elements.map((item) => jsonOf(checker, item));
   if (ts.isObjectLiteralExpression(node)) {
     return Object.fromEntries(node.properties.map((member) => [member.name.getText().replace(/^["']|["']$/g, ""), jsonOf(checker, member.initializer)]));

@@ -2,16 +2,16 @@ import { afterEach, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import type { PanelFormDescription, PanelFormSaveInput, PanelFormValues } from "@ontomato/contracts/panel-projection";
+import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import { AGENT_DEFINITION, SKILL } from "@ontomato/contracts/panel-client-requests";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
-  ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
+  formSaveCalls, humanIntents, ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
 /*
  * What the form tells its owner it submitted (`submittedFields`), through the platform's real bridge: the save's input
- * is observed where the form hands it to the owner's adapter, which decides from it whether, for example, an agent's
+ * is observed where the form prepares its write through the coordinator. The owner decides from it whether an agent's
  * skills are part of the update. A field the reader set counts even when it ends where it began (cleared to an empty
  * list, or set back to the value shown); a field a draft wrote counts; one neither touched is never added.
  *
@@ -34,51 +34,75 @@ const fields: PanelFormDescription["fields"] = [
 ];
 const AGENT = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a01";
 const save = { method: "PUT" as const, path: "/assistant/agent-definitions/:id", bodySchema: {}, draftOperation: "agent.update" };
-const record = (id: string, componentId: string, binding: string, more: Partial<ProductProjection> = {}): ProductProjection => ({
+const current = {
   domainId: "domain-1", ownerId: "owner-1", revision: 1, createdAt: "2026-11-19T00:00:00.000Z",
-  updatedAt: "2026-11-19T00:00:00.000Z", editable: false, visibility: "domain",
-  id, name: id, description: "", componentId, binding: { kind: "PlatformObjectType", id: binding }, inputs: {}, display: {}, ...more,
+  updatedAt: "2026-11-19T00:00:00.000Z", editable: false, visibility: "domain" as const,
+};
+const projection = (
+  id: string,
+  fields: Pick<Exclude<ProductProjection, { componentId: "@ontomato/sdk:MetricChart" }>, "componentId" | "inputs" | "data">,
+  config: ProductProjection["config"] = {},
+): ProductProjection => ({
+  ...current, id, name: id, description: "", outputs: {}, config, ...fields,
 });
+const formInputs = {
+  agent: { kind: "object", objectType: AGENT_DEFINITION },
+  values: { kind: "json" },
+  changedField: { kind: "scalar", type: "string" },
+} as const;
+const formParams = { values: { input: "values" }, changedField: { input: "changedField" } };
+const referencePicker = (id: string, objectType: string) => {
+  const source = { type: { kind: "PlatformObjectType" as const, id: objectType } };
+  return projection(id, {
+    componentId: "@ontomato/sdk:ReferencePicker",
+    inputs: { values: { kind: "json" } },
+    data: {
+      options: { source, read: "options", params: {} },
+      selected: { source, read: "resolve", params: { values: { input: "values" } } },
+    },
+  });
+};
 const projections: Record<string, ProductProjection> = {
-  "agent-form": record("agent-form", "ObjectForm", AGENT_DEFINITION, { inputs: { agent: { kind: "object", objectType: AGENT_DEFINITION } } }),
-  "agent-skills": record("agent-skills", "ReferencePicker", SKILL),
+  "agent-form": projection("agent-form", {
+    componentId: "@ontomato/sdk:ObjectForm",
+    inputs: formInputs,
+    data: {
+      form: { source: { object: { input: "agent" } }, read: "form", params: formParams },
+    },
+  }),
+  "agent-skills": referencePicker("agent-skills", SKILL),
 };
 const manifest = definePanel({
-  state: { selectedAgent: { kind: "object", objectType: AGENT_DEFINITION, deepLink: true } },
-  slots: {
-    definition: { projectionId: "agent-form", inputs: { agent: { state: "selectedAgent" } } },
-    skills: { projectionId: "agent-skills", inputs: {}, formField: { slot: "definition", path: "/skills" } },
+  state: { selectedAgent: { type: { kind: "object", objectType: AGENT_DEFINITION }, deepLink: true } },
+  members: {
+    definition: { target: { projectionId: "agent-form" }, inputs: { agent: { state: "selectedAgent" } } },
+    skills: { target: { projectionId: "agent-skills" }, inputs: {}, formField: { slot: "definition", path: "/skills" } },
   },
-  operations: [],
+  events: {},
 });
 const panel = panelRecord("panel-submitted", "Agents", manifest);
 const use = panelUse("use-submitted", "submitted", panel.id, "/ontology/agents");
 const link = { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/drafts/agent.page-draft.json" };
 const draftAt = `/api/assistant/sessions/${link.sessionId}/runs/${link.runId}/page-draft`;
 
-/** What the definitions service holds for the agent in this test. */
-let held: PanelFormValues = stored;
-
 /** The definitions service: a checked draft comes back whole, the fields it did not write as they are stored. */
-function owner(request: Sent): Response {
+function owner(request: Sent, held: PanelFormValues): Response | undefined {
   const projected = /^\/api\/product-projections\/(.+)$/.exec(request.path);
   if (projected) return Response.json({ projection: projections[projected[1]!] });
   if (request.path === "/api/assistant/agent-definitions/form") {
     const { values } = request.body as { values?: PanelFormValues };
     return Response.json({ fields, values: { ...held, ...values }, errors: [], save });
   }
-  if (request.path === `/api/assistant/agent-definitions/${AGENT}` && request.method === "PUT")
-    return Response.json({ id: AGENT, sortOrder: 0, ...held, ...(request.body as PanelFormValues) });
   if (request.path === "/api/assistant/agent-skills")
     return Response.json({ skills: [{ skill: sql, title: "SQL", description: "" }, { skill: chart, title: "Charts", description: "" }] });
-  return nothingAt(request);
+  return undefined;
 }
 
 async function open(draft?: PanelFormValues, shown: PanelFormValues = stored) {
-  held = shown;
-  installPlatform((request) => {
+  const intents = humanIntents(() => ({ kind: "success", data: {} }));
+  const sent = installPlatform((request) => {
     if (draft && request.path === draftAt) return Response.json({ pageKey: use.pageKey, operation: "agent.update", target: { id: AGENT }, form: draft });
-    return owner(request);
+    return intents(request) ?? owner(request, shown) ?? nothingAt(request);
   });
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
@@ -88,12 +112,9 @@ async function open(draft?: PanelFormValues, shown: PanelFormValues = stored) {
   inside(frame);
   const mounted = await mountPanel(panelOf("definition", "skills"));
   await vi.waitFor(() => expect(document.querySelector<HTMLInputElement>('#app [data-field="/name"] input')?.value).toBeTruthy(), { timeout: 5000 });
-  // The save's input, where the form hands it to the owner's adapter, which still sends the request.
-  const { platformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
-  const forms = platformObjectAdapter(AGENT_DEFINITION).forms!;
-  const saved = vi.spyOn(forms, "save");
-  const submitted = (call: number) => (saved.mock.calls[call]![1] as PanelFormSaveInput).submittedFields;
-  return { ...mounted, form: mounted.context.instance.forms.handle("definition")!, saved, submitted };
+  const saves = () => formSaveCalls(sent);
+  const submitted = (call: number) => saves()[call]!.input.submittedFields;
+  return { ...mounted, form: mounted.context.instance.forms.handle("definition")!, saves, submitted };
 }
 
 /** The form's own save button, as the reader sees and clicks it. */
@@ -153,21 +174,21 @@ it("forgets what was submitted once the reader discards", async () => {
 });
 
 it("lets the reader save a field set back to the value shown, such as skills cleared to the empty list they showed", async () => {
-  const { form, saved, submitted } = await open(undefined, { ...stored, skills: [] });
+  const { form, saves, submitted } = await open(undefined, { ...stored, skills: [] });
   form.set("/skills", [sql]);
   form.set("/skills", []);
   await nextTick();
   // The values are as they were read, and the reader's intent to submit the skills still stands.
   expect(saveButton().disabled).toBe(false);
   saveButton().click();
-  await vi.waitFor(() => expect(saved).toHaveBeenCalledTimes(1));
+  await vi.waitFor(() => expect(saves()).toHaveLength(1));
   expect(submitted(0)).toEqual(["/skills"]);
 });
 
 it("keeps a draft's field written as the value shown, and saves it from the button", async () => {
-  const { saved, submitted } = await open({ skills: [] }, { ...stored, skills: [] });
+  const { saves, submitted } = await open({ skills: [] }, { ...stored, skills: [] });
   await vi.waitFor(() => expect(saveButton().disabled).toBe(false), { timeout: 5000 });
   saveButton().click();
-  await vi.waitFor(() => expect(saved).toHaveBeenCalledTimes(1));
+  await vi.waitFor(() => expect(saves()).toHaveLength(1));
   expect(submitted(0)).toEqual(["/skills"]);
 });

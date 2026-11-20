@@ -124,6 +124,9 @@ describe("standard runtime real HTTP/PG/processes", () => {
             },
             { id: "b", token: "other-host", providers: ["workbench"] },
           ]),
+          AGENT_CHANNEL_PROVIDERS: JSON.stringify([
+            { id: "workbench", hostId: "a", url: base, token },
+          ]),
         },
         stdio: ["ignore", "pipe", "pipe"],
       },
@@ -519,6 +522,29 @@ describe("standard runtime real HTTP/PG/processes", () => {
       stream.close();
     }
   });
+  it("returns 410 when submitting a channel run that was cancelled before admission", async () => {
+    const sessionId = await session();
+    const runId = randomUUID();
+    const agent = { providerId: "workbench", agentId: "fixture-agent" };
+    const actor = { id: randomUUID(), domainId: "domain-a" };
+    const sessionRef = { providerId: agent.providerId, sessionId };
+    expect((await api(`/v1/channel/sessions/${sessionId}/bind`, { agent, actor })).status).toBe(200);
+    expect((await api(`/v1/sessions/${sessionId}/run-intents/${runId}/cancel`, {})).status).toBe(204);
+    const request = {
+      channel: {
+        agent, actor, authority: { classNames: [], executionKind: "live" },
+        requestedBy: null, root: { session: sessionRef, runId },
+      },
+      language: "en",
+      input: { role: "user", content: "Do not admit this run", timestamp: Date.now() },
+      credential: { token: "fixture-tk", apiKey: null },
+    };
+    const submit = () => api(`/v1/channel/sessions/${sessionId}/runs`, request, { "idempotency-key": runId });
+    const closed = { status: 410, body: { error: { code: "RESOURCE_DELETED" } } };
+    expect(await submit()).toMatchObject(closed);
+    expect(await submit()).toMatchObject(closed);
+  });
+
   it("notifies only the host and domain that admitted the run", async () => {
     const own = await runEvents(),
       otherDomain = await runEvents({ "x-domain-id": "domain-b" }),

@@ -191,12 +191,12 @@ it("narrows candidates from display-skill, re-queries on member switch, skips re
   const homeSkill: PageSkillContext = {
     mode: "member",
     locator: { pageKey: "home", access: "domain-member" },
-    member: { source: { kind: "home" }, memberKey: "pvt-home-panel" },
+    member: { source: { kind: "home" }, memberPath: [], ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-home-panel" } },
   };
   const drawerSkill: PageSkillContext = {
     mode: "member",
     locator: { pageKey: "home", access: "domain-member" },
-    member: { source: { kind: "object-detail", useId: "use-1", object: { className: "Order", primaryKey: "1" } }, memberKey: "pvt-drawer-panel" },
+    member: { source: { kind: "object-detail", useId: "use-1", object: { className: "Order", primaryKey: "1" } }, memberPath: [], ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-drawer-panel" } },
   };
   const nullSkill: PageSkillContext = {
     mode: "member",
@@ -210,7 +210,7 @@ it("narrows candidates from display-skill, re-queries on member switch, skips re
     if (url.pathname.endsWith("/sessions")) {
       return new Response(JSON.stringify({ sessions: [], nextCursor: null }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
-    const memberKey = url.searchParams.get("memberKey");
+    const memberKey = (JSON.parse(url.searchParams.get("member") ?? "null") as { ref: { name: string } } | null)?.ref.name ?? null;
     if (memberKey === "pvt-home-panel") {
       return new Response(JSON.stringify({ agents: wire([every[0]]), defaultAgentId: assistant }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
@@ -264,7 +264,7 @@ it("narrows candidates from display-skill, re-queries on member switch, skips re
   await settle();
   expect((await head(root)).listed).toEqual(["Assistant"]);
   expect(agentId.value).toBe(assistant);
-  expect(requests.some((url) => url.includes("memberKey=pvt-home-panel"))).toBe(true);
+  expect(requests.some((url) => decodeURIComponent(url).includes('"name":"pvt-home-panel"'))).toBe(true);
   expect(leftConversation).not.toHaveBeenCalled();
 
   // Switching to an object drawer re-emits display-skill with the drawer member and re-queries.
@@ -272,7 +272,7 @@ it("narrows candidates from display-skill, re-queries on member switch, skips re
   await settle();
   expect((await head(root)).listed).toEqual(["Knowledge governance"]);
   expect(agentId.value).toBe(governance);
-  expect(requests.some((url) => url.includes("memberKey=pvt-drawer-panel"))).toBe(true);
+  expect(requests.some((url) => decodeURIComponent(url).includes('"name":"pvt-drawer-panel"'))).toBe(true);
   expect(leftConversation).not.toHaveBeenCalled();
 
   // Reporting member: null sends no /agents request, clears candidates, and keeps the panel open.
@@ -301,16 +301,16 @@ it("narrows candidates from display-skill, re-queries on member switch, skips re
 it("keeps an active conversation on its own agent when new page candidates exclude it, and still lets the reader switch from the chooser", async () => {
   const existingSessionId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
   const runId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
-  const sentBodies: { path: string; message: string }[] = [];
+  const sentBodies: { path: string; message: string; pageSkillContext?: PageSkillContext }[] = [];
   const homeSkill: PageSkillContext = {
     mode: "member",
     locator: { pageKey: "home", access: "domain-member" },
-    member: { source: { kind: "home" }, memberKey: "pvt-home-panel" },
+    member: { source: { kind: "home" }, memberPath: [], ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-home-panel" } },
   };
   const drawerSkill: PageSkillContext = {
     mode: "member",
     locator: { pageKey: "home", access: "domain-member" },
-    member: { source: { kind: "object-detail", useId: "use-1", object: { className: "Order", primaryKey: "1" } }, memberKey: "pvt-drawer-panel" },
+    member: { source: { kind: "object-detail", useId: "use-1", object: { className: "Order", primaryKey: "1" } }, memberPath: [], ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-drawer-panel" } },
   };
   const session = {
     id: existingSessionId,
@@ -335,8 +335,8 @@ it("keeps an active conversation on its own agent when new page candidates exclu
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     if (url.pathname.endsWith("/runs") && init?.method === "POST") {
-      const body = JSON.parse(String(init.body)) as { message: string };
-      sentBodies.push({ path: url.pathname, message: body.message });
+      const body = JSON.parse(String(init.body)) as { message: string; pageSkillContext?: PageSkillContext };
+      sentBodies.push({ path: url.pathname, message: body.message, ...(body.pageSkillContext ? { pageSkillContext: body.pageSkillContext } : {}) });
       return new Response(JSON.stringify({
         delivery: {
           messageId: runId,
@@ -379,7 +379,7 @@ it("keeps an active conversation on its own agent when new page candidates exclu
     if (url.pathname.endsWith("/sessions")) {
       return new Response(JSON.stringify({ sessions: [session], nextCursor: null }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
-    const memberKey = url.searchParams.get("memberKey");
+    const memberKey = (JSON.parse(url.searchParams.get("member") ?? "null") as { ref: { name: string } } | null)?.ref.name ?? null;
     if (memberKey === "pvt-home-panel") {
       return new Response(JSON.stringify({ agents: wire([every[0]]), defaultAgentId: assistant }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
@@ -483,6 +483,8 @@ it("keeps an active conversation on its own agent when new page candidates exclu
   expect(sentBodies[0]!.message).toContain("Explain this order");
   expect(sentBodies[0]!.message).toContain("Current page: Order detail (/applications/app/home)");
   expect(sentBodies[0]!.message).toContain("Selected: Order #1");
+  // The message carries the page shown as it left, as that page's own snapshot named it; the server checks it again.
+  expect(sentBodies[0]!.pageSkillContext).toEqual(drawerSkill);
 
   // Opening a native page whose candidates exclude Assistant follows the same rule and keeps the page open.
   await display.navigate("/dashboards", { view: "side", history: "push" });
