@@ -30,7 +30,7 @@ vi.mock("../../assistant/skills",()=>({
   resolvePageSkillSource: mocks.resolveMember,
   loadedPageSkillVersion: mocks.loadedMember,
 }));
-vi.mock("../../../utils/backend-client",()=>({backendGet:mocks.backend,buildBackendHeaders:(token:string,_x:unknown,_l:unknown,key:string,headers:object)=>({...headers,...(token?{tk:token}:{}),...(key?{"X-API-Key":key}:{})})}));
+vi.mock("../../../utils/backend-client",()=>({backendGet:mocks.backend,backendPost:mocks.backend,buildBackendHeaders:(token:string,_x:unknown,_l:unknown,key:string,headers:object)=>({...headers,...(token?{tk:token}:{}),...(key?{"X-API-Key":key}:{})})}));
 vi.mock("../../agent-host/caller",()=>({restoreAgentCaller:mocks.restore,readAgentSessionActor:mocks.sessionActor}));
 vi.mock("../../agent-host/presentation",()=>({publishObjectChanged:mocks.notify}));
 vi.mock("../current",()=>({
@@ -40,13 +40,14 @@ vi.mock("../current",()=>({
     if (!("projectionId" in member.target)) throw new Error("Expected a projection in this fixture");
     const { binding, ...projection } = await mocks.projection(owner, credentials, member.target.projectionId);
     const form = Object.keys(projection.inputs)[0];
-    const data = binding.kind === "PlatformOperation"
+    const action = binding.kind === "PlatformOperation" || binding.kind === "Action";
+    const data = action
       ? { operation: { source: { operation: binding }, read: "describe", params: {} } }
       : form
         ? { form: { source: { object: { input: form } }, read: "form", params: {} } }
         : { createForm: { source: { type: binding }, read: "createForm", params: {} } };
     return { member, projection: {
-      ...projection, data, componentId: binding.kind === "PlatformOperation" ? "@ontomato/sdk:OperationButton" : "@ontomato/sdk:ObjectForm",
+      ...projection, data, componentId: action ? "@ontomato/sdk:OperationButton" : "@ontomato/sdk:ObjectForm",
     } };
   },
 }));
@@ -714,4 +715,79 @@ it("resolves the actual panel-use member and refuses a run that only loaded a si
     { ...skill, name: "other-panel-in-the-same-group" }, current.resolvedSkills,
   );
   expect(ownerWrites()).toHaveLength(0);
+});
+
+it("rechecks a customer action and reads the confirmation label as the initiator, then executes as the runner", async () => {
+ const order = { kind: "object" as const, objectType: "Order", primaryKey: "o1" };
+ const identity = { kind: "object", objectType: "Order" };
+ mocks.panel.mockResolvedValue({ id: "P", manifest: {
+   state: { order: { type: identity } },
+   members: { run: { target: { projectionId: "approval" }, inputs: { target: { state: "order" } } } },
+   events: {},
+ } });
+ mocks.projection.mockResolvedValue({ id: "approval", name: "Approve order",
+   binding: { kind: "Action", id: "approve-order" }, inputs: { target: identity },
+ });
+ const originalBackend = mocks.backend.getMockImplementation()!;
+ mocks.backend.mockImplementation(async (...args) => {
+   const url = new URL(args[1]);
+   if (url.pathname === "/ontology/model/attributes") {
+     expect(args[2].headers.tk).toBe("U-token");
+     return { text: JSON.stringify([
+       { className: "Order", name: "id", showName: "ID", type: "varchar", attrDesc: "", enable: true, primaryKey: true, businessKey: false },
+       { className: "Order", name: "name", showName: "Name", type: "varchar", attrDesc: "", enable: true, primaryKey: false, businessKey: true },
+     ]) };
+   }
+   if (url.pathname === "/data/queryInfoByNode") {
+     expect(args[3].headers.tk).toBe("U-token");
+     expect(args[2]).toEqual({ class: "Order", id: "Order:o1" });
+     return { text: JSON.stringify({ success: true, data: { data: { name: "Purchase order" } } }) };
+   }
+   return originalBackend(...args);
+ });
+ const ownerCalls: string[] = [];
+ vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+   const headers = new Headers(init.headers);
+   const path = new URL(url).pathname;
+   if (path === "/action/queryById") {
+     expect(headers.get("tk")).toBe("U-token");
+     ownerCalls.push("definition");
+     return Response.json({ success: true, data: {
+       id: "approve-order", name: "Approve order", codeHash: "a".repeat(64),
+       target: { className: "Order", keyParameter: "key" },
+       function: { parameters: [{ name: "key", type: "TYPE_STRING" }] },
+     } });
+   }
+   if (path === "/action/form") {
+     const submitted = JSON.parse(String(init.body));
+     if (submitted.values === undefined) {
+       expect(headers.get("tk")).toBe("U-token");
+       ownerCalls.push("open");
+     } else {
+       expect(headers.get("X-API-Key")).toBe("V-key");
+       expect(headers.get("tk")).toBeNull();
+       ownerCalls.push("submit");
+     }
+     return Response.json({ success: true, data: {
+       fields: [{ key: "key", label: "Key", required: false, defaultValue: null, help: null,
+         type: "text", multiline: false, placeholder: null, maxLength: 200 }],
+       values: { key: "o1" }, errors: [], parameters: submitted.values === undefined ? null : { key: "o1" },
+     } });
+   }
+   expect(path).toBe("/action/execute");
+   expect(headers.get("X-API-Key")).toBe("V-key");
+   expect(headers.get("tk")).toBeNull();
+   expect((init.body as FormData).get("param")).toBe(JSON.stringify({ key: "o1" }));
+   ownerCalls.push("execute");
+   return Response.json({ success: true, data: { result: "{}", affects: ["Order"] } });
+ }));
+ const input = { ...action(), operationId: "run.execute", call: { target: order, input: { values: {} } } };
+ expect(await operatePanel(owner, credentials, current.id, input)).toMatchObject({ kind: "confirmation-required" });
+ expect(JSON.stringify(mocks.request.mock.calls[0]?.[2])).toContain("Purchase order");
+ expect(ownerCalls).toEqual(["definition", "open"]);
+ answer();
+ expect(await dispatchPanel(owner, credentials, current.id, input.intentId)).toMatchObject({
+   kind: "dispatched", outcome: { kind: "success" },
+ });
+ expect(ownerCalls).toEqual(["definition", "open", "definition", "open", "submit", "execute"]);
 });
