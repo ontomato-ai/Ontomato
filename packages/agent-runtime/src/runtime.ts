@@ -274,8 +274,8 @@ export class AgentRuntime {
         config = await this.models.resolve(scope.domainId, request.definition.modelId);
         assertWorkerPolicy(this.worker);
         skills = await Promise.all(
-          request.definition.skills.map((ref) =>
-            this.registry.resolve(host, scope.domainId, ref),
+          request.definition.skills.map((version) =>
+            this.registry.resolve(host, scope.domainId, version),
           ),
         );
         if (new Set(skills.map((s) => s.skill.name)).size !== skills.length)

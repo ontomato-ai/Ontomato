@@ -9,6 +9,7 @@ vi.mock("../../../i18n", () => ({ t: (key: string) => key, tApp: (key: string) =
 vi.mock("../../../identity/installed", () => ({
   requirePermission: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
+vi.mock("../../../services/assistant/definitions", () => ({ filterReadableAgentDefinitions: vi.fn() }));
 vi.mock("../../../services/skills/skill-manager", () => ({
   skillManager: { importSkill: vi.fn(async () => {
     throw new HttpError(409, "Skill already exists: example", "SKILL_EXISTS", { skillId: "example" });

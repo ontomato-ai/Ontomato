@@ -1,3 +1,4 @@
+import type { PanelThemeOverrides } from "./panel-manifest";
 import type { AppExecutionContext } from "./build-tests";
 import type { RequestIdentity } from "./identity";
 import type {ProductNavigationTarget} from './product-page-state';
@@ -24,6 +25,7 @@ export type AppHostTheme = "light" | "dark";
 export interface AppHostPreferences {
   locale: string;
   theme: AppHostTheme;
+  tokens?: PanelThemeOverrides;
 }
 
 /** The signed-in user, for display only: the server decides every permission. */

@@ -6,6 +6,10 @@ import {
   panelReadOperationDescriptorSchema, type PanelReadOperationResult, type panelBatchInvocationSchema,
   type panelOperationImpactSchema, type panelReadOperationCallSchema, type panelSingleInvocationSchema,
 } from "@ontomato/contracts/panel-operations";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import type { AssistantSkillView } from "../assistant/skills";
+import type { AssistantOwner } from "../assistant/store";
+import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import type { OntologyElementRef } from "@ontomato/contracts/product-panels";
 import { m6ServerOperations } from "../action/panel-operations";
 import { agentDefinitionOperations } from "../assistant/definition-operations";
@@ -22,7 +26,14 @@ export interface PanelImpactInspector {
   handlerRef: string;
   inspect(host: PanelOperationHost, calls: readonly PanelOperationCall[]): Promise<z.infer<typeof panelOperationImpactSchema>>;
 }
+export interface PanelOperationActor {
+  owner: AssistantOwner;
+  credentials: AssistantCredentials;
+}
 export interface PanelOperationHost {
+  initiator: PanelOperationActor;
+  executor: PanelOperationActor;
+  skillView?: AssistantSkillView;
   locale?: string;
   requestWorkbench(path: string, init: NonNullable<Parameters<typeof fetch>[1]>): Promise<Response>;
   request(path: string, init: NonNullable<Parameters<typeof fetch>[1]>): Promise<Response>;
@@ -36,6 +47,7 @@ interface ServerOperation {
   targetSchema: z.ZodType<PanelOperationTarget>;
   inputSchema: z.ZodType<Record<string, unknown>>;
   resultSchema: z.ZodTypeAny;
+  projectResult?(data: Record<string, RuntimeJsonValue>, view: AssistantSkillView): Record<string, RuntimeJsonValue>;
   execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>, intentId: string): Promise<SinglePanelOperationOutcome>;
 }
 export type PanelWriteServerOperation = ServerOperation & (
@@ -43,7 +55,7 @@ export type PanelWriteServerOperation = ServerOperation & (
     kind: "form.save";
     batch: false;
     draftOperation(target: PanelOperationTarget): string;
-    draftInput(input: Record<string, unknown>): Record<string, unknown>;
+    draftInput(input: Record<string, unknown>, target: PanelOperationTarget): Record<string, unknown>;
     formInstructions: string;
     create?: {
       draftValues(values: unknown, domainId: string): Record<string, unknown>;
@@ -106,6 +118,11 @@ export function describePanelRead(handler: PanelReadServerOperation, label: stri
     handlerRef: handler.handlerRef, label, effect: handler.effect, batch: handler.batch, target: handler.target,
     inputSchema: jsonSchema(handler.inputSchema), resultSchema: jsonSchema(handler.resultSchema),
   });
+}
+
+export function panelResultProjection(handlerRef: string) {
+  const operation = operations.get(handlerRef);
+  if (operation?.effect === "write") return operation.projectResult;
 }
 
 export function panelServerOperation(handlerRef: string): PanelServerOperation {

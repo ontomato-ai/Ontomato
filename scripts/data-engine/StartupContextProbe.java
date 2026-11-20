@@ -52,9 +52,10 @@ class StartupContextProbe {
     runtime.createContext(
         "/v1/skills",
         exchange -> {
-          exchange.getRequestBody().readAllBytes();
+          JSONObject pkg = JSON.parseObject(exchange.getRequestBody().readAllBytes());
           publications.incrementAndGet();
-          byte[] body = "{}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+          byte[] body = JSONObject.of("skill", pkg.get("skill"), "digest", "a".repeat(64),
+              "description", "Fixture skill").toJSONString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
           exchange.sendResponseHeaders(201, body.length);
           exchange.getResponseBody().write(body);
           exchange.close();
