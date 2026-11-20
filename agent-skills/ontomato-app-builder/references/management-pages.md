@@ -11,7 +11,8 @@ node "$SKILL/ontomato.mjs" panel register "@$example/registration.json"
 ```
 
 Open the example's application entry at `/applications/example-agent-management/manage`. Select an agent to edit it.
-The New control clears that selection and the owner supplies the create form.
+The New control clears that selection and the owner supplies the create form. After a successful create, the host
+uses the object returned by the owner as the form's selection.
 
 Start your own page by choosing the registered platform type and your intended application ID.
 
@@ -26,7 +27,8 @@ input. The starter includes the owner save when the type declares a form and sav
 Use `--operation <owner operation ID>` for a button targeting the selected record and `--batch <owner operation ID>`
 for a button targeting checked records. Repeat either flag to add more buttons. The starter takes the target input
 name and batch support from the type table. For operations with extra required inputs, wire the owner form or
-operation inputs. Online `panel check` uses the same type table to check button targets before registration.
+operation inputs. The starter places these controls above the list. Online `panel check` uses the same type table
+to check button targets before registration.
 
 ## Effect and wiring
 

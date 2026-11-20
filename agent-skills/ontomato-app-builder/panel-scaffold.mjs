@@ -133,7 +133,7 @@ export function managementPanel(type, checks, typeTable, {
     return key;
   });
   const member = ref => `  <panel-member ref="${ref}"></panel-member>`;
-  const keys = ["newRecord", "tabs", "list", "detail", "form", ...buttonKeys];
+  const keys = ["newRecord", "tabs", ...buttonKeys, "list", "detail", "form"];
   const html = ['<section flow="column" gap="medium">', ...keys.filter(key => key in members).map(member), "</section>", ""].join("\n");
   const manifest = { state, members, events };
   const definition = { manifest, content: { html } };
