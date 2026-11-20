@@ -150,12 +150,18 @@ async function prepareSwitch(page, config, variant, panel, taskKeys) {
     if (!ariaLabel) throw new Error("Native edit menu missing for the chosen task");
     const selector = variant.list.row.selector + " " + variant.list.action + "[aria-label=" + JSON.stringify(ariaLabel) + "]";
     await input(page, { selector }, null, false);
+    const menuId = await page.evaluate(selector => document.querySelector(selector)?.getAttribute("aria-controls"), selector);
+    if (!menuId) throw new Error("Native edit menu has no controlled popup");
+    const popup = '.el-dropdown__popper:not([class*="-enter-active"]):not([class*="-leave-active"])';
+    const menu = '[role="menu"][id=' + JSON.stringify(menuId) + ']';
+    const edit = { ...variant.edit, selector: popup + " " + menu + " " + variant.edit.selector };
+    await call(page, "ready", { kind: "control", control: edit });
+    return edit;
   };
-  await openMenu(first);
-  await input(page, variant.edit, firstForm, false);
+  const firstEdit = await openMenu(first);
+  await input(page, firstEdit, firstForm, false);
   await input(page, variant.close, listCheck(config, variant), false);
-  await openMenu(second);
-  return variant.edit;
+  return openMenu(second);
 }
 
 export async function benchmark(page, config, { count, save, saveSuppressed }) {
