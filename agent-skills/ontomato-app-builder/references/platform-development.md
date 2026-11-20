@@ -110,14 +110,14 @@ the full body as text with its original line breaks. The owner returns highlight
 
 1. Find the built-in presets that selected the old page skill. At cutover, update their bundled declarations
    to select the new built-in panel by its fixed ID. Keep the entry's current default agent.
-2. Install the panel in each domain before running the system agent install or upgrade. The installer uses the
-   skill core's `protectedSkillRef("product-panels", domainId, panelId)` and writes the root skill reference to
-   the preset's `skills`, preserving the domain's edited selections. If a panel is absent from that domain,
-   skip its reference until an upgrade after installation. Implement the upgrade with the cutover where presets
-   currently have initialization only. Candidate discovery, effective skills and preparation use the persisted
-   selection through the existing rules.
+2. Check which panels are installed in the domain. At installation or an explicit definition update, use the
+   skill core's `protectedSkillRef("product-panels", domainId, panelId)` to store an ordinary root skill reference.
+   Add a missing panel's skill with an explicit update after installation. For existing domains, the bundled
+   material or agent definition owner determines the cutover update and how existing user choices are kept.
+   Prefer the normal definition update entry point. Candidate discovery, effective skills and preparation
+   use the same persisted selection.
 3. Verify an existing domain as part of cutover. For Business Knowledge, start with a previously installed
-   `knowledge-governance` preset and user-edited skill choices. Install the panel and run the upgrade once.
+   `knowledge-governance` preset and user-edited skill choices. Install the panel and run the explicit update.
    Confirm the edited choices remain and the preset is a candidate on the page. The main entry still defaults
    to the general assistant.
 
