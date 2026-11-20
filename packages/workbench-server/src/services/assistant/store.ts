@@ -10,7 +10,6 @@ import type { ModelSelection } from "@ontomato/contracts/model-settings";
 import { lockSessionClaim, assertUnclaimedSession } from "../agent-host/session-claim";
 import { protectedSkillRef } from "../../core/skills/providers";
 import { panelSkillProvider } from "../product-panels/skill-provider";
-import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { randomUUID, createHash } from "node:crypto";
 import type pg from "pg";
 import {
@@ -21,9 +20,9 @@ import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
 import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import type { HomeState } from "@ontomato/contracts/platform-home";
+/** A reader's skill view, which says whether a panel's skill is visible in the domain. */
 export interface AgentsReadOptions {
   skillView?: { hasSkill(ref: RuntimeSkillRef): boolean };
-  credentials?: AssistantCredentials;
 }
 export interface AssistantOwner {
   domainId: string;
@@ -72,16 +71,19 @@ export interface AgentRow {
 }
 const db = () => getPostgresPool();
 
-/** Lazily adds the governance panel skill once per domain/version once that panel skill is visible. */
-async function upgradeGovernancePreset(domainId: string, options?: AgentsReadOptions) {
-  if (!options?.skillView && !options?.credentials) return;
+/**
+ * Adds the business knowledge panel's skill to the governance preset once per domain and preset version, when a read
+ * that already holds the skill view sees that skill: the page's agent candidates and the agents' settings. A domain
+ * where the panel is not registered yet gets it on a later such read; a skill an administrator removed stays removed.
+ */
+async function upgradeGovernancePreset(domainId: string, skillView: AgentsReadOptions["skillView"]) {
+  if (!skillView) return;
   const applied = await db().query(
     `SELECT 1 FROM ${table("assistant_preset_upgrades")} WHERE domain_id=$1 AND kind=$2 AND version=$3 LIMIT 1`,
     [domainId, GOVERNANCE_KIND, GOVERNANCE_PRESET_VERSION],
   );
   if (applied.rowCount) return;
 
-  const skillView = options.skillView ?? await (await import("./skills")).readAssistantSkillView(domainId, options.credentials!);
   const ref = protectedSkillRef(panelSkillProvider.id, domainId, GOVERNANCE_PANEL_ID);
   if (!skillView.hasSkill(ref)) return;
 
@@ -138,7 +140,7 @@ export const assistantStore = {
       `INSERT INTO ${table("assistant_agents")} (id,domain_id,kind,name,description,system_prompt,skills,sort_order) VALUES($1,$2,$3,$4,$5,NULL,$6,2) ON CONFLICT(domain_id,kind) DO NOTHING`,
       [randomUUID(), domainId, GOVERNANCE_KIND, "Knowledge governance", "Review business knowledge with traceable evidence", JSON.stringify([GOVERNANCE_SKILL])],
     );
-    await upgradeGovernancePreset(domainId, options);
+    await upgradeGovernancePreset(domainId, options?.skillView);
     return (
       await db().query(
         `SELECT * FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind<>'app-builder' AND kind NOT LIKE 'app-builder:%' ORDER BY sort_order,name,id`,
@@ -146,8 +148,8 @@ export const assistantStore = {
       )
     ).rows;
   },
-  async channelAgents(domainId: string, options?: AgentsReadOptions): Promise<AgentRow[]> {
-    await this.agents(domainId, options);await this.appBuilder(domainId);
+  async channelAgents(domainId: string): Promise<AgentRow[]> {
+    await this.agents(domainId);await this.appBuilder(domainId);
     return (await db().query(`SELECT * FROM ${table("assistant_agents")} WHERE domain_id=$1 ORDER BY sort_order,name,id`,[domainId])).rows;
   },
   async appBuilder(domainId: string): Promise<AgentRow> {

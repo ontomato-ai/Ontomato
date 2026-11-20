@@ -31,7 +31,7 @@ export const agentChannelService = {
     const { owner, credentials } = await caller(body, domain, undefined, false, supplied);
     const agents = [];
     if (body.providerId === "workbench") {
-      for (const agent of await assistantStore.channelAgents(domain, { credentials })) {
+      for (const agent of await assistantStore.channelAgents(domain)) {
         if (!agent.enabled) continue;
         try { await assistantService.admitAgent(agent.id, owner, credentials); }
         catch (error) { if (error instanceof HttpError && error.status === 403) continue; throw error; }

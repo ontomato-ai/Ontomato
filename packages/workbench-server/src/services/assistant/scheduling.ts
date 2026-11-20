@@ -13,7 +13,7 @@ export const assistantScheduleApplication: ScheduleApplication = {
   async authorize() {},
   async form(input, { owner, credentials }) {
     const zh = credentials.locale?.startsWith("zh");
-    const agents = await assistantStore.agents(owner.domainId, { credentials });
+    const agents = await assistantStore.agents(owner.domainId);
     const options = agents.map((agent) => option(agent.id, agent.name, agent.enabled ? null : zh ? "智能体已停用" : "Agent disabled", agent.description));
     const selected = input.values.agentId;
     if (selected && !agents.some((agent) => agent.id === selected))

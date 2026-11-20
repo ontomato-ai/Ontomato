@@ -45,9 +45,7 @@ function createAnalysisAgentMcpServer(req: Request) {
     },
     async () =>
       withAnalysisIdentity(req, async (identity) => {
-        const agents = await assistantStore.agents(identity.domainId, {
-          credentials: { token: identity.token, apiKey: identity.apiKey },
-        });
+        const agents = await assistantStore.agents(identity.domainId);
         return textJson({
           agents: agents
             .filter((a) => a.enabled)
