@@ -349,7 +349,11 @@ async function registerChartPanel(year: number) {
   const projection = await register();
   const saved = await request("/product-panels/chart-pilot", "PUT", {
     name: "Shared chart", description: "", visibility: "domain", revision: 0,
-    content: { html: '<panel-member ref="chart"></panel-member>' },
+    content: {
+      html: '<div id="app"><projection slot="chart"></projection></div>',
+      module: `import { mountPanel } from "@ontomato/sdk/panel";
+await mountPanel({});`,
+    },
     manifest: { state: {}, events: {}, members: {
       chart: { target: { projectionId: projection.id }, inputs: { year: { literal: year } } },
     } },
