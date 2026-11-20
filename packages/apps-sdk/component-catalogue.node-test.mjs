@@ -78,6 +78,14 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     const given = new Set(catalogue.components.filter(({ componentId }) => componentId !== panelData.componentId)
       .flatMap((component) => Object.values(component.data ?? {}).flatMap((datum) => datum.runtimeParams ?? [])));
     assert.deepEqual([...panelData.data["*"].runtimeParams].sort(), [...given].sort());
+    // A placement binds a component's outputs to the panel's state by type; an object of the projection's own type is
+    // `@binding`, which registration resolves, and a signal with no state stays an event.
+    assert.deepEqual(declared.get("ObjectList").outputs, {
+      selected: { kind: "object", objectType: "@binding" },
+      checked: { kind: "list", items: { kind: "object", objectType: "@binding" } },
+      search: { kind: "scalar", type: "string" },
+    });
+    assert.equal(declared.get("ObjectSummary").outputs, undefined, "navigating is an event, not a state");
     // Configuration is the props a projection sets, kept apart from the running inputs a placement supplies.
     assert.deepEqual(declared.get("ObjectSummary").config, declared.get("ObjectSummary").ports.props);
     assert.equal(declared.get("MetricChart").config, undefined, "a component with no configuration declares none");
