@@ -121,6 +121,10 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     componentsPath: "/public" + sdkPath + "/components.json",
   };
   const typeTable = {
+    unavailableActions: [
+      { id: "legacy-action", reason: "Stored function is missing" },
+      { id: "bad-action", objectType: "ReviewQueue", reason: "target: invalid field" },
+    ],
     objectTypes: {
       "platform:AgentDefinition": {
         reads: {
@@ -266,6 +270,11 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       ["PUT", panelPath, { ...input, revision: 7 }, "author-key"],
       ["PUT", usesPath, application, "author-key"],
     ]);
+    await assert.rejects(run("panel", "register", JSON.stringify({
+      panels: [{ id: "acceptance-panel", mode: "update", revision: 7, input }],
+      applications: [{ id: "acceptance", mode: "create", input: application }],
+    })), error => error.stderr.includes("Application ID must start with app-"));
+    assert.deepEqual(requests, []);
     const material = { panels: [{ id: "acceptance-panel", mode: "update", revision: 7, input: { ...input, sdkVersion } }] };
     await assert.rejects(run("panel", "register", JSON.stringify(material)), error => error.stderr.includes("The current SDK refuses sdkVersion"));
     assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), [
@@ -285,19 +294,22 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     const moduleFile = join(directory, "panel.mjs");
     await writeFile(moduleFile, panel.content.module);
     const checked = await run("panel", "check", directory);
+    assert.equal(checked.stderr,
+      "Action legacy-action is unavailable. Stored function is missing\n" +
+      "Action bad-action (ReviewQueue) is unavailable. target: invalid field\n");
     assert.deepEqual(JSON.parse(checked.stdout), { status: "valid", version: sdkVersion, digest: release.digest, unchecked: [] });
     assert.deepEqual(new Map(requests.splice(0).map(([method, url]) => [url, method])), new Map([
       ["/api/apps-sdk/current", "GET"], [`${sdkPath}/node/panel-check.mjs`, "GET"],
       [`${sdkPath}/components.json`, "GET"], ["/api/app-builder/type-table", "GET"], [projectionPath, "GET"],
     ]));
     await rm(moduleFile);
-    await assert.rejects(run("panel", "check", directory), error => error.stderr.includes("panel.json:content.module: Required"));
+    await assert.rejects(run("panel", "check", directory), error => error.stderr.includes("panel.mjs: required Vue module is missing"));
     await writeFile(moduleFile, panel.content.module);
     assert.equal(requests.some(([method, url]) => method !== "GET" || url === projectionPath), false);
     requests.length = 0;
     const draft = join(directory, "manager");
-    const scaffold = await run("panel", "scaffold", "platform:AgentDefinition", draft, "--id", "example-agent-management", "--operation", "platform:AgentDefinition.save");
-    assert.equal(JSON.parse(scaffold.stdout).entry, "/applications/example-agent-management/manage");
+    const scaffold = await run("panel", "scaffold", "platform:AgentDefinition", draft, "--id", "app-example-agent-management", "--operation", "platform:AgentDefinition.save");
+    assert.equal(JSON.parse(scaffold.stdout).entry, "/applications/app-example-agent-management/manage");
     for (const name of ["panel.html", "panel.mjs", "panel.json", "registration.json"]) {
       const sample = await readFile(join("agent-skills/ontomato-app-builder/examples/agent-management", name), "utf8");
       assert.equal(await readFile(join(draft, name), "utf8"), sample);
@@ -337,7 +349,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     incorrectPanel.manifest.members.batch2.inputs = { entry: { state: "checked" } };
     await writeFile(reviewPanel, JSON.stringify(incorrectPanel));
     await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
-      error.stderr.includes("member batch2 (projection review-queue-manager-batch2): bind operation approve (reviews.approve)'s target input review"));
+      error.stderr.includes("member batch2 (projection app-review-queue-manager-batch2): bind operation approve (reviews.approve)'s target input review"));
     await writeFile(reviewPanel, JSON.stringify({ manifest: reviewManifest }));
     const incorrect = JSON.parse(await readFile(reviewMaterial, "utf8"));
     const batch = incorrect.projections.find(({ id }) => id.endsWith("-batch2"));

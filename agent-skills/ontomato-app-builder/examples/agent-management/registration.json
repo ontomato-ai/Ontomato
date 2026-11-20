@@ -1,7 +1,7 @@
 {
   "projections": [
     {
-      "id": "example-agent-management-list",
+      "id": "app-example-agent-management-list",
       "mode": "create",
       "input": {
         "name": "Agent Definition list",
@@ -36,7 +36,7 @@
       }
     },
     {
-      "id": "example-agent-management-detail",
+      "id": "app-example-agent-management-detail",
       "mode": "create",
       "input": {
         "name": "Agent Definition detail",
@@ -65,7 +65,7 @@
       }
     },
     {
-      "id": "example-agent-management-form",
+      "id": "app-example-agent-management-form",
       "mode": "create",
       "input": {
         "name": "Agent Definition form",
@@ -117,7 +117,7 @@
   ],
   "panels": [
     {
-      "id": "example-agent-management",
+      "id": "app-example-agent-management",
       "mode": "create",
       "input": {
         "name": "Agent Definition",
@@ -136,7 +136,7 @@
           "members": {
             "list": {
               "target": {
-                "projectionId": "example-agent-management-list"
+                "projectionId": "app-example-agent-management-list"
               },
               "inputs": {
                 "selected": {
@@ -146,7 +146,7 @@
             },
             "detail": {
               "target": {
-                "projectionId": "example-agent-management-detail"
+                "projectionId": "app-example-agent-management-detail"
               },
               "inputs": {
                 "item": {
@@ -156,7 +156,7 @@
             },
             "form": {
               "target": {
-                "projectionId": "example-agent-management-form"
+                "projectionId": "app-example-agent-management-form"
               },
               "inputs": {
                 "item": {
@@ -176,11 +176,11 @@
   ],
   "applications": [
     {
-      "id": "example-agent-management",
+      "id": "app-example-agent-management",
       "mode": "create",
       "input": {
         "entry": {
-          "path": "/applications/example-agent-management",
+          "path": "/applications/app-example-agent-management",
           "renderer": "panels"
         },
         "entryAccess": [
@@ -199,10 +199,10 @@
         },
         "panelUses": [
           {
-            "id": "example-agent-management-use",
-            "pageKey": "example-agent-management",
-            "panelId": "example-agent-management",
-            "path": "/applications/example-agent-management/manage",
+            "id": "app-example-agent-management-use",
+            "pageKey": "app-example-agent-management",
+            "panelId": "app-example-agent-management",
+            "path": "/applications/app-example-agent-management/manage",
             "access": {
               "kind": "domain-member"
             },

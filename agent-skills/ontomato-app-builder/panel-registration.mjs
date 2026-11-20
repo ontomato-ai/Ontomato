@@ -13,6 +13,10 @@ async function readAnswer(response, method, path) {
   return answer;
 }
 
+export function requireApplicationId(id) {
+  if (!id.startsWith("app-")) throw new Error("Application ID must start with app-");
+}
+
 function requireMode(mode) {
   if (mode !== "create" && mode !== "update") throw new Error("Expected mode create or update");
 }
@@ -85,6 +89,9 @@ export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workben
     async register(material, onRegistered, checks) {
       const { projections = [], panels = [], applications = [], ...unknown } = material;
       if (Object.keys(unknown).length) throw new Error(`Unknown registration fields: ${Object.keys(unknown).join(", ")}`);
+      for (const { id, mode } of applications) {
+        if (mode === "create") requireApplicationId(id);
+      }
 
       async function apply(kind, items, write) {
         for (const item of items) {

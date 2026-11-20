@@ -1174,6 +1174,91 @@ export default {
         "uses-skill": "Uses skill",
         "executes-as-user": "Executes as user"
       }
+    },
+    "typeDetails": {
+      "agentDefinition": {
+        "definition": "A reusable agent configuration that defines its instructions, model, skills, tools, data scope, and execution identity.",
+        "rules": "Reading, creating, or maintaining definitions in the current domain requires the analysis-agent permission. The definition service exposes only skill references the reader may use, and the execution identity service validates changes to the execution user.",
+        "properties": {
+          "id": "The stable identifier of the agent definition.",
+          "name": "The name shown in agent lists and selectors.",
+          "description": "A short description of what the agent is for.",
+          "icon": "The agent's icon reference, when one is configured.",
+          "enabled": "Whether the agent is enabled for use.",
+          "systemPrompt": "The instructions supplied to the agent as its system prompt.",
+          "modelSelection": "The selected model, with a null model ID using the domain default.",
+          "skills": "The skill references selected for the agent.",
+          "classNames": "The ontology class names in the agent's configured data scope.",
+          "enabledMcpServiceIds": "The IDs of MCP services enabled for the agent.",
+          "executionUserId": "The specified execution user's ID, or null to run as the initiating user.",
+          "sortOrder": "The position used to order the definition in agent lists."
+        }
+      },
+      "application": {
+        "definition": "A published unit that makes content available through application entries.",
+        "rules": "The platform maintains built-in applications, and Java checks domain identity, assigned paths, and permission to use referenced panels during domain registration. Java checks application and entry admission and panel use before opening an entry, requires maintenance authority for edits and deletion, and requires a product edit grant to manage access.",
+        "properties": {
+          "id": "The stable identifier of the application.",
+          "names": "Display names keyed by language code.",
+          "descriptions": "Application descriptions keyed by language code.",
+          "icon": "The icon identifier used to display the application.",
+          "source": "Whether the application is declared by the platform or registered in a domain.",
+          "canMaintain": "Whether the current caller may edit the identity or delete this domain application.",
+          "canEditEntries": "Whether the current caller has maintenance authority to edit this domain panel application's entry table.",
+          "canGrant": "Whether the current caller may manage the application's sharing and grants under product edit authority.",
+          "entry": "The application's landing path with an optional renderer and home path.",
+          "panelUses": "Entries in their declared order, including paths, panel references, inputs, menu metadata, admission rules, and default agents.",
+          "groups": "Menu group keys, translated names, and sort order.",
+          "entryAccess": "Application-level admission rules visible to the application's maintainers.",
+          "framePanelId": "The ID of the application's configured frame panel, visible to maintainers.",
+          "theme": "The application's light and dark theme overrides, visible to maintainers.",
+          "delivery": "Declared references to panels, projections, packages, agents, and skills, visible to maintainers."
+        }
+      },
+      "productProjection": {
+        "definition": "A record that binds an SDK component to ontology data and to operations it can initiate.",
+        "rules": "Domain registrants create projections. A projection's use Grant governs use and its edit Grant governs editing, sharing, and deletion; the data or operation owner authorizes the underlying business reads and writes.",
+        "properties": {
+          "id": "The stable identifier of the projection.",
+          "name": "The name shown in projection lists and selectors.",
+          "description": "A short description of the projection's purpose.",
+          "componentId": "The package-qualified ID of the SDK component used by the projection.",
+          "data": "Named data reads, each with its source, read method, and declared parameter bindings.",
+          "operations": "Named operations the projection binds explicitly, with their owner operation and any declared target.",
+          "config": "The configuration values supplied to the SDK component.",
+          "inputs": "The types of named values supplied by a placement.",
+          "outputs": "The types of named values the projection exposes to its host.",
+          "conversationEntry": "The declared conversation entry for opening a composer from this projection.",
+          "metricId": "The ID of the registered MetricView on a source-card chart projection.",
+          "visibility": "The initial sharing scope recorded for the projection.",
+          "domainId": "The ID of the domain that owns the record.",
+          "ownerId": "The ID of the projection's registered owner.",
+          "revision": "The current revision used to check for concurrent edits at save time.",
+          "createdAt": "The creation time in ISO 8601 format.",
+          "updatedAt": "The most recent update time in ISO 8601 format.",
+          "editable": "Whether the current reader has the edit Grant for this projection."
+        }
+      },
+      "productPanel": {
+        "definition": "A reusable unit of content composed of Vue page code and a panel declaration.",
+        "rules": "Domain registrants create panels. The actual application entry has its own admission check, each panel or member resource requires its own use Grant with denied members withheld individually, and editing, sharing, or deleting a panel requires its edit Grant; the data or operation owner authorizes business reads and writes.",
+        "properties": {
+          "id": "The stable identifier of the panel.",
+          "name": "The name shown in panel lists and selectors.",
+          "description": "A short description of the panel's purpose.",
+          "content": "The HTML template and Vue module, with optional styles, usage notes, and localized messages.",
+          "manifest": "The declaration of state fields, member references and their connections, and event wiring.",
+          "theme": "The panel's light and dark theme overrides.",
+          "template": "Whether this panel is designated for reuse as a template.",
+          "visibility": "The initial sharing scope recorded for the panel.",
+          "domainId": "The ID of the domain that owns the record.",
+          "ownerId": "The ID of the panel's registered owner.",
+          "revision": "The current revision used to check for concurrent edits at save time.",
+          "createdAt": "The creation time in ISO 8601 format.",
+          "updatedAt": "The most recent update time in ISO 8601 format.",
+          "editable": "Whether the current reader has the edit Grant for this panel."
+        }
+      }
     }
   },
 };

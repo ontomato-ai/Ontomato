@@ -3,7 +3,17 @@ import { defineComponent, h } from "vue";
 import { createMemoryHistory, createRouter, RouterView, type RouteRecordRaw } from "vue-router";
 import type { CandidatePanelSource } from "@ontomato/contracts/panel-host";
 import { panelAddress } from "@ontomato/contracts/panel-host";
-import { ACTION, APPLICATION, OBJECT_TYPE, ROLE, USER, WORKFLOW } from "@ontomato/contracts/platform-object-types";
+import {
+  ACTION,
+  APPLICATION,
+  BUSINESS_KNOWLEDGE,
+  OBJECT_TYPE,
+  ONTOLOGY_TYPE,
+  PRODUCT_PROJECTION,
+  ROLE,
+  USER,
+  WORKFLOW,
+} from "@ontomato/contracts/platform-object-types";
 import { productPanelInputSchema, productProjectionInputSchema, type ProductProjection } from "@ontomato/contracts/product-panels";
 import type { GraphCanvasEdge, GraphCanvasNode, GraphCanvasPoint } from "@ontomato/foundation-ui/graph/g6";
 import { appBuilderPages } from "../../../../../packages/platform-web/src/workbench-routes";
@@ -155,6 +165,14 @@ function memberData({ dataName, inputs, runtimeParams }: Read): unknown {
           derived: false,
           owner: "java-action",
         },
+        {
+          id: "projection.binds-target",
+          from: PRODUCT_PROJECTION,
+          to: [OBJECT_TYPE, ONTOLOGY_TYPE],
+          labelKey: "platformOntology.relations.projection.binds-target",
+          derived: false,
+          owner: "node-product-panels",
+        },
       ],
     };
   }
@@ -240,6 +258,54 @@ function memberData({ dataName, inputs, runtimeParams }: Read): unknown {
           },
         ],
         relations: [{ relationKind: "action.targets-object-type", status: "ok", edgeCount: 1 }],
+      };
+    }
+    if (node.className === PRODUCT_PROJECTION && node.primaryKey === "proj-kb") {
+      return {
+        node: { className: PRODUCT_PROJECTION, primaryKey: "proj-kb", label: "Knowledge List", layer: "product" },
+        neighbors: [
+          {
+            className: ONTOLOGY_TYPE,
+            primaryKey: BUSINESS_KNOWLEDGE,
+            label: "Business knowledge",
+            layer: "capability",
+          },
+        ],
+        edges: [
+          {
+            id: "e-proj-kb-type",
+            relationKind: "projection.binds-target",
+            from: { className: PRODUCT_PROJECTION, primaryKey: "proj-kb" },
+            to: { className: ONTOLOGY_TYPE, primaryKey: BUSINESS_KNOWLEDGE },
+            direction: "outgoing",
+            derived: false,
+            binding: { reads: ["query"] },
+          },
+        ],
+        relations: [{ relationKind: "projection.binds-target", status: "ok", edgeCount: 1 }],
+      };
+    }
+    if (node.className === ONTOLOGY_TYPE && node.primaryKey === BUSINESS_KNOWLEDGE) {
+      return {
+        node: {
+          className: ONTOLOGY_TYPE,
+          primaryKey: BUSINESS_KNOWLEDGE,
+          label: "Business knowledge",
+          layer: "capability",
+        },
+        neighbors: [{ className: PRODUCT_PROJECTION, primaryKey: "proj-kb", label: "Knowledge List", layer: "product" }],
+        edges: [
+          {
+            id: "e-proj-kb-type",
+            relationKind: "projection.binds-target",
+            from: { className: PRODUCT_PROJECTION, primaryKey: "proj-kb" },
+            to: { className: ONTOLOGY_TYPE, primaryKey: BUSINESS_KNOWLEDGE },
+            direction: "incoming",
+            derived: false,
+            binding: { reads: ["query"] },
+          },
+        ],
+        relations: [{ relationKind: "projection.binds-target", status: "ok", edgeCount: 1 }],
       };
     }
     return {
@@ -430,6 +496,44 @@ it("runs instance exploration, relations inspection, user switching, highlight q
     expect(sent.every((r) => r.credential === READER)).toBe(true);
     expect(sent.some((r) => r.path.startsWith("/api/platform-ontology/"))).toBe(false);
     expect(sent.some((r) => r.path.startsWith("/api/panel-operation") || ["PUT", "DELETE", "PATCH"].includes(r.method))).toBe(false);
+  } finally {
+    app.unmount();
+  }
+});
+
+it("selects and promotes a platform:OntologyType node bound by a projection without state rejection", async () => {
+  const { app, sent } = await preview({
+    mode: "instance",
+    start: { className: PRODUCT_PROJECTION, primaryKey: "proj-kb" },
+  });
+  try {
+    await vi.waitFor(() => {
+      expect(canvasRecorder.nodes.map((n) => n.label).sort()).toEqual(["Business knowledge", "Knowledge List"]);
+    }, { timeout: 2500 });
+
+    const typeNodeId = canvasRecorder.nodes.find((n) => n.label === "Business knowledge")!.id;
+    canvasRecorder.emitSelect!([typeNodeId]);
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('.panel-host-coded [data-relation-kind="projection.binds-target"]')).not.toBeNull();
+    }, { timeout: 2500 });
+
+    const promoteBtn = document.querySelector<HTMLButtonElement>('.panel-host-coded [data-cap-action="use-selected-as-start"]')!;
+    expect(promoteBtn.disabled).toBe(false);
+    promoteBtn.click();
+
+    await vi.waitFor(() => {
+      expect(promoteBtn.disabled).toBe(true);
+      expect(
+        reads(sent).some((r) => {
+          const node = (r.runtimeParams?.node ?? r.inputs.node) as { className?: string; primaryKey?: string } | undefined;
+          return r.memberPath[0].member === "graph"
+            && r.dataName === "neighbors"
+            && node?.className === ONTOLOGY_TYPE
+            && node?.primaryKey === BUSINESS_KNOWLEDGE;
+        }),
+      ).toBe(true);
+    }, { timeout: 2500 });
   } finally {
     app.unmount();
   }
