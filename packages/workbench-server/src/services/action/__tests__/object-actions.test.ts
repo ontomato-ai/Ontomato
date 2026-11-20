@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   describePanelOperationFromDeclaration, panelOperationDeclarationSchema, panelOwnerOperationDescriptorSchema,
 } from "@ontomato/contracts/panel-operations";
 import { HttpError } from "../../../utils/errors";
+import { createCustomerOntologyReadAdapter } from "../../ontology-model/customer-reads";
 import type { PanelOperationHost } from "../../product-panels/server-operations";
 import {
   ACTIONS_EXECUTE, OBJECT_ACTION_TARGET, describeObjectAction, objectActionDeclaration, objectActionOperation,
@@ -14,6 +15,8 @@ import {
  * engine's form as the authority, described from that same declaration, and executed through the owner's form and execute
  * with the owner's own refusals.
  */
+
+vi.mock("../../ontology-model/customer-reads", () => ({ createCustomerOntologyReadAdapter: vi.fn() }));
 
 type Init = NonNullable<Parameters<typeof fetch>[1]>;
 function hostWith(answers: Record<string, (init: Init) => Response>) {
@@ -179,6 +182,20 @@ describe("executing an action on a customer object", () => {
     expect(operation.targetSchema.safeParse(target).success).toBe(true);
     expect(operation.targetSchema.safeParse({ ...target, primaryKey: "00124" }).success).toBe(false);
     expect(operation.targetSchema.safeParse({ ...target, objectType: "Invoice" }).success).toBe(false);
+  });
+
+  it("names the object as the confirming person reads it from the customer ontology owner", async () => {
+    const record = vi.fn(async () => ({ primaryKey: "00123", label: "Order 00123 · ACME", fields: {} }));
+    vi.mocked(createCustomerOntologyReadAdapter).mockReturnValue({ record } as never);
+    const { host } = hostWith({});
+
+    expect(await operation.targetLabel(host)).toBe("Order 00123 · ACME");
+    expect(createCustomerOntologyReadAdapter).toHaveBeenCalledWith(host.initiator.owner, host.initiator.credentials);
+    expect(record).toHaveBeenCalledWith("Order", "00123");
+
+    const refusal = new HttpError(403, "No permission to read this object", "CUSTOMER_DATA_PERMISSION");
+    record.mockRejectedValueOnce(refusal);
+    await expect(operation.targetLabel(host)).rejects.toBe(refusal);
   });
 
   it("checks the values through the owner's form, then executes its typed parameters", async () => {
