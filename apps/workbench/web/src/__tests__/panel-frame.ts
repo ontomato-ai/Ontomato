@@ -2,7 +2,7 @@ import { vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createApp, defineComponent, h, ref, resolveComponent } from "vue";
+import { createApp, defineComponent, h, ref, resolveComponent, type App } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { definePanel, type PanelManifest, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
@@ -27,7 +27,9 @@ import publicEn from "@ontomato/workbench-ui/locales/en";
 import ElementPlus from "element-plus";
 import type { Router } from "vue-router";
 import elementEn from "element-plus/es/locale/lang/en";
-import { installAppHost, installProductEmbedding } from "../../../../../packages/platform-web/src/app-host";
+import { installAppHost, installProductEmbedding, servePageComposer } from "../../../../../packages/platform-web/src/app-host";
+import { pageCounterKey, type PageCounter } from "../../../../../packages/agent-shell-ui/src/page-counter";
+import { servePageComposerKey } from "../../../../../packages/agent-shell-ui/src/page-composer-entry";
 
 import type { ConfirmPanelOperation, PanelHumanOperations } from "../../../../../packages/apps-sdk/src/panel/human-operations";
 import { randomId } from "@ontomato/contracts/random-id";
@@ -419,8 +421,24 @@ export function hostMessageOf(frameDocument: string): PanelHostMessage {
  * Mounts a page of the platform as the shell does — its router, its language and Element Plus — into the platform's
  * document, and gives back the element it is drawn in and the app.
  */
-export function mountPlatformPage(render: () => ReturnType<typeof h>, router: Router) {
-  const app = createApp({ render }).use(router).use(workbenchI18n()).use(ElementPlus);
+/** A page counter offering no agents: the page's own composer stays away unless a test gives it agents. */
+const noAgents: PageCounter = {
+  agents: async () => [],
+  pageAgents: async () => ({ agents: [] }),
+  preferredAgentId: ref(null),
+  ask: () => { throw new Error("This test sends nothing from a page's composer"); },
+};
+
+/** What the platform gives every page: the composer registry it installs and the page counter its layout provides. */
+export function providePlatform(app: App, counter: PageCounter = noAgents) {
+  app.provide(servePageComposerKey, servePageComposer);
+  app.provide(pageCounterKey, counter);
+  return app;
+}
+
+/** Mounts a page as the platform does (`providePlatform`), with `counter` for its own composer, or one offering no agents. */
+export function mountPlatformPage(render: () => ReturnType<typeof h>, router: Router, counter: PageCounter = noAgents) {
+  const app = providePlatform(createApp({ render }).use(router).use(workbenchI18n()).use(ElementPlus), counter);
   const element = document.createElement("div");
   document.body.append(element);
   app.mount(element);

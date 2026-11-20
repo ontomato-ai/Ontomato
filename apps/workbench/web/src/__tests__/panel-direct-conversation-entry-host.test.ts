@@ -1,24 +1,29 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { h } from "vue";
+import { h, ref } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
+import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import type { DirectProjection, ProductPanel } from "@ontomato/contracts/product-panels";
+import type { PageCounter } from "../../../../../packages/agent-shell-ui/src/page-counter";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
-import { servePageComposer } from "../../../../../packages/platform-web/src/app-host";
 import { installPlatform, mountPlatformPage, nothingAt, panelAnswer, panelSnapshot, panelUse, PLACE_EVERY_MEMBER, type Sent } from "./panel-frame";
 
 /*
- * A conversation entry in a panel run in the platform's document, at its application's address (big main's ruling, 2026-11-20):
- * pressed, it expands the page's composer — the one shown last — with the agent and sentence its projection declares,
- * through the same function a frame's entry reaches once checked. Nothing is sent.
+ * A conversation entry in a panel at its application's own address (big main's ruling, 2026-11-21): the page has the
+ * platform's composer at its foot, and pressing the entry expands that composer with the agent and sentence the member's
+ * projection declares — the agent chosen among the page's own, the sentence written in, nothing sent.
  *
- * Real route, panel host, SDK instance and component; the network and the composer are stand-ins.
+ * Real route, panel host, SDK instance and component, and the platform's own composer and its registry; the network and
+ * the counter's agents are stand-ins.
  *
- * What this rules out: a panel's entry the host never hands a composer to (it threw before the host passed one).
+ * What this rules out: a panel page with no composer for its entry ("This page has no composer"); an entry that opens
+ * the composer without its agent or its sentence; an entry that sends.
  */
 
 const application = "app-knowledge";
 const use = panelUse("use-knowledge", "knowledge", "panel-knowledge", `/applications/${application}/knowledge`);
+const regular: AgentHostAgent = { id: "agent-regular", name: "Regular assistant", description: "", icon: null, enabled: true };
+const governor: AgentHostAgent = { id: "agent-knowledge-governance", name: "Knowledge governance", description: "", icon: null, enabled: true };
 const governance: PanelConversationEntry = {
   target: { kind: "id", id: "agent-knowledge-governance" },
   prefill: "Check this knowledge item",
@@ -50,29 +55,42 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-it("expands the page's composer with the member's declared agent and sentence, sending nothing", async () => {
-  const expanded: PanelConversationEntry[] = [];
-  const stopServing = servePageComposer(entry => expanded.push(entry));
+it("expands the page's own composer with the member's declared agent and sentence, sending nothing", async () => {
   const sent = installPlatform(answer);
+  const ask = vi.fn();
+  const counter: PageCounter = {
+    agents: async () => [regular, governor],
+    // The page's skill offers both, the regular assistant first as its default.
+    pageAgents: async () => ({ agents: [regular, governor], defaultAgentId: regular.id }),
+    preferredAgentId: ref(null),
+    ask,
+  };
   const router = createRouter({ history: createMemoryHistory(), routes: [{
     path: "/applications/:applicationId/:panelPath",
     component: PanelApplicationRoute,
     props: route => ({ applicationId: route.params.applicationId }),
   }] });
   await router.push(use.path);
-  const { app, element } = mountPlatformPage(() => h(RouterView), router);
+  const { app, element } = mountPlatformPage(() => h(RouterView), router, counter);
   try {
+    const input = await vi.waitFor(() => {
+      const found = element.querySelector<HTMLTextAreaElement>(".page-ask textarea");
+      if (!found) throw new Error("The page's composer is not drawn yet");
+      return found;
+    });
+    expect(element.querySelector(".page-ask")?.textContent).toContain(regular.name);
     const button = await vi.waitFor(() => {
       const found = element.querySelector<HTMLButtonElement>('[data-member="governance"] button');
       if (!found) throw new Error("The entry is not drawn yet");
       return found;
     });
     button.click();
-    await vi.waitFor(() => expect(expanded).toEqual([governance]));
+    await vi.waitFor(() => expect(input.value).toBe(governance.prefill));
+    expect(element.querySelector(".page-ask")?.textContent).toContain(governor.name);
     expect(element.querySelector('[data-member="governance"] [role=alert]')).toBeNull();
+    expect(ask).not.toHaveBeenCalled();
     expect(sent.some(request => request.method !== "GET")).toBe(false);
   } finally {
     app.unmount();
-    stopServing();
   }
 });
