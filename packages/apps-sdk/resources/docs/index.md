@@ -2,10 +2,10 @@
 
 Follow the [Product Layer and Application Composition Standard](https://infohub.eloyzh.de/o/standard-66842053) when composing a panel application. Use this installed SDK version's component catalogue and contracts. The hosted ProductAsset and frozen release examples below apply to maintenance of existing hosted applications.
 
-Panel applications compose registered projections in a panel host. The panel supplies a layout, state and optional recipes. The platform supplies the sandboxed frame, the SDK and the identity for its reads. Existing hosted source applications use the static HTML and ES module setup in [Page skeleton](#page-skeleton).
-
-This directory is one exact version. It never changes, and it stays installed when the platform is upgraded, so an app
-keeps the behaviour of the version it names.
+Panel applications compose registered projections using the deployment's current SDK. Each projection names its
+owner-provided data and operations. A panel provides the layout, typed state and optional recipes. The platform renders
+a panel without a module directly and supplies the current data. For maintenance of an existing hosted source application,
+see [Page skeleton](#page-skeleton).
 
 ## What is in this version
 
@@ -46,47 +46,35 @@ scripts, styles or fonts from the internet, because many installations have no i
 
 ## Compose a panel
 
-Choose the base components and ports in [the catalog](components.md). Each business slot references a registered
-projection that binds one of those components to a real ontology element. Put slot bindings, typed state and operations in
-the panel manifest. Mark state intended to travel in the address with `deepLink`. A slot's input maps declared projection
-inputs to the panel's state. Use existing platform resource clients and report any missing client to its owner.
+Choose official components and ports from [the catalogue](components.md). A projection names an owner read, its
+source and parameters, and the component which renders the result. Map the member's inputs and outputs to the
+panel's typed state. Mark state intended for the address with `deepLink`. Keep business rules in the owning capability.
 
-The author workspace contains these files at its root.
-
-| File | Content |
+| Workspace file | Content |
 | --- | --- |
-| `panel.html` | HTML fragment with a `div#app` and a visible `<projection slot="…"></projection>` for each business slot |
-| `panel.mjs` | ES module that calls `mountPanel` from `@ontomato/sdk/panel`. Use only the host's import map |
-| `panel.json` | The JSON object `{manifest, sdkVersion, content?}`. Optional `content.messages` supplies translations in the registration format. Use the exact installed SDK directory name, including the full content hash for a development build |
-| `recipes.md` | Optional task guidance for the panel's derived skill |
+| `panel.html` | Declarative layout with `<panel-member ref="…">` references to manifest members |
+| `panel.json` | `{manifest, content?}`. Use `manifest.members` for the placements and `content.messages` for optional translations |
+| `recipes.md` | Optional task guidance |
 
-Use `definePanel` to validate the manifest at authoring time and serialize its result as the `manifest` in `panel.json`.
-See [the SDK reference](reference.md) for the declaration API. The host reads the JSON description and gives it to
-`mountPanel` before the module runs. The HTML can be the component's template.
-
-For panel text, use `content.messages` with locale tags, flat keys and named placeholders such as `{name}`.
-For example, `{"en":{"settings.title":"Settings for {name}"}}` supplies `settings.title` to the panel's `t()`.
-The translation object may occupy up to 256 KiB as UTF-8 JSON. The preview source carries the same object
-under `panel.content.messages`, which is also the content used for registration.
+A layout can place a declared member by name.
 
 ```html
-<div id="app">
-  <projection slot="details"></projection>
-</div>
+<section flow="column">
+  <panel-member ref="details"></panel-member>
+</section>
 ```
 
-```js
-import { mountPanel } from "@ontomato/sdk/panel";
-await mountPanel({});
-```
+Declare `details` in `manifest.members` with the actual `target.projectionId`. Give typed inputs for the declared
+owner read, such as the state that selects an object. Use the deployed component catalogue to check which fields
+and operations the component exposes. For translations, use locale tags, flat message keys and named placeholders
+such as `{name}` in `content.messages`.
 
-Match `details` to a declared slot with a real projection ID. The SDK restores address state, reports page context,
-receives drafts for the declared forms and dispatches declared operations. Owner-provided form descriptions determine
-which values are editable. Keep business rules in the owner service.
+Run the App Builder skill's `ontomato panel check` on the workspace directory. It uses the current release's layout
+parser and declarations. Register the requested projections, panel and application uses through their owners, then open
+the application's declared entry.
 
-Open the workspace candidate as its author and test it before registering current definitions. The panel host supplies
-the workspace's test execution context. See [Build-test previews](#build-test-previews) for owner refusals and the
-app-builder technical guide for registration commands and application routes.
+A maintained panel with a module may continue to use the host's published module API. It shares the current SDK and the
+same manifest members. Existing code can reference a member with the public `<projection slot="…">` attribute.
 
 ## Page skeleton
 
