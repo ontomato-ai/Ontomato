@@ -1351,6 +1351,7 @@ test("the author type table and live descriptions share operation declarations",
   });
   const table = {
     objectTypes: { [SCHEDULED_TASK]: { reads: platformObjectTypes[SCHEDULED_TASK].reads, operations: [run, save] } },
+    resultSchemas: { panelRecordList: { type: "array" }, panelRecord: { type: "object" }, panelFormDescription: { type: "object" } },
   };
   assert.deepEqual(platformTypeTableResponseSchema.parse(table), table);
   assert.equal(panelOperationDeclarationSchema.safeParse({ ...run, label: "Run now" }).success, false);

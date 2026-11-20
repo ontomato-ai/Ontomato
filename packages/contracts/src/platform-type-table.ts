@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { runtimeKeySchema } from "./agent-runtime-values";
+import { runtimeJsonObjectSchema, runtimeKeySchema } from "./agent-runtime-values";
 import { panelOperationDeclarationSchema, panelReadResultIdSchema } from "./panel-operations";
 import { panelReadParameterSchemas } from "./panel-projection";
 import { platformOntologyLayers, type PanelReadParameterId } from "./platform-object-types";
@@ -48,6 +48,8 @@ export type UnavailableObjectAction = z.infer<typeof unavailableObjectActionSche
 /** The authenticated author catalogue, keyed by the owner type's ID. */
 export const platformTypeTableResponseSchema = z.object({
   objectTypes: z.record(runtimeKeySchema, platformTypeTableEntrySchema),
+  /** Standalone JSON Schemas for the distinct result IDs referenced by the returned reads. */
+  resultSchemas: z.record(z.lazy(() => panelReadResultIdSchema), runtimeJsonObjectSchema),
   /** Broken published actions have no executable declaration. A missing target has no object type. */
   unavailableActions: z.array(unavailableObjectActionSchema).optional(),
 }).strict();

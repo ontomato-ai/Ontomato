@@ -159,6 +159,10 @@ it("reads the authoritative operation type table while isolating stale published
   expect(objectTypes["platform:ScheduledTask"].operations).toContainEqual(expect.objectContaining({
     id: "schedules.runNow", target: { source: "input", input: "task" }, batch: false, effect: "write",
   }));
+  const usedResults = new Set(Object.values(objectTypes).flatMap(entry => Object.values(entry.reads ?? {}).map(read => read.result)));
+  expect(new Set(Object.keys(table.resultSchemas))).toEqual(usedResults);
+  expect(table.resultSchemas.panelRecordQuery).toMatchObject({ properties: { rows: { type: "array" } } });
+  expect(table.resultSchemas.panelRecord).toMatchObject({ properties: { primaryKey: { type: "string" } } });
   expect(objectTypes.expense.operations).toEqual([expect.objectContaining({
     id: "approve-expense", target: { source: "input", input: "target" }, batch: false, effect: "write",
     inputSchema: expect.objectContaining({
