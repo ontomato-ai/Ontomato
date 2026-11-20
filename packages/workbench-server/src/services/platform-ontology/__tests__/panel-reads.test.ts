@@ -295,6 +295,7 @@ describe("createPlatformOntologyReadAdapter", () => {
     ]);
 
     const projectionSchema = directProjectionPortsSchema.superRefine(validateDirectProjection);
+    const platformType = (id: string) => ({ kind: "PlatformObjectType" as const, id });
     const anyLayerObject: {
       kind: "object-union";
       layers: ["fact", "capability", "governance", "product"];
@@ -306,8 +307,8 @@ describe("createPlatformOntologyReadAdapter", () => {
         inputs: {},
         outputs: {},
         data: {
-          nodes: { source: { type: OBJECT_TYPE }, read: "list", params: {} },
-          edges: { source: { type: RELATIONSHIP }, read: "list", params: {} },
+          nodes: { source: { type: platformType(OBJECT_TYPE) }, read: "list", params: {} },
+          edges: { source: { type: platformType(RELATIONSHIP) }, read: "list", params: {} },
         },
         config: { edgeEnds: { source: "/fromclass", target: "/toclass" } },
       },
@@ -320,16 +321,22 @@ describe("createPlatformOntologyReadAdapter", () => {
           selectedType: { kind: "scalar", type: "string" },
           query: { kind: "scalar", type: "string" },
           node: anyLayerObject,
+          layers: { kind: "json" },
+          relationKinds: { kind: "json" },
         },
         outputs: {
           selectedNode: anyLayerObject,
           selectedType: { kind: "scalar", type: "string" },
         },
         data: {
-          schema: { source: { type: ONTOLOGY_TYPE }, read: "schema", params: {} },
-          counts: { source: { type: ONTOLOGY_TYPE }, read: "counts", params: {} },
-          start: { source: { type: ONTOLOGY_TYPE }, read: "start", params: {} },
-          neighbors: { source: { type: ONTOLOGY_TYPE }, read: "neighbors", params: { node: { input: "node" } } },
+          schema: { source: { type: platformType(ONTOLOGY_TYPE) }, read: "schema", params: {} },
+          counts: { source: { type: platformType(ONTOLOGY_TYPE) }, read: "counts", params: {} },
+          start: { source: { type: platformType(ONTOLOGY_TYPE) }, read: "start", params: {} },
+          neighbors: {
+            source: { type: platformType(ONTOLOGY_TYPE) },
+            read: "neighbors",
+            params: { node: { input: "node" }, layers: { input: "layers" }, relationKinds: { input: "relationKinds" } },
+          },
         },
         config: { showLayerFilter: true, showLegend: true, showToolbar: true },
       },
@@ -338,7 +345,7 @@ describe("createPlatformOntologyReadAdapter", () => {
         inputs: { selected: anyLayerObject },
         outputs: { selected: anyLayerObject },
         data: {
-          neighbors: { source: { type: ONTOLOGY_TYPE }, read: "neighbors", params: { node: { input: "selected" } } },
+          neighbors: { source: { type: platformType(ONTOLOGY_TYPE) }, read: "neighbors", params: { node: { input: "selected" } } },
         },
         config: { emptyText: "capMap.relationsEmpty" },
       },
@@ -352,7 +359,7 @@ describe("createPlatformOntologyReadAdapter", () => {
         outputs: { selected: anyLayerObject },
         data: {
           objects: {
-            source: { type: ONTOLOGY_TYPE },
+            source: { type: platformType(ONTOLOGY_TYPE) },
             read: "objects",
             params: { type: { input: "type" }, keyword: { input: "keyword" }, page: { input: "page" } },
           },
@@ -365,10 +372,10 @@ describe("createPlatformOntologyReadAdapter", () => {
           keyword: { kind: "scalar", type: "string" },
           page: { kind: "json" },
         },
-        outputs: { selected: anyLayerObject },
+        outputs: { selected: { kind: "object", objectType: USER } },
         data: {
           objects: {
-            source: { type: ONTOLOGY_TYPE },
+            source: { type: platformType(ONTOLOGY_TYPE) },
             read: "objects",
             params: { type: { literal: USER }, keyword: { input: "keyword" }, page: { input: "page" } },
           },
