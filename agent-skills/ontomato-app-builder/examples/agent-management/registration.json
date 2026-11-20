@@ -1,0 +1,261 @@
+{
+  "projections": [
+    {
+      "id": "example-agent-management-list",
+      "mode": "create",
+      "input": {
+        "name": "Agent Definition list",
+        "description": "",
+        "visibility": "domain",
+        "componentId": "@ontomato/sdk:ObjectList",
+        "inputs": {},
+        "outputs": {
+          "selected": {
+            "kind": "object",
+            "objectType": "platform:AgentDefinition"
+          }
+        },
+        "config": {},
+        "data": {
+          "rows": {
+            "source": {
+              "type": {
+                "kind": "PlatformObjectType",
+                "id": "platform:AgentDefinition"
+              }
+            },
+            "read": "list",
+            "params": {}
+          }
+        }
+      }
+    },
+    {
+      "id": "example-agent-management-detail",
+      "mode": "create",
+      "input": {
+        "name": "Agent Definition detail",
+        "description": "",
+        "visibility": "domain",
+        "componentId": "@ontomato/sdk:ObjectSummary",
+        "inputs": {
+          "item": {
+            "kind": "object",
+            "objectType": "platform:AgentDefinition"
+          }
+        },
+        "outputs": {},
+        "config": {},
+        "data": {
+          "record": {
+            "source": {
+              "object": {
+                "input": "item"
+              }
+            },
+            "read": "record",
+            "params": {}
+          }
+        }
+      }
+    },
+    {
+      "id": "example-agent-management-form",
+      "mode": "create",
+      "input": {
+        "name": "Agent Definition form",
+        "description": "",
+        "visibility": "domain",
+        "componentId": "@ontomato/sdk:ObjectForm",
+        "inputs": {
+          "item": {
+            "kind": "object",
+            "objectType": "platform:AgentDefinition"
+          }
+        },
+        "outputs": {},
+        "config": {},
+        "data": {
+          "form": {
+            "source": {
+              "object": {
+                "input": "item"
+              }
+            },
+            "read": "form",
+            "params": {}
+          },
+          "createForm": {
+            "source": {
+              "type": {
+                "kind": "PlatformObjectType",
+                "id": "platform:AgentDefinition"
+              }
+            },
+            "read": "createForm",
+            "params": {}
+          }
+        }
+      }
+    },
+    {
+      "id": "example-agent-management-newRecord",
+      "mode": "create",
+      "input": {
+        "name": "Agent Definition newRecord",
+        "description": "",
+        "visibility": "domain",
+        "componentId": "@ontomato/sdk:SegmentedControl",
+        "inputs": {},
+        "outputs": {
+          "value": {
+            "kind": "scalar",
+            "type": "string"
+          }
+        },
+        "config": {
+          "options": [
+            {
+              "value": "new",
+              "label": "New"
+            }
+          ]
+        },
+        "data": {}
+      }
+    }
+  ],
+  "panels": [
+    {
+      "id": "example-agent-management",
+      "mode": "create",
+      "input": {
+        "name": "Agent Definition",
+        "description": "",
+        "visibility": "domain",
+        "manifest": {
+          "state": {
+            "selected": {
+              "type": {
+                "kind": "object",
+                "objectType": "platform:AgentDefinition"
+              },
+              "deepLink": true
+            },
+            "newAction": {
+              "type": {
+                "kind": "scalar",
+                "type": "string"
+              }
+            }
+          },
+          "members": {
+            "list": {
+              "target": {
+                "projectionId": "example-agent-management-list"
+              },
+              "outputs": {
+                "selected": {
+                  "state": "selected"
+                }
+              }
+            },
+            "detail": {
+              "target": {
+                "projectionId": "example-agent-management-detail"
+              },
+              "inputs": {
+                "item": {
+                  "state": "selected"
+                }
+              }
+            },
+            "form": {
+              "target": {
+                "projectionId": "example-agent-management-form"
+              },
+              "inputs": {
+                "item": {
+                  "state": "selected"
+                }
+              }
+            },
+            "newRecord": {
+              "target": {
+                "projectionId": "example-agent-management-newRecord"
+              },
+              "outputs": {
+                "value": {
+                  "state": "newAction"
+                }
+              }
+            }
+          },
+          "events": {
+            "newRecord": {
+              "on": {
+                "member": "newRecord",
+                "output": "value"
+              },
+              "do": {
+                "set": {
+                  "fields": {
+                    "selected": {
+                      "literal": null
+                    },
+                    "newAction": {
+                      "literal": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "content": {
+          "html": "<section flow=\"column\" gap=\"medium\">\n  <panel-member ref=\"newRecord\"></panel-member>\n  <panel-member ref=\"list\"></panel-member>\n  <panel-member ref=\"detail\"></panel-member>\n  <panel-member ref=\"form\"></panel-member>\n</section>\n"
+        }
+      }
+    }
+  ],
+  "applications": [
+    {
+      "id": "example-agent-management",
+      "mode": "create",
+      "input": {
+        "entry": {
+          "path": "/applications/example-agent-management",
+          "renderer": "panels"
+        },
+        "entryAccess": [
+          "domain-member"
+        ],
+        "declaration": {
+          "names": {
+            "en": "Agent Definition"
+          },
+          "descriptions": {
+            "en": "Manage Agent Definition"
+          },
+          "icon": "settings",
+          "groups": [],
+          "permissions": []
+        },
+        "panelUses": [
+          {
+            "id": "example-agent-management-use",
+            "pageKey": "example-agent-management",
+            "panelId": "example-agent-management",
+            "path": "/applications/example-agent-management/manage",
+            "access": {
+              "kind": "domain-member"
+            },
+            "names": {
+              "en": "Agent Definition"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

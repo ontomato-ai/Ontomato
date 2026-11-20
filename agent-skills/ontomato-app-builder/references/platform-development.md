@@ -42,12 +42,13 @@ directory for the registered definitions and wiring.
 
 The task-list projection uses `data.rows = { source: { type: { kind: "PlatformObjectType", id: "platform:ScheduledTask" } }, read: "list", params: {} }`.
 The summary uses `data.record = { source: { object: { input: "task" } }, read: "record", params: {} }`. The form
-binds `params.values` to `{ input: "values" }` and `params.changedField` to `{ input: "changedField" }`.
+supplies `values` and `changedField` at runtime through its component declaration.
 The list's `selected` output and the summary, form and button inputs share a panel state of type
 `{ kind: "object", objectType: "platform:ScheduledTask" }`. The member wiring maps the values through `{ state: "selectedTask" }`.
 The button reads `data.operation = { source: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, read: "describe", params: {} }`.
-Its owner description names the write effect and targets the `task` input. In that placement the operation is
-`run.runNow`, with writes going through the operation dispatcher.
+Its owner description names the write effect and targets the `task` input. The operation ID is the member key
+followed by the last segment of the owner operation ID, here `run.runNow`. One object target runs a single operation.
+A list of object targets runs a batch when the owner declares batch support.
 
 Use a real selected task UUID for `<taskId>` in the following summary read. The reader's authentication and the
 registered use determine whether this request can read the task.
@@ -98,7 +99,8 @@ For Business Knowledge at `/ontology/knowledge`, the owner supplies these rules.
 
 For Business Knowledge search, give the list, status counts and detail the same panel state as their `search` input.
 In `query`, `counts` and `record`, map `params.search` to `{ input: "search" }`. The counts read also takes
-`params.by: { literal: "status" }`. The detail receives the selected knowledge record. Use `ObjectSummary` to show
+`params.by: { literal: "status" }`. Bind the status state directly to `query.params.status`.
+The detail receives the selected knowledge record. Use `ObjectSummary` to show
 the full body as text with its original line breaks. The owner returns highlight ranges in the record for the current search.
 
 ## Add an official SDK component

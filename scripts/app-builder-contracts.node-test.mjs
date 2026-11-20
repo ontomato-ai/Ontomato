@@ -24,7 +24,7 @@ for (const [command, option] of [
 
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -127,7 +127,19 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     };
     export const registerProductPanelRequestSchema = { parse };
     export const registerProductProjectionRequestSchema = { parse };
+    export const platformObjectTypes = {
+      "platform:AgentDefinition": {
+        reads: {
+          list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+          record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+          form: { source: "object", parameterMode: "fixed", params: {}, result: "panelFormDescription" },
+          createForm: { source: "type", parameterMode: "fixed", params: {}, result: "panelFormDescription" },
+        },
+        operations: ["platform:AgentDefinition.save"],
+      },
+    };
     export const panelDefinitionContentSchema = {
+      parse,
       safeParse(value) {
         return value.content.html === "<bad>"
           ? { success: false, error: { issues: [{ path: ["content", "html"], params: { line: 1, column: 2 }, message: "Rejected by the release parser" }] } }
@@ -212,6 +224,15 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await writeFile(layout, "<bad>");
     await assert.rejects(run("panel", "check", directory), error => error.stderr.includes(`${layout}:1:2: Rejected by the release parser`));
     assert.equal(requests.some(([method, url]) => method !== "GET" || url === projectionPath), false);
+    requests.length = 0;
+    const draft = join(directory, "manager");
+    const scaffold = await run("panel", "scaffold", "platform:AgentDefinition", draft, "--id", "example-agent-management", "--operation", "platform:AgentDefinition.save");
+    assert.equal(JSON.parse(scaffold.stdout).entry, "/applications/example-agent-management/manage");
+    for (const name of ["panel.html", "panel.json", "registration.json"]) {
+      const sample = await readFile(join("agent-skills/ontomato-app-builder/examples/agent-management", name), "utf8");
+      assert.equal(await readFile(join(draft, name), "utf8"), sample);
+    }
+    assert.deepEqual(requests.map(([method]) => method), ["GET", "GET"]);
   } finally {
     await rm(directory, { recursive: true });
     await new Promise(resolve => server.close(resolve));

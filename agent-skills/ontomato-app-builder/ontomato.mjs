@@ -5,6 +5,7 @@ import { authenticate } from "./identity.mjs";
 import { panelRegistrationClient } from "./panel-registration.mjs";
 import { currentSdkClient, installedPanelSdk } from "./current-sdk.mjs";
 import { checkPanelWorkspace } from "./panel-check.mjs";
+import { managementPanel, writeManagementPanel } from "./panel-scaffold.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -322,6 +323,21 @@ async function checkCurrentPanel(api, directory, materialPath) {
 }
 
 async function panelCommand(api, workspaceId, [command, ...args]) {
+  if (command === "scaffold") {
+    const id = takeOption(args, "--id") ?? undefined;
+    const operations = [];
+    let operation = takeOption(args, "--operation");
+    while (operation !== null) {
+      operations.push(operation);
+      operation = takeOption(args, "--operation");
+    }
+    if (args.length !== 2) die("panel scaffold <type> <new directory> [--id <application id>] [--operation <id>]");
+    const [type, directory] = args;
+    const sdk = currentSdkClient({ workbenchUrl: api.envUrl, headers: headers(api) });
+    const panel = managementPanel(type, await sdk.check(await sdk.current()), { id, operations });
+    await writeManagementPanel(directory, panel);
+    return print({ directory, entry: panel.material.applications[0].input.panelUses[0].path });
+  }
   if (command === "applications" && args.length === 0) {
     return printData(await requestJson(api, "GET", "/platform/applications?purpose=navigation"));
   }
@@ -341,7 +357,7 @@ async function panelCommand(api, workspaceId, [command, ...args]) {
     const collection = command === "projection" ? "projections" : "panels";
     return print(await workbench(api, "GET", `/product-${collection}/${encodeURIComponent(args[0])}`));
   }
-  die("panel requires applications, projection <id>, get <id>, uses <applicationId>, preview <working|commit> [--workspace <id>], check <directory>, or register <json|@file>");
+  die("panel requires applications, projection <id>, get <id>, uses <applicationId>, preview <working|commit> [--workspace <id>], scaffold <type> <directory>, check <directory>, or register <json|@file>");
 }
 
 async function functionCommand(api, [command, ...args]) {
@@ -440,6 +456,7 @@ function usage() {
   panel get <id>
   panel uses <applicationId>
   panel preview <working|commit> [--workspace <id>]
+  panel scaffold <type> <new directory> [--id <application id>] [--operation <id>]
   panel check <directory> [--material <registration file>] [--sdk-dir <installed SDK release directory>]
   panel register <json|@file>
   function list [<filter json|@file>]
