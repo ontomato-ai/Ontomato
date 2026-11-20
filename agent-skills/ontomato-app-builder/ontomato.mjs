@@ -304,14 +304,10 @@ async function workbench(api, method, endpoint, body) {
 }
 const print = value => console.log(JSON.stringify(value, null, 2));
 async function sdkCommand(api, args) {
-  if (args[0] === "current" && args.length === 1) return print(await workbench(api, "GET", "/apps-sdk/current"));
-  if (args[0] !== "read" || (args.length !== 2 && args.length !== 3)) die("sdk requires current or read [<exact version>] <relative path>");
-  const version = args.length === 3 ? args[1] : (await workbench(api, "GET", "/apps-sdk/current")).version;
-  // The CLI reaches the deployment or internal Node URL; only source rendered in the browser uses public paths.
-  const response = await fetch(`${api.envUrl}/apps-sdk/${encodeURIComponent(version)}/${args.at(-1)}`, { headers: headers(api), redirect: "error" });
-  const text = await response.text();
-  if (!response.ok) die(`${response.status}\n${text}`);
-  console.log(text);
+  const sdk = currentSdkClient({ workbenchUrl: api.envUrl, headers: headers(api) });
+  if (args[0] === "current" && args.length === 1) return print(await sdk.current());
+  if (args[0] !== "read" || args.length !== 2) die("sdk requires current or read <relative path>");
+  console.log(await (await sdk.read(await sdk.current(), args[1])).text());
 }
 
 async function checkCurrentPanel(api, directory, materialPath) {

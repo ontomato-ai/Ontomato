@@ -30,7 +30,7 @@ async function workspaceDefinition(directory, checks) {
   const contents = await Promise.all(sources.map(async ([key, file]) => [
     key, await readFile(resolve(directory, file), "utf8"),
   ]));
-  const result = checks.directPanelDefinitionContentSchema.safeParse({
+  const result = checks.panelDefinitionContentSchema.safeParse({
     ...descriptor, content: { ...content, ...Object.fromEntries(contents) },
   });
   if (result.success) return result.data;
