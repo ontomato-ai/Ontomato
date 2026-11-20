@@ -16,7 +16,9 @@ public final class PageSkills {
     public record Mapping(String permissionCode, String access, String pageKey, Skill skill, List<Default> defaults) {
         public String locator() { return PageSkills.locator(permissionCode, access, pageKey); }
     }
-    public record Projection(List<Mapping> pageSkills, List<Skill> registeredSkills) {}
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record Entrance(String permissionCode, String access, String pageKey) {}
+    public record Projection(List<Mapping> pageSkills, List<Skill> registeredSkills, List<Entrance> admittedEntrances) {}
 
     public static String locator(String permissionCode, String access, String pageKey) {
         return permissionCode != null ? "permission:" + permissionCode : "access:" + access + ":" + pageKey;

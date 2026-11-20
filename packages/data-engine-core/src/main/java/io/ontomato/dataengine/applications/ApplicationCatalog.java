@@ -16,7 +16,6 @@ import org.springframework.http.HttpStatus;
 public class ApplicationCatalog {
     public record PanelUseLocation(String applicationId, Map<String, String> names, String useId, String path) {}
     public static final String DOMAIN_MEMBER_ENTRY = "domain-member";
-    private record PanelSkillGroup(PageSkills.Mapping mapping, PanelSkills.Source source) {}
     public record Group(String key, Map<String,String> names, int sort) {}
     public record Permission(String code, Map<String,String> names, String groupKey, int sort) {}
     public record Declaration(Map<String,String> names, Map<String,String> descriptions, String icon,
@@ -57,39 +56,31 @@ public class ApplicationCatalog {
         var domainId = user.getDomainId();
         var applications = applicationsInDomain(domainId);
         validateLocators(applications);
-        var mappings = new ArrayList<>(applications.stream().filter(app -> !panelManaged(app))
-            .flatMap(app -> app.getList("pageSkills", PageSkills.Mapping.class).stream()).toList());
-        if (domainId != null)
-            panelSkillGroups(domainId, applications).stream().map(PanelSkillGroup::mapping).forEach(mappings::add);
-        return new PageSkills.Projection(access.pageSkills(mappings,user), mappings.stream().map(PageSkills.Mapping::skill).distinct().toList());
+        var nativeMappings = applications.stream().filter(app -> !panelManaged(app))
+            .flatMap(app -> app.getList("pageSkills", PageSkills.Mapping.class).stream()).toList();
+        var admittedUses = domainId == null ? List.<ApplicationPanelUse>of() : applications.stream()
+            .filter(app -> isPanelSkillApplication(app) && canEnter(app, user))
+            .flatMap(app -> entryAdmittedPanelUses(app, user).stream()).toList();
+        var mappings = new ArrayList<>(access.pageSkills(nativeMappings, user));
+        mappings.addAll(PanelSkills.groups(admittedUses));
+        return new PageSkills.Projection(mappings, nativeMappings.stream().map(PageSkills.Mapping::skill).distinct().toList(),
+            admittedUses.stream().map(PanelSkills::entrance).toList());
     }
-    public List<PanelSkills.Source> panelSkillSources(String domainId) {
-        var applications = applicationsInDomain(domainId);
-        return panelSkillGroups(domainId, applications).stream().map(PanelSkillGroup::source).toList();
+
+    public List<PanelSkills.Use> panelSkillSources(String domainId) {
+        return applicationsInDomain(domainId).stream().filter(ApplicationCatalog::isPanelSkillApplication)
+            .flatMap(app -> app.getList("panelUses", ApplicationPanelUse.class).stream()
+                .map(use -> PanelSkills.source(app.getString("id"), use)))
+            .toList();
     }
+
+    private static boolean isPanelSkillApplication(JSONObject app) {
+        return panelManaged(app) && hasAssignedPanelPaths(app);
+    }
+
     private List<JSONObject> applicationsInDomain(String domainId) {
         return all().stream().filter(app -> app.getString("domainId") == null
             || Objects.equals(app.getString("domainId"), domainId)).toList();
-    }
-    private static List<PanelSkillGroup> panelSkillGroups(String domainId, List<JSONObject> applications) {
-        var groups = new LinkedHashMap<String, List<PanelSkills.LocatedUse>>();
-        for (var app : applications) {
-            if (!panelManaged(app) || !hasAssignedPanelPaths(app)) continue;
-            for (var use : app.getList("panelUses", ApplicationPanelUse.class)) {
-                groups.computeIfAbsent(use.locator(), key -> new ArrayList<>()).add(new PanelSkills.LocatedUse(app.getString("id"), use));
-            }
-        }
-        return groups.values().stream().map(uses -> {
-            var first = uses.getFirst().use();
-            var skill = PanelSkills.identity(domainId, first);
-            var defaults = uses.stream().filter(located -> located.use().defaultAgent() != null)
-                .map(PanelSkills.LocatedUse::pageDefault).toList();
-            var key = first.access().permissionCode() == null ? first.pageKey() : null;
-            var mapping = new PageSkills.Mapping(first.access().permissionCode(), first.access().kind(), key, skill,
-                defaults.isEmpty() ? null : defaults);
-            var source = new PanelSkills.Source(skill, uses.stream().map(PanelSkills.LocatedUse::source).toList());
-            return new PanelSkillGroup(mapping, source);
-        }).toList();
     }
     public JSONObject require(String id) {
         return all().stream().filter(a -> id.equals(a.getString("id"))).findFirst()
@@ -336,9 +327,14 @@ public class ApplicationCatalog {
         if (!hasAssignedPanelPaths(app))
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "Panel application " + app.getString("id") + " must be re-registered with complete canonical paths");
-        return access.panelUses(app.getList("panelUses", ApplicationPanelUse.class), user).stream()
+        return entryAdmittedPanelUses(app, user).stream()
             .filter(use -> grants.allowed(use.panelId(), "use")).toList();
     }
+
+    private List<ApplicationPanelUse> entryAdmittedPanelUses(JSONObject app, User user) {
+        return access.panelUses(app.getList("panelUses", ApplicationPanelUse.class), user);
+    }
+
     public JSONObject putPanelUses(String id, ApplicationController.PanelRegistration body, User user) {
         validateId(id);
         if (user.getDomainId() == null || !id.startsWith("app-")) throw bad("A panel application requires an app- ID and domain");

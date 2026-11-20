@@ -35,13 +35,26 @@ class PageSkillsContractTest {
         PageSkills.validate(mappings);
         assertEquals(SKILL,mappings.getFirst().skill());
         var output = new MockHttpOutputMessage();
-        converter.write(new PageSkills.Projection(mappings,List.of(SKILL)),MediaType.APPLICATION_JSON,output);
+        var target = new DefaultAgentTarget("id", "tasks-agent", null);
+        var panelGroup = new PageSkills.Mapping("schedules", null, null, null, List.of(new PageSkills.Default("tasks", target)));
+        var entrances = List.of(new PageSkills.Entrance("schedules", null, "tasks"),
+            new PageSkills.Entrance(null, "domain-member", "dashboard"));
+        var projection = new PageSkills.Projection(List.of(mappings.getFirst(), panelGroup), List.of(SKILL), entrances);
+        converter.write(projection,MediaType.APPLICATION_JSON,output);
         var body = JSONObject.parseObject(output.getBodyAsString());
         var mapping = body.getJSONArray("pageSkills").getJSONObject(0);
         assertFalse(mapping.containsKey("access"));
         assertFalse(mapping.getJSONObject("skill").getJSONObject("namespace").containsKey("domainId"));
         assertEquals("governance-report",mapping.getJSONArray("defaults").getJSONObject(0).getString("pageKey"));
         assertEquals(SKILL.name(),body.getJSONArray("registeredSkills").getJSONObject(0).getString("name"));
+        var panel = body.getJSONArray("pageSkills").getJSONObject(1);
+        assertFalse(panel.containsKey("skill"));
+        assertFalse(panel.containsKey("pageKey"));
+        assertEquals("schedules", panel.getString("permissionCode"));
+        assertEquals("tasks-agent", panel.getJSONArray("defaults").getJSONObject(0).getJSONObject("defaultAgent").getString("id"));
+        assertEquals(List.of(JSONObject.of("permissionCode", "schedules", "pageKey", "tasks"),
+            JSONObject.of("access", "domain-member", "pageKey", "dashboard")),
+            body.getJSONArray("admittedEntrances"));
     }
 
     @Test void rejectsAmbiguousLocatorsAtTheDeclarationBoundary() {
