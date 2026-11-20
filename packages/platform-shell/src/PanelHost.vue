@@ -170,8 +170,18 @@ defineExpose({ ...view, operations });
 .panel-layout-row > .panel-layout-member[style] { flex: 0 0 calc(var(--panel-layout-span) / 12 * 100%); }
 .panel-layout-grid > * { grid-column: span 12; }
 .panel-layout-grid > .panel-layout-member[style] { grid-column: span var(--panel-layout-span); }
+/*
+ * A filled container takes the height its parent leaves: the panel's own area, or a filled column's rest after its other
+ * children's own heights. Each child of a filled row takes the row's height and scrolls on its own.
+ */
+.panel-layout-fill { box-sizing: border-box; height: 100%; min-height: 0; }
+.panel-layout-column.panel-layout-fill > .panel-layout-fill { flex: 1 1 0; height: auto; }
+.panel-layout-row.panel-layout-fill > * { min-height: 0; overflow: auto; }
 @container (max-width: 36rem) {
   .panel-layout-row > *, .panel-layout-row > .panel-layout-member[style] { flex: 0 0 100%; }
   .panel-layout-grid > *, .panel-layout-grid > .panel-layout-member[style] { grid-column: span 12; }
+  /* Narrow, nothing fills: what a filled layout holds overflows into the panel's own scroll, as one. */
+  .panel-layout-column.panel-layout-fill > .panel-layout-fill { flex: none; }
+  .panel-layout-row.panel-layout-fill > * { overflow: visible; }
 }
 </style>

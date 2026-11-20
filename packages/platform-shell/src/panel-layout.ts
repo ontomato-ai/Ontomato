@@ -9,6 +9,10 @@ import type { PanelMember } from "@ontomato/contracts/panel-manifest";
  *
  * A container lays out by its own width, not the browser's: below 36rem every member takes a whole row, otherwise a
  * member takes the share of twelve columns its declaration's width names. A row and a grid wrap; a column stacks.
+ *
+ * A container that fills the height (`fill="height"`) takes what its parent leaves: a column gives its filled children
+ * the rest after its other members' own heights, and each member of a filled row scrolls on its own. Below 36rem it
+ * fills nothing, and the panel scrolls as one, as a layout without it always does.
  */
 
 /** How many of twelve columns a declared width takes; `auto` takes what the row leaves. */
@@ -44,7 +48,7 @@ export const PanelLayout = defineComponent({
       if (node.when && !holds(node.when, props.values)) return null;
       return h(node.tag, {
         key: `${node.position.offset}`,
-        class: ["panel-layout", `panel-layout-${node.flow}`, `panel-layout-gap-${node.gap}`],
+        class: ["panel-layout", `panel-layout-${node.flow}`, `panel-layout-gap-${node.gap}`, node.fill && "panel-layout-fill"],
       }, node.children.map(draw));
     }
     return () => props.nodes.map(draw);
