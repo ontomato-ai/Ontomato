@@ -39,16 +39,16 @@ import type { createChartProjectionService } from "../../services/product-panels
 import { panelSkillProvider } from "../../services/product-panels/skill-provider";
 import { readRegisteredPanelPageSkillContext } from "../../services/skills/view";
 
-async function withPageSkillContext<T extends { panel: { id: string } }>(
-  response: T, query: ProductPanelReadQuery, caller: ReturnType<typeof context>,
+function pageSkillContextFor(
+  query: Extract<ProductPanelReadQuery, { applicationId: string }>,
+  caller: ReturnType<typeof context>,
+  panel: { id: string },
 ) {
-  if (!("applicationId" in query)) return response;
   const { applicationId, useId, ...entrance } = query;
-  const pageSkillContext = await readRegisteredPanelPageSkillContext(
+  return readRegisteredPanelPageSkillContext(
     { domainId: caller.owner.domainId, initiatorCredentials: caller.credentials },
-    entrance, { kind: "application-use", applicationId, useId }, response.panel, panelSkillProvider,
+    entrance, { kind: "application-use", applicationId, useId }, panel, panelSkillProvider,
   );
-  return { ...response, pageSkillContext };
 }
 
 function registrationIssue(issue: z.ZodIssue, branch?: number): string {
@@ -88,8 +88,8 @@ productPanelsRouter.post("/read", wrap(async (req, res) => {
 productPanelsRouter.get("/:id/snapshot", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
   const query = productPanelReadQuerySchema.parse(req.query);
-  const snapshot = await requirePanelDefinitions(c.owner, c.credentials, id);
-  res.json(await withPageSkillContext(snapshot, query, c));
+  const readContext = "applicationId" in query ? (panel: { id: string }) => pageSkillContextFor(query, c, panel) : undefined;
+  res.json(await requirePanelDefinitions(c.owner, c.credentials, id, readContext));
 }));
 productPanelsRouter.post("/definition-stream", wrap(async (req, res) => {
   const {owner,credentials}=context(req);
@@ -108,7 +108,8 @@ productPanelsRouter.get("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
   const query = productPanelReadQuerySchema.parse(req.query);
   const panel = await readCurrentPanelRecord(c.owner, c.credentials, id, !("applicationId" in query));
-  res.json(await withPageSkillContext({ panel }, query, c));
+  const pageSkillContext = "applicationId" in query ? await pageSkillContextFor(query, c, panel) : undefined;
+  res.json({ panel, ...(pageSkillContext && { pageSkillContext }) });
 }));
 productPanelsRouter.put("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);

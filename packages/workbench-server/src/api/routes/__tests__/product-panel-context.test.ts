@@ -43,7 +43,10 @@ afterAll(async () => {
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.panel.mockResolvedValue(panel);
-  mocks.snapshot.mockResolvedValue(snapshot);
+  mocks.snapshot.mockImplementation(async (_owner, _credentials, _id, readContext) => {
+    const pageSkillContext = await readContext?.(snapshot.panel);
+    return { ...snapshot, ...(pageSkillContext && { pageSkillContext }) };
+  });
 });
 const read = (path: string, entrance: Record<string, string>) => fetch(base + path + "?" + new URLSearchParams({
   applicationId: source.applicationId, useId: source.useId, ...entrance,
