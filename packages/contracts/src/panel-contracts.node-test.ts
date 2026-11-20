@@ -498,19 +498,24 @@ test("time controls and schedule frequencies accept local times at minute precis
 
 test("form saves address the draft target even when the slot receives a selected object", () => {
   const agent = { kind: "object", objectType: AGENT_DEFINITION } as const;
+  const projection = productProjectionInputSchema.parse({
+    name: "Agent definition", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectForm",
+    inputs: { record: agent }, outputs: {}, config: {},
+    data: {
+      form: { source: { object: { input: "record" } }, read: "form", params: {} },
+      createForm: { source: { type: platformType(AGENT_DEFINITION) }, read: "createForm", params: {} },
+    },
+  });
   const manifest = panelManifestSchema.parse({
     state: { selectedAgent: { type: agent } },
     members: { definition: { target: { projectionId: "definition-form" }, inputs: { record: { state: "selectedAgent" } } } },
     events: {},
   });
-  const [save] = projectionOperations(manifest, {
-    slot: "definition",
-    ports: {
-      binding: binding(AGENT_DEFINITION),
-      inputs: { record: agent },
-      operations: [{ name: "save", label: "Save", kind: "form.save", handlerRef: "platform:AgentDefinition.save", inputSchema: {} }],
-    },
+  const ports = projectionPorts(projection, {
+    operations: [{ client: "@binding", name: "save", label: "Save", kind: "form.save", inputSchema: {} }],
   });
+  const [save] = projectionOperations(manifest, { slot: "definition", ports });
+  assert.equal(save?.handlerRef, `${AGENT_DEFINITION}.save`);
   assert.deepEqual(save?.target, { source: "draft", slot: "definition" });
 });
 
@@ -665,6 +670,20 @@ test("write refusals carry typed field errors directly in the operation outcome"
   assert.equal(panelOperationOutcomeSchema.safeParse({ ...outcome, errors: [{ ...errors[0], field: "start" }] }).success, false);
   const batch = { kind: "batch", items: [{ target: { objectType: "platform:Workflow", primaryKey: "example" }, outcome }] };
   assert.deepEqual(panelOperationOutcomeSchema.parse(batch), batch);
+});
+
+test("model form reads and save refusals preserve format and duplicate name errors", () => {
+  const errors = [
+    { field: "/className", code: "invalid_format", message: "Use a valid class name" },
+    { field: "/primaryKeyName", code: "already_exists", message: "This attribute name already exists" },
+  ];
+  const fields = errors.map(({ field }) => ({
+    ...editableField, path: field, label: field, control: { kind: "text" }, valueSchema: { type: "string" },
+  }));
+  const form = { fields, values: { className: "bad class", primaryKeyName: "existing" }, errors, save: ownerSave };
+  assert.deepEqual(panelFormDescriptionSchema.parse(form), form);
+  const outcome = { kind: "refusal", code: "FIELD_VALIDATION_FAILED", message: "Invalid model fields", errors };
+  assert.deepEqual(panelOperationOutcomeSchema.parse(outcome), outcome);
 });
 
 test("code, number, time and line array controls retain the owner's JSON values and schema", () => {
