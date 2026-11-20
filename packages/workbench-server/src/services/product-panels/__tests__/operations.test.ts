@@ -6,6 +6,7 @@ import rawExamples from "../../../../../contracts/examples/platform-schedules.js
 import {platformTaskSchema,platformScheduleFormSchema} from "@ontomato/contracts/platform-schedules";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { isPanelHumanOperationIntent, type PanelOperationIntent } from "@ontomato/contracts/panel-agent";
+import { APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE } from "@ontomato/contracts/panel-client-requests";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { panelReadOperationInputSchema, panelReadOperationResultSchema } from "@ontomato/contracts/panel-operations";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
@@ -275,6 +276,46 @@ it("reuses the original creation artifact as the initiator and saves as the exec
   await expect(operatePanel(owner, credentials, current.id, { ...input, intentId: uuid(22) }))
     .rejects.toMatchObject({ code: "PAGE_DRAFT_MISMATCH" });
   expect(write).toHaveBeenCalledTimes(1);
+});
+
+it("asks by the entry's title and approves the whole entry as the executor", async () => {
+  const key = uuid(9);
+  const entry = { knowledgeID: key, knowledgeTitle: "Order rule", knowledgeText: "Orders need a customer", knowledgeTags: ["Business"], status: 0, creatorType: 1 };
+  mocks.panel.mockResolvedValue({ id: "P", sdkVersion: "1.0.0", manifest: {
+    state: { task: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+    slots: { run: { projectionId: "run", inputs: { knowledge: { state: "task" } } } }, operations: [],
+  } });
+  mocks.projection.mockResolvedValue({ id: "run", name: "Approve", componentId: "@ontomato/sdk:OperationButton",
+    binding: { kind: "PlatformOperation", id: APPROVE_KNOWLEDGE }, inputs: { knowledge: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+    data: { describe: { source: { operation: APPROVE_KNOWLEDGE }, read: "describe", params: {} } },
+  });
+  // The label is read as the initiator; the dispatch's list read and the write go as the executor.
+  const reads: Headers[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+    const headers = new Headers(init.headers);
+    if (String(url).endsWith("/admin/getBussinessKnowledge")) {
+      reads.push(headers);
+      return Response.json({ success: true, data: { [key]: entry } });
+    }
+    expect(String(url).endsWith("/admin/editBussinessKnowledge")).toBe(true);
+    expect(headers.get("X-API-Key")).toBe("V-key");
+    expect(headers.get("tk")).toBeNull();
+    // Approval rewrites the whole entry as the owner read it, with status 1.
+    expect(JSON.parse(String(init.body))).toEqual({ ...entry, status: 1 });
+    return Response.json({ success: true });
+  }));
+  const input = { ...action(), operationId: "run.approve", call: { target: { kind: "object" as const, objectType: BUSINESS_KNOWLEDGE, primaryKey: key }, input: {} } };
+  const response = await operatePanel(owner, credentials, current.id, input);
+  expect(response.kind).toBe("confirmation-required");
+  expect(mocks.request.mock.calls[0][2].message).toBe('Run “Approve” on “Order rule” as Victor?');
+  answer();
+  current = { ...current, id: uuid(6) };
+  expect(await dispatchPanel(owner, credentials, current.id, input.intentId)).toMatchObject({ kind: "dispatched", outcome: { kind: "success", data: {} } });
+  expect(reads.map((headers) => [headers.get("tk"), headers.get("X-API-Key")])).toEqual([["U-token", null], [null, "V-key"]]);
+  const target = { objectType: BUSINESS_KNOWLEDGE, primaryKey: key };
+  expect(mocks.notify.mock.calls).toEqual([[{ domainId: owner.domainId, initiator: owner.userId, rootSession: root,
+    target, affected: { objects: [target], objectTypes: [BUSINESS_KNOWLEDGE] },
+  }]]);
 });
 
 it("freezes the owner write description with a named target and a result schema", async () => {

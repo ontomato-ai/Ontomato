@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { BUSINESS_KNOWLEDGE, SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
@@ -11,6 +11,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
+import { createBusinessKnowledgeReadAdapter } from "../business-knowledge/panel-reads";
 import { createScheduledTaskReadAdapter } from "../scheduling/panel-reads";
 import { requirePanelUse } from "./application-use";
 import { requireCurrentProduct, requireDirectPanelMember } from "./current";
@@ -21,6 +22,7 @@ type ReadAdapter = (selection: ReadSelection, params: ReadInputs) => Promise<unk
 
 function readAdapters(viewer: AssistantCredentials): Record<string, Record<string, ReadAdapter>> {
   const schedules = createScheduledTaskReadAdapter(viewer);
+  const knowledge = createBusinessKnowledgeReadAdapter(viewer);
   return {
     [SCHEDULED_TASK]: {
       list: () => schedules.list(),
@@ -30,6 +32,14 @@ function readAdapters(viewer: AssistantCredentials): Record<string, Record<strin
         changedField: panelReadParameterSchemas.changedField.optional().parse(params.changedField),
       }),
       "schedules.runNow.describe": () => schedules["schedules.runNow.describe"](),
+    },
+    [BUSINESS_KNOWLEDGE]: {
+      query: (_selection, params) => knowledge.query(params),
+      counts: (_selection, params) => knowledge.counts(params),
+      record: selection => knowledge.record(selection.primaryKey!),
+      form: (selection, params) => knowledge.form(selection.primaryKey, params),
+      "knowledge.approve.describe": () => knowledge["knowledge.approve.describe"](),
+      "knowledge.delete.describe": () => knowledge["knowledge.delete.describe"](),
     },
   };
 }
