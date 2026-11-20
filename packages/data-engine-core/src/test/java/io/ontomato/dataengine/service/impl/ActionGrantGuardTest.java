@@ -263,6 +263,24 @@ class ActionGrantGuardTest {
   }
 
   @Test
+  void aProgramWrittenJsonResultIsNotReplacedWithCompletedTrue() throws Exception {
+    Action action = publishedAction();
+    action.setCodeSegments(com.alibaba.fastjson2.JSONArray.of(JSONObject.of("kind", "UPDATE_OBJECT", "class", "Order")));
+    grantAnswer(true);
+    when(preconditions.evaluate(any(), any(), any(), any(), any()))
+        .thenReturn(new ActionPreconditionService.Verdict(true, List.of()));
+    PythonExecuteResult program = new PythonExecuteResult();
+    program.setResult("{\"targetClass\":\"tech_gwdj_apply\",\"run_id\":\"tga-1\"}");
+    when(programs.execute(any(), any(Function.class), eq(USER_ID), eq(permission),
+        eq(io.ontomato.dataengine.config.ServiceConst.NOT_SANDBOX), eq(LANG), anyInt(), eq(DOMAIN), any()))
+        .thenReturn(new Object[] { null, program });
+
+    PythonExecuteResult result = service.execute(ACTION_ID, params(), LANG, alice, permission, 5);
+
+    assertEquals("{\"targetClass\":\"tech_gwdj_apply\",\"run_id\":\"tga-1\"}", result.getResult());
+  }
+
+  @Test
   void theRefusalIsReportedBeforeThePreconditionMessageCanMaskIt() throws Exception {
     publishedAction();
     grantAnswer(false);
