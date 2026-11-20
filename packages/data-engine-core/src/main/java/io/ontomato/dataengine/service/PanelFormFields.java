@@ -99,6 +99,24 @@ public final class PanelFormFields {
   }
 
   /**
+   * A draft laid over the form's current values: each value the draft gives replaces the one at its place, objects merge
+   * key by key, arrays are replaced whole, and anything the draft leaves out keeps its current value.
+   */
+  public static JSONObject withDraft(JSONObject current, JSONObject draft) {
+    JSONObject merged = JSON.parseObject(JSON.toJSONString(current, Feature.WriteMapNullValue));
+    lay(merged, JSON.parseObject(JSON.toJSONString(draft, Feature.WriteMapNullValue)));
+    return merged;
+  }
+
+  private static void lay(JSONObject onto, JSONObject draft) {
+    for (var entry : draft.entrySet()) {
+      Object current = onto.get(entry.getKey());
+      if (current instanceof JSONObject object && entry.getValue() instanceof JSONObject given) lay(object, given);
+      else onto.put(entry.getKey(), entry.getValue());
+    }
+  }
+
+  /**
    * The values a save applies when the request names the fields it submitted: the saved values, with each submitted
    * field, by its JSON Pointer, taken from the request. A field the request did not submit keeps its saved value; a
    * submitted field the request leaves out is cleared.
