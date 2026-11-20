@@ -313,7 +313,7 @@ test("a no-code task panel registers and parses the same members and layout", as
   const { parsePanelLayout } = await import("./panel-layout");
   const input = {
     name: "Scheduled tasks", description: "", visibility: "domain", revision: 0,
-    content: { html: '<div flow="row">\n  <panel-member ref="tasks"></panel-member>\n</div>' },
+    content: { html: '<style>.tasks { display: grid; }</style>\n<main class="tasks">\n  <h2>Tasks &amp; runs</h2>\n  <hr>\n  <panel-member ref="tasks" class="list" style="min-width: 0"></panel-member>\n</main>' },
     manifest: {
       state: { selectedTask: { type: { kind: "object", objectType: "platform:ScheduledTask" }, deepLink: true, external: true, default: null } },
       members: { tasks: { target: { projectionId: "projection-schedules-tasks" }, outputs: { selected: { state: "selectedTask" } } } },
@@ -321,16 +321,42 @@ test("a no-code task panel registers and parses the same members and layout", as
     },
   };
   const panel = registerProductPanelRequestSchema.parse(input);
-  assert.deepEqual(parsePanelLayout(panel.content.html, panel.manifest), [{
-    kind: "container", tag: "div", flow: "row", gap: "medium", position: { offset: 0, line: 1, column: 1 },
-    children: [{ kind: "member", ref: "tasks", position: { offset: 19, line: 2, column: 3 } }],
-  }]);
-  const wrong = '<div>\n  <panel-member ref="tasks" onclick="run()"></panel-member>\n</div>';
-  assert.throws(() => parsePanelLayout(wrong, panel.manifest), /2:29.*onclick/u);
-  assert.equal(registerProductPanelRequestSchema.safeParse({ ...input, content: { html: wrong } }).success, false);
+  const layout = parsePanelLayout(panel.content.html, panel.manifest);
+  assert.equal(layout.css, ".tasks { display: grid; }");
+  const main = layout.nodes.find(node => node.kind === "element");
+  assert.equal(main?.tag, "main");
+  assert.deepEqual(main?.attrs, { class: "tasks" });
+  const elements = main?.children.filter(node => node.kind === "element");
+  assert.deepEqual(elements?.map(node => node.tag), ["h2", "hr"]);
+  const heading = elements?.[0]?.children[0];
+  assert.equal(heading?.kind === "text" && heading.value, "Tasks & runs");
+  const member = main?.children.find(node => node.kind === "member");
+  assert.equal(member?.ref, "tasks");
+  assert.deepEqual(member?.attrs, { class: "list", style: "min-width: 0" });
+
+  for (const [html, diagnostic] of [
+    ['<div>\n  <panel-member ref="tasks" onclick="run()"></panel-member>\n</div>', /2:29.*onclick/u],
+    ['<div>\n  <SCRIPT></SCRIPT>\n</div>', /2:3.*script/u],
+    ['<div>\n  <a HREF="&#106;avascript:void(0)">link</a>\n</div>', /2:6.*javascript:/u],
+    ...["iframe", "object", "embed"].map(tag => [`<div>\n  <${tag}></${tag}>\n</div>`, new RegExp(`2:3.*${tag}`, "u")] as const),
+  ] as const) {
+    assert.throws(() => parsePanelLayout(html, panel.manifest), diagnostic);
+    const result = registerProductPanelRequestSchema.safeParse({ ...input, content: { html } });
+    assert.equal(result.success, false);
+    assert.match(result.error!.issues[0]!.message, /Use members and events for interactions/u);
+  }
+  assert.throws(() => parsePanelLayout("<style></style>\n<style></style>", panel.manifest), /2:1.*one <style>/u);
+  assert.throws(() => parsePanelLayout('<div flow="column"></div>', panel.manifest), /1:6.*Use CSS.*flow/u);
+  assert.throws(() => parsePanelLayout('<div gap="small"></div>', panel.manifest), /1:6.*Use CSS.*gap/u);
+  assert.equal(registerProductPanelRequestSchema.safeParse({
+    ...input,
+    manifest: {
+      ...input.manifest,
+      members: { tasks: { ...input.manifest.members.tasks, params: { width: "half" } } },
+    },
+  }).success, false);
   assert.throws(() => parsePanelLayout('<section when="selectedTask" eq="1"></section>', panel.manifest), /Comparison/u);
-  assert.throws(() => parsePanelLayout('<div><panel-member ref="tasks"></div>', panel.manifest), /Unexpected closing tag/u);
-  assert.throws(() => parsePanelLayout('<div flow="row" flow="column"></div>', panel.manifest), /Duplicate attribute 'flow'/u);
+  assert.throws(() => parsePanelLayout('<div><panel-member ref="tasks"><span></span></panel-member></div>', panel.manifest), /has no children/u);
   assert.throws(() => parsePanelLayout('<panel-member ref="missing"></panel-member>', panel.manifest), /Undeclared member 'missing'/u);
 });
 
@@ -340,6 +366,7 @@ test("the current registration accepts the shipped no-code layout and rejects an
   const [{ directory, manifest, name, description }] = material.panels;
   const body = { content: material.panelContent(directory), manifest, name, description, visibility: "domain", revision: 0 };
   assert.equal(panelNeedsFrame(registerProductPanelRequestSchema.parse(body).content), false);
+  assert.equal(panelNeedsFrame({ html: "<main></main>", style: "main {}" }), false);
   assert.equal(registerProductPanelRequestSchema.safeParse({ ...body, sdkVersion: "1.1.2" }).success, false);
   assert.equal(panelNeedsFrame(registerProductPanelRequestSchema.parse({
     ...body, content: { html: "<main id='app'></main>", module: "export {}" },
@@ -367,8 +394,8 @@ test("nested layout and explicit events share typed state and placement", async 
   const manifest = panelManifestSchema.parse(input);
   assert.deepEqual(manifest.events.create, input.events.create);
   const html = '<div each="agents"><panel-member ref="row"></panel-member></div><panel-member ref="$state.preview"></panel-member>';
-  const tree = parsePanelLayout(html, manifest);
-  assert.equal(tree[0]?.kind === "container" && tree[0].each, "agents");
+  const { nodes } = parsePanelLayout(html, manifest);
+  assert.equal(nodes[0]?.kind === "element" && nodes[0].each, "agents");
   assert.throws(() => parsePanelLayout('<panel-member ref="row"></panel-member>', manifest), /repeat/u);
   assert.throws(() => parsePanelLayout('<div each="agent"></div>', manifest), /list state/u);
   assert.equal(panelManifestSchema.safeParse({

@@ -45,13 +45,13 @@ export function repeatItemTypes(panel: ProductPanelInput): Map<string, DirectPan
     for (const node of nodes) {
       if (node.kind === "member") {
         if (item) items.set(node.ref, item);
-      } else {
+      } else if (node.kind === "element") {
         const source = node.each === undefined ? undefined : state[node.each].type;
         collect(node.children, source?.kind === "list" ? source.items : item);
       }
     }
   }
-  collect(parsePanelLayout(panel.content.html, panel.manifest));
+  collect(parsePanelLayout(panel.content.html, panel.manifest).nodes);
   return items;
 }
 

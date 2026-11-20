@@ -64,7 +64,7 @@ beforeAll(async () => {
   await rm(join(git.tree, "recipes.md"));
   await rm(join(git.tree, "panel.mjs"));
   await writeFile(join(git.tree, "panel.json"), JSON.stringify({ manifest }));
-  await writeFile(join(git.tree, "panel.html"), '<section flow="column"><panel-member ref="form"></panel-member></section>');
+  await writeFile(join(git.tree, "panel.html"), '<section><panel-member ref="form"></panel-member></section>');
 
   const { workspaceRouter } = await import("../workspaces");
   const { productPanelsRouter, productProjectionsRouter } = await import("../product-panels");

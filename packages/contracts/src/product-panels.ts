@@ -117,7 +117,7 @@ const panelDefinitionContent = z.object({
 }).strict();
 
 export function panelNeedsFrame(content: ProductPanelContent): boolean {
-  return content.module !== undefined || content.style !== undefined;
+  return content.module !== undefined;
 }
 
 function validatePanelLayout(definition: z.infer<typeof panelDefinitionContent>, ctx: z.RefinementCtx): void {

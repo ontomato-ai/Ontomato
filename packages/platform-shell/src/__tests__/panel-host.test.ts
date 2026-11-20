@@ -28,6 +28,7 @@ const SCHEDULED_TASK = "platform:ScheduledTask";
 const labels: PanelHostLabels = {
   notStarted: "Not started",
   failures: { fileUnavailable: "Could not load {file}", scriptThrew: "Script failed", scriptRejected: "Script rejected" },
+    content: { htmlRemoved: "HTML removed", styleOutside: "Style outside" },
 };
 
 /** Panel P: a task list, the task's form and a button that runs it. Its list and summary are the shared projection X. */

@@ -84,9 +84,10 @@ async function selectedPlacement(
   const selection = segment.selection;
   if (!field || field.type.kind !== "placement" || !selection || !("placement" in selection)) unavailable();
   function hasRef(nodes: PanelLayoutNode[]): boolean {
-    return nodes.some(node => node.kind === "member" ? node.ref === segment.member : hasRef(node.children));
+    return nodes.some(node => node.kind === "member" ? node.ref === segment.member :
+      node.kind === "element" && hasRef(node.children));
   }
-  if (panelNeedsFrame(panel.content) || !hasRef(parsePanelLayout(panel.content.html, panel.manifest))) unavailable();
+  if (panelNeedsFrame(panel.content) || !hasRef(parsePanelLayout(panel.content.html, panel.manifest).nodes)) unavailable();
 
   let value = field.default;
   if (field.personal) {

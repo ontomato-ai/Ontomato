@@ -10,23 +10,19 @@
   "members": {
     "tasks": {
       "target": { "projectionId": "projection-schedules-tasks" },
-      "outputs": { "selected": { "state": "selectedTask" } },
-      "params": { "width": "third" }
+      "outputs": { "selected": { "state": "selectedTask" } }
     },
     "summary": {
       "target": { "projectionId": "projection-schedules-summary" },
-      "inputs": { "task": { "state": "selectedTask" } },
-      "params": { "width": "full" }
+      "inputs": { "task": { "state": "selectedTask" } }
     },
     "form": {
       "target": { "projectionId": "projection-schedules-form" },
-      "inputs": { "task": { "state": "selectedTask" } },
-      "params": { "width": "full" }
+      "inputs": { "task": { "state": "selectedTask" } }
     },
     "run": {
       "target": { "projectionId": "projection-schedules-run" },
-      "inputs": { "task": { "state": "selectedTask" } },
-      "params": { "width": "auto" }
+      "inputs": { "task": { "state": "selectedTask" } }
     }
   },
   "events": {}

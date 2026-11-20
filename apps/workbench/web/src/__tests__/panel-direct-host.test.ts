@@ -27,7 +27,7 @@ const base = { domainId: "d", ownerId: "o", revision: 1, createdAt: "", updatedA
 const panel: ProductPanel = {
   ...base, id: use.panelId, name: "Scheduled tasks",
   content: {
-    html: `<div flow="row" gap="small">
+    html: `<div class="tasks-page">
   <section when="selectedTask" ne="null">
     <panel-member ref="form"></panel-member>
     <panel-member ref="run"></panel-member>
@@ -37,8 +37,8 @@ const panel: ProductPanel = {
   manifest: {
     state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: true, default: null } },
     members: {
-      form: { target: { projectionId: "task-form" }, inputs: { task: { state: "selectedTask" } }, params: { width: "full" } },
-      run: { target: { projectionId: "task-run" }, inputs: { task: { state: "selectedTask" } }, params: { width: "auto" } },
+      form: { target: { projectionId: "task-form" }, inputs: { task: { state: "selectedTask" } } },
+      run: { target: { projectionId: "task-run" }, inputs: { task: { state: "selectedTask" } } },
     },
     events: {},
   },
@@ -115,7 +115,7 @@ it("draws a panel without code in the platform's document and reads its members 
   try {
     await vi.waitFor(() => expect(element.querySelector('[data-member="form"] [data-field="/name"] input')).not.toBeNull());
     expect(element.querySelector("iframe")).toBeNull();
-    expect(element.querySelector(".panel-layout-row")).not.toBeNull();
+    expect(element.querySelector(".tasks-page")).not.toBeNull();
     // A panel without code needs no SDK build: the host never asks where the SDK is served.
     expect(sent.some(request => request.path === "/api/apps-sdk/current")).toBe(false);
     expect(reads(sent).find(read => read.dataName === "form")).toEqual({
@@ -131,7 +131,7 @@ it("draws a panel without code in the platform's document and reads its members 
 it("shows nothing selected-only until a task is chosen, without reading for nothing", async () => {
   const { app, element, sent } = await open(use.path);
   try {
-    await vi.waitFor(() => expect(element.querySelector(".panel-layout-row")).not.toBeNull());
+    await vi.waitFor(() => expect(element.querySelector(".tasks-page")).not.toBeNull());
     await nextTick();
     expect(element.querySelector('[data-member="form"]')).toBeNull();
     expect(reads(sent)).toEqual([]);
@@ -168,12 +168,12 @@ it("follows another chosen task in the same instance, reading the form for it", 
   const { app, element, router, sent } = await open(panelAddress(use.path, { selectedTask: task("t-1") }));
   try {
     await vi.waitFor(() => expect(element.querySelector('[data-member="form"] [data-field="/name"] input')).not.toBeNull());
-    const layout = element.querySelector(".panel-layout-row");
+    const layout = element.querySelector(".tasks-page");
     const projectionReads = sent.filter(request => request.path.startsWith("/api/product-projections/")).length;
     await router.push(panelAddress(use.path, { selectedTask: task("t-2") }));
     await vi.waitFor(() => expect(reads(sent).some(read => read.dataName === "form" && read.inputs.task?.primaryKey === "t-2")).toBe(true));
     // The same instance: its layout stays in place and its members' projections are not read again.
-    expect(element.querySelector(".panel-layout-row")).toBe(layout);
+    expect(element.querySelector(".tasks-page")).toBe(layout);
     expect(sent.filter(request => request.path.startsWith("/api/product-projections/")).length).toBe(projectionReads);
   } finally {
     app.unmount();

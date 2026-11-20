@@ -34,9 +34,9 @@ test("P is a direct panel: its layout parses against its declaration and it carr
   const answer = await taken(String(({ productPanelInputSchema, parsePanelLayout }, { panels: [p], panelContent }) => {
     const content = panelContent(p.directory);
     const input = productPanelInputSchema.parse({ name: p.name, description: p.description, visibility: "domain", content, manifest: p.manifest });
-    return { module: Object.hasOwn(content, "module"), roots: parsePanelLayout(input.content.html, input.manifest).map(node => node.kind) };
+    return { module: Object.hasOwn(content, "module"), roots: parsePanelLayout(input.content.html, input.manifest).nodes.filter(node => node.kind !== "text").map(node => node.kind) };
   }));
-  assert.deepEqual(answer, { module: false, roots: ["container"] });
+  assert.deepEqual(answer, { module: false, roots: ["element"] });
 });
 
 test("every trial projection names the owner's registered reads under the data names its component takes", async () => {
