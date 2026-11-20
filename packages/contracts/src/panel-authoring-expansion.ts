@@ -1,10 +1,14 @@
 import { appsSdkComponentDatum, type AppsSdkComponentCatalogEntry } from "./apps-sdk";
+import { dashboardCardPrimaryKey } from "./dashboard";
 import type { PanelAuthoringMember } from "./panel-authoring";
+import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import { panelPortAccepts, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelStateRef } from "./panel-manifest";
 import {
   missingRequiredReadParameters, panelLocalOperationNameSchema, panelReadInputMatches, panelReadParameterId, panelReadParameterSchemas,
   projectionOperationTargetMatches, type DirectProjectionData, type DirectProjectionPorts, type ProjectionOperationBinding,
 } from "./panel-projection";
+import { DASHBOARD_CARD, platformOntologyLayers } from "./platform-object-types";
+import { chartProjectionSchema } from "./product-panels";
 import type { PlatformTypeTableResponse } from "./platform-type-table";
 
 type ShortMember = Extract<PanelAuthoringMember, { component: string }>;
@@ -31,12 +35,21 @@ export function expandPanelAuthoringMember(
   const fail = (field: string, message: string): never => {
     throw new Error(`Member '${key}', field '${field}': ${message}`);
   };
+  if (member.sourceCard !== undefined)
+    return fail("sourceCard", "Resolve the source card through the chart owner before binding this member");
   const matching = components.filter(component =>
     qualifiedId(component) === member.component || component.componentId === member.component);
   if (!matching.length) return fail("component", `SDK component '${member.component}' does not exist`);
   if (matching.length !== 1) return fail("component", `'${member.component}' is ambiguous. Use the full component ID`);
   const component = matching[0];
   if (component.data === undefined) return fail("component", "This component does not declare projection data");
+  const componentId = qualifiedId(component);
+  if (member.agent !== undefined && componentId !== "@ontomato/sdk:ConversationEntry")
+    return fail("agent", "The agent target belongs to the official ConversationEntry component");
+  const conversationEntry = member.agent === undefined ? undefined : panelConversationEntrySchema.parse({
+    target: member.agent === "page-default" ? { kind: "page-default" } : member.agent,
+    ...(member.prefill !== undefined && { prefill: member.prefill }),
+  });
 
   const stateType = (name: string, field: string): DirectPanelPortType =>
     Object.hasOwn(state, name) ? state[name].type : fail(field, `State '${name}' is not declared`);
@@ -64,7 +77,6 @@ export function expandPanelAuthoringMember(
     return matches[0];
   })();
   typeId ??= ownerOperation?.type;
-  const type = typeId === undefined ? undefined : objectTypes[typeId];
   const targetPort = ownerOperation?.operation.target.source === "input" ? ownerOperation.operation.target.input : "target";
   const inputTypes = new Map<string, DirectProjectionPorts["inputs"][string]>();
   const inputBindings = new Map<string, PanelStateRef>();
@@ -82,21 +94,32 @@ export function expandPanelAuthoringMember(
     return { input: name };
   }
 
+  const dataTypes = new Set<string>();
+  let readsOntologyObjects = false;
   const data: DirectProjectionPorts["data"] = Object.fromEntries(Object.entries(member.data ?? {}).map(([name, shorthand]) => {
     const path = `data.${name}`;
-    const { read, params: explicit = {} } = typeof shorthand === "string" ? { read: shorthand } : shorthand;
-    const declaration = type?.reads && Object.hasOwn(type.reads, read) ? type.reads[read]
-      : fail(`${path}.read`, `'${read}' is not registered on type '${typeId}'`);
+    const { read, type: declaredType, params: explicit = {} } = typeof shorthand === "string" ? { read: shorthand } : shorthand;
+    const readType = declaredType ?? typeId ?? fail(`${path}.type`, "Declare the datum's owner type");
+    if (!Object.hasOwn(objectTypes, readType))
+      fail(`${path}.type`, `Type '${readType}' is absent from the author type table`);
+    const reads = objectTypes[readType].reads;
+    const declaration = reads && Object.hasOwn(reads, read) ? reads[read]
+      : fail(`${path}.read`, `'${read}' is not registered on type '${readType}'`);
+    dataTypes.add(readType);
+    readsOntologyObjects ||= declaration.result === "panelOntologyObjects";
     const datum = appsSdkComponentDatum(component.data, name) ?? fail(path, "The component does not declare this datum");
     if (!datum.results.includes(declaration.result))
       fail(path, `The component does not accept result '${declaration.result}' for this datum`);
     const source: DirectProjectionData["source"] = declaration.source === "type"
-      ? { type: { kind: typeId!.startsWith("platform:") ? "PlatformObjectType" : "ObjectType", id: typeId! } }
+      ? { type: { kind: readType.startsWith("platform:") ? "PlatformObjectType" : "ObjectType", id: readType } }
       : {
           object: bindInput(targetPort, member.target ?? fail("target", `Read '${read}' needs an object target`), "target"),
         };
-    if (declaration.source === "object" && stateType(member.target!, "target").kind !== "object")
-      fail("target", `Read '${read}' needs a single object`);
+    if (declaration.source === "object") {
+      if (stateType(member.target!, "target").kind !== "object") fail("target", `Read '${read}' needs a single object`);
+      if (targetType !== readType)
+        fail(`${path}.type`, `'${readType}' does not match target state type '${targetType}'`);
+    }
     const parameterNames = new Set([
       ...Object.keys(explicit), ...(declaration.parameterMode === "fixed"
         ? Object.keys(declaration.params).filter(param => Object.hasOwn(member.state ?? {}, param)) : []),
@@ -124,13 +147,16 @@ export function expandPanelAuthoringMember(
   for (const [name, datum] of Object.entries(component.data))
     if (datum.required && !Object.hasOwn(data, name)) fail(`data.${name}`, "The component requires this datum");
 
-  const readsOntologyObjects = Object.values(data).some(({ read }) => type?.reads?.[read]?.result === "panelOntologyObjects");
+  const bindingType = typeId ?? (dataTypes.size === 1 ? [...dataTypes][0] : undefined);
+  const ontologyNode: DirectPanelPortType = {
+    kind: "object-union", layers: [...platformOntologyLayers],
+  };
 
   function concretePort<Port extends DirectProjectionPorts["inputs"][string]>(port: Port, path: string): Port {
     if (port.kind === "object" && port.objectType === "@binding")
-      return { ...port, objectType: typeId ?? fail(path, "This port needs a declared object type") };
+      return { ...port, objectType: bindingType ?? fail(path, "This port needs a declared object type") };
     if (port.kind === "list" && port.items.kind === "object" && port.items.objectType === "@binding")
-      return { ...port, items: { ...port.items, objectType: typeId ?? fail(path, "This port needs a declared object type") } };
+      return { ...port, items: { ...port.items, objectType: bindingType ?? fail(path, "This port needs a declared object type") } };
     return port;
   }
 
@@ -146,9 +172,10 @@ export function expandPanelAuthoringMember(
       bindInput(port, fieldName, path);
     }
     if (output) {
-      if (readsOntologyObjects && objectTypeOf(output) === "@binding")
-        fail(path, "The objects read can return a different object type. Reuse a registered projection with an explicit output type");
-      const offered = concretePort(output, path);
+      const usesOntologyNodes = componentId === "@ontomato/sdk:ObjectList" && readsOntologyObjects && objectTypeOf(output) === "@binding";
+      if (usesOntologyNodes && output.kind === "list")
+        fail(path, "The objects read exposes several types, but list state requires one object type");
+      const offered = usesOntologyNodes ? ontologyNode : concretePort(output, path);
       if (!panelPortAccepts(actual, offered))
         fail(path, `State '${fieldName}' cannot receive component output '${port}'`);
       outputTypes.set(port, offered);
@@ -182,12 +209,42 @@ export function expandPanelAuthoringMember(
 
   return {
     projection: {
-      componentId: qualifiedId(component), inputs: Object.fromEntries(inputTypes), outputs: Object.fromEntries(outputTypes),
-      data, config, ...(operations && { operations }),
+      componentId, inputs: Object.fromEntries(inputTypes), outputs: Object.fromEntries(outputTypes),
+      data, config, ...(operations && { operations }), ...(conversationEntry && { conversationEntry }),
     },
     placement: {
       ...(inputBindings.size && { inputs: Object.fromEntries(inputBindings) }),
       ...(outputBindings.size && { outputs: Object.fromEntries(outputBindings) }),
     },
   };
+}
+
+/** Bind an author member to the formal chart record returned by the source owner. */
+export function bindPanelAuthoringChart(
+  key: string,
+  member: ShortMember,
+  { state, projection }: { state: PanelManifest["state"]; projection: unknown },
+): PanelMember {
+  const fail = (field: string, message: string): never => {
+    throw new Error(`Member '${key}', field '${field}': ${message}`);
+  };
+  const card = member.sourceCard ?? fail("sourceCard", "Declare a source card");
+  const parsed = chartProjectionSchema.safeParse(projection);
+  if (!parsed.success) return fail("sourceCard", "The owner did not return a valid chart projection");
+  const saved = parsed.data;
+  const source = saved.data.template?.source;
+  if (!source || !("object" in source) || !("literal" in source.object) ||
+      source.object.literal.className !== DASHBOARD_CARD || source.object.literal.primaryKey !== dashboardCardPrimaryKey(card))
+    return fail("sourceCard", "The chart projection belongs to a different source card");
+
+  const inputs = Object.fromEntries(Object.entries(member.state ?? {}).map(([parameter, stateName]) => {
+    const field = `state.${parameter}`;
+    if (!Object.hasOwn(saved.inputs, parameter)) return fail(field, "The source card does not expose this input");
+    if (!Object.hasOwn(state, stateName)) return fail(field, `State '${stateName}' is not declared`);
+    const expected = saved.inputs[parameter];
+    if (expected.kind !== "json" && !panelPortAccepts(expected, state[stateName].type))
+      return fail(field, `State '${stateName}' has an incompatible type for source card input '${parameter}'`);
+    return [parameter, { state: stateName }];
+  }));
+  return { target: { projectionId: saved.id }, ...(Object.keys(inputs).length && { inputs }) };
 }
