@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import { AGENT_DEFINITION, BUSINESS_KNOWLEDGE, MODEL_OPTION, SCHEDULED_TASK, SKILL, USER } from "@ontomato/contracts/panel-client-requests";
 import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
@@ -169,12 +170,24 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   };
 }
 
-async function readRoot(owner: ProductOwner, viewer: AssistantCredentials, source: ProductPanelReadRequest["source"]) {
-  if (source.kind === "candidate")
-    throw new HttpError(422, "Direct workspace panel reads are not available", "DIRECT_CANDIDATE_UNAVAILABLE");
+async function resolveReadMember(owner: ProductOwner, viewer: AssistantCredentials, request: ProductPanelReadRequest) {
+  const { source, memberPath } = request;
+  if (source.kind === "candidate") {
+    const { resolvePanelCandidateMember } = await import("../workspaces/panel-candidate");
+    const { panel, member, projection, previewContext } = await resolvePanelCandidateMember(owner, viewer, source.workspace, memberPath);
+    const headers = { ...viewer.headers, [BUILD_TEST_HEADER]: JSON.stringify({
+      kind: "build-test", contextId: previewContext.test?.contextId ?? null,
+    }) };
+    return { member, projection, panel, viewer: { ...viewer, headers } };
+  }
+
   const { panelId } = await requirePanelUse(viewer, source);
   const row = await requireCurrentProduct(owner, viewer, "panel", panelId, "use");
-  return productPanelSchema.parse(currentProductRecord(row, false));
+  const panel = productPanelSchema.parse(currentProductRecord(row, false));
+  if (memberPath.length !== 1)
+    throw new HttpError(422, "Only a fixed projection at the panel root can be read here", "PANEL_MEMBER_TARGET_UNSUPPORTED");
+  const placement = await requireDirectPanelMember(owner, viewer, panel, memberPath[0].member);
+  return { ...placement, panel, viewer };
 }
 
 function effectiveInputs(
@@ -247,11 +260,7 @@ export async function readProductPanelData(
   owner: ProductOwner, viewer: AssistantCredentials, request: ProductPanelReadRequest, callerUserName?: string,
 ): Promise<ProductPanelReadResponse> {
   try {
-    const panel = await readRoot(owner, viewer, request.source);
-    if (request.memberPath.length !== 1)
-      throw new HttpError(422, "Only a fixed projection at the panel root can be read here", "PANEL_MEMBER_TARGET_UNSUPPORTED");
-    const { member: key } = request.memberPath[0];
-    const { member, projection } = await requireDirectPanelMember(owner, viewer, panel, key);
+    const { member, projection, panel, viewer: readViewer } = await resolveReadMember(owner, viewer, request);
     if (!Object.hasOwn(projection.data, request.dataName)) return { status: "forbidden" };
     const data = projection.data[request.dataName];
     const inputs = effectiveInputs(projection, member, request.inputs);
@@ -263,7 +272,7 @@ export async function readProductPanelData(
     }
     if ("operation" in data.source && data.source.operation.kind === "Action") {
       const resolved = await resolvePlacedObjectAction(
-        { owner, credentials: viewer }, { panel, projection, member, memberName: key, data }, data.source.operation.id,
+        { owner, credentials: readViewer }, { panel, projection, member, memberName: request.memberPath[0].member, data }, data.source.operation.id,
         name => {
           const value = name === undefined ? undefined : inputs[name];
           if (value == null) return undefined;
@@ -275,8 +284,8 @@ export async function readProductPanelData(
     }
     const selection = readSelection(data, inputs);
     const read = selection.kind === "customer"
-      ? customerReads(owner, viewer, callerUserName)[selection.method]
-      : readAdapters(owner, viewer, callerUserName)[selection.typeId]?.[selection.method];
+      ? customerReads(owner, readViewer, callerUserName)[selection.method]
+      : readAdapters(owner, readViewer, callerUserName)[selection.typeId]?.[selection.method];
     if (!read) throw new HttpError(422, "The owner read is unavailable", "PANEL_READ_UNAVAILABLE");
     const result = await read(selection, params, projection);
     if (declaration.result === "panelRecordList") {

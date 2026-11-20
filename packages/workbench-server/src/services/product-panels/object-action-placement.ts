@@ -8,7 +8,7 @@ import { operationHost } from "./operation-host";
 import type { PanelOperationActor } from "./server-operations";
 
 interface ObjectActionPlacement {
-  panel: ProductPanel;
+  panel: Pick<ProductPanel, "manifest">;
   projection: ProductProjection;
   member: PanelMember;
   memberName: string;

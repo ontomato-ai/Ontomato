@@ -58,7 +58,7 @@ export async function readCurrentPanel(owner: ProductOwner, credentials: Assista
 export const readCurrentProjectionRecord = readCurrentProjection;
 export const readCurrentPanelRecord = readCurrentPanel;
 
-export async function requireDirectPanelMember(owner: ProductOwner, credentials: AssistantCredentials, panel: ProductPanel, key: string) {
+export async function requireDirectPanelMember(owner: ProductOwner, credentials: AssistantCredentials, panel: Pick<ProductPanel, "manifest">, key: string) {
   if (!Object.hasOwn(panel.manifest.members, key))
     throw new HttpError(403, "Panel member is not available", "FORBIDDEN");
   const member = panel.manifest.members[key];

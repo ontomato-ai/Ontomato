@@ -80,7 +80,7 @@ productPanelsRouter.post("/read", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
   const request = productPanelReadRequestSchema.parse(req.body);
   const preview = req.header(BUILD_TEST_HEADER);
-  const viewer = preview === undefined
+  const viewer = request.source.kind === "candidate" || preview === undefined
     ? credentials : { ...credentials, headers: { ...credentials.headers, [BUILD_TEST_HEADER]: preview } };
   res.json(await readProductPanelData(owner, viewer, request, (req as AuthenticatedRequest).userName));
 }));
