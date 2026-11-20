@@ -3,9 +3,9 @@ import { BUSINESS_KNOWLEDGE, SCHEDULED_TASK } from "@ontomato/contracts/panel-cl
 import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
-import { directReadDeclaration, panelReadParameterSchemas, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
+import { directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import { platformObjectTypes } from "@ontomato/contracts/platform-object-types";
-import { directPanelSchema, type DirectPanel, type DirectProjection } from "@ontomato/contracts/product-panels";
+import { productPanelSchema, type ProductPanel, type ProductProjection } from "@ontomato/contracts/product-panels";
 import { currentProductRecord } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendUnavailableError } from "../../utils/backend-client";
@@ -18,7 +18,7 @@ import { requireCurrentProduct, requireDirectPanelMember } from "./current";
 
 type ReadInputs = ProductPanelReadRequest["inputs"];
 type ReadSelection = { typeId: string; method: string; primaryKey?: string };
-type ReadAdapter = (selection: ReadSelection, params: ReadInputs) => Promise<unknown> | unknown;
+type ReadAdapter = (selection: ReadSelection, params: Record<string, unknown>) => Promise<unknown> | unknown;
 
 function readAdapters(viewer: AssistantCredentials): Record<string, Record<string, ReadAdapter>> {
   const schedules = createScheduledTaskReadAdapter(viewer);
@@ -36,8 +36,9 @@ function readAdapters(viewer: AssistantCredentials): Record<string, Record<strin
     [BUSINESS_KNOWLEDGE]: {
       query: (_selection, params) => knowledge.query(params),
       counts: (_selection, params) => knowledge.counts(params),
-      record: selection => knowledge.record(selection.primaryKey!),
-      form: (selection, params) => knowledge.form(selection.primaryKey, params),
+      record: (selection, params) => knowledge.record(selection.primaryKey!, params),
+      form: (selection, params) => knowledge.form(selection.primaryKey!, params),
+      createForm: (_selection, params) => knowledge.form(undefined, params),
       "knowledge.approve.describe": () => knowledge["knowledge.approve.describe"](),
       "knowledge.delete.describe": () => knowledge["knowledge.delete.describe"](),
     },
@@ -49,11 +50,11 @@ async function readRoot(owner: ProductOwner, viewer: AssistantCredentials, sourc
     throw new HttpError(422, "Direct workspace panel reads are not available", "DIRECT_CANDIDATE_UNAVAILABLE");
   const { panelId } = await requirePanelUse(viewer, source);
   const row = await requireCurrentProduct(owner, viewer, "panel", panelId, "use");
-  return directPanelSchema.parse(currentProductRecord(row, false));
+  return productPanelSchema.parse(currentProductRecord(row, false));
 }
 
 function effectiveInputs(
-  projection: DirectProjection, member: DirectPanel["manifest"]["members"][string], submitted: ReadInputs,
+  projection: ProductProjection, member: ProductPanel["manifest"]["members"][string], submitted: ReadInputs,
 ): ReadInputs {
   const values = { ...submitted };
   for (const [name, ref] of Object.entries(member.inputs ?? {})) {
@@ -70,15 +71,17 @@ function effectiveInputs(
 }
 
 function readSelection({ source, read }: DirectProjectionData, inputs: ReadInputs): ReadSelection {
-  if ("type" in source) return { typeId: source.type, method: read };
+  if ("type" in source) return { typeId: source.type.id, method: read };
   if ("object" in source) {
     const value = "literal" in source.object ? source.object.literal : inputs[source.object.input];
     if (value == null) throw new HttpError(400, "Select an object before reading its data", "PANEL_SELECTION_REQUIRED");
     const { className, primaryKey } = panelObjectRefSchema.parse(value);
     return { typeId: className, method: read, primaryKey };
   }
-  const [typeId] = Object.entries(platformObjectTypes).find(([, entry]) => entry.operations?.includes(source.operation))!;
-  return { typeId, method: `${source.operation}.${read}` };
+  if (source.operation.kind === "Action")
+    throw new HttpError(422, "Object action reads require an owner adapter", "PANEL_READ_UNAVAILABLE");
+  const [typeId] = Object.entries(platformObjectTypes).find(([, entry]) => entry.operations?.includes(source.operation.id))!;
+  return { typeId, method: `${source.operation.id}.${read}` };
 }
 
 export async function readProductPanelData(
@@ -86,6 +89,8 @@ export async function readProductPanelData(
 ): Promise<ProductPanelReadResponse> {
   try {
     const panel = await readRoot(owner, viewer, request.source);
+    if (request.memberPath.length !== 1)
+      throw new HttpError(422, "Only a fixed projection at the panel root can be read here", "PANEL_MEMBER_TARGET_UNSUPPORTED");
     const { member: key } = request.memberPath[0];
     const { member, projection } = await requireDirectPanelMember(owner, viewer, panel, key);
     if (!Object.hasOwn(projection.data, request.dataName)) return { status: "forbidden" };
@@ -96,14 +101,25 @@ export async function readProductPanelData(
     const params = Object.fromEntries(
       Object.entries(data.params).flatMap(([name, ref]) => {
         const value = "literal" in ref ? ref.literal : inputs[ref.input];
-        return value === undefined ? [] : [[name, value]];
+        if (value === undefined) return [];
+        const parameter = panelReadParameterId(declaration, name)!;
+        return [[name, panelReadParameterSchemas[parameter].parse(value)]];
       }),
     );
-    const read = readAdapters(viewer)[selection.typeId][selection.method];
+    if (declaration.parameterMode === "fixed") {
+      for (const name of declaration.requiredParams ?? [])
+        if (!Object.hasOwn(params, name)) throw new HttpError(400, `Missing read parameter: ${name}`, "PANEL_INPUT_REQUIRED");
+    }
+    const read = readAdapters(viewer)[selection.typeId]?.[selection.method];
+    if (!read) throw new HttpError(422, "The owner read is unavailable", "PANEL_READ_UNAVAILABLE");
     const result = await read(selection, params);
     if (declaration.result === "panelRecordList") {
       const value = panelReadResultSchemas.panelRecordList.parse(result);
       return value.length ? { status: "ready", value } : { status: "empty" };
+    }
+    if (declaration.result === "metricOutput") {
+      const value = panelReadResultSchemas.metricOutput.parse(result);
+      return value.rows.length || value.truncation ? { status: "ready", value } : { status: "empty" };
     }
     return { status: "ready", value: panelReadResultSchemas[declaration.result].parse(result) };
   } catch (error) {

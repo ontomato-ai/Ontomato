@@ -7,6 +7,7 @@ import {
 import { panelOwnerOperationDescriptorSchema } from "@ontomato/contracts/panel-operations";
 import {
   panelFormDescriptionSchema, panelReadParameterSchemas, type PanelFormDescription, type PanelRecord,
+  type PanelTextHighlightRange,
 } from "@ontomato/contracts/panel-projection";
 import { config } from "../../config/application";
 import { tForLocale } from "../../i18n";
@@ -32,7 +33,7 @@ type StatusFilter = "all" | "pending" | "approved";
 /** The list read's inputs, as the first-phase list contract declares them. */
 const queryInputSchema = z.object({
   search: z.string().optional(),
-  filter: z.enum(["all", "pending", "approved"]).optional(),
+  filter: panelReadParameterSchemas.knowledgeFilter.optional(),
   cursor: z.string().regex(/^\d+$/).optional(),
   size: z.number().int().positive().optional(),
 }).strict();
@@ -41,15 +42,24 @@ const countsInputSchema = z.object({
   by: z.literal("status"),
   search: z.string().optional(),
 }).strict();
+const recordInputSchema = z.object({
+  search: z.string().optional(),
+}).strict();
 
 /** Space-separated search terms, lower-cased; an empty search matches every entry. */
 const searchTerms = (search: string | undefined) => search?.trim().toLowerCase().split(/\s+/).filter(Boolean) ?? [];
 
+/** Whether every search term appears case-insensitively in title, content or tags. */
+function entryMatches(entry: KnowledgeEntry, terms: readonly string[]): boolean {
+  if (!terms.length) return true;
+  const text = [entry.knowledgeTitle, entry.knowledgeText, ...(entry.knowledgeTags ?? [])].join("\n").toLowerCase();
+  return terms.every(term => text.includes(term));
+}
+
 /** The entries the search keeps, title hits first: the page's own ranking over the owner's order. */
 function searchedEntries(entries: KnowledgeEntry[], terms: readonly string[]): KnowledgeEntry[] {
   if (!terms.length) return entries;
-  const hits = entries.filter(entry => terms.every(term =>
-    [entry.knowledgeTitle, entry.knowledgeText, ...(entry.knowledgeTags ?? [])].join("\n").toLowerCase().includes(term)));
+  const hits = entries.filter(entry => entryMatches(entry, terms));
   const titleHits = (entry: KnowledgeEntry) => terms.filter(term => entry.knowledgeTitle.toLowerCase().includes(term)).length;
   return hits.sort((a, b) => titleHits(b) - titleHits(a));
 }
@@ -57,6 +67,37 @@ function searchedEntries(entries: KnowledgeEntry[], terms: readonly string[]): K
 /** The status filter over the searched entries; the owner marks every entry not approved as pending. */
 const statusFiltered = (entries: KnowledgeEntry[], filter: StatusFilter) =>
   filter === "all" ? entries : entries.filter(entry => (entry.status === 1) === (filter === "approved"));
+
+/** Half-open UTF-16 ranges in displayed text where any search term occurs, merged when overlapping or adjacent. */
+function textHighlights(text: string, terms: readonly string[]): PanelTextHighlightRange[] | undefined {
+  if (!text || !terms.length) return undefined;
+  const ranges: PanelTextHighlightRange[] = [];
+  for (const term of terms) {
+    const pattern = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+    for (const match of text.matchAll(pattern)) {
+      ranges.push({ start: match.index, end: match.index + match[0].length });
+    }
+  }
+  if (!ranges.length) return undefined;
+  ranges.sort((a, b) => a.start - b.start || a.end - b.end);
+  const merged: PanelTextHighlightRange[] = [];
+  for (const range of ranges) {
+    const previous = merged.at(-1);
+    if (previous && range.start <= previous.end) previous.end = Math.max(previous.end, range.end);
+    else merged.push(range);
+  }
+  return merged;
+}
+
+function rowHighlights(label: string, fields: Record<string, string>, terms: readonly string[]): PanelRecord["highlights"] {
+  if (!terms.length) return undefined;
+  const matched = [
+    ["label", textHighlights(label, terms)],
+    ["knowledgeText", textHighlights(fields.knowledgeText, terms)],
+    ["knowledgeTags", textHighlights(fields.knowledgeTags, terms)],
+  ].filter((entry): entry is [string, PanelTextHighlightRange[]] => entry[1] !== undefined);
+  return matched.length ? Object.fromEntries(matched) : undefined;
+}
 
 /** The labels the owner's form gives: the field names and the two status names, in the reader's language. */
 interface EntryText {
@@ -78,20 +119,24 @@ function entryTextOf(description: PanelFormDescription): EntryText {
 }
 
 /** One entry as the list and the detail read it, named and labelled in the reader's language. */
-function entryRow(entry: KnowledgeEntry, text: EntryText): PanelRecord {
+function entryRow(entry: KnowledgeEntry, text: EntryText, terms: readonly string[] = []): PanelRecord {
+  const label = entry.knowledgeTitle;
+  const fields = {
+    knowledgeText: entry.knowledgeText,
+    knowledgeTags: (entry.knowledgeTags ?? []).join(", "),
+    status: entry.status === 1 ? text.approvedName : text.pendingName,
+  };
+  const highlights = terms.length && entryMatches(entry, terms) ? rowHighlights(label, fields, terms) : undefined;
   return {
     primaryKey: entry.knowledgeID,
-    label: entry.knowledgeTitle,
+    label,
     fieldLabels: {
       knowledgeText: text.fieldLabels.knowledgeText,
       knowledgeTags: text.fieldLabels.knowledgeTags,
       status: text.fieldLabels.status,
     },
-    fields: {
-      knowledgeText: entry.knowledgeText,
-      knowledgeTags: (entry.knowledgeTags ?? []).join(", "),
-      status: entry.status === 1 ? text.approvedName : text.pendingName,
-    },
+    fields,
+    ...(highlights ? { highlights } : {}),
   };
 }
 
@@ -137,7 +182,7 @@ export function createBusinessKnowledgeReadAdapter(viewer: AssistantCredentials,
 
   /** The owner's form description for a target: a draft's blank form or one entry's, with submitted values and edits. */
   async function ownerForm(primaryKey: string | undefined, params: Record<string, unknown>): Promise<PanelFormDescription> {
-    const values = panelReadParameterSchemas.formValues.optional().parse(params.values);
+    const values = panelReadParameterSchemas.panelFormValues.optional().parse(params.values);
     const changedField = panelReadParameterSchemas.changedField.optional().parse(params.changedField);
     const target = primaryKey === undefined
       ? { kind: "draft" }
@@ -161,10 +206,11 @@ export function createBusinessKnowledgeReadAdapter(viewer: AssistantCredentials,
     async query(params: Record<string, unknown>) {
       const { search, filter, cursor, size } = queryInputSchema.parse(params);
       const [entries, text] = await Promise.all([ownerEntries(), ownerEntryText()]);
-      const kept = statusFiltered(searchedEntries(entries, searchTerms(search)), filter ?? "all");
+      const terms = searchTerms(search);
+      const kept = statusFiltered(searchedEntries(entries, terms), filter?.status ?? "all");
       const offset = cursor === undefined ? 0 : Number(cursor);
       return {
-        rows: kept.slice(offset, size === undefined ? undefined : offset + size).map(entry => entryRow(entry, text)),
+        rows: kept.slice(offset, size === undefined ? undefined : offset + size).map(entry => entryRow(entry, text, terms)),
         ...(size !== undefined && offset + size < kept.length ? { nextCursor: String(offset + size) } : {}),
         total: kept.length,
       };
@@ -176,11 +222,12 @@ export function createBusinessKnowledgeReadAdapter(viewer: AssistantCredentials,
       const pending = kept.filter(entry => entry.status !== 1).length;
       return { all: kept.length, pending, approved: kept.length - pending };
     },
-    /** One entry, read from the whole-domain list the owner keeps. */
-    async record(primaryKey: string) {
+    /** One entry, read from the whole-domain list the owner keeps, with highlights when search matches it. */
+    async record(primaryKey: string, params: Record<string, unknown> = {}) {
+      const { search } = recordInputSchema.parse(params);
       const found = (await ownerEntries()).find(entry => entry.knowledgeID === primaryKey);
       if (!found) throw new HttpError(404, `Business knowledge ${primaryKey} is not in this domain`, "KNOWLEDGE_UNAVAILABLE");
-      return entryRow(found, await ownerEntryText());
+      return entryRow(found, await ownerEntryText(), searchTerms(search));
     },
     /** The form for a target: a draft's blank one, or one entry's with submitted values and a changed field. */
     async form(primaryKey: string | undefined, params: Record<string, unknown>) {

@@ -133,7 +133,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         source: "type", parameterMode: "fixed", params: { by: "knowledgeCountField", search: "keyword" },
         requiredParams: ["by"], result: "panelGroupCounts",
       },
-      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+      record: { source: "object", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecord" },
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
       createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
       [`${APPROVE_KNOWLEDGE}.describe`]: operationDescription,

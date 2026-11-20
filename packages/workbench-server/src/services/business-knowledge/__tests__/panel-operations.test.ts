@@ -20,9 +20,13 @@ configureI18n({
   packs: { en: { messages: en, ...enLocaleMeta } },
 });
 
+const actor = { owner: { domainId: "domain", userId: "user" }, credentials: { token: "token", locale: "en" } };
+
 function hostWith(answer: (path: string, init: NonNullable<Parameters<typeof fetch>[1]>) => Response) {
   const sent: { path: string; init: NonNullable<Parameters<typeof fetch>[1]> }[] = [];
   const host: PanelOperationHost = {
+    initiator: actor,
+    executor: actor,
     async request(path, init) {
       sent.push({ path, init });
       return answer(path, init);

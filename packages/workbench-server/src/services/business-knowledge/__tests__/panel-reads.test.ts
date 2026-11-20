@@ -118,21 +118,52 @@ it("searches as the page did, ranks by title hits, filters and pages by cursor",
   const reads = createBusinessKnowledgeReadAdapter(viewer);
 
   // Every term must occur somewhere in title, content or tags, whatever its case; title hits rank first.
-  expect(await reads.query({ search: "ORDERS rule" })).toMatchObject({
-    rows: [row(entries["k-4"], "Approved"), row(entries["k-1"], "Approved")], total: 2,
+  expect(await reads.query({ search: "ORDERS rule" })).toEqual({
+    rows: [
+      {
+        ...row(entries["k-4"], "Approved"),
+        highlights: { label: [{ start: 0, end: 4 }, { start: 8, end: 14 }], knowledgeText: [{ start: 5, end: 9 }] },
+      },
+      {
+        ...row(entries["k-1"], "Approved"),
+        highlights: { label: [{ start: 6, end: 10 }], knowledgeText: [{ start: 0, end: 6 }] },
+      },
+    ],
+    total: 2,
   });
-  expect(await reads.query({ search: "rule receipt" })).toMatchObject({ rows: [row(entries["k-2"], "Pending review")], total: 1 });
-  expect(await reads.query({ search: "Business" })).toMatchObject({ total: 2 });
+  expect(await reads.query({ search: "rule receipt" })).toEqual({
+    rows: [
+      {
+        ...row(entries["k-2"], "Pending review"),
+        highlights: { label: [{ start: 7, end: 11 }], knowledgeText: [{ start: 17, end: 24 }] },
+      },
+    ],
+    total: 1,
+  });
+  expect(await reads.query({ search: "Business" })).toEqual({
+    rows: [
+      { ...row(entries["k-1"], "Approved"), highlights: { knowledgeTags: [{ start: 0, end: 8 }] } },
+      { ...row(entries["k-3"], "Pending review"), highlights: { knowledgeTags: [{ start: 0, end: 8 }] } },
+    ],
+    total: 2,
+  });
 
   // The status filter keeps the searched entries; the cursor pages them with the filtered total.
-  expect(await reads.query({ search: "rule", filter: "approved" })).toMatchObject({
-    rows: [row(entries["k-1"], "Approved"), row(entries["k-4"], "Approved")], total: 2,
+  expect(await reads.query({ search: "rule", filter: { status: "approved" } })).toEqual({
+    rows: [
+      { ...row(entries["k-1"], "Approved"), highlights: { label: [{ start: 6, end: 10 }] } },
+      { ...row(entries["k-4"], "Approved"), highlights: { label: [{ start: 0, end: 4 }], knowledgeText: [{ start: 5, end: 9 }] } },
+    ],
+    total: 2,
   });
-  expect(await reads.query({ search: "rule", filter: "pending" })).toMatchObject({ rows: [row(entries["k-2"], "Pending review")], total: 1 });
-  expect(await reads.query({ filter: "approved", size: 1 })).toEqual({
+  expect(await reads.query({ search: "rule", filter: { status: "pending" } })).toEqual({
+    rows: [{ ...row(entries["k-2"], "Pending review"), highlights: { label: [{ start: 7, end: 11 }] } }],
+    total: 1,
+  });
+  expect(await reads.query({ filter: { status: "approved" }, size: 1 })).toEqual({
     rows: [row(entries["k-1"], "Approved")], nextCursor: "1", total: 2,
   });
-  expect(await reads.query({ filter: "approved", cursor: "1", size: 1 })).toEqual({
+  expect(await reads.query({ filter: { status: "approved" }, cursor: "1", size: 1 })).toEqual({
     rows: [row(entries["k-4"], "Approved")], total: 2,
   });
   expect(await reads.query({ search: "nothing matches this" })).toEqual({ rows: [], total: 0 });
@@ -146,11 +177,18 @@ it("counts the tabs on the searched entries", async () => {
   expect(await reads.counts({ by: "status", search: "rule" })).toEqual({ all: 3, pending: 1, approved: 2 });
 });
 
-it("reads one entry from the whole-domain list the owner keeps", async () => {
+it("reads one entry from the whole-domain list the owner keeps, with highlights only when search matches", async () => {
   vi.stubGlobal("fetch", ownerFetch().fetchOwner);
   const reads = createBusinessKnowledgeReadAdapter(viewer);
 
   expect(panelReadResultSchemas.panelRecord.parse(await reads.record("k-3"))).toEqual(row(entries["k-3"], "Pending review"));
+  expect(panelReadResultSchemas.panelRecord.parse(await reads.record("k-3", { search: "evening" }))).toEqual({
+    ...row(entries["k-3"], "Pending review"),
+    highlights: { knowledgeText: [{ start: 23, end: 30 }] },
+  });
+  expect(panelReadResultSchemas.panelRecord.parse(await reads.record("k-3", { search: "evening missing" }))).toEqual(
+    row(entries["k-3"], "Pending review"),
+  );
   await expect(reads.record("k-none")).rejects.toMatchObject({
     status: 404, message: "Business knowledge k-none is not in this domain", code: "KNOWLEDGE_UNAVAILABLE",
   });
@@ -167,12 +205,12 @@ it("forwards the owner's form for a draft and for one entry's target", async () 
   expect(draft.fields.map(field => field.path)).toEqual(["/knowledgeTitle", "/knowledgeText", "/knowledgeTags", "/status", "/knowledgeID"]);
   expect(draft.save).toEqual(draftForm.save);
 
-  // The read route's values are a string record, as the read parameter contract takes them; the owner echoes them.
-  const edited = await reads.form("k-2", { values: { knowledgeTitle: "Return policy", status: "1" }, changedField: "/status" });
+  // The read route carries JSON form values (panelFormValues) in the owner's value shape.
+  const edited = await reads.form("k-2", { values: { knowledgeTitle: "Return policy", knowledgeTags: ["Business"], status: 1 }, changedField: "/status" });
   expect(panelReadResultSchemas.panelFormDescription.parse(edited)).toEqual(edited);
   expect(JSON.parse(String(sent[1]?.init.body))).toEqual({
     target: { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-2" }, changedField: "/status",
-    values: { knowledgeTitle: "Return policy", status: "1" },
+    values: { knowledgeTitle: "Return policy", knowledgeTags: ["Business"], status: 1 },
   });
 });
 
