@@ -7,6 +7,7 @@ import type { AddressInfo } from "node:net";
 import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
 import {
   productPanelInUseErrorSchema, productPanelResponseSchema, productPanelUsedBySchema,
   productProjectionInUseErrorSchema, productProjectionResponseSchema,
@@ -16,6 +17,7 @@ import {
   panelPersonalStateReadRequestSchema, panelPersonalStateResponseSchema, panelPersonalStateWriteRequestSchema,
 } from "@ontomato/contracts/panel-host";
 import { panelDefinitionSnapshotSchema } from "@ontomato/contracts/product-subscriptions";
+import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { installContentLayout } from "../../content/layout";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
@@ -28,7 +30,10 @@ vi.mock("../../infrastructure/postgres", () => ({
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
 }));
 vi.mock("../../config/application", () => ({ config: { dataQuery: { get baseUrl() { return state.base; } } } }));
-vi.mock("../../config/environment", () => ({ environment: { agentRuntime: () => ({ queryServiceToken: "fixture-service" }) } }));
+vi.mock("../../config/environment", () => ({ environment: {
+  agentRuntime: () => ({ queryServiceToken: "fixture-service" }),
+  publicBasePath: () => "",
+} }));
 vi.mock("../../utils/request-identity", async original => ({
   ...await original<typeof import("../../utils/request-identity")>(),
   requireDomainId: (req: { domainId: string }) => req.domainId,
@@ -50,7 +55,13 @@ const portType = { kind: "scalar", type: "string" } as const;
 const projectionInput = {
   name: "Referenced projection", description: "", visibility: "domain",
   componentId: "@ontomato/sdk:ObjectSummary",
-  inputs: { caption: portType }, outputs: { selected: portType }, data: {}, config: {},
+  inputs: { caption: portType }, outputs: { selected: portType }, config: {},
+  data: {
+    record: {
+      source: { object: { literal: { className: SCHEDULED_TASK, primaryKey: "00000000-0000-4000-8000-000000000001" } } },
+      read: "record", params: {},
+    },
+  },
 };
 
 beforeAll(async () => {
@@ -62,6 +73,7 @@ beforeAll(async () => {
   await ensureProductPanelsSchema(state.pool);
 
   contentRoot = await mkdtemp(join(tmpdir(), "product-panel-references-"));
+  await writeBundledAppSdkFixture(contentRoot);
   installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
   const { productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const app = express();
