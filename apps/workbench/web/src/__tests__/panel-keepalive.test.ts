@@ -104,10 +104,11 @@ const reopened = () => performance.getEntriesByName("ontomato:panel-page-reopene
 
 /** Each page's panel, as the element its component is mounted in, in the order the pages are kept. */
 const panels = (element: HTMLElement) => [...element.querySelectorAll<HTMLElement>(".panel-host-coded > *")];
-const shown = (panel: HTMLElement) => panel.closest<HTMLElement>(".panel-host-direct")!.style.display !== "none";
-/** The page shown now, once its panel has drawn a member. */
-const shownPanel = (element: HTMLElement) => vi.waitFor(() => {
-  const found = panels(element).find(panel => shown(panel) && panel.querySelector("[data-member]"));
+/** Whether the page a panel belongs to is the one shown: a kept page's host is hidden, never taken out. */
+const shown = (panel: HTMLElement) => panel.closest<HTMLElement>(".panel-host")!.style.display !== "none";
+/** The page shown now, once its panel has drawn a member; after a switch, not the page being left. */
+const shownPanel = (element: HTMLElement, left?: HTMLElement) => vi.waitFor(() => {
+  const found = panels(element).find(panel => panel !== left && shown(panel) && panel.querySelector("[data-member]"));
   if (!found) throw new Error("No page is shown");
   return found;
 });
@@ -121,7 +122,7 @@ afterEach(() => {
   asked.mockClear();
   uses = allUses;
   shownLabel = task.title;
-  p = { ...p, revision: 1 };
+  p = panelRecord("panel-keep-p", "Tasks", manifestP);
   performance.clearMarks();
   leaveFrame();
 });
@@ -135,9 +136,8 @@ it("shows a page kept within its application as it was left: its module not run 
     new MutationObserver(records => records.forEach(record => moved.push(...record.removedNodes))).observe(element, { childList: true, subtree: true });
 
     await router.push(at("summary"));
-    const summary = await shownPanel(element);
-    expect(summary).not.toBe(tasks);
-    expect(shown(tasks)).toBe(false);
+    const summary = await shownPanel(element, tasks);
+    await vi.waitFor(() => expect(shown(tasks)).toBe(false));
 
     // Back by its bare address: the same panel is shown at once, at the state it was left at — but it reads nothing
     // until its relation and its definitions have been checked.
@@ -227,9 +227,9 @@ it("keeps the shown page and the clean page left last, and makes room by the pag
   try {
     const tasks = await shownPanel(element);
     await router.push(at("summary"));
-    const summary = await shownPanel(element);
+    const summary = await shownPanel(element, tasks);
     await router.push(at("more"));
-    const more = await shownPanel(element);
+    const more = await shownPanel(element, summary);
     expect(tasks.isConnected).toBe(false);
     expect(panels(element)).toEqual([summary, more]);
     // Back and forth between the two kept pages keeps both.
@@ -238,7 +238,7 @@ it("keeps the shown page and the clean page left last, and makes room by the pag
     expect(panels(element)).toEqual([summary, more]);
     // A new page: the one left longest ago (more) makes room, not the page being left.
     await router.push(at("other"));
-    await shownPanel(element);
+    await shownPanel(element, summary);
     expect(more.isConnected).toBe(false);
     expect(summary.isConnected).toBe(true);
     expect(panels(element)).toHaveLength(2);
@@ -273,7 +273,7 @@ it("leaves a page with unsaved changes only through the platform's question, and
     await vi.waitFor(() => expect(router.currentRoute.value.path).toBe(at("summary")));
     await vi.waitFor(() => expect(tasks.isConnected).toBe(false));
     await router.push(at("tasks"));
-    const reopenedTasks = await shownPanel(element);
+    const reopenedTasks = await shownPanel(element, tasks);
     expect(reopenedTasks).not.toBe(tasks);
   } finally {
     app.unmount();
@@ -287,7 +287,7 @@ it("drops every kept page when the reader leaves the application", async () => {
     await router.push(at("summary"));
     const summary = await shownPanel(element);
     await router.push(`/applications/${appB}/summary`);
-    const other = await shownPanel(element);
+    const other = await shownPanel(element, summary);
     expect(tasks.isConnected).toBe(false);
     expect(summary.isConnected).toBe(false);
     expect(panels(element)).toEqual([other]);

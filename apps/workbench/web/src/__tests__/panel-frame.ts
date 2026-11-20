@@ -523,6 +523,21 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
       draftServed();
       return Response.json(draft);
     }
+    // The owner's form as Node's read entry describes it, for the values the form asks with: the case set to choose.
+    if (request.path === "/api/product-panels/read") {
+      const { runtimeParams } = request.body as { runtimeParams?: { values?: Record<string, unknown> } };
+      const values = runtimeParams?.values ?? task.content;
+      return Response.json({ status: "ready", value: {
+        fields: [{
+          path: "/caseSetId", label: caseSetLabel, required: false, readOnly: false, valueSchema: {},
+          control: { kind: "select", options: [
+            { value: task.content.caseSetId, label: "Regression (12)" }, { value: "set-smoke", label: "Smoke (8)" },
+          ] },
+        }],
+        values, errors: [], revision: task.revision,
+        save: { method: "PUT", path: "/platform/scheduled-tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+      } });
+    }
     return nothingAt(request);
   };
   return { panel, use, address, answer };
