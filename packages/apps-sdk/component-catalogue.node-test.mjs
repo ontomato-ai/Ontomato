@@ -57,7 +57,12 @@ test("the built SDK's components.json is the catalogue its contract declares", (
   assert.ok(version, "the build wrote a version directory");
   const written = JSON.parse(readFileSync(join(out, version, "components.json"), "utf8"));
   // The release's own Node modules are where the platform reads this shape from; the check module carries the schema.
-  return import(pathToFileURL(join(out, version, "node/panel-check.mjs")).href).then(({ appsSdkComponentCatalogSchema }) => {
+  return import(pathToFileURL(join(out, version, "node/panel-check.mjs")).href).then(async ({
+    applicationIconKeys, appsSdkComponentCatalogSchema, panelModuleImports,
+  }) => {
+    assert.ok(applicationIconKeys.includes("ontology"));
+    await panelModuleImports('import { ref } from "vue"');
+    await assert.rejects(panelModuleImports('import { ElButton } from "element-plus"'), /imports element-plus/);
     const catalogue = appsSdkComponentCatalogSchema.parse(written);
     const declared = new Map(catalogue.components.map((component) => [component.componentId.replace("@ontomato/sdk:", ""), component]));
     for (const [name, data] of Object.entries(DECLARED_DATA)) {

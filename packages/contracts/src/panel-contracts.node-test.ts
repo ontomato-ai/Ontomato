@@ -1,5 +1,6 @@
 import { formOptionSchema } from "./form-fields";
 import { appsSdkBuildSchema, appsSdkCurrentSchema } from "./apps-sdk";
+import { panelModuleImports } from "./panel-module";
 import {
   APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL, EXPORT_FEEDBACK, EXPORT_SKILL,
   FEEDBACK_RECORD, IMPORT_SKILL, KNOWLEDGE_GOVERNANCE_RECORD, SKILL,
@@ -1851,4 +1852,19 @@ test("page candidate directories can identify the offered agents by preset", asy
 test("only the host can send frame activity messages", () => {
   assert.deepEqual(panelHostFrameMessageSchema.parse({ kind: "activity", active: false }), { kind: "activity", active: false });
   assert.equal(panelFrameMessageSchema.safeParse({ kind: "activity", active: true }).success, false);
+});
+test("the direct panel import policy accepts only the host's literal module names", async () => {
+  const imports = await panelModuleImports(`
+    import { ref } from "vue";
+    export { mountPanel } from "@ontomato/sdk/panel";
+    await import("vue");
+    import.meta.url;
+  `);
+  assert.deepEqual(imports.map(({ specifier, dynamic }) => [specifier, dynamic]), [
+    ["vue", false], ["@ontomato/sdk/panel", false], ["vue", true],
+  ]);
+  await assert.rejects(panelModuleImports('import { ElButton } from "element-plus";'), /imports element-plus/);
+  await assert.rejects(panelModuleImports('export { mountPanel } from "./panel-tools.mjs";'), /imports \.\/panel-tools\.mjs/);
+  await assert.rejects(panelModuleImports('await import("element-plus");'), /imports element-plus/);
+  await assert.rejects(panelModuleImports('await import(moduleName);'), /imports a computed module/);
 });
