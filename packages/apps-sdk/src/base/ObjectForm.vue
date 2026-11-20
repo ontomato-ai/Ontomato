@@ -36,7 +36,7 @@ import FormFieldControl from "./FormFieldControl.vue";
  *
  * A page that opens the form under a parent (an attribute created in its class, a relationship from its two ends) fixes
  * the fields that parent decides, through `fixedFields`: the form shows each with the page's value, read-only, and
- * submits it with every save. The owner's form does not know which page it is in, so the page says it; the owner checks
+ * submits it with every save; one fixed from a state that holds nothing (no parent chosen) is the owner's to edit as usual. The owner's form does not know which page it is in, so the page says it; the owner checks
  * the value as it checks any other.
  */
 /**
@@ -46,10 +46,11 @@ import FormFieldControl from "./FormFieldControl.vue";
 const props = withDefaults(defineProps<{
   /**
    * The fields the page fixes, by the owner's JSON Pointer path: each value comes from a field of the panel's state
-   * (`{state}`, as it holds it) or is written here (`{literal}`). The form shows them read-only and submits them with
-   * every save.
+   * (`{state}`, the value it holds, or with `path` the part of it that JSON Pointer names, such as an object
+   * reference's `/primaryKey`) or is written here (`{literal}`). The form shows them read-only and submits them with
+   * every save; while the state holds nothing, the field is not fixed.
    */
-  fixedFields?: Record<string, { state: string } | { literal: RuntimeJsonValue }>;
+  fixedFields?: Record<string, { state: string; path?: string } | { literal: RuntimeJsonValue }>;
 }>(), { fixedFields: () => ({}) });
 const emit = defineEmits<{
   /** The owner saved the form: the object it saved, or the one it created. */
@@ -91,6 +92,9 @@ function moveTo(next: PanelFormTarget) {
 
 /** The owner's description now: its fields, which follow the values the form holds. */
 const description = shallowRef<PanelFormDescription | null>(null);
+/** The owner's own answers behind `description` and `opened`, which the fixed fields are laid over as they change. */
+const ownerShown = shallowRef<PanelFormDescription | null>(null);
+const ownerOpened = shallowRef<PanelFormDescription | null>(null);
 /** The owner's reading when the form opened: what discard returns to and the revision a save is sent with. */
 const opened = shallowRef<PanelFormDescription | null>(null);
 const values = shallowRef<PanelFormValues>({});
@@ -108,9 +112,17 @@ for (const [path, from] of Object.entries(props.fixedFields)) {
   if ("state" in from && !(from.state in panel.manifest.state))
     throw new Error(`The fixed field ${path} names the state '${from.state}', which the panel does not declare`);
 }
-/** The fixed fields' values now, by path. */
-const fixedValues = computed<Readonly<Record<string, RuntimeJsonValue>>>(() => Object.fromEntries(Object.entries(props.fixedFields).map(
-  ([path, from]) => [path, "state" in from ? (panel.instance.state.values.value[from.state] ?? null) as RuntimeJsonValue : from.literal])));
+/** The fixed fields' values now, by path: those fixed from a state that holds nothing are not among them. */
+const fixedValues = computed<Readonly<Record<string, RuntimeJsonValue>>>(() => Object.fromEntries(Object.entries(props.fixedFields).flatMap(
+  ([path, from]): [string, RuntimeJsonValue][] => {
+    if ("literal" in from) return [[path, from.literal]];
+    const held = (panel.instance.state.values.value[from.state] ?? null) as RuntimeJsonValue;
+    if (held === null) return [];
+    if (from.path === undefined) return [[path, held]];
+    const part = valueAt(held as PanelFormValues, from.path);
+    if (part === undefined) throw new Error(`The fixed field ${path} reads ${from.path} of the state '${from.state}', which holds none`);
+    return [[path, part]];
+  })));
 /** Whether a path is a fixed field or inside one. */
 const isFixed = (path: string) => Object.keys(fixedValues.value).some((fixed) => path === fixed || path.startsWith(`${fixed}/`));
 /** Values with the fixed fields as the page fixes them. */
@@ -162,6 +174,8 @@ function adopt(
   written: ReadonlySet<string> = new Set(),
 ) {
   submitted.value = written;
+  ownerOpened.value = baseline;
+  ownerShown.value = shown;
   opened.value = fixDescription(baseline);
   description.value = fixDescription(shown);
   values.value = description.value.values;
@@ -186,7 +200,7 @@ function load(next: PanelFormTarget | null) {
   const reading = ++latestRead;
   loaded = nextKey;
   if (next === null) {
-    description.value = opened.value = null;
+    description.value = opened.value = ownerShown.value = ownerOpened.value = null;
     values.value = {};
     loading.value = false;
     return;
@@ -264,11 +278,14 @@ useProjectionObjectRefresh((id) => id === key.value, () => {
 watch([canSettle, saving], refreshWhenClean);
 
 // The page's fixed values follow the state they come from: what the form opened with and what it shows both take them.
-watch(() => JSON.stringify(fixedValues.value), () => {
-  if (!opened.value || !description.value) return;
-  opened.value = fixDescription(opened.value);
-  description.value = fixDescription(description.value);
-  values.value = fixValues(values.value);
+// A field no longer fixed (its state emptied) is the owner's again, with the value the form opened with.
+watch(fixedValues, (next, previous) => {
+  if (!ownerOpened.value || !ownerShown.value) return;
+  const baseline = ownerOpened.value.values;
+  const released = Object.keys(previous).filter((path) => !(path in next));
+  opened.value = fixDescription(ownerOpened.value);
+  description.value = fixDescription(ownerShown.value);
+  values.value = fixValues(released.reduce((all, path) => withValueAt(all, path, valueAt(baseline, path) ?? null), values.value));
 });
 
 /** One field changed: the form holds the value; a field the owner's form depends on has the owner asked again. */
@@ -285,6 +302,7 @@ function set(path: string, value: RuntimeJsonValue) {
   // The owner changes the fields for these edits; the opened reading, its revision and the discard baseline stay.
   void forms.describe({ target: asked, values: values.value, changedField: path }).then((answer) => {
     if (loaded !== askedKey) return;
+    ownerShown.value = answer;
     description.value = fixDescription(answer);
     values.value = description.value.values;
     errors.value = fieldMessages(answer.errors);
@@ -364,7 +382,7 @@ useProjectionForm({
 
 function discard() {
   held = null;
-  adopt(opened.value!);
+  adopt(ownerOpened.value!);
   emit("discarded");
   void panel.instance.settleDraft(slot.slot).catch(showRefusal);
 }
@@ -404,6 +422,7 @@ async function write(): Promise<unknown> {
     });
     submitted.value = new Set();
     held = null;
+    ownerOpened.value = { ...ownerShown.value!, values: values.value };
     opened.value = { ...description.value!, values: values.value };
     changed.value = new Set();
     if (into.kind === "draft") moveTo({ kind: "object", objectType, primaryKey: saved.primaryKey });
