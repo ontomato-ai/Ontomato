@@ -516,6 +516,30 @@ class OntologyModelServiceImplTest {
 	}
 
 	@Test
+	void theFieldLabelsNameEachModelFieldWithTheLabelItsFormShows() {
+		var labels = service.fieldLabels("en");
+
+		assertEquals(Map.of("className", "Admin.form.className", "primaryKeyName", "Admin.form.primaryKeyName",
+				"showName", "Admin.form.showName", "classDesc", "Admin.form.desc"), labels.objectType());
+		assertEquals(Map.of("className", "Admin.form.ownerType", "name", "Admin.form.name", "type", "Admin.form.type",
+				"showName", "Admin.form.showName", "attrDesc", "Admin.form.desc", "enable", "Admin.form.enable",
+				"businessKey", "Admin.form.businessKey", "primaryKey", "Admin.form.primaryKey"), labels.attribute());
+		assertEquals(Map.of("relationship", "Admin.form.relationship", "fromclass", "Admin.form.fromclass",
+				"fromField", "Admin.form.fromField", "toclass", "Admin.form.toclass", "toField", "Admin.form.toField",
+				"desc", "Admin.form.desc"), labels.relationship());
+		assertLabelledBy(labels.objectType(), service.objectTypeForm(open("draft", "platform:ObjectType", null), user, "en"));
+		assertLabelledBy(labels.attribute(), service.attributeForm(open("draft", "platform:Attribute", null), user, "en"));
+		assertLabelledBy(labels.relationship(),
+				service.relationshipForm(open("draft", "platform:Relationship", null), user, "en"));
+	}
+
+	private static void assertLabelledBy(Map<String, String> labels, FormDescription form) {
+		for (JsonNode field : form.fields()) {
+			assertEquals(labels.get(field.get("path").asText().substring(1)), field.get("label").asText());
+		}
+	}
+
+	@Test
 	void theObjectTypeFormOpensAnEditWithItsNameReadOnlyAndTheStoredValues() {
 		var form = service.objectTypeForm(open("object", "platform:ObjectType", "Device"), user, "en");
 

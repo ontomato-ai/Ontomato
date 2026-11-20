@@ -55,6 +55,11 @@ public interface OntologyModelService {
 	}
 
 	/** A form's target as the panel contract sends it: an existing object by its primary key, or the create draft. */
+	/** The owner's label of each field of the three model objects in the reader's language, by field key. */
+	record FieldLabels(Map<String, String> objectType, Map<String, String> attribute,
+			Map<String, String> relationship) {
+	}
+
 	record FormTarget(String kind, String objectType, String primaryKey) {
 	}
 
@@ -101,6 +106,8 @@ public interface OntologyModelService {
 	RelationshipView updateRelationship(String relationship, RelationshipUpdate body, User user, String lang);
 
 	void deleteRelationship(String relationship, User user, String lang);
+
+	FieldLabels fieldLabels(String lang);
 
 	FormDescription objectTypeForm(FormRequest body, User user, String lang);
 
