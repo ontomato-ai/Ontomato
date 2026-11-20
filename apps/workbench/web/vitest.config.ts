@@ -8,8 +8,6 @@ const editionSource = fileURLToPath(new URL("./src/sdk-edition.ts", import.meta.
 // A panel's own module imports the SDK by the specifier its frame's import map serves; a test running that module binds
 // it to the SDK's source entry.
 const panelEntry = fileURLToPath(new URL("../../../packages/apps-sdk/src/entries/panel.ts", import.meta.url));
-// The panel host's tests clean a panel's HTML as a browser does; see the file.
-const panelSanitizer = fileURLToPath(new URL("../../../packages/platform-shell/test-sanitizer.ts", import.meta.url));
 
 export default defineConfig(async () => ({
   plugins: [vue(), elementComponents(), await panelAppearance(editionSource)],
@@ -23,6 +21,6 @@ export default defineConfig(async () => ({
   test: {
     environment: "happy-dom",
     include: ["src/**/__tests__/**/*.test.ts"],
-    setupFiles: [panelSanitizer],
+    setupFiles: ["./test-setup.ts"],
   },
 }));
