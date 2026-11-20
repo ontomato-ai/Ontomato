@@ -1,8 +1,16 @@
-import { GOVERNANCE_KIND, GOVERNANCE_SKILL } from "./governance-definition";
+import {
+  GOVERNANCE_KIND,
+  GOVERNANCE_PANEL_ID,
+  GOVERNANCE_PRESET_VERSION,
+  GOVERNANCE_SKILL,
+} from "./governance-definition";
 import { defaultAssistantSkills } from "../../config/assistant-defaults";
 import { APP_BUILDER, APP_BUILDER_KIND,isAppBuilderKind } from "../app-builder/definition";
 import type { ModelSelection } from "@ontomato/contracts/model-settings";
 import { lockSessionClaim, assertUnclaimedSession } from "../agent-host/session-claim";
+import { protectedSkillRef } from "../../core/skills/providers";
+import { panelSkillProvider } from "../product-panels/skill-provider";
+import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { randomUUID, createHash } from "node:crypto";
 import type pg from "pg";
 import {
@@ -11,8 +19,12 @@ import {
 } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
-import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import type { HomeState } from "@ontomato/contracts/platform-home";
+export interface AgentsReadOptions {
+  skillView?: { hasSkill(ref: RuntimeSkillRef): boolean };
+  credentials?: AssistantCredentials;
+}
 export interface AssistantOwner {
   domainId: string;
   userId: string;
@@ -59,8 +71,44 @@ export interface AgentRow {
   sort_order: number;
 }
 const db = () => getPostgresPool();
+
+/** Lazily adds the governance panel skill once per domain/version once that panel skill is visible. */
+async function upgradeGovernancePreset(domainId: string, options?: AgentsReadOptions) {
+  if (!options?.skillView && !options?.credentials) return;
+  const applied = await db().query(
+    `SELECT 1 FROM ${table("assistant_preset_upgrades")} WHERE domain_id=$1 AND kind=$2 AND version=$3 LIMIT 1`,
+    [domainId, GOVERNANCE_KIND, GOVERNANCE_PRESET_VERSION],
+  );
+  if (applied.rowCount) return;
+
+  const skillView = options.skillView ?? await (await import("./skills")).readAssistantSkillView(domainId, options.credentials!);
+  const ref = protectedSkillRef(panelSkillProvider.id, domainId, GOVERNANCE_PANEL_ID);
+  if (!skillView.hasSkill(ref)) return;
+
+  await transaction(async (c) => {
+    const recorded = await c.query(
+      `INSERT INTO ${table("assistant_preset_upgrades")} (domain_id,kind,version) VALUES($1,$2,$3) ON CONFLICT(domain_id,kind,version) DO NOTHING`,
+      [domainId, GOVERNANCE_KIND, GOVERNANCE_PRESET_VERSION],
+    );
+    if (!recorded.rowCount) return;
+    const row = (
+      await c.query<{ id: string; skills: RuntimeSkillRef[] }>(
+        `SELECT id,skills FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind=$2 FOR UPDATE`,
+        [domainId, GOVERNANCE_KIND],
+      )
+    ).rows[0];
+    if (!row) return;
+    const key = runtimeSkillKey(ref);
+    if (row.skills.some((skill) => runtimeSkillKey(skill) === key)) return;
+    await c.query(
+      `UPDATE ${table("assistant_agents")} SET skills=$2::jsonb WHERE id=$1`,
+      [row.id, JSON.stringify([...row.skills, ref])],
+    );
+  });
+}
+
 export const assistantStore = {
-  async agents(domainId: string, _locale?: string): Promise<AgentRow[]> {
+  async agents(domainId: string, options?: AgentsReadOptions): Promise<AgentRow[]> {
     if (
       !(
         await db().query(
@@ -90,6 +138,7 @@ export const assistantStore = {
       `INSERT INTO ${table("assistant_agents")} (id,domain_id,kind,name,description,system_prompt,skills,sort_order) VALUES($1,$2,$3,$4,$5,NULL,$6,2) ON CONFLICT(domain_id,kind) DO NOTHING`,
       [randomUUID(), domainId, GOVERNANCE_KIND, "Knowledge governance", "Review business knowledge with traceable evidence", JSON.stringify([GOVERNANCE_SKILL])],
     );
+    await upgradeGovernancePreset(domainId, options);
     return (
       await db().query(
         `SELECT * FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind<>'app-builder' AND kind NOT LIKE 'app-builder:%' ORDER BY sort_order,name,id`,
@@ -97,8 +146,8 @@ export const assistantStore = {
       )
     ).rows;
   },
-  async channelAgents(domainId: string): Promise<AgentRow[]> {
-    await this.agents(domainId);await this.appBuilder(domainId);
+  async channelAgents(domainId: string, options?: AgentsReadOptions): Promise<AgentRow[]> {
+    await this.agents(domainId, options);await this.appBuilder(domainId);
     return (await db().query(`SELECT * FROM ${table("assistant_agents")} WHERE domain_id=$1 ORDER BY sort_order,name,id`,[domainId])).rows;
   },
   async appBuilder(domainId: string): Promise<AgentRow> {
