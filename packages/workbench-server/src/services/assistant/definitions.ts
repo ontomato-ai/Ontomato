@@ -15,7 +15,9 @@ import { assistantStore, type AssistantOwner, type AgentRow } from "./store";
 import { HttpError } from "../../utils/errors";
 import { assertPermission } from "../../identity/installed";
 import { resolveAssistantSkillReferences } from "./skill-references";
-import { AgentDefinitionFieldError } from "./definition-form-schema";
+import { AgentDefinitionFieldError, parseAgentDefinitionUpdateForm } from "./definition-form-schema";
+import type { PanelFormValues } from "@ontomato/contracts/panel-projection";
+import { applySubmittedFields } from "../product-panels/submitted-form-values";
 import {
   hasHiddenAssistantSkillRefs,
   readAssistantSkillView,
@@ -67,8 +69,8 @@ export async function filterReadableAgentDefinitions(
   return new Set(rows.filter(({ kind }) => isReadableDefinition(kind)).map(({ id }) => id));
 }
 
-async function editableAgent(id: string, owner: AssistantOwner) {
-  const agent = await assistantStore.agent(id, owner);
+async function editableAgent(id: string, owner: AssistantOwner, client?: Parameters<typeof assistantStore.agent>[2]) {
+  const agent = await assistantStore.agent(id, owner, client);
   if (!isReadableDefinition(agent.kind)) throw new HttpError(404, "Agent definition not found", "NOT_FOUND");
   return agent;
 }
@@ -148,44 +150,71 @@ export async function saveAgentDefinition(
   return projectAgentDefinitionSkills(definition, skillView);
 }
 
+type SubmittedAgentUpdate = { values: PanelFormValues; submittedFields: readonly string[] };
+
 export async function saveAgentDefinitionSnapshot(
   id: string,
-  input: AssistantAgentUpdateInput,
+  update: AssistantAgentUpdateInput | SubmittedAgentUpdate,
   owner: AssistantOwner,
   credentials: AssistantCredentials,
   selection?: AgentDefinitionSkillSelection,
 ) {
   const locale = credentials.locale;
   return withDomainSkills(owner.domainId, async () => {
-    const agent = await editableAgent(id, owner);
     const access = selection ?? { credentials, view: await readAssistantSkillView(owner.domainId, credentials) };
-    const { skills, executionUserId } = await checkedDefinition(input, owner, credentials, agent.execution_user_id, agent.skills, access);
-    if (input.executionUserId != null && input.executionUserId !== agent.execution_user_id)
-      await prepareExecutionSetting(owner, agent.execution_user_id, input.executionUserId, credentials);
-    await transaction(async client=>{
-    await lockProducts(client,owner);
-    await client.query(
-      `UPDATE ${t("assistant_agents")} SET name=$3,description=$4,enabled=$5,system_prompt=$6,model_selection=$7,model_reference_migrated=true,icon=$8,class_names=$9,enabled_mcp_service_ids=$10,sort_order=COALESCE($11,sort_order),execution_user_id=$12${skills === undefined ? "" : ",skills=$13"} WHERE id=$1 AND domain_id=$2`,
-      [
-        id,
-        owner.domainId,
-        input.name === assistantName(agent, locale) ? agent.name : input.name,
-        input.description === assistantDescription(agent, locale) ? agent.description : input.description,
-        input.enabled,
-        storedSystemPrompt(agent.kind, input.systemPrompt, locale),
-        JSON.stringify(input.modelSelection),
-        input.icon,
-        JSON.stringify(input.classNames),
-        JSON.stringify(input.enabledMcpServiceIds),
-        input.sortOrder ?? null,
-        executionUserId,
-        ...(skills === undefined ? [] : [JSON.stringify(skills)]),
-      ],
-    );
-    const updated=await client.query(`SELECT * FROM ${t('assistant_agents')} WHERE id=$1 AND domain_id=$2`,[id,owner.domainId]);
-    await synchronizeNativeProfile(client,owner,updated.rows[0],locale);
+    const definition = await transaction(async client => {
+      await lockProducts(client, owner);
+      const agent = await editableAgent(id, owner, client);
+      const current = view(agent, locale);
+      const partial = "submittedFields" in update ? update : undefined;
+      if (partial?.submittedFields.length === 0) return current;
+      const changed = (field: keyof AssistantAgentUpdateInput) =>
+        partial === undefined || partial.submittedFields.some(path => path === `/${field}` || path.startsWith(`/${field}/`));
+
+      let input: AssistantAgentUpdateInput;
+      if ("submittedFields" in update) {
+        const { id: _id, sortOrder: _sortOrder, ...stored } = current;
+        const values = applySubmittedFields(stored, update.values, update.submittedFields);
+        if (!changed("skills")) delete values.skills;
+        input = parseAgentDefinitionUpdateForm(values);
+      } else {
+        input = update;
+      }
+      const { skills, executionUserId } = await checkedDefinition(input, owner, credentials, agent.execution_user_id, agent.skills, access);
+      if (input.executionUserId != null && input.executionUserId !== agent.execution_user_id)
+        await prepareExecutionSetting(owner, agent.execution_user_id, input.executionUserId, credentials);
+
+      const assignments: string[] = [];
+      const parameters: unknown[] = [id, owner.domainId];
+      const set = (field: keyof AssistantAgentUpdateInput, column: string, value: unknown) => {
+        if (changed(field) && value !== undefined) {
+          parameters.push(value);
+          assignments.push(`${column}=$${parameters.length}`);
+        }
+      };
+      set("name", "name", input.name === assistantName(agent, locale) ? agent.name : input.name);
+      set("description", "description", input.description === assistantDescription(agent, locale) ? agent.description : input.description);
+      set("enabled", "enabled", input.enabled);
+      set("systemPrompt", "system_prompt", storedSystemPrompt(agent.kind, input.systemPrompt, locale));
+      set("modelSelection", "model_selection", JSON.stringify(input.modelSelection));
+      set("modelSelection", "model_reference_migrated", true);
+      set("icon", "icon", input.icon);
+      set("classNames", "class_names", JSON.stringify(input.classNames));
+      set("enabledMcpServiceIds", "enabled_mcp_service_ids", JSON.stringify(input.enabledMcpServiceIds));
+      set("sortOrder", "sort_order", input.sortOrder);
+      set("executionUserId", "execution_user_id", executionUserId);
+      set("skills", "skills", skills === undefined ? undefined : JSON.stringify(skills));
+      if (!assignments.length) return current;
+
+      const { rows: [saved] } = await client.query<AgentRow>(
+        `UPDATE ${t("assistant_agents")} SET ${assignments.join(",")} WHERE id=$1 AND domain_id=$2 RETURNING *`,
+        parameters,
+      );
+      if (!saved) throw new HttpError(404, "Agent definition not found", "NOT_FOUND");
+      await synchronizeNativeProfile(client, owner, saved, locale);
+      return view(saved, locale);
     });
-    return { definition: await readStoredAgentDefinition(id, owner, locale), skillView: access.view };
+    return { definition, skillView: access.view };
   });
 }
 export async function createAgentDefinition(
