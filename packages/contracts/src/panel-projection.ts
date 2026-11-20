@@ -123,6 +123,7 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "ontologyType":
     case "className":
     case "cursor":
+    case "scheduledRunId":
     case "knowledgeCountField":
     case "knowledgeStatus":
     case "feedbackCountField":

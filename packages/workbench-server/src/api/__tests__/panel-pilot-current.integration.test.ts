@@ -68,6 +68,10 @@ const taskForm = platformScheduleFormSchema.parse(examples.forms.find(item => it
 const taskRun = platformTaskRunSchema.parse({
   ...examples.runs.find(item => item.name === "agents-running")!.response, taskId: task.id,
 });
+const completedTaskRun = platformTaskRunSchema.parse({
+  ...examples.runs.find(item => item.name === "governance-completed")!.response, taskId: task.id,
+});
+const runIdType = { kind: "scalar", type: "string" } as const;
 const createdTaskId = "10000000-0000-4000-8000-000000000011";
 const ownerWrites: string[] = [];
 let ownerTasks: typeof task[] = [];
@@ -100,14 +104,20 @@ const panel = {
   name: "Schedules", description: "", visibility: "domain",
   content: vuePanelContent("summary", "tasks", "form", "run", "create", "history", "manage"),
   manifest: {
-    state: { selectedTask: { type: taskType, deepLink: true, external: true, personal: false, default: null } },
+    state: {
+      selectedTask: { type: taskType, deepLink: true, external: true, personal: false, default: null },
+      selectedRunId: { type: runIdType, default: taskRun.id },
+    },
     members: {
       summary: { target: { projectionId }, inputs: { task: { state: "selectedTask" } } },
       tasks: { target: { projectionId: "projection-pilot-list" } },
       form: { target: { projectionId: "projection-pilot-form" }, inputs: { task: { state: "selectedTask" } } },
       run: { target: { projectionId: "projection-pilot-run" }, inputs: { task: { state: "selectedTask" } } },
       create: { target: { projectionId: "projection-pilot-create-task" } },
-      history: { target: { projectionId: "projection-pilot-task-history" }, inputs: { task: { state: "selectedTask" } } },
+      history: {
+        target: { projectionId: "projection-pilot-task-history" },
+        inputs: { task: { state: "selectedTask" }, runId: { state: "selectedRunId" } },
+      },
       manage: { target: { projectionId: "projection-pilot-manage-task" }, inputs: { task: { state: "selectedTask" } } },
     },
     events: {},
@@ -418,8 +428,9 @@ beforeAll(async () => {
   app.get("/platform/scheduled-tasks/:taskId/runs/:runId", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.params.taskId).toBe(task.id);
-    expect(req.params.runId).toBe(taskRun.id);
-    res.json(taskRun);
+    const run = [taskRun, completedTaskRun].find(item => item.id === req.params.runId);
+    expect(run).toBeDefined();
+    res.json(run);
   });
   app.put("/platform/scheduled-tasks/:taskId/enabled", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
@@ -512,9 +523,10 @@ it("reads back stable member keys and named data, and leaves the record intact a
     },
     "projection-pilot-task-history": {
       ...projection, componentId: "@ontomato/sdk:PanelData", config: {},
+      inputs: { ...projection.inputs, runId: runIdType },
       data: {
         runs: { ...projection.data.record, read: "runs", params: { cursor: { literal: "previous-page" } } },
-        run: { ...projection.data.record, read: "run", params: { runId: { literal: taskRun.id } } },
+        run: { ...projection.data.record, read: "run", params: { runId: { input: "runId" } } },
       },
     },
     "projection-pilot-manage-task": {
@@ -571,7 +583,9 @@ it("reads back stable member keys and named data, and leaves the record intact a
   expect(await (await read("history", "runs", { task: taskRef })).json()).toEqual({
     status: "ready", value: { runs: [taskRun], nextCursor: "next-page" },
   });
-  expect(await (await read("history", "run", { task: taskRef })).json()).toEqual({ status: "ready", value: taskRun });
+  for (const run of [taskRun, completedTaskRun]) {
+    expect(await (await read("history", "run", { task: taskRef, runId: run.id })).json()).toEqual({ status: "ready", value: run });
+  }
   const operation = await (await request("POST", "product-panels/read", {
     source, memberPath: [{ member: "run" }], operations: true, inputs: { task: taskRef },
   })).json();
