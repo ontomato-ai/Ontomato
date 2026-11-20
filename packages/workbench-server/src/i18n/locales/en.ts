@@ -65,6 +65,8 @@ export const en = {
   "panels.knowledge.delete": "Delete",
   "panels.operation.targetInputUnbound": "Operation '{operation}' expects target input '{input}', but member '{member}' does not connect it.",
   "panels.operation.targetInputMismatch": "Operation '{operation}' expects member '{member}' to connect input '{input}' to an object of type '{objectType}'.",
+  "panels.confirmation.deleteAttributeImpact": "This deletes the selected attribute; the owner refuses the primary key and an attribute a relationship joins on.",
+  "panels.confirmation.deleteRelationshipImpact": "This deletes the selected relationship.",
   "panels.confirmation.deleteObjectTypeImpact": "This deletes the selected object type, together with the relationships that touch it ({relationships} in total).",
   "panels.knowledge.statusAll": "All",
   "panels.feedback.all": "All",

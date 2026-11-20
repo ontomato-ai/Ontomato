@@ -319,7 +319,7 @@ function showEntry(text: string | null) {
   entry.value = { text, seq: (entry.value?.seq ?? 0) + 1 };
 }
 const expandEntry: PageComposerExpand = (request) => {
-  const named = entryAgent(request.target, nav.agents.value, nav.pageAgents.value?.defaultAgentId);
+  const named = entryAgent(request.target, nav.agents.value, nav.pageAgents.value?.defaultAgentId, nav.pageAgents.value?.presetAgentIds);
   if (!named) return showEntry(null);
   if (named === agentId.value) return showEntry(request.prefill ?? null);
   if (conversation.busy.value) {
