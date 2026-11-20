@@ -9,6 +9,7 @@ import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE, DELETE_KNOWLEDGE } from "@ontomato/contracts/panel-client-requests";
 import { productPanelInputSchema, productProjectionInputSchema } from "@ontomato/contracts/product-panels";
+import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { installContentLayout } from "../../content/layout";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
@@ -21,7 +22,7 @@ vi.mock("../../infrastructure/postgres", () => ({
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
 }));
 vi.mock("../../config/application", () => ({ config: { dataQuery: { get baseUrl() { return state.base; } } } }));
-vi.mock("../../config/environment", () => ({ environment: { agentRuntime: () => ({ queryServiceToken: "fixture-service" }) } }));
+vi.mock("../../config/environment", () => ({ environment: { agentRuntime: () => ({ queryServiceToken: "fixture-service" }), publicBasePath: () => "" } }));
 vi.mock("../../utils/request-identity", async original => ({
   ...await original<typeof import("../../utils/request-identity")>(),
   requireDomainId: (req: { domainId: string }) => req.domainId,
@@ -126,6 +127,15 @@ const projections = {
           size: { input: "size" },
         },
       },
+    },
+  }),
+  "projection-knowledge-counts": productProjectionInputSchema.parse({
+    name: "Knowledge counts", description: "", visibility: "domain",
+    componentId: "@ontomato/sdk:SegmentedControl",
+    inputs: { search: { kind: "scalar", type: "string" } },
+    outputs: {},
+    config: {},
+    data: {
       counts: {
         source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } },
         read: "counts",
@@ -215,13 +225,14 @@ const projections = {
 const panel = productPanelInputSchema.parse({
   name: "Business knowledge", description: "", visibility: "domain",
   content: {
-    html: '<section flow="column"><panel-member ref="list"></panel-member><panel-member ref="detail"></panel-member><panel-member ref="form"></panel-member><panel-member ref="createForm"></panel-member><panel-member ref="approve"></panel-member><panel-member ref="remove"></panel-member></section>',
+    html: '<section flow="column"><panel-member ref="counts"></panel-member><panel-member ref="list"></panel-member><panel-member ref="detail"></panel-member><panel-member ref="form"></panel-member><panel-member ref="createForm"></panel-member><panel-member ref="approve"></panel-member><panel-member ref="remove"></panel-member></section>',
   },
   manifest: {
     state: {
       selectedEntry: { type: knowledgeType, deepLink: true, external: true, personal: false, default: null },
     },
     members: {
+      counts: { target: { projectionId: "projection-knowledge-counts" } },
       list: { target: { projectionId: "projection-knowledge-list" } },
       detail: { target: { projectionId: "projection-knowledge-detail" }, inputs: { entry: { state: "selectedEntry" } } },
       form: { target: { projectionId: "projection-knowledge-form" }, inputs: { entry: { state: "selectedEntry" } } },
@@ -247,6 +258,7 @@ beforeAll(async () => {
   await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
   contentRoot = await mkdtemp(path.join(os.tmpdir(), "panel-knowledge-"));
+  await writeBundledAppSdkFixture(contentRoot);
   installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
 
   const { productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
@@ -380,11 +392,11 @@ it("serves business knowledge panel reads over real HTTP routes backed by Postgr
   expect(page2.value.nextCursor).toBeUndefined();
 
   // counts: status tabs with and without search.
-  expect(await (await read("list", "counts", {})).json()).toEqual({
+  expect(await (await read("counts", "counts", {})).json()).toEqual({
     status: "ready",
     value: { all: 4, pending: 2, approved: 2 },
   });
-  expect(await (await read("list", "counts", { search: "rule" })).json()).toEqual({
+  expect(await (await read("counts", "counts", { search: "rule" })).json()).toEqual({
     status: "ready",
     value: { all: 3, pending: 1, approved: 2 },
   });
