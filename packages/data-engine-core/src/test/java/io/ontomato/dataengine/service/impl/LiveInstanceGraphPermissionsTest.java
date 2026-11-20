@@ -71,7 +71,9 @@ class LiveInstanceGraphPermissionsTest {
             assertFalse(search.getBooleanValue("hasMore"));
             search = data(controller.instanceGraphSearch(JSONObject.of("term", "p1")));
             assertEquals(Set.of("Person:p1"), ids(search, "nodes"));
-            assertEquals("p1", search.getJSONArray("nodes").getJSONObject(0).getString("name"));
+            var node = search.getJSONArray("nodes").getJSONObject(0);
+            assertEquals("Person:p1", node.getString("id"));
+            assertEquals("—", node.getString("name"));
 
             var neighbors = data(controller.instanceGraphNeighborhood(JSONObject.of("id", "Department:d1", "direction", "incoming")));
             assertEquals(Set.of("Department:d1", "Person:p1"), ids(neighbors, "nodes"));
@@ -120,7 +122,9 @@ class LiveInstanceGraphPermissionsTest {
         assertEquals(2, unrestricted.join().getIntValue("nodeCount"));
         assertEquals(Set.of("Person:a"), ids(restricted.join(), "overviewNodes"));
         assertEquals(1, fixture.query("statistics", new JSONObject(), alice).getIntValue("nodeCount"));
-        assertEquals("a", fixture.query("summary", new JSONObject(), alice).getJSONArray("overviewNodes").getJSONObject(0).getString("name"));
+        var restrictedNode = fixture.query("summary", new JSONObject(), alice).getJSONArray("overviewNodes").getJSONObject(0);
+        assertEquals("Person:a", restrictedNode.getString("id"));
+        assertEquals("—", restrictedNode.getString("name"));
 
         alice.getFieldPermissionByClassName("Person").getVisibleFields().add("name");
         assertEquals("Alice name", fixture.query("summary", new JSONObject(), alice).getJSONArray("overviewNodes").getJSONObject(0).getString("name"));
