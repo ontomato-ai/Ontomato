@@ -69,6 +69,7 @@ const projections: Record<string, ProductProjection> = {
       source: { object: { input: "agent" } }, read: "form",
       params: { values: { input: "values" }, changedField: { input: "changedField" } },
     } },
+    operations: { save: { operation: { kind: "PlatformOperation", id: `${AGENT_DEFINITION}.save` }, target: { input: "agent" } } },
   },
   "parameter-skills": {
     ...current, id: "parameter-skills", name: "Parameter skills", componentId: "@ontomato/sdk:ReferencePicker",

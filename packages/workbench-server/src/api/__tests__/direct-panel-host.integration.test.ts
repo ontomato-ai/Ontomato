@@ -25,6 +25,8 @@ import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-
 import { readSseFrames } from "../../infrastructure/agent-runtime/client";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
+import { configureI18n } from "../../i18n";
+import { en, enLocaleMeta } from "../../i18n/locales/en";
 
 const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "" }));
 vi.mock("../../infrastructure/postgres", () => ({
@@ -60,6 +62,10 @@ const grants = new Set<string>();
 const codePanelId = "panel-schedules-mixed";
 
 beforeAll(async () => {
+  configureI18n({
+    defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
+    packs: { en: { ...enLocaleMeta, messages: en } },
+  });
   state.schema = `direct_panel_host_${randomUUID().replaceAll("-", "")}`;
   state.pool = new pg.Pool({ connectionString: database });
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);

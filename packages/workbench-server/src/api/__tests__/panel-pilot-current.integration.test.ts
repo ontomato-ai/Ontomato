@@ -55,6 +55,7 @@ const resourceIds = new Set<string>();
 const projectionId = "projection-pilot-summary";
 const panelId = "panel-schedules-pilot";
 const graphPanelId = "panel-ontology-pilot";
+const dataPanelId = "panel-data-port-pilot";
 const agentPanelId = "panel-agent-settings-pilot";
 const agentId = randomUUID();
 const task = platformTaskSchema.parse(examples.creates.find(item => item.name === "governance-instruction")!.response);
@@ -163,12 +164,13 @@ beforeAll(async () => {
   app.get("/platform/applications/resolve-entry", (req, res, next) => {
     if (req.query.applicationId !== "ontology-pilot") { next(); return; }
     expect(req.header("tk")).toBe("pilot-reader");
+    // Java answers the one admitted entry the request names.
+    const uses = [
+      { id: "graph", pageKey: "graph", path: "/applications/ontology-pilot/graph", panelId: graphPanelId, access: { kind: "domain-member" } },
+      { id: "data", pageKey: "data", path: "/applications/ontology-pilot/data", panelId: dataPanelId, access: { kind: "domain-member" } },
+    ];
     res.json({ success: true, data: {
-      applicationId: "ontology-pilot", menu: { groups: [], panelUses: [] },
-      use: {
-        id: "graph", pageKey: "graph", path: "/applications/ontology-pilot/graph", panelId: graphPanelId,
-        access: { kind: "domain-member" },
-      },
+      applicationId: "ontology-pilot", menu: { groups: [], panelUses: [] }, use: uses.find(use => use.id === req.query.useId),
     } });
   });
   app.post("/admin/getMetas", (req, res) => {
@@ -389,11 +391,12 @@ it("reads back stable member keys and named data, and leaves the record intact a
   const formWrite = await request("PUT", "product-projections/projection-pilot-form", {
     ...projection, componentId: "@ontomato/sdk:ObjectForm", revision: 0,
     data: { form: { ...projection.data.record, read: "form" } },
+    operations: { save: { operation: { kind: "PlatformOperation", id: "platform:ScheduledTask.save" }, target: { input: "task" } } },
   });
   expect(formWrite.status, await formWrite.text()).toBe(200);
   const runWrite = await request("PUT", "product-projections/projection-pilot-run", {
     ...projection, componentId: "@ontomato/sdk:OperationButton", revision: 0,
-    data: { operation: { source: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, read: "describe", params: {} } },
+    data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
   });
   expect(runWrite.status, await runWrite.text()).toBe(200);
   const panelWrite = await request("PUT", panelPath, { ...panel, revision: 0 });
@@ -433,9 +436,11 @@ it("reads back stable member keys and named data, and leaves the record intact a
   expect(await (await read("form", "form", { task: taskRef })).json()).toMatchObject({
     status: "ready", value: { revision: task.revision },
   });
-  const operation = await (await read("run", "operation", {})).json();
+  const operation = await (await request("POST", "product-panels/read", {
+    source, memberPath: [{ member: "run" }], operations: true, inputs: { task: taskRef },
+  })).json();
   expect(operation).toMatchObject({
-    status: "ready", value: { effect: "write", handlerRef: "schedules.runNow", label: "立即运行" },
+    status: "ready", value: { runNow: { kind: "action", effect: "write", handlerRef: "schedules.runNow", label: "立即运行" } },
   });
   const target = { kind: "object", objectType: taskType.objectType, primaryKey: task.id };
   let runNowReceipt: unknown;
@@ -599,6 +604,65 @@ it("reads the seven named ontology data items with the panel viewer", async () =
   expect(await update.json()).toMatchObject({ error: { message: expect.stringContaining("node") } });
 });
 
+it("registers and reads an author-named datum through the SDK catalogue wildcard", async () => {
+  const original = await readFile(cataloguePath, "utf8");
+  const catalogue = appsSdkComponentCatalogSchema.parse(JSON.parse(original));
+  await writeFile(cataloguePath, JSON.stringify({
+    ...catalogue,
+    components: [...catalogue.components, {
+      componentId: "Data", module: "@ontomato/sdk/base", exportName: "Data", role: "presentation",
+      meaning: "Supplies author-named data to the panel.", ports: { props: [], events: [], slots: [] },
+      data: { "*": { results: ["panelGraphNeighbors"], required: false, runtimeParams: ["node", "page"] } },
+    }],
+  }));
+
+  try {
+    const source = { type: { kind: "PlatformObjectType", id: "platform:OntologyType" } };
+    const datumName = "nearbyWarehouses";
+    const projection = {
+      name: "Warehouse neighbors", description: "", visibility: "domain", componentId: "@ontomato/sdk:Data",
+      revision: 0, inputs: {}, outputs: {}, config: {},
+      data: { [datumName]: { source, read: "neighbors", params: {} } },
+    };
+    const projectionPath = "product-projections/data-port-pilot";
+    const wrongResult = await request("PUT", projectionPath, {
+      ...projection, data: { [datumName]: { source, read: "counts", params: {} } },
+    });
+    expect(wrongResult.status).toBe(400);
+    expect(await wrongResult.json()).toMatchObject({
+      error: { code: "PANEL_COMPONENT_DATA_RESULT_MISMATCH", message: expect.stringContaining(datumName) },
+    });
+
+    const savedProjection = await request("PUT", projectionPath, projection);
+    expect(savedProjection.status, await savedProjection.text()).toBe(200);
+    const savedPanel = await request("PUT", "product-panels/" + dataPanelId, {
+      name: "Warehouse data", description: "", visibility: "domain", revision: 0,
+      content: { html: '<section><panel-member ref="data"></panel-member></section>' },
+      manifest: { state: {}, members: { data: { target: { projectionId: "data-port-pilot" } } }, events: {} },
+    });
+    expect(savedPanel.status, await savedPanel.text()).toBe(200);
+
+    const read = async (runtimeParams: object) => {
+      const response = await request("POST", "product-panels/read", {
+        source: { kind: "registered", applicationId: "ontology-pilot", useId: "data" },
+        memberPath: [{ member: "data" }], dataName: datumName, inputs: {}, runtimeParams,
+      });
+      expect(response.status).toBe(200);
+      return productPanelReadResponseSchema.parse(await response.json());
+    };
+    const node = { className: "platform:ObjectType", primaryKey: "warehouse" };
+    expect(await read({ node })).toMatchObject({ status: "ready", value: { node: { primaryKey: "warehouse" } } });
+    expect(await read({ node, page: { number: 1, size: 10 } })).toMatchObject({
+      status: "error", message: expect.stringContaining("parameter 'page'"),
+    });
+    expect(await read({ node, relationKinds: [] })).toMatchObject({
+      status: "error", message: expect.stringContaining("parameter 'relationKinds'"),
+    });
+  } finally {
+    await writeFile(cataloguePath, original);
+  }
+});
+
 it("reads agent settings and reference options with the panel viewer", async () => {
   const type = (id: string, read: string, params = {}) => ({
     source: { type: { kind: "PlatformObjectType", id } }, read, params,
@@ -610,30 +674,32 @@ it("reads agent settings and reference options with the panel viewer", async () 
     data: { options: type(id, "options", params), selected: type(id, "resolve", { values: { input: "values" } }) },
   });
   const agentType = { agent: { kind: "object", objectType: "platform:AgentDefinition" } };
-  const written: Record<string, { componentId: string; inputs?: object; data: object }> = {
+  const written: Record<string, { componentId: string; inputs?: object; data: object; operations?: object }> = {
     agents: { componentId: "@ontomato/sdk:ObjectList", data: { rows: type("platform:AgentDefinition", "list") } },
     summary: { componentId: "@ontomato/sdk:ObjectSummary", inputs: agentType, data: { record: object("record") } },
     definition: { componentId: "@ontomato/sdk:ObjectForm", inputs: agentType,
-      data: { form: object("form"), createForm: type("platform:AgentDefinition", "createForm") } },
+      data: { form: object("form"), createForm: type("platform:AgentDefinition", "createForm") },
+      operations: { save: { operation: { kind: "PlatformOperation", id: "platform:AgentDefinition.save" }, target: { input: "agent" } } },
+    },
     models: picker("platform:ModelOption"),
     users: picker("platform:User", { keyword: { kind: "scalar", type: "string" }, page: { kind: "json" } },
       { keyword: { input: "keyword" }, page: { input: "page" } }),
     skills: picker("platform:Skill"),
 
   };
-  const members: Record<string, { target: { projectionId: string } }> = {};
+  const members: Record<string, { target: { projectionId: string }; inputs?: object }> = {};
   for (const [key, projection] of Object.entries(written)) {
     const projectionId = "agent-settings-" + key;
     const saved = await request("PUT", "product-projections/" + projectionId, {
       name: key, description: "", visibility: "domain", revision: 0, inputs: {}, outputs: {}, config: {}, ...projection,
     });
     expect(saved.status, await saved.text()).toBe(200);
-    members[key] = { target: { projectionId } };
+    members[key] = { target: { projectionId }, ...(key === "definition" && { inputs: { agent: { state: "selectedAgent" } } }) };
   }
   const saved = await request("PUT", "product-panels/" + agentPanelId, {
     name: "Agent settings", description: "", visibility: "domain", revision: 0,
     content: { html: "<section>" + Object.keys(members).map(key => `<panel-member ref="${key}"></panel-member>`).join("") + "</section>" },
-    manifest: { state: {}, members, events: {} },
+    manifest: { state: { selectedAgent: { type: agentType.agent, default: null } }, members, events: {} },
   });
   expect(saved.status, await saved.text()).toBe(200);
   const read = async (member: string, dataName: string, inputs: object = {}) => {
@@ -651,6 +717,16 @@ it("reads agent settings and reference options with the panel viewer", async () 
     return reply.value;
   };
   const agent = { className: "platform:AgentDefinition", primaryKey: agentId };
+  const describeSave = async (inputs: object) => (await request("POST", "product-panels/read", {
+    source: { kind: "registered", applicationId: "agent-settings", useId: "settings" },
+    memberPath: [{ member: "definition" }], operations: true, inputs,
+  })).json();
+  expect(await describeSave({ agent })).toMatchObject({
+    status: "ready", value: { save: { kind: "form.save", target: { source: "input", input: "agent" } } },
+  });
+  expect(await describeSave({ agent: null })).toMatchObject({
+    status: "ready", value: { save: { kind: "form.save", target: { source: "draft", slot: "definition" } } },
+  });
   expect(await ready("agents", "rows")).toContainEqual(expect.objectContaining({ primaryKey: agentId, label: "Inventory analyst" }));
   expect(await ready("summary", "record", { agent })).toMatchObject({
     primaryKey: agentId, fields: { description: "Inventory summary", enabled: "false" },
@@ -721,7 +797,7 @@ it("dispatches the action catalog's three reads and both operation descriptions"
   const selected = { object: { literal: action } };
   const operation = (id: string) => ({
     componentId: "@ontomato/sdk:OperationButton", inputs: { action: actionType },
-    data: { operation: { source: { operation: { kind: "PlatformOperation", id } }, read: "describe", params: {} } },
+    data: {}, operations: { change: { operation: { kind: "PlatformOperation", id }, target: { input: "action" } } },
   });
   const read = await ownerReadPanel("owner-actions", {
     list: { componentId: "@ontomato/sdk:ObjectList", data: {
@@ -742,9 +818,15 @@ it("dispatches the action catalog's three reads and both operation descriptions"
   expect(await read("list", "rows")).toMatchObject({ status: "ready", value: [{ primaryKey: "review", label: "Review" }] });
   expect(await read("summary", "record")).toMatchObject({ status: "ready", value: { fields: { status: "Published" } } });
   expect(await read("definition", "form")).toMatchObject({ status: "ready", value: { values: { name: "Draft review" }, errors: [] } });
-  expect(await read("status", "operation")).toMatchObject({ status: "ready", value: { handlerRef: "actions.setStatus", batch: true } });
-  expect(await read("remove", "operation")).toMatchObject({
-    status: "ready", value: { handlerRef: "actions.delete", inspectImpact: { handlerRef: "actions.delete.inspect-impact" } },
+  const readOperations = async (member: string) => (await request("POST", "product-panels/read", {
+    source: { kind: "registered", applicationId: "owner-actions", useId: "data" },
+    memberPath: [{ member }], operations: true, inputs: { action },
+  })).json();
+  expect(await readOperations("status")).toMatchObject({
+    status: "ready", value: { change: { handlerRef: "actions.setStatus", batch: true } },
+  });
+  expect(await readOperations("remove")).toMatchObject({
+    status: "ready", value: { change: { handlerRef: "actions.delete", inspectImpact: { handlerRef: "actions.delete.inspect-impact" } } },
   });
 });
 

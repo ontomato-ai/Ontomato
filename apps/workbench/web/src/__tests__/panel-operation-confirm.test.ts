@@ -23,11 +23,13 @@ import { codePanelRecord, connectBridge, projectionRecord } from "./host-bridge-
 
 const removal = "projection-agent-remove";
 const run = "projection-task-run";
-const operationButton = (id: string, operation: string) => projectionRecord({
-  id, componentId: "@ontomato/sdk:OperationButton",
-  data: { describe: { source: { operation: { kind: "PlatformOperation", id: operation } }, read: "describe", params: {} } },
+const operationButton = (id: string, name: string, operation: string) => projectionRecord({
+  id, componentId: "@ontomato/sdk:OperationButton", config: { operation: name },
+  data: {}, operations: { [name]: { operation: { kind: "PlatformOperation", id: operation } } },
 });
-const projections: Record<string, ProductProjection> = { [removal]: operationButton(removal, DELETE_KNOWLEDGE), [run]: operationButton(run, RUN_NOW) };
+const projections: Record<string, ProductProjection> = {
+  [removal]: operationButton(removal, "delete", DELETE_KNOWLEDGE), [run]: operationButton(run, "runNow", RUN_NOW),
+};
 /** The panel's members `remove` and `run` place the two buttons; an operation ID is `<member>.<operation>`. */
 const panel = codePanelRecord("panel-agents", { remove: removal, run });
 const use = panelUse("use-agents", "agents", panel.id, "/applications/app-agents/agents");

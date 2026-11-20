@@ -1,9 +1,12 @@
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { projectionPorts } from "@ontomato/contracts/panel-projection";
-import { componentMeta } from "../catalogue-components";
-import { memberComponentId } from "./projection-element";
 
-/** A projection's ports: what it reads and this release's catalogue entry for the component it draws. */
+/** A projection's ports: what it binds, takes and emits, from its record. */
 export function portsOf(projection: ProductProjection) {
-  return projectionPorts(projection, componentMeta(memberComponentId(projection)));
+  return projectionPorts(projection);
+}
+
+/** Whether a projection reads an owner's form (an object's or a new one's): a draft is offered to it. */
+export function readsOwnerForm(projection: ProductProjection): boolean {
+  return Object.values(projection.data).some((data) => data.read === "form" || data.read === "createForm");
 }

@@ -5,7 +5,7 @@ import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import { definePanel, type PanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
+import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import {
   ACTION,
   AGENT_DEFINITION,
@@ -27,6 +27,8 @@ import { encodeGraphNodeId } from "../../../../../packages/apps-sdk/src/base/ont
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 import { noOperations } from "./panel-frame";
+import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
+import { memberProjectionId } from "../../../../../packages/apps-sdk/src/panel/projection-element";
 
 /*
  * Direct-read regression for ObjectGraph, OntologyGraph, and ObjectRelations:
@@ -124,7 +126,7 @@ const meta = {
 type Layer = (typeof platformOntologyLayers)[number];
 const allLayers: [Layer, ...Layer[]] = [platformOntologyLayers[0], ...platformOntologyLayers.slice(1)];
 
-type Read = Omit<ProductPanelReadRequest, "source">;
+type Read = PanelMemberReadRequest;
 
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
 
@@ -150,6 +152,15 @@ function mountDirect(
     ...noOperations,
     readProjection: async (id) => projections[id]!,
     read: async (request) => {
+      // A member's operations are its owners' (here a form's save of the chosen object); the data reads are the test's.
+      if (request.operations) {
+        const projection = projections[memberProjectionId(manifest, request.memberPath[0]!.member)]!;
+        return ready(Object.fromEntries(Object.entries(projection.operations ?? {}).flatMap(([name, { operation, target }]) =>
+          target && "input" in target && request.inputs[target.input]
+            ? [[name, { kind: "form.save", handlerRef: operation.id, label: "Save", effect: "write", target: { source: "input", input: target.input },
+              inputSchema: {}, resultSchema: {}, batch: false }]]
+            : [])));
+      }
       reads.push(request);
       return answer(request);
     },
@@ -190,6 +201,7 @@ it("draws direct ObjectGraph in a direct panel via PanelMember with member.formF
       outputs: {},
       config: {},
       data: { form: { source: { object: { input: "agent" } }, read: "form", params: {} } },
+      operations: { save: { operation: { kind: "PlatformOperation", id: `${AGENT_DEFINITION}.save` }, target: { input: "agent" } } },
     },
     "agent-data-scope": {
       ...meta,
@@ -320,6 +332,7 @@ it("draws direct ObjectGraph in a frame via frameMemberData and edits the paired
       outputs: {},
       config: {},
       data: { form: { source: { object: { input: "agent" } }, read: "form", params: {} } },
+      operations: { save: { operation: { kind: "PlatformOperation", id: `${AGENT_DEFINITION}.save` }, target: { input: "agent" } } },
     },
     "agent-data-scope": {
       ...meta,
@@ -490,6 +503,7 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
         key: "scope",
         projection: scopeProjection,
         inputs: computed(() => ({})),
+        operations: computed(() => ({ status: "ready" as const, value: {} })),
         data: {
           use: (name) => computed(() => (name === "nodes" ? nodesState.value : edgesState.value)),
           read: async (name) => (name === "nodes" ? nodesState.value : edgesState.value),

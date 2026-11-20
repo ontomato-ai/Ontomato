@@ -513,7 +513,8 @@ describe("ontology model read adapter", () => {
       [ATTRIBUTE, SET_PRIMARY_KEY],
       [RELATIONSHIP, DELETE_RELATIONSHIP],
     ] as const) {
-      expect(platformObjectTypes[typeId]!.reads).toHaveProperty([`${operation}.describe`]);
+      // An operation is described by the operations read of the member that names it, not by a read of its own.
+      expect(platformObjectTypes[typeId]!.reads).not.toHaveProperty([`${operation}.describe`]);
       expect(platformObjectTypes[typeId]!.operations).toContain(operation);
     }
 

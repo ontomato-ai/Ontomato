@@ -25,6 +25,7 @@ const taskForm: DirectProjection = {
   inputs: { task: { kind: "object", objectType: SCHEDULED_TASK }, values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
   outputs: {}, config: {},
   data: { form: { source: { object: { input: "task" } }, read: "form", params: { values: { input: "values" }, changedField: { input: "changedField" } } } },
+  operations: { save: { operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.save` }, target: { input: "task" } } },
 };
 const manifest: DirectPanelManifest = {
   state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false } },
@@ -35,6 +36,11 @@ const field = (path: string, label: string) => ({ path, label, control: { kind: 
 const form = { fields: [field("/name", "Name"), field("/note", "Note")], values: { name: "t-1", note: "" }, errors: [], revision: 3,
   save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` } };
 const errors = [{ field: "/note", code: "value_too_long", message: "A note is a sentence" }];
+/** The owner's save of the chosen task, as it admits it. */
+const save = {
+  kind: "form.save", handlerRef: `${SCHEDULED_TASK}.save`, label: "Save", effect: "write", target: { source: "input", input: "task" },
+  inputSchema: {}, resultSchema: {}, batch: false,
+};
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -56,7 +62,7 @@ it("fails the panel with the owner's reason when the owner refuses the draft", a
     confirmOperation: noOperations.confirmOperation,
     // The owner checks the draft's values and answers its form with what it does not accept.
     read: async (request): Promise<ProductPanelReadResponse> =>
-      ({ status: "ready", value: (request.inputs.values ? { ...form, values: request.inputs.values, errors } : form) as never }),
+      ({ status: "ready", value: (request.operations ? { save } : request.inputs.values ? { ...form, values: request.inputs.values, errors } : form) as never }),
   });
   const element = document.createElement("div");
   document.body.append(element);

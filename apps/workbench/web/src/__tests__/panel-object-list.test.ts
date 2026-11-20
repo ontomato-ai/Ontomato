@@ -6,7 +6,7 @@ import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import { definePanel, type DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
-import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
+import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import {
   ACTION,
   BUSINESS_KNOWLEDGE,
@@ -21,6 +21,7 @@ import { createDirectPanelInstance } from "../../../../../packages/apps-sdk/src/
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 import { noOperations } from "./panel-frame";
+import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 
 /*
  * ObjectList, ObjectSummary and SegmentedControl under the Step 2 zero-config member-parameter contract:
@@ -51,7 +52,7 @@ const meta = {
   description: "",
 };
 
-type Read = Omit<ProductPanelReadRequest, "source">;
+type Read = PanelMemberReadRequest;
 
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
 const knowledge = (primaryKey: string) => ({ className: BUSINESS_KNOWLEDGE, primaryKey });

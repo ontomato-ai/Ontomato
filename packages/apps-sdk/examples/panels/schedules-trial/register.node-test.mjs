@@ -162,7 +162,8 @@ test("registers the trial's projections, panels and applications in that order",
     ["/api/product-panels/panel-schedules-summary", false, true],
   ]);
   assert.ok(productRequests.filter((request) => request.url.startsWith("/api/product-projections/"))
-    .every((request) => request.body.componentId.startsWith("@ontomato/sdk:") && Object.keys(request.body.data).length === 1));
+    .every((request) => request.body.componentId.startsWith("@ontomato/sdk:")
+      && Object.keys(request.body.data).length + Object.keys(request.body.operations ?? {}).length >= 1));
 });
 
 test("snapshots the pre-upgrade revisions and uses them without reading the legacy records after the upgrade", async () => {

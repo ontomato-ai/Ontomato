@@ -76,7 +76,7 @@ it("draws the owner's field names, button name and run message in a directly ren
     if (!found || found.disabled) throw new Error("Run now is not ready");
     return found;
   });
-  expect(button.textContent?.trim()).toBe(ownerAnswered.operation.value.label);
+  expect(button.textContent?.trim()).toBe(ownerAnswered.operation.value.runNow.label);
   button.click();
   await vi.waitFor(() => expect(element.querySelector(".sdk-operation-button [data-outcome=success]")?.textContent)
     .toBe(ownerAnswered.runNowReceipt.outcome.message));

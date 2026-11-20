@@ -16,7 +16,9 @@ import { codePanelRecord, connectBridge, projectionRecord } from "./host-bridge-
 const runProjection = projectionRecord({
   id: "projection-task-run",
   componentId: "@ontomato/sdk:OperationButton",
-  data: { describe: { source: { operation: { kind: "PlatformOperation", id: RUN_NOW } }, read: "describe", params: {} } },
+  config: { operation: "runNow" },
+  data: {},
+  operations: { runNow: { operation: { kind: "PlatformOperation", id: RUN_NOW } } },
 });
 const panel = codePanelRecord("panel-tasks", { run: runProjection.id });
 const use = panelUse("use-tasks", "tasks", panel.id, "/applications/app-tasks/tasks");

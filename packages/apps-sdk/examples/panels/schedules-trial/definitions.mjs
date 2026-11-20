@@ -8,7 +8,8 @@ import declarationQ from "./q/declaration.mjs";
  * themselves, and the two applications that use them.
  *
  * A projection is one SDK component with the data it shows, each item a read its owner registered (the scheduled task's
- * list, record, form and run-now description), and nothing about who draws it or where. X is the summary of one
+ * list, record and form), the owners' operations it offers (the task's save, run now), and nothing about who draws it or
+ * where. X is the summary of one
  * scheduled task; P and Q both use it, so changing its display changes both. The other projections are P's alone.
  */
 
@@ -54,6 +55,7 @@ export const projections = [
     {
       inputs: { task },
       data: { form: read({ object: { input: "task" } }, "form") },
+      operations: { save: { operation: { kind: "PlatformOperation", id: `${TASK}.save` }, target: { input: "task" } } },
     },
   ),
   // P's button: the platform's own operation to run a task now.
@@ -62,7 +64,12 @@ export const projections = [
     "Run now",
     "Runs the chosen scheduled task now, leaving its schedule as it is.",
     "OperationButton",
-    { inputs: { task }, data: { operation: read({ operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, "describe") } },
+    {
+      inputs: { task },
+      data: {},
+      operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
+      config: { operation: "runNow" },
+    },
   ),
 ];
 

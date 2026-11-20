@@ -1,8 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { effectScope, nextTick, type ComputedRef } from "vue";
+import { computed, effectScope, nextTick, type ComputedRef } from "vue";
 import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
-import type { ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
 import { ACTION, AGENT_DEFINITION, BUSINESS_KNOWLEDGE, MODEL_OPTION, ONTOLOGY_TYPE, USER } from "@ontomato/contracts/platform-object-types";
 import { createDirectPanelInstance, type MemberDataState, type MemberInputs } from "../../../../../packages/apps-sdk/src/panel/direct";
 import { frameMemberData } from "../../../../../packages/apps-sdk/src/panel/frame-member";
@@ -13,6 +12,7 @@ import { registerPlatformObjectAdapter, type PlatformRequests } from "../../../.
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { noOperations } from "./panel-frame";
+import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 
 /** A frame here reads through its resource modules; any read through the platform fails the test. */
 const noPlatformRead = async (): Promise<never> => { throw new Error("This test reads through the frame's modules"); };
@@ -59,7 +59,7 @@ it("reads nothing for a datum whose required parameter has no value, in the plat
     members: { objects: { target: { projectionId: typeObjects.id }, inputs: { type: { state: "selectedType" } } } },
     events: {},
   };
-  const reads: Omit<ProductPanelReadRequest, "source">[] = [];
+  const reads: PanelMemberReadRequest[] = [];
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "map", url: () => "/map", label: () => "Map", initial: {},
     text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
@@ -194,7 +194,9 @@ it("reads a reference's choices and held values, and a type's create form, as a 
   };
   const formData = frameMemberData(form, "definition", instance, () => ({}), noPlatformRead);
   // The member's form source reads the type's create form for a new object, with the values the form holds.
-  const source = memberFormSource({ key: "definition", projection: form, inputs: { value: {} } as never, data: formData }, instance);
+  const source = memberFormSource({
+    key: "definition", projection: form, inputs: { value: {} } as never, operations: computed(() => ({ status: "ready" as const, value: {} })), data: formData,
+  }, instance);
   expect(await source.describe({ target: { kind: "draft" }, values: { name: "Analyst" }, changedField: "/name" })).toEqual(description);
   expect(describe).toHaveBeenCalledWith({ target: { kind: "draft" }, values: { name: "Analyst" }, changedField: "/name" });
 });

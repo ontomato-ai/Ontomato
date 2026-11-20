@@ -5,11 +5,12 @@ import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
-import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
+import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import { mountDirectPanel, type DirectPanelMount } from "../../../../../packages/apps-sdk/src/direct";
 import { noOperations } from "./panel-frame";
+import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 
 /*
  * A directly rendered panel run beside the platform's host by the same rules as a frame's: it reports its deep-linkable
@@ -27,8 +28,8 @@ let summaryName = "Run now";
 const projections: Record<string, () => DirectProjection> = {
   "task-run": () => ({
     ...base, id: "task-run", revision: summaryName === "Run now" ? 1 : 2, name: summaryName, componentId: "@ontomato/sdk:OperationButton",
-    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: {},
-    data: { operation: { source: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, read: "describe", params: {} } },
+    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: { operation: "runNow" },
+    data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
   }),
 };
 const manifest: DirectPanelManifest = {
@@ -36,10 +37,10 @@ const manifest: DirectPanelManifest = {
   members: { run: { target: { projectionId: "task-run" }, inputs: { task: { state: "selectedTask" } } } },
   events: {},
 };
-const runNow = { handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
+const runNow = { kind: "action", handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
 
 function open() {
-  const reads: Omit<ProductPanelReadRequest, "source">[] = [];
+  const reads: PanelMemberReadRequest[] = [];
   const reports = { state: [] as unknown[], context: [] as unknown[], dirty: [] as boolean[] };
   // The platform's request path, as the reader: here only projection records are read through it.
   const readProjection = vi.fn((id: string) => projections[id]!());
@@ -63,7 +64,8 @@ function open() {
     confirmOperation: noOperations.confirmOperation,
     read: async (request): Promise<ProductPanelReadResponse> => {
       reads.push(request);
-      return { status: "ready", value: runNow as never };
+      // The button reads no datum: what it shows is its operation, as the owner admits it.
+      return { status: "ready", value: (request.operations ? { runNow } : null) as never };
     },
   });
   const element = document.createElement("div");
@@ -98,7 +100,7 @@ it("reads again only the data an operation reports changed, and everything on an
   const { mount, element, reads } = open();
   await vi.waitFor(() => expect(element.querySelector(".sdk-operation-button button")).toBeTruthy());
   const before = reads.length;
-  // The run's description is read from the operation, not from a task: a changed task leaves it as it is.
+  // The run's description is the member's operation, not a datum of a task: a changed task leaves it as it is.
   mount.refresh(null, { objects: [{ objectType: SCHEDULED_TASK, primaryKey: "t-1" }], objectTypes: [SCHEDULED_TASK] });
   await nextTick();
   expect(reads.length).toBe(before);

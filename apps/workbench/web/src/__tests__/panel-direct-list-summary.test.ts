@@ -5,12 +5,13 @@ import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
-import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
+import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import { createDirectPanelInstance } from "../../../../../packages/apps-sdk/src/panel/direct";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 import { noOperations } from "./panel-frame";
+import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 
 /*
  * Direct-rendered ObjectList and ObjectSummary (design 4.2): the instance reads each member's named datum (`rows`,
@@ -50,7 +51,7 @@ const baseManifest: DirectPanelManifest = {
   events: {},
 };
 
-type Read = Omit<ProductPanelReadRequest, "source">;
+type Read = PanelMemberReadRequest;
 
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
 

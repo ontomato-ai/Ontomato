@@ -58,7 +58,7 @@ const current = {
 };
 const projection = (
   id: string,
-  fields: Pick<Exclude<ProductProjection, { componentId: "@ontomato/sdk:MetricChart" }>, "componentId" | "inputs" | "data">,
+  fields: Pick<Exclude<ProductProjection, { componentId: "@ontomato/sdk:MetricChart" }>, "componentId" | "inputs" | "data" | "operations">,
   config: ProductProjection["config"] = {},
 ): ProductProjection => ({
   ...current, id, name: id, description: "", outputs: {}, config, ...fields,
@@ -88,7 +88,8 @@ const projections: Record<string, ProductProjection> = {
       form: { source: { object: { input: "agent" } }, read: "form", params: formParams },
       createForm: { source: { type: { kind: "PlatformObjectType", id: AGENT_DEFINITION } }, read: "createForm", params: formParams },
     },
-  }, { creates: true }),
+    operations: { save: { operation: { kind: "PlatformOperation", id: `${AGENT_DEFINITION}.save` }, target: { input: "agent" } } },
+  }),
   "agent-skill-choice": referencePicker("agent-skill-choice", SKILL),
   "agent-model-choice": referencePicker("agent-model-choice", MODEL_OPTION),
   "agent-data-scope": projection("agent-data-scope", {
@@ -161,7 +162,7 @@ function ownerForInstance() {
       kind: "success", data: {},
       affected: { objects: [{ objectType: AGENT_DEFINITION, primaryKey }], objectTypes: [AGENT_DEFINITION] },
     };
-  });
+  }, { source: "input", input: "agent" }, { creates: true });
   return (request: Sent) => intents(request) ?? owner(request, valuesById);
 }
 

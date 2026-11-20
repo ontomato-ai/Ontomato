@@ -83,6 +83,11 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
     watch(instance.unclaimedDraft, (unclaimed) => {
       if (unclaimed) run.failed(new Error((options.translate ?? String)("platform.panelDraftUnclaimed")));
     });
+    // Every member the panel declares is held from the start, drawn or not: its operations are listed, a draft is offered
+    // to it, and the panel's own code reads its data, whether or not a layout or a template places it.
+    // A member that cannot be read is that member's failure, not the panel's: whoever draws it (`<Projection>`) or reads
+    // it (`usePanelData`) shows the reason in its place, from this same hold; the rest of the panel goes on.
+    for (const member of Object.keys(options.manifest.members)) void instance.memberContext(member).then(undefined, () => undefined);
     void panelRun.start().catch(run.failed);
     return {
       instance,

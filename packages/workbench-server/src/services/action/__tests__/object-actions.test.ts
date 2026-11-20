@@ -136,7 +136,7 @@ describe("declaring and describing an action on a customer object", () => {
   it("declares one text value per stored parameter except the bound key, JSON text for a non-text type, none required", () => {
     expect(panelOperationDeclarationSchema.parse(declaration)).toEqual(declaration);
     expect(declaration).toEqual({
-      id: "approve-order", effect: "write", batch: false, target: { source: "input", input: OBJECT_ACTION_TARGET },
+      id: "approve-order", kind: "action", effect: "write", batch: false, target: { source: "input", input: OBJECT_ACTION_TARGET },
       inputSchema: {
         type: "object",
         properties: {

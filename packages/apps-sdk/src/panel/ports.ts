@@ -2,22 +2,26 @@ import { type PanelManifest, type PanelOperation, type PanelOperationCall } from
 import type { ProjectionPorts } from "@ontomato/contracts/panel-projection";
 import { stateObject, stateObjects, type PanelFieldValue } from "./state";
 import type { PanelWriteInvocation } from "./human-operations";
+import type { MemberOperations } from "./member-operations";
 
-export type { ProjectionOperation, ProjectionPorts } from "@ontomato/contracts/panel-projection";
+export type { ProjectionPorts } from "@ontomato/contracts/panel-projection";
 
 /*
  * What a projection offers the panel it is placed in, and therefore what the panel contains (overall design 3.2, 3.4,
- * "projection registration"): the element it binds, the parameters it takes, the operations it publishes and the handler
- * reference each one is. All of it comes from the projection's record and this SDK version's catalogue; a panel's
- * declaration names the projection and never its ports, so nothing is scanned out of the HTML and no renderer is guessed
- * from a name.
+ * "projection registration"): the element it binds, the parameters it takes, and the operations its record names, as
+ * their owners admit them now. A panel's declaration names the projection and never its ports, so nothing is scanned out
+ * of the HTML and no operation is guessed from a component.
  */
 
-/** One projection registered in one panel instance: the slot it fills and what its component publishes. */
+/** One projection registered in one panel instance: the slot it fills and what it offers. */
 export interface PanelProjectionRegistration {
   slot: string;
   projectionId: string;
   ports: ProjectionPorts;
+  /** The operations its record names, as the owners admit them now, by local name: what the header and an agent list. */
+  readonly operations: MemberOperations;
+  /** Whether it reads an owner's form, which a draft is offered to. */
+  takesDrafts: boolean;
 }
 
 /** The values a slot passes its projection now, by the parameter each fills; a field with no value passes null. */
@@ -56,8 +60,12 @@ function operationTarget(
   operation: PanelOperation,
   state: Readonly<Record<string, PanelFieldValue>>,
 ): PanelOperationCall["target"] {
-  if (!operation.target) return null;
+  if (!operation.target || operation.target.source === "none") return null;
   if (operation.target.source === "draft") return { kind: "draft" };
+  if (operation.target.source === "literal") {
+    const { className, primaryKey } = operation.target.literal;
+    return { kind: "object", objectType: className, primaryKey };
+  }
   const value = stateObject(state[operation.target.state]);
   return value && { kind: "object", objectType: value.className, primaryKey: value.primaryKey };
 }

@@ -39,14 +39,17 @@ test("P is a direct panel: its layout parses against its declaration and it carr
   assert.deepEqual(answer, { module: false, roots: ["element"] });
 });
 
-test("every trial projection names the owner's registered reads under the data names its component takes", async () => {
+test("every trial projection names the owner's registered reads under the data names its component takes, and the operations it offers", async () => {
   const answer = await taken(String(({ productProjectionInputSchema }, { projections }) =>
-    Object.fromEntries(projections.map(({ id, input }) => [id, Object.keys(productProjectionInputSchema.parse(input).data)]))));
+    Object.fromEntries(projections.map(({ id, input }) => {
+      const { data, operations } = productProjectionInputSchema.parse(input);
+      return [id, { data: Object.keys(data), operations: Object.fromEntries(Object.entries(operations ?? {}).map(([name, { operation }]) => [name, operation.id])) }];
+    }))));
   assert.deepEqual(answer, {
-    "projection-schedules-summary": ["record"],
-    "projection-schedules-tasks": ["rows"],
-    "projection-schedules-form": ["form"],
-    "projection-schedules-run": ["operation"],
+    "projection-schedules-summary": { data: ["record"], operations: {} },
+    "projection-schedules-tasks": { data: ["rows"], operations: {} },
+    "projection-schedules-form": { data: ["form"], operations: { save: "platform:ScheduledTask.save" } },
+    "projection-schedules-run": { data: [], operations: { runNow: "schedules.runNow" } },
   });
 });
 

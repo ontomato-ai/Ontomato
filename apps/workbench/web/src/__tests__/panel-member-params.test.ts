@@ -3,11 +3,11 @@ import { effectScope, nextTick, type ComputedRef } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { BUSINESS_KNOWLEDGE } from "@ontomato/contracts/platform-object-types";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import type { ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
 import { createDirectPanelInstance, type MemberDataState, type MemberInputs } from "../../../../../packages/apps-sdk/src/panel/direct";
 import { slotInputValues } from "../../../../../packages/apps-sdk/src/panel/ports";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 import { noOperations } from "./panel-frame";
+import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 
 /*
  * A member's parameters, as its component sets them through one interface (big main's rule, 2026-11-20): a read's
@@ -42,7 +42,7 @@ const manifest = definePanel({
 });
 
 it("sends what the panel's state binds as the author's input and what the member keeps as its own run-time value", async () => {
-  const reads: Omit<ProductPanelReadRequest, "source">[] = [];
+  const reads: PanelMemberReadRequest[] = [];
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "knowledge", url: () => "/ontology/knowledge", label: () => "Knowledge", initial: {},
     text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},

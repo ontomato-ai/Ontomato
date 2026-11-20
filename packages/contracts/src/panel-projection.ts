@@ -2,14 +2,15 @@ import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema, formValuesSchema, panelFormOptionSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
-import { directPanelPortTypeSchema, ontologyParameterTypeSchema, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, type DirectPanelPortType, type OntologyParameterType, type PanelManifest, type PanelMember, type PanelOperation, type PanelStateOperation, type PanelStateRef } from "./panel-manifest";
+import { directPanelPortTypeSchema, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelOperation, type PanelStateOperation, type PanelStateRef } from "./panel-manifest";
 import { ontologyElementRefSchema, type OntologyElementRef } from "./ontology-element-ref";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import {
   platformOntologyNeighborsRequestSchema, platformOntologyNeighborsResponseSchema,
   platformOntologyObjectsRequestSchema, platformOntologyRelationStatusSchema,
 } from "./platform-ontology";
-import { EXECUTE_OBJECT_ACTION, customerOntologyReads, customerRelationReads, objectActionReads, platformObjectTypes, type PanelReadParameterId, type PlatformReadDeclaration } from "./platform-object-types";
+import type { PanelOperationDeclaration, PanelOwnerOperationDescriptor } from "./panel-operations";
+import { customerOntologyReads, customerRelationReads, platformObjectTypes, type PanelReadParameterId, type PlatformReadDeclaration } from "./platform-object-types";
 
 /** Nested JSON in the owner's value shape. Field pointers address this object, including values filled by projections. */
 export const panelFormValuesSchema = runtimeJsonObjectSchema;
@@ -36,14 +37,13 @@ export const directProjectionParamSchema = z.union([z.object({ literal: runtimeJ
 const typeSource = ontologyElementRefSchema.extend({
   kind: ontologyElementRefSchema.shape.kind.extract(["PlatformObjectType", "ObjectType", "Relationship"]),
 });
-const operationSource = ontologyElementRefSchema.extend({
+const operationRef = ontologyElementRefSchema.extend({
   kind: ontologyElementRefSchema.shape.kind.extract(["PlatformOperation", "Action"]),
 });
 export const directProjectionDataSchema = z.object({
   source: z.union([
     z.object({ type: typeSource }).strict(),
     z.object({ object: z.union([z.object({ literal: panelObjectRefSchema }).strict(), inputRef]) }).strict(),
-    z.object({ operation: operationSource }).strict(),
   ]),
   read: readKey,
   params: z.record(readKey, directProjectionParamSchema),
@@ -55,11 +55,23 @@ export const directProjectionInputTypeSchema = z.union([
   z.object({ kind: z.literal("json") }).strict(),
 ]);
 
+export const projectionOperationTargetSchema = z.union([
+  inputRef,
+  z.object({ literal: panelObjectRefSchema }).strict(),
+]);
+export const panelLocalOperationNameSchema = readKey.refine(name => !name.includes("."), "Operation names cannot contain a dot");
+export const projectionOperationBindingSchema = z.object({
+  operation: operationRef,
+  target: projectionOperationTargetSchema.optional(),
+}).strict();
+export type ProjectionOperationBinding = z.infer<typeof projectionOperationBindingSchema>;
+
 export const directProjectionPortsSchema = z.object({
   componentId: z.string().regex(/^(?:@[^@\s/:]+\/)?[^@\s/:]+:[^@\s/:]+$/u, "Expected a package-qualified component name"),
   inputs: z.record(readKey, directProjectionInputTypeSchema),
   outputs: z.record(readKey, directPanelPortTypeSchema),
   data: z.record(readKey, directProjectionDataSchema),
+  operations: z.record(panelLocalOperationNameSchema, projectionOperationBindingSchema).optional(),
   config: runtimeJsonObjectSchema,
   conversationEntry: panelConversationEntrySchema.optional(),
 }).strict();
@@ -125,7 +137,6 @@ export function directObjectSourceType(projection: Pick<DirectProjectionPorts, "
 
 function projectionReadReference(projection: DirectProjectionPorts, source: DirectProjectionData["source"]): OntologyElementRef | undefined {
   if ("type" in source) return source.type;
-  if ("operation" in source) return source.operation;
   const id = directObjectSourceType(projection, source.object);
   return id === undefined ? undefined : { kind: id.startsWith("platform:") ? "PlatformObjectType" : "ObjectType", id };
 }
@@ -137,6 +148,7 @@ export function projectionReadReferences(projection: ProjectionReadFacts): reado
     const ref = projectionReadReference(projection, source);
     if (ref) references.set(bindingKey(ref), ref);
   }
+  for (const { operation } of Object.values(projection.operations ?? {})) references.set(bindingKey(operation), operation);
   if (projection.metricId !== undefined) {
     const metric = { kind: "MetricView", id: projection.metricId } as const;
     references.set(bindingKey(metric), metric);
@@ -155,17 +167,11 @@ export function directReadDeclaration(projection: DirectProjectionPorts, data: D
     case "PlatformObjectType":
       if (Object.hasOwn(platformObjectTypes, ref.id)) declaration = platformObjectTypes[ref.id].reads?.[read];
       break;
-    case "PlatformOperation":
-      declaration = Object.values(platformObjectTypes).find(type => type.operations?.includes(ref.id))?.reads?.[`${ref.id}.${read}`];
-      break;
     case "ObjectType":
       declaration = customerOntologyReads[read];
       break;
     case "Relationship":
       declaration = customerRelationReads[read];
-      break;
-    case "Action":
-      declaration = objectActionReads[read];
       break;
   }
   return declaration?.source === sourceKind ? declaration : undefined;
@@ -229,6 +235,12 @@ export function validateDirectProjection(projection: DirectProjectionPorts, ctx:
           issue([...path, "params", param, "input"], "Input does not match the read parameter type");
       }
     }
+  }
+  for (const [name, { target }] of Object.entries(projection.operations ?? {})) {
+    if (!target || !("input" in target)) continue;
+    const port = projection.inputs[target.input];
+    if (port?.kind !== "object" && port?.kind !== "list")
+      issue(["operations", name, "target", "input"], "The operation needs a declared object or list input");
   }
 }
 
@@ -409,120 +421,63 @@ export const panelFormSaveInputSchema = panelFormDescriptionSchema.pick({ values
 });
 export type PanelFormSaveInput = z.infer<typeof panelFormSaveInputSchema>;
 
-/** Operation metadata declared by a component of the SDK. */
-export const componentOperationSchema = z.object({
-  client: z.string(),
-  name: z.string(),
-  label: z.string(),
-  kind: z.enum(["form.save", "action"]),
-  inputSchema: z.record(ontologyParameterTypeSchema),
-});
-export type ComponentOperation = Readonly<z.infer<typeof componentOperationSchema>>;
-interface ComponentOperationMetadata {
-  readonly operations?: readonly ComponentOperation[];
+/** An owner's only valid object or object-list port. Used by both author preflight and the server. */
+export function panelOperationTargetPort(port: ReadInput | undefined, objectType: string, batch: boolean) {
+  if (port?.kind === "object" && port.objectType === objectType) return port;
+  if (port?.kind === "list" && batch && port.items.kind === "object" && port.items.objectType === objectType) return port;
 }
-/** Frame admission and skill documentation use the same declared resource identities. */
+
+/** Match a projection target to the selected owner declaration from the type table. */
+export function projectionOperationTargetMatches(
+  projection: Pick<DirectProjectionPorts, "inputs">,
+  binding: ProjectionOperationBinding,
+  declaration: Pick<PanelOperationDeclaration, "target" | "batch">,
+  objectType?: string,
+): boolean {
+  const { target } = binding;
+  if (declaration.target.source === "none") return target === undefined;
+  if (!target) return declaration.target.source === "draft";
+  if (objectType === undefined) return false;
+  if ("literal" in target) return target.literal.className === objectType;
+  return panelOperationTargetPort(projection.inputs[target.input], objectType, declaration.batch) !== undefined;
+}
+
+export interface ProjectionPorts {
+  binding: string;
+  inputs: Readonly<Record<string, DirectPanelPortType>>;
+  outputs?: Readonly<Record<string, DirectPanelPortType>>;
+}
+
+/** Both the old frame boundary and the authoring tools need the referenced ontology identities. */
 export function projectionBindingKeys(projection: ProjectionReadFacts): readonly string[] {
   return projectionReadReferences(projection).map(bindingKey);
 }
 
-/** An operation a projection publishes: its own name, what it takes, and the SDK client operation it is. */
-export interface ProjectionOperation {
-  /** The operation's name within this projection, such as `runNow` or `update`. */
-  name: string;
-  label: string;
-  kind: PanelOperation["kind"];
-  /** Its own business inputs, by name; these are not the panel's state. */
-  inputSchema: Readonly<Record<string, OntologyParameterType>>;
-  /** The SDK client operation this is, such as `schedules.runNow`; a registered handler, never a URL. */
-  handlerRef: string;
-  /** The input explicitly selected by the read; null denotes an owner-supplied literal target. */
-  targetInput?: string | null;
-}
-
-/** The endpoints a projection publishes: what it binds, what it accepts and what it can do. */
-export interface ProjectionPorts {
-  /** The ontology element it binds, as `Kind:id`: `Action:<id>`, `PlatformObjectType:platform:ScheduledTask`. */
-  binding: string;
-  /** The parameters it accepts, by name; a slot's inputs fill these. */
-  inputs: Readonly<Record<string, DirectPanelPortType>>;
-  /** The values it emits, by name; a slot can bind each output to its own panel state field. */
-  outputs?: Readonly<Record<string, DirectPanelPortType>>;
-  operations: readonly ProjectionOperation[];
-}
-
-/*
- * A projection record's ports (overall design 3.1, 3.2): what it binds comes from the record, what it takes from the
- * record, and the operations it publishes from this SDK version's catalogue entry for its component.
- *
- * A record bound to a `PlatformOperation` publishes that operation, which is how "run now" is a button: the binding names
- * the operation, its label comes from the catalogue when a component declares it, and its handler is the reference the
- * binding is. Nothing here is written by a panel.
- */
-export function projectionPorts(projection: ProjectionReadFacts & { name: string }, meta: ComponentOperationMetadata): ProjectionPorts {
-  const references = projectionReadReferences(projection);
-  const objectTypes = references.filter(ref => ref.kind === "PlatformObjectType").map(ref => ref.id);
-  const boundOperations = new Map<string, string | null | undefined>();
-  for (const { source, read, params } of Object.values(projection.data)) {
-    if (!("operation" in source) || read !== "describe") continue;
-    const handlerRef = source.operation.kind === "Action" ? EXECUTE_OBJECT_ACTION : source.operation.id;
-    const target = params.target;
-    boundOperations.set(handlerRef, target === undefined ? undefined : "input" in target ? target.input : null);
-  }
-  const handlerRefs = new Set<string>();
-  for (const type of objectTypes) {
-    for (const operation of platformObjectTypes[type].operations ?? []) handlerRefs.add(operation);
-  }
-  for (const operation of boundOperations.keys()) handlerRefs.add(operation);
-
-  const operations = new Map<string, ProjectionOperation>();
-  for (const { client, name, label, kind, inputSchema } of meta.operations ?? []) {
-    for (const concreteClient of client === "@binding" ? objectTypes : [client]) {
-      const handlerRef = `${concreteClient}.${name}`;
-      if (handlerRefs.has(handlerRef)) operations.set(handlerRef, { name, label, kind, inputSchema, handlerRef });
-    }
-  }
-  for (const [handlerRef, targetInput] of boundOperations) {
-    const operation: ProjectionOperation = operations.get(handlerRef) ?? {
-      name: handlerRef.split(".").at(-1)!, label: projection.name, kind: "action", inputSchema: {}, handlerRef,
-    };
-    operations.set(handlerRef, targetInput === undefined ? operation : { ...operation, targetInput });
-  }
+export function projectionPorts(projection: ProjectionReadFacts): ProjectionPorts {
   return {
-    binding: references.map(bindingKey).join(", "),
+    binding: projectionBindingKeys(projection).join(", "),
     inputs: Object.fromEntries(Object.entries(projection.inputs).filter((entry): entry is [string, DirectPanelPortType] => entry[1].kind !== "json")),
     outputs: projection.outputs,
-    operations: [...operations.values()],
   };
 }
 
-/** The operations a registered projection publishes, described for the header and an agent. */
-export function projectionOperations(
+/** Show the already admitted owner operation under the name of this member's binding. */
+export function projectionOperation(
   manifest: PanelManifest,
-  registration: { slot: string; ports: ProjectionPorts },
-): PanelOperation[] {
-  const slot = manifest.members[registration.slot];
-  if (!slot) throw new Error(`The panel declares no slot '${registration.slot}'`);
-  const targets = new Map(Object.entries(slot.inputs ?? {}).flatMap(([name, value]) => {
-    const kind = registration.ports.inputs[name]?.kind;
-    return "state" in value && (kind === "object" || kind === "object-union" || kind === "list")
-      ? [[name, value.state] as const] : [];
-  }));
-  function targetFor(operation: ProjectionOperation): PanelOperation["target"] {
-    if (operation.kind === "form.save") return { source: "draft", slot: registration.slot };
-    const state = typeof operation.targetInput === "string" ? targets.get(operation.targetInput)
-      : operation.targetInput !== null && targets.size === 1 ? targets.values().next().value : undefined;
-    return state === undefined ? undefined : { source: "state", state };
+  member: string,
+  name: string,
+  descriptor: PanelOwnerOperationDescriptor,
+): PanelOperation {
+  const { kind, label, handlerRef, inputSchema, target } = descriptor;
+  let placed: PanelOperation["target"];
+  if (kind === "form.save") placed = { source: "draft", slot: member };
+  else if (target.source === "literal" || target.source === "none") placed = target;
+  else if (target.source === "input") {
+    const binding = manifest.members[member]?.inputs?.[target.input];
+    if (binding && "state" in binding) placed = { source: "state", state: binding.state };
+    else if (binding && "literal" in binding) placed = { source: "literal", literal: panelObjectRefSchema.parse(binding.literal) };
   }
-  return registration.ports.operations.map((operation) => ({
-    id: panelOperationId(registration.slot, operation.name),
-    label: operation.label,
-    kind: operation.kind,
-    inputSchema: { ...operation.inputSchema },
-    target: targetFor(operation),
-    slot: registration.slot,
-    handlerRef: operation.handlerRef,
-  }));
+  return { id: panelOperationId(member, name), kind, label, handlerRef, inputSchema, target: placed, slot: member };
 }
 
 /** The wire description is shared by the SDK's header and the generated skill. */

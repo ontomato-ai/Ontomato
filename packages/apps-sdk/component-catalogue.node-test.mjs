@@ -19,6 +19,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** The read results the contracts register, as the platform reads them. */
+function registeredResults() {
+  const loader = join(HERE, "../contracts/node_modules/tsx/dist/loader.mjs");
+  const source = `import { panelReadResultSchemas } from ${JSON.stringify(join(HERE, "../contracts/src/panel-operations.ts"))};`
+    + "console.log(JSON.stringify(Object.keys(panelReadResultSchemas)));";
+  return JSON.parse(execFileSync(process.execPath, ["--import", loader, "--input-type=module", "-e", source], { encoding: "utf8" }));
+}
 const EDITION = join(HERE, "../../apps/workbench/web/src/sdk-edition.ts");
 
 /** Every directly rendered component's data names, and the read results each may hold. */
@@ -26,7 +34,7 @@ const DECLARED_DATA = {
   ObjectList: { rows: ["panelRecordList", "panelRecordQuery"], objects: ["panelOntologyObjects"] },
   ObjectSummary: { record: ["panelRecord"] },
   ObjectForm: { form: ["panelFormDescription"], createForm: ["panelFormDescription"] },
-  OperationButton: { operation: ["panelOperationDescriptor"] },
+  OperationButton: {},
   ReferencePicker: { options: ["panelOptionList"], selected: ["panelOptionList"] },
   ObjectGraph: { nodes: ["panelRecordList"], edges: ["panelRecordList"] },
   OntologyGraph: { schema: ["panelGraphSchema"], counts: ["panelGraphCounts"], start: ["panelGraphStart"], neighbors: ["panelGraphNeighbors"] },
@@ -61,6 +69,15 @@ test("the built SDK's components.json is the catalogue its contract declares", (
         `${name} declares the data it reads`,
       );
     }
+    // The member a panel draws itself takes any datum the projection names, with every read result, and is never required.
+    const panelData = declared.get("PanelData");
+    assert.deepEqual(Object.keys(panelData.data), ["*"]);
+    assert.equal(panelData.data["*"].required, false);
+    // Every read result an owner can register, and every run-time value another component gives itself.
+    assert.deepEqual([...panelData.data["*"].results].sort(), [...registeredResults()].sort());
+    const given = new Set(catalogue.components.filter(({ componentId }) => componentId !== panelData.componentId)
+      .flatMap((component) => Object.values(component.data ?? {}).flatMap((datum) => datum.runtimeParams ?? [])));
+    assert.deepEqual([...panelData.data["*"].runtimeParams].sort(), [...given].sort());
     // Configuration is the props a projection sets, kept apart from the running inputs a placement supplies.
     assert.deepEqual(declared.get("ObjectSummary").config, declared.get("ObjectSummary").ports.props);
     assert.equal(declared.get("MetricChart").config, undefined, "a component with no configuration declares none");
