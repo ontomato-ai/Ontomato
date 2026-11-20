@@ -4,9 +4,7 @@ import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "@ontomato/contr
 import {
   DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, METRIC_VIEW, SET_METRIC_VIEW_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW,
 } from "@ontomato/contracts/panel-client-requests";
-import {
-  panelReadOperationCallSchema, panelReadOperationInputSchema, panelTrialOperationCallSchema,
-} from "@ontomato/contracts/panel-operations";
+import { panelReadOperationCallSchema, panelReadOperationInputSchema } from "@ontomato/contracts/panel-operations";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import { tForLocale } from "../../i18n";
@@ -152,12 +150,9 @@ function withParameterValues(draft: Record<string, unknown>, parameters: Record<
   return copy;
 }
 
-/**
- * A read call carries its input as a JSON object; a metric trial reads its draft, parameter values and binding from it
- * by the trial call's own schema. A trial whose call names no target has none.
- */
+/** A read call carries its input as a JSON object; a metric trial reads its draft, parameter values and binding from it. */
 function trialInput(call: z.infer<typeof panelReadOperationCallSchema>) {
-  return panelTrialOperationCallSchema.parse({ target: call.target ?? null, input: call.input }).input;
+  return panelReadOperationInputSchema.parse(call.input);
 }
 
 /** The owner's answer to a trial; a refusal keeps the owner's reason and code. */
