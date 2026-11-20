@@ -30,6 +30,7 @@ For instances of customer ontology classes, bind the detail to the owner's `reco
 | Command | Result |
 | --- | --- |
 | `sdk read components.json` | Official components and ports in the current SDK |
+| `panel type <type-id>` | The type's read parameters, required parameters, result schemas and operation declarations |
 | `panel projection <id>`, `panel get <id>` | Authorized current projection or panel, including its revision |
 | `panel applications`, `panel uses <applicationId>` | Java navigation catalog and visible use relations |
 | `panel scaffold <type> <new directory> [--id <application id>] [--operation <id>] [--batch <id>]` | Draft a Vue management panel from the type table. Select single and batch buttons by owner operation ID. |

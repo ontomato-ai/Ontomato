@@ -342,9 +342,13 @@ async function panelCommand(api, workspaceId, [command, ...args]) {
     const [id] = args;
     const sdk = currentSdkClient({ workbenchUrl: api.envUrl, headers: headers(api) });
     const checks = await sdk.check(await sdk.current());
-    const { objectTypes } = await readPlatformTypeTable(api, checks);
+    const { objectTypes, resultSchemas } = await readPlatformTypeTable(api, checks);
     if (!Object.hasOwn(objectTypes, id)) die(`Type ${id} is not listed in the author's type table`);
-    return print({ id, ...objectTypes[id] });
+    const entry = objectTypes[id];
+    const results = new Set(Object.values(entry.reads ?? {}).map(read => read.result));
+    return print({ id, ...entry, resultSchemas: Object.fromEntries(
+      [...results].map(result => [result, resultSchemas[result]]),
+    ) });
   }
   if (command === "scaffold") {
     const id = takeOption(args, "--id") ?? undefined;

@@ -121,6 +121,13 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     componentsPath: "/public" + sdkPath + "/components.json",
   };
   const typeTable = {
+    resultSchemas: {
+      panelRecordList: { type: "array" },
+      panelRecord: { type: "object" },
+      panelRecordQuery: { type: "object", required: ["rows"], properties: { rows: { type: "array" } } },
+      panelGroupCounts: { type: "array", items: { type: "object", required: ["key", "label", "count"] } },
+      panelFormDescription: { type: "object", required: ["fields"] },
+    },
     unavailableActions: [
       { id: "legacy-action", reason: "Stored function is missing" },
       { id: "bad-action", objectType: "ReviewQueue", reason: "target: invalid field" },
@@ -138,7 +145,10 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       "platform:ReviewQueue": {
         reads: {
           query: { source: "type", parameterMode: "fixed", params: { search: "keyword", status: "reviewStatus" }, result: "panelRecordQuery" },
-          counts: { source: "type", parameterMode: "fixed", params: { by: "countField", search: "keyword" }, result: "panelGroupCounts" },
+          counts: {
+            source: "type", parameterMode: "fixed", params: { by: "countField", search: "keyword" },
+            requiredParams: ["by"], result: "panelGroupCounts",
+          },
           record: { source: "object", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecord" },
         },
         operations: [{ id: "reviews.approve", kind: "action", effect: "write", target: { source: "input", input: "review" }, inputSchema: {}, batch: true }],
@@ -303,7 +313,14 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       [`${sdkPath}/components.json`, "GET"], ["/api/app-builder/type-table", "GET"], [projectionPath, "GET"],
     ]));
     const type = await run("panel", "type", "platform:ReviewQueue");
-    assert.deepEqual(JSON.parse(type.stdout), { id: "platform:ReviewQueue", ...typeTable.objectTypes["platform:ReviewQueue"] });
+    assert.deepEqual(JSON.parse(type.stdout), {
+      id: "platform:ReviewQueue", ...typeTable.objectTypes["platform:ReviewQueue"],
+      resultSchemas: {
+        panelRecordQuery: typeTable.resultSchemas.panelRecordQuery,
+        panelGroupCounts: typeTable.resultSchemas.panelGroupCounts,
+        panelRecord: typeTable.resultSchemas.panelRecord,
+      },
+    });
     assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), [
       ["GET", "/api/apps-sdk/current"], ["GET", `${sdkPath}/node/panel-check.mjs`], ["GET", "/api/app-builder/type-table"],
     ]);
