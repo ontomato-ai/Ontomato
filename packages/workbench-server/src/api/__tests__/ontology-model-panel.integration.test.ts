@@ -1,3 +1,4 @@
+import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import type { Server } from "node:http";
@@ -241,9 +242,8 @@ beforeAll(async () => {
     });
     expect(saved.status, await saved.text()).toBe(200);
   }
-  const html = Object.keys(members).map(key => `<panel-member ref="${key}"></panel-member>`).join("");
   const saved = await request("PUT", `product-panels/${panelId}`, {
-    name: "Ontology model", description: "", visibility: "domain", revision: 0, content: { html: `<section flow="column">${html}</section>` },
+    name: "Ontology model", description: "", visibility: "domain", revision: 0, content: vuePanelContent(...Object.keys(members)),
     manifest: { state: {}, events: {}, members: Object.fromEntries(Object.entries(members).map(([key, member]) =>
       [key, { target: { projectionId: `ontology-model-${key}` }, ...member }])) },
   });

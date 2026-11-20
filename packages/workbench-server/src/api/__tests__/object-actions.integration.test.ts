@@ -1,3 +1,4 @@
+import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import type { Server } from "node:http";
@@ -49,7 +50,7 @@ const projection = {
 };
 const panel = {
   name: "Orders", description: "", visibility: "domain", revision: 0,
-  content: { html: '<section><panel-member ref="approve"></panel-member><panel-member ref="pinned"></panel-member></section>' },
+  content: vuePanelContent("approve", "pinned"),
   manifest: {
     state: { order: { type: orderType, default: null } },
     members: {

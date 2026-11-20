@@ -1,3 +1,4 @@
+import { vuePanelContent } from "../../../__tests__/fixtures/vue-panel";
 import express from "express";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
@@ -54,17 +55,18 @@ beforeAll(async () => {
   installWorkbenchIdentity({ requireDomainId: () => scope.domainId } as unknown as WorkbenchIdentity);
   const git = new WorkspaceGit(join(root, "author-workspace"));
   await git.initialize();
+  const { html, module } = vuePanelContent("form");
   await git.replace(Object.entries({
-    "panel.html": '<projection slot="form" />',
+    "panel.html": html,
     "panel.mjs": 'throw new Error("The server must not execute the module");',
     "panel.json": JSON.stringify({ manifest, content: { messages } }),
     "recipes.md": "Committed recipes",
   }).map(([path, content]) => ({ path, content, encoding: "utf8" })));
   commit = await git.commit("Panel candidate");
   await rm(join(git.tree, "recipes.md"));
-  await rm(join(git.tree, "panel.mjs"));
+  await writeFile(join(git.tree, "panel.mjs"), module);
   await writeFile(join(git.tree, "panel.json"), JSON.stringify({ manifest }));
-  await writeFile(join(git.tree, "panel.html"), '<section><panel-member ref="form"></panel-member></section>');
+
 
   const { workspaceRouter } = await import("../workspaces");
   const { productPanelsRouter, productProjectionsRouter } = await import("../product-panels");
@@ -157,7 +159,7 @@ it("loads a commit under the author, uses the workspace's current test context a
   expect(candidatePanelSourceSchema.parse(await response.json())).toEqual({
     kind: "candidate", workspace: { id: workspaceId, ref: commit },
     panel: {
-      content: { html: '<projection slot="form" />', module: 'throw new Error("The server must not execute the module");', recipes: "Committed recipes", messages },
+      content: { html: vuePanelContent("form").html, module: 'throw new Error("The server must not execute the module");', recipes: "Committed recipes", messages },
       manifest,
     },
     previewContext: { kind: "build-test", test: currentTest },
@@ -166,14 +168,13 @@ it("loads a commit under the author, uses the workspace's current test context a
   expect(productQuery.mock.calls).toEqual([[expect.stringMatching(/^SELECT .*product_projections/), [scope.domainId, projectionId]]]);
 });
 
-it("reads a code-free working tree and preserves NONE as build-test", async () => {
+it("reads the Vue panel from the working tree and preserves NONE as build-test", async () => {
   issuedTest = null;
   const response = await preview("working");
   expect(response.status).toBe(200);
   const source = candidatePanelSourceSchema.parse(await response.json());
   expect(source.workspace.ref).toBe("working");
-  expect(source.panel.content.html).toContain('<panel-member ref="form">');
-  expect(source.panel.content).not.toHaveProperty("module");
+  expect(source.panel.content).toMatchObject(vuePanelContent("form"));
   expect(source.panel.content).not.toHaveProperty("recipes");
   expect(source.panel.content).not.toHaveProperty("messages");
   expect(source.previewContext).toEqual({ kind: "build-test", test: null });
@@ -221,7 +222,7 @@ it("resolves a coded candidate's member from its commit and scopes the projectio
 it("resolves a working candidate without a test as build-test NONE", async () => {
   issuedTest = null;
   const result = await candidateMember("working");
-  expect(result.panel.content.module).toBeUndefined();
+  expect(result.panel.content.module).toBe(vuePanelContent("form").module);
   expect(result.previewContext).toEqual({ kind: "build-test", test: null });
 });
 

@@ -1,3 +1,4 @@
+import { vuePanelContent } from "../../../__tests__/fixtures/vue-panel";
 import { ONTOLOGY_TYPE } from "@ontomato/contracts/platform-object-types";
 import { appsSdkReleaseManifestSchema } from "@ontomato/contracts/apps-sdk";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -30,7 +31,7 @@ const trial = await import(definitions) as {
   applications: { applicationId: string; panelUses: ApplicationPanelUse[] }[];
   panels: { id: string; directory: string; manifest: unknown; name: string; description: string }[];
   projections: { id: string; input: Record<string, unknown> }[];
-  panelContent(directory: string): { html: string; module?: string; recipes?: string };
+  panelContent(directory: string): { html: string; module: string; recipes?: string };
 };
 
 const uses: PanelSkillSource[] = trial.applications.flatMap(application => application.panelUses.map(use => ({
@@ -44,15 +45,10 @@ const taskRef = skill("captured-task-skill");
 const taskInput = { kind: "object", objectType: "platform:ScheduledTask" } as const;
 const selectedTask = { type: taskInput, external: true, deepLink: true, default: null };
 const taskInputBinding = { task: { state: "selectedTask" } };
-const trialPanels = new Map(trial.panels.map(panel => {
-  const content = trial.panelContent(panel.directory);
-  const manifest = content.module === undefined ? panel.manifest : {
-    state: { selectedTask },
-    members: { summary: { target: { projectionId: "projection-schedules-summary" }, inputs: taskInputBinding } },
-    events: {},
-  };
-  return [panel.id, { name: panel.name, description: panel.description, manifest, visibility: "domain", content }] as const;
-}));
+const trialPanels = new Map(trial.panels.map(panel => [panel.id, {
+  name: panel.name, description: panel.description, manifest: panel.manifest,
+  visibility: "domain", content: trial.panelContent(panel.directory),
+}] as const));
 let panels = new Map(trialPanels);
 const trialProjections = new Map(trial.projections.map(({ id, input }) => [id, input]));
 
@@ -63,7 +59,7 @@ function codeTasksPanel(projections: Record<string, { projectionId: string; inpu
   const row = trialPanels.get(id)!;
   const panel = {
     ...row,
-    content: { ...row.content, module: "export default {};" },
+    content: { ...row.content, ...vuePanelContent(...Object.keys(projections)) },
     manifest: {
       state: { selectedTask },
       members: Object.fromEntries(Object.entries(projections).map(([key, { projectionId, inputs }]) =>
