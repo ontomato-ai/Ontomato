@@ -3,7 +3,7 @@ import { nextTick } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { ignoreChanges,
+import { formSaveCalls, humanIntents, ignoreChanges,
   SCHEDULED_TASK, inside, inspectionTaskForm, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord,
   panelUse, projections, registered, task, writePanelDocument, type Sent,
 } from "./panel-frame";
@@ -34,6 +34,7 @@ function opened() {
   let hold = false;
   /** Holds only the next form read; the reads after it are answered at once. */
   let holdOne = false;
+  const intents = humanIntents(() => ({ kind: "success", data: {} }));
   const sent = installPlatform(async (request: Sent) => {
     if (request.path === `/api/product-projections/${formProjection.id}`) return Response.json({ projection: formProjection });
     if (request.path === taskPath && request.method === "GET") return Response.json(inspection);
@@ -44,9 +45,7 @@ function opened() {
       }
       return Response.json({ ...inspectionTaskForm, values: inspection.content, submittable: true });
     }
-    if (request.path === taskPath && request.method === "PUT")
-      return Response.json({ ...inspection, revision: inspection.revision + 1, content: (request.body as { content: object }).content });
-    return nothingAt(request);
+    return intents(request) ?? nothingAt(request);
   });
   const frame = panelFrame();
   platformPanelHost("app-panels-trial-a", use, ignoreChanges).frame(frame, registered("app-panels-trial-a", use, panel), true);
@@ -138,8 +137,11 @@ it("keeps what the reader typed while a read is on its way, saves it, and reads 
   const reads = formReads(platform.sent);
   const save = context.instance.operations.value.find((operation) => operation.kind === "form.save")!;
   await context.instance.invoke(save.id);
-  const put = platform.sent.find((request) => request.method === "PUT")!;
-  expect((put.body as { content: object }).content).toEqual({ operation: "inspection", instruction: "Inspect this morning's failures" });
+  expect(formSaveCalls(platform.sent).map(({ input }) => input)).toEqual([{
+    values: { operation: "inspection", instruction: "Inspect this morning's failures" },
+    revision: inspection.revision,
+    submittedFields: ["/instruction"],
+  }]);
   // The read the typing held back is made now the form is saved.
   await vi.waitFor(() => expect(formReads(platform.sent)).toBeGreaterThan(reads));
 });

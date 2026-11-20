@@ -2,11 +2,11 @@ import { afterEach, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import type { PanelFormValues } from "@ontomato/contracts/panel-projection";
+import type { PanelFormSaveInput } from "@ontomato/contracts/panel-projection";
 import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
-  humanIntents, ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
+  formSaveCalls, humanIntents, ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
 /*
@@ -23,6 +23,7 @@ const SECOND = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a02";
 const CREATED = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a03";
 const listPath = "/api/assistant/agent-definitions";
 const formPath = `${listPath}/form`;
+const revision = 7;
 const fields = [{ path: "/name", label: "Name", control: { kind: "text" }, valueSchema: { type: "string" }, required: true, readOnly: false }];
 const agent = { kind: "object", objectType: AGENT_DEFINITION } as const;
 const source = { type: { kind: "PlatformObjectType", id: AGENT_DEFINITION } } as const;
@@ -73,9 +74,8 @@ const definition = (id: string, name: string) => ({
 
 async function open(state: Record<string, unknown>) {
   const agents = [definition(FIRST, "Revenue"), definition(SECOND, "Churn")];
-  let pending: PanelFormValues;
-  const intents = humanIntents(() => {
-    agents.push(definition(CREATED, String(pending.name)));
+  const intents = humanIntents((_, { input }) => {
+    agents.push(definition(CREATED, String((input as PanelFormSaveInput).values.name)));
     return {
       kind: "success", data: {},
       affected: { objects: [{ objectType: AGENT_DEFINITION, primaryKey: CREATED }], objectTypes: [AGENT_DEFINITION] },
@@ -91,10 +91,7 @@ async function open(state: Record<string, unknown>) {
       const save = target.kind === "draft"
         ? { method: "POST", path: "/assistant/agent-definitions", bodySchema: {}, draftOperation: "agent.create" }
         : { method: "PUT", path: "/assistant/agent-definitions/:id", bodySchema: {}, draftOperation: "agent.update" };
-      return Response.json({ fields, values: { name }, errors: [], save });
-    }
-    if (request.path === "/api/panel-operations/intents") {
-      pending = (request.body as { call: { input: { values: PanelFormValues } } }).call.input.values;
+      return Response.json({ fields, values: { name }, revision, errors: [], save });
     }
     return intents(request) ?? nothingAt(request);
   });
@@ -136,10 +133,10 @@ it("opened at a creating address, keeps the new object while the list selects it
   expect(formReads(sent)).toEqual([{ kind: "draft" }]);
 
   await context.instance.invoke("form.save");
-  const saved = sent.find((request) => request.path === "/api/panel-operations/intents")!.body as {
-    call: { input: { values: PanelFormValues } };
-  };
-  expect(saved.call.input.values).toEqual({ name: "Margin" });
+  expect(formSaveCalls(sent)).toEqual([{
+    target: { kind: "draft" },
+    input: { values: { name: "Margin" }, revision, submittedFields: ["/name"] },
+  }]);
   // Saved, the panel no longer creates: it selects the object the owner created and the form edits it.
   await vi.waitFor(() => expect(context.instance.state.values.value).toMatchObject({
     selected: { className: AGENT_DEFINITION, primaryKey: CREATED }, mode: null,

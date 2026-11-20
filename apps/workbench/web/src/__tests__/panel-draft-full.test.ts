@@ -5,6 +5,8 @@ import PanelApplicationRoute from "../../../../../packages/platform-web/src/page
 import { mountPanel } from "../../../../../packages/apps-sdk/src/panel/mount";
 import {
   draftScenario,
+  formSaveCalls,
+  humanIntents,
   hostMessageOf,
   inside,
   installPlatform,
@@ -12,6 +14,7 @@ import {
   mountPlatformPage,
   panelHostFrame,
   READER,
+  SCHEDULED_TASK,
   task,
   writeFrameDocument,
   caseSetLabel,
@@ -35,11 +38,13 @@ describe("a draft at a panel application's own address", () => {
     scenario.panel.content.html = '<div id="app" v-cloak><projection slot="form"></projection></div>';
     const taskPath = `/api/data-query/platform/scheduled-tasks/${task.id}`;
     let currentRevision = task.revision;
+    const intents = humanIntents(() => ({
+      kind: "success", data: {},
+      affected: { objects: [{ objectType: SCHEDULED_TASK, primaryKey: task.id }], objectTypes: [SCHEDULED_TASK] },
+    }));
     const sent = installPlatform(request => {
       if (request.path === taskPath && request.method === "GET") return Response.json({ ...task, revision: currentRevision });
-      if (request.path === taskPath && request.method === "PUT")
-        return Response.json({ ...task, revision: task.revision + 1, content: (request.body as { content: object }).content });
-      return scenario.answer(request);
+      return intents(request) ?? scenario.answer(request);
     });
     const router = createRouter({
       history: createMemoryHistory(),
@@ -68,7 +73,7 @@ describe("a draft at a panel application's own address", () => {
       timeout: 5000,
     });
     expect(document.querySelector('[data-field="/caseSetId"]')?.textContent).toContain("Smoke (8)");
-    expect(sent.filter((request) => request.method === "PUT")).toEqual([]);
+    expect(formSaveCalls(sent)).toEqual([]);
     expect(sent.filter(request => request.path.startsWith("/api/product-assets/"))).toEqual([]);
     const form = document.querySelector<HTMLFormElement>(".sdk-owner-form form")!;
     // The frame is sandboxed without allow-forms, so the save is the button's own click, not a form submission.
@@ -78,10 +83,15 @@ describe("a draft at a panel application's own address", () => {
     currentRevision++;
     save.click();
     await vi.waitFor(() => {
-      expect(sent.filter(request => request.method === "PUT")).toMatchObject([{
-        path: taskPath, credential: READER,
-        body: { revision: task.revision, content: { ...task.content, caseSetId: "set-smoke" } },
+      expect(formSaveCalls(sent)).toEqual([{
+        target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: task.id },
+        input: {
+          revision: task.revision,
+          values: { ...task.content, caseSetId: "set-smoke" },
+          submittedFields: ["/operation", "/caseSetId"],
+        },
       }]);
+      expect(sent.find(request => request.path === "/api/panel-operations/intents")?.credential).toBe(READER);
       expect(context.draft.value).toBeNull();
       expect(context.instance.dirty()).toBe(false);
     });

@@ -4,7 +4,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createApp, defineComponent, h, ref, resolveComponent } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
-import { definePanel, type PanelManifest } from "@ontomato/contracts/panel-manifest";
+import { definePanel, type PanelManifest, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
+import type { PanelFormSaveInput } from "@ontomato/contracts/panel-projection";
 import type { PanelHostMessage } from "@ontomato/contracts/panel-host";
 import { appsSdkCurrentSchema } from "@ontomato/contracts/apps-sdk";
 import type { PanelMemberSnapshot } from "@ontomato/contracts/product-subscriptions";
@@ -214,6 +216,38 @@ export const ignoreChanges = () => {};
 export const registered = (applicationId: string, use: ApplicationPanelUse, panel: ProductPanel) =>
   ({ kind: "registered", applicationId, use, panel }) as const;
 
+/**
+ * The skill reference Node answers for a panel's member, as the trusted service derives it: the host passes it on and
+ * never derives one itself, so any stable stand-in serves the tests.
+ */
+export const skillRefOf = (panelId: string) => ({
+  namespace: { kind: "provider" as const, provider: "product-panels" },
+  name: `pvt-${[...panelId].map(char => char.charCodeAt(0).toString(16)).join("").slice(0, 48).padEnd(48, "0")}`,
+});
+
+/**
+ * The page skill context Node answers for a panel read or a snapshot read made for one page: which member a message
+ * beside that page reaches. A read that names no page gets none.
+ */
+export function pageSkillContextFor(panel: Pick<ProductPanel, "id">, request: Sent) {
+  const query = new URLSearchParams(request.search);
+  const applicationId = query.get("applicationId");
+  if (!applicationId) return undefined;
+  const pageKey = query.get("pageKey")!;
+  const permissionCode = query.get("permissionCode");
+  const locator = permissionCode ? { permissionCode, pageKey } : { access: "domain-member", pageKey };
+  return {
+    mode: "member", locator,
+    member: { source: { kind: "application-use", applicationId, useId: query.get("useId")! }, memberPath: [], ref: skillRefOf(panel.id) },
+  };
+}
+
+/** Node's answer for a panel read: the panel, and the page skill context when the read names the page it is shown for. */
+export function panelAnswer(panel: ProductPanel, request: Sent) {
+  const pageSkillContext = pageSkillContextFor(panel, request);
+  return Response.json({ panel, ...(pageSkillContext ? { pageSkillContext } : {}) });
+}
+
 /** One request that reached the network, as the platform sent it for the frame. */
 export interface Sent {
   method: string;
@@ -380,7 +414,7 @@ export function leaveFrame() {
   document.body.innerHTML = "";
 }
 
-export function panelSnapshot(panel: ProductPanel, current = projections) {
+export function panelSnapshot(panel: ProductPanel, current: Record<string, { revision: number }> = projections, request?: Sent) {
   const revisions = new Map<string, number>();
   const members: PanelMemberSnapshot[] = [];
   for (const [member, { target }] of Object.entries(panel.manifest.members)) {
@@ -395,6 +429,7 @@ export function panelSnapshot(panel: ProductPanel, current = projections) {
     panel: { id: panel.id, revision: panel.revision },
     projections: [...revisions].map(([id, revision]) => ({ id, revision })),
     members,
+    ...(request ? { pageSkillContext: pageSkillContextFor(panel, request) } : {}),
   });
 }
 
@@ -434,9 +469,9 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
         success: true,
         data: { applicationId: "app-panels-trial-a", entry: { path: "/panels-trial-a", renderer: "panels" }, panelUses: [use] },
       });
-    if (request.path === `/api/product-panels/${panel.id}`) return Response.json({ panel });
+    if (request.path === `/api/product-panels/${panel.id}`) return panelAnswer(panel, request);
     if (request.path === "/api/apps-sdk/current") return currentSdk();
-    if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel);
+    if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel, projections, request);
     if (request.path === `/api/product-projections/${formProjection.id}`)
       return served.then(() => Response.json({ projection: formProjection }));
     if (request.path === `/api/data-query/platform/scheduled-tasks/${task.id}`) return Response.json(task);
@@ -458,29 +493,35 @@ export const noOperations: { operations: PanelHumanOperations; confirmOperation:
   operations: { describe: unused, read: unused, prepare: unused }, confirmOperation: unused,
 };
 
+/** The form save calls that reached the coordinator. */
+export function formSaveCalls(sent: readonly Sent[]) {
+  return sent.filter((request) => request.method === "POST" && request.path === "/api/panel-operations/intents")
+    .map(({ body }) => (body as { call: { target: PanelOperationCall["target"]; input: PanelFormSaveInput } }).call);
+}
+
 /**
  * Node's coordinator for a person's writes, as the frame and its host reach it: the frame prepares one intent, the host
  * reads it back and dispatches it once, and `outcome` is what the owner's registered operation returned for it. Nothing
  * here needs confirming; the host's dialog is the host's own test.
  */
-export function humanIntents(outcome: (operationId: string) => unknown, target: { source: "input"; input: string } = { source: "input", input: "task" }) {
-  const prepared = new Map<string, { intentId: string; operationId: string; label: string; confirmation: { kind: "none" } }>();
+export function humanIntents(outcome: (operationId: string, call: PanelOperationCall) => unknown, target: { source: "input"; input: string } = { source: "input", input: "task" }) {
+  const prepared = new Map<string, { preparation: PanelHumanOperationPreparation; call: PanelOperationCall }>();
   return (request: Sent): Response | undefined => {
     // The owner's write: one object it acts on, with nothing to confirm.
     if (request.method === "GET" && request.path === "/api/panel-operations/descriptor")
       return Response.json({ handlerRef: "owner.write", label: "Write", effect: "write", target, inputSchema: {}, resultSchema: {}, batch: false });
     if (request.method === "POST" && request.path === "/api/panel-operations/intents") {
-      const { operationId } = request.body as { operationId: string };
+      const { operationId, call } = request.body as { operationId: string; call: PanelOperationCall };
       const preparation = { intentId: randomId(), operationId, label: operationId, confirmation: { kind: "none" as const } };
-      prepared.set(preparation.intentId, preparation);
+      prepared.set(preparation.intentId, { preparation, call });
       return Response.json(preparation);
     }
     const read = /^\/api\/panel-operation-intents\/([^/?]+)$/.exec(request.path);
-    if (read && request.method === "GET") return Response.json(prepared.get(read[1]!));
+    if (read && request.method === "GET") return Response.json(prepared.get(read[1]!)?.preparation);
     const dispatch = /^\/api\/panel-operations\/intents\/([^/]+)\/dispatch$/.exec(request.path);
     if (dispatch && request.method === "POST") {
-      const { intentId, operationId } = prepared.get(dispatch[1]!)!;
-      return Response.json({ kind: "dispatched", intentId, outcome: outcome(operationId) });
+      const { preparation: { intentId, operationId }, call } = prepared.get(dispatch[1]!)!;
+      return Response.json({ kind: "dispatched", intentId, outcome: outcome(operationId, call) });
     }
     return undefined;
   };
