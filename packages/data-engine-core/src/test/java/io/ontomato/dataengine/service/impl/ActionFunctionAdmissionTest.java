@@ -16,6 +16,7 @@ import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.service.ABCProgramService;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.OwnerFieldRefusal;
+import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.SystemUtils;
@@ -114,10 +115,12 @@ class ActionFunctionAdmissionTest {
   @ValueSource(strings = {Function.OPERATION_READ, Function.OPERATION_WRITE})
   void formAndExecutionRejectStoredInvalidAssetsWithTheSameMessage(String operation) throws Exception {
     doReturn(action(operation)).when(service).queryById("action-a");
-    var formError = assertThrows(IllegalArgumentException.class,
+    var formError = assertThrows(OwnerRefusal.class,
         () -> service.form("action-a", new JSONObject(), null, List.of(), "en", user));
-    var executionError = assertThrows(IllegalArgumentException.class,
+    var executionError = assertThrows(OwnerRefusal.class,
         () -> service.execute("action-a", new JSONObject(), "en", user, new UserDataPermission(), 1));
+    assertEquals("ACTION_NOT_EXECUTABLE", formError.code());
+    assertEquals("ACTION_NOT_EXECUTABLE", executionError.code());
     assertTrue(formError.getMessage().endsWith(message));
     assertTrue(executionError.getMessage().endsWith(message));
     verifyNoInteractions(programs);

@@ -1,4 +1,6 @@
 import type { z } from "zod";
+import { createHash } from "node:crypto";
+import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
 import {
   runtimeRegisterSkillRequestSchema,
   type RuntimeSkillRef,
@@ -20,27 +22,51 @@ export interface SkillOffering {
   provide(): Promise<SkillPackage>;
 }
 
+/** Identity and dependencies describe the same snapshot used by both content readers. */
+export interface ProtectedSkillOffering {
+  kind: "protected";
+  sourceKey: string;
+  scopeKey: string;
+  entrances: readonly PageSkillEntrance[];
+  resourceIds: readonly string[];
+  legacyAggregateRefs?: readonly RuntimeSkillRef[];
+  readManifest(skill: RuntimeSkillRef): Promise<StandardSkillFrontmatter>;
+  provide(skill: RuntimeSkillRef): Promise<SkillPackage>;
+}
+
+const PROTECTED_SKILL_NAME = /^pvt-[0-9a-f]{48}$/u;
+
+export function isProtectedSkillName(name: string): boolean {
+  return PROTECTED_SKILL_NAME.test(name);
+}
+
+export function protectedSkillRef(providerId: string, domainId: string, sourceKey: string, scopeKey: string): RuntimeSkillRef {
+  const hash = createHash("sha256").update(JSON.stringify([providerId, domainId, sourceKey, scopeKey])).digest("hex");
+  return { namespace: { kind: "domain", domainId }, name: `pvt-${hash.slice(0, 48)}` };
+}
+
 /**
  * A source of skills. It supplies packages only; catalogue merging, admission, publication and permissions belong to
  * the skill system.
  */
-export interface SkillProvider {
-  /** Stable source identity used to locate conflicts. It is not part of a skill's runtime identity. */
+export interface SkillProvider<Offering extends SkillOffering | ProtectedSkillOffering = SkillOffering> {
+  /** Stable provider identity used to derive protected skill refs and locate conflicts. */
   id: string;
   /** Name that management shows as who provides the skill. */
   name: string;
-  list(context: SkillSourceContext): Promise<readonly SkillOffering[]>;
+  list(context: SkillSourceContext): Promise<readonly Offering[]>;
 }
 
-const providers: SkillProvider[] = [];
+export type RegisteredSkillProvider = SkillProvider<SkillOffering | ProtectedSkillOffering>;
+const providers: RegisteredSkillProvider[] = [];
 
-export function registerSkillProvider(provider: SkillProvider): void {
+export function registerSkillProvider(provider: RegisteredSkillProvider): void {
   if (providers.some((registered) => registered.id === provider.id))
     throw new Error(`Skill provider "${provider.name}" is already registered with id "${provider.id}"`);
   providers.push(provider);
 }
 
 /** The registered sources for one catalogue read, in registration order. */
-export function registeredSkillProviders(): readonly SkillProvider[] {
+export function registeredSkillProviders(): readonly RegisteredSkillProvider[] {
   return [...providers];
 }

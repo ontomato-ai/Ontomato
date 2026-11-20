@@ -19,7 +19,8 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   created: [id: string];
-  changed: [];
+  /** The agent shown is gone: the address that named it names nothing now. */
+  deleted: [];
 }>();
 const { t, locale } = useI18n();
 const { agents, loading, loadFailed, classes, relations, outlineLoading, modelOptions, modelOptionsFailed, ensureLoaded, load, reloadModelOptions, remember, forget } =
@@ -28,15 +29,15 @@ const { agents, loading, loadFailed, classes, relations, outlineLoading, modelOp
 const shown = computed(() => (props.agentId ? agents.value.find((agent) => agent.id === props.agentId) ?? null : agents.value[0] ?? null));
 const editorKey = computed(() => (props.creating ? "new" : (shown.value?.id ?? "none")));
 
+/** A saved agent stays shown: an update keeps its address, a new one moves to the address it now has. */
 function saved(agent: Parameters<typeof remember>[0]) {
   remember(agent);
   if (props.creating) emit("created", agent.id);
-  else emit("changed");
 }
 
 function deleted(id: string) {
   forget(id);
-  emit("changed");
+  emit("deleted");
 }
 
 onMounted(() => {
