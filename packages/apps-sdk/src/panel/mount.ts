@@ -105,6 +105,8 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     resources: platformResourceLoader({ request: (path, init, service) => transport.request(path, init, service) }, platformResources,
       contextTranslate(appContext)),
     expandPageComposer: contextExpandPageComposer(appContext),
+    // A frame is not how a panel runs; it gets nothing new.
+    navigate: () => Promise.reject(new Error("Navigating is a panel the platform runs in its own page; a frame has none")),
     readPanelData: (request) => readPanelData(transport, request),
   };
   const app = createApp({
