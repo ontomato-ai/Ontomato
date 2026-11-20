@@ -62,10 +62,11 @@ const binding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
 
 test("current SDK discovery carries the digest of the build and the component catalogue path", () => {
   const build = { version: "1.1.2", digest: "2f".repeat(32) };
-  const root = "/tenant/api/apps-sdk/1.1.2";
+  const root = "/tenant/apps-sdk/current";
   const current = {
     ...build, publicBasePath: "/tenant", sdkBasePath: root, manifestPath: `${root}/sdk.json`,
     docsPath: `${root}/docs/index.md`, referencePath: `${root}/docs/reference.md`, componentsPath: `${root}/components.json`,
+    checkPath: `${root}/node/panel-check.mjs`,
   };
   assert.deepEqual(appsSdkBuildSchema.parse(build), build);
   assert.deepEqual(appsSdkCurrentSchema.parse(current), current);
@@ -74,6 +75,48 @@ test("current SDK discovery carries the digest of the build and the component ca
     assert.equal(appsSdkCurrentSchema.safeParse({ ...current, digest: badDigest }).success, false);
   }
   assert.equal(appsSdkCurrentSchema.safeParse({ ...current, componentsPath: undefined }).success, false);
+  assert.equal(appsSdkCurrentSchema.safeParse({ ...current, checkPath: undefined }).success, false);
+});
+
+test("current SDK describes the browser files and Node check from the same release", async () => {
+  const { appsSdkReleaseManifestSchema } = await import("./apps-sdk");
+  const manifest = {
+    version: "1.1.2", product: "workbench", executionContext: 1, hostTransport: 1, messageBridge: 2,
+    entries: { "@ontomato/sdk/panel": "panel.js" }, stylesheet: "sdk.css", components: "components.json",
+    check: "node/panel-check.mjs", libraries: { vue: "3.5.0" }, docs: "docs/index.md",
+  };
+  assert.deepEqual(appsSdkReleaseManifestSchema.parse(manifest), manifest);
+  assert.equal(appsSdkReleaseManifestSchema.safeParse({ ...manifest, check: "/node/panel-check.mjs" }).success, false);
+});
+
+test("ontology object lists and reference pickers declare the named reads they use", async () => {
+  const { registerDirectProjectionRequestSchema } = await import("./product-panels");
+  const { panelReadResultSchemas } = await import("./panel-operations");
+  const { platformOntologyObjectsResponseSchema } = await import("./platform-ontology");
+  const base = { name: "Choices", description: "", visibility: "domain", revision: 0, outputs: {}, config: {} };
+  const users = {
+    ...base, componentId: "@ontomato/sdk:ReferencePicker",
+    inputs: { keyword: { kind: "scalar", type: "string" }, page: { kind: "json" }, values: { kind: "json" } },
+    data: {
+      options: { source: { type: USER }, read: "options", params: { keyword: { input: "keyword" }, page: { input: "page" } } },
+      selected: { source: { type: USER }, read: "resolve", params: { values: { input: "values" } } },
+    },
+  };
+  assert.deepEqual(registerDirectProjectionRequestSchema.parse(users), users);
+  assert.equal(registerDirectProjectionRequestSchema.safeParse({
+    ...users, data: { options: { ...users.data.options, source: { type: SKILL } } },
+  }).success, false);
+  const objects = {
+    ...base, componentId: "@ontomato/sdk:ObjectList", inputs: {},
+    data: { objects: { source: { type: ONTOLOGY_TYPE }, read: "objects", params: { type: { literal: USER } } } },
+  };
+  assert.deepEqual(registerDirectProjectionRequestSchema.parse(objects), objects);
+  assert.equal(registerDirectProjectionRequestSchema.safeParse({
+    ...objects, data: { objects: { ...objects.data.objects, params: {} } },
+  }).success, false);
+  assert.equal(panelReadResultSchemas.panelOntologyObjects, platformOntologyObjectsResponseSchema);
+  const option = { primaryKey: "m1", value: { providerId: "models", id: "m1" }, label: "Model 1", unavailable: { reason: "Unavailable" } };
+  assert.deepEqual(panelReadResultSchemas.panelOptionList.parse({ options: [option] }), { options: [option] });
 });
 
 test("a no-code task panel registers and parses the same members and layout", async () => {

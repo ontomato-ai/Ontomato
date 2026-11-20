@@ -1,8 +1,11 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema, runtimeKeySchema } from "./agent-runtime-values";
 import { panelObjectIdentitySchema, panelOperationCallSchema } from "./panel-manifest";
-import { panelFormDescriptionSchema, panelFormValuesSchema, panelRecordListSchema, panelRecordSchema } from "./panel-projection";
-import type { PlatformReadDeclaration } from "./platform-object-types";
+import { panelFormDescriptionSchema, panelFormValuesSchema, panelOptionListSchema, panelRecordListSchema, panelRecordSchema } from "./panel-projection";
+import {
+  platformOntologyCountsResponseSchema, platformOntologyNeighborsResponseSchema, platformOntologyObjectsResponseSchema,
+  platformOntologySchemaResponseSchema, platformOntologyStartResponseSchema,
+} from "./platform-ontology";
 
 /** The owner selects a named input or form slot to resolve before invoking the operation. */
 export const panelOwnerOperationTargetSchema = z.discriminatedUnion("source", [
@@ -36,7 +39,13 @@ export const panelReadResultSchemas = {
   panelRecord: panelRecordSchema,
   panelFormDescription: panelFormDescriptionSchema,
   panelOperationDescriptor: panelOwnerOperationDescriptorSchema,
-} satisfies Record<PlatformReadDeclaration["result"], z.ZodTypeAny>;
+  panelOptionList: panelOptionListSchema,
+  panelGraphSchema: platformOntologySchemaResponseSchema,
+  panelGraphCounts: platformOntologyCountsResponseSchema,
+  panelGraphStart: platformOntologyStartResponseSchema,
+  panelGraphNeighbors: platformOntologyNeighborsResponseSchema,
+  panelOntologyObjects: platformOntologyObjectsResponseSchema,
+};
 
 /** A read-only trial takes the current form values plus the execution parameter values. */
 export const panelReadOperationInputSchema = z.object({

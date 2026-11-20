@@ -32,8 +32,9 @@ export const platformOntologyLayers = ["fact", "capability", "governance", "prod
 
 export interface PlatformReadDeclaration {
   source: "type" | "object" | "operation";
-  params: Readonly<Record<string, "formValues" | "changedField">>;
-  result: "panelRecordList" | "panelRecord" | "panelFormDescription" | "panelOperationDescriptor";
+  params: Readonly<Record<string, keyof typeof import("./panel-projection").panelReadParameterSchemas>>;
+  requiredParams?: readonly string[];
+  result: keyof typeof import("./panel-operations").panelReadResultSchemas;
 }
 
 export interface PlatformObjectTypeDeclaration {
@@ -53,6 +54,14 @@ const describeType = (name: string, layer?: PlatformObjectTypeDeclaration["layer
 
 const runNow: typeof import("./panel-client-requests").RUN_NOW = "schedules.runNow";
 
+const referenceReads = {
+  options: { source: "type", params: {}, result: "panelOptionList" },
+  resolve: { source: "type", params: { values: "optionValues" }, requiredParams: ["values"], result: "panelOptionList" },
+} as const satisfies NonNullable<PlatformObjectTypeDeclaration["reads"]>;
+
+const metadataList = { list: { source: "type", params: {}, result: "panelRecordList" } } as const;
+const definitionFormParams = { values: "panelFormValues", changedField: "changedField" } as const;
+
 /** Type-level metadata shared by projection bindings and ontology catalogues. */
 export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDeclaration>> = {
   [SCHEDULED_TASK]: {
@@ -65,27 +74,56 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
     operations: [`${SCHEDULED_TASK}.save`, runNow],
   },
-  [MODEL_OPTION]: describeType("modelOption"),
+  [MODEL_OPTION]: { ...describeType("modelOption"), reads: referenceReads },
   [MCP_SERVICE_OPTION]: describeType("mcpServiceOption"),
-  [OBJECT_TYPE]: describeType("objectType", "fact"),
+  [OBJECT_TYPE]: { ...describeType("objectType", "fact"), reads: metadataList },
   [ATTRIBUTE]: describeType("attribute", "fact"),
-  [RELATIONSHIP]: describeType("relationship", "fact"),
+  [RELATIONSHIP]: { ...describeType("relationship", "fact"), reads: metadataList },
   [METRIC_VIEW]: describeType("metricView", "capability"),
   [FUNCTION]: describeType("function", "capability"),
   [ACTION]: describeType("action", "capability"),
   [WORKFLOW]: describeType("workflow", "capability"),
   [TRIGGER]: describeType("trigger", "capability"),
-  [SKILL]: { ...describeType("skill", "capability"), childCollections: ["files"] },
+  [SKILL]: { ...describeType("skill", "capability"), childCollections: ["files"], reads: referenceReads },
   [BUSINESS_KNOWLEDGE]: describeType("businessKnowledge", "capability"),
   [DEFINITION]: describeType("definition", "capability"),
-  [USER]: describeType("user", "governance"),
+  [USER]: {
+    ...describeType("user", "governance"),
+    reads: {
+      ...referenceReads,
+      options: { source: "type", params: { keyword: "keyword", page: "page" }, result: "panelOptionList" },
+    },
+  },
   [ROLE]: describeType("role", "governance"),
   [SDK_COMPONENT]: describeType("sdkComponent", "product"),
   [PRODUCT_PROJECTION]: describeType("productProjection", "product"),
   [PRODUCT_PANEL]: describeType("productPanel", "product"),
   [APPLICATION]: describeType("application", "product"),
-  [AGENT_DEFINITION]: describeType("agentDefinition", "product"),
-  [ONTOLOGY_TYPE]: describeType("ontologyType"),
+  [AGENT_DEFINITION]: {
+    ...describeType("agentDefinition", "product"),
+    reads: {
+      ...metadataList,
+      record: { source: "object", params: {}, result: "panelRecord" },
+      form: { source: "object", params: definitionFormParams, result: "panelFormDescription" },
+      createForm: { source: "type", params: definitionFormParams, result: "panelFormDescription" },
+    },
+  },
+  [ONTOLOGY_TYPE]: {
+    ...describeType("ontologyType"),
+    reads: {
+      schema: { source: "type", params: {}, result: "panelGraphSchema" },
+      counts: { source: "type", params: {}, result: "panelGraphCounts" },
+      start: { source: "type", params: {}, result: "panelGraphStart" },
+      neighbors: {
+        source: "type", params: { node: "graphNode", relationKinds: "relationKinds", layers: "layers" },
+        requiredParams: ["node"], result: "panelGraphNeighbors",
+      },
+      objects: {
+        source: "type", params: { type: "ontologyType", keyword: "keyword", page: "page" },
+        requiredParams: ["type"], result: "panelOntologyObjects",
+      },
+    },
+  },
   [ONTOLOGY_RELATION_KIND]: describeType("ontologyRelationKind"),
   [KNOWLEDGE_GOVERNANCE_RECORD]: { ...describeType("knowledgeGovernanceRecord"), childCollections: ["issues", "sources"] },
   [FEEDBACK_RECORD]: describeType("feedbackRecord"),

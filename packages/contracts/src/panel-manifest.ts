@@ -363,25 +363,28 @@ export const panelOpenRequestSchema = z
   .strict();
 export type PanelOpenRequest = z.infer<typeof panelOpenRequestSchema>;
 
-export function matchesDirectPanelValue(type: z.infer<typeof singleOntologyParameterTypeSchema>, value: unknown): boolean {
+export const directPanelPortTypeSchema = z.union([singleOntologyParameterTypeSchema, ontologyObjectUnionTypeSchema]);
+export type DirectPanelPortType = z.infer<typeof directPanelPortTypeSchema>;
+
+export function matchesDirectPanelValue(type: DirectPanelPortType, value: unknown): boolean {
   if (value === null) return true;
-  if (type.kind === "object") {
+  if (type.kind !== "scalar") {
     const ref = panelObjectRefSchema.safeParse(value);
-    return ref.success && ref.data.className === type.objectType;
+    return ref.success && matchesObjectType(type, ref.data.className);
   }
   if (type.type === "date") return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/u.test(value);
   return typeof value === type.type && (typeof value !== "number" || Number.isFinite(value));
 }
 
 export const directPanelStateFieldSchema = z.object({
-  type: singleOntologyParameterTypeSchema,
+  type: directPanelPortTypeSchema,
   personal: z.literal(false).default(false),
   deepLink: z.boolean().default(false),
   external: z.boolean().default(false),
   default: panelStateValueSchema.optional(),
 }).strict().superRefine((field, ctx) => {
   if (field.default === undefined || field.default === null) return;
-  if (field.type.kind === "object" || !matchesDirectPanelValue(field.type, field.default))
+  if (field.type.kind !== "scalar" || !matchesDirectPanelValue(field.type, field.default))
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["default"], message: "Invalid default value for the declared state type" });
 });
 export type DirectPanelStateField = z.infer<typeof directPanelStateFieldSchema>;
@@ -393,6 +396,7 @@ export const directPanelMemberSchema = z.object({
   target: z.object({ projectionId: key }).strict(),
   inputs: z.record(key, memberInput).optional(),
   outputs: z.record(key, panelStateRefSchema).optional(),
+  formField: panelFormFieldRefSchema.optional(),
   params: z.object({ width: z.enum(["quarter", "third", "half", "twoThirds", "full", "auto"]) }).strict().optional(),
 }).strict();
 export type DirectPanelMember = z.infer<typeof directPanelMemberSchema>;
@@ -419,6 +423,8 @@ export const directPanelManifestSchema = z.object({
       if ("state" in input) requireName(state, input.state, ["members", member, "inputs", name, "state"]);
     for (const [name, output] of Object.entries(declaration.outputs ?? {}))
       requireName(state, output.state, ["members", member, "outputs", name, "state"]);
+    if (declaration.formField)
+      requireName(members, declaration.formField.slot, ["members", member, "formField", "slot"]);
   }
   for (const [name, event] of Object.entries(events)) {
     const path = ["events", name];
