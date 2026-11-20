@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { panelMemberPathSchema } from "./panel-manifest";
 import { defaultAgentSchema } from "./default-agent";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
 
@@ -43,7 +44,8 @@ export type PageSkillSource = z.infer<typeof pageSkillSourceSchema>;
 
 export const pageSkillMemberSchema = z.object({
   source: pageSkillSourceSchema,
-  memberKey: runtimeSkillRefSchema.shape.name,
+  memberPath: panelMemberPathSchema,
+  ref: runtimeSkillRefSchema,
 }).strict();
 export type PageSkillMember = z.infer<typeof pageSkillMemberSchema>;
 
@@ -77,26 +79,21 @@ export const pageSkillsProjectionSchema = z.object({
 }).strict();
 export type PageSkillsProjection = z.infer<typeof pageSkillsProjectionSchema>;
 
-const queryPageSkillSourceSchema = z.preprocess((value) => {
-  if (typeof value !== "string") return value;
+const queryPageSkillMemberSchema = z.string().transform((value, ctx) => {
   try {
     return JSON.parse(value);
   } catch {
-    return value;
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid member JSON" });
+    return z.NEVER;
   }
-}, pageSkillSourceSchema);
+}).pipe(pageSkillMemberSchema);
 
-const memberQueryFields = {
-  source: queryPageSkillSourceSchema,
-  memberKey: pageSkillMemberSchema.shape.memberKey,
-};
-
-/** Menu mappings use permissionCode; domain-member mappings use access + pageKey. Member queries add source + memberKey. */
+/** A member query carries the complete snapshot member in one URL parameter. */
 export const assistantAgentsQuerySchema = z.union([
   z.object({}).strict(),
   z.object({ pageKey: pageKeySchema, permissionCode: permissionCodeSchema }).strict(),
   domainMemberLocator,
-  z.object({ pageKey: pageKeySchema, permissionCode: permissionCodeSchema, ...memberQueryFields }).strict(),
-  z.object({ access: z.literal("domain-member"), pageKey: pageKeySchema, ...memberQueryFields }).strict(),
+  z.object({ pageKey: pageKeySchema, permissionCode: permissionCodeSchema, member: queryPageSkillMemberSchema }).strict(),
+  z.object({ access: z.literal("domain-member"), pageKey: pageKeySchema, member: queryPageSkillMemberSchema }).strict(),
 ]);
 export type AssistantAgentsQuery = z.infer<typeof assistantAgentsQuerySchema>;
