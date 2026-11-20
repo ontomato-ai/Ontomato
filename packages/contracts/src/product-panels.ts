@@ -4,7 +4,7 @@ import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
 import { panelManifestSchema, panelMessageKeySchema, panelThemeOverridesSchema } from "./panel-manifest";
 import { PanelLayoutError, parsePanelLayout } from "./panel-layout";
-import { directProjectionPortsSchema, validateDirectProjection } from "./panel-projection";
+import { directObjectSourceType, directProjectionPortsSchema, validateDirectProjection } from "./panel-projection";
 import { applicationMetadataSchema } from "./application-metadata";
 import { pageSkillContextSchema, pageSkillEntranceSchema } from "./page-skills";
 import { runtimeJsonValueSchema } from "./agent-runtime-values";
@@ -50,7 +50,9 @@ export type ChartProjectionSource = z.infer<typeof chartProjectionSourceSchema>;
 
 const projectionDefinition = directProjectionPortsSchema.extend(editableDefinitionFields);
 const ordinaryProjectionDefinition = projectionDefinition.extend({
-  componentId: directProjectionPortsSchema.shape.componentId.exclude([METRIC_CHART_COMPONENT]),
+  componentId: projectionDefinition.shape.componentId.refine(
+    componentId => componentId !== METRIC_CHART_COMPONENT, "Register a chart through its source card",
+  ),
 });
 const chartProjectionDefinition = projectionDefinition.extend({
   componentId: z.literal(METRIC_CHART_COMPONENT),
@@ -61,11 +63,9 @@ const chartProjectionDefinition = projectionDefinition.extend({
 function validateChartProjection(projection: z.infer<typeof chartProjectionDefinition>, ctx: z.RefinementCtx): void {
   validateDirectProjection(projection, ctx);
   const key = dashboardCardPrimaryKey(projection.chartSource);
-  for (const [name, read] of [["template", "chartTemplate"], ["result", "result"]] as const) {
-    const datum = projection.data[name];
-    const source = datum?.source;
-    if (!datum || datum.read !== read || !source || !("object" in source) || !("literal" in source.object)
-      || source.object.literal.className !== DASHBOARD_CARD || source.object.literal.primaryKey !== key) {
+  for (const [name, { source }] of Object.entries(projection.data)) {
+    if (!("object" in source) || directObjectSourceType(projection, source.object) !== DASHBOARD_CARD) continue;
+    if (!("literal" in source.object) || source.object.literal.primaryKey !== key) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["data", name], message: "The chart must read its registered source card" });
     }
   }
