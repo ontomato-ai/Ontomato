@@ -78,6 +78,24 @@ A `confirmation-required` result ends that tool call without a write. After the 
 the answering run uses its own credentials to dispatch that intent. The owner write starts the run and returns
 the result and affected task. A repeated dispatch reports the existing result.
 
+## Write the page skill's common tasks
+
+In `recipes.md`, describe how to use the declared reads, forms and operations for common tasks. Use the business
+owner's rules and actual operation descriptions for the page.
+
+For Business Knowledge at `/ontology/knowledge`, the owner supplies these rules.
+
+1. A record has a required title and body, tags, and a status. The body is the retrievable text. Use the owner's
+   tag choices or create a new tag. Status `0` means pending review and `1` means approved, the default for manual creation.
+2. Split a search on whitespace. A match contains every term somewhere in its title, body or tags.
+3. Read the current record before editing. The owner uses last-write-wins updates.
+4. In the default mode, hand a draft to the user for form saves. Execute declared writes after the user's confirmation
+   or when the application allows automatic execution.
+5. Approval sets the status to `1`. A delete confirmation names the titles and number of entries because deletion is
+   permanent. For batch approvals or deletions, report each outcome and leave failed entries for review.
+6. Use the Business Knowledge page for creating, editing, reviewing and deleting records. Use the existing
+   `knowledge-governance` agent for extracting or organizing knowledge from conversations and documents.
+
 ## Add an official SDK component
 
 Use an existing component if its ports already express the interaction. For a new component, record these five
