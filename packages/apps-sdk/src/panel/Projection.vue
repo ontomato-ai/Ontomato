@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, provide, ref, shallowRef, watch, type Component } from "vue";
+import { computed, inject, onBeforeUnmount, provide, ref, shallowRef, useAttrs, watch, type Component } from "vue";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { type MemberInputs } from "./direct";
 import { memberComponentId, memberProjectionId } from "./projection-element";
@@ -32,6 +32,9 @@ const props = defineProps<{
 const panel = inject(panelContextKey, null);
 if (!panel) throw new Error("<Projection> runs inside a panel, which provides its context");
 
+const attrs = useAttrs();
+/** What the panel's template listens to on the component; an attribute written here configures nothing. */
+const listeners = computed(() => Object.fromEntries(Object.entries(attrs).filter(([name]) => /^on[A-Z]/.test(name))));
 const loading = ref(true);
 const failure = shallowRef<Error | null>(null);
 const loaded = shallowRef<{ projection: ProductProjection; component: Component; member: PanelMemberContext } | null>(null);
@@ -121,7 +124,7 @@ provide(panelMemberKey, () => loaded.value!.member);
 <template>
   <p v-if="failure" role="alert">{{ failure.message }}</p>
   <div v-else-if="loading || !loaded" class="sdk-projection-loading"></div>
-  <component :is="loaded.component" v-else v-bind="{ ...loaded.projection.config, ...inputs }">
+  <component :is="loaded.component" v-else v-bind="{ ...loaded.projection.config, ...listeners, ...inputs }">
     <template v-for="(_, name) in $slots" :key="name" #[name]="slotProps">
       <slot :name="name" v-bind="slotProps ?? {}"></slot>
     </template>
