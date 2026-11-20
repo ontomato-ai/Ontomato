@@ -24,7 +24,9 @@ const querySchema = z.object({
 }).strict();
 
 export function applicationCatalogueClient(viewer: AssistantCredentials) {
-  const options = { headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers), retries: 1 };
+  const options = () => ({
+    headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers), retries: 1,
+  });
   const url = (path: string) => config.dataQuery.baseUrl + path;
   const entryPath = (id: string) => `${applicationPath}/${encodeURIComponent(id)}`;
 
@@ -33,35 +35,35 @@ export function applicationCatalogueClient(viewer: AssistantCredentials) {
       const query = new URLSearchParams();
       for (const [key, value] of Object.entries(querySchema.parse(params)))
         if (value !== undefined) query.set(key, String(value));
-      const response = await backendGet("application-catalogue", url(`${cataloguePath}?${query}`), options);
+      const response = await backendGet("application-catalogue", url(`${cataloguePath}?${query}`), options());
       return ownerData(response.text, applicationCatalogueQueryResultSchema);
     },
     async record(primaryKey: string) {
-      const response = await backendGet("application-catalogue-record", url(`${cataloguePath}/${encodeURIComponent(primaryKey)}`), options);
+      const response = await backendGet("application-catalogue-record", url(`${cataloguePath}/${encodeURIComponent(primaryKey)}`), options());
       return ownerData(response.text, applicationCatalogueRecordSchema);
     },
     async form(input: ApplicationCatalogueFormRequest) {
       const response = await backendPost("application-catalogue-form", url(`${cataloguePath}/form`),
-        applicationCatalogueFormRequestSchema.parse(input), options);
+        applicationCatalogueFormRequestSchema.parse(input), options());
       return ownerData(response.text, panelFormDescriptionSchema);
     },
     async create(id: string, values: unknown) {
       const response = await backendPut("application-catalogue-create", url(`${entryPath(id)}/panel-uses?create=true`),
-        applicationCatalogueCreateSchema.parse(values), options);
+        applicationCatalogueCreateSchema.parse(values), options());
       ownerSuccessSchema.parse(JSON.parse(response.text));
     },
     async saveIdentity(id: string, values: unknown) {
       const response = await backendPut("application-catalogue-identity", url(`${entryPath(id)}/identity`),
-        applicationIdentityUpdateSchema.parse(values), options);
+        applicationIdentityUpdateSchema.parse(values), options());
       ownerSuccessSchema.parse(JSON.parse(response.text));
     },
     async saveEntries(id: string, values: unknown) {
       const response = await backendPut("application-catalogue-entries", url(`${entryPath(id)}/panel-uses`),
-        applicationEntriesUpdateSchema.parse(values), options);
+        applicationEntriesUpdateSchema.parse(values), options());
       ownerSuccessSchema.parse(JSON.parse(response.text));
     },
     async remove(id: string) {
-      await backendDelete("application-catalogue-delete", url(entryPath(id)), options);
+      await backendDelete("application-catalogue-delete", url(entryPath(id)), options());
     },
   };
 }

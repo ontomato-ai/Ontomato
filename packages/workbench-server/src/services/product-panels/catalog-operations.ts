@@ -50,7 +50,6 @@ async function write(type: string, run: () => Promise<{ primaryKey: string; data
 function productOperations(kind: "panel" | "projection", type: string, collection: string): PanelWriteServerOperation[] {
   const objectTarget = panelObjectIdentitySchema.extend({ kind: z.literal("object"), objectType: z.literal(type) });
   const { revision: updateRevision } = deleteProductCurrentQuerySchema.shape;
-  const read = kind === "panel" ? readCurrentPanel : readCurrentProjection;
   const save: PanelWriteServerOperation = {
     handlerRef: `${type}.save`,
     binding: { kind: "PlatformObjectType", id: type },
@@ -107,6 +106,7 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
       inputSchema: inputSchema as z.ZodType<Input>,
       resultSchema,
       async targetLabel({ initiator: { owner, credentials } }, target) {
+        const read = kind === "panel" ? readCurrentPanel : readCurrentProjection;
         return (await read(owner, credentials, target.primaryKey)).name;
       },
       async execute({ executor }, target, input) {
