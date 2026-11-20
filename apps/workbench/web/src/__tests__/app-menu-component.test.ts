@@ -5,6 +5,7 @@ import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import type { MemberDataState } from "../../../../../packages/apps-sdk/src/panel/direct";
 import { panelMemberKey, type PanelMemberContext } from "../../../../../packages/apps-sdk/src/panel/member";
+import { panelContextKey, projectionKey, type PanelContext, type ProjectionSlot } from "../../../../../packages/apps-sdk/src/panel/context";
 import AppMenu from "../../../../../packages/apps-sdk/src/base/AppMenu.vue";
 import { APPLICATION_PANEL_USE } from "@ontomato/contracts/platform-object-types";
 import type { ApplicationMenu } from "../../../../../packages/apps-sdk/src/base/app-menu";
@@ -32,6 +33,13 @@ afterEach(() => {
   mounted = null;
 });
 
+/** The panel context a component runs under, with the member it is drawn as and the outputs it hands over. */
+function contextOf(member: PanelMemberContext, outputs: unknown[]): PanelContext {
+  return {
+    instance: { output: async (slot: string, output: string, value: unknown) => { outputs.push({ slot, output, value }); } },
+  } as unknown as PanelContext;
+}
+
 function mount(component: Component, props: Record<string, unknown>, datum: MemberDataState, emitted: unknown[]) {
   const i18n = createI18n({ legacy: false, locale: "en", messages: { en: publicEn } });
   const data = { use: () => ref(datum), read: async () => datum } as unknown as PanelMemberContext["data"];
@@ -42,8 +50,10 @@ function mount(component: Component, props: Record<string, unknown>, datum: Memb
     data,
   };
   const element = document.createElement("div");
-  const app = createApp({ render: () => h(component, { ...props, onActivated: (value: unknown) => emitted.push(value) }) });
+  const app = createApp({ render: () => h(component, { ...props }) });
   app.provide(panelMemberKey, () => member);
+  app.provide(panelContextKey, contextOf(member, emitted));
+  app.provide(projectionKey, { slot: "menu", projection: member.projection, inputs: {} } as unknown as ProjectionSlot);
   app.use(i18n).use(ElementPlus);
   app.mount(element);
   mounted = app;
@@ -61,7 +71,9 @@ it("draws Java's menu in the order the frame shows it, and names the entry the r
   expect(buttons).toEqual(["Home", "Open orders", "Sales"]);
   element.querySelectorAll<HTMLButtonElement>(".app-menu-entry")[1]!.click();
   await nextTick();
-  expect(emitted).toEqual([{ className: APPLICATION_PANEL_USE, primaryKey: "orders-open" }]);
+  expect(emitted).toEqual([
+    { slot: "menu", output: "activated", value: { className: APPLICATION_PANEL_USE, primaryKey: "orders-open" } },
+  ]);
 });
 
 it("says nothing about an entry the reader may not see, and draws nothing until the datum is there", async () => {

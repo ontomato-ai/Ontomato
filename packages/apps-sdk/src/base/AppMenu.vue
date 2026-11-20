@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMemberData } from "../panel/member";
+import { usePanelContext, useProjectionSlot } from "../panel/context";
 import { APPLICATION_PANEL_USE } from "@ontomato/contracts/platform-object-types";
 import { applicationMenuSections, type ApplicationMenu } from "./app-menu";
 
@@ -19,12 +20,9 @@ defineProps<{
   active?: string | null;
 }>();
 
-const emit = defineEmits<{
-  /** The entry the reader picked: what the panel's `open` event names an entry by. */
-  activated: [{ className: string; primaryKey: string }];
-}>();
-
 const { t, locale } = useI18n();
+const panel = usePanelContext();
+const slot = useProjectionSlot();
 const menu = useMemberData("menu");
 
 const result = computed<DataStateResult<ApplicationMenu>>(() => menu.value as DataStateResult<ApplicationMenu>);
@@ -37,8 +35,12 @@ const labels = computed(() => ({
   awaiting: t("platform.dataAwaiting"),
 }));
 
+/**
+ * The reader picked an entry. The member hands the reference over at its `activated` output, which is where the panel's
+ * declaration binds it and runs its own event — the component neither navigates nor decides where the jump goes.
+ */
 function activate(id: string) {
-  emit("activated", { className: APPLICATION_PANEL_USE, primaryKey: id });
+  void panel.instance.output(slot.slot, "activated", { className: APPLICATION_PANEL_USE, primaryKey: id });
 }
 </script>
 
