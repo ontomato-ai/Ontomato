@@ -127,6 +127,17 @@ describe("metric and function panel server operations", () => {
       .toEqual({ kind: "refusal", code: "FUNCTION_QUERY_PACKAGE_INVALID", message: packageError.message, errors: [packageError] });
   });
 
+  it("sends the fields a save submitted with its values, so the owner keeps every other saved value", async () => {
+    const metric = hostWith(() => Response.json({ success: true, data: { id: "m1", name: "Revenue" } }));
+    await write(`${METRIC_VIEW}.save`).execute(metric.host, metricTarget,
+      { values: { description: "Weekly" }, submittedFields: ["/description"] });
+    expect(JSON.parse(String(metric.sent[0]?.init.body))).toEqual({ description: "Weekly", id: "m1", submittedFields: ["/description"] });
+
+    const fn = hostWith(() => Response.json({ success: true, data: { id: "f1", name: "Revenue query" } }));
+    await write(`${FUNCTION}.save`).execute(fn.host, functionTarget, { values: { name: "Revenue query" } });
+    expect(JSON.parse(String(fn.sent[0]?.init.body))).toEqual({ name: "Revenue query", id: "f1" });
+  });
+
   it("keeps an uncoded write error as a known failure", async () => {
     const operation = write(`${METRIC_VIEW}.save`);
     const { host } = hostWith(() => Response.json({ success: false, message: "The definition store could not complete the write" }));

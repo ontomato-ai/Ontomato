@@ -8,8 +8,9 @@ import type { AddressInfo } from "node:net";
 import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { APPLICATION, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
+import { APPLICATION, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
+import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
@@ -18,12 +19,13 @@ import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { HttpError } from "../../utils/errors";
 import { installContentLayout } from "../../content/layout";
 import { config } from "../../config/application";
-import { createProductPanelReadAdapter } from "../../services/product-panels/catalog-reads";
+import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "../../services/product-panels/catalog-reads";
 
 const state = vi.hoisted(() => ({
   pool: undefined as pg.Pool | undefined,
   schema: "",
   use: ["one", "two", "catalogue-panel", "catalogue-data"],
+  edit: ["one", "catalogue-data"],
 }));
 vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
@@ -31,9 +33,9 @@ vi.mock("../../infrastructure/postgres", () => ({
 }));
 vi.mock("../../services/product-governance/grants", async original => ({
   ...await original<typeof import("../../services/product-governance/grants")>(),
-  grantedProductIds: async (verb: "use" | "edit") => verb === "use" ? state.use : ["one"],
+  grantedProductIds: async (verb: "use" | "edit") => verb === "use" ? state.use : state.edit,
   requireProductGrant: async (id: string, verb: "use" | "edit") => {
-    if (!(verb === "use" ? state.use : ["one"]).includes(id))
+    if (!(verb === "use" ? state.use : state.edit).includes(id))
       throw new HttpError(403, "Denied", "PRODUCT_FORBIDDEN");
   },
 }));
@@ -62,6 +64,7 @@ const declaration = { names: { en: "Application" }, descriptions: {}, icon: "pag
 const draftValues = { declaration, entry: { ...entry, path: `/applications/${draftId}` },
   entryAccess: ["domain-member"], panelUses: [] };
 const entryValues = { entry, panelUses: [publicUse, hiddenUse], framePanelId: "catalogue-panel" };
+const identityValues = { names: { en: "Application", fr: "Application française" }, descriptions: { en: "Kept description" }, icon: "pages" };
 const writes: { path: string; actor?: string; body: unknown }[] = [];
 const content = {
   html: '<div id="app"><p>Test panel</p></div>',
@@ -93,7 +96,7 @@ beforeAll(async () => {
   await state.pool.query(`INSERT INTO "${state.schema}".product_projections (domain_id,id,owner_id,definition)
     VALUES ($1,'catalogue-data',$2,$3)`, [owner.domainId, owner.userId, {
     name: "Catalogue data", description: "", visibility: "domain", componentId: "@ontomato/sdk:PanelData",
-    inputs: {}, outputs: {}, config: {},
+    inputs: {}, outputs: {}, config: { drawing: { color: "blue", width: 400 } },
     data: {
       listing: { source: { type: { kind: "PlatformObjectType", id: PRODUCT_PANEL } }, read: "query",
         params: { search: { literal: "directory" }, sort: { literal: "name" }, size: { literal: 1 } } },
@@ -107,6 +110,7 @@ beforeAll(async () => {
   }]);
 
   root = await mkdtemp(join(tmpdir(), "m2-catalogue-"));
+  await writeBundledAppSdkFixture(root);
   installContentLayout({ runtimeRoot: root, publicSkillsRoot: root, prompts: [], runtimeResources: [] });
   const { productPanelsRouter } = await import("../routes/product-panels");
   const app = express();
@@ -129,15 +133,17 @@ beforeAll(async () => {
   });
   app.post("/java/platform/applications/catalogue/form", (req, res) => {
     const draft = req.body.section === "create";
+    const identity = req.body.section === "identity";
     expect(req.header("tk")).toBe(draft ? viewer.token : "executor");
     expect(req.body.target.kind).toBe(draft ? "draft" : "object");
     res.json({ success: true, data: {
-      fields: [], values: draft ? draftValues : entryValues, errors: [],
-      save: { method: "PUT", path: `/platform/applications/${draft ? draftId : applicationId}/panel-uses${draft ? "?create=true" : ""}`,
-        bodySchema: {}, draftOperation: draft ? "create" : "saveEntries" },
+      fields: [], values: draft ? draftValues : identity ? identityValues : entryValues, errors: [],
+      save: { method: "PUT",
+        path: `/platform/applications/${draft ? draftId : applicationId}/${identity ? "identity" : "panel-uses"}${draft ? "?create=true" : ""}`,
+        bodySchema: {}, draftOperation: draft ? "create" : identity ? "saveIdentity" : "saveEntries" },
     } });
   });
-  app.put("/java/platform/applications/:id/panel-uses", (req, res) => {
+  app.put(["/java/platform/applications/:id/panel-uses", "/java/platform/applications/:id/identity"], (req, res) => {
     writes.push({ path: req.originalUrl, actor: req.header("tk"), body: req.body });
     res.json({ success: true });
   });
@@ -192,13 +198,21 @@ it("uses the registered save operation to write the current panel and refuses a 
   const save = panelServerOperation(`${PRODUCT_PANEL}.save`);
   if (save.effect !== "write") throw new Error("Expected a write operation");
   const target = { kind: "object" as const, objectType: PRODUCT_PANEL, primaryKey: "one" };
-  const input = { values: { ...form.values, name: "Alpha revised directory" }, revision: form.revision };
+  const input = {
+    values: { ...form.values, name: "Alpha revised directory", description: "An unsubmitted stale description" },
+    submittedFields: ["/name"], revision: form.revision,
+  };
 
   expect(await save.execute(host, target, input, "first-save")).toMatchObject({
     kind: "success", data: { id: "one" }, affected: { objects: [{ objectType: PRODUCT_PANEL, primaryKey: "one" }] },
   });
   expect(await save.execute(host, target, { ...input, values: { ...input.values, name: "Stale edit" } }, "stale-save"))
     .toMatchObject({ kind: "refusal", code: "PRODUCT_CONFLICT" });
+  expect(await adapter.record("one")).toMatchObject({
+    name: "Alpha revised directory", description: "", content, manifest, revision: 2,
+  });
+  expect(await save.execute(host, target, { values: { name: "Unused" }, submittedFields: [], revision: 2 }, "no-edit"))
+    .toMatchObject({ kind: "success" });
   expect(await adapter.record("one")).toMatchObject({ name: "Alpha revised directory", revision: 2 });
 });
 
@@ -242,9 +256,53 @@ it("dispatches application reads from current PostgreSQL records and preserves t
   });
 
   const draft = panelReadResultSchemas.panelFormDescription.parse(await readCatalogue("appDraft"));
-  await expect(save.execute(host, { kind: "draft" }, { values: draft.values }, "create"))
+  await expect(save.execute(host, { kind: "draft" }, { values: draft.values, submittedFields: ["/declaration/names"] }, "create"))
     .resolves.toMatchObject({ kind: "success", data: { id: draftId } });
   expect(writes.at(-1)).toEqual({
     path: `/java/platform/applications/${draftId}/panel-uses?create=true`, actor: "executor", body: draftValues,
+  });
+});
+
+it("updates only the submitted projection configuration field in PostgreSQL", async () => {
+  const adapter = createProductProjectionReadAdapter(owner, viewer);
+  const before = await adapter.record("catalogue-data");
+  const actor = { owner, credentials: viewer };
+  const unusedRequest = async () => { throw new Error("The Node owner should write through its own store"); };
+  const host = { initiator: actor, executor: actor, request: unusedRequest, requestWorkbench: unusedRequest };
+  const { panelServerOperation } = await import("../../services/product-panels/server-operations");
+  const save = panelServerOperation(`${PRODUCT_PROJECTION}.save`);
+  if (save.effect !== "write") throw new Error("Expected a write operation");
+  const target = { kind: "object" as const, objectType: PRODUCT_PROJECTION, primaryKey: before.id };
+
+  await expect(save.execute(host, target, {
+    values: { config: { drawing: { color: "orange", width: 1 } } },
+    submittedFields: ["/config/drawing/color"], revision: before.revision,
+  }, "projection-save")).resolves.toMatchObject({ kind: "success" });
+  expect(await adapter.record(before.id)).toMatchObject({
+    name: before.name, data: before.data, componentId: before.componentId,
+    config: { drawing: { color: "orange", width: 400 } },
+  });
+});
+
+it.each(["identity", "entries"] as const)("submits only the changed application %s field without losing owner values", async section => {
+  const actor = { owner, credentials: viewer };
+  const executor = { owner, credentials: { token: "executor" } };
+  const unusedRequest = async () => { throw new Error("The application owner has its own HTTP client"); };
+  const host = { initiator: actor, executor, request: unusedRequest, requestWorkbench: unusedRequest };
+  const { panelServerOperation } = await import("../../services/product-panels/server-operations");
+  const save = panelServerOperation(`${APPLICATION}.save`);
+  if (save.effect !== "write") throw new Error("Expected a write operation");
+  const target = { kind: "object" as const, objectType: APPLICATION, primaryKey: applicationId };
+  const path = `${entry.path}/renamed`;
+  const input = section === "identity"
+    ? { values: { names: { en: "Renamed", fr: "Stale name" } }, submittedFields: ["/names/en"] }
+    : { values: { panelUses: [{ path }] }, submittedFields: ["/panelUses/0/path"] };
+
+  await expect(save.execute(host, target, input, `partial-${section}`)).resolves.toMatchObject({ kind: "success" });
+  expect(writes.at(-1)).toEqual({
+    path: `/java/platform/applications/${applicationId}/${section === "identity" ? "identity" : "panel-uses"}`, actor: "executor",
+    body: section === "identity"
+      ? { ...identityValues, names: { ...identityValues.names, en: "Renamed" } }
+      : { ...entryValues, panelUses: [{ ...publicUse, path }, hiddenUse] },
   });
 });
