@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { panelRegistrationRecords } from "./panel-registration.mjs";
+import { panelRegistrationRecords, requireApplicationId } from "./panel-registration.mjs";
 
 const text = { kind: "scalar", type: "string" };
 const stateRef = state => ({ state });
@@ -10,8 +10,9 @@ const namedRead = (source, read, params = {}) => ({ source, read, params });
 const slug = value => value.replace(/([a-z0-9])([A-Z])/gu, "$1-$2").toLowerCase();
 
 export function managementPanel(type, checks, typeTable, {
-  id = `${slug(type.split(":").at(-1))}-manager`, operations = [], batches = [],
+  id = `app-${slug(type.split(":").at(-1))}-manager`, operations = [], batches = [],
 } = {}) {
+  requireApplicationId(id);
   if (!/^[a-z][a-z0-9-]*$/u.test(id)) throw new Error("Application ID must use lowercase letters, digits and hyphens");
   const owner = typeTable.objectTypes[type];
   const reads = owner?.reads;

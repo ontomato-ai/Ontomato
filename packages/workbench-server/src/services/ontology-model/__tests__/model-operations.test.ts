@@ -302,6 +302,47 @@ describe("ontology model server operations", () => {
     });
   });
 
+  it("keeps the stored value of every field an update did not submit", async () => {
+    const stored = {
+      "/ontology/model/object-type?className=Device": { ...objectTypeView, className: "Device", classDesc: "Kept description" },
+      "/ontology/model/attributes?className=Device": [{ ...attributeView, attrDesc: "Kept", businessKey: true }],
+      "/ontology/model/relationship?relationship=owns": relationshipView,
+    } as Record<string, unknown>;
+    const written = { "/object-type/update": objectTypeView, "/attribute/update": attributeView, "/relationship/update": relationshipView };
+    const { host, requests } = owner((path, init) => {
+      const resource = path.slice(path.indexOf("/ontology/model"));
+      const write = Object.entries(written).find(([suffix]) => resource.endsWith(suffix));
+      return { status: 200, body: init.method === "POST" ? write![1] : stored[resource] };
+    });
+    const write = (path: string) => requests.find(request => request.method === "POST" && request.path.endsWith(path))!.body;
+
+    // A partial submission names what it changes; the rest comes from the owner, not from missing (empty) values.
+    await saveObjectType.execute(host, objectTarget, { values: { showName: "Renamed" }, submittedFields: ["/showName"] }, "intent-1");
+    expect(write("/object-type/update")).toEqual({ className: "Device", showName: "Renamed", classDesc: "Kept description" });
+
+    await saveAttribute.execute(host, attributeTarget, { values: { showName: "Width", attrDesc: "" }, submittedFields: ["/showName"] }, "intent-2");
+    expect(write("/attribute/update")).toEqual({
+      className: "Device", name: "size", showName: "Width", attrDesc: "Kept", enable: true, businessKey: true,
+    });
+
+    await saveRelationship.execute(host, relationshipTarget, { values: { desc: "" }, submittedFields: ["/desc"] }, "intent-3");
+    // A submitted field is written even when it clears the value; Java then decides whether it may be empty.
+    expect(write("/relationship/update")).toEqual({ relationship: "owns", desc: "", fromField: "site_id", toField: "id" });
+  });
+
+  it("writes the submitted form as is when no submittedFields are named, and refuses an update of a vanished object", async () => {
+    const { host, requests } = owner(() => ({ status: 200, body: objectTypeView }));
+    await saveObjectType.execute(host, objectTarget, { values: { showName: "Pump display", classDesc: "" } }, "intent-4");
+    expect(requests.map(request => request.method)).toEqual(["POST"]);
+
+    const missing = owner(() => ({ status: 404, body: { error: { code: "ATTRIBUTE_NOT_FOUND", message: "Gone" } } }));
+    const refused = await saveAttribute.execute(
+      missing.host, attributeTarget, { values: { showName: "Width" }, submittedFields: ["/showName"] }, "intent-5",
+    );
+    expect(refused).toMatchObject({ kind: "refusal", code: "ATTRIBUTE_NOT_FOUND" });
+    expect(missing.requests.every(request => request.method === "GET")).toBe(true);
+  });
+
   it("keeps 422 field errors and 409 business refusals structured", async () => {
     const fieldRefusal = hostWithBody(422, {
       error: {

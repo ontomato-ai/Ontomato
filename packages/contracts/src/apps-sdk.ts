@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { directPanelPortTypeSchema } from "./panel-manifest";
 import { panelReadResultIdSchema } from "./panel-operations";
 import { directProjectionInputTypeSchema } from "./panel-projection";
 import { workspacePathSchema } from "./workspaces";
@@ -86,7 +87,8 @@ export const appsSdkComponentCatalogEntrySchema = z.object({
   data: appsSdkComponentDataSchema.optional(),
   config: componentConfigSchema.optional(),
   inputs: z.record(name, z.lazy(() => directProjectionInputTypeSchema)).optional(),
-  outputs: z.array(name).optional(),
+  /** State bindings use typed outputs. Event-only signals are listed in ports.events. */
+  outputs: z.record(name, z.lazy(() => directPanelPortTypeSchema)).optional(),
   ports: z.object({
     props: componentConfigSchema,
     events: z.array(componentPortSchema),
