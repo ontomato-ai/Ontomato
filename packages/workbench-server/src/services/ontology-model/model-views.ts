@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { formFieldErrorSchema } from "@ontomato/contracts/form-fields";
 
 /** The owner's typed views of the three model objects, as `OntologyModelController` answers them. */
 export const objectTypeViewSchema = z.object({
@@ -40,7 +41,7 @@ export const modelErrorSchema = z.object({
   error: z.object({
     code: z.string(),
     message: z.string(),
-    fields: z.array(z.object({ field: z.string(), code: z.string(), message: z.string() }).strict()).optional(),
+    fields: z.array(formFieldErrorSchema).optional(),
   }).passthrough(),
 });
 
@@ -51,3 +52,11 @@ export function parseAttributePrimaryKey(primaryKey: string): { className: strin
   const [className, name] = attributePrimaryKeySchema.parse(JSON.parse(primaryKey));
   return { className, name };
 }
+
+/** The owner's label of each field of the three model objects in the reader's language, by field key. */
+export const fieldLabelsSchema = z.object({
+  objectType: z.record(z.string()),
+  attribute: z.record(z.string()),
+  relationship: z.record(z.string()),
+}).strict();
+export type FieldLabels = z.infer<typeof fieldLabelsSchema>;

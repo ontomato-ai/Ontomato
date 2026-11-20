@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
-import type { FormFieldError } from "@ontomato/contracts/form-fields";
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
 import { panelFormTargetSchema, type PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
@@ -58,7 +57,7 @@ async function refused(response: Response): Promise<SinglePanelOperationOutcome>
       kind: "refusal",
       code: error.code,
       message: error.message,
-      errors: (error.fields ?? []).map(item => ({ ...item, field: item.field.replace(/^\/values\//, "/") })) as FormFieldError[],
+      errors: (error.fields ?? []).map(item => ({ ...item, field: item.field.replace(/^\/values\//, "/") })),
     };
   }
   const details = runtimeJsonObjectSchema.parse(error);

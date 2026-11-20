@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { formFieldKey, type FormFieldError } from "@ontomato/contracts/form-fields";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import {
   panelFormDescriptionSchema,
@@ -29,11 +28,13 @@ import type { ProductOwner } from "../product-governance/grants";
 import type { PanelWriteServerOperation } from "../product-panels/server-operations";
 import {
   attributeViewSchema,
+  fieldLabelsSchema,
   modelErrorSchema,
   objectTypeViewSchema,
   parseAttributePrimaryKey,
   relationshipViewSchema,
   type AttributeView,
+  type FieldLabels,
   type ObjectTypeView,
   type RelationshipView,
 } from "./model-views";
@@ -74,7 +75,7 @@ export interface OntologyModelReadAdapter {
   describe(operation: OntologyModelAction): PanelOwnerOperationDescriptor;
 }
 
-function objectTypeRecord(view: ObjectTypeView, fieldLabels: Record<string, string>): PanelRecord {
+function objectTypeRecord(view: ObjectTypeView): Omit<PanelRecord, "fieldLabels"> {
   return {
     primaryKey: view.className,
     label: view.showName || view.className,
@@ -88,11 +89,10 @@ function objectTypeRecord(view: ObjectTypeView, fieldLabels: Record<string, stri
       // The owner's derived primary-key state: missing, multiple, disabled or ok.
       primaryKey: view.primaryKey.status,
     },
-    fieldLabels,
   };
 }
 
-function attributeRecord(view: AttributeView, fieldLabels: Record<string, string>): PanelRecord {
+function attributeRecord(view: AttributeView): Omit<PanelRecord, "fieldLabels"> {
   return {
     primaryKey: JSON.stringify([view.className, view.name]),
     label: view.showName || view.name,
@@ -105,11 +105,10 @@ function attributeRecord(view: AttributeView, fieldLabels: Record<string, string
       businessKey: String(view.businessKey),
       primaryKey: String(view.primaryKey),
     },
-    fieldLabels,
   };
 }
 
-function relationshipRecord(view: RelationshipView, fieldLabels: Record<string, string>): PanelRecord {
+function relationshipRecord(view: RelationshipView): Omit<PanelRecord, "fieldLabels"> {
   return {
     primaryKey: view.relationship,
     label: view.desc || view.relationship,
@@ -121,18 +120,17 @@ function relationshipRecord(view: RelationshipView, fieldLabels: Record<string, 
       fromField: view.fromField,
       toField: view.toField,
     },
-    fieldLabels,
   };
 }
 
 /** One model type's owner reads: its list, its single record, and the record mapping. */
 interface ModelTypeReader<V> {
   readonly formPath: string;
-  /** The record fields named by the owner's form; derived summary fields omit fieldLabels. */
-  readonly recordFields: readonly string[];
+  /** This type's entry in the owner's field labels. */
+  readonly labels: keyof FieldLabels;
   views(className?: string): Promise<readonly V[]>;
   one(primaryKey: string): Promise<V>;
-  record(view: V, fieldLabels: Record<string, string>): PanelRecord;
+  record(view: V): Omit<PanelRecord, "fieldLabels">;
 }
 
 interface ModelReads {
@@ -171,15 +169,14 @@ export function createOntologyModelReadAdapter(
     return modelFormSchema.parse(JSON.parse(response.text));
   }
 
-  /** Reads the owner's field labels for this call in the viewer's language from the create form without caching. */
-  async function labelsOf(reader: Pick<ModelTypeReader<unknown>, "formPath" | "recordFields">) {
-    const answer = await ownerForm(reader.formPath, { target: { kind: "draft" }, changedField: null });
-    const labels: Record<string, string> = {};
-    for (const field of answer.fields) {
-      const key = formFieldKey(field.path, "/");
-      if (key !== null && reader.recordFields.includes(key)) labels[key] = field.label;
-    }
-    return labels;
+  /** Reads the owner's field labels in the viewer's language for this call, under the same permission as the lists. */
+  async function labelsOf(reader: Pick<ModelTypeReader<unknown>, "labels">) {
+    return (await ownerGet("ontology-model-field-labels", fieldLabelsSchema, "/ontology/model/field-labels"))[reader.labels];
+  }
+
+  /** Labels the fields a record has; derived summary fields have no owner label and stay unlabelled. */
+  function labelled(record: Omit<PanelRecord, "fieldLabels">, labels: Record<string, string>): PanelRecord {
+    return { ...record, fieldLabels: Object.fromEntries(Object.entries(labels).filter(([key]) => key in record.fields)) };
   }
 
   function refusedFields(error: unknown) {
@@ -208,9 +205,8 @@ export function createOntologyModelReadAdapter(
     } catch (error) {
       const refused = refusedFields(error);
       if (refused === null) throw error;
-      // Owner pointers use `/values/<key>` while form fields use `/<key>`. `invalid_format` and `already_exists`
-      // await alignment in A's shared `formFieldErrorCodeSchema`.
-      const errors = refused.map(item => ({ ...item, field: item.field.replace(/^\/values\//, "/") })) as FormFieldError[];
+      // Owner pointers use `/values/<key>` while form fields use `/<key>`.
+      const errors = refused.map(item => ({ ...item, field: item.field.replace(/^\/values\//, "/") }));
       // A mid-edit refresh describes the form around the draft without refusing it, so options that depend on
       // other values (a relationship's join fields follow its end classes) match what was submitted.
       const around = await ownerForm(formPath, { target, values, changedField: errors[0]!.field });
@@ -221,12 +217,12 @@ export function createOntologyModelReadAdapter(
   function typedReads<V>(typeId: string, reader: ModelTypeReader<V>): ModelReads {
     return {
       async list(params) {
-        const [views, fieldLabels] = await Promise.all([reader.views(params?.className), labelsOf(reader)]);
-        return views.map(view => reader.record(view, fieldLabels));
+        const [views, labels] = await Promise.all([reader.views(params?.className), labelsOf(reader)]);
+        return views.map(view => labelled(reader.record(view), labels));
       },
       async record(primaryKey) {
-        const [view, fieldLabels] = await Promise.all([reader.one(primaryKey), labelsOf(reader)]);
-        return reader.record(view, fieldLabels);
+        const [view, labels] = await Promise.all([reader.one(primaryKey), labelsOf(reader)]);
+        return labelled(reader.record(view), labels);
       },
       form: (primaryKey, params) =>
         describeForm(reader.formPath, { kind: "object", objectType: typeId, primaryKey }, params),
@@ -237,7 +233,7 @@ export function createOntologyModelReadAdapter(
 
   const objectTypeReader: ModelTypeReader<ObjectTypeView> = {
     formPath: "/ontology/model/object-type/form",
-    recordFields: ["className", "showName", "classDesc"],
+    labels: "objectType",
     views: () => ownerGet("ontology-model-object-types", z.array(objectTypeViewSchema), "/ontology/model/object-types"),
     one: primaryKey => ownerGet(
       "ontology-model-object-type",
@@ -249,7 +245,7 @@ export function createOntologyModelReadAdapter(
 
   const attributeReader: ModelTypeReader<AttributeView> = {
     formPath: "/ontology/model/attribute/form",
-    recordFields: ["className", "name", "type", "attrDesc", "enable", "businessKey", "primaryKey"],
+    labels: "attribute",
     views: className => ownerGet(
       "ontology-model-attributes",
       z.array(attributeViewSchema),
@@ -268,7 +264,7 @@ export function createOntologyModelReadAdapter(
 
   const relationshipReader: ModelTypeReader<RelationshipView> = {
     formPath: "/ontology/model/relationship/form",
-    recordFields: ["fromclass", "toclass", "desc", "fromField", "toField"],
+    labels: "relationship",
     views: className => ownerGet(
       "ontology-model-relationships",
       z.array(relationshipViewSchema),

@@ -134,6 +134,15 @@ const relationshipForm = {
   save: { method: "POST", path: "/ontology/model/relationship/create", bodySchema: { type: "object" }, draftOperation: "relationship.create" },
 };
 
+/** The owner labels its fields the same in the field-label read as in its forms. */
+const labelsOf = (form: { fields: readonly { path: string; label: string }[] }) =>
+  Object.fromEntries(form.fields.map(field => [field.path.slice(1), field.label]));
+const fieldLabels = {
+  objectType: labelsOf(objectTypeForm),
+  attribute: labelsOf(attributeForm),
+  relationship: labelsOf(relationshipForm),
+};
+
 const forms: Record<string, typeof objectTypeForm | typeof attributeForm | typeof relationshipForm> = {
   "/ontology/model/object-type/form": objectTypeForm,
   "/ontology/model/attribute/form": attributeForm,
@@ -166,6 +175,8 @@ function catalogRoute(request: RecordedRequest): Response | undefined {
   if (request.method !== "GET") return undefined;
   const className = request.url.searchParams.get("className");
   switch (request.url.pathname) {
+    case "/ontology/model/field-labels":
+      return Response.json(fieldLabels);
     case "/ontology/model/object-types":
       return Response.json(objectTypes);
     case "/ontology/model/object-type": {
@@ -208,13 +219,13 @@ describe("ontology model read adapter", () => {
   it("lists all three model types with owner labels, viewer headers and no cross-call label cache", async () => {
     let labelSuffix = "";
     const requests = stubOwner(request => {
-      if (request.method === "POST" && request.url.pathname === "/ontology/model/object-type/form") {
-        return Response.json({
-          ...objectTypeForm,
-          fields: objectTypeForm.fields.map(field => ({ ...field, label: `${field.label}${labelSuffix}` })),
-        });
+      if (request.url.pathname === "/ontology/model/field-labels") {
+        const objectType = Object.fromEntries(
+          Object.entries(fieldLabels.objectType).map(([key, label]) => [key, `${label}${labelSuffix}`]),
+        );
+        return Response.json({ ...fieldLabels, objectType });
       }
-      return catalogRoute(request) ?? formRoute(request);
+      return catalogRoute(request);
     });
     const adapter = createOntologyModelReadAdapter(owner, viewer, "alice");
 
@@ -335,6 +346,8 @@ describe("ontology model read adapter", () => {
       },
     ]);
 
+    // Lists read under the readers' GET permission; no form description is posted for labels.
+    expect(requests.every(req => req.method === "GET")).toBe(true);
     for (const req of requests) {
       expect(req.headers.get("tk")).toBe(viewer.token);
       expect(req.headers.get("Accept-Language")).toBe(viewer.locale);
