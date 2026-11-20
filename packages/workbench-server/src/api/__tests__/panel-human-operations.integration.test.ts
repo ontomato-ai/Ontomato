@@ -32,21 +32,19 @@ const objectType = "platform:ScheduledTask";
 const use = { applicationId: "app-tasks", useId: "tasks", operationId: "run.runNow" };
 vi.mock("../../services/product-panels/current", () => ({
   readCurrentPanelRecord: async () => ({
-    sdkVersion: "1.0.0",
     manifest: {
-      state: { task: { kind: "object", objectType } },
-      slots: { run: { projectionId: "run", inputs: { task: { state: "task" } } } },
-      operations: [],
+      state: { task: { type: { kind: "object", objectType } } },
+      members: { run: { target: { projectionId: "run" }, inputs: { task: { state: "task" } } } },
+      events: {},
     },
   }),
-  readCurrentProjectionRecord: async () => ({
-    id: "run", componentId: "run", name: "Run now",
-    binding: { kind: "PlatformOperation", id: "schedules.runNow" },
-    inputs: { task: { kind: "object", objectType } },
+  requireDirectPanelMember: async () => ({
+    member: { target: { projectionId: "run" }, inputs: { task: { state: "task" } } },
+    projection: {
+      id: "run", componentId: "@ontomato/sdk:OperationButton", name: "Run now", inputs: { task: { kind: "object", objectType } },
+      data: { operation: { source: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, read: "describe", params: {} } },
+    },
   }),
-}));
-vi.mock("../../services/product-panels/skill-package", () => ({
-  readComponentCatalogue: async () => new Map([["run", { componentId: "run", meaning: "Run now" }]]),
 }));
 
 const database = process.env.RUNTIME_TEST_DATABASE_URL;

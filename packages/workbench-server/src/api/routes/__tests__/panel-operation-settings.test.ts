@@ -14,15 +14,13 @@ vi.mock("../../../config/application",()=>({config:{dataQuery:{get baseUrl(){ret
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:state.query}),qualifiedTable:(name:string)=>name}));
 vi.mock("../../../services/assistant/skills",()=>({loadedPageSkillVersion:vi.fn(),readAssistantSkillView:vi.fn()}));
 vi.mock("../../../services/skills/view",()=>({pageSkillMemberContext:vi.fn(),readSkillView:vi.fn()}));
-vi.mock("../../../services/product-panels/skill-package",()=>({readComponentCatalogue:vi.fn()}));
-vi.mock("../../../services/product-panels/current",()=>({readCurrentPanelRecord:vi.fn(),readCurrentProjectionRecord:vi.fn(),requireCurrentPanels:vi.fn(),saveCurrentPanel:vi.fn(),saveCurrentProjection:vi.fn()}));
+vi.mock("../../../services/product-panels/current",()=>({readCurrentPanelRecord:vi.fn(),readCurrentProjectionRecord:vi.fn(),requireDirectPanelMember:vi.fn(),validateApplicationPanelReferences:vi.fn(),saveCurrentPanel:vi.fn(),saveCurrentProjection:vi.fn()}));
 vi.mock("../../../utils/request-identity",async original=>({...await original<typeof import("../../../utils/request-identity")>(),requireDomainId:(req:{domainId:string})=>req.domainId}));
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { panelOperationsRouter } from "../product-panels";
 import { RuntimeClient } from "../../../infrastructure/agent-runtime/client";
-import { readCurrentPanelRecord, readCurrentProjectionRecord } from "../../../services/product-panels/current";
-import { readComponentCatalogue } from "../../../services/product-panels/skill-package";
+import { readCurrentPanelRecord, requireDirectPanelMember } from "../../../services/product-panels/current";
 
 const sessionId="77777777-7777-4777-8777-777777777777",actorId="11111111-1111-4111-8111-111111111111";
 const path=`/api/panel-operation-settings/workbench/${sessionId}`;
@@ -122,20 +120,22 @@ it("returns the server descriptor only for a current use of the authenticated re
    domainId: "domain", ownerId: "owner", visibility: "domain" as const, description: "",
    revision: 1, createdAt: "2026-11-19T00:00:00Z", updatedAt: "2026-11-19T00:00:00Z", editable: true,
  };
+ const task = { kind: "object" as const, objectType };
+ const member = { target: { projectionId: "run" }, inputs: { task: { state: "task" } } };
  vi.mocked(readCurrentPanelRecord).mockResolvedValue({
-   ...record, id: "panel-tasks", name: "Tasks", sdkVersion: "1.0.0", content: { html: "", module: "" },
-   manifest: {
-     state: { task: { kind: "object", objectType, deepLink: false } },
-     slots: { run: { projectionId: "run", inputs: { task: { state: "task" } } } },
-     operations: [],
+   ...record, id: "panel-tasks", name: "Tasks", content: { html: "", module: "" },
+   manifest: { state: { task: { type: task, personal: false, deepLink: false, external: false } }, members: { run: member }, events: {} },
+ });
+ vi.mocked(requireDirectPanelMember).mockResolvedValue({
+   member,
+   projection: {
+     ...record, id: "run", componentId: "@ontomato/sdk:OperationButton", name: "Run now",
+     inputs: { task }, outputs: {}, config: {},
+     data: { operation: {
+       source: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, read: "describe", params: {},
+     } },
    },
  });
- vi.mocked(readCurrentProjectionRecord).mockResolvedValue({
-   ...record, id: "run", componentId: "run", name: "Run now", display: {},
-   binding: { kind: "PlatformOperation", id: "schedules.runNow" },
-   inputs: { task: { kind: "object", objectType } },
- });
- vi.mocked(readComponentCatalogue).mockResolvedValue(new Map([["run", { componentId: "run", meaning: "Run now" }]]));
 
  const url = hostUrl + "/api/panel-operations/descriptor?applicationId=app-tasks&operationId=run.runNow";
  const result = await fetch(url + "&useId=tasks", { headers: { tk: "owner" } });
