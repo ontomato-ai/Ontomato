@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
 import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { panelOptionListSchema } from "@ontomato/contracts/panel-projection";
 import { installContentLayout } from "../../../content/layout";
-import { configureI18n, tForLocale } from "../../../i18n";
+import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 
 /*
@@ -89,8 +89,8 @@ it("names each held value in its submitted order, repeating duplicates item by i
   expect(resolved.options[1]).toEqual({
     primaryKey: runtimeSkillKey(ghost),
     value: ghost,
-    label: tForLocale("en", "assistant.skills.unavailable.name"),
-    unavailable: { reason: tForLocale("en", "assistant.skills.unavailable.reason") },
+    label: "Unavailable skill",
+    unavailable: { reason: "This skill is not available to you." },
   });
   expect(resolved.options[2]).toEqual({
     primaryKey: runtimeSkillKey(governance),
@@ -113,15 +113,17 @@ it("answers unreadable, missing, and removed skills with the same generalized la
 
   const resolved = await adapter.resolve({ values: [foreign, missing, removed] });
 
-  const generalized = tForLocale("en", "assistant.skills.unavailable.name");
-  expect(resolved.options.map(({ label }) => label)).toEqual([generalized, generalized, generalized]);
-  const reason = tForLocale("en", "assistant.skills.unavailable.reason");
+  // The generalized copy is the shipped localization, not the raw key shown while a key is missing.
+  expect(resolved.options.map(({ label }) => label))
+    .toEqual(["Unavailable skill", "Unavailable skill", "Unavailable skill"]);
+  const reason = "This skill is not available to you.";
   expect(resolved.options.map(option => option.unavailable?.reason)).toEqual([reason, reason, reason]);
   for (const option of resolved.options) {
     expect(option.description).toBeUndefined();
     expect(option.label).not.toContain("gone-skill");
     expect(option.label).not.toContain("ghost-skill");
+    expect(option.label.startsWith("assistant.")).toBe(false);
   }
-  expect(generalized).not.toContain("gone-skill");
+  expect("Unavailable skill").not.toContain("gone-skill");
   expect(resolved.options[2].value).toEqual(removed);
 });

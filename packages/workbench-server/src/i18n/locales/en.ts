@@ -431,6 +431,8 @@ export const en = {
   "assistant.skills.report.description": "Write an evidence-based report and turn it into a PowerPoint presentation on request.",
   "assistant.skills.analyst.title": "Ontology analyst",
   "assistant.skills.analyst.description": "Read ontology metadata and ask data questions",
+  "assistant.skills.unavailable.name": "Unavailable skill",
+  "assistant.skills.unavailable.reason": "This skill is not available to you.",
   "mcp.catalog.analysisTitle": "Agent Platform Agents MCP",
   "mcp.catalog.opsTitle": "Agent Platform Ops Agent MCP",
 } satisfies import("../index").TranslationMessages;
