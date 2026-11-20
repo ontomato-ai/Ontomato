@@ -30,9 +30,11 @@ import io.ontomato.dataengine.service.ActionPreconditionService;
 import io.ontomato.dataengine.service.CapabilityGrantLookup;
 import io.ontomato.dataengine.service.IdentitySnapshotLookup;
 import io.ontomato.dataengine.service.LangService;
+import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.impl.WorkflowRunResolver;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -120,6 +122,7 @@ class ActionGrantGuardTest {
     action.setOrigin(Action.ORIGIN_USER);
     action.setStatus(Action.STATUS_PUBLISHED);
     action.setDomainId(DOMAIN);
+    action.setFunction(function);
     when(actionDao.queryById(ACTION_ID)).thenReturn(new Object[] { action, FUNCTION_ID });
     when(functionDao.queryById(FUNCTION_ID)).thenReturn(function);
     return action;
@@ -136,23 +139,23 @@ class ActionGrantGuardTest {
   // ---------- the guard itself ----------
 
   @Test
-  void anUngrantedRoleIsRefusedWithTheGrantsOwnMessage() throws Exception {
+  void anUngrantedRoleIsRefusedWithTheGrantsOwnMessage() {
     publishedAction();
     grantAnswer(false);
 
-    PythonExecuteResult result = service.execute(ACTION_ID, params(), LANG, alice, permission, 5);
+    OwnerRefusal error = assertThrows(OwnerRefusal.class,
+        () -> service.execute(ACTION_ID, params(), LANG, alice, permission, 5));
 
-    assertEquals("No role grants this action", result.getError());
-    assertTrue(result.getAffects().isEmpty());
-    assertNull(result.getResult(), "a refused run must not carry a result");
+    assertEquals("ACTION_NOT_GRANTED", error.code());
+    assertEquals("No role grants this action", error.getMessage());
   }
 
   @Test
-  void anUngrantedRunNeverReachesTheProgramOrThePreconditions() throws Exception {
+  void anUngrantedRunNeverReachesTheProgramOrThePreconditions() {
     publishedAction();
     grantAnswer(false);
 
-    service.execute(ACTION_ID, params(), LANG, alice, permission, 5);
+    assertThrows(OwnerRefusal.class, () -> service.execute(ACTION_ID, params(), LANG, alice, permission, 5));
 
     // Either one running first would mean the program could already have written, or a subject
     // learned something about an object they were never allowed to execute against.
@@ -178,11 +181,13 @@ class ActionGrantGuardTest {
     when(preconditions.evaluate(any(), any(), any(), any(), any()))
         .thenReturn(new ActionPreconditionService.Verdict(false, List.of("still open")));
 
-    PythonExecuteResult result = service.execute(ACTION_ID, params(), LANG, alice, permission, 5);
+    OwnerRefusal error = assertThrows(OwnerRefusal.class,
+        () -> service.execute(ACTION_ID, params(), LANG, alice, permission, 5));
 
     // Proving the refusal below is about the precondition, not about a grant that never resolved:
     // without this case a guard that always says no would pass every test above.
-    assertEquals("Preconditions are not met: still open", result.getError());
+    assertEquals("ACTION_PRECONDITION_FAILED", error.code());
+    assertEquals("Preconditions are not met: still open", error.getMessage());
     verify(preconditions).evaluate(any(), any(), any(), any(), any());
     verifyNoInteractions(programs);
   }
@@ -196,11 +201,12 @@ class ActionGrantGuardTest {
     grantAnswer(true);
     when(lang.get(anyString(), eq("Action.notPublished"))).thenReturn("Action not published");
 
-    Exception thrown =
-        assertThrows(Exception.class,
+    OwnerRefusal thrown =
+        assertThrows(OwnerRefusal.class,
             () -> service.execute(ACTION_ID, params(), LANG, alice, permission, 5));
 
     // A draft is not an authorization question; asking the grant here would report the wrong layer.
+    assertEquals("ACTION_NOT_EXECUTABLE", thrown.code());
     assertEquals("Action not published", thrown.getMessage());
     verify(grants, never()).admission(anyString(), anyString(), anyString(), anyString());
   }
@@ -211,10 +217,11 @@ class ActionGrantGuardTest {
     action.setDomainId("domain-2");
     grantAnswer(true);
 
-    Exception thrown =
-        assertThrows(IllegalArgumentException.class,
+    OwnerRefusal thrown =
+        assertThrows(OwnerRefusal.class,
             () -> service.execute(ACTION_ID, params(), LANG, alice, permission, 5));
 
+    assertEquals("ACTION_NOT_FOUND", thrown.code());
     assertTrue(thrown.getMessage().contains("outside the current domain"), thrown.getMessage());
     verify(grants, never()).admission(anyString(), anyString(), anyString(), anyString());
   }
@@ -224,10 +231,11 @@ class ActionGrantGuardTest {
     when(actionDao.queryById(ACTION_ID)).thenReturn(null);
     when(lang.get(anyString(), eq("Action.notFound"))).thenReturn("Action not found");
 
-    Exception thrown =
-        assertThrows(Exception.class,
+    OwnerRefusal thrown =
+        assertThrows(OwnerRefusal.class,
             () -> service.execute(ACTION_ID, params(), LANG, alice, permission, 5));
 
+    assertEquals("ACTION_NOT_FOUND", thrown.code());
     assertEquals("Action not found", thrown.getMessage());
     verify(grants, never()).admission(anyString(), anyString(), anyString(), anyString());
   }
@@ -262,10 +270,85 @@ class ActionGrantGuardTest {
     when(preconditions.evaluate(any(), any(), any(), any(), any()))
         .thenReturn(new ActionPreconditionService.Verdict(false, List.of("would fail too")));
 
-    PythonExecuteResult result = service.execute(ACTION_ID, params(), LANG, alice, permission, 5);
+    OwnerRefusal error = assertThrows(OwnerRefusal.class,
+        () -> service.execute(ACTION_ID, params(), LANG, alice, permission, 5));
 
-    assertFalse(result.getError().contains("Preconditions are not met"), result.getError());
-    assertEquals("No role grants this action", result.getError());
+    assertEquals("ACTION_NOT_GRANTED", error.code());
+    assertEquals("No role grants this action", error.getMessage());
+  }
+
+  @Test
+  void formRefusesAnUnpublishedActionAsNotExecutable() {
+    Action action = publishedAction();
+    action.setStatus(Action.STATUS_PENDING_REVIEW);
+    when(lang.get(anyString(), eq("Action.notPublished"))).thenReturn("Action not published");
+
+    OwnerRefusal error = assertThrows(OwnerRefusal.class,
+        () -> service.form(ACTION_ID, new JSONObject(), null, List.of(), LANG, alice));
+
+    assertEquals("ACTION_NOT_EXECUTABLE", error.code());
+    assertEquals("Action not published", error.getMessage());
+  }
+
+  @Test
+  void formRefusesAnotherDomainAsNotFound() {
+    Action action = publishedAction();
+    action.setDomainId("domain-2");
+
+    OwnerRefusal error = assertThrows(OwnerRefusal.class,
+        () -> service.form(ACTION_ID, new JSONObject(), null, List.of(), LANG, alice));
+
+    assertEquals("ACTION_NOT_FOUND", error.code());
+    assertTrue(error.getMessage().contains("outside the current domain"), error.getMessage());
+  }
+
+  @Test
+  void formRefusesAnUngrantedActionAsNotGranted() {
+    publishedAction();
+    grantAnswer(false);
+
+    OwnerRefusal error = assertThrows(OwnerRefusal.class,
+        () -> service.form(ACTION_ID, new JSONObject(), null, List.of(), LANG, alice));
+
+    assertEquals("ACTION_NOT_GRANTED", error.code());
+    assertEquals("No role grants this action", error.getMessage());
+  }
+
+  @Test
+  void scheduledRunsReturnTheRefusalMessageForTheGrantsThreeRefusals() throws Exception {
+    Action action = publishedAction();
+    grantAnswer(false);
+    PythonExecuteResult unauth = service.executeScheduled(action, params(), LANG, alice, permission, 5, UUID.randomUUID());
+    assertEquals("No role grants this action", unauth.getError());
+
+    grantAnswer(true);
+    when(preconditions.evaluate(any(), any(), any(), any(), any()))
+        .thenReturn(new ActionPreconditionService.Verdict(false, List.of("still open")));
+    PythonExecuteResult precondition = service.executeScheduled(action, params(), LANG, alice, permission, 5, UUID.randomUUID());
+    assertEquals("Preconditions are not met: still open", precondition.getError());
+
+    action.setTarget(new io.ontomato.dataengine.bean.action.ActionTarget("Order", "order_id"));
+    var queries = mock(io.ontomato.dataengine.service.OntologyQueryService.class);
+    ReflectionTestUtils.setField(service, "queries", queries);
+    when(queries.actionTargetExists(any(), anyString(), any(), any())).thenReturn(false);
+    PythonExecuteResult target = service.executeScheduled(action, params(), LANG, alice, permission, 5, UUID.randomUUID());
+    assertEquals("Target is outside scope", target.getError());
+  }
+
+  @Test
+  void scheduledRunsStillThrowForAnUnpublishedActionOrAnotherDomain() throws Exception {
+    Action draft = publishedAction();
+    draft.setStatus(Action.STATUS_PENDING_REVIEW);
+    when(lang.get(anyString(), eq("Action.notPublished"))).thenReturn("Action not published");
+    OwnerRefusal notPublished = assertThrows(OwnerRefusal.class,
+        () -> service.executeScheduled(draft, params(), LANG, alice, permission, 5, UUID.randomUUID()));
+    assertEquals("ACTION_NOT_EXECUTABLE", notPublished.code());
+
+    Action foreign = publishedAction();
+    foreign.setDomainId("domain-2");
+    OwnerRefusal notFound = assertThrows(OwnerRefusal.class,
+        () -> service.executeScheduled(foreign, params(), LANG, alice, permission, 5, UUID.randomUUID()));
+    assertEquals("ACTION_NOT_FOUND", notFound.code());
   }
 
   @Test
@@ -275,8 +358,10 @@ class ActionGrantGuardTest {
     var queries = mock(io.ontomato.dataengine.service.OntologyQueryService.class);
     ReflectionTestUtils.setField(service, "queries", queries);
     grantAnswer(true);
-    var result = service.execute(ACTION_ID, JSONObject.of("order_id", "00123"), LANG, alice, permission, 5);
-    assertEquals("Target is outside scope", result.getError());
+    OwnerRefusal error = assertThrows(OwnerRefusal.class,
+        () -> service.execute(ACTION_ID, JSONObject.of("order_id", "00123"), LANG, alice, permission, 5));
+    assertEquals("ACTION_TARGET_OUT_OF_SCOPE", error.code());
+    assertEquals("Target is outside scope", error.getMessage());
     verify(queries).actionTargetExists(eq(action.getTarget()), eq("00123"), eq(CapabilityGrantLookup.Admission.ALL), any());
     org.mockito.Mockito.verifyNoInteractions(preconditions, programs);
   }

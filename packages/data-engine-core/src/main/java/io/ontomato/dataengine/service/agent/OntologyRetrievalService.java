@@ -372,8 +372,8 @@ public class OntologyRetrievalService {
     long deadline=Instant.parse(row.getString("deadline")).toEpochMilli();
     var classes = input.getList("classNames", String.class);
     String grant=access.exploration(context,id,id,runId,deadline,classes);
-    definitions.publish();
-    var definition=definitions.definition(context.owner().domainId(),context.language(),deadline-System.currentTimeMillis());
+    var skills = definitions.publish();
+    var definition=definitions.definition(context.owner().domainId(),context.language(),deadline-System.currentTimeMillis(),skills);
     definition.put("context",modelContext(id,runId,context));
     store.transaction(() -> store.gate(id,runId,context.owner()));
     return JSONObject.of("language",context.language(),"input",message,"definition",definition,

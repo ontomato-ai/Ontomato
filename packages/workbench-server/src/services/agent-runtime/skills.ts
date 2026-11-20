@@ -1,5 +1,5 @@
-import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
-import { runtimeRegisteredSkillSchema } from "@ontomato/contracts/agent-runtime-skills";
+import type { RuntimeSkillRef, RuntimeSkillVersion } from "@ontomato/contracts/agent-runtime-skills";
+import { runtimeRegisteredSkillSchema, runtimeSkillVersionSchema } from "@ontomato/contracts/agent-runtime-skills";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { readSkillPackage } from "../../core/skills/package";
 import type { SkillPackage } from "../../core/skills/providers";
@@ -7,6 +7,16 @@ import fs from "node:fs";
 import { exportChartTheme } from "../chart-theme";
 import path from "node:path";
 import { publicSkillsRoot, publicSkillTranslationsRoot } from "../../content/layout";
+import { environment } from "../../config/environment";
+import { getApiConfig } from "../../config/data-query-api";
+import { backendPost } from "../../utils/backend-client";
+import { workbenchServerResourceRoot } from "../../content/resources";
+
+export function workbenchBuiltinSkillRoot(skill: RuntimeSkillRef): string {
+  return skill.name === "ontomato-app-builder"
+    ? path.resolve(workbenchServerResourceRoot, "../../agent-skills", skill.name)
+    : path.join(workbenchServerResourceRoot, "resources/runtime-skills", skill.name);
+}
 
 /** Push one standard package to the runtime, using the caller's verified domain. */
 export async function publishSkillPackage(pkg: SkillPackage, domainId?: string) {
@@ -34,4 +44,14 @@ export async function publishSkill(root: string, skill: RuntimeSkillRef, domainI
     }
   }
   return publishSkillPackage(pkg, domainId);
+}
+
+/** The ontology host assembles and publishes its public assistant skill. */
+export async function publishOntologyAssistantSkill(domainId: string): Promise<RuntimeSkillVersion> {
+  const url = getApiConfig().baseUrl!.replace(/\/$/, "") + "/platform/agent-channel/assistant-skill";
+  const response = await backendPost("ontology-assistant-skill", url, {}, {
+    headers: { "X-Ontomato-Query-Service-Token": environment.agentRuntime().queryServiceToken, "X-Domain-Id": domainId },
+    retries: 1,
+  });
+  return runtimeSkillVersionSchema.parse(JSON.parse(response.text));
 }
