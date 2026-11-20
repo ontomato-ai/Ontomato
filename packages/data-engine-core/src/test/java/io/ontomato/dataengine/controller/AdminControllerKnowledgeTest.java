@@ -4,13 +4,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,6 +22,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.core.bean.User;
+import io.ontomato.dataengine.dao.KnowledgeEntity;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.KnowledgeService;
 import io.ontomato.dataengine.service.LangService;
@@ -47,6 +51,20 @@ class AdminControllerKnowledgeTest {
 		when(langService.get(any(), anyString())).thenAnswer(call -> call.getArgument(0) + ":" + call.getArgument(1));
 		ReflectionTestUtils.setField(controller, "knowledgeService", knowledgeService);
 		ReflectionTestUtils.setField(controller, "langService", langService);
+
+		when(user.getDomainId()).thenReturn("domain-a");
+		var stored = new KnowledgeEntity();
+		stored.setKnowledgeID("k1");
+		stored.setKnowledgeTitle("Refund rule");
+		stored.setKnowledgeText("Within 7 days");
+		stored.setKnowledgeTags(List.of("Business"));
+		stored.setStatus(0);
+		when(knowledgeService.getBussinessKnowledge("domain-a")).thenReturn(Map.of("k1", stored));
+	}
+
+	private void verifyNothingSaved() {
+		verify(knowledgeService, never()).addBussinessKnowledge(any(), any(), any(), anyInt(), any(), any());
+		verify(knowledgeService, never()).editBussinessKnowledge(any(), any(), any(), anyInt(), any(), any());
 	}
 
 	private static JSONObject payload(String id, String text) {
@@ -73,7 +91,7 @@ class AdminControllerKnowledgeTest {
 		assertRefused(controller.addBussinessKnowledge("zh-CN", payload("", "  \n ")));
 		assertRefused(controller.editBussinessKnowledge("zh-CN", payload("k1", "")));
 		assertRefused(controller.editBussinessKnowledge("zh-CN", payload("k1", "   ")));
-		verifyNoInteractions(knowledgeService);
+		verifyNothingSaved();
 	}
 
 	@Test
@@ -110,5 +128,37 @@ class AdminControllerKnowledgeTest {
 
 		assertTrue(controller.editBussinessKnowledge("en", payload("k1", "Within 14 days")).getBooleanValue("success"));
 		verify(knowledgeService).editBussinessKnowledge("k1", "Refund rule", "Within 14 days", 1, List.of("Business"), user);
+	}
+
+	/** An agent's draft carries only the fields it changes; the save keeps the rest instead of failing on them. */
+	@Test
+	void anEditWithOnlyTheChangedFieldsKeepsTheEntrysOtherValues() {
+		JSONObject ret = controller.editBussinessKnowledge("en",
+				new JSONObject().fluentPut("knowledgeID", "k1").fluentPut("knowledgeText", "Within 14 days"));
+
+		assertTrue(ret.getBooleanValue("success"), ret.toString());
+		verify(knowledgeService).editBussinessKnowledge("k1", "Refund rule", "Within 14 days", 0, List.of("Business"), user);
+	}
+
+	@Test
+	void aCreateWithOnlySomeFieldsTakesTheNewEntryDefaults() {
+		when(knowledgeService.addBussinessKnowledge("", "Refund rule", "Within 7 days", 1, List.of(), user))
+				.thenReturn("knowledge_0b5d");
+
+		JSONObject ret = controller.addBussinessKnowledge("en",
+				new JSONObject().fluentPut("knowledgeTitle", "Refund rule").fluentPut("knowledgeText", "Within 7 days"));
+
+		assertTrue(ret.getBooleanValue("success"), ret.toString());
+		assertEquals("knowledge_0b5d", ret.getJSONObject("data").getString("id"));
+	}
+
+	@Test
+	void anEditOfAnEntryThisDomainDoesNotHaveIsRefused() {
+		JSONObject ret = controller.editBussinessKnowledge("en",
+				new JSONObject().fluentPut("knowledgeID", "missing").fluentPut("knowledgeText", "Within 14 days"));
+
+		assertFalse(ret.getBooleanValue("success"));
+		assertEquals("Business knowledge not found in the current domain", ret.getString("message"));
+		verifyNothingSaved();
 	}
 }

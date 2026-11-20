@@ -19,12 +19,16 @@ export async function readPanelTypeTable(owner: ProductOwner, viewer: AssistantC
       }),
     },
   ]));
-  for (const { className, declaration } of await createActionReadAdapter(owner, viewer).objectActions()) {
+  const { actions, unavailableActions } = await createActionReadAdapter(owner, viewer).objectActions();
+  for (const { className, declaration } of actions) {
     const entry = objectTypes.get(className);
     if (entry) (entry.operations ??= []).push(declaration);
     else objectTypes.set(className, { operations: [declaration] });
   }
-  return platformTypeTableResponseSchema.parse({ objectTypes: Object.fromEntries(objectTypes) });
+  return platformTypeTableResponseSchema.parse({
+    objectTypes: Object.fromEntries(objectTypes),
+    ...(unavailableActions.length > 0 && { unavailableActions }),
+  });
 }
 
 export function panelOperationTargetCheck(owner: ProductOwner, viewer: AssistantCredentials) {
@@ -32,11 +36,13 @@ export function panelOperationTargetCheck(owner: ProductOwner, viewer: Assistant
   return async (projection: ProductProjectionInput, wiring?: Pick<PanelPlacement, "inputs">) => {
     for (const { name, binding, owner: platform } of boundProjectionOperations(projection)) {
       const ref = binding.operation;
-      const operation = ref.kind === "Action"
-        ? (await (objectActions ??= createActionReadAdapter(owner, viewer).objectActions()))
-          .find(action => action.declaration.id === ref.id)
-        : platform;
-      if (!operation) return `operation '${name}' refers to unavailable owner operation '${ref.id}'`;
+      const catalog = ref.kind === "Action"
+        ? await (objectActions ??= createActionReadAdapter(owner, viewer).objectActions()) : undefined;
+      const operation = catalog ? catalog.actions.find(action => action.declaration.id === ref.id) : platform;
+      if (!operation) {
+        const unavailable = catalog?.unavailableActions.find(action => action.id === ref.id);
+        return `operation '${name}' refers to unavailable owner operation '${ref.id}'${unavailable ? `: ${unavailable.reason}` : ""}`;
+      }
       const type = "className" in operation ? operation.className : operation.targetType;
       const { target } = binding;
       if (!projectionOperationTargetMatches(projection, binding, operation.declaration, type))
