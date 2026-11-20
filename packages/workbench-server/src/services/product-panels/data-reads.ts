@@ -10,8 +10,8 @@ import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contrac
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import {
-  ACTION, ATTRIBUTE, DASHBOARD_CARD, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE, ONTOLOGY_TYPE,
-  RELATIONSHIP, SDK_COMPONENT, type PlatformReadDeclaration,
+  ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE,
+  ONTOLOGY_TYPE, PRODUCT_PANEL, PRODUCT_PROJECTION, RELATIONSHIP, SDK_COMPONENT, type PlatformReadDeclaration,
 } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { assertPermission } from "../../identity/installed";
@@ -27,6 +27,8 @@ import { createBusinessKnowledgeReadAdapter } from "../business-knowledge/panel-
 import { createOntologyModelReadAdapter } from "../ontology-model/model-reads";
 import { createScheduledTaskReadAdapter } from "../scheduling/panel-reads";
 import type { SkillResolveRequest } from "../skills/panel-reads";
+import { createApplicationReadAdapter } from "./application-catalogue";
+import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "./catalog-reads";
 import { requireChartReadRegistration } from "./chart-sources";
 import { listSdkComponents, readPanelComponentCatalogue, readSdkComponent } from "./component-catalogue";
 import { requireRegisteredPanelRoot, resolvePanelMemberPath } from "./member-path";
@@ -79,6 +81,16 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     form: (selection, params) => model.form(selection.typeId, selection.primaryKey!, formParams(params)),
     createForm: (selection, params) => model.createForm(selection.typeId, formParams(params)),
   };
+  const projectionCatalogue = createProductProjectionReadAdapter(owner, viewer);
+  const panelCatalogue = createProductPanelReadAdapter(owner, viewer);
+  const applications = createApplicationReadAdapter(owner, viewer);
+  const catalogueReads = (adapter: typeof projectionCatalogue | typeof panelCatalogue): Record<string, ReadAdapter> => ({
+    query: (_selection, params) => adapter.query(params),
+    record: selection => adapter.record(selection.primaryKey!),
+    form: (selection, params) => adapter.form(selection.primaryKey!, formParams(params)),
+    createForm: (_selection, params) => adapter.createForm(formParams(params)),
+    usedBy: selection => adapter.usedBy(selection.primaryKey!),
+  });
   const definitions = async () => {
     const { createAgentDefinitionReadAdapter } = await import("../assistant/panel-reads");
     return createAgentDefinitionReadAdapter(owner, viewer);
@@ -188,6 +200,21 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [OBJECT_TYPE]: modelReads,
     [ATTRIBUTE]: modelReads,
     [RELATIONSHIP]: modelReads,
+    [PRODUCT_PROJECTION]: catalogueReads(projectionCatalogue),
+    [PRODUCT_PANEL]: {
+      ...catalogueReads(panelCatalogue),
+      members: selection => panelCatalogue.members(selection.primaryKey!),
+    },
+    [APPLICATION]: {
+      query: (_selection, params) => applications.query(params),
+      record: selection => applications.record(selection.primaryKey!),
+      entries: selection => applications.entries(selection.primaryKey!),
+      form: (_selection, params) => applications.form({
+        ...formParams(params),
+        section: panelReadParameterSchemas.applicationFormSection.parse(params.section),
+        target: panelReadParameterSchemas.applicationFormTarget.parse(params.target),
+      }),
+    },
     [ONTOLOGY_TYPE]: {
       schema: async () => (await ontology()).schema(),
       counts: async () => (await ontology()).counts(),

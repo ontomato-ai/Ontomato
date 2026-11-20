@@ -82,3 +82,35 @@ test("product governance lists domain grants and changes domain sharing through 
   const panelSharing = { success: true, skippedProjectionIds: ["restricted"] };
   assert.deepEqual(changeProductPanelDomainGrantResponseSchema.parse(panelSharing), panelSharing);
 });
+
+test("declares typed catalogue reads that reuse the current product records and list responses", async () => {
+  const { APPLICATION, PRODUCT_PANEL, PRODUCT_PROJECTION, platformObjectTypes } = await import("./platform-object-types");
+  const { panelReadResultSchemas } = await import("./panel-operations");
+  const { panelReadParameterSchemas } = await import("./panel-projection");
+  const { currentPanelRecordSchema, currentProjectionRecordSchema } = await import("./product-panels");
+
+  assert.equal(platformObjectTypes[PRODUCT_PROJECTION].reads?.query.result, "productProjectionList");
+  assert.equal(platformObjectTypes[PRODUCT_PANEL].reads?.usedBy.result, "productPanelUsedBy");
+  assert.equal(platformObjectTypes[APPLICATION].reads?.form.result, "panelFormDescription");
+  assert.equal(panelReadResultSchemas.productProjectionRecord, currentProjectionRecordSchema);
+  assert.equal(panelReadResultSchemas.productPanelRecord, currentPanelRecordSchema);
+  assert.equal(panelReadParameterSchemas.productScope.safeParse("mine").success, true);
+  assert.equal(panelReadParameterSchemas.productScope.safeParse("maintainable").success, false);
+  assert.equal(panelReadParameterSchemas.applicationScope.safeParse("maintainable").success, true);
+});
+
+test("accepts a legacy hosted application entry without widening the panel registration response", async () => {
+  const { applicationCatalogueEntriesSchema, applicationCatalogueRecordSchema } = await import("./application-catalogue");
+  const { applicationPanelUsesResponseSchema } = await import("./product-panels");
+  const entry = { path: "/applications/hosted-example" };
+  const record = {
+    id: "hosted-example", names: { en: "Existing hosted application" }, descriptions: {}, icon: "pages",
+    source: "domain", canMaintain: true, canEditEntries: false, canGrant: true, entryCount: 0,
+    entry, panelUses: [], groups: [],
+  };
+  assert.deepEqual(applicationCatalogueRecordSchema.parse(record).entry, entry);
+  assert.equal(applicationCatalogueRecordSchema.safeParse({ ...record, entry: { ...entry, upstream: "private" } }).success, false);
+  const entries = { applicationId: record.id, entry, panelUses: [] };
+  assert.deepEqual(applicationCatalogueEntriesSchema.parse(entries), entries);
+  assert.equal(applicationPanelUsesResponseSchema.safeParse(entries).success, false);
+});

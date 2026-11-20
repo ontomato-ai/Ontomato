@@ -95,6 +95,15 @@ const modelReads = {
   form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
   createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
 } as const;
+const catalogueQuery = {
+  source: "type", parameterMode: "fixed",
+  params: { search: "keyword", scope: "productScope", sort: "productSort", cursor: "cursor", size: "size" },
+} as const;
+const catalogueRecord = { source: "object", parameterMode: "fixed", params: {} } as const;
+const productCatalogueFormReads = { form: modelReads.form, createForm: modelReads.createForm };
+const productCatalogueOperations = (type: string, collection: string) => [
+  `${type}.save`, `${collection}.copy`, `${collection}.delete`, `${collection}.grant`, `${collection}.revoke`, `${collection}.share`,
+];
 const modelListByClass = { source: "type", parameterMode: "fixed", params: { className: "className" }, result: "panelRecordList" } as const;
 
 /** Type-level metadata shared by projection bindings and ontology catalogues. */
@@ -211,9 +220,48 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       definition: { source: "object", parameterMode: "fixed", params: {}, result: "sdkComponentDefinition" },
     },
   },
-  [PRODUCT_PROJECTION]: describeType("productProjection", "product"),
-  [PRODUCT_PANEL]: describeType("productPanel", "product"),
-  [APPLICATION]: describeType("application", "product"),
+  [PRODUCT_PROJECTION]: {
+    ...describeType("productProjection", "product"),
+    reads: {
+      ...productCatalogueFormReads,
+      query: { ...catalogueQuery, result: "productProjectionList" },
+      record: { ...catalogueRecord, result: "productProjectionRecord" },
+      usedBy: { ...catalogueRecord, result: "productProjectionUsedBy" },
+    },
+    operations: productCatalogueOperations(PRODUCT_PROJECTION, "productProjections"),
+  },
+  [PRODUCT_PANEL]: {
+    ...describeType("productPanel", "product"),
+    reads: {
+      ...productCatalogueFormReads,
+      query: { ...catalogueQuery, result: "productPanelList" },
+      record: { ...catalogueRecord, result: "productPanelRecord" },
+      usedBy: { ...catalogueRecord, result: "productPanelUsedBy" },
+      members: { ...catalogueRecord, result: "productPanelMembers" },
+    },
+    operations: productCatalogueOperations(PRODUCT_PANEL, "productPanels"),
+  },
+  [APPLICATION]: {
+    ...describeType("application", "product"),
+    reads: {
+      query: {
+        source: "type", parameterMode: "fixed",
+        params: { search: "keyword", scope: "applicationScope", cursor: "cursor", size: "size" },
+        result: "applicationCatalogue",
+      },
+      record: { ...catalogueRecord, result: "applicationRecord" },
+      entries: { ...catalogueRecord, result: "applicationEntries" },
+      form: {
+        source: "type", parameterMode: "fixed",
+        params: { ...definitionFormParams, section: "applicationFormSection", target: "applicationFormTarget" },
+        requiredParams: ["section", "target"], result: "panelFormDescription",
+      },
+    },
+    operations: [
+      `${APPLICATION}.save`, "applications.delete", "applications.addEntry", "applications.updateEntry",
+      "applications.deleteEntry", "applications.grant",
+    ],
+  },
   [APPLICATION_PANEL_USE]: {
     ...describeType("applicationPanelUse"),
     reads: { visible: { source: "type", parameterMode: "fixed", params: {}, result: "panelApplicationMenu" } },

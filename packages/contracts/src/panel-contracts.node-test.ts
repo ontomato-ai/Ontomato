@@ -1435,7 +1435,7 @@ test("checked object collections are typed ports and never become deep-link stat
 });
 
 test("mixed graphs declare selected node types separately from the read bindings", () => {
-  const nodeIdentity = { kind: "object-union", layers: [...platformOntologyLayers] };
+  const nodeIdentity = { kind: "object-union", layers: [...platformOntologyLayers], objectTypes: [ONTOLOGY_TYPE] };
   const projection = productProjectionInputSchema.parse({
     name: "Platform ontology graph", description: "", visibility: "domain", componentId: "@ontomato/sdk:OntologyGraph",
     inputs: { start: nodeIdentity }, outputs: { selectedNode: nodeIdentity }, config: {},
@@ -1453,7 +1453,7 @@ test("mixed graphs declare selected node types separately from the read bindings
   assert.notDeepEqual(user, definition);
 });
 
-test("object unions resolve current layer declarations or an explicit list of declared types", () => {
+test("object unions combine current layers and explicit types without duplicates", () => {
   const explicit = ontologyObjectUnionTypeSchema.parse({ kind: "object-union", objectTypes: [DEFINITION, ONTOLOGY_TYPE] });
   assert.deepEqual(objectUnionTypes(explicit), [DEFINITION, ONTOLOGY_TYPE]);
   assert.equal(matchesObjectType(explicit, ONTOLOGY_TYPE), true);
@@ -1463,14 +1463,23 @@ test("object unions resolve current layer declarations or an explicit list of de
   assert.equal(matchesObjectType(layered, DEFINITION), true);
   assert.equal(matchesObjectType(layered, ONTOLOGY_USER), false);
   assert.equal(matchesObjectType(layered, ONTOLOGY_TYPE), false);
+  const combined = ontologyObjectUnionTypeSchema.parse({
+    ...layered, objectTypes: [DEFINITION, ONTOLOGY_TYPE, ONTOLOGY_TYPE],
+  });
+  assert.deepEqual(objectUnionTypes(combined), [...objectUnionTypes(layered), ONTOLOGY_TYPE]);
+  assert.equal(matchesObjectType(combined, ONTOLOGY_TYPE), true);
+  assert.equal(matchesObjectType(combined, ONTOLOGY_USER), false);
   assert.equal(matchesObjectType({ kind: "object", objectType: ONTOLOGY_USER }, ONTOLOGY_USER), true);
 });
 
-test("object union contracts reject unknown types, unknown layers and ambiguous selectors", () => {
+test("object union contracts require a selector and reject unknown types and layers", () => {
   for (const selector of [
     { objectTypes: [DEFINITION, "platform:Missing"] },
     { layers: ["unclassified"] },
-    { layers: ["capability"], objectTypes: [DEFINITION] },
+    { layers: ["capability"], objectTypes: ["platform:Missing"] },
+    { layers: ["unclassified"], objectTypes: [DEFINITION] },
+    { objectTypes: [] },
+    { layers: [] },
     {},
   ]) {
     const field = { kind: "object-union", ...selector };
