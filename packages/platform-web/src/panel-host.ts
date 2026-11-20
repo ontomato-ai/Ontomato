@@ -15,6 +15,7 @@ import {
 } from "@ontomato/contracts/panel-host";
 import { buildExecutionContext } from "@ontomato/contracts/build-tests";
 import { pageSkillContextSchema, type PageSkillContext } from "@ontomato/contracts/page-skills";
+import { panelModuleSpecifiers } from "@ontomato/contracts/panel-module";
 import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
 import { confirmPanelIntent, expandDeclaredComposer, platformRouter, registerCandidateFrame, registerPanelFrame } from "./app-host";
@@ -244,8 +245,8 @@ async function mountCoded(options: DirectPanelMountOptions, target: CodedPanelTa
   await useTemplateCompiler();
   let mounted: DirectPanelMount | undefined;
   await runPanelModule(module, {
-    vue: Vue as unknown as Record<string, unknown>,
-    "@ontomato/sdk/panel": panelModuleFor({
+    [panelModuleSpecifiers.vue]: Vue as unknown as Record<string, unknown>,
+    [panelModuleSpecifiers.sdk]: panelModuleFor({
       ...options,
       element: target.element,
       template: target.template,
