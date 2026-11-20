@@ -4,7 +4,7 @@ import { analystCommand } from "./client.mjs";
 import { authenticate } from "./identity.mjs";
 import { panelRegistrationClient } from "./panel-registration.mjs";
 import { currentSdkClient, installedPanelSdk } from "./current-sdk.mjs";
-import { checkPanelWorkspace } from "./panel-check.mjs";
+import { checkPanelWorkspace, registerPanelWorkspace } from "./panel-check.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -335,9 +335,20 @@ async function panelCommand(api, workspaceId, [command, ...args]) {
     const query = new URLSearchParams({ ref: args[0] });
     return print(await workbench(api, "GET", `/workspaces/${encodeURIComponent(workspaceId)}/panel-candidate?${query}`));
   }
-  if (command === "register" && args.length === 1) {
-    const client = panelRegistrationClient({ workbenchUrl: api.envUrl, ontologyUrl: api.ontologyUrl, headers: headers(api) });
-    return client.register(JSON.parse(readInput(args[0])), (kind, id) => console.log(`${kind} ${id}`));
+  if (command === "register") {
+    const materialPath = takeOption(args, "--material") ?? undefined;
+    if (args.length !== 1) die("panel register requires one workspace directory or registration object");
+    const connection = { workbenchUrl: api.envUrl, ontologyUrl: api.ontologyUrl, headers: headers(api) };
+    const client = panelRegistrationClient(connection);
+    const report = (kind, id) => console.log(`${kind} ${id}`);
+    const [source] = args;
+    if (source.startsWith("@") || source.trimStart().startsWith("{")) {
+      if (materialPath !== undefined) die("--material applies to workspace registration");
+      return client.register(JSON.parse(readInput(source)), report);
+    }
+    const sdk = currentSdkClient(connection);
+    const checks = await sdk.check(await sdk.current());
+    return registerPanelWorkspace(source, materialPath, checks, client, report);
   }
   if (command === "uses" && args.length === 1) {
     return printData(await requestJson(api, "GET", `/platform/applications/${encodeURIComponent(args[0])}/panel-uses`));
@@ -346,7 +357,7 @@ async function panelCommand(api, workspaceId, [command, ...args]) {
     const collection = command === "projection" ? "projections" : "panels";
     return print(await workbench(api, "GET", `/product-${collection}/${encodeURIComponent(args[0])}`));
   }
-  die("panel requires applications, projection <id>, get <id>, uses <applicationId>, preview <working|commit> [--workspace <id>], check <directory>, or register <json|@file>");
+  die("panel requires applications, projection <id>, get <id>, uses <applicationId>, preview <working|commit> [--workspace <id>], check <directory>, or register <directory|json|@file>");
 }
 
 async function functionCommand(api, [command, ...args]) {
@@ -446,6 +457,7 @@ function usage() {
   panel uses <applicationId>
   panel preview <working|commit> [--workspace <id>]
   panel check <directory> [--material <registration file>] [--sdk-dir <installed SDK release directory>]
+  panel register <directory> [--material <registration file>]
   panel register <json|@file>
   function list [<filter json|@file>]
   function get <id>

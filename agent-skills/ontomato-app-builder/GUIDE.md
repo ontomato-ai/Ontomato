@@ -30,7 +30,35 @@ For instances of customer ontology classes, bind the detail to the owner's `reco
 | `panel projection <id>`, `panel get <id>` | Authorized current projection or panel, including its revision |
 | `panel applications`, `panel uses <applicationId>` | Java navigation catalog and visible use relations |
 | `panel check <directory> [--material <file>] [--sdk-dir <release directory>]` | Check the layout and declaration with the SDK parser, and resolve registered references using the current viewer's access. With an installed release directory, check offline and list unresolved references. |
+| `panel register <directory> [--material <file>]` | Register a panel from its workspace sources, including its inline projections |
 | `panel register <JSON or @file>` | Register selected current definitions and application uses under the author's permissions |
+
+### Write projections inside the panel
+
+In `panel.json`, put a new projection in `manifest.members.<key>.target.projection`. Use the same component,
+named data, input and output declarations, and config as a separately registered projection. Keep state bindings
+on the member. For example, a member named `agents` can use this target:
+
+```json
+{
+  "projection": {
+    "componentId": "@ontomato/sdk:ObjectList",
+    "data": {
+      "rows": {"source": {"type": {"kind": "PlatformObjectType", "id": "platform:AgentDefinition"}}, "read": "list", "params": {}}
+    }
+  }
+}
+```
+
+In `registration.json`, put one item in `panels`, with its `id`, `mode` and `input` containing `name`,
+`description` and `visibility`. For updates, put the current panel `revision` on the item. Keep the manifest,
+layout and instructions in the workspace files. Run `panel check <directory>` and `panel register <directory>`
+with the same workspace and registration material.
+
+The tool uses the panel ID and member key to give the projection a stable ID. On creation, the name and description
+default to the member key, and the sharing scope follows the panel. Subsequent registration uses the existing
+projection revision for that member. Other panels can reference that ID with `target.projectionId`, subject to the
+usual projection permission.
 
 Registration material has up to three arrays, `projections`, `panels` and `applications`. Each item is `{id,mode,input}` with `mode` set to `create` or `update`.
 
