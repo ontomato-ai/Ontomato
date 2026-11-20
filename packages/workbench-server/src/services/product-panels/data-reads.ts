@@ -4,7 +4,10 @@ import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomat
 import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
-import { OBJECT_TYPE, ONTOLOGY_TYPE, RELATIONSHIP, platformObjectTypes } from "@ontomato/contracts/platform-object-types";
+import {
+  ATTRIBUTE, DELETE_ATTRIBUTE, DELETE_OBJECT_TYPE, DELETE_RELATIONSHIP, OBJECT_TYPE, ONTOLOGY_TYPE, RELATIONSHIP,
+  SET_PRIMARY_KEY, platformObjectTypes,
+} from "@ontomato/contracts/platform-object-types";
 import { productPanelSchema, type ProductPanel, type ProductProjection } from "@ontomato/contracts/product-panels";
 import { currentProductRecord } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -12,6 +15,7 @@ import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
 import { createBusinessKnowledgeReadAdapter } from "../business-knowledge/panel-reads";
+import { createOntologyModelReadAdapter } from "../ontology-model/model-reads";
 import { createScheduledTaskReadAdapter } from "../scheduling/panel-reads";
 import { requirePanelUse } from "./application-use";
 import { requireCurrentProduct, requireDirectPanelMember } from "./current";
@@ -27,9 +31,27 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     return createPlatformOntologyReadAdapter(owner, viewer, callerUserName);
   };
   const knowledge = createBusinessKnowledgeReadAdapter(viewer);
+  const model = createOntologyModelReadAdapter(owner, viewer, callerUserName);
+  const formParams = (params: Record<string, unknown>) => ({
+    values: panelReadParameterSchemas.panelFormValues.optional().parse(params.values),
+    changedField: panelReadParameterSchemas.changedField.optional().parse(params.changedField),
+  });
+  const modelReads: Record<string, ReadAdapter> = {
+    list: (selection, params) => model.list(selection.typeId, {
+      className: panelReadParameterSchemas.className.optional().parse(params.className),
+    }),
+    record: selection => model.record(selection.typeId, selection.primaryKey!),
+    form: (selection, params) => model.form(selection.typeId, selection.primaryKey!, formParams(params)),
+    createForm: (selection, params) => model.createForm(selection.typeId, formParams(params)),
+  };
   return {
-    [OBJECT_TYPE]: { list: async () => (await ontology()).listObjectTypes() },
-    [RELATIONSHIP]: { list: async () => (await ontology()).listRelationships() },
+    [OBJECT_TYPE]: { ...modelReads, [`${DELETE_OBJECT_TYPE}.describe`]: () => model.describe(DELETE_OBJECT_TYPE) },
+    [ATTRIBUTE]: {
+      ...modelReads,
+      [`${DELETE_ATTRIBUTE}.describe`]: () => model.describe(DELETE_ATTRIBUTE),
+      [`${SET_PRIMARY_KEY}.describe`]: () => model.describe(SET_PRIMARY_KEY),
+    },
+    [RELATIONSHIP]: { ...modelReads, [`${DELETE_RELATIONSHIP}.describe`]: () => model.describe(DELETE_RELATIONSHIP) },
     [ONTOLOGY_TYPE]: {
       schema: async () => (await ontology()).schema(),
       counts: async () => (await ontology()).counts(),

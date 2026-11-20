@@ -132,6 +132,27 @@ beforeAll(async () => {
       relationship_rule: { contains: { fromclass: "warehouse", toclass: "item", desc: "Contains" } },
     } });
   });
+  app.get("/ontology/model/field-labels", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.header("Accept-Language")).toBe("zh-CN");
+    res.json({ objectType: { className: "API 名称" }, attribute: { name: "API 名称" }, relationship: { fromclass: "来源对象" } });
+  });
+  app.get("/ontology/model/object-types", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    res.json([{ className: "warehouse", showName: "Warehouse", classDesc: "", attributeCount: 1,
+      businessKeyCount: 0, relationshipCount: 1, primaryKey: { status: "ok", name: "id" } }]);
+  });
+  app.get("/ontology/model/relationships", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    const relationship = { relationship: "contains", fromclass: "warehouse", toclass: "item", desc: "Contains", fromField: "id", toField: "store" };
+    res.json(req.query.className === "item" ? [{ ...relationship, relationship: "filtered-contains" }] : [relationship]);
+  });
+  app.get("/ontology/model/attributes", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.query.className).toBe("warehouse");
+    res.json([{ className: "warehouse", name: "id", showName: "Identifier", type: "string", attrDesc: "",
+      enable: true, businessKey: false, primaryKey: true }]);
+  });
   app.get("/platform/scheduled-tasks", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ tasks: ownerTasks, timeZone: task.timeZone });
@@ -305,6 +326,12 @@ it("reads the seven named ontology data items with the panel viewer", async () =
     objects: { componentId: "@ontomato/sdk:ObjectList", data: {
       objects: type("platform:OntologyType", "objects", { type: { literal: "platform:ObjectType" } }),
     } },
+    attributes: { componentId: "@ontomato/sdk:ObjectList", data: {
+      rows: type("platform:Attribute", "list", { className: { literal: "warehouse" } }),
+    } },
+    relationships: { componentId: "@ontomato/sdk:ObjectList", data: {
+      rows: type("platform:Relationship", "list", { className: { literal: "item" } }),
+    } },
   };
   for (const [key, projection] of Object.entries(projections)) {
     const projectionId = "ontology-pilot-" + key;
@@ -316,7 +343,7 @@ it("reads the seven named ontology data items with the panel viewer", async () =
   }
   const saved = await request("PUT", "product-panels/" + graphPanelId, {
     name: "Ontology", description: "", visibility: "domain", revision: 0,
-    content: { html: '<section><panel-member ref="scope"></panel-member><panel-member ref="ontology"></panel-member><panel-member ref="objects"></panel-member></section>' },
+    content: { html: '<section><panel-member ref="scope"></panel-member><panel-member ref="ontology"></panel-member><panel-member ref="objects"></panel-member><panel-member ref="attributes"></panel-member><panel-member ref="relationships"></panel-member></section>' },
     manifest: { state: {}, members, events: {} },
   });
   expect(saved.status, await saved.text()).toBe(200);
@@ -331,8 +358,12 @@ it("reads the seven named ontology data items with the panel viewer", async () =
     if (reply.status !== "ready") throw new Error(reply.status);
     return reply.value;
   };
-  expect(await ready("scope", "nodes")).toContainEqual(expect.objectContaining({ primaryKey: "warehouse", label: "Warehouse" }));
+  expect(await ready("scope", "nodes")).toContainEqual(expect.objectContaining({
+    primaryKey: "warehouse", label: "Warehouse", fieldLabels: { className: "API 名称" },
+  }));
   expect(await ready("scope", "edges")).toMatchObject([{ primaryKey: "contains", fields: { fromclass: "warehouse", toclass: "item" } }]);
+  expect(await ready("attributes", "rows")).toMatchObject([{ label: "Identifier", fields: { className: "warehouse", name: "id" } }]);
+  expect(await ready("relationships", "rows")).toMatchObject([{ primaryKey: "filtered-contains" }]);
   expect(await ready("ontology", "schema")).toMatchObject({ objectTypes: expect.any(Array), relationKinds: expect.any(Array) });
   expect(await ready("ontology", "counts")).toMatchObject({ counts: expect.any(Array) });
   expect(await ready("ontology", "start")).toMatchObject({ node: { primaryKey: "reader", label: "Pilot Reader" } });
