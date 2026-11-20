@@ -22,6 +22,7 @@ export const en = {
   "panels.confirmation.deleteMetricViewImpact": "This deletes the selected metric, together with its bindings ({bindings} in total).",
   "panels.confirmation.deleteFunctionImpact": "This deletes the selected function; the owner refuses one referenced by a metric, an action or a write task.",
   "panels.confirmation.deleteActionImpact": "This deletes the selected action; the owner refuses a system action or one referenced by a scheduled task.",
+  "panels.confirmation.deleteObjectTypeImpact": "This deletes the selected object type, together with the relationships that touch it ({relationships} in total).",
   "panels.action.fields.status": "Status",
   "panels.action.fields.origin": "Origin",
   "panels.action.fields.createdBy": "Created by",
