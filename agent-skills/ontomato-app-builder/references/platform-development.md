@@ -96,10 +96,10 @@ For Business Knowledge at `/ontology/knowledge`, the owner supplies these rules.
 6. Use the Business Knowledge page for creating, editing, reviewing and deleting records. Use the existing
    `knowledge-governance` agent for extracting or organizing knowledge from conversations and documents.
 
-For Business Knowledge search, give the list and detail members the same panel state as their `search` input.
-In the list's `query` and the detail's `record`, map `params.search` to `{ input: "search" }`. The detail also
-receives the selected knowledge record. Use `ObjectSummary` to show the full body as text with its original line
-breaks. The owner supplies the body's highlight ranges in `record.highlights` for the current search.
+For Business Knowledge search, give the list, status counts and detail the same panel state as their `search` input.
+In `query`, `counts` and `record`, map `params.search` to `{ input: "search" }`. The counts read also takes
+`params.by: { literal: "status" }`. The detail receives the selected knowledge record. Use `ObjectSummary` to show
+the full body as text with its original line breaks. The owner returns highlight ranges in the record for the current search.
 
 ## Add an official SDK component
 
@@ -118,12 +118,14 @@ Use `packages/apps-sdk/src/base/ObjectSummary.vue` as a component example. In a 
 `useMemberData("record")`. A projection's `config.fields` controls which fields appear and in what order.
 The component declares the optional `fields` and `input` props and the `navigate` event. Its public export is in
 `packages/apps-sdk/src/entries/base.ts`, with the template binding in `packages/apps-sdk/src/base-components.ts`.
-The `ObjectSummary` entry in `packages/apps-sdk/src/catalogue.ts` declares its meaning, binding and output through
-`defineComponentMeta`. Controls add operations. For example, `ObjectForm` declares the owner form save
+The `ObjectSummary` entry in `packages/apps-sdk/src/catalogue.ts` uses `defineComponentMeta` to declare its meaning,
+binding, output and required datum `data: { record: { results: ["panelRecord"], required: true } }`.
+Controls add operations. For example, `ObjectForm` declares the owner form save
 with `client: "@binding"` and `kind: "form.save"`.
 
 Write the catalogue declaration alongside the component. Give it a package-qualified component ID for projection
-registration, such as `@ontomato/sdk:ObjectSummary`, and declare the expected name and type of each needed datum.
+registration, such as `@ontomato/sdk:ObjectSummary`. Declare the accepted result types and whether each datum is
+required. Keep display configuration separate from the inputs supplied by a placement.
 Write JSDoc for props and events in the component source. The SDK build checks the public export against the
 catalogue, then generates `components.json`, `docs/components.md` and `docs/reference.md`. Registration uses the
 current release catalogue to check the component exists and the projection supplies the declared data keys and types.

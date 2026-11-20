@@ -28,13 +28,12 @@ import { knowledgeEntrySchema, m7ServerOperations } from "./panel-operations";
  */
 
 type KnowledgeEntry = z.infer<typeof knowledgeEntrySchema>;
-const statusFilterSchema = z.enum(["all", "pending", "approved"]);
-type StatusFilter = z.infer<typeof statusFilterSchema>;
+type StatusFilter = z.infer<typeof panelReadParameterSchemas.knowledgeStatus>;
 
 /** The list read's inputs, as the flattened list contract declares them. */
 const queryInputSchema = z.object({
   search: z.string().optional(),
-  status: statusFilterSchema.optional(),
+  status: panelReadParameterSchemas.knowledgeStatus.optional(),
   cursor: z.string().regex(/^\d+$/).optional(),
   size: z.number().int().positive().optional(),
 }).strict();

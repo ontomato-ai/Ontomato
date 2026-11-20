@@ -100,7 +100,7 @@ test("the SDK catalogue separates supply, configuration and run inputs", async (
   const component = {
     componentId: "ObjectSummary", module: "@ontomato/sdk/base", exportName: "ObjectSummary",
     role: "presentation", meaning: "Show the selected object as its owner describes it.",
-    data: { record: { results: ["panelRecord"], required: true } },
+    data: { record: { results: ["panelRecord"], required: true, runtimeParams: ["search"] } },
     config: [{ name: "fields", type: "string[]", description: "Visible fields", required: false }],
     inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
     outputs: [],
@@ -132,6 +132,7 @@ test("projection registration accepts package-qualified components and leaves da
 
 test("ontology object lists and reference pickers declare the named reads they use", async () => {
   const { registerDirectProjectionRequestSchema } = await import("./product-panels");
+  const { authoredReadParameterSource, directReadDeclaration, missingRequiredReadParameters } = await import("./panel-projection");
   const { panelReadResultSchemas } = await import("./panel-operations");
   const { platformOntologyObjectsResponseSchema } = await import("./platform-ontology");
   const base = { name: "Choices", description: "", visibility: "domain", revision: 0, outputs: {}, config: {} };
@@ -152,9 +153,20 @@ test("ontology object lists and reference pickers declare the named reads they u
     data: { objects: { source: { type: platformType(ONTOLOGY_TYPE) }, read: "objects", params: { type: { literal: USER } } } },
   };
   assert.deepEqual(registerDirectProjectionRequestSchema.parse(objects), objects);
-  assert.equal(registerDirectProjectionRequestSchema.safeParse({
+  const runtimeObjects = registerDirectProjectionRequestSchema.parse({
     ...objects, data: { objects: { ...objects.data.objects, params: {} } },
-  }).success, false);
+  });
+  assert.ok("data" in runtimeObjects);
+  const declaration = directReadDeclaration(runtimeObjects, runtimeObjects.data.objects);
+  assert.ok(declaration);
+  assert.deepEqual(missingRequiredReadParameters(declaration, runtimeObjects.data.objects.params), ["type"]);
+  assert.deepEqual(missingRequiredReadParameters(declaration, runtimeObjects.data.objects.params, ["keyword"]), ["type"]);
+  assert.deepEqual(missingRequiredReadParameters(declaration, runtimeObjects.data.objects.params, ["type"]), []);
+  assert.deepEqual(missingRequiredReadParameters(declaration, objects.data.objects.params), []);
+  const placement = { outputs: { type: { state: "selectedType" } } };
+  assert.deepEqual(missingRequiredReadParameters(declaration, runtimeObjects.data.objects.params, [], placement), []);
+  assert.deepEqual(authoredReadParameterSource({}, "type", placement), { state: "selectedType" });
+  assert.deepEqual(authoredReadParameterSource(objects.data.objects.params, "type", placement), { literal: USER });
   assert.equal(panelReadResultSchemas.panelOntologyObjects, platformOntologyObjectsResponseSchema);
   const option = { primaryKey: "m1", value: { providerId: "models", id: "m1" }, label: "Model 1", unavailable: { reason: "Unavailable" } };
   assert.deepEqual(panelReadResultSchemas.panelOptionList.parse({ options: [option] }), { options: [option] });
@@ -225,6 +237,46 @@ test("knowledge detail can share list search and customer instances have no form
   assert.equal(productProjectionInputSchema.safeParse({
     ...base, componentId: "@ontomato/sdk:ObjectForm", data: { form: { ...customer, read: "form" } },
   }).success, false);
+});
+
+test("knowledge lists accept scalar status and counts preserve the owner's order and labels", async () => {
+  const { panelGroupCountsSchema, panelReadInputMatches } = await import("./panel-projection");
+  const projection = {
+    name: "Knowledge", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectList",
+    inputs: {}, outputs: {}, config: {},
+  };
+  const query = { source: { type: platformType(BUSINESS_KNOWLEDGE) }, read: "query", params: { status: { literal: "pending" } } };
+  assert.equal(productProjectionInputSchema.safeParse({ ...projection, data: { rows: query } }).success, true);
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...projection, data: { rows: { ...query, params: { filter: { literal: { status: "pending" } } } } },
+  }).success, false);
+  assert.equal(panelReadInputMatches("knowledgeStatus", { kind: "scalar", type: "string" }), true);
+
+  const counts = [
+    { key: "all", label: "全部", count: 3 },
+    { key: "pending", label: "待审核", count: 1 },
+    { key: "approved", label: "已通过", count: 2 },
+  ];
+  assert.deepEqual(panelGroupCountsSchema.parse(counts), counts);
+  assert.equal(panelGroupCountsSchema.safeParse({ all: 3, pending: 1, approved: 2 }).success, false);
+});
+
+test("ontology object lists use search while reference options keep keyword", () => {
+  const projection = {
+    name: "Find an ontology object", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectList",
+    inputs: {}, outputs: {}, config: {},
+  };
+  const objects = { source: { type: platformType(ONTOLOGY_TYPE) }, read: "objects" };
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...projection, data: { objects: { ...objects, params: { type: { literal: USER }, search: { literal: "Lee" } } } },
+  }).success, true);
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...projection, data: { objects: { ...objects, params: { type: { literal: USER }, keyword: { literal: "Lee" } } } },
+  }).success, false);
+  const options = { source: { type: platformType(USER) }, read: "options" };
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...projection, componentId: "@ontomato/sdk:ReferencePicker", data: { options: { ...options, params: { keyword: { literal: "Lee" } } } },
+  }).success, true);
 });
 
 test("model reads and operations use their owner's fixed signatures", async () => {
@@ -348,7 +400,7 @@ test("entry resolution and personal-state scope use the actual use and nested pa
     inputs: { term: { frameState: "term" }, role: { literal: null } },
   };
   const response = {
-    applicationId: "app-tasks", use, framePanelId: "site-frame", theme: { dark: { "--el-color-primary": "#0084ff" } },
+    applicationId: "app-tasks", use, framePanelId: "site-frame", theme: { dark: { "--test-accent": "#0084ff" } },
     menu: { groups: [{ key: "plan", names: { en: "Plan" }, sort: 0 }], panelUses: [use] },
   };
   assert.deepEqual(applicationEntryResolutionSchema.parse(response), response);
@@ -410,6 +462,9 @@ test("direct task reads use the registered source, parameters and result envelop
     dataName: "form", inputs: { task: { className: "platform:ScheduledTask", primaryKey: "task-1" } },
   };
   assert.deepEqual(productPanelReadRequestSchema.parse(request), request);
+  const runtimeRequest = { ...request, runtimeParams: { values: { start: "09:00" }, changedField: "/start" } };
+  assert.deepEqual(productPanelReadRequestSchema.parse(runtimeRequest), runtimeRequest);
+  assert.equal(productPanelReadRequestSchema.safeParse({ ...request, runtimeParams: [] }).success, false);
   assert.equal(productPanelReadRequestSchema.safeParse({ source: request.source, items: [request] }).success, false);
   assert.equal(productPanelReadRequestSchema.safeParse({ ...request, memberPath: [{ member: "form", selection: "untrusted" }] }).success, false);
   assert.equal(productPanelReadResponseSchema.safeParse({ status: "forbidden", value: [] }).success, false);

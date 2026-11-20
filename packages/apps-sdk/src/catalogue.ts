@@ -328,7 +328,7 @@ export const components: readonly ComponentMetadata[] = [
       "Lists one-hop relations of the selected node from the bound resource's graph neighbors port, grouped by relation kind with distinct no-neighbors, owner-refused, read-failed and unavailable states, showing edge direction and stored/derived line semantics, and moving selection to a clicked peer node with its complete identity.",
     effects: "Reads the bound graph source's one-hop neighbors as the reader; writes only the panel's own selection state.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
-    data: { neighbors: { results: ["panelRelationNeighbors"], required: true } },
+    data: { neighbors: { results: ["panelGraphNeighbors", "panelRelationNeighbors"], required: true } },
     outputs: ["selected"],
   }),
   defineComponentMeta({
