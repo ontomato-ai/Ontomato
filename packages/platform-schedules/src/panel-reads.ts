@@ -71,7 +71,8 @@ async function checkDraft(readForm: FormReader, savedValues: FormValues, draft: 
       });
     }
   }
-  const answer = changed ? effective : await readForm(submitted, null);
+  // A selector can reset dependent fields while resolving the form. Validate after applying the draft to that form.
+  const answer = await readForm({ ...effective.values, ...submitted }, null);
   // The owner marks an incomplete draft un-submittable without listing missing required values.
   for (const { key, required, label } of answer.fields) {
     if (required && !answer.values[key].trim()) {
