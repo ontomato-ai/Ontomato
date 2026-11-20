@@ -18,7 +18,7 @@ const current = {
 };
 
 type ProjectionFields = Pick<ProductProjection, "id" | "componentId" | "data"> & Partial<Pick<ProductProjection, "inputs" | "conversationEntry">>
-  & { chartSource?: { dashboardId: string; cardId: string }; metricId?: string };
+  & { metricId?: string };
 
 /** A projection's current record as Node answers it; a chart's also names its source card and metric. */
 export const projectionRecord = ({ inputs = {}, ...fields }: ProjectionFields): ProductProjection =>
