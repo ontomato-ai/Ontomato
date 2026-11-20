@@ -14,7 +14,10 @@ import {
 type Init = NonNullable<Parameters<typeof fetch>[1]>;
 function hostWith(answers: Record<string, (init: Init) => Response>) {
   const sent: { path: string; init: Init }[] = [];
+  const actor = { owner: { domainId: "d", userId: "U" }, credentials: { token: "U-token", locale: "en" } };
   const host: PanelOperationHost = {
+    initiator: actor,
+    executor: actor,
     async request(path, init) {
       sent.push({ path, init });
       const answer = answers[path];

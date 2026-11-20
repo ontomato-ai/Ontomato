@@ -1,8 +1,12 @@
 package io.ontomato.dataengine.applications;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.JsonNode;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
@@ -20,10 +24,35 @@ public class PanelResources {
         http = RestClient.builder().requestFactory(requests).baseUrl(url)
             .defaultHeader("X-Ontomato-Query-Service-Token", token).build();
     }
-    public void requireCurrent(String domain, List<String> ids) {
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private record UseReference(String id, String panelId, Map<String, Map<String, Object>> inputs) {}
+    private record DeliveryReferences(List<String> panels, List<String> projections) {}
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private record References(String domainId, String framePanelId, List<UseReference> uses, DeliveryReferences delivery) {}
+
+    public void requireCurrent(String domain, String framePanelId, List<ApplicationPanelUse> uses, ApplicationCatalog.Delivery delivery) {
+        var references = new References(domain, framePanelId,
+            uses.stream().map(use -> new UseReference(use.id(), use.panelId(), use.inputs())).toList(),
+            delivery == null ? new DeliveryReferences(List.of(), List.of())
+                : new DeliveryReferences(delivery.panels(), delivery.projections()));
         try {
-            http.post().uri("/internal/product-panels/validate-references")
-                .body(Map.of("domainId", domain, "ids", ids)).retrieve().toBodilessEntity();
+            http.post().uri("/internal/product-panels/validate-references").contentType(MediaType.APPLICATION_JSON)
+                .body(references).retrieve().toBodilessEntity();
+        } catch (RestClientResponseException failure) {
+            throw new ResponseStatusException(failure.getStatusCode(), failure.getResponseBodyAsString(), failure);
+        }
+    }
+
+    public String objectDetailPanel(String domainId, String className) {
+        try {
+            var response = http.get().uri(builder -> builder.path("/internal/object-details/resolve")
+                .queryParam("domainId", "{domainId}").queryParam("className", "{className}")
+                .build(domainId, className))
+                .retrieve().body(JsonNode.class);
+            var panelId = response == null ? null : response.get("panelId");
+            if (panelId == null || (!panelId.isNull() && (!panelId.isTextual() || panelId.asText().isBlank())))
+                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Invalid object detail mapping response");
+            return panelId.isNull() ? null : panelId.asText();
         } catch (RestClientResponseException failure) {
             throw new ResponseStatusException(failure.getStatusCode(), failure.getResponseBodyAsString(), failure);
         }
