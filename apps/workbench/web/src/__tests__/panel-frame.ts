@@ -216,12 +216,9 @@ export const ignoreChanges = () => {};
 export const registered = (applicationId: string, use: ApplicationPanelUse, panel: ProductPanel) =>
   ({ kind: "registered", applicationId, use, panel }) as const;
 
-/**
- * The skill reference Node answers for a panel's member, as the trusted service derives it: the host passes it on and
- * never derives one itself, so any stable stand-in serves the tests.
- */
-export const skillRefOf = (panelId: string) => ({
-  namespace: { kind: "provider" as const, provider: "product-panels" },
+/** The page skill ref Node names for a panel read for one page: one ref per panel, by a name derived from the panel alone. */
+export const memberRefOf = (panelId: string) => ({
+  namespace: { kind: "domain" as const, domainId: "domain-test" },
   name: `pvt-${[...panelId].map(char => char.charCodeAt(0).toString(16)).join("").slice(0, 48).padEnd(48, "0")}`,
 });
 
@@ -238,7 +235,7 @@ export function pageSkillContextFor(panel: Pick<ProductPanel, "id">, request: Se
   const locator = permissionCode ? { permissionCode, pageKey } : { access: "domain-member", pageKey };
   return {
     mode: "member", locator,
-    member: { source: { kind: "application-use", applicationId, useId: query.get("useId")! }, memberPath: [], ref: skillRefOf(panel.id) },
+    member: { source: { kind: "application-use", applicationId, useId: query.get("useId")! }, memberPath: [], ref: memberRefOf(panel.id) },
   };
 }
 
@@ -414,6 +411,7 @@ export function leaveFrame() {
   document.body.innerHTML = "";
 }
 
+/** Node's snapshot of a panel's revisions, with the page skill context when the read names the page it is shown for. */
 export function panelSnapshot(panel: ProductPanel, current: Record<string, { revision: number }> = projections, request?: Sent) {
   const revisions = new Map<string, number>();
   const members: PanelMemberSnapshot[] = [];
@@ -425,11 +423,12 @@ export function panelSnapshot(panel: ProductPanel, current: Record<string, { rev
       members.push({ status: "ready", memberPath: [{ member }], target: { kind: "projection", id }, revision });
     }
   }
+  const pageSkillContext = request && pageSkillContextFor(panel, request);
   return Response.json({
     panel: { id: panel.id, revision: panel.revision },
     projections: [...revisions].map(([id, revision]) => ({ id, revision })),
     members,
-    ...(request ? { pageSkillContext: pageSkillContextFor(panel, request) } : {}),
+    ...(pageSkillContext ? { pageSkillContext } : {}),
   });
 }
 
