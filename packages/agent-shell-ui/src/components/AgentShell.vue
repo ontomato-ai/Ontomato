@@ -2,6 +2,7 @@
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, provide, ref, shallowRef, toRef, useId, useSlots, watch } from "vue";
 import { PanelLeft, PanelRightOpen, X } from "lucide-vue-next";
 import { conversationQuestions, displayPlacementKey, shellContextKey, type ShellContext } from "../context";
+import { entryAgent, servePageComposerKey, type ComposerEntry, type PageComposerExpand } from "../page-composer-entry";
 import {
   CLOSED_TARGET,
   carriedTargetIn,
@@ -307,6 +308,31 @@ function chooseAgent(id: string) {
   agentId.value = id;
 }
 
+/**
+ * A panel's conversation entry on the page beside this conversation (design U18): when the agent it names is this
+ * conversation's, its sentence is filled here; when it is another of the page's candidates, a new conversation starts
+ * with that agent and takes the sentence, the open one keeping its own agent and the page staying open. An agent it
+ * cannot name, or a run still going, only opens the composer. Nothing is sent from here.
+ */
+const entry = shallowRef<ComposerEntry | null>(null);
+function showEntry(text: string | null) {
+  entry.value = { text, seq: (entry.value?.seq ?? 0) + 1 };
+}
+const expandEntry: PageComposerExpand = (request) => {
+  const named = entryAgent(request.target, nav.agents.value, nav.pageAgents.value?.defaultAgentId);
+  if (!named) return showEntry(null);
+  if (named === agentId.value) return showEntry(request.prefill ?? null);
+  if (conversation.busy.value) {
+    emit("error", props.labels.switchWhileRunning);
+    return showEntry(null);
+  }
+  nav.beginWith(named);
+  void nextTick(() => showEntry(request.prefill ?? null));
+};
+const serveEntry = inject(servePageComposerKey, null);
+const withdrawEntry = serveEntry?.(expandEntry);
+onBeforeUnmount(() => withdrawEntry?.());
+
 /** Sending from a full page brings the conversation back beside it, so the reply is visible. */
 function sendFromPage(text: string) {
   void display.setView("side");
@@ -510,6 +536,7 @@ onMounted(() => {
         :pending-input="conversation.pendingInput.value"
         :busy="conversation.busy.value"
         :sending="conversation.sending.value"
+        :entry="entry"
         :feedback="feedback"
         @send="send"
         @stop="conversation.cancel"
@@ -528,6 +555,7 @@ onMounted(() => {
       :view="display.view.value"
       :busy="conversation.busy.value"
       :sending="conversation.sending.value"
+      :entry="entry"
       :disabled="!currentAgent?.enabled"
       @send="sendFromPage"
       @stop="conversation.cancel"

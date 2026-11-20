@@ -207,6 +207,7 @@
                                 <include>**/VectorResourcePostgresBoundaryTest.java</include>
                                 <include>**/AssetLookupPostgresBoundaryTest.java</include>
                                 <include>**/KnowledgeDomainPostgresBoundaryTest.java</include>
+                                <include>**/BussinessKnowledgeFormBoundaryTest.java</include>
                                 <include>**/AbsJdbcBaseDaoIdTest.java</include>
                                 <include>**/OssStartupAssemblyTest.java</include>
                             </includes>

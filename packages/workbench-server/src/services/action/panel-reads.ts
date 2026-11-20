@@ -4,11 +4,13 @@ import {
 } from "@ontomato/contracts/action-panel";
 import { ACTION, DELETE_ACTION, SET_ACTION_STATUS } from "@ontomato/contracts/panel-client-requests";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
+import type { UnavailableObjectAction } from "@ontomato/contracts/platform-type-table";
 import type { PanelOperationDeclaration } from "@ontomato/contracts/panel-operations";
 import {
   panelFormDescriptionSchema, type PanelFormDescription, type PanelFormValues, type PanelRecord,
 } from "@ontomato/contracts/panel-projection";
 import { config } from "../../config/application";
+import { createLogger } from "../../logging/logger";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
@@ -39,6 +41,13 @@ const actionSchema = z.object({
   function: z.object({ name: z.string().nullish() }).passthrough().nullish(),
 }).passthrough();
 type ActionAsset = z.infer<typeof actionSchema>;
+
+const logger = createLogger("action-panel-reads");
+const listedActionSchema = storedObjectActionSchema.pick({ id: true }).extend({
+  target: z.unknown(),
+  function: z.unknown(),
+});
+const listedTargetSchema = storedObjectActionSchema.shape.target.unwrap().pick({ className: true });
 
 /** One object Action for an author's type table: the object type it runs on and its static declaration. */
 export interface ObjectActionEntry {
@@ -131,14 +140,40 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
      * The published Actions of the viewer's domain that run on an object, each with the object type its stored target
      * names, as static declarations; with an object type, only that type's. One owner read serves a whole type table.
      */
-    async objectActions(objectType?: string): Promise<ObjectActionEntry[]> {
-      const published = await owner(
-        "action-object-catalog", "/action/queryList", { status: "PUBLISHED" }, z.array(storedObjectActionSchema),
-      );
-      return published.flatMap(({ target, ...action }) =>
-        target !== null && (objectType === undefined || target.className === objectType)
-          ? [{ className: target.className, declaration: objectActionDeclaration({ ...action, target }) }]
-          : []);
+    async objectActions(objectType?: string): Promise<{ actions: ObjectActionEntry[]; unavailableActions: UnavailableObjectAction[] }> {
+      const published = await owner("action-object-catalog", "/action/queryList", { status: "PUBLISHED" }, z.array(z.unknown()));
+      const actions: ObjectActionEntry[] = [];
+      const unavailableActions: UnavailableObjectAction[] = [];
+      for (const raw of published) {
+        const listed = listedActionSchema.safeParse(raw);
+        if (!listed.success) {
+          logger.warn("The action owner returned a published record without a usable ID");
+          continue;
+        }
+        const { id, target, function: storedFunction } = listed.data;
+        const classified = listedTargetSchema.safeParse(target);
+        const actualType = classified.success ? classified.data.className : undefined;
+        if (objectType !== undefined && objectType !== actualType) continue;
+        const identity = { id, ...(actualType === undefined ? {} : { objectType: actualType }) };
+
+        if (storedFunction == null) {
+          unavailableActions.push({ ...identity, reason: "The stored function definition is missing." });
+          continue;
+        }
+        // A healthy action with no target is outside the object-action catalogue.
+        if (target === null) continue;
+        const stored = storedObjectActionSchema.safeParse(raw);
+        if (!stored.success) {
+          const issue = stored.error.issues[0]!;
+          const field = issue.path.length ? `field '${issue.path.join(".")}'` : "definition";
+          unavailableActions.push({ ...identity, reason: `Invalid stored action ${field}: ${issue.message}` });
+          continue;
+        }
+        const action = stored.data;
+        if (action.target !== null)
+          actions.push({ className: action.target.className, declaration: objectActionDeclaration({ ...action, target: action.target }) });
+      }
+      return { actions, unavailableActions };
     },
     [`${SET_ACTION_STATUS}.describe`]() {
       return describeServerOperation(panelServerOperation(SET_ACTION_STATUS), translate("panels.action.operations.setStatus"));

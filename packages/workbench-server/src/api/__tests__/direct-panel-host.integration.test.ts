@@ -103,13 +103,18 @@ beforeAll(async () => {
   app.post("/action/queryList", (req, res) => {
     expect(req.header("tk")).toBe("host-reader");
     expect(req.body).toEqual({ status: "PUBLISHED" });
-    res.json({ success: true, data: [{
-      id: "approve-expense", name: "Approve expense", codeHash: "author-private-hash",
-      target: { className: "expense", keyParameter: "id" },
-      function: { code: "author-private-source", parameters: [
-        { name: "id", type: "TYPE_STRING" }, { name: "amount", type: "TYPE_NUMBER" },
-      ] },
-    }] });
+    res.json({ success: true, data: [
+      ...["missing-function-one", "missing-function-two", "missing-function-three"].map(id => ({
+        id, name: "author-private-name", codeHash: "author-private-hash", target: null, function: null,
+      })),
+      {
+        id: "approve-expense", name: "Approve expense", codeHash: "author-private-hash",
+        target: { className: "expense", keyParameter: "id" },
+        function: { code: "author-private-source", parameters: [
+          { name: "id", type: "TYPE_STRING" }, { name: "amount", type: "TYPE_NUMBER" },
+        ] },
+      },
+    ] });
   });
   app.get("/platform/applications/resolve-entry", (req, res, next) => {
     if (req.query.applicationId !== "app-mixed") { next(); return; }
@@ -135,11 +140,17 @@ beforeAll(async () => {
   state.base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 
-it("reads the authoritative operation type table before there is a panel use", async () => {
+it("reads the authoritative operation type table while isolating stale published actions", async () => {
   const response = await request("GET", "app-builder/type-table");
   expect(response.status).toBe(200);
   const raw = await response.text();
-  const { objectTypes } = platformTypeTableResponseSchema.parse(JSON.parse(raw));
+  const table = platformTypeTableResponseSchema.parse(JSON.parse(raw));
+  const { objectTypes } = table;
+  expect(table).toMatchObject({
+    unavailableActions: ["missing-function-one", "missing-function-two", "missing-function-three"].map(id => ({
+      id, reason: "The stored function definition is missing.",
+    })),
+  });
   expect(objectTypes["platform:ScheduledTask"].operations).toContainEqual(expect.objectContaining({
     id: "schedules.runNow", target: { source: "input", input: "task" }, batch: false, effect: "write",
   }));

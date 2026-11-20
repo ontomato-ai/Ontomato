@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, useSlots, watch } from "vue"
 import { ArrowUp, MessageSquare, Minus, Send, Square } from "lucide-vue-next";
 import { ActionTooltip } from "@ontomato/foundation-ui/overlay";
 import type { ShellLabels } from "../types";
+import type { ComposerEntry } from "../page-composer-entry";
 import { useComposerCollapsed } from "../composer-collapsed";
 
 /**
@@ -36,6 +37,11 @@ const props = defineProps<{
   floating?: boolean;
   /** A floating box also names its fold and its round button; a conversation's box has neither. */
   labels: Pick<ShellLabels, "placeholder" | "send" | "stop"> & Partial<Pick<ShellLabels, "collapseComposer" | "expandComposer">>;
+  /**
+   * A panel's conversation entry asking this box to show (design U18): it opens, takes the entry's text when there is
+   * one, and waits for the reader to send. Each new `seq` is one request.
+   */
+  entry?: ComposerEntry | null;
 }>();
 const emit = defineEmits<{ send: [text: string]; stop: [] }>();
 const slots = useSlots();
@@ -47,7 +53,9 @@ const canSend = computed(() => !props.sending && !props.disabled && hasText.valu
 const tooltipText = (value: unknown) => typeof value === "function" ? String((value as () => unknown)()) : String(value ?? "");
 const { collapsed, setCollapsed } = useComposerCollapsed();
 /** Only a floating box folds; the conversation's own is always there. */
-const folded = computed(() => props.floating && collapsed.value);
+/** Opened by an entry this time: the reader's remembered fold stays as it was. */
+const opened = ref(false);
+const folded = computed(() => props.floating && collapsed.value && !opened.value);
 
 /** The lines the input shows before it grows, and the lines it grows to before it scrolls. */
 const lines = computed(() => (props.floating ? { least: 1, most: 6 } : { least: Math.min(8, Math.max(1, props.minLines ?? 2)), most: 8 }));
@@ -93,8 +101,17 @@ function onKeydown(event: KeyboardEvent) {
 
 /** Folding keeps what was written: it is the same box, out of the page's way. */
 function fold() {
+  opened.value = false;
   setCollapsed(true);
 }
+
+watch(() => props.entry?.seq, () => {
+  const entry = props.entry;
+  if (!entry) return;
+  opened.value = true;
+  if (entry.text !== null) text.value = entry.text;
+  void Promise.resolve().then(() => input.value?.focus());
+});
 function unfold() {
   setCollapsed(false);
   void Promise.resolve().then(() => input.value?.focus());
