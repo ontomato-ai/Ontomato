@@ -417,15 +417,4 @@ export const components: readonly ComponentMetadata[] = [
     effects: "Requests the host to expand the page's composer with the projection's declared conversationEntry; performs no writes and never sends messages.",
     bindsElement: ["PlatformObjectType:platform:AgentDefinition"],
   }),
-  defineComponentMeta({
-    componentId: "AppMenu",
-    module: "@ontomato/sdk/base",
-    exportName: "AppMenu",
-    role: "presentation",
-    meaning:
-      "Draws an application's entry menu from the menu the platform resolved: entries in no group first in their own order, then each declared group by its sort, each group's entries in their own order. Picking an entry only says which entry the reader picked, as a reference to it; the panel's own event decides where that jump goes, and admission is decided when the entry is resolved.",
-    effects: "Reads the application's entry menu as the reader; performs no writes and navigates nothing itself.",
-    data: { menu: { results: ["panelApplicationMenu"], required: true } },
-    outputs: ["activated"],
-  }),
 ];

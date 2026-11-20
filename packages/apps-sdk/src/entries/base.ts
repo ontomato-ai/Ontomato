@@ -2,7 +2,6 @@
 // projection binds decides what a list lists, what a summary shows and which owner answers a form, and the panel state a
 // slot's input names decides where a selection goes. The graph canvas and the layouts bind nothing at all: what a graph
 // holds and what a choice on it means are the caller's.
-export { default as AppMenu } from "../base/AppMenu.vue";
 export { default as ObjectList } from "../base/ObjectList.vue";
 export type {
   ObjectListColumn,
