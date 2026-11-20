@@ -60,7 +60,7 @@ async function open(stored: AssistantAgentDefinition | null, form?: Record<strin
   const path = form ? DRAFT : stored ? `/agents/settings/${AGENT}` : "/agents/settings/new";
   if (form) draft.read.mockResolvedValue({ pageKey: "agent-settings", operation: "agent.update", target: { id: AGENT }, form });
   await router.push(path);
-  vi.spyOn(agentDefinitionsApi, "skills").mockResolvedValue(catalog);
+  vi.spyOn(agentDefinitionsApi, "skills").mockResolvedValue({ skills: catalog });
   vi.spyOn(agentDefinitionsApi, "listMcpServiceOptions").mockResolvedValue([]);
   vi.spyOn(agentDefinitionsApi, "executionOptions").mockResolvedValue({ canSetExecutionUser: false, users: [] });
   const update = vi.spyOn(agentDefinitionsApi, "update").mockImplementation(async (id, written) => ({ ...agent(), ...written, id }) as AssistantAgentDefinition);

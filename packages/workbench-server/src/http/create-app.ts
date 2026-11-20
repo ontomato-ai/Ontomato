@@ -149,12 +149,12 @@ export function createWorkbenchApp(): Express {
       res.setHeader("Referrer-Policy", "no-referrer");
       const { token, apiKey } = verification;
       await runWithLogContext({ domainId, token, apiKey }, async () => {
-        const { registry } = await readSkillView(domainId, { token, apiKey });
+        const view = await readSkillView(domainId, { token, apiKey });
         // Saved HTML still has two historical path segments before the skill name.
         const [, , , id, ...segments] = decodeURIComponent(req.path).split("/");
-        const skill = registry.getSkillById(id);
+        const skill = view.requireSkillById(id);
         const relative = normalizeSkillPackagePath(segments.join("/"));
-        if (!skill || !relative) {
+        if (!relative) {
           res.sendStatus(404);
           return;
         }

@@ -4,7 +4,8 @@ import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox, type UploadFile } from "element-plus";
 import { useI18n } from "vue-i18n";
 import { Download, Trash2, Upload } from "lucide-vue-next";
-import type { SkillInfo } from "@ontomato/contracts/skills";
+import SkillCatalogWarnings from "./SkillCatalogWarnings.vue";
+import type { SkillInfo, SkillCatalogDiagnostics } from "@ontomato/contracts/skills";
 import { PlatformPageHeader } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { ApiRequestError } from "../../../utils/api";
@@ -22,6 +23,7 @@ import { skillSource } from "../source";
 const { t, locale } = useI18n();
 const router = useRouter();
 const skills = ref<SkillInfo[]>([]);
+const diagnostics = ref<SkillCatalogDiagnostics>();
 const loading = ref(true);
 const loadFailed = ref(false);
 const importing = ref(false);
@@ -35,6 +37,7 @@ async function load() {
     const response = await skillsApi.fetchSkills();
     if (version !== loadVersion) return;
     skills.value = response.skills;
+    diagnostics.value = response.diagnostics;
     updateSkillLibraryCount(response.skills.length);
   } catch {
     if (version === loadVersion) loadFailed.value = true;
@@ -97,6 +100,7 @@ async function upload(uploaded: UploadFile) {
       </template>
     </PlatformPageHeader>
     <div v-loading="loading" class="library-body platform-page-gutter">
+      <SkillCatalogWarnings v-if="!loading && !loadFailed && diagnostics" :diagnostics="diagnostics" />
       <el-alert v-if="loadFailed" type="error" :closable="false" show-icon :title="t('capabilities.loadFailed')">
         <el-button text @click="load">{{ t("common.retry") }}</el-button>
       </el-alert>
@@ -120,7 +124,7 @@ async function upload(uploaded: UploadFile) {
           </span>
         </li>
       </ul>
-      <p v-else-if="!loading" class="empty">{{ t("capabilities.emptySkills") }}</p>
+      <p v-else-if="!loading && !diagnostics" class="empty">{{ t("capabilities.emptySkills") }}</p>
     </div>
     <!-- What a package looks like comes before the file is chosen, not after an import failed. -->
     <el-dialog v-model="importing" :title="t('admin.importSkill')" width="480px" append-to-body>

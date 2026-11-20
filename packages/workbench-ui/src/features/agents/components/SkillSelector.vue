@@ -10,6 +10,7 @@
       show-icon
       :closable="false"
     />
+    <SkillCatalogWarnings v-if="!loading && !loadError && diagnostics" :diagnostics="diagnostics" />
     <div v-loading="loading" class="skill-list">
       <div
         v-for="skill in displayedSkills"
@@ -36,7 +37,7 @@
       </div>
 
       <el-empty
-        v-if="!loading && !loadError && displayedSkills.length === 0"
+        v-if="!loading && !loadError && !diagnostics && displayedSkills.length === 0"
         :image-size="48"
         :description="t('admin.noAvailableSkills')"
       />
@@ -46,6 +47,8 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import SkillCatalogWarnings from "../../skills/components/SkillCatalogWarnings.vue";
+import type { SkillCatalogDiagnostics } from "@ontomato/contracts/skills";
 import { agentDefinitionsApi } from "../api";
 import type { AssistantSkillOption } from "@ontomato/contracts/assistant-chat";
 import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
@@ -69,6 +72,7 @@ const emit = defineEmits<{
 }>();
 
 const skills = ref<AssistantSkillOption[]>([]);
+const diagnostics = ref<SkillCatalogDiagnostics>();
 const selectedSkills = ref<RuntimeSkillRef[]>([]);
 const loadError = ref("");
 const loading = ref(false);
@@ -90,7 +94,9 @@ async function loadSkills() {
   emit("ready", false);
   try {
     loadError.value = "";
-    skills.value = await agentDefinitionsApi.skills();
+    const catalogue = await agentDefinitionsApi.skills();
+    skills.value = catalogue.skills;
+    diagnostics.value = catalogue.diagnostics;
     emit("ready", true);
   } catch (error) {
     skills.value = [];

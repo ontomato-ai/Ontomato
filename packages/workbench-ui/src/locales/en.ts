@@ -2,6 +2,17 @@ import platformSchedules from "@ontomato/platform-schedules/locales/en";
 
 // Generated from the original frontend messages using the keys the migrated pages actually use; extended as more pages are migrated.
 export default {
+  skills: {
+    diagnostics: {
+      record_missing: "The source record is missing.",
+      invalid_definition: "The source definition is invalid.",
+      component_missing: "The referenced component is missing.",
+      operation_unregistered: "The referenced operation is not registered.",
+      sourceUnavailable: "Some skill sources could not be read.",
+      item: "{skill} — {resource}: {reason}",
+      itemField: "{skill} — {resource} ({field}): {reason}",
+    },
+  },
   ops: {"title": "Operations", "turns": "Turn evidence", "logs": "Live logs", "tests": "Automatic tests", "results": "Test results", "cases": "Test cases", "dsl": "DSL execution", "knowledge": "Operations knowledge", "back": "Back to chat", "references": "Evidence references", "referenceHint": "This package contains references, not archived logs. Source authorization and retention still apply.", "legacy": "This older workspace has no runtime references. Refresh it to resolve current evidence.", "diagnose": "Diagnose", "refresh": "Refresh references", "greeting": "What should we diagnose?", "placeholder": "Describe what went wrong, or paste a Turn key…", "context": "(Current page: {page})", "contextTurn": "Turn {key}", "contextRun": "test run {run}", "contextCase": "case {case} of test run {run}"},
   "admin": {
     "agentEditorEnabledHint": "Allow this agent to be selected and used in the workspace.",

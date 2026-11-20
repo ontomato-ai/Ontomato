@@ -1,5 +1,7 @@
 import type { z } from "zod";
 import { createHash } from "node:crypto";
+import type { SkillCatalogReason } from "@ontomato/contracts/skills";
+import { HttpError } from "../../utils/errors";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
 import {
   runtimeRegisterSkillRequestSchema,
@@ -13,6 +15,23 @@ export type SkillPackage = z.infer<typeof runtimeRegisterSkillRequestSchema>;
 /** The verified domain the skill system is reading for. Providers cannot choose another one. */
 export interface SkillSourceContext {
   readonly domainId: string;
+  reportSourceFailure(failure: SkillSourceFailure): void;
+}
+
+/** A registered source whose complete package dependencies could not be enumerated. */
+export interface SkillSourceFailure {
+  sourceKey: string;
+  entrances: readonly PageSkillEntrance[];
+  knownRequiredResourceIds: readonly string[];
+  field?: string;
+  reason: SkillCatalogReason;
+}
+
+/** A record failure with only the resource and structural field safe to disclose after admission. */
+export class SkillSourceRecordError extends HttpError {
+  constructor(readonly detail: { resourceId: string; field?: string; reason: SkillCatalogReason }) {
+    super(502, [detail.resourceId, detail.field, detail.reason].filter(Boolean).join(": "), "SKILL_SOURCE_UNAVAILABLE");
+  }
 }
 
 /** One skill a provider offers now, with its current package supplied on demand. */
