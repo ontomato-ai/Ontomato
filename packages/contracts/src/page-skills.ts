@@ -77,10 +77,26 @@ export const pageSkillsProjectionSchema = z.object({
 }).strict();
 export type PageSkillsProjection = z.infer<typeof pageSkillsProjectionSchema>;
 
-/** Menu mappings use permissionCode; domain-member mappings use access + pageKey. pageKey also selects a local default. */
+const queryPageSkillSourceSchema = z.preprocess((value) => {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}, pageSkillSourceSchema);
+
+const memberQueryFields = {
+  source: queryPageSkillSourceSchema,
+  memberKey: pageSkillMemberSchema.shape.memberKey,
+};
+
+/** Menu mappings use permissionCode; domain-member mappings use access + pageKey. Member queries add source + memberKey. */
 export const assistantAgentsQuerySchema = z.union([
   z.object({}).strict(),
-  z.object({ pageKey: z.string().min(1), permissionCode: z.string().min(1) }).strict(),
-  z.object({ pageKey: z.string().min(1), access: z.literal("domain-member") }).strict(),
+  z.object({ pageKey: pageKeySchema, permissionCode: permissionCodeSchema }).strict(),
+  domainMemberLocator,
+  z.object({ pageKey: pageKeySchema, permissionCode: permissionCodeSchema, ...memberQueryFields }).strict(),
+  z.object({ access: z.literal("domain-member"), pageKey: pageKeySchema, ...memberQueryFields }).strict(),
 ]);
 export type AssistantAgentsQuery = z.infer<typeof assistantAgentsQuerySchema>;

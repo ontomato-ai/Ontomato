@@ -1,4 +1,5 @@
 import type { ShellFeatureDeclaration } from "@ontomato/agent-shell-ui";
+import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 
 /**
  * The agent platform's own entries in its column, before the recent conversations.
@@ -14,7 +15,10 @@ import type { ShellFeatureDeclaration } from "@ontomato/agent-shell-ui";
  */
 /** The ids are what the conversation's parameter and the host's slots name; the labels are what a reader reads. */
 export const AGENT_SETTINGS_PAGE_ID = "agents";
-const agentSettingsPageSkill = { pageKey: "agent-settings", permissionCode: "analysis-agent" } as const;
+const agentSettingsPageSkill: PageSkillContext = {
+  mode: "public",
+  locator: { pageKey: "agent-settings", permissionCode: "analysis-agent" },
+};
 /** The settings page, at the address it is open at (one agent, a new one, a draft handoff), or at the settings' own. */
 const agentSettingsFeature = (label: string, address: string): ShellFeatureDeclaration => ({
   id: AGENT_SETTINGS_PAGE_ID,
@@ -34,7 +38,10 @@ export const DASHBOARDS_PAGE_ID = "dashboards";
  * The dashboards' own skill, by the domain membership the dashboards application itself is open to: one declaration,
  * read by the composer beside the conversation and by the page's own composer at its address.
  */
-export const DASHBOARDS_PAGE_SKILL = { pageKey: "dashboard", access: "domain-member" } as const;
+export const DASHBOARDS_PAGE_SKILL: PageSkillContext = {
+  mode: "public",
+  locator: { pageKey: "dashboard", access: "domain-member" },
+};
 
 /**
  * The dashboards page beside the conversation. Its address is what this application's page parameter names: enlarging
@@ -61,7 +68,10 @@ export const GOVERNANCE_REPORT_PAGE_ID = "governance-report";
  * The report's own skill: the governance preset the platform's mapping names for `governance-report`, under the business
  * knowledge menu code. One declaration, read by the composer beside the conversation and by the page's own composer.
  */
-export const GOVERNANCE_REPORT_PAGE_SKILL = { pageKey: "governance-report", permissionCode: "business-knowledge" } as const;
+export const GOVERNANCE_REPORT_PAGE_SKILL: PageSkillContext = {
+  mode: "public",
+  locator: { pageKey: "governance-report", permissionCode: "business-knowledge" },
+};
 
 /**
  * The report page beside the conversation. Its address is what this application's page parameter names, and its own

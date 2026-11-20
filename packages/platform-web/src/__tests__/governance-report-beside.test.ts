@@ -111,7 +111,7 @@ describe("one governance record's report beside the conversation", () => {
     // The page's own skill narrows the composer: an agent is a candidate when its effective skills carry the page's.
     const feature = (wrapper.findComponent(AgentShell).props("workbench") as { features: { id: string; pageSkill?: unknown }[] })
       .features.find((item) => item.id === "governance-report")!;
-    expect(feature.pageSkill).toEqual({ pageKey: "governance-report", permissionCode: "business-knowledge" });
+    expect(feature.pageSkill).toEqual({ mode: "public", locator: { pageKey: "governance-report", permissionCode: "business-knowledge" } });
     wrapper.unmount();
   });
 

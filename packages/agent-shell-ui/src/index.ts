@@ -51,10 +51,10 @@ export {
   type AgentHostClient,
   type AgentHostClientOptions,
   type AgentHostWorkspaceScope,
-  type AgentPageQuery,
   type SessionRunHandlers,
   type SessionRunPort,
 } from "./host";
+export type { PageSkillContext } from "@ontomato/contracts/page-skills";
 export type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 export type {
   ArtifactPresentation,
