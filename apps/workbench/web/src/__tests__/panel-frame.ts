@@ -305,7 +305,8 @@ export interface Sent {
  * Installs the platform as the shell starts it — the reader's identity, the app host and the message bridge — with the
  * network answering through `answer`. Returns what was sent, in order.
  */
-export function installPlatform(answer: (request: Sent) => Response | Promise<Response>) {
+/** `router` is the platform's, as its app host is installed with it: where a panel's own navigation goes at full page. */
+export function installPlatform(answer: (request: Sent) => Response | Promise<Response>, router: Router = createRouter({ history: createMemoryHistory(), routes: [] })) {
   const sent: Sent[] = [];
   installAuthHost({
     getToken: () => READER,
@@ -327,7 +328,7 @@ export function installPlatform(answer: (request: Sent) => Response | Promise<Re
   installAppHost({
     credential: { type: "token", token: READER },
     preferences: { locale: ref("en"), theme: ref("light") } as PlatformPreferences,
-    router: createRouter({ history: createMemoryHistory(), routes: [] }),
+    router,
     onAuthFailure: vi.fn(),
   });
   installProductEmbedding(createApp({}));
@@ -568,11 +569,12 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
 /** The coordinator of an instance a test builds by hand and runs no operation of: any call to it fails the test. */
 const unused = () => Promise.reject(new Error("This test runs no operation of the panel"));
 export const noOperations: {
-  operations: PanelHumanOperations; confirmOperation: ConfirmPanelOperation; expandPageComposer: () => never;
+  operations: PanelHumanOperations; confirmOperation: ConfirmPanelOperation; expandPageComposer: () => never; navigate: () => never;
 } = {
   operations: { describe: unused, read: unused, prepare: unused }, confirmOperation: unused,
   // A test that opens the page's composer gives its own; any other call to it fails the test.
   expandPageComposer: () => { throw new Error("This test opens no composer"); },
+  navigate: () => { throw new Error("This test opens no address"); },
 };
 
 /** The form save calls that reached the coordinator. */

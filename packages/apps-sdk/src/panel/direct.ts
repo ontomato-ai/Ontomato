@@ -48,6 +48,11 @@ export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "
    * sentence. The record is the platform's own read, so the entry needs no check against it; nothing is sent.
    */
   expandPageComposer(entry: PanelConversationEntry): void;
+  /**
+   * Opens one of the platform's addresses. When it cannot (not the platform's address, a page the reader may not open, a
+   * guard that stopped it), the host says why on the page and rejects with the same reason.
+   */
+  navigate(address: string): Promise<void>;
 }
 
 /** One member's data: the shown data by name, and a read the component asks for with run inputs of its own. */
@@ -72,6 +77,8 @@ export interface DirectPanelInstance extends PanelInstance {
   readonly text: PanelText;
   /** The page's composer, expanded with a member's declared conversation entry. */
   expandPageComposer(entry: PanelConversationEntry): void;
+  /** Opens one of the platform's addresses, or says on the page why it cannot (see the options). */
+  navigate(address: string): Promise<void>;
   /** The member's projection, read once for this instance. */
   projectionOf(member: string): Promise<DirectProjection>;
   /**
@@ -189,10 +196,12 @@ export async function readMemberDatum(read: PanelReadPort, projection: DirectPro
   if (awaitsInputs(projection, data, placement, values, own)) return { status: "awaiting" };
   // What the member's component set itself goes apart from the author's inputs, and is checked as such.
   const { runtime, authored } = readParams(projection, data, placement, values, own);
+  // A read the platform could not answer (unavailable, refused before the owner) is this datum's failure, with the
+  // platform's reason: the member shows it where its data would be.
   const result = await read({
     memberPath: [{ member }], dataName: name, inputs: authored,
     ...(Object.keys(runtime).length ? { runtimeParams: runtime } : {}),
-  });
+  }).catch((reason: unknown) => ({ status: "error" as const, message: reason instanceof Error ? reason.message : String(reason) }));
   if (result.status !== "ready") return result;
   // The host's answer is checked against the result the owner registered for this read.
   const declaration = directReadDeclaration(projection, data);
@@ -230,6 +239,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     direct,
     text: options.text,
     expandPageComposer: options.expandPageComposer,
+    navigate: options.navigate,
     projectionOf(member: string) {
       let found = projections.get(member);
       if (!found) {
@@ -353,6 +363,7 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     resources: () => Promise.resolve(),
     // The member's projection is the platform's own record here: its declared entry goes to the page's composer as it is.
     expandPageComposer: async ({ slot: _member, ...entry }) => instance.expandPageComposer(entry),
+    navigate: (address) => instance.navigate(address),
     // A member here reads through the instance's own port; nothing asks the context for it.
     readPanelData: frameOnly("Reading a member's data over the frame's request path"),
   };

@@ -17,7 +17,8 @@ import { buildExecutionContext } from "@ontomato/contracts/build-tests";
 import { pageSkillContextSchema, type PageSkillContext } from "@ontomato/contracts/page-skills";
 import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
-import { confirmPanelIntent, expandDeclaredComposer, registerCandidateFrame, registerPanelFrame } from "./app-host";
+import { confirmPanelIntent, expandDeclaredComposer, platformRouter, registerCandidateFrame, registerPanelFrame } from "./app-host";
+import { panelNavigator } from "./panel-navigate";
 import type { CodedPanelTarget, DirectPanelMount, DirectPanelRun, PanelHostPort, PanelSdkRelease } from "@ontomato/platform-shell";
 import { panelModuleFor, type DirectPanelMountOptions, type PlatformRequests } from "@ontomato/apps-sdk/direct";
 import { workbenchI18n, workbenchLanguage } from "@ontomato/workbench-ui/i18n";
@@ -110,6 +111,8 @@ export function platformPanelHost(
   relations?: Promise<readonly ApplicationPanelUse[]>,
   /** Hears which page skill a message written beside this page reaches, as Node answers it with the panel. */
   pageSkill?: (context: PageSkillContext) => void,
+  /** Beside a conversation, the conversation's display, which opens an address the panel asks for; at full page, none. */
+  beside?: (address: string) => void,
 ): PanelHostPort<Extract<PanelHostSource | DirectPanelHostSource, { kind: "registered" }>> {
   const shown: PanelUseRef = { applicationId, useId: use.id };
   const names = (records: readonly ApplicationPanelUse[]) =>
@@ -140,7 +143,7 @@ export function platformPanelHost(
     frame: (frame, source, open) => registerPanelFrame(frame, shown, { pageKey: use.pageKey, manifest: source.panel.manifest }, open, changed),
     // The panel runs in this document, as the same application's page: its members read through the platform as the
     // reader, within this use, and a person's write is confirmed and dispatched here.
-    coded: (source, run, target) => mountCoded(directOptions(source, run, shown, changed), target, source.panel.content.module!),
+    coded: (source, run, target) => mountCoded(directOptions(source, run, shown, changed, beside), target, source.panel.content.module!),
     // The relation this page opens is still the application's, bound to the same panel: a kept page shown again is
     // checked against Java's current relations before its frame may ask for anything.
     async current() {
@@ -189,6 +192,7 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
         read: request => readPanelData({ source: { kind: "candidate", workspace: source.workspace }, ...request }),
         confirmOperation: () => Promise.reject(new Error("A panel preview runs no operations; they run in the panel's application")),
         expandPageComposer: expandDeclaredComposer,
+        navigate: panelNavigator(platformRouter()),
         messages: source.panel.content.messages ?? {},
         locale: global.locale,
         defaultLocale: String(global.fallbackLocale.value),
@@ -209,7 +213,9 @@ const platformRequests: PlatformRequests = {
 };
 
 /** What a panel of an application use runs on in this document: the SDK's instance with this platform's reads, requests and words. */
-function directOptions(source: DirectPanelHostSource, run: DirectPanelRun, use: PanelUseRef, changed: (change: PanelObjectChange) => void): DirectPanelMountOptions {
+function directOptions(
+  source: DirectPanelHostSource, run: DirectPanelRun, use: PanelUseRef, changed: (change: PanelObjectChange) => void, beside?: (address: string) => void,
+): DirectPanelMountOptions {
   const { global } = workbenchI18n();
   return {
     manifest: source.panel.manifest,
@@ -219,6 +225,7 @@ function directOptions(source: DirectPanelHostSource, run: DirectPanelRun, use: 
     read: request => readPanelData({ source: { kind: "registered", ...use }, ...request }),
     confirmOperation: preparation => confirmPanelIntent(use, preparation.intentId, changed),
     expandPageComposer: expandDeclaredComposer,
+    navigate: panelNavigator(platformRouter(), beside),
     messages: source.panel.content.messages ?? {},
     locale: global.locale,
     defaultLocale: String(global.fallbackLocale.value),
