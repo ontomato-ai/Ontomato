@@ -58,6 +58,8 @@ const panelReadResultIdSchema = z.custom<PanelReadResultId>(
 export const appsSdkComponentDataSchema = z.record(name, z.object({
   results: z.array(panelReadResultIdSchema).min(1),
   required: z.boolean(),
+  /** Read parameters this component can supply for this datum at runtime. */
+  runtimeParams: z.array(name).optional(),
 }).strict());
 export type AppsSdkComponentData = z.infer<typeof appsSdkComponentDataSchema>;
 
