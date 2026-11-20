@@ -823,7 +823,9 @@ it("reads the metric and function catalogues, a definition and its forms with th
     const type = { kind: "PlatformObjectType", id: objectType };
     const selected = (primaryKey: string) => ({ object: { literal: { className: objectType, primaryKey } } });
     const read = await ownerReadPanel(`owner-${objectType.slice("platform:".length).toLowerCase()}`, {
-      list: { componentId: "@ontomato/sdk:ObjectList", data: { rows: { source: { type }, read: "list", params: {} } } },
+      list: { componentId: "@ontomato/sdk:ObjectList", data: { rows: {
+        source: { type }, read: "query", params: { search: { literal: definition.name.slice(0, 4) }, size: { literal: 10 } },
+      } } },
       summary: { componentId: "@ontomato/sdk:ObjectSummary", data: {
         record: { source: selected(definition.id), read: "record", params: {} },
       } },
@@ -836,7 +838,9 @@ it("reads the metric and function catalogues, a definition and its forms with th
       } } },
       create: { componentId: "@ontomato/sdk:ObjectForm", data: { form: { source: { type }, read: "createForm", params: {} } } },
     });
-    expect(await read("list", "rows")).toMatchObject({ status: "ready", value: [{ primaryKey: definition.id, label: definition.name }] });
+    expect(await read("list", "rows")).toMatchObject({
+      status: "ready", value: { rows: [{ primaryKey: definition.id, label: definition.name }], total: 1 },
+    });
     expect(await read("summary", "record")).toMatchObject({ status: "ready", value: { primaryKey: definition.id } });
     expect(await read("missing", "record")).toEqual({ status: "error", message: "Definition not found" });
     expect(await read("definition", "form")).toMatchObject({ status: "ready", value: { values: { name: "Draft" }, errors: [] } });

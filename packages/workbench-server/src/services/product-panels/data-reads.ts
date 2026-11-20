@@ -97,14 +97,14 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       form: async (selection, params) => (await actions()).form(selection.primaryKey!, formParams(params)),
     },
     [METRIC_VIEW]: {
-      list: () => metrics.list(),
+      query: (_selection, params) => metrics.query(params),
       record: selection => metrics.record(selection.primaryKey!),
       form: (selection, params) => metrics.form(selection.primaryKey!, formParams(params)),
       createForm: (_selection, params) => metrics.createForm(formParams(params)),
       result: (selection, params) => metrics.result(selection.primaryKey!, runtimeJsonObjectSchema.parse(params)),
     },
     [FUNCTION]: {
-      list: () => functions.list(),
+      query: (_selection, params) => functions.query(params),
       record: selection => functions.record(selection.primaryKey!),
       form: (selection, params) => functions.form(selection.primaryKey!, formParams(params)),
       createForm: (_selection, params) => functions.createForm(formParams(params)),

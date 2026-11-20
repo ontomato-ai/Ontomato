@@ -4,7 +4,8 @@ import { dashboardMetricDescriptionSchema, dashboardMetricOutputSchema, type Das
 import { FUNCTION, METRIC_VIEW } from "@ontomato/contracts/panel-client-requests";
 import { panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
 import {
-  panelFormDescriptionSchema, type PanelFormDescription, type PanelFormValues, type PanelRecord,
+  panelFormDescriptionSchema, panelReadParameterSchemas, type PanelFormDescription, type PanelFormValues, type PanelRecord,
+  type PanelRecordQuery,
 } from "@ontomato/contracts/panel-projection";
 import { config } from "../../config/application";
 import { tForLocale } from "../../i18n";
@@ -15,9 +16,10 @@ import { ownerEnvelopeSchema, ownerWriteFailure } from "../product-panels/data-q
 import type { ProductOwner } from "../product-governance/grants";
 
 /*
- * The metric and function owners' named reads for a panel, each read as the viewer. Both catalogues read the owner's
- * list, one record and its definition form, for a saved object or a new one; the data engine answers the display names,
- * labels and form in the reader's language, and the column names are this owner's text.
+ * The metric and function owners' named reads for a panel, each read as the viewer. Both catalogues query the owner's
+ * list, searched and paged here as the business knowledge list is, read one record and its definition form, for a saved
+ * object or a new one; the data engine answers the display names, labels and form in the reader's language, and the
+ * column names are this owner's text.
  *
  * A metric also reads its `result`: it runs one selected metric and answers its output, the metric's declared columns,
  * its rows, and the truncation that marks a partial result. The owner's query surface judges everything: whether the
@@ -28,6 +30,29 @@ import type { ProductOwner } from "../product-governance/grants";
 
 /** The values of a result read, each named by the metric's own parameter it fills. */
 export type MetricResultParams = Readonly<Record<string, RuntimeJsonValue>>;
+
+const catalogueQuerySchema = z.object({
+  search: panelReadParameterSchemas.keyword.optional(),
+  cursor: panelReadParameterSchemas.cursor.optional(),
+  size: panelReadParameterSchemas.size.optional(),
+}).strict();
+
+/**
+ * The records a search keeps, matching name or description in any case, from the offset the cursor names, at most `size`
+ * of them, with the total the search keeps. The owner answers its whole domain list, so the query reads it once.
+ */
+function queried(records: readonly PanelRecord[], params: Record<string, unknown>): PanelRecordQuery {
+  const { search, cursor, size } = catalogueQuerySchema.parse(params);
+  const offset = cursor === undefined ? 0 : Number(cursor);
+  if (!Number.isInteger(offset) || offset < 0) throw new HttpError(400, "The cursor does not name a position in the list", "INVALID_CURSOR");
+  const term = search?.trim().toLowerCase();
+  const kept = term ? records.filter(record => `${record.label} ${record.subtitle ?? ""}`.toLowerCase().includes(term)) : records;
+  return {
+    rows: kept.slice(offset, size === undefined ? undefined : offset + size),
+    ...(size !== undefined && offset + size < kept.length ? { nextCursor: String(offset + size) } : {}),
+    total: kept.length,
+  };
+}
 
 /** A definition form's values to check or recompute; without them, the owner's opening form. */
 export interface DefinitionFormParams {
@@ -128,9 +153,10 @@ export function createMetricReadAdapter(_owner: ProductOwner, viewer: AssistantC
     return schema.parse(JSON.parse(response.text));
   }
   return {
-    async list(): Promise<PanelRecord[]> {
+    async query(params: Record<string, unknown>): Promise<PanelRecordQuery> {
       const columns = labels();
-      return (await owner("metric-list", "/metricView/queryList", {}, z.array(metricSchema))).map(metric => metricRecord(metric, columns));
+      const metrics = await owner("metric-list", "/metricView/queryList", {}, z.array(metricSchema));
+      return queried(metrics.map(metric => metricRecord(metric, columns)), params);
     },
     async record(primaryKey: string): Promise<PanelRecord> {
       return metricRecord(await owner("metric-record", "/metricView/queryById", { id: primaryKey }, metricSchema), labels());
@@ -167,9 +193,10 @@ export function createFunctionReadAdapter(_owner: ProductOwner, viewer: Assistan
   const { owner, fieldLabels, form } = ownerReads(viewer, "FUNCTION_READ_FAILED");
   const labels = () => fieldLabels("function", ["operation"]);
   return {
-    async list(): Promise<PanelRecord[]> {
+    async query(params: Record<string, unknown>): Promise<PanelRecordQuery> {
       const columns = labels();
-      return (await owner("function-list", "/function/queryList", {}, z.array(functionSchema))).map(fn => functionRecord(fn, columns));
+      const functions = await owner("function-list", "/function/queryList", {}, z.array(functionSchema));
+      return queried(functions.map(fn => functionRecord(fn, columns)), params);
     },
     async record(primaryKey: string): Promise<PanelRecord> {
       return functionRecord(await owner("function-record", "/function/queryById", { id: primaryKey }, functionSchema), labels());

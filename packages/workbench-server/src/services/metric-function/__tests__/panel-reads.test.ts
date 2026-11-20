@@ -141,10 +141,11 @@ it("reads the metric catalogue as records with the owner's labels and this owner
   const sent = catalogueOwner(path => ({ success: true, data: path.endsWith("/queryList") ? [metricAsset] : metricAsset }));
   const reads = createMetricReadAdapter(owner, viewer);
 
-  const [row] = panelReadResultSchemas.panelRecordList.parse(await reads.list());
+  const { rows: [row], total } = panelReadResultSchemas.panelRecordQuery.parse(await reads.query({}));
   const record = panelReadResultSchemas.panelRecord.parse(await reads.record("m1"));
 
   expect(row).toEqual(record);
+  expect(total).toBe(1);
   expect(record).toEqual({
     primaryKey: "m1", label: "Revenue by customer", subtitle: "Monthly revenue",
     fields: {
@@ -166,9 +167,9 @@ it("reads the function catalogue with the owner's operation label", async () => 
   const sent = catalogueOwner(path => ({ success: true, data: path.endsWith("/queryList") ? [functionAsset] : functionAsset }));
   const reads = createFunctionReadAdapter(owner, viewer);
 
-  expect(panelReadResultSchemas.panelRecordList.parse(await reads.list())).toEqual([{
+  expect(panelReadResultSchemas.panelRecordQuery.parse(await reads.query({}))).toEqual({ rows: [{
     primaryKey: "f1", label: "revenue_query", fields: { operation: "读" }, fieldLabels: { operation: "Operation" },
-  }]);
+  }], total: 1 });
   expect(await reads.record("f1")).toEqual({
     primaryKey: "f1", label: "revenue_query", fields: { operation: "读" }, fieldLabels: { operation: "Operation" },
   });
@@ -208,8 +209,26 @@ it("keeps the owner's read refusal with its code: a missing definition is missin
   const functions = createFunctionReadAdapter(owner, viewer);
 
   await expect(functions.record("gone")).rejects.toMatchObject({ status: 404, code: "FUNCTION_NOT_FOUND", message: "Function not found" });
-  await expect(functions.list()).rejects.toMatchObject({
+  await expect(functions.query({})).rejects.toMatchObject({
     status: 500, code: "FUNCTION_READ_FAILED", message: "The definition store is unavailable",
   });
-  await expect(functions.list()).rejects.toBeInstanceOf(HttpError);
+  await expect(functions.query({})).rejects.toBeInstanceOf(HttpError);
+});
+
+it("searches a catalogue by name or description in any case and pages what it keeps by an offset cursor", async () => {
+  const metrics = ["Revenue", "Orders", "Refunds", "Net revenue"].map((name, index) => ({
+    ...metricAsset, id: `m${index}`, name, description: index === 1 ? "Counts REVENUE orders" : "",
+  }));
+  catalogueOwner(() => ({ success: true, data: metrics }));
+  const reads = createMetricReadAdapter(owner, viewer);
+  const keys = (query: { rows: { primaryKey: string }[] }) => query.rows.map(row => row.primaryKey);
+
+  const first = await reads.query({ search: " revenue ", size: 2 });
+  expect(keys(first)).toEqual(["m0", "m1"]);
+  expect(first).toMatchObject({ nextCursor: "2", total: 3 });
+  const second = await reads.query({ search: "revenue", cursor: first.nextCursor, size: 2 });
+  expect(keys(second)).toEqual(["m3"]);
+  expect(second).not.toHaveProperty("nextCursor");
+  expect(keys(await reads.query({}))).toEqual(["m0", "m1", "m2", "m3"]);
+  await expect(reads.query({ cursor: "later" })).rejects.toMatchObject({ status: 400, code: "INVALID_CURSOR" });
 });

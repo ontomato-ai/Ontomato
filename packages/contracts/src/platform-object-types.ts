@@ -80,6 +80,10 @@ const referenceReads = {
 } as const satisfies NonNullable<PlatformObjectTypeDeclaration["reads"]>;
 
 const metadataList = { list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" } } as const;
+/** A catalogue searched and paged like the business knowledge list, for definitions with no further filter. */
+const definitionQuery = {
+  query: { source: "type", parameterMode: "fixed", params: { search: "keyword", cursor: "cursor", size: "size" }, result: "panelRecordQuery" },
+} as const;
 const definitionFormParams = { values: "panelFormValues", changedField: "changedField" } as const;
 const modelReads = {
   record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
@@ -121,7 +125,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [METRIC_VIEW]: {
     ...describeType("metricView", "capability"),
     reads: {
-      ...metadataList,
+      ...definitionQuery,
       ...modelReads,
       result: { source: "object", parameterMode: "owner", parameter: "ontologyParameter", result: "metricOutput" },
     },
@@ -136,7 +140,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   },
   [FUNCTION]: {
     ...describeType("function", "capability"),
-    reads: { ...metadataList, ...modelReads },
+    reads: { ...definitionQuery, ...modelReads },
     operations: [`${FUNCTION}.save`, DELETE_FUNCTION],
   },
   [ACTION]: {
