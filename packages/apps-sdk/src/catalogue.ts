@@ -18,7 +18,6 @@ export const components: readonly ComponentMetadata[] = [
       "Reads one published MetricView and hands its result to the page's own template; the loading state and a failed read reach it as values, and it draws nothing itself.",
     effects: "Reads the MetricView through the data engine as the reader; it computes no metric of its own.",
     bindsElement: ["MetricView:*"],
-    outputs: ["data", "loading", "error", "reload"],
   }),
   defineComponentMeta({
     componentId: "ProductAsset",
@@ -27,7 +26,6 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     meaning:
       "Embeds an existing product asset as the application's pinned release draws it; an unavailable asset or an unsupported host is reported instead of drawing another page.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "EChart",
@@ -46,7 +44,6 @@ export const components: readonly ComponentMetadata[] = [
     meaning:
       "Draws a form exactly as its owner declares it — a choice as a select whose unavailable options stay listed with the reason, a text as an input or a large text box — in the owner's order and limits.",
     bindsElement: ["Action:*"],
-    outputs: ["input", "choose"],
   }),
   defineComponentMeta({
     componentId: "CodeEditor",
@@ -54,7 +51,6 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "CodeEditor",
     role: "control",
     meaning: "Edits code or structured text such as JSON, in the page's light or dark theme; it validates nothing.",
-    outputs: ["modelValue"],
   }),
   defineComponentMeta({
     componentId: "MarkdownView",
@@ -85,7 +81,6 @@ export const components: readonly ComponentMetadata[] = [
     meaning:
       "Holds one conversation with one of the platform's agents and reports its session; the agent's own skills decide what it can do.",
     effects: "Sends the reader's messages to the agent service as the signed-in user and shows the run as it streams.",
-    outputs: ["sessionId", "error"],
   }),
   defineComponentMeta({
     componentId: "AgentShell",
@@ -95,7 +90,6 @@ export const components: readonly ComponentMetadata[] = [
     meaning:
       "The whole conversation surface of one agent: its column, the conversation and the page beside it. A panel that talks to an agent composes it rather than drawing a conversation of its own.",
     effects: "Sends the reader's messages to the agent service as the signed-in user.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "ShellComposer",
@@ -103,7 +97,6 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ShellComposer",
     role: "control",
     meaning: "The input a reader types a message into, with what the message would carry; it sends nothing itself.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "PageComposer",
@@ -111,7 +104,6 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "PageComposer",
     role: "control",
     meaning: "The composer of a page shown full beside the conversation, with the page the message will carry.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "ShellColumn",
@@ -119,7 +111,6 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ShellColumn",
     role: "presentation",
     meaning: "The conversation's own column: its agents and sessions, as the host lists them.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "ShellNavBody",
@@ -127,7 +118,6 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ShellNavBody",
     role: "presentation",
     meaning: "The rows of the conversation column, with their counts and their state.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "ShellDockRoom",
@@ -135,7 +125,6 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ShellDockRoom",
     role: "presentation",
     meaning: "The room the shell's own controls cover at the foot of a page, so the page's end scrolls clear.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "AgentPicker",
@@ -143,7 +132,6 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "AgentPicker",
     role: "control",
     meaning: "Chooses one of the agents the host serves; it grants nothing: the server decides what the reader may use.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "AgentAvatar",
@@ -151,7 +139,6 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "AgentAvatar",
     role: "presentation",
     meaning: "An agent's avatar, from its stored image or colour and its initial.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "DatasetSelectionButton",
@@ -159,7 +146,6 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "DatasetSelectionButton",
     role: "control",
     meaning: "Chooses a dataset to name in the conversation; it reads nothing and writes nothing.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "ToolStep",
@@ -167,7 +153,6 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ToolStep",
     role: "presentation",
     meaning: "One tool call of a run: what was called, what it answered, and whether it failed.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "Projection",
@@ -194,7 +179,11 @@ export const components: readonly ComponentMetadata[] = [
       rows: { results: ["panelRecordList", "panelRecordQuery"], required: false, runtimeParams: ["search", "cursor", "size", "page"] },
       objects: { results: ["panelOntologyObjects"], required: false, runtimeParams: ["search", "page"] },
     },
-    outputs: ["selected", "checked", "navigate", "search"],
+    outputs: {
+      selected: { kind: "object", objectType: "@binding" },
+      checked: { kind: "list", items: { kind: "object", objectType: "@binding" } },
+      search: { kind: "scalar", type: "string" },
+    },
   }),
   defineComponentMeta({
     componentId: "ObjectSummary",
@@ -206,7 +195,6 @@ export const components: readonly ComponentMetadata[] = [
     effects: "Reads one object of the type the projection binds, as the reader.",
     bindsElement: ["PlatformObjectType:*"],
     data: { record: { results: ["panelRecord"], required: true } },
-    outputs: ["navigate"],
   }),
   defineComponentMeta({
     componentId: "ObjectForm",
@@ -288,7 +276,6 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     meaning:
       "Draws the nodes and edges it is given as a light SVG graph, each node in the tone its caller gives it and marked when its ID is among the selected ones, and hands back the selection a reader's choice results in and the part of the graph in view. What the nodes are, which may be chosen and what a choice implies are its caller's: it reads nothing and decides nothing about them.",
-    outputs: ["selected", "viewport"],
   }),
   defineComponentMeta({
     componentId: "G6GraphCanvas",
@@ -297,7 +284,6 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     meaning:
       "Draws the nodes and edges it is given with G6, for graphs a reader pans, zooms and drags: the graph canvas's interface, plus each node coloured by its category from the edition's palette, edges labelled, dashed or weighted as given, and invisible anchors for aggregated edges. It hands back the selection a reader's choice results in, the part of the graph in view, a double-click, a dragged node's new place and a click on empty canvas, and gives its caller the current positions and an image of the view. What the nodes are, what a choice means, and where positions and images are kept are its caller's: it reads and stores nothing.",
-    outputs: ["selected", "viewport", "blank", "activate", "move", "progress"],
   }),
   defineComponentMeta({
     componentId: "OntologyGraph",
@@ -316,7 +302,11 @@ export const components: readonly ComponentMetadata[] = [
       // The node the reader expands, and the layers and relation kinds the graph shows now.
       neighbors: { results: ["panelGraphNeighbors"], required: true, runtimeParams: ["node", "layers", "relationKinds"] },
     },
-    outputs: ["selectedNode", "selected", "selectedType"],
+    outputs: {
+      selectedNode: { kind: "object-union", layers: ["fact", "capability", "governance", "product"] },
+      selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"] },
+      selectedType: { kind: "scalar", type: "string" },
+    },
   }),
   defineComponentMeta({
     componentId: "ObjectRelations",
@@ -329,7 +319,7 @@ export const components: readonly ComponentMetadata[] = [
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     // The node a reader moved to, when no state the author bound holds it.
     data: { neighbors: { results: ["panelGraphNeighbors", "panelRelationNeighbors"], required: true, runtimeParams: ["node"] } },
-    outputs: ["selected"],
+    outputs: { selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"] } },
   }),
   defineComponentMeta({
     componentId: "SegmentedControl",
@@ -339,7 +329,7 @@ export const components: readonly ComponentMetadata[] = [
     meaning:
       "Switches one declared scalar panel state between mutually exclusive options supplied by the owner's `counts` datum (`[{key, label, count}]`) or static configuration. It binds no ontology element.",
     data: { counts: { results: ["panelGroupCounts"], required: false } },
-    outputs: ["value"],
+    outputs: { value: { kind: "scalar", type: "string" } },
   }),
   defineComponentMeta({
     componentId: "TwoPaneLayout",
@@ -364,7 +354,6 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     meaning:
       "Arranges a flat list of slash-separated paths into a folder-first, name-sorted, default-expanded tree; clicking a folder only collapses or expands it, while clicking a file emits its key and highlights the active row. It reads nothing and carries no business rules.",
-    outputs: ["selectedKey"],
   }),
   defineComponentMeta({
     componentId: "ObjectTree",
@@ -375,7 +364,6 @@ export const components: readonly ComponentMetadata[] = [
       "Displays path-bearing objects of the bound type (optionally scoped by a parent object input) as a folder/file tree and writes the selected file's full identity to the slot's output state, honoring an owner-supplied default key when configured.",
     effects: "Reads the bound type's list or parent-scoped query as the reader; it writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*"],
-    outputs: ["selected"],
   }),
   defineComponentMeta({
     componentId: "SegmentedTextReader",
@@ -384,7 +372,6 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     meaning:
       "Displays offset-paged plain-text segments for a selected source with a close control and a More button when another offset exists, coordinating shared activeAnchor state so multiple placements on one page expand only one reader at a time.",
-    outputs: ["activeAnchor", "activeSourceId"],
   }),
   defineComponentMeta({
     componentId: "ObjectTextReader",
@@ -395,7 +382,6 @@ export const components: readonly ComponentMetadata[] = [
       "Reads offset-paged text segments for sources of the bound type through its resource adapter's readSegment port (optionally scoped by a parent object input), showing More while another offset exists and coordinating single-open across placements.",
     effects: "Reads source metadata and text segments through the bound adapter as the reader; it changes nothing itself.",
     bindsElement: ["PlatformObjectType:*"],
-    outputs: ["activeAnchor", "activeSourceId"],
   }),
   defineComponentMeta({
     componentId: "FileUploadControl",

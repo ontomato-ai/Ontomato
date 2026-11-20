@@ -64,7 +64,10 @@ const save = {
 };
 
 type Read = PanelMemberReadRequest;
-function open(answer: (request: Read) => ProductPanelReadResponse | Promise<ProductPanelReadResponse>, initial = {}) {
+function open(
+  answer: (request: Read) => ProductPanelReadResponse | Promise<ProductPanelReadResponse>, initial = {},
+  formListeners: Record<string, (...args: never[]) => void> = {},
+) {
   const reads: Read[] = [];
   const draftErrors: unknown[] = [];
   const prepared: [string, unknown][] = [];
@@ -77,7 +80,7 @@ function open(answer: (request: Read) => ProductPanelReadResponse | Promise<Prod
     pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial,
     text: createPanelText({}, { value: "en" } as never, "en"),
     operations: { ...noOperations.operations, prepare },
-    expandPageComposer: noOperations.expandPageComposer,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate,
     confirmOperation: async ({ intentId }) => ({ decision: "confirm", response: { kind: "dispatched", intentId, outcome: outcome as never } }),
     recordDraftCreated: async () => {},
     reportDraftError: (reason) => draftErrors.push(reason),
@@ -89,7 +92,7 @@ function open(answer: (request: Read) => ProductPanelReadResponse | Promise<Prod
   });
   const element = document.createElement("div");
   document.body.append(element);
-  const app = createApp({ render: () => h("div", [h(PanelMember, { instance, member: "form" }), h(PanelMember, { instance, member: "run" })]) });
+  const app = createApp({ render: () => h("div", [h(PanelMember, { instance, member: "form", ...formListeners }), h(PanelMember, { instance, member: "run" })]) });
   app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus).mount(element);
   return { instance, element, reads, prepared, draftErrors, setOutcome: (next: unknown) => { outcome = next; }, unmount: () => app.unmount() };
 }
@@ -268,4 +271,24 @@ it("keeps what the reader types when the first read of the form is answered afte
   expect(formReads).toBe(before);
   expect(input(element, "/note").value).toBe("Typed while the first read was on its way");
   expect(instance.dirty()).toBe(true);
+});
+
+it("tells the page's code the form was saved, with the object, and that it was discarded", async () => {
+  const saved = vi.fn();
+  const discarded = vi.fn();
+  const { instance, element } = open(owner, { selectedTask: task("t-1") }, { onSaved: saved, onDiscarded: discarded });
+  await vi.waitFor(() => expect(input(element, "/name")?.value).toBe("t-1"));
+  const note = input(element, "/note");
+  note.value = "x";
+  note.dispatchEvent(new Event("input"));
+  await nextTick();
+  await instance.invoke("form.save");
+  expect(saved).toHaveBeenCalledWith({ className: SCHEDULED_TASK, primaryKey: "t-1" });
+
+  note.value = "y";
+  note.dispatchEvent(new Event("input"));
+  await nextTick();
+  [...element.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")].find((button) => button.textContent?.trim() === "Discard")!.click();
+  await vi.waitFor(() => expect(discarded).toHaveBeenCalledTimes(1));
+  expect(saved).toHaveBeenCalledTimes(1);
 });

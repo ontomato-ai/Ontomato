@@ -48,6 +48,11 @@ export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "
    * sentence. The record is the platform's own read, so the entry needs no check against it; nothing is sent.
    */
   expandPageComposer(entry: PanelConversationEntry): void;
+  /**
+   * Opens one of the platform's addresses. When it cannot (not the platform's address, a page the reader may not open, a
+   * guard that stopped it), the host says why on the page and rejects with the same reason.
+   */
+  navigate(address: string): Promise<void>;
 }
 
 /** One member's data: the shown data by name, and a read the component asks for with run inputs of its own. */
@@ -72,6 +77,8 @@ export interface DirectPanelInstance extends PanelInstance {
   readonly text: PanelText;
   /** The page's composer, expanded with a member's declared conversation entry. */
   expandPageComposer(entry: PanelConversationEntry): void;
+  /** Opens one of the platform's addresses, or says on the page why it cannot (see the options). */
+  navigate(address: string): Promise<void>;
   /** The member's projection, read once for this instance. */
   projectionOf(member: string): Promise<DirectProjection>;
   /**
@@ -230,6 +237,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     direct,
     text: options.text,
     expandPageComposer: options.expandPageComposer,
+    navigate: options.navigate,
     projectionOf(member: string) {
       let found = projections.get(member);
       if (!found) {
@@ -353,6 +361,7 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     resources: () => Promise.resolve(),
     // The member's projection is the platform's own record here: its declared entry goes to the page's composer as it is.
     expandPageComposer: async ({ slot: _member, ...entry }) => instance.expandPageComposer(entry),
+    navigate: (address) => instance.navigate(address),
     // A member here reads through the instance's own port; nothing asks the context for it.
     readPanelData: frameOnly("Reading a member's data over the frame's request path"),
   };
