@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { runtimeRunSnapshotSchema } from "@ontomato/contracts/agent-runtime";
 import { runtimeSessionRunFrameSchema, type RuntimeSessionRunFrame } from "@ontomato/contracts/agent-runtime-events";
-import { codeLimitsSchema, codeExecutionVirtualAddressSpaceBytes } from "@ontomato/contracts/agent-runtime-code";
+import { codeExecutionSchema, codeLimitsSchema, codeExecutionVirtualAddressSpaceBytes } from "@ontomato/contracts/agent-runtime-code";
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
 const repo = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -649,6 +649,14 @@ describe("standard runtime real HTTP/PG/processes", () => {
     const next = await run(s, "overwrite");
     expect((await settle(next.id)).run.stopReason).toBe("stop");
   });
+  async function stoppedCodeExecution(id: string) {
+    for (let i = 0; i < 200; i++) {
+      const result = codeExecutionSchema.parse((await api(`/v1/code-executions/${id}`)).body);
+      if (result.status === "stopped") return result;
+      await pause(25);
+    }
+    throw new Error("Code execution did not stop: " + logs);
+  }
   it("executes standalone Python and keeps output bytes off PostgreSQL", async () => {
     const id = randomUUID(),
       body = {
@@ -671,16 +679,11 @@ describe("standard runtime real HTTP/PG/processes", () => {
       (await api("/v1/code-executions", body, { "idempotency-key": id }))
         .status,
     ).toBe(202);
-    let result: any;
-    for (let i = 0; i < 200; i++) {
-      result = (await api(`/v1/code-executions/${id}`)).body;
-      if (result.status === "stopped") break;
-      await pause(25);
-    }
+    const result = await stoppedCodeExecution(id);
     expect(result.errorMessage, logs).toBeNull();
     expect(result.exitCode).toBe(0);
     expect(
-      result.outputs.some((o: any) => o.name === "stdout" && o.sha256),
+      result.outputs.some((o) => o.name === "stdout" && o.sha256),
     ).toBe(true);
     expect(
       await (
@@ -693,5 +696,39 @@ describe("standard runtime real HTTP/PG/processes", () => {
       (await api("/v1/code-executions", body, { "idempotency-key": id })).body
         .replayed,
     ).toBe(true);
+  });
+  it("uses the published library version even after a replacement is published", async () => {
+    const library = { namespace: { kind: "provider", provider: "workbench" }, name: "fixture-python-library" };
+    async function publish(value: string) {
+      const response = await api("/v1/skills", {
+        skill: library,
+        files: [
+          { path: "SKILL.md", content: "---\nname: fixture-python-library\ndescription: Fixture Python library\n---\n" },
+          { path: "python/pinned.py", content: `VALUE = ${JSON.stringify(value)}\n` },
+        ],
+      });
+      expect(response.status).toBe(201);
+      return runtimeRegisteredSkillSchema.parse(response.body).digest;
+    }
+    const digest = await publish("first version");
+    const replacement = await publish("replacement");
+    const id = randomUUID();
+    const body = {
+      language: "python",
+      files: [{ path: "program.py", content: "from pinned import VALUE\nprint(VALUE)" }],
+      entry: "program.py",
+      arguments: [],
+      outputPaths: [],
+      libraries: [{ skill: library, digest, path: "python" }],
+      environment: { values: {}, secrets: {} },
+      limits: codeLimitsSchema.parse({}),
+    };
+    expect((await api("/v1/code-executions", body, { "idempotency-key": id })).status).toBe(202);
+    const changed = { ...body, libraries: [{ ...body.libraries[0], digest: replacement }] };
+    expect((await api("/v1/code-executions", changed, { "idempotency-key": id })).status).toBe(409);
+    expect((await stoppedCodeExecution(id)).exitCode).toBe(0);
+    const output = await fetch(url + `/v1/code-executions/${id}/outputs/stdout`, { headers });
+    expect(output.status).toBe(200);
+    expect(await output.text()).toBe("first version\n");
   });
 });
