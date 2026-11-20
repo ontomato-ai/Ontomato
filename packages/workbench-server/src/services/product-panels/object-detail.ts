@@ -1,19 +1,18 @@
 import { directPanelSchema, productPanelSchema } from "@ontomato/contracts/product-panels";
 import type { PoolClient } from "pg";
 import { z } from "zod";
-import { currentProductRecord } from "../../infrastructure/product-current";
+import { currentProductRecord, findCurrentProduct } from "../../infrastructure/product-current";
 import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { requireProductGrant, type ProductOwner } from "../product-governance/grants";
-import { loadCurrentProduct } from "./current";
 
 type ObjectDetailResolution = { kind: "configured"; panelId: string } | { kind: "unconfigured" };
 type ObjectDetailPanelMapping = { className: string; panelId: string };
 
 const panelRecordSchema = z.union([directPanelSchema, productPanelSchema]);
 
-async function mappedPanelId(domainId: string, className: string, client: Pick<PoolClient, "query"> = getPostgresPool()) {
+export async function findObjectDetailPanelId(domainId: string, className: string, client: Pick<PoolClient, "query"> = getPostgresPool()) {
   const { rows } = await client.query<{ panelId: string }>(
     `SELECT panel_id AS "panelId" FROM ${t("product_object_details")} WHERE domain_id=$1 AND class_name=$2`,
     [domainId, className],
@@ -21,15 +20,16 @@ async function mappedPanelId(domainId: string, className: string, client: Pick<P
   return rows[0]?.panelId ?? null;
 }
 
-async function requireDetailPanel(domainId: string, panelId: string, client?: PoolClient) {
-  const panel = await loadCurrentProduct(domainId, "panel", panelId, client);
+export async function requireDetailPanel(domainId: string, panelId: string, client?: PoolClient) {
+  const panel = await findCurrentProduct(domainId, "panel", panelId, client);
+  if (!panel) throw new HttpError(404, "Mapped detail panel does not exist", "PRODUCT_NOT_FOUND");
   if (!panelRecordSchema.safeParse(currentProductRecord(panel, false)).success)
     throw new HttpError(404, "Mapped detail panel definition is invalid", "PRODUCT_UNAVAILABLE");
 }
 
 /** Platform callers resolve the current relation before performing their own resource authorization. */
 export async function locateObjectDetailPanel(domainId: string, className: string): Promise<string | null> {
-  const panelId = await mappedPanelId(domainId, className);
+  const panelId = await findObjectDetailPanelId(domainId, className);
   if (panelId !== null) await requireDetailPanel(domainId, panelId);
   return panelId;
 }

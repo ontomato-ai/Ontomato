@@ -63,7 +63,7 @@ it("resolves a usable current panel and distinguishes a class with no mapping", 
 
 it("rejects an unavailable, invalid or forbidden mapped panel", async () => {
   await mapClass("Customer", "detail");
-  await expect(resolveObjectDetail(owner, credentials, "Customer")).rejects.toMatchObject({ status: 404, code: "PRODUCT_UNAVAILABLE" });
+  await expect(resolveObjectDetail(owner, credentials, "Customer")).rejects.toMatchObject({ status: 404, code: "PRODUCT_NOT_FOUND" });
   await addPanel("detail", {});
   await expect(resolveObjectDetail(owner, credentials, "Customer")).rejects.toMatchObject({ status: 404, code: "PRODUCT_UNAVAILABLE" });
   await addPanel("private");
