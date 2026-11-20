@@ -268,6 +268,8 @@ function openPage(use: ApplicationPanelUse): KeptPage {
   };
   page.port = markRaw(platformPanelHost(
     props.applicationId, use, changed, undefined, answered.value ? undefined : relations!, (context) => reportPageSkill(page, context),
+    // Beside a conversation, an address the panel opens goes to the conversation's display; at full page, the router.
+    props.navigate,
   ));
   return page;
 }
