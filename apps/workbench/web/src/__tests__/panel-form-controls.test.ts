@@ -5,9 +5,10 @@ import { EditorView } from "../../../../../packages/foundation-ui/node_modules/@
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/panel-projection";
-import { FUNCTION } from "@ontomato/contracts/panel-client-requests";
+import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
+import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { ignoreChanges,
+import { humanIntents, ignoreChanges,
   inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
@@ -49,7 +50,7 @@ const fields: Field[] = [
   field("/schema", "Schema", { kind: "code", language: "json" }, { valueSchema: { type: "object" } }),
   field("/tags", "Tags", { kind: "string-array" }),
 ];
-const ID = "fn-1";
+const ID = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a01";
 const stored: PanelFormValues = {
   id: ID,
   name: "Ship order",
@@ -61,38 +62,48 @@ const stored: PanelFormValues = {
   schema: { type: "object" },
   tags: ["ops"],
 };
-const save = { method: "POST" as const, path: "/function/save", bodySchema: {}, draftOperation: "function.update" };
+const save = { method: "PUT" as const, path: "/assistant/agent-definitions/:id", bodySchema: {}, draftOperation: "agent.update" };
 const projection: ProductProjection = {
   domainId: "domain-1", ownerId: "owner-1", revision: 1, createdAt: "2026-11-19T00:00:00.000Z",
   updatedAt: "2026-11-19T00:00:00.000Z", editable: false, visibility: "domain",
-  id: "function-form", name: "function-form", description: "", componentId: "ObjectForm",
-  binding: { kind: "PlatformObjectType", id: FUNCTION },
-  inputs: { fn: { kind: "object", objectType: FUNCTION } }, display: {},
+  id: "agent-form", name: "Agent form", description: "", componentId: "@ontomato/sdk:ObjectForm",
+  inputs: {
+    agent: { kind: "object", objectType: AGENT_DEFINITION },
+    values: { kind: "json" },
+    changedField: { kind: "scalar", type: "string" },
+  },
+  outputs: {},
+  config: {},
+  data: {
+    form: {
+      source: { object: { input: "agent" } }, read: "form",
+      params: { values: { input: "values" }, changedField: { input: "changedField" } },
+    },
+  },
 };
 const manifest = definePanel({
-  state: { selected: { kind: "object", objectType: FUNCTION, deepLink: true } },
-  slots: { definition: { projectionId: "function-form", inputs: { fn: { state: "selected" } } } },
-  operations: [],
+  state: { selected: { type: { kind: "object", objectType: AGENT_DEFINITION }, deepLink: true } },
+  members: { definition: { target: { projectionId: projection.id }, inputs: { agent: { state: "selected" } } } },
+  events: {},
 });
 const panel = panelRecord("panel-form-controls", "Form controls", manifest);
-const use = panelUse("use-form-controls", "form-controls", panel.id, "/ontology/functions");
+const use = panelUse("use-form-controls", "form-controls", panel.id, "/ontology/agents");
 
-/** The function owner's envelope: a success with its data, or a refusal naming fields by their absolute pointers. */
-const ok = (data: unknown) => Response.json({ success: true, data });
-async function open(saved: (values: PanelFormValues) => Response = (values) => ok(values)) {
+const formPath = "/api/assistant/agent-definitions/form";
+async function open(outcome: PanelOperationOutcome = { kind: "success", data: {} }) {
+  const intents = humanIntents(() => outcome, { source: "input", input: "agent" });
   const sent = installPlatform((request: Sent) => {
-    if (request.path === "/api/product-projections/function-form") return Response.json({ projection });
-    if (request.path === "/api/data-query/function/form") {
+    if (request.path === `/api/product-projections/${projection.id}`) return Response.json({ projection });
+    if (request.path === formPath) {
       const { values } = request.body as { values?: PanelFormValues };
-      return ok({ fields, values: values ?? stored, errors: [], save });
+      return Response.json({ fields, values: values ?? stored, errors: [], save });
     }
-    if (request.path === "/api/data-query/function/save") return saved(request.body as PanelFormValues);
-    return nothingAt(request);
+    return intents(request) ?? nothingAt(request);
   });
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
   platformPanelHost("ontology", use, ignoreChanges).frame(frame, registered("ontology", use, panel), true);
-  writePanelDocument(registered("ontology", use, panel), "/ontology/functions", { selected: { className: FUNCTION, primaryKey: ID } } as never);
+  writePanelDocument(registered("ontology", use, panel), "/ontology/agents", { selected: { className: AGENT_DEFINITION, primaryKey: ID } } as never);
   inside(frame);
   const mounted = await mountPanel(panelOf("definition"));
   await vi.waitFor(() => expect(item("/name")?.querySelector("input")?.value).toBe("Ship order"), { timeout: 5000 });
@@ -114,7 +125,8 @@ function code(path: string, text: string) {
   view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
 }
 const storedParameters = stored.parameters as PanelFormValues[];
-const puts = (sent: Sent[]) => sent.filter((request) => request.path === "/api/data-query/function/save");
+const submitted = (sent: Sent[]) => sent.filter((request) => request.path === "/api/panel-operations/intents")
+  .map(({ body }) => (body as { call: { input: { values: PanelFormValues } } }).call.input.values);
 
 afterEach(() => {
   leaveFrame();
@@ -122,10 +134,10 @@ afterEach(() => {
 });
 
 it("edits parameter rows at their absolute paths, and a message follows its row when the rows move", async () => {
-  const { context, sent } = await open(() => Response.json({
-    success: false, code: "FUNCTION_INVALID", message: "Check the parameters",
+  const { context, sent } = await open({
+    kind: "refusal", code: "INVALID_PARAMETERS", message: "Check the parameters",
     errors: [{ field: "/parameters/1/name", code: "invalid_object", message: "A parameter name is a word" }],
-  }));
+  });
   // Each row's fields at the row's current place; the hidden identity is drawn by no control.
   expect(item("/parameters/0/name")?.querySelector("input")?.value).toBe("orderId");
   expect(item("/parameters/1/name")?.querySelector("input")?.value).toBe("count");
@@ -134,7 +146,7 @@ it("edits parameter rows at their absolute paths, and a message follows its row 
   type("/parameters/1/name", "count of");
   await nextTick();
   await expect(context.instance.invoke("definition.save")).rejects.toThrow("Check the parameters");
-  expect(puts(sent)[0]!.body).toMatchObject({ parameters: [storedParameters[0], { id: "p-2", name: "count of", type: "number", required: false }] });
+  expect(submitted(sent)[0]!).toMatchObject({ parameters: [storedParameters[0], { id: "p-2", name: "count of", type: "number", required: false }] });
   await vi.waitFor(() => expect(error("/parameters/1/name")).toBe("A parameter name is a word"));
 
   // The second row moves up: it and its message are now at index 0, and the values are in the new order.
@@ -158,8 +170,9 @@ it("edits parameter rows at their absolute paths, and a message follows its row 
 it("asks the owner again with a row field's absolute path when it refreshes the form", async () => {
   const { context, sent } = await open();
   context.instance.forms.handle("definition")!.set("/parameters/1/type", "string");
-  await vi.waitFor(() => expect(sent.filter((request) => request.path === "/api/data-query/function/form")).toHaveLength(2));
-  expect(sent.at(-1)!.body).toMatchObject({ changedField: "/parameters/1/type" });
+  const reads = () => sent.filter((request) => request.path === formPath);
+  await vi.waitFor(() => expect(reads()).toHaveLength(2));
+  expect(reads()[1]!.body).toMatchObject({ changedField: "/parameters/1/type" });
 });
 
 it("keeps an omitted object absent, adds it from the owner's default and removes it as null", async () => {
@@ -167,7 +180,7 @@ it("keeps an omitted object absent, adds it from the owner's default and removes
   type("/name", "Ship orders");
   await nextTick();
   await context.instance.invoke("definition.save");
-  expect(Object.hasOwn(puts(sent)[0]!.body as object, "target")).toBe(false);
+  expect(Object.hasOwn(submitted(sent)[0]!, "target")).toBe(false);
 
   button(item("/target")!.querySelector(".sdk-form-object")!, "Add").click();
   await nextTick();
@@ -180,12 +193,12 @@ it("keeps an omitted object absent, adds it from the owner's default and removes
   type("/target/limit", "");
   await nextTick();
   await context.instance.invoke("definition.save");
-  expect((puts(sent)[1]!.body as PanelFormValues).target).toEqual({ className: "Order", limit: null });
+  expect(submitted(sent)[1]!.target).toEqual({ className: "Order", limit: null });
 
   button(item("/target")!.querySelector(".sdk-form-object")!, "Remove").click();
   await nextTick();
   await context.instance.invoke("definition.save");
-  expect((puts(sent)[2]!.body as PanelFormValues).target).toBeNull();
+  expect(submitted(sent)[2]!.target).toBeNull();
 });
 
 it("saves Python as text and JSON as the owner's value, and never saves JSON that does not parse", async () => {
@@ -198,14 +211,14 @@ it("saves Python as text and JSON as the owner's value, and never saves JSON tha
   // The reader's text is unsaved although no value changed: a refresh does not replace it, and leaving asks.
   expect(context.instance.dirty()).toBe(true);
   await expect(context.instance.invoke("definition.save")).rejects.toThrow("Correct the marked fields before saving");
-  expect(puts(sent)).toHaveLength(0);
+  expect(submitted(sent)).toHaveLength(0);
 
   code("/schema", '{"type": "array", "items": {"type": "string"}}');
   code("/script", "def run(order):\n    return None");
   await nextTick();
   expect(error("/schema")).toBeFalsy();
   await context.instance.invoke("definition.save");
-  expect(puts(sent)[0]!.body).toMatchObject({
+  expect(submitted(sent)[0]!).toMatchObject({
     schema: { type: "array", items: { type: "string" } },
     script: "def run(order):\n    return None",
   });
@@ -235,5 +248,5 @@ it("edits a list of strings as the owner's array", async () => {
   button(tags.querySelector(".sdk-form-string-row")!, "Remove").click();
   await nextTick();
   await context.instance.invoke("definition.save");
-  expect((puts(sent)[0]!.body as PanelFormValues).tags).toEqual(["billing"]);
+  expect(submitted(sent)[0]!.tags).toEqual(["billing"]);
 });

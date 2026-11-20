@@ -10,7 +10,7 @@ import { appBuilderPages } from "../../../../../packages/platform-web/src/workbe
 import PanelCandidateRoute from "../../../../../packages/platform-web/src/pages/PanelCandidateRoute.vue";
 import {
   currentSdk, hostMessageOf, inside, installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelHostFrame, projections,
-  READER, SDK_VERSION, writeFrameDocument, type Sent,
+  READER, writeFrameDocument, type Sent,
 } from "./panel-frame";
 
 /*
@@ -143,8 +143,8 @@ it("previews the author's candidate through the same panel host, with only its d
     expect(message.panel).toEqual(candidateOf('<div id="app"></div>', null).panel);
     // A candidate is no application's use: the frame is told it has none.
     expect(message).toMatchObject({ pageKey: "agent-settings", use: null, url: previewAddress, label: "Panel preview (working)" });
-    // The frame runs the exact SDK version the candidate names, not the one the platform currently serves.
-    expect(frame.srcdoc).toContain(`"@ontomato/sdk/panel":"/apps-sdk/${SDK_VERSION}/panel.js"`);
+    const { sdkBasePath } = await currentSdk().json();
+    expect(frame.srcdoc).toContain(`"@ontomato/sdk/panel":"${sdkBasePath}/panel.js"`);
     // The preview is an author's host: the registered projections the candidate names follow the definition stream,
     // and no panel is registered for it to follow.
     await vi.waitFor(() => expect(streams).toEqual([[

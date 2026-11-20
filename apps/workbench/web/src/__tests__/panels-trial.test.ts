@@ -69,13 +69,9 @@ function instance(initial?: Record<string, unknown>) {
 
 describe("a panel's projection", () => {
   it("publishes the operation its record binds, with the handler the catalogue names", async () => {
-    // The record binds the operation, so the projection publishes that one — its label from the catalogue, its handler
-    // the reference the record names. The panel wrote neither.
-    expect(portsOf(records.get("projection-schedules-run")!)).toEqual({
-      binding: "PlatformOperation:schedules.runNow",
-      inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
-      operations: [{ name: "runNow", label: "Run now", kind: "action", inputSchema: {}, handlerRef: "schedules.runNow" }],
-    });
+    expect(portsOf(records.get("projection-schedules-run")!).operations).toEqual([
+      { name: "runNow", label: "Run now", kind: "action", inputSchema: {}, handlerRef: "schedules.runNow" },
+    ]);
   });
 
   it("runs the selected task, not some other one, through the platform's coordinator", async () => {

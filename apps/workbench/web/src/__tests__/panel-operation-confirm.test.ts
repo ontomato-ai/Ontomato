@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { APP_BRIDGE_CHANNEL } from "@ontomato/contracts/app-bridge";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
-import { AGENT_DEFINITION, DELETE_AGENT, RUN_NOW } from "@ontomato/contracts/panel-client-requests";
+import { BUSINESS_KNOWLEDGE, DELETE_KNOWLEDGE, RUN_NOW } from "@ontomato/contracts/platform-object-types";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
@@ -22,12 +22,13 @@ import { inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord
  * taken as markup.
  */
 
-const removal = "projection-agent-remove";
+const removal = "projection-knowledge-remove";
 const run = "projection-task-run";
 const base = {
   description: "",
   inputs: {},
-  display: {},
+  config: {},
+  outputs: {},
   domainId: "domain-1",
   ownerId: "owner-1",
   revision: 1,
@@ -36,23 +37,27 @@ const base = {
   editable: false,
   visibility: "domain" as const,
 };
+const operationProjection = (id: string, name: string, operation: string): ProductProjection => ({
+  ...base, id, name, componentId: "@ontomato/sdk:OperationButton",
+  data: { operation: { source: { operation: { kind: "PlatformOperation", id: operation } }, read: "describe", params: {} } },
+});
 const projections: Record<string, ProductProjection> = {
-  [removal]: { ...base, id: removal, name: "Remove", componentId: "OperationButton", binding: { kind: "PlatformOperation", id: DELETE_AGENT } },
-  [run]: { ...base, id: run, name: "Run", componentId: "OperationButton", binding: { kind: "PlatformOperation", id: RUN_NOW } },
+  [removal]: operationProjection(removal, "Remove", DELETE_KNOWLEDGE),
+  [run]: operationProjection(run, "Run", RUN_NOW),
 };
-const panel = panelRecord("panel-agents", "Agents", definePanel({
+const panel = panelRecord("panel-knowledge", "Business knowledge", definePanel({
   state: {},
-  slots: { remove: { projectionId: removal, inputs: {} }, run: { projectionId: run, inputs: {} } },
-  operations: [],
+  members: { remove: { target: { projectionId: removal } }, run: { target: { projectionId: run } } },
+  events: {},
 }));
-const use = panelUse("use-agents", "agents", panel.id, "/applications/app-agents/agents");
+const use = panelUse("use-knowledge", "entries", panel.id, "/applications/app-knowledge/entries");
 
 const impact = {
-  summary: "Removing these agents also removes their schedules.",
+  summary: "Removing these entries also removes their references.",
   total: 4,
   objects: [
-    { target: { objectType: AGENT_DEFINITION, primaryKey: "a" }, label: "Assistant A" },
-    { target: { objectType: AGENT_DEFINITION, primaryKey: "b" }, label: "<b>Assistant B</b>" },
+    { target: { objectType: BUSINESS_KNOWLEDGE, primaryKey: "a" }, label: "Shipping note" },
+    { target: { objectType: BUSINESS_KNOWLEDGE, primaryKey: "b" }, label: "<b>Returns note</b>" },
   ],
 };
 const intentId = "6f1c2a4e-0b7d-4c1e-9a55-3d2f8e7b9c10";
@@ -67,7 +72,7 @@ const confirmation = {
   confirmation: { kind: "impact", impact: { summary: "Nothing goes.", total: 0, objects: [] } },
 };
 const dispatched = { kind: "dispatched", intentId, outcome: null };
-const affected = { objects: [{ objectType: AGENT_DEFINITION, primaryKey: "a" }], objectTypes: [AGENT_DEFINITION] };
+const affected = { objects: [{ objectType: BUSINESS_KNOWLEDGE, primaryKey: "a" }], objectTypes: [BUSINESS_KNOWLEDGE] };
 
 let stored: PanelHumanOperationPreparation = prepared;
 let dispatchAnswer: unknown = dispatched;
@@ -106,7 +111,7 @@ function shownFrame() {
   const frame = panelFrame();
   // The page's port for what changed: a person's operation hands it what the owner reports, as a conversation does.
   const changed = vi.fn();
-  const registration = platformPanelHost("app-agents", use, changed).frame(frame, registered("app-agents", use, panel), true);
+  const registration = platformPanelHost("app-knowledge", use, changed).frame(frame, registered("app-knowledge", use, panel), true);
   inside(frame);
   const invoke = connect();
   const read = (id: string) => invoke("request", { path: `/product-projections/${id}`, service: "", method: "GET", headers: [], body: null });
@@ -138,7 +143,7 @@ describe("a person's confirmation of a panel operation", () => {
     let box = await dialog();
     expect(box.querySelector(".el-message-box__title")?.textContent).toContain("Delete");
     const names = [...box.querySelectorAll("li")].map((item) => item.textContent);
-    expect(names).toEqual(["Assistant A", "<b>Assistant B</b>"]);
+    expect(names).toEqual(["Shipping note", "<b>Returns note</b>"]);
     expect(box.querySelector("li b")).toBeNull();
     expect(box.textContent).toContain(impact.summary);
     expect(box.textContent).toContain("4");
@@ -158,7 +163,7 @@ describe("a person's confirmation of a panel operation", () => {
     ]);
     // Node reads the intent back only within the use this frame shows.
     const reads = sent.filter((request) => request.path === `/api/panel-operation-intents/${intentId}`);
-    expect(reads.map((request) => request.search)).toEqual(["?applicationId=app-agents&useId=use-agents", "?applicationId=app-agents&useId=use-agents"]);
+    expect(reads.map((request) => request.search)).toEqual(["?applicationId=app-knowledge&useId=use-knowledge", "?applicationId=app-knowledge&useId=use-knowledge"]);
     // Node finished nothing yet (no outcome): the page hears of no change.
     expect(changed).not.toHaveBeenCalled();
   });
@@ -169,7 +174,7 @@ describe("a person's confirmation of a panel operation", () => {
     const changesWhenHeard: number[] = [];
     for (const outcome of [
       { kind: "success", data: {}, affected },
-      { kind: "batch", items: [{ target: { objectType: AGENT_DEFINITION, primaryKey: "a" }, outcome: { kind: "success", data: {} } }], affected },
+      { kind: "batch", items: [{ target: { objectType: BUSINESS_KNOWLEDGE, primaryKey: "a" }, outcome: { kind: "success", data: {} } }], affected },
       { kind: "success", data: {} },
     ]) {
       storing({ kind: "none" });
@@ -208,17 +213,17 @@ describe("a person's confirmation of a panel operation", () => {
     storing({
       kind: "batch",
       targets: { total: 2, objects: impact.objects },
-      impact: { summary: "Their schedules go too.", total: 3, objects: [
-        { target: { objectType: AGENT_DEFINITION, primaryKey: "s" }, label: "Nightly schedule" },
+      impact: { summary: "Their references go too.", total: 3, objects: [
+        { target: { objectType: BUSINESS_KNOWLEDGE, primaryKey: "s" }, label: "Referenced note" },
       ] },
     });
     const { invoke, read } = shownFrame();
     await read(removal);
     const confirmed = invoke("confirm-panel-operation", confirmation);
     const box = await dialog();
-    expect([...box.querySelectorAll("li")].map((item) => item.textContent)).toEqual(["Assistant A", "<b>Assistant B</b>", "Nightly schedule"]);
+    expect([...box.querySelectorAll("li")].map((item) => item.textContent)).toEqual(["Shipping note", "<b>Returns note</b>", "Referenced note"]);
     expect(box.textContent).toContain("2 affected in total");
-    expect(box.textContent).toContain("Their schedules go too.");
+    expect(box.textContent).toContain("Their references go too.");
     expect(box.textContent).toContain("3 affected in total");
     button(box, "Delete").click();
     await expect(confirmed).resolves.toEqual({ decision: "confirm", response: dispatched });
@@ -251,14 +256,14 @@ describe("a person's confirmation of a panel the platform draws itself", () => {
     const sent = installPlatform(answer);
     const changed = vi.fn();
     dispatchAnswer = { kind: "dispatched", intentId, outcome: { kind: "success", data: {}, affected } };
-    const decided = confirmPanelIntent({ applicationId: "app-agents", useId: "use-agents" }, intentId, changed);
+    const decided = confirmPanelIntent({ applicationId: "app-knowledge", useId: "use-knowledge" }, intentId, changed);
     const box = await dialog();
     expect(box.querySelector(".el-message-box__title")?.textContent).toContain("Delete");
     button(box, "Delete").click();
     await expect(decided).resolves.toEqual({ decision: "confirm", response: dispatchAnswer });
     expect(changed.mock.calls).toEqual([[{ target: null, affected }]]);
     expect(sent.map(({ method, path, search, body }) => ({ method, path, search, body }))).toEqual([
-      { method: "GET", path: `/api/panel-operation-intents/${intentId}`, search: "?applicationId=app-agents&useId=use-agents", body: null },
+      { method: "GET", path: `/api/panel-operation-intents/${intentId}`, search: "?applicationId=app-knowledge&useId=use-knowledge", body: null },
       { method: "POST", path: `/api/panel-operations/intents/${intentId}/dispatch`, search: "", body: {} },
     ]);
   });
