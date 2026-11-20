@@ -7,6 +7,8 @@ import {
   type PanelFormDescription,
   type PanelFormRequest,
   type PanelFormValues,
+  type PanelOption,
+  type PanelOptionList,
   type PanelRecord,
 } from "@ontomato/contracts/panel-projection";
 import { panelOwnerOperationDescriptorSchema } from "@ontomato/contracts/panel-operations";
@@ -73,6 +75,19 @@ export interface OntologyModelReadAdapter {
   createForm(typeId: string, params?: OntologyModelFormParams): Promise<PanelFormDescription>;
   /** The `<operation>.describe` read: the action as the coordinator dispatches it, labelled in the viewer's language. */
   describe(operation: OntologyModelAction): PanelOwnerOperationDescriptor;
+  /** `platform:ObjectType.options`: every class as a choice whose value is its class name. */
+  objectTypeOptions(): Promise<PanelOptionList>;
+  /** `platform:ObjectType.resolve`: the chosen class names back as choices; a class that no longer exists stays, marked unavailable. */
+  resolveObjectTypes(values: readonly unknown[]): Promise<PanelOptionList>;
+}
+
+function objectTypeOption(view: ObjectTypeView): PanelOption {
+  return {
+    primaryKey: view.className,
+    value: view.className,
+    label: view.showName || view.className,
+    ...(view.classDesc && { description: view.classDesc }),
+  };
 }
 
 function objectTypeRecord(view: ObjectTypeView): Omit<PanelRecord, "fieldLabels"> {
@@ -306,8 +321,25 @@ export function createOntologyModelReadAdapter(
     });
   }
 
+  async function objectTypeOptions(): Promise<PanelOptionList> {
+    return { options: (await objectTypeReader.views()).map(objectTypeOption) };
+  }
+
+  async function resolveObjectTypes(values: readonly unknown[]): Promise<PanelOptionList> {
+    const options = new Map((await objectTypeReader.views()).map(view => [view.className, objectTypeOption(view)]));
+    return { options: values.map(value => {
+      const className = String(value);
+      return options.get(className) ?? {
+        primaryKey: className, value: className, label: className,
+        unavailable: { reason: tForLocale(viewer.locale, "panels.ontologyModel.objectTypeUnavailable") },
+      };
+    }) };
+  }
+
   return {
     describe,
+    objectTypeOptions,
+    resolveObjectTypes,
     list: async (typeId, params) => readerFor(typeId).list(params),
     record: async (typeId, primaryKey) => readerFor(typeId).record(primaryKey),
     form: async (typeId, primaryKey, params) => readerFor(typeId).form(primaryKey, params),
