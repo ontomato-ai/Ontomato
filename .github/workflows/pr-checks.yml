@@ -101,6 +101,9 @@ jobs:
       - name: Test workbench server integration
         run: pnpm --filter @ontomato/workbench-server test:integration
 
+      - name: Test workbench web integration
+        run: pnpm --filter @ontomato/workbench test:web:integration
+
       - name: Install Python HTTP helper dependency
         run: python3 -m pip install requests==2.32.5
 

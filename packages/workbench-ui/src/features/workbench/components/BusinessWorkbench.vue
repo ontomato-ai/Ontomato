@@ -305,6 +305,31 @@ const bottomEntry = computed<ShellBottomEntry | null>(() =>
  */
 let consumedLink: string | null = null;
 let pendingLink: string | null = null;
+/**
+ * The conversation knows the page beside it: the page has said which skill a message written beside it reaches (a
+ * native page declares it; a panel reports it with its read, before it has loaded), and the agents offered on that page
+ * have been read. Until then the agent list is the one before the page, or empty while the page's own is read.
+ */
+const knowsPage = () =>
+  display.load.value.status !== "loading" && nav.agentsState.value === "ready"
+  && (display.pageSkill.value === null || nav.pageAgents.value !== null);
+/**
+ * Waits for the conversation to know the page beside it. False when the agents could not be read: the read's own error
+ * was shown where it failed, and there is nothing to check a link's agent against or to send it with.
+ */
+async function pageKnown(): Promise<boolean> {
+  const settled = () => knowsPage() || nav.agentsState.value === "error";
+  if (!settled()) {
+    await new Promise<void>((resolve) => {
+      const stop = watch(settled, (now) => {
+        if (!now) return;
+        stop();
+        resolve();
+      });
+    });
+  }
+  return nav.agentsState.value !== "error";
+}
 const linkAddress = () =>
   JSON.stringify([requestedAgent(), queryText(route.query.sessionId), queryText(route.query.prompt), queryText(route.query.page)]);
 
@@ -329,6 +354,13 @@ async function openRequestedAgent() {
   // The link's own parameters go before anything is awaited; the page it was written on stays, carried by the address.
   const { agentId: _agent, sessionId: _session, prompt: _prompt, ...query } = route.query;
   await router.replace({ query: page ? { ...query, page } : query });
+  // The page the message was written on is beside the conversation from the start: the agent is one of those offered on
+  // it, and the message carries its skill, once the conversation knows it. Its agents not read, the message ends here,
+  // unsent; the same address arriving again is the reader trying again.
+  if (page && !(await pageKnown())) {
+    pendingLink = null;
+    return;
+  }
   if (!nav.agents.value.some((agent) => agent.id === id && agent.enabled)) {
     ElMessage.error(t("assistant.agentUnavailable"));
     return;
@@ -350,7 +382,16 @@ async function openRequestedAgent() {
   }
   // Choosing a conversation closes whatever page was open beside the old one; the page this message came from opens
   // beside the conversation it was written for.
-  if (page) await display.navigate(page, { view: "side", history: "replace" });
+  if (page) {
+    await display.navigate(page, { view: "side", history: "replace" });
+    // Opened again, it is another instance of the page: once drawn it says again which skill it reaches, and the message
+    // carries that.
+    await nextTick();
+    if (!(await pageKnown())) {
+      pendingLink = null;
+      return;
+    }
+  }
   if (prompt) {
     await nextTick();
     await shell.value!.send(prompt);
