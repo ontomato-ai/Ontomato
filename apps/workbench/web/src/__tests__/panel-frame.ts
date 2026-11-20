@@ -8,7 +8,7 @@ import { definePanel, type PanelManifest, type PanelOperationCall } from "@ontom
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
 import type { PanelFormSaveInput } from "@ontomato/contracts/panel-projection";
 import type { PanelHostMessage } from "@ontomato/contracts/panel-host";
-import { appsSdkCurrentSchema } from "@ontomato/contracts/apps-sdk";
+import { appsSdkCurrentSchema, appsSdkReleaseManifestSchema } from "@ontomato/contracts/apps-sdk";
 import type { PanelMemberSnapshot } from "@ontomato/contracts/product-subscriptions";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import {
@@ -186,6 +186,14 @@ export const manifestQ = definePanel({
 export const SDK_VERSION = `1.1.1-dev.${"0123456789abcdef".repeat(4)}`;
 
 /** What Node answers for the SDK currently served to panels. */
+/** Where the current release's manifest is served, and what it names: every frame loads exactly these modules. */
+export const SDK_MANIFEST_PATH = "/apps-sdk/1.2.0/sdk.json";
+export const sdkManifest = appsSdkReleaseManifestSchema.parse({
+  version: "1.2.0", product: "workbench", executionContext: 1, hostTransport: 1, messageBridge: 2,
+  entries: { vue: "vue.js", "element-plus": "element-plus.js", "@ontomato/sdk": "sdk.js", "@ontomato/sdk/panel": "panel.js", "@ontomato/sdk/base": "base.js" },
+  stylesheet: "styles/sdk.css", components: "components.json", check: "node/panel-check.mjs", libraries: { vue: "3.5.0" }, docs: "docs/index.md",
+});
+
 export const currentSdk = () => Response.json(appsSdkCurrentSchema.parse({
   version: "1.2.0", digest: "a".repeat(64), publicBasePath: "", sdkBasePath: "/apps-sdk/1.2.0",
   manifestPath: "/apps-sdk/1.2.0/sdk.json", componentsPath: "/apps-sdk/1.2.0/components.json",
@@ -294,6 +302,8 @@ export function installPlatform(answer: (request: Sent) => Response | Promise<Re
       body: typeof init?.body === "string" ? JSON.parse(init.body) : (init?.body instanceof FormData ? init.body : null),
     };
     sent.push(request);
+    // The release manifest is a static file of the current release, the same for every test.
+    if (request.path === SDK_MANIFEST_PATH) return Response.json(sdkManifest);
     return answer(request);
   });
   return sent;
