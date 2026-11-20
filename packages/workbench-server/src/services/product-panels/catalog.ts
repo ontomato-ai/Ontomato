@@ -47,7 +47,6 @@ interface SummaryRow {
 
 interface ProjectionSummaryRow extends SummaryRow {
   componentId: string;
-  binding: unknown;
 }
 
 export async function listCurrentProducts(owner: ProductOwner, credentials: AssistantCredentials,
@@ -60,7 +59,7 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
   const keyType = updated ? "timestamptz" : "text";
   // PostgreSQL provides the exact timestamp key, including sub-millisecond precision.
   const cursorKey = updated ? "to_jsonb(updated_at)#>>'{}'" : order;
-  const projectionColumns = kind === "projection" ? `,definition->>'componentId' AS "componentId",definition->'binding' AS binding` : "";
+  const projectionColumns = kind === "projection" ? `,definition->>'componentId' AS "componentId"` : "";
   const { rows } = await getPostgresPool().query<SummaryRow | ProjectionSummaryRow>(
     `SELECT id,owner_id AS "ownerId",definition->>'name' AS name,definition->>'description' AS description,
        definition->>'visibility' AS visibility,revision,updated_at AS "updatedAt",${cursorKey} AS "sortKey"${projectionColumns}
