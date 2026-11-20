@@ -17,7 +17,7 @@ A workspace is the application source tree. Business definitions remain in Java;
 
 1. Use `sdk read components.json` and `sdk read docs/index.md` to see the current release's official components and their inputs and outputs. Inspect the actual ontology resources, projections and application uses. Reuse existing records and ask the owner for any missing business capability or named read.
 2. Write `panel.html` using the layout elements documented by the SDK, and `panel.json` with `{manifest, content?}`. The manifest declares members and typed state. Optional `content.messages` supplies translations. Use `recipes.md` for task guidance. Compose new panels without a module so the platform renders the official components directly.
-3. Run `panel check <workspace directory>`. When a panel references projections still in the proposed registration material, pass that file with `--material`.
+3. Run `panel check <workspace directory>`. The command reads `registration.json` in that directory and looks up other references on the platform. Use `--material` to select a different registration file.
 4. Submit the selected projections, panels and application uses with `panel register`, then open the application's declared entry. Use an application ID and route you control.
 
 When converting a platform page that needs a new owner read, operation or official component, use the [platform development examples](references/platform-development.md).
