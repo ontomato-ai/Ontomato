@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import ElementPlus from "element-plus";
-import { createApp, h, ref, type App } from "vue";
+import { createApp, defineComponent, h, ref, type App } from "vue";
 import { createPinia } from "pinia";
-import { createMemoryHistory, createRouter } from "vue-router";
+import { createMemoryHistory, createRouter, RouterView, useRouter, type Router } from "vue-router";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { pilotPageKey, platformPageAccessKey } from "@ontomato/platform-shell";
@@ -14,6 +14,9 @@ import { BusinessWorkbench } from "@ontomato/workbench-ui/features/workbench";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import { installAppHost, installProductEmbedding } from "../../../../../packages/platform-web/src/app-host";
 import { pilotPageResolver } from "../../../../../packages/platform-web/src/pilot-pages";
+import { platformLayoutRoute } from "../../../../../packages/platform-web/src/layout-route";
+import { workbenchPages } from "../../../../../packages/platform-web/src/workbench-routes";
+import { providePlatformPageCounter } from "../../../../../packages/platform-web/src/page-counter";
 import { startPanelSkillEntryServer } from "../../../../../packages/workbench-server/src/__tests__/fixtures/panel-skill-entry-server";
 
 /*
@@ -91,6 +94,67 @@ async function openBeside(path: string) {
   return root;
 }
 
+/** The page at its registered address, in the platform's own route table, under a layout giving it the platform's counter. */
+async function openAt(path: string) {
+  const counter = defineComponent({
+    name: "PlatformCounter",
+    setup() {
+      providePlatformPageCounter(useRouter());
+      return () => h(RouterView);
+    },
+  });
+  const router: Router = createRouter({
+    history: createMemoryHistory(),
+    routes: [platformLayoutRoute(workbenchPages(BusinessWorkbench, { component: { render: () => null } }), counter)],
+  });
+  await router.push(path);
+  await router.isReady();
+  const app = createApp(RouterView).use(router).use(workbenchI18n()).use(ElementPlus).use(createPinia())
+    .provide(pilotPageKey, pilotPageResolver)
+    .provide(platformPageAccessKey, () => true);
+  const root = document.createElement("div");
+  document.body.append(root);
+  app.mount(root);
+  apps.push(app);
+  return { root, router };
+}
+
+/** The shown instance's read of its panel, and the context Node answered with it. */
+async function readOf(panelId: string) {
+  const read = await vi.waitFor(() => {
+    const found = seen.find((request) => request.url.pathname === `/api/product-panels/${panelId}`);
+    expect(found).toBeDefined();
+    return found!;
+  }, { timeout: 20000 });
+  return (read.answer as { pageSkillContext: PageSkillContext }).pageSkillContext;
+}
+
+/** The page's candidates, asked for one member. */
+async function candidatesFor(member: unknown) {
+  return vi.waitFor(() => {
+    const found = seen.find((request) => request.url.pathname === "/api/assistant/agents" && request.url.searchParams.has("member"));
+    expect(found).toBeDefined();
+    expect(JSON.parse(found!.url.searchParams.get("member")!)).toEqual(member);
+    return found!;
+  }, { timeout: 20000 });
+}
+
+/** The first run started since the page opened. */
+async function firstRun() {
+  return vi.waitFor(() => {
+    const found = seen.find((request) => request.method === "POST" && /\/runs$/.test(request.url.pathname));
+    expect(found).toBeDefined();
+    return found!;
+  }, { timeout: 30000 });
+}
+
+/** Writes in a composer and sends, as the reader's Enter does. */
+function write(box: HTMLTextAreaElement, text: string) {
+  box.value = text;
+  box.dispatchEvent(new Event("input"));
+  box.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+}
+
 /** The composer on screen, once the page's candidates let the reader write in it. */
 function composer(root: HTMLElement) {
   const box = [...root.querySelectorAll<HTMLTextAreaElement>("textarea")].find((candidate) => !candidate.disabled);
@@ -107,36 +171,55 @@ describe("a panel entrance beside the conversation", () => {
       const root = await openBeside(entry.path);
 
       // The shown instance's read answers its member; the candidates are asked for exactly that member.
-      const read = await vi.waitFor(() => {
-        const found = seen.find((request) => request.url.pathname === `/api/product-panels/${entry.panelId}`);
-        expect(found).toBeDefined();
-        return found!;
-      }, { timeout: 20000 });
-      const context = (read.answer as { pageSkillContext: PageSkillContext }).pageSkillContext;
+      const context = await readOf(entry.panelId);
       expect(context).toMatchObject({ mode: "member", locator: entry.entrance });
       const member = context.mode === "member" ? context.member : null;
       expect(member).toMatchObject({ source: { kind: "application-use", applicationId, useId: entry.useId }, memberPath: [] });
-      const candidates = await vi.waitFor(() => {
-        const found = seen.find((request) => request.url.pathname === "/api/assistant/agents" && request.url.searchParams.has("member"));
-        expect(found).toBeDefined();
-        return found!;
-      }, { timeout: 20000 });
-      expect(JSON.parse(candidates.url.searchParams.get("member")!)).toEqual(member);
+      const candidates = await candidatesFor(member);
       expect(candidates.answer).toMatchObject({ defaultAgentId: server.regularAgentId });
 
       // The reader writes on the page; the run carries the shown instance's context as it was answered.
-      const box = await vi.waitFor(() => composer(root), { timeout: 20000 });
-      box.value = "What can I do on this page?";
-      box.dispatchEvent(new Event("input"));
-      box.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
-      const run = await vi.waitFor(() => {
-        const found = seen.find((request) => request.method === "POST" && /\/runs$/.test(request.url.pathname));
-        expect(found).toBeDefined();
-        return found!;
-      }, { timeout: 30000 });
+      write(await vi.waitFor(() => composer(root), { timeout: 20000 }), "What can I do on this page?");
+      const run = await firstRun();
       expect((run.body as { pageSkillContext?: PageSkillContext }).pageSkillContext).toEqual(context);
 
       // That run installed the member's own skill: the fixture checks the prompt's current page and the sandbox copy.
+      const sessionId = run.url.pathname.split("/").at(-2)!;
+      const installed = await server.installedSkill(sessionId, member!.ref);
+      expect(installed.skill).toEqual(member!.ref);
+      expect(installed.digest).toMatch(/^[0-9a-f]{64}$/);
+    },
+    90000,
+  );
+});
+
+describe("a panel entrance at its own address", () => {
+  it.each(["app-business-knowledge-panel", "app-panels-trial-a"])(
+    "sends the first message from the page's foot through the platform's counter with the entrance's member (%s)",
+    async (applicationId) => {
+      const entry = server.entries.find((candidate) => candidate.applicationId === applicationId)!;
+      apps.splice(0).forEach((app) => app.unmount());
+      // A new tab: no conversation held with the agent, so the page's message starts one.
+      sessionStorage.clear();
+      seen.length = 0;
+      const { root, router } = await openAt(entry.path);
+
+      // The page at its own address reads its panel; Node answers the member, and the page's composer asks for it.
+      const context = await readOf(entry.panelId);
+      expect(context).toMatchObject({ mode: "member", locator: entry.entrance });
+      const member = context.mode === "member" ? context.member : null;
+      expect(member).toMatchObject({ source: { kind: "application-use", applicationId, useId: entry.useId }, memberPath: [] });
+      const candidates = await candidatesFor(member);
+      expect(candidates.answer).toMatchObject({ defaultAgentId: server.regularAgentId });
+
+      // The reader writes at the page's foot; the counter opens the conversation with this page beside it.
+      write(await vi.waitFor(() => composer(root.querySelector<HTMLElement>(".page-ask")!), { timeout: 20000 }), "What can I do on this page?");
+      await vi.waitFor(() => expect(router.currentRoute.value.path).toBe(platformRoutes.chat.path), { timeout: 20000 });
+      expect(router.currentRoute.value.query.page).toBe(entry.path);
+
+      // That first message runs with the entrance's own member, as Node answered it at the page's address.
+      const run = await firstRun();
+      expect((run.body as { pageSkillContext?: PageSkillContext }).pageSkillContext).toEqual(context);
       const sessionId = run.url.pathname.split("/").at(-2)!;
       const installed = await server.installedSkill(sessionId, member!.ref);
       expect(installed.skill).toEqual(member!.ref);

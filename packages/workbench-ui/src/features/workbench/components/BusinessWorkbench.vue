@@ -305,6 +305,24 @@ const bottomEntry = computed<ShellBottomEntry | null>(() =>
  */
 let consumedLink: string | null = null;
 let pendingLink: string | null = null;
+/**
+ * The conversation knows the page beside it: the page has said which skill a message written beside it reaches (a
+ * native page declares it; a panel reports it with its read, before it has loaded), and the agents offered on that page
+ * have been read. Until then the agent list is the one before the page, or empty while the page's own is read.
+ */
+const knowsPage = () =>
+  display.load.value.status !== "loading" && !nav.agentsLoading.value
+  && (display.pageSkill.value === null || nav.pageAgents.value !== null);
+function until(ready: () => boolean): Promise<void> {
+  if (ready()) return Promise.resolve();
+  return new Promise((resolve) => {
+    const stop = watch(ready, (now) => {
+      if (!now) return;
+      stop();
+      resolve();
+    });
+  });
+}
 const linkAddress = () =>
   JSON.stringify([requestedAgent(), queryText(route.query.sessionId), queryText(route.query.prompt), queryText(route.query.page)]);
 
@@ -329,6 +347,9 @@ async function openRequestedAgent() {
   // The link's own parameters go before anything is awaited; the page it was written on stays, carried by the address.
   const { agentId: _agent, sessionId: _session, prompt: _prompt, ...query } = route.query;
   await router.replace({ query: page ? { ...query, page } : query });
+  // The page the message was written on is beside the conversation from the start: the agent is one of those offered on
+  // it, and the message carries its skill, once the conversation knows it.
+  if (page) await until(knowsPage);
   if (!nav.agents.value.some((agent) => agent.id === id && agent.enabled)) {
     ElMessage.error(t("assistant.agentUnavailable"));
     return;
@@ -350,7 +371,13 @@ async function openRequestedAgent() {
   }
   // Choosing a conversation closes whatever page was open beside the old one; the page this message came from opens
   // beside the conversation it was written for.
-  if (page) await display.navigate(page, { view: "side", history: "replace" });
+  if (page) {
+    await display.navigate(page, { view: "side", history: "replace" });
+    // Opened again, it is another instance of the page: once drawn it says again which skill it reaches, and the message
+    // carries that.
+    await nextTick();
+    await until(knowsPage);
+  }
   if (prompt) {
     await nextTick();
     await shell.value!.send(prompt);

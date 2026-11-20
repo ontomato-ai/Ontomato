@@ -25,10 +25,7 @@ import { useApplicationCatalog } from "./catalog";
 import { nodeApiRequest } from "@ontomato/workbench-ui";
 import { appAt } from "./apps";
 import { pilotPageResolver as resolvePilotPages } from "./pilot-pages";
-import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
-import { pageCounterKey, type PageCounter } from "@ontomato/agent-shell-ui";
-import { createAssistantClient } from "@ontomato/workbench-ui/features/workbench/assistant-host";
-import { readRememberedAgent } from "@ontomato/workbench-ui";
+import { providePlatformPageCounter } from "./page-counter";
 import { recentDestination } from "./recent-work";
 import { openApplicationKey, platformApplicationsKey, platformBrandKey, type PlatformAppDeclaration } from "./apps";
 import { useApplicationOpening } from "./application-opening";
@@ -162,26 +159,8 @@ const pageActions = providePageActions();
 provide(pilotPageKey, resolvePilotPages);
 
 
-/*
- * The one counter a page at its own address sends to (DESIGN.md "Applications and shells"): its agents, the agent this
- * tab last used, and the address that opens the conversation with the page beside it. The pages themselves only show
- * the platform's composer and hand over the message.
- */
-/** Read when a page shows its composer, once per page load: the platform's own pages do not read agents at startup. */
-let counterAgents: Promise<readonly AgentHostAgent[]> | null = null;
-provide(pageCounterKey, {
-  agents: () =>
-    (counterAgents ??= createAssistantClient()
-      .listAgents()
-      .then((list) => list.filter((agent) => agent.enabled))),
-  // The page's own skill, read from the same directory the conversation's composer reads beside it: a page's refusal
-  // (no mapping for this reader, or a registered default that is gone) goes back to the page as what it is.
-  pageAgents: (page) => createAssistantClient().listPageAgents(page),
-  preferredAgentId: ref(readRememberedAgent()),
-  ask(agentId, text, page) {
-    void router.push({ path: platformRoutes.chat.path, query: { agentId, prompt: text, page } });
-  },
-} satisfies PageCounter);
+/** The one counter a page at its own address sends its message to. */
+providePlatformPageCounter(router);
 
 /**
  * Leaving a draft with unsaved changes asks first: before the address leaves every page that edits it, and before the

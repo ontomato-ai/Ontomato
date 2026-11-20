@@ -42,6 +42,18 @@ export function useAgentNav(options: AgentNavOptions) {
   const sessionsState = ref<"loading" | "ready" | "error">("loading");
   const nextCursor = ref<string | null>(null);
   let agentsLoad = 0;
+  /**
+   * Whether the agents are being read: all of them, or a page's candidates, which empty the list until they arrive. What
+   * `agents` lists, and the agent chosen from it, are settled only once this is down.
+   */
+  const agentsLoading = ref(false);
+  /** The latest read of the agents failed: there is nothing more to wait for. */
+  function readFailed(load: number) {
+    return (error: unknown): never => {
+      if (load === agentsLoad) agentsLoading.value = false;
+      throw error;
+    };
+  }
   let sessionsLoad = 0;
   /**
    * False until the first agent read has settled. The read may replace a remembered agent that no longer exists, and
@@ -60,7 +72,8 @@ export function useAgentNav(options: AgentNavOptions) {
   async function loadAgents() {
     if (page.value) return loadPageAgents();
     const load = ++agentsLoad;
-    const list = await options.client().listAgents();
+    agentsLoading.value = true;
+    const list = await options.client().listAgents().catch(readFailed(load));
     if (load !== agentsLoad) return;
     agents.value = list;
     pageAgents.value = null;
@@ -71,6 +84,7 @@ export function useAgentNav(options: AgentNavOptions) {
     // Let the selection watcher run once with the flag still down, then treat later changes as the reader's.
     await nextTick();
     initialAgentLoaded = true;
+    if (load === agentsLoad) agentsLoading.value = false;
   }
 
   /**
@@ -86,7 +100,8 @@ export function useAgentNav(options: AgentNavOptions) {
     retainedAgent.value = active;
     pageAgents.value = null;
     agents.value = [];
-    const result = await options.client().listPageAgents(target);
+    agentsLoading.value = true;
+    const result = await options.client().listPageAgents(target).catch(readFailed(load));
     if (load !== agentsLoad) return;
     pageAgents.value = result;
     agents.value = result.agents;
@@ -103,6 +118,7 @@ export function useAgentNav(options: AgentNavOptions) {
     await nextTick();
     adoptingAgent = false;
     initialAgentLoaded = true;
+    if (load === agentsLoad) agentsLoading.value = false;
   }
 
   /** A page with its own skill opens or closes: the composer chooses among that page's agents, or among all of them. */
@@ -202,6 +218,7 @@ export function useAgentNav(options: AgentNavOptions) {
 
   return {
     agents,
+    agentsLoading: computed(() => agentsLoading.value),
     pageAgents,
     sessions,
     sessionsState,

@@ -50,6 +50,9 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => {
       const sessions = ref<{ id: string }[]>([]);
       return {
         agents: { value: agents },
+        // The agents were read and the pages here declare no skill of their own.
+        agentsLoading: { value: false },
+        pageAgents: { value: null },
         sessions,
         loadAgents: async () => {},
         // The column reads the agent's conversations: the one this tab holds is among them.
