@@ -1,5 +1,5 @@
 import type {AssistantRetrievalOperation,AssistantRetrievalCallerInput} from "@ontomato/contracts/assistant-retrieval";
-import { agentQualityProjectionSchema } from "@ontomato/contracts/agent-task-results";
+import { replyQualitySchema } from "@ontomato/contracts/agent-task-results";
 import { z } from "zod";
 import { agentHostRunSnapshotSchema } from "@ontomato/contracts/agent-host";
 import { storedDataset, retrievalEvidenceSchema, retrievalCallerSchema, retrievalCallerAdmissionSchema, retrievalCallerUserQuotesSchema } from "@ontomato/contracts/data-retrieval";
@@ -35,7 +35,6 @@ export class OntologyRetrievalClient {
   async executeOperation(operation:AssistantRetrievalOperation) {
     if(operation.operation==="begin")return this.request("/ontology/retrievals/skill-runs","POST",operation.input,this.operationCredentials,operation.key);
     const path=`/ontology/retrievals/${operation.retrievalId}`;
-    if(operation.operation==="cancel")return this.request(`${path}/retriever/cancel`,"POST",{expectedRoundId:operation.retrievalRunId},this.operationCredentials);
     if(operation.operation==="close")return this.request(`${path}/skill-runs/${operation.retrievalRunId}/close`,"POST",{},this.operationCredentials);
     const output=`${path}/runs/${operation.retrievalRunId}/outputs`;
     const headers={...this.headers(this.operationCredentials,operation.key),"X-Ontomato-Run-Id":operation.retrievalRunId};
@@ -67,8 +66,13 @@ export class OntologyRetrievalClient {
   async closeScope(credentials?: AssistantCredentials) {
     await this.request(`/ontology/retrieval-callers/${this.scopeId}/close-scope`, "POST", {}, credentials);
   }
-  async quality(retrievalId:string,runId:string) {
-    return z.object({quality:z.array(agentQualityProjectionSchema)}).strict().parse(await this.request(`/ontology/retrievals/${retrievalId}/runs/${runId}/quality`)).quality;
+  /** The checks this scope's reply scheduled; the scope is the reply's own caller. */
+  async replyQuality() {
+    return replyQualitySchema.parse(await this.request(`/ontology/retrieval-callers/${this.scopeId}/quality`));
+  }
+  /** Reports that a finished reply cited these outputs of a round this scope admitted. */
+  async adoptQuality(retrievalId: string, runId: string, replyRunId: string, outputIds: string[]) {
+    await this.request(`/ontology/retrievals/${retrievalId}/runs/${runId}/quality`, "POST", { replyRunId, outputIds });
   }
   async evidence(retrievalId: string, runId: string) {
     return retrievalEvidenceSchema.parse(await this.request(`/ontology/retrievals/${retrievalId}/runs/${runId}/evidence`));
@@ -96,8 +100,12 @@ export class OntologyRetrievalClient {
     }
   }
   async dataset(retrievalId: string, artifactId: string) {
-    const value = z.object({ id: z.string().uuid(), payload: z.unknown(), source: z.literal("binding").optional(), sha256: z.string().optional() }).parse(await this.request(`/ontology/retrievals/${retrievalId}/datasets/${artifactId}`));
+    const value = z.object({ id: z.string().uuid(), payload: z.unknown() }).strict().parse(await this.request(`/ontology/retrievals/${retrievalId}/datasets/${artifactId}`));
     return { ...value, payload: storedDataset(value.payload) };
+  }
+  /** A metric run's delivered output, the original stored dataset. */
+  async output(retrievalId: string, runId: string, outputId: string) {
+    return storedDataset(await this.request(`/ontology/retrievals/${retrievalId}/runs/${runId}/outputs/${outputId}/content`));
   }
   async artifact(sessionId: string, artifactId: string) {
     return runtimeArtifactSchema.parse(await this.request(`/ontology/ai/sessions/${sessionId}/artifacts/${artifactId}`));

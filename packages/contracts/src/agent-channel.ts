@@ -1,4 +1,4 @@
-import { retrievalExtensionSchema,agentQualityProjectionSchema,agentFileSchema } from "./agent-task-results";
+import { retrievalExtensionSchema,agentFileSchema } from "./agent-task-results";
 import { z } from "zod";
 import { runtimeIdSchema as id, runtimeKeySchema as key, runtimeJsonObjectSchema, runtimeTimestampSchema } from "./agent-runtime-values";
 import { presentationBindingSchema } from "./agent-presentation";
@@ -81,7 +81,7 @@ export const agentDeliverySchema = z.object({
     z.object({ mode: z.literal("none") }).strict(),
   ]),
   results: z.array(z.object({ kind: key, href: key, title: z.string() }).strict()),
-  retrieval: retrievalExtensionSchema.optional(),quality: z.array(agentQualityProjectionSchema),files: z.array(agentFileSchema),
+  retrieval: retrievalExtensionSchema.optional(),files: z.array(agentFileSchema),
 }).strict();
 export const agentChannelCommandSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("list"), query: z.string().optional() }).strict(),

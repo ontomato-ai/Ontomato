@@ -38,6 +38,7 @@ class OntologyRetrievalContractTest {
   RetrievalResults results;
   QueryJobService jobs;
   QueryQualityService quality;
+  AgentChannelChanges changes;
   QueryGrantService grants;
   OntologyQueryService ontology;
   QueryOutputService outputs;
@@ -184,9 +185,8 @@ class OntologyRetrievalContractTest {
     when(ontology.knowledge(any(), any())).thenReturn(Map.of("items", List.of()));
     jobs = mock(QueryJobService.class);
     quality = mock(QueryQualityService.class);
+    changes = mock(AgentChannelChanges.class);
     var definitions = new OntologyAgentDefinitions(runtime, new RuntimeCodeClient(runtime), org.mockito.Mockito.mock(OntologyAgentModelSettings.class));
-    var bindings = mock(OntologyBindingRetrieval.class);
-    when(bindings.snapshot(any(),any(),any())).thenReturn(JSONObject.of("status","completed","error",null,"datasets",new JSONArray()));
     results = new RetrievalResults(store,mock(AgentChannelChanges.class));
     outputs = mock(QueryOutputService.class);
     tasks = new RetrievalTasks(store, jobs, results);
@@ -200,7 +200,7 @@ class OntologyRetrievalContractTest {
             outputs,
             jobs,
             quality,
-            authorization, bindings, results, tasks,mock(AgentChannelRuns.class),mock(AgentChannelChanges.class));
+            authorization, results, mock(AgentChannelRuns.class), changes);
     var host =
         new OntologyAgentHost(
             store,
@@ -606,9 +606,9 @@ class OntologyRetrievalContractTest {
       Thread.sleep(10);
     }
     var task = tasks.read(retrievalId,run,owner);
-    assertEquals("cancelled", task.getJSONObject("retrieval").getJSONArray("branches").getJSONObject(0).getString("status"));
     assertEquals("cancelled", task.getString("status"));
-    assertEquals("cancelled",task.getJSONObject("retrieval").getJSONArray("branches").getJSONObject(0).getString("status"));
+    assertTrue(task.getBooleanValue("settled"));
+    assertTrue(task.getJSONObject("retrieval").getJSONArray("datasets").isEmpty());
   }
 
   @Test
@@ -1020,22 +1020,48 @@ class OntologyRetrievalContractTest {
     assertThrows(AgentHttpException.class, () -> retrieval.dataset(retrievalId, changed, owner));
     runs.get(run).getJSONObject("run").put("status", "stopped");
     runs.get(run).getJSONObject("run").put("stopReason", "stop");
-    when(quality.start(any(), any(), any()))
-        .thenThrow(new IllegalStateException("Lost admission response"))
-        .thenReturn(Map.of());
-    assertThrows(IllegalStateException.class, () -> retrieval.reconcile(retrievalId, run, owner, runs.get(run)));
-    String qcId = store.run(retrievalId, run, owner).getString("qc_id");
-    assertNotNull(qcId);
-    retrieval.recover();
-    verify(quality, timeout(5000).times(2))
-        .start(argThat(body -> qcId.equals(body.getString("id"))), any(), any());
-    for (int attempt = 0;
-        attempt < 100 && !store.run(retrievalId, run, owner).getBooleanValue("qc_admitted");
-        attempt++) Thread.sleep(10);
-    assertTrue(store.run(retrievalId, run, owner).getBooleanValue("qc_admitted"));
+    // Delivery alone schedules nothing: only the reply that cites an output asks for its check.
+    retrieval.reconcile(retrievalId, run, owner, runs.get(run));
+    verify(quality, never()).start(any(), any(), any(), anyBoolean());
+    assertNull(store.run(retrievalId, run, owner).getString("qc_id"));
     assertThrows(
         AgentHttpException.class,
         () -> store.transaction(() -> store.gate(retrievalId, run, owner)));
+
+    var result = AgentJson.copy(dataset);
+    result.remove("execution");
+    result.put("receiptId", output);
+    result.put("executedAt", dataset.getJSONObject("execution").getString("executedAt"));
+    when(jobs.get(eq(output), any(), eq("output"))).thenReturn(JSONObject.of("status", "completed", "result", result));
+    String reply = id(), later = id();
+    for (String caller : List.of(reply, later))
+      store.update("INSERT INTO ontology_retrieval_callers VALUES(?,?,?,'x','{}'::jsonb,false,now()+interval '1 hour')",
+          OntologyAgentStore.uuid(caller), owner.userId(), owner.domainId());
+    retrieval.adoptQuality(retrievalId, run, reply, List.of(output), owner);
+    var row = store.run(retrievalId, run, owner);
+    String qcId = row.getString("qc_id");
+    assertTrue(row.getBooleanValue("qc_admitted"));
+    assertEquals(JSONObject.of("replyRunId", reply, "outputIds", List.of(output)), row.getJSONObject("quality_adoption"));
+    verify(quality).start(argThat(body -> qcId.equals(body.getString("id")) && reply.equals(body.getString("sourceRunId"))
+        && body.getJSONArray("programs").size() == 1 && "Sales?".equals(body.getString("question"))), any(), any(), eq(true));
+    verify(changes).reply(owner.domainId(), reply);
+    // A later reply citing the same round keeps the first check and its card.
+    retrieval.adoptQuality(retrievalId, run, later, List.of(output), owner);
+    verify(quality, times(1)).start(any(), any(), any(), anyBoolean());
+    assertEquals(qcId, store.run(retrievalId, run, owner).getString("qc_id"));
+
+    when(jobs.get(eq(qcId), any(), eq("quality"))).thenReturn(JSONObject.of("id", qcId, "status", "running", "startedAt", "2026-11-20T00:00:00Z"));
+    var projection = tasks.reply(reply, owner);
+    assertFalse(projection.getBooleanValue("settled"));
+    var task = projection.getJSONArray("quality").getJSONObject(0);
+    assertEquals(run, task.getString("parentTaskId"));
+    assertEquals(JSONArray.of(JSONObject.of("id", output, "title", null)), task.getJSONObject("checks").getJSONArray("datasets"));
+    assertTrue(tasks.reply(later, owner).getJSONArray("quality").isEmpty());
+    // The reply belongs to the same owner: another user's caller is not a reply this round may report to.
+    String foreign = id();
+    store.update("INSERT INTO ontology_retrieval_callers VALUES(?,?,?,'x','{}'::jsonb,false,now()+interval '1 hour')",
+        OntologyAgentStore.uuid(foreign), "user-b", owner.domainId());
+    assertThrows(AgentHttpException.class, () -> retrieval.adoptQuality(retrievalId, run, foreign, List.of(output), owner));
   }
 
   @AfterEach

@@ -134,9 +134,13 @@ async function metricCommand(_cfg, argv) {
     receiptId: dataset.execution.receiptId }));
 }
 
+// Data questions go to the retriever through the native agent tool; this entry only reads definitions and reuses metrics.
+const metadata = ["dataset-desc", "classes", "schema", "relationships", "knowledge"];
 const [command] = process.argv.slice(2);
-const run = command === "recall-metrics" || command === "run-metric" ? metricCommand : analystCommand;
-run(cfg, process.argv.slice(2), headers).catch((error) => {
+const run = command === "recall-metrics" || command === "run-metric" ? metricCommand
+  : metadata.includes(command) ? analystCommand
+  : () => { throw new Error(`Commands: ${metadata.join(", ")}, recall-metrics, run-metric`); };
+Promise.resolve().then(() => run(cfg, process.argv.slice(2), headers)).catch((error) => {
   console.error(error.message);
   process.exitCode = 1;
 });

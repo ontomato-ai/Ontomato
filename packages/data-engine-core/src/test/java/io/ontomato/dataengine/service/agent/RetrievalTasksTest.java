@@ -6,7 +6,7 @@ import com.alibaba.fastjson2.*;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/** A task's status is interpreted once, from the round's branch facts and the quality job's own state. */
+/** A task's status is interpreted once, from the round's delivery and the quality job's own state. */
 class RetrievalTasksTest {
   private static JSONObject round() {
     var row = JSONObject.of("id", "11111111-1111-4111-8111-111111111111", "session_id", "22222222-2222-4222-8222-222222222222",
@@ -16,13 +16,13 @@ class RetrievalTasksTest {
     return row;
   }
 
-  private static JSONObject delivery(String source, JSONObject run, int datasets) {
+  private static JSONObject delivery(JSONObject run, int datasets) {
     var items = new JSONArray();
     for (int i = 0; i < datasets; i++)
       items.add(JSONObject.of("id", "d" + i, "title", "Sales", "rowCount", 3, "sha256", "x"));
     var data = JSONObject.of("answer", "", "datasets", items);
     data.put("run", run);
-    return JSONObject.of("source", source, "data", data);
+    return JSONObject.of("data", data);
   }
 
   private static JSONObject stopped(String reason) {
@@ -32,41 +32,39 @@ class RetrievalTasksTest {
   }
 
   @Test
-  void aRoundRunsUntilEveryBranchEndsAndKeepsEachBranchsOutcome() {
+  void aRoundRunsUntilTheRetrieverDeliversAndEndsAsItsRunStopped() {
     var row = round();
-    var retriever = List.of(delivery("retriever", stopped("aborted"), 0), delivery("binding", null, 1));
-    var running = new JSONArray(List.of(
-        RetrievalTasks.bindingBranch(JSONObject.of("status", "running"), retriever),
-        RetrievalTasks.retrieverBranch(row, retriever)));
-    assertEquals("running", RetrievalTasks.roundStatus(running).getString("status"));
-
-    var ended = new JSONArray(List.of(
-        RetrievalTasks.bindingBranch(JSONObject.of("status", "completed"), retriever),
-        RetrievalTasks.retrieverBranch(row, retriever)));
-    var task = RetrievalTasks.roundStatus(ended);
-    assertEquals("completed", task.getString("status"));
-    assertEquals("cancelled", ended.getJSONObject(1).getString("status"));
-    assertNull(task.get("error"));
+    assertEquals("running", RetrievalTasks.round(row, List.of()).getString("status"));
+    var completed = RetrievalTasks.round(row, List.of(delivery(stopped("stop"), 1)));
+    assertEquals("completed", completed.getString("status"));
+    assertNull(completed.get("error"));
+    assertEquals("cancelled", RetrievalTasks.round(row, List.of(delivery(stopped("aborted"), 0))).getString("status"));
   }
 
   @Test
-  void aRoundWithoutAnyDeliveryFailsWithItsBranchsReason() {
+  void aRoundThatFailedCarriesItsReason() {
     var row = round();
-    var deliveries = List.of(delivery("retriever", stopped("length"), 0));
-    var task = RetrievalTasks.roundStatus(new JSONArray(List.of(RetrievalTasks.retrieverBranch(row, deliveries))));
+    var task = RetrievalTasks.round(row, List.of(delivery(stopped("length"), 0)));
     assertEquals("failed", task.getString("status"));
     assertEquals("LENGTH_LIMIT", task.getJSONObject("error").getString("code"));
+    row.put("admission_error", "No authorized classes");
+    var admission = JSONObject.of("answer", "", "datasets", new JSONArray(), "error", "No authorized classes");
+    admission.put("run", null);
+    assertEquals("ADMISSION_FAILED", RetrievalTasks.round(row, List.of(JSONObject.of("data", admission)))
+        .getJSONObject("error").getString("code"));
   }
 
   @Test
   void aFailedCheckHasItsReasonAndNoScoreAndAnOldJobHasNoStartTime() {
     var interrupted = JSONObject.of("id", "q", "status", "interrupted",
         "error", JSONObject.of("code", "JOB_INTERRUPTED", "message", "Ontology service restarted"));
-    var task = RetrievalTasks.qualityTask(interrupted, "round", "binding", List.of("d0"));
+    var task = RetrievalTasks.qualityTask(interrupted, "round", new JSONArray(List.of(JSONObject.of("id", "d0", "title", "Sales"))));
     assertEquals("failed", task.getString("status"));
     assertEquals("JOB_INTERRUPTED", task.getJSONObject("error").getString("code"));
     assertNull(task.get("createdAt"));
     assertTrue(task.containsKey("createdAt"));
+    assertEquals("round", task.getString("parentTaskId"));
+    assertEquals("d0", task.getJSONObject("checks").getJSONArray("datasets").getJSONObject(0).getString("id"));
     assertNull(RetrievalTasks.qualityResult(interrupted));
 
     var completed = JSONObject.of("id", "q", "status", "completed", "startedAt", "2026-11-12T02:00:01Z",
@@ -78,6 +76,10 @@ class RetrievalTasksTest {
     completed.getJSONObject("result").remove("summary");
     assertTrue(RetrievalTasks.qualityResult(completed).containsKey("summary"));
     assertNull(RetrievalTasks.qualityResult(completed).get("summary"));
-    assertEquals("2026-11-12T02:00:01Z", RetrievalTasks.qualityTask(completed, "round", "retriever", List.of()).getString("createdAt"));
+    assertEquals("2026-11-12T02:00:01Z", RetrievalTasks.qualityTask(completed, null, new JSONArray()).getString("createdAt"));
+    // A metric the assistant ran itself has no retriever task to hang under.
+    var metric = RetrievalTasks.qualityTask(completed, null, new JSONArray());
+    assertTrue(metric.containsKey("parentTaskId"));
+    assertNull(metric.get("parentTaskId"));
   }
 }

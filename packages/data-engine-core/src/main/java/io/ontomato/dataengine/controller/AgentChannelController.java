@@ -261,7 +261,7 @@ public class AgentChannelController {
       String summary=java.text.MessageFormat.format(language.get(run.getString("language"),"AgentChannel.retrieval."+projection.getString("status")),files.size(),rows);
       boolean admitted=run.getBooleanValue("runtime_admitted");
       Object process=admitted?JSONObject.of("mode","inline","runtimeSessionId",execution.session(),"runtimeRunId",execution.run()):JSONObject.of("mode","none");
-      return JSONObject.of("settled",projection.getBooleanValue("settled"),"status",projection.getString("status"),"summary",summary,"process",process,"results",List.of(),"retrieval",projection.get("retrieval"),"quality",projection.get("quality"),"files",files);
+      return JSONObject.of("settled",projection.getBooleanValue("settled"),"status",projection.getString("status"),"summary",summary,"process",process,"results",List.of(),"retrieval",projection.get("retrieval"),"files",files);
     }
     var status=runtime.status(owner.domainId(),execution.run());
     String state="running".equals(status.getString("status"))?"running":"aborted".equals(status.getString("stopReason"))?"cancelled":"stop".equals(status.getString("stopReason"))?"completed":"failed";
@@ -277,6 +277,6 @@ public class AgentChannelController {
       var file=JSONObject.from(item);String path=file.getString("path");
       if(execution.run().equals(file.getString("runId")) && path.startsWith("outputs/")) files.add(JSONObject.of("id",file.getString("id"),"name",path.substring(path.lastIndexOf('/')+1),"mediaType",file.getString("mediaType"),"href","/platform/agent-channel/tasks/"+execution.run()+"/files/"+file.getString("id")));
     }
-    return JSONObject.of("settled",!"running".equals(state),"status",state,"summary",summary,"process",process,"results",results,"quality",List.of(),"files",files);
+    return JSONObject.of("settled",!"running".equals(state),"status",state,"summary",summary,"process",process,"results",results,"files",files);
   }
 }

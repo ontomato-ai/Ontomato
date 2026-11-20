@@ -129,41 +129,24 @@ export const retrievalInputSchema = z
     interaction: z.enum(["resumable", "non_interactive"]).default("resumable"),
   })
   .strict();
-export const bindingRetrievalSchema = z.object({
-  status: z.enum(["running", "completed", "cancelled", "interrupted"]),
-  error: z.string().nullable(),
-  datasets: z.array(z.object({ id, sha256: z.string(), title: z.string() })),
-});
-/** A branch's quality check named by its task; its status and conclusion are read from the session's tasks. */
-export const qualityTaskReferenceSchema = z.object({ taskId: id, source: z.enum(["binding", "retriever"]) }).strict();
 const retrievalRunStateSchema = z.object({
   status: z.enum(["running", "stopped"]), stopReason: runtimeStopReasonSchema.nullable(), errorMessage: z.string().nullable(),
 });
 export const retrievalDeliverySchema = z.object({
-  cursor: z.number().int().positive(), runId: id, source: z.enum(["binding", "retriever"]),
+  cursor: z.number().int().positive(), runId: id,
   data: z.object({
     answer: z.string(), run: retrievalRunStateSchema.nullable(), error: z.string().optional(),
     runtimeSessionId: id.optional(), runtimeRunId: id.optional(),
     datasets: z.array(z.object({ id, sha256: z.string(), title: z.string(), rowCount: z.number().int().nonnegative(),
-      truncation: truncationSchema.nullable(), binding: runtimeJsonObjectSchema.optional() })),
+      truncation: truncationSchema.nullable() })),
   }),
 });
-export const retrievalPollSchema = z.object({
-  bindings: bindingRetrievalSchema,
-  qualityTasks: z.array(qualityTaskReferenceSchema),
-  id, roundId: id, cursor: z.number().int().nonnegative(), decisionRevision: z.number().int(),
-  runtimeSessionId: id.nullable(), runtimeRunId: id.nullable(), run: retrievalRunStateSchema.nullable(),
-  pending: z.object({ retriever: z.boolean(), bindings: z.boolean() }), deliveries: z.array(retrievalDeliverySchema),
-});
-export type RetrievalPoll = z.infer<typeof retrievalPollSchema>;
-
 export const retrievalSnapshotSchema = z.object({
-  bindings: bindingRetrievalSchema.optional(),
   retrieverPending: z.boolean().optional(),
-  bindingPending: z.boolean().optional(),
   admissionError: z.string().nullable().optional(),
   createdAt: z.string().optional(),
-  qualityTasks: z.array(qualityTaskReferenceSchema),
+  /** Delivered formal outputs; a metric run's only datasets, since it has no runtime files. */
+  outputIds: z.array(id),
   id,
   revision: z.number().int(),
   runtimeSessionId: id.nullable(),

@@ -39,11 +39,14 @@ import {
 } from "../../infrastructure/postgres";
 import { assistantStore, type AssistantOwner, type SessionRow, type TurnRow } from "./store";
 import {
+  answerText,
   messageText,
   type AssistantCredentials,
 } from "../../platform/agent-runtime/runtime";
 import { OntologyRetrievalClient } from "./ontology-retrieval";
 import { agentTasksSnapshotSchema, type AgentTasksSnapshot } from "@ontomato/contracts/agent-tasks";
+import { artifactPath } from "@ontomato/contracts/agent-artifact-markdown";
+import { parseProductMarkdown, type ImageNode, type LinkNode, type ParsedNode } from "@ontomato/markdown";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
 import { createLogger } from "../../logging/logger";
@@ -198,13 +201,18 @@ export const assistantService = {
     return new RuntimeClient(owner.domainId, undefined, owner.userId).run(id);
   },
   /**
-   * The conversation's delegated work: each admitted turn's caller scope names the rounds and quality checks the
-   * ontology service ran for that reply, so the turn's run is their root. Settled while nothing will change before the
-   * conversation's next run: the latest turn has been settled and the ontology service owes nothing.
+   * The conversation's work in one projection, shared by the read and the stream: the runtime's delegated executions
+   * under the reply that delegated them, and the ontology service's checks under the reply that cited the checked
+   * outputs. A check and its retriever task share one job ID, so the reply's snapshot and the task's details agree.
    */
   async tasks(sessionId:string,owner:AssistantOwner,supplied?:AgentTasksSnapshot) {
     await assistantStore.session(sessionId,owner);
-    return {snapshot:supplied ?? await this.channelTasks(sessionId,owner),settled:false};
+    const snapshot=supplied ?? await this.channelTasks(sessionId,owner);
+    const replies=(await assistantStore.turns(sessionId)).filter(turn=>turn.retrieval_scope_id);
+    const checks=await Promise.all(replies.map(async turn=>({turn,...await new OntologyRetrievalClient(owner,turn.retrieval_scope_id!).replyQuality()})));
+    return {snapshot:{...snapshot,
+      tasks:[...snapshot.tasks,...checks.flatMap(({turn,quality})=>quality.map(task=>({...task,root:{sessionId,runId:turn.id}})))],
+      qualityResults:[...snapshot.qualityResults,...checks.flatMap(({qualityResults})=>qualityResults)]},settled:false};
   },
   async channelTasks(sessionId: string, owner: AssistantOwner) {
     return agentTasksSnapshotSchema.parse(await new RuntimeClient(owner.domainId, undefined, owner.userId).request(`/v1/channel/sessions/${sessionId}/tasks`));
@@ -215,11 +223,58 @@ export const assistantService = {
     if(task?.kind!=="agent" || task.process.mode!=="inline") throw new HttpError(404,"Task process not found","NOT_FOUND");
     return {client:new ChannelProcessClient(owner,sessionId,taskId),process:task.process};
   },
-  /** Parent completion records its own turn only; delegated executions retain their authorization. */
+  /**
+   * Parent completion records its own turn only; delegated executions retain their authorization. A reply that ended
+   * normally asks for checks of the datasets its answer cited, before the runtime reads whether the reply settled. A
+   * check that could not be admitted stays a quality failure; it never turns the finished reply into a failed one.
+   */
   async settleTurn(id: string, owner: AssistantOwner, sessionId: string) {
     await closeAuthoringRun(id, sessionId, owner, "terminal");
     await closeGovernanceWindow(id,owner);
+    await this.adoptCited(id, owner, sessionId).catch((error: unknown) => logger.error("Answer quality admission failed", {
+      runId: id, error: error instanceof Error ? error.message : String(error) }));
     await assistantStore.settled(id);
+  },
+  /**
+   * The datasets a normally finished answer cites: links and images of its own text that name a stored `.dataset.json`,
+   * resolved as the shell resolves them. Code, tool output, drafts and files only downloaded are not cited. Each cited
+   * file must be a formal output; the outputs of one round go to one check.
+   */
+  async adoptCited(id: string, owner: AssistantOwner, sessionId: string) {
+    const turn = await assistantStore.turn(id, owner);
+    if (!turn.retrieval_scope_id) return;
+    const run = await new RuntimeClient(owner.domainId, undefined, owner.userId).run(id);
+    if (run.run.stopReason !== "stop" || !run.run.answerMessageId) return;
+    const paths = new Set<string>();
+    const visit = (nodes: readonly ParsedNode[]) => { for (const node of nodes) {
+      const target = node.type === "link" ? (node as LinkNode).href : node.type === "image" ? (node as ImageNode).src : undefined;
+      const path = target === undefined ? null : artifactPath(target);
+      if (path?.endsWith(".dataset.json")) paths.add(path);
+      if ("children" in node && Array.isArray(node.children)) visit(node.children as ParsedNode[]);
+    } };
+    visit(parseProductMarkdown(answerText(run)));
+    const rounds = new Map<string, { scopeId: string; retrievalId: string; runId: string; outputIds: Set<string> }>();
+    for (const path of paths) {
+      const { artifact } = await this.resolve(sessionId, id, path, owner);
+      const source = artifact ? await this.formalOutput(sessionId, artifact.id, owner) : null;
+      if (!source) continue;
+      const key = `${source.retrievalId}/${source.runId}`;
+      const round = rounds.get(key) ?? { ...source, outputIds: new Set<string>() };
+      round.outputIds.add(source.outputId);
+      rounds.set(key, round);
+    }
+    for (const round of rounds.values())
+      await new OntologyRetrievalClient(owner, round.scopeId).adoptQuality(round.retrievalId, round.runId, id, [...round.outputIds]);
+  },
+  /** The ontology service reports that a reply's checks changed; the reply's run is signalled on this host. */
+  async qualityChanged(id: string, domainId: string) {
+    const turn = await assistantStore.domainTurn(id, domainId);
+    await new RuntimeClient(domainId, undefined, turn.userId).request(`/v1/channel/runs/${id}/changed`, "POST", { kind: "quality" });
+  },
+  /** Whether this reply's checks and their candidate jobs have ended; until then it holds its credential chain. */
+  async qualitySettled(id: string, owner: AssistantOwner) {
+    const turn = await assistantStore.turn(id, owner);
+    return !turn.retrieval_scope_id || (await new OntologyRetrievalClient(owner, turn.retrieval_scope_id).replyQuality()).settled;
   },
   async cancelScope(id: string,owner: AssistantOwner,credentials: AssistantCredentials) {
     const turn=await assistantStore.turn(id,owner);
@@ -521,28 +576,36 @@ export const assistantService = {
       throw new HttpError(409, "This draft already created another object", "PAGE_DRAFT_CREATED_CONFLICT");
   },
   /**
-   * Which formal output a workspace file is. A metric delivery leaves no child run, so the file's receipt and bytes
-   * decide it; the ontology owns that match, never a path or a file name. A retriever file keeps its accepted
-   * artifact as the source of the same round.
+   * Which formal output a workspace file is, with the caller scope of the reply that admitted its round. The file's
+   * receipt and bytes decide it; the ontology owns that match, never a path or a file name.
    */
-  async datasetSource(sessionId: string, id: string, owner: AssistantOwner) {
-    const a = await this.artifact(sessionId, id, owner);
+  async formalOutput(sessionId: string, id: string, owner: AssistantOwner) {
     const bytes = (await this.content(sessionId, id, owner)).toString();
-    const file = JSON.parse(bytes) as { execution?: { receiptId?: string } };
-    const receiptId = file.execution?.receiptId;
+    const receiptId = (JSON.parse(bytes) as { execution?: { receiptId?: string } }).execution?.receiptId;
+    if (!receiptId) return null;
     for (const turn of await assistantStore.turns(sessionId)) {
       if (!turn.retrieval_scope_id) continue;
       const ontology = new OntologyRetrievalClient(owner, turn.retrieval_scope_id);
       for (const link of await ontology.links()) {
-        const formal = receiptId
-          ? await ontology.datasetSource(link.retrievalId, receiptId, bytes) : null;
-        if (formal) return { retrievalId: link.retrievalId, sourceOutputId: formal.outputId };
+        const formal = await ontology.datasetSource(link.retrievalId, receiptId, bytes);
+        if (formal) return { scopeId: turn.retrieval_scope_id, retrievalId: link.retrievalId, ...formal };
+      }
+    }
+    return null;
+  },
+  /**
+   * Which formal output a workspace file is. A metric delivery leaves no child run, so its formal output is the
+   * source; a retriever file keeps its accepted artifact as the source of the same round.
+   */
+  async datasetSource(sessionId: string, id: string, owner: AssistantOwner) {
+    const a = await this.artifact(sessionId, id, owner);
+    const formal = await this.formalOutput(sessionId, id, owner);
+    if (formal) return { retrievalId: formal.retrievalId, sourceOutputId: formal.outputId };
+    for (const turn of await assistantStore.turns(sessionId)) {
+      if (!turn.retrieval_scope_id) continue;
+      const ontology = new OntologyRetrievalClient(owner, turn.retrieval_scope_id);
+      for (const link of await ontology.links()) {
         const evidence = await ontology.evidence(link.retrievalId, link.runId);
-        for (const output of evidence.snapshot.bindings?.datasets ?? []) {
-          if (output.sha256 !== a.sha256) continue;
-          await ontology.dataset(link.retrievalId, output.id);
-          return { retrievalId: link.retrievalId, sourceOutputId: output.id };
-        }
         const sourceSession = evidence.snapshot.runtimeSessionId;
         if (!sourceSession) continue;
         for (const artifactId of evidence.snapshot.datasetArtifactIds) {

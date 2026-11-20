@@ -6,7 +6,7 @@ import { shellContextKey } from "../../context";
 import TaskProcess from "./TaskProcess.vue";
 
 /**
- * Delegated executions and their branch checks. Direct work locates its card; deeper inline work
+ * Delegated executions and the checks of a reply's cited data. Direct work locates its card; deeper inline work
  * opens only its process here, while page-backed work links to the page its provider declares.
  */
 const props = defineProps<{ snapshot: AgentTasksSnapshot; rounds: string[] }>();
@@ -19,6 +19,8 @@ const index = computed(() => props.rounds.indexOf(runId.value));
 const rows=computed(()=>{
   const tasks=props.snapshot.tasks.filter(task=>task.root.runId===runId.value),result:{task:AgentTask;depth:number}[]=[];
   const visit=(parent:string|null,depth:number)=>{for(const task of tasks.filter(task=>task.parentTaskId===parent)){result.push({task,depth});visit(task.id,depth+1);}};
+  // A check whose retriever was delegated by an earlier reply still starts this reply's list.
+  for(const task of tasks.filter(task=>task.parentTaskId!==null && !tasks.some(parent=>parent.id===task.parentTaskId))){result.push({task,depth:0});visit(task.id,1);}
   visit(null,0);return result;
 });
 function select(task:AgentTask,depth:number) {
@@ -59,7 +61,7 @@ const result = (task: AgentTask) => props.snapshot.qualityResults.find((value) =
           <MessageSquare v-else :size="14" />
           <span v-if="row.task.kind==='quality'" class="name">{{ labels.quality }}</span>
           <span v-else-if="row.task.retrieval" class="name">{{ labels.retriever }}</span>
-          <span v-if="row.task.kind==='quality'" class="source">{{ labels.checkedBranch[row.task.checks.source] }}</span>
+          <span v-if="row.task.kind==='quality'" class="source">{{ row.task.checks.datasets.map((dataset) => dataset.title ?? dataset.id).join("、") }}</span>
           <span v-else class="question">{{ row.task.title }}</span>
           <span class="status" :class="row.task.status">{{ row.task.kind==='quality' && result(row.task)?labels.score(Math.round(result(row.task)!.score)):labels.status[row.task.status] }}</span>
         </component>

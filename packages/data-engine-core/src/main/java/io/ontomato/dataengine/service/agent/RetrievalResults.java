@@ -5,27 +5,27 @@ import com.alibaba.fastjson2.*;
 import java.util.*;
 import org.springframework.stereotype.Service;
 
-/** Ordered references to accepted results. This is not another execution or usage ledger. */
+/** The retriever's delivery for a round, one per run. This is not another execution or usage ledger. */
 @Service
 public class RetrievalResults {
   private final AgentChannelChanges changes;
   private final OntologyAgentStore store;
   public RetrievalResults(OntologyAgentStore store,AgentChannelChanges changes) { this.store=store;this.changes=changes; }
 
-  public void publish(String retrieval, String run, Owner owner, String source, String sourceId, JSONObject data) {
+  public void publish(String retrieval, String run, Owner owner, JSONObject data) {
     boolean inserted=store.transaction(() -> {
       store.run(retrieval, run, owner);
       // Serialize publication per retrieval: a cursor must never skip an uncommitted earlier result.
       store.one("SELECT id FROM ontology_agent_sessions WHERE id=? FOR UPDATE", uuid(retrieval));
-      return store.update("INSERT INTO ontology_retrieval_deliveries(run_id,source,source_id,data) VALUES(?,?,?,?::jsonb) ON CONFLICT(run_id,source,source_id) DO NOTHING",
-          uuid(run), source, uuid(sourceId), AgentJson.json(data))!=0;
+      return store.update("INSERT INTO ontology_retrieval_deliveries(run_id,source,source_id,data) VALUES(?,'retriever',?,?::jsonb) ON CONFLICT(run_id,source,source_id) DO NOTHING",
+          uuid(run), uuid(run), AgentJson.json(data))!=0;
     });
     if(inserted) changes.run(retrieval,run,owner,"delivery");
   }
 
   public List<JSONObject> forRun(String retrieval, String run, Owner owner) {
     store.run(retrieval, run, owner);
-    return answered(store.rows("SELECT seq AS cursor,run_id AS \"runId\",source,data FROM ontology_retrieval_deliveries WHERE run_id=? ORDER BY seq", uuid(run)));
+    return answered(store.rows("SELECT seq AS cursor,run_id AS \"runId\",data FROM ontology_retrieval_deliveries WHERE run_id=? ORDER BY seq", uuid(run)));
   }
 
   /** The text of the message the runtime named as the run's answer; empty when it named none. */

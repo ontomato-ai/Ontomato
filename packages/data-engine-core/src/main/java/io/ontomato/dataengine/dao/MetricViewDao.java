@@ -442,35 +442,6 @@ public class MetricViewDao extends BaseDao {
         });
     }
 
-    public record BindingMatch(String metricId, MetricViewBinding binding) {}
-
-    public List<BindingMatch> findBindings(String question, int maxResult, double minScore, String domainId) {
-        return retrievalGate.read(domainId, () -> {
-            List<BindingMatch> found = new ArrayList<>();
-            try {
-                PGvector vector = new PGvector(embeddingService.embedding(question, domainId));
-                List<Object[]> rows = jdbcTemplate.query("SELECT b.*,b.brief_vector <-> ?::vector AS distance FROM metric_view_binding b "
-                    + "JOIN metric_view m ON m.id=b.metric_view_id WHERE m.type='GENERAL' AND m.domain_id=? AND m.status=? "
-                    + "AND b.brief_vector IS NOT NULL ORDER BY distance LIMIT ?",
-                    (rs,n) -> new Object[]{new BindingMatch(rs.getString("metric_view_id"), bindingRow(rs)), rs.getDouble("distance")},
-                    vector, domainId, MetricView.STATUS_PUBLISHED, maxResult);
-                if (rows.isEmpty()) return found;
-                double cutoff = minScore;
-                if (cutoff <= 0) {
-                    List<Double> scores = rows.stream().map(row -> distanceToScore((Double) row[1])).toList();
-                    AutoKMeansClusteringUtil clusters = new AutoKMeansClusteringUtil(scores);
-                    clusters.runAutoKMeans();
-                    cutoff = clusters.getHighClustersMinX();
-                }
-                for (Object[] row : rows)
-                    if (distanceToScore((Double) row[1]) >= cutoff) found.add((BindingMatch) row[0]);
-            } catch (Exception e) {
-                log.error(e.getMessage(), e);
-            }
-            return found;
-        });
-    }
-
 	private Object[] mapRowWithFunctionId(java.sql.ResultSet rs) throws java.sql.SQLException {
 		MetricView metricView = new MetricView();
 		metricView.setId(rs.getString("id"));

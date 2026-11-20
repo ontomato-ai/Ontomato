@@ -163,7 +163,7 @@ public class QueryJobService {
                 running.remove(sessionId);
                 currentJob.remove();
                 if(kind.equals("quality")) changes.job(id);
-                else if(kind.equals("candidate") && sourceRun!=null) changes.execution(sourceRun);
+                else if(kind.equals("candidate") && sourceRun!=null) changes.reply(user.getDomainId(),sourceRun);
               }
               return null;
             });

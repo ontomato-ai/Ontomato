@@ -90,3 +90,13 @@ test("run-metric opens one retrieval run, delivers one table and writes the retu
     ]);
   });
 });
+
+test("the assistant entry exposes the metric reuse commands and only the read-only definitions besides", async () => {
+  await withServer((_request, res) => reply(res, 200, { items: [] }), async ({ requests, base }) => {
+    for (const command of [["metrics", "Sales?"], ["agent", "list"], ["retriever-cancel", "x", "--run", "y"], ["execute-dsl", "@q.json"]]) {
+      await assert.rejects(run(process.execPath, [script, ...command], { env: { ...process.env, ONTOMATO_ONTOLOGY_URL: base } }),
+        (error) => /Commands: dataset-desc, classes, schema, relationships, knowledge, recall-metrics, run-metric/u.test(error.stderr));
+    }
+    assert.deepEqual(requests, []);
+  });
+});
