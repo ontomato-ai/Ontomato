@@ -63,6 +63,11 @@ const describeType = (name: string, layer?: PlatformObjectTypeDeclaration["layer
 export const RUN_NOW = "schedules.runNow";
 export const SET_ACTION_STATUS = "actions.setStatus";
 export const DELETE_ACTION = "actions.delete";
+export const DELETE_METRIC_VIEW = "metricViews.delete";
+export const SET_METRIC_VIEW_STATUS = "metricViews.setStatus";
+export const TEST_METRIC_VIEW = "metricViews.test";
+export const TEST_EXECUTE_METRIC_VIEW = "metricViews.testExecute";
+export const DELETE_FUNCTION = "functions.delete";
 export const APPROVE_KNOWLEDGE = "knowledge.approve";
 export const DELETE_KNOWLEDGE = "knowledge.delete";
 export const DELETE_OBJECT_TYPE = "objectTypes.delete";
@@ -115,7 +120,12 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   },
   [METRIC_VIEW]: {
     ...describeType("metricView", "capability"),
-    reads: { result: { source: "object", parameterMode: "owner", parameter: "ontologyParameter", result: "metricOutput" } },
+    reads: {
+      ...metadataList,
+      ...modelReads,
+      result: { source: "object", parameterMode: "owner", parameter: "ontologyParameter", result: "metricOutput" },
+    },
+    operations: [`${METRIC_VIEW}.save`, SET_METRIC_VIEW_STATUS, DELETE_METRIC_VIEW, TEST_METRIC_VIEW, TEST_EXECUTE_METRIC_VIEW],
   },
   [DASHBOARD_CARD]: {
     ...describeType("dashboardCard"),
@@ -124,7 +134,11 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       result: { source: "object", parameterMode: "owner", parameter: "ontologyParameter", result: "metricOutput" },
     },
   },
-  [FUNCTION]: describeType("function", "capability"),
+  [FUNCTION]: {
+    ...describeType("function", "capability"),
+    reads: { ...metadataList, ...modelReads },
+    operations: [`${FUNCTION}.save`, DELETE_FUNCTION],
+  },
   [ACTION]: {
     ...describeType("action", "capability"),
     reads: {
