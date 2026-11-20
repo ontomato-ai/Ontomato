@@ -216,7 +216,7 @@ export const panelRecordSchema = z.object({
   /** Field names supplied by the owner in the reader's locale, keyed by the names in fields. */
   fieldLabels: z.record(z.string()).optional(),
   /** Display field keys (including label and subtitle). Omit this property when nothing matched. */
-  highlights: z.record(z.array(panelTextHighlightRangeSchema).nonempty())
+  highlights: z.record(z.array(panelTextHighlightRangeSchema).min(1))
     .refine(fields => Object.keys(fields).length > 0, "Omit highlights when there are no matches").optional(),
 }).strict();
 export type PanelRecord = z.infer<typeof panelRecordSchema>;
