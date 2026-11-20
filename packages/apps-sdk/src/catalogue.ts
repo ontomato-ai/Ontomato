@@ -364,6 +364,18 @@ export const components: readonly ComponentMetadata[] = [
       "Displays offset-paged plain-text segments for a selected source with a close control and a More button when another offset exists, coordinating shared activeAnchor state so multiple placements on one page expand only one reader at a time.",
   }),
   defineComponentMeta({
+    componentId: "ObjectTree",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectTree",
+    role: "control",
+    meaning:
+      "Shows one object's files — a skill package's, say — as a folder/file tree, from its `files` datum (an owner's records, one per file, at the path `pathField` gives, else the record's own key). Clicking a file selects it: `selected` is the file's key, which the placement can bind to the panel's state so another member (an ObjectTextReader's `record`) reads that file. Folders open and close; they are not selected.",
+    effects: "Reads the owner's files as the reader; it writes only the panel's own state.",
+    bindsElement: ["PlatformObjectType:*"],
+    data: { files: { results: ["panelRecordList"], required: true } },
+    outputs: { selected: { kind: "scalar", type: "string" } },
+  }),
+  defineComponentMeta({
     componentId: "ObjectTextReader",
     module: "@ontomato/sdk/base",
     exportName: "ObjectTextReader",
