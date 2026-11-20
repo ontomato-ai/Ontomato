@@ -273,6 +273,23 @@ it("shares editable member projections, reports skipped members once and does no
   expect((await read("projection", editable)).status).toBe(200);
 });
 
+it("shares editable default placements and reports the defaults the caller cannot share", async () => {
+  const editable = "share-default-editable", restricted = "share-default-restricted", id = "share-default-panel";
+  await saveProjection(editable);
+  await saveProjection(restricted, "projection-owner");
+  const type = { kind: "placement", candidates: { rule: "catalogSelection" } };
+  const field = (projectionId: string) => ({ type, default: { id: "placed", target: { projectionId } } });
+  const saved = await savePanel(id, {
+    state: { editable: field(editable), restricted: field(restricted) }, members: {}, events: {},
+  });
+  expect(saved.status, await saved.text()).toBe(200);
+  const enabled = await request("POST", `product-panels/${id}/domain-grant`, "author", { shared: true });
+  expect(enabled.status).toBe(200);
+  expect(await enabled.json()).toEqual({ success: true, skippedProjectionIds: [restricted] });
+  expect((await request("GET", `product-projections/${editable}`, "reader")).status).toBe(200);
+  expect((await request("GET", `product-projections/${restricted}`, "reader")).status).toBe(403);
+});
+
 it("deletes only editable orphan projections and honors hidden panel references", async () => {
   const orphan = "cascade-orphan", restricted = "cascade-restricted", inUse = "cascade-in-use", id = "cascade-panel";
   await saveProjection(orphan);

@@ -3,7 +3,6 @@ import type { PoolClient } from "pg";
 import { panelPlacementSchema } from "@ontomato/contracts/panel-manifest";
 import {
   PRODUCT_IN_USE, productCurrentIdParamsSchema, productPanelInputSchema, productProjectionInputSchema, type ProductCatalogQuery,
-  type ProductPanelInput,
 } from "@ontomato/contracts/product-panels";
 import {
   currentProductRecord, currentProductTables, findCurrentProduct, type CurrentProductKind,
@@ -90,15 +89,11 @@ export async function currentProductUsedBy(owner: ProductOwner, credentials: Ass
     : panelUsers(owner.domainId, id, credentials);
 }
 
-function memberProjectionIds({ manifest }: ProductPanelInput) {
-  return new Set(Object.values(manifest.members).flatMap(({ target }) =>
+function panelProjectionIds(definition: unknown) {
+  const { manifest } = productPanelInputSchema.parse(definition);
+  const ids = new Set(Object.values(manifest.members).flatMap(({ target }) =>
     "projectionId" in target ? [target.projectionId] : []));
-}
-
-function projectionCleanupCandidates(definition: unknown) {
-  const panel = productPanelInputSchema.parse(definition);
-  const ids = memberProjectionIds(panel);
-  for (const { type, default: value } of Object.values(panel.manifest.state)) {
+  for (const { type, default: value } of Object.values(manifest.state)) {
     if (type.kind !== "placement" || value == null) continue;
     const { target } = panelPlacementSchema.parse(value);
     if ("projectionId" in target) ids.add(target.projectionId);
@@ -131,7 +126,7 @@ export async function deleteCurrentProduct(owner: ProductOwner, credentials: Ass
 
     const { rows: candidates } = await client.query<{ id: string }>(
       `SELECT id FROM ${t(currentProductTables.projection)} WHERE domain_id=$1 AND id=ANY($2::text[]) ORDER BY id`,
-      [domainId, projectionCleanupCandidates(current.definition)],
+      [domainId, panelProjectionIds(current.definition)],
     );
     const deletedProjectionIds: string[] = [];
     const retainedProjectionIdsWithoutEdit: string[] = [];
@@ -188,7 +183,7 @@ export async function changeCurrentProductDomainGrant(owner: ProductOwner, crede
     await changeProductDomainGrant(id, shared, credentials);
     return { success: true as const };
   }
-  const projectionIds = shared ? [...memberProjectionIds(productPanelInputSchema.parse(current.definition))] : [];
+  const projectionIds = shared ? panelProjectionIds(current.definition) : [];
   const editable = new Set(projectionIds.length ? await grantedProductIds("edit", credentials) : []);
   await changeProductDomainGrant(id, shared, credentials);
   const skippedProjectionIds: string[] = [];
