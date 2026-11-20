@@ -23,13 +23,14 @@ node "$SKILL/ontomato.mjs" panel scaffold platform:AgentDefinition ./agents-pane
 The starter writes `panel.html`, `panel.json` and `registration.json` into a new directory. It reads owner declarations
 from the platform's type table. The generated material includes an application entry. Review its access before registration.
 When editing the generated layout or manifest, carry the updated `html` and `manifest` into the panel's registration
-input. The starter includes the owner save when the type declares a form and save operation.
+input. The starter includes the owner save when the type declares a form and a `form.save` operation.
 Use `--operation <owner operation ID>` for a button targeting the selected record and `--batch <owner operation ID>`
 for a button targeting checked records. Repeat either flag to add more buttons. The starter takes the target input
 name and batch support from the type table. For operations with extra required inputs, wire the owner form or
 operation inputs. The starter places these controls above the list. Online `panel check` uses the same type table
-to check button targets before registration. Use the exact `operation.target.input` name in the projection's
-inputs and in the member's state binding, for either the selected object or the checked list.
+to check targets before registration. Declare a local name in `operations` and use that name in `config.operation`
+on a button. Use the projection's `target.input` name in the member's state binding, for either the selected object
+or the checked list. The placed operation ID is `<member key>.<local name>`.
 
 ## Effect and wiring
 
@@ -40,9 +41,9 @@ inputs and in the member's state binding, for either the selected object or the 
 | Status tabs with counts | Use `SegmentedControl` with `data.counts` and bind its `outputs.value` to scalar status state. The owner supplies the ordered `[{key, label, count}]` options. Bind the list member's `inputs.status` to that state. Its same-named read parameter uses the binding, and counts and rows share the search state. |
 | Pagination | Use an owner read that declares its pagination parameters. The list supplies page or cursor values at runtime. The default page size is 20. Set `config.pageSize` when the page needs a different size. |
 | Select a row and show details | Bind `outputs.selected` to object-reference state. Pass that state to the summary's object input. Its `data.record.source` is `{object: {input: "<object input name>"}}`. |
-| New and edit in one form | Put `data.form` and `data.createForm` on one `ObjectForm` projection and bind the object input named by `form.source.object.input` to the selected state. A null selection shows the create form. A New event sets the selected state to `{literal: null}`. |
-| Single operation | Read `data.operation = {source: {operation: {kind: "PlatformOperation", id: "<owner operation ID>"}}, read: "describe", params: {}}` in an `OperationButton` projection. Bind the member input named by the description's `target.input` to the selected object. The operation ID is `<member key>.<last segment of owner operation ID>`. |
-| Batch operation | Bind `ObjectList.outputs.checked` to a list of object references. Bind the button's owner-named target input to that list. A list target invokes a batch for an owner operation that declares batch support. |
+| New and edit in one form | Put `data.form`, `data.createForm` and one owner `form.save` binding on an `ObjectForm` projection. Connect the edit object's input to the selection. A New event clears that selection. When the owner supports creation and the projection declares the matching `createForm`, the empty input opens the create form. |
+| Single operation | In an `OperationButton` projection, set `operations.approve = {operation: {kind: "PlatformOperation", id: "<owner operation ID>"}, target: {input: "record"}}` and `config.operation = "approve"`. Connect the `record` member input to the selected object. |
+| Batch operation | Bind `ObjectList.outputs.checked` to a list of object references. Bind the button's target input to that list. A list target invokes a batch for an owner operation that declares batch support. |
 | Highlight search hits | Bind the detail's `inputs.search` to the list's search state when the owner record read declares `search`. The owner returns highlight ranges, and ObjectList and ObjectSummary render them. |
 | Carry state in the address | Mark the state fields to restore with `deepLink: true` in the manifest. Keep transient multi-selection in panel state. |
 
