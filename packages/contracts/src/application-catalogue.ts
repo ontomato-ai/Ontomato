@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { applicationMetadataSchema } from "./application-metadata";
+import { panelFormRequestSchema } from "./panel-projection";
+import { applicationFormSectionSchema } from "./product-catalog-query";
 import { productCurrentIdParamsSchema } from "./product-record-id";
-import { applicationPanelUsesManagementSchema, applicationPanelUsesResponseSchema } from "./product-panels";
+import {
+  applicationPanelUsesManagementSchema, applicationPanelUsesResponseSchema, registerApplicationPanelUsesRequestSchema,
+} from "./product-panels";
 
 const summary = applicationMetadataSchema.pick({ names: true, descriptions: true, icon: true }).extend({
   id: productCurrentIdParamsSchema.shape.id,
@@ -24,3 +28,16 @@ export const applicationCatalogueRecordSchema = summary
   }).partial())
   .extend({ groups: applicationMetadataSchema.shape.groups })
   .strict();
+
+export const applicationCatalogueFormRequestSchema = panelFormRequestSchema.extend({
+  section: applicationFormSectionSchema,
+});
+export type ApplicationCatalogueFormRequest = z.infer<typeof applicationCatalogueFormRequestSchema>;
+
+export const applicationIdentityUpdateSchema = applicationMetadataSchema.pick({ names: true, descriptions: true, icon: true });
+export const applicationCatalogueCreateSchema = registerApplicationPanelUsesRequestSchema.required({
+  declaration: true, entryAccess: true,
+});
+export const applicationEntriesUpdateSchema = registerApplicationPanelUsesRequestSchema.omit({
+  declaration: true, entryAccess: true,
+});
