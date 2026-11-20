@@ -43,6 +43,8 @@ const DECLARED_DATA = {
   SegmentedControl: { counts: ["panelGroupCounts"] },
   // Readable as a member it reads nothing; an empty table says so, and Node registers it on that declaration.
   ConversationEntry: {},
+  ObjectTree: { files: ["panelRecordList"] },
+  ObjectTextReader: { sources: ["panelRecordList"], page: ["panelRecordQuery"], record: ["panelRecord"] },
 };
 
 test("the built SDK's components.json is the catalogue its contract declares", (t) => {
@@ -88,7 +90,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.equal(declared.get("ObjectSummary").outputs, undefined, "navigating is an event, not a state");
     // Components that only ran in the old frame are not offered until each runs in the platform's page: an author never
     // places one that would not work there.
-    for (const withdrawn of ["FileUploadControl", "ObjectTree", "ObjectTextReader"])
+    for (const withdrawn of ["FileUploadControl"])
       assert.equal(declared.get(withdrawn), undefined, `${withdrawn} is not offered`);
     // Configuration is the props a projection sets, kept apart from the running inputs a placement supplies.
     assert.deepEqual(declared.get("ObjectSummary").config, declared.get("ObjectSummary").ports.props);
