@@ -184,6 +184,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     };
     export const platformTypeTableResponseSchema = { parse };
     export const panelAuthoringManifestSchema = { parse };
+    export const appsSdkComponentCatalogSchema = { parse };
     export function expandPanelAuthoringMember(key, member, { state, components, typeTable }) {
       if (!components.some(component => component.componentId === member.component)) throw new Error("member " + key + ": component unavailable");
       const target = state[member.target]?.type;

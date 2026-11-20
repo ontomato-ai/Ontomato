@@ -23,12 +23,13 @@ async function expandInlineProjections(manifest, panel, checks, loadAuthoring) {
 
   const { state, members, ...definition } = checks.panelAuthoringManifestSchema.parse(manifest);
   const { catalogue, typeTable } = await loadAuthoring();
+  const { components } = checks.appsSdkComponentCatalogSchema.parse(catalogue);
   const inline = [];
   const placements = Object.entries(members).map(([member, declaration]) => {
     if (!("component" in declaration)) return [member, declaration];
     const { id = randomUUID(), name, description } = declaration;
     const { projection, placement } = checks.expandPanelAuthoringMember(member, declaration, {
-      state, components: catalogue.components, typeTable,
+      state, components, typeTable,
     });
     inline.push({ member, id, needsId: declaration.id === undefined, input: { ...projection, name, description } });
     return [member, { ...placement, target: { projectionId: id } }];
