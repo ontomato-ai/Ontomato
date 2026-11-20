@@ -2,16 +2,21 @@ import { z } from "zod";
 import { defaultAgentSchema } from "./default-agent";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
-import { directPanelManifestSchema, ontologyObjectUnionTypeSchema, ontologyParameterTypeSchema, panelManifestSchema, panelMessageKeySchema } from "./panel-manifest";
+import { panelManifestSchema, panelMessageKeySchema, panelObjectRefSchema, panelThemeOverridesSchema } from "./panel-manifest";
 import { PanelLayoutError, parsePanelLayout } from "./panel-layout";
 import { directProjectionPortsSchema, validateDirectProjection } from "./panel-projection";
 import { applicationMetadataSchema } from "./application-metadata";
-import { appsSdkBuildSchema } from "./apps-sdk";
-import { formFieldErrorSchema } from "./form-fields";
-import { dashboardCardRequestSchema, dashboardChartFileSchema, dashboardMetricReferenceSchema } from "./dashboard";
 import { pageSkillContextSchema, pageSkillEntranceSchema } from "./page-skills";
+import { runtimeJsonValueSchema } from "./agent-runtime-values";
+import { dashboardCardPrimaryKey, dashboardCardRequestSchema, dashboardChartFileSchema } from "./dashboard";
+import { DASHBOARD_CARD } from "./platform-object-types";
+export { chartProjectionTemplateSchema } from "./dashboard";
+export { ontologyElementRefSchema, type OntologyElementRef } from "./ontology-element-ref";
+import { objectDetailUsedByResponseSchema } from "./object-detail";
+import { productCurrentIdParamsSchema } from "./product-record-id";
+export { productCurrentIdParamsSchema } from "./product-record-id";
 
-const id = z.string().min(1).max(200);
+const id = productCurrentIdParamsSchema.shape.id;
 const path = z.string().regex(/^\/(?!\/)/);
 
 /** The Java-owned canonical site route, before any instance state or draft query is added. */
@@ -20,18 +25,6 @@ export const applicationPanelUsePathSchema = path.pipe(z.string().refine((value)
   return new URL(value, "https://panel.invalid").pathname === value &&
     (value === "/" || value.slice(1).split("/").every(Boolean));
 }, "Expected a canonical site path without query or fragment"));
-
-/**
- * PlatformObjectType binds a platform-declared type and its owner APIs, including management of its definitions.
- * A MetricView, Action, ObjectType or Relationship binding targets one specific ontology element.
- * A PlatformOperation ID is the SDK client's registered operation name (for example, schedules.runNow),
- * identical to the derived operation's handlerRef; there is no second operation namespace.
- */
-export const ontologyElementRefSchema = z.object({
-  kind: z.enum(["MetricView", "Action", "ObjectType", "Relationship", "Definition", "PlatformObjectType", "PlatformOperation"]),
-  id,
-}).strict();
-export type OntologyElementRef = z.infer<typeof ontologyElementRefSchema>;
 
 const editableDefinitionFields = {
   name: z.string().trim().min(1).max(200),
@@ -51,71 +44,51 @@ const currentRecordFields = {
   editable: z.boolean(),
 };
 
-/** A graph uses its primary binding for nodes and this second binding for edges. */
-export const projectionGraphSchema = z.object({
-  /** Mixed node records carry their complete identities and these allowed types. */
-  nodeIdentity: ontologyObjectUnionTypeSchema.optional(),
-  edges: z.object({
-    binding: ontologyElementRefSchema.extend({
-      kind: ontologyElementRefSchema.shape.kind.extract(["PlatformObjectType", "Relationship"]),
-    }),
-    /** JSON Pointers inside the edge record's fields, each resolving to a node key, or a complete identity for a mixed graph. */
-    sourcePath: formFieldErrorSchema.shape.field,
-    targetPath: formFieldErrorSchema.shape.field,
-  }).strict(),
-}).strict();
-
-export const METRIC_CHART_COMPONENT = "MetricChart";
+export const METRIC_CHART_COMPONENT = "@ontomato/sdk:MetricChart";
 export const chartProjectionSourceSchema = dashboardCardRequestSchema;
 export type ChartProjectionSource = z.infer<typeof chartProjectionSourceSchema>;
 
-/** Component-specific display validation belongs to the registered SDK component. */
-const projectionDefinitionSchema = z.object({
-  ...editableDefinitionFields,
-  componentId: id,
-  binding: ontologyElementRefSchema,
-  graph: projectionGraphSchema.optional(),
-  conversationEntry: panelConversationEntrySchema.optional(),
-  inputs: z.record(id, ontologyParameterTypeSchema),
-  display: z.record(z.unknown()),
-}).strict();
-
-const ordinaryProjectionDefinitionSchema = projectionDefinitionSchema.extend({
-  componentId: id.refine(value => value !== METRIC_CHART_COMPONENT, "Register a chart from its source card"),
-  display: projectionDefinitionSchema.shape.display.refine(
-    display => !Object.hasOwn(display, "chartSource"), "Register a chart source through its owner",
-  ),
+const projectionDefinition = directProjectionPortsSchema.extend(editableDefinitionFields);
+const ordinaryProjectionDefinition = projectionDefinition.extend({
+  componentId: directProjectionPortsSchema.shape.componentId.exclude([METRIC_CHART_COMPONENT]),
 });
-
-const chartProjectionDefinitionSchema = projectionDefinitionSchema.extend({
-  graph: z.never().optional(),
+const chartProjectionDefinition = projectionDefinition.extend({
   componentId: z.literal(METRIC_CHART_COMPONENT),
-  binding: ontologyElementRefSchema.extend({ kind: z.literal("MetricView") }),
-  /** The owner omits parameters outside this vocabulary. Parameters without an input come from the source card. */
-  inputs: projectionDefinitionSchema.shape.inputs,
-  display: z.object({ chartSource: chartProjectionSourceSchema }).strict(),
+  chartSource: chartProjectionSourceSchema,
+  metricId: id,
 });
 
-export const productProjectionInputSchema = z.union([chartProjectionDefinitionSchema, ordinaryProjectionDefinitionSchema]);
+function validateChartProjection(projection: z.infer<typeof chartProjectionDefinition>, ctx: z.RefinementCtx): void {
+  validateDirectProjection(projection, ctx);
+  const key = dashboardCardPrimaryKey(projection.chartSource);
+  for (const [name, read] of [["template", "chartTemplate"], ["result", "result"]] as const) {
+    const datum = projection.data[name];
+    const source = datum?.source;
+    if (!datum || datum.read !== read || !source || !("object" in source) || !("literal" in source.object)
+      || source.object.literal.className !== DASHBOARD_CARD || source.object.literal.primaryKey !== key) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["data", name], message: "The chart must read its registered source card" });
+    }
+  }
+}
+
+export const productProjectionInputSchema = z.union([
+  ordinaryProjectionDefinition.superRefine(validateDirectProjection),
+  chartProjectionDefinition.superRefine(validateChartProjection),
+]);
 export type ProductProjectionInput = z.infer<typeof productProjectionInputSchema>;
 
-export const chartProjectionSchema = chartProjectionDefinitionSchema.extend(currentRecordFields);
+export const chartProjectionSchema = chartProjectionDefinition.extend(currentRecordFields).superRefine(validateChartProjection);
 export const productProjectionSchema = z.union([
   chartProjectionSchema,
-  ordinaryProjectionDefinitionSchema.extend(currentRecordFields),
+  ordinaryProjectionDefinition.extend(currentRecordFields).superRefine(validateDirectProjection),
 ]);
 export type ProductProjection = z.infer<typeof productProjectionSchema>;
-
-const directProjectionInput = directProjectionPortsSchema.extend(editableDefinitionFields);
-export const directProjectionInputSchema = directProjectionInput.superRefine(validateDirectProjection);
-export type DirectProjectionInput = z.infer<typeof directProjectionInputSchema>;
-export const directProjectionSchema = directProjectionInput.extend(currentRecordFields).superRefine(validateDirectProjection);
-export type DirectProjection = z.infer<typeof directProjectionSchema>;
-export const currentProjectionRecordSchema = z.union([directProjectionSchema, productProjectionSchema]);
-export type CurrentProjectionRecord = z.infer<typeof currentProjectionRecordSchema>;
-export const registerDirectProjectionRequestSchema = directProjectionInput.extend({
-  revision: z.number().int().nonnegative(),
-}).superRefine(validateDirectProjection);
+export const currentProjectionRecordSchema = productProjectionSchema;
+export type CurrentProjectionRecord = ProductProjection;
+export const directProjectionInputSchema = productProjectionInputSchema;
+export type DirectProjectionInput = ProductProjectionInput;
+export const directProjectionSchema = productProjectionSchema;
+export type DirectProjection = ProductProjection;
 
 const panelContentByteLimit = 256 * 1024;
 const panelText = z.string().refine(value => new TextEncoder().encode(value).byteLength <= panelContentByteLimit,
@@ -126,35 +99,29 @@ export const panelMessagesSchema = z.record(z.string().min(1), z.record(panelMes
     "Panel messages must not exceed 256 KiB");
 export type PanelMessages = z.infer<typeof panelMessagesSchema>;
 
-/** The text of a current panel definition or a workspace candidate. */
+/** The shared sources of a registered panel or workspace candidate. */
 export const productPanelContentSchema = z.object({
   html: panelText,
-  module: panelText,
+  module: panelText.optional(),
+  style: panelText.optional(),
   recipes: panelText.optional(),
   messages: panelMessagesSchema.optional(),
 }).strict();
 export type ProductPanelContent = z.infer<typeof productPanelContentSchema>;
 
-/** Everything needed to render a panel from either source, independent of its registration. */
-export const panelDefinitionContentSchema = z.object({
+const panelDefinitionContent = z.object({
   content: productPanelContentSchema,
-  /** Supplied by the registrant's module export; Node validates references without executing module text. */
   manifest: panelManifestSchema,
-  sdkVersion: appsSdkBuildSchema.shape.version.regex(/^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9.-]+)*$/),
+  theme: panelThemeOverridesSchema.optional(),
+  template: z.boolean().optional(),
 }).strict();
-export type PanelDefinitionContent = z.infer<typeof panelDefinitionContentSchema>;
 
-export const productPanelInputSchema = panelDefinitionContentSchema.extend(editableDefinitionFields);
-export type ProductPanelInput = z.infer<typeof productPanelInputSchema>;
+export function panelNeedsFrame(content: ProductPanelContent): boolean {
+  return content.module !== undefined || content.style !== undefined;
+}
 
-export const productPanelSchema = productPanelInputSchema.extend(currentRecordFields).strict();
-export type ProductPanel = z.infer<typeof productPanelSchema>;
-
-/** The no-code pilot records need neither executable content nor a pinned SDK version. */
-export const directPanelContentSchema = productPanelContentSchema.omit({ module: true });
-const directPanelDefinitionContent = z.object({ content: directPanelContentSchema, manifest: directPanelManifestSchema }).strict();
-
-function validateDirectLayout(definition: z.infer<typeof directPanelDefinitionContent>, ctx: z.RefinementCtx): void {
+function validatePanelLayout(definition: z.infer<typeof panelDefinitionContent>, ctx: z.RefinementCtx): void {
+  if (panelNeedsFrame(definition.content)) return;
   try {
     parsePanelLayout(definition.content.html, definition.manifest);
   } catch (error) {
@@ -163,16 +130,23 @@ function validateDirectLayout(definition: z.infer<typeof directPanelDefinitionCo
   }
 }
 
-export const directPanelDefinitionContentSchema = directPanelDefinitionContent.superRefine(validateDirectLayout);
-export type DirectPanelDefinitionContent = z.infer<typeof directPanelDefinitionContentSchema>;
-const directPanelInput = directPanelDefinitionContent.extend(editableDefinitionFields);
-export const directPanelInputSchema = directPanelInput.superRefine(validateDirectLayout);
-export type DirectPanelInput = z.infer<typeof directPanelInputSchema>;
-export const directPanelSchema = directPanelInput.extend(currentRecordFields).superRefine(validateDirectLayout);
-export type DirectPanel = z.infer<typeof directPanelSchema>;
-export const registerDirectPanelRequestSchema = directPanelInput.extend({
-  revision: z.number().int().nonnegative(),
-}).superRefine(validateDirectLayout);
+export const panelDefinitionContentSchema = panelDefinitionContent.superRefine(validatePanelLayout);
+export type PanelDefinitionContent = z.infer<typeof panelDefinitionContentSchema>;
+const productPanelInput = panelDefinitionContent.extend(editableDefinitionFields);
+export const productPanelInputSchema = productPanelInput.superRefine(validatePanelLayout);
+export type ProductPanelInput = z.infer<typeof productPanelInputSchema>;
+
+const productPanelRecord = productPanelInput.extend(currentRecordFields);
+export const productPanelSchema = productPanelRecord.superRefine(validatePanelLayout);
+export type ProductPanel = z.infer<typeof productPanelSchema>;
+export const currentPanelRecordSchema = productPanelSchema;
+
+/** Values wired into a content panel's public fields by its application entry. */
+export const applicationPanelInputsSchema = z.record(id, z.union([
+  z.object({ frameState: id }).strict(),
+  z.object({ literal: runtimeJsonValueSchema }).strict(),
+]));
+export type ApplicationPanelInputs = z.infer<typeof applicationPanelInputsSchema>;
 
 /** Owned by Java ApplicationCatalog; shared panels contain none of these entry facts. */
 export const applicationPanelUseSchema = z.object({
@@ -186,20 +160,66 @@ export const applicationPanelUseSchema = z.object({
   ]),
   defaultAgent: defaultAgentSchema.optional(),
   names: applicationMetadataSchema.shape.names.optional(),
+  inputs: applicationPanelInputsSchema.optional(),
+  groupKey: applicationMetadataSchema.shape.groups.element.shape.key.optional(),
 }).strict();
 export type ApplicationPanelUse = z.infer<typeof applicationPanelUseSchema>;
+
+export const applicationEntryResolutionQuerySchema = z.object({ path: applicationPanelUsePathSchema }).strict();
+/** The entry owner supplies a stable cross-application key for menu activation. */
+export const applicationEntryMenuItemSchema = applicationPanelUseSchema.extend({
+  primaryKey: panelObjectRefSchema.shape.primaryKey.optional(),
+});
+export const applicationEntryMenuSchema = z.object({
+  groups: applicationMetadataSchema.shape.groups,
+  panelUses: z.array(applicationEntryMenuItemSchema),
+}).strict();
+export const applicationEntryResolutionSchema = z.object({
+  applicationId: id,
+  use: applicationPanelUseSchema,
+  framePanelId: id.optional(),
+  theme: panelThemeOverridesSchema.optional(),
+  menu: applicationEntryMenuSchema,
+}).strict();
+export type ApplicationEntryResolution = z.infer<typeof applicationEntryResolutionSchema>;
+
+export const applicationDeliverySchema = z.object({
+  panels: z.array(id),
+  projections: z.array(id),
+  packages: z.array(id),
+  agents: z.array(id),
+  skills: z.array(runtimeSkillRefSchema),
+}).strict();
+export type ApplicationDelivery = z.infer<typeof applicationDeliverySchema>;
+
+const applicationEntrySettings = {
+  framePanelId: id.optional(),
+  theme: panelThemeOverridesSchema.optional(),
+  delivery: applicationDeliverySchema.optional(),
+};
+
+export const APPLICATION_PANEL_REFERENCES_PATH = "/internal/product-panels/validate-references";
+/** The platform service authenticates this request. Node validates the public inputs and the fixed closure. */
+export const applicationPanelReferencesRequestSchema = z.object({
+  domainId: id,
+  framePanelId: id.optional(),
+  uses: z.array(applicationPanelUseSchema.pick({ id: true, panelId: true, inputs: true })),
+  delivery: applicationDeliverySchema.pick({ panels: true, projections: true }),
+}).strict();
+export type ApplicationPanelReferencesRequest = z.infer<typeof applicationPanelReferencesRequestSchema>;
 
 export const panelUseRefSchema = z.object({ applicationId: id, useId: id }).strict();
 export type PanelUseRef = z.infer<typeof panelUseRefSchema>;
 
-export const panelSkillSourceSchema = z.object({
-  skill: runtimeSkillRefSchema,
-  uses: z.array(applicationPanelUseSchema.pick({ pageKey: true, panelId: true, path: true }).extend({
-    applicationId: id,
-    useId: id,
-  })).nonempty(),
-}).strict();
+/** Java exposes registered entry facts to the authenticated provider service. */
+export const panelSkillSourceSchema = panelUseRefSchema.extend({
+  panelId: id,
+  path: applicationPanelUsePathSchema,
+  entrance: pageSkillEntranceSchema,
+});
 export type PanelSkillSource = z.infer<typeof panelSkillSourceSchema>;
+export const panelSkillSourcesResponseSchema = z.array(panelSkillSourceSchema);
+export const panelSkillSourcesQuerySchema = z.object({ domainId: id }).strict();
 
 /** The Java declaration is the sole takeover authority, including for legacy writers. */
 export const panelApplicationEntrySchema = z.object({
@@ -207,9 +227,6 @@ export const panelApplicationEntrySchema = z.object({
   renderer: z.literal("panels"),
 }).strict();
 export type PanelApplicationEntry = z.infer<typeof panelApplicationEntrySchema>;
-
-/** GET/PUT /api/product-projections/:id and /api/product-panels/:id. */
-export const productCurrentIdParamsSchema = z.object({ id }).strict();
 
 const [menuEntrance, domainMemberEntrance] = pageSkillEntranceSchema.options;
 /** GET /api/product-panels/:id and /:id/snapshot take either no query or one complete application-use entrance. */
@@ -220,20 +237,13 @@ export const productPanelReadQuerySchema = z.union([
 ]);
 export type ProductPanelReadQuery = z.infer<typeof productPanelReadQuerySchema>;
 
-/**
- * PUT creates at revision 0 or replaces a current definition at the supplied revision.
- * A chart metadata update repeats its current component and binding and supplies an empty display. The owner
- * compares those values with the current record and retains the registered source; only source registration creates
- * a MetricChart. The owner also rejects replacing a registered chart with an ordinary projection.
- */
+/** The source card owner creates chart projections; ordinary updates may only edit chart metadata. */
 export const registerProductProjectionRequestSchema = z.union([
-  ordinaryProjectionDefinitionSchema.extend({ revision: z.number().int().nonnegative() }),
-  chartProjectionDefinitionSchema.extend({
-    revision: currentRecordFields.revision,
-    display: z.object({}).strict(),
-  }),
+  ordinaryProjectionDefinition.extend({ revision: z.number().int().nonnegative() }).superRefine(validateDirectProjection),
+  z.object({ ...editableDefinitionFields, componentId: z.literal(METRIC_CHART_COMPONENT), revision: currentRecordFields.revision }).strict(),
 ]);
 export type RegisterProductProjectionRequest = z.infer<typeof registerProductProjectionRequestSchema>;
+export const registerDirectProjectionRequestSchema = registerProductProjectionRequestSchema;
 
 /** GET and PUT return the same current record; neither accepts a historical revision selector. */
 export const productProjectionResponseSchema = z.object({ projection: currentProjectionRecordSchema }).strict();
@@ -253,12 +263,6 @@ export const registerChartProjectionResponseSchema = z.object({ projection: char
  */
 export const chartProjectionLookupResponseSchema = z.object({ projectionId: id.nullable() }).strict();
 
-/** Read the source card's current drawing and saved parameters under the projection's use grant. */
-export const chartProjectionTemplateSchema = z.object({
-  chartFile: dashboardChartFileSchema,
-  parameters: dashboardMetricReferenceSchema.shape.parameters,
-}).strict();
-
 /** The projection's edit grant permits updating the source template's drawing. */
 export const updateChartProjectionSourceRequestSchema = z.object({
   chartFile: dashboardChartFileSchema.pick({ content: true }),
@@ -273,12 +277,11 @@ export const chartSourceInUseErrorSchema = z.object({
   details: z.object({ projectionIds: z.array(id).nonempty() }).strict(),
 }).strict();
 
-export const registerProductPanelRequestSchema = productPanelInputSchema.extend({
+export const registerProductPanelRequestSchema = productPanelInput.extend({
   revision: z.number().int().nonnegative(),
-}).strict();
+}).superRefine(validatePanelLayout);
 export type RegisterProductPanelRequest = z.infer<typeof registerProductPanelRequestSchema>;
 
-export const currentPanelRecordSchema = z.union([directPanelSchema, productPanelSchema]);
 export const productPanelResponseSchema = z.object({
   panel: currentPanelRecordSchema,
   pageSkillContext: pageSkillContextSchema.optional(),
@@ -296,7 +299,7 @@ export const productCatalogQuerySchema = z.object({
 }).strict();
 export type ProductCatalogQuery = z.infer<typeof productCatalogQuerySchema>;
 
-export const productPanelSummarySchema = productPanelSchema.pick({
+export const productPanelSummarySchema = productPanelRecord.pick({
   id: true,
   name: true,
   description: true,
@@ -307,7 +310,7 @@ export const productPanelSummarySchema = productPanelSchema.pick({
   editable: true,
 });
 export const productProjectionSummarySchema = productPanelSummarySchema.extend(
-  projectionDefinitionSchema.pick({ componentId: true, binding: true }).shape,
+  projectionDefinition.pick({ componentId: true }).shape,
 );
 export type ProductPanelSummary = z.infer<typeof productPanelSummarySchema>;
 export type ProductProjectionSummary = z.infer<typeof productProjectionSummarySchema>;
@@ -337,13 +340,14 @@ export const productProjectionUsedBySchema = z.object({
   panels: z.array(productPanelSummarySchema.pick({ id: true, name: true })),
   hiddenCount: z.number().int().nonnegative(),
 }).strict();
-export const productPanelUsedBySchema = z.object({
+export const productPanelUsedBySchema = productProjectionUsedBySchema.extend({
   applicationEntries: z.array(z.object({
     applicationId: id,
     applicationName: z.string(),
     entryId: applicationPanelUseSchema.shape.id,
     path: applicationPanelUsePathSchema,
   }).strict()),
+  classNames: objectDetailUsedByResponseSchema.shape.classNames,
 }).strict();
 export type ProductProjectionUsedBy = z.infer<typeof productProjectionUsedBySchema>;
 export type ProductPanelUsedBy = z.infer<typeof productPanelUsedBySchema>;
@@ -375,6 +379,7 @@ export const registerApplicationPanelUsesRequestSchema = z.object({
   /** Required when creating an application; omitted updates retain existing metadata and entry access. */
   declaration: applicationMetadataSchema.optional(),
   entryAccess: z.array(id).min(1).optional(),
+  ...applicationEntrySettings,
 }).strict();
 export type RegisterApplicationPanelUsesRequest = z.infer<typeof registerApplicationPanelUsesRequestSchema>;
 
@@ -385,6 +390,14 @@ export const applicationPanelUsesResponseSchema = z.object({
   panelUses: z.array(applicationPanelUseSchema),
 }).strict();
 export type ApplicationPanelUsesResponse = z.infer<typeof applicationPanelUsesResponseSchema>;
+
+/** A maintenance read is the full declaration and uses, independent of the viewer's visible menu. */
+export const applicationPanelUsesManagementSchema = applicationPanelUsesResponseSchema.extend({
+  declaration: applicationMetadataSchema,
+  entryAccess: z.array(id).min(1),
+  ...applicationEntrySettings,
+});
+export type ApplicationPanelUsesManagement = z.infer<typeof applicationPanelUsesManagementSchema>;
 
 /** Internal product subscription branch; readers reload the ID from its current owner. */
 export const productDefinitionChangedEventSchema = z.object({

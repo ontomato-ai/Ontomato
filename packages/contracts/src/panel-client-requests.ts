@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema } from "./agent-runtime-values";
 import { platformSchedulesPath } from "./platform-schedules";
-import { ACTION, AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, KNOWLEDGE_GOVERNANCE_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE } from "./platform-object-types";
+import { ACTION, AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, KNOWLEDGE_GOVERNANCE_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, RUN_NOW, SET_ACTION_STATUS, DELETE_ACTION, APPROVE_KNOWLEDGE, DELETE_KNOWLEDGE } from "./platform-object-types";
 
-export { ACTION, AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, KNOWLEDGE_GOVERNANCE_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE } from "./platform-object-types";
+export { ACTION, AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, KNOWLEDGE_GOVERNANCE_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, RUN_NOW, SET_ACTION_STATUS, DELETE_ACTION, APPROVE_KNOWLEDGE, DELETE_KNOWLEDGE } from "./platform-object-types";
 
 /*
  * The requests the SDK's platform clients send, by the binding that reaches each client (overall design 3.2, 5.1). A
@@ -17,17 +17,12 @@ export { ACTION, AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION, METR
  */
 
 /** The platform operation that runs one scheduled task now, as a projection binds it. */
-export const RUN_NOW = "schedules.runNow";
 export const DELETE_AGENT = "agents.delete";
 export const DELETE_METRIC_VIEW = "metricViews.delete";
 export const SET_METRIC_VIEW_STATUS = "metricViews.setStatus";
 export const TEST_METRIC_VIEW = "metricViews.test";
 export const TEST_EXECUTE_METRIC_VIEW = "metricViews.testExecute";
 export const DELETE_FUNCTION = "functions.delete";
-export const SET_ACTION_STATUS = "actions.setStatus";
-export const DELETE_ACTION = "actions.delete";
-export const APPROVE_KNOWLEDGE = "knowledge.approve";
-export const DELETE_KNOWLEDGE = "knowledge.delete";
 export const DELETE_SKILL = "skills.delete";
 export const IMPORT_SKILL = "skills.import";
 export const EXPORT_SKILL = "skills.export";

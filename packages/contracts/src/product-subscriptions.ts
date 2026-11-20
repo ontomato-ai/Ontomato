@@ -1,5 +1,6 @@
 import {z} from 'zod';
 import {productDefinitionChangedEventSchema,type ProductDefinitionChangedEvent} from './product-panels';
+import {panelMemberPathSchema} from './panel-manifest';
 import {pageSkillContextSchema} from './page-skills';
 
 const id=z.string().min(1).max(200);
@@ -15,9 +16,18 @@ export type ProductSubscriptionEvent = ProductDefinitionChangedEvent | {kind:'ch
 
 export const definitionRevisionSchema = z.object({id,revision:z.number().int().positive()}).strict();
 export type DefinitionRevision = z.infer<typeof definitionRevisionSchema>;
+export const panelMemberSnapshotSchema = z.discriminatedUnion('status',[
+  z.object({
+    status:z.literal('ready'), memberPath:panelMemberPathSchema.nonempty(),
+    target:productDefinitionChangedEventSchema.shape.target, revision:definitionRevisionSchema.shape.revision,
+  }).strict(),
+  z.object({status:z.literal('forbidden'), memberPath:panelMemberPathSchema.nonempty()}).strict(),
+]);
+export type PanelMemberSnapshot = z.infer<typeof panelMemberSnapshotSchema>;
 export const panelDefinitionSnapshotSchema = z.object({
   panel:definitionRevisionSchema,
   projections:z.array(definitionRevisionSchema),
+  members:z.array(panelMemberSnapshotSchema).optional(),
   pageSkillContext:pageSkillContextSchema.optional(),
 }).strict();
 export type PanelDefinitionSnapshot = z.infer<typeof panelDefinitionSnapshotSchema>;
