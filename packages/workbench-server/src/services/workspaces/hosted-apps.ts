@@ -112,14 +112,14 @@ export async function publishWorkspace(owner: AssistantOwner, workspaceId: strin
     ? { ...file, encoding: "utf8" as const, content: injectHostedSdkHtml(Buffer.from(file.content, file.encoding).toString("utf8"), sdk, file.path) }
     : file);
   requireHostedSdkTransport(files, sdk);
-  const { assetIds: productIds } = sourceProductManifest(files);
+  const { assetIds: productIds, triggerIds } = sourceProductManifest(files);
   for(const productId of productIds) {
     const product=await getProduct(owner,productId);
     if(!["page","widget","widget-group","operation-panel","dashboard","object-view","object-projection","metric-widget","action-view","collection-view","navigation","agent-profile"].includes(product.document.kind))throw new HttpError(400,"Application manifest must reference pages or runnable components","INVALID_PRODUCT_CHILD");
     await validateProduct(owner,product,credentials);
     await validateChildren(owner,product,credentials);
   }
-  const productSnapshot=await captureProductRelease(owner,productIds,credentials,manifest.triggerIds);
+  const productSnapshot=await captureProductRelease(owner,productIds,credentials,triggerIds);
   const release = await transaction(async c => {
     await c.query(`INSERT INTO ${t("hosted_apps")} (app_id,domain_id,owner_id,workspace_id) VALUES($1,$2,$3,$4) ON CONFLICT(domain_id,workspace_id) DO NOTHING`, [`app-${randomUUID()}`, owner.domainId, owner.userId, workspaceId]);
     const app = (await c.query(`SELECT app_id FROM ${t("hosted_apps")} WHERE domain_id=$1 AND owner_id=$2 AND workspace_id=$3`, [owner.domainId, owner.userId, workspaceId])).rows[0];
