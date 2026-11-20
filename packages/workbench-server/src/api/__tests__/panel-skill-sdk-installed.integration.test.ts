@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -8,7 +8,7 @@ import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { runtimeRegisterSkillRequestSchema, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
-import { appsSdkReleaseManifestSchema } from "@ontomato/contracts/apps-sdk";
+import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { installContentLayout } from "../../content/layout";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
@@ -84,7 +84,6 @@ vi.mock("../../utils/backend-client", async original => ({
 
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
 if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
-const current = "1.1.2-dev.current";
 const agentId = randomUUID();
 let server: Server;
 let root: string;
@@ -96,29 +95,7 @@ const digest = "b".repeat(64);
 beforeAll(async () => {
   root = await mkdtemp(path.join(tmpdir(), "bundled-sdk-skill-"));
   const publicSkills = path.join(root, "public");
-  const distribution = path.join(root, "dist/apps-sdk");
-  const bundled = path.join(distribution, current);
-  const manifest = appsSdkReleaseManifestSchema.parse({
-    version: current,
-    product: "ontomato",
-    executionContext: 1,
-    hostTransport: 1,
-    messageBridge: 2,
-    entries: { "@ontomato/sdk/panel": "panel.js" },
-    stylesheet: "styles/sdk.css",
-    components: "components.json",
-    check: "node/panel-check.mjs",
-    libraries: {},
-    docs: "docs/index.md",
-  });
-  await Promise.all([mkdir(publicSkills), mkdir(bundled, { recursive: true })]);
-  await Promise.all([
-    writeFile(path.join(distribution, "current.json"), JSON.stringify({ version: current, digest: "a".repeat(64) })),
-    writeFile(path.join(bundled, "sdk.json"), JSON.stringify(manifest)),
-    writeFile(path.join(bundled, manifest.components), JSON.stringify({
-      version: current, components: [{ componentId: "ObjectList", meaning: "Displays current objects" }],
-    })),
-  ]);
+  await Promise.all([mkdir(publicSkills), writeBundledAppSdkFixture(root)]);
   installContentLayout({ runtimeRoot: root, prompts: [], publicSkillsRoot: publicSkills, runtimeResources: [] });
   configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { messages: en, ...enLocaleMeta } } });
   const requirePermission: WorkbenchIdentity["requirePermission"] = () => (_req, _res, next) => next();

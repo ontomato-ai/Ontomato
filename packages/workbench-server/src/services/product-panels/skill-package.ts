@@ -11,20 +11,11 @@ import { productPanelInputSchema, productProjectionInputSchema, type PanelSkillS
 import type { ProtectedSkillOffering } from "../../core/skills";
 import { getDefaultLocale } from "../../i18n";
 import { findCurrentProduct, type CurrentProductKind } from "../../infrastructure/product-current";
-import { readCurrentAppSdkComponents } from "../app-builder/sdk";
+import { readPanelComponentCatalogue } from "./component-catalogue";
 import { directProjectionWriteDescriptions } from "./direct-operations";
 import { panelServerOperation, panelServerOperationSupportsBatch } from "./server-operations";
 
-const catalogue = z.object({
-  version: z.string(),
-  components: z.array(z.object({
-    componentId: z.string(),
-    meaning: z.string(),
-  })),
-});
-type ComponentMetadata = z.infer<typeof catalogue>["components"][number];
-type ComponentCatalogue = ReadonlyMap<string, ComponentMetadata>;
-type ComponentRelease = { version: string; digest: string; components: ComponentCatalogue };
+type ComponentCatalogue = Awaited<ReturnType<typeof readPanelComponentCatalogue>>["components"];
 const verbs = new Intl.ListFormat("en", { type: "conjunction" });
 
 function fingerprint(value: unknown): string {
@@ -44,12 +35,6 @@ function panelSkillManifest(skill: RuntimeSkillRef, panel: PanelDescription, sou
     description: `${actionText[0]!.toUpperCase()}${actionText.slice(1)} for ${panel.name}.`,
     metadata: { "ontomato-panel-fingerprint": sourceFingerprint },
   };
-}
-
-function parseComponentCatalogue(version: string, raw: unknown) {
-  const parsed = catalogue.parse(raw);
-  if (parsed.version !== version) throw new Error(`Expected SDK catalogue ${version}, found ${parsed.version}`);
-  return new Map(parsed.components.map(component => [component.componentId, component]));
 }
 
 async function currentDefinition(domainId: string, kind: CurrentProductKind, id: string) {
@@ -75,16 +60,14 @@ export async function panelSkillOfferings(domainId: string, sources: readonly Pa
     projections.set(id, read);
     return read;
   }
-  let release: Promise<ComponentRelease> | undefined;
+  let release: ReturnType<typeof readPanelComponentCatalogue> | undefined;
   return Promise.all([...panels].map(async ([id, entrances]): Promise<ProtectedSkillOffering> => {
     const panel = productPanelInputSchema.parse(await currentDefinition(domainId, "panel", id));
     const projectionIds = [...new Set(Object.values(panel.manifest.members)
       .flatMap(({ target }) => "projectionId" in target ? [target.projectionId] : []))];
     async function buildSnapshot() {
       const [sdk, entries] = await Promise.all([
-        release ??= readCurrentAppSdkComponents().then(({ version, digest, catalogue }) => ({
-          version, digest, components: parseComponentCatalogue(version, catalogue),
-        })),
+        release ??= readPanelComponentCatalogue(),
         Promise.all(projectionIds.map(async projectionId => [projectionId, await projection(projectionId)] as const)),
       ]);
       const description = describePanel(panel, new Map(entries), sdk.components);
@@ -124,7 +107,7 @@ function describePanel(
     if (!("projectionId" in declaration.target)) return [];
     const { projectionId } = declaration.target;
     const projection = records.get(projectionId)!;
-    const component = components.get(projection.componentId.slice("@ontomato/sdk:".length));
+    const component = components.get(projection.componentId);
     if (!component) throw new Error("SDK component " + projection.componentId + " is missing for projection " + projectionId);
     const data = Object.fromEntries(Object.entries(projection.data).map(([key, read]) =>
       [key, { ...read, result: directReadDeclaration(projection, read)!.result }]));

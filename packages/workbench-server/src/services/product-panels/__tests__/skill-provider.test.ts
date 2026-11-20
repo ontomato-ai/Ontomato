@@ -114,9 +114,10 @@ beforeEach(async () => {
   await writeFile(path.join(bundled, manifest.components), JSON.stringify({
     version: currentVersion,
     components: components.map(component => {
-      if (component.componentId === "ObjectSummary") return { ...component, meaning: "Summary from the current SDK release." };
-      if (component.componentId === "ObjectList") return { ...component, meaning: "List from the current SDK release." };
-      return component;
+      const ports = { props: [], events: [], slots: [] };
+      if (component.componentId === "ObjectSummary") return { ...component, ports, meaning: "Summary from the current SDK release." };
+      if (component.componentId === "ObjectList") return { ...component, ports, meaning: "List from the current SDK release." };
+      return { ...component, ports };
     }),
   }));
   installContentLayout({ runtimeRoot: root, prompts: [], publicSkillsRoot: root, runtimeResources: [] });

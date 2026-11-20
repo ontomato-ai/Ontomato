@@ -1,4 +1,9 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { writeBundledAppSdkFixture } from "../../../__tests__/fixtures/bundled-app-sdk";
+import { installContentLayout } from "../../../content/layout";
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { registerProductPanelRequestSchema, registerProductProjectionRequestSchema } from "@ontomato/contracts/product-panels";
 import { HttpError } from "../../../utils/errors";
 const mocks = vi.hoisted(() => ({ query: vi.fn(), grant: vi.fn(), register: vi.fn(), share: vi.fn(), notify: vi.fn(), edits: [] as string[] }));
@@ -22,6 +27,14 @@ const panel = () => registerProductPanelRequestSchema.parse({ name: "Tasks", des
 async function seedProjection() {
   return saveCurrentProjection(owner, credentials, "x", projection());
 }
+
+let runtimeRoot: string;
+beforeAll(async () => {
+  runtimeRoot = await mkdtemp(path.join(os.tmpdir(), "current-product-"));
+  await writeBundledAppSdkFixture(runtimeRoot);
+  installContentLayout({ runtimeRoot, publicSkillsRoot: runtimeRoot, prompts: [], runtimeResources: [] });
+});
+afterAll(() => rm(runtimeRoot, { recursive: true }));
 
 beforeEach(() => {
   vi.resetAllMocks(); mocks.edits = []; rows = new Map();

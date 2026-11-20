@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { appsSdkComponentCatalogSchema } from "@ontomato/contracts/apps-sdk";
 import {
   APPLICATION_PANEL_REFERENCES_PATH, productPanelResponseSchema, productProjectionResponseSchema,
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
@@ -19,6 +20,7 @@ import {
   type ProductDefinitionRevision,
 } from "@ontomato/contracts/product-subscriptions";
 import { installContentLayout } from "../../content/layout";
+import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { readSseFrames } from "../../infrastructure/agent-runtime/client";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
@@ -29,7 +31,9 @@ vi.mock("../../infrastructure/postgres", () => ({
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
 }));
 vi.mock("../../config/application", () => ({ config: { dataQuery: { get baseUrl() { return state.base; } } } }));
-vi.mock("../../config/environment", () => ({ environment: { agentRuntime: () => ({ queryServiceToken: "fixture-service" }) } }));
+vi.mock("../../config/environment", () => ({
+  environment: { agentRuntime: () => ({ queryServiceToken: "fixture-service" }), publicBasePath: () => "" },
+}));
 vi.mock("../../utils/request-identity", async original => ({
   ...await original<typeof import("../../utils/request-identity")>(),
   requireDomainId: (req: { domainId: string }) => req.domainId,
@@ -47,6 +51,7 @@ const trial = await import(fileURLToPath(new URL("../../../../apps-sdk/examples/
 };
 let server: Server;
 let contentRoot: string;
+let cataloguePath: string;
 const grants = new Set<string>();
 const codePanelId = "panel-schedules-mixed";
 
@@ -57,6 +62,7 @@ beforeAll(async () => {
   await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
   contentRoot = await mkdtemp(path.join(os.tmpdir(), "direct-panel-host-"));
+  cataloguePath = await writeBundledAppSdkFixture(contentRoot);
   installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
 
   const { panelOperationsRouter, productPanelsInternalRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
@@ -95,6 +101,52 @@ beforeAll(async () => {
     const started = app.listen(0, "127.0.0.1", () => resolve(started));
   });
   state.base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+});
+
+it("checks projection data against the current release before registering or changing a record", async () => {
+  const trialSummary = trial.projections.find(projection => projection.id === "projection-schedules-summary")!;
+  const summary = projectionRequest(trialSummary.input, 0);
+  expect("data" in summary).toBe(true);
+  if (!("data" in summary)) throw new Error("Expected an ordinary projection in the trial");
+  const rows = { source: { type: { kind: "PlatformObjectType", id: "platform:ScheduledTask" } }, read: "list", params: {} };
+  const rejects = async (id: string, body: object, code: string) => {
+    const result = await request("PUT", "product-projections/" + id, body);
+    expect(result.status).toBe(400);
+    expect(await result.json()).toMatchObject({ error: { code } });
+  };
+
+  await rejects("catalogue-wrong-result", { ...summary, data: { record: rows } }, "PANEL_COMPONENT_DATA_RESULT_MISMATCH");
+  await rejects("catalogue-unknown-data", { ...summary, data: { ...summary.data, extra: rows } }, "PANEL_COMPONENT_DATA_UNKNOWN");
+  await rejects("catalogue-missing-record", { ...summary, data: {} }, "PANEL_COMPONENT_DATA_REQUIRED");
+  await rejects("catalogue-missing-alternative", { ...summary, componentId: "@ontomato/sdk:ObjectList", data: {} }, "PANEL_COMPONENT_DATA_REQUIRED");
+  expect([...grants].some(id => id.startsWith("catalogue-"))).toBe(false);
+
+  const id = "catalogue-existing";
+  const saved = await request("PUT", "product-projections/" + id, summary);
+  expect(saved.status).toBe(200);
+  const before = productProjectionResponseSchema.parse(await saved.json());
+  await rejects(id, { ...summary, revision: 1, data: { record: rows } }, "PANEL_COMPONENT_DATA_RESULT_MISMATCH");
+  const stored = await request("GET", "product-projections/" + id);
+  expect(productProjectionResponseSchema.parse(await stored.json())).toEqual(before);
+
+  const entry = await request("PUT", "product-projections/catalogue-conversation", {
+    ...summary, componentId: "@ontomato/sdk:ConversationEntry", data: {}, inputs: {}, config: {},
+    conversationEntry: { target: { kind: "page-default" } },
+  });
+  expect(entry.status, await entry.text()).toBe(200);
+
+  const catalogue = appsSdkComponentCatalogSchema.parse(JSON.parse(await readFile(cataloguePath, "utf8")));
+  const others = catalogue.components.filter(component => component.componentId !== "ObjectSummary");
+  try {
+    await writeFile(cataloguePath, JSON.stringify({ ...catalogue, components: others }));
+    await rejects("catalogue-absent", summary, "PANEL_COMPONENT_UNAVAILABLE");
+    const { data: _data, ...codeOnly } = catalogue.components.find(component => component.componentId === "ObjectSummary")!;
+    await writeFile(cataloguePath, JSON.stringify({ ...catalogue, components: [...others, codeOnly] }));
+    await rejects("catalogue-code-only", summary, "PANEL_COMPONENT_NOT_PROJECTABLE");
+    expect(grants.has("catalogue-absent") || grants.has("catalogue-code-only")).toBe(false);
+  } finally {
+    await writeFile(cataloguePath, JSON.stringify(catalogue));
+  }
 });
 
 afterAll(async () => {
