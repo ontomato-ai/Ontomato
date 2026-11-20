@@ -830,5 +830,69 @@
   {
     "key": "KnowledgeGovernance.source.externalMaterial",
     "value": "External governance material"
+  },
+  {
+    "key": "ActionSegment.kind.QUERY",
+    "value": "Query"
+  },
+  {
+    "key": "ActionSegment.kind.CREATE_OBJECT",
+    "value": "Create object"
+  },
+  {
+    "key": "ActionSegment.kind.UPDATE_OBJECT",
+    "value": "Update object"
+  },
+  {
+    "key": "ActionSegment.kind.DELETE_OBJECT",
+    "value": "Delete object"
+  },
+  {
+    "key": "ActionSegment.kind.CREATE_EDGE",
+    "value": "Create relation"
+  },
+  {
+    "key": "ActionSegment.kind.DELETE_EDGE",
+    "value": "Delete relation"
+  },
+  {
+    "key": "ActionSegment.kind.APPEND_VECTOR",
+    "value": "Append vector file"
+  },
+  {
+    "key": "ActionSegment.kind.UPDATE_VECTOR",
+    "value": "Update vector file"
+  },
+  {
+    "key": "ActionSegment.kind.DELETE_VECTOR",
+    "value": "Delete vector file"
+  },
+  {
+    "key": "ActionSegment.kind.COMPUTE",
+    "value": "Compute"
+  },
+  {
+    "key": "ActionSegment.kind.EXTERNAL_CALL",
+    "value": "External call"
+  },
+  {
+    "key": "ActionSegment.kind.BRANCH",
+    "value": "Branch"
+  },
+  {
+    "key": "ActionSegment.kind.LOOP",
+    "value": "Loop"
+  },
+  {
+    "key": "ActionSegment.kind.TRY_CATCH",
+    "value": "Try / catch"
+  },
+  {
+    "key": "ActionSegment.kind.ERROR_HANDLING",
+    "value": "Error handling"
+  },
+  {
+    "key": "ActionSegment.kind.CUSTOM",
+    "value": "Other"
   }
 ]

@@ -41,6 +41,32 @@ public class ApplicationController {
             this(entry, panelUses, declaration, entryAccess, null, null, null);
         }
     }
+    public record CatalogueFormTarget(String kind, String id, String objectType, String primaryKey) {}
+    public record CatalogueFormRequest(String section, CatalogueFormTarget target, JSONObject values, String changedField) {}
+    public record IdentityUpdate(Map<String, String> names, Map<String, String> descriptions, String icon) {}
+
+    @GetMapping("/platform/applications/catalogue")
+    public R<JSONObject> catalogue(@RequestParam(defaultValue = "") String search,
+            @RequestParam(defaultValue = "visible") String scope, @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "30") int size) {
+        return R.of(catalog.catalogue(current(), search, scope, cursor, size));
+    }
+
+    @GetMapping("/platform/applications/catalogue/{id}")
+    public R<JSONObject> catalogueRecord(@PathVariable String id) {
+        return R.of(catalog.catalogueRecord(id, current()));
+    }
+
+    @PostMapping("/platform/applications/catalogue/form")
+    public R<JSONObject> catalogueForm(@RequestBody CatalogueFormRequest body) {
+        return R.of(catalog.catalogueForm(body, current()));
+    }
+
+    @PutMapping("/platform/applications/{id}/identity")
+    public R<IdentityUpdate> updateIdentity(@PathVariable String id, @RequestBody IdentityUpdate body) {
+        return R.of(catalog.updateIdentity(id, body, current()));
+    }
+
     @GetMapping("/platform/applications/resolve-entry")
     @io.ontomato.dataengine.controller.BuildTestAccess(io.ontomato.dataengine.controller.BuildTestAccess.Access.NO_BUSINESS_DATA)
     public R<JSONObject> resolveEntry(@RequestParam(required = false) String path,
@@ -61,8 +87,9 @@ public class ApplicationController {
     }
 
     @PutMapping("/platform/applications/{id}/panel-uses")
-    public R<JSONObject> putPanelUses(@PathVariable String id, @RequestBody PanelRegistration body) {
-        return R.of(catalog.putPanelUses(id, body, current()));
+    public R<JSONObject> putPanelUses(@PathVariable String id, @RequestBody PanelRegistration body,
+            @RequestParam(defaultValue = "false") boolean create) {
+        return R.of(catalog.putPanelUses(id, body, current(), create));
     }
     @DeleteMapping("/platform/applications/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
