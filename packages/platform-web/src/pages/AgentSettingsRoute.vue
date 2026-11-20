@@ -113,7 +113,7 @@ watch(() => route.name, () => void ensureLoaded());
       @select-agent="selectAgent"
       @create-agent="createAgent"
     />
-    <AgentSettingsPage :agent-id="agentId" :creating="creating" @created="selectAgent" @changed="openList" />
+    <AgentSettingsPage :agent-id="agentId" :creating="creating" @created="selectAgent" @deleted="openList" />
   </div>
 </template>
 

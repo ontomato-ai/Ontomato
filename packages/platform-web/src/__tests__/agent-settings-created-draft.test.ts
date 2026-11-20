@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
-import ElementPlus from "element-plus";
+import ElementPlus, { ElMessageBox } from "element-plus";
 import { defineComponent, h } from "vue";
 import { createMemoryHistory, createRouter, type Router } from "vue-router";
 import type { AssistantAgentDefinition, AssistantAgentInput } from "@ontomato/contracts/assistant-chat";
@@ -24,7 +24,7 @@ const EDITED = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const QUERY = "draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2Fagent.page-draft.json";
 
 const server = vi.hoisted(() => ({
-  agents: [] as AssistantAgentDefinition[], read: vi.fn(), record: vi.fn(), create: vi.fn(), update: vi.fn(),
+  agents: [] as AssistantAgentDefinition[], read: vi.fn(), record: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(),
 }));
 vi.mock("../../../workbench-ui/src/features/workbench/assistant-host", () => ({
   createAssistantClient: () => ({ readPageDraft: server.read, recordPageDraftCreated: server.record }),
@@ -41,6 +41,7 @@ vi.mock("../../../workbench-ui/src/features/agents/api", () => ({
     executionOptions: async () => ({ canSetExecutionUser: false, users: [] }),
     create: server.create,
     update: server.update,
+    remove: server.remove,
   },
   loadModelOptions: async () => ({ models: [], defaultModelId: null, embeddingModelId: null }),
   loadOntologyScope: async () => ({ classes: [], relations: [] }),
@@ -68,6 +69,8 @@ afterEach(() => {
   server.record.mockReset();
   server.create.mockReset();
   server.update.mockReset();
+  server.remove.mockReset();
+  vi.restoreAllMocks();
   document.body.innerHTML = "";
 });
 
@@ -155,17 +158,34 @@ describe.each([platformRoutes.agents.path, platformRoutes.ontologyAgents.path])(
       expect(wrapper.get(".agent-row[aria-current=page]").text()).toBe(created.name);
     });
 
-    it("returns to the list after saving an existing agent", async () => {
+    // The saved agent is not the list's first: had the page left its address, the editor would show another agent.
+    it.each([false, true])("stays on the agent it saved (beside a conversation: %s)", async (beside) => {
       const renamed = { ...edited, name: "Renamed analyst" };
       server.update.mockResolvedValue(renamed);
-      const { wrapper, router } = await openAt([existing, edited], `${prefix}/` + EDITED);
+      const { wrapper, router } = await openAt([existing, edited], `${prefix}/` + EDITED, beside);
 
       await nameField(wrapper).setValue(renamed.name);
       await save(wrapper);
 
       expect(server.update).toHaveBeenCalledWith(EDITED, expect.objectContaining({ name: renamed.name }));
+      const target = `${prefix}/` + EDITED;
+      if (beside) expect(router.currentRoute.value.query.page).toBe(target);
+      else expect(router.currentRoute.value.fullPath).toBe(target);
+      expect((nameField(wrapper).element as HTMLInputElement).value).toBe(renamed.name);
+      expect(wrapper.get(".agent-row[aria-current=page]").text()).toBe(renamed.name);
+    });
+
+    it("returns to the list once the agent it shows is deleted", async () => {
+      vi.spyOn(ElMessageBox, "confirm").mockResolvedValue("confirm" as never);
+      server.remove.mockResolvedValue(undefined);
+      const { wrapper, router } = await openAt([existing, edited], `${prefix}/` + EDITED);
+
+      await wrapper.findAll(".platform-page-header button").find((button) => button.text() === t("common.delete"))!.trigger("click");
+      await flushPromises();
+
+      expect(server.remove).toHaveBeenCalledWith(EDITED);
       expect(router.currentRoute.value.fullPath).toBe(prefix);
-      expect((nameField(wrapper).element as HTMLInputElement).value).toBe(existing.name);
+      expect(wrapper.findAll(".agent-row").map((row) => row.text())).toEqual([existing.name]);
     });
   });
 

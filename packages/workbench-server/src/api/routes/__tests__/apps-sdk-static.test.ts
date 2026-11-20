@@ -20,10 +20,12 @@ const SDK_MANIFEST = {
   entries: { "@ontomato/sdk/panel": "panel.js" },
   stylesheet: "styles/sdk.css",
   components: "catalogue/components.json",
+  check: "node/panel-check.mjs",
 };
 const COMPONENTS = { version: VERSION, components: [{ componentId: "ObjectList", meaning: "Lists objects." }] };
 const PANEL_JS = Buffer.from("export const panel = 'panel';\n");
 const STYLESHEET = Buffer.from("body { color: red; }\n");
+const CHECKER = Buffer.from("export const ready = true;\n");
 const ENTRY = Buffer.from(`${JSON.stringify({ version: VERSION })}\n`);
 let root: string;
 let server: Server;
@@ -45,6 +47,8 @@ beforeAll(async () => {
   mkdirSync(path.join(versionRoot, "catalogue"));
   writeFileSync(path.join(versionRoot, "sdk.json"), JSON.stringify(SDK_MANIFEST));
   writeFileSync(path.join(versionRoot, SDK_MANIFEST.components), JSON.stringify(COMPONENTS));
+  mkdirSync(path.join(versionRoot, "node"));
+  writeFileSync(path.join(versionRoot, SDK_MANIFEST.check), CHECKER);
   const buildRoot = path.join(root, "dist/apps-sdk");
   mkdirSync(buildRoot, { recursive: true });
   writeFileSync(path.join(buildRoot, "current.json"), JSON.stringify({ version: VERSION, digest: DIGEST }));
@@ -92,7 +96,7 @@ function expectCommonHeaders(headers: IncomingHttpHeaders) {
 }
 
 describe("current apps SDK discovery", () => {
-  it("discovers the installed package and its catalogue with the deployment prefix", async () => {
+  it("discovers the installed SDK checker and catalogue with the deployment prefix", async () => {
     const response = await get(`${PUBLIC_PREFIX}/api/apps-sdk/current`);
     expect(response.status).toBe(200);
     const sdkBasePath = `${PUBLIC_PREFIX}/apps-sdk/${VERSION}`;
@@ -104,13 +108,18 @@ describe("current apps SDK discovery", () => {
       sdkBasePath,
       manifestPath: `${sdkBasePath}/sdk.json`,
       componentsPath: `${sdkBasePath}/${SDK_MANIFEST.components}`,
+      checkPath: `${sdkBasePath}/${SDK_MANIFEST.check}`,
       docsPath: `${sdkBasePath}/docs/index.md`,
       referencePath: `${sdkBasePath}/docs/reference.md`,
     });
     const manifest = await get(current.manifestPath);
     const catalogue = await get(current.componentsPath);
+    const checker = await get(current.checkPath);
     expect(manifest.status).toBe(200);
     expect(catalogue.status).toBe(200);
+    expect(checker.status).toBe(200);
+    expect(checker.headers["content-type"]).toMatch(/javascript/);
+    expect(checker.body).toEqual(CHECKER);
     expect(JSON.parse(manifest.body.toString())).toEqual(SDK_MANIFEST);
     expect(JSON.parse(catalogue.body.toString())).toEqual(COMPONENTS);
     expect(await readCurrentAppSdkComponents()).toEqual({ version: VERSION, digest: DIGEST, catalogue: COMPONENTS });
