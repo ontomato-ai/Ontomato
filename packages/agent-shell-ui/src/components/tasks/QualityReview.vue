@@ -7,8 +7,7 @@ import type { ResponseReview } from "../../view";
 /**
  * Another party's review of the reply's data, beside the reply and never part of it: folded to one line (the score and
  * why, in one sentence, or that it is checking or could not complete), opened for the whole conclusion, the score, a
- * better-fitting question and what it checked. It updates the moment the check settles, whether or not the reply
- * is still running.
+ * better-fitting question and what it checked. The reply that cited the data shows it once that reply has its answer.
  */
 const props = defineProps<{ review: ResponseReview }>();
 const shell = inject(shellContextKey)!;
@@ -16,7 +15,6 @@ const labels = computed(() => shell.labels.value.tasks!);
 const open = ref(false);
 const task = computed(() => props.review.task);
 const result = computed(() => props.review.result);
-const source = computed(() => labels.value.checkedBranch[task.value.checks.source]);
 const score = computed(() => (result.value ? labels.value.score(Math.round(result.value.score)) : ""));
 const reason = computed(() => {
   const error = task.value.error;
@@ -58,7 +56,7 @@ watch(() => shell.taskFocus?.value, (focus) => {
         <dd>{{ reason }}</dd>
       </template>
       <dt>{{ labels.checked }}</dt>
-      <dd>{{ source }}<template v-if="review.datasets.length">: {{ review.datasets.map((dataset) => dataset.title).join("、") }}</template></dd>
+      <dd>{{ review.datasets.map((dataset) => dataset.title).join("、") }}</dd>
     </dl>
   </section>
 </template>

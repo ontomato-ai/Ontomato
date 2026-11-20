@@ -30,12 +30,6 @@ public class OntologyRetrievalController {
     return runId == null ? retrieval.get(id, owner) : retrieval.get(id, runId, owner);
   }
 
-  @PostMapping("/ontology/retrievals/{id}/retriever/cancel")
-  public Object cancelRetriever(@PathVariable String id,@RequestBody JSONObject body,HttpServletRequest req) throws Exception {
-    if(req.getHeader("X-Ontomato-Query-Service-Token")!=null) {access.service(req);store.requireCallerResource(AgentJson.id(req.getHeader("X-Ontomato-Retrieval-Caller-Id")),AgentJson.id(id),AgentJson.id(body.getString("expectedRoundId")));}
-    return retrieval.cancelRetriever(AgentJson.id(id),AgentJson.id(body.getString("expectedRoundId")),access.authenticated(req).owner());
-  }
-
   @GetMapping("/ontology/retrievals/{id}/datasets/{artifact}/content")
   public ResponseEntity<byte[]> datasetContent(@PathVariable String id,@PathVariable String artifact,HttpServletRequest req) throws Exception {
     return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(retrieval.datasetContent(AgentJson.id(id),AgentJson.id(artifact),access.reader(req,id,null)));
@@ -55,14 +49,32 @@ public class OntologyRetrievalController {
         AgentJson.id(id), AgentJson.id(artifact), access.reader(req, id, null));
   }
 
-  @GetMapping("/ontology/retrievals/{id}/runs/{run}/quality")
-  public Object quality(@PathVariable String id,@PathVariable String run,HttpServletRequest request) {
-    return JSONObject.of("quality",tasks.qualityEvidence(AgentJson.id(id),AgentJson.id(run),access.reader(request,id,run)));
+  /**
+   * The workbench, having verified which outputs a finished reply cited, asks for their check. The caller header is the
+   * round's own caller; the reply is another caller of the same owner. Only the host reports adoption.
+   */
+  @PostMapping("/ontology/retrievals/{id}/runs/{run}/quality")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  public void adoptQuality(@PathVariable String id,@PathVariable String run,@RequestBody JSONObject body,HttpServletRequest request) throws Exception {
+    access.service(request);
+    AgentJson.fields(body,"replyRunId","outputIds");
+    if(!(body.get("outputIds") instanceof List<?> outputs) || outputs.isEmpty() || outputs.stream().anyMatch(value -> !(value instanceof String)))
+      throw AgentHttpException.invalid("outputIds must be a nonempty string array");
+    var ids=body.getList("outputIds",String.class);
+    for(String output:ids) AgentJson.id(output);
+    if(new HashSet<>(ids).size()!=ids.size()) throw AgentHttpException.invalid("outputIds must be distinct");
+    retrieval.adoptQuality(AgentJson.id(id),AgentJson.id(run),AgentJson.id(body.getString("replyRunId")),ids,access.reader(request,id,run));
   }
   @GetMapping("/ontology/retrievals/{id}/runs/{run}/evidence")
   public Object evidence(@PathVariable String id, @PathVariable String run, HttpServletRequest req)
       throws Exception {
     return retrieval.evidence(AgentJson.id(id), AgentJson.id(run), access.reader(req, id, run));
+  }
+
+  @PostMapping("/ontology/retrievals/{id}/dataset-source")
+  public Object datasetSource(
+      @PathVariable String id, @RequestBody JSONObject body, HttpServletRequest req) {
+    return retrieval.datasetSource(AgentJson.id(id), body, access.reader(req, id, null));
   }
 
   @PostMapping("/ontology/retrievals/skill-runs")
@@ -80,8 +92,8 @@ public class OntologyRetrievalController {
       throws Exception {
     var owner = access.authenticated(req).owner();
     if(req.getHeader("X-Ontomato-Query-Service-Token")!=null) {access.service(req);store.requireCallerResource(AgentJson.id(req.getHeader("X-Ontomato-Retrieval-Caller-Id")),AgentJson.id(id),AgentJson.id(run));}
-    store.closeRun(AgentJson.id(id), AgentJson.id(run), owner);
-    retrieval.cancelWork(id, run, owner);
+    // A normal close only ends this run's write window; what it delivered may still be checked after the reply.
+    store.endWrites(AgentJson.id(id), AgentJson.id(run), owner);
   }
 
   @PostMapping("/ontology/retrievals/{id}/runs/{run}/outputs")
@@ -96,6 +108,22 @@ public class OntologyRetrievalController {
       throw AgentHttpException.invalid("Run identity mismatch");
     if(req.getHeader("X-Ontomato-Query-Service-Token")!=null) {access.service(req);store.requireCallerResource(AgentJson.id(req.getHeader("X-Ontomato-Retrieval-Caller-Id")),AgentJson.id(id),AgentJson.id(run));}
     return retrieval.prepareOutput(
+        AgentJson.id(id), AgentJson.id(run), AgentJson.id(key), body, access.executionContext(req));
+  }
+
+  /** The assistant's metric delivery: the selector names a published metric, everything else is the server's. */
+  @PostMapping("/ontology/retrievals/{id}/runs/{run}/submit-metric")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  public Object metricOutput(
+      @PathVariable String id,
+      @PathVariable String run,
+      @RequestHeader("Idempotency-Key") String key,
+      @RequestBody JSONObject body,
+      HttpServletRequest req) {
+    if (!run.equals(req.getHeader("X-Ontomato-Run-Id")))
+      throw AgentHttpException.invalid("Run identity mismatch");
+    if(req.getHeader("X-Ontomato-Query-Service-Token")!=null) {access.service(req);store.requireCallerResource(AgentJson.id(req.getHeader("X-Ontomato-Retrieval-Caller-Id")),AgentJson.id(id),AgentJson.id(run));}
+    return retrieval.prepareMetricOutput(
         AgentJson.id(id), AgentJson.id(run), AgentJson.id(key), body, access.executionContext(req));
   }
 
@@ -160,6 +188,12 @@ public class OntologyRetrievalController {
     AgentJson.fields(JSONObject.from(body),"recentUserMessages");
     if(!(body.get("recentUserMessages") instanceof List<?> quotes) || quotes.stream().anyMatch(value -> !(value instanceof String))) throw AgentHttpException.invalid("recentUserMessages must be a string array");
     store.updateUserQuotes(AgentJson.id(id),context.owner(),new JSONArray(quotes));
+  }
+
+  /** The checks a reply scheduled for the outputs it cited, as that reply's own task projection. */
+  @GetMapping("/ontology/retrieval-callers/{id}/quality")
+  public Object replyQuality(@PathVariable String id, HttpServletRequest req) {
+    return tasks.reply(AgentJson.id(id), access.callerOwner(req, AgentJson.id(id)));
   }
 
   @GetMapping("/ontology/retrieval-callers/{id}")

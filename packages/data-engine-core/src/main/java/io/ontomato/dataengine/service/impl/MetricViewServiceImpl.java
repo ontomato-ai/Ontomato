@@ -37,6 +37,7 @@ import io.ontomato.dataengine.service.BackendSessionEntrance;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.MetricViewService;
+import io.ontomato.dataengine.service.MetricRecall;
 import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.SubjectReference;
 import io.ontomato.dataengine.service.SubjectValueResolver;
@@ -420,6 +421,11 @@ public class MetricViewServiceImpl implements MetricViewService {
   public List<MetricView> queryForRetrieval(String domainId, String query, String cursor, List<String> classes, int limit) {
     return metricViewDao.queryForRetrieval(domainId, query, cursor, classes, limit, false).stream()
         .map(row -> hydrate(row, domainId)).toList();
+  }
+
+  @Override
+  public List<MetricRecall> recall(String question, String domainId, double maxDistance, int maxRows) {
+    return metricViewDao.recall(question, domainId, maxDistance, maxRows);
   }
 
   @Override

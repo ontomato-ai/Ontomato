@@ -10,9 +10,9 @@ export type AssistantRetrievalCallerInput=z.infer<typeof assistantRetrievalCalle
 export const assistantRetrievalOperationSchema=z.discriminatedUnion("operation",[
  z.object({operation:z.literal("begin"),key:id,input:runtimeJsonObjectSchema}).strict(),
  z.object({operation:z.literal("submit"),retrievalId:id,retrievalRunId:id,key:id,input:runtimeJsonObjectSchema}).strict(),
+ z.object({operation:z.literal("submit-metric"),retrievalId:id,retrievalRunId:id,key:id,input:runtimeJsonObjectSchema}).strict(),
  z.object({operation:z.literal("status"),retrievalId:id,retrievalRunId:id,key:id}).strict(),
  z.object({operation:z.literal("content"),retrievalId:id,retrievalRunId:id,key:id}).strict(),
  z.object({operation:z.literal("close"),retrievalId:id,retrievalRunId:id}).strict(),
- z.object({operation:z.literal("cancel"),retrievalId:id,retrievalRunId:id}).strict(),
 ]);
 export type AssistantRetrievalOperation=z.infer<typeof assistantRetrievalOperationSchema>;

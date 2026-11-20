@@ -7,7 +7,7 @@ import { isDirectUserRun, MID_ROUND_RESULT_NOTIFICATION_FACT } from "@ontomato/c
 import type { PresentationBinding } from "@ontomato/contracts/agent-presentation";
 import { runtimeStartRunRequestSchema, type RuntimeRun } from "@ontomato/contracts/agent-runtime";
 import type { RuntimeMessage } from "@ontomato/contracts/agent-runtime-messages";
-import type { AgentTask,QualityResult } from "@ontomato/contracts/agent-tasks";
+import type { AgentTask } from "@ontomato/contracts/agent-tasks";
 import type { Message } from "@earendil-works/pi-ai";
 import type { AgentTool } from "./core/pi/types";
 import type { AgentRuntime } from "./runtime";
@@ -529,7 +529,7 @@ export class AgentChannel {
     const sessions = (this.runtime.options.agentProviders ?? []).filter(provider => provider.hostId === scope.hostId).map(provider => ({ providerId: provider.id,sessionId }));
     const roots = await this.facts.descendants(scope.domainId,sessions);
     const own = (source: AgentExecutionRef) => sessions.some(session => session.providerId === source.session.providerId && session.sessionId === source.session.sessionId);
-    const tasks: AgentTask[] = [],qualityResults: QualityResult[]=[];
+    const tasks: AgentTask[] = [];
     for (const { intent,rootRunId } of roots) {
       const requestedBy = intent.channel.requestedBy!;
       const delivery = intent.status === "starting" || ((intent.status === "failed" || intent.status === "cancelled") && intent.cancelMode!=="model" && !await this.facts.hasRun(this.scope(intent.session,scope.domainId),intent.id)) ? null : agentDeliverySchema.parse(await this.callback(intent, "read"));
@@ -537,12 +537,8 @@ export class AgentChannel {
       tasks.push({ id: intent.id, kind: "agent", root: { sessionId, runId: rootRunId }, requestedBy, parentTaskId: own(requestedBy) ? null : requestedBy.runId,
         title: intent.title ?? (typeof input.content === "string" ? input.content.split("\n")[0] : intent.channel.agent.agentId), status: delivery?.status ?? intent.status, error: intent.error ? { code: "AGENT_EXECUTION_FAILED", message: intent.error } : null,
         createdAt: intent.createdAt, agentRef: intent.channel.agent, sessionRef: intent.session, runId: intent.id, process: delivery?.process ?? { mode: "none" }, results: delivery?.results ?? [],...(delivery?.retrieval?{retrieval:delivery.retrieval}:{}) });
-      for(const quality of delivery?.quality ?? []) {
-        const {result,...job}=quality;
-        tasks.push({...job,parentTaskId:intent.id,root:{sessionId,runId:rootRunId}});
-        if(result) qualityResults.push(result);
-      }
     }
-    return { sessionId, tasks, qualityResults, preparationFailures: await this.facts.preparationFailures(scope,sessionId), pendingQuestions: await this.facts.pendingQuestions(scope,sessionId), notifications: (await this.runtime.store.messages(scope, sessionId)).filter(row => row.message.role === "notification") };
+    // Quality checks belong to the host's replies; the host adds them to this projection.
+    return { sessionId, tasks, qualityResults: [], preparationFailures: await this.facts.preparationFailures(scope,sessionId), pendingQuestions: await this.facts.pendingQuestions(scope,sessionId), notifications: (await this.runtime.store.messages(scope, sessionId)).filter(row => row.message.role === "notification") };
   }
 }

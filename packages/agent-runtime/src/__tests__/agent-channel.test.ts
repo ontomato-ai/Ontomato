@@ -140,7 +140,7 @@ it("cannot prepare a bound run again after its delivery has settled", async () =
   const finished = settled.intents.get(runId)!;
   finished.status = "completed";
   vi.spyOn(settled.port, "callback").mockResolvedValue({
-    status: "completed", settled: true, summary: "", process: { mode: "none" }, results: [], quality: [], files: [],
+    status: "completed", settled: true, summary: "", process: { mode: "none" }, results: [], files: [],
   });
   await settled.port.stopped(scope, { ...run, channel: humanChannel });
   await expect(settled.port.prepare(finished)).rejects.toMatchObject({ code: "CALLER_CREDENTIAL_INVALID" });
@@ -254,7 +254,7 @@ it("a later parent run can read work its conversation delegated in an earlier ru
   const { channel: port } = channel();
   const child = { id: inputId, session: { providerId: source.session.providerId, sessionId: inputId }, channel: { ...context, root: { ...source,runId: "44444444-4444-4444-8444-444444444444" }, requestedBy: { ...source, runId: "44444444-4444-4444-8444-444444444444" } }, inputId, status: "completed" as const, language: "en", createdAt: new Date(0).toISOString(), error: null, cancelled: false };
   vi.spyOn(port.facts, "task").mockResolvedValue({ scope,intent: child });
-  vi.spyOn(port, "callback").mockResolvedValue({ status: "completed", summary: "Saved", process: { mode: "none" }, results: [],quality:[],files:[],settled:true });
+  vi.spyOn(port, "callback").mockResolvedValue({ status: "completed", summary: "Saved", process: { mode: "none" }, results: [],files:[],settled:true });
   await expect(port.execute(scope,run,{ op: "read",taskId: inputId })).resolves.toMatchObject({ taskId: inputId,status: "completed" });
 });
 
@@ -284,7 +284,7 @@ it("wakes the idle delegating execution on its original chain after a later run 
   vi.spyOn(port.facts, "reserve").mockImplementation(async (_scope, _session, id, inputId, channel, options) =>
     ({ ...origin, id, inputId, channel, status: "starting", ...options }));
   vi.spyOn(port, "callback").mockResolvedValue({
-    status: "completed", summary: "Saved", process: { mode: "none" }, results: [], quality: [], files: [], settled: true,
+    status: "completed", summary: "Saved", process: { mode: "none" }, results: [], files: [], settled: true,
   });
   const prepare = vi.spyOn(port, "prepare").mockResolvedValue();
 
@@ -304,7 +304,7 @@ it("message reads expose conversation progress without transferring the child's 
   const { runtime,channel: port } = channel();
   const child = { id: inputId, session: { providerId: source.session.providerId,sessionId: inputId },channel: { ...context,requestedBy: source },inputId,language: "en",status: "completed" as const,createdAt: new Date(0).toISOString(),error: null,cancelled: false };
   vi.spyOn(port.facts,"task").mockResolvedValue({ scope,intent: child });
-  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",summary: "Saved",process: { mode: "none" },results: [],quality:[],files:[{id:inputId,name:"delivered.dataset.json",mediaType:"application/json",href:"/file"}],settled:true });
+  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",summary: "Saved",process: { mode: "none" },results: [],files:[{id:inputId,name:"delivered.dataset.json",mediaType:"application/json",href:"/file"}],settled:true });
   vi.spyOn(port,"file").mockResolvedValue(new Response("original dataset"));
   vi.spyOn(runtime.store,"messages").mockResolvedValue([
     { id: runId,runId: inputId,messageSeq: 1, contextSeq: null,message: { role: "system",content: "Private host instructions",timestamp: 1 } },
@@ -331,7 +331,7 @@ it("authorizes a deep task by reading only the requested intent and its ancestor
   const child = { ...middle,id: inputId,session: { ...middle.session,sessionId: inputId },channel: { ...context,requestedBy: { session: middle.session,runId: middleId } } };
   const task = vi.spyOn(port.facts,"task").mockResolvedValue({ scope,intent: child });
   vi.mocked(port.facts.intent).mockResolvedValue(middle);
-  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",summary: "Saved",process: { mode: "none" },results: [],quality:[],files:[],settled:true });
+  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",summary: "Saved",process: { mode: "none" },results: [],files:[],settled:true });
   await expect(port.execute(scope,run,{ op: "read",taskId: inputId })).resolves.toMatchObject({ taskId: inputId });
   expect(task).toHaveBeenCalledWith(scope.domainId,inputId);
   expect(port.facts.intent).toHaveBeenCalledTimes(1);
@@ -368,7 +368,7 @@ it("projects only the conversation subtree returned by the store, retaining its 
   runtime.store.session = vi.fn(async () => ({ id: sessionId,domainId: scope.domainId,activeRunId: null,latestRunId: runId,createdAt: new Date(0).toISOString(),updatedAt: new Date(0).toISOString() }));
   const descendants = vi.spyOn(port.facts,"descendants").mockResolvedValue([{ scope,intent: middle,rootRunId: runId },{ scope,intent: child,rootRunId: runId }]);
   vi.spyOn(port.facts,"preparationFailures").mockResolvedValue([]);
-  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",summary: "Saved",process: { mode: "none" },results: [],quality:[],files:[],settled:true });
+  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",summary: "Saved",process: { mode: "none" },results: [],files:[],settled:true });
   vi.spyOn(runtime.store,"messages").mockImplementation(async (_scope,id) => id === sessionId ? [] : [{ id,runId: id,messageSeq: 1, contextSeq: null,message: notification }]);
   const result = await port.tasks(scope,sessionId);
   expect(descendants).toHaveBeenCalledWith(scope.domainId,[source.session]);
@@ -424,7 +424,7 @@ it("retains only the root credential until delegated business attachments finish
   await port.execute(scope,run,{op:"start",agent:context.agent,message:"Inspect"});
   expect(JSON.stringify(reserve.mock.calls)).not.toContain("initiating-token");
   vi.mocked(port.facts.intent).mockImplementation(async (_scope,id) => id===child.id ? {...child,status:"completed"} : {...child,id:runId,session:source.session,channel:context});
-  const projection={status:"completed",summary:"Done",process:{mode:"none"},results:[],quality:[],files:[]};
+  const projection={status:"completed",summary:"Done",process:{mode:"none"},results:[],files:[]};
   const read=vi.spyOn(port,"callback").mockResolvedValue({...projection,settled:false});
   vi.spyOn(port,"deliver").mockResolvedValue({messageId:inputId,taskId:null,sessionRef:source.session});
   await port.changed(scope,inputId,"delivery");expect(port.credential(context).token).toBe("initiating-token");
