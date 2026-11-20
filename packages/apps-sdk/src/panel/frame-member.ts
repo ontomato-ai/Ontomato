@@ -132,7 +132,9 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
       let sequence = 0;
       const reread = () => {
         const reading = ++sequence;
-        state.value = { status: "loading" };
+        // A datum already shown stays on screen until its new answer arrives: rereading replaces what it shows, never
+        // the component drawing it. Only a first read (or one after an empty, refused or failed answer) shows loading.
+        if (state.value.status !== "ready") state.value = { status: "loading" };
         answer(name, inputs()).then(
           (result) => { if (reading === sequence) state.value = result; },
           (reason: unknown) => {
