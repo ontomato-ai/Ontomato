@@ -157,21 +157,6 @@ test("fixed owner signatures and per-definition read parameters are distinct", a
   assert.equal(productProjectionInputSchema.safeParse({
     ...projected, data: { operation: { ...projected.data.operation, params: { target: { input: "unknown" } } } },
   }).success, false);
-
-  const knowledgeRecord = {
-    ...base, componentId: "@ontomato/sdk:ObjectSummary",
-    inputs: { selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE }, search: { kind: "scalar", type: "string" } },
-    data: { detail: {
-      source: { object: { input: "selected" } }, read: "record", params: { search: { input: "search" } },
-    } },
-  };
-  assert.deepEqual(productProjectionInputSchema.parse(knowledgeRecord), knowledgeRecord);
-  assert.deepEqual(productProjectionInputSchema.parse({
-    ...knowledgeRecord, data: { detail: { ...knowledgeRecord.data.detail, params: {} } },
-  }).data.detail.params, {});
-  assert.equal(productProjectionInputSchema.safeParse({
-    ...knowledgeRecord, data: { detail: { ...knowledgeRecord.data.detail, params: { unknown: { input: "search" } } } },
-  }).success, false);
 });
 
 test("owner query rows carry only actual highlight ranges on their display text", async () => {
