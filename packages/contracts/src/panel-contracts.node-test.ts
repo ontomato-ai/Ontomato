@@ -461,10 +461,15 @@ test("entry resolution and personal-state scope use the actual use and nested pa
     menu: { groups: [{ key: "plan", names: { en: "Plan" }, sort: 0 }], panelUses: [use] },
   };
   assert.deepEqual(applicationEntryResolutionSchema.parse(response), response);
-  assert.equal(applicationPanelReferencesRequestSchema.safeParse({
-    domainId: "domain", framePanelId: "site-frame", uses: [{ id: use.id, panelId: use.panelId, inputs: use.inputs }],
+  const references = {
+    domainId: "domain", framePanelId: "site-frame",
+    uses: [
+      { id: use.id, panelId: use.panelId, inputs: use.inputs },
+      { id: "configured", panelId: use.panelId, defaultAgent: { kind: "preset", agentKind: "regular" } },
+    ],
     delivery: { panels: [use.panelId], projections: ["projection-tasks"] },
-  }).success, true);
+  };
+  assert.deepEqual(applicationPanelReferencesRequestSchema.parse(references), references);
   const memberPath = [{ member: "frame" }, {
     member: "preview", selection: { placement: { id: "current", target: { panelId: use.panelId } } },
   }];
@@ -1504,6 +1509,30 @@ test("platform ontology reads preserve declared topology, owner status and scope
   assert.equal(platformOntologyObjectsRequestSchema.safeParse({ ...query, pageSize: 201 }).success, false);
   const objects = { type: ONTOLOGY_USER, layer: "governance", status: "ok", items: [{ node, label: "Alice" }], total: 11, page: 2, pageSize: 10 };
   assert.deepEqual(platformOntologyObjectsResponseSchema.parse(objects), objects);
+});
+
+test("the ontology schema read preserves public type details and registered signatures", async () => {
+  const { panelReadResultSchemas } = await import("./panel-operations");
+  const { platformTypeDetailDeclarationSchema, platformTypeDetails } = await import("./platform-type-details");
+  for (const [id, detail] of Object.entries(platformTypeDetails)) {
+    assert.equal(platformTypeDetailDeclarationSchema.parse(detail).id, id);
+  }
+  const { id, ...detail } = platformTypeDetailDeclarationSchema.parse(platformTypeDetails[AGENT_DEFINITION]);
+  const agent = {
+    id, layer: "product", labelKey: "platformOntology.types.agentDefinition", ...detail,
+    reads: { list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" } },
+    operations: [{
+      id: `${AGENT_DEFINITION}.save`, kind: "form.save", effect: "write", target: { source: "draft" },
+      inputSchema: {}, batch: false,
+    }],
+  };
+  const response = { layers: ["product"], objectTypes: [agent], relationKinds: [] };
+  assert.deepEqual(panelReadResultSchemas.panelGraphSchema.parse(response), response);
+  assert.equal(platformOntologySchemaResponseSchema.safeParse({
+    ...response, objectTypes: [{
+      ...agent, reads: { list: { ...agent.reads.list, result: "unregistered" } },
+    }],
+  }).success, false);
 });
 
 test("the four-layer topology points to declared kinds and distinguishes stored and derived edges", () => {

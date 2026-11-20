@@ -335,11 +335,13 @@ public class AdminController {
     public JSONObject addBussinessKnowledge(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
 		JSONObject ret = new JSONObject();
 		try {
-			String knowledgeID = param.getString("knowledgeID");
-			String knowledgeTitle = param.getString("knowledgeTitle").trim();
-			String bk = param.getString("knowledgeText").trim();
-			int status = param.getInteger("status");
-			List<String> listknowledgeTags = param.getList("knowledgeTags", String.class);
+			// Fields the request leaves out take a new entry's defaults.
+			JSONObject values = BussinessKnowledgeForm.values(null, param);
+			String knowledgeID = values.getString("knowledgeID");
+			String knowledgeTitle = values.getString("knowledgeTitle").trim();
+			String bk = values.getString("knowledgeText").trim();
+			int status = values.getInteger("status");
+			List<String> listknowledgeTags = values.getList("knowledgeTags", String.class);
 			// The content is what gets embedded and recalled; an entry without it is refused instead of reported as saved.
 			if ("".equals(bk)) {
 				throw new Exception(langService.get(lang, "Admin.knowledge.textRequired"));
@@ -362,18 +364,24 @@ public class AdminController {
 		JSONObject ret = new JSONObject();
 		try {
 			String knowledgeID = param.getString("knowledgeID");
-			String knowledgeTitle = param.getString("knowledgeTitle").trim();
-			String bk = param.getString("knowledgeText").trim();
-			int status = param.getInteger("status");
-			List<String> listknowledgeTags = param.getList("knowledgeTags", String.class);
 			// Without an ID there is nothing to edit; it is refused instead of reported as saved.
 			if (knowledgeID == null || knowledgeID.isBlank()) {
 				throw new Exception(langService.get(lang, "Admin.knowledge.idRequired"));
 			}
+			User user = SystemUtils.getCurUser();
+			KnowledgeEntity current = knowledgeService.getBussinessKnowledge(user.getDomainId()).get(knowledgeID);
+			if (current == null) {
+				throw new Exception("Business knowledge not found in the current domain");
+			}
+			// Fields the request leaves out keep the entry's current values.
+			JSONObject values = BussinessKnowledgeForm.values(current, param);
+			String knowledgeTitle = values.getString("knowledgeTitle").trim();
+			String bk = values.getString("knowledgeText").trim();
+			int status = values.getInteger("status");
+			List<String> listknowledgeTags = values.getList("knowledgeTags", String.class);
 			if ("".equals(bk)) {
 				throw new Exception(langService.get(lang, "Admin.knowledge.textRequired"));
 			}
-			User user = SystemUtils.getCurUser();
 			knowledgeService.editBussinessKnowledge(knowledgeID,knowledgeTitle, bk,status,listknowledgeTags, user);
 			ret.put("success", true);
 		} catch (Exception e) {

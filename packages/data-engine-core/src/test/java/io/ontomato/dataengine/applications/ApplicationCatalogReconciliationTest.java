@@ -10,15 +10,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.sun.net.httpserver.HttpServer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.ProductGrantService;
 import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import io.ontomato.dataengine.test.PostgresTestDatabase;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
@@ -372,6 +375,42 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.errors[0].field").value("/icon"))
             .andExpect(jsonPath("$.data.save.path").value("/platform/applications/" + id + "/identity"));
         assertEquals(before, records());
+    }
+
+    @Test void referencePreflightForwardsConfiguredDefaultsAndOmitsUnsetDefaults() throws Exception {
+        var requests = new AtomicReference<JSONObject>();
+        var serviceHeader = new AtomicReference<String>();
+        var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/internal/product-panels/validate-references", exchange -> {
+            try {
+                serviceHeader.set(exchange.getRequestHeaders().getFirst(WorkbenchServiceAuthentication.HEADER));
+                requests.set(JSON.parseObject(exchange.getRequestBody().readAllBytes()));
+                exchange.sendResponseHeaders(204, -1);
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        try {
+            var remote = new PanelResources("http://127.0.0.1:" + server.getAddress().getPort(), "test-service");
+            var member = new ApplicationPanelUse.Access(null, "domain-member");
+            remote.requireCurrent("domain", null, List.of(
+                new ApplicationPanelUse("report", "report", "panel-report", "/example/report", member,
+                    new DefaultAgentTarget("preset", null, "knowledge-governance"), null),
+                new ApplicationPanelUse("plan", "plan", "panel-plan", "/example/plan", member,
+                    new DefaultAgentTarget("id", "planner", null), null),
+                new ApplicationPanelUse("ordinary", "ordinary", "panel-ordinary", "/example/ordinary", member, null, null)
+            ), null);
+
+            assertEquals("test-service", serviceHeader.get());
+            var uses = requests.get().getJSONArray("uses");
+            assertEquals(JSONObject.of("kind", "preset", "agentKind", "knowledge-governance"),
+                uses.getJSONObject(0).getJSONObject("defaultAgent"));
+            assertEquals(JSONObject.of("kind", "id", "id", "planner"), uses.getJSONObject(1).getJSONObject("defaultAgent"));
+            assertFalse(uses.getJSONObject(2).containsKey("defaultAgent"));
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test void upgradesStoredDefaultAgentTargetsWithoutChangingTheirMeaning() {

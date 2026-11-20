@@ -9,7 +9,7 @@ import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import {
   platformOntologyNeighborsRequestSchema, platformOntologyNeighborsResponseSchema,
   platformOntologyObjectsRequestSchema, platformOntologyRelationStatusSchema,
-} from "./platform-ontology";
+} from "./platform-ontology-data";
 import type { PanelOperationDeclaration, PanelOwnerOperationDescriptor } from "./panel-operations";
 import { customerOntologyReads, customerRelationReads, platformObjectTypes, type PanelReadParameterId, type PlatformReadDeclaration } from "./platform-object-types";
 
