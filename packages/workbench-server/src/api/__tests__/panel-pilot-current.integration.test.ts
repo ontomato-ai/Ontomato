@@ -288,8 +288,20 @@ beforeAll(async () => {
   });
   app.post("/data/queryInfoByNode", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
-    expect(req.body).toEqual({ class: "person", id: "person:p1" });
-    res.json({ success: true, data: { data: { name: "Alice" } } });
+    expect(req.body.class).toBe("person");
+    switch (req.body.id) {
+      case "person:p1":
+        res.json({ success: true, data: { data: { name: "Alice" } } });
+        break;
+      case "person:p-denied":
+        res.json({ success: false, code: "DATA_PERMISSION_DENIED", message: "No data permission" });
+        break;
+      case "person:p-missing":
+        res.json({ success: false, code: "OBJECT_NOT_FOUND", message: "Object not found" });
+        break;
+      default:
+        res.sendStatus(400);
+    }
   });
   app.post("/dsl/executeV1", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
@@ -759,16 +771,20 @@ it("reads a customer type and a relationship by the registered source identity",
       source: { type: { kind: "ObjectType", id: "person" } }, read: "query",
       params: { search: { literal: "Ali" }, page: { literal: { number: 2, size: 3 } } },
     } } },
-    detail: { componentId: "@ontomato/sdk:ObjectSummary", data: { record: {
-      source: { object: { literal: person } }, read: "record", params: {},
-    } } },
+    detail: { componentId: "@ontomato/sdk:ObjectSummary", inputs: { person: { kind: "object", objectType: "person" } },
+      data: { record: { source: { object: { input: "person" } }, read: "record", params: {} } },
+    },
     relations: { componentId: "@ontomato/sdk:ObjectRelations", data: { neighbors: {
       source: { type: { kind: "Relationship", id: "person_to_org" } }, read: "neighbors",
       params: { node: { literal: person }, limit: { literal: 10 } },
     } } },
   });
   expect(await read("rows", "rows")).toMatchObject({ status: "ready", value: { rows: [{ label: "Alice" }], total: 12 } });
-  expect(await read("detail", "record")).toMatchObject({ status: "ready", value: { primaryKey: "p1", label: "Alice" } });
+  expect(await read("detail", "record", { person })).toMatchObject({ status: "ready", value: { primaryKey: "p1", label: "Alice" } });
+  expect(await read("detail", "record", { person: { ...person, primaryKey: "p-denied" } }))
+    .toEqual({ status: "forbidden" });
+  expect(await read("detail", "record", { person: { ...person, primaryKey: "p-missing" } }))
+    .toEqual({ status: "error", message: "Object not found" });
   expect(await read("relations", "neighbors")).toMatchObject({
     status: "ready", value: { neighbors: [{ primaryKey: "org1", label: "Example Org" }] },
   });

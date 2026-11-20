@@ -14,6 +14,7 @@ import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.IdentityService;
+import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.sys.bean.permission.FieldPermission;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.SystemUtils;
@@ -83,6 +84,29 @@ class LiveInstanceGraphPermissionsTest {
             assertFalse(controller.instanceGraphNeighborhood(JSONObject.of("id", "Person:p2")).getBooleanValue("success"));
             assertFalse(controller.instanceGraphNeighborhood(JSONObject.of("id", "Secret:s1")).getBooleanValue("success"));
         }
+    }
+
+    @Test
+    void customerReadCodesDistinguishARestrictedRowFromAMissingObject() throws Exception {
+        var fixture = new Fixture(List.of("Person"));
+        fixture.rows.get("Person").add(row("p1", "bob", "", "Restricted"));
+        var service = new DataServiceImpl();
+        ReflectionTestUtils.setField(service, "adminService", fixture.admin);
+        ReflectionTestUtils.setField(service, "dataAdapterRegistry", fixture.adapters);
+        ReflectionTestUtils.setField(service, "businessConfigService", fixture.configs);
+        ReflectionTestUtils.setField(service, "langService", mock(LangService.class));
+        var reader = permission(List.of("Person"), "alice", false);
+
+        var restricted = service.queryInfoByNode(JSONObject.of("class", "Person", "id", "Person:p1"), "en", reader, "test");
+        assertFalse(restricted.getBooleanValue("success"));
+        assertEquals("DATA_PERMISSION_DENIED", restricted.getString("code"));
+        var missing = service.queryInfoByNode(JSONObject.of("class", "Person", "id", "Person:p9"), "en", reader, "test");
+        assertFalse(missing.getBooleanValue("success"));
+        assertEquals("OBJECT_NOT_FOUND", missing.getString("code"));
+        var deniedPage = service.getWholeClassDataByPage(JSONObject.of("classname", "Person", "pagenum", 1, "pagecount", 10),
+                "en", new UserDataPermission(), "test");
+        assertFalse(deniedPage.getBooleanValue("success"));
+        assertEquals("DATA_PERMISSION_DENIED", deniedPage.getString("code"));
     }
 
     @Test
@@ -188,6 +212,9 @@ class LiveInstanceGraphPermissionsTest {
     private static final class Fixture {
         final Map<String, List<JSONObject>> rows = new LinkedHashMap<>();
         final JSONObject relationships = new JSONObject();
+        final AdminService admin = mock(AdminService.class);
+        final BusinessConfigService configs = mock(BusinessConfigService.class);
+        final DataAdapterRegistry adapters = mock(DataAdapterRegistry.class);
         final LiveInstanceGraph service;
 
         Fixture(List<String> names) throws Exception {
@@ -200,13 +227,10 @@ class LiveInstanceGraphPermissionsTest {
                         JSONObject.of("name", "title", "type", "varchar"),
                         JSONObject.of("name", "owner"), JSONObject.of("name", "parent_id"))));
             }
-            var admin = mock(AdminService.class);
             when(admin.getJSONRule("test")).thenReturn(JSONObject.of("classDef", definitions, "relationship_rule", relationships));
-            var configs = mock(BusinessConfigService.class);
             when(configs.get("test")).thenReturn(new BusinessConfig());
             var adapter = mock(DataAdapter.class);
             when(adapter.executeDsl(anyString(), anyString(), any(), anyList())).thenAnswer(call -> execute(call.getArgument(0)));
-            var adapters = mock(DataAdapterRegistry.class);
             when(adapters.create(any(), any())).thenReturn(adapter);
             service = new LiveInstanceGraph(admin, configs, adapters);
         }
@@ -248,7 +272,8 @@ class LiveInstanceGraphPermissionsTest {
             if ("count".equalsIgnoreCase(fields.getJSONObject(0).getString("function"))) {
                 answer.add(JSONObject.of(fields.getJSONObject(0).getString("as"), matches.size()));
             } else {
-                int limit = output.getJSONObject("limit").getIntValue("count");
+                var limitClause = output.getJSONObject("limit");
+                int limit = limitClause == null ? matches.size() : limitClause.getIntValue("count");
                 for (var match : matches.stream().limit(limit).toList()) {
                     var projected = new JSONObject();
                     for (Object value : fields) {
