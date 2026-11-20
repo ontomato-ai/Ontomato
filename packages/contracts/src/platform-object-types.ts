@@ -137,7 +137,7 @@ const identifier = z.string().min(1);
 export const platformRelationKindDeclarationSchema = z.object({
   id: identifier,
   from: identifier,
-  to: z.union([identifier, z.array(identifier).readonly()]),
+  to: z.union([identifier, z.array(identifier)]),
   labelKey: identifier,
   derived: z.boolean(),
   owner: identifier,
