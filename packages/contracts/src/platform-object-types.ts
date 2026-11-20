@@ -65,6 +65,10 @@ export const SET_ACTION_STATUS = "actions.setStatus";
 export const DELETE_ACTION = "actions.delete";
 export const APPROVE_KNOWLEDGE = "knowledge.approve";
 export const DELETE_KNOWLEDGE = "knowledge.delete";
+export const DELETE_OBJECT_TYPE = "objectTypes.delete";
+export const DELETE_ATTRIBUTE = "attributes.delete";
+export const DELETE_RELATIONSHIP = "relationships.delete";
+export const SET_PRIMARY_KEY = "attributes.setPrimaryKey";
 const operationDescription = {
   source: "operation", parameterMode: "fixed", params: {}, result: "panelOperationDescriptor",
 } as const;
@@ -77,6 +81,12 @@ const referenceReads = {
 
 const metadataList = { list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" } } as const;
 const definitionFormParams = { values: "panelFormValues", changedField: "changedField" } as const;
+const modelReads = {
+  record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+  form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
+  createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
+} as const;
+const modelListByClass = { source: "type", parameterMode: "fixed", params: { className: "className" }, result: "panelRecordList" } as const;
 
 /** Type-level metadata shared by projection bindings and ontology catalogues. */
 export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDeclaration>> = {
@@ -92,9 +102,24 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   },
   [MODEL_OPTION]: { ...describeType("modelOption"), reads: referenceReads },
   [MCP_SERVICE_OPTION]: describeType("mcpServiceOption"),
-  [OBJECT_TYPE]: { ...describeType("objectType", "fact"), reads: metadataList },
-  [ATTRIBUTE]: describeType("attribute", "fact"),
-  [RELATIONSHIP]: { ...describeType("relationship", "fact"), reads: metadataList },
+  [OBJECT_TYPE]: {
+    ...describeType("objectType", "fact"),
+    reads: { ...modelReads, ...metadataList, [`${DELETE_OBJECT_TYPE}.describe`]: operationDescription },
+    operations: [`${OBJECT_TYPE}.save`, DELETE_OBJECT_TYPE],
+  },
+  [ATTRIBUTE]: {
+    ...describeType("attribute", "fact"),
+    reads: {
+      ...modelReads, list: modelListByClass,
+      [`${DELETE_ATTRIBUTE}.describe`]: operationDescription, [`${SET_PRIMARY_KEY}.describe`]: operationDescription,
+    },
+    operations: [`${ATTRIBUTE}.save`, DELETE_ATTRIBUTE, SET_PRIMARY_KEY],
+  },
+  [RELATIONSHIP]: {
+    ...describeType("relationship", "fact"),
+    reads: { ...modelReads, list: modelListByClass, [`${DELETE_RELATIONSHIP}.describe`]: operationDescription },
+    operations: [`${RELATIONSHIP}.save`, DELETE_RELATIONSHIP],
+  },
   [METRIC_VIEW]: {
     ...describeType("metricView", "capability"),
     reads: { result: { source: "object", parameterMode: "owner", parameter: "ontologyParameter", result: "metricOutput" } },
@@ -133,7 +158,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         source: "type", parameterMode: "fixed", params: { by: "knowledgeCountField", search: "keyword" },
         requiredParams: ["by"], result: "panelGroupCounts",
       },
-      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+      record: { source: "object", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecord" },
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
       createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
       [`${APPROVE_KNOWLEDGE}.describe`]: operationDescription,
@@ -192,7 +217,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
 export const customerOntologyReads: Readonly<Record<string, PlatformReadDeclaration>> = {
   query: { source: "type", parameterMode: "fixed", params: { search: "keyword", page: "page" }, result: "panelRecordQuery" },
   record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
-  form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
 };
 export const customerRelationReads: Readonly<Record<string, PlatformReadDeclaration>> = {
   neighbors: {
