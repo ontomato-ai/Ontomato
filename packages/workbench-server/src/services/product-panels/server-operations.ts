@@ -18,6 +18,7 @@ import { m7ServerOperations } from "../business-knowledge/panel-operations";
 import { m5ServerOperations } from "../metric-function/panel-operations";
 import { ontologyModelServerOperations } from "../ontology-model/model-operations";
 import { scheduledTaskServerOperations } from "../scheduling/panel-operations";
+import { skillServerOperations } from "../skills/panel-operations";
 import { productCatalogServerOperations } from "./catalog-operations";
 import { HttpError } from "../../utils/errors";
 
@@ -100,6 +101,7 @@ const registrations: readonly PanelServerOperation[] = [
   ...m5ServerOperations,
   ...m6ServerOperations,
   ...m7ServerOperations,
+  ...skillServerOperations,
   ...ontologyModelServerOperations,
   ...productCatalogServerOperations,
 ];

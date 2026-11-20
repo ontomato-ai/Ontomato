@@ -2,14 +2,16 @@ import { appsSdkComponentDatum } from "@ontomato/contracts/apps-sdk";
 import { z } from "zod";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
-import { AGENT_DEFINITION, BUSINESS_KNOWLEDGE, MODEL_OPTION, SCHEDULED_TASK, SKILL, USER } from "@ontomato/contracts/panel-client-requests";
+import {
+  AGENT_DEFINITION, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, KNOWLEDGE_GOVERNANCE_RECORD, MODEL_OPTION, SCHEDULED_TASK, SKILL, USER,
+} from "@ontomato/contracts/panel-client-requests";
 import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import {
-  ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, METRIC_VIEW, OBJECT_TYPE, ONTOLOGY_TYPE, PRODUCT_PANEL,
-  PRODUCT_PROJECTION, RELATIONSHIP, type PlatformReadDeclaration,
+  ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE, ONTOLOGY_TYPE,
+  PRODUCT_PANEL, PRODUCT_PROJECTION, RELATIONSHIP, SDK_COMPONENT, type PlatformReadDeclaration,
 } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { assertPermission } from "../../identity/installed";
@@ -28,7 +30,7 @@ import type { SkillResolveRequest } from "../skills/panel-reads";
 import { createApplicationReadAdapter } from "./application-catalogue";
 import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "./catalog-reads";
 import { requireChartReadRegistration } from "./chart-sources";
-import { readPanelComponentCatalogue } from "./component-catalogue";
+import { listSdkComponents, readPanelComponentCatalogue, readSdkComponent } from "./component-catalogue";
 import { requireRegisteredPanelRoot, resolvePanelMemberPath } from "./member-path";
 
 type ReadInputs = ProductPanelReadRequest["inputs"];
@@ -96,11 +98,22 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     const { createAgentOptionReadAdapters } = await import("../assistant/panel-reads");
     return createAgentOptionReadAdapters(viewer);
   };
+  const skillLibrary = async () => {
+    const { createSkillReadAdapter } = await import("../skills/panel-reads");
+    return createSkillReadAdapter(owner, viewer, callerUserName);
+  };
   const skills = async () => {
     const { agentDefinitionPermissions } = await import("../assistant/definitions");
     await assertPermission(viewer, agentDefinitionPermissions);
-    const { createSkillReadAdapter } = await import("../skills/panel-reads");
-    return createSkillReadAdapter(owner, viewer, callerUserName);
+    return skillLibrary();
+  };
+  const feedback = async () => {
+    const { createFeedbackReadAdapter } = await import("../admin/feedback-panel-reads");
+    return createFeedbackReadAdapter(owner, viewer);
+  };
+  const governance = async () => {
+    const { createKnowledgeGovernanceReadAdapter } = await import("../assistant/governance-panel-reads");
+    return createKnowledgeGovernanceReadAdapter(viewer);
   };
   return {
     [ACTION]: {
@@ -129,6 +142,20 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       options: async () => (await options()).models.options(),
       resolve: async (_selection, params) => (await options()).models.resolve(params.values as readonly unknown[]),
     },
+    [MCP_SERVICE_OPTION]: {
+      async options() {
+        const { createMcpServiceOptionReadAdapter } = await import("../assistant/panel-reads");
+        return createMcpServiceOptionReadAdapter(owner, viewer).options();
+      },
+      async resolve(_selection, params) {
+        const { createMcpServiceOptionReadAdapter } = await import("../assistant/panel-reads");
+        return createMcpServiceOptionReadAdapter(owner, viewer).resolve(panelReadParameterSchemas.optionValues.parse(params.values));
+      },
+    },
+    [SDK_COMPONENT]: {
+      catalogue: (_selection, params) => listSdkComponents(viewer.locale, panelReadParameterSchemas.keyword.optional().parse(params.search)),
+      definition: selection => readSdkComponent(selection.primaryKey!, viewer.locale),
+    },
     [USER]: {
       options: async (_selection, params) => (await options()).users.options({
         keyword: panelReadParameterSchemas.keyword.optional().parse(params.keyword),
@@ -142,6 +169,18 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       },
       async resolve(_selection, params) {
         return (await skills()).resolve({ values: params.values as SkillResolveRequest["values"] });
+      },
+      async query(_selection, params) {
+        return (await skillLibrary()).query(params);
+      },
+      async record(selection) {
+        return (await skillLibrary()).record(selection.primaryKey!);
+      },
+      async files(selection) {
+        return (await skillLibrary()).files(selection.primaryKey!);
+      },
+      async file(selection, params) {
+        return (await skillLibrary()).file(selection.primaryKey!, params);
       },
     },
     [OBJECT_TYPE]: modelReads,
@@ -183,6 +222,17 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       record: (selection, params) => knowledge.record(selection.primaryKey!, params),
       form: (selection, params) => knowledge.form(selection.primaryKey!, params),
       createForm: (_selection, params) => knowledge.form(undefined, params),
+    },
+    [FEEDBACK_RECORD]: {
+      query: async (_selection, params) => (await feedback()).query(params),
+      counts: async (_selection, params) => (await feedback()).counts(params),
+      record: async selection => (await feedback()).record(selection.primaryKey!),
+    },
+    [KNOWLEDGE_GOVERNANCE_RECORD]: {
+      record: async selection => (await governance()).record(selection.primaryKey!),
+      issues: async selection => (await governance()).issues(selection.primaryKey!),
+      sources: async selection => (await governance()).sources(selection.primaryKey!),
+      sourcePage: async (selection, params) => (await governance()).sourcePage(selection.primaryKey!, params),
     },
   };
 }
