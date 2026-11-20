@@ -69,8 +69,8 @@ async function authoringRun(
     if (appBuilderOnly) throw new HttpError(403, "The App Builder skill is required", "FORBIDDEN");
     const { entrance, source } = authoringSources[kind];
     const view = await readAssistantSkillView(owner.domainId, credentials);
-    const member = await resolvePageSkillSource(view, entrance, source);
-    if (!member || !loadedPageSkillVersion(member, run.resolvedSkills)) {
+    const ref = await resolvePageSkillSource(view, entrance, source, []);
+    if (!ref || !loadedPageSkillVersion(ref, run.resolvedSkills)) {
       throw new HttpError(403, "The required authoring skill is not loaded in this run", "FORBIDDEN");
     }
   }
