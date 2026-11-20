@@ -58,10 +58,11 @@ In `registration.json`, put one item in `panels`, with its `id`, `mode` and `inp
 layout and instructions in the workspace files. Run `panel check <directory>` and `panel register <directory>`
 with the same workspace and registration material.
 
-The tool uses the panel ID and member key to give the projection a stable ID. On creation, the name and description
-default to the member key, and the sharing scope follows the panel. Subsequent registration uses the existing
-projection revision for that member. Other panels can reference that ID with `target.projectionId`, subject to the
-usual projection permission.
+The first successful projection write saves its ID as `target.projection.id` in `panel.json`. Keep that ID when
+renaming or moving the member. Keep the existing ID in source when editing a projection already registered for this
+panel. On creation, name and description default to the member key and the sharing scope follows the panel.
+Registration uses the existing projection's revision when updating it. Other panels can reference the ID with
+`target.projectionId`, subject to the usual projection permission.
 
 Registration material has up to three arrays, `projections`, `panels` and `applications`. Each item is `{id,mode,input}` with `mode` set to `create` or `update`.
 
