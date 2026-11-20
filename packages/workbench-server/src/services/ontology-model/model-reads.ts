@@ -295,6 +295,7 @@ export function createOntologyModelReadAdapter(
       item.kind === "action" && item.handlerRef === handlerRef)!;
     return panelOwnerOperationDescriptorSchema.parse({
       handlerRef,
+      kind: operation.kind,
       label: tForLocale(viewer.locale, actionLabels[handlerRef]),
       effect: operation.effect,
       batch: operation.batch,

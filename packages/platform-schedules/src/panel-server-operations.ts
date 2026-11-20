@@ -48,6 +48,7 @@ async function outcome(call: () => Promise<{ data: unknown; taskId: string; mess
 
 export const scheduledTaskRunNowOperation = {
   handlerRef: RUN_NOW,
+  labelKey: "platformSchedules.action.runNow",
   kind: "action",
   binding: { kind: "PlatformOperation", id: RUN_NOW },
   effect: "write",

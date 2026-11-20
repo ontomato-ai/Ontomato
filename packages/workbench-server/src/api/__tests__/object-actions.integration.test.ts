@@ -8,7 +8,7 @@ import express from "express";
 import multer from "multer";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
-import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
+import { productPanelOperationsReadResponseSchema } from "@ontomato/contracts/panel-host";
 import { panelHumanOperationPreparationSchema } from "@ontomato/contracts/panel-agent";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { installContentLayout } from "../../content/layout";
@@ -45,7 +45,7 @@ const orderRef = { className: objectType, primaryKey: "00123" };
 const projection = {
   componentId: "@ontomato/sdk:OperationButton", name: "Approve order", description: "", visibility: "domain", revision: 0,
   inputs: { target: orderType }, outputs: {}, config: {},
-  data: { operation: { source: { operation: { kind: "Action", id: actionId } }, read: "describe", params: {} } },
+  data: {}, operations: { execute: { operation: { kind: "Action", id: actionId }, target: { input: "target" } } },
 };
 const panel = {
   name: "Orders", description: "", visibility: "domain", revision: 0,
@@ -136,6 +136,10 @@ beforeAll(async () => {
   });
   app.post("/action/form", (req, res) => {
     expect(req.header("tk")).toBe("alice");
+    if (req.body.parameters.order_id === "forbidden-order") {
+      res.json({ success: false, code: "ACTION_NOT_GRANTED", message: "Order is outside the reader's scope" });
+      return;
+    }
     owner.forms.push(req.body);
     const { values } = req.body as { values?: Record<string, string> };
     const fields = ["order_id", "amount"].map(key => ({
@@ -210,14 +214,19 @@ const dispatch = (intentId: string) => request(`/panel-operations/intents/${inte
 it("describes and freezes the Action, its code and the object, then runs the owner's typed parameters as the reader", async () => {
   const describe = await request("/product-panels/read", {
     source: { kind: "registered", applicationId: use.applicationId, useId: use.useId },
-    memberPath: [{ member: "approve" }], dataName: "operation", inputs: { target: orderRef },
+    memberPath: [{ member: "approve" }], operations: true, inputs: { target: orderRef },
   });
   expect(describe.status).toBe(200);
-  const described = productPanelReadResponseSchema.parse(await describe.json());
-  expect(described).toMatchObject({ status: "ready", value: {
-    handlerRef: "actions.execute", label: "Approve order", target: { source: "input", input: "target" },
+  const unselected = await request("/product-panels/read", {
+    source: { kind: "registered", applicationId: use.applicationId, useId: use.useId },
+    memberPath: [{ member: "approve" }], operations: true, inputs: {},
+  });
+  expect(await unselected.json()).toEqual({ status: "ready", value: {} });
+  const described = productPanelOperationsReadResponseSchema.parse(await describe.json());
+  expect(described).toMatchObject({ status: "ready", value: { execute: {
+    kind: "action", handlerRef: "actions.execute", label: "Approve order", target: { source: "input", input: "target" },
     inputSchema: { properties: { values: { properties: { amount: { type: "string", contentMediaType: "application/json" } } } } },
-  } });
+  } } });
 
   const prepared = await intent({ amount: "12.5" });
   expect(prepared.confirmation).toEqual({ kind: "none" });
@@ -227,7 +236,7 @@ it("describes and freezes the Action, its code and the object, then runs the own
     handlerRef: "actions.execute", action: { actionId, codeHash: originalHash, object: { objectType, primaryKey: "00123" } },
   });
 
-  expect(described.status === "ready" && described.value).toMatchObject({
+  expect(described.status === "ready" && described.value.execute).toMatchObject({
     inputSchema: stored.rows[0].intent.operation.inputSchema,
   });
 
@@ -285,5 +294,23 @@ it("refuses a different target from the member's pinned object before consulting
   expect(response.status).toBe(400);
   expect(await response.json()).toMatchObject({ error: { code: "TARGET_ID_MISMATCH" } });
   expect(owner.forms).toEqual([]);
+  expect(owner.executions).toEqual([]);
+});
+
+it("rejects a forged member, an undeclared operation and an object refused by its owner", async () => {
+  const input = { values: {} };
+  const forge = (operationId: string, target = order) => request("/panel-operations/intents", {
+    ...use, operationId, call: { target, input },
+  });
+  const missingMember = await forge("forged.execute");
+  expect(missingMember.status).toBe(403);
+  expect(await missingMember.json()).toMatchObject({ error: { message: "Panel does not declare member 'forged'" } });
+  const missingOperation = await forge("approve.unlisted");
+  expect(missingOperation.status).toBe(422);
+  expect(await missingOperation.json()).toMatchObject({ error: { code: "OPERATION_UNAVAILABLE",
+    message: "The panel member does not declare operation 'approve.unlisted'" } });
+  const refusedTarget = await forge(use.operationId, { ...order, primaryKey: "forbidden-order" });
+  expect(refusedTarget.status).toBe(403);
+  expect(await refusedTarget.json()).toMatchObject({ error: { code: "ACTION_NOT_GRANTED", message: "Order is outside the reader's scope" } });
   expect(owner.executions).toEqual([]);
 });

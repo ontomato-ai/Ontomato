@@ -1,11 +1,13 @@
-import { panelObjectRefSchema, type PanelPlacement } from "@ontomato/contracts/panel-manifest";
+import type { PanelPlacement } from "@ontomato/contracts/panel-manifest";
+import { projectionOperationTargetMatches } from "@ontomato/contracts/panel-projection";
 import { platformObjectTypes } from "@ontomato/contracts/platform-object-types";
 import { platformTypeTableResponseSchema } from "@ontomato/contracts/platform-type-table";
 import type { ProductProjectionInput } from "@ontomato/contracts/product-panels";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { createActionReadAdapter } from "../action/panel-reads";
 import type { ProductOwner } from "../product-governance/grants";
-import { panelOperationTargetPort, registeredPanelOperation } from "./server-operations";
+import { registeredPanelOperation } from "./server-operations";
+import { allowsOperationDraft, boundProjectionOperations } from "./operation-bindings";
 
 export async function readPanelTypeTable(owner: ProductOwner, viewer: AssistantCredentials) {
   const objectTypes = new Map(Object.entries(platformObjectTypes).map(([id, { operations, ...entry }]) => [
@@ -27,31 +29,22 @@ export async function readPanelTypeTable(owner: ProductOwner, viewer: AssistantC
 
 export function panelOperationTargetCheck(owner: ProductOwner, viewer: AssistantCredentials) {
   let objectActions: ReturnType<ReturnType<typeof createActionReadAdapter>["objectActions"]> | undefined;
-  return async (projection: ProductProjectionInput, wiring: Pick<PanelPlacement, "inputs">) => {
-    for (const [name, datum] of Object.entries(projection.data)) {
-      if (!("operation" in datum.source)) continue;
-      const source = datum.source.operation;
-      const operation = source.kind === "Action"
+  return async (projection: ProductProjectionInput, wiring?: Pick<PanelPlacement, "inputs">) => {
+    for (const { name, binding, owner: platform } of boundProjectionOperations(projection)) {
+      const ref = binding.operation;
+      const operation = ref.kind === "Action"
         ? (await (objectActions ??= createActionReadAdapter(owner, viewer).objectActions()))
-          .find(action => action.declaration.id === source.id)
-        : registeredPanelOperation(source.id);
-      if (!operation) return `data '${name}' names unavailable operation '${source.id}'`;
-
-      const { declaration } = operation;
-      if (declaration.target.source !== "input") continue;
-      const { input } = declaration.target;
-      const targetType = "className" in operation ? operation.className : operation.targetType!;
-      const binding = datum.params[input];
-      if (binding && "literal" in binding) {
-        const literal = panelObjectRefSchema.safeParse(binding.literal);
-        if (literal.success && literal.data.className === targetType) continue;
-      } else {
-        const port = binding?.input ?? input;
-        if (!wiring.inputs || !Object.hasOwn(wiring.inputs, port))
-          return `operation '${source.id}' expects target input '${port}', but it is not connected`;
-        if (panelOperationTargetPort(projection.inputs[port], targetType, declaration.batch)) continue;
-      }
-      return `operation '${source.id}' expects target input '${input}' of type '${targetType}'`;
+          .find(action => action.declaration.id === ref.id)
+        : platform;
+      if (!operation) return `operation '${name}' refers to unavailable owner operation '${ref.id}'`;
+      const type = "className" in operation ? operation.className : operation.targetType;
+      const { target } = binding;
+      if (!projectionOperationTargetMatches(projection, binding, operation.declaration, type))
+        return `operation '${name}' takes a target of type '${type}'`;
+      if (!target && platform?.handler.kind === "form.save" && !allowsOperationDraft(projection, platform.handler))
+        return `operation '${name}' needs an edit target or the owner's create form`;
+      if (wiring && target && "input" in target && !Object.hasOwn(wiring.inputs ?? {}, target.input))
+        return `operation '${name}' expects input '${target.input}', but it is not connected`;
     }
   };
 }

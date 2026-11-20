@@ -29,7 +29,7 @@ import { readCurrentPanelRecord } from "./current";
 import { declaredDirectOperation, type PlacedOperationTarget } from "./direct-operations";
 import { requirePanelUse } from "./application-use";
 import {
-  describePanelRead, panelResultProjection, type PanelBatchCalls, type PanelOperationInvocation,
+  panelResultProjection, type PanelBatchCalls, type PanelOperationInvocation,
   type PanelWriteServerOperation, type PanelOperationHost, type PanelOperationTarget, type PanelRecordTarget, type PanelImpactInspector,
 } from "./server-operations";
 import { panelConfirmation } from "./confirmation";
@@ -43,7 +43,7 @@ type AgentRecord = Exclude<StoredPanelOperationIntent, { kind: "current" }> | { 
 type ReadableAgentIntent = Extract<AgentRecord, { intent: unknown }>["intent"];
 
 async function admitted(owner: AssistantOwner, credentials: AssistantCredentials, run: PanelRun,
-  ref: PanelUseRef, operationId: string, target: PanelRecordTarget | undefined) {
+  ref: PanelUseRef, operationId: string, target: PanelOperationCall["target"] | undefined) {
   const use = await requirePanelUse(credentials, ref);
   const view = await readAssistantSkillView(owner.domainId, credentials);
   const entrance: PageSkillEntrance = "permissionCode" in use.access
@@ -58,17 +58,17 @@ async function admitted(owner: AssistantOwner, credentials: AssistantCredentials
 }
 
 async function declaredOperation(owner: AssistantOwner, credentials: AssistantCredentials, use: ApplicationPanelUse,
-  operationId: string, target?: PanelRecordTarget) {
+  operationId: string, target?: PanelOperationCall["target"]) {
   const panel = await readCurrentPanelRecord(owner, credentials, use.panelId);
   return declaredDirectOperation(owner, credentials, use, panel, operationId, target);
 }
 
-async function operationForUse(owner: AssistantOwner, credentials: AssistantCredentials, ref: PanelOperationRef, target?: PanelRecordTarget) {
+async function operationForUse(owner: AssistantOwner, credentials: AssistantCredentials, ref: PanelOperationRef, target?: PanelOperationCall["target"]) {
   return declaredOperation(owner, credentials, await requirePanelUse(credentials, ref), ref.operationId, target);
 }
 
-function invocationObject(input: PanelOperationInvocation) {
-  return "call" in input && input.call.target?.kind === "object" ? input.call.target : undefined;
+function invocationTarget(input: PanelOperationInvocation) {
+  return "call" in input ? input.call.target : undefined;
 }
 
 function writeOperation(current: Awaited<ReturnType<typeof declaredOperation>>) {
@@ -78,9 +78,7 @@ function writeOperation(current: Awaited<ReturnType<typeof declaredOperation>>) 
 
 export async function readPanelOperationDescriptor(owner: AssistantOwner, credentials: AssistantCredentials, ref: PanelOperationRef) {
   const current = await operationForUse(owner, credentials, ref);
-  if (current.effect === "read") return describePanelRead(current.handler, current.label);
-  const { id: _id, kind: _kind, slot: _slot, action: _action, ...descriptor } = current.operation;
-  return descriptor;
+  return current.descriptor;
 }
 
 export async function readPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials, request: ReadPanelOperationRequest) {
@@ -194,7 +192,7 @@ async function ownerImpact(inspector: PanelImpactInspector, host: PanelOperation
 export async function inspectPanelOperationImpact(owner: AssistantOwner, credentials: AssistantCredentials,
   input: z.infer<typeof inspectPanelOperationImpactRequestSchema>,
 ) {
-  const { handler, fixedTarget } = writeOperation(await operationForUse(owner, credentials, input, invocationObject(input)));
+  const { handler, fixedTarget } = writeOperation(await operationForUse(owner, credentials, input, invocationTarget(input)));
   if (!handler.inspectImpact)
     throw new HttpError(422, "The owner has no impact description for this operation", "OPERATION_IMPACT_UNAVAILABLE");
   return ownerImpact(handler.inspectImpact, operationHost({ owner, credentials }), validateInvocation(handler, input, fixedTarget));
@@ -236,7 +234,7 @@ async function humanConfirmation(
 export async function prepareHumanPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials,
   input: CreatePanelHumanOperationIntentRequest,
 ): Promise<PanelHumanOperationPreparation> {
-  const current = writeOperation(await operationForUse(owner, credentials, input, invocationObject(input)));
+  const current = writeOperation(await operationForUse(owner, credentials, input, invocationTarget(input)));
   const prepared = validateInvocation(current.handler, input, current.fixedTarget);
   const confirmation = await humanConfirmation(current.handler, operationHost({ owner, credentials }), prepared);
   const intent: PanelHumanOperationIntent = {
@@ -264,7 +262,7 @@ export async function dispatchHumanPanelOperation(owner: AssistantOwner, credent
   const { intent } = record;
   if (intent.dispatched) return replay(record, owner, credentials);
   const current = writeOperation(await operationForUse(owner, credentials,
-    { ...intent.use, operationId: intent.operation.id }, invocationObject(intent)));
+    { ...intent.use, operationId: intent.operation.id }, invocationTarget(intent)));
   requireFrozenOperation(intent, current);
   const prepared = validateInvocation(current.handler, intent, current.fixedTarget);
   const view = current.handler.projectResult && await readAssistantSkillView(owner.domainId, credentials);
@@ -307,7 +305,7 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
     matchingInvocation(record.intent, input, source.session, run.executionUserId ?? null);
     return replay(record, owner, credentials);
   }
-  const current = await admitted(owner,credentials,run,input,input.operationId,invocationObject(input));
+  const current = await admitted(owner,credentials,run,input,input.operationId,invocationTarget(input));
   const executor = await credentialsForRun(owner,runId,credentials,run.sessionId);
   const root = rootOf(run);
   if (!root) throw new HttpError(409,"Execution has no authenticated human session","USER_SESSION_UNAVAILABLE");
@@ -370,7 +368,7 @@ export async function dispatchPanel(owner: AssistantOwner, credentials: Assistan
   const executor = await credentialsForRun(owner,runId,credentials,intent.source.session.sessionId);
   if (executor.executionUserId !== intent.executionUserId) throw new HttpError(409,"Executor changed; create a new intent","INTENT_CHANGED");
   if (run.channel!.authority.executionKind !== "live") throw new HttpError(422,"Management operations do not support test data","BUILD_TEST_UNSUPPORTED");
-  const current = await admitted(owner,credentials,run,intent.use,intent.operation.id,invocationObject(intent));
+  const current = await admitted(owner,credentials,run,intent.use,intent.operation.id,invocationTarget(intent));
   requireFrozenOperation(intent, current);
   const client = new RuntimeClient(owner.domainId,undefined,owner.userId);
   if (intent.confirmation === "required") {
