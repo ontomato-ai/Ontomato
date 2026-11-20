@@ -10,7 +10,7 @@
   <section class="agent-directory">
     <div><button type="button" @click="newAgent">New agent</button></div>
     <div class="agent-directory-body">
-      <projection slot="list" @update:selected="selectAgent"></projection>
+      <projection slot="list" @update:selected="stopCreating"></projection>
       <div class="agent-directory-detail">
         <section v-if="detail.status === 'ready'">
           <h2>{{ detail.value.label }}</h2>

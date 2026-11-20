@@ -19,14 +19,15 @@ await mountPanel({
     const { instance } = usePanelContext();
     return {
       selected: computed(() => instance.state.values.value.selected),
-      selectRecord: value => instance.state.set("selected", value),
+      clearSelection: () => instance.state.set("selected", null),
     };
   },
 });
 ```
 
-Use `@update:selected="selectRecord"` on the list and `v-if="selected"` on the detail. The standard form and list
-components use the projection's range and fields. Keep the selected reference connected to the detail's declared input.
+Bind the list's `selected` input and the detail's object input to the same public state. The list updates that
+state when the reader selects a record. Vue events can update page-local state, as the example does to leave
+creation mode. Use `@click="clearSelection"` on a control that should clear both the detail and the list's selection.
 
 ## Read declared data
 

@@ -16,7 +16,12 @@
             "name": "Agent Definition list",
             "description": "",
             "componentId": "@ontomato/sdk:ObjectList",
-            "inputs": {},
+            "inputs": {
+              "selected": {
+                "kind": "object",
+                "objectType": "platform:AgentDefinition"
+              }
+            },
             "outputs": {
               "selected": {
                 "kind": "object",
@@ -36,6 +41,11 @@
                 "params": {}
               }
             }
+          }
+        },
+        "inputs": {
+          "selected": {
+            "state": "selected"
           }
         }
       },
