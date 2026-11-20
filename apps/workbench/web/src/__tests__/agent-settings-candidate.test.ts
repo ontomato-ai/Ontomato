@@ -18,11 +18,12 @@ import {
  * writes, read through Node's candidate port and shown by the platform's own preview route, panel host, app host and
  * bridge, with the panel's own module running on the SDK's modules in the frame. Only the network is a stand-in: the
  * definitions service, the skill catalogue, the model options, the execution options and the ontology metadata answer
- * as their owners do, and a write marked with a build-test context is refused as Node's build-test guard refuses it.
+ * as their owners do. A candidate preview runs as no application use, so it runs none of the panel's operations: a save
+ * is refused in the frame, with the form the reader holds kept.
  *
  * What this rules out: a field of the definition edited anywhere but the one form (a second draft, a second dirty fact,
- * a second save); a value turned into text on its way to the owner; a create that does not start from the owner's
- * defaults; a candidate that saves live; and panel words the frame never receives.
+ * a second save); a create that does not start from the owner's defaults; a candidate that saves live; and panel words
+ * the frame never receives.
  */
 
 const WORKSPACE = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
@@ -82,7 +83,6 @@ const save = (create: boolean) => create
   ? { method: "POST" as const, path: "/assistant/agent-definitions", bodySchema: {}, draftOperation: "agent.create" }
   : { method: "PUT" as const, path: `/assistant/agent-definitions/${AGENT}`, bodySchema: {}, draftOperation: "agent.update" };
 const definition = (id: string, values: PanelFormValues) => ({ id, sortOrder: 0, ...values });
-const refused = () => Response.json({ error: { code: "BUILD_TEST_UNSUPPORTED", message: "This interface does not support test data" } }, { status: 422 });
 
 /** Node's candidate port and the owners, as they answer the preview. */
 function owners(request: Sent): Response {
@@ -92,9 +92,6 @@ function owners(request: Sent): Response {
     return new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } });
   const projected = /^\/api\/product-projections\/(.+)$/.exec(request.path);
   if (projected) return Response.json({ projection: projections[projected[1]!] });
-  // Writes of definitions do not support test data: Node's build-test guard refuses them before the service.
-  if (request.execution && ["POST", "PUT", "DELETE"].includes(request.method) && request.path.startsWith("/api/assistant/agent-definitions")
-    && request.path !== "/api/assistant/agent-definitions/form") return refused();
   if (request.path === "/api/assistant/agent-definitions/form") {
     const { target, values } = request.body as { target: { kind: string }; values?: PanelFormValues };
     const create = target.kind === "draft";
@@ -143,6 +140,12 @@ const formSave = () => [...document.querySelectorAll<HTMLButtonElement>("#app .s
   .find(button => button.textContent?.trim() === "Save")!;
 const fromFrame = (sent: Sent[]) => sent.filter(request => request.path !== `/api/workspaces/${WORKSPACE}/panel-candidate`
   && request.path !== "/api/apps-sdk/current" && request.path !== SDK_MANIFEST_PATH && request.path !== "/api/product-panels/definition-stream");
+
+const PREVIEW_REFUSAL = "A panel preview runs no operations; they run in the panel's application";
+/** A write of a definition, or any operation sent through the platform's coordinator. */
+const isWrite = (request: Sent) => request.path.startsWith("/api/panel-operation")
+  || ["POST", "PUT", "DELETE"].includes(request.method) && request.path.startsWith("/api/assistant/agent-definitions")
+    && request.path !== "/api/assistant/agent-definitions/form";
 
 /** Picks one choice of a picker the way a reader does: open its list and click the choice. */
 async function pick(path: string, label: string) {
@@ -217,17 +220,9 @@ it("edits one agent's definition as one form: its fields, model, skills and data
     expect(dirty.filter((value, index) => index > 0 && value !== dirty[index - 1])).toEqual([true]);
 
     formSave().click();
-    // One save, of the owner's own JSON with every change in it, nothing turned into text. In a candidate preview it is
-    // marked with the workspace's build-test context, and the definitions service does not take test-data writes: the
-    // refusal is the answer, shown with the form the reader still holds, and nothing is sent again.
-    await vi.waitFor(() => expect(document.querySelector("#app .sdk-owner-form")?.textContent).toContain("This interface does not support test data"));
-    const writes = sent.filter(request => request.method === "PUT" || request.method === "POST" && request.path === "/api/assistant/agent-definitions");
-    expect(writes).toHaveLength(1);
-    expect(writes[0]).toMatchObject({ method: "PUT", path: `/api/assistant/agent-definitions/${AGENT}` });
-    expect(writes[0]!.body).toEqual({
-      ...stored, name: "e2e-agent-settings v2", enabled: true, modelSelection: { modelId: "openai/gpt-4o" },
-      skills: [sql, chart], classNames: ["Order", "Invoice", "Customer"],
-    });
+    // A preview saves nothing: the refusal is the answer, shown with the form the reader still holds, and no write leaves.
+    await vi.waitFor(() => expect(document.querySelector("#app .sdk-owner-form")?.textContent).toContain(PREVIEW_REFUSAL));
+    expect(sent.filter(isWrite)).toEqual([]);
     expect(fieldItem("/name")?.querySelector("input")?.value).toBe("e2e-agent-settings v2");
     expect(dirty.at(-1)).toBe(true);
     // Every request the frame made went out as the reader, marked with the preview's context; none was live.
@@ -257,10 +252,9 @@ it("opens a new agent with the owner's defaults, and its create is the owner's t
     name.dispatchEvent(new Event("input"));
     await nextTick();
     formSave().click();
-    await vi.waitFor(() => expect(document.querySelector("#app .sdk-owner-form")?.textContent).toContain("This interface does not support test data"));
-    const creates = sent.filter(request => request.method === "POST" && request.path === "/api/assistant/agent-definitions");
-    expect(creates).toHaveLength(1);
-    expect(creates[0]!.body).toEqual({ ...defaults, name: "e2e-new-agent" });
+    await vi.waitFor(() => expect(document.querySelector("#app .sdk-owner-form")?.textContent).toContain(PREVIEW_REFUSAL));
+    expect(sent.filter(isWrite)).toEqual([]);
+    expect(fieldItem("/name")?.querySelector("input")?.value).toBe("e2e-new-agent");
   } finally {
     app.unmount();
   }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, markRaw, ref, toRaw, watch } from "vue";
+import { computed, inject, markRaw, ref, toRaw, watch, type Ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { PanelHost, panelUnavailable, useUnsavedChanges, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
@@ -109,7 +109,8 @@ interface KeptPage {
  * The kept pages, in the order they were opened. The order never changes while a page is kept: a frame moved in the
  * document is loaded again, which is the rebuild keeping it avoids.
  */
-const kept = ref<KeptPage[]>([]);
+// Typed as the pages themselves: unwrapping each page's port and contexts as reactive state is too deep to type.
+const kept = ref([]) as Ref<KeptPage[]>;
 let showings = 0;
 const failure = ref("");
 const catalog = useApplicationCatalog();
