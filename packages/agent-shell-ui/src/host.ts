@@ -26,6 +26,7 @@ import {
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { PresentationReceipt } from "@ontomato/contracts/agent-presentation";
 import { assistantAgentListSchema } from "@ontomato/contracts/assistant-chat";
+import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import { pageDraftReadSchema, type PageDraft } from "@ontomato/contracts/page-draft";
 import type { RuntimeCursor, RuntimeEventEnvelope, RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
 import { agentTasksFrameSchema, type AgentTasksFrame } from "@ontomato/contracts/agent-tasks";
@@ -95,22 +96,15 @@ export interface ShellTaskPort {
   ): () => void;
 }
 
-/**
- * The page whose skills the composer offers: the page's own skill is what an agent must carry to be a candidate. A page
- * with a menu code names it; one that opens to every member of the domain says so instead.
- */
-export type AgentPageQuery =
-  | { pageKey: string; permissionCode: string }
-  | { pageKey: string; access: "domain-member" };
-
 export interface AgentHostClient {
   listAgents(): Promise<AgentHostAgent[]>;
   /**
    * The agents that may take a message on this page, with the page's default agent when it registered one. A page the
    * reader holds no skill mapping for is refused, and so is a registered default that is no longer available: the page
-   * shows the configuration error rather than choosing another agent.
+   * shows the configuration error rather than choosing another agent. A member context with `member: null` returns no
+   * candidates without sending a request.
    */
-  listPageAgents(page: AgentPageQuery): Promise<{ agents: AgentHostAgent[]; defaultAgentId?: string }>;
+  listPageAgents(page: PageSkillContext): Promise<{ agents: AgentHostAgent[]; defaultAgentId?: string }>;
   /** The agent's conversations, or those of the client's workspace when it has one. */
   listSessions(agentId: string, cursor: string | null): Promise<AgentHostSessionPage>;
   /** A new conversation with the agent, inside the client's workspace when it has one. */
@@ -291,7 +285,15 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
       return options.agents ? options.agents(agents) : agents;
     },
     async listPageAgents(page) {
-      return assistantAgentListSchema.parse(await json(`/agents?${query({ ...page })}`));
+      if (page.mode === "public")
+        return assistantAgentListSchema.parse(await json(`/agents?${query({ ...page.locator })}`));
+      if (page.member === null) return { agents: [] };
+      const params = {
+        ...page.locator,
+        source: JSON.stringify(page.member.source),
+        memberKey: page.member.memberKey,
+      };
+      return assistantAgentListSchema.parse(await json(`/agents?${query(params)}`));
     },
     listSessions(agentId, cursor) {
       if (options.workspace) return options.workspace.listSessions(cursor);

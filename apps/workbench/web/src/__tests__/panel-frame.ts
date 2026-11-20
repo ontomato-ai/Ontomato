@@ -15,7 +15,7 @@ import {
   type PlatformTask,
   type PlatformTaskRun,
 } from "@ontomato/contracts/platform-schedules";
-import type { ApplicationPanelUse, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
+import type { ApplicationPanelUse, DirectPanel, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
@@ -208,6 +208,32 @@ export const ignoreChanges = () => {};
 export const registered = (applicationId: string, use: ApplicationPanelUse, panel: ProductPanel) =>
   ({ kind: "registered", applicationId, use, panel }) as const;
 
+/** The page skill member Node names for a panel read for one page, by a name derived from the panel alone. */
+export const memberKeyOf = (panelId: string) => `pvt-${[...panelId].map(char => char.charCodeAt(0).toString(16)).join("").slice(0, 48).padEnd(48, "0")}`;
+
+/**
+ * The page skill context Node answers for a panel read or a snapshot read made for one page: which member a message
+ * beside that page reaches. A read that names no page gets none.
+ */
+export function pageSkillContextFor(panel: Pick<ProductPanel, "id">, request: Sent) {
+  const query = new URLSearchParams(request.search);
+  const applicationId = query.get("applicationId");
+  if (!applicationId) return undefined;
+  const pageKey = query.get("pageKey")!;
+  const permissionCode = query.get("permissionCode");
+  const locator = permissionCode ? { permissionCode, pageKey } : { access: "domain-member", pageKey };
+  return {
+    mode: "member", locator,
+    member: { source: { kind: "application-use", applicationId, useId: query.get("useId")! }, memberKey: memberKeyOf(panel.id) },
+  };
+}
+
+/** Node's answer for a panel read: the panel, and the page skill context when the read names the page it is shown for. */
+export function panelAnswer(panel: ProductPanel | DirectPanel, request: Sent) {
+  const pageSkillContext = pageSkillContextFor(panel, request);
+  return Response.json({ panel, ...(pageSkillContext ? { pageSkillContext } : {}) });
+}
+
 /** One request that reached the network, as the platform sent it for the frame. */
 export interface Sent {
   method: string;
@@ -374,11 +400,16 @@ export function leaveFrame() {
   document.body.innerHTML = "";
 }
 
-export function panelSnapshot(panel: ProductPanel, current = projections) {
-  const ids = new Set(Object.values(panel.manifest.slots).map(slot => slot.projectionId));
+/** Node's snapshot of a panel's revisions, with the page skill context when the read names the page it is shown for. */
+export function panelSnapshot(panel: ProductPanel | DirectPanel, current: Record<string, { revision: number }> = projections, request?: Sent) {
+  const ids = new Set("slots" in panel.manifest
+    ? Object.values(panel.manifest.slots).map(slot => slot.projectionId)
+    : Object.values(panel.manifest.members).map(member => member.target.projectionId));
+  const pageSkillContext = request && pageSkillContextFor(panel, request);
   return Response.json({
     panel: { id: panel.id, revision: panel.revision },
     projections: [...ids].map(id => ({ id, revision: current[id]!.revision })),
+    ...(pageSkillContext ? { pageSkillContext } : {}),
   });
 }
 
@@ -418,9 +449,9 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
         success: true,
         data: { applicationId: "app-panels-trial-a", entry: { path: "/panels-trial-a", renderer: "panels" }, panelUses: [use] },
       });
-    if (request.path === `/api/product-panels/${panel.id}`) return Response.json({ panel });
+    if (request.path === `/api/product-panels/${panel.id}`) return panelAnswer(panel, request);
     if (request.path === "/api/apps-sdk/current") return currentSdk();
-    if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel);
+    if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel, projections, request);
     if (request.path === `/api/product-projections/${formProjection.id}`)
       return served.then(() => Response.json({ projection: formProjection }));
     if (request.path === `/api/data-query/platform/scheduled-tasks/${task.id}`) return Response.json(task);

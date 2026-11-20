@@ -79,7 +79,7 @@ describe("the report's own composer at its address", () => {
 
     // The declaration is the page's feature's own: one place decides which agents a report is written with.
     expect(composerQueries).toEqual([GOVERNANCE_REPORT_PAGE_SKILL]);
-    expect(GOVERNANCE_REPORT_PAGE_SKILL).toEqual({ pageKey: "governance-report", permissionCode: "business-knowledge" });
+    expect(GOVERNANCE_REPORT_PAGE_SKILL).toEqual({ mode: "public", locator: { pageKey: "governance-report", permissionCode: "business-knowledge" } });
     wrapper.unmount();
   });
 
