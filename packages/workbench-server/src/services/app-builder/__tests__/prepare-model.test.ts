@@ -3,6 +3,7 @@ const mocks=vi.hoisted(()=>({definition:vi.fn((..._args:unknown[])=>({})),author
 vi.mock('../build-tests',()=>({WorkspaceBuildTests:class{authorize=mocks.authorize;}}));
 vi.mock('../sdk',()=>({currentAppSdk:async()=>({version:'sdk'})}));
 vi.mock('../../../platform/agent-runtime/runtime',()=>({runDefinition:mocks.definition,userSkillEnvironment:()=>({values:{},secrets:{}})}));
+vi.mock('../../agent-runtime/skills',()=>({workbenchBuiltinSkillRoot:()=>'/skills',publishSkill:async(_root:string,skill:unknown)=>({skill,digest:'a'.repeat(64)})}));
 vi.mock('../../assistant/prompts',()=>({effectiveSystemPrompt:()=>''}));
 import {prepareAppBuilderRun} from '../prepare';
 it('uses a builder variants selected model when preparing its runtime definition',async()=>{

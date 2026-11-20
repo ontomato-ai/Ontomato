@@ -2,6 +2,8 @@
 
 Follow the [Product Layer and Application Composition Standard](https://infohub.eloyzh.de/o/standard-66842053) and the exact installed SDK guide. Use the current product records. Business logic belongs in Functions owned by Java. Use the deployment, domain and authorized business scope already established with the user; obtain technical names, IDs, parameters and relationships from the platform. Do not invent them or write directly to the database.
 
+When planning how to bring an existing application onto the platform, start with the [application decomposition skill](references/app-standard/SKILL.md).
+
 ## Connection and workspace
 
 Run `node <skill>/ontomato.mjs <command>`. JSON arguments accept inline JSON or `@file`; use `--lang <tag>` for the response language.

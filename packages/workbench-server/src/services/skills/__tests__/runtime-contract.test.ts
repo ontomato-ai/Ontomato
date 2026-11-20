@@ -8,8 +8,15 @@ import { installContentLayout } from "../../../content/layout";
 import { readSkillPackage } from "../../../core/skills/package";
 import { standardSkillFrontmatterSchema, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { parse } from "yaml";
+import type { ProtectedSkillOffering } from "../../../core/skills/providers";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
+
+const referenceQuery = vi.hoisted(() => vi.fn());
+vi.mock("../../../infrastructure/postgres", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../infrastructure/postgres")>(),
+  getPostgresPool: () => ({ query: referenceQuery }),
+}));
 
 configureI18n({ defaultLocale: "en", packs: { en: { messages: en, ...enLocaleMeta } },
   languageSwitchEnabled: false, appTextLocale: "en" });
@@ -17,10 +24,12 @@ configureI18n({ defaultLocale: "en", packs: { en: { messages: en, ...enLocaleMet
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "domain-skills-contract-"));
 installContentLayout({ runtimeRoot: root, prompts: [], runtimeResources: [], publicSkillsRoot: path.resolve("skills") });
 const { skillManager } = await import("../skill-manager");
-const { assistantSkillCatalog, prepareAssistantSkills } = await import("../../assistant/skills");
+const { assistantSkillCatalog, hasHiddenAssistantSkillRefs, pageSkillMemberContext, prepareAssistantSkills, readAssistantSkillView, validateAssistantSkills, visibleAssistantSkillRefs } = await import("../../assistant/skills");
 const { skillRegistryManager } = await import("../../../core/skills/registry/manager");
-const { registerSkillProvider } = await import("../../../core/skills/providers");
+const { registerSkillProvider, protectedSkillRef } = await import("../../../core/skills/providers");
 const domain = "contract-domain";
+const credentials = { token: "initiator", locale: "en" };
+const referenceAccess = { credentials, readableAgentIds: async () => new Set<string>() };
 const reference = { namespace: { kind: "domain" as const, domainId: domain }, name: "sample-skill" };
 const files = {
   "SKILL.md": "---\r\nname: sample-skill\r\ndescription: A portable sample\r\nlicense: MIT\r\nmetadata:\r\n  author: example\r\n---\r\nRun scripts/main.mjs.\r\n",
@@ -39,6 +48,7 @@ type Offering = {
   provide: () => Promise<{ skill: RuntimeSkillRef; files: { path: string; content: string }[] }>;
 };
 let panelOfferings: Offering[] = [];
+let protectedPanelOfferings: ProtectedSkillOffering[] = [];
 let conflictOfferings: Offering[] = [];
 let panelCalls: string[] = [];
 let panelListError: Error | null = null;
@@ -48,6 +58,7 @@ const panelProvider = {
 };
 const conflictProvider = { id: "conflict-test", name: "Conflicting source", async list() { return conflictOfferings; } };
 registerSkillProvider(panelProvider);
+registerSkillProvider({ id: "product-panels", name: "Product panels", async list() { return protectedPanelOfferings; } });
 registerSkillProvider(conflictProvider);
 function offering(name: string, options: { domainId?: string; script?: string; packageName?: string;
   provideError?: Error; namespace?: RuntimeSkillRef["namespace"] } = {}): Offering {
@@ -65,41 +76,45 @@ function offering(name: string, options: { domainId?: string; script?: string; p
 const panelSkill = (name = "panel-skill") => offering(name);
 const panelReference = (name = "panel-skill"): RuntimeSkillRef => ({ namespace: { kind: "domain", domainId: domain }, name });
 afterAll(async () => { await fs.rm(root, { recursive: true, force: true }); });
-beforeEach(() => { panelOfferings = []; conflictOfferings = []; panelCalls = []; panelListError = null; });
+const pageDirectory = () => Response.json({ success: true, data: { pageSkills: [], registeredSkills: [] } });
+beforeEach(() => {
+  panelOfferings = []; protectedPanelOfferings = []; conflictOfferings = []; panelCalls = []; panelListError = null;
+  vi.stubGlobal("fetch", vi.fn(async () => pageDirectory()));
+});
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 it("round-trips a standard package byte-for-byte and lists and reads its files", async () => {
-  const imported = await skillManager.importSkill(domain, zip());
+  const imported = await skillManager.importSkill(domain, zip(), credentials);
   expect(imported.skill).toEqual(reference);
   expect(imported.title).toBe(reference.name);
   expect(imported.writeRestriction).toBeNull();
-  const exported = new AdmZip(await skillManager.exportSkill(domain, reference.name));
+  const exported = new AdmZip(await skillManager.exportSkill(domain, reference.name, credentials));
   for (const [name, content] of Object.entries(files)) expect(exported.readFile(name)).toEqual(Buffer.from(content));
   const front = parse(exported.readAsText("SKILL.md").split("---")[1]);
   expect(standardSkillFrontmatterSchema.parse(front)).toMatchObject({ license: "MIT", metadata: { author: "example" } });
-  expect(await skillManager.listSkillFiles(domain, reference.name)).toEqual(Object.keys(files).sort()
+  expect(await skillManager.listSkillFiles(domain, reference.name, credentials)).toEqual(Object.keys(files).sort()
     .map((name) => ({ path: name, size: Buffer.byteLength(files[name as keyof typeof files]) })));
-  expect(await skillManager.readSkillFile(domain, reference.name, "references/guide.md")).toBe(files["references/guide.md"]);
+  expect(await skillManager.readSkillFile(domain, reference.name, "references/guide.md", credentials)).toBe(files["references/guide.md"]);
 });
 
 it("keeps an older package's ontomato.* metadata in the package and reads none of it", async () => {
   const older = "---\nname: sample-skill\ndescription: A portable sample\nmetadata:\n  ontomato.title: Old title\n  ontomato.category: visualization\n  ontomato.tags: not json\n---\nRun scripts/main.mjs.\n";
-  const imported = await skillManager.importSkill(domain, zip({ "SKILL.md": older }), true);
+  const imported = await skillManager.importSkill(domain, zip({ "SKILL.md": older }), credentials, true);
   expect(imported).toMatchObject({ title: reference.name, description: "A portable sample" });
-  const exported = new AdmZip(await skillManager.exportSkill(domain, reference.name));
+  const exported = new AdmZip(await skillManager.exportSkill(domain, reference.name, credentials));
   expect(exported.readAsText("SKILL.md")).toBe(older);
 });
 
 it("reads only files inside the package", async () => {
-  await skillManager.importSkill(domain, zip(), true);
+  await skillManager.importSkill(domain, zip(), credentials, true);
   for (const outside of ["../sample-skill/SKILL.md", "/etc/hosts", "scripts/../../x"])
-    await expect(skillManager.readSkillFile(domain, reference.name, outside)).rejects.toMatchObject({ status: 400 });
+    await expect(skillManager.readSkillFile(domain, reference.name, outside, credentials)).rejects.toMatchObject({ status: 400 });
 });
 
 it("lists and reads a provider package on demand, with no source path and one write restriction", async () => {
-  await skillManager.importSkill(domain, zip(), true);
+  await skillManager.importSkill(domain, zip(), credentials, true);
   panelOfferings = [panelSkill()];
-  const infos = await skillManager.getAllSkills(domain);
+  const infos = await skillManager.getAllSkills(domain, credentials);
   const info = infos.find((entry) => entry.id === "panel-skill")!;
   expect(info).toMatchObject({ isPublic: false, writeRestriction: { kind: "provider", providerId: "panel-test", providerName: "Test panels" } });
   expect(info.path).toBeUndefined();
@@ -107,12 +122,12 @@ it("lists and reads a provider package on demand, with no source path and one wr
   expect(infos.find((entry) => entry.id === "network-graph")).toMatchObject({ writeRestriction: { kind: "public" }, isPublic: true });
   // Listing only asks for metadata; each read asks the provider for its current package.
   expect(panelCalls).toEqual([]);
-  expect(await skillManager.listSkillFiles(domain, "panel-skill")).toEqual([
+  expect(await skillManager.listSkillFiles(domain, "panel-skill", credentials)).toEqual([
     { path: "SKILL.md", size: Buffer.byteLength(skillMarkdown("panel-skill")) },
     { path: "scripts/main.mjs", size: Buffer.byteLength("console.log('panel');\n") },
   ]);
-  expect(await skillManager.readSkillFile(domain, "panel-skill", "scripts/main.mjs")).toBe("console.log('panel');\n");
-  const exported = new AdmZip(await skillManager.exportSkill(domain, "panel-skill"));
+  expect(await skillManager.readSkillFile(domain, "panel-skill", "scripts/main.mjs", credentials)).toBe("console.log('panel');\n");
+  const exported = new AdmZip(await skillManager.exportSkill(domain, "panel-skill", credentials));
   expect(exported.readAsText("SKILL.md")).toBe(skillMarkdown("panel-skill"));
 });
 
@@ -121,7 +136,6 @@ it("publishes the selected provider's current package and never provides an unse
   const published: Array<{ skill: RuntimeSkillRef; files: { path: string; content: string }[] }> = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: { headers: Record<string, string>; body: string }) => {
     if (url.endsWith("/platform/page-skills")) return Response.json({ success: true, data: { pageSkills: [], registeredSkills: [] } });
-    expect(new Headers(init.headers).get("x-domain-id")).toBe(domain);
     const body = JSON.parse(String(init.body));
     published.push(body);
     return Response.json({ skill: body.skill, digest: "a".repeat(64), description: "Panel-provided skill" }, { status: 201 });
@@ -139,17 +153,107 @@ it("publishes the selected provider's current package and never provides an unse
     .rejects.toThrow(/panel-test.*cannot supply the selected package/);
 });
 
+it("admits protected packages only through the initiator's exact entrance and every dependency", async () => {
+  vi.stubEnv("AGENT_RUNTIME_SERVICE_TOKEN", "synthetic-host");
+  const entrance = { permissionCode: "panel-menu", pageKey: "real-use" };
+  const source = { kind: "application-use", applicationId: "app-test", useId: "primary" } as const;
+  const old = panelReference("panel-menu-panel-menu-123456789012345678901234");
+  const protectedRef = protectedSkillRef("product-panels", domain, "panel-a", "main");
+  const readManifest = vi.fn(async (ref: RuntimeSkillRef) => ({ name: ref.name, description: "Protected member" }));
+  const provide = vi.fn(async (ref: RuntimeSkillRef) => ({
+    skill: ref, files: [{ path: "SKILL.md", content: skillMarkdown(ref.name) }],
+  }));
+  protectedPanelOfferings = [{
+    kind: "protected", sourceKey: "panel-a", scopeKey: "main", entrances: [entrance],
+    resourceIds: ["panel-a", "projection-a"], legacyAggregateRefs: [old], readManifest, provide,
+  }];
+  let admittedEntrance = { ...entrance, pageKey: "sibling-use" };
+  let ids = ["panel-a", "projection-a"];
+  const upstream = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+    if (url.endsWith("/platform/page-skills"))
+      return Response.json({ success: true, data: {
+        pageSkills: [{ permissionCode: entrance.permissionCode }], registeredSkills: [], admittedEntrances: [admittedEntrance],
+      } });
+    if (url.endsWith("/product-governance/resources")) {
+      expect(new Headers(init.headers).get("tk")).toBe(credentials.token);
+      expect(JSON.parse(String(init.body))).toEqual({ verb: "use" });
+      return Response.json({ ids });
+    }
+    if (url.endsWith("/platform/applications/app-test/panel-uses"))
+      return Response.json({ success: true, data: {
+        applicationId: source.applicationId, entry: { path: "/applications/app-test", renderer: "panels" },
+        panelUses: [{ id: source.useId, pageKey: entrance.pageKey, panelId: "panel-a",
+          path: "/applications/app-test/panel", access: { permissionCode: entrance.permissionCode } }],
+      } });
+    return Response.json({ skill: protectedRef, digest: "b".repeat(64), description: "Protected member" });
+  });
+  vi.stubGlobal("fetch", upstream);
+
+  let view = await readAssistantSkillView(domain, credentials);
+  expect(view.pageSkills[0].skills).toEqual([]);
+  expect(hasHiddenAssistantSkillRefs([old], view)).toBe(true);
+  expect(readManifest).not.toHaveBeenCalled();
+
+  admittedEntrance = entrance;
+  view = await readAssistantSkillView(domain, credentials);
+  expect(visibleAssistantSkillRefs([old], view)).toEqual([protectedRef]);
+  expect(hasHiddenAssistantSkillRefs([old], view)).toBe(false);
+  await expect(pageSkillMemberContext(view, entrance, source, { id: "panel-a" })).resolves.toEqual({
+    mode: "member", locator: entrance, member: { source, memberKey: protectedRef.name },
+  });
+  await expect(pageSkillMemberContext(view, entrance, source, { id: "old-panel" })).resolves.toEqual({
+    mode: "member", locator: entrance, member: null,
+  });
+  expect(provide).not.toHaveBeenCalled();
+  await expect(prepareAssistantSkills(domain, { kind: "custom", skills: [old] }, credentials))
+    .resolves.toEqual({ skills: [{ skill: protectedRef, digest: "b".repeat(64) }], pageDrafts: true });
+
+  referenceQuery.mockResolvedValueOnce({ rows: [
+    { id: "readable", name: "Readable agent" },
+    { id: "hidden", name: "Hidden agent" },
+  ] });
+  const readableAgentIds = vi.fn(async () => new Set(["readable"]));
+  await expect(skillManager.getSkillReferences(domain, protectedRef.name, { credentials, readableAgentIds }))
+    .resolves.toEqual([{ id: "readable", name: "Readable agent", usesAnalysis: true, usesVisualization: false }]);
+  expect(readableAgentIds).toHaveBeenCalledWith(["readable", "hidden"]);
+
+  ids = ["panel-a"];
+  readManifest.mockClear(); provide.mockClear();
+  await expect(skillManager.exportSkill(domain, protectedRef.name, credentials))
+    .rejects.toMatchObject({ status: 404, code: "SKILL_NOT_FOUND" });
+  await expect(skillManager.deleteSkill(domain, protectedRef.name, referenceAccess))
+    .rejects.toMatchObject({ status: 404, code: "SKILL_NOT_FOUND" });
+  await expect(skillManager.getSkillReferences(domain, protectedRef.name, referenceAccess))
+    .rejects.toMatchObject({ status: 404, code: "SKILL_NOT_FOUND" });
+  await expect(validateAssistantSkills(domain, [protectedRef], credentials))
+    .rejects.toMatchObject({ code: "SKILL_NOT_FOUND", message: "Skill is not in this domain's catalogue" });
+  await expect(prepareAssistantSkills(domain, { kind: "regular", skills: [old] }, credentials))
+    .resolves.toEqual({ skills: [], pageDrafts: false });
+  expect(readManifest).not.toHaveBeenCalled();
+  expect(provide).not.toHaveBeenCalled();
+
+  protectedPanelOfferings = [];
+  view = await readAssistantSkillView(domain, credentials);
+  expect(visibleAssistantSkillRefs([old, protectedRef], view)).toEqual([]);
+  expect(hasHiddenAssistantSkillRefs([old, protectedRef], view)).toBe(false);
+  const imported = new AdmZip();
+  imported.addFile("SKILL.md", Buffer.from(skillMarkdown(protectedRef.name)));
+  upstream.mockClear();
+  await expect(skillManager.importSkill(domain, imported.toBuffer(), credentials, true))
+    .rejects.toMatchObject({ code: "INVALID_SKILL_PACKAGE" });
+  expect(upstream).not.toHaveBeenCalled();
+});
+
 it("fails the whole catalogue when a provider cannot list, and all preparation with it", async () => {
   panelListError = new Error("panel source unavailable");
   let listFailure: Error | undefined;
-  try { await skillManager.getAllSkills(domain); }
+  try { await skillManager.getAllSkills(domain, credentials); }
   catch (error) { listFailure = error as Error; }
   expect(listFailure?.message).toContain('Skill provider "Test panels" (panel-test) failed to list skills');
-  expect(listFailure?.message).toContain("panel source unavailable");
   expect((listFailure as Error & { cause?: unknown }).cause).toBe(panelListError);
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ success: true, data: { pageSkills: [], registeredSkills: [] } })));
   await expect(prepareAssistantSkills(domain, { kind: "custom", skills: [] }, {}))
-    .rejects.toThrow(/panel-test.*panel source unavailable/);
+    .rejects.toMatchObject({ code: "SKILL_SOURCE_UNAVAILABLE", cause: panelListError });
 });
 
 it("fails a page-mapped skill that no source supplies instead of reusing its runtime package", async () => {
@@ -168,13 +272,13 @@ it("fails a page-mapped skill that no source supplies instead of reusing its run
 
 it("rejects a provider skill for another domain, a repeated manageable name, and a built-in identity takeover", async () => {
   panelOfferings = [offering("other-domain-skill", { domainId: "other-domain" })];
-  await expect(skillManager.getAllSkills(domain)).rejects.toThrow(/other-domain\/other-domain-skill/);
+  await expect(skillManager.getAllSkills(domain, credentials)).rejects.toThrow(/other-domain\/other-domain-skill/);
   panelOfferings = [panelSkill()];
   conflictOfferings = [panelSkill("panel-skill")];
-  await expect(skillManager.getAllSkills(domain)).rejects.toThrow(/conflict-test[\s\S]*panel-test/);
+  await expect(skillManager.getAllSkills(domain, credentials)).rejects.toThrow(/conflict-test[\s\S]*panel-test/);
   const governance = { namespace: { kind: "provider" as const, provider: "ontology" }, name: "knowledge-governance" };
   panelOfferings = [offering(governance.name, { namespace: governance.namespace })];
-  await expect(assistantSkillCatalog(domain, { locale: "en" }, { pageSkills: [], registeredSkills: [] }))
+  await expect(assistantSkillCatalog(domain, credentials))
     .rejects.toThrow(/built-in skill/);
 });
 
@@ -185,30 +289,30 @@ it("refuses to overwrite or delete provider content before touching a domain sou
     archive.addFile("SKILL.md", Buffer.from(skillMarkdown("panel-skill")));
     return archive.toBuffer();
   })();
-  await expect(skillManager.importSkill(domain, providerZip, true))
+  await expect(skillManager.importSkill(domain, providerZip, credentials, true))
     .rejects.toMatchObject({ status: 403, code: "SKILL_PROVIDER_READ_ONLY" });
   await expect(fs.access(path.join(skillRegistryManager.getDomainSkillsRoot(domain), "panel-skill")))
     .rejects.toThrow();
-  await expect(skillManager.deleteSkill(domain, "panel-skill"))
+  await expect(skillManager.deleteSkill(domain, "panel-skill", referenceAccess))
     .rejects.toMatchObject({ status: 403, code: "SKILL_PROVIDER_READ_ONLY" });
-  expect((await skillManager.getAllSkills(domain)).find((entry) => entry.id === "panel-skill")?.writeRestriction)
+  expect((await skillManager.getAllSkills(domain, credentials)).find((entry) => entry.id === "panel-skill")?.writeRestriction)
     .toMatchObject({ kind: "provider", providerName: "Test panels" });
 });
 
 it("keeps public packages read-only while leaving their files and export readable", async () => {
-  expect((await skillManager.listSkillFiles(domain, "network-graph")).length).toBeGreaterThan(0);
-  await expect(skillManager.readSkillFile(domain, "network-graph", "SKILL.md")).resolves.toContain("---");
+  expect((await skillManager.listSkillFiles(domain, "network-graph", credentials)).length).toBeGreaterThan(0);
+  await expect(skillManager.readSkillFile(domain, "network-graph", "SKILL.md", credentials)).resolves.toContain("---");
   const replacement = new AdmZip();
   replacement.addFile("SKILL.md", Buffer.from("---\nname: network-graph\ndescription: Replaced\n---\n"));
-  await expect(skillManager.importSkill(domain, replacement.toBuffer(), true))
+  await expect(skillManager.importSkill(domain, replacement.toBuffer(), credentials, true))
     .rejects.toMatchObject({ status: 403, code: "PUBLIC_SKILL_READ_ONLY" });
-  await expect(skillManager.deleteSkill(domain, "network-graph"))
+  await expect(skillManager.deleteSkill(domain, "network-graph", referenceAccess))
     .rejects.toMatchObject({ status: 403, code: "PUBLIC_SKILL_READ_ONLY" });
 });
 
 it("rejects a provided package whose identity differs from the offered skill", async () => {
   panelOfferings = [offering("panel-skill", { packageName: "other-skill" })];
-  await expect(skillManager.listSkillFiles(domain, "panel-skill")).rejects.toThrow(/panel-test.*supplied/);
+  await expect(skillManager.listSkillFiles(domain, "panel-skill", credentials)).rejects.toThrow(/panel-test.*supplied/);
 });
 
 it("rejects a provided package whose SKILL.md declares another name", async () => {
@@ -216,33 +320,40 @@ it("rejects a provided package whose SKILL.md declares another name", async () =
   offered.provide = async () => ({ skill: offered.skill,
     files: [{ path: "SKILL.md", content: skillMarkdown("other-skill") }] });
   panelOfferings = [offered];
-  await expect(skillManager.listSkillFiles(domain, "panel-skill")).rejects.toThrow(/panel-test.*SKILL.md must declare the package name/);
+  await expect(skillManager.listSkillFiles(domain, "panel-skill", credentials)).rejects.toThrow(/panel-test.*SKILL.md must declare the package name/);
 });
 
-it("publishes only the selected current-domain package and keeps captured versions unchanged across imports", async () => {
+it("binds static and current-domain skills to the versions returned by their publishers", async () => {
   vi.stubEnv("AGENT_RUNTIME_SERVICE_TOKEN", "synthetic-host");
-  const published: Array<{ skill: unknown; files: { path: string; content: string }[] }> = [];
-  vi.stubGlobal("fetch", vi.fn(async (url: string, init: { headers: Record<string, string>; body: string }) => {
-    if (url.endsWith("/platform/page-skills")) return Response.json({ success: true, data: { pageSkills: [], registeredSkills: [] } });
-    expect(new Headers(init.headers).get("x-domain-id")).toBe(domain);
+  const report: RuntimeSkillRef = { namespace: { kind: "provider", provider: "workbench" }, name: "assistant-report" };
+  const analyst: RuntimeSkillRef = { namespace: { kind: "provider", provider: "ontology" }, name: "ontomato-analyst-assistant" };
+  const published: Array<{ skill: RuntimeSkillRef; files: { path: string; content: string }[] }> = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+    if (url.endsWith("/platform/page-skills")) return pageDirectory();
+    if (url.endsWith("/platform/agent-channel/assistant-skill"))
+      return Response.json({ skill: analyst, digest: "a".repeat(64) });
     const body = JSON.parse(String(init.body));
     published.push(body);
-    return Response.json({ skill: body.skill, digest: "a".repeat(64), description: "A portable sample" }, { status: 201 });
+    if (body.skill.namespace.kind === "domain")
+      expect(new Headers(init.headers).get("x-domain-id")).toBe(domain);
+    return Response.json({ skill: body.skill, digest: published.length.toString().repeat(64), description: "Published" });
   }));
-  await skillManager.importSkill(domain, zip(), true);
-  const provider = { namespace: { kind: "provider" as const, provider: "workbench" }, name: "assistant-report" };
-  const analyst = { namespace: { kind: "provider" as const, provider: "ontology" }, name: "ontomato-analyst-assistant" };
-  expect((await prepareAssistantSkills(domain, { kind: "custom", skills: [analyst, provider, reference] }, {})).skills).toEqual([analyst, provider, reference]);
-  const script = (body: { files: { path: string; content: string }[] }) =>
-    body.files.find((file) => file.path === "scripts/main.mjs")?.content;
-  await skillManager.importSkill(domain, zip({ "scripts/main.mjs": "console.log('next run');\n" }), true);
-  await prepareAssistantSkills(domain, { kind: "custom", skills: [reference] }, {});
-  expect(published.map((p) => p.skill)).toEqual([reference, reference]);
-  // A captured version is the package as it was: the later import reaches only the new publication.
-  expect(script(published[0])).toBe(files["scripts/main.mjs"]);
-  expect(script(published[1])).toBe("console.log('next run');\n");
-  expect(published).toHaveLength(2);
-  await expect(prepareAssistantSkills("another-domain", { kind: "custom", skills: [reference] }, {})).rejects.toThrow();
+  await skillManager.importSkill(domain, zip(), credentials, true);
+  const first = await prepareAssistantSkills(domain, { kind: "custom", skills: [analyst, report, reference] }, credentials);
+  expect(first.skills).toEqual([
+    { skill: analyst, digest: "a".repeat(64) },
+    { skill: report, digest: "1".repeat(64) },
+    { skill: reference, digest: "2".repeat(64) },
+  ]);
+  await skillManager.importSkill(domain, zip({ "scripts/main.mjs": "console.log('next run');\n" }), credentials, true);
+  const second = await prepareAssistantSkills(domain, { kind: "custom", skills: [reference] }, credentials);
+  expect(second.skills).toEqual([{ skill: reference, digest: "3".repeat(64) }]);
+  expect(published.map(item => item.skill)).toEqual([report, reference, reference]);
+  const script = (body: (typeof published)[number]) => body.files.find(file => file.path === "scripts/main.mjs")?.content;
+  expect(script(published[1])).toBe(files["scripts/main.mjs"]);
+  expect(script(published[2])).toBe("console.log('next run');\n");
+  await expect(prepareAssistantSkills("another-domain", { kind: "custom", skills: [reference] }, credentials))
+    .rejects.toMatchObject({ status: 422, code: "SKILL_NOT_FOUND" });
 });
 
 it("publishes every bundled public directory with the same standard package contract", async () => {

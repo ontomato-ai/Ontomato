@@ -181,7 +181,7 @@ public class ActionCreationService {
             });
     try {
       operations.createSandbox(sandbox, owner.domainId());
-      definitions.publishGeneration();
+      var skills = definitions.publishActionCreation();
       var row =
           store.one(
               "SELECT r.*,g.sandbox_id FROM ontology_agent_runs r JOIN ontology_generations g ON"
@@ -222,7 +222,7 @@ public class ActionCreationService {
               context.language(),
               "input",inputMessage,
               "definition",
-              definitions.actionCreation(context.owner().domainId(), prompt, context.language(), remaining),
+              definitions.actionCreation(context.owner().domainId(), prompt, context.language(), remaining, skills),
               "environment",
               JSONObject.of(
                   "values",
