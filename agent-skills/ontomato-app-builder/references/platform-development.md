@@ -40,12 +40,12 @@ directory for the registered definitions and wiring.
    with `RUNTIME_TEST_DATABASE_URL` set to a disposable PostgreSQL database. The agent confirmation cases are in
    `packages/workbench-server/src/services/product-panels/__tests__/operations.test.ts`.
 
-The task-list projection uses `data.rows = { source: { type: "platform:ScheduledTask" }, read: "list", params: {} }`.
+The task-list projection uses `data.rows = { source: { type: { kind: "PlatformObjectType", id: "platform:ScheduledTask" } }, read: "list", params: {} }`.
 The summary uses `data.record = { source: { object: { input: "task" } }, read: "record", params: {} }`. The form
 binds `params.values` to `{ input: "values" }` and `params.changedField` to `{ input: "changedField" }`.
 The list's `selected` output and the summary, form and button inputs share a panel state of type
 `{ kind: "object", objectType: "platform:ScheduledTask" }`. The member wiring maps the values through `{ state: "selectedTask" }`.
-The button reads `data.operation = { source: { operation: "schedules.runNow" }, read: "describe", params: {} }`.
+The button reads `data.operation = { source: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, read: "describe", params: {} }`.
 Its owner description names the write effect and targets the `task` input. In that placement the operation is
 `run.runNow`, with writes going through the operation dispatcher.
 
@@ -96,6 +96,11 @@ For Business Knowledge at `/ontology/knowledge`, the owner supplies these rules.
 6. Use the Business Knowledge page for creating, editing, reviewing and deleting records. Use the existing
    `knowledge-governance` agent for extracting or organizing knowledge from conversations and documents.
 
+For Business Knowledge search, give the list and detail members the same panel state as their `search` input.
+In the list's `query` and the detail's `record`, map `params.search` to `{ input: "search" }`. The detail also
+receives the selected knowledge record. Use `ObjectSummary` to show the full body as text with its original line
+breaks. The owner supplies the body's highlight ranges in `record.highlights` for the current search.
+
 ## Add an official SDK component
 
 Use an existing component if its ports already express the interaction. For a new component, record these five
@@ -117,11 +122,11 @@ The `ObjectSummary` entry in `packages/apps-sdk/src/catalogue.ts` declares its m
 `defineComponentMeta`. Controls add operations. For example, `ObjectForm` declares the owner form save
 with `client: "@binding"` and `kind: "form.save"`.
 
-A direct projection uses `@ontomato/sdk:ObjectSummary` from the supported component IDs in
-`packages/contracts/src/panel-projection.ts`. Register any new shared data or port shapes with the public contract
-owner. Write JSDoc for the props and events in the component source. The SDK build checks the public export
-against the catalogue, then emits the generated ports in `components.json`, `docs/components.md` and
-`docs/reference.md`.
+Write the catalogue declaration alongside the component. Give it a package-qualified component ID for projection
+registration, such as `@ontomato/sdk:ObjectSummary`, and declare the expected name and type of each needed datum.
+Write JSDoc for props and events in the component source. The SDK build checks the public export against the
+catalogue, then generates `components.json`, `docs/components.md` and `docs/reference.md`. Registration uses the
+current release catalogue to check the component exists and the projection supplies the declared data keys and types.
 
 Verify the component in a projection with the real owner result. Check that its input and emitted values match the
 catalogue and that writes go through the declared operation. Reuse the host's loading, error, empty and forbidden
