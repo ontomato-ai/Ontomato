@@ -312,7 +312,12 @@ async function sdkCommand(api, args) {
 }
 
 async function readPlatformTypeTable(api, checks) {
-  return checks.platformTypeTableResponseSchema.parse(await workbench(api, "GET", "/app-builder/type-table"));
+  const table = checks.platformTypeTableResponseSchema.parse(await workbench(api, "GET", "/app-builder/type-table"));
+  for (const { id, reason, objectType } of table.unavailableActions ?? []) {
+    const record = objectType === undefined ? id : `${id} (${objectType})`;
+    console.error(`Action ${record} is unavailable. ${reason}`);
+  }
+  return table;
 }
 
 async function checkCurrentPanel(api, directory, materialPath) {

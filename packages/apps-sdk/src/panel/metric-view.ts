@@ -118,8 +118,10 @@ export const metricViewAdapters: PlatformObjectAdapterFactory = requests => {
       async describe(request) {
         return panelFormDescriptionSchema.parse(await ownerRequest(requests, "/metricView/form", request));
       },
-      async save(target, { values }) {
-        return record(assetOf(await ownerRequest(requests, "/metricView/save", valuesForTarget(target, values))));
+      async save(target, { values, submittedFields }) {
+        // Submitted fields go with the values, so the owner changes only those and keeps every other saved value.
+        const body = { ...valuesForTarget(target, values), ...(submittedFields && { submittedFields }) };
+        return record(assetOf(await ownerRequest(requests, "/metricView/save", body)));
       },
     },
   }];

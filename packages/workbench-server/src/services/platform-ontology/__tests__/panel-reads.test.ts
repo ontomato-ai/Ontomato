@@ -149,9 +149,15 @@ describe("createPlatformOntologyReadAdapter", () => {
     const { seenRequests } = stubOwnerHttp();
     const reads = createPlatformOntologyReadAdapter(owner, viewer, "Alice");
 
-    const schema = panelReadResultSchemas.panelGraphSchema.parse(reads.schema());
+    const schema = panelReadResultSchemas.panelGraphSchema.parse(await reads.schema());
     expect(schema.layers).toEqual(["fact", "capability", "governance", "product"]);
     expect(schema.objectTypes.some((item) => item.id === ACTION)).toBe(true);
+    const agent = schema.objectTypes.find((item) => item.id === "platform:AgentDefinition");
+    expect(agent?.definition).toBeTruthy();
+    expect(agent?.properties?.length).toBeGreaterThan(0);
+    expect(agent?.rules).toBeTruthy();
+    expect(agent?.reads?.list?.result).toBe("panelRecordList");
+    expect(agent?.operations?.some((op) => op.id === "platform:AgentDefinition.save")).toBe(true);
 
     const counts = panelReadResultSchemas.panelGraphCounts.parse(await reads.counts());
     expect(counts.counts.find((c) => c.type === OBJECT_TYPE)).toMatchObject({ status: "ok", count: 2 });

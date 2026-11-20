@@ -32,7 +32,7 @@ export interface PlatformOntologyObjectsReadParams {
 }
 
 export interface PlatformOntologyReadAdapter {
-  schema(): PlatformOntologySchemaResponse;
+  schema(): Promise<PlatformOntologySchemaResponse>;
   counts(): Promise<PlatformOntologyCountsResponse>;
   start(): Promise<PlatformOntologyStartResponse>;
   neighbors(params: PlatformOntologyNeighborsRequest | Record<string, unknown>): Promise<PlatformOntologyNeighborsResponse>;
@@ -49,7 +49,7 @@ export function createPlatformOntologyReadAdapter(
   callerUserName?: string,
 ): PlatformOntologyReadAdapter {
   return {
-    schema(): PlatformOntologySchemaResponse {
+    schema(): Promise<PlatformOntologySchemaResponse> {
       return readPlatformOntologySchema();
     },
 
