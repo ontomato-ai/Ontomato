@@ -116,12 +116,9 @@ const panelDefinitionContent = z.object({
   template: z.boolean().optional(),
 }).strict();
 
-export function panelNeedsFrame(content: ProductPanelContent): boolean {
-  return content.module !== undefined || content.style !== undefined;
-}
-
 function validatePanelLayout(definition: z.infer<typeof panelDefinitionContent>, ctx: z.RefinementCtx): void {
-  if (panelNeedsFrame(definition.content)) return;
+  // A module supplies its own rendering. The platform interprets layout markup for module-free panels.
+  if (definition.content.module !== undefined) return;
   try {
     parsePanelLayout(definition.content.html, definition.manifest);
   } catch (error) {
