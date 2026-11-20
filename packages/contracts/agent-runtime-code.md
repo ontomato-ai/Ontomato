@@ -19,7 +19,7 @@ type ExecuteCode = {
   language: "python"; locale?: string; // defaults to en
   files: {path:string; content:string}[];
   entry: string; arguments: string[]; outputPaths: string[];
-  libraries: {skill: SkillRef; path:string}[];
+  libraries: {skill: SkillRef; digest:string; path:string}[];
   environment: {values:Record<string,string>; secrets:Record<string,string>};
   limits: CodeLimits;
 };
@@ -31,6 +31,9 @@ type Execution = {
   outputs: {name:string; sha256:string; size:number; mediaType:string}[];
 };
 ```
+
+Library entries use the digest returned by skill publication. Execution reads that
+version and the digest participates in the admission fingerprint.
 
 | Route | Result |
 | --- | --- |

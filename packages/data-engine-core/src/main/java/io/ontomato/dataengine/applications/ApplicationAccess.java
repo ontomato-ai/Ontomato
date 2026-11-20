@@ -12,6 +12,10 @@ public interface ApplicationAccess {
     boolean canEnter(JSONObject application, User user);
     java.util.List<PageSkills.Mapping> pageSkills(java.util.List<PageSkills.Mapping> mappings, User user);
     java.util.List<ApplicationPanelUse> panelUses(java.util.List<ApplicationPanelUse> uses, User user);
+    /** Edition-owned declarations contribute codes without moving menu metadata into the catalog. */
+    default java.util.List<ApplicationCatalog.Permission> builtinPermissions(String applicationId) {
+        return java.util.List.of();
+    }
     void declare(JSONObject application, ApplicationCatalog.Declaration declaration, boolean created);
     /** Remove edition-owned facts for a domain application within its catalog transaction. */
     void retire(JSONObject application);
