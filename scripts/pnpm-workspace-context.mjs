@@ -179,7 +179,7 @@ const WORKSPACE_EXCLUDE = new Set([
 // out-of-source docs never enter the context; resource markdown under the
 // package resource dirs is kept. No second packlist: git is the authority.
 const WORKSPACE_ROOT_FILES = new Set(["package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml"]);
-const RESOURCE_DIRS = new Set(["prompts", "skills", "data", "resources"]);
+const RESOURCE_DIRS = new Set(["prompts", "skills", "data", "resources", "chart-maps"]);
 
 function workspaceAllowed(path) {
   const parts = path.split("/");

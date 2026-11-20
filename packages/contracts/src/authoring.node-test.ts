@@ -137,11 +137,17 @@ test("Action explanation evidence points to its business run and stores the acce
 });
 
 test("the Java schema is generated from the same definitions and its references resolve", () => {
-  const schema: Record<string, unknown> = JSON.parse(
-    readFileSync(new URL("./authoring.schema.json", import.meta.url), "utf8"),
+  const javaSchema = JSON.parse(
+    readFileSync(new URL("./authoring.java.schema.json", import.meta.url), "utf8"),
   );
-  const { $schema, definitions } = zodToJsonSchema(z.never(), { definitions: authoringWireSchemas });
-  assert.deepEqual(schema, { $schema, $ref: "#/definitions/hostRun", definitions });
+  const { $schema, definitions: javaDefinitions } = zodToJsonSchema(z.never(), {
+    definitions: authoringWireSchemas,
+    $refStrategy: "none",
+  });
+  assert.deepEqual(javaSchema, { $schema, definitions: javaDefinitions });
+
+  const { definitions } = zodToJsonSchema(z.never(), { definitions: authoringWireSchemas });
+  const schema: Record<string, unknown> = { $schema, $ref: "#/definitions/hostRun", definitions };
 
   function checkReferences(node: unknown, path: string) {
     if (typeof node !== "object" || node === null) return;

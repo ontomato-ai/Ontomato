@@ -10,11 +10,13 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run --exclude '**/*.integration.test.ts'",
+    "pretest:integration": "pnpm run build:skills",
     "test:integration": "vitest run src/services/ops-diagnosis/__tests__/runtime-http.integration.test.ts src/api/__tests__/agent-definitions.integration.test.ts src/api/__tests__/page-draft-created.integration.test.ts src/api/__tests__/panel-skill-sdk-installed.integration.test.ts src/api/__tests__/panel-human-operations.integration.test.ts src/api/__tests__/panel-pilot-current.integration.test.ts src/api/__tests__/direct-panel-host.integration.test.ts src/api/__tests__/product-panel-references.integration.test.ts src/api/__tests__/chart-sources.integration.test.ts src/api/__tests__/knowledge-panel-reads.integration.test.ts",
     "test:wire": "vitest run src/services/assistant/__tests__/ontology-wire.integration.test.ts",
     "build:report-skill": "node report-skill/build.mjs",
     "build:chart-skill": "node chart-skill/build.mjs",
-    "build:dashboard-skill": "node dashboard-skill/build.mjs"
+    "build:dashboard-skill": "node dashboard-skill/build.mjs",
+    "build:skills": "node report-skill/build.mjs && node chart-skill/build.mjs && node dashboard-skill/build.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
