@@ -37,8 +37,9 @@ const counter = usePageCounter()!;
  */
 const agents = ref<readonly AgentHostAgent[]>([]);
 const chosen = ref<string | null>(null);
-/** The page's registered default among its candidates, which a conversation entry may name. */
+/** The page's registered default among its candidates, and which candidate is which preset: what an entry may name. */
 const pageDefault = ref<string | null>(null);
+const presets = shallowRef<Readonly<Record<string, string>> | undefined>(undefined);
 let load = 0;
 
 watch(
@@ -49,12 +50,13 @@ watch(
     agents.value = [];
     chosen.value = null;
     pageDefault.value = null;
+    presets.value = undefined;
     if (skill?.mode === "member" && skill.member === null) return;
     const candidates = skill
       ? counter.pageAgents(skill)
-      : counter.agents().then((list) => ({ agents: list, defaultAgentId: undefined as string | undefined }));
+      : counter.agents().then((list) => ({ agents: list, defaultAgentId: undefined as string | undefined, presetAgentIds: undefined }));
     void candidates
-      .then(({ agents: list, defaultAgentId }) => {
+      .then(({ agents: list, defaultAgentId, presetAgentIds }) => {
         if (seq !== load) return;
         agents.value = list.filter((agent) => agent.enabled);
         const offered = (id: string | null | undefined) => agents.value.some((agent) => agent.id === id);
@@ -63,6 +65,7 @@ watch(
         const initial = offered(defaultAgentId) ? defaultAgentId : offered(remembered) ? remembered : agents.value[0]?.id;
         chosen.value = initial ?? null;
         pageDefault.value = defaultAgentId ?? null;
+        presets.value = presetAgentIds;
       })
       // The page's own configuration keeps its own words and the service's reason; anything else is the service's error.
       .catch((reason: unknown) => {
@@ -98,7 +101,7 @@ function ask(text: string) {
  */
 const entry = shallowRef<ComposerEntry | null>(null);
 const expand: PageComposerExpand = (request) => {
-  const named = entryAgent(request.target, agents.value, pageDefault.value);
+  const named = entryAgent(request.target, agents.value, pageDefault.value, presets.value);
   if (named) chosen.value = named;
   entry.value = { text: named ? request.prefill ?? null : null, seq: (entry.value?.seq ?? 0) + 1 };
 };
