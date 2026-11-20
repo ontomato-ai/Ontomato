@@ -16,7 +16,7 @@ export function resolveAssistantSkillReferences(
       skill.namespace.domainId !== undefined &&
       skill.namespace.domainId !== domainId
     )
-      throw new HttpError(403, "Skill belongs to another domain");
+      throw new HttpError(400, "Skill is not in this domain's catalogue", "SKILL_NOT_FOUND");
     return runtimeSkillRefSchema.parse({
       ...skill,
       namespace:
@@ -30,15 +30,12 @@ export async function listAnalysisAgentSkillReferences(
   domainId: string,
   skill: RuntimeSkillRef,
 ): Promise<AnalysisAgentSkillReference[]> {
-  return (
-    await getPostgresPool().query(
-      `SELECT id,name FROM ${t("assistant_agents")} WHERE domain_id=$1 AND skills @> $2::jsonb`,
-      [
-        domainId,
-        JSON.stringify([skill]),
-      ],
-    )
-  ).rows.map((r) => ({ ...r, usesAnalysis: true, usesVisualization: false }));
+  const { rows } = await getPostgresPool().query<{ id: string; name: string }>(
+    `SELECT id,name FROM ${t("assistant_agents")}
+     WHERE domain_id=$1 AND skills @> $2::jsonb`,
+    [domainId, JSON.stringify([skill])],
+  );
+  return rows.map(({ id, name }) => ({ id, name, usesAnalysis: true, usesVisualization: false }));
 }
 export async function removeAnalysisAgentSkillReferences(
   domainId: string,

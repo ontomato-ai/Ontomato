@@ -6,7 +6,7 @@ import type {
   RuntimeRunSnapshot,
 } from "@ontomato/contracts/agent-runtime";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
-import type { RuntimeEnvironment, RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import type { RuntimeEnvironment } from "@ontomato/contracts/agent-runtime-skills";
 import { environment } from "../../config/environment";
 import { getApiConfig } from "../../config/data-query-api";
 import { getQueryTimeoutMs } from "../../config/query-settings";
@@ -152,7 +152,6 @@ interface AuxiliaryInput {
   domainId?: string;
   userId?: string;
   credentials?: AssistantCredentials;
-  skills?: RuntimeSkillRef[];
   environment?: RuntimeEnvironment;
 }
 export async function startAuxiliary(input: AuxiliaryInput) {
@@ -186,7 +185,7 @@ export async function startAuxiliary(input: AuxiliaryInput) {
     definition: runDefinition(
       input.systemPrompt,
       null,
-      input.skills ?? [],
+      [],
       credentials.locale,
     ),
     environment: input.environment ?? { values: {}, secrets: {} },

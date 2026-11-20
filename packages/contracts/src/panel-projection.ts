@@ -5,7 +5,10 @@ import { bindingKey } from "./panel-client-requests";
 import { directPanelPortTypeSchema, ontologyParameterTypeSchema, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, type DirectPanelPortType, type OntologyParameterType, type PanelManifest, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
 import { ontologyElementRefSchema, type OntologyElementRef } from "./ontology-element-ref";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
-import { platformOntologyNeighborsRequestSchema, platformOntologyObjectsRequestSchema } from "./platform-ontology";
+import {
+  platformOntologyNeighborsRequestSchema, platformOntologyNeighborsResponseSchema,
+  platformOntologyObjectsRequestSchema, platformOntologyRelationStatusSchema,
+} from "./platform-ontology";
 import { EXECUTE_OBJECT_ACTION, customerOntologyReads, customerRelationReads, objectActionReads, platformObjectTypes, type PanelReadParameterId, type PlatformReadDeclaration } from "./platform-object-types";
 
 /** Nested JSON in the owner's value shape. Field pointers address this object, including values filled by projections. */
@@ -51,7 +54,7 @@ export const directProjectionPortsSchema = z.object({
   componentId: z.enum([
     "@ontomato/sdk:ObjectList", "@ontomato/sdk:ObjectSummary", "@ontomato/sdk:ObjectForm", "@ontomato/sdk:OperationButton",
     "@ontomato/sdk:ReferencePicker", "@ontomato/sdk:ObjectGraph", "@ontomato/sdk:OntologyGraph", "@ontomato/sdk:ObjectRelations",
-    "@ontomato/sdk:MetricChart", "@ontomato/sdk:ConversationEntry",
+    "@ontomato/sdk:MetricChart", "@ontomato/sdk:ConversationEntry", "@ontomato/sdk:AppMenu",
   ]),
   inputs: z.record(readKey, z.union([directPanelPortTypeSchema, z.object({ kind: z.literal("json") }).strict()])),
   outputs: z.record(readKey, directPanelPortTypeSchema),
@@ -73,6 +76,7 @@ export const panelReadParameterSchemas = {
   relationKinds: platformOntologyNeighborsRequestSchema.shape.relationKinds.unwrap(),
   layers: platformOntologyNeighborsRequestSchema.shape.layers.unwrap(),
   ontologyType: platformOntologyObjectsRequestSchema.shape.type,
+  neighborsLimit: positiveInteger.max(100),
   ontologyParameter: runtimeJsonValueSchema,
   filter: runtimeJsonObjectSchema,
   sort: runtimeJsonValueSchema,
@@ -93,6 +97,7 @@ function readInputMatches(parameter: PanelReadParameterId, input: ReadInput | un
     case "knowledgeCountField":
       return input?.kind === "scalar" && input.type === "string";
     case "size":
+    case "neighborsLimit":
       return input?.kind === "scalar" && input.type === "number";
     case "ontologyParameter":
     case "sort":
@@ -156,6 +161,11 @@ export function directReadDeclaration(projection: DirectProjectionPorts, data: D
   return declaration?.source === sourceKind ? declaration : undefined;
 }
 
+/** The named key is known either to the fixed signature or to the resolved owner object. */
+export function panelReadParameterId(declaration: PlatformReadDeclaration, name: string): PanelReadParameterId | undefined {
+  return declaration.parameterMode === "owner" ? declaration.parameter : declaration.params[name];
+}
+
 /** Match a declared read to its owner and verify that every parameter has a supported source. */
 export function validateDirectProjection(projection: DirectProjectionPorts, ctx: z.RefinementCtx): void {
   const issue = (path: string[], message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
@@ -175,7 +185,7 @@ export function validateDirectProjection(projection: DirectProjectionPorts, ctx:
       if (!Object.hasOwn(params, param)) issue([...path, "params", param], "Required parameter needs a source");
     }
     for (const [param, value] of Object.entries(params)) {
-      const parameter = declaration.parameterMode === "owner" ? declaration.parameter : declaration.params[param];
+      const parameter = panelReadParameterId(declaration, param);
       if (!parameter) {
         issue([...path, "params", param], "Parameter is not registered for this read");
       } else if ("literal" in value) {
@@ -189,6 +199,15 @@ export function validateDirectProjection(projection: DirectProjectionPorts, ctx:
   }
 }
 
+/** A half-open UTF-16 range in the displayed text supplied by the owner. */
+export const panelTextHighlightRangeSchema = z.object({
+  start: z.number().int().nonnegative(),
+  end: z.number().int().nonnegative(),
+}).strict().refine(range => range.end > range.start, {
+  path: ["end"], message: "A highlight must cover at least one character",
+});
+export type PanelTextHighlightRange = z.infer<typeof panelTextHighlightRangeSchema>;
+
 export const panelRecordSchema = z.object({
   primaryKey: panelObjectRefSchema.shape.primaryKey,
   label: z.string(),
@@ -196,6 +215,9 @@ export const panelRecordSchema = z.object({
   fields: z.record(z.string()),
   /** Field names supplied by the owner in the reader's locale, keyed by the names in fields. */
   fieldLabels: z.record(z.string()).optional(),
+  /** Display field keys (including label and subtitle). Omit this property when nothing matched. */
+  highlights: z.record(z.array(panelTextHighlightRangeSchema).min(1))
+    .refine(fields => Object.keys(fields).length > 0, "Omit highlights when there are no matches").optional(),
 }).strict();
 export type PanelRecord = z.infer<typeof panelRecordSchema>;
 export const panelRecordListSchema = z.array(panelRecordSchema);
@@ -206,10 +228,10 @@ export const panelRecordQuerySchema = z.object({
 }).strict();
 export type PanelRecordQuery = z.infer<typeof panelRecordQuerySchema>;
 export const panelGroupCountsSchema = z.record(z.number().int().nonnegative());
-export const panelRelationNeighborsSchema = z.object({
-  nodes: z.array(panelObjectRefSchema.extend({ label: z.string() })),
-  edges: z.array(z.object({ id: readKey, relationKind: readKey, from: panelObjectRefSchema, to: panelObjectRefSchema }).strict()),
-}).strict();
+export const panelRelationNeighborsSchema = platformOntologyNeighborsResponseSchema.extend({
+  relations: z.array(platformOntologyRelationStatusSchema.extend({ truncated: z.boolean() })),
+});
+export type PanelRelationNeighbors = z.infer<typeof panelRelationNeighborsSchema>;
 
 export const panelOptionSchema = z.object({
   primaryKey: panelObjectRefSchema.shape.primaryKey,

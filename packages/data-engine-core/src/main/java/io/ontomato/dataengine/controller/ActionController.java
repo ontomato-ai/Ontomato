@@ -443,6 +443,8 @@ public class ActionController {
 					param.getJSONObject("values"), readOnly == null ? List.of() : readOnly.toJavaList(String.class),
 					lang, SystemUtils.getCurUser()));
 			ret.put("success", true);
+		} catch (OwnerRefusal e) {
+			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -494,6 +496,8 @@ public class ActionController {
 			}
 			ret.put("success", true);
 			ret.put("data", result);
+		} catch (OwnerRefusal e) {
+			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);

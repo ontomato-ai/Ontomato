@@ -7,8 +7,13 @@ import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
+import { assertPermission } from "../../identity/installed";
+import {
+  agentDefinitionPermissions, createAgentDefinitionSnapshot, projectAgentDefinitionSkills, saveAgentDefinitionSnapshot,
+} from "./definitions";
+import type { AssistantSkillView } from "./skills";
 import type { PanelImpactInspector, PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelServerOperation, SinglePanelOperationOutcome } from "../product-panels/server-operations";
-import { agentDefinitionSave, parseAgentDefinitionForm } from "./definition-form-schema";
+import { AgentDefinitionFieldError, agentDefinitionSave, parseAgentDefinitionForm, parseAgentDefinitionUpdateForm } from "./definition-form-schema";
 import { resolveAssistantSkillReferences } from "./skill-references";
 
 const targetSchema = panelFormTargetSchema.options[0].extend({
@@ -21,6 +26,14 @@ const affectedDefinition = (id: string) => ({
   objects: [{ objectType: AGENT_DEFINITION, primaryKey: id }],
   objectTypes: [AGENT_DEFINITION],
 });
+
+function draftInput(input: Record<string, unknown>, target: PanelOperationTarget) {
+  const { values, submittedFields } = inputSchema.parse(input);
+  if (target.kind === "draft" || submittedFields?.includes("/skills")) return parseAgentDefinitionForm(values);
+  if (submittedFields === undefined) return parseAgentDefinitionUpdateForm(values);
+  const { skills: _skills, ...otherValues } = values;
+  return parseAgentDefinitionUpdateForm(otherValues);
+}
 
 async function ownerError(response: Response) {
   return agentHostErrorSchema.parse(await response.json()).error;
@@ -68,8 +81,11 @@ export const agentDefinitionOperations = [
     inputSchema,
     resultSchema: assistantAgentDefinitionSchema,
     draftOperation: (target: PanelOperationTarget) => agentDefinitionSave(target).draftOperation,
-    draftInput: (input: Record<string, unknown>) => parseAgentDefinitionForm(inputSchema.parse(input).values),
-    formInstructions: "Read the definition form for the intended target. Use its fields and option sources, save.bodySchema for the values, and save.draftOperation for the draft. Carry the complete form values in call.input.",
+    draftInput,
+    formInstructions: "Read the definition form for the intended target. Use its fields and option sources, save.bodySchema for the values, and save.draftOperation for the draft. When editing, omit skills unless the selection is explicitly changing.",
+    projectResult(data: unknown, view: AssistantSkillView) {
+      return projectAgentDefinitionSkills(assistantAgentDefinitionSchema.parse(data), view);
+    },
     create: {
       draftValues(values: unknown, domainId: string) {
         const input = parseAgentDefinitionForm(values);
@@ -78,15 +94,19 @@ export const agentDefinitionOperations = [
       createdObject: (data: unknown) => ({ objectType: AGENT_DEFINITION, primaryKey: assistantAgentDefinitionSchema.parse(data).id }),
     },
     async execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>, intentId: string): Promise<SinglePanelOperationOutcome> {
-      const save = agentDefinitionSave(target);
-      const response = await host.requestWorkbench(save.path, {
-        method: save.method,
-        headers: save.method === "POST" ? { "Idempotency-Key": intentId } : {},
-        body: JSON.stringify(parseAgentDefinitionForm(inputSchema.parse(input).values)),
-      });
-      if (!response.ok) return unsuccessfulWrite(response);
-      const data = assistantAgentDefinitionSchema.parse(await response.json());
-      return { kind: "success", data, affected: affectedDefinition(data.id) };
+      const { owner, credentials } = host.executor;
+      const selection = { credentials: host.initiator.credentials, view: host.skillView! };
+      try {
+        await assertPermission(credentials, agentDefinitionPermissions);
+        const saved = target.kind === "draft"
+          ? await createAgentDefinitionSnapshot(intentId, parseAgentDefinitionForm(inputSchema.parse(input).values), owner, credentials, selection)
+          : await saveAgentDefinitionSnapshot(target.primaryKey, draftInput(input, target), owner, credentials, selection);
+        return { kind: "success", data: saved.definition, affected: affectedDefinition(saved.definition.id) };
+      } catch (error) {
+        if (!(error instanceof HttpError) || error.status >= 500) throw error;
+        return { kind: "refusal", code: error.code ?? "INVALID_REQUEST", message: error.message,
+          ...(error instanceof AgentDefinitionFieldError && { errors: error.errors }) };
+      }
     },
   },
   {

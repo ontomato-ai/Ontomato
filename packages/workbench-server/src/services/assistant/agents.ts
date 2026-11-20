@@ -1,6 +1,6 @@
 import { assistantAgentListSchema } from "@ontomato/contracts/assistant-chat";
 import type { DefaultAgent } from "@ontomato/contracts/default-agent";
-import type { AssistantAgentsQuery } from "@ontomato/contracts/page-skills";
+import type { AssistantAgentsQuery, PageSkillEntrance, PageSkillLocator } from "@ontomato/contracts/page-skills";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
@@ -9,10 +9,38 @@ import { nativeProfileId } from "../product-assets/platform-assets";
 import { profileIdForAgent } from "../product-assets/agent-profile";
 import { assistantStore, type AssistantOwner } from "./store";
 import { assistantDescription, assistantName } from "./labels";
-import { effectiveAssistantSkills, readPageSkills } from "./skills";
+import { effectiveAssistantSkills, readAssistantSkillView, resolvePageSkillMember } from "./skills";
+
+function locatorOf(entrance: PageSkillEntrance): PageSkillLocator {
+  return "permissionCode" in entrance
+    ? { permissionCode: entrance.permissionCode }
+    : { access: entrance.access, pageKey: entrance.pageKey };
+}
+
+function sameLocator(a: PageSkillLocator, b: PageSkillLocator): boolean {
+  return "permissionCode" in a
+    ? "permissionCode" in b && a.permissionCode === b.permissionCode
+    : "access" in b && a.access === b.access && a.pageKey === b.pageKey;
+}
 
 export async function listAssistantAgents(owner: AssistantOwner, credentials: AssistantCredentials, query: AssistantAgentsQuery = {}) {
-  const projection = await readPageSkills(credentials);
+  const view = await readAssistantSkillView(owner.domainId, credentials);
+  let pageFilter: { skillKey: string; defaultAgent: DefaultAgent } | null = null;
+  if ("pageKey" in query) {
+    const entrance: PageSkillEntrance = "permissionCode" in query
+      ? { permissionCode: query.permissionCode, pageKey: query.pageKey }
+      : { access: query.access, pageKey: query.pageKey };
+    const locator = locatorOf(entrance);
+    const skill = "source" in query
+      ? await resolvePageSkillMember(view, entrance, { source: query.source, memberKey: query.memberKey })
+      : view.publicPageSkill(locator);
+    if (!skill) throw new HttpError(403, "Page skill is unavailable", "PAGE_SKILL_FORBIDDEN");
+    const group = view.pageSkills.find(entry => sameLocator(entry.locator, locator));
+    pageFilter = {
+      skillKey: runtimeSkillKey(skill),
+      defaultAgent: group?.defaults.find(entry => entry.pageKey === query.pageKey)?.defaultAgent ?? { kind: "preset", agentKind: "regular" },
+    };
+  }
   const definitions = await assistantStore.agents(owner.domainId);
   return withProductGrants(owner, async () => {
     const agents = [];
@@ -21,17 +49,12 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
       const profile = native ? null : await profileIdForAgent(owner, agent.id);
       agents.push({
         id: agent.id, name: assistantName(agent, credentials.locale), description: assistantDescription(agent, credentials.locale),
-        icon: agent.icon, enabled: agent.enabled, effectiveSkills: effectiveAssistantSkills(agent, projection, profile !== null),
+        icon: agent.icon, enabled: agent.enabled, effectiveSkills: effectiveAssistantSkills(agent, view, profile !== null),
       });
     }
-    if (!("pageKey" in query)) return assistantAgentListSchema.parse({ agents });
-    const mapping = projection.pageSkills.find(mapping => "permissionCode" in query
-      ? "permissionCode" in mapping && mapping.permissionCode === query.permissionCode
-      : "access" in mapping && mapping.access === query.access && mapping.pageKey === query.pageKey);
-    if (!mapping) throw new HttpError(403, "Page skill is unavailable", "PAGE_SKILL_FORBIDDEN");
-    const candidates = agents.filter(agent => agent.enabled && agent.effectiveSkills.some(skill => runtimeSkillKey(skill) === runtimeSkillKey(mapping.skill)));
-    const defaultAgent: DefaultAgent = mapping.defaults?.find(entry => entry.pageKey === query.pageKey)?.defaultAgent
-      ?? { kind: "preset", agentKind: "regular" };
+    if (!pageFilter) return assistantAgentListSchema.parse({ agents });
+    const { skillKey, defaultAgent } = pageFilter;
+    const candidates = agents.filter(agent => agent.enabled && agent.effectiveSkills.some(skill => runtimeSkillKey(skill) === skillKey));
     const selected = defaultAgent.kind === "id"
       ? candidates.find(agent => agent.id === defaultAgent.id)
       : candidates.find(agent => definitions.some(row => row.id === agent.id && row.kind === defaultAgent.agentKind));

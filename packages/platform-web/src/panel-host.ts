@@ -1,5 +1,8 @@
 import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
-import { applicationPanelUsesResponseSchema, directPanelSchema, productPanelSchema, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
+import {
+  applicationPanelUsesResponseSchema, directPanelSchema, productPanelResponseSchema, productPanelSchema, type ApplicationPanelUse,
+  type ProductPanelReadQuery,
+} from "@ontomato/contracts/product-panels";
 import { appsSdkCurrentSchema } from "@ontomato/contracts/apps-sdk";
 import {
   panelDefinitionSnapshotSchema, productDefinitionStreamFrameSchema,
@@ -11,6 +14,7 @@ import {
   type ProductPanelReadRequest, type ProductPanelReadResponse,
 } from "@ontomato/contracts/panel-host";
 import { buildExecutionContext } from "@ontomato/contracts/build-tests";
+import { pageSkillContextSchema, type PageSkillContext } from "@ontomato/contracts/page-skills";
 import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
 import { confirmPanelIntent, registerCandidateFrame, registerPanelFrame } from "./app-host";
@@ -96,13 +100,26 @@ export function platformPanelHost(
   applicationId: string, use: ApplicationPanelUse, changed: (change: PanelObjectChange) => void, mode: PanelDefinitionMode = { kind: "view" },
   /** Java's answer for the application, when the page was opened from the shell's catalog before it came. */
   relations?: Promise<readonly ApplicationPanelUse[]>,
+  /** Hears which page skill a message written beside this page reaches, as Node answers it with the panel. */
+  pageSkill?: (context: PageSkillContext) => void,
 ): PanelHostPort<Extract<PanelHostSource | DirectPanelHostSource, { kind: "registered" }>> {
-  const shown = { applicationId, useId: use.id };
+  const shown: PanelUseRef = { applicationId, useId: use.id };
   const names = (records: readonly ApplicationPanelUse[]) =>
     records.some(relation => relation.id === use.id && relation.panelId === use.panelId);
+  // The page these reads are made for: the use relation it is shown for, and the entrance it is reached by — its menu
+  // code, or domain membership, with its page key. Node answers with them which page skill member the reader reaches
+  // here: null when it does not, never a public guess.
+  const read: ProductPanelReadQuery = "permissionCode" in use.access
+    ? { ...shown, pageKey: use.pageKey, permissionCode: use.access.permissionCode }
+    : { ...shown, pageKey: use.pageKey, access: "domain-member" };
+  const page = new URLSearchParams(read);
   return {
+    // Opening reads the panel for this page.
     async source() {
-      const record = await panel(use.panelId);
+      const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(use.panelId)}?${page}`));
+      // A read that names its page is answered with the page skill context; the host passes on what Node answered.
+      pageSkill?.(pageSkillContextSchema.parse(answer.pageSkillContext));
+      const record = answer.panel;
       // A record with an SDK version is written with code and runs in a frame; one without is drawn directly.
       return "sdkVersion" in record ? { kind: "registered", applicationId, use, panel: record } : { kind: "registered", applicationId, use, panel: record };
     },
@@ -124,7 +141,13 @@ export function platformPanelHost(
       return names(await panelUsesOf(applicationId));
     },
     ...(relations ? { admitted: relations.then(names) } : {}),
-    snapshot,
+    // The page's check of its definitions, when it is shown again or comes back to the foreground, is read for this page
+    // too: the page skill it reaches is confirmed again with it, since what it may reach can have changed meanwhile.
+    async snapshot(panelId) {
+      const answer = panelDefinitionSnapshotSchema.parse(await json(`${panelHostPaths.snapshot(panelId)}?${page}`));
+      pageSkill?.(pageSkillContextSchema.parse(answer.pageSkillContext));
+      return answer;
+    },
     mode,
   };
 }

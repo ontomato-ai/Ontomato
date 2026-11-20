@@ -1,6 +1,7 @@
 import type { Component } from "vue";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { RuntimeRunStatus } from "@ontomato/contracts/agent-runtime-values";
+import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 
 export type ArtifactPresentation = "inline" | "panel";
 
@@ -88,11 +89,9 @@ export interface ShellFeatureDeclaration {
    */
   address?: string;
   /**
-   * The page's own skill: an agent is a candidate for this page's composer when its effective skills carry it. A page
-   * with a menu code names it, so the candidates follow the reader's menu permission; a page open to every member of the
-   * domain says so instead.
+   * The page's own skill context: an agent is a candidate for this page's composer when its effective skills carry it.
    */
-  pageSkill?: { pageKey: string; permissionCode: string } | { pageKey: string; access: "domain-member" };
+  pageSkill?: PageSkillContext;
 }
 
 /**

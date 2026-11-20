@@ -2,6 +2,7 @@ package io.ontomato.dataengine.service.agent;
 
 import com.alibaba.fastjson2.*;
 import io.ontomato.dataengine.service.RuntimeCodeClient;
+import io.ontomato.dataengine.service.agent.AgentRuntimeClient.SkillVersion;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import org.springframework.stereotype.Service;
@@ -59,20 +60,15 @@ public class OntologyAgentDefinitions {
     files.add(Map.of("path", "references/query-subgraph.schema.json", "content", resource("ontology-contracts/query-subgraph.schema.json")));
   }
 
-  public void publish() throws Exception {
-    code.registerSkill();
+  public List<SkillVersion> publish() throws Exception {
+    var analyst = code.registerSkill();
     var files = new ArrayList<Map<String, String>>();
     for (String path : List.of("SKILL.md", "scripts/dataset.mjs", "scripts/query-package.mjs", "references/dataset.md"))
       files.add(
           Map.of("path", path, "content", resource("ontology-skills/data-retrieval/" + path)));
     sourceContract(files);
-    runtime.json(
-        null,
-        "ontology-retrieval-skills",
-        "/v1/skills",
-        "POST",
-        Map.of("skill", DATASET_SKILL, "files", files),
-        null);
+    var dataset = runtime.publishSkill("ontology-retrieval-skills", DATASET_SKILL, files);
+    return List.of(analyst, dataset);
   }
 
   public static final Map<String, Object> GENERATION_SKILL =
@@ -82,20 +78,26 @@ public class OntologyAgentDefinitions {
           "name",
           "ontology-generation");
 
-  public void publishGeneration() throws Exception {
-    publish();
+  public List<SkillVersion> publishGeneration() throws Exception {
+    return publishGenerationSkills(GENERATION_SKILL);
+  }
+
+  public List<SkillVersion> publishActionCreation() throws Exception {
+    return List.of(code.registerSkill(), publishGenerator(GENERATION_SKILL));
+  }
+
+  private List<SkillVersion> publishGenerationSkills(Map<String, Object> generator) throws Exception {
+    var skills = new ArrayList<>(publish());
+    skills.add(publishGenerator(generator));
+    return skills;
+  }
+
+  private SkillVersion publishGenerator(Map<String, Object> skill) throws Exception {
     var files = new ArrayList<Map<String, String>>();
     for (String path : List.of("SKILL.md", "scripts/generation.mjs"))
-      files.add(
-          Map.of("path", path, "content", resource("ontology-skills/ontology-generation/" + path)));
+      files.add(Map.of("path", path, "content", resource("ontology-skills/" + skill.get("name") + "/" + path)));
     sourceContract(files);
-    runtime.json(
-        null,
-        "ontology-generation-skills",
-        "/v1/skills",
-        "POST",
-        Map.of("skill", GENERATION_SKILL, "files", files),
-        null);
+    return runtime.publishSkill("ontology-generation-skills", skill, files);
   }
 
   /**
@@ -104,13 +106,12 @@ public class OntologyAgentDefinitions {
    */
   static final Map<String, Object> TOOL_LOOP_POLICY = Map.of("maxCalls", 100, "maxSameShape", 12);
 
-  public JSONObject generation(String domain, String kind, String prompt, String language, long remainingMs) {
-    var definition = definition(domain, language, remainingMs);
+  public JSONObject generation(String domain, String kind, String prompt, String language, long remainingMs, List<SkillVersion> skills) {
+    var definition = definition(domain, language, remainingMs, skills);
     definition.put("toolCallPolicy", TOOL_LOOP_POLICY);
     definition.put("agentId", OntologyGenerationService.agentId(kind));
     definition.put(
         "modelId", models.modelId(domain, OntologyGenerationService.agentId(kind)));
-    definition.put("skills", List.of(RuntimeCodeClient.SKILL, DATASET_SKILL, GENERATION_SKILL));
     definition.put(
         "systemPrompt",
         prompt
@@ -132,29 +133,15 @@ public class OntologyAgentDefinitions {
           "name",
           "metricview-generation");
 
-  public void publishMetricView() throws Exception {
-    publish();
-    var files = new ArrayList<Map<String, String>>();
-    for (String path : List.of("SKILL.md", "scripts/generation.mjs"))
-      files.add(
-          Map.of(
-              "path", path, "content", resource("ontology-skills/metricview-generation/" + path)));
-    sourceContract(files);
-    runtime.json(
-        null,
-        "metricview-generation-skills",
-        "/v1/skills",
-        "POST",
-        Map.of("skill", METRICVIEW_SKILL, "files", files),
-        null);
+  public List<SkillVersion> publishMetricView() throws Exception {
+    return publishGenerationSkills(METRICVIEW_SKILL);
   }
 
-  public JSONObject metricView(String domain, String prompt, String language, long remainingMs) {
-    var definition = definition(domain, language, remainingMs);
+  public JSONObject metricView(String domain, String prompt, String language, long remainingMs, List<SkillVersion> skills) {
+    var definition = definition(domain, language, remainingMs, skills);
     definition.put("toolCallPolicy", TOOL_LOOP_POLICY);
     definition.put("agentId", METRICVIEW_AGENT);
     definition.put("modelId", models.modelId(domain, METRICVIEW_AGENT));
-    definition.put("skills", List.of(RuntimeCodeClient.SKILL, DATASET_SKILL, METRICVIEW_SKILL));
     definition.put(
         "systemPrompt",
         prompt
@@ -166,7 +153,7 @@ public class OntologyAgentDefinitions {
     return definition;
   }
 
-  public JSONObject definition(String domain, String language, long remainingMs) {
+  public JSONObject definition(String domain, String language, long remainingMs, List<SkillVersion> skills) {
     String markdown =
         JSON.parseObject(
             resource("ontology-contracts/agent-artifact-markdown-prompt.json"), String.class);
@@ -177,7 +164,7 @@ public class OntologyAgentDefinitions {
         "modelId",
         models.modelId(domain, OntologyAgentStore.RETRIEVER),
         "skills",
-        List.of(RuntimeCodeClient.SKILL, DATASET_SKILL),
+        skills,
         "externalMcp",
         List.of(),
         "sandbox",
@@ -203,12 +190,11 @@ public class OntologyAgentDefinitions {
    * The conversational action creator: the action maker task prompt plus the generation skill, in
    * a persistent session. It has a write sandbox and can revise the files from the previous turn.
    */
-  public JSONObject actionCreation(String domain, String prompt, String language, long remainingMs) {
-    var value = definition(domain, language, remainingMs);
+  public JSONObject actionCreation(String domain, String prompt, String language, long remainingMs, List<SkillVersion> skills) {
+    var value = definition(domain, language, remainingMs, skills);
     value.put("toolCallPolicy", TOOL_LOOP_POLICY);
     value.put("agentId", ActionCreationService.AGENT);
     value.put("modelId", models.modelId(domain, ActionCreationService.AGENT));
-    value.put("skills", List.of(RuntimeCodeClient.SKILL, GENERATION_SKILL));
     // The conversation guardrails go last: they are the rules the model must apply after reading
     // the action-maker task and the generation skill, not before them.
     value.put(

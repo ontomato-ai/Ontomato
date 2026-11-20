@@ -1,6 +1,7 @@
 import { computed, nextTick, ref, watch } from "vue";
 import type { AgentHostAgent, AgentHostSession } from "@ontomato/contracts/agent-host";
-import type { AgentHostClient, AgentPageQuery } from "./host";
+import type { PageSkillContext } from "@ontomato/contracts/page-skills";
+import type { AgentHostClient } from "./host";
 
 export interface AgentNavOptions {
   /** The host port; read lazily so the nav follows a replaced client. */
@@ -30,10 +31,16 @@ export function useAgentNav(options: AgentNavOptions) {
   /** The open page's agents while a page with its own skill is open; null when it has none or none is open. */
   const pageAgents = ref<{ agents: AgentHostAgent[]; defaultAgentId?: string } | null>(null);
   /** The page whose skill the composer is choosing agents for, as the shell reports it opening and closing. */
-  const page = ref<AgentPageQuery | null>(null);
+  const page = ref<PageSkillContext | null>(null);
+  /**
+   * The open conversation's own agent kept while a page narrows `agents` to candidates that do not include it, so the
+   * head and composer still recognise it. Cleared as soon as `agentId` changes or the agent is listed again.
+   */
+  const retainedAgent = ref<AgentHostAgent | null>(null);
   const sessions = ref<AgentHostSession[]>([]);
   const sessionsState = ref<"loading" | "ready" | "error">("loading");
   const nextCursor = ref<string | null>(null);
+  let agentsLoad = 0;
   let sessionsLoad = 0;
   /**
    * False until the first agent read has settled. The read may replace a remembered agent that no longer exists, and
@@ -42,13 +49,21 @@ export function useAgentNav(options: AgentNavOptions) {
    */
   let initialAgentLoaded = false;
 
-  const currentAgent = computed(() => agents.value.find((agent) => agent.id === options.agentId()) ?? null);
+  const currentAgent = computed(
+    () =>
+      agents.value.find((agent) => agent.id === options.agentId()) ??
+      (retainedAgent.value?.id === options.agentId() ? retainedAgent.value : null),
+  );
   const currentSession = computed(() => sessions.value.find((session) => session.id === options.sessionId()));
 
   async function loadAgents() {
     if (page.value) return loadPageAgents();
-    agents.value = await options.client().listAgents();
+    const load = ++agentsLoad;
+    const list = await options.client().listAgents();
+    if (load !== agentsLoad) return;
+    agents.value = list;
     pageAgents.value = null;
+    retainedAgent.value = null;
     const selected = options.agentId();
     if (!agents.value.some((agent) => agent.id === selected))
       options.setAgentId((agents.value.find((agent) => agent.enabled) ?? agents.value[0])?.id ?? null);
@@ -58,20 +73,39 @@ export function useAgentNav(options: AgentNavOptions) {
   }
 
   /**
-   * A page with its own skill offers only the agents that carry it: the page's default when it registered one, the agent
-   * already in use while it is a candidate, and the first candidate otherwise. The page and its conversation are kept.
+   * A page with its own skill narrows the chooser to the agents that carry it. Before a conversation has started, an
+   * agent outside those candidates gives way to the page's default (or its first enabled candidate) without closing the
+   * page. Once a conversation is open, it stays on its own agent so it is never moved under another; the chooser still
+   * lists only the page's candidates if the reader chooses to switch.
    */
   async function loadPageAgents() {
-    pageAgents.value = await options.client().listPageAgents(page.value!);
-    agents.value = pageAgents.value.agents;
-    if (!agents.value.some((agent) => agent.id === options.agentId()))
-      options.setAgentId(pageAgents.value.defaultAgentId ?? agents.value.find((agent) => agent.enabled)?.id ?? null);
+    const load = ++agentsLoad;
+    const target = page.value!;
+    const active = options.sessionId() !== null ? currentAgent.value : null;
+    retainedAgent.value = active;
+    pageAgents.value = null;
+    agents.value = [];
+    const result = await options.client().listPageAgents(target);
+    if (load !== agentsLoad) return;
+    pageAgents.value = result;
+    agents.value = result.agents;
+    if (agents.value.some((agent) => agent.id === options.agentId())) {
+      retainedAgent.value = null;
+    } else if (options.sessionId() === null) {
+      retainedAgent.value = null;
+      const next = pageAgents.value.defaultAgentId ?? agents.value.find((agent) => agent.enabled)?.id ?? null;
+      if (next !== options.agentId()) {
+        adoptingAgent = true;
+        options.setAgentId(next);
+      }
+    }
     await nextTick();
+    adoptingAgent = false;
     initialAgentLoaded = true;
   }
 
   /** A page with its own skill opens or closes: the composer chooses among that page's agents, or among all of them. */
-  async function setPage(next: AgentPageQuery | null) {
+  async function setPage(next: PageSkillContext | null) {
     if (JSON.stringify(next) === JSON.stringify(page.value)) return;
     page.value = next;
     await loadAgents();
@@ -134,6 +168,7 @@ export function useAgentNav(options: AgentNavOptions) {
   const stopAgentWatch = watch(
     () => options.agentId(),
     (_, previous) => {
+      retainedAgent.value = null;
       sessions.value = [];
       nextCursor.value = null;
       // Initial selection can replace a removed remembered agent while opening a bookmarked feature.
