@@ -14,6 +14,7 @@ import {
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
 } from "@ontomato/contracts/product-panels";
 import { panelOperationDescriptorResponseSchema } from "@ontomato/contracts/panel-agent";
+import { platformTypeTableResponseSchema } from "@ontomato/contracts/platform-type-table";
 import { panelManifestSchema } from "@ontomato/contracts/panel-manifest";
 import {
   panelDefinitionSnapshotSchema, productDefinitionStreamFrameSchema, productDefinitionStreamRequestSchema,
@@ -69,6 +70,7 @@ beforeAll(async () => {
   installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
 
   const { panelOperationsRouter, productPanelsInternalRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
+  const { appBuilderRouter } = await import("../routes/app-builder");
   const app = express();
   app.use(express.json());
   app.post("/product-governance/register", (req, res) => {
@@ -91,6 +93,17 @@ beforeAll(async () => {
       entryAccess: ["app-builder"], scheduleAdapter: null, releaseId: null,
     }] });
   });
+  app.post("/action/queryList", (req, res) => {
+    expect(req.header("tk")).toBe("host-reader");
+    expect(req.body).toEqual({ status: "PUBLISHED" });
+    res.json({ success: true, data: [{
+      id: "approve-expense", name: "Approve expense", codeHash: "author-private-hash",
+      target: { className: "expense", keyParameter: "id" },
+      function: { code: "author-private-source", parameters: [
+        { name: "id", type: "TYPE_STRING" }, { name: "amount", type: "TYPE_NUMBER" },
+      ] },
+    }] });
+  });
   app.get("/platform/applications/app-mixed/panel-uses", (req, res) => {
     expect(req.header("tk")).toBe("host-reader");
     res.json({ success: true, data: {
@@ -106,11 +119,33 @@ beforeAll(async () => {
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
   app.use("/api", panelOperationsRouter);
+  app.use("/api", appBuilderRouter);
   app.use("/internal/product-panels", productPanelsInternalRouter);
   server = await new Promise<Server>(resolve => {
     const started = app.listen(0, "127.0.0.1", () => resolve(started));
   });
   state.base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+});
+
+it("reads the authoritative operation type table before there is a panel use", async () => {
+  const response = await request("GET", "app-builder/type-table");
+  expect(response.status).toBe(200);
+  const raw = await response.text();
+  const { objectTypes } = platformTypeTableResponseSchema.parse(JSON.parse(raw));
+  expect(objectTypes["platform:ScheduledTask"].operations).toContainEqual(expect.objectContaining({
+    id: "schedules.runNow", target: { source: "input", input: "task" }, batch: false, effect: "write",
+  }));
+  expect(objectTypes.expense.operations).toEqual([expect.objectContaining({
+    id: "approve-expense", target: { source: "input", input: "target" }, batch: false, effect: "write",
+    inputSchema: expect.objectContaining({
+      properties: { values: expect.objectContaining({ properties: {
+        amount: { type: "string", title: "amount", contentMediaType: "application/json" },
+      } }) },
+    }),
+  })]);
+  expect(raw).not.toContain("author-private");
+  const denied = await fetch(state.base + "/api/app-builder/type-table", { headers: { "X-Test-Token": "ordinary-reader" } });
+  expect(denied.status).toBe(403);
 });
 
 it("identifies malformed registrations and missing author references without bypassing use grants", async () => {
@@ -375,9 +410,14 @@ it("preserves a code panel's ID and revision rules and describes its member oper
   const response = await describe("run.runNow");
   const payload = await response.json();
   expect(response.status, JSON.stringify(payload)).toBe(200);
-  expect(panelOperationDescriptorResponseSchema.parse(payload)).toMatchObject({
+  const descriptor = panelOperationDescriptorResponseSchema.parse(payload);
+  expect(descriptor).toMatchObject({
     handlerRef: "schedules.runNow", effect: "write", target: { source: "input", input: "task" },
   });
+  const authorResponse = await request("GET", "app-builder/type-table");
+  const table = platformTypeTableResponseSchema.parse(await authorResponse.json());
+  const { id: _id, ...declaration } = table.objectTypes["platform:ScheduledTask"].operations!.find(op => op.id === "schedules.runNow")!;
+  expect(descriptor).toMatchObject(declaration);
   expect((await describe("summary.runNow")).status).toBe(422);
 
   const application = {

@@ -1,7 +1,6 @@
 import { z } from "zod";
-import { panelReadResultSchemas } from "./panel-operations";
+import { panelReadResultIdSchema } from "./panel-operations";
 import { componentOperationSchema, directProjectionInputTypeSchema } from "./panel-projection";
-import type { PanelReadResultId } from "./platform-object-types";
 import { workspacePathSchema } from "./workspaces";
 
 /** Written by the image build beside its exact SDK version directory. */
@@ -50,11 +49,6 @@ const componentPropSchema = componentPortSchema.extend({
   default: z.string().optional(),
 });
 const componentConfigSchema = z.array(componentPropSchema);
-const panelReadResultIdSchema = z.custom<PanelReadResultId>(
-  value => typeof value === "string" && Object.hasOwn(panelReadResultSchemas, value),
-  "Expected a registered panel read result ID",
-);
-
 export const appsSdkComponentDataSchema = z.record(name, z.object({
   results: z.array(panelReadResultIdSchema).min(1),
   required: z.boolean(),

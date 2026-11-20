@@ -19,6 +19,7 @@ import { requireProductGrant, type ProductOwner } from "../product-governance/gr
 import { readPanelComponentCatalogue } from "./component-catalogue";
 import { listObjectDetailPanelMappings } from "./object-detail";
 import { panelStateDomainPrefix, panelStateKeyNamespace } from "./personal-state-key";
+import type { panelOperationTargetCheck } from "./type-table";
 
 type QueryClient = Pick<PoolClient, "query">;
 type Target = { kind: CurrentProductKind; id: string };
@@ -244,6 +245,15 @@ export async function validateCurrentProductReferences(
   const [panels, details] = await Promise.all([loadPanels(owner.domainId, client), loadDetails(owner.domainId, client)]);
   let catalogue: ReturnType<typeof readPanelComponentCatalogue> | undefined;
   const readCatalogue = () => catalogue ??= readPanelComponentCatalogue();
+  let checkOperationTarget: ReturnType<typeof panelOperationTargetCheck> | undefined;
+  const checkMember = async (manifest: PanelManifest, reference: Reference, definition: ProductPanelInput | ProductProjectionInput) => {
+    if ("componentId" in definition && definition.componentId === "@ontomato/sdk:OperationButton") {
+      checkOperationTarget ??= (await import("./type-table")).panelOperationTargetCheck(owner, credentials);
+      const issue = await checkOperationTarget(definition, reference.wiring);
+      if (issue) return issue;
+    }
+    return incompatiblePort(manifest, reference, definition, readCatalogue);
+  };
   if ("manifest" in input) panels.set(id, input);
   const saved = await loadSavedPlacements(owner.domainId, panels, client);
   if ("manifest" in input) {
@@ -267,7 +277,7 @@ export async function validateCurrentProductReferences(
       }
       const definition = known ?? (target.kind === "panel" ? panels.get(target.id)! : productProjectionInputSchema.parse(stored));
       inspected.set(target.id, definition);
-      const issue = await incompatiblePort(input.manifest, reference, definition, readCatalogue);
+      const issue = await checkMember(input.manifest, reference, definition);
       if (issue) throw new HttpError(400, `Panel '${id}', member '${key}' – ${issue}`, "PANEL_PORT_MISMATCH");
     }
   }
@@ -275,7 +285,7 @@ export async function validateCurrentProductReferences(
   for (const [parentId, panel] of panels) {
     for (const reference of collectReferences(panel, details, saved.get(parentId))) {
       if (reference.target.kind !== kind || reference.target.id !== id) continue;
-      const issue = await incompatiblePort(panel.manifest, reference, input, readCatalogue);
+      const issue = await checkMember(panel.manifest, reference, input);
       if (issue) throw new HttpError(409, `Connected ${issue}`, "PRODUCT_PORT_IN_USE");
     }
   }

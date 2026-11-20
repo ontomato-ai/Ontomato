@@ -25,6 +25,8 @@ export const en = {
   "panels.confirmation.deleteKnowledgeImpact": "This deletes the selected business knowledge ({count} in total).",
   "panels.knowledge.approve": "Approve",
   "panels.knowledge.delete": "Delete",
+  "panels.operation.targetInputUnbound": "Operation '{operation}' expects target input '{input}', but member '{member}' does not connect it.",
+  "panels.operation.targetInputMismatch": "Operation '{operation}' expects member '{member}' to connect input '{input}' to an object of type '{objectType}'.",
   "panels.confirmation.deleteObjectTypeImpact": "This deletes the selected object type, together with the relationships that touch it ({relationships} in total).",
   "panels.knowledge.statusAll": "All",
   "panels.action.fields.status": "Status",
