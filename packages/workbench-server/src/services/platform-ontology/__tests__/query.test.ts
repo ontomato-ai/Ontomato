@@ -553,7 +553,7 @@ describe("platform-ontology composite query", () => {
             approve: { operation: { kind: "PlatformOperation", id: APPROVE_KNOWLEDGE }, target: { input: "row" } },
             remove: { operation: { kind: "PlatformOperation", id: DELETE_KNOWLEDGE }, target: { input: "row" } },
             // Undeclared in platformObjectTypes[*].operations: must not be guessed by prefix
-            deleteAgent: { operation: { kind: "PlatformOperation", id: "agents.delete" } },
+            undeclaredOp: { operation: { kind: "PlatformOperation", id: "agents.undeclaredOperation" } },
           },
           config: {},
         },
@@ -812,7 +812,7 @@ describe("platform-ontology composite query", () => {
         }),
       ]),
     );
-    // Must not guess platform:AgentDefinition from agents.delete
+    // Must not guess platform:AgentDefinition from an undeclared agents.* prefix
     expect(kbListNeighbors.edges.filter((e) => e.relationKind === "projection.binds-target")).toHaveLength(1);
     expect(kbListNeighbors.neighbors).toContainEqual({
       className: ONTOLOGY_TYPE,
