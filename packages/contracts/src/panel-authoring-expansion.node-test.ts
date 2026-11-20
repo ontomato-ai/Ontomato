@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { appsSdkComponentCatalogEntrySchema } from "./apps-sdk";
-import { expandPanelAuthoringMember, panelAuthoringMemberSchema, panelManifestSchema } from "./panel-check";
+import { bindPanelAuthoringChart, expandPanelAuthoringMember, panelAuthoringMemberSchema, panelManifestSchema } from "./panel-check";
 import { panelOperationDeclarationSchema } from "./panel-operations";
-import { platformObjectTypes } from "./platform-object-types";
+import { dashboardCardPrimaryKey } from "./dashboard";
+import { DASHBOARD_CARD, platformObjectTypes } from "./platform-object-types";
 import { platformTypeTableEntrySchema } from "./platform-type-table";
 import { productProjectionInputSchema } from "./product-panels";
 
@@ -139,17 +140,22 @@ test("a required read parameter can come from the component's declared runtime v
   }), /Member 'graph', field 'data.neighborhood.params.node'.*Required/);
 });
 
-test("ontology objects with a binding-relative output require an explicit projection", () => {
+test("ontology object lists expose the four layers as the selected output", () => {
   const ontologyType = "platform:OntologyType";
   const typeTable = { objectTypes: {
     [ontologyType]: platformTypeTableEntrySchema.parse({ reads: platformObjectTypes[ontologyType].reads }),
   } };
   const component = buildComponent("ObjectList", {
     data: { objects: { results: ["panelOntologyObjects"], required: false } },
-    outputs: { selected: { kind: "object", objectType: "@binding" } },
+    outputs: {
+      selected: { kind: "object", objectType: "@binding" },
+      checked: { kind: "list", items: { kind: "object", objectType: "@binding" } },
+    },
   });
+  const node = { kind: "object-union", layers: ["fact", "capability", "governance", "product"] };
+  const checked = { kind: "list", items: { kind: "object", objectType: ontologyType } };
   const state = panelManifestSchema.parse({
-    state: { selected: { type: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: [ontologyType] } } },
+    state: { selected: { type: node }, checked: { type: checked } },
     members: {}, events: {},
   }).state;
   const member = panelAuthoringMemberSchema.parse({
@@ -157,6 +163,105 @@ test("ontology objects with a binding-relative output require an explicit projec
     data: { objects: { read: "objects", params: { type: { literal: "platform:User" } } } },
   });
   assert("component" in member);
-  assert.throws(() => expandPanelAuthoringMember("nodes", member, { state, typeTable, components: [component] }),
-    /Member 'nodes', field 'state.selected'.*explicit output type/);
+  const expanded = expandPanelAuthoringMember("nodes", member, { state, typeTable, components: [component] });
+  assert.deepEqual(expanded.projection.outputs, { selected: node });
+  assert.throws(() => expandPanelAuthoringMember("nodes", { ...member, state: { checked: "checked" } }, {
+    state, typeTable, components: [component],
+  }), /Member 'nodes', field 'state.checked'.*list state requires one object type/);
+  assert.throws(() => expandPanelAuthoringMember("nodes", member, {
+    state: { ...state, selected: { ...state.selected, type: { kind: "object", objectType: ontologyType } } },
+    typeTable, components: [component],
+  }), /Member 'nodes', field 'state.selected'.*cannot receive component output/);
+});
+
+test("a short conversation entry stores its target and prefill on an ordinary projection", () => {
+  const component = buildComponent("ConversationEntry", { data: {} });
+  const prefill = "Review this domain's business knowledge entries.";
+  const member = panelAuthoringMemberSchema.parse({ component: "ConversationEntry", agent: "page-default", prefill });
+  assert("component" in member);
+  const { projection, placement } = expandPanelAuthoringMember("governance", member, {
+    state, components: [component], typeTable,
+  });
+  assert.deepEqual(placement, {});
+  assert.deepEqual(productProjectionInputSchema.parse({
+    ...projection, name: "Governance", description: "", visibility: "domain",
+  }), {
+    name: "Governance", description: "", visibility: "domain",
+    componentId: "@ontomato/sdk:ConversationEntry", inputs: {}, outputs: {}, data: {}, config: {},
+    conversationEntry: { target: { kind: "page-default" }, prefill },
+  });
+
+  for (const agent of [{ kind: "id", id: "review-agent" }, { kind: "preset", agentKind: "knowledge-governance" }]) {
+    const specified = panelAuthoringMemberSchema.parse({ component: "@ontomato/sdk:ConversationEntry", agent });
+    assert("component" in specified);
+    const expanded = expandPanelAuthoringMember("review", specified, { state, components: [component], typeTable });
+    assert.deepEqual(expanded.projection.conversationEntry, { target: agent });
+  }
+});
+
+test("per-datum owners expand to distinct formal type sources", () => {
+  const nodeType = "platform:ObjectType";
+  const edgeType = "platform:Relationship";
+  const graph = buildComponent("ObjectGraph", {
+    data: {
+      nodes: { results: ["panelRecordList"], required: true },
+      edges: { results: ["panelRecordList"], required: true },
+    },
+  });
+  const table = { objectTypes: Object.fromEntries([nodeType, edgeType].map(id => [
+    id, platformTypeTableEntrySchema.parse({ reads: platformObjectTypes[id].reads }),
+  ])) };
+  const member = panelAuthoringMemberSchema.parse({
+    component: "ObjectGraph", type: nodeType,
+    data: { nodes: "list", edges: { type: edgeType, read: "list" } },
+  });
+  assert("component" in member);
+  const { projection } = expandPanelAuthoringMember("scope", member, { state, components: [graph], typeTable: table });
+  assert.deepEqual(projection.data.nodes.source, { type: { kind: "PlatformObjectType", id: nodeType } });
+  assert.deepEqual(projection.data.edges.source, { type: { kind: "PlatformObjectType", id: edgeType } });
+  assert.doesNotThrow(() => productProjectionInputSchema.parse({
+    ...projection, name: "Scope", description: "", visibility: "domain",
+  }));
+});
+
+test("a datum's object owner cannot replace the target state's type", () => {
+  const otherType = "platform:AgentDefinition";
+  const member = panelAuthoringMemberSchema.parse({
+    component: "ObjectForm", target: "selected", data: { form: { type: otherType, read: "form" } },
+  });
+  assert("component" in member);
+  assert.throws(() => expandPanelAuthoringMember("form", member, {
+    state, components, typeTable: { objectTypes: {
+      ...typeTable.objectTypes, [otherType]: platformTypeTableEntrySchema.parse({ reads: platformObjectTypes[otherType].reads }),
+    } },
+  }), /Member 'form', field 'data.form.type'.*does not match target state type/);
+});
+
+test("a chart short member binds only the formal projection returned for its source card", () => {
+  const sourceCard = { dashboardId: "board", cardId: "card" };
+  const source = { object: { literal: { className: DASHBOARD_CARD, primaryKey: dashboardCardPrimaryKey(sourceCard) } } };
+  const projection = {
+    id: "chart-from-owner", domainId: "domain", ownerId: "viewer", name: "Report chart", description: "", visibility: "domain",
+    componentId: "@ontomato/sdk:MetricChart", revision: 1, editable: true, metricId: "metric",
+    createdAt: "2026-11-20T00:00:00.000Z", updatedAt: "2026-11-20T00:00:00.000Z",
+    inputs: { region: search }, outputs: {}, config: {},
+    data: {
+      template: { source, read: "chartTemplate", params: {} },
+      result: { source, read: "result", params: { region: { input: "region" } } },
+    },
+  };
+  const member = panelAuthoringMemberSchema.parse({ component: "MetricChart", sourceCard, state: { region: "search" } });
+  assert("component" in member);
+  assert.deepEqual(bindPanelAuthoringChart("chart", member, { state, projection }), {
+    target: { projectionId: "chart-from-owner" }, inputs: { region: { state: "search" } },
+  });
+  assert.throws(() => expandPanelAuthoringMember("chart", member, { state, components, typeTable }),
+    /Member 'chart', field 'sourceCard'.*chart owner/);
+  assert.throws(() => bindPanelAuthoringChart("chart", {
+    ...member, sourceCard: { ...sourceCard, cardId: "another-card" },
+  }, { state, projection }), /Member 'chart', field 'sourceCard'.*different source card/);
+  assert.throws(() => bindPanelAuthoringChart("chart", { ...member, state: { absent: "search" } }, { state, projection }),
+    /Member 'chart', field 'state.absent'.*does not expose this input/);
+  assert.throws(() => bindPanelAuthoringChart("chart", { ...member, state: { region: "selected" } }, { state, projection }),
+    /Member 'chart', field 'state.region'.*incompatible type/);
 });
