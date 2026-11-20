@@ -18,8 +18,12 @@ import type { ProductOwner } from "../product-governance/grants";
 /** The values of a result read, each named by the metric's own parameter it fills. */
 export type MetricResultParams = Readonly<Record<string, RuntimeJsonValue>>;
 
-/** An object chosen in a panel fills a metric parameter with its primary key; any other value goes as it is. */
+/**
+ * An object chosen in a panel fills a metric parameter with its primary key, and a checked list of objects with their
+ * keys in order; any other value goes as it is.
+ */
 function parameterValue(value: RuntimeJsonValue): RuntimeJsonValue {
+  if (Array.isArray(value)) return value.map(parameterValue);
   const object = panelObjectRefSchema.safeParse(value);
   return object.success ? object.data.primaryKey : value;
 }

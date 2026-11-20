@@ -66,6 +66,19 @@ it("runs the selected metric as the reader at its described revision and answers
   ]);
 });
 
+it("fills a list parameter from a checked list of objects with their keys in order", async () => {
+  const sent = ownerAnswering(() => Response.json(output));
+
+  await createMetricReadAdapter(owner, viewer).result("m1", {
+    customerIds: [{ className: "Customer", primaryKey: "c-42" }, { className: "Customer", primaryKey: "c-7" }],
+    regions: ["east", "west"],
+  });
+
+  expect(sent[1]?.body).toEqual({
+    id: "m1", revision: "rev-7", parameters: { customerIds: ["c-42", "c-7"], regions: ["east", "west"] },
+  });
+});
+
 it("runs a metric without parameters with none", async () => {
   const sent = ownerAnswering(() => Response.json({ ...output, rows: [], truncation: null }));
 
