@@ -619,12 +619,19 @@ public class ActionServiceImpl implements ActionService {
   }
 
   /** Asset validity is independent of the edition-owned admission decision. */
-  private void requireExecutable(Action action, String lang, User user) throws Exception {
-    if (action == null) throw new Exception(langService.get(lang, "Action.notFound"));
+  private void requireExecutable(Action action, String lang, User user) {
+    if (action == null)
+      throw new OwnerRefusal("ACTION_NOT_FOUND", langService.get(lang, "Action.notFound"));
     if (!user.getDomainId().equals(action.getDomainId()) || action.getFunction() == null ||
-        !user.getDomainId().equals(action.getFunction().getDomainId())) throw new IllegalArgumentException("Action is outside the current domain");
-    if (!Action.STATUS_PUBLISHED.equals(action.getStatus())) throw new Exception(langService.get(lang, "Action.notPublished"));
-    ActionFunctionAdmission.requireSupported(action.getFunction(), langService, lang);
+        !user.getDomainId().equals(action.getFunction().getDomainId()))
+      throw new OwnerRefusal("ACTION_NOT_FOUND", "Action is outside the current domain");
+    if (!Action.STATUS_PUBLISHED.equals(action.getStatus()))
+      throw new OwnerRefusal("ACTION_NOT_EXECUTABLE", langService.get(lang, "Action.notPublished"));
+    try {
+      ActionFunctionAdmission.requireSupported(action.getFunction(), langService, lang);
+    } catch (IllegalArgumentException error) {
+      throw new OwnerRefusal("ACTION_NOT_EXECUTABLE", error.getMessage());
+    }
   }
 
   @Override
@@ -644,32 +651,44 @@ public class ActionServiceImpl implements ActionService {
   @Override
   public PythonExecuteResult executeScheduled(Action action, JSONObject param, String lang, User creator,
       UserDataPermission permission, int timeoutMinutes, UUID runId) throws Exception {
-    return (PythonExecuteResult) run(action, param, lang, creator, permission, timeoutMinutes, ExecutionTarget.LIVE, runId)[1];
+    requireExecutable(action, lang, creator);
+    try {
+      return (PythonExecuteResult) executeAction(action, param, lang, creator, permission, timeoutMinutes, ExecutionTarget.LIVE, runId)[1];
+    } catch (OwnerRefusal refusal) {
+      PythonExecuteResult result = new PythonExecuteResult();
+      result.setError(refusal.getMessage());
+      return result;
+    }
   }
 
   private Object[] run(Action action, JSONObject param, String lang, User user, UserDataPermission permission,
       int timeoutMinutes, ExecutionTarget target, UUID runId) throws Exception {
     requireExecutable(action, lang, user);
+    return executeAction(action, param, lang, user, permission, timeoutMinutes, target, runId);
+  }
+
+  private Object[] executeAction(Action action, JSONObject param, String lang, User user, UserDataPermission permission,
+      int timeoutMinutes, ExecutionTarget target, UUID runId) throws Exception {
     boolean caseAuthorized = CaseExecutionGuard.allows(action.getId());
     var admission = capabilityGrants.admission(user.getId(), user.getDomainId(), CapabilityGrantLookup.ACTION, action.getId());
-    if (!admission.admitted() && !caseAuthorized) {
-      return new Object[]{null, refused(lang, "Action.notGranted")};
-    }
+    if (!admission.admitted() && !caseAuthorized)
+      throw new OwnerRefusal("ACTION_NOT_GRANTED", langService.get(lang, "Action.notGranted"));
     Function function = io.ontomato.dataengine.service.MetricViewBindings.executionWriteFunction(action.getFunction(), param);
     String key = null;
     if (action.getTarget() != null) {
       key = action.getTarget().key(param);
       if (!caseAuthorized) {
         var access = new QueryAccessService.Access(user, permission, null, null, null).withTarget(target);
-        if (!queries.actionTargetExists(action.getTarget(), key, admission, access)) return new Object[]{null, refused(lang, "Action.targetOutsideScope")};
+        if (!queries.actionTargetExists(action.getTarget(), key, admission, access))
+          throw new OwnerRefusal("ACTION_TARGET_OUT_OF_SCOPE", langService.get(lang, "Action.targetOutsideScope"));
       }
-    } else if (!caseAuthorized && !admission.unrestricted()) return new Object[]{null, refused(lang, "Action.targetOutsideScope")};
-    ActionPreconditionService.Verdict verdict = preconditions.evaluate(action, param, user, permission, target);
-    if (!verdict.satisfied()) {
-      PythonExecuteResult refused = new PythonExecuteResult();
-      refused.setError(langService.get(lang, "Action.preconditionFailed") + ": " + String.join("; ", verdict.violations()));
-      return new Object[]{null, refused};
+    } else if (!caseAuthorized && !admission.unrestricted()) {
+      throw new OwnerRefusal("ACTION_TARGET_OUT_OF_SCOPE", langService.get(lang, "Action.targetOutsideScope"));
     }
+    ActionPreconditionService.Verdict verdict = preconditions.evaluate(action, param, user, permission, target);
+    if (!verdict.satisfied())
+      throw new OwnerRefusal("ACTION_PRECONDITION_FAILED", langService.get(lang, "Action.preconditionFailed")
+          + ": " + String.join("; ", verdict.violations()));
     List<String> affectedTypes = ActionDefinitionProjector.project(action).getList("affects", String.class);
     Object[] execution = abcProgramService.execute((runId == null ? UUID.randomUUID() : runId).toString(), function, user.getId(), permission, target.testing() ? target.sandboxId() : ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId(),
         new ABCProgramService.ExecutionContext(runId, identitySnapshot(action, user, key), target));
@@ -678,12 +697,6 @@ public class ActionServiceImpl implements ActionService {
       result.setAffects(affectedTypes == null ? List.of() : affectedTypes);
     }
     return execution;
-  }
-
-  private PythonExecuteResult refused(String lang, String key) {
-    var result = new PythonExecuteResult();
-    result.setError(langService.get(lang, key));
-    return result;
   }
 
   private JSONObject identitySnapshot(
@@ -699,7 +712,7 @@ public class ActionServiceImpl implements ActionService {
     Action action = queryById(id);
     requireExecutable(action, lang, user);
     if (!capabilityGrants.admission(user.getId(), user.getDomainId(), CapabilityGrantLookup.ACTION, id).admitted())
-      throw new IllegalArgumentException(langService.get(lang, "Action.notGranted"));
+      throw new OwnerRefusal("ACTION_NOT_GRANTED", langService.get(lang, "Action.notGranted"));
     List<Parameter> parameters = action.getFunction().getParameters();
     var names = new HashSet<String>();
     for (Parameter parameter : parameters) {
