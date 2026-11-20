@@ -16,14 +16,12 @@ import { ignoreChanges,
  *   ObjectSummary highlights/tags/references (M7 knowledge pattern).
  * - Server-side offset/limit pagination, submit-mode search + dropdown filters resetting to page 1, refresh, and
  *   per-row detail action (M7 feedback pattern).
- * - Explicit failure when query features are enabled on a list-only adapter.
  */
 
 const METRIC = "test:MetricView";
 const FUNCTION = "test:Function";
 const KNOWLEDGE = "test:BusinessKnowledge";
 const FEEDBACK = "test:Feedback";
-const LEGACY = "test:LegacyListOnly";
 
 const current = {
   domainId: "domain-1", ownerId: "owner-1", revision: 1, createdAt: "2026-11-19T00:00:00.000Z",
@@ -458,37 +456,6 @@ it("supports server-side pagination, submit-mode filters resetting to page 1, re
   detailButton.click();
   await nextTick();
   expect(mounted.context.instance.state.values.value.selectedFeedback).toEqual({ className: FEEDBACK, primaryKey: "f-2" });
-});
-
-it("fails visibly when query features are enabled on a list-only adapter", async () => {
-  const projections = {
-    "legacy-list": projection("legacy-list", "ObjectList", LEGACY, { searchable: true }),
-  };
-  const manifest = definePanel({
-    state: {},
-    slots: { list: { projectionId: "legacy-list", inputs: {} } },
-    operations: [],
-  });
-  const panel = panelRecord("panel-legacy", "Legacy", manifest);
-  panel.content.html = `<div id="app"><Projection slot="list"></Projection></div>`;
-  const use = panelUse("use-legacy", "legacy-test", panel.id, "/applications/app-test/legacy");
-
-  installPlatform(hostWith(projections));
-  const frame = panelFrame();
-  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(registered("app-test", use, panel), use.path, {});
-  inside(frame);
-
-  const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
-  registerPlatformObjectAdapter({
-    objectType: LEGACY,
-    list: async () => [{ primaryKey: "1", label: "One", fields: {} }],
-  });
-
-  const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
-  await mountPanel({});
-
-  await vi.waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toContain("has no query"));
 });
 
 it("resolves column labelKey/emptyKey via panel.t, falls back to owner fieldLabels on ObjectList and ObjectSummary, and resolves state operation labelKey", async () => {

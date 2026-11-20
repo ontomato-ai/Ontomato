@@ -18,7 +18,7 @@ import { platformLayoutRoute } from "../../../../../packages/platform-web/src/la
 import {
   framedTasksPanelHtml, ignoreChanges,
   hostMessageOf, inspectionTaskForm, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt,
-  currentSdk, humanIntents, panelHostFrame, panelRecord, panelSnapshot, panelUse, projections, READER, run, SCHEDULED_TASK, SDK_VERSION, task, taskForm,
+  currentSdk, humanIntents, panelHostFrame, panelRecord, panelSnapshot, panelUse, projections, READER, run, SCHEDULED_TASK, task, taskForm,
   writeFrameDocument,
   type Sent,
   caseSetLabel,
@@ -728,7 +728,7 @@ it("reconciles definitions and objects on foreground without replacing an unchan
     panel = { ...p, revision: p.revision + 2, content: { ...p.content, html: `${p.content.html}<p id="rearranged"></p>` } };
     foreground.set("visible");
     await vi.waitFor(() => expect(hostMessageOf(frame.srcdoc).panel.content.html).toContain('id="rearranged"'));
-    expect(hostMessageOf(frame.srcdoc).panel).toEqual({ content: panel.content, manifest: panel.manifest, sdkVersion: SDK_VERSION });
+    expect(hostMessageOf(frame.srcdoc).panel).toEqual({ content: panel.content, manifest: panel.manifest });
     expect(sent.filter(request => request.path.startsWith("/api/product-assets/"))).toEqual([]);
   } finally {
     app.unmount();
