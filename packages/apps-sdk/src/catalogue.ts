@@ -303,8 +303,8 @@ export const components: readonly ComponentMetadata[] = [
       neighbors: { results: ["panelGraphNeighbors"], required: true, runtimeParams: ["node", "layers", "relationKinds"] },
     },
     outputs: {
-      selectedNode: { kind: "object-union", layers: ["fact", "capability", "governance", "product"] },
-      selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"] },
+      selectedNode: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
+      selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
       selectedType: { kind: "scalar", type: "string" },
     },
   }),
@@ -319,7 +319,7 @@ export const components: readonly ComponentMetadata[] = [
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     // The node a reader moved to, when no state the author bound holds it.
     data: { neighbors: { results: ["panelGraphNeighbors", "panelRelationNeighbors"], required: true, runtimeParams: ["node"] } },
-    outputs: { selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"] } },
+    outputs: { selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] } },
   }),
   defineComponentMeta({
     componentId: "SegmentedControl",
