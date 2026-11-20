@@ -93,6 +93,43 @@ declared owner read, such as the state that selects an object. The panel's own c
 catalogue to check which fields the component exposes. For translations, use locale tags, flat message keys and named
 placeholders such as `{name}` in `content.messages`; the template reads them with `t(…)`.
 
+### Draw a part yourself
+
+When no official component draws a part the way the page needs, the panel draws it itself. Declare a member whose
+projection uses `@ontomato/sdk:PanelData`: it draws nothing and takes any data the projection names, under names of
+your choosing. Read each datum in the page's code with `usePanelData(member, name)`:
+
+```js
+import { computed, ref } from "vue";
+import { mountPanel, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
+
+await mountPanel({
+  setup() {
+    const { instance } = usePanelContext();
+    const cursor = ref(null);
+    // The member's `rows` datum (an owner's query), with the cursor and page size as the page's own run-time values.
+    const rows = usePanelData("board", "rows", () => ({ cursor: cursor.value, size: 20 }));
+    const items = computed(() => (rows.value.status === "ready" ? rows.value.value.rows : []));
+    const next = () => { cursor.value = rows.value.value?.nextCursor ?? null; };
+    // The operation acts on the object the member's target input is bound to in the panel's state.
+    const approve = () => instance.invoke("board.approve");
+    return { rows, items, next, approve };
+  },
+});
+```
+
+`usePanelData` reads the way every member's data is read: by the projection's read and its mappings, through the
+platform, as the reader. It answers `loading`, `awaiting` (an object or a required parameter has no value yet; nothing
+is read), `ready` with `value`, `empty`, `forbidden` or `error` with `message`. It reads again when the panel state the
+member binds changes, when the run-time values you pass change, and when an operation reports that what it shows
+changed. Values you pass yourself are run-time parameters, which the platform checks against the catalogue and the
+read.
+
+The member's operations are the ones its projection names under `operations.<name>`. `instance.operations` lists those
+the owners admit now (an action on an object appears once the object is chosen), and `instance.invoke("<member>.<name>",
+input?)` runs one exactly as the page's header and an agent do. Never call the platform's business endpoints from the
+page.
+
 Run the App Builder skill's `ontomato panel check` on the workspace directory. It uses the current release's
 declarations. Register the requested projections, panel and application uses through their owners, then open the
 application's declared entry.
