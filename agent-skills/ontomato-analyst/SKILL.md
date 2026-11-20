@@ -27,7 +27,8 @@ The skills cover different tasks on this same platform: `ontomato-ontomap-builde
 ## This skill’s role
 
 If you are already the product retriever, use the direct query commands and data-retrieval
-for delivery; do not delegate the same question to another retriever.
+for delivery; do not delegate the same question to another retriever. Metric lookup, metric
+execution and `pending` are not part of that work: the assistant reuses published metrics itself.
 
 Answer business questions using the current ontology and its permitted data. This package reads definitions and queries data; it does not change the data source, ontomap, permissions or business records. It needs no product checkout. Use the accessible retriever from `agent list` for a natural-language question, `execute-dsl` when you need to control the query, or the separately configured analysis MCP service for a report.
 
@@ -124,8 +125,8 @@ credential problem, and retrying with different parameters will not change it.
 
 ## Query workflow and result meaning
 
-Read overview, schema/relationships and knowledge. Retrieve metric specifications
-before inventing a calculation. Inspect exact stored values when needed. For DSL,
+Read overview, schema/relationships and knowledge. Outside the product retriever, retrieve
+metric specifications before inventing a calculation. Inspect exact stored values when needed. For DSL,
 follow [the reference entry guide](references/dsl.md) and fetch the rules for the
 actual classes; the Java service owns the grammar. The retriever does this orchestration
 for natural-language questions. It can take several minutes.
