@@ -225,7 +225,37 @@ const projections = {
 const panel = productPanelInputSchema.parse({
   name: "Business knowledge", description: "", visibility: "domain",
   content: {
-    html: '<style>.knowledge { display: flex; flex-direction: column; }</style><section class="knowledge"><panel-member ref="counts"></panel-member><panel-member ref="list"></panel-member><panel-member ref="detail"></panel-member><panel-member ref="form"></panel-member><panel-member ref="createForm"></panel-member><panel-member ref="approve"></panel-member><panel-member ref="remove"></panel-member></section>',
+    html: [
+      '<div id="app" class="knowledge-panel" v-cloak>',
+      '  <div class="knowledge-list">',
+      '    <projection slot="counts"></projection>',
+      '    <projection slot="list"></projection>',
+      "  </div>",
+      '  <section class="knowledge-detail">',
+      '    <template v-if="chosen">',
+      '      <projection slot="detail"></projection>',
+      '      <projection slot="form"></projection>',
+      '      <projection slot="approve"></projection>',
+      '      <projection slot="remove"></projection>',
+      "    </template>",
+      '    <projection v-else slot="createForm"></projection>',
+      "  </section>",
+      "</div>",
+    ].join("\n"),
+    module: [
+      'import { computed } from "vue";',
+      'import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";',
+      "",
+      "const BusinessKnowledgePanel = {",
+      "  setup() {",
+      "    const { instance } = usePanelContext();",
+      "    const chosen = computed(() => instance.state.values.value.selectedEntry != null);",
+      "    return { chosen };",
+      "  },",
+      "};",
+      "",
+      "await mountPanel(BusinessKnowledgePanel);",
+    ].join("\n"),
   },
   manifest: {
     state: {
