@@ -124,6 +124,8 @@ export function expandPanelAuthoringMember(
   for (const [name, datum] of Object.entries(component.data))
     if (datum.required && !Object.hasOwn(data, name)) fail(`data.${name}`, "The component requires this datum");
 
+  const readsOntologyObjects = Object.values(data).some(({ read }) => type?.reads?.[read]?.result === "panelOntologyObjects");
+
   function concretePort<Port extends DirectProjectionPorts["inputs"][string]>(port: Port, path: string): Port {
     if (port.kind === "object" && port.objectType === "@binding")
       return { ...port, objectType: typeId ?? fail(path, "This port needs a declared object type") };
@@ -144,6 +146,8 @@ export function expandPanelAuthoringMember(
       bindInput(port, fieldName, path);
     }
     if (output) {
+      if (readsOntologyObjects && objectTypeOf(output) === "@binding")
+        fail(path, "The objects read can return a different object type. Reuse a registered projection with an explicit output type");
       const offered = concretePort(output, path);
       if (!panelPortAccepts(actual, offered))
         fail(path, `State '${fieldName}' cannot receive component output '${port}'`);

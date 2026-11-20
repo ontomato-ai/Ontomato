@@ -138,3 +138,25 @@ test("a required read parameter can come from the component's declared runtime v
     state, typeTable: table, components: [graph([])],
   }), /Member 'graph', field 'data.neighborhood.params.node'.*Required/);
 });
+
+test("ontology objects with a binding-relative output require an explicit projection", () => {
+  const ontologyType = "platform:OntologyType";
+  const typeTable = { objectTypes: {
+    [ontologyType]: platformTypeTableEntrySchema.parse({ reads: platformObjectTypes[ontologyType].reads }),
+  } };
+  const component = buildComponent("ObjectList", {
+    data: { objects: { results: ["panelOntologyObjects"], required: false } },
+    outputs: { selected: { kind: "object", objectType: "@binding" } },
+  });
+  const state = panelManifestSchema.parse({
+    state: { selected: { type: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: [ontologyType] } } },
+    members: {}, events: {},
+  }).state;
+  const member = panelAuthoringMemberSchema.parse({
+    component: "ObjectList", type: ontologyType, state: { selected: "selected" },
+    data: { objects: { read: "objects", params: { type: { literal: "platform:User" } } } },
+  });
+  assert("component" in member);
+  assert.throws(() => expandPanelAuthoringMember("nodes", member, { state, typeTable, components: [component] }),
+    /Member 'nodes', field 'state.selected'.*explicit output type/);
+});
