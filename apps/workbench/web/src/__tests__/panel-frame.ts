@@ -451,7 +451,7 @@ export function humanIntents(outcome: (operationId: string) => unknown, target: 
   return (request: Sent): Response | undefined => {
     // The owner's write: one object it acts on, with nothing to confirm.
     if (request.method === "GET" && request.path === "/api/panel-operations/descriptor")
-      return Response.json({ handlerRef: "owner.write", effect: "write", target, inputSchema: {}, resultSchema: {}, batch: false });
+      return Response.json({ handlerRef: "owner.write", label: "Write", effect: "write", target, inputSchema: {}, resultSchema: {}, batch: false });
     if (request.method === "POST" && request.path === "/api/panel-operations/intents") {
       const { operationId } = request.body as { operationId: string };
       const preparation = { intentId: randomId(), operationId, label: operationId, confirmation: { kind: "none" as const } };

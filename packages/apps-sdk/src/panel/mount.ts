@@ -102,7 +102,8 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     },
     t: text,
     // The resource clients a projection binds, fetched with it and sending through this frame's request path.
-    resources: platformResourceLoader({ request: (path, init, service) => transport.request(path, init, service) }, platformResources),
+    resources: platformResourceLoader({ request: (path, init, service) => transport.request(path, init, service) }, platformResources,
+      contextTranslate(appContext)),
     expandPageComposer: contextExpandPageComposer(appContext),
   };
   const app = createApp({

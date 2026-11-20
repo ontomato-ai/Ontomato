@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
@@ -8,8 +8,11 @@ import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { platformScheduleFormSchema, platformTaskRunSchema, platformTaskSchema } from "@ontomato/contracts/platform-schedules";
+import { scheduledTaskPanelMessages, scheduledTaskPanelTextZhCn } from "@ontomato/platform-schedules/panel-text";
 import examples from "../../../../contracts/examples/platform-schedules.json";
 import { installContentLayout } from "../../content/layout";
+import { configureI18n } from "../../i18n";
+import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 
@@ -39,6 +42,7 @@ const taskRun = platformTaskRunSchema.parse({
   ...examples.runs.find(item => item.name === "agents-running")!.response, taskId: task.id,
 });
 const ownerWrites: string[] = [];
+let ownerTasks: typeof task[] = [];
 const taskType = { kind: "object", objectType: "platform:ScheduledTask" };
 const projection = {
   name: "Task summary", description: "", visibility: "domain",
@@ -64,6 +68,13 @@ const panel = {
 };
 
 beforeAll(async () => {
+  configureI18n({
+    defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: true,
+    packs: {
+      en: { ...enLocaleMeta, messages: en },
+      "zh-CN": { ...enLocaleMeta, messages: scheduledTaskPanelMessages(scheduledTaskPanelTextZhCn) },
+    },
+  });
   state.schema = `panel_pilot_${randomUUID().replaceAll("-", "")}`;
   state.pool = new pg.Pool({ connectionString: database });
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
@@ -101,7 +112,7 @@ beforeAll(async () => {
   });
   app.get("/platform/scheduled-tasks", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
-    res.json({ tasks: [], timeZone: task.timeZone });
+    res.json({ tasks: ownerTasks, timeZone: task.timeZone });
   });
   app.get("/platform/scheduled-tasks/:taskId", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
@@ -128,7 +139,7 @@ beforeAll(async () => {
     res.json(taskRun);
   });
   app.use("/api", (req, _res, next) => {
-    Object.assign(req, { domainId: "pilot", userId: "reader", token: "pilot-reader", locale: "en" });
+    Object.assign(req, { domainId: "pilot", userId: "reader", token: "pilot-reader", locale: req.header("Accept-Language") });
     next();
   });
   app.use("/api/product-panels", productPanelsRouter);
@@ -148,9 +159,9 @@ afterAll(async () => {
   await rm(contentRoot, { recursive: true });
 });
 
-function request(method: string, resource: string, body?: object) {
+function request(method: string, resource: string, body?: object, locale = "zh-CN") {
   return fetch(`${state.base}/api/${resource}`, {
-    method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    method, headers: { "Content-Type": "application/json", "Accept-Language": locale }, body: JSON.stringify(body),
   });
 }
 
@@ -193,13 +204,21 @@ it("reads back stable member keys and named data, and leaves the record intact a
   expect((await (await request("GET", panelPath)).json()).panel).toEqual(current);
 
   const source = { kind: "registered", applicationId: "app-schedules", useId: "pilot" };
-  const read = (member: string, dataName: string, inputs: object) =>
-    request("POST", "product-panels/read", { source, memberPath: [{ member }], dataName, inputs });
+  const read = (member: string, dataName: string, inputs: object, locale?: string) =>
+    request("POST", "product-panels/read", { source, memberPath: [{ member }], dataName, inputs }, locale);
   const taskRef = { className: taskType.objectType, primaryKey: task.id };
-  expect(await (await read("summary", "record", { task: taskRef })).json()).toMatchObject({
-    status: "ready", value: { primaryKey: task.id, label: task.title },
+  const fieldLabels = { application: "应用", settings: "配置", state: "状态", nextRun: "下次运行", lastRun: "上次运行" };
+  const record = await (await read("summary", "record", { task: taskRef })).json();
+  expect(record).toMatchObject({
+    status: "ready", value: { primaryKey: task.id, label: task.title, fieldLabels },
+  });
+  expect(await (await read("summary", "record", { task: taskRef }, "en")).json()).toMatchObject({
+    status: "ready", value: { primaryKey: task.id, fieldLabels: { application: "Application", state: "Status" } },
   });
   expect(await (await read("tasks", "rows", {})).json()).toEqual({ status: "empty" });
+  ownerTasks = [task];
+  const rows = await (await read("tasks", "rows", {})).json();
+  expect(rows).toMatchObject({ status: "ready", value: [{ primaryKey: task.id, fieldLabels }] });
   expect(await (await read("related", "record", { task: taskRef })).json()).toEqual({ status: "forbidden" });
   expect(await (await read("summary", "record", { task: { ...taskRef, primaryKey: "removed" } })).json()).toEqual({
     status: "error", message: "Task no longer exists",
@@ -207,10 +226,12 @@ it("reads back stable member keys and named data, and leaves the record intact a
   expect(await (await read("form", "form", { task: taskRef })).json()).toMatchObject({
     status: "ready", value: { revision: task.revision },
   });
-  expect(await (await read("run", "operation", {})).json()).toMatchObject({
-    status: "ready", value: { effect: "write", handlerRef: "schedules.runNow" },
+  const operation = await (await read("run", "operation", {})).json();
+  expect(operation).toMatchObject({
+    status: "ready", value: { effect: "write", handlerRef: "schedules.runNow", label: "立即运行" },
   });
   const target = { kind: "object", objectType: taskType.objectType, primaryKey: task.id };
+  let runNowReceipt: unknown;
   for (const [operationId, input] of [
     ["form.save", { values: task.content, revision: task.revision }], ["run.runNow", {}],
   ] as const) {
@@ -221,10 +242,19 @@ it("reads back stable member keys and named data, and leaves the record intact a
     expect(prepared.status, JSON.stringify(preparation)).toBe(200);
     expect(preparation).toMatchObject({ operationId, confirmation: { kind: "none" } });
     const dispatch = `panel-operations/intents/${intentId}/dispatch`;
-    expect(await (await request("POST", dispatch, {})).json()).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
-    expect(await (await request("POST", dispatch, {})).json()).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
+    const receipt = await (await request("POST", dispatch, {})).json();
+    expect(receipt).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
+    if (operationId === "run.runNow") {
+      expect(receipt).toMatchObject({ outcome: { message: "已开始运行。", data: { status: "running", taskId: task.id } } });
+      runNowReceipt = receipt;
+    }
+    expect(await (await request("POST", dispatch, {})).json()).toEqual(receipt);
   }
   expect(ownerWrites).toEqual(["save", "runNow"]);
+  const evidence = process.env.SCHEDULED_TASK_PANEL_HTTP_EVIDENCE;
+  if (evidence) {
+    await writeFile(evidence, JSON.stringify({ rows, record, operation, runNowReceipt }, null, 2) + "\n");
+  }
 });
 
 it("rejects reader requests carrying a caller-selected URL or handler", async () => {

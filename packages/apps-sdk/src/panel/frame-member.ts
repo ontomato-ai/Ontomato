@@ -6,7 +6,7 @@ import { directReadDeclaration, type DirectProjectionData } from "@ontomato/cont
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import { readKey, type MemberData, type MemberDataState, type MemberInputs } from "./direct";
 import type { PanelInstance } from "./instance";
-import { adapterPart } from "./platform-objects";
+import { adapterPart, type PlatformObjectRecord } from "./platform-objects";
 import { stateObject, type PanelFieldValue } from "./state";
 
 /*
@@ -22,6 +22,11 @@ function objectOf(data: DirectProjectionData, inputs: MemberInputs) {
   if (!("object" in data.source)) return null;
   const object = data.source.object;
   return stateObject(("literal" in object ? object.literal : inputs[object.input]) as PanelFieldValue | undefined);
+}
+
+/** What a record read declares of a module's record: the owner's identity, label, fields and their names. */
+function panelRecord({ primaryKey, label, subtitle, fields, fieldLabels }: PlatformObjectRecord) {
+  return { primaryKey, label, ...(subtitle === undefined ? {} : { subtitle }), fields, ...(fieldLabels === undefined ? {} : { fieldLabels }) };
 }
 
 export function frameMemberData(projection: DirectProjection, slot: string, instance: PanelInstance, inputs: () => MemberInputs): MemberData {
@@ -41,10 +46,9 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
     let value: unknown;
     if (declaration.result === "panelRecordList" && "type" in data.source) {
       const rows = await adapterPart(data.source.type, "list")();
-      value = rows.map(({ primaryKey, label, subtitle, fields }) => ({ primaryKey, label, ...(subtitle === undefined ? {} : { subtitle }), fields }));
+      value = rows.map(panelRecord);
     } else if (declaration.result === "panelRecord" && object) {
-      const { primaryKey, label, subtitle, fields } = await adapterPart(object.className, "read")(object.primaryKey);
-      value = { primaryKey, label, ...(subtitle === undefined ? {} : { subtitle }), fields };
+      value = panelRecord(await adapterPart(object.className, "read")(object.primaryKey));
     } else if (declaration.result === "panelFormDescription" && object) {
       const valuesInput = runInput(data, "values");
       const changedInput = runInput(data, "changedField");

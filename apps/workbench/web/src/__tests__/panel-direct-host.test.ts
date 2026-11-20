@@ -61,7 +61,7 @@ const form = (name: string) => ({
   fields: [field("/name", "Name")], values: { name }, errors: [], revision: 3,
   save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
 });
-const runNow = { handlerRef: "schedules.runNow", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
+const runNow = { handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
 const INTENT = "5f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d05";
 const task = (primaryKey: string) => ({ className: SCHEDULED_TASK, primaryKey });
 

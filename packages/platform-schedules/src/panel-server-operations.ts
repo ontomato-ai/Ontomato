@@ -7,7 +7,7 @@ import type { PlatformSchedulesHost } from "./host";
 import { createSchedulesApi, ScheduleRequestError } from "./api";
 import { scheduledTaskDraftOperation, scheduledTaskPanelOperations, scheduledTaskPanelSaveSchema } from "./panel-operations";
 
-type Host = Pick<PlatformSchedulesHost, "request">;
+type Host = Pick<PlatformSchedulesHost, "request"> & { locale?: string };
 type Target = Extract<PanelOperationCall["target"], { kind: "object" }>;
 const targetSchema = z.object({ kind: z.literal("object"), objectType: z.literal(SCHEDULED_TASK), primaryKey: z.string().uuid() }).strict();
 
@@ -22,11 +22,12 @@ async function targetLabel(host: Host, target: Target): Promise<string> {
 }
 
 /** The owner interprets its own structured refusal; uncertain transport errors remain the coordinator's outcome. */
-async function outcome(call: () => Promise<{ data: unknown; taskId: string }>): Promise<Exclude<PanelOperationOutcome, { kind: "batch" }>> {
+async function outcome(call: () => Promise<{ data: unknown; taskId: string; message?: string }>): Promise<Exclude<PanelOperationOutcome, { kind: "batch" }>> {
   try {
-    const { data, taskId } = await call();
+    const { data, taskId, message } = await call();
     return {
       kind: "success", data: JSON.parse(JSON.stringify(data)),
+      ...(message && { message }),
       affected: { objects: [{ objectType: SCHEDULED_TASK, primaryKey: taskId }], objectTypes: [SCHEDULED_TASK] },
     };
   } catch (error) {
@@ -57,37 +58,43 @@ export const scheduledTaskRunNowOperation = {
   resultSchema: platformTaskRunSchema,
   targetInput: "task",
   targetLabel,
-  execute(host: Host, target: Target, _input: Record<string, unknown>, intentId: string) {
+} as const;
+
+const scheduledTaskSaveOperation = {
+  handlerRef: `${SCHEDULED_TASK}.save`,
+  kind: "form.save",
+  binding: { kind: "PlatformObjectType", id: SCHEDULED_TASK },
+  effect: "write",
+  batch: false,
+  targetType: SCHEDULED_TASK,
+  targetSchema,
+  inputSchema: scheduledTaskPanelSaveSchema,
+  resultSchema: platformTaskSchema,
+  targetLabel,
+  draftOperation: () => scheduledTaskDraftOperation,
+  draftInput: (input: Record<string, unknown>) => scheduledTaskPanelSaveSchema.parse(input).values,
+  formInstructions: "Use the application's form response for the field keys. Send the returned string values and the current task revision in call.input.",
+  execute(host: Host, target: Target, input: Record<string, unknown>, _intentId: string) {
+    const { values, revision } = scheduledTaskPanelSaveSchema.parse(input);
     return outcome(async () => {
-      const data = await scheduledTaskPanelOperations(host).runNow(target.primaryKey, intentId);
-      return { data, taskId: data.taskId };
+      const data = await scheduledTaskPanelOperations(host).save(target.primaryKey, values, revision);
+      return { data, taskId: data.id };
     });
   },
 } as const;
 
-/** Only the two server operations this owner currently implements, beside their shared pure client. */
-export const scheduledTaskServerOperations = [
-  {
-    handlerRef: `${SCHEDULED_TASK}.save`,
-    kind: "form.save",
-    binding: { kind: "PlatformObjectType", id: SCHEDULED_TASK },
-    effect: "write",
-    batch: false,
-    targetType: SCHEDULED_TASK,
-    targetSchema,
-    inputSchema: scheduledTaskPanelSaveSchema,
-    resultSchema: platformTaskSchema,
-    targetLabel,
-    draftOperation: () => scheduledTaskDraftOperation,
-    draftInput: (input: Record<string, unknown>) => scheduledTaskPanelSaveSchema.parse(input).values,
-    formInstructions: "Use the application's form response for the field keys. Send the returned string values and the current task revision in call.input.",
-    execute(host: Host, target: Target, input: Record<string, unknown>, _intentId: string) {
-      const { values, revision } = scheduledTaskPanelSaveSchema.parse(input);
-      return outcome(async () => {
-        const data = await scheduledTaskPanelOperations(host).save(target.primaryKey, values, revision);
-        return { data, taskId: data.id };
-      });
+export function createScheduledTaskServerOperations(translate: (locale: string | undefined, key: string) => string) {
+  return [
+    scheduledTaskSaveOperation,
+    {
+      ...scheduledTaskRunNowOperation,
+      execute(host: Host, target: Target, _input: Record<string, unknown>, intentId: string) {
+        return outcome(async () => {
+          const data = await scheduledTaskPanelOperations(host).runNow(target.primaryKey, intentId);
+          const key = data.status === "running" ? "panelRunStarted" : `runStatus.${data.status}`;
+          return { data, taskId: data.taskId, message: translate(host.locale, `platformSchedules.${key}`) };
+        });
+      },
     },
-  },
-  scheduledTaskRunNowOperation,
-] as const;
+  ] as const;
+}

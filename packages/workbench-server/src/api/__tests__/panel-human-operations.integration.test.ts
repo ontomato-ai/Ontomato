@@ -8,6 +8,8 @@ import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { panelHumanOperationPreparationSchema } from "@ontomato/contracts/panel-agent";
 import { platformTaskRunSchema, platformTaskSchema } from "@ontomato/contracts/platform-schedules";
 import scheduleExamples from "../../../../contracts/examples/platform-schedules.json";
+import { configureI18n } from "../../i18n";
+import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
 import { buildTestAccess } from "../build-test-access";
 import { panelOperationsRouter } from "../routes/product-panels";
@@ -58,6 +60,10 @@ let ownerReads = 0;
 const ownerWrites: { credential: string | undefined; idempotencyKey: string | undefined }[] = [];
 
 beforeAll(async () => {
+  configureI18n({
+    defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
+    packs: { en: { ...enLocaleMeta, messages: en } },
+  });
   state.schema = `panel_human_operations_${randomUUID().replaceAll("-", "")}`;
   state.pool = new pg.Pool({ connectionString: database });
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
@@ -130,7 +136,7 @@ it("stores the host's exact confirmation and claims the registered owner once as
   const results = await Promise.all([request(dispatch, "alice", {}), request(dispatch, "alice", {})]);
   expect(results.map(result => result.status)).toEqual([200, 200]);
   const result = {
-    kind: "dispatched", intentId, outcome: { kind: "success", data: run, affected: {
+    kind: "dispatched", intentId, outcome: { kind: "success", data: run, message: "The run has started.", affected: {
       objects: [{ objectType, primaryKey: task.id }], objectTypes: [objectType],
     } },
   };

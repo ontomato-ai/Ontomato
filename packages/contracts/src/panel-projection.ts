@@ -117,6 +117,8 @@ export const panelRecordSchema = z.object({
   label: z.string(),
   subtitle: z.string().optional(),
   fields: z.record(z.string()),
+  /** Field names supplied by the owner in the reader's locale, keyed by the names in fields. */
+  fieldLabels: z.record(z.string()).optional(),
 }).strict();
 export type PanelRecord = z.infer<typeof panelRecordSchema>;
 export const panelRecordListSchema = z.array(panelRecordSchema);

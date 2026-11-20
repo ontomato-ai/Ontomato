@@ -178,6 +178,40 @@ test("the current projection response admits named direct reads through the fram
   assert.equal(clientSends(keys, "GET", "/data-query", "/platform-ontology/schema"), false);
 });
 
+test("direct panel read replies retain the owner's localized field and operation labels", async () => {
+  const { productPanelReadResponseSchema } = await import("./panel-host");
+  const { panelReadResultSchemas } = await import("./panel-operations");
+  const row = {
+    primaryKey: "11111111-1111-4111-8111-111111111111", label: "每日检查",
+    fields: { application: "ops", settings: "每天 02:00", state: "on", nextRun: "" },
+    fieldLabels: { application: "应用", settings: "设置", state: "状态", nextRun: "下次运行" },
+  };
+  const operation = {
+    handlerRef: RUN_NOW, label: "立即运行", effect: "write", batch: false,
+    target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {},
+  };
+  const replyValue = (value: unknown) => {
+    const reply = productPanelReadResponseSchema.parse({ status: "ready", value });
+    assert.ok(reply.status === "ready");
+    return reply.value;
+  };
+  assert.deepEqual(panelReadResultSchemas.panelRecordList.parse(replyValue([row])), [row]);
+  assert.deepEqual(panelReadResultSchemas.panelRecord.parse(replyValue(row)), row);
+  assert.deepEqual(panelReadResultSchemas.panelOperationDescriptor.parse(replyValue(operation)), operation);
+  assert.equal(panelReadResultSchemas.panelOperationDescriptor.safeParse({ ...operation, label: undefined }).success, false);
+  assert.equal(panelReadResultSchemas.panelRecord.safeParse({ ...row, fieldLabels: { state: 1 } }).success, false);
+});
+
+test("a dispatched success carries the owner's message alongside the result data", () => {
+  const reply = {
+    kind: "dispatched", intentId: "eeb5fc31-8ecf-46a9-882f-728ce4ba3fff",
+    outcome: { kind: "success", message: "已开始运行", data: { status: "running" } },
+  };
+  assert.deepEqual(panelHumanOperationDispatchResponseSchema.parse(reply), reply);
+  assert.deepEqual(panelOperationOutcomeSchema.parse({ kind: "success", data: {} }), { kind: "success", data: {} });
+  assert.equal(panelOperationOutcomeSchema.safeParse({ ...reply.outcome, message: { key: "started" } }).success, false);
+});
+
 test("the field port refers to another slot in the same manifest", () => {
   const picker = { projectionId: "skill-picker", formField: { slot: "definition", path: "/skills" } };
   const slots = { definition: { projectionId: "definition-form" }, picker };
@@ -565,7 +599,7 @@ test("a panel operation descriptor admits exactly the three use and operation qu
   assert.deepEqual(panelOperationRefSchema.parse(query), query);
   assert.equal(panelOperationRefSchema.safeParse({ ...query, effect: "read" }).success, false);
   const description = {
-    handlerRef: "schedules.runNow", effect: "write", target: { source: "input", input: "task" },
+    handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" },
     inputSchema: {}, resultSchema: {}, batch: false,
   };
   assert.deepEqual(panelOperationDescriptorResponseSchema.parse(description), description);
@@ -714,7 +748,7 @@ test("a read-only trial carries the current draft and parameters without a write
   assert.deepEqual(readPanelOperationRequestSchema.parse(request), request);
   assert.equal(readPanelOperationRequestSchema.safeParse({ ...request, effect: "read" }).success, false);
   const owner = {
-    handlerRef: "metricViews.testExecute", effect: "read", batch: false, target: { source: "draft", slot: "definition" },
+    handlerRef: "metricViews.testExecute", label: "Test", effect: "read", batch: false, target: { source: "draft", slot: "definition" },
     inputSchema: { type: "object" }, resultSchema: { type: "object" },
   };
   assert.deepEqual(panelReadOperationDescriptorSchema.parse(owner), owner);

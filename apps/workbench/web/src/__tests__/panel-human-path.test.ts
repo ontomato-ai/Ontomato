@@ -709,7 +709,7 @@ it("reconciles definitions and objects on foreground without replacing an unchan
     foreground.set("hidden");
     summary = { ...summary, revision: summary.revision + 1, display: { fields: ["settings"] } };
     foreground.set("visible");
-    await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary dt")?.textContent).toBe("settings"));
+    await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary dt")?.textContent).toBe("Settings"));
     expect(definitionReads().slice(initialDefinitions).map(request => request.path)).toEqual([
       `/api/product-projections/${summary.id}`,
     ]);
@@ -803,7 +803,7 @@ it("shares one definition stream across author panels, restores a changed collec
     const previous = summary;
     summary = { ...summary, revision: summary.revision + 1, display: { fields: ["settings"] } };
     send(reduced, { kind: "snapshot", definitions: [{ kind: "projection", id: summary.id, revision: summary.revision }] });
-    await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary dt")?.textContent).toBe("settings"));
+    await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary dt")?.textContent).toBe("Settings"));
     send(reduced, { kind: "definition-changed", definition: { kind: "projection", id: summary.id, revision: previous.revision } });
 
     foreground.set("hidden");

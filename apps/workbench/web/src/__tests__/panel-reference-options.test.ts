@@ -71,7 +71,7 @@ it("reads all three metadata bindings through one owner request and preserves re
     },
   }));
   const factory = await platformResources.objects[ATTRIBUTE]!();
-  const metadata = new Map(factory({ request }).map(adapter => [adapter.objectType, adapter]));
+  const metadata = new Map(factory({ request }, (key: string) => key).map(adapter => [adapter.objectType, adapter]));
   const [classes, attributes, relationships] = await Promise.all(
     [OBJECT_TYPE, ATTRIBUTE, RELATIONSHIP].map(type => metadata.get(type)!.list!()),
   );

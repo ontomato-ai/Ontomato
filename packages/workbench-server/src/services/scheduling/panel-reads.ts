@@ -8,6 +8,7 @@ import {
 } from "@ontomato/contracts/platform-schedules";
 import { createScheduledTaskReads } from "@ontomato/platform-schedules/panel-reads";
 import { config } from "../../config/application";
+import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
 
@@ -33,5 +34,5 @@ export function createScheduledTaskReadAdapter(viewer: AssistantCredentials, sig
       );
       return platformScheduleFormSchema.parse(JSON.parse(response.text));
     },
-  });
+  }, key => tForLocale(viewer.locale, key));
 }
