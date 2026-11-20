@@ -33,7 +33,8 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
   const source=await profileSourceForSession(owner,session.id,session.agent_id);
   const prepared=source?null:await prepareAssistantSkills(owner.domainId,a,credentials);
   const skills=prepared?.skills??[];
-  const retrieval=needsRetrievalScope(skills);
+  const skillRefs=skills.map(({skill})=>skill);
+  const retrieval=needsRetrievalScope(skillRefs);
   const continuationIds=new Set<string>();
   if(retrieval)for(const previous of await assistantStore.turns(sessionId)) {
     if(previous.id===id || !previous.retrieval_scope_id)continue;
@@ -56,7 +57,7 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
     ? profile.instructions+'\n\nProduct projection interfaces (not authorization):\n'+JSON.stringify({tools:profile.tools,contextViews:profile.contextViews,issues:profile.issues,...('objectContext' in profile?{objectContext:profile.objectContext}:{})})
     : effectiveSystemPrompt(a,resolveLocale(credentials.locale)) + (retrieval ? "\n\nInitial ontology context:\n"+ontologyContext : "") + externalContext;
   const panelEnvironment=profile?null:executionUserId===null?executionSkillEnvironment(owner,credentials,id):skillEnvironment;
-  const governance=hasGovernanceSkill(skills),callbackPath=`/api/assistant/sessions/${session.id}/governance-window`;
+  const governance=hasGovernanceSkill(skillRefs),callbackPath=`/api/assistant/sessions/${session.id}/governance-window`;
   const artifactInstructions = [ARTIFACT_MARKDOWN_PROMPT, ...(reader ? [agentVisibilityPrompt(reader)] : [])].join("\n\n");
   return {
     language: resolveLocale(credentials.locale), input,

@@ -47,9 +47,9 @@ host can persist its business gate before sending admission. The shared admissio
 ledger retains operation, target and canonical semantic fingerprint per scope.
 Same key + same request replays the original resource, even when stopped; changed
 input/definition/target returns 409. Resolve a matching prior admission before
-checking busy state or current skill publication. Secret values and correlation
+checking busy state or skill availability. Secret values and correlation
 IDs do not participate in fingerprints; public environment values, secret names,
-language, input and definition do. Retrying does not rotate an admitted run's
+language, input and definition (including each skill digest) do. Retrying does not rotate an admitted run's
 credentials or re-resolve its skills. One session has one active run under a row
 lock. Persist admission, resolved definition, input and initial events before
 responding or executing. Do not append input twice.
@@ -86,13 +86,14 @@ Wire shape (all IDs are UUIDs; paths are portable relative paths):
 ```ts
 type SkillRef = { namespace: {kind:"provider"; provider:string}
                             | {kind:"domain"; domainId:string}; name:string };
+type RuntimeSkillVersion = { skill: SkillRef; digest: string };
 type StartRun = {
   language: string;
   input: RuntimeUserMessage;
   definition: {
     systemPrompt: string;
     modelId?: string | null;
-    skills: SkillRef[];
+    skills: RuntimeSkillVersion[];
     externalMcp: {id:string}[];
     compaction: {systemPrompt:string; summarizePrompt:string; updatePrompt:string};
     sandbox: {limits: CodeLimits};
@@ -151,9 +152,7 @@ type PublishSkill = {
   skill: SkillRef;
   files: {path:string; content:string}[]; // UTF-8 source files in this batch
 };
-type PublishedSkill = {
-  skill: SkillRef; digest:string; description:string;
-};
+type PublishedSkill = RuntimeSkillVersion & { description: string };
 ```
 
 A package is a directory with standard `SKILL.md`, scripts and references.
@@ -166,12 +165,15 @@ for the three source packages in scope; binary package transport is deferred.
 
 Compute SHA-256 from the UTF-8 canonical JSON array of `[path,content]` pairs,
 sorted by path without Unicode/newline rewriting. Store immutable files by
-namespace/name/digest on the runtime volume. PG stores package metadata and the
-current published digest for each authorized name. Identical bytes are
-idempotent. New bytes create a new digest and atomically advance that name; old
-bytes remain addressable by admitted runs. Definition input references names;
-admission stores their resolved digests. There is no mutable package content or
-semantic-version manifest. A missing/unauthorized reference fails admission.
+namespace/name/digest on the runtime volume and store matching metadata in PG.
+Identical publication is idempotent. Hosts select and authorize package content
+during preparation and bind the publication response's ref and digest into
+`definition.skills`. Admission checks the host and domain's existing namespace
+permissions and resolves that exact pair. A missing or unauthorized version
+fails admission. The runtime records the admitted versions in `resolvedSkills`
+and installs the corresponding immutable directories. A subsequent publication
+of the same ref leaves an earlier selection unchanged. Persisted ref-only run
+facts are read using their matching `resolvedSkills` records.
 
 Use PI's skill loader against only the installed selected directories, with
 default/global discovery disabled. Use its catalog formatter for name,

@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.controller;
 
 import com.alibaba.fastjson2.*;
+import io.ontomato.dataengine.service.RuntimeCodeClient;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import io.ontomato.dataengine.service.agent.*;
 import jakarta.servlet.http.HttpServletRequest;
@@ -21,11 +22,12 @@ public class AgentChannelController {
   private final OntologyAgentStore store;
   private final AgentRuntimeClient runtime;
   private final WorkbenchServiceAuthentication services;
-  public AgentChannelController(AgentCaller callers,AgentDirectory directory,OntologyAgentStore store,AgentRuntimeClient runtime,WorkbenchServiceAuthentication services,OntologyRetrievalService retrieval,RetrievalTasks retrievalTasks,ActionCreationService actions,OntologyGenerationService generation,OntologyAgentAccess access,io.ontomato.dataengine.service.LangService language) {
+  private final RuntimeCodeClient code;
+  public AgentChannelController(AgentCaller callers,AgentDirectory directory,OntologyAgentStore store,AgentRuntimeClient runtime,WorkbenchServiceAuthentication services,OntologyRetrievalService retrieval,RetrievalTasks retrievalTasks,ActionCreationService actions,OntologyGenerationService generation,OntologyAgentAccess access,io.ontomato.dataengine.service.LangService language,RuntimeCodeClient code) {
     this.language=language;
     this.access=access;
     this.retrieval=retrieval;this.retrievalTasks=retrievalTasks;this.actions=actions;this.generation=generation;
-    this.callers=callers; this.directory=directory; this.store=store; this.runtime=runtime; this.services=services;
+    this.callers=callers; this.directory=directory; this.store=store; this.runtime=runtime; this.services=services; this.code=code;
   }
   private JSONObject body(Map<String,Object> body) { return JSONObject.from(body); }
   private String domain(HttpServletRequest request) {
@@ -33,6 +35,11 @@ public class AgentChannelController {
     String domain=request.getHeader("X-Domain-Id");
     if (domain==null || domain.isBlank()) throw AgentHttpException.invalid("Domain is required");
     return domain;
+  }
+  @PostMapping("/assistant-skill")
+  public AgentRuntimeClient.SkillVersion publishAssistantSkill(HttpServletRequest request) throws Exception {
+    services.authenticate(request);
+    return code.registerAssistantSkill();
   }
   private JSONObject taskActor(String task,OntologyAgentAccess.Context context) throws Exception {
     var ref=runtime.json(context.owner().domainId(),task,"/v1/channel/tasks/"+AgentJson.id(task)+"/actor","GET",null,null).getJSONObject("actor");
