@@ -142,16 +142,6 @@ export function runValues(projection: DirectProjection, name: string, params: Me
   return { inputs, own };
 }
 
-/** The member inputs a datum's projection mapping reads. Kept for ObjectList until its rewrite reads member parameters. */
-export function inputsRead(data: DirectProjectionData): string[] {
-  const object = "object" in data.source && "input" in data.source.object ? [data.source.object.input] : [];
-  return [...object, ...Object.values(data.params).flatMap((param) => ("input" in param ? [param.input] : []))];
-}
-
-/** The values of the inputs a datum's mapping reads. Kept for ObjectList until its rewrite reads member parameters. */
-export const readKey = (data: DirectProjectionData, inputs: MemberInputs) =>
-  JSON.stringify(inputsRead(data).map((name) => inputs[name] ?? null));
-
 /**
  * Whether a datum waits for what its read cannot go without: the object it is read from, or a parameter its owner
  * requires (a type to list objects of, a node to expand). A waiting datum is read nowhere; a literal is always there.

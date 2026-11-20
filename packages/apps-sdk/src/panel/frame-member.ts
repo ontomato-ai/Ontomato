@@ -106,7 +106,7 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
         const page = params.page as { number: number; size: number } | null;
         value = await graphOf(type!).objects!({
           type: params.type as string,
-          ...(params.keyword ? { keyword: params.keyword as string } : {}),
+          ...(params.search ? { keyword: params.search as string } : {}),
           ...(page ? { page: page.number, pageSize: page.size } : {}),
         });
         break;
