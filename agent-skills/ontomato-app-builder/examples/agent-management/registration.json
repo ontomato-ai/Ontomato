@@ -213,7 +213,7 @@
           }
         },
         "content": {
-          "html": "<section flow=\"column\" gap=\"medium\" fill=\"height\">\n  <section flow=\"row\" gap=\"small\">\n    <panel-member ref=\"newRecord\"></panel-member>\n  </section>\n  <section flow=\"row\" gap=\"medium\" fill=\"height\">\n    <panel-member ref=\"list\"></panel-member>\n    <section flow=\"column\" gap=\"medium\">\n      <panel-member ref=\"detail\"></panel-member>\n      <panel-member ref=\"form\"></panel-member>\n    </section>\n  </section>\n</section>\n"
+          "html": "<section flow=\"column\" gap=\"medium\">\n  <panel-member ref=\"newRecord\"></panel-member>\n  <panel-member ref=\"list\"></panel-member>\n  <panel-member ref=\"detail\"></panel-member>\n  <panel-member ref=\"form\"></panel-member>\n</section>\n"
         }
       }
     }

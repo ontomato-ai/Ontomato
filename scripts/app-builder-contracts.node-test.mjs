@@ -268,9 +268,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.deepEqual(reviewManifest.members.action1.inputs, { review: { state: "selected" } });
     assert.deepEqual(reviewManifest.members.batch2.inputs, { review: { state: "checked" } });
     const reviewLayout = await readFile(join(review, "panel.html"), "utf8");
-    const columns = reviewLayout.indexOf('flow="row" gap="medium" fill="height"');
-    assert(columns > reviewLayout.indexOf('ref="batch2"'));
-    assert(reviewLayout.indexOf('ref="list"') > columns);
+    assert(reviewLayout.indexOf('ref="batch2"') < reviewLayout.indexOf('ref="list"'));
     const reviewMaterial = join(review, "registration.json");
     await run("panel", "check", review, "--material", reviewMaterial);
     const reviewPanel = join(review, "panel.json");
