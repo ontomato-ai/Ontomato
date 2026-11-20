@@ -198,9 +198,9 @@ const relationStatusesByNode = shallowRef<Map<string, readonly PlatformGraphRela
 const instancePositions = shallowRef<Map<string, GraphCanvasPoint>>(new Map());
 
 // Internal view state (deliberately excluded from panel state)
-const initialLayers = Array.isArray(props.layers) ? props.layers : [];
-const enabledLayers = shallowRef<Set<string>>(new Set(initialLayers));
-const layersInitialized = ref(initialLayers.length > 0);
+const hasExplicitLayers = Array.isArray(props.layers) && props.layers.length > 0;
+const enabledLayers = shallowRef<Set<string>>(new Set(hasExplicitLayers ? props.layers! : []));
+const seenLayers = new Set<string>(hasExplicitLayers ? props.layers! : []);
 const manualPositions = shallowRef<Map<string, GraphCanvasPoint>>(new Map());
 const currentViewport = shallowRef<GraphCanvasViewport | null>(null);
 const focusedNodeId = ref<string | null>(null);
@@ -214,8 +214,9 @@ const declaredNodeIdentity = computed(() => {
   const candidate =
     member.projection.outputs.selectedNode
     ?? member.projection.outputs.selected
+    ?? member.projection.inputs.start
     ?? member.projection.inputs.selected
-    ?? member.projection.inputs.start;
+    ?? member.projection.inputs.node;
   return candidate && (candidate.kind === "object" || candidate.kind === "object-union") ? candidate : undefined;
 });
 
@@ -262,15 +263,30 @@ const availableLayers = computed<readonly string[]>(() => {
   return [...discovered];
 });
 
+const hasDeclaredLayerSet = computed(() =>
+  Boolean(
+    hasExplicitLayers
+    || (activeMode.value === "type" && typeSchema.value?.layers?.length)
+    || (declaredNodeIdentity.value && "layers" in declaredNodeIdentity.value),
+  ),
+);
+
 watch(
   availableLayers,
   (layers) => {
-    if (!layersInitialized.value && layers.length > 0) {
-      enabledLayers.value = new Set(layers);
-      layersInitialized.value = true;
+    if (hasExplicitLayers) return;
+    let changed = false;
+    const next = new Set(enabledLayers.value);
+    for (const layer of layers) {
+      if (!seenLayers.has(layer)) {
+        seenLayers.add(layer);
+        next.add(layer);
+        changed = true;
+      }
     }
+    if (changed) enabledLayers.value = next;
   },
-  { immediate: true },
+  { immediate: true, flush: "sync" },
 );
 
 function toggleLayer(layer: string) {
@@ -556,10 +572,6 @@ async function loadTypeMode(generation: number) {
     typeSchema.value = schema;
     typeCounts.value = counts;
     manualPositions.value = new Map();
-    if (!layersInitialized.value && schema.layers?.length) {
-      enabledLayers.value = new Set(schema.layers);
-      layersInitialized.value = true;
-    }
     await nextTick();
     void canvas.value?.fit({ maxZoom: 1.15, padding: 36 });
   } catch (reason: unknown) {
@@ -580,8 +592,12 @@ async function expandInstanceNode(refValue: PanelObjectValue, generation: number
   forbidden.value = false;
   errorMessage.value = null;
 
-  const activeLayers = availableLayers.value.length > 0 ? [...enabledLayers.value] : undefined;
-  const allLayersActive = activeLayers !== undefined && activeLayers.length === availableLayers.value.length;
+  const allLayersActive = availableLayers.value.length > 0
+    && availableLayers.value.every((layer) => enabledLayers.value.has(layer));
+  const activeLayers =
+    availableLayers.value.length > 0 && (hasDeclaredLayerSet.value || !allLayersActive)
+      ? [...enabledLayers.value]
+      : undefined;
 
   try {
     const result = await graphSource.neighbors({

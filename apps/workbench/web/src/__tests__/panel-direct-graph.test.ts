@@ -1048,3 +1048,80 @@ it("draws direct OntologyGraph and ObjectRelations in a frame via frameMemberDat
   await vi.waitFor(() => expect(instance.state.values.value.selected).toEqual({ className: USER, primaryKey: "u-1" }));
   expect(instance.state.values.value.lastSource).toBe("relations");
 });
+
+it("keeps newly discovered layers visible when OntologyGraph expands without declared layers", async () => {
+  const ROLE = "platform:Role";
+  const explicitTypes = { kind: "object-union" as const, objectTypes: [USER, ROLE, ACTION] as [string, ...string[]] };
+  const graphProjection: ProductProjection = {
+    ...meta,
+    id: "dynamic-layers-graph",
+    name: "Dynamic layers graph",
+    componentId: "@ontomato/sdk:OntologyGraph",
+    inputs: {
+      start: explicitTypes,
+      selected: explicitTypes,
+      node: explicitTypes,
+      layers: { kind: "json" },
+    },
+    outputs: { selectedNode: explicitTypes },
+    config: {},
+    data: {
+      start: { source: typeSource(ONTOLOGY_TYPE), read: "start", params: {} },
+      neighbors: { source: typeSource(ONTOLOGY_TYPE), read: "neighbors", params: { node: { input: "node" }, layers: { input: "layers" } } },
+    },
+  };
+  const manifest: PanelManifest = {
+    state: {
+      selected: { type: explicitTypes, personal: false, deepLink: false, external: false },
+    },
+    members: {
+      graph: {
+        target: { projectionId: "dynamic-layers-graph" },
+        inputs: { selected: { state: "selected" } },
+        outputs: { selectedNode: { state: "selected" } },
+      },
+    },
+    events: {},
+  };
+
+  const alice = { className: USER, primaryKey: "u-alice", label: "Alice", layer: "governance" };
+  const admin = { className: ROLE, primaryKey: "r-admin", label: "Admin", layer: "governance" };
+  const approve = { className: ACTION, primaryKey: "act-approve", label: "Approve Order", layer: "capability" };
+  const neighborLayerFilters: Array<unknown> = [];
+
+  const { element } = mountDirect(manifest, { "dynamic-layers-graph": graphProjection }, (request) => {
+    if (request.dataName === "start") return ready({ node: alice });
+    if (request.dataName === "neighbors") {
+      neighborLayerFilters.push(request.inputs.layers);
+      const node = request.inputs.node as { className: string; primaryKey: string };
+      if (node.className === USER) {
+        return ready({
+          node: alice,
+          neighbors: [admin],
+          edges: [{ id: "e-1", relationKind: "user.holdsRole", from: { className: USER, primaryKey: "u-alice" }, to: { className: ROLE, primaryKey: "r-admin" }, direction: "outgoing", derived: false }],
+          relations: [{ relationKind: "user.holdsRole", status: "ok", edgeCount: 1 }],
+        });
+      }
+      return ready({
+        node: admin,
+        neighbors: [approve],
+        edges: [{ id: "e-2", relationKind: "role.canExecuteAction", from: { className: ROLE, primaryKey: "r-admin" }, to: { className: ACTION, primaryKey: "act-approve" }, direction: "outgoing", derived: false }],
+        relations: [{ relationKind: "role.canExecuteAction", status: "ok", edgeCount: 1 }],
+      });
+    }
+    throw new Error(`Unexpected read ${request.dataName}`);
+  });
+
+  // Initial load discovers only "governance" from Alice + Admin.
+  await vi.waitFor(() => expect(canvasRecorder.nodes).toHaveLength(2));
+
+  // Expanding Admin reaches Approve Order in "capability" without filtering out the new layer or sending layers=["governance"].
+  canvasRecorder.emitSelect?.([encodeGraphNodeId(admin)]);
+  await vi.waitFor(() => expect(canvasRecorder.nodes.map((n) => n.label).sort()).toEqual(["Admin", "Alice", "Approve Order"]));
+  expect(neighborLayerFilters).toEqual([undefined, undefined]);
+
+  // Manually toggling off "capability" still hides Approve Order.
+  element.querySelector<HTMLButtonElement>("[data-graph-layer='capability']")!.click();
+  await nextTick();
+  expect(canvasRecorder.nodes.map((n) => n.label).sort()).toEqual(["Admin", "Alice"]);
+});
