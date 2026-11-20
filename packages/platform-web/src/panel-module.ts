@@ -1,5 +1,6 @@
 import * as Vue from "vue";
 import { init, parse } from "es-module-lexer";
+import type { CompilerOptions } from "@vue/compiler-dom";
 
 /*
  * A panel written with code, run in the platform's own document (big main's ruling, 2026-11-20). Its author writes what
@@ -10,34 +11,11 @@ import { init, parse } from "es-module-lexer";
  * global that two instances could race for.
  */
 
-/** A panel's `panel.html`, split into what the platform does with each part. */
-export interface CodedPanelHtml {
-  /** The component's template: what the panel's `#app` element holds. */
-  template: string;
-  /** The `#app` element's own attributes, which the element the instance mounts into carries. */
-  rootAttributes: Record<string, string>;
-  /** The panel's CSS, scoped to the instance by its host. */
-  css: string;
-}
-
-/** Splits a panel's HTML in an inert document: nothing in it loads or runs while it is read. */
-export function splitCodedPanelHtml(html: string): CodedPanelHtml {
-  const document = globalThis.document.implementation.createHTMLDocument("");
-  document.body.innerHTML = html;
-  const root = document.getElementById("app");
-  if (!root) throw new Error("A panel's HTML designates the element its component mounts into as #app");
-  return {
-    template: root.innerHTML,
-    rootAttributes: Object.fromEntries([...root.attributes].filter(({ name }) => name !== "id").map(({ name, value }) => [name, value])),
-    css: [...document.querySelectorAll("style")].map(style => style.textContent ?? "").join("\n"),
-  };
-}
-
 /** The platform's Vue compiles a template the way Vue's full build does, once the first panel with one runs. */
 let compiler: Promise<void> | undefined;
 export function useTemplateCompiler(): Promise<void> {
   return compiler ??= import("@vue/compiler-dom").then(({ compile }) => {
-    Vue.registerRuntimeCompiler((template, options) => {
+    Vue.registerRuntimeCompiler((template: string | object, options?: CompilerOptions) => {
       const { code } = compile(template as string, { hoistStatic: true, ...options });
       return new Function("Vue", code)(Vue);
     });

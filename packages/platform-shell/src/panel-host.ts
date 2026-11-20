@@ -19,7 +19,7 @@ import {
 import type { PanelObjectIdentity, PanelOperation } from "@ontomato/contracts/panel-manifest";
 import type { PanelOperationAffected } from "@ontomato/contracts/panel-operations";
 import { parsePanelLayout, type PanelLayoutNode } from "@ontomato/contracts/panel-layout";
-import { adoptPanelStyle, cleanPanelHtml, PanelStyleOutsideError, scopedPanelStyle } from "./panel-content";
+import { adoptPanelStyle, cleanPanelHtml, PanelStyleOutsideError, scopedPanelStyle, splitCodedPanelHtml } from "./panel-content";
 import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
 import { panelNeedsFrame, type PanelDefinitionContent, type ProductPanel } from "@ontomato/contracts/product-panels";
 
@@ -73,6 +73,12 @@ export interface PanelHostPort<Source extends HostedPanelSource = HostedPanelSou
    * the platform as the reader, and draws each member the layout places. The host keeps the instance's lifecycle.
    */
   direct(source: Source, run: DirectPanelRun): DirectPanelMount;
+  /**
+   * Starts a panel written with code in the platform's own document: its module, run once for this instance, mounts its
+   * component into `target.element` from `target.template`, on the same instance a panel without code runs on. It
+   * settles once the module has mounted it, and fails with whatever stopped the module.
+   */
+  coded(source: Source, run: DirectPanelRun, target: CodedPanelTarget): Promise<DirectPanelMount>;
   snapshot(panelId: string): Promise<PanelDefinitionSnapshot>;
   /**
    * Whether the use relation this host opens is still the application's, bound to the same panel: what a kept page is
@@ -223,9 +229,15 @@ export interface PanelHostLabels {
 }
 
 /** A panel the platform draws: its parsed layout and its running instance. */
-export interface DirectInstance {
-  layout: PanelLayoutNode[];
-  mount: DirectPanelMount;
+export type DirectInstance =
+  | { layout: PanelLayoutNode[]; mount: DirectPanelMount }
+  /** A panel written with code: the element its own component is mounted in, which the host places in the page. */
+  | { element: HTMLElement; mount: DirectPanelMount };
+
+/** Where a panel written with code mounts: the element the host made for it, and the template its `#app` holds. */
+export interface CodedPanelTarget {
+  element: HTMLElement;
+  template: string;
 }
 
 /** Each instance's own name for its element, so its panel's CSS reaches it and no other. */
@@ -367,6 +379,12 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     error.value = "";
     const requested = requestedState(next.panel) as PanelHostState;
     const requestedAddress = panelAddress(pageAddress(), requested);
+    // A panel written with code runs in the platform's document too (user's ruling, 2026-11-20): the frame below is no
+    // longer a way a panel runs.
+    if (next.panel.content.module !== undefined) {
+      await adoptCoded(next, requested, requestedAddress);
+      return;
+    }
     if (runsDirect(next)) {
       adoptDirect(next, requested, requestedAddress);
       return;
@@ -409,9 +427,44 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
    * what a frame would report in its messages. A new revision with the same definition keeps the running instance.
    */
   function adoptDirect(next: HostedPanelSource, requested: PanelHostState, requestedAddress: string) {
+    if (!replaceDirect(next, requested, requestedAddress)) return;
+    const cleaned = cleanPanelHtml(next.panel.content.html);
+    const { nodes: layout, css } = parsePanelLayout(cleaned.html, next.panel.manifest);
+    notice.value = cleaned.removed ? options.labels.content.htmlRemoved : "";
+    adoptStyle(css);
+    const mount = port.direct(next, directRun(next, requested));
+    mount.activate(bridgeOpen);
+    direct.value = { layout, mount };
+  }
+
+  /**
+   * Starts a panel written with code in this document: its HTML split into the template its `#app` holds, the element it
+   * mounts into (carrying `#app`'s own attributes) and its CSS, scoped to this instance as a panel without code's is.
+   * A source adopted while the module ran replaces it: the mount that comes back late is let go.
+   */
+  async function adoptCoded(next: HostedPanelSource, requested: PanelHostState, requestedAddress: string) {
+    if (!replaceDirect(next, requested, requestedAddress)) return;
+    const { template, rootAttributes, css } = splitCodedPanelHtml(next.panel.content.html);
+    const element = globalThis.document.createElement("div");
+    for (const [name, value] of Object.entries(rootAttributes)) element.setAttribute(name, value);
+    adoptStyle(css);
+    const mount = await port.coded(next, directRun(next, requested), { element, template });
+    if (!active || source.value !== next) {
+      mount.dispose();
+      return;
+    }
+    mount.activate(bridgeOpen);
+    direct.value = { element, mount };
+  }
+
+  /**
+   * Takes a source to draw in this document: the same definition keeps the running instance, and anything else ends it
+   * and starts over from the address the source asks for. Whether there is a new instance to start.
+   */
+  function replaceDirect(next: HostedPanelSource, requested: PanelHostState, requestedAddress: string) {
     const shown = source.value;
     source.value = next;
-    if (direct.value && shown && JSON.stringify(definitionOf(shown)) === JSON.stringify(definitionOf(next))) return;
+    if (direct.value && shown && JSON.stringify(definitionOf(shown)) === JSON.stringify(definitionOf(next))) return false;
     endDirect();
     document.value = "";
     registration?.dispose();
@@ -421,18 +474,23 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     frameAddress = requestedAddress;
     frameReady = false;
     displayLoad.value = loading;
-    const cleaned = cleanPanelHtml(next.panel.content.html);
-    const { nodes: layout, css } = parsePanelLayout(cleaned.html, next.panel.manifest);
-    notice.value = cleaned.removed ? options.labels.content.htmlRemoved : "";
-    if (css) {
-      try {
-        dropStyle = adoptPanelStyle(scopedPanelStyle(css, instance));
-      } catch (failure) {
-        if (!(failure instanceof PanelStyleOutsideError)) throw failure;
-        notice.value = options.labels.content.styleOutside;
-      }
+    return true;
+  }
+
+  /** The panel's CSS, scoped to this instance; CSS that reaches outside it applies nowhere, and the author is told. */
+  function adoptStyle(css: string | undefined) {
+    if (!css) return;
+    try {
+      dropStyle = adoptPanelStyle(scopedPanelStyle(css, instance));
+    } catch (failure) {
+      if (!(failure instanceof PanelStyleOutsideError)) throw failure;
+      notice.value = options.labels.content.styleOutside;
     }
-    const mount = port.direct(next, {
+  }
+
+  /** What an instance in this document reports to its host, as a frame would in its messages. */
+  function directRun(next: HostedPanelSource, requested: PanelHostState): DirectPanelRun {
+    return {
       pageKey: port.pageKey,
       url: () => address.value,
       label: () => options.label(next),
@@ -443,9 +501,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       dirty: reportDirty,
       draftSettled: settleDraft,
       failed: reason => reportFrameFailure({ code: PANEL_LOAD_ERROR_CODES.scriptThrew, message: failureText(reason) }),
-    });
-    mount.activate(bridgeOpen);
-    direct.value = { layout, mount };
+    };
   }
 
   function endDirect() {

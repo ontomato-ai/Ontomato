@@ -59,3 +59,26 @@ export function adoptPanelStyle(sheet: CSSStyleSheet): () => void {
     document.adoptedStyleSheets = document.adoptedStyleSheets.filter(adopted => adopted !== sheet);
   };
 }
+
+/** A panel's `panel.html`, split into what the platform does with each part. */
+export interface CodedPanelHtml {
+  /** The component's template: what the panel's `#app` element holds. */
+  template: string;
+  /** The `#app` element's own attributes, which the element the instance mounts into carries. */
+  rootAttributes: Record<string, string>;
+  /** The panel's CSS, scoped to the instance by its host. */
+  css: string;
+}
+
+/** Splits a panel's HTML in an inert document: nothing in it loads or runs while it is read. */
+export function splitCodedPanelHtml(html: string): CodedPanelHtml {
+  const inert = document.implementation.createHTMLDocument("");
+  inert.body.innerHTML = html;
+  const root = inert.getElementById("app");
+  if (!root) throw new Error("A panel's HTML designates the element its component mounts into as #app");
+  return {
+    template: root.innerHTML,
+    rootAttributes: Object.fromEntries([...root.attributes].filter(({ name }) => name !== "id").map(({ name, value }) => [name, value])),
+    css: [...inert.querySelectorAll("style")].map(style => style.textContent ?? "").join("\n"),
+  };
+}

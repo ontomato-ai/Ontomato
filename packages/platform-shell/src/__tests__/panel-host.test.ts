@@ -102,6 +102,7 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
         frame: stand.frame,
         // These trial panels run in frames: they have modules of their own.
         direct: () => { throw new Error("A panel with a module is not drawn directly"); },
+        coded: () => Promise.reject(new Error("This stand runs panels in frames")),
         snapshot: stand.snapshot,
         mode: stand.mode,
       };

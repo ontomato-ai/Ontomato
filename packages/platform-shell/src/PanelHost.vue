@@ -61,6 +61,12 @@ const view = usePanelInstance(props.port, {
   withdrawn: () => emit("withdrawn"),
 });
 const frame = ref<HTMLIFrameElement | null>(null);
+/** Where a panel written with code goes in the page: the element its own component is mounted in, placed once. */
+function placeCoded(place: unknown) {
+  const shown = view.direct.value;
+  if (place instanceof HTMLElement && shown && "element" in shown && shown.element.parentElement !== place)
+    place.replaceChildren(shown.element);
+}
 watch(
   () => frame.value,
   (element) => view.frame(element?.contentWindow ?? null),
@@ -102,10 +108,12 @@ defineExpose({ ...view, operations });
     >
       <p v-if="view.notice.value" role="status" class="panel-host-notice">{{ view.notice.value }}</p>
       <PanelLayout
+        v-if="'layout' in view.direct.value"
         :nodes="view.direct.value.layout"
         :values="view.direct.value.mount.values.value"
         :member="view.direct.value.mount.member"
       />
+      <div v-else :ref="placeCoded" class="panel-host-coded" />
     </div>
     <iframe
       v-else-if="view.document.value && view.admitted.value"
