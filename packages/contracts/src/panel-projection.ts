@@ -56,12 +56,7 @@ export const directProjectionInputTypeSchema = z.union([
 ]);
 
 export const directProjectionPortsSchema = z.object({
-  componentId: z.enum([
-    "@ontomato/sdk:ObjectList", "@ontomato/sdk:ObjectSummary", "@ontomato/sdk:ObjectForm", "@ontomato/sdk:OperationButton",
-    "@ontomato/sdk:ReferencePicker", "@ontomato/sdk:ObjectGraph", "@ontomato/sdk:OntologyGraph", "@ontomato/sdk:ObjectRelations",
-    "@ontomato/sdk:MetricChart", "@ontomato/sdk:ConversationEntry", "@ontomato/sdk:AppMenu",
-    "@ontomato/sdk:SegmentedControl",
-  ]),
+  componentId: z.string().regex(/^(?:@[^@\s/:]+\/)?[^@\s/:]+:[^@\s/:]+$/u, "Expected a package-qualified component name"),
   inputs: z.record(readKey, directProjectionInputTypeSchema),
   outputs: z.record(readKey, directPanelPortTypeSchema),
   data: z.record(readKey, directProjectionDataSchema),
@@ -69,6 +64,9 @@ export const directProjectionPortsSchema = z.object({
   conversationEntry: panelConversationEntrySchema.optional(),
 }).strict();
 export type DirectProjectionPorts = z.infer<typeof directProjectionPortsSchema>;
+
+/** Only a source-card registration adds a metric identity to the projection record. */
+type ProjectionReadFacts = DirectProjectionPorts & { metricId?: string };
 
 const positiveInteger = z.number().int().positive();
 export const panelReadParameterSchemas = {
@@ -119,7 +117,7 @@ function readInputMatches(parameter: PanelReadParameterId, input: ReadInput | un
 
 type DirectObjectSource = Extract<DirectProjectionData["source"], { object: unknown }>["object"];
 
-function directObjectSourceType(projection: Pick<DirectProjectionPorts, "inputs">, object: DirectObjectSource): string | undefined {
+export function directObjectSourceType(projection: Pick<DirectProjectionPorts, "inputs">, object: DirectObjectSource): string | undefined {
   if ("literal" in object) return object.literal.className;
   const input = projection.inputs[object.input];
   return input?.kind === "object" ? input.objectType : undefined;
@@ -133,11 +131,15 @@ function projectionReadReference(projection: DirectProjectionPorts, source: Dire
 }
 
 /** The domain owner validates these identities at registration and resolves them again at use. */
-export function projectionReadReferences(projection: DirectProjectionPorts): readonly OntologyElementRef[] {
+export function projectionReadReferences(projection: ProjectionReadFacts): readonly OntologyElementRef[] {
   const references = new Map<string, OntologyElementRef>();
   for (const { source } of Object.values(projection.data)) {
     const ref = projectionReadReference(projection, source);
     if (ref) references.set(bindingKey(ref), ref);
+  }
+  if (projection.metricId !== undefined) {
+    const metric = { kind: "MetricView", id: projection.metricId } as const;
+    references.set(bindingKey(metric), metric);
   }
   return [...references.values()];
 }
@@ -391,7 +393,7 @@ interface ComponentOperationMetadata {
   readonly operations?: readonly ComponentOperation[];
 }
 /** Frame admission and skill documentation use the same declared resource identities. */
-export function projectionBindingKeys(projection: DirectProjectionPorts): readonly string[] {
+export function projectionBindingKeys(projection: ProjectionReadFacts): readonly string[] {
   return projectionReadReferences(projection).map(bindingKey);
 }
 
@@ -428,7 +430,7 @@ export interface ProjectionPorts {
  * the operation, its label comes from the catalogue when a component declares it, and its handler is the reference the
  * binding is. Nothing here is written by a panel.
  */
-export function projectionPorts(projection: DirectProjectionPorts & { name: string }, meta: ComponentOperationMetadata): ProjectionPorts {
+export function projectionPorts(projection: ProjectionReadFacts & { name: string }, meta: ComponentOperationMetadata): ProjectionPorts {
   const references = projectionReadReferences(projection);
   const objectTypes = references.filter(ref => ref.kind === "PlatformObjectType").map(ref => ref.id);
   const boundOperations = new Map<string, string | null | undefined>();

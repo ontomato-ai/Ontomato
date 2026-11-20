@@ -117,6 +117,19 @@ test("the SDK catalogue separates supply, configuration and run inputs", async (
   assert.equal(appsSdkComponentCatalogSchema.safeParse({ ...catalogue, components: [displayOnly] }).success, true);
 });
 
+test("projection registration accepts package-qualified components and leaves data keys to the catalogue", () => {
+  const input = {
+    name: "Task list", description: "", visibility: "domain", revision: 0, inputs: {}, outputs: {}, config: {},
+    data: { items: { source: { type: platformType(SCHEDULED_TASK) }, read: "list", params: {} } },
+  };
+  for (const componentId of ["@school/panels:InventoryList", "local-kit:list-view"]) {
+    assert.deepEqual(registerProductProjectionRequestSchema.parse({ ...input, componentId }), { ...input, componentId });
+  }
+  for (const componentId of ["InventoryList", "@school:InventoryList", "local-kit:", "local-kit:list:view", "local-kit:two words"]) {
+    assert.equal(registerProductProjectionRequestSchema.safeParse({ ...input, componentId }).success, false);
+  }
+});
+
 test("ontology object lists and reference pickers declare the named reads they use", async () => {
   const { registerDirectProjectionRequestSchema } = await import("./product-panels");
   const { panelReadResultSchemas } = await import("./panel-operations");
@@ -1022,6 +1035,14 @@ test("the chart reads its registered source card with per-metric overrides", () 
     revision: 1, createdAt: "2026-11-19T00:00:00Z", updatedAt: "2026-11-19T00:00:00Z", editable: true,
   };
   assert.deepEqual(registerChartProjectionResponseSchema.parse({ projection }).projection.chartSource, chartSource);
+  const renamed = { ...projection, data: { drawing: projection.data.template, points: projection.data.result } };
+  assert.deepEqual(registerChartProjectionResponseSchema.parse({ projection: renamed }).projection.data, renamed.data);
+  const wrongCard = { object: { literal: {
+    className: DASHBOARD_CARD, primaryKey: dashboardCardPrimaryKey({ ...chartSource, cardId: "different-card" }),
+  } } };
+  assert.equal(registerChartProjectionResponseSchema.safeParse({ projection: {
+    ...projection, data: { ...projection.data, extra: { source: wrongCard, read: "chartTemplate", params: {} } },
+  } }).success, false);
   assert.equal(productProjectionInputSchema.safeParse({
     ...chartProjection, chartSource: { ...chartSource, cardId: "different-card" },
   }).success, false);
@@ -1069,16 +1090,25 @@ test("the chart client is restricted to its chart projection and bound metric", 
   assert.ok(!chartProjectionSourceSends(["other"], "GET", "", path));
   assert.ok(!chartProjectionSourceSends(["chart:id"], "DELETE", "", path));
 
+  const projection = productProjectionInputSchema.parse(chartProjection);
+  const bindings = projectionBindingKeys(projection);
   const metric = bindingKey({ kind: "MetricView", id: chartProjection.metricId });
+  assert.deepEqual(bindings, [binding(DASHBOARD_CARD), metric]);
   for (const [path, body] of [
     ["/ontology/query/metrics/describe", { id: "department-metric" }],
-    ["/metricView/execute", { id: "department-metric", param: { department: "sales" } }],
+    ["/ontology/query/metrics/execute", { id: "department-metric", revision: "r7", parameters: { department: "sales" } }],
   ] as const) {
     assert.ok(panelClientReads(metric).some(read => read.method === "POST" && read.path.test(path)));
-    assert.ok(clientSends([metric], "POST", "/data-query", path, body));
-    assert.ok(!clientSends([metric], "POST", "/data-query", path, { ...body, id: "other" }));
-    assert.ok(!clientSends([metric], "POST", "/data-query", path));
+    assert.ok(clientSends(bindings, "POST", "/data-query", path, body));
+    assert.ok(!clientSends(bindings, "POST", "/data-query", path, { ...body, id: "other" }));
+    assert.ok(!clientSends(bindings, "POST", "/data-query", path));
   }
+  assert.ok(!clientSends(bindings, "POST", "/data-query", "/ontology/query/metrics/execute", {
+    id: chartProjection.metricId, parameters: {},
+  }));
+  assert.ok(!clientSends(bindings, "POST", "/data-query", "/metricView/execute", {
+    id: chartProjection.metricId, param: { department: "sales" },
+  }));
   const rawDefinitionPath = "/metricView/queryById";
   assert.ok(!panelClientReads(metric).some(read => read.path.test(rawDefinitionPath)));
   assert.ok(!clientSends([metric], "POST", "/data-query", rawDefinitionPath, { id: "department-metric" }));
