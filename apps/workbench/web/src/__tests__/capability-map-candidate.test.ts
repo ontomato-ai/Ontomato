@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { defineComponent, h } from "vue";
 import { createMemoryHistory, createRouter, RouterView, type RouteRecordRaw } from "vue-router";
+import { appsSdkReleaseManifestSchema } from "@ontomato/contracts/apps-sdk";
 import type { CandidatePanelSource } from "@ontomato/contracts/panel-host";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import { ACTION, APPLICATION, OBJECT_TYPE, ROLE, USER, WORKFLOW } from "@ontomato/contracts/platform-object-types";
@@ -115,6 +116,24 @@ const projections: Record<string, ProductProjection> = Object.fromEntries(
 function owners(request: Sent): Response {
   if (request.path === `/api/workspaces/${WORKSPACE}/panel-candidate`) return Response.json(candidate());
   if (request.path === "/api/apps-sdk/current") return currentSdk();
+  const sdkManifest = /^\/apps-sdk\/([^/]+)\/sdk\.json$/.exec(request.path);
+  if (sdkManifest) {
+    return Response.json(
+      appsSdkReleaseManifestSchema.parse({
+        version: sdkManifest[1]!,
+        product: "workbench",
+        executionContext: 1,
+        hostTransport: 1,
+        messageBridge: 2,
+        entries: { vue: "vue.js", "@ontomato/sdk/panel": "panel.js" },
+        stylesheet: "styles/sdk.css",
+        components: "components.json",
+        check: "node/panel-check.mjs",
+        libraries: { vue: "3.5.0" },
+        docs: "docs/index.md",
+      }),
+    );
+  }
   if (request.path === "/api/product-panels/definition-stream") {
     return new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } });
   }

@@ -284,8 +284,16 @@ describe("createPlatformOntologyReadAdapter", () => {
   });
 
   it("matches all seven registered platformObjectTypes read declarations for graph and picker projections", () => {
-    expect(Object.keys(platformObjectTypes[OBJECT_TYPE]?.reads ?? {})).toEqual(["list"]);
-    expect(Object.keys(platformObjectTypes[RELATIONSHIP]?.reads ?? {})).toEqual(["list"]);
+    expect(platformObjectTypes[OBJECT_TYPE]?.reads?.list).toMatchObject({
+      source: "type",
+      parameterMode: "fixed",
+      result: "panelRecordList",
+    });
+    expect(platformObjectTypes[RELATIONSHIP]?.reads?.list).toMatchObject({
+      source: "type",
+      parameterMode: "fixed",
+      result: "panelRecordList",
+    });
     expect(Object.keys(platformObjectTypes[ONTOLOGY_TYPE]?.reads ?? {}).sort()).toEqual([
       "counts",
       "neighbors",
