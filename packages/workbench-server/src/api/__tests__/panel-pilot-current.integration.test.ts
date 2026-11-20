@@ -634,7 +634,7 @@ it("registers and reads an author-named datum through the SDK catalogue wildcard
     expect(savedProjection.status, await savedProjection.text()).toBe(200);
     const savedPanel = await request("PUT", "product-panels/" + dataPanelId, {
       name: "Warehouse data", description: "", visibility: "domain", revision: 0,
-      content: { html: '<section><panel-member ref="data"></panel-member></section>' },
+      content: vuePanelContent("data"),
       manifest: { state: {}, members: { data: { target: { projectionId: "data-port-pilot" } } }, events: {} },
     });
     expect(savedPanel.status, await savedPanel.text()).toBe(200);
