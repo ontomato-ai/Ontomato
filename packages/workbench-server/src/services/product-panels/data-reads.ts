@@ -1,3 +1,4 @@
+import { appsSdkComponentDatum } from "@ontomato/contracts/apps-sdk";
 import { z } from "zod";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
@@ -221,7 +222,7 @@ async function readParameters(
   const runtime = Object.entries(runtimeParams ?? {});
   if (runtime.length) {
     const { components } = await readPanelComponentCatalogue();
-    const names = components.get(projection.componentId)?.data?.[dataName]?.runtimeParams ?? [];
+    const names = appsSdkComponentDatum(components.get(projection.componentId)?.data, dataName)?.runtimeParams ?? [];
     for (const [name, value] of runtime) {
       const parameter = panelReadParameterId(declaration, name);
       if (!parameter || !names.includes(name))
