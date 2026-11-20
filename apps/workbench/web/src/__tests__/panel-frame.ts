@@ -15,7 +15,7 @@ import {
   type PlatformTask,
   type PlatformTaskRun,
 } from "@ontomato/contracts/platform-schedules";
-import type { ApplicationPanelUse, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
+import type { ApplicationPanelUse, DirectPanel, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
@@ -214,7 +214,7 @@ export const memberKeyOf = (panelId: string) => `pvt-${[...panelId].map(char => 
  * The page skill context Node answers for a panel read or a snapshot read made for one page: which member a message
  * beside that page reaches. A read that names no page gets none.
  */
-export function pageSkillContextFor(panel: ProductPanel, request: Sent) {
+export function pageSkillContextFor(panel: Pick<ProductPanel, "id">, request: Sent) {
   const query = new URLSearchParams(request.search);
   const applicationId = query.get("applicationId");
   if (!applicationId) return undefined;
@@ -228,7 +228,7 @@ export function pageSkillContextFor(panel: ProductPanel, request: Sent) {
 }
 
 /** Node's answer for a panel read: the panel, and the page skill context when the read names the page it is shown for. */
-export function panelAnswer(panel: ProductPanel, request: Sent) {
+export function panelAnswer(panel: ProductPanel | DirectPanel, request: Sent) {
   const pageSkillContext = pageSkillContextFor(panel, request);
   return Response.json({ panel, ...(pageSkillContext ? { pageSkillContext } : {}) });
 }
@@ -400,8 +400,10 @@ export function leaveFrame() {
 }
 
 /** Node's snapshot of a panel's revisions, with the page skill context when the read names the page it is shown for. */
-export function panelSnapshot(panel: ProductPanel, current = projections, request?: Sent) {
-  const ids = new Set(Object.values(panel.manifest.slots).map(slot => slot.projectionId));
+export function panelSnapshot(panel: ProductPanel | DirectPanel, current: Record<string, { revision: number }> = projections, request?: Sent) {
+  const ids = new Set("slots" in panel.manifest
+    ? Object.values(panel.manifest.slots).map(slot => slot.projectionId)
+    : Object.values(panel.manifest.members).map(member => member.target.projectionId));
   const pageSkillContext = request && pageSkillContextFor(panel, request);
   return Response.json({
     panel: { id: panel.id, revision: panel.revision },
