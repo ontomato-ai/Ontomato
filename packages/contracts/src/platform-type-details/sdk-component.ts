@@ -20,9 +20,9 @@ export const sdkComponentTypeDetail = {
     { name: "data", type: "AppsSdkComponentData", optional: true, description: "The data it reads, by the name a projection gives each: the read results each may hold, whether it is required and the run-time values the component gives itself; \"*\" takes any name." },
     { name: "config", type: "ComponentProp[]", optional: true, description: "The configuration a projection sets on it: each property's name, type, description, whether it is required and its default." },
     { name: "inputs", type: "Record<string, DirectProjectionInputType>", optional: true, description: "The typed values a placement supplies it, by name." },
-    { name: "outputs", type: "string[]", optional: true, description: "The values it hands its panel, by name, which a placement can bind to the panel's state." },
+    { name: "outputs", type: "Record<string, DirectPanelPortType>", optional: true, description: "The values a placement can bind to the panel's state, by name and type; an object of the projection's own type is @binding, which registration resolves. Signals without state are its events." },
     { name: "ports", type: "ComponentPorts", description: "Its props, events and slots, as the release's type information gives them." },
   ],
   rules:
-    "A component exists only by shipping in an SDK release, whose catalogue lists it; nobody registers or changes one at run time. Anyone who may author a projection may name any component of the deployment's current SDK, and what it reads or runs through it is judged by the owners of that data and those operations, not by the component.",
+    "A component exists only by shipping in an SDK release, whose catalogue lists it; nobody registers or changes one at run time. Anyone who may author a projection may use the components of the deployment's current SDK that declare projection data, and what is read or run through them is judged by the owners of that data and those operations, not by the component.",
 } as const satisfies PlatformTypeDetailDeclaration;
