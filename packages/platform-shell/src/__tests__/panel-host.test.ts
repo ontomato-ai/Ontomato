@@ -29,7 +29,7 @@ const SCHEDULED_TASK = "platform:ScheduledTask";
 const labels: PanelHostLabels = {
   notStarted: "Not started",
   failures: { fileUnavailable: "Could not load {file}", scriptThrew: "Script failed", scriptRejected: "Script rejected" },
-    content: { htmlRemoved: "HTML removed", styleOutside: "Style outside" },
+    content: { styleOutside: "Style outside" },
 };
 
 /** Panel P: a task list, the task's form and a button that runs it. Its list and summary are the shared projection X. */
@@ -105,8 +105,7 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
         panel: stand.panel,
         release: () => stand.release(),
         frame: stand.frame,
-        // These trial panels have modules of their own: they run in the platform's document, started here.
-        direct: () => { throw new Error("A panel with a module draws itself"); },
+        // The panel runs in the platform's document, started here.
         coded: async (_source, run) => {
           if (stand.codedFailure) throw stand.codedFailure;
           const started = { run, projectionsChanged: [] as { id: string; revision: number }[][], addresses: [] as string[], invoked: [] as string[] };
@@ -114,7 +113,7 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
           // The instance runs: it reports its state at the address it was given.
           run.state(run.initial, run.url());
           return {
-            member: () => null, values: shallowRef({}), refresh() {}, activate() {}, dispose() {},
+            refresh() {}, activate() {}, dispose() {},
             address: url => { started.addresses.push(url); },
             invoke: id => { started.invoked.push(id); return Promise.resolve(`answer of ${id}`); },
             projectionsChanged: projections => { started.projectionsChanged.push([...projections]); },
