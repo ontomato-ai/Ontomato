@@ -59,11 +59,14 @@ const projection = {
 };
 const panel = {
   name: "Schedules", description: "", visibility: "domain",
-  content: { html: '<section flow="column"><panel-member ref="summary"></panel-member><panel-member ref="tasks"></panel-member><panel-member ref="form"></panel-member><panel-member ref="run"></panel-member></section>' },
+  content: { html: '<section style="display:flex;flex-direction:column">'
+    + '<panel-member ref="summary" style="width:100%"></panel-member>'
+    + '<panel-member ref="tasks"></panel-member><panel-member ref="form"></panel-member>'
+    + '<panel-member ref="run"></panel-member></section>' },
   manifest: {
     state: { selectedTask: { type: taskType, deepLink: true, external: true, personal: false, default: null } },
     members: {
-      summary: { target: { projectionId }, inputs: { task: { state: "selectedTask" } }, params: { width: "full" } },
+      summary: { target: { projectionId }, inputs: { task: { state: "selectedTask" } } },
       tasks: { target: { projectionId: "projection-pilot-list" } },
       form: { target: { projectionId: "projection-pilot-form" }, inputs: { task: { state: "selectedTask" } } },
       run: { target: { projectionId: "projection-pilot-run" }, inputs: { task: { state: "selectedTask" } } },
@@ -242,10 +245,10 @@ it("reads back stable member keys and named data, and leaves the record intact a
   expect((await request("PUT", panelPath, { ...panel, revision: original.revision })).status).toBe(200);
   expect((await request("PUT", panelPath, { ...panel, revision: original.revision })).status).toBe(409);
   const current = (await (await request("GET", panelPath)).json()).panel;
-  const malformed = { ...panel, content: { html: '<section invented="true"></section>' }, revision: current.revision };
+  const malformed = { ...panel, content: { html: '<section flow="column"></section>' }, revision: current.revision };
   const rejected = await request("PUT", panelPath, malformed);
   expect(rejected.status).toBe(400);
-  expect(await rejected.json()).toMatchObject({ error: { message: expect.stringMatching(/^Panel 'panel-schedules-pilot', field 'content.html' – 1:\d+ .*invented/u) } });
+  expect(await rejected.json()).toMatchObject({ error: { message: expect.stringMatching(/^Panel 'panel-schedules-pilot', field 'content.html' – 1:\d+ .*flow/u) } });
   expect((await (await request("GET", panelPath)).json()).panel).toEqual(current);
 
   const source = { kind: "registered", applicationId: "app-schedules", useId: "pilot" };

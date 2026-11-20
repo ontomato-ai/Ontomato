@@ -186,6 +186,14 @@ export async function readProductPanelData(
       const value = panelReadResultSchemas.metricOutput.parse(result);
       return value.rows.length || value.truncation ? { status: "ready", value } : { status: "empty" };
     }
+    if (declaration.result === "panelOperationDescriptor" && "operation" in data.source
+      && data.source.operation.kind === "PlatformOperation") {
+      const described = panelReadResultSchemas.panelOperationDescriptor.parse(result);
+      const { describeServerOperation, panelServerOperation } = await import("./server-operations");
+      const handler = panelServerOperation(data.source.operation.id);
+      const slot = described.target.source === "draft" ? described.target.slot : undefined;
+      return { status: "ready", value: describeServerOperation(handler, described.label, slot) };
+    }
     return { status: "ready", value: panelReadResultSchemas[declaration.result].parse(result) };
   } catch (error) {
     if (error instanceof HttpError && (error.status === 401 || error.status === 403)) return { status: "forbidden" };

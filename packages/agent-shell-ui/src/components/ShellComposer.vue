@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, useSlots, watch } from "vue";
 import { ArrowUp, MessageSquare, Minus, Send, Square } from "lucide-vue-next";
-import { ElTooltip } from "element-plus";
-import { actionTooltipProps } from "@ontomato/foundation-ui/overlay";
+import { ActionTooltip } from "@ontomato/foundation-ui/overlay";
 import type { ShellLabels } from "../types";
 import { useComposerCollapsed } from "../composer-collapsed";
 
@@ -144,7 +143,7 @@ defineExpose({ focus: () => input.value?.focus() });
         </template>
         <div v-if="$slots.context" class="composer-context"><slot name="context" /></div>
         <div class="composer-actions">
-          <ElTooltip v-if="busy" v-bind="actionTooltipProps" :content="tooltipText(labels.stop)">
+          <ActionTooltip v-if="busy" :content="tooltipText(labels.stop)">
           <button
             type="button"
             class="composer-button stop"
@@ -153,8 +152,8 @@ defineExpose({ focus: () => input.value?.focus() });
           >
             <Square :size="12" fill="currentColor" />
           </button>
-          </ElTooltip>
-          <ElTooltip v-if="!busy || hasText" v-bind="actionTooltipProps" :content="tooltipText(labels.send)">
+          </ActionTooltip>
+          <ActionTooltip v-if="!busy || hasText" :content="tooltipText(labels.send)">
           <button
             type="submit"
             class="composer-button"
@@ -164,7 +163,7 @@ defineExpose({ focus: () => input.value?.focus() });
             <Send v-if="sendIcon === 'plane'" :size="13" aria-hidden="true" />
             <ArrowUp v-else :size="16" aria-hidden="true" />
           </button>
-          </ElTooltip>
+          </ActionTooltip>
         </div>
       </div>
     </div>
