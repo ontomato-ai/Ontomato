@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, provide, ref, useSlots, watch } from "vue";
 import { Columns2, Maximize, Menu, X } from "lucide-vue-next";
-import { ElTooltip } from "element-plus";
-import { actionTooltipProps } from "@ontomato/foundation-ui/overlay";
+import { ActionTooltip } from "@ontomato/foundation-ui/overlay";
 import { pageDockSpaceKey, shellContextKey, useDisplayPlacement } from "../context";
 import type { ShellFeatureDeclaration } from "../types";
 import { usePanelWidth } from "../usePanelWidth";
@@ -75,12 +74,12 @@ const paneStyle = computed(() => ({
         <Menu :size="18" />
       </button>
       <slot name="header"><h1 class="pane-title">{{ feature?.label }}</h1></slot>
-      <ElTooltip v-bind="actionTooltipProps" :content="layoutLabel">
+      <ActionTooltip :content="layoutLabel">
         <button type="button" class="pane-button pane-layout" :aria-label="layoutLabel" @click="toggleLayout">
           <Columns2 v-if="view === 'full'" :size="16" aria-hidden="true" />
           <Maximize v-else :size="16" aria-hidden="true" />
         </button>
-      </ElTooltip>
+      </ActionTooltip>
       <button type="button" class="pane-button" :title="labels.close" :aria-label="labels.close" @click="emit('close')">
         <X :size="17" />
       </button>
