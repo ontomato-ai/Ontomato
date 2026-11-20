@@ -18,6 +18,7 @@ import { m7ServerOperations } from "../business-knowledge/panel-operations";
 import { m5ServerOperations } from "../metric-function/panel-operations";
 import { ontologyModelServerOperations } from "../ontology-model/model-operations";
 import { scheduledTaskServerOperations } from "../scheduling/panel-operations";
+import { productCatalogServerOperations } from "./catalog-operations";
 import { HttpError } from "../../utils/errors";
 
 export type PanelOperationTarget = PanelFormTarget;
@@ -100,6 +101,7 @@ const registrations: readonly PanelServerOperation[] = [
   ...m6ServerOperations,
   ...m7ServerOperations,
   ...ontologyModelServerOperations,
+  ...productCatalogServerOperations,
 ];
 const operations = new Map(registrations.map(operation => [operation.handlerRef, operation]));
 const jsonSchema = (schema: z.ZodTypeAny) => zodToJsonSchema(schema, { effectStrategy: "input" });
