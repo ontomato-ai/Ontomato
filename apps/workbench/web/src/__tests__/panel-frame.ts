@@ -8,7 +8,7 @@ import { definePanel, type PanelManifest, type PanelOperationCall } from "@ontom
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
 import type { PanelFormSaveInput } from "@ontomato/contracts/panel-projection";
 import type { PanelHostMessage } from "@ontomato/contracts/panel-host";
-import { appsSdkCurrentSchema } from "@ontomato/contracts/apps-sdk";
+import { appsSdkCurrentSchema, type AppsSdkReleaseManifest } from "@ontomato/contracts/apps-sdk";
 import type { PanelMemberSnapshot } from "@ontomato/contracts/product-subscriptions";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import {
@@ -185,12 +185,38 @@ export const manifestQ = definePanel({
 /** The old workspace sample version used by tests that still exercise that input. */
 export const SDK_VERSION = `1.1.1-dev.${"0123456789abcdef".repeat(4)}`;
 
+const sdkBasePath = "/apps-sdk/current";
+export const SDK_MANIFEST_PATH = `${sdkBasePath}/sdk.json`;
+
+/** The current release's static manifest, with files relative to the release directory. */
+const sdkManifest: AppsSdkReleaseManifest = {
+  version: "1.2.0",
+  product: "workbench",
+  executionContext: 1,
+  hostTransport: 1,
+  messageBridge: 2,
+  entries: {
+    vue: "vue.js",
+    "element-plus": "element-plus.js",
+    "@ontomato/sdk": "sdk.js",
+    "@ontomato/sdk/panel": "panel.js",
+    "@ontomato/sdk/base": "base.js",
+  },
+  stylesheet: "styles/sdk.css",
+  components: "components.json",
+  check: "node/panel-check.mjs",
+  libraries: { vue: "3.5.0" },
+  docs: "docs/index.md",
+};
+
 /** What Node answers for the SDK currently served to panels. */
 export const currentSdk = () => Response.json(appsSdkCurrentSchema.parse({
-  version: "1.2.0", digest: "a".repeat(64), publicBasePath: "", sdkBasePath: "/apps-sdk/1.2.0",
-  manifestPath: "/apps-sdk/1.2.0/sdk.json", componentsPath: "/apps-sdk/1.2.0/components.json",
-  checkPath: "/apps-sdk/1.2.0/node/panel-check.mjs",
-  docsPath: "/apps-sdk/1.2.0/docs/index.md", referencePath: "/apps-sdk/1.2.0/docs/reference.md",
+  version: sdkManifest.version, digest: "a".repeat(64), publicBasePath: "", sdkBasePath,
+  manifestPath: SDK_MANIFEST_PATH,
+  componentsPath: `${sdkBasePath}/${sdkManifest.components}`,
+  checkPath: `${sdkBasePath}/${sdkManifest.check}`,
+  docsPath: `${sdkBasePath}/${sdkManifest.docs}`,
+  referencePath: `${sdkBasePath}/docs/reference.md`,
 }));
 
 /** A panel's current record; its HTML has the element the SDK mounts into, and the test supplies the component. */
@@ -297,6 +323,7 @@ export function installPlatform(answer: (request: Sent) => Response | Promise<Re
       body: typeof init?.body === "string" ? JSON.parse(init.body) : (init?.body instanceof FormData ? init.body : null),
     };
     sent.push(request);
+    if (request.path === SDK_MANIFEST_PATH) return Response.json(sdkManifest);
     return answer(request);
   });
   return sent;
