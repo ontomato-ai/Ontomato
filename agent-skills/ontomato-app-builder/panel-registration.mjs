@@ -55,8 +55,8 @@ export function panelRegistrationRecords({ projections = [], panels = [], applic
       const { icon } = mode === "update"
         ? checks.applicationIdentityUpdateSchema.partial().parse(input.declaration)
         : input.declaration;
-      if (icon !== undefined && !checks.applicationIconNames.includes(icon)) {
-        throw new Error(`declaration.icon '${icon}' is not available. Choose one of ${checks.applicationIconNames.join(", ")}`);
+      if (icon !== undefined && !checks.applicationIconKeys.includes(icon)) {
+        throw new Error(`declaration.icon '${icon}' is not available. Choose one of ${checks.applicationIconKeys.join(", ")}`);
       }
     } catch (error) {
       throw new Error(`application ${id}: ${error.message}`, { cause: error });

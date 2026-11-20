@@ -70,7 +70,7 @@ async function workspaceDefinition(directory, files, checks, panel, loadAuthorin
   });
   if (result.success) {
     try {
-      await checks.checkPanelModuleImports(result.data.content.module);
+      await checks.panelModuleImports(result.data.content.module);
     } catch (error) {
       throw new Error(`${resolve(directory, "panel.mjs")}: ${error.message}`, { cause: error });
     }

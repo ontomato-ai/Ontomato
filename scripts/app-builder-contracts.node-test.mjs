@@ -187,10 +187,10 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     export const platformTypeTableResponseSchema = { parse };
     export const panelAuthoringManifestSchema = { parse };
     export const appsSdkComponentCatalogSchema = { parse };
-    export const applicationIconNames = ["settings", "ontology"];
+    export const applicationIconKeys = ["settings", "ontology"];
     export const applicationCatalogueRecordSchema = { parse };
     export const applicationIdentityUpdateSchema = { parse, partial: () => ({ parse }) };
-    export async function checkPanelModuleImports(source) {
+    export async function panelModuleImports(source) {
       if (source.includes("element-plus")) throw new Error("A panel's module imports element-plus, which the platform does not give it");
     }
     export const CHART_PROJECTION_SOURCES_PATH = "/product-projections/chart-sources";
