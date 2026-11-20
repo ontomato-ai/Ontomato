@@ -2,6 +2,7 @@ import { inject, type ComputedRef, type InjectionKey } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { MemberData, MemberDataState, MemberInputs } from "./direct";
+import { usePanelContext } from "./context";
 
 /*
  * The member a component is drawn as in a directly rendered panel (design 4.2): its projection with the named data it
@@ -34,20 +35,22 @@ export function useMemberData(name: string): ComputedRef<MemberDataState> {
 }
 
 /**
- * The run inputs that give a datum's read parameters these values, each to the input the projection takes it from. A
- * parameter the projection does not take from an input (an owner that neither searches nor pages) is not sent.
+ * One parameter of this member, as its component reads and sets it (a list's search, page, filter, checked or selected
+ * objects): the panel state the member binds it to — by its input of that name, else its output — or, unbound, the
+ * member's own value, which lives in this member alone and reaches the owner as a run-time parameter. Every datum whose
+ * read takes the parameter is read again when it changes.
  */
-export function readRun(projection: DirectProjection, name: string, params: Readonly<Record<string, RuntimeJsonValue>>): MemberInputs {
-  const data = projection.data[name];
-  if (!data) throw new Error(`Projection ${projection.id} declares no datum '${name}'`);
-  return Object.fromEntries(Object.entries(params).flatMap(([param, value]) => {
-    const source = data.params[param];
-    return source && "input" in source ? [[source.input, value]] : [];
-  }));
+export interface MemberParam {
+  readonly value: ComputedRef<RuntimeJsonValue | null>;
+  set(value: RuntimeJsonValue | null): void;
+}
+
+export function useMemberParam(name: string): MemberParam {
+  return usePanelContext().instance.memberParam(member().key, name);
 }
 
 /** One more read of a named datum with values of the component's own for its read parameters, such as a form's values. */
 export function useMemberRead(name: string): (params: Readonly<Record<string, RuntimeJsonValue>>) => Promise<MemberDataState> {
-  const { projection, data } = member();
-  return (params) => data.read(name, readRun(projection, name, params));
+  const { data } = member();
+  return (params) => data.read(name, params);
 }
