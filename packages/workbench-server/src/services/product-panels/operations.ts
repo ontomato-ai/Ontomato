@@ -42,8 +42,8 @@ type SingleIntent = Extract<PanelAgentOperationIntent, { call: PanelOperationCal
 type AgentRecord = Exclude<StoredPanelOperationIntent, { kind: "current" }> | { kind: "current"; intent: PanelAgentOperationIntent };
 type ReadableAgentIntent = Extract<AgentRecord, { intent: unknown }>["intent"];
 
-async function admitted(owner: AssistantOwner, credentials: AssistantCredentials, run: PanelRun,
-  ref: PanelUseRef, operationId: string, target: PanelOperationCall["target"] | undefined) {
+export async function requirePanelSkillForRun(owner: AssistantOwner, credentials: AssistantCredentials, run: PanelRun,
+  ref: PanelUseRef) {
   const use = await requirePanelUse(credentials, ref);
   const view = await readAssistantSkillView(owner.domainId, credentials);
   const entrance: PageSkillEntrance = "permissionCode" in use.access
@@ -54,6 +54,12 @@ async function admitted(owner: AssistantOwner, credentials: AssistantCredentials
   }, [], { id: use.panelId });
   if (!skill || !loadedPageSkillVersion(skill, run.resolvedSkills))
     throw new HttpError(403,"This run does not have this panel's skill","FORBIDDEN");
+  return { use, view };
+}
+
+async function admitted(owner: AssistantOwner, credentials: AssistantCredentials, run: PanelRun,
+  ref: PanelUseRef, operationId: string, target: PanelOperationCall["target"] | undefined) {
+  const { use, view } = await requirePanelSkillForRun(owner, credentials, run, ref);
   return { ...writeOperation(await declaredOperation(owner, credentials, use, operationId, target)), view };
 }
 

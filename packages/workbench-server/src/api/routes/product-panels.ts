@@ -88,6 +88,7 @@ productPanelsRouter.post("/read", wrap(async (req, res) => {
   res.json(await readProductPanelData(owner, viewer, request, (req as AuthenticatedRequest).userName));
 }));
 productPanelsRouter.get("/:id/snapshot", wrap(async (req, res) => {
+  res.set("Cache-Control", "no-store");
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
   const query = productPanelReadQuerySchema.parse(req.query);
   const readContext = "applicationId" in query ? (panel: { id: string }) => pageSkillContextFor(query, c, panel) : undefined;
@@ -107,6 +108,7 @@ productPanelsRouter.post("/definition-stream", wrap(async (req, res) => {
   if(!res.destroyed)send({kind:'snapshot',definitions});
 }));
 productPanelsRouter.get("/:id", wrap(async (req, res) => {
+  res.set("Cache-Control", "no-store");
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
   const query = productPanelReadQuerySchema.parse(req.query);
   const panel = await readCurrentPanelRecord(c.owner, c.credentials, id, !("applicationId" in query));
