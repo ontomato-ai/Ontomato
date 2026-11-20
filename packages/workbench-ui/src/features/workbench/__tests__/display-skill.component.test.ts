@@ -72,7 +72,7 @@ describe("BusinessWorkbench display-skill forwarding", () => {
       if (url.pathname.endsWith("/sessions")) {
         return new Response(JSON.stringify({ sessions: [], nextCursor: null }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
-      const memberKey = url.searchParams.get("memberKey");
+      const memberKey = (JSON.parse(url.searchParams.get("member") ?? "null") as { ref: { name: string } } | null)?.ref.name ?? null;
       if (memberKey === "pvt-home-panel") {
         return new Response(JSON.stringify({ agents: [assistant], defaultAgentId: assistant.id }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
@@ -121,7 +121,7 @@ describe("BusinessWorkbench display-skill forwarding", () => {
     const homeContext: PageSkillContext = {
       mode: "member",
       locator: { pageKey: "home", access: "domain-member" },
-      member: { source: { kind: "home" }, memberKey: "pvt-home-panel" },
+      member: { source: { kind: "home" }, memberPath: [], ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-home-panel" } },
     };
     emitSkillByInstance.get("/applications/workspace/home")!(homeContext);
     await settle();
@@ -129,29 +129,19 @@ describe("BusinessWorkbench display-skill forwarding", () => {
     const agentRequests = () => hostState.requests.filter((url) => url.startsWith("/agents"));
     expect(display.pageSkill.value).toEqual(homeContext);
     const homeQuery = Object.fromEntries(new URL(agentRequests().at(-1)!, "http://host.test").searchParams);
-    expect(assistantAgentsQuerySchema.parse(homeQuery)).toEqual({
-      pageKey: "home",
-      access: "domain-member",
-      source: { kind: "home" },
-      memberKey: "pvt-home-panel",
-    });
+    expect(assistantAgentsQuerySchema.parse(homeQuery)).toEqual({ pageKey: "home", access: "domain-member", member: homeContext.member });
 
     // Re-emitting display-skill on the same instance (e.g. /home opening an object drawer) re-queries.
     const drawerContext: PageSkillContext = {
       mode: "member",
       locator: { pageKey: "home", access: "domain-member" },
-      member: { source: { kind: "object-detail", useId: "use-order", object: { className: "Order", primaryKey: "ord-1" } }, memberKey: "pvt-order-detail" },
+      member: { source: { kind: "object-detail", useId: "use-order", object: { className: "Order", primaryKey: "ord-1" } }, memberPath: [], ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-order-detail" } },
     };
     emitSkillByInstance.get("/applications/workspace/home")!(drawerContext);
     await settle();
 
     const drawerQuery = Object.fromEntries(new URL(agentRequests().at(-1)!, "http://host.test").searchParams);
-    expect(assistantAgentsQuerySchema.parse(drawerQuery)).toEqual({
-      pageKey: "home",
-      access: "domain-member",
-      source: { kind: "object-detail", useId: "use-order", object: { className: "Order", primaryKey: "ord-1" } },
-      memberKey: "pvt-order-detail",
-    });
+    expect(assistantAgentsQuerySchema.parse(drawerQuery)).toEqual({ pageKey: "home", access: "domain-member", member: drawerContext.member });
 
     // Emitting member: null sends no /agents request and keeps the panel mounted.
     const countBeforeNull = agentRequests().length;

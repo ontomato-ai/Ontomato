@@ -120,7 +120,9 @@ const taskFocus = ref<{ taskId: string; at: number } | null>(null);
  * in this conversation; and a stream that is ready again has the page read everything it shows.
  */
 const sessionStream = inject(pageSessionStream, null);
-const conversation = useAgentConversation(() => props.client, () => agentId.value, () => sessionStream?.binding ?? null);
+const conversation = useAgentConversation(
+  () => props.client, () => agentId.value, () => sessionStream?.binding ?? null, () => pageSkill.value,
+);
 if (sessionStream) {
   onBeforeUnmount(
     sessionStream.attach({
@@ -146,6 +148,11 @@ if (notice) watch(notice, frame => {
 const nav = props.nav;
 const { currentAgent } = nav;
 const currentFeature = display.feature;
+/**
+ * The page skill of the page shown: what its own snapshot named for the instance shown, else the page's declaration. It
+ * narrows who may take a message, and it travels with every message sent while that page is shown.
+ */
+const pageSkill = computed(() => display.pageSkill.value ?? currentFeature.value?.pageSkill ?? null);
 /** A page that sits in the agent-app states rather than replacing the conversation. */
 const pairedPage = computed(() => currentFeature.value?.withConversation === true);
 const pageFull = computed(() => pairedPage.value && display.view.value === "full");
@@ -267,11 +274,7 @@ watch(display.page, (current, previous) => {
  * applies from the start too: an address that opens with a page beside the conversation narrows the list the same way as
  * opening that page later does.
  */
-watch(
-  () => display.pageSkill.value ?? currentFeature.value?.pageSkill ?? null,
-  (page) => void nav.setPage(page).catch(report),
-  { immediate: true },
-);
+watch(pageSkill, (page) => void nav.setPage(page).catch(report), { immediate: true });
 
 /**
  * The agent is chosen at the head of the application's column (the user's place for it, 2026-11-06): one chooser for the
