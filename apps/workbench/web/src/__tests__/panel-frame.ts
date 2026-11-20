@@ -208,7 +208,14 @@ export const registered = (applicationId: string, use: ApplicationPanelUse, pane
   ({ kind: "registered", applicationId, use, panel }) as const;
 
 /** The page skill member Node names for a panel read for one page, by a name derived from the panel alone. */
-export const memberKeyOf = (panelId: string) => `pvt-${[...panelId].map(char => char.charCodeAt(0).toString(16)).join("").slice(0, 48).padEnd(48, "0")}`;
+/**
+ * The skill reference Node answers for a panel's member, as the trusted service derives it: the host passes it on and
+ * never derives one itself, so any stable stand-in serves the tests.
+ */
+export const skillRefOf = (panelId: string) => ({
+  namespace: { kind: "provider" as const, provider: "product-panels" },
+  name: `pvt-${[...panelId].map(char => char.charCodeAt(0).toString(16)).join("").slice(0, 48).padEnd(48, "0")}`,
+});
 
 /**
  * The page skill context Node answers for a panel read or a snapshot read made for one page: which member a message
@@ -223,7 +230,7 @@ export function pageSkillContextFor(panel: Pick<ProductPanel, "id">, request: Se
   const locator = permissionCode ? { permissionCode, pageKey } : { access: "domain-member", pageKey };
   return {
     mode: "member", locator,
-    member: { source: { kind: "application-use", applicationId, useId: query.get("useId")! }, memberKey: memberKeyOf(panel.id) },
+    member: { source: { kind: "application-use", applicationId, useId: query.get("useId")! }, memberPath: [], ref: skillRefOf(panel.id) },
   };
 }
 
