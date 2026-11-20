@@ -12,7 +12,6 @@ import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
 import { createBusinessKnowledgeReadAdapter } from "../business-knowledge/panel-reads";
-import { createPlatformOntologyReadAdapter } from "../platform-ontology/panel-reads";
 import { createScheduledTaskReadAdapter } from "../scheduling/panel-reads";
 import { requirePanelUse } from "./application-use";
 import { requireCurrentProduct, requireDirectPanelMember } from "./current";
@@ -23,17 +22,20 @@ type ReadAdapter = (selection: ReadSelection, params: Record<string, unknown>) =
 
 function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerUserName?: string): Record<string, Record<string, ReadAdapter>> {
   const schedules = createScheduledTaskReadAdapter(viewer);
-  const ontology = createPlatformOntologyReadAdapter(owner, viewer, callerUserName);
+  const ontology = async () => {
+    const { createPlatformOntologyReadAdapter } = await import("../platform-ontology/panel-reads");
+    return createPlatformOntologyReadAdapter(owner, viewer, callerUserName);
+  };
   const knowledge = createBusinessKnowledgeReadAdapter(viewer);
   return {
-    [OBJECT_TYPE]: { list: () => ontology.listObjectTypes() },
-    [RELATIONSHIP]: { list: () => ontology.listRelationships() },
+    [OBJECT_TYPE]: { list: async () => (await ontology()).listObjectTypes() },
+    [RELATIONSHIP]: { list: async () => (await ontology()).listRelationships() },
     [ONTOLOGY_TYPE]: {
-      schema: () => ontology.schema(),
-      counts: () => ontology.counts(),
-      start: () => ontology.start(),
-      neighbors: (_selection, params) => ontology.neighbors(params),
-      objects: (_selection, params) => ontology.objects(params),
+      schema: async () => (await ontology()).schema(),
+      counts: async () => (await ontology()).counts(),
+      start: async () => (await ontology()).start(),
+      neighbors: async (_selection, params) => (await ontology()).neighbors(params),
+      objects: async (_selection, params) => (await ontology()).objects(params),
     },
     [SCHEDULED_TASK]: {
       list: () => schedules.list(),
