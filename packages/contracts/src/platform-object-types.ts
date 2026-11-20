@@ -3,6 +3,9 @@ import { z } from "zod";
 export const DASHBOARD_CARD = "platform:DashboardCard";
 export const EXECUTE_OBJECT_ACTION = "actions.execute";
 export const SCHEDULED_TASK = "platform:ScheduledTask";
+export const CREATE_SCHEDULED_TASK = `${SCHEDULED_TASK}.create`;
+export const SET_SCHEDULED_TASK_ENABLED = `${SCHEDULED_TASK}.setEnabled`;
+export const DELETE_SCHEDULED_TASK = `${SCHEDULED_TASK}.delete`;
 export const AGENT_DEFINITION = "platform:AgentDefinition";
 export const SKILL = "platform:Skill";
 export const MODEL_OPTION = "platform:ModelOption";
@@ -113,9 +116,15 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     reads: {
       list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
-      form: { source: "object", parameterMode: "fixed", params: { values: "formValues", changedField: "changedField" }, result: "panelFormDescription" },
+      form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
+      createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
+      runs: { source: "object", parameterMode: "fixed", params: { cursor: "cursor" }, result: "scheduledTaskRunPage" },
+      run: {
+        source: "object", parameterMode: "fixed", params: { runId: "scheduledRunId" },
+        requiredParams: ["runId"], result: "scheduledTaskRun",
+      },
     },
-    operations: [`${SCHEDULED_TASK}.save`, RUN_NOW],
+    operations: [`${SCHEDULED_TASK}.save`, RUN_NOW, CREATE_SCHEDULED_TASK, SET_SCHEDULED_TASK_ENABLED, DELETE_SCHEDULED_TASK],
   },
   [MODEL_OPTION]: { ...describeType("modelOption"), reads: referenceReads },
   [MCP_SERVICE_OPTION]: { ...describeType("mcpServiceOption"), reads: referenceReads },

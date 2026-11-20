@@ -425,6 +425,7 @@ export const components: readonly ComponentMetadata[] = [
           "panelFormDescription", "panelOperationDescriptor", "panelOptionList", "panelGraphSchema", "panelGraphCounts",
           "panelGraphStart", "panelGraphNeighbors", "panelOntologyObjects", "panelRelationNeighbors", "chartTemplate", "metricOutput",
           "sdkComponentDefinition", "actionDefinition", "actionExplanation",
+          "scheduledTaskRunPage", "scheduledTaskRun",
         ],
         required: false,
         runtimeParams: ["changedField", "cursor", "keyword", "layers", "node", "page", "relationKinds", "search", "size", "source", "values"],
