@@ -26,5 +26,5 @@ export const productPanelTypeDetail = {
     { name: "updatedAt", type: "string", description: "The most recent update time in ISO 8601 format." },
     { name: "editable", type: "boolean", description: "Whether the current reader has the edit Grant for this panel." },
   ],
-  rules: "Domain registrants create panels. A panel's use Grant governs use and its edit Grant governs editing, sharing, and deletion; the data or operation owner authorizes the underlying business reads and writes.",
+  rules: "Domain registrants create panels. The actual application entry has its own admission check, each panel or member resource requires its own use Grant with denied members withheld individually, and editing, sharing, or deleting a panel requires its edit Grant; the data or operation owner authorizes business reads and writes.",
 } as const satisfies PlatformTypeDetailDeclaration;
