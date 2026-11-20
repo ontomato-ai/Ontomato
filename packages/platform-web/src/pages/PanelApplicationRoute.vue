@@ -185,6 +185,13 @@ const labels = computed<PanelHostLabels>(() => ({
  * conversation's own composer serves instead. Its configuration error is shown where it would be.
  */
 const composerProblem = ref<string | null>(null);
+/** The page skill a message written on the shown page reaches, once its read or its checks have said which. */
+const shownSkill = ref<PageSkillContext | null>(null);
+/** The shown page's skill is known: a message beside it, and the page's own composer, reach it. */
+function passSkill(context: PageSkillContext) {
+  shownSkill.value = context;
+  emit("display-skill", context);
+}
 const composerLabels = computed(() => ({
   placeholder: t("assistant.placeholder"),
   send: t("assistant.send"),
@@ -240,6 +247,7 @@ watch(use, (next, previous) => {
   // A page left with unsaved changes was left through the unsaved-changes question: its changes go with its instance.
   const left = previous && previous.id !== next?.id ? kept.value.find((page) => page.use.id === previous.id) : undefined;
   if (left?.dirty) kept.value = kept.value.filter((page) => page !== left);
+  shownSkill.value = null;
   if (!next) return;
   performance.mark("ontomato:panel-page-opened", { detail: { applicationId: props.applicationId, useId: next.id } });
   const found = kept.value.find((page) => page.use.id === next.id);
@@ -267,7 +275,7 @@ function markReopened(page: KeptPage) {
   performance.mark("ontomato:panel-page-reopened", { detail: { applicationId: props.applicationId, useId: page.use.id } });
   // Its checks are through: the page skill they confirmed is the one a message beside it reaches now.
   page.rechecking = false;
-  emit("display-skill", page.pageSkill!);
+  passSkill(page.pageSkill!);
 }
 
 /** A new instance for a page of this application. */
@@ -296,7 +304,7 @@ function openPage(use: ApplicationPanelUse): KeptPage {
 function reportPageSkill(page: KeptPage, context: PageSkillContext) {
   const changed = JSON.stringify(context) !== JSON.stringify(page.pageSkill);
   page.pageSkill = context;
-  if (changed && shownPage.value && toRaw(shownPage.value) === page && !page.rechecking) emit("display-skill", context);
+  if (changed && shownPage.value && toRaw(shownPage.value) === page && !page.rechecking) passSkill(context);
 }
 
 /** A kept page shown again whose use relation was withdrawn or bound elsewhere ends; the page opens from the current relations. */
@@ -350,10 +358,10 @@ function reportDirty(page: KeptPage, dirty: boolean) {
     />
     <!-- Offered once the panel's read named the page's skill: the agents are the ones that skill reaches. -->
     <PageComposer
-      v-if="!props.navigate && shownPage?.pageSkill"
+      v-if="!props.navigate && shownPage && shownSkill"
       :page="shownPage.reported"
       :labels="composerLabels"
-      :page-skill="shownPage.pageSkill"
+      :page-skill="shownSkill"
       @error="composerProblem = $event"
     />
     <p v-if="!props.navigate && composerProblem" class="page-composer-error" role="alert">{{ composerProblem }}</p>
