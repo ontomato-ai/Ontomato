@@ -348,7 +348,7 @@ test("entry resolution and personal-state scope use the actual use and nested pa
     inputs: { term: { frameState: "term" }, role: { literal: null } },
   };
   const response = {
-    applicationId: "app-tasks", use, framePanelId: "site-frame", theme: { dark: { "--el-color-primary": "#0084ff" } },
+    applicationId: "app-tasks", use, framePanelId: "site-frame", theme: { dark: { "--test-accent": "#0084ff" } },
     menu: { groups: [{ key: "plan", names: { en: "Plan" }, sort: 0 }], panelUses: [use] },
   };
   assert.deepEqual(applicationEntryResolutionSchema.parse(response), response);
