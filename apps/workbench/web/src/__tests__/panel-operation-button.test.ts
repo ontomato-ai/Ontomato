@@ -64,14 +64,14 @@ const impact = {
 /** The owner's descriptions, by the panel's operation ID. */
 const descriptions: Record<string, unknown> = {
   "remove.delete": {
-    handlerRef: DELETE_AGENT, effect: "write", target: { source: "input", input: "agent" }, inputSchema: {}, resultSchema: {},
+    handlerRef: DELETE_AGENT, label: "Delete", effect: "write", target: { source: "input", input: "agent" }, inputSchema: {}, resultSchema: {},
     batch: false, inspectImpact: { handlerRef: "agents.delete.impact" },
   },
   "removeAll.delete": {
-    handlerRef: DELETE_AGENT, effect: "write", target: { source: "input", input: "agent" }, inputSchema: {}, resultSchema: {}, batch: true,
+    handlerRef: DELETE_AGENT, label: "Delete all", effect: "write", target: { source: "input", input: "agent" }, inputSchema: {}, resultSchema: {}, batch: true,
   },
   "trial.testExecute": {
-    handlerRef: TEST_EXECUTE_METRIC_VIEW, effect: "read", target: { source: "draft", slot: "definition" },
+    handlerRef: TEST_EXECUTE_METRIC_VIEW, label: "Test", effect: "read", target: { source: "draft", slot: "definition" },
     inputSchema: {}, resultSchema: {}, batch: false,
   },
 };

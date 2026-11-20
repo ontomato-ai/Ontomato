@@ -20,8 +20,12 @@ import { stateObject, stateObjects } from "../panel/state";
  * A read (a trial run) takes the form the owner's operation targets and the inputs the slot's declaration names
  * (`readOperationInputs`), and shows what it read beneath the button; it saves nothing. A write is frozen as one intent
  * — the selected object, or every checked one as one batch — which the host confirms where the owner or the batch asks,
- * and dispatches once; the receipt is shown here, item by item for a batch, and only the objects the owner reports
- * changed are read again. Items a batch did not change stay checked.
+ * and dispatches once; the receipt is shown here in the owner's words, item by item for a batch, and only the objects the
+ * owner reports changed are read again. Items a batch did not change stay checked. What a write returned is the owner's
+ * record of it, not something to show the reader: the button says what the owner said of it, or that it was done.
+ *
+ * A declared (direct) projection's button is named by the owner's description, in the reader's language; a code
+ * projection's by the operation its component publishes.
  */
 const props = withDefaults(
   defineProps<{
@@ -64,6 +68,8 @@ const published = computed(() => {
   return found;
 });
 const operationId = computed(() => panelOperationId(slot.slot, published.value.name));
+/** A member's button shows only once its description is read, so the owner's name is there to show. */
+const label = computed(() => (operationData ? descriptor.value!.label : published.value.label));
 
 const fail = (reason: unknown) => {
   failure.value = reason instanceof Error ? reason : new Error(String(reason));
@@ -132,13 +138,10 @@ type Outcome = NonNullable<Extract<PanelHumanOperationDispatchResponse, { kind: 
 type Single = Exclude<Outcome, { kind: "batch" }>;
 /** One result in words: the owner's own message where it gave one. */
 const said = (outcome: Single) =>
-  outcome.kind === "success" ? t("platform.operationDone")
+  outcome.kind === "success" ? outcome.message ?? t("platform.operationDone")
     : outcome.kind === "unknown" ? t("platform.operationUnknown", { message: outcome.message })
       : outcome.message;
 const outcome = computed(() => (receipt.value?.kind === "dispatched" ? receipt.value.outcome : null));
-/** What a successful single write returned beyond its success, such as an activation's notes. */
-const returned = computed<PanelReadOperationResult | null>(() =>
-  outcome.value?.kind === "success" && Object.keys(outcome.value.data).length ? { kind: "json", value: outcome.value.data } : null);
 const items = computed(() => (outcome.value?.kind === "batch" ? outcome.value.items : []));
 const done = computed(() => items.value.filter((item) => item.outcome.kind === "success").length);
 </script>
@@ -146,7 +149,7 @@ const done = computed(() => items.value.filter((item) => item.outcome.kind === "
 <template>
   <div class="sdk-operation-button">
     <data-state v-if="operationData && operationData.status !== 'ready'" :result="operationData" :labels="labels"></data-state>
-    <el-button v-else :type="type" :loading="running" :disabled="!ready" @click="run">{{ published.label }}</el-button>
+    <el-button v-else :type="type" :loading="running" :disabled="!ready" @click="run">{{ label }}</el-button>
     <p v-if="failure" role="alert">{{ failure.message }}</p>
     <operation-result v-if="read" :result="read"></operation-result>
     <template v-if="receipt">
@@ -162,7 +165,6 @@ const done = computed(() => items.value.filter((item) => item.outcome.kind === "
           >{{ item.target.primaryKey }}: {{ said(item.outcome) }}</li>
         </ul>
       </div>
-      <operation-result v-else-if="returned" :result="returned"></operation-result>
       <p v-else :role="outcome.kind === 'success' ? 'status' : 'alert'" :data-outcome="outcome.kind">{{ said(outcome) }}</p>
     </template>
   </div>

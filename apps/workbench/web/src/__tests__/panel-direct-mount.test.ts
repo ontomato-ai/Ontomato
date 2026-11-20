@@ -36,7 +36,7 @@ const manifest: DirectPanelManifest = {
   members: { run: { target: { projectionId: "task-run" }, inputs: { task: { state: "selectedTask" } } } },
   events: {},
 };
-const runNow = { handlerRef: "schedules.runNow", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
+const runNow = { handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
 
 function open() {
   const reads: Omit<ProductPanelReadRequest, "source">[] = [];
@@ -107,9 +107,18 @@ it("reads again only the data an operation reports changed, and everything on an
 
 it("draws a member anew from its projection's newer definition", async () => {
   const { mount, element, readProjection } = open();
-  await vi.waitFor(() => expect(element.querySelector(".sdk-operation-button button")?.textContent?.trim()).toBe("Run now"));
+  const drawn = await vi.waitFor(() => {
+    const found = element.querySelector(".sdk-operation-button button");
+    if (!found) throw new Error("The member is not drawn yet");
+    return found;
+  });
   summaryName = "Run it now";
   mount.projectionsChanged([{ id: "task-run", revision: 2 }]);
-  await vi.waitFor(() => expect(element.querySelector(".sdk-operation-button button")?.textContent?.trim()).toBe("Run it now"));
-  expect(readProjection).toHaveBeenCalledTimes(2);
+  // Read again at the newer revision and drawn anew: the button is another one.
+  await vi.waitFor(() => expect(readProjection).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() => {
+    const now = element.querySelector(".sdk-operation-button button");
+    expect(now).not.toBeNull();
+    expect(now).not.toBe(drawn);
+  });
 });

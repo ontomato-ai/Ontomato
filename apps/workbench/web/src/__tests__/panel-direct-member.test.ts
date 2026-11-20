@@ -53,7 +53,7 @@ const form = (name: string, revision = 3) => ({
   save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
 });
 const runNow = {
-  handlerRef: "schedules.runNow", effect: "write", target: { source: "input", input: "task" },
+  handlerRef: "schedules.runNow", label: "立即运行", effect: "write", target: { source: "input", input: "task" },
   inputSchema: {}, resultSchema: {}, batch: false,
 };
 
@@ -108,7 +108,8 @@ it("asks for a selection without reading, then reads the owner's form and run-no
     memberPath: [{ member: "form" }], dataName: "form", inputs: { task: task("t-1"), changedField: null },
   });
   expect(reads.find((read) => read.dataName === "operation")).toMatchObject({ memberPath: [{ member: "run" }], dataName: "operation" });
-  await vi.waitFor(() => expect(element.querySelector(".sdk-operation-button button")?.textContent?.trim()).toBe("Run now"));
+  // The button is named as the owner names the operation in the reader's language, not by the projection's own name.
+  await vi.waitFor(() => expect(element.querySelector(".sdk-operation-button button")?.textContent?.trim()).toBe("立即运行"));
 });
 
 it("saves through the owner's operation, marks the fields the owner refused, and reads again what it changed", async () => {
@@ -139,15 +140,30 @@ it("saves through the owner's operation, marks the fields the owner refused, and
   expect(reads.filter((read) => read.dataName === "form").length).toBe(before + 1);
 });
 
-it("runs run-now through the owner's operation for the selected task", async () => {
-  const { element, prepared } = open(owner, { selectedTask: task("t-1") });
+it("runs run-now through the owner's operation for the selected task, and says what the owner said of it", async () => {
+  const { element, prepared, setOutcome } = open(owner, { selectedTask: task("t-1") });
   const button = await vi.waitFor(() => {
     const found = element.querySelector<HTMLButtonElement>(".sdk-operation-button button");
     if (!found || found.disabled) throw new Error("The button is not ready");
     return found;
   });
+  // The owner returns the run it started, and says in the reader's language that it started.
+  const started = { id: "run-1", taskId: "t-1", status: "running", startedAt: "2026-11-20T08:00:00Z" };
+  setOutcome({ kind: "success", data: started, message: "已开始运行", affected: { objects: [task("t-1")], objectTypes: [SCHEDULED_TASK] } });
   button.click();
   await vi.waitFor(() => expect(prepared).toEqual([["run.runNow", { call: { target: { kind: "object", ...{ objectType: SCHEDULED_TASK, primaryKey: "t-1" } }, input: {} } }]]));
+  const said = () => element.querySelector(".sdk-operation-button [data-outcome=success]")?.textContent;
+  await vi.waitFor(() => expect(said()).toBe("已开始运行"));
+  // What the write returned is the owner's record of it, never laid out for the reader.
+  expect(element.querySelector(".sdk-operation-result")).toBeNull();
+  expect(element.textContent).not.toContain("run-1");
+
+  // An owner that says nothing of it: the platform's own word that it was done.
+  setOutcome({ kind: "success", data: started, affected: { objects: [task("t-1")], objectTypes: [SCHEDULED_TASK] } });
+  await vi.waitFor(() => expect(button.disabled).toBe(false));
+  button.click();
+  await vi.waitFor(() => expect(said()).toBe("Done"));
+  expect(element.querySelector(".sdk-operation-result")).toBeNull();
 });
 
 it("shows no permission and the owner's reason in the product's one presentation", async () => {
