@@ -30,7 +30,7 @@ import { loadedPageSkillVersion, readAssistantSkillView, resolvePageSkillSource,
 import type { AssistantOwner } from "../assistant/store";
 import { restoreAgentCaller, readAgentSessionActor } from "../agent-host/caller";
 import { readCurrentPanelRecord } from "./current";
-import { declaredDirectOperation } from "./direct-operations";
+import { declaredDirectOperation, type PlacedOperationTarget } from "./direct-operations";
 import { requirePanelUse } from "./application-use";
 import {
   describePanelRead, panelResultProjection, type PanelBatchCalls, type PanelOperationInvocation,
@@ -176,12 +176,21 @@ type CheckedInvocation =
   | { call: PanelOperationCall; target: ReturnType<typeof validateCall> }
   | { calls: PanelBatchCalls; owner: Extract<PanelWriteServerOperation, { batch: true }> };
 
-function validateInvocation(handler: PanelWriteServerOperation, input: PanelOperationInvocation, fixedTarget?: PanelOperationTarget | null): CheckedInvocation {
+function validateInvocation(handler: PanelWriteServerOperation, input: PanelOperationInvocation, fixedTarget?: PlacedOperationTarget): CheckedInvocation {
   if ("calls" in input) {
     if (!handler.batch) throw new HttpError(422, "This operation does not support a batch", "OPERATION_BATCH_UNSUPPORTED");
-    for (const call of input.calls) validateCall(handler, call, fixedTarget);
+    if (fixedTarget?.kind === "list") {
+      const { objects } = fixedTarget;
+      if (objects && objects.length !== input.calls.length)
+        throw new HttpError(400, "Operation targets do not match this panel member", "TARGET_ID_MISMATCH");
+      input.calls.forEach((call, index) => validateCall(handler, call, objects?.[index]));
+    } else {
+      for (const call of input.calls) validateCall(handler, call, fixedTarget);
+    }
     return { calls: input.calls, owner: handler };
   }
+  if (fixedTarget?.kind === "list")
+    throw new HttpError(422, "This panel member targets a list and requires a batch", "OPERATION_BATCH_REQUIRED");
   return { call: input.call, target: validateCall(handler, input.call, fixedTarget) };
 }
 
