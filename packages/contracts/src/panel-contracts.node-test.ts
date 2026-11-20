@@ -28,7 +28,7 @@ import {
   RUN_NOW, SCHEDULED_TASK, bindingKey, chartProjectionLookupRead, chartProjectionSourcePath, chartProjectionSourceSends, clientSends, panelClientReads,
 } from "./panel-client-requests";
 import {
-  candidatePanelSourceSchema, panelCapacityPlanSchema, panelCapacityRequestSchema, panelFrameMessageSchema,
+  candidatePanelSourceSchema, panelFrameMessageSchema,
   panelHostFrameMessageSchema, panelHostMessageSchema, panelUsePath,
 } from "./panel-host";
 import {
@@ -1628,16 +1628,7 @@ test("conversation entries declare the exact composer target and can prefill wit
   assert.deepEqual(projection.conversationEntry, conversationEntry);
 });
 
-test("capacity admission separates a confirmed departure from activity in the frame", () => {
-  const current = { instance: "knowledge", address: "/ontology/knowledge?state=old" };
-  const next = { instance: "knowledge", address: "/ontology/knowledge?state=new" };
-  const request = { current, next, departure: "retain-clean" };
-  assert.deepEqual(panelCapacityRequestSchema.parse(request), request);
-  assert.equal(panelCapacityRequestSchema.safeParse({ ...request, departure: "dirty" }).success, false);
-
-  const plan = { kind: "admitted", next: "reuse", reclaim: [] };
-  assert.deepEqual(panelCapacityPlanSchema.parse(plan), plan);
-  assert.equal(panelCapacityPlanSchema.safeParse({ kind: "refused", reclaim: [current.instance] }).success, false);
+test("only the host can send frame activity messages", () => {
   assert.deepEqual(panelHostFrameMessageSchema.parse({ kind: "activity", active: false }), { kind: "activity", active: false });
   assert.equal(panelFrameMessageSchema.safeParse({ kind: "activity", active: true }).success, false);
 });
