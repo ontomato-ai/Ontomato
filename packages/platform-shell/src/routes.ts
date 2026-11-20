@@ -7,6 +7,11 @@
  */
 export const platformRoutes = {
   layout: { name: "PlatformLayout", path: "/" },
+  /**
+   * Any address the edition has no page for — none exists, or the reader's edition does not register it. It lands where
+   * the root does; a panel asked to go there is told so instead.
+   */
+  unknown: { name: "PlatformUnknownAddress", path: "/:unknown(.*)*" },
   personalWorkspace: { name: "PersonalWorkspace", path: "/workspace" },
   /** The platform's home: everyone's starting point, with their favourites, dashboards and every application. */
   home: { name: "Home", path: "/home" },

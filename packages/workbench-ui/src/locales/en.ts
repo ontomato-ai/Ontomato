@@ -174,6 +174,7 @@ export default {
     "panelScriptThrew": "The panel's script failed while it ran",
     "panelScriptRejected": "The panel's script failed",
     "panelStyleOutside": "This panel's CSS reaches outside the panel, so none of it applies. A panel's CSS styles only its own panel.",
+    "panelAddressUnavailable": "{address} is not a page you can open: it does not exist, or you may not open it.",
     "panelDraftUnclaimed": "This draft belongs to no form of this panel",
     "panelDraftChanged": "Changed: {fields}",
     "graphIncludeAdjacent": "Include adjacent ({count})",

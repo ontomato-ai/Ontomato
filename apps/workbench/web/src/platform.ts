@@ -18,6 +18,7 @@ import {
   workbenchPages,
 } from "@ontomato/platform-web";
 import { ossBrand } from "@ontomato/design-tokens/oss";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { anonymousAuthHost } from "./auth";
 import { ossLanguage } from "./language";
 import { workbenchContent } from "./workbench-content";
@@ -66,7 +67,7 @@ export function startPlatform() {
       ], OssPlatformShell),
       ...legacyAdminRoutes,
       // An unknown address lands where the root does.
-      { path: "/:unknown(.*)*", redirect: () => startPage() },
+      { ...platformRoutes.unknown, redirect: () => startPage() },
     ],
   });
 }
