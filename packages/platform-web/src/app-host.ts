@@ -22,6 +22,7 @@ import {validatePageState,validateProductNavigation,productNavigationTargetSchem
 import {invalidateProductData} from '@ontomato/contracts/product-invalidation';
 import {installAppBridge} from './app-bridge';
 import type {PanelObjectChange} from './panel-host';
+import type {CandidatePanelSource,ProductPanelReadSource} from '@ontomato/contracts/panel-host';
 import type {PanelManifest} from '@ontomato/contracts/panel-manifest';
 import {METRIC_CHART_COMPONENT,productProjectionResponseSchema} from '@ontomato/contracts/product-panels';
 import {pageDraftCreatedSchema,pageDraftReadSchema} from '@ontomato/contracts/page-draft';
@@ -88,8 +89,14 @@ interface PanelFrame {
    * one agent target and sentence its entry may put into the page's composer.
    */
   conversationEntries: Map<string,PanelConversationEntry>;
+  /**
+   * What the frame's data is read as at Node's one read entry: the application use it shows, or the candidate's
+   * workspace. The host names it; a frame never does.
+   */
+  readSource: ProductPanelReadSource;
 }
 const panelFrames=new WeakMap<object,PanelFrame>();
+const PANEL_READ='/product-panels/read';
 const PROJECTION_READ=/^\/product-projections\/([^/?]+)$/;
 const DRAFT_READ=/^\/assistant\/sessions\/([^/?]+)\/runs\/([^/?]+)\/page-draft\?([^#]*)$/;
 const DRAFT_CREATED=/^\/assistant\/sessions\/([^/?]+)\/runs\/([^/?]+)\/page-draft\/created$/;
@@ -174,9 +181,9 @@ export function registerLiveFrame(source: object,applicationId?:string) {
 
 type PanelDeclaration = { pageKey: string; manifest: PanelManifest };
 
-function registerDeclaredFrame(source: object, bridgeIdentity: string, panel: PanelDeclaration, context: AppExecutionContext, open: boolean, registered?: PanelFrame["registered"]) {
+function registerDeclaredFrame(source: object, bridgeIdentity: string, panel: PanelDeclaration, context: AppExecutionContext, open: boolean, readSource: ProductPanelReadSource, registered?: PanelFrame["registered"]) {
   const memberProjections=new Map(Object.entries(panel.manifest.members).flatMap(([member,{target}])=>'projectionId' in target?[[member,target.projectionId] as const]:[]));
-  const frame:PanelFrame={bridgeIdentity,open,pageKey:panel.pageKey,registered,memberProjections,conversationEntries:new Map(),bindings:new Map([...memberProjections.values()].map(id=>[id,null])),createDrafts:new Set(),charts:new Set()};
+  const frame:PanelFrame={bridgeIdentity,open,pageKey:panel.pageKey,registered,memberProjections,conversationEntries:new Map(),bindings:new Map([...memberProjections.values()].map(id=>[id,null])),createDrafts:new Set(),charts:new Set(),readSource};
   panelFrames.set(source,frame);
   const binding=registerFrame(source,context);
   return {
@@ -195,7 +202,7 @@ function registerDeclaredFrame(source: object, bridgeIdentity: string, panel: Pa
  * registers it as soon as the frame exists, before the panel's module can ask to connect.
  */
 export function registerPanelFrame(source: object,use: PanelUseRef,panel:PanelDeclaration,open: boolean,changed:(change:PanelObjectChange)=>void) {
-  return registerDeclaredFrame(source,use.applicationId,panel,{kind:"live"},open,{use,changed});
+  return registerDeclaredFrame(source,use.applicationId,panel,{kind:"live"},open,{kind:"registered",...use},{use,changed});
 }
 
 /**
@@ -203,11 +210,14 @@ export function registerPanelFrame(source: object,use: PanelUseRef,panel:PanelDe
  * on its workspace's build-test context — never live. Its requests carry that context to their owners, which accept
  * them only where they declared support for test data or definition-only reads.
  */
-export function registerCandidateFrame(source: object,context: Extract<AppExecutionContext,{kind:"build-test"}>,panel:PanelDeclaration,open: boolean) {
-  return registerDeclaredFrame(source,`workspace:${context.workspaceId}`,panel,context,open);
+export function registerCandidateFrame(source: object,context: Extract<AppExecutionContext,{kind:"build-test"}>,workspace:CandidatePanelSource["workspace"],panel:PanelDeclaration,open: boolean) {
+  return registerDeclaredFrame(source,`workspace:${context.workspaceId}`,panel,context,open,{kind:"candidate",workspace});
 }
 /** Refuses, before anything is sent, a request of a panel's frame that its declaration does not cover. */
 function admitPanelRequest(panel:PanelFrame,method:string,path:string,service:string,body:BodyInit|null|undefined){
+  // Node's one read entry, which checks the member, its data and the reader itself: what the frame asks it is read as
+  // the frame's own source, which the host has put in.
+  if(service===''&&method==='POST'&&path===PANEL_READ)return;
   if(service===''&&method==='GET'){
     const projection=PROJECTION_READ.exec(path);
     if(projection&&panel.bindings.has(decodeURIComponent(projection[1]!)))return;
@@ -222,6 +232,13 @@ function admitPanelRequest(panel:PanelFrame,method:string,path:string,service:st
   if(record?.success&&panel.createDrafts.has(draftKey(created![1]!,created![2]!,record.data.path)))return;
   const bindings=[...panel.bindings.values()].flatMap(keys=>keys??[]);
   if(!clientSends(bindings,method,service,path,decoded))throw new Error("Outside what this panel's projections declare");
+}
+
+/** A frame's read at Node's read entry, as its own source: the frame names the member, its datum and its values, never where it reads. */
+function readAsFrame(panel:PanelFrame,body:BodyInit|null|undefined){
+  const asked=typeof body==='string'?JSON.parse(body):undefined;
+  if(!asked||typeof asked!=='object'||'source' in asked)throw new Error('A panel frame names its member and datum, not where it reads');
+  return JSON.stringify({...asked,source:panel.readSource});
 }
 
 /**
@@ -395,6 +412,7 @@ export function installAppHost(options: {
       const method=(init.method??'GET').toUpperCase();
       // A panel's frame asks only for what its own declaration covers; every other frame for the SDK's capabilities.
       const panel=panelFrames.get(source);
+      if(panel&&service===''&&method==='POST'&&path===PANEL_READ)init={...init,body:readAsFrame(panel,init.body)};
       if(panel)admitPanelRequest(panel,method,path,service,init.body);
       else{
         const allowed=service==='/data-query'?['/metricView/queryById','/metricView/execute','/action/form','/action/execute']:[];

@@ -372,6 +372,7 @@ it("draws direct ObjectGraph in a frame via frameMemberData and edits the paired
         t: (key: string) => key,
         resources: async () => {},
         expandPageComposer: async () => {},
+        readPanelData: async () => { throw new Error("This test reads no member data through the platform"); },
       });
       return () => h("div", [h(Projection, { slot: "definition" }), h(Projection, { slot: "scope" })]);
     },
@@ -478,6 +479,7 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
         t: (key: string) => key,
         resources: async () => {},
         expandPageComposer: async () => {},
+        readPanelData: async () => { throw new Error("This test reads no member data through the platform"); },
       });
       provide(projectionKey, {
         slot: "scope",
@@ -1020,6 +1022,7 @@ it("draws direct OntologyGraph and ObjectRelations in a frame via frameMemberDat
         t: (key: string) => key,
         resources: async () => {},
         expandPageComposer: async () => {},
+        readPanelData: async () => { throw new Error("This test reads no member data through the platform"); },
       });
       return () => h("div", [h(Projection, { slot: "graph" }), h(Projection, { slot: "relations" })]);
     },

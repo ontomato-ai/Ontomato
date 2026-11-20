@@ -21,7 +21,7 @@ import { panelContextKey, type PanelContext, type ProjectionSlot } from "./conte
 import { applyPanelRequest, createPanelInstance } from "./instance";
 import PanelProjection from "./Projection.vue";
 import { runPanel } from "./lifecycle";
-import { readPageDraft, readProjectionRecord, recordDraftCreated } from "./platform-requests";
+import { readPageDraft, readProjectionRecord, recordDraftCreated, readPanelData } from "./platform-requests";
 import { baseComponents } from "../base-components";
 import { prepareTemplateComponents } from "./template-components";
 import { platformResourceLoader } from "./platform-objects";
@@ -105,6 +105,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     resources: platformResourceLoader({ request: (path, init, service) => transport.request(path, init, service) }, platformResources,
       contextTranslate(appContext)),
     expandPageComposer: contextExpandPageComposer(appContext),
+    readPanelData: (request) => readPanelData(transport, request),
   };
   const app = createApp({
     setup: () => {

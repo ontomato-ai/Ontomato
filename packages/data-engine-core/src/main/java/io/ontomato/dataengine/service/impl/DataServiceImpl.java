@@ -146,15 +146,18 @@ public class DataServiceImpl implements DataService {
 					ret.put("data", d);
 					ret.put("success", true);
 				} else {
+					ret.put("code", "DATA_PERMISSION_DENIED");
 					ret.put("message", langService.get(lang, "Data.dataPermission.noPermission"));
 					ret.put("success", false);
 				}
 			} else {
+				ret.put("code", "OBJECT_NOT_FOUND");
 				ret.put("message", langService.get(lang, "Data.object.notExist"));
 				ret.put("success", false);
 			}
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
+			ret.put("code", "QUERY_FAILED");
 			ret.put("message", langService.get(lang, "Data.query.error"));
 			ret.put("success", false);
 		}
@@ -581,6 +584,7 @@ public class DataServiceImpl implements DataService {
     		ret.put("cur_page", pageNum);
     		ret.put("success", true);
 		} else {
+			ret.put("code", "DATA_PERMISSION_DENIED");
 			ret.put("message", langService.get(lang, "Data.dataPermission.noPermission"));
 			ret.put("success", false);
 		}

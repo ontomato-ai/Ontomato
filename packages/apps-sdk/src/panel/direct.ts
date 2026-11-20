@@ -155,6 +155,34 @@ export function awaitsInputs(projection: DirectProjection, data: DirectProjectio
   return required.some((param) => values[param] === null || values[param] === undefined);
 }
 
+/** The platform's read entry for a panel's member data, as the reader: the host fills in which panel it is. */
+export type PanelReadPort = (request: Omit<ProductPanelReadRequest, "source">) => Promise<ProductPanelReadResponse>;
+
+/**
+ * One named datum of a member, read through the platform's read entry: unread while it waits for its object or a
+ * required parameter; the author's values as inputs and the component's own as run-time parameters; the owner's answer
+ * checked against the result its registered read declares. A directly rendered panel and a panel's frame read the same
+ * way and differ only in the port: the host's own, or the frame's request path through its bridge.
+ */
+export async function readMemberDatum(read: PanelReadPort, projection: DirectProjection, member: string, placement: MemberPlacement,
+  name: string, values: MemberInputs, own: MemberInputs): Promise<MemberDataState> {
+  const data = projection.data[name];
+  if (!data) throw new Error(`Member '${member}' declares no datum '${name}'`);
+  // A datum waits for its object or a required parameter; no read is made for nothing.
+  if (awaitsInputs(projection, data, placement, values, own)) return { status: "awaiting" };
+  // What the member's component set itself goes apart from the author's inputs, and is checked as such.
+  const { runtime, authored } = readParams(projection, data, placement, values, own);
+  const result = await read({
+    memberPath: [{ member }], dataName: name, inputs: authored,
+    ...(Object.keys(runtime).length ? { runtimeParams: runtime } : {}),
+  });
+  if (result.status !== "ready") return result;
+  // The host's answer is checked against the result the owner registered for this read.
+  const declaration = directReadDeclaration(projection, data);
+  if (!declaration) throw new Error(`No owner registers the read '${data.read}' that datum '${name}' names`);
+  return { status: "ready", value: panelReadResultSchemas[declaration.result].parse(result.value) as RuntimeJsonValue };
+}
+
 /** The object a datum is read from now, when its source is one: the literal, or the input that holds it. */
 function sourceObject(data: DirectProjectionData, inputs: MemberInputs): PanelFieldValue | undefined {
   if (!("object" in data.source)) return undefined;
@@ -194,23 +222,8 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     memberData(member: string, projection: DirectProjection, inputs: () => MemberInputs): MemberData {
       const own = () => instance.ownParams(member);
       const placement = direct.members[member]!;
-      async function answer(name: string, values: MemberInputs, ownRun: MemberInputs = own()): Promise<MemberDataState> {
-        const data = projection.data[name];
-        if (!data) throw new Error(`Member '${member}' declares no datum '${name}'`);
-        // A datum waits for its object or a required parameter; no read is made for nothing.
-        if (awaitsInputs(projection, data, placement, values, ownRun)) return { status: "awaiting" };
-        // What the member's component set itself goes apart from the author's inputs, and is checked as such.
-        const { runtime, authored } = readParams(projection, data, placement, values, ownRun);
-        const result = await options.read({
-          memberPath: [{ member }], dataName: name, inputs: authored,
-          ...(Object.keys(runtime).length ? { runtimeParams: runtime } : {}),
-        });
-        if (result.status !== "ready") return result;
-        // The host's answer is checked against the result the owner registered for this read.
-        const declaration = directReadDeclaration(projection, data);
-        if (!declaration) throw new Error(`No owner registers the read '${data.read}' that datum '${name}' names`);
-        return { status: "ready", value: panelReadResultSchemas[declaration.result].parse(result.value) as RuntimeJsonValue };
-      }
+      const answer = (name: string, values: MemberInputs, ownRun: MemberInputs = own()) =>
+        readMemberDatum(options.read, projection, member, placement, name, values, ownRun);
 
       return {
         use(name) {
@@ -287,5 +300,7 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     resources: () => Promise.resolve(),
     // The member's projection is the platform's own record here: its declared entry goes to the page's composer as it is.
     expandPageComposer: async ({ slot: _member, ...entry }) => instance.expandPageComposer(entry),
+    // A member here reads through the instance's own port; nothing asks the context for it.
+    readPanelData: frameOnly("Reading a member's data over the frame's request path"),
   };
 }

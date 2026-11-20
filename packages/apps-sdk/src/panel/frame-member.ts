@@ -4,9 +4,9 @@ import { panelOperationId, type PanelFormTarget } from "@ontomato/contracts/pane
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { directReadDeclaration, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
-import { awaitsInputs, memberReadKey, paramValues, runValues, type MemberData, type MemberDataState, type MemberInputs } from "./direct";
+import { awaitsInputs, memberReadKey, paramValues, readMemberDatum, runValues, type MemberData, type PanelReadPort, type MemberDataState, type MemberInputs } from "./direct";
 import type { PanelInstance } from "./instance";
-import { adapterPart, type PlatformGraphNeighborsQuery, type PlatformObjectRecord } from "./platform-objects";
+import { adapterPart, registeredPlatformObjects, type PlatformGraphNeighborsQuery, type PlatformObjectRecord } from "./platform-objects";
 
 type PanelObjectValue = NonNullable<ReturnType<typeof stateObject>>;
 import { stateObject, type PanelFieldValue } from "./state";
@@ -49,7 +49,8 @@ function formOf(data: DirectProjectionData, object: PanelObjectValue | null, par
   });
 }
 
-export function frameMemberData(projection: DirectProjection, slot: string, instance: PanelInstance, inputs: () => MemberInputs): MemberData {
+export function frameMemberData(projection: DirectProjection, slot: string, instance: PanelInstance, inputs: () => MemberInputs,
+  read: PanelReadPort): MemberData {
   /** What the member's component set itself; a frame's resource module takes it with the author's parameters. */
   const own = () => instance.ownParams(slot);
   const placement = instance.manifest.members[slot]!;
@@ -62,6 +63,10 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
     const object = objectOf(data, values);
     const params = paramValues(projection, data, placement, values, ownRun);
     const type = "type" in data.source ? data.source.type.id : object?.className;
+    // A type this release has no resource module for is read where a directly rendered panel reads it: through the
+    // platform's read entry, from its owner's one adapter. A type moves there when its page does and its module goes.
+    if (type !== undefined && !registeredPlatformObjects().includes(type))
+      return readMemberDatum(read, projection, slot, placement, name, values, ownRun);
     let value: unknown;
     switch (declaration.result) {
       case "panelRecordList":

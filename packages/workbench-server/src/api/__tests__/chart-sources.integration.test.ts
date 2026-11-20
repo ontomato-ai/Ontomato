@@ -1,4 +1,5 @@
 import { dashboardCardPrimaryKey } from "@ontomato/contracts/dashboard";
+import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
 import { DASHBOARD_CARD } from "@ontomato/contracts/platform-object-types";
 import { randomUUID } from "node:crypto";
 import { chartProjectionSourcePath, CHART_PROJECTION_SOURCES_PATH } from "@ontomato/contracts/panel-client-requests";
@@ -65,7 +66,9 @@ const sampleCard = {
 };
 let registrations: { id: string; shared: boolean }[];
 let metricCallers: string[];
+let metricExecutions: unknown[];
 let aliceUse: boolean;
+let bobDeniedUse: string | undefined;
 let bobEdit: boolean;
 let base: string;
 let server: Server;
@@ -88,7 +91,7 @@ beforeAll(async () => {
   await writeBundledAppSdkFixture(root);
   installContentLayout({ runtimeRoot: root, publicSkillsRoot: root, prompts: [], runtimeResources: [] });
   const { default: dashboardsRouter } = await import("../routes/dashboards");
-  const { createChartProjectionsRouter, productProjectionsRouter } = await import("../routes/product-panels");
+  const { createChartProjectionsRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const app = express();
   app.use(express.json());
   app.post("/java/product-governance/register", (req, res) => {
@@ -100,8 +103,9 @@ beforeAll(async () => {
   app.post("/java/product-governance/check", (req, res) => {
     const { id, verb } = req.body;
     const owner = req.header("tk") === "alice";
+    const canUse = owner ? aliceUse : id !== bobDeniedUse;
     res.json({ allowed: registrations.some(resource => resource.id === id) &&
-      (verb === "use" ? !owner || aliceUse : owner || bobEdit) });
+      (verb === "use" ? canUse : owner || bobEdit) });
   });
   app.post("/java/product-governance/resources", (_req, res) => {
     res.json({ ids: registrations.map(resource => resource.id) });
@@ -113,6 +117,19 @@ beforeAll(async () => {
       parameterDefs, outputColumns: [{ key: "name", label: null, type: null }, { key: "value", label: null, type: null }],
     });
   });
+  app.post("/java/ontology/query/metrics/execute", (req, res) => {
+    expect(req.header("tk")).toBe("bob");
+    metricExecutions.push(req.body);
+    res.json({ columns: [{ key: "name", label: null, type: null }], rows: [{ name: "north" }], truncation: null });
+  });
+  app.get("/java/platform/applications/chart-pilot/panel-uses", (req, res) => {
+    expect(req.header("tk")).toBe("bob");
+    res.json({ success: true, data: {
+      applicationId: "chart-pilot", entry: { path: "/applications/chart-pilot", renderer: "panels" },
+      panelUses: [{ id: "chart", pageKey: "chart", path: "/applications/chart-pilot/chart", panelId: "chart-pilot",
+        access: { kind: "domain-member" } }],
+    } });
+  });
   app.use("/api", (req, _res, next) => {
     const caller = req.header("tk");
     Object.assign(req, { userId: caller, token: caller, domainId: "domain" });
@@ -122,6 +139,7 @@ beforeAll(async () => {
   app.use("/api/dashboards", dashboardsRouter);
   app.use("/api/product-projections", createChartProjectionsRouter(createChartProjectionService(dashboardChartSources)));
   app.use("/api/product-projections", productProjectionsRouter);
+  app.use("/api/product-panels", productPanelsRouter);
   server = app.listen(0, "127.0.0.1");
   await new Promise<void>(resolve => server.once("listening", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -141,9 +159,11 @@ afterAll(async () => {
 beforeEach(async () => {
   registrations = [];
   metricCallers = [];
+  metricExecutions = [];
   aliceUse = true;
+  bobDeniedUse = undefined;
   bobEdit = false;
-  await state.pool!.query(`TRUNCATE ${table("dashboards")}, ${table("product_projections")}, ${table("product_subscriptions")}`);
+  await state.pool!.query(`TRUNCATE ${table("dashboards")}, ${table("product_panels")}, ${table("product_projections")}, ${table("product_subscriptions")}`);
   await createDashboard({
     id: source.dashboardId, ownerId: "alice", domainId: "domain", name: "Board",
     groups: [
@@ -314,4 +334,70 @@ it("removes only the projections of the account's deleted dashboards and reports
   const missing = await request(chartProjectionSourcePath(projection.id), "GET", undefined, "bob");
   expect(missing.status).toBe(404);
   expect(await missing.json()).toMatchObject({ error: { code: "PRODUCT_UNAVAILABLE" } });
+});
+
+async function registerChartPanel(year: number) {
+  const projection = await register();
+  const saved = await request("/product-panels/chart-pilot", "PUT", {
+    name: "Shared chart", description: "", visibility: "domain", revision: 0,
+    content: { html: '<panel-member ref="chart"></panel-member>' },
+    manifest: { state: {}, events: {}, members: {
+      chart: { target: { projectionId: projection.id }, inputs: { year: { literal: year } } },
+    } },
+  });
+  expect(saved.status, await saved.text()).toBe(200);
+  return projection;
+}
+
+async function readChartMember(dataName: "template" | "result") {
+  const response = await request("/product-panels/read", "POST", {
+    source: { kind: "registered", applicationId: "chart-pilot", useId: "chart" },
+    memberPath: [{ member: "chart" }], dataName, inputs: {},
+  }, "bob");
+  expect(response.status).toBe(200);
+  return productPanelReadResponseSchema.parse(await response.json());
+}
+
+it("reads a registered chart's template and result as a different panel viewer", async () => {
+  await registerChartPanel(2028);
+  expect(await readChartMember("template")).toEqual({ status: "ready", value: { chartFile, parameters } });
+  expect(await readChartMember("result")).toMatchObject({ status: "ready", value: { rows: [{ name: "north" }] } });
+  expect(metricCallers).toEqual(["alice", "bob"]);
+});
+
+it("returns only forbidden for a viewer without use on the chart projection", async () => {
+  const projection = await registerChartPanel(2028);
+  bobDeniedUse = projection.id;
+
+  expect(await readChartMember("template")).toEqual({ status: "forbidden" });
+  expect(await readChartMember("result")).toEqual({ status: "forbidden" });
+  expect(metricCallers).not.toContain("bob");
+  expect(metricExecutions).toEqual([]);
+});
+
+it("rejects both chart reads after the source metric changes and preserves the registered binding", async () => {
+  const projection = await registerChartPanel(2028);
+  const board = await readBoard();
+  board.groups[0].charts[0].query.metricId = "different-metric";
+  await saveDashboard("alice", "domain", board);
+
+  expect((await readChartMember("template")).status).toBe("error");
+  expect((await readChartMember("result")).status).toBe("error");
+  expect(metricExecutions).toEqual([]);
+
+  const response = await request("/product-projections/" + projection.id);
+  expect(response.status).toBe(200);
+  expect(registerChartProjectionResponseSchema.parse(await response.json()).projection).toMatchObject({
+    chartSource: projection.chartSource, metricId: projection.metricId, data: projection.data,
+  });
+});
+
+it("overlays member inputs on saved chart parameters for execution and preserves the saved parameters", async () => {
+  await registerChartPanel(2030);
+
+  expect((await readChartMember("result")).status).toBe("ready");
+  expect(metricExecutions).toEqual([{
+    id: metricId, revision: "metric-revision", parameters: { ...parameters, year: 2030 },
+  }]);
+  expect((await readBoard()).groups[0].charts[0].query.parameters).toEqual(parameters);
 });

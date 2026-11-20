@@ -217,6 +217,7 @@ describe("a panel's module", () => {
       t: (key: string) => key,
       resources: async () => {},
       expandPageComposer: async () => {},
+      readPanelData: async () => { throw new Error("This test reads no member data through the platform"); },
     });
     app.mount(element);
     await nextTick();
