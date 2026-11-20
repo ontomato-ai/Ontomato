@@ -198,10 +198,13 @@ async function loadRebuildStatus() {
   if (alive && !unmounted) rebuildPollTimer = setTimeout(loadRebuildStatus, REBUILD_POLL_MS);
 }
 
-async function rebuildVectors() {
-  // Only a new round clears the existing vectors; resuming continues one already confirmed.
-  if (rebuildStatus.value?.state === "PENDING") {
-    const confirmed = await ElMessageBox.confirm(t("admin.vectorRebuildConfirm"), t("admin.rebuildVectors"), {
+const rebuildBusy = ref(false);
+
+function rebuildVectors() {
+  return rebuildAction(api.rebuildVectors, async () => {
+    // Resuming continues a round that was already confirmed.
+    if (rebuildStatus.value?.state !== "PENDING") return true;
+    return ElMessageBox.confirm(t("admin.vectorRebuildConfirm"), t("admin.rebuildVectors"), {
       type: "warning",
       confirmButtonText: t("admin.rebuildVectors"),
       cancelButtonText: t("common.cancel"),
@@ -209,19 +212,24 @@ async function rebuildVectors() {
       () => true,
       () => false
     );
-    if (!confirmed) return;
-  }
-  await rebuildAction(api.rebuildVectors);
+  });
 }
 
-async function rebuildAction(request: () => Promise<unknown>) {
+async function rebuildAction(request: () => Promise<unknown>, confirm?: () => Promise<boolean>) {
+  if (rebuildBusy.value) return;
+  rebuildBusy.value = true;
   try {
-    await request();
-  } catch (e) {
-    ElMessage.error(describeError(e, "admin.operationFailed"));
+    if (confirm && !await confirm()) return;
+    try {
+      await request();
+    } catch (e) {
+      ElMessage.error(describeError(e, "admin.operationFailed"));
+    }
+    // An accepted action shows its progress; a rejection can mean the previous status was stale.
+    await loadRebuildStatus();
+  } finally {
+    rebuildBusy.value = false;
   }
-  // Read again either way: an accepted action shows its progress, a rejection means the shown status was stale.
-  await loadRebuildStatus();
 }
 
 onMounted(() => {
@@ -254,6 +262,7 @@ onBeforeUnmount(() => {
     <ModelUsagePanel
       v-else
       :rebuild-status="rebuildStatus"
+      :rebuild-busy="rebuildBusy"
       @rebuild="rebuildVectors"
       @pause="rebuildAction(api.pauseVectorRebuild)"
     />

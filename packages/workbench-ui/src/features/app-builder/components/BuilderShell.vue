@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, shallowRef, watch, watchEffect } from "
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { PanelRightOpen } from "lucide-vue-next";
 import {
   AgentShell,
   ShellColumn,
@@ -177,7 +178,7 @@ const display = useConversationDisplay({
   feature: (id) => (id === PANEL_ID ? panelPage : null),
   context: () => pageContext.value,
   leave: { leaves: (address) => leave.leaves(address ?? ""), confirm: () => leave.confirm() },
-  initial: { page: panelPage, view: "side" },
+  initial: globalThis.matchMedia?.("(max-width: 1100px)").matches ? undefined : { page: panelPage, view: "side" },
 });
 const tab = ref<PanelTab>("preview");
 const file = ref<string | null>(null);
@@ -431,6 +432,9 @@ const columnEvents = {
           @select="openConversation($event, null)"
           @create="createWorkspace"
         />
+        <el-button v-if="!pageOpen && !display.target.value" text size="small" :icon="PanelRightOpen" @click="openPage('preview')">
+          {{ t("appBuilder.panel") }}
+        </el-button>
         <ComposerContext
           :page-open="pageOpen"
           :inline="inline"
@@ -471,18 +475,43 @@ const columnEvents = {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  gap: 6px;
+  gap: var(--spacing-xs);
   min-width: 0;
 }
 .composer-line.inline {
   flex-wrap: nowrap;
   align-items: center;
 }
+.builder-shell {
+  container: builder-workbench / inline-size;
+}
+.builder-shell :deep(.empty) {
+  padding-inline: var(--spacing-lg);
+}
+.builder-shell :deep(.greeting) {
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+.builder-shell :deep(.agent-description) {
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
 .builder-shell :deep(.page-pane.side) {
   border: 0;
   border-inline-start: 1px solid var(--el-border-color);
   border-radius: 0;
   box-shadow: none;
+}
+@media (min-width: 1101px) {
+  @container builder-workbench (min-width: 0px) {
+    .builder-shell :deep(.page-pane.side) {
+      max-width: max(260px, calc(100cqw - var(--shell-app-column) - 500px));
+    }
+  }
 }
 /* The start frame is the agent shell's frame without a conversation: the column, then the application's area. */
 .builder-start {

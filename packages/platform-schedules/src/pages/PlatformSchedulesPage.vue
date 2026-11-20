@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { ChevronDown, Circle, Search } from "lucide-vue-next";
+import { CalendarClock, ChevronDown, Circle, Search } from "lucide-vue-next";
+import { dropdownBoundaryOptions } from "@ontomato/foundation-ui/overlay";
 import type {
   PlatformScheduleApplications,
   PlatformTask,
@@ -379,13 +380,13 @@ defineExpose({ openNewTask });
 <template>
   <div class="schedules">
     <div class="toolbar">
-      <div class="chips" role="group" :aria-label="t('filter.label')">
+      <div class="filter-segments" role="group" :aria-label="t('filter.label')">
         <button
           v-for="chip in rowChips"
           :key="chip.id ?? ''"
           type="button"
-          class="chip"
-          :class="{ selected: chip.id === app }"
+          class="chip filter-segment"
+          :class="{ 'is-active': chip.id === app }"
           :aria-pressed="chip.id === app"
           :data-app="chip.id ?? ''"
           @click="pick(chip.id)"
@@ -393,8 +394,8 @@ defineExpose({ openNewTask });
           <span>{{ chip.label }}</span>
           <span v-if="chip.count !== null" class="count">{{ chip.count }}</span>
         </button>
-        <el-dropdown v-if="moreChips.length > 0" trigger="click" @command="pick">
-          <button type="button" class="chip more" :class="{ selected: chosenMore }">
+        <el-dropdown v-if="moreChips.length > 0" class="filter-more" trigger="click" :popper-options="dropdownBoundaryOptions" @command="pick">
+          <button type="button" class="chip more filter-segment" :class="{ 'is-active': chosenMore }">
             <span>{{ chosenMore?.label ?? t("filter.more") }}</span>
             <span v-if="chosenMore && chosenMore.count !== null" class="count">{{ chosenMore.count }}</span>
             <ChevronDown :size="14" aria-hidden="true" />
@@ -420,29 +421,27 @@ defineExpose({ openNewTask });
         v-model="search"
         class="search"
         clearable
-        :prefix-icon="Search"
         :placeholder="t('filter.search')"
         :aria-label="t('filter.search')"
-      />
+      >
+        <template #prefix><Search :size="16" aria-hidden="true" /></template>
+      </el-input>
     </div>
 
-    <p v-if="notice" class="notice" role="status">
-      <span>{{ notice.text }}</span>
-      <button v-if="notice.retry" type="button" class="link" @click="notice.retry()">{{ t("retry") }}</button>
-    </p>
+    <el-alert v-if="notice" :title="notice.text" type="warning" :closable="false" show-icon>
+      <el-button v-if="notice.retry" text size="small" @click="notice.retry()">{{ t("retry") }}</el-button>
+    </el-alert>
 
     <div v-if="tasksState === 'loading' && tasks.length === 0" class="grid" aria-busy="true">
-      <div v-for="index in 3" :key="index" class="skeleton">
-        <span class="bar short" />
-        <span class="bar" />
-        <span class="bar long" />
-      </div>
+      <el-skeleton v-for="index in 3" :key="index" class="skeleton schedule-card-placeholder" :rows="3" animated />
     </div>
-    <p v-else-if="tasksState === 'error'" class="state" role="alert">
-      <span>{{ t("loadFailed") }}</span>
-      <button type="button" class="link" @click="loadTasks()">{{ t("retry") }}</button>
-    </p>
-    <el-empty v-else-if="shown.length === 0" :description="emptyText" :image-size="40" />
+    <el-alert v-else-if="tasksState === 'error'" :title="t('loadFailed')" type="error" :closable="false" show-icon>
+      <el-button text size="small" @click="loadTasks()">{{ t("retry") }}</el-button>
+    </el-alert>
+    <div v-else-if="shown.length === 0" class="empty" role="status">
+      <component :is="query ? Search : CalendarClock" :size="24" aria-hidden="true" />
+      <p>{{ emptyText }}</p>
+    </div>
     <ul v-else class="grid cards">
       <li v-for="task in shown" :key="task.id">
         <ScheduleCard
@@ -500,40 +499,16 @@ defineExpose({ openNewTask });
   justify-content: space-between;
   gap: var(--spacing-md);
 }
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm);
-}
-/* A filter is a pill with the application's name and its number of tasks; the chosen one is tinted and set in bold. */
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: var(--control-height-sm);
-  padding: 0 var(--spacing-md);
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-full);
-  background: var(--el-bg-color);
-  color: var(--el-text-color-regular);
-  font: inherit;
+.filter-segment {
   font-size: var(--text-sm);
-  cursor: pointer;
 }
-.chip:hover:not(.selected) {
-  background: var(--el-fill-color-light);
-}
-.chip.selected {
-  border-color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-  color: var(--brand-link);
-  font-weight: var(--font-semibold);
-}
+.filter-more { min-width: 0; max-width: 100%; }
+.filter-more svg { flex: none; }
 .count {
   color: var(--el-text-color-secondary);
   font-variant-numeric: tabular-nums;
 }
-.chip.selected .count {
+.chip.is-active .count {
   color: inherit;
 }
 /* "More" opens the applications that do not fit in the row, each with its count; the chosen one reads as in the row. */
@@ -546,40 +521,26 @@ defineExpose({ openNewTask });
   font-variant-numeric: tabular-nums;
 }
 :global(.el-dropdown-menu__item.schedule-filter-chosen) {
-  color: var(--brand-link);
+  color: var(--el-text-color-primary);
   font-weight: var(--font-semibold);
 }
 :global(.el-dropdown-menu__item.schedule-filter-chosen .schedule-filter-count) {
   color: inherit;
 }
 .search {
-  width: 220px;
+  width: 280px;
+  max-width: 100%;
 }
-.notice,
-.state {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
+.empty {
+  display: grid;
+  justify-items: center;
   gap: var(--spacing-sm);
-  margin: 0;
-  font-size: var(--text-sm);
-  line-height: var(--leading-sm);
+  padding: var(--spacing-3xl) var(--spacing-lg);
+  text-align: center;
   color: var(--el-text-color-secondary);
+  overflow-wrap: anywhere;
 }
-.notice {
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--radius-sm);
-  background: var(--el-color-warning-light-9);
-  color: var(--el-color-warning);
-}
-.link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--brand-link);
-  font: inherit;
-  cursor: pointer;
-}
+.empty p { margin: 0; min-width: 0; }
 /* Cards fill the width three or more to a row; a narrow page takes them one under another. */
 .grid {
   display: grid;
@@ -590,26 +551,16 @@ defineExpose({ openNewTask });
   list-style: none;
 }
 .skeleton {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-md);
-  height: 200px;
+  min-height: 200px;
   box-sizing: border-box;
   padding: var(--spacing-lg);
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--radius-lg);
+  background: var(--el-bg-color);
 }
-.bar {
-  height: 12px;
-  width: 70%;
-  border-radius: var(--radius-xs);
-  background: var(--el-fill-color);
-}
-.bar.short {
-  width: 35%;
-}
-.bar.long {
-  width: 90%;
+.cards > li { min-width: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .skeleton :deep(.el-skeleton__item) { animation: none; }
 }
 @media (max-width: 760px) {
   .search {

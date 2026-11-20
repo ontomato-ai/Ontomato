@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, shallowRef } from "vue";
-import { ElButton, ElEmpty, ElInput, ElTag, vLoading } from "element-plus";
-import { Download, Maximize, RefreshCw, Search } from "lucide-vue-next";
+import { ElEmpty, ElInput, ElTag, vLoading } from "element-plus";
+import { Download, Maximize, Network, RefreshCw, Search } from "lucide-vue-next";
 import { G6GraphCanvas, graphCategorySlot, readGraphPalette, type GraphCanvasEdge, type GraphCanvasNode } from "@ontomato/foundation-ui/graph/g6";
+import ManagerIconButton from "./ManagerIconButton.vue";
 import { PlatformPageHeader } from "@ontomato/platform-shell";
 import type {
   CapabilityGrantRecord,
@@ -12,7 +13,7 @@ import type {
   TriggerRecord,
   WorkflowRecord,
 } from "../api";
-import { useManagerClient, useOntologyText } from "../context";
+import { useManagerClient, useOntologyText, useSharedText } from "../context";
 import { useManagerFeedback } from "../feedback";
 import type { MessageKey } from "../i18n";
 import {
@@ -39,6 +40,7 @@ import { buildCapabilityMap } from "./capability-map-model";
  * are dashed — the same distinction the instance graph draws between a real foreign key and a derived one.</p>
  */
 const { ot } = useOntologyText();
+const { t } = useSharedText();
 const { message } = useManagerFeedback();
 const {
   loadWorkflows,
@@ -266,13 +268,10 @@ onMounted(async () => {
 
 <template>
   <section ref="root" v-loading="loading" class="capability-map">
-    <PlatformPageHeader compact :title="ot('mapTitle')" :description="ot('mapDesc')">
+    <PlatformPageHeader compact :title="t('nav.capabilityMap')" :description="ot('mapDesc')">
       <template #actions>
         <el-input v-model="query" class="map-filter" :prefix-icon="Search" :placeholder="ot('mapFilter')" clearable @change="place" />
-        <el-button @click="redraw">
-          <RefreshCw :size="16" />
-          <span>{{ ot("mapRefresh") }}</span>
-        </el-button>
+        <ManagerIconButton :icon="RefreshCw" :label="ot('mapRefresh')" :loading="loading" @click="redraw" />
       </template>
     </PlatformPageHeader>
 
@@ -301,7 +300,7 @@ onMounted(async () => {
         <G6GraphCanvas
           ref="canvas"
           class="map-canvas"
-          :label="ot('mapTitle')"
+          :label="t('nav.capabilityMap')"
           :nodes="canvasNodes"
           :edges="canvasEdges"
           :selected="selected ? [selected.id] : []"
@@ -312,9 +311,9 @@ onMounted(async () => {
           @blank="selected = null"
         />
         <div class="map-tools">
-          <button :title="ot('mapFit')" :aria-label="ot('mapFit')" @click="fitView"><Maximize :size="16" /></button>
-          <button :title="ot('mapRelayout')" :aria-label="ot('mapRelayout')" @click="place"><RefreshCw :size="16" /></button>
-          <button :title="ot('mapDownload')" :aria-label="ot('mapDownload')" @click="downloadPng"><Download :size="16" /></button>
+          <ManagerIconButton :icon="Maximize" :label="ot('mapFit')" @click="fitView" />
+          <ManagerIconButton :icon="Network" :label="ot('mapRelayout')" @click="place" />
+          <ManagerIconButton :icon="Download" :label="ot('mapDownload')" @click="downloadPng" />
         </div>
         <div class="map-totals">
           <el-tag size="small" effect="plain">{{ ot("mapGroupGovernance") }} {{ summary.governance }}</el-tag>
@@ -433,28 +432,14 @@ onMounted(async () => {
 
 .map-tools {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  inset-block-start: var(--spacing-sm);
+  inset-inline-end: var(--spacing-sm);
   display: flex;
-  gap: 4px;
-}
-
-.map-tools button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 6px;
-  background: var(--el-bg-color);
-  color: var(--el-text-color-regular);
-  cursor: pointer;
-}
-
-.map-tools button:disabled {
-  cursor: default;
-  opacity: 0.5;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs);
+  border-radius: var(--radius-md);
+  background: var(--el-bg-color-overlay);
+  box-shadow: var(--elevation-overlay);
 }
 
 .map-totals {

@@ -132,7 +132,7 @@ function stateLabel(value: ReturnType<typeof state>) {
 }
 
 .provider-row.active {
-  background: var(--el-color-primary-light-9);
+  background: var(--ui-selection-background, var(--el-color-primary-light-9));
 }
 
 .provider-row-head {

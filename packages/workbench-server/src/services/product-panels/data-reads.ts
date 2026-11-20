@@ -3,8 +3,11 @@ import { BUSINESS_KNOWLEDGE, SCHEDULED_TASK } from "@ontomato/contracts/panel-cl
 import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
-import { directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
-import { OBJECT_TYPE, ONTOLOGY_TYPE, RELATIONSHIP, platformObjectTypes } from "@ontomato/contracts/platform-object-types";
+import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
+import {
+  ATTRIBUTE, DELETE_ATTRIBUTE, DELETE_OBJECT_TYPE, DELETE_RELATIONSHIP, OBJECT_TYPE, ONTOLOGY_TYPE, RELATIONSHIP,
+  SET_PRIMARY_KEY, platformObjectTypes, type PlatformReadDeclaration,
+} from "@ontomato/contracts/platform-object-types";
 import { productPanelSchema, type ProductPanel, type ProductProjection } from "@ontomato/contracts/product-panels";
 import { currentProductRecord } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -12,11 +15,14 @@ import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
 import { createBusinessKnowledgeReadAdapter } from "../business-knowledge/panel-reads";
+import { createOntologyModelReadAdapter } from "../ontology-model/model-reads";
 import { createScheduledTaskReadAdapter } from "../scheduling/panel-reads";
 import { requirePanelUse } from "./application-use";
+import { readPanelComponentCatalogue } from "./component-catalogue";
 import { requireCurrentProduct, requireDirectPanelMember } from "./current";
 
 type ReadInputs = ProductPanelReadRequest["inputs"];
+type ReadMember = ProductPanel["manifest"]["members"][string];
 type ReadSelection = { typeId: string; method: string; primaryKey?: string };
 type ReadAdapter = (selection: ReadSelection, params: Record<string, unknown>) => Promise<unknown> | unknown;
 
@@ -27,9 +33,27 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     return createPlatformOntologyReadAdapter(owner, viewer, callerUserName);
   };
   const knowledge = createBusinessKnowledgeReadAdapter(viewer);
+  const model = createOntologyModelReadAdapter(owner, viewer, callerUserName);
+  const formParams = (params: Record<string, unknown>) => ({
+    values: panelReadParameterSchemas.panelFormValues.optional().parse(params.values),
+    changedField: panelReadParameterSchemas.changedField.optional().parse(params.changedField),
+  });
+  const modelReads: Record<string, ReadAdapter> = {
+    list: (selection, params) => model.list(selection.typeId, {
+      className: panelReadParameterSchemas.className.optional().parse(params.className),
+    }),
+    record: selection => model.record(selection.typeId, selection.primaryKey!),
+    form: (selection, params) => model.form(selection.typeId, selection.primaryKey!, formParams(params)),
+    createForm: (selection, params) => model.createForm(selection.typeId, formParams(params)),
+  };
   return {
-    [OBJECT_TYPE]: { list: async () => (await ontology()).listObjectTypes() },
-    [RELATIONSHIP]: { list: async () => (await ontology()).listRelationships() },
+    [OBJECT_TYPE]: { ...modelReads, [`${DELETE_OBJECT_TYPE}.describe`]: () => model.describe(DELETE_OBJECT_TYPE) },
+    [ATTRIBUTE]: {
+      ...modelReads,
+      [`${DELETE_ATTRIBUTE}.describe`]: () => model.describe(DELETE_ATTRIBUTE),
+      [`${SET_PRIMARY_KEY}.describe`]: () => model.describe(SET_PRIMARY_KEY),
+    },
+    [RELATIONSHIP]: { ...modelReads, [`${DELETE_RELATIONSHIP}.describe`]: () => model.describe(DELETE_RELATIONSHIP) },
     [ONTOLOGY_TYPE]: {
       schema: async () => (await ontology()).schema(),
       counts: async () => (await ontology()).counts(),
@@ -67,20 +91,55 @@ async function readRoot(owner: ProductOwner, viewer: AssistantCredentials, sourc
 }
 
 function effectiveInputs(
-  projection: ProductProjection, member: ProductPanel["manifest"]["members"][string], submitted: ReadInputs,
+  projection: ProductProjection, member: ReadMember, submitted: ReadInputs,
 ): ReadInputs {
   const values = { ...submitted };
   for (const [name, ref] of Object.entries(member.inputs ?? {})) {
     if ("literal" in ref) values[name] = ref.literal;
   }
   for (const [name, value] of Object.entries(values)) {
-    if (!Object.hasOwn(projection.inputs, name))
-      throw new HttpError(400, `Unknown projection input: ${name}`, "PANEL_INPUT_UNKNOWN");
+    if (!Object.hasOwn(projection.inputs, name)) {
+      const implicit = Object.values(projection.data).some(datum => {
+        const source = authoredReadParameterSource(datum.params, name, member);
+        return source && "state" in source && panelReadParameterId(directReadDeclaration(projection, datum)!, name);
+      });
+      if (!implicit) throw new HttpError(400, `Unknown projection input: ${name}`, "PANEL_INPUT_UNKNOWN");
+      continue;
+    }
     const type = projection.inputs[name];
     if (type.kind !== "json" && !matchesDirectPanelValue(type, value))
       throw new HttpError(400, `Invalid projection input: ${name}`, "PANEL_INPUT_TYPE_MISMATCH");
   }
   return values;
+}
+
+async function readParameters(
+  projection: ProductProjection, member: ReadMember, dataName: string, data: DirectProjectionData,
+  declaration: PlatformReadDeclaration, inputs: ReadInputs, runtimeParams: ProductPanelReadRequest["runtimeParams"],
+) {
+  const resolved = new Map<string, unknown>();
+  const runtime = Object.entries(runtimeParams ?? {});
+  if (runtime.length) {
+    const { components } = await readPanelComponentCatalogue();
+    const names = components.get(projection.componentId)?.data?.[dataName]?.runtimeParams ?? [];
+    for (const [name, value] of runtime) {
+      const parameter = panelReadParameterId(declaration, name);
+      if (!parameter || !names.includes(name))
+        throw new HttpError(400, `Runtime parameter '${name}' is not declared for data '${dataName}'`, "PANEL_RUNTIME_PARAMETER_UNKNOWN");
+      if (value == null) continue;
+      const parsed = panelReadParameterSchemas[parameter].parse(value);
+      if (!authoredReadParameterSource(data.params, name, member)) resolved.set(name, parsed);
+    }
+  }
+  const authored = new Set([...Object.keys(data.params), ...Object.keys(member.inputs ?? {}), ...Object.keys(member.outputs ?? {})]);
+  for (const name of authored) {
+    const source = authoredReadParameterSource(data.params, name, member);
+    const parameter = panelReadParameterId(declaration, name);
+    if (!source || !parameter) continue;
+    const value = "literal" in source ? source.literal : inputs["input" in source ? source.input : name];
+    if (value != null) resolved.set(name, panelReadParameterSchemas[parameter].parse(value));
+  }
+  return Object.fromEntries(resolved);
 }
 
 function readSelection({ source, read }: DirectProjectionData, inputs: ReadInputs): ReadSelection {
@@ -111,14 +170,7 @@ export async function readProductPanelData(
     const inputs = effectiveInputs(projection, member, request.inputs);
     const selection = readSelection(data, inputs);
     const declaration = directReadDeclaration(projection, data)!;
-    const params = Object.fromEntries(
-      Object.entries(data.params).flatMap(([name, ref]) => {
-        const value = "literal" in ref ? ref.literal : inputs[ref.input];
-        if (value == null) return [];
-        const parameter = panelReadParameterId(declaration, name)!;
-        return [[name, panelReadParameterSchemas[parameter].parse(value)]];
-      }),
-    );
+    const params = await readParameters(projection, member, request.dataName, data, declaration, inputs, request.runtimeParams);
     if (declaration.parameterMode === "fixed") {
       for (const name of declaration.requiredParams ?? [])
         if (!Object.hasOwn(params, name)) throw new HttpError(400, `Missing read parameter: ${name}`, "PANEL_INPUT_REQUIRED");

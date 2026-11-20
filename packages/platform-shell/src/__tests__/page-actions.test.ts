@@ -1,8 +1,35 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { mount } from "@vue/test-utils";
+import PlatformPageHeader from "../PlatformPageHeader.vue";
 import { createApp, defineComponent, h, nextTick, ref, type Ref } from "vue";
 import { pageActionRow, providePageActions, usePageActions, type PlatformPageActions } from "../page-actions";
 
 describe("page header actions", () => {
+  it("exposes pending saves and actions without allowing another submission", async () => {
+    const onSave = vi.fn();
+    const onClick = vi.fn();
+    const draft = { dirty: true, saving: true, save: onSave, discard: vi.fn() };
+    const action = { id: "refresh", label: "Refresh", loading: true, onClick };
+    const wrapper = mount(PlatformPageHeader, { props: {
+      draft, actions: [action], onSave,
+      labels: { save: "Save", discard: "Discard", unsavedChanges: "Unsaved changes" },
+    } });
+    try {
+      const buttons = wrapper.findAll<HTMLButtonElement>('button[aria-busy="true"]');
+      expect(buttons.map(button => button.text())).toEqual(["Refresh", "Save"]);
+      for (const button of buttons) {
+        expect(button.element.disabled).toBe(true);
+        button.element.click();
+      }
+      expect(onClick).not.toHaveBeenCalled();
+      expect(onSave).not.toHaveBeenCalled();
+      await wrapper.setProps({ draft: { ...draft, saving: false }, actions: [{ ...action, loading: false }] });
+      await wrapper.get("button.primary").trigger("click");
+      expect(onSave).toHaveBeenCalledOnce();
+    } finally {
+      wrapper.unmount();
+    }
+  });
   it("reach the frame that draws the header, and leave it when the page unmounts", async () => {
     const save = () => {};
     const page = defineComponent({

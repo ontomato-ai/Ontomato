@@ -20,6 +20,8 @@ export interface PlatformPageAction {
   id: string;
   label: string;
   icon?: Component;
+  /** Compact tools keep their accessible label and tooltip without visible text. */
+  iconOnly?: boolean;
   /** The page's main action; a header has at most one besides the draft's Save. */
   primary?: boolean;
   /** A destructive action (delete). */

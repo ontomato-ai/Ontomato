@@ -6,7 +6,7 @@ import {productAssetSchema} from '@ontomato/contracts/product-assets';
 const mocks=vi.hoisted(()=>({request:vi.fn()}));
 vi.mock('@ontomato/workbench-ui',()=>({nodeApiRequest:mocks.request}));
 vi.mock('@ontomato/ontology-manager',()=>({useProductText:()=>(value:string)=>value,ManagerFrame:{template:'<div><slot /></div>'},ProductAssetRuntime:{props:['asset','pageState'],template:'<div class="projection">{{JSON.stringify(pageState)}}</div>'}}));
-vi.mock('../pages/PersonalWorkspaceRoute.vue',()=>({default:{props:['productAssetId','pinnedAssets'],template:'<div class="page">{{productAssetId}}</div>'}}));
+vi.mock('../pages/PersonalWorkspaceRoute.vue',()=>({default:{props:['productAssetId','pinnedAssets','hidePageHeader'],template:'<div><h1 v-if="!hidePageHeader">{{productAssetId}}</h1><div class="page">{{productAssetId}}</div></div>'}}));
 import ProductRoute from '../pages/ProductRoute.vue';
 let wrapper:VueWrapper|undefined;
 afterEach(()=>{wrapper?.unmount();vi.resetAllMocks();});
@@ -38,6 +38,21 @@ it('opens the declared deep link rather than silently returning to the applicati
   mocks.request.mockImplementation(async()=>Response.json({asset:root,assets:[root,navigation,asset('home',{kind:'page',children:[]}),asset('detail',{kind:'page',children:[]})],issues:[]}));
   const view=await open('app',{applicationId:'app',navigationPath:'/details'});
   expect(view.find('.page').text()).toBe('detail');
+});
+it('uses application tabs in standalone mode without rendering another page header', async () => {
+  const root = asset('app', { kind: 'application', applicationId: 'app', navigationId: 'nav', children: [] });
+  const nav = asset('nav', { kind: 'navigation', entry: 'home', nodes: [
+    { id: 'home', pageId: 'home', label: 'Home', path: '/' },
+    { id: 'detail', pageId: 'detail', label: 'Detail', path: '/details' },
+  ] });
+  mocks.request.mockResolvedValue(Response.json({ asset: root, assets: [root, nav, asset('home', { kind: 'page', children: [] }), asset('detail', { kind: 'page', children: [] })], issues: [] }));
+  const view = await open('app', { applicationId: 'app', standalone: '1' });
+  expect(view.find('h1').exists()).toBe(false);
+  expect(view.get('[aria-selected=true]').text()).toBe('Home');
+  await view.findAll('[role=tab]')[1]!.trigger('click');
+  expect(view.get('[aria-selected=true]').text()).toBe('Detail');
+  expect(view.get('.page').text()).toBe('detail');
+  expect(mocks.request).toHaveBeenCalledTimes(1);
 });
 it('rejects a deep link absent from the frozen Navigation',async()=>{
   const root=asset('app',{kind:'application',applicationId:'app',navigationId:'nav',children:[]});

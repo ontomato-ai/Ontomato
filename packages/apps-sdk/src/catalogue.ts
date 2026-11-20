@@ -192,8 +192,9 @@ export const components: readonly ComponentMetadata[] = [
     // Either list shape draws the table, and an ontology type lists its declared objects instead: no single one of these
     // is what a placement must declare, so none is required.
     data: {
-      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false },
-      objects: { results: ["panelOntologyObjects"], required: false },
+      // The list pages itself; search and filters are the panel's state, bound by the author.
+      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false, runtimeParams: ["cursor", "size"] },
+      objects: { results: ["panelOntologyObjects"], required: false, runtimeParams: ["page"] },
     },
     outputs: ["selected", "checked", "navigate", "search"],
   }),
@@ -220,8 +221,9 @@ export const components: readonly ComponentMetadata[] = [
     bindsElement: ["PlatformObjectType:*", "Action:*"],
     // A form edits an existing record or creates a new one; which of the two a placement shows is its own choice.
     data: {
-      form: { results: ["panelFormDescription"], required: false },
-      createForm: { results: ["panelFormDescription"], required: false },
+      // The form asks its owner again with the values it holds and the field that changed.
+      form: { results: ["panelFormDescription"], required: false, runtimeParams: ["values", "changedField"] },
+      createForm: { results: ["panelFormDescription"], required: false, runtimeParams: ["values", "changedField"] },
     },
     // The owner's own save: `@binding` stands for the type the projection binds, so one declared operation serves every
     // type this version registers.
@@ -250,8 +252,9 @@ export const components: readonly ComponentMetadata[] = [
     bindsElement: ["PlatformObjectType:*"],
     // The catalogue it offers, and the held values it lists beside it: both are the member's own reads.
     data: {
-      options: { results: ["panelOptionList"], required: true },
-      selected: { results: ["panelOptionList"], required: true },
+      // The reader's search and page of choices, and the values the form holds now.
+      options: { results: ["panelOptionList"], required: true, runtimeParams: ["keyword", "page"] },
+      selected: { results: ["panelOptionList"], required: true, runtimeParams: ["values"] },
     },
   }),
   defineComponentMeta({
@@ -315,7 +318,8 @@ export const components: readonly ComponentMetadata[] = [
       schema: { results: ["panelGraphSchema"], required: false },
       counts: { results: ["panelGraphCounts"], required: false },
       start: { results: ["panelGraphStart"], required: false },
-      neighbors: { results: ["panelGraphNeighbors"], required: true },
+      // The node the reader expands, and the layers and relation kinds the graph shows now.
+      neighbors: { results: ["panelGraphNeighbors"], required: true, runtimeParams: ["node", "layers", "relationKinds"] },
     },
     outputs: ["selectedNode", "selected", "selectedType"],
   }),
@@ -328,7 +332,8 @@ export const components: readonly ComponentMetadata[] = [
       "Lists one-hop relations of the selected node from the bound resource's graph neighbors port, grouped by relation kind with distinct no-neighbors, owner-refused, read-failed and unavailable states, showing edge direction and stored/derived line semantics, and moving selection to a clicked peer node with its complete identity.",
     effects: "Reads the bound graph source's one-hop neighbors as the reader; writes only the panel's own selection state.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
-    data: { neighbors: { results: ["panelGraphNeighbors", "panelRelationNeighbors"], required: true } },
+    // The node a reader moved to, when no state the author bound holds it.
+    data: { neighbors: { results: ["panelGraphNeighbors", "panelRelationNeighbors"], required: true, runtimeParams: ["node"] } },
     outputs: ["selected"],
   }),
   defineComponentMeta({
