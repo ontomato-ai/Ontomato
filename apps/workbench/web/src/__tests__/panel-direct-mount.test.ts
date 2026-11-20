@@ -59,6 +59,7 @@ function open() {
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests, use: { applicationId: "app-tasks", useId: "tasks" },
+    expandPageComposer: noOperations.expandPageComposer,
     confirmOperation: noOperations.confirmOperation,
     read: async (request): Promise<ProductPanelReadResponse> => {
       reads.push(request);

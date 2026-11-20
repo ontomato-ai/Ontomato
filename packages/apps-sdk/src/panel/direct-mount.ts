@@ -40,7 +40,7 @@ export interface DirectPanelRun {
   failed(reason: unknown): void;
 }
 
-export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions, "read" | "confirmOperation" | "translate" | "reportDraftError"> {
+export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions, "read" | "confirmOperation" | "translate" | "reportDraftError" | "expandPageComposer"> {
   manifest: PanelManifest;
   run: DirectPanelRun;
   /** The platform's request path, as the reader: drafts, projection records and the coordinator's operations. */
@@ -81,6 +81,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
     const instance = createDirectPanelInstance(options.manifest, {
       read: options.read,
       confirmOperation: options.confirmOperation,
+      expandPageComposer: options.expandPageComposer,
       translate: options.translate,
       reportDraftError: options.reportDraftError,
       text: createPanelText(options.messages, options.locale, options.defaultLocale),
