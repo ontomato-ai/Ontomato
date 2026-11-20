@@ -18,8 +18,9 @@ import { noOperations } from "./panel-frame";
  * not be read. The component shows them beside what did come back, as the owner wrote them, and still shows the rest.
  *
  * The mistakes these catch: diagnostics dropped, so a reader takes a partial catalogue for the whole one; a partial
- * answer drawn as a failure, hiding the skills that did come back; a held value's notice lost because only the
- * catalogue's read was looked at.
+ * answer drawn as a failure, hiding the skills that did come back; a catalogue with not one good answer that hides its
+ * notice or drops the values the form holds. A held value says it is unavailable by its own reason; the catalogue's
+ * notice comes from the catalogue's read alone.
  */
 
 const record = { domainId: "d", ownerId: "o", revision: 1, createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "" };
@@ -101,18 +102,21 @@ it("shows a list's diagnostics beside the rows that did come back", async () => 
   expect(element.textContent).toContain("The vendor skill source did not answer.");
 });
 
-it("shows a choice's diagnostics, the catalogue's and the held values', beside the choices", async () => {
+it("shows the catalogue's diagnostics beside the choices, and not the held values' read's", async () => {
   const { element } = open(["form", "skills"]);
-  await vi.waitFor(() => expect(element.querySelector('[data-field="/skills"]')?.textContent).toContain("Some skills of the vendor source are not listed."));
-  await vi.waitFor(() => expect(element.querySelector('[data-field="/skills"]')?.textContent).toContain("A chosen skill could not be checked."));
+  const picker = () => element.querySelector('[data-field="/skills"]')?.textContent ?? "";
+  await vi.waitFor(() => expect(picker()).toContain("Some skills of the vendor source are not listed."));
+  expect(picker()).not.toContain("A chosen skill could not be checked.");
 });
 
 it("with not one good answer, still says why, and keeps the values the form holds unchanged", async () => {
   const { element, instance } = open(["list", "form", "skills"], true);
   const picker = () => element.querySelector('[data-field="/skills"]')?.textContent ?? "";
-  await vi.waitFor(() => expect(picker()).toContain("A chosen skill could not be checked."));
-  expect(picker()).toContain("Some skills of the vendor source are not listed.");
-  expect(element.textContent).toContain("The vendor skill source did not answer.");
+  await vi.waitFor(() => expect(picker()).toContain("Some skills of the vendor source are not listed."));
+  await vi.waitFor(() => expect(element.textContent).toContain("The vendor skill source did not answer."));
+  expect(picker()).not.toContain("A chosen skill could not be checked.");
+  // The held values stay chosen.
+  await vi.waitFor(() => expect(picker()).toContain("sqlvendor"));
   expect(element.querySelector(".sdk-object-list-row, .sdk-object-list-table tbody tr")).toBeNull();
   const form = instance.forms.handle("form")!;
   expect(form.values.value.skills).toEqual([skill("sql"), skill("vendor")]);

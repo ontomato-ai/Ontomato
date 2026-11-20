@@ -5,7 +5,7 @@ import { ElFormItem } from "element-plus/es/components/form/index";
 import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { formFieldAt, usePanelContext } from "../panel/context";
-import type { PlatformObjectOption } from "../panel/platform-objects";
+import type { PlatformObjectOption, PlatformObjectOptions } from "../panel/platform-objects";
 import type { PanelOptionList } from "@ontomato/contracts/panel-projection";
 import { MemberDataUnavailable } from "../panel/member-forms";
 import { useMemberRead } from "../panel/member";
@@ -19,14 +19,15 @@ import { useMemberRead } from "../panel/member";
  *
  * A member's choices are its `options` datum (searched and paged with the reader's words) and its `selected` datum (the
  * held values, as choices), read by the instance: through the platform, or this release's resource module in a frame.
- * What the owner says of a partial answer of either (`diagnostics`: a source that did not answer) is shown under the
- * field as the owner wrote it, beside the choices that did come back.
+ * What the owner says of a partial catalogue (`diagnostics` of the `options` read: a source that did not answer) is shown
+ * under the field as the owner wrote it, beside the choices that did come back; a held value the owner no longer offers
+ * says so by its own unavailable reason.
  */
 const props = defineProps<{ formSlot: string; path: string }>();
 const field = formFieldAt(usePanelContext().instance, props.formSlot, () => props.path);
-const options = memberOptions();
+const options: PlatformObjectOptions = memberOptions();
 
-function memberOptions() {
+function memberOptions(): PlatformObjectOptions {
   const readOptions = useMemberRead("options");
   const readSelected = useMemberRead("selected");
   const answered = async (reading: ReturnType<typeof readOptions>) => {
@@ -35,9 +36,8 @@ function memberOptions() {
     return result.value as PanelOptionList;
   };
   return {
-    list: ({ keyword, page }: { keyword: string; page: { number: number; size: number } }) =>
-      answered(readOptions({ ...(keyword ? { keyword } : {}), page })),
-    resolve: (values: readonly RuntimeJsonValue[]) => answered(readSelected({ values: [...values] })),
+    list: ({ keyword, page }) => answered(readOptions({ ...(keyword ? { keyword } : {}), ...(page ? { page } : {}) })),
+    resolve: async (values) => (await answered(readSelected({ values: [...values] }))).options,
   };
 }
 const { t, te } = useI18n();
@@ -49,10 +49,8 @@ const offered = shallowRef<readonly PlatformObjectOption[]>([]);
 const held = shallowRef<readonly PlatformObjectOption[]>([]);
 const searching = ref(false);
 const failure = shallowRef<Error | null>(null);
-/** The owner's notes on the catalogue's latest answer and on the held values' latest answer. */
-const offeredNotes = shallowRef<readonly string[]>([]);
-const heldNotes = shallowRef<readonly string[]>([]);
-const notes = computed(() => [...new Set([...offeredNotes.value, ...heldNotes.value])]);
+/** The owner's notes on the catalogue's latest answer. */
+const notes = shallowRef<readonly string[]>([]);
 const multiple = computed(() => field.field.value?.control.kind === "reference" && field.field.value.control.multiple);
 
 function remember(list: readonly PlatformObjectOption[]) {
@@ -64,7 +62,7 @@ function search(keyword = "") {
   void options.list({ keyword, page: { number: 1, size: 50 } }).then(({ options: listed, diagnostics }) => {
     remember(listed);
     offered.value = listed;
-    offeredNotes.value = diagnostics ?? [];
+    notes.value = diagnostics ?? [];
     searching.value = false;
   }, (reason: unknown) => {
     failure.value = reason instanceof Error ? reason : new Error(String(reason));
@@ -80,13 +78,11 @@ const heldValues = computed<RuntimeJsonValue[]>(() => {
 watch(() => JSON.stringify(heldValues.value), () => {
   if (!heldValues.value.length) {
     held.value = [];
-    heldNotes.value = [];
     return;
   }
-  void options.resolve(heldValues.value).then(({ options: resolved, diagnostics }) => {
+  void options.resolve(heldValues.value).then((resolved) => {
     remember(resolved);
     held.value = resolved;
-    heldNotes.value = diagnostics ?? [];
   }, (reason: unknown) => {
     failure.value = reason instanceof Error ? reason : new Error(String(reason));
   });
