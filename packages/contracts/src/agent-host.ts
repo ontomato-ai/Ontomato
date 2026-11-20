@@ -150,6 +150,8 @@ export const agentHostSendRequestSchema = z
     selectedOption: z.number().int().nonnegative().optional(),
     /** Only a new human run can use the binding; steering does not change the running view. */
     presentationBinding: presentationBindingSchema.optional(),
+    /** Structured variables supplied by an external workflow or integration. */
+    variables: z.record(z.unknown()).optional(),
   })
   .strict().refine(value => value.selectedOption === undefined || value.replyTo !== undefined, "A selection requires replyTo");
 export const agentHostSendResultSchema = z

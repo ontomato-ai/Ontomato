@@ -50,6 +50,13 @@ test("run requests carry the view identity and ready identifies a particular con
   assert.deepEqual(agentHostSendRequestSchema.parse({ message: "Show the page", presentationBinding }), {
     message: "Show the page", presentationBinding,
   });
+  assert.deepEqual(agentHostSendRequestSchema.parse({
+    message: "Assign the next reviewer",
+    variables: { runId: id, stepId: id },
+  }), {
+    message: "Assign the next reviewer",
+    variables: { runId: id, stepId: id },
+  });
   assert.equal(agentHostSendRequestSchema.safeParse({ message: "Show the page", presentationBinding: id }).success, false);
   assert.equal(agentHostSendRequestSchema.safeParse({
     message: "Show the page", presentationBinding: { connectionId: id },

@@ -17,6 +17,7 @@ import org.springframework.transaction.support.TransactionOperations;
 import lombok.extern.slf4j.Slf4j;
 
 import io.ontomato.dataengine.bean.workflow.RunContract;
+import io.ontomato.dataengine.bean.workflow.StepActorPolicy;
 import io.ontomato.dataengine.bean.workflow.Workflow;
 import io.ontomato.dataengine.bean.workflow.WorkflowStep;
 import io.ontomato.dataengine.dao.ActionDao;
@@ -210,11 +211,38 @@ public class WorkflowServiceImpl implements WorkflowService {
                 if (step.getActionType() != null && !WorkflowStep.actionTypes().contains(step.getActionType())) {
                     problems.add(where + " has an unknown action type: " + step.getActionType());
                 }
+                validateActorPolicy(step, where, problems);
 
             }
         }
         validateRunContract(workflow, domainId, problems);
         if (!problems.isEmpty()) throw new IllegalArgumentException(String.join("; ", problems));
+    }
+
+    private void validateActorPolicy(WorkflowStep step, String where, List<String> problems) {
+        String invocation = step.getInvocationMode();
+        if (invocation != null && !WorkflowStep.invocationModes().contains(invocation)) {
+            problems.add(where + " has an unknown invocationMode: " + invocation);
+        }
+        StepActorPolicy policy = step.getActorPolicy();
+        String mode = policy == null ? StepActorPolicy.MODE_NONE : policy.getMode();
+        if (StepActorPolicy.MODE_NONE.equals(mode)) return;
+        if (StepActorPolicy.MODE_RULE.equals(mode)) {
+            if (policy.getMetricViewId() == null || policy.getMetricViewId().isBlank()) {
+                problems.add(where + " rule actorPolicy requires metricViewId");
+            }
+            if (policy.getMetricRevision() == null || policy.getMetricRevision().isBlank()) {
+                problems.add(where + " rule actorPolicy requires metricRevision");
+            }
+            return;
+        }
+        if (StepActorPolicy.MODE_AGENT.equals(mode)) {
+            if (policy.getAgentId() == null || policy.getAgentId().isBlank()) {
+                problems.add(where + " agent actorPolicy requires agentId");
+            }
+            return;
+        }
+        problems.add(where + " has an unknown actorPolicy.mode: " + mode);
     }
 
     private void validateTarget(WorkflowStep step, Action action, Workflow workflow, List<String> problems) {

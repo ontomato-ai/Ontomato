@@ -229,6 +229,18 @@ export interface WorkflowStepRecord {
   actionId?: string;
   actionType?: string;
   scope: WorkflowScope;
+  actorPolicy?: {
+    mode: "none" | "rule" | "agent";
+    metricViewId?: string;
+    metricRevision?: string;
+    principalField?: string;
+    parameters?: Record<string, unknown>;
+    valueMap?: Record<string, string>;
+    executionPrincipalId?: string;
+    agentId?: string;
+    instruction?: string;
+  };
+  invocationMode?: "manual" | "automatic";
   description?: string;
 }
 
