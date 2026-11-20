@@ -35,7 +35,7 @@ export const readPanelOperationRequestSchema = panelUseRefSchema.extend({
   call: panelReadOperationCallSchema,
 }).strict();
 export type ReadPanelOperationRequest = z.infer<typeof readPanelOperationRequestSchema>;
-export { panelReadOperationResultSchema as readPanelOperationResponseSchema } from "./panel-operations";
+export { panelReadOperationJsonResultSchema as readPanelOperationResponseSchema } from "./panel-operations";
 
 /** The descriptor GET query locates the published operation through its actual application use. */
 export const panelOperationRefSchema = panelUseRefSchema.extend({ operationId: key }).strict();

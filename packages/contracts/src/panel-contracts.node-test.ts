@@ -349,7 +349,8 @@ test("feedback, governance records and the skill library read through their owne
   assert.deepEqual(required(FEEDBACK_RECORD, "counts"), ["by"]);
   assert.deepEqual(required(KNOWLEDGE_GOVERNANCE_RECORD, "sourcePage"), ["source"]);
   assert.deepEqual(required(SKILL, "file"), ["path"]);
-  assert.deepEqual(platformObjectTypes[SKILL].operations, [DELETE_SKILL]);
+  assert.deepEqual(platformObjectTypes[SKILL].operations, [DELETE_SKILL, EXPORT_SKILL]);
+  assert.deepEqual(platformObjectTypes[FEEDBACK_RECORD].operations, [EXPORT_FEEDBACK]);
 });
 
 test("model reads and operations use their owner's fixed signatures", async () => {
@@ -1252,6 +1253,38 @@ test("MetricView and Function management reads do not grant operation or concret
     assert.ok(!clientSends([operationKey], "GET", "/data-query", path));
     assert.ok(!clientSends([operationKey], "POST", "", path));
   }
+});
+
+test("an export uses the read endpoint without a draft or a write intent", () => {
+  const feedback = {
+    applicationId: "ontology", useId: "feedback", operationId: "list.export",
+    call: { input: { search: "status", rating: "like" } },
+  };
+  assert.deepEqual(readPanelOperationRequestSchema.parse(feedback), feedback);
+  const skill = {
+    applicationId: "ontology", useId: "skills", operationId: "details.export",
+    call: { target: { kind: "object", objectType: SKILL, primaryKey: "skill-1" }, input: {} },
+  };
+  assert.deepEqual(readPanelOperationRequestSchema.parse(skill), skill);
+  assert.equal(readPanelOperationRequestSchema.safeParse({ ...feedback, call: { ...feedback.call, draft: {} } }).success, false);
+});
+
+test("a panel download validates the same basename and media type for the file and its receipt", async () => {
+  const { panelDownloadFileSchema } = await import("./panel-download");
+  const bytes = new Uint8Array([1, 2]);
+  const file = { bytes, mime: "text/csv", suggestedName: "反馈.csv" };
+  assert.deepEqual(panelDownloadFileSchema.parse(file), file);
+  for (const invalid of [
+    { suggestedName: "../feedback.csv" }, { suggestedName: ".feedback.csv" },
+    { suggestedName: "feedback\u0000.csv" }, { suggestedName: "feedback.zip" },
+    { mime: "text/html" }, { bytes: "encoded" },
+  ]) {
+    assert.equal(panelDownloadFileSchema.safeParse({ ...file, ...invalid }).success, false);
+  }
+  const receipt = { kind: "file", name: file.suggestedName, mime: file.mime };
+  assert.deepEqual(panelReadOperationResultSchema.parse(receipt), receipt);
+  assert.equal(panelReadOperationResultSchema.safeParse({ ...receipt, name: "feedback.zip" }).success, false);
+  assert.equal(readPanelOperationResponseSchema.safeParse(receipt).success, false);
 });
 
 test("a read-only trial carries the current draft and parameters without a write intent", () => {

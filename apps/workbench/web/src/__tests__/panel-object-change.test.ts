@@ -9,7 +9,7 @@ import PanelApplicationRoute from "../../../../../packages/platform-web/src/page
 import type { DisplayObjectRefresh } from "../../../../../packages/agent-shell-ui/src/conversation-display";
 import { panelAnswer,
   currentSdk, installPlatform, leaveFrame, manifestP, nothingAt, panelRecord, panelSnapshot, panelUse, SCHEDULED_TASK,
-  projections, task, type Sent,
+  projections, providePlatform, task, type Sent,
 } from "./panel-frame";
 
 /*
@@ -53,7 +53,7 @@ it("tells the Manager's counts which object types a write changed, and nothing f
     props: route => ({ applicationId: route.params.applicationId, get objectRefresh() { return refresh.value; } }),
   }] });
   await router.push(use.path);
-  const app = createApp({ render: () => h(RouterView) }).use(router).use(workbenchI18n()).use(ElementPlus);
+  const app = providePlatform(createApp({ render: () => h(RouterView) }).use(router).use(workbenchI18n()).use(ElementPlus));
   app.provide(countedTypesChangedKey, objectTypes => { counted.push(objectTypes); });
   app.mount(document.body.appendChild(document.createElement("div")));
   try {

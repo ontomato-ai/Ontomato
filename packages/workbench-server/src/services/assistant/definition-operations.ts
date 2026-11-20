@@ -29,10 +29,11 @@ const affectedDefinition = (id: string) => ({
 
 function draftInput(input: Record<string, unknown>, target: PanelOperationTarget) {
   const { values, submittedFields } = inputSchema.parse(input);
-  if (target.kind === "draft" || submittedFields?.includes("/skills")) return parseAgentDefinitionForm(values);
+  if (target.kind === "draft") return parseAgentDefinitionForm(values);
   if (submittedFields === undefined) return parseAgentDefinitionUpdateForm(values);
+  if (submittedFields.some(field => field === "/skills" || field.startsWith("/skills/"))) return values;
   const { skills: _skills, ...otherValues } = values;
-  return parseAgentDefinitionUpdateForm(otherValues);
+  return otherValues;
 }
 
 async function ownerError(response: Response) {
@@ -98,9 +99,12 @@ export const agentDefinitionOperations = [
       const selection = { credentials: host.initiator.credentials, view: host.skillView! };
       try {
         await assertPermission(credentials, agentDefinitionPermissions);
+        const { values, submittedFields } = inputSchema.parse(input);
         const saved = target.kind === "draft"
-          ? await createAgentDefinitionSnapshot(intentId, parseAgentDefinitionForm(inputSchema.parse(input).values), owner, credentials, selection)
-          : await saveAgentDefinitionSnapshot(target.primaryKey, draftInput(input, target), owner, credentials, selection);
+          ? await createAgentDefinitionSnapshot(intentId, parseAgentDefinitionForm(values), owner, credentials, selection)
+          : await saveAgentDefinitionSnapshot(target.primaryKey,
+            submittedFields === undefined ? parseAgentDefinitionUpdateForm(values) : { values, submittedFields },
+            owner, credentials, selection);
         return { kind: "success", data: saved.definition, affected: affectedDefinition(saved.definition.id) };
       } catch (error) {
         if (!(error instanceof HttpError) || error.status >= 500) throw error;

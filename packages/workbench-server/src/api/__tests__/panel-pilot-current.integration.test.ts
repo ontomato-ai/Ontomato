@@ -252,6 +252,10 @@ beforeAll(async () => {
       defaultModelId: "demo/chat", embeddingModelId: "demo/embed",
     } });
   });
+  app.post("/internal/agent-execution/validate-setting", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    res.status(204).end();
+  });
   app.get("/platform/agent-execution/options", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.header("Accept-Language")).toBe("zh-CN");
@@ -830,6 +834,27 @@ it("reads agent settings and reference options with the panel viewer", async () 
   expect(skills.map(option => option.value)).toEqual([missing, governance, missing]);
   expect(skills[0]).toMatchObject({ label: "技能不可用", unavailable: { reason: "你无法使用此技能。" } });
   expect(skills[0]).toEqual(skills[2]);
+
+  const partial = await request("POST", "panel-operations/intents", {
+    applicationId: "agent-settings", useId: "settings", operationId: "definition.save",
+    call: {
+      target: { kind: "object", objectType: "platform:AgentDefinition", primaryKey: agentId },
+      input: { values: { name: "Renamed analyst", description: "Stale form text" }, submittedFields: ["/name"] },
+    },
+  });
+  expect(partial.status, await partial.clone().text()).toBe(200);
+  const { intentId } = await partial.json();
+  const dispatched = await request("POST", `panel-operations/intents/${intentId}/dispatch`, {});
+  expect(dispatched.status, await dispatched.clone().text()).toBe(200);
+  expect(await dispatched.json()).toMatchObject({
+    kind: "dispatched", outcome: { kind: "success", data: { name: "Renamed analyst", description: "Inventory summary" } },
+  });
+  const { rows } = await state.pool!.query(
+    `SELECT name, description, enabled, system_prompt, skills FROM "${state.schema}".assistant_agents WHERE id=$1`, [agentId],
+  );
+  expect(rows).toEqual([{
+    name: "Renamed analyst", description: "Inventory summary", enabled: false, system_prompt: "Read inventory", skills: [],
+  }]);
 
   state.allowAgentReads = false;
   expect(await read("definition", "createForm")).toEqual({ status: "forbidden" });

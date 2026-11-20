@@ -29,4 +29,5 @@ export type { PanelProjectionRegistration, ProjectionPorts } from "../panel/port
 export type { MemberOperations, MemberOperationsState } from "../panel/member-operations";
 export { useMemberOperations } from "../panel/member";
 export { usePanelData } from "../panel/panel-data";
+export { savePanelFile, type PanelDownloadReceipt } from "../panel/save-file";
 export type { PanelStateStore } from "../panel/state";

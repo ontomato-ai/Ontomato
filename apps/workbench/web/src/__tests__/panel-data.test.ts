@@ -178,3 +178,26 @@ it("keeps a member whose projection cannot be read to itself: the rest of the pa
   expect(failed).toEqual([]);
   (await mount).dispose();
 });
+
+it("says where to call it when it is called outside a component's setup", async () => {
+  const element = document.createElement("div");
+  document.body.append(element);
+  const module = panelModuleFor({
+    mounted: () => {}, element, template: "<p></p>",
+    install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
+    manifest,
+    run: {
+      pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
+      failed: (reason) => { throw reason; },
+    },
+    messages: {}, locale: ref("en"), defaultLocale: "en",
+    requests: { request: async () => Response.json({ projection: taskData }) },
+    use: { applicationId: "app-tasks", useId: "tasks" },
+    expandPageComposer: noOperations.expandPageComposer,
+    confirmOperation: noOperations.confirmOperation,
+    read: async (): Promise<ProductPanelReadResponse> => ({ status: "ready", value: {} as never }),
+  });
+  // At a module's top level (or after an await in setup), not in a panel's frame: the reason names the call's place.
+  expect(() => module.usePanelData("task", "record")).toThrow("Call usePanelData in a component's setup, before any await");
+});

@@ -90,6 +90,16 @@ async function knowledgeTitle(host: Host, target: PanelRecordTarget): Promise<st
   return found.knowledgeTitle;
 }
 
+/**
+ * The fields a save sends: when the caller names what it submitted, only those, so a field it left alone is not
+ * changed, whatever value the form still shows for it. The owner keeps the rest as they are, or a new entry's defaults.
+ */
+function submittedValues({ values, submittedFields }: z.infer<typeof saveInputSchema>): Record<string, unknown> {
+  if (submittedFields === undefined) return values;
+  const fields = new Set(submittedFields.map(path => path.split("/")[1]!.replace(/~1/g, "/").replace(/~0/g, "~")));
+  return Object.fromEntries(Object.entries(values).filter(([field]) => fields.has(field)));
+}
+
 /** A save writes the chosen target: a draft names no existing entry, and an update carries the target's id. */
 function valuesForTarget(target: PanelOperationTarget, values: Record<string, unknown>): Record<string, unknown> {
   const id = values.knowledgeID;
@@ -205,7 +215,7 @@ export const m7ServerOperations = [
       },
     },
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
-      return save(host, target, valuesForTarget(target, saveInputSchema.parse(input).values));
+      return save(host, target, valuesForTarget(target, submittedValues(saveInputSchema.parse(input))));
     },
   },
   {

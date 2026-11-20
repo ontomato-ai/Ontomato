@@ -147,7 +147,8 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     open: (request) => Promise.reject(new Error(`This SDK release opens no ${request.mode === "entry" ? "application entry" : "member"} from an event`)),
     text: options.text,
   });
-  const operations = computed(() => panelOperations(manifest, registrations.value, state, forms, events, writeOperation));
+  const operations = computed(() => panelOperations(manifest, registrations.value, state, forms, events, writeOperation,
+    (operationId, call) => options.operations.read(operationId, call)));
   /** A member's output: the state it binds takes the value, then the events on it run. */
   async function output(member: string, name: string, value: RuntimeJsonValue, item?: RuntimeJsonValue) {
     const declaration = manifest.members[member];
