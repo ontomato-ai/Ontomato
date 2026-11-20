@@ -4,7 +4,7 @@ import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomat
 import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
-import { platformObjectTypes } from "@ontomato/contracts/platform-object-types";
+import { OBJECT_TYPE, ONTOLOGY_TYPE, RELATIONSHIP, platformObjectTypes } from "@ontomato/contracts/platform-object-types";
 import { productPanelSchema, type ProductPanel, type ProductProjection } from "@ontomato/contracts/product-panels";
 import { currentProductRecord } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -12,6 +12,7 @@ import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
 import { createBusinessKnowledgeReadAdapter } from "../business-knowledge/panel-reads";
+import { createPlatformOntologyReadAdapter } from "../platform-ontology/panel-reads";
 import { createScheduledTaskReadAdapter } from "../scheduling/panel-reads";
 import { requirePanelUse } from "./application-use";
 import { requireCurrentProduct, requireDirectPanelMember } from "./current";
@@ -20,10 +21,20 @@ type ReadInputs = ProductPanelReadRequest["inputs"];
 type ReadSelection = { typeId: string; method: string; primaryKey?: string };
 type ReadAdapter = (selection: ReadSelection, params: Record<string, unknown>) => Promise<unknown> | unknown;
 
-function readAdapters(viewer: AssistantCredentials): Record<string, Record<string, ReadAdapter>> {
+function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerUserName?: string): Record<string, Record<string, ReadAdapter>> {
   const schedules = createScheduledTaskReadAdapter(viewer);
+  const ontology = createPlatformOntologyReadAdapter(owner, viewer, callerUserName);
   const knowledge = createBusinessKnowledgeReadAdapter(viewer);
   return {
+    [OBJECT_TYPE]: { list: () => ontology.listObjectTypes() },
+    [RELATIONSHIP]: { list: () => ontology.listRelationships() },
+    [ONTOLOGY_TYPE]: {
+      schema: () => ontology.schema(),
+      counts: () => ontology.counts(),
+      start: () => ontology.start(),
+      neighbors: (_selection, params) => ontology.neighbors(params),
+      objects: (_selection, params) => ontology.objects(params),
+    },
     [SCHEDULED_TASK]: {
       list: () => schedules.list(),
       record: selection => schedules.record(selection.primaryKey!),
@@ -85,7 +96,7 @@ function readSelection({ source, read }: DirectProjectionData, inputs: ReadInput
 }
 
 export async function readProductPanelData(
-  owner: ProductOwner, viewer: AssistantCredentials, request: ProductPanelReadRequest,
+  owner: ProductOwner, viewer: AssistantCredentials, request: ProductPanelReadRequest, callerUserName?: string,
 ): Promise<ProductPanelReadResponse> {
   try {
     const panel = await readRoot(owner, viewer, request.source);
@@ -110,7 +121,7 @@ export async function readProductPanelData(
       for (const name of declaration.requiredParams ?? [])
         if (!Object.hasOwn(params, name)) throw new HttpError(400, `Missing read parameter: ${name}`, "PANEL_INPUT_REQUIRED");
     }
-    const read = readAdapters(viewer)[selection.typeId]?.[selection.method];
+    const read = readAdapters(owner, viewer, callerUserName)[selection.typeId]?.[selection.method];
     if (!read) throw new HttpError(422, "The owner read is unavailable", "PANEL_READ_UNAVAILABLE");
     const result = await read(selection, params);
     if (declaration.result === "panelRecordList") {

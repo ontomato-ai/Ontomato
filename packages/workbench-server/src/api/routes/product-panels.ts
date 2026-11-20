@@ -30,6 +30,7 @@ import {
   readCurrentPanelRecord, readCurrentProjectionRecord, saveCurrentPanel, saveCurrentProjection, validateApplicationPanelReferences,
 } from "../../services/product-panels/current";
 import { HttpError } from "../../utils/errors";
+import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { readProductPanelData } from "../../services/product-panels/data-reads";
 import { productDefinitionStreamRequestSchema, type ProductDefinitionStreamFrame } from "@ontomato/contracts/product-subscriptions";
 import { authorizeDefinitionStream, requirePanelDefinitions } from "../../services/product-panels/definition-stream";
@@ -57,7 +58,7 @@ productPanelsRouter.post("/read", wrap(async (req, res) => {
   const preview = req.header(BUILD_TEST_HEADER);
   const viewer = preview === undefined
     ? credentials : { ...credentials, headers: { ...credentials.headers, [BUILD_TEST_HEADER]: preview } };
-  res.json(await readProductPanelData(owner, viewer, request));
+  res.json(await readProductPanelData(owner, viewer, request, (req as AuthenticatedRequest).userName));
 }));
 productPanelsRouter.get("/:id/snapshot", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
