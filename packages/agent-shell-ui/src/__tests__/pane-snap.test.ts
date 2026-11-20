@@ -10,6 +10,34 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
+it("offers only the layout switch that applies to the current view", async () => {
+  const root = document.createElement("div");
+  document.body.appendChild(root);
+  const view = ref<"side" | "full">("side");
+  app = createApp({ render: () => h(ShellPagePane, {
+    feature: { id: "panel", label: "Workspace", icon: "pages", availability: "page", withConversation: true },
+    view: view.value,
+    busy: false,
+    sending: false,
+    disabled: false,
+    onExpand: () => { view.value = "full"; },
+    onCollapse: () => { view.value = "side"; },
+  }) });
+  app.provide(shellContextKey, {
+    labels: ref({ expand: "Expand page", collapse: "Show beside chat", close: "Close" }),
+    questions: { pending: ref([]), sending: ref(false), view: { skipped: [] } },
+  } as unknown as ShellContext);
+  app.mount(root);
+
+  root.querySelector<HTMLButtonElement>('button[aria-label="Expand page"]')!.click();
+  await nextTick();
+  expect(root.querySelector('button[aria-label="Expand page"]')).toBeNull();
+  root.querySelector<HTMLButtonElement>('button[aria-label="Show beside chat"]')!.click();
+  await nextTick();
+  expect(root.querySelector('button[aria-label="Show beside chat"]')).toBeNull();
+  expect(root.querySelector('button[aria-label="Expand page"]')).not.toBeNull();
+});
+
 /** A page beside the conversation, with the window at happy-dom's 1024px: the side is 430px, at most 717px, at least 360px. */
 async function sidePane() {
   const root = document.createElement("div");

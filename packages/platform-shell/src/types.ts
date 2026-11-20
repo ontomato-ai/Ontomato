@@ -5,6 +5,8 @@ export interface PlatformApp {
   label: string;
   /** Icon name from the shell's curated set (see icons.ts). */
   icon: string;
+  /** The application was published from App Builder. */
+  built?: boolean;
   /**
     * The application's rail section: user applications, builders, governance, or settings above the account.
     * Absent means `apps`.
@@ -85,6 +87,8 @@ export interface PlatformShellLabels {
   collapseRail: string;
   /** Accessible name of the rail's navigation landmark. */
   applications: string;
+  home?: string;
+  builtApplication?: string;
   /**
    * The product's name on the rail (`Ontomato`). It is the product the applications belong to, not any one application's
    * former name.

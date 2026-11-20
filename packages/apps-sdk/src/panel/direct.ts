@@ -221,7 +221,9 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
             // Unseen, the instance reads nothing; the refresh when it is seen again reads every shown datum.
             if (!active) return;
             const reading = ++sequence;
-            state.value = { status: "loading" };
+            // A datum already shown stays on screen until its new answer arrives: rereading replaces what it shows, never
+            // the component drawing it. Only a first read (or one after an empty, refused or failed answer) shows loading.
+            if (state.value.status !== "ready") state.value = { status: "loading" };
             // An answer for an earlier read (an earlier selection) is dropped once a later read was asked for.
             void answer(name, inputs()).then((result) => { if (reading === sequence) state.value = result; });
           };

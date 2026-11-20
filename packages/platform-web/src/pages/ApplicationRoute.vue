@@ -21,4 +21,6 @@ watch(frame,element=>{
 onBeforeUnmount(()=>{generation++;dispose?.();});
 </script>
 <template><p v-if="error" role="alert">{{error}}</p><iframe v-else-if="policy!==null" ref="frame" :key="src" :sandbox="policy===2?'allow-scripts':undefined" title="Application" class="hosted-application" /></template>
-<style scoped>.hosted-application { width: 100%; height: 100%; border: 0; flex: 1; }</style>
+<style scoped>
+.hosted-application { display: block; width: 100%; min-width: 0; min-height: 0; border: 0; flex: 1 1 0; }
+</style>

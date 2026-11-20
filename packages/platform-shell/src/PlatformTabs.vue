@@ -4,12 +4,29 @@ defineProps<{
   tabs: readonly { id: string; label: string; icon?:Component }[];
   activeId?: string;
   label: string;
+  variant?: 'segmented';
 }>();
 const emit = defineEmits<{ select: [id: string] }>();
+
+function move(event: KeyboardEvent) {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  const tab = event.target as HTMLElement;
+  const list = tab.closest('[role="tablist"]');
+  if (!list || tab.getAttribute('role') !== 'tab') return;
+  const buttons = [...list.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+  const index = buttons.indexOf(tab as HTMLButtonElement);
+  const rtl = getComputedStyle(list).direction === 'rtl';
+  const step = (event.key === 'ArrowRight' ? 1 : -1) * (rtl ? -1 : 1);
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + step + buttons.length) % buttons.length;
+  event.preventDefault();
+  buttons[next]?.focus();
+  buttons[next]?.click();
+  buttons[next]?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+}
 </script>
 
 <template>
-  <div class="page-tabs-bar" role="tablist" :aria-label="label">
+  <div class="page-tabs-bar" :class="{ 'is-segmented': variant === 'segmented' }" role="tablist" :aria-label="label" @keydown="move">
     <button
       v-for="tab in tabs"
       :key="tab.id"
@@ -17,7 +34,8 @@ const emit = defineEmits<{ select: [id: string] }>();
       role="tab"
       class="page-tab"
       :class="{ active: tab.id === activeId }"
-      :aria-selected="tab.id === activeId"
+       :aria-selected="tab.id === activeId"
+       :tabindex="tab.id === (activeId ?? tabs[0]?.id) ? 0 : -1"
       @click="tab.id !== activeId && emit('select', tab.id)"
     ><component :is="tab.icon" v-if="tab.icon" :size="16" aria-hidden="true"/>{{ tab.label }}</button>
   </div>
@@ -56,5 +74,34 @@ const emit = defineEmits<{ select: [id: string] }>();
 .page-tab:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: -2px;
+}
+.page-tabs-bar.is-segmented {
+  box-sizing: border-box;
+  inline-size: max-content;
+  max-inline-size: 100%;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--el-fill-color-light);
+  scrollbar-width: thin;
+}
+.page-tabs-bar.is-segmented .page-tab {
+  height: var(--control-height-sm);
+  padding-inline: var(--spacing-sm);
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+}
+.page-tabs-bar.is-segmented .page-tab:not(.active):hover {
+  background: var(--ui-fill-tertiary, var(--el-fill-color));
+  color: var(--el-text-color-primary);
+}
+.page-tabs-bar.is-segmented .page-tab.active {
+  background: var(--el-bg-color-overlay);
+  color: var(--el-text-color-primary);
+  box-shadow: var(--elevation-panel);
+  font-weight: var(--font-semibold);
 }
 </style>

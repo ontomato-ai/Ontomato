@@ -13,16 +13,40 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Product controls use their existing border and background states rather than an additional outline. */
-*,
-*::before,
-*::after {
-  outline: none !important;
-  outline-offset: 0 !important;
+:where(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
 }
 
 .el-overlay {
   background-color: var(--el-overlay-color-lighter);
+}
+
+/* Match the tooltip surface and motion across pages, including teleported hints. */
+html:root .el-popper.el-tooltip[role="tooltip"]:not(.el-select__popper, .el-dropdown__popper, .el-popover, .el-cascader__dropdown) {
+  max-width: min(320px, calc(100vw - 16px));
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 0 !important;
+  border-radius: var(--radius-sm);
+  background: var(--el-bg-color-overlay) !important;
+  color: var(--el-text-color-secondary) !important;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 4%), 0 2px 4px rgb(0 0 0 / 2%), 0 0 0 1px var(--el-border-color) !important;
+  backdrop-filter: none !important;
+  font-size: var(--text-xs) !important;
+  line-height: 1.2 !important;
+  overflow-wrap: anywhere;
+  transition-property: opacity;
+}
+html:root .el-popper.el-tooltip:not(.el-select__popper, .el-dropdown__popper, .el-popover, .el-cascader__dropdown) > .el-popper__arrow { display: none; }
+html:root .el-popper.el-tooltip.el-fade-in-linear-enter-active {
+  transition: opacity 160ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+html:root .el-popper.el-tooltip.el-fade-in-linear-leave-active { transition: opacity 100ms ease-in; }
+.el-popper.el-tooltip:is(.el-fade-in-linear-enter-from, .el-fade-in-linear-leave-to) {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  html:root .el-popper.el-tooltip:is(.el-fade-in-linear-enter-active, .el-fade-in-linear-leave-active) { transition: none; }
 }
 
 html.dark .el-loading-mask {
@@ -88,6 +112,9 @@ html.dark .el-loading-mask {
 .el-drawer__footer .el-button,
 .el-message-box__btns .el-button {
   margin: 0 !important;
+  max-inline-size: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
   border-radius: var(--radius-sm) !important;
   min-height: var(--control-height);
   height: auto;
@@ -125,6 +152,21 @@ html.dark .el-loading-mask {
 .dialog-close:hover { color: var(--el-text-color-primary); background: var(--el-fill-color-light); }
 .dialog-close:active { background: var(--el-fill-color); }
 
+/* Overlay close icons are neutral controls, including in portaled overlays. */
+:root :is(.el-dialog__headerbtn, .el-message-box__headerbtn, .el-drawer__close-btn) {
+  color: var(--el-text-color-secondary);
+}
+:root :is(.el-dialog__headerbtn, .el-message-box__headerbtn, .el-drawer__close-btn):is(:hover, :focus-visible) {
+  color: var(--el-text-color-primary);
+}
+:root :is(.el-dialog__headerbtn, .el-message-box__headerbtn, .el-drawer__close-btn):focus-visible {
+  outline: 2px solid var(--el-text-color-secondary);
+  outline-offset: -4px;
+}
+html:root :is(.el-dialog__headerbtn, .el-message-box__headerbtn, .el-drawer__close-btn) > .el-icon {
+  color: inherit;
+}
+
 :is(.el-dialog, .el-message-box, .el-drawer) .el-button:not(.el-button--primary, .el-button--danger, .el-button--success, .el-button--warning, .el-button--info, .is-text, .is-link) {
   --el-button-hover-text-color: var(--el-text-color-primary);
   --el-button-hover-bg-color: var(--el-fill-color-light);
@@ -140,6 +182,7 @@ html.dark .el-loading-mask {
 
 .el-message-box__btns {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--component-gap);
   padding-top: var(--spacing-lg);
@@ -225,6 +268,40 @@ html.dark .el-loading-mask {
   max-width: 100%;
 }
 
+/* Wrapping filter groups can also contain a menu for options outside the main row. */
+.filter-segments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  box-sizing: border-box;
+  max-inline-size: 100%;
+  padding: var(--spacing-xs);
+  border-radius: var(--radius-md);
+  background: var(--el-fill-color-light);
+}
+.filter-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  min-height: var(--control-height-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  font: inherit;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.filter-segment:not(.is-active):hover { background: var(--el-color-primary-light-9); }
+.filter-segment.is-active {
+  background: var(--el-bg-color);
+  color: var(--el-text-color-primary);
+  box-shadow: var(--elevation-panel);
+}
+
 /* Auxiliary filters stay quiet; primary view switches retain the standard filled selection. */
 .el-segmented.secondary-segmented {
   --el-segmented-bg-color: transparent;
@@ -265,7 +342,25 @@ html.dark .el-loading-mask {
   --el-pagination-border-radius: var(--radius-sm);
   --el-pagination-button-width-small: var(--control-height-sm);
   --el-pagination-button-height-small: var(--control-height-sm);
+  --el-pagination-item-gap: 0px;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm) var(--spacing-xs);
 }
+.el-pagination .el-pagination__rightwrapper {
+  min-inline-size: 0;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm) var(--spacing-xs);
+}
+.el-pagination .el-pagination__rightwrapper:empty { display: none; }
+.el-pagination .el-pager {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+.el-pagination.is-background :is(.btn-prev, .btn-next, .el-pager li) { margin-inline: 0; }
 .el-pagination button,
 .el-pagination .el-pager li,
 .el-pager li {

@@ -376,7 +376,11 @@ export default {
     "it": "Italiano"
   },
   "audit": {
-    "loadFailed": "Load Failed"
+    "loadFailed": "Could not load audit logs",
+    "all": "All",
+    "resultScope": "Page {page} · Business type: {business} · Operation: {operation}",
+    "previousResults": "Showing the last successful results",
+    "empty": "No audit logs match these filters"
   },
   "platform": {
     "systemAgentModels":"Agent models",

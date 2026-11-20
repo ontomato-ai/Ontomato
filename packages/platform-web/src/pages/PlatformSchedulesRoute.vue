@@ -46,25 +46,20 @@ function changeQuery(change: Record<string, string | null>) {
   }
   void router.replace({ path: route.path, query });
 }
-
-const actions = computed(() => [
-  {
-    id: "new-task",
-    label: t("platformSchedules.newTask"),
-    primary: true,
-    icon: Plus,
-    onClick: () => page.value?.openNewTask(),
-  },
-]);
 </script>
 
 <template>
   <AppPage
+    class="schedule-page"
     :title="t('platformSchedules.title')"
     :description="t('platformSchedules.intro')"
-    :actions="actions"
     :labels="{ save: t('platform.save'), discard: t('platform.discard'), unsavedChanges: t('platform.unsavedChanges') }"
   >
+    <template #actions>
+      <el-button type="primary" class="compact-create" :icon="Plus" @click="page?.openNewTask()">
+        {{ t('platformSchedules.newTask') }}
+      </el-button>
+    </template>
     <PlatformSchedulesPage
       ref="page"
       :host="host"
@@ -76,3 +71,12 @@ const actions = computed(() => [
     />
   </AppPage>
 </template>
+
+<style scoped>
+.el-button.compact-create {
+  min-height: var(--control-height-sm);
+  height: auto;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  line-height: var(--leading-sm);
+}
+</style>

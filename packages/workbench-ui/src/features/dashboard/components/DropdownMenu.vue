@@ -13,6 +13,7 @@
       :class="triggerClass"
       :type="as === 'button' ? 'button' : undefined"
       :title="title"
+      :aria-label="title || t('common.more')"
       @click.stop
     >
       <MoreHorizontal :size="iconSize || 16" :color="iconColor || undefined" />

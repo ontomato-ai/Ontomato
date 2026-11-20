@@ -50,6 +50,8 @@ export default {
     gte: "Gte",
     loadClassFailed: "Load Class Failed",
     loadDataFailed: "Load Data Failed",
+    resultScope: "Page {page} · {size} per page · Search: {search}",
+    previousResults: "Showing the last successful results",
     loadDataFirst: "Load Data First",
     lt: "Lt",
     lte: "Lte",

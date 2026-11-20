@@ -38,3 +38,9 @@ it("lets the conversation's input keep the height its lines set", () => {
   const floating = [...rules.matchAll(/\n\.composer\.floating textarea \{([^}]*)\}/g)].map((rule) => rule[1]).join("");
   expect(floating).toMatch(/flex: 1 1 auto;/);
 });
+
+it("keeps the default send icon as the shared platform action", () => {
+  const composer = source("../components/ShellComposer.vue");
+  expect(composer).toContain('<ArrowUp v-else :size="16" aria-hidden="true" />');
+  expect(composer).toContain('<Send v-if="sendIcon === \'plane\'" :size="13" aria-hidden="true" />');
+});

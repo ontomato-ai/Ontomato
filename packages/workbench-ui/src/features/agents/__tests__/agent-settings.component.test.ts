@@ -15,8 +15,8 @@ const i18n = workbenchI18n();
 const t = i18n.global.t as (key: string) => string;
 
 const AGENTS = [
-  { id: "a1", name: "助理", description: "日常问数" },
-  { id: "a2", name: "分析师", description: "调查分析" },
+  { id: "a1", name: "助理", description: "日常问数", icon: null },
+  { id: "a2", name: "分析师", description: "调查分析", icon: null },
 ];
 
 vi.mock("../api", () => ({
@@ -101,6 +101,19 @@ describe("the agent settings column", () => {
     expect(wrapper.emitted("selectAgent")).toEqual([["a2"]]);
     expect(wrapper.emitted("createAgent")).toHaveLength(1);
     expect(wrapper.emitted("back")).toHaveLength(1);
+  });
+
+  it("marks the editor's default agent and moves the current marker when switching pages", async () => {
+    const wrapper = await mountNav({ agentId: null, creating: false });
+    const current = () => wrapper.get('[aria-current="page"]');
+    expect(current().get(".row-name").text()).toBe("助理");
+
+    await wrapper.setProps({ agentId: "a2" });
+    expect(current().get(".row-name").text()).toBe("分析师");
+    expect(wrapper.findAll('[aria-current="page"]')).toHaveLength(1);
+
+    await wrapper.setProps({ agentId: null, creating: true });
+    expect(current().text()).toBe(t("agents.newAgent"));
   });
 
   it("lists the models at its foot only for an account that may open them", async () => {
