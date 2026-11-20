@@ -272,6 +272,28 @@ test("owner rows may give a status tone and a field's values as tags", async () 
   assert.equal(panelRecordSchema.safeParse({ ...row, tags: { knowledgeTags: "Business" } }).success, false);
 });
 
+test("skill catalogues expose authorized diagnostics and panel reads carry only display text", async () => {
+  const { assistantSkillCatalogSchema } = await import("./assistant-chat");
+  const { panelOptionListSchema, panelRecordQuerySchema } = await import("./panel-projection");
+  const diagnostic = {
+    skill: { namespace: { kind: "domain", domainId: "domain-a" }, name: "pvt-panel-skill" },
+    resourceId: "knowledge-panel",
+    reason: "record_missing",
+  };
+  const diagnostics = { items: [diagnostic], sourceUnavailable: true };
+  assert.deepEqual(assistantSkillCatalogSchema.parse({ skills: [], diagnostics }), { skills: [], diagnostics });
+  assert.deepEqual(assistantSkillCatalogSchema.parse({ skills: [] }), { skills: [] });
+  assert.equal(assistantSkillCatalogSchema.safeParse({
+    skills: [], diagnostics: { ...diagnostics, items: [{ ...diagnostic, reason: "raw error message" }] },
+  }).success, false);
+
+  const messages = ["Some skill sources could not be read."];
+  assert.deepEqual(panelOptionListSchema.parse({ options: [], diagnostics: messages }), { options: [], diagnostics: messages });
+  assert.deepEqual(panelRecordQuerySchema.parse({ rows: [], diagnostics: messages }), { rows: [], diagnostics: messages });
+  assert.equal(panelOptionListSchema.safeParse({ options: [], diagnostics }).success, false);
+  assert.equal(panelRecordQuerySchema.safeParse({ rows: [], diagnostics: diagnostics.items }).success, false);
+});
+
 test("owner query rows carry only actual highlight ranges on their display text", async () => {
   const { panelRecordQuerySchema, panelRecordSchema } = await import("./panel-projection");
   const row = {
