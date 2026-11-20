@@ -8,6 +8,7 @@ import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { runtimeRegisterSkillRequestSchema, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import { appsSdkReleaseManifestSchema } from "@ontomato/contracts/apps-sdk";
 import { installContentLayout } from "../../content/layout";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
@@ -93,15 +94,28 @@ const published = vi.fn();
 const digest = "b".repeat(64);
 
 beforeAll(async () => {
-  root = await mkdtemp(path.join(tmpdir(), "installed-sdk-skill-"));
+  root = await mkdtemp(path.join(tmpdir(), "bundled-sdk-skill-"));
   const publicSkills = path.join(root, "public");
-  const installed = path.join(root, "data/apps-sdk", current);
   const distribution = path.join(root, "dist/apps-sdk");
-  await Promise.all([mkdir(publicSkills), mkdir(installed, { recursive: true }), mkdir(distribution, { recursive: true })]);
+  const bundled = path.join(distribution, current);
+  const manifest = appsSdkReleaseManifestSchema.parse({
+    version: current,
+    product: "ontomato",
+    executionContext: 1,
+    hostTransport: 1,
+    messageBridge: 2,
+    entries: { "@ontomato/sdk/panel": "panel.js" },
+    stylesheet: "styles/sdk.css",
+    components: "components.json",
+    check: "node/panel-check.mjs",
+    libraries: {},
+    docs: "docs/index.md",
+  });
+  await Promise.all([mkdir(publicSkills), mkdir(bundled, { recursive: true })]);
   await Promise.all([
     writeFile(path.join(distribution, "current.json"), JSON.stringify({ version: current, digest: "a".repeat(64) })),
-    writeFile(path.join(installed, "sdk.json"), JSON.stringify({ components: "components.json" })),
-    writeFile(path.join(installed, "components.json"), JSON.stringify({
+    writeFile(path.join(bundled, "sdk.json"), JSON.stringify(manifest)),
+    writeFile(path.join(bundled, manifest.components), JSON.stringify({
       version: current, components: [{ componentId: "ObjectList", meaning: "Displays current objects" }],
     })),
   ]);
@@ -176,7 +190,7 @@ afterAll(async () => {
   if (root) await rm(root, { recursive: true });
 });
 
-it("lists a code panel's protected skill from the installed current SDK and saves its selection", async () => {
+it("lists a code panel's protected skill from the bundled current SDK and saves its selection", async () => {
   const [listed, saved] = await Promise.all([
     fetch(base + "/agent-skills"),
     fetch(`${base}/agent-definitions/${agentId}`, {
