@@ -22,7 +22,7 @@ const notification: AgentNotification = { role: "notification", kind: "agent-ans
 afterEach(() => { vi.unstubAllGlobals(); });
 function channel() {
   let locked = false;
-  const runtime = { options: { agentProviders: [{ id: "registered-custom", hostId: scope.hostId, url: "http://provider.test/channel", token: "service" }] }, store: { messages: vi.fn(async () => []) },
+  const runtime = { options: { agentProviders: [{ id: "registered-custom", hostId: scope.hostId, url: "http://provider.test/channel", token: "service" }] }, store: { messages: vi.fn(async () => []), readOpenAdmission: vi.fn(async () => undefined) },
     importAgentFile: vi.fn(async () => "outputs/agents/delivered.dataset.json"),
     locked: async (_scope: unknown, _session: unknown, fn: () => Promise<unknown>) => { locked = true; try { return await fn(); } finally { locked = false; } },
     questionsChanged: vi.fn(async()=>{}),
