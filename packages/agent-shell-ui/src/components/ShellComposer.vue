@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, useSlots, watch } from "vue";
-import { ArrowUp, MessageSquare, Minus, Square } from "lucide-vue-next";
+import { ArrowUp, MessageSquare, Minus, Send, Square } from "lucide-vue-next";
+import { ElTooltip } from "element-plus";
+import { actionTooltipProps } from "@ontomato/foundation-ui/overlay";
 import type { ShellLabels } from "../types";
 import { useComposerCollapsed } from "../composer-collapsed";
 
@@ -29,6 +31,8 @@ const props = defineProps<{
   sending?: boolean;
   disabled?: boolean;
   autofocus?: boolean;
+  minLines?: number;
+  sendIcon?: "arrow" | "plane";
   /** The box floats over a page (a page's foot, a full page beside the conversation) rather than standing under a conversation. */
   floating?: boolean;
   /** A floating box also names its fold and its round button; a conversation's box has neither. */
@@ -41,12 +45,13 @@ const input = ref<HTMLTextAreaElement | null>(null);
 const composing = ref(false);
 const hasText = computed(() => text.value.trim().length > 0);
 const canSend = computed(() => !props.sending && !props.disabled && hasText.value);
+const tooltipText = (value: unknown) => typeof value === "function" ? String((value as () => unknown)()) : String(value ?? "");
 const { collapsed, setCollapsed } = useComposerCollapsed();
 /** Only a floating box folds; the conversation's own is always there. */
 const folded = computed(() => props.floating && collapsed.value);
 
 /** The lines the input shows before it grows, and the lines it grows to before it scrolls. */
-const lines = computed(() => (props.floating ? { least: 1, most: 6 } : { least: 2, most: 8 }));
+const lines = computed(() => (props.floating ? { least: 1, most: 6 } : { least: Math.min(8, Math.max(1, props.minLines ?? 2)), most: 8 }));
 
 /**
  * The input is as tall as the message, between its least and most lines; past the most, it scrolls inside. It is
@@ -139,26 +144,27 @@ defineExpose({ focus: () => input.value?.focus() });
         </template>
         <div v-if="$slots.context" class="composer-context"><slot name="context" /></div>
         <div class="composer-actions">
+          <ElTooltip v-if="busy" v-bind="actionTooltipProps" :content="tooltipText(labels.stop)">
           <button
-            v-if="busy"
             type="button"
             class="composer-button stop"
-            :title="labels.stop"
             :aria-label="labels.stop"
             @click="emit('stop')"
           >
             <Square :size="12" fill="currentColor" />
           </button>
+          </ElTooltip>
+          <ElTooltip v-if="!busy || hasText" v-bind="actionTooltipProps" :content="tooltipText(labels.send)">
           <button
-            v-if="!busy || hasText"
             type="submit"
             class="composer-button"
             :disabled="!canSend"
-            :title="labels.send"
             :aria-label="labels.send"
           >
-            <ArrowUp :size="16" />
+            <Send v-if="sendIcon === 'plane'" :size="13" aria-hidden="true" />
+            <ArrowUp v-else :size="16" aria-hidden="true" />
           </button>
+          </ElTooltip>
         </div>
       </div>
     </div>
@@ -274,7 +280,7 @@ defineExpose({ focus: () => input.value?.focus() });
   max-width: 60%;
 }
 @container shell-composer (max-width: 300px) {
-  .composer-agent .switch-name {
+  .composer-agent .agent-switch:not(.home) .switch-name {
     display: none;
   }
 }

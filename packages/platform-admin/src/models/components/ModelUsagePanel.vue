@@ -11,7 +11,7 @@ import ModelSelectionSelect from "./ModelSelectionSelect.vue";
  * application's model page), and the embedding model of vector search with the data engine's rebuild status. The call
  * policy of every request closes the page.
  */
-const props = defineProps<{ rebuildStatus: VectorRebuildStatus | null }>();
+const props = defineProps<{ rebuildStatus: VectorRebuildStatus | null; rebuildBusy: boolean }>();
 const emit = defineEmits<{ rebuild: []; pause: [] }>();
 const { t } = useI18n();
 const draft = useModelDraft();
@@ -131,18 +131,15 @@ const timeoutSeconds = secondsField("timeoutMs");
             <p v-if="embeddingDimensions !== null" class="field-hint">{{ t("admin.embeddingRebuildHint") }}</p>
             <div v-if="rebuildAlert || rebuildState" class="rebuild-status">
               <el-alert v-if="rebuildAlert" :type="rebuildAlert.type" :title="rebuildAlert.title" :closable="false" show-icon />
-              <div class="rebuild-actions">
+              <div class="rebuild-actions" :aria-busy="rebuildBusy">
                 <span v-if="rebuildLabel" class="rebuild-state">{{ rebuildLabel }}</span>
-                <el-button v-if="running" size="small" :disabled="rebuildState === 'PAUSING'" @click="emit('pause')">
+                <el-button v-if="running" size="small" :loading="rebuildBusy" :disabled="rebuildState === 'PAUSING'" @click="emit('pause')">
                   {{ t("admin.pauseVectorRebuild") }}
                 </el-button>
-                <el-button v-else-if="resumable" size="small" @click="emit('rebuild')">
+                <el-button v-else-if="resumable" size="small" :loading="rebuildBusy" @click="emit('rebuild')">
                   {{ t("admin.resumeVectorRebuild") }}
                 </el-button>
-                <el-button v-else-if="rebuildState === 'PENDING'" size="small" @click="emit('rebuild')">
-                  {{ t("admin.rebuildVectors") }}
-                </el-button>
-                <el-button v-else-if="rebuildState === 'READY'" size="small" @click="emit('rebuild')">
+                <el-button v-else-if="rebuildState === 'PENDING' || rebuildState === 'READY'" size="small" :loading="rebuildBusy" @click="emit('rebuild')">
                   {{ t("admin.rebuildVectors") }}
                 </el-button>
               </div>

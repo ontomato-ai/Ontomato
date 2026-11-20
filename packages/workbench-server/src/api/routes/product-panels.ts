@@ -106,7 +106,7 @@ productPanelsRouter.post("/definition-stream", wrap(async (req, res) => {
 productPanelsRouter.get("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
   const query = productPanelReadQuerySchema.parse(req.query);
-  const panel = await readCurrentPanelRecord(c.owner, c.credentials, id);
+  const panel = await readCurrentPanelRecord(c.owner, c.credentials, id, !("applicationId" in query));
   res.json(await withPageSkillContext({ panel }, query, c));
 }));
 productPanelsRouter.put("/:id", wrap(async (req, res) => {
@@ -151,7 +151,7 @@ export function createChartProjectionsRouter(service: ReturnType<typeof createCh
 
 productProjectionsRouter.get("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
-  res.json({ projection: await readCurrentProjectionRecord(c.owner, c.credentials, id) });
+  res.json({ projection: await readCurrentProjectionRecord(c.owner, c.credentials, id, true) });
 }));
 productProjectionsRouter.put("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);

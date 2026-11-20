@@ -5,7 +5,8 @@ import { D3ForceLayout } from "@antv/g6";
 import { PlatformPageHeader } from "@ontomato/platform-shell";
 import { graphLayout, initialNodePosition } from "../ontology-graph-layout";
 import { useManagerFeedback } from "../feedback";
-import { ArrowLeft, Box, Link2, Maximize, Minus, Network, Pencil, Plus, Trash2 } from "lucide-vue-next";
+import { ArrowLeft, Link2, Maximize, Minus, Network, Pencil, Plus, Trash2 } from "lucide-vue-next";
+import ManagerIconButton from "../components/ManagerIconButton.vue";
 import { Graph, Node, Edge } from "@antv/x6";
 import { useManagerClient, useManagerContext, useOntologyText, useSharedText } from "../context";
 import { readGraphColors } from "../graph-colors";
@@ -1424,13 +1425,13 @@ async function saveClassDesc(cls: ClassDef) {
     <!-- The platform's one page header: the title, its line of description, and this page's own buttons. -->
     <PlatformPageHeader compact :title="t('nav.visualModeling')" :description="ot('visualModelingDesc')">
       <template #actions>
-        <el-button v-if="backToPlayground" :icon="ArrowLeft" @click="emit('back')">
+        <el-button v-if="backToPlayground" text :icon="ArrowLeft" @click="emit('back')">
           {{ ot("backToGraph") }}
         </el-button>
         <el-button :icon="Link2" @click="openAddEdgeDialog">
           {{ t("hotData.addRelation") }}
         </el-button>
-        <el-button type="primary" :icon="Box" @click="openAddNodeDialog">
+        <el-button type="primary" :icon="Plus" @click="openAddNodeDialog">
           {{ t("hotData.addClass") }}
         </el-button>
       </template>
@@ -1440,10 +1441,10 @@ async function saveClassDesc(cls: ClassDef) {
     <div class="modeling-body">
       <div class="toolbar platform-page-gutter">
         <div class="zoom-controls" role="toolbar" :aria-label="ot('fitCanvas')">
-          <el-button :title="ot('zoomIn')" :aria-label="ot('zoomIn')" @click="onZoomIn"><Plus :size="18" /></el-button>
-          <el-button :title="ot('zoomOut')" :aria-label="ot('zoomOut')" @click="onZoomOut"><Minus :size="18" /></el-button>
-          <el-button :title="ot('fitCanvas')" :aria-label="ot('fitCanvas')" @click="onZoomFit"><Maximize :size="18" /></el-button>
-          <el-button :title="ot('relayout')" :aria-label="ot('relayout')" :disabled="loading || layouting || !classList.length" @click="onRelayout"><Network :size="18" /></el-button>
+          <ManagerIconButton :icon="Plus" :label="ot('zoomIn')" @click="onZoomIn" />
+          <ManagerIconButton :icon="Minus" :label="ot('zoomOut')" @click="onZoomOut" />
+          <ManagerIconButton :icon="Maximize" :label="ot('fitCanvas')" @click="onZoomFit" />
+          <ManagerIconButton :icon="Network" :label="ot('relayout')" :loading="layouting" :disabled="loading || !classList.length" @click="onRelayout" />
         </div>
 
         <div class="selection-cluster">
@@ -1471,7 +1472,7 @@ async function saveClassDesc(cls: ClassDef) {
             </el-button>
             <el-button
               type="danger"
-              plain
+              text
               :icon="Trash2"
               :disabled="!selectedNode && !selectedEdge"
               @click="selectedNode ? handleTrash2Node() : handleTrash2Edge()"

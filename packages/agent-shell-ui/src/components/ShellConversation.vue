@@ -9,6 +9,7 @@ import ShellComposer from "./ShellComposer.vue";
 import ShellQuestions from "./ShellQuestions.vue";
 import ShellResponse from "./ShellResponse.vue";
 import ShellMarkdown from "./ShellMarkdown.vue";
+import AgentAvatar from "./AgentAvatar.vue";
 
 const props = defineProps<{
   items: ConversationItem[];
@@ -224,6 +225,10 @@ async function send(text: string) {
   <div class="conversation">
     <div v-if="empty" class="empty">
       <div class="empty-inner">
+        <div v-if="agent" class="empty-agent">
+          <AgentAvatar :icon="agent.icon" :size="36" />
+          <span>{{ agent.name }}</span>
+        </div>
         <h1 class="greeting">{{ labels.greeting }}</h1>
         <p v-if="agent?.description" class="agent-description">{{ agent.description }}</p>
         <ShellQuestions />
@@ -234,8 +239,9 @@ async function send(text: string) {
     </div>
     <template v-else>
       <div
-        ref="scroller"
-        class="scroller"
+         ref="scroller"
+         class="scroller"
+        :class="{ 'initial-load-error': loadError && !loading && !items.length && pendingInput === null }"
         @scroll.passive="onScroll"
         @wheel.passive="release"
         @touchstart.passive="release"
@@ -249,11 +255,11 @@ async function send(text: string) {
               {{ loadingOlder ? labels.loading : olderError ? labels.retry : labels.more }}
             </button>
           </div>
-          <div v-if="loading" class="thread-loading" aria-busy="true">
+          <div v-if="loading && !items.length" class="thread-loading" aria-busy="true">
             <span class="line w60" /><span class="line w90" /><span class="line w75" />
           </div>
-          <div v-else-if="loadError" class="load-error" role="alert">
-            <CircleAlert :size="16" />
+          <div v-else-if="!loading && loadError" class="load-error" role="alert">
+            <CircleAlert :size="16" aria-hidden="true" />
             <span>{{ labels.loadFailed }}</span>
             <button type="button" @click="emit('retry')">{{ labels.retry }}</button>
           </div>
@@ -315,6 +321,8 @@ async function send(text: string) {
   width: min(100%, 720px);
   margin-top: -8vh;
 }
+.empty-agent { display: flex; align-items: center; justify-content: center; gap: var(--spacing-sm); margin-bottom: var(--spacing-md); color: var(--el-text-color-secondary); font-size: var(--text-sm); }
+.empty-agent span:last-child { min-width: 0; overflow-wrap: anywhere; }
 .greeting {
   margin: 0 0 8px;
   text-align: center;
@@ -379,7 +387,7 @@ async function send(text: string) {
   max-width: min(85%, 620px);
   padding: 8px 14px;
   border-radius: var(--radius-lg);
-  background: var(--el-fill-color);
+  background: var(--chat-user-bubble, var(--el-fill-color));
   color: var(--el-text-color-primary);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -427,10 +435,17 @@ async function send(text: string) {
 .load-error {
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: var(--el-color-danger);
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  color: var(--el-color-danger-text, var(--el-color-danger));
   font-size: var(--text-sm);
 }
+.initial-load-error .thread {
+  box-sizing: border-box;
+  min-block-size: 100%;
+  justify-content: center;
+}
+.initial-load-error .load-error { justify-content: center; text-align: center; }
 .load-error button {
   border: 0;
   background: none;

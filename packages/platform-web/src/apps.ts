@@ -19,6 +19,7 @@ export interface PlatformAppDeclaration {
    */
   description?: string | null;
   icon: string;
+  built?: boolean;
   /**
    * Which of the rail's three sections it sits in; the shell groups by it and draws a divider between sections. A
    * declaration made outside this module may leave it out, which puts the application among the business ones.
@@ -64,6 +65,7 @@ export function railApp(declaration: PlatformAppDeclaration, open: () => void): 
     id: declaration.id,
     label: declaration.label,
     icon: declaration.icon,
+    built: declaration.built,
     rail: declaration.rail,
     open: declaration.href || declaration.open ? open : undefined,
   };

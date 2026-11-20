@@ -32,6 +32,7 @@ import { readRememberedAgent } from "@ontomato/workbench-ui";
 import { recentDestination } from "./recent-work";
 import { openApplicationKey, platformApplicationsKey, platformBrandKey, type PlatformAppDeclaration } from "./apps";
 import { useApplicationOpening } from "./application-opening";
+import { agentBuilderShortcut } from "./application-shortcuts";
 import { workspaceObjectHostKey } from "@ontomato/contracts/workspace-objects";
 import { createWorkspaceObjectHost } from "./workspace-objects";
 
@@ -64,7 +65,8 @@ async function readShortcuts(){try{pinnedAppIds.value=(await readHomeState()).fa
 onMounted(()=>{void readShortcuts();window.addEventListener(HOME_PREFERENCES_CHANGED,readShortcuts);});
 onBeforeUnmount(()=>window.removeEventListener(HOME_PREFERENCES_CHANGED,readShortcuts));
 watch(()=>route.path,()=>{void readShortcuts();});
-watch(() => host.navigation.value, () => { void catalog.refresh(); }, { immediate: true, deep: true });
+onMounted(() => { void catalog.refresh(); });
+watch(() => host.navigation.value, () => { void catalog.refresh(); }, { deep: true });
 // The home lists every application, so returning to it reads the catalog again; the first read above covers a shell
 // mounted on the home.
 watch(() => route.path === platformRoutes.home.path, (home) => { if (home) void catalog.refresh(); });
@@ -75,6 +77,8 @@ const partition = computed(() => catalogPartition(catalog.applications.value, ho
 const declarations = computed<PlatformAppDeclaration[]>(() =>
   appDeclarations(host.navigation.value, host.access, partition.value, (key) => t(key)),
 );
+const agentBuilder = computed(() => agentBuilderShortcut(declarations.value, host.navigation.value, host.access, t("platform.agentBuilder")));
+const railDeclarations = computed(() => agentBuilder.value ? [...declarations.value, agentBuilder.value] : declarations.value);
 
 /** The page the navigation names for this address; a screen of a page (a detail) names the page it belongs to. */
 function pageAt(path: string): PlatformPage | undefined {
@@ -107,6 +111,8 @@ const labels = computed(() => ({
   expandRail: t("platform.expandRail"),
   collapseRail: t("platform.collapseRail"),
   applications: t("platform.apps"),
+  home: t("ontology.productHomeTitle"),
+  builtApplication: t("platform.builtApplication"),
   brand: t("platform.serviceName"),
   account: t("platform.account"),
   language: t("platform.language"),
@@ -121,6 +127,10 @@ const labels = computed(() => ({
 
 /** The rail's rows and every page inside (the home's cards, the app builder) open applications through this entry. */
 const openApplication = useApplicationOpening(declarations);
+function selectRailApp(id: string) {
+  if (id !== "agent-builder") openApplication(id);
+  else if (agentBuilder.value?.home) void router.push(agentBuilder.value.home);
+}
 provide(openApplicationKey, openApplication);
 provide(platformApplicationsKey, declarations);
 const shellBrand = computed<PlatformBrand>(() => ({ ...props.brand, name: props.brand?.name ?? t("platform.serviceName") }));
@@ -247,7 +257,7 @@ const blocked = computed(() => {
 
 <template>
   <PlatformLayout
-    :apps="declarations"
+    :apps="railDeclarations"
     :dynamic-app-ids="dynamicAppIds"
     :pinned-app-ids="pinnedAppIds"
     :loading="railLoading"
@@ -259,6 +269,6 @@ const blocked = computed(() => {
     :brand="shellBrand"
     :page-actions="pageActions"
     :blocked="catalog.error.value ? { reason: 'no-pages', message: catalog.error.value } : blocked"
-    @select-app="openApplication"
+    @select-app="selectRailApp"
   />
 </template>

@@ -1,6 +1,11 @@
 import {expect,it} from 'vitest';
-import {applicationShortcuts} from '../application-shortcuts';
+import {agentBuilderShortcut, applicationShortcuts} from '../application-shortcuts';
 import type {PlatformAppDeclaration} from '../apps';
+import {catalogPartition} from '../native-layouts';
+import {appDeclarations} from '../partition';
+import {catalogFixture, closedAccess, generatedNavigation} from './fixtures';
+import {applicationPages} from '../shell';
+import {platformRoutes} from '@ontomato/platform-shell/routes';
 it('bounds personal dynamic shortcuts while preserving the active application and builtins',()=>{
   const app=(id:string):PlatformAppDeclaration=>({id,label:id,icon:'pages',category:'business',prefix:'/'+id});
   const dynamic=Array.from({length:12},(_,index)=>`app-${index}`);
@@ -9,7 +14,34 @@ it('bounds personal dynamic shortcuts while preserving the active application an
   expect(shown.map(item=>item.id)).toEqual(expect.arrayContaining(['home','application-gallery','app-11']));
   expect(shown.some(item=>item.id==='app-8')).toBe(false);
 });
-it('places pinned built applications alongside the builder entry',()=>{
- const business:PlatformAppDeclaration={id:'app-business',label:'Business',icon:'pages',category:'business',rail:'apps',prefix:'/business'};
- expect(applicationShortcuts([business],['app-business'],['app-business'],null)[0].rail).toBe('builders');
+it('orders the permitted settings shortcut above App Builder and groups only published builder outputs with it',()=>{
+  const catalog = catalogFixture();
+  const seed = catalog[0]!;
+  const built = { ...seed, id: 'app-built', kind: 'hosted' as const, category: 'business' as const, releaseId: 'release-1' };
+  const product = { ...built, id: 'app-product', kind: 'product' as const, entry: { path: '/products/app-product?applicationId=app-product' } };
+  const panels = { ...product, id: 'app-panel', releaseId: null, entry: { path: '/panel', renderer: 'panels' } };
+  const connected = { ...built, id: 'app-connected', kind: 'connected' as const, releaseId: null };
+  const settings = applicationPages.find(page => page.path === platformRoutes.agents.path)!;
+  const fixture = generatedNavigation();
+  const navigation = { ...fixture, pages: [...fixture.pages, settings] };
+  const access = closedAccess([settings.permissions[0]!]);
+  const apps = appDeclarations(navigation, access, catalogPartition([...catalog, built, product, panels, connected], 'en'), key => key);
+  const shortcut = agentBuilderShortcut(apps, navigation, access, 'Agent Builder')!;
+  expect(shortcut.home).toBe('/agents/settings');
+  expect(agentBuilderShortcut(apps, navigation, closedAccess([]), 'Agent Builder')).toBeUndefined();
+  const ids = [built.id, connected.id];
+  const shown = applicationShortcuts([...apps, shortcut], ids, [connected.id], null);
+  expect(shown.filter(app => app.rail === 'builders').map(app => app.id)).toEqual(['agent-builder', 'app-builder', built.id, product.id, panels.id]);
+  expect(shown.find(app => app.id === built.id)?.built).toBe(true);
+  expect(shown.find(app => app.id === connected.id)?.built).toBe(false);
+});
+
+it('shows every published builder output without using personal shortcut slots', () => {
+  const app = (id: string, built = false): PlatformAppDeclaration => ({id,label:id,icon:'pages',category:'business',prefix:'/'+id,built});
+  const built = Array.from({length: 7}, (_, index) => app(`built-${index}`, true));
+  const connected = Array.from({length: 6}, (_, index) => app(`connected-${index}`));
+  const dynamic = [...built, ...connected].map(item => item.id);
+  const shown = applicationShortcuts([app('app-builder'), ...built, ...connected], dynamic, dynamic.slice(0, 6).concat(connected.map(item => item.id)), null);
+  expect(shown.filter(item => item.rail === 'builders').map(item => item.id)).toEqual(['app-builder', ...built.map(item => item.id)]);
+  expect(shown.filter(item => item.id.startsWith('connected-')).map(item => item.id)).toEqual(connected.slice(0, 5).map(item => item.id));
 });

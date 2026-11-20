@@ -67,6 +67,18 @@ async function mount(component: unknown, props: Record<string, unknown>, slots: 
 }
 
 describe("platform rail", () => {
+  it.each([false, true])("identifies published builder applications when collapsed is %s", async (collapsed) => {
+    const root = await mount(PlatformRail, {
+      apps: [...apps, { id: "app-sales", label: "Sales", icon: "pages", rail: "builders", built: true, href: "#/applications/app-sales" }],
+      activeAppId: "app-sales", account, preferences: preferences(), labels, collapsed,
+    });
+    const row = root.querySelector<HTMLAnchorElement>('a[aria-label="Sales · App Builder · Opens in a new tab"]')!;
+    expect(row.getAttribute("aria-current")).toBe("page");
+    expect(row.target).toBe("_blank");
+    expect(row.relList.contains("noopener")).toBe(true);
+    expect(Boolean(row.querySelector(".rail-built-icon"))).toBe(!collapsed);
+    expect(row.textContent?.trim()).toBe(collapsed ? "" : "Sales");
+  });
   it("keeps the platform's own applications at the foot above the account and opens the external one in a new tab", async () => {
     const root = await mount(PlatformRail, { apps, activeAppId: "agents", account, preferences: preferences(), labels, collapsed: false });
     // The platform's own applications sit at the foot, above the account and outside the scrolling area.

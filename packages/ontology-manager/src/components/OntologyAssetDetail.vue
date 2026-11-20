@@ -3,6 +3,7 @@ import { submissionConditionRows } from "./actionCreation/submissionConditions";
 import ElDialog from "../ManagerDialog.vue";
 import { computed, onMounted, ref, watch } from "vue";
 import { ArrowLeft, Play, Plus, Save, Sparkles, Trash2 } from "lucide-vue-next";
+import ManagerIconButton from "./ManagerIconButton.vue";
 import {
   ElAlert,
   ElButton,
@@ -882,7 +883,7 @@ onMounted(() => void loadDetail());
                 :placeholder="ot('assetParameterClasses')"
                 @update:model-value="updateParameterClassNames(parameter, $event)"
               />
-              <el-button link type="danger" :icon="Trash2" @click="removeParameter(index)" />
+              <ManagerIconButton :icon="Trash2" :label="`${ot('delete')} · ${parameter.name || ot('assetParameterName')}`" danger @click="removeParameter(index)" />
             </div>
             <el-form-item :label="ot('assetReturnClasses')">
               <el-input
@@ -1387,7 +1388,7 @@ h2 {
   min-width: 0;
   width: 100%;
 }
-.parameter-row > .el-button {
+.parameter-row > .manager-icon-button {
   width: 28px;
   min-width: 28px;
   justify-self: end;

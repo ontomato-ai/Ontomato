@@ -69,9 +69,13 @@ export function slotInputValues(
 ): Record<string, PanelFieldValue> {
   const declaration = manifest.members[slot];
   if (!declaration) throw new Error(`The panel declares no member '${slot}'`);
-  return Object.fromEntries(Object.entries(declaration.inputs ?? {}).map(([input, source]) => {
-    if ("state" in source) return [input, values[source.state] ?? null];
-    if ("literal" in source) return [input, source.literal as PanelFieldValue];
+  const inputs = Object.entries(declaration.inputs ?? {}).map(([input, source]) => {
+    if ("state" in source) return [input, values[source.state] ?? null] as const;
+    if ("literal" in source) return [input, source.literal as PanelFieldValue] as const;
     throw new Error(`Member '${slot}' fills '${input}' from a repeated item, which this SDK release does not place`);
-  }));
+  });
+  // An output bound to a state reads that state back as the input of the same name.
+  const outputs = Object.entries(declaration.outputs ?? {}).filter(([name]) => !Object.hasOwn(declaration.inputs ?? {}, name))
+    .map(([name, { state }]) => [name, values[state] ?? null] as const);
+  return Object.fromEntries([...inputs, ...outputs]);
 }

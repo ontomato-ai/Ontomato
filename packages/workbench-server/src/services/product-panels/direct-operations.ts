@@ -1,5 +1,6 @@
 import { panelObjectRefSchema, panelOperationId, panelPortAccepts, type PanelState } from "@ontomato/contracts/panel-manifest";
 import type { ApplicationPanelUse, DirectProjection, ProductPanel, ProductProjectionInput } from "@ontomato/contracts/product-panels";
+import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
@@ -68,7 +69,7 @@ export function directProjectionWriteDescriptions(projection: ProductProjectionI
 
 function declaredDirectProjectionOperation(
   use: ApplicationPanelUse, projection: DirectProjection, inputs: ProductPanel["manifest"]["members"][string]["inputs"],
-  state: PanelState, slot: string, id: string,
+  state: PanelState, slot: string, id: string, locale?: string,
 ) {
   if (!id.startsWith(`${slot}.`)) return;
   const name = id.slice(slot.length + 1);
@@ -80,8 +81,12 @@ function declaredDirectProjectionOperation(
   const binding = targetInput === undefined ? undefined : inputs?.[targetInput];
   if (targetInput !== undefined) {
     const targetType = projection.inputs[targetInput];
-    if (!binding || targetType?.kind !== "object" || targetType.objectType !== handler.targetType) return unavailable();
-    if ("state" in binding && !panelPortAccepts(targetType, state[binding.state].type)) return unavailable();
+    const message = { operation: handler.handlerRef, input: targetInput, member: slot, objectType: handler.targetType };
+    if (!binding)
+      throw new HttpError(422, tForLocale(locale, "panels.operation.targetInputUnbound", message), "PANEL_OPERATION_TARGET_UNBOUND");
+    if (targetType?.kind !== "object" || targetType.objectType !== handler.targetType
+      || ("state" in binding && !panelPortAccepts(targetType, state[binding.state].type)))
+      throw new HttpError(422, tForLocale(locale, "panels.operation.targetInputMismatch", message), "PANEL_OPERATION_TARGET_MISMATCH");
   }
   const value = source.literal ?? (binding && "literal" in binding ? binding.literal : undefined);
   const object = value === undefined || value === null ? value : panelObjectRefSchema.parse(value);
@@ -97,7 +102,7 @@ export async function declaredDirectOperation(
   if (separator < 1) return unavailable();
   const slot = id.slice(0, separator);
   const { member, projection } = await requireDirectPanelMember(owner, credentials, panel, slot);
-  const current = declaredDirectProjectionOperation(use, projection, member.inputs, panel.manifest.state, slot, id) ?? unavailable();
+  const current = declaredDirectProjectionOperation(use, projection, member.inputs, panel.manifest.state, slot, id, credentials.locale) ?? unavailable();
   if (current.effect === "read" && !Object.hasOwn(panel.manifest.members, current.handler.target.slot)) return unavailable();
   return current;
 }
