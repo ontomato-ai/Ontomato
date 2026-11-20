@@ -3,7 +3,8 @@ import { computed, type Component } from "vue";
 import { ChevronDown, ChevronRight, CirclePause, Clock, Ellipsis } from "lucide-vue-next";
 import type { PlatformTask } from "@ontomato/contracts/platform-schedules";
 import { useScheduleText } from "../text";
-import {dropdownBoundaryOptions} from '@ontomato/foundation-ui/overlay';
+import { dropdownBoundaryOptions } from "@ontomato/foundation-ui/overlay";
+import ScheduleRunStatus from "./ScheduleRunStatus.vue";
 
 /**
  * One task as a card: its application, its title, what it was given, why it is paused, when it runs, how its last run
@@ -61,7 +62,7 @@ const last = computed(() => {
       : run.status === "completed"
         ? (resultPreview(run.resultSummary) || (run.spendTime === null ? null : t("duration.took", { time: text.duration(run.spendTime) })))
         : null;
-  return { status: run.status, label: text.runStatus(run.status), when: text.moment(run.startedAt, props.task.timeZone), point };
+  return { status: run.status, when: text.moment(run.startedAt, props.task.timeZone), point };
 });
 
 function command(name: string | number | object) {
@@ -73,7 +74,7 @@ function command(name: string | number | object) {
 </script>
 
 <template>
-  <article class="card" :aria-labelledby="titleId" :data-task="task.id">
+  <article class="card schedule-card" :aria-labelledby="titleId" :data-task="task.id">
     <header class="head">
       <span class="app">
         <component :is="app.icon" :size="14" aria-hidden="true" />
@@ -98,9 +99,9 @@ function command(name: string | number | object) {
         </summary>
         <p>{{ task.pause.message }}</p>
       </details>
-      <button v-if="task.pause.code === 'definition_changed'" type="button" class="pause-action" @click="emit('edit')">
+      <el-button v-if="task.pause.code === 'definition_changed'" link type="primary" size="small" @click="emit('edit')">
         {{ t("card.review") }}
-      </button>
+      </el-button>
     </div>
     <div class="meta">
       <p class="line">
@@ -112,8 +113,7 @@ function command(name: string | number | object) {
         </template>
       </p>
       <p v-if="last" class="line">
-        <span class="dot" :class="last.status" aria-hidden="true" />
-        <strong class="status" :class="last.status">{{ last.label }}</strong>
+        <ScheduleRunStatus :status="last.status" />
         <span>{{ last.when }}</span>
         <template v-if="last.point">
           <span class="sep" aria-hidden="true" />
@@ -121,30 +121,27 @@ function command(name: string | number | object) {
         </template>
       </p>
       <p v-else class="line muted">
-        <span class="dot" aria-hidden="true" />
         <span>{{ t("card.neverRun") }}</span>
       </p>
     </div>
     <footer class="foot">
       <div class="result-actions">
-        <button
+        <el-button
           v-if="task.latestResult"
-          type="button"
+          link type="primary" size="small"
           class="result"
           @click="emit('openResult')"
         >
           <span>{{ t(hasEarlierResult ? "card.viewEarlierResult" : "card.viewResult") }}</span>
           <ChevronRight :size="14" aria-hidden="true" />
-        </button>
+        </el-button>
         <span v-else class="no-result">{{ t('card.noResult') }}</span>
-        <button v-if="last?.status === 'failed' || last?.status === 'skipped'" type="button" class="result" @click="emit('records')">
+        <el-button v-if="last?.status === 'failed' || last?.status === 'skipped'" link type="primary" size="small" class="result" @click="emit('records')">
           {{ t("action.records") }}
-        </button>
+        </el-button>
       </div>
       <el-dropdown trigger="click" placement="bottom-end" :popper-options="dropdownBoundaryOptions" :disabled="busy" @command="command">
-        <button type="button" class="more" :aria-label="t('card.more', { title: task.title })" :disabled="busy">
-          <Ellipsis :size="16" aria-hidden="true" />
-        </button>
+        <el-button text size="small" class="more" :icon="Ellipsis" :aria-label="t('card.more', { title: task.title })" :disabled="busy" />
         <template #dropdown>
           <el-dropdown-menu>
             <el-dropdown-item command="runNow">{{ t("action.runNow") }}</el-dropdown-item>
@@ -160,9 +157,7 @@ function command(name: string | number | object) {
 
 <style scoped>
 /*
- * A card is the page's content, flat on its own surface with the table's 1px border and 8px radius: no shadow and no
- * hover movement. Cards of one row share a height, and the schedule, the last run and the actions sit at the foot of
- * each, so those lines align across the row whatever the summary's length.
+ * Keep the schedule, last run and actions aligned at the foot of each card in the row.
  */
 .card {
   display: flex;
@@ -171,8 +166,8 @@ function command(name: string | number | object) {
   height: 100%;
   box-sizing: border-box;
   padding: var(--spacing-lg);
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--radius-lg);
   background: var(--el-bg-color);
 }
 .head {
@@ -190,6 +185,8 @@ function command(name: string | number | object) {
   line-height: var(--leading-xs);
   color: var(--el-text-color-secondary);
 }
+.app svg { flex: none; }
+.app span { overflow-wrap: anywhere; }
 .title {
   margin: 0;
   font-size: var(--text-base);
@@ -237,15 +234,6 @@ function command(name: string | number | object) {
 .pause summary:hover { background: var(--el-color-warning-light-8); }
 .pause details[open] .pause-chevron { rotate: 180deg; }
 .pause p { margin: var(--spacing-xs) 0 0; color: var(--el-text-color-secondary); overflow-wrap: anywhere; }
-.pause-action {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--brand-link);
-  font: inherit;
-  text-decoration: underline;
-  cursor: pointer;
-}
 .meta {
   display: flex;
   flex-direction: column;
@@ -285,38 +273,6 @@ function command(name: string | number | object) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* A state reads by its word; the dot and the colour only repeat it. */
-.dot {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-full);
-  background: var(--el-border-color-dark);
-}
-.dot.completed {
-  background: var(--el-color-success);
-}
-.dot.failed {
-  background: var(--el-color-danger);
-}
-.dot.running {
-  background: var(--el-color-primary);
-}
-.status {
-  font-weight: var(--font-semibold);
-}
-.status.completed {
-  color: var(--el-color-success-text);
-}
-.status.failed {
-  color: var(--el-color-danger-text);
-}
-.status.running {
-  color: var(--brand-link);
-}
-.status.skipped {
-  color: var(--el-text-color-secondary);
-}
 .foot {
   display: flex;
   align-items: center;
@@ -326,43 +282,11 @@ function command(name: string | number | object) {
 }
 .result-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
 .no-result { color: var(--el-text-color-secondary); font-size: var(--text-xs); }
-.result {
-  min-height: 24px;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--brand-link);
-  font: inherit;
-  font-size: var(--text-sm);
-  font-weight: var(--font-semibold);
-  cursor: pointer;
-}
-.result:disabled {
-  color: var(--el-text-color-disabled);
-  cursor: not-allowed;
-}
+.result.el-button { margin: 0; padding-inline: 0; }
+.result :deep(> span) { gap: var(--spacing-xs); }
 .more {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--control-height-inline);
-  height: var(--control-height-inline);
+  width: var(--control-height-sm);
   padding: 0;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--el-text-color-secondary);
-  cursor: pointer;
-}
-.more:hover:not(:disabled) {
-  background: var(--el-fill-color-light);
-  color: var(--el-text-color-primary);
-}
-.more:disabled {
-  cursor: not-allowed;
 }
 :global(.el-dropdown-menu__item.schedule-danger-item:not(.is-disabled)) {
   color: var(--el-color-danger);

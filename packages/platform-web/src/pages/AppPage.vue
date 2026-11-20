@@ -27,7 +27,9 @@ withDefaults(
 
 <template>
   <div class="app-page">
-    <PlatformPageHeader v-if="!hideHeader" :class="{ 'app-navigation-header': navigationHeader }" :title="title" :description="description" :actions="actions" :labels="labels" />
+    <PlatformPageHeader v-if="!hideHeader" :class="{ 'app-navigation-header': navigationHeader }" :title="title" :description="description" :actions="actions" :labels="labels">
+      <template v-if="$slots.actions" #actions><slot name="actions" /></template>
+    </PlatformPageHeader>
     <div class="app-page-body platform-page-gutter">
       <slot />
     </div>

@@ -72,9 +72,25 @@ async function toggle(item: HomeItem) {
       <el-button text @click="loadSource(source)">{{ labels.retry }}</el-button>
     </el-alert>
     <el-alert v-if="favoriteError" :title="favoriteError" type="error" @close="favoriteError = ''" />
-    <div class="gallery-toolbar"><nav :aria-label="t('ontology.productGalleryCategories')"><button v-for="value in homeCategories" :key="value" :class="{active:category===value}" :aria-pressed="category===value" @click="category=value">{{t(`home.categories.${value}`)}}</button></nav><el-input v-model="query" clearable :placeholder="labels.search" :aria-label="labels.search"><template #prefix><Search :size="16"/></template></el-input></div>
+    <div class="gallery-toolbar">
+      <nav class="filter-segments" :aria-label="t('ontology.productGalleryCategories')">
+        <button
+          v-for="value in homeCategories"
+          :key="value"
+          type="button"
+          class="filter-segment"
+          :class="{ 'is-active': category === value }"
+          :aria-pressed="category === value"
+          @click="category = value"
+        >{{ t(`home.categories.${value}`) }}</button>
+      </nav>
+      <el-input v-model="query" clearable :placeholder="labels.search" :aria-label="labels.search">
+        <template #prefix><Search :size="16" aria-hidden="true" /></template>
+      </el-input>
+    </div>
     <div v-if="shown.length" class="gallery-grid" :aria-busy="catalogLoading || undefined">
-      <HomeTile v-for="item in shown" :key="itemKey(item)" :item="item" variant="preview"
+      <HomeTile
+        v-for="item in shown" :key="itemKey(item)" :item="item" variant="preview"
         :favorite="favoriteKeys.has(itemKey(item))" :favorite-busy="pendingFavorite === itemKey(item)"
         :favorite-disabled="pendingFavorite !== null || pending.has('favorites') || !!failures.favorites" @open="open(item)" @toggle-favorite="toggle(item)" />
     </div>
@@ -93,19 +109,6 @@ async function toggle(item: HomeItem) {
 .gallery-content { width: min(100%, 1200px); margin-inline: auto; }
 .gallery-content > .el-alert { margin-bottom: var(--spacing-md); }
 .gallery-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-md); flex-wrap: wrap; margin-bottom: var(--page-content-gap); }
-.gallery-toolbar nav { display: flex; flex-wrap: wrap; gap: var(--spacing-xs); max-width: 100%; padding: var(--spacing-xs); border-radius: var(--radius-md); background: var(--el-fill-color-light); }
-.gallery-toolbar nav button {
-  min-height: var(--control-height-sm);
-  padding: var(--spacing-xs) var(--spacing-md);
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--el-text-color-secondary);
-  font: inherit;
-  cursor: pointer;
-}
-.gallery-toolbar nav button.active { background: var(--el-bg-color); color: var(--el-text-color-primary); box-shadow: var(--elevation-panel); }
-.gallery-toolbar nav button:not(.active):hover { background: var(--el-color-primary-light-9); }
 .gallery-toolbar .el-input { width: 280px; max-width: 100%; }
 .gallery-skeleton { min-height: 108px; border: 1px solid var(--el-border-color); border-radius: var(--radius-lg); background: var(--el-bg-color); }
 .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 256px), 1fr)); gap: var(--spacing-md); }

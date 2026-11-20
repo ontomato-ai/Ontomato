@@ -268,6 +268,40 @@ html:root :is(.el-dialog__headerbtn, .el-message-box__headerbtn, .el-drawer__clo
   max-width: 100%;
 }
 
+/* Wrapping filter groups can also contain a menu for options outside the main row. */
+.filter-segments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  box-sizing: border-box;
+  max-inline-size: 100%;
+  padding: var(--spacing-xs);
+  border-radius: var(--radius-md);
+  background: var(--el-fill-color-light);
+}
+.filter-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  min-height: var(--control-height-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  font: inherit;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.filter-segment:not(.is-active):hover { background: var(--el-color-primary-light-9); }
+.filter-segment.is-active {
+  background: var(--el-bg-color);
+  color: var(--el-text-color-primary);
+  box-shadow: var(--elevation-panel);
+}
+
 /* Auxiliary filters stay quiet; primary view switches retain the standard filled selection. */
 .el-segmented.secondary-segmented {
   --el-segmented-bg-color: transparent;

@@ -101,6 +101,7 @@ function set<K extends keyof FrequencyDraft>(key: K, value: FrequencyDraft[K]) {
   gap: var(--spacing-sm);
   width: 100%;
 }
+.frequency > * { max-width: 100%; }
 .kind {
   width: 150px;
 }

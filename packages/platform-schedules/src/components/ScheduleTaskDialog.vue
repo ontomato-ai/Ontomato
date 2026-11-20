@@ -345,7 +345,7 @@ async function submit() {
     </template>
 
     <div ref="body">
-      <el-form class="task-form" label-position="left" label-width="auto" @submit.prevent="submit">
+      <el-form class="task-form" label-position="top" @submit.prevent="submit">
         <el-form-item :label="t('form.title')" :error="platformError.title" data-field="title">
           <el-input v-model="title" :maxlength="PLATFORM_SCHEDULE_TITLE_MAX" :aria-label="t('form.title')" />
         </el-form-item>
@@ -392,14 +392,19 @@ async function submit() {
 
         <section v-if="appId" class="section" :aria-label="t('form.content', { app: selectedApp?.label ?? appId })">
           <h3 class="section-title">{{ t("form.content", { app: selectedApp?.label ?? appId }) }}</h3>
-          <p v-if="notice" class="notice" role="status">{{ notice }}</p>
-          <p v-if="session.state.value === 'loading' && !session.form.value" class="form-state" aria-busy="true">
-            {{ t("form.loadingForm") }}
-          </p>
-          <p v-else-if="session.state.value === 'error'" class="form-state failed" role="alert">
-            {{ t("form.formFailed") }}{{ session.failure.value ? `: ${failureText(session.failure.value)}` : "" }}
-            <button type="button" class="link" @click="session.retry()">{{ t("retry") }}</button>
-          </p>
+          <el-alert v-if="notice" class="section-alert" :title="notice" type="warning" :closable="false" show-icon />
+          <el-skeleton v-if="session.state.value === 'loading' && !session.form.value" class="section-alert" :rows="2" aria-busy="true" :aria-label="t('form.loadingForm')" />
+          <el-alert
+            v-else-if="session.state.value === 'error'"
+            class="section-alert"
+            :title="t('form.formFailed')"
+            type="error"
+            :closable="false"
+            show-icon
+          >
+            <div v-if="session.failure.value">{{ failureText(session.failure.value) }}</div>
+            <el-button text size="small" @click="session.retry()">{{ t("retry") }}</el-button>
+          </el-alert>
           <template v-if="session.form.value">
             <p v-if="session.form.value.fields.length === 0" class="form-state">{{ t("form.noFields") }}</p>
             <FormFields
@@ -428,8 +433,8 @@ async function submit() {
           </el-form-item>
         </section>
 
-        <p class="identity">{{ t("form.identity") }}</p>
-        <p v-if="failure" class="save-failure" role="alert">{{ failure }}</p>
+        <el-alert :title="t('form.identity')" type="info" :closable="false" show-icon />
+        <el-alert v-if="failure" class="save-failure" :title="failure" type="error" :closable="false" show-icon />
       </el-form>
     </div>
 
@@ -447,7 +452,7 @@ async function submit() {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
-  padding-right: var(--spacing-xl);
+  padding-inline-end: var(--spacing-xl);
 }
 .dialog-subtitle {
   margin: 0;
@@ -481,49 +486,14 @@ async function submit() {
   font-weight: var(--font-semibold);
   color: var(--el-text-color-primary);
 }
-.notice {
-  margin: 0 0 var(--spacing-md);
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--radius-sm);
-  background: var(--el-color-warning-light-9);
-  color: var(--el-color-warning);
-  font-size: var(--text-sm);
-  line-height: var(--leading-sm);
-}
+.section-alert { margin-bottom: var(--spacing-md); }
 .form-state {
   margin: 0 0 var(--spacing-lg);
   font-size: var(--text-sm);
   color: var(--el-text-color-secondary);
 }
-.form-state.failed {
-  color: var(--el-color-danger);
-}
-.identity {
-  margin: 0;
-  padding: var(--spacing-md);
-  border-radius: var(--radius-md);
-  background: var(--el-color-primary-light-9);
-  color: var(--el-text-color-regular);
-  font-size: var(--text-sm);
-  line-height: var(--leading-sm);
-}
 .save-failure {
   margin: var(--spacing-md) 0 0;
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--radius-sm);
-  background: var(--el-color-danger-light-9);
-  color: var(--el-color-danger);
-  font-size: var(--text-sm);
-  line-height: var(--leading-sm);
-}
-.link {
-  padding: 0;
-  margin-left: var(--spacing-xs);
-  border: 0;
-  background: none;
-  color: var(--brand-link);
-  font: inherit;
-  cursor: pointer;
 }
 .app-value {
   display: inline-flex;
