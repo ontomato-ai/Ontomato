@@ -45,7 +45,10 @@ const relationshipView = {
 
 function owner(answer: (path: string, init: NonNullable<Parameters<typeof fetch>[1]>) => { status: number; body: unknown }) {
   const requests: { path: string; method: string; body: Record<string, unknown> }[] = [];
+  const actor = { owner: { domainId: "domain-1", userId: "user-1" }, credentials: { token: "token-1" } };
   const host: PanelOperationHost = {
+    initiator: actor,
+    executor: actor,
     requestWorkbench: async () => {
       throw new Error("The ontology model owner is reached through request");
     },
