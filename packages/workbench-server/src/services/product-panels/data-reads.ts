@@ -18,6 +18,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
+import { describeObjectAction } from "../action/object-actions";
 import { createActionReadAdapter } from "../action/panel-reads";
 import { createDashboardCardReadAdapter } from "../dashboard/chart-sources";
 import { createMetricReadAdapter } from "../metric-function/panel-reads";
@@ -29,6 +30,7 @@ import type { SkillResolveRequest } from "../skills/panel-reads";
 import { requirePanelUse } from "./application-use";
 import { readPanelComponentCatalogue } from "./component-catalogue";
 import { requireCurrentProduct, requireDirectPanelMember } from "./current";
+import { resolvePlacedObjectAction } from "./object-action-placement";
 
 type ReadInputs = ProductPanelReadRequest["inputs"];
 type ReadMember = ProductPanel["manifest"]["members"][string];
@@ -253,8 +255,6 @@ function readSelection({ source, read }: DirectProjectionData, inputs: ReadInput
     const { className, primaryKey } = panelObjectRefSchema.parse(value);
     return { kind: className.startsWith("platform:") ? "platform" : "customer", typeId: className, method: read, primaryKey };
   }
-  if (source.operation.kind === "Action")
-    throw new HttpError(422, "Object action reads require an owner adapter", "PANEL_READ_UNAVAILABLE");
   const [typeId] = Object.entries(platformObjectTypes).find(([, entry]) => entry.operations?.includes(source.operation.id))!;
   return { kind: "platform", typeId, method: `${source.operation.id}.${read}` };
 }
@@ -263,17 +263,29 @@ export async function readProductPanelData(
   owner: ProductOwner, viewer: AssistantCredentials, request: ProductPanelReadRequest, callerUserName?: string,
 ): Promise<ProductPanelReadResponse> {
   try {
-    const { member, projection, viewer: readViewer } = await resolveReadMember(owner, viewer, request);
+    const { member, projection, panel, viewer: readViewer } = await resolveReadMember(owner, viewer, request);
     if (!Object.hasOwn(projection.data, request.dataName)) return { status: "forbidden" };
     const data = projection.data[request.dataName];
     const inputs = effectiveInputs(projection, member, request.inputs);
-    const selection = readSelection(data, inputs);
     const declaration = directReadDeclaration(projection, data)!;
     const params = await readParameters(projection, member, request.dataName, data, declaration, inputs, request.runtimeParams);
     if (declaration.parameterMode === "fixed") {
       for (const name of declaration.requiredParams ?? [])
         if (!Object.hasOwn(params, name)) throw new HttpError(400, `Missing read parameter: ${name}`, "PANEL_INPUT_REQUIRED");
     }
+    if ("operation" in data.source && data.source.operation.kind === "Action") {
+      const resolved = await resolvePlacedObjectAction(
+        { owner, credentials: readViewer }, { panel, projection, member, memberName: request.memberPath[0].member, data }, data.source.operation.id,
+        name => {
+          const value = name === undefined ? undefined : inputs[name];
+          if (value == null) return undefined;
+          const { className, primaryKey } = panelObjectRefSchema.parse(value);
+          return { objectType: className, primaryKey };
+        },
+      );
+      return { status: "ready", value: describeObjectAction(resolved) };
+    }
+    const selection = readSelection(data, inputs);
     const read = selection.kind === "customer"
       ? customerReads(owner, readViewer, callerUserName)[selection.method]
       : readAdapters(owner, readViewer, callerUserName)[selection.typeId]?.[selection.method];
