@@ -107,9 +107,10 @@ async function open(address: string) {
   return { app, element, router, sent };
 }
 
-const reads = (sent: Sent[]) => sent.filter(request => request.path === "/api/product-panels/read").map(request => request.body as {
-  source: unknown; memberPath: unknown; dataName: string; inputs: { task?: { primaryKey: string } };
-});
+/** The data the page read: its members' operations, read for every member from the start, are not data. */
+const reads = (sent: Sent[]) => sent.filter(request => request.path === "/api/product-panels/read")
+  .map(request => request.body as { source: unknown; memberPath: unknown; dataName?: string; inputs: { task?: { primaryKey: string } } })
+  .filter(read => read.dataName !== undefined);
 
 afterEach(() => {
   document.body.innerHTML = "";

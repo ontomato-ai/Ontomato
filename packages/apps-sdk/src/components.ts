@@ -37,6 +37,8 @@ export interface ComponentMetadata {
   readonly data?: Readonly<Record<string, {
     readonly results: readonly PanelReadResultId[];
     readonly required: boolean;
+    /** The read parameters it gives itself at run time, beside what the projection maps. */
+    readonly runtimeParams?: readonly string[];
   }>>;
   /** The ontology elements it may bind, as `Kind:id` or `Kind:*` when any of that kind does. */
   readonly bindsElement?: readonly string[];

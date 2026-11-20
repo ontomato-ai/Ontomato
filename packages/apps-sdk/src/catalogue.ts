@@ -2,10 +2,8 @@ import { defineComponentMeta, type ComponentMetadata } from "./components";
 
 /*
  * Semantic metadata of the components this SDK version exports (overall design 3.1): what each means, what it binds,
- * the parameters it takes, the state it hands over, and — for a control — the SDK client operations it publishes. The
- * build generates `components.json` and the catalogue document from this list; a panel's projections then take their
- * ports from the catalogue, so an operation's `handlerRef` is a declared client operation rather than a name read off a
- * button's label.
+ * the data it reads and the parameters it takes, and the state it hands over. The build generates `components.json` and
+ * the catalogue document from this list. What a projection can do is the operations it names, not its component's.
  *
  * Only components this version actually exports may be declared, and the build checks that: a declaration for something
  * absent, or a public component with no declaration, fails it rather than shipping an undescribed component.
@@ -420,5 +418,26 @@ export const components: readonly ComponentMetadata[] = [
     bindsElement: ["PlatformObjectType:platform:AgentDefinition"],
     // A button the host acts on: it reads nothing from the platform, and says so, so a placement may carry it as a member.
     data: {},
+  }),
+  defineComponentMeta({
+    componentId: "PanelData",
+    module: "@ontomato/sdk/base",
+    exportName: "PanelData",
+    role: "presentation",
+    meaning:
+      "Draws nothing: it hands the data its projection declares to the panel's own code, which reads each datum with usePanelData(member, name) and draws it in the page's own way. A projection names it for the part of a page the panel draws itself; the panel's own buttons run the projection's operations with instance.invoke.",
+    // Any datum the projection names, under the author's own name, with any read result and the run-time values the
+    // other components give; the read's own signature still bounds them. The catalogue test keeps these lists whole.
+    data: {
+      "*": {
+        results: [
+          "panelRecordList", "panelRecord", "panelRecordQuery", "panelGroupCounts", "panelApplicationMenu", "panelFormDescription",
+          "panelOperationDescriptor", "panelOptionList", "panelGraphSchema", "panelGraphCounts", "panelGraphStart",
+          "panelGraphNeighbors", "panelOntologyObjects", "panelRelationNeighbors", "chartTemplate", "metricOutput",
+        ],
+        required: false,
+        runtimeParams: ["changedField", "cursor", "keyword", "layers", "node", "page", "relationKinds", "search", "size", "values"],
+      },
+    },
   }),
 ];

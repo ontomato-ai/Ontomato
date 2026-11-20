@@ -127,7 +127,8 @@ it("runs two different panels at once, each drawn from its own template", async 
   await drawn(list.element);
   expect(list.element.querySelector("h2.title")?.textContent).toBe("Tasks");
   expect(settings.element.querySelector("aside.title")?.textContent).toBe("Settings list");
-  expect(settings.reads).toEqual([]);
+  // The settings panel draws no member: it reads no datum, though its members' operations are known from the start.
+  expect(settings.reads.filter((read) => read.dataName)).toEqual([]);
 
   settingsMount.dispose();
   expect(settings.element.innerHTML).toBe("");

@@ -1,0 +1,137 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { computed, nextTick, ref } from "vue";
+import { createI18n } from "vue-i18n";
+import publicEn from "@ontomato/workbench-ui/locales/en";
+import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
+import type { DirectProjection } from "@ontomato/contracts/product-panels";
+import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
+import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { panelModuleFor, type DirectPanelMount } from "../../../../../packages/apps-sdk/src/direct";
+import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
+import { noOperations } from "./panel-frame";
+
+/*
+ * Data a panel's own code draws (big main's ruling, 2026-11-20): a member whose projection is a `PanelData` one is never
+ * placed; the panel's code reads its datum with `usePanelData` and draws it its own way, and runs its operation with
+ * `instance.invoke`. The datum is read the way every member's is — through the run's one read port, waiting while the
+ * object it is read from is not chosen, read again when the panel state the member binds changes — and the member's
+ * operations are listed whether or not anything draws it.
+ *
+ * What this rules out: a read the page's code makes of its own; a datum read for nothing chosen, or not read again when
+ * the choice changes; a member's operation missing from what the panel offers because nothing draws or reads it; a datum the projection does not
+ * declare read anyway.
+ */
+
+const base = { domainId: "d", ownerId: "o", createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "", revision: 1 };
+const taskData: DirectProjection = {
+  ...base, id: "task-data", name: "Task", componentId: "@ontomato/sdk:PanelData",
+  inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: {},
+  data: { record: { source: { object: { input: "task" } }, read: "record", params: {} } },
+  operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
+};
+const runNow = { kind: "action", handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
+const manifest: DirectPanelManifest = {
+  state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false } },
+  members: {
+    task: { target: { projectionId: taskData.id }, inputs: { task: { state: "selectedTask" } } },
+    // A member the panel's code neither reads nor draws: its own buttons run its operation.
+    actions: { target: { projectionId: taskData.id }, inputs: { task: { state: "selectedTask" } } },
+  },
+  events: {},
+};
+const record = (primaryKey: string) => ({ primaryKey, label: `Task ${primaryKey}`, fields: {} });
+const chosen = (primaryKey: string) => ({ className: SCHEDULED_TASK, primaryKey });
+
+afterEach(() => {
+  document.body.innerHTML = "";
+});
+
+it("reads a member's datum for the panel's own code, as its projection declares, and lists its operations undrawn", async () => {
+  const reads: PanelMemberReadRequest[] = [];
+  const element = document.createElement("div");
+  document.body.append(element);
+  let mounted!: (mount: DirectPanelMount) => void;
+  const mount = new Promise<DirectPanelMount>((resolve) => { mounted = resolve; });
+  const module = panelModuleFor({
+    mounted, element,
+    template: `<p class="task">{{ shown }}</p>`,
+    install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
+    manifest,
+    run: {
+      pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
+      failed: (reason) => { throw reason; },
+    },
+    messages: {}, locale: ref("en"), defaultLocale: "en",
+    requests: { request: async () => Response.json({ projection: taskData }) },
+    use: { applicationId: "app-tasks", useId: "tasks" },
+    expandPageComposer: noOperations.expandPageComposer,
+    confirmOperation: noOperations.confirmOperation,
+    read: async (request): Promise<ProductPanelReadResponse> => {
+      reads.push(request);
+      const task = request.inputs.task as { primaryKey: string } | null;
+      if (request.operations) return { status: "ready", value: (task ? { runNow } : {}) as never };
+      return { status: "ready", value: record(task!.primaryKey) as never };
+    },
+  });
+  // The panel's own code: the chosen task's record, drawn its own way.
+  const { context } = await module.mountPanel({
+    setup() {
+      const task = module.usePanelData("task", "record");
+      return { shown: computed(() => (task.value.status === "ready" ? (task.value.value as { label: string }).label : task.value.status)) };
+    },
+  });
+  const run = await mount;
+
+  // Nothing chosen: the datum waits, unread, and the member offers no operation yet.
+  await vi.waitFor(() => expect(element.querySelector(".task")?.textContent).toBe("awaiting"));
+  expect(reads.filter((read) => read.dataName)).toEqual([]);
+  expect(context.instance.operations.value).toEqual([]);
+
+  // A choice: the datum is read for it, and the member's run-now is offered, though nothing draws the member.
+  context.instance.state.set("selectedTask", chosen("t-1"));
+  await vi.waitFor(() => expect(element.querySelector(".task")?.textContent).toBe("Task t-1"));
+  await vi.waitFor(() => expect(context.instance.operations.value.map(({ id, label }) => [id, label])).toEqual([
+    ["task.runNow", "Run now"], ["actions.runNow", "Run now"],
+  ]));
+  expect(reads.filter((read) => read.dataName)).toEqual([{ memberPath: [{ member: "task" }], dataName: "record", inputs: { task: chosen("t-1") } }]);
+
+  // Another choice is read again; the page's code sent no request of its own.
+  context.instance.state.set("selectedTask", chosen("t-2"));
+  await vi.waitFor(() => expect(element.querySelector(".task")?.textContent).toBe("Task t-2"));
+  expect(reads.filter((read) => read.dataName).every((read) => read.memberPath[0]!.member === "task")).toBe(true);
+  run.dispose();
+});
+
+it("says so when the projection declares no such datum", async () => {
+  const element = document.createElement("div");
+  document.body.append(element);
+  let mounted!: (mount: DirectPanelMount) => void;
+  const mount = new Promise<DirectPanelMount>((resolve) => { mounted = resolve; });
+  const module = panelModuleFor({
+    mounted, element, template: `<p class="task">{{ shown }}</p>`,
+    install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
+    manifest,
+    run: {
+      pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: chosen("t-1") },
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
+      failed: (reason) => { throw reason; },
+    },
+    messages: {}, locale: ref("en"), defaultLocale: "en",
+    requests: { request: async () => Response.json({ projection: taskData }) },
+    use: { applicationId: "app-tasks", useId: "tasks" },
+    expandPageComposer: noOperations.expandPageComposer,
+    confirmOperation: noOperations.confirmOperation,
+    read: async (request): Promise<ProductPanelReadResponse> =>
+      ({ status: "ready", value: (request.operations ? {} : record("t-1")) as never }),
+  });
+  await module.mountPanel({
+    setup() {
+      const rows = module.usePanelData("task", "rows");
+      return { shown: computed(() => (rows.value.status === "error" ? rows.value.message : rows.value.status)) };
+    },
+  });
+  await nextTick();
+  await vi.waitFor(() => expect(element.querySelector(".task")?.textContent).toBe("The projection of member 'task' declares no datum 'rows'"));
+  (await mount).dispose();
+});

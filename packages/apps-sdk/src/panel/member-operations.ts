@@ -52,7 +52,11 @@ export function watchMemberOperations(
   const reread = () => {
     if (!active()) return;
     const reading = ++sequence;
-    void readMemberOperations(read, projection, member, inputs()).then((result) => { if (reading === sequence) state.value = result; });
+    // A read that fails is the member's to show, as a datum's is: its buttons say why there is nothing to press.
+    void readMemberOperations(read, projection, member, inputs()).then(
+      (result) => { if (reading === sequence) state.value = result; },
+      (reason: unknown) => { if (reading === sequence) state.value = { status: "error", message: reason instanceof Error ? reason.message : String(reason) }; },
+    );
   };
   watch(() => JSON.stringify(operationInputs(projection, inputs())), reread, { immediate: true });
   return { state: computed(() => state.value), reread };
