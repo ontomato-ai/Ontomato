@@ -10,6 +10,7 @@ import { definePanel } from "@ontomato/contracts/panel-manifest";
 import {
   panelFrameDocument,
   usePanelInstance,
+  type DirectPanelRun,
   type PanelHostLabels,
   type PanelHostPort,
 } from "../panel-host";
@@ -28,6 +29,7 @@ const SCHEDULED_TASK = "platform:ScheduledTask";
 const labels: PanelHostLabels = {
   notStarted: "Not started",
   failures: { fileUnavailable: "Could not load {file}", scriptThrew: "Script failed", scriptRejected: "Script rejected" },
+    content: { htmlRemoved: "HTML removed", styleOutside: "Style outside" },
 };
 
 /** Panel P: a task list, the task's form and a button that runs it. Its list and summary are the shared projection X. */
@@ -62,7 +64,7 @@ function record(id: string, name: string, manifest: ProductPanel["manifest"]): P
     name,
     description: "",
     visibility: "domain",
-    content: { html: `<div id="panel"></div>`, module: `import {mountPanel} from "@ontomato/sdk/panel";` },
+    content: { html: `<div id="app"></div>`, module: `import {mountPanel} from "@ontomato/sdk/panel";` },
     manifest,
   };
 }
@@ -87,6 +89,10 @@ function useRelation(id: string, pageKey: string, panelId: string, path: string)
  */
 function platform(input: { applicationId?: string; panels: Map<string, ProductPanel>; uses: ApplicationPanelUse[] }) {
   const listeners = new Set<(revisions: readonly ProductDefinitionRevision[]) => void>();
+  /** Each started instance of a panel with a module, by use: what the host gave it, and what it was told since. */
+  const coded = new Map<string, {
+    run: DirectPanelRun; projectionsChanged: { id: string; revision: number }[][]; addresses: string[]; invoked: string[];
+  }>();
   const frames = new Map<Window, unknown[]>();
   const sent = new WeakMap<Window, unknown[]>();
   const stand = {
@@ -99,8 +105,21 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
         panel: stand.panel,
         release: () => stand.release(),
         frame: stand.frame,
-        // These trial panels run in frames: they have modules of their own.
-        direct: () => { throw new Error("A panel with a module is not drawn directly"); },
+        // These trial panels have modules of their own: they run in the platform's document, started here.
+        direct: () => { throw new Error("A panel with a module draws itself"); },
+        coded: async (_source, run) => {
+          if (stand.codedFailure) throw stand.codedFailure;
+          const started = { run, projectionsChanged: [] as { id: string; revision: number }[][], addresses: [] as string[], invoked: [] as string[] };
+          coded.set(use.id, started);
+          // The instance runs: it reports its state at the address it was given.
+          run.state(run.initial, run.url());
+          return {
+            member: () => null, values: shallowRef({}), refresh() {}, activate() {}, dispose() {},
+            address: url => { started.addresses.push(url); },
+            invoke: id => { started.invoked.push(id); return Promise.resolve(`answer of ${id}`); },
+            projectionsChanged: projections => { started.projectionsChanged.push([...projections]); },
+          };
+        },
         snapshot: stand.snapshot,
         mode: stand.mode,
       };
@@ -130,6 +149,10 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
     } satisfies PanelHostPort["mode"],
     changed: (revision: ProductDefinitionRevision) => listeners.forEach(listener => listener([revision])),
     posted: (frame: Window) => sent.get(frame) ?? [],
+    /** What the host gave the instance it started for a use, and what it told it since. */
+    started: (useId: string) => coded.get(useId)!,
+    /** Why the next panel with a module fails to start, when it should. */
+    codedFailure: undefined as Error | undefined,
   };
   return stand;
 }
@@ -225,18 +248,11 @@ describe("the panel host", () => {
     const q = open("use-q");
     const r = open("use-r");
     await Promise.all([a.ready, b.ready, q.ready, r.ready]);
-    const frames = [frameWindow(), frameWindow(), frameWindow(), frameWindow()];
-    [a, b, q, r].forEach((view, index) => {
-      const frame = frames[index]!;
-      view.frame(frame);
-      fromFrame(frame, { kind: "state", fromAddress: view.address.value, state: {} });
-    });
-
-    // X changes: both uses of P and Q are told, each in its own frame; the panel that does not use X is not.
+    // X changes: both uses of P and Q are told, each its own instance; the panel that does not use X is not.
     port.changed({ kind: "projection", id: "projection-x", revision: 2 });
-    for (const frame of frames.slice(0, 3))
-      await vi.waitFor(() => expect(postedTo(port, frame)).toContainEqual({ channel: PANEL_HOST_CHANNEL, kind: "projections-changed", projections: [{ id: "projection-x", revision: 2 }] }));
-    expect(postedTo(port, frames[3]!)).toEqual([]);
+    for (const useId of ["use-a", "use-b", "use-q"])
+      await vi.waitFor(() => expect(port.started(useId).projectionsChanged).toContainEqual([{ id: "projection-x", revision: 2 }]));
+    expect(port.started("use-r").projectionsChanged).toEqual([]);
     scope.stop();
   });
 
@@ -256,23 +272,19 @@ describe("the panel host", () => {
     const a = scope.run(() => usePanelInstance(port.port("use-a"), { labels, label: (source) => source.kind === "registered" ? source.panel.name : "", address: () => "/applications/app-a/a/schedules", initial: () => ({}) }))!;
     const q = scope.run(() => usePanelInstance(port.port("use-q"), { labels, label: (source) => source.kind === "registered" ? source.panel.name : "", address: () => "/applications/app-a/summary", initial: () => ({}) }))!;
     await Promise.all([a.ready, q.ready]);
-    const frameA = frameWindow();
-    a.frame(frameA);
-    fromFrame(frameA, { kind: "state", fromAddress: a.address.value, state: {} });
-
-    // The reader is editing: the frame says so, and the record that arrives meanwhile waits.
-    fromFrame(frameA, { kind: "dirty", dirty: true });
-    const beforeA = a.document.value;
+    // The reader is editing: the instance says so, and the record that arrives meanwhile waits.
+    port.started("use-a").run.dirty(true);
+    const shown = a.direct.value;
     panels.set("panel-p", { ...record("panel-p", "Scheduled tasks, rearranged", panelP), revision: 2 });
     port.changed({ kind: "panel", id: "panel-p", revision: 2 });
-    // The form on screen is not replaced while it has unsaved changes: neither the record it draws nor its document.
+    // The form on screen is not replaced while it has unsaved changes: neither the record it draws nor its instance.
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(a.source.value?.kind === "registered" && a.source.value.panel.name).toBe("Scheduled tasks");
-    expect(a.document.value).toBe(beforeA);
+    expect(a.direct.value).toBe(shown);
 
     // The reader saves: now the changed panel is shown.
-    fromFrame(frameA, { kind: "dirty", dirty: false });
-    await vi.waitFor(() => expect(a.document.value).not.toBe(beforeA));
+    port.started("use-a").run.dirty(false);
+    await vi.waitFor(() => expect(a.source.value?.kind === "registered" && a.source.value.panel.name).toBe("Scheduled tasks, rearranged"));
     expect(q.source.value?.kind === "registered" && q.source.value.panel.name).toBe("Task summary");
     scope.stop();
   });
@@ -286,7 +298,7 @@ describe("the panel host", () => {
     expect(panelAddress("/a/schedules", {})).toBe("/a/schedules");
   });
 
-  it("applies external state and accepts reader selections without echoing them to the frame", async () => {
+  it("applies external state and accepts reader selections without echoing them to the instance", async () => {
     const selected = (primaryKey: string) => ({ selectedTask: { className: SCHEDULED_TASK, primaryKey } });
     const initial = shallowRef(selected("task-1"));
     const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
@@ -300,25 +312,25 @@ describe("the panel host", () => {
       }),
     )!;
     await a.ready;
-    const frame = frameWindow();
-    a.frame(frame);
+    const instance = port.started("use-a");
     const bootAddress = a.address.value;
-    fromFrame(frame, { kind: "state", fromAddress: bootAddress, state: selected("task-1") });
     expect(a.state.value).toEqual(initial.value);
 
-    fromFrame(frame, { kind: "state", fromAddress: bootAddress, state: selected("task-2") });
+    // The reader chooses another task: the address follows, and the instance is not told what it said itself.
+    instance.run.state(selected("task-2"), bootAddress);
     initial.value = selected("task-2");
     await nextTick();
     expect(panelAddressState(a.address.value)).toEqual(initial.value);
-    expect(postedTo(port, frame)).toEqual([]);
+    expect(instance.addresses).toEqual([]);
 
+    // The address changes outside it: the instance is told, and a late report for the old address changes nothing.
     initial.value = selected("task-0");
     await nextTick();
     const requested = panelAddress("/applications/app-a/a/schedules", initial.value);
-    expect(postedTo(port, frame)).toEqual([{ channel: PANEL_HOST_CHANNEL, kind: "address", address: requested }]);
-    fromFrame(frame, { kind: "state", fromAddress: bootAddress, state: selected("task-2") });
+    expect(instance.addresses).toEqual([requested]);
+    instance.run.state(selected("task-2"), bootAddress);
     expect(a.address.value).toBe(requested);
-    fromFrame(frame, { kind: "state", fromAddress: requested, state: initial.value });
+    instance.run.state(initial.value, requested);
     expect(a.state.value).toEqual(initial.value);
     scope.stop();
   });
@@ -336,27 +348,23 @@ describe("the panel host", () => {
       }),
     )!;
     await a.ready;
-    const frame = frameWindow();
-    a.frame(frame);
     // The page's label is built from the record's own name — never the page key, which is only the panel's key.
-    expect(a.document.value).toContain('"label":"Trial A · Scheduled tasks"');
+    expect(port.started("use-a").run.label()).toBe("Trial A · Scheduled tasks");
     scope.stop();
   });
 
-  it("says what it could not read, instead of showing an empty page", async () => {
+  it("says what it could not start, instead of showing an empty page", async () => {
     const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
     const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
-    // The SDK's current version is refused — the request the platform's own host once sent to the wrong address.
-    port.release = async () => {
-      throw new Error("GET /api/data-query/app-builder/apps-sdk/current failed: 403 Product use Grant required");
-    };
+    // The panel's module is refused what it asked for as it started.
+    port.codedFailure = new Error("GET /api/product-projections/projection-x failed: 403 Product use Grant required");
     const scope = effectScope();
     const a = scope.run(() =>
       usePanelInstance(port.port("use-a"), { labels, label: (source) => source.kind === "registered" ? source.panel.name : "", address: () => "/applications/app-a/a/schedules", initial: () => ({}) }),
     )!;
     await a.ready;
-    // The failure is the page's word: no frame is drawn, and the reason is there to read.
-    expect(a.document.value).toBe("");
+    // The failure is the page's word: nothing is drawn, and the reason is there to read.
+    expect(a.direct.value).toBeNull();
     expect(a.error.value).toContain("403");
     scope.stop();
   });
@@ -469,45 +477,34 @@ describe("the panel host", () => {
       initial: () => selected,
     }))!;
     await a.ready;
-    const frame = frameWindow();
-    a.frame(frame);
+    const instance = port.started("use-a");
     const opened = a.address.value;
-    fromFrame(frame, { kind: "state", fromAddress: opened, state: selected });
 
     // A late word about the draft opened before this one leaves the address alone.
-    fromFrame(frame, { kind: "draft-settled", draft: link(runs[0]!) });
+    instance.run.draftSettled(link(runs[0]!));
     expect(a.address.value).toBe(opened);
-    expect(postedTo(port, frame)).toEqual([]);
+    expect(instance.addresses).toEqual([]);
 
-    // The draft the address links: its three parameters go, the page's own and its state stay, and the frame hears it.
-    fromFrame(frame, { kind: "draft-settled", draft: link(runs[1]!) });
+    // The draft the address links: its three parameters go, the page's own and its state stay, and the instance hears it.
+    instance.run.draftSettled(link(runs[1]!));
     const settled = panelAddress("/applications/app-a/a/schedules?tab=runs", selected);
     expect(a.address.value).toBe(settled);
-    expect(postedTo(port, frame)).toEqual([{ channel: PANEL_HOST_CHANNEL, kind: "address", address: settled }]);
-    fromFrame(frame, { kind: "state", fromAddress: settled, state: selected });
+    expect(instance.addresses).toEqual([settled]);
+    instance.run.state(selected, settled);
     expect(a.address.value).toBe(settled);
     scope.stop();
   });
 
-  it("pairs an operation's answer with the call that asked for it", async () => {
+  it("hands an operation's call to its instance, and each call its own answer", async () => {
     const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
     const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
     const scope = effectScope();
     const a = scope.run(() => usePanelInstance(port.port("use-a"), { labels, label: (source) => source.kind === "registered" ? source.panel.name : "", address: () => "/applications/app-a/a/schedules", initial: () => ({}) }))!;
     await a.ready;
-    const frameA = frameWindow();
-    a.frame(frameA);
-
-    const first = a.invoke("runTask.runNow");
-    const second = a.invoke("task.clear");
-    // Two calls are two requests, each answered by its own request ID, in whatever order the frame answers them.
-    const invoked = postedTo(port, frameA).filter((message) => (message as { kind: string }).kind === "invoke") as { requestId: string }[];
-    expect(invoked).toHaveLength(2);
-    expect(invoked[0]!.requestId).not.toBe(invoked[1]!.requestId);
-    fromFrame(frameA, { kind: "invoked", requestId: invoked[1]!.requestId, result: "second" });
-    fromFrame(frameA, { kind: "invoked", requestId: invoked[0]!.requestId, result: "first" });
-    await expect(first).resolves.toBe("first");
-    await expect(second).resolves.toBe("second");
+    const [first, second] = [a.invoke("runTask.runNow"), a.invoke("task.clear")];
+    await expect(first).resolves.toBe("answer of runTask.runNow");
+    await expect(second).resolves.toBe("answer of task.clear");
+    expect(port.started("use-a").invoked).toEqual(["runTask.runNow", "task.clear"]);
     scope.stop();
   });
 });

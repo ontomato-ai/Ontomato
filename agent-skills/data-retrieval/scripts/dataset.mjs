@@ -19,14 +19,12 @@ let input = {};
 if (command === "begin") input = await json(entry);
 else if (command !== "close") {
   if (!options["--meta"]) throw new Error("--meta @delivery.json is required");
-  const meta = await json(options["--meta"]), selector = await json(entry);
+  const meta = await json(options["--meta"]);
   const { columnLabels, ...description } = meta;
-  input = { ...description, recipe: selector.kind === "metric" ? selector : {
+  input = { ...description, recipe: {
     kind: "package", package: await collectPackage(entry),
     parameters: options["--params"] ? await json(options["--params"]) : {}, columnLabels,
   } };
-  if (selector.kind === "metric" && options["--params"])
-    throw new Error("Metric parameters belong in the metric selector");
 }
 const headers = {
   ...(process.env.ONTOMATO_EXECUTION_CALLBACK ? { "X-Ontomato-Callback-Credential": process.env.ONTOMATO_EXECUTION_CALLBACK, "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID } : {}),

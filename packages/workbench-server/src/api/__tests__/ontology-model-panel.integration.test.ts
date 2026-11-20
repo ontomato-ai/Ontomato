@@ -213,12 +213,13 @@ beforeAll(async () => {
   app.post("/product-governance/register", (req, res) => { resourceIds.add(req.body.id); res.json({ success: true }); });
   app.post("/product-governance/check", (req, res) => res.json({ allowed: resourceIds.has(req.body.id) }));
   app.post("/product-governance/resources", (_req, res) => res.json({ ids: [...resourceIds] }));
-  app.get(`/platform/applications/${use.applicationId}/panel-uses`, (req, res) => {
+  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+    if (req.query.applicationId !== use.applicationId) { next(); return; }
     expect(req.header("tk")).toBe("model-reader");
     res.json({ success: true, data: {
-      applicationId: use.applicationId, entry: { path: `/applications/${use.applicationId}`, renderer: "panels" },
-      panelUses: [{ id: use.useId, pageKey: use.useId, path: `/applications/${use.applicationId}/${use.useId}`, panelId,
-        access: { kind: "domain-member" } }],
+      applicationId: use.applicationId, menu: { groups: [], panelUses: [] },
+      use: { id: use.useId, pageKey: use.useId, path: `/applications/${use.applicationId}/${use.useId}`, panelId,
+        access: { kind: "domain-member" } },
     } });
   });
   javaOwner(app);

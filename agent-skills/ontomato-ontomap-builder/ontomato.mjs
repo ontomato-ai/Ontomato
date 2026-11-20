@@ -478,7 +478,7 @@ async function main() {
     await dbImport(cfg, argv.slice(1));
     return;
   }
-  if (cmd === "agent" || cmd === "retriever-cancel") {
+  if (cmd === "agent") {
     await agent(cfg, argv);
     return;
   }

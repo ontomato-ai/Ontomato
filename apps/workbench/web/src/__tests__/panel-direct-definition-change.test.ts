@@ -1,3 +1,4 @@
+import { noOperations } from "./panel-frame";
 import { afterEach, expect, it, vi } from "vitest";
 import { createApp, h, nextTick, ref } from "vue";
 import { createI18n } from "vue-i18n";
@@ -66,6 +67,7 @@ it("keeps the reader's unsaved input when the member's definition changes, and d
       state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, failed: (reason) => { throw reason; },
     },
     requests, use: { applicationId: "app-tasks", useId: "tasks" }, messages: {}, locale: ref("en"), defaultLocale: "en",
+    expandPageComposer: noOperations.expandPageComposer,
     confirmOperation: async ({ intentId }) => ({ decision: "confirm", response: { kind: "dispatched", intentId, outcome: { kind: "success", data: {} } } }),
     read: async (): Promise<ProductPanelReadResponse> => ({ status: "ready", value: description as never }),
   });

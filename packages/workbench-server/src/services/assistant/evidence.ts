@@ -52,6 +52,8 @@ export async function readAssistantTurnEvidence(
     artifacts = [...run.artifacts];
   const ontology = turn.retrieval_scope_id ? new OntologyRetrievalClient(owner,turn.retrieval_scope_id) : null;
   const links = ontology ? await ontology.links() : [];
+  // The checks this reply scheduled for the outputs it cited, each grouped by the round that delivered them.
+  const quality = ontology ? await ontology.replyQuality() : null;
   for (const link of links) {
     const evidence = await ontology!.evidence(link.retrievalId, link.runId);
     const child = evidence.snapshot.runtimeSessionId && evidence.snapshot.runtimeRunId
@@ -67,10 +69,10 @@ export async function readAssistantTurnEvidence(
         runtimeRunId: child!.run.id,
       }));
     }
-    for (const output of evidence.snapshot.bindings?.datasets ?? []) {
-      const data = await ontology!.dataset(link.retrievalId, output.id);
-      datasets.push(projectDataset(data.id, data.payload, { source: "binding", retrievalId: link.retrievalId,
-        bindingOutputId: data.id, runtimeSessionId: null, runtimeRunId: null }));
+    // A metric the assistant ran itself has no child run; its delivered outputs are its datasets.
+    for (const outputId of child ? [] : evidence.snapshot.outputIds) {
+      datasets.push(projectDataset(outputId, await ontology!.output(link.retrievalId, link.runId, outputId), {
+        retrievalId: link.retrievalId, outputId, runtimeSessionId: null, runtimeRunId: null }));
     }
     queries.push({
       id: link.runId,
@@ -79,11 +81,12 @@ export async function readAssistantTurnEvidence(
       sourceKind: "retrieval",
       sourceRef: link.retrievalId,
       question: evidence.input.question,
-      status: child?.run.status ?? (evidence.snapshot.retrieverPending || evidence.snapshot.bindings?.status === "running" ? "running" : "stopped"),
+      status: child?.run.status ?? (evidence.snapshot.retrieverPending ? "running" : "stopped"),
       fullContent: child ? answerText(child) : "",
       backendSessions: [],
-      // Each branch's quality task of this round, with its conclusion once it completed.
-      qcResult: await ontology!.quality(link.retrievalId,link.runId),
+      // The check this reply scheduled for the outputs it cited from this round, with its conclusion once completed.
+      qcResult: quality!.quality.filter((task) => task.checks.datasets.some((dataset) => evidence.snapshot.outputIds.includes(dataset.id)))
+        .map((task) => ({ ...task, result: quality!.qualityResults.find((result) => result.taskId === task.id) ?? null })),
       datasetsPayload: datasets.map((d) => ({
         id: d.id,
         datasetKey: d.id,
@@ -136,6 +139,8 @@ export async function readAssistantTurnEvidence(
     artifacts,
     queries,
     retrievalRequested: links.length > 0,
+    // Every check this reply scheduled, including one for a round an earlier reply delegated.
+    quality,
     turnRun: {
       threadId: sessionId,
       requestSeq,

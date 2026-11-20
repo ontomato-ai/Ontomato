@@ -84,11 +84,14 @@ const projection = {
 };
 const panel = {
   name: "Schedules", description: "", visibility: "domain",
-  content: { html: '<section flow="column"><panel-member ref="summary"></panel-member><panel-member ref="tasks"></panel-member><panel-member ref="form"></panel-member><panel-member ref="run"></panel-member></section>' },
+  content: { html: '<section style="display:flex;flex-direction:column">'
+    + '<panel-member ref="summary" style="width:100%"></panel-member>'
+    + '<panel-member ref="tasks"></panel-member><panel-member ref="form"></panel-member>'
+    + '<panel-member ref="run"></panel-member></section>' },
   manifest: {
     state: { selectedTask: { type: taskType, deepLink: true, external: true, personal: false, default: null } },
     members: {
-      summary: { target: { projectionId }, inputs: { task: { state: "selectedTask" } }, params: { width: "full" } },
+      summary: { target: { projectionId }, inputs: { task: { state: "selectedTask" } } },
       tasks: { target: { projectionId: "projection-pilot-list" } },
       form: { target: { projectionId: "projection-pilot-form" }, inputs: { task: { state: "selectedTask" } } },
       run: { target: { projectionId: "projection-pilot-run" }, inputs: { task: { state: "selectedTask" } } },
@@ -147,23 +150,25 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ ids: [...resourceIds] });
   });
-  app.get("/platform/applications/app-schedules/panel-uses", (req, res) => {
+  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+    if (req.query.applicationId !== "app-schedules") { next(); return; }
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ success: true, data: {
       applicationId: "app-schedules",
-      entry: { path: "/applications/app-schedules", renderer: "panels" },
-      panelUses: [{ id: "pilot", pageKey: "pilot", path: "/applications/app-schedules/pilot", panelId,
-        access: { kind: "domain-member" } }],
+      menu: { groups: [], panelUses: [] },
+      use: { id: "pilot", pageKey: "pilot", path: "/applications/app-schedules/pilot", panelId,
+        access: { kind: "domain-member" } },
     } });
   });
-  app.get("/platform/applications/ontology-pilot/panel-uses", (req, res) => {
+  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+    if (req.query.applicationId !== "ontology-pilot") { next(); return; }
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ success: true, data: {
-      applicationId: "ontology-pilot", entry: { path: "/applications/ontology-pilot", renderer: "panels" },
-      panelUses: [{
+      applicationId: "ontology-pilot", menu: { groups: [], panelUses: [] },
+      use: {
         id: "graph", pageKey: "graph", path: "/applications/ontology-pilot/graph", panelId: graphPanelId,
         access: { kind: "domain-member" },
-      }],
+      },
     } });
   });
   app.post("/admin/getMetas", (req, res) => {
@@ -203,14 +208,15 @@ beforeAll(async () => {
       primary, { ...primary, name: "name", showName: "Name", primaryKey: false, businessKey: true },
     ]);
   });
-  app.get("/platform/applications/agent-settings/panel-uses", (req, res) => {
+  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+    if (req.query.applicationId !== "agent-settings") { next(); return; }
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ success: true, data: {
-      applicationId: "agent-settings", entry: { path: "/applications/agent-settings", renderer: "panels" },
-      panelUses: [{
+      applicationId: "agent-settings", menu: { groups: [], panelUses: [] },
+      use: {
         id: "settings", pageKey: "settings", path: "/applications/agent-settings/settings", panelId: agentPanelId,
         access: { kind: "domain-member" },
-      }],
+      },
     } });
   });
   app.get("/platform/page-skills", (req, res) => {
@@ -244,13 +250,13 @@ beforeAll(async () => {
     }
     res.json({ canSetExecutionUser: false, users: [] });
   });
-  app.get("/platform/applications/:family/panel-uses", (req, res) => {
-    const family = req.params.family;
+  app.get("/platform/applications/resolve-entry", (req, res) => {
+    const family = String(req.query.applicationId);
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ success: true, data: {
-      applicationId: family, entry: { path: `/applications/${family}`, renderer: "panels" },
-      panelUses: [{ id: "data", pageKey: "data", path: `/applications/${family}/data`,
-        panelId: `panel-${family}`, access: { kind: "domain-member" } }],
+      applicationId: family, menu: { groups: [], panelUses: [] },
+      use: { id: "data", pageKey: "data", path: `/applications/${family}/data`,
+        panelId: `panel-${family}`, access: { kind: "domain-member" } },
     } });
   });
   for (const endpoint of ["queryList", "queryById", "definitionForm"]) {
@@ -399,10 +405,10 @@ it("reads back stable member keys and named data, and leaves the record intact a
   expect((await request("PUT", panelPath, { ...panel, revision: original.revision })).status).toBe(200);
   expect((await request("PUT", panelPath, { ...panel, revision: original.revision })).status).toBe(409);
   const current = (await (await request("GET", panelPath)).json()).panel;
-  const malformed = { ...panel, content: { html: '<section invented="true"></section>' }, revision: current.revision };
+  const malformed = { ...panel, content: { html: '<section flow="column"></section>' }, revision: current.revision };
   const rejected = await request("PUT", panelPath, malformed);
   expect(rejected.status).toBe(400);
-  expect(await rejected.json()).toMatchObject({ error: { message: expect.stringMatching(/^Panel 'panel-schedules-pilot', field 'content.html' – 1:\d+ .*invented/u) } });
+  expect(await rejected.json()).toMatchObject({ error: { message: expect.stringMatching(/^Panel 'panel-schedules-pilot', field 'content.html' – 1:\d+ .*flow/u) } });
   expect((await (await request("GET", panelPath)).json()).panel).toEqual(current);
 
   const source = { kind: "registered", applicationId: "app-schedules", useId: "pilot" };

@@ -1,7 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { h } from "vue";
+import { h, nextTick } from "vue";
 import { createMemoryHistory, createRouter, RouterView, type RouteRecordRaw } from "vue-router";
-import { buildExecutionContext, type BuildTestContext } from "@ontomato/contracts/build-tests";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { CandidatePanelSource } from "@ontomato/contracts/panel-host";
 import type { ProductDefinitionTarget } from "@ontomato/contracts/product-subscriptions";
@@ -9,23 +8,20 @@ import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { appBuilderPages } from "../../../../../packages/platform-web/src/workbench-routes";
 import PanelCandidateRoute from "../../../../../packages/platform-web/src/pages/PanelCandidateRoute.vue";
 import {
-  currentSdk, hostMessageOf, inside, installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelHostFrame, projections,
-  READER, writeFrameDocument, type Sent,
+  installPlatform, leaveFrame, mountPlatformPage, nothingAt, PLACE_EVERY_MEMBER, projections, READER, type Sent,
 } from "./panel-frame";
 
 /*
- * An author previews the panel candidate in their workspace (design 6.2, 9.3 G1) through the platform's own route, panel
- * host, app host and message bridge, with the SDK's own modules in the frame. Only the network is a recorded stand-in,
- * answering as Node's candidate port and the owners would.
+ * An author previews the panel candidate in their workspace (design 6.2, 9.3 G1) through the platform's own route and
+ * panel host, its module running in the platform's document like any panel's. Only the network is a stand-in, answering
+ * as Node's candidate port and read entry would.
  *
- * What this rules out: a preview that reads or writes formal registrations to render; a candidate whose workspace or
- * preview context crosses into the frame; a frame of a preview whose requests go out live, or whose request an owner
- * refused is sent again without its mark; an undeclared request reaching the network; a non-author shown a candidate;
- * and a preview that misses the author's changed files.
+ * What this rules out: a preview that reads or writes formal registrations to render; a candidate whose members read
+ * anywhere but Node's read entry, or as anything but the author's workspace; a preview that runs an operation; a
+ * non-author shown a candidate; and a preview that misses the author's changed files, or replaces an unsaved form.
  */
 
 const WORKSPACE = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
-const AGENT = "3f1b6a2e-8c4d-4e5f-9a0b-1c2d3e4f5a6b";
 const agentForm: ProductProjection = {
   id: "projection-agent-definition-form",
   domainId: "domain-1",
@@ -47,24 +43,20 @@ const agentForm: ProductProjection = {
 };
 const summary = projections["projection-schedules-summary"]!;
 
-const candidateOf = (html: string, test: BuildTestContext | null): CandidatePanelSource => ({
+const candidateOf = (html: string): CandidatePanelSource => ({
   kind: "candidate",
   workspace: { id: WORKSPACE, ref: "working" },
   panel: {
-    content: { html, module: "" },
+    content: { html, module: PLACE_EVERY_MEMBER },
     manifest: definePanel({
       state: {},
       members: { definition: { target: { projectionId: agentForm.id }, inputs: {} }, summary: { target: { projectionId: summary.id }, inputs: {} } },
       events: {},
     }),
   },
-  previewContext: { kind: "build-test", test },
+  previewContext: { kind: "build-test", test: null },
 });
 
-const readyTest: BuildTestContext = {
-  contextId: "test-context-1", workspaceId: WORKSPACE, status: "READY", expiresAt: 1_900_000_000_000, classNames: [],
-  sampleSummary: { name: "test-data/sample.json", classes: 1, sha256: null }, resources: [],
-};
 
 const candidatePath = `/api/workspaces/${WORKSPACE}/panel-candidate`;
 const previewAddress = `/app-builder/${WORKSPACE}/panel-preview/working/agent-settings`;
@@ -77,16 +69,18 @@ function network(candidate: () => CandidatePanelSource | Response) {
       const source = candidate();
       return source instanceof Response ? source : Response.json(source);
     }
-    if (request.path === "/api/apps-sdk/current") return currentSdk();
     if (request.path === "/api/product-panels/definition-stream") {
       streams.push((request.body as { targets: ProductDefinitionTarget[] }).targets);
       return new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } });
     }
     if (request.path === `/api/product-projections/${agentForm.id}`) return Response.json({ projection: agentForm });
     if (request.path === `/api/product-projections/${summary.id}`) return Response.json({ projection: summary });
-    if (request.path === "/api/data-query/platform/scheduled-tasks") return Response.json({ tasks: [], timeZone: "UTC" });
-    if (request.method === "PUT" && request.path === `/api/assistant/agent-definitions/${AGENT}` && request.execution)
-      return Response.json({ error: { code: "BUILD_TEST_UNSUPPORTED", message: "This interface does not support test data" } }, { status: 422 });
+    // Node answers a candidate's member read as the author's workspace, with the context it confirms for it.
+    if (request.path === "/api/product-panels/read") return Response.json({ status: "ready", value: {
+      fields: [{ path: "/name", label: "Name", control: { kind: "text" }, valueSchema: {}, required: false, readOnly: false }],
+      values: (request.body as { runtimeParams?: { values?: object } }).runtimeParams?.values ?? { name: "" }, errors: [], revision: 1,
+      save: { method: "POST", path: "/assistant/agent-definitions", bodySchema: {}, draftOperation: "agent.create" },
+    } });
     return nothingAt(request);
   };
   return { answer, streams };
@@ -102,17 +96,6 @@ async function openPreview(answer: (request: Sent) => Response) {
   return { ...page, router, sent };
 }
 
-/** Starts the frame's own SDK modules on the document the host wrote, as the frame's browser would. */
-async function startFrame(frame: HTMLIFrameElement) {
-  const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
-  const { contextTransport } = await import("../../../../../packages/apps-sdk/src/context");
-  writeFrameDocument(hostMessageOf(frame.srcdoc));
-  inside(frame.contentWindow!);
-  const { ref } = await import("vue");
-  const mounted = await mountPanel({ render: () => h("div") });
-  return { ...mounted, ref, transport: contextTransport(mounted.appContext) };
-}
-
 function visibility() {
   const current = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
   function set(value: "visible" | "hidden") {
@@ -122,29 +105,44 @@ function visibility() {
   return { set, reset: () => { set("visible"); current.mockRestore(); } };
 }
 
-/** Anything the preview asked of a formal registration: a use relation, an application, a panel record or its writes. */
+/**
+ * Anything the preview asked of a formal registration: a use relation, an application, a panel record or its writes.
+ * Node's read entry is not one: a candidate's members read there as the workspace.
+ */
 const formal = (sent: Sent[]) => sent.filter(request =>
-  request.path.startsWith("/api/product-panels") && request.path !== "/api/product-panels/definition-stream"
+  request.path.startsWith("/api/product-panels")
+    && !["/api/product-panels/definition-stream", "/api/product-panels/read"].includes(request.path)
   || request.path.includes("/platform/applications") || request.method === "PUT" && request.path.startsWith("/api/product-"));
 
-afterEach(() => {
-  leaveFrame();
-  vi.resetModules();
+afterEach(leaveFrame);
+
+/** The candidate's panel, as the element its component is mounted in. */
+const shownPanel = (element: HTMLElement) => vi.waitFor(() => {
+  const found = element.querySelector<HTMLElement>(".panel-host-coded > *");
+  if (!found?.querySelector("[data-member]")) throw new Error("The candidate is not drawn yet");
+  return found;
+});
+const nameInput = (element: HTMLElement) => vi.waitFor(() => {
+  const input = element.querySelector<HTMLInputElement>("[data-member='definition'] [data-field='/name'] input");
+  if (!input) throw new Error("The form is not drawn yet");
+  return input;
+});
+const candidateReads = (sent: Sent[]) => sent.filter(request => request.path === "/api/product-panels/read").map(request => request.body as {
+  source: unknown; memberPath: unknown; dataName: string;
 });
 
-it("previews the author's candidate through the same panel host, with only its definition in the frame", async () => {
-  const { answer, streams } = network(() => candidateOf('<div id="app"></div>', null));
-  const { app, sent } = await openPreview(answer);
+it("previews the author's candidate through the same panel host, its members read at Node's entry as the workspace", async () => {
+  const { answer, streams } = network(() => candidateOf('<div id="app"></div>'));
+  const { app, element, sent } = await openPreview(answer);
   try {
-    const frame = await panelHostFrame();
-    expect(sent[0]).toMatchObject({ method: "GET", path: candidatePath, search: "?ref=working", credential: READER, execution: null });
-    const message = hostMessageOf(frame.srcdoc);
-    // Only the renderable definition crosses into the frame: no workspace, ref or preview context.
-    expect(message.panel).toEqual(candidateOf('<div id="app"></div>', null).panel);
-    // A candidate is no application's use: the frame is told it has none.
-    expect(message).toMatchObject({ pageKey: "agent-settings", use: null, url: previewAddress, label: "Panel preview (working)" });
-    const { sdkBasePath } = await currentSdk().json();
-    expect(frame.srcdoc).toContain(`"@ontomato/sdk/panel":"${sdkBasePath}/panel.js"`);
+    await shownPanel(element);
+    expect(sent[0]).toMatchObject({ method: "GET", path: candidatePath, search: "?ref=working", credential: READER });
+    expect(element.querySelector("iframe")).toBeNull();
+    await nameInput(element);
+    expect(candidateReads(sent)).toContainEqual(expect.objectContaining({
+      source: { kind: "candidate", workspace: { id: WORKSPACE, ref: "working" } }, memberPath: [{ member: "definition" }],
+      dataName: "createForm",
+    }));
     // The preview is an author's host: the registered projections the candidate names follow the definition stream,
     // and no panel is registered for it to follow.
     await vi.waitFor(() => expect(streams).toEqual([[
@@ -156,61 +154,24 @@ it("previews the author's candidate through the same panel host, with only its d
   }
 });
 
-it.each([
-  { case: "has none", test: null },
-  { case: "has one", test: readyTest },
-])("runs the frame on the workspace's build-test context when the workspace $case, never live", async ({ test }) => {
-  const { answer } = network(() => candidateOf('<div id="app"></div>', test));
-  const { app, sent } = await openPreview(answer);
+it("reads only through Node as the candidate, and runs no operation: a save is refused in the preview, and nothing is written", async () => {
+  const { answer } = network(() => candidateOf('<div id="app"></div>'));
+  const { app, element, sent } = await openPreview(answer);
   try {
-    const frame = await panelHostFrame();
-    const { appContext, transport } = await startFrame(frame);
-    expect(appContext.executionContext).toEqual(buildExecutionContext(WORKSPACE, test));
-    const before = sent.length;
-    const marked = JSON.stringify({ kind: "build-test", contextId: test?.contextId ?? null });
-
-    // The registered projections and a Java read their bindings declare go out marked with the preview's context.
-    expect((await transport.request(`/product-projections/${agentForm.id}`, {}, "")).status).toBe(200);
-    expect((await transport.request(`/product-projections/${summary.id}`, {}, "")).status).toBe(200);
-    expect((await transport.request("/platform/scheduled-tasks", {}, "/data-query")).status).toBe(200);
-    // A management write the binding declares reaches its owner marked, and the owner's refusal is the answer: it is
-    // not sent again without the mark.
-    await expect(transport.request(`/assistant/agent-definitions/${AGENT}`, { method: "PUT", body: "{}" }, ""))
-      .rejects.toMatchObject({ code: "BUILD_TEST_UNSUPPORTED" });
-    // What no projection of the candidate declares never leaves the frame, a formal registration's write included.
-    for (const [path, init, service] of [
-      ["/product-panels/agent-settings", { method: "PUT", body: "{}" }, ""],
-      ["/product-projections/projection-schedules-form", {}, ""],
-      [`/assistant/agent-definitions/${AGENT}`, { method: "DELETE" }, ""],
-      ["/dsl/executeV1", { method: "POST", body: "{}" }, "/data-query"],
-    ] as const)
-      await expect(transport.request(path, init, service)).rejects.toThrow("Outside what this panel's projections declare");
-
-    const fromFrame = sent.slice(before);
-    expect(fromFrame.map(({ method, path }) => `${method} ${path}`)).toEqual([
-      `GET /api/product-projections/${agentForm.id}`,
-      `GET /api/product-projections/${summary.id}`,
-      "GET /api/data-query/platform/scheduled-tasks",
-      `PUT /api/assistant/agent-definitions/${AGENT}`,
-    ]);
-    expect(fromFrame.every(request => request.execution === marked && request.credential === READER)).toBe(true);
+    const input = await nameInput(element);
+    input.value = "Preview agent";
+    input.dispatchEvent(new Event("input"));
+    await nextTick();
+    const save = [...element.querySelectorAll<HTMLButtonElement>("[data-member='definition'] button")].find(button => button.textContent?.trim() === "Save")!;
+    save.click();
+    await vi.waitFor(() => expect(element.querySelector("[data-member='definition']")?.textContent).toContain("A panel preview runs no operations"));
+    // What the preview sent: the candidate, its projections and Node's read entry, as the reader; no owner was asked
+    // directly, and nothing was written.
+    expect(sent.every(request => request.credential === READER)).toBe(true);
+    expect(sent.filter(request => request.path.startsWith("/api/data-query/") || request.path.startsWith("/api/assistant/")
+      || request.path.startsWith("/api/panel-operation"))).toEqual([]);
+    expect(candidateReads(sent).every(read => JSON.stringify(read.source) === JSON.stringify({ kind: "candidate", workspace: { id: WORKSPACE, ref: "working" } }))).toBe(true);
     expect(formal(sent)).toEqual([]);
-  } finally {
-    app.unmount();
-  }
-});
-
-it("embeds no live product in a candidate's frame", async () => {
-  const { answer } = network(() => candidateOf('<div id="app"></div>', null));
-  const { app, sent } = await openPreview(answer);
-  try {
-    const { appContext } = await startFrame(await panelHostFrame());
-    const before = sent.length;
-    const element = document.createElement("div");
-    document.body.append(element);
-    appContext.mountProductAsset(element, "asset-1");
-    await vi.waitFor(() => expect(element.textContent).toBe("Product embedding is unavailable in build-test previews"));
-    expect(sent.slice(before)).toEqual([]);
   } finally {
     app.unmount();
   }
@@ -221,7 +182,7 @@ it("refuses a reader who is not the workspace's author, and shows the refusal", 
   const { app, element, sent } = await openPreview(answer);
   try {
     await vi.waitFor(() => expect(element.querySelector(".panel-host-error")?.textContent).toBe("Workspace not found"));
-    expect(element.querySelector("iframe")).toBeNull();
+    expect(element.querySelector(".panel-host-coded")).toBeNull();
     expect(streams).toEqual([]);
     expect(formal(sent)).toEqual([]);
   } finally {
@@ -232,36 +193,32 @@ it("refuses a reader who is not the workspace's author, and shows the refusal", 
 it("reads the candidate again when the author comes back, and waits for an unsaved form", async () => {
   const foreground = visibility();
   let html = '<div id="app"></div>';
-  const { answer } = network(() => candidateOf(html, null));
-  const { app, sent } = await openPreview(answer);
+  const { answer } = network(() => candidateOf(html));
+  const { app, element, sent } = await openPreview(answer);
   const reads = () => sent.filter(request => request.path === candidatePath);
   try {
-    const frame = await panelHostFrame();
-    const { context, ref } = await startFrame(frame);
-    const shown = frame.srcdoc;
+    const shown = await shownPanel(element);
 
-    // Unchanged files keep the frame as it is.
+    // Unchanged files keep the panel as it is.
     foreground.set("hidden");
     foreground.set("visible");
     await vi.waitFor(() => expect(reads()).toHaveLength(2));
-    expect(frame.srcdoc).toBe(shown);
+    expect(element.querySelector(".panel-host-coded > *")).toBe(shown);
 
     // The author changed the files while the reader holds an unsaved form: the new candidate waits for it.
-    html = '<div id="app"></div><p id="changed"></p>';
-    const said = new Promise<void>(resolve => window.addEventListener("message", event => {
-      if (event.data?.kind === "dirty" && event.data.dirty) resolve();
-    }));
-    const unsaved = ref(true);
-    context.holdUnsaved(unsaved);
-    // The frame's word reaches the host a task later, as a browser delivers a message.
-    await said;
+    html = '<div id="app" class="changed"></div>';
+    const input = await nameInput(element);
+    input.value = "Unsaved";
+    input.dispatchEvent(new Event("input"));
+    await nextTick();
     foreground.set("hidden");
     foreground.set("visible");
     await vi.waitFor(() => expect(reads()).toHaveLength(3));
     await new Promise(resolve => setTimeout(resolve, 0));
-    expect(frame.srcdoc).toBe(shown);
-    unsaved.value = false;
-    await vi.waitFor(() => expect(hostMessageOf(frame.srcdoc).panel.content.html).toContain('id="changed"'));
+    expect(element.querySelector(".panel-host-coded > *")).toBe(shown);
+    // Discarded: the changed candidate is drawn.
+    [...element.querySelectorAll<HTMLButtonElement>("[data-member='definition'] button")].find(button => button.textContent?.trim() === "Discard")!.click();
+    await vi.waitFor(() => expect(element.querySelector(".panel-host-coded > .changed")).not.toBeNull());
     expect(formal(sent)).toEqual([]);
   } finally {
     app.unmount();

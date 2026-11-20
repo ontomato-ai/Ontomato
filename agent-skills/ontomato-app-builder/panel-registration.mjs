@@ -90,10 +90,10 @@ export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workben
         for (const item of items) {
           try {
             await write(item);
+            await onRegistered(kind, item.id);
           } catch (error) {
             throw new Error(`${kind} ${item.id}: ${error.message}`, { cause: error });
           }
-          onRegistered(kind, item.id);
         }
       }
 

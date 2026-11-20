@@ -220,8 +220,23 @@ export const currentSdk = () => Response.json(appsSdkCurrentSchema.parse({
 }));
 
 /** A panel's current record; its HTML has the element the SDK mounts into, and the test supplies the component. */
+/**
+ * The module of a panel written with code that places every member of its declaration, as an author's `panel.mjs` does:
+ * the platform runs it in its own document, on its own Vue and SDK.
+ */
+export const PLACE_EVERY_MEMBER = `import { h, resolveComponent } from "vue";
+import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
+
+await mountPanel({
+  setup() {
+    const { manifest } = usePanelContext();
+    return () => h("div", Object.keys(manifest.members).map(slot => h(resolveComponent("Projection"), { slot })));
+  },
+});
+`;
+
 export function panelRecord(id: string, name: string, manifest: PanelManifest): ProductPanel {
-  return { ...current, id, name, description: name, content: { html: '<div id="app"></div>', module: "" }, manifest };
+  return { ...current, id, name, description: name, content: { html: '<div id="app"></div>', module: PLACE_EVERY_MEMBER }, manifest };
 }
 
 /** A use relation of one of the trial's applications, as Java declares it. */
@@ -508,6 +523,23 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
       draftServed();
       return Response.json(draft);
     }
+    // The owner's form as Node's read entry describes it, for the values the form asks with: the case set to choose.
+    if (request.path === "/api/product-panels/read") {
+      // The values the form asks with: the component's own, or an input the projection declares for them.
+      const { inputs, runtimeParams } = request.body as { inputs: { values?: Record<string, unknown> }; runtimeParams?: { values?: Record<string, unknown> } };
+      const values = runtimeParams?.values ?? inputs.values ?? task.content;
+      return Response.json({ status: "ready", value: {
+        fields: [{
+          path: "/caseSetId", label: caseSetLabel, required: false, readOnly: false, valueSchema: {},
+          control: { kind: "select", options: [
+            { value: task.content.caseSetId, label: "Regression (12)", description: null, disabled: false, disabledReason: null },
+            { value: "set-smoke", label: "Smoke (8)", description: null, disabled: false, disabledReason: null },
+          ] },
+        }],
+        values, errors: [], revision: task.revision,
+        save: { method: "PUT", path: "/platform/scheduled-tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+      } });
+    }
     return nothingAt(request);
   };
   return { panel, use, address, answer };
@@ -515,8 +547,12 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
 
 /** The coordinator of an instance a test builds by hand and runs no operation of: any call to it fails the test. */
 const unused = () => Promise.reject(new Error("This test runs no operation of the panel"));
-export const noOperations: { operations: PanelHumanOperations; confirmOperation: ConfirmPanelOperation } = {
+export const noOperations: {
+  operations: PanelHumanOperations; confirmOperation: ConfirmPanelOperation; expandPageComposer: () => never;
+} = {
   operations: { describe: unused, read: unused, prepare: unused }, confirmOperation: unused,
+  // A test that opens the page's composer gives its own; any other call to it fails the test.
+  expandPageComposer: () => { throw new Error("This test opens no composer"); },
 };
 
 /** The form save calls that reached the coordinator. */

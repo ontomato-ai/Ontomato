@@ -14,15 +14,12 @@ workbench `/api/retrievals` entirely.
 
 | Method/path | Shape / meaning |
 | --- | --- |
-| POST `/ontology/retrievals` | UUID Idempotency-Key; existing `RetrievalInput`; 202 `RetrievalPoll` |
-| GET `/ontology/retrievals/:id?runId=:runId` | Lightweight `RetrievalSnapshot`: stored state, deliveries and result cursor, never messages. Optional runId selects an exact owned round; omitted selects the current round |
-| GET `/ontology/retrievals/:id/results?after=cursor` | `RetrievalPoll`: ordered incremental deliveries and pending branch status; no runtime HTTP read on this polling path |
-| POST `/ontology/retrievals/:id/retriever/cancel` | `{expectedRoundId}`; cancel only that current retriever, never binding work/results/QC |
-| POST `/ontology/retrievals/:id/answers` | New UUID key; existing `retrievalAnswersSchema` (`expectedRunId`, `expectedDecisionRevision`, `message`); 202 `RetrievalPoll` |
-| POST `/ontology/retrievals/:id/cancel` | `{}`; close business writes before cancelling active output/QC work and runtime intent/run |
-| GET `/ontology/retrievals/:id/datasets/:datasetId` | `{id,payload:DatasetPayload}` for an accepted immutable dataset; host binding results also identify their source, hash and quality task |
-| GET `/ontology/retrievals/:id/datasets/:datasetId/content` | Original accepted bytes, whether a real runtime artifact or a host output receipt |
-| GET `/ontology/retrievals/:id/runs/:runId/evidence` | `{input:RetrievalInput,snapshot:RetrievalSnapshot}` for that exact owned round; QC is read as its quality tasks |
+| GET `/ontology/retrievals/:id?runId=:runId` | Lightweight `RetrievalSnapshot`: stored state, the retriever's delivery, delivered `outputIds` and result cursor, never messages. Optional runId selects an exact owned round; omitted selects the current round |
+| GET `/ontology/retrievals/:id/datasets/:datasetId` | `{id,payload:DatasetPayload}` for an accepted immutable dataset |
+| GET `/ontology/retrievals/:id/datasets/:datasetId/content` | Original accepted bytes of the runtime artifact |
+| GET `/ontology/retrievals/:id/runs/:runId/evidence` | `{input:RetrievalInput,snapshot:RetrievalSnapshot}` for that exact owned round |
+| POST `/ontology/retrievals/:id/runs/:runId/quality` | Workbench service only: `{replyRunId,outputIds}`, the outputs of this round a finished reply cited; 202. See [answer quality](#answer-quality) |
+| POST `/ontology/retrievals/:id/dataset-source` | `{receiptId,dataset}` → `{runId,outputId}`: which formal output these exact bytes are |
 | DELETE `/ontology/retrievals/:id` | 204; active run 409. Delete the owned business record and runtime session through their owners |
 
 Preserve `running/stopped`, stopReason/errorMessage, runtime IDs,
@@ -44,43 +41,37 @@ minutes. Java does not read workbench configuration.
 
 ## Retrieval as a task
 
-A round and its quality checks are read as [tasks](agent-tasks.md); the retriever's own run is
-shown through the task's process routes. Reads name each branch's quality task
-(`qualityTasks`, a binding dataset's `qualityTaskId`) rather than embedding the job.
+A round is read as a [task](agent-tasks.md); the retriever's own run is shown through the task's
+process routes. The round runs until the retriever's delivery is recorded and settles with it.
+Runtime `agent_end` alone does not imply that the delivery has been recorded. These reads never
+fetch runtime messages synchronously; the existing observer owns reconciliation. Evidence reads
+remain side-effect free. Continuation admission still reconciles current runtime facts before
+deciding whether another round can start.
 
-Business state reads continue through admission and independent binding execution,
-and stop when both branches have published or finished. Runtime `agent_end` alone
-does not imply that retrieval delivery has been recorded. These reads never fetch
-runtime messages synchronously; the existing observer owns reconciliation, with
-lazy projection of old terminal rounds shared with `/results`. Evidence reads
-remain side-effect free. Continuation admission still reconciles current runtime
-facts before deciding whether another round can start.
+Retriever delivery uses its accepted artifacts, and its `answer` is the text of the message the
+runtime named as the run's `answerMessageId` (empty without one). Reads apply the same identity to
+deliveries stored before the runtime named answers: their text counts only for a normal stop.
+Cancellation closes pending outputs before stopping work and keeps accepted outputs.
 
-## Concurrent delivery
+## Answer quality
 
-Fresh ask and explicit answered rounds launch the existing retriever and binding
-execution independently. Binding recall retains its current vector algorithm
-and error behavior; retriever context retains catalog lookup, never binding
-execution results. Existing retriever limits are unchanged. Binding jobs retain
-formal execution limits plus credential/caller expiry.
+Delivery alone schedules no check. When a workbench reply ends normally, the workbench reads the
+datasets its answer message cites (Markdown links and images to `.dataset.json` files, resolved as
+the shell resolves them) and matches each file to its formal output by receipt and digest. For each
+round it posts the cited outputs once. The caller header is the round's own caller; `replyRunId` is
+the reply's caller of the same owner. Java freezes the check from the round's own record: question,
+user quotes, confirmed decisions, class scope and the cited outputs' frozen recipes, nothing the
+model wrote. The first adopting reply records `quality_adoption` on the round and owns its one
+check; a later reply citing the same round keeps that check. A published metric is only checked:
+candidates are generated for retriever packages, never for metric recipes.
 
-A successful binding publishes one delivery immediately. No match or execution
-failure publishes nothing and cannot make ask return early. Retriever delivery
-uses its accepted artifacts, and its `answer` is the text of the message the
-runtime named as the run's `answerMessageId` (empty without one; binding
-deliveries have none). Reads apply the same identity to deliveries stored before
-the runtime named answers: their text counts only for a normal stop. Results are ordered by
-an ontology cursor; wait reads only later deliveries without restarting work.
-Only the main agent chooses whether to cancel the retriever or wait. Whole-request
-or parent closure cancels both unfinished branches, retaining accepted outputs
-and their asynchronous QC.
-
-Binding outputs have their own write gate and formal execution receipt, not a
-synthetic runtime run/artifact. Runtime stops never close that gate. History and
-parent-file verification distinguish host output IDs from runtime artifact IDs.
-Only host-produced dataset reads allow selfCheck null; agent/external preparation
-contracts, metricUses and comparison instructions stay unchanged. Existing QC
-runs on accepted binding recipes through the same quality service.
+The check and its candidates run under the reply's run, which holds its credential chain: the
+workbench's provider read reports the reply unsettled until they end. `GET
+/ontology/retrieval-callers/:replyRunId/quality` returns `{quality,qualityResults,settled}` for that
+reply; the workbench places each check under the reply in its task projection. Java reports a
+change of a reply's checks to the workbench (`POST /internal/assistant/runs/:runId/quality-changed`,
+platform service credential, the reference only), and the workbench signals that run through its own
+runtime host. A check that cannot be admitted does not change the finished reply.
 
 ## Formal files and external skills
 
@@ -104,10 +95,24 @@ and truncation; exploration rows are not formal results. Unknown effects reconci
 the original ID. Closed/old runs return 409 `RETRIEVAL_RUN_CLOSED`; committed
 receipts stay readable. Cancellation closes pending outputs before stopping work.
 
-Metric recipes optionally select an owned `bindingId` on the dynamic `metricId`.
-Execution resolves the stored binding values, rejects overrides and freezes the
-actual values in the returned recipe. Metric revisions include the current
-aggregate; a changed definition or binding requires retrieving it again.
+## Metric delivery
+
+The assistant recalls published metrics and runs one itself, in its own
+retrieval run: `POST /ontology/retrievals/skill-runs` with the question,
+`POST .../runs/:runId/submit-metric` with `{id,revision,bindingId?,parameters?}`
+and a UUID Idempotency-Key, the same status/content reads, then `close`. The
+selector is the whole input: Java reads the published definition, the declared
+defaults or the preset values, freezes the executed source and the receipt, and
+generates the title from the definition and the question from the accepted
+request. `bindingId` and `parameters` are exclusive; missing parameter values
+come from the definition, and subject-bound values are resolved at execution.
+A revision that changed is refused, and only a published metric is delivered.
+`workbench.dataset.v2` metric files carry `recipe.kind="metric"` with exactly one
+frozen source and `selfCheck:null`; they never carry metric uses.
+
+Files written before the cutover may carry `metricUses` and a `selfCheck.comparisons`
+list. A reader of an already stored file drops those two fields before applying
+the current view; new submissions must not send them.
 
 `DatasetPayload` remains the sole dataset schema. New outputs use
 `workbench.dataset.v2` and freeze the complete package and actual parameter values;
@@ -122,7 +127,9 @@ and receipt metadata, not another permanent copy of rows.
 
 External `POST /ontology/retrievals/skill-runs` and
 `POST /ontology/retrievals/:id/skill-runs/:runId/close` keep existing begin/close
-inputs and `{id,sessionId,runId,expiresAt}`. Use the same business gate/output
+inputs and `{id,sessionId,runId,expiresAt}`. A normal close ends that run's write window only; its
+delivered outputs stay checkable and nothing is cancelled. A run that outlives its deadline is closed
+and cancelled by the observer. Use the same business gate/output
 service without a runtime agent or synthetic history. External snapshots have
 null runtime IDs/run and empty messages. External work uses normal user authority;
 in-product retrieval issues its exploration grant locally.

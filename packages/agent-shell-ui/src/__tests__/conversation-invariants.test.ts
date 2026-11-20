@@ -75,10 +75,10 @@ describe("delegated tasks in a reply", () => {
     sessionId,
     tasks: [
       { kind: "agent", id: roundId, root: { sessionId, runId }, title: "Sales?", agentRef: {providerId:"ontology",agentId:"retrieval"}, sessionRef:{providerId:"ontology",sessionId:roundId}, runId:roundId, requestedBy:{session:{providerId:"workbench",sessionId},runId}, results:[], parentTaskId: null, status: "completed", error: null,
-        createdAt: at(3), process: { mode: "none" }, retrieval:{question:"Sales?",decisionRevision:0,branches: [{ source: "retriever", status: "completed", error: null,
-          datasets: [{ id: dataset, title: "Sales", rowCount: 3, truncation: null }] }]} },
+        createdAt: at(3), process: { mode: "none" }, retrieval:{question:"Sales?",decisionRevision:0,
+          datasets: [{ id: dataset, title: "Sales", rowCount: 3, truncation: null }]} },
       { kind: "quality", id: checkId, root: { sessionId, runId }, parentTaskId: roundId, status: "completed", error: null,
-        createdAt: null, process: { mode: "none" }, checks: { source: "retriever", datasetIds: [dataset] } },
+        createdAt: null, process: { mode: "none" }, checks: { datasets: [{ id: dataset, title: "Sales" }] } },
     ],
     qualityResults: [{ taskId: checkId, score: 92, summary: "Matches the question.", conclusion: "Matches the question.", fittedQuestion: "Sales?" }],
   };
@@ -98,11 +98,21 @@ describe("delegated tasks in a reply", () => {
     expect(kinds.filter((kind) => ["steps", "task", "note"].includes(kind))).toEqual(["steps", "task", "note"]);
     const step = response.process[0]!.kind === "steps" ? response.process[0]!.steps[0]! : null;
     expect(stepActivity(step!)).toBe("skill");
-    // The review is the one quality check of the reply's retrieval, over the dataset that retrieval delivered.
+    // The review is the one quality check of the data the reply cited, over the dataset it cited.
     const review = response.reviews[0]!;
     expect(review.task.id).toBe(checkId);
     expect(review.result?.score).toBe(92);
-    expect(review.datasets.map((item) => item.id)).toEqual([dataset]);
+    expect(review.datasets).toEqual([{ id: dataset, title: "Sales" }]);
+  });
+
+  it("puts a check under the reply that cited the data, not the reply that delegated the retrieval", () => {
+    const state = emptyConversation(sessionId);
+    applyRunSnapshot(state, snapshot({ messages: [user], pendingMessages: [{ id: partialId, message: partial }] }));
+    const later = { ...tasks, tasks: tasks.tasks.map((task) =>
+      task.kind === "quality" ? { ...task, root: { sessionId, runId: "12121212-1212-4121-8121-121212121212" } } : task) };
+    const response = conversationItems(state, later).find((item) => item.kind === "response")!;
+    expect(response.process.some((block) => block.kind === "task")).toBe(true);
+    expect(response.reviews).toEqual([]);
   });
 });
 

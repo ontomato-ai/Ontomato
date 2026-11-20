@@ -1,0 +1,81 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:AgentDefinition"
+        },
+        "deepLink": true
+      },
+      "newAction": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      }
+    },
+    "members": {
+      "list": {
+        "target": {
+          "projectionId": "example-agent-management-list"
+        },
+        "outputs": {
+          "selected": {
+            "state": "selected"
+          }
+        }
+      },
+      "detail": {
+        "target": {
+          "projectionId": "example-agent-management-detail"
+        },
+        "inputs": {
+          "item": {
+            "state": "selected"
+          }
+        }
+      },
+      "form": {
+        "target": {
+          "projectionId": "example-agent-management-form"
+        },
+        "inputs": {
+          "item": {
+            "state": "selected"
+          }
+        }
+      },
+      "newRecord": {
+        "target": {
+          "projectionId": "example-agent-management-newRecord"
+        },
+        "outputs": {
+          "value": {
+            "state": "newAction"
+          }
+        }
+      }
+    },
+    "events": {
+      "newRecord": {
+        "on": {
+          "member": "newRecord",
+          "output": "value"
+        },
+        "do": {
+          "set": {
+            "fields": {
+              "selected": {
+                "literal": null
+              },
+              "newAction": {
+                "literal": null
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

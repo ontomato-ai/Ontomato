@@ -175,6 +175,7 @@ function openEdit(workflow: WorkflowRecord) {
 
 type EditableStep = WorkflowStepRecord & {
   parametersJson?: string;
+  parameterBindingsJson?: string;
   valueMapJson?: string;
 };
 
@@ -185,6 +186,7 @@ function editableStep(step: WorkflowStepRecord): EditableStep {
     invocationMode: step.invocationMode ?? "manual",
     actorPolicy: { ...policy, mode: policy.mode ?? "none" },
     parametersJson: JSON.stringify(policy.parameters ?? {}, null, 2),
+    parameterBindingsJson: JSON.stringify(policy.parameterBindings ?? {}, null, 2),
     valueMapJson: JSON.stringify(policy.valueMap ?? {}, null, 2),
   };
 }
@@ -200,6 +202,7 @@ function blankStep(no: number): EditableStep {
     invocationMode: "manual",
     actorPolicy: { mode: "none" },
     parametersJson: "{}",
+    parameterBindingsJson: "{}",
     valueMapJson: "{}",
   };
 }
@@ -210,6 +213,14 @@ function stepParametersJson(step: WorkflowStepRecord) {
 
 function setStepParametersJson(step: WorkflowStepRecord, value: string) {
   (step as EditableStep).parametersJson = value;
+}
+
+function stepParameterBindingsJson(step: WorkflowStepRecord) {
+  return (step as EditableStep).parameterBindingsJson ?? "{}";
+}
+
+function setStepParameterBindingsJson(step: WorkflowStepRecord, value: string) {
+  (step as EditableStep).parameterBindingsJson = value;
 }
 
 function stepValueMapJson(step: WorkflowStepRecord) {
@@ -318,6 +329,10 @@ function savedStep(step: WorkflowStepRecord): WorkflowStepRecord {
           metricRevision: editable.actorPolicy?.metricRevision?.trim(),
           principalField: editable.actorPolicy?.principalField?.trim() || "principal",
           parameters: parsePolicyObject(editable.parametersJson, ot("workflowPolicyParameters")),
+          parameterBindings: parsePolicyObject(
+            editable.parameterBindingsJson,
+            ot("workflowPolicyParameterBindings"),
+          ) as Record<string, string>,
           valueMap: parsePolicyObject(editable.valueMapJson, ot("workflowPolicyValueMap")) as Record<string, string>,
           executionPrincipalId: editable.actorPolicy?.executionPrincipalId?.trim() || undefined,
         }
@@ -660,6 +675,14 @@ function grantSummary(workflow: WorkflowRecord) {
                     type="textarea"
                     :rows="3"
                     @update:model-value="setStepParametersJson(step, $event)"
+                  />
+                </el-form-item>
+                <el-form-item :label="ot('workflowPolicyParameterBindings')">
+                  <el-input
+                    :model-value="stepParameterBindingsJson(step)"
+                    type="textarea"
+                    :rows="3"
+                    @update:model-value="setStepParameterBindingsJson(step, $event)"
                   />
                 </el-form-item>
                 <el-form-item :label="ot('workflowPolicyValueMap')">

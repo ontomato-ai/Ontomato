@@ -70,7 +70,8 @@ export async function resolveDiagnosisEvidence(target: DiagnosisTarget, caller: 
     for (const link of links.retrievals) {
       const evidence = retrievalEvidenceSchema.parse(await ontologyRead(`/ontology/retrievals/${link.retrievalId}/runs/${link.runId}/evidence`, caller));
       const session = evidence.snapshot.runtimeSessionId;
-      if (!session) throw new HttpError(503, "Ontology runtime reference is unavailable");
+      // A metric the assistant ran itself is a formal output without an ontology agent run.
+      if (!session) continue;
       const run = agentHostRunSnapshotSchema.parse(await ontologyRead(`/ontology/ai/sessions/${session}/runs/${link.runId}`, caller));
       add("ontology", run, null);
     }

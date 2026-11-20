@@ -142,7 +142,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     reads: {
       query: {
         source: "type", parameterMode: "fixed",
-        params: { search: "keyword", filter: "knowledgeFilter", cursor: "cursor", size: "size" },
+        params: { search: "keyword", status: "knowledgeStatus", cursor: "cursor", size: "size" },
         result: "panelRecordQuery",
       },
       counts: {
@@ -193,7 +193,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         requiredParams: ["node"], result: "panelGraphNeighbors",
       },
       objects: {
-        source: "type", parameterMode: "fixed", params: { type: "ontologyType", keyword: "keyword", page: "page" },
+        source: "type", parameterMode: "fixed", params: { type: "ontologyType", search: "keyword", page: "page" },
         requiredParams: ["type"], result: "panelOntologyObjects",
       },
     },

@@ -95,12 +95,11 @@ export const panelReadParameterSchemas = {
   className: panelObjectRefSchema.shape.className,
   neighborsLimit: positiveInteger.max(100),
   ontologyParameter: runtimeJsonValueSchema,
-  filter: runtimeJsonObjectSchema,
   sort: runtimeJsonValueSchema,
   cursor: z.string(),
   size: positiveInteger,
   knowledgeCountField: z.literal("status"),
-  knowledgeFilter: z.object({ status: z.enum(["all", "pending", "approved"]) }).strict(),
+  knowledgeStatus: z.enum(["all", "pending", "approved"]),
 };
 
 type ReadInput = DirectProjectionPorts["inputs"][string];
@@ -113,6 +112,7 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "className":
     case "cursor":
     case "knowledgeCountField":
+    case "knowledgeStatus":
       return input?.kind === "scalar" && input.type === "string";
     case "size":
     case "neighborsLimit":
@@ -272,7 +272,13 @@ export const panelRecordQuerySchema = z.object({
   total: z.number().int().nonnegative().optional(),
 }).strict();
 export type PanelRecordQuery = z.infer<typeof panelRecordQuerySchema>;
-export const panelGroupCountsSchema = z.record(z.number().int().nonnegative());
+/** Group order and display labels come from the owner. */
+export const panelGroupCountsSchema = z.array(z.object({
+  key: z.string(),
+  label: z.string(),
+  count: z.number().int().nonnegative(),
+}).strict());
+export type PanelGroupCounts = z.infer<typeof panelGroupCountsSchema>;
 export const panelRelationNeighborsSchema = platformOntologyNeighborsResponseSchema.extend({
   relations: z.array(platformOntologyRelationStatusSchema.extend({ truncated: z.boolean() })),
 });

@@ -205,6 +205,15 @@ export const assistantStore = {
     return { row, replayed: !r.rowCount };
     });
   },
+  /** A turn found by the service in its domain, with the owner the service then acts for. */
+  async domainTurn(id: string, domainId: string): Promise<TurnRow & AssistantOwner> {
+    const r = await db().query(
+      `SELECT t.*,s.domain_id AS "domainId",s.owner_id AS "userId" FROM ${table("assistant_turns")} t JOIN ${table("assistant_sessions")} s ON s.id=t.session_id WHERE t.id=$1 AND s.domain_id=$2`,
+      [id, domainId],
+    );
+    if (!r.rowCount) throw new HttpError(404, "Run not found", "NOT_FOUND");
+    return r.rows[0];
+  },
   async turn(id: string, owner: AssistantOwner): Promise<TurnRow> {
     const r = await db().query(
       `SELECT t.* FROM ${table("assistant_turns")} t JOIN ${table("assistant_sessions")} s ON s.id=t.session_id WHERE t.id=$1 AND s.domain_id=$2 AND s.owner_id=$3`,

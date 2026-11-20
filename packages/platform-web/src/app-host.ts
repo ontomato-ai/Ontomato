@@ -288,9 +288,16 @@ function expandPageComposer(source:object,{slot,...asked}:AppBridgeExpandPageCom
   const declared=projectionId===undefined?undefined:panel!.conversationEntries.get(projectionId);
   // Both sides are parsed by the same schema, so their keys come in the same order.
   if(!declared||JSON.stringify(declared)!==JSON.stringify(asked))throw new Error('This conversation entry is not declared by the panel');
+  expandDeclaredComposer(declared);
+}
+/**
+ * Expands the page's composer, the one shown last, with a conversation entry a panel's member declares: a frame's once
+ * this host has checked it against the record it read, a directly drawn panel's as the platform read it.
+ */
+export function expandDeclaredComposer(entry:PanelConversationEntry){
   const expand=composers.at(-1);
   if(!expand)throw new Error('This page has no composer');
-  expand(declared);
+  expand(entry);
 }
 /**
  * A panel frame asks the platform to carry out a human intent it prepared at Node. Only its ID is the frame's, and the

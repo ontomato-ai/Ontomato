@@ -4,6 +4,7 @@ import type { PanelFormDescription, PanelFormRequest, PanelFormSaveInput, PanelF
 import type { MemberDataState } from "./direct";
 import type { PanelInstance } from "./instance";
 import type { PanelMemberContext } from "./member";
+import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { PlatformObjectRefusal } from "./platform-objects";
 
 /*
@@ -16,6 +17,12 @@ import { PlatformObjectRefusal } from "./platform-objects";
 export interface FormSource {
   describe(request: PanelFormRequest): Promise<PanelFormDescription>;
   save(target: PanelFormTarget, input: PanelFormSaveInput): Promise<{ primaryKey: string }>;
+}
+
+/** The input a form's `form` datum reads its object from: the panel state the edited object is held in. */
+export function editedInput(projection: ProductProjection): string | undefined {
+  const data = projection.data.form;
+  return data && "object" in data.source && "input" in data.source.object ? data.source.object.input : undefined;
 }
 
 /** A datum the owner did not answer with a value: no permission, or the reason it could not be read. */

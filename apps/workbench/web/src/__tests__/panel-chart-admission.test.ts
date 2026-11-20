@@ -24,7 +24,7 @@ const METRIC = "department-metric";
 const chartSource = { dashboardId: "board-a", cardId: "chart-1" };
 const card = { object: { literal: { className: DASHBOARD_CARD, primaryKey: dashboardCardPrimaryKey(chartSource) } } };
 const chart = projectionRecord({
-  id: "chart-departments", componentId: "@ontomato/sdk:MetricChart", chartSource, metricId: METRIC,
+  id: "chart-departments", componentId: "@ontomato/sdk:MetricChart", metricId: METRIC,
   inputs: { department: { kind: "scalar", type: "string" } },
   data: {
     template: { source: card, read: "chartTemplate", params: {} },

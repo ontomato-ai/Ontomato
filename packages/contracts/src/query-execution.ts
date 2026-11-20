@@ -6,14 +6,13 @@ import type {
   QcResult,
 } from "./query-thinking";
 export type QueryRetrievalRef = {
-  source?: "retriever";
   retrievalId: string;
   runtimeSessionId: string;
   runtimeRunId: string;
 } | {
-  source: "binding";
+  /** A metric the assistant ran itself: one formal output and no child run. */
   retrievalId: string;
-  bindingOutputId: string;
+  outputId: string;
   runtimeSessionId: null;
   runtimeRunId: null;
 };

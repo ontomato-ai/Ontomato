@@ -429,12 +429,11 @@ Use the provider and agent IDs returned by `agent list`; the retriever's display
 | Command | Result |
 | --- | --- |
 | `agent list [query]` | List accessible agents and their provider/id references |
-| `agent start --agent <providerId>/<agentId> --message @question.txt [--context @context.json]` | Admit binding and retrieval together; return taskId and sessionRef immediately |
+| `agent start --agent <providerId>/<agentId> --message @question.txt [--context @context.json]` | Admit the retriever's task; return taskId and sessionRef immediately |
 | `agent read <taskId> [--follow] [--files]` | Read a snapshot or follow its SSE updates; download delivered files without changing their bytes |
 | `agent send --session <providerId>/<sessionId> --message @answer.txt --reply-to <questionId>` | Answer in the same conversation; steer while running, otherwise start its next round |
 | `agent send --session <providerId>/<sessionId> --message @question.txt [--steer]` | Continue that conversation; ordinary messages fail while busy unless explicitly steered |
 | `agent cancel <taskId>` | Cancel this execution and its delegated descendants; keep accepted results |
-| `retriever-cancel <sessionId> --run <runId>` | Ontology business command: stop only the retriever, preserving binding results and QC |
 
 
 ## Standalone delegation and results
@@ -450,8 +449,6 @@ its stable question ID. The recipient may still be running; the channel chooses 
 new round. Silence confirms nothing. Without a product parent, questions appear in reads/events;
 `read --follow` returns on an unanswered question or a terminal snapshot, so a question is not completion.
 
-Binding and retriever branches run independently. A successful binding, including zero rows,
-is available before the retriever finishes. Check its meaning, conditions and parameters before
-using it as the answer; otherwise keep the retriever's task. Lookup failure is not empty data.
-Preserve partial-result limits. Both branches settle before the final result notification;
-quality checks continue separately. Formal binding files have null selfCheck.
+The retriever's task ends with its delivered files or its answer; zero rows can be a formal result.
+Check each file's scope, assumptions and self-check before using it. Preserve partial-result limits.
+Lookup failure is not empty data.

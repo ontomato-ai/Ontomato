@@ -113,7 +113,7 @@ const projections = {
     componentId: "@ontomato/sdk:ObjectList",
     inputs: {
       search: { kind: "scalar", type: "string" },
-      filter: { kind: "json" },
+      status: { kind: "scalar", type: "string" },
       cursor: { kind: "scalar", type: "string" },
       size: { kind: "scalar", type: "number" },
     },
@@ -125,7 +125,7 @@ const projections = {
         read: "query",
         params: {
           search: { input: "search" },
-          filter: { input: "filter" },
+          status: { input: "status" },
           cursor: { input: "cursor" },
           size: { input: "size" },
         },
@@ -136,7 +136,7 @@ const projections = {
     name: "Knowledge counts", description: "", visibility: "domain",
     componentId: "@ontomato/sdk:SegmentedControl",
     inputs: { search: { kind: "scalar", type: "string" } },
-    outputs: {},
+    outputs: { value: { kind: "scalar", type: "string" } },
     config: {},
     data: {
       counts: {
@@ -233,16 +233,49 @@ const projections = {
 const panel = productPanelInputSchema.parse({
   name: "Business knowledge", description: "", visibility: "domain",
   content: {
-    html: '<section flow="column"><panel-member ref="counts"></panel-member><panel-member ref="list"></panel-member><panel-member ref="detail"></panel-member><panel-member ref="form"></panel-member><panel-member ref="createForm"></panel-member><panel-member ref="approve"></panel-member><panel-member ref="remove"></panel-member><panel-member ref="removeAll"></panel-member></section>',
+    html: [
+      '<div id="app" class="knowledge-panel" v-cloak>',
+      '  <div class="knowledge-list">',
+      '    <projection slot="counts"></projection>',
+      '    <projection slot="list"></projection>',
+      '    <projection v-if="hasChecked" slot="removeAll"></projection>',
+      "  </div>",
+      '  <section class="knowledge-detail">',
+      '    <template v-if="chosen">',
+      '      <projection slot="detail"></projection>',
+      '      <projection slot="form"></projection>',
+      '      <projection slot="approve"></projection>',
+      '      <projection slot="remove"></projection>',
+      "    </template>",
+      '    <projection v-else slot="createForm"></projection>',
+      "  </section>",
+      "</div>",
+    ].join("\n"),
+    module: [
+      'import { computed } from "vue";',
+      'import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";',
+      "",
+      "const BusinessKnowledgePanel = {",
+      "  setup() {",
+      "    const { instance } = usePanelContext();",
+      "    const chosen = computed(() => instance.state.values.value.selectedEntry != null);",
+      "    const hasChecked = computed(() => (instance.state.values.value.checked?.length ?? 0) > 0);",
+      "    return { chosen, hasChecked };",
+      "  },",
+      "};",
+      "",
+      "await mountPanel(BusinessKnowledgePanel);",
+    ].join("\n"),
   },
   manifest: {
     state: {
+      status: { type: { kind: "scalar", type: "string" }, deepLink: true, external: true, personal: false, default: "all" },
       selectedEntry: { type: knowledgeType, deepLink: true, external: true, personal: false, default: null },
       checked: { type: targetList, default: [] },
     },
     members: {
-      counts: { target: { projectionId: "projection-knowledge-counts" } },
-      list: { target: { projectionId: "projection-knowledge-list" } },
+      counts: { target: { projectionId: "projection-knowledge-counts" }, outputs: { value: { state: "status" } } },
+      list: { target: { projectionId: "projection-knowledge-list" }, inputs: { status: { state: "status" } } },
       detail: { target: { projectionId: "projection-knowledge-detail" }, inputs: { entry: { state: "selectedEntry" } } },
       form: { target: { projectionId: "projection-knowledge-form" }, inputs: { entry: { state: "selectedEntry" } } },
       createForm: { target: { projectionId: "projection-knowledge-create-form" } },
@@ -258,8 +291,8 @@ beforeAll(async () => {
   configureI18n({
     defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: true,
     packs: {
-      en: { ...enLocaleMeta, messages: { ...en, "panels.knowledge.approve": "Approve", "panels.knowledge.delete": "Delete" } as typeof en },
-      "zh-CN": { ...enLocaleMeta, messages: { ...en, "panels.knowledge.approve": "通过", "panels.knowledge.delete": "删除" } as typeof en },
+      en: { ...enLocaleMeta, messages: { ...en, "panels.knowledge.approve": "Approve", "panels.knowledge.delete": "Delete", "panels.knowledge.statusAll": "All" } as typeof en },
+      "zh-CN": { ...enLocaleMeta, messages: { ...en, "panels.knowledge.approve": "通过", "panels.knowledge.delete": "删除", "panels.knowledge.statusAll": "全部" } as typeof en },
     },
   });
   state.schema = `panel_knowledge_${randomUUID().replaceAll("-", "")}`;
@@ -288,17 +321,18 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("knowledge-reader");
     res.json({ ids: [...resourceIds] });
   });
-  app.get("/platform/applications/app-knowledge/panel-uses", (req, res) => {
+  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+    if (req.query.applicationId !== "app-knowledge") { next(); return; }
     expect(["knowledge-reader", "outsider"]).toContain(req.header("tk"));
     res.json({
       success: true,
       data: {
         applicationId: "app-knowledge",
-        entry: { path: "/ontology/knowledge", renderer: "panels" },
-        panelUses: [{
+        menu: { groups: [], panelUses: [] },
+        use: {
           id: "knowledge", pageKey: "knowledge", path: "/ontology/knowledge", panelId,
           access: { kind: "domain-member" },
-        }],
+        },
       },
     });
   });
@@ -391,7 +425,7 @@ it("serves business knowledge panel reads over real HTTP routes backed by Postgr
     },
   });
 
-  const pendingFiltered = await (await read("list", "rows", { search: "rule", filter: { status: "pending" } })).json();
+  const pendingFiltered = await (await read("list", "rows", { search: "rule", status: "pending" })).json();
   expect(pendingFiltered).toMatchObject({
     status: "ready",
     value: {
@@ -400,14 +434,14 @@ it("serves business knowledge panel reads over real HTTP routes backed by Postgr
     },
   });
 
-  const page1 = await (await read("list", "rows", { filter: { status: "approved" }, size: 1 })).json();
+  const page1 = await (await read("list", "rows", { status: "approved", size: 1 })).json();
   expect(page1).toMatchObject({
     status: "ready",
     value: { rows: [{ primaryKey: "k-1" }], nextCursor: "1", total: 2 },
   });
   expect(page1.value.rows[0].highlights).toBeUndefined();
 
-  const page2 = await (await read("list", "rows", { filter: { status: "approved" }, cursor: "1", size: 1 })).json();
+  const page2 = await (await read("list", "rows", { status: "approved", cursor: "1", size: 1 })).json();
   expect(page2).toMatchObject({
     status: "ready",
     value: { rows: [{ primaryKey: "k-4" }], total: 2 },
@@ -418,13 +452,33 @@ it("serves business knowledge panel reads over real HTTP routes backed by Postgr
   expect(await (await read("list", "rows", { search: null })).json()).toEqual(
     await (await read("list", "rows", {})).json(),
   );
-  expect(await (await read("counts", "counts", { search: null })).json()).toEqual({
+  expect(await (await read("counts", "counts", { search: null })).json()).toEqual(
+    await (await read("counts", "counts", {})).json(),
+  );
+  // counts: ordered status tabs with and without search, using localized "All" label and form status labels.
+  expect(await (await read("counts", "counts", {})).json()).toEqual({
     status: "ready",
-    value: { all: 4, pending: 2, approved: 2 },
+    value: [
+      { key: "all", label: "All", count: 4 },
+      { key: "pending", label: "Pending review", count: 2 },
+      { key: "approved", label: "Approved", count: 2 },
+    ],
   });
   expect(await (await read("counts", "counts", { search: "rule" })).json()).toEqual({
     status: "ready",
-    value: { all: 3, pending: 1, approved: 2 },
+    value: [
+      { key: "all", label: "All", count: 3 },
+      { key: "pending", label: "Pending review", count: 1 },
+      { key: "approved", label: "Approved", count: 2 },
+    ],
+  });
+  expect(await (await read("counts", "counts", {}, "zh-CN")).json()).toMatchObject({
+    status: "ready",
+    value: [
+      { key: "all", label: "全部", count: 4 },
+      { key: "pending", label: "Pending review", count: 2 },
+      { key: "approved", label: "Approved", count: 2 },
+    ],
   });
 
   // record: without search omits highlights; with matching search includes highlights; with non-matching search omits highlights.

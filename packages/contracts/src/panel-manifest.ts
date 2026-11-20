@@ -283,7 +283,6 @@ export type PanelMemberInput = z.infer<typeof panelMemberInputSchema>;
 const placementPorts = {
   inputs: z.record(key, panelMemberInputSchema).optional(),
   outputs: z.record(key, panelStateRefSchema).optional(),
-  params: z.object({ width: z.enum(["quarter", "third", "half", "twoThirds", "full", "auto"]) }).strict().optional(),
   theme: panelThemeOverridesSchema.optional(),
 };
 export const panelPlacementSchema = z.object({

@@ -8,7 +8,7 @@ import { workbenchI18n } from "@ontomato/workbench-ui/i18n";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import type { DisplayObjectRefresh } from "../../../../../packages/agent-shell-ui/src/conversation-display";
 import { panelAnswer,
-  currentSdk, installPlatform, leaveFrame, manifestP, nothingAt, panelHostFrame, panelRecord, panelSnapshot, panelUse, SCHEDULED_TASK,
+  currentSdk, installPlatform, leaveFrame, manifestP, nothingAt, panelRecord, panelSnapshot, panelUse, SCHEDULED_TASK,
   task, type Sent,
 } from "./panel-frame";
 
@@ -52,7 +52,8 @@ it("tells the Manager's counts which object types a write changed, and nothing f
   app.provide(countedTypesChangedKey, objectTypes => { counted.push(objectTypes); });
   app.mount(document.body.appendChild(document.createElement("div")));
   try {
-    await panelHostFrame();
+    // The page's panel runs in the platform's document.
+    await vi.waitFor(() => expect(document.querySelector(".panel-host-coded > *")).not.toBeNull());
     const target = { objectType: SCHEDULED_TASK, primaryKey: task.id };
     refresh.value = { seq: 1, target };
     await nextTick();

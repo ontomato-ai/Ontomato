@@ -1,14 +1,21 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig, loadEnv } from "vite";
 import vue from "@vitejs/plugin-vue";
+import { elementComponents } from "../../../packages/apps-sdk/element-components.mjs";
+import { panelAppearance } from "../../../packages/apps-sdk/panel-appearance.mjs";
+
+// A panel written with code runs in this document on the SDK's own sources, which name this product's edition and the
+// components and appearance its panels draw with; build:sdk binds the same for the SDK served to panel frames.
+const editionSource = fileURLToPath(new URL("./src/sdk-edition.ts", import.meta.url));
 
 // Web output goes to dist/web at the repository root: the Node production server serves static pages from the product root's dist/web.
-export default defineConfig(({ command, mode }) => {
+export default defineConfig(async ({ command, mode }) => {
   const env = { ...loadEnv(mode, fileURLToPath(new URL("../../../", import.meta.url)), ""), ...process.env };
   const prefix = env.PUBLIC_BASE_PATH || "";
   return {
   base: command === "serve" ? `${prefix}/` : "./",
-  plugins: [vue()],
+  plugins: [vue(), elementComponents(), await panelAppearance(editionSource)],
+  resolve: { alias: [{ find: /^apps-sdk:edition$/, replacement: editionSource }] },
   root: fileURLToPath(new URL(".", import.meta.url)),
   build: {
     outDir: fileURLToPath(new URL("../../../dist/web", import.meta.url)),

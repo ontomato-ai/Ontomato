@@ -5,6 +5,7 @@ import { authenticate } from "./identity.mjs";
 import { panelRegistrationClient } from "./panel-registration.mjs";
 import { currentSdkClient, installedPanelSdk } from "./current-sdk.mjs";
 import { checkPanelWorkspace, registerPanelWorkspace } from "./panel-check.mjs";
+import { managementPanel, writeManagementPanel } from "./panel-scaffold.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -310,10 +311,15 @@ async function sdkCommand(api, args) {
   console.log(await (await sdk.read(await sdk.current(), args[1])).text());
 }
 
+async function readPlatformTypeTable(api, checks) {
+  return checks.platformTypeTableResponseSchema.parse(await workbench(api, "GET", "/app-builder/type-table"));
+}
+
 async function checkCurrentPanel(api, directory, materialPath) {
   const sdk = currentSdkClient({ workbenchUrl: api.envUrl, headers: headers(api) });
   const release = await sdk.current();
   const [checks, catalogue] = await Promise.all([sdk.check(release), sdk.components(release)]);
+  const typeTable = await readPlatformTypeTable(api, checks);
   const lookup = (kind, id) => workbench(api, "GET", `/product-${kind}s/${encodeURIComponent(id)}`, undefined,
     async response => {
       if (response.status === 404) return null;
@@ -323,10 +329,30 @@ async function checkCurrentPanel(api, directory, materialPath) {
         throw new Error(`${kind} ${id}: ${error.message}`, { cause: error });
       }
     });
-  return print(await checkPanelWorkspace(directory, { checks, catalogue, version: release.version, digest: release.digest, lookup, materialPath }));
+  return print(await checkPanelWorkspace(directory, { checks, catalogue, version: release.version, digest: release.digest, typeTable, lookup, materialPath }));
 }
 
 async function panelCommand(api, workspaceId, [command, ...args]) {
+  if (command === "scaffold") {
+    const id = takeOption(args, "--id") ?? undefined;
+    const operations = [];
+    const batches = [];
+    for (const [flag, values] of [["--operation", operations], ["--batch", batches]]) {
+      let operation = takeOption(args, flag);
+      while (operation !== null) {
+        values.push(operation);
+        operation = takeOption(args, flag);
+      }
+    }
+    if (args.length !== 2) die("panel scaffold <type> <new directory> [--id <application id>] [--operation <id>] [--batch <id>]");
+    const [type, directory] = args;
+    const sdk = currentSdkClient({ workbenchUrl: api.envUrl, headers: headers(api) });
+    const checks = await sdk.check(await sdk.current());
+    const typeTable = await readPlatformTypeTable(api, checks);
+    const panel = managementPanel(type, checks, typeTable, { id, operations, batches });
+    await writeManagementPanel(directory, panel);
+    return print({ directory, entry: panel.material.applications[0].input.panelUses[0].path });
+  }
   if (command === "applications" && args.length === 0) {
     return printData(await requestJson(api, "GET", "/platform/applications?purpose=navigation"));
   }
@@ -357,7 +383,7 @@ async function panelCommand(api, workspaceId, [command, ...args]) {
     const collection = command === "projection" ? "projections" : "panels";
     return print(await workbench(api, "GET", `/product-${collection}/${encodeURIComponent(args[0])}`));
   }
-  die("panel requires applications, projection <id>, get <id>, uses <applicationId>, preview <working|commit> [--workspace <id>], check <directory>, or register <directory|json|@file>");
+  die("panel requires applications, projection <id>, get <id>, uses <applicationId>, preview <working|commit> [--workspace <id>], scaffold <type> <directory>, check <directory>, or register <directory|json|@file>");
 }
 
 async function functionCommand(api, [command, ...args]) {
@@ -450,12 +476,13 @@ function usage() {
   die(`usage: ontomato.mjs [--lang <tag>] <command>
   test start|status|stop [--workspace <id>] [--sample test-data/sample.json]
   sdk current
-  sdk read <relative path, e.g. docs/index.md>
+  sdk read <relative path, e.g. docs/components.md>
   panel applications
   panel projection <id>
   panel get <id>
   panel uses <applicationId>
   panel preview <working|commit> [--workspace <id>]
+  panel scaffold <type> <new directory> [--id <application id>] [--operation <id>] [--batch <id>]
   panel check <directory> [--material <registration file>] [--sdk-dir <installed SDK release directory>]
   panel register <directory> [--material <registration file>]
   panel register <json|@file>
@@ -465,15 +492,13 @@ function usage() {
   function delete <id>
   workspace list [<page json|@file>]
   workspace create <name>
-  workspace get|tree|commits|sessions|releases <id> [<query json|@file>]
+  workspace get|tree|commits|sessions <id> [<query json|@file>]
   workspace content <id> <path> [<commit>]
   workspace diff <id> <from> <to|working>
   workspace rename <id> <name>
   workspace delete <id>
   workspace import <id> <directory> --message <text>
   workspace restore <id> <commit>
-  workspace publish <id> <commit> <declaration json|@file>
-  workspace rollback <id> <releaseId> <declaration json|@file>
   dataset-desc
   classes
   schema <class> [<class> ...]
