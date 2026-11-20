@@ -79,14 +79,14 @@ export const pageSkillsProjectionSchema = z.object({
 }).strict();
 export type PageSkillsProjection = z.infer<typeof pageSkillsProjectionSchema>;
 
-const queryPageSkillMemberSchema = z.preprocess((value) => {
-  if (typeof value !== "string") return value;
+const queryPageSkillMemberSchema = z.string().transform((value, ctx) => {
   try {
     return JSON.parse(value);
   } catch {
-    return value;
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid member JSON" });
+    return z.NEVER;
   }
-}, pageSkillMemberSchema);
+}).pipe(pageSkillMemberSchema);
 
 /** A member query carries the complete snapshot member in one URL parameter. */
 export const assistantAgentsQuerySchema = z.union([

@@ -211,6 +211,9 @@ it("admits protected packages only through the initiator's exact entrance and ev
     namespace: { kind: "domain", domainId: "unrelated-domain" } } })).resolves.toBeNull();
   await expect(resolveCurrentPageSkillMember(view, entrance, { ...member, memberPath: [{ member: "sibling" }] })).resolves.toBeNull();
   await expect(resolveCurrentPageSkillMember(view, entrance, { ...member, source: { ...source, useId: "missing" } })).resolves.toBeNull();
+  await expect(prepareAssistantSkills(domain, { kind: "regular", skills: [] }, credentials, {
+    ...context, member: { ...member, source: { ...source, useId: "missing" } },
+  })).rejects.toMatchObject({ status: 403, code: "PAGE_SKILL_FORBIDDEN" });
   await expect(pageSkillMemberContext(view, entrance, source, { id: "old-panel" })).resolves.toEqual({
     mode: "member", locator: entrance, member: null,
   });
@@ -306,8 +309,14 @@ it("publishes one member across admitted entrances alongside the native permissi
     { mode: "member", locator: second, member });
   expect(prepared.currentPage).toEqual({ entrance: second, member, path: "/ontology/alternate" });
   expect(published).toEqual([native, ref]);
+  expect((await prepareAssistantSkills(domain, { kind: "custom", skills: [native] }, credentials,
+    { mode: "member", locator: first, member: null })).currentPage).toBeNull();
   grants.mockReturnValueOnce(Response.json({ unexpected: "source failure" }));
   await expect(readAssistantSkillView(domain, credentials)).rejects.toMatchObject({ code: "PRODUCT_GOVERNANCE_UNAVAILABLE" });
+  const wrongApp = await uses().json();
+  wrongApp.data.applicationId = "other-app";
+  uses.mockReturnValueOnce(Response.json(wrongApp));
+  await expect(resolveCurrentPageSkillMember(view, second, member)).rejects.toMatchObject({ code: "SKILL_SOURCE_UNAVAILABLE" });
   uses.mockReturnValueOnce(Response.json({ success: false }));
   await expect(resolveCurrentPageSkillMember(view, second, member)).rejects.toThrow();
 });

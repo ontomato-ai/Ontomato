@@ -178,8 +178,11 @@ export async function prepareAssistantSkills(domainId: string, agent: { kind: st
   for (const ref of agent.skills) {
     if (!view.hasSkill(ref) && !view.unavailableStoredPageSkill(ref)) throw unavailableRunSkill();
   }
-  const currentPage = pageSkillContext?.mode === "member"
-    ? await resolveCurrentPageSkillMember(view, pageSkillContext.locator, pageSkillContext.member) : null;
+  let currentPage = null;
+  if (pageSkillContext?.mode === "member" && pageSkillContext.member) {
+    currentPage = await resolveCurrentPageSkillMember(view, pageSkillContext.locator, pageSkillContext.member);
+    if (!currentPage) throw new HttpError(403, "Page skill is unavailable", "PAGE_SKILL_FORBIDDEN");
+  }
   const selected = effectiveAssistantSkills(agent, view);
   checkSkillSelection(selected, view);
   const skills: RuntimeSkillVersion[] = [];
