@@ -7,6 +7,7 @@ import {
 import { config } from "../../config/application";
 import type { PanelUseRef } from "@ontomato/contracts/product-panels";
 import type { SkillCatalogDiagnostics } from "@ontomato/contracts/skills";
+import { SkillSourceRecordError, type SkillSourceFailure } from "../../core/skills/providers";
 import { isProtectedSkillName, protectedSkillRef, type ProtectedSkillOffering } from "../../core/skills";
 import { skillRegistryManager, type ListedProtectedSkill, type ListedSourceFailure } from "../../core/skills/registry/manager";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -97,9 +98,8 @@ export function isStoredProtectedSkillRef(ref: RuntimeSkillRef) {
 }
 
 function pageAuthorization(domainId: string, java: Awaited<ReturnType<typeof javaPageSkillProjection>>,
-  sources: readonly ListedProtectedSkill[], grants: ReadonlySet<string>,
+  sources: readonly (ListedProtectedSkill | ListedSourceFailure)[], grants: ReadonlySet<string>,
   associations: readonly { entrance: PageSkillEntrance; identity: SkillSourceIdentity }[],
-  failures: readonly ListedSourceFailure[],
 ) {
   const registered = new Set(java.registeredSkills.map(runtimeSkillKey));
   const publicSkills = new Map<string, RuntimeSkillRef>();
@@ -126,7 +126,7 @@ function pageAuthorization(domainId: string, java: Awaited<ReturnType<typeof jav
     entrances.push(entrance);
     ownedEntrances.set(key, entrances);
   }
-  for (const source of [...sources, ...failures]) {
+  for (const source of sources) {
     const key = runtimeSkillKey(source.skill);
     current.add(key);
     const required = "resourceIds" in source ? source.resourceIds : source.knownRequiredResourceIds;
@@ -151,30 +151,45 @@ function pageAuthorization(domainId: string, java: Awaited<ReturnType<typeof jav
   return { groups, publicSkills, registered, allowedPageKeys, admitted, current, byEntrance, uncertain };
 }
 
+function anonymousFailure() {
+  return new HttpError(502, "A skill source is unavailable", "SKILL_SOURCE_UNAVAILABLE");
+}
+
 /** Resolve the skill of this registered entry without loading the domain's skill catalogue. */
 export async function readRegisteredPanelPageSkillContext(
   caller: PageSkillViewCaller,
   entrance: PageSkillEntrance,
   source: ApplicationUseSkillSource,
   loadedPanel: { id: string },
-  provider: { id: string; findByUse(domainId: string, use: PanelUseRef): Promise<ProtectedSkillOffering | null> },
+  provider: { id: string; findByUse(domainId: string, use: PanelUseRef): Promise<ProtectedSkillOffering | SkillSourceFailure | null> },
 ): Promise<PageSkillContext> {
   const absent = { mode: "member" as const, locator: entrance, member: null };
   const actual = await currentApplicationPanel(caller, entrance, source);
   if (!actual || actual.use.panelId !== loadedPanel.id) return absent;
   const use = { applicationId: actual.applicationId, useId: actual.use.id };
-  const offering = await provider.findByUse(caller.domainId, use);
-  if (!offering || offering.sourceKey !== loadedPanel.id) return absent;
+  const sourceFact = await provider.findByUse(caller.domainId, use);
+  if (!sourceFact || sourceFact.sourceKey !== loadedPanel.id) return absent;
 
-  const ref = protectedSkillRef(provider.id, caller.domainId, offering.sourceKey);
-  const listed: ListedProtectedSkill = { ...offering, providerId: provider.id, skill: ref };
+  const ref = protectedSkillRef(provider.id, caller.domainId, sourceFact.sourceKey);
+  const listed = { ...sourceFact, providerId: provider.id, skill: ref };
   const [java, grants] = await Promise.all([
     javaPageSkillProjection(caller.initiatorCredentials),
     grantedProductIds("use", caller.initiatorCredentials),
   ]);
-  const pages = pageAuthorization(caller.domainId, java, [listed], new Set(grants), [], []);
+  const pages = pageAuthorization(caller.domainId, java, [listed], new Set(grants), []);
   if (!pages.byEntrance.get(entranceKey(actual.entrance))?.has(runtimeSkillKey(ref))) return absent;
-  await offering.readManifest(ref);
+  // Only admitted offerings and unresolved sources with an eligible entrance reach this point.
+  if ("knownRequiredResourceIds" in sourceFact) throw anonymousFailure();
+  try {
+    await sourceFact.readManifest(ref);
+  } catch (error) {
+    if (!(error instanceof SkillSourceRecordError)) throw error;
+    const { resourceId, field, reason } = error.detail;
+    const resource = resourceId === loadedPanel.id ? "panel" : "projection";
+    const location = `${resource} '${resourceId}'${field ? `, field '${field}'` : ""}`;
+    throw new HttpError(502, `Panel '${loadedPanel.id}' skill is unavailable: ${location}: ${reason.replaceAll("_", " ")}`,
+      "SKILL_SOURCE_UNAVAILABLE");
+  }
   return {
     mode: "member", locator: actual.entrance,
     member: { source: { kind: "application-use", ...use }, memberPath: [], ref },
@@ -187,11 +202,12 @@ export async function readSkillView(domainId: string, initiatorCredentials: Assi
   const java = await javaPageSkillProjection(initiatorCredentials);
   let pages!: ReturnType<typeof pageAuthorization>;
   const registry = await skillRegistryManager.forDomain(domainId, async (sources, failures) => {
+    const listed = [...sources, ...failures];
     const [grants, associations] = await Promise.all([
-      sources.length || failures.length ? grantedProductIds("use", initiatorCredentials) : [],
+      listed.length ? grantedProductIds("use", initiatorCredentials) : [],
       Promise.all([...new Set(sourceOwners.values())].map(owner => owner.listAssociations(caller))),
     ]);
-    pages = pageAuthorization(domainId, java, sources, new Set(grants), associations.flat(), failures);
+    pages = pageAuthorization(domainId, java, listed, new Set(grants), associations.flat());
     return {
       public: skill => !pages.registered.has(runtimeSkillKey(skill)) || pages.allowedPageKeys.has(runtimeSkillKey(skill)),
       protected: skill => pages.admitted.has(runtimeSkillKey(skill)),
@@ -200,9 +216,6 @@ export async function readSkillView(domainId: string, initiatorCredentials: Assi
   const items = [...registry.failedManifests.values()];
   const sourceUnavailable = pages.uncertain.size > 0;
   const diagnostics: SkillCatalogDiagnostics | undefined = items.length || sourceUnavailable ? { items, sourceUnavailable } : undefined;
-  function anonymousFailure() {
-    return new HttpError(502, "A skill source is unavailable", "SKILL_SOURCE_UNAVAILABLE");
-  }
   function requireReadableManifest(ref: RuntimeSkillRef) {
     const item = registry.failedManifests.get(runtimeSkillKey(ref));
     if (item) throw new HttpError(502, "The selected skill source is unavailable", "SKILL_SOURCE_UNAVAILABLE", item);

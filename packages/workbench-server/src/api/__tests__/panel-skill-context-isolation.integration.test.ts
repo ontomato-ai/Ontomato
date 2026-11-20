@@ -51,12 +51,13 @@ function page(name: string) {
   return { applicationId, useId: `use-${name}`, panelId: `panel-${name}`, path: `/panels/${name}`,
     entrance: { permissionCode: "panel-menu", pageKey: name } };
 }
-const good = page("good"), broken = page("broken"), library = page("library");
+const good = page("good"), broken = page("broken"), library = page("library"), changing = page("changing");
 const brokenProjection = "projection-broken";
 const privateOperation = "private-stored-operation-body";
 const skillRef = (entry: typeof good) => protectedSkillRef("product-panels", domainId, entry.panelId);
 const registered = new Set<string>();
 let entries = [good, broken];
+let listSources = async () => entries;
 let denied: string | undefined;
 let root: string;
 let server: Server;
@@ -110,10 +111,10 @@ beforeAll(async () => {
       use: { id: entry.useId, panelId: entry.panelId, path: entry.path, pageKey: entry.entrance.pageKey,
         access: { permissionCode: entry.entrance.permissionCode } } } });
   });
-  app.get("/platform/applications/panel-skill-sources", (req, res) => {
+  app.get("/platform/applications/panel-skill-sources", async (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     expect(req.query.domainId).toBe(domainId);
-    res.json({ success: true, data: entries });
+    res.json({ success: true, data: await listSources() });
   });
   app.get("/platform/page-skills", (req, res) => {
     expect(req.header("tk")).toBe("reader");
@@ -145,6 +146,10 @@ beforeAll(async () => {
       manifest: { state: {}, members: { list: { target: { projectionId } } }, events: {} },
     });
   }
+  await register("product-panels", changing.panelId, {
+    name: changing.entrance.pageKey, description: "", visibility: "domain", content: vuePanelContent(),
+    manifest: { state: {}, members: {}, events: {} },
+  });
   const libraryProjection = "projection-skill-library";
   const skillType = { type: { kind: "PlatformObjectType", id: SKILL } };
   await register("product-projections", libraryProjection, {
@@ -180,6 +185,7 @@ afterAll(async () => {
 });
 beforeEach(() => {
   entries = [good, broken];
+  listSources = async () => entries;
   denied = undefined;
 });
 
@@ -339,4 +345,44 @@ it.each(["", "/snapshot"])("keeps the displayed panel distinct from its repointe
   expect(response.status, JSON.stringify(body)).toBe(200);
   expect(body.panel.id).toBe(good.panelId);
   expect(body.pageSkillContext).toEqual({ mode: "member", locator: good.entrance, member: null });
+});
+
+it.each(["", "/snapshot"])("keeps another panel's dependency failure private on GET %s", async route => {
+  const other = "other-private-panel";
+  listSources = async () => [{ ...good, panelId: other }];
+  const response = await read(good, route);
+  const body = await response.json();
+  expect(response.status, JSON.stringify(body)).toBe(200);
+  expect(body.pageSkillContext).toEqual({ mode: "member", locator: good.entrance, member: null });
+  expect(JSON.stringify(body)).not.toContain(other);
+});
+
+it.each(["", "/snapshot"])("classifies a single use with unknown dependencies on GET %s before reporting it", async route => {
+  const entry = changing;
+  entries = [entry];
+  // The route has already loaded its panel when the service lists the matching use.
+  // Change its actual stored dependencies at that boundary, so both reads use the real provider.
+  const panels = `"${state.schema}".product_panels`;
+  for (const hasRootGrant of [false, true]) {
+    denied = undefined;
+    await state.pool!.query(`UPDATE ${panels} SET definition=jsonb_set(definition,'{manifest,members}','{}') WHERE id=$1 AND domain_id=$2`,
+      [entry.panelId, domainId]);
+    listSources = async () => {
+      await state.pool!.query(`UPDATE ${panels} SET definition=jsonb_set(definition,'{manifest,members}',to_jsonb($3::text))
+        WHERE id=$1 AND domain_id=$2`, [entry.panelId, domainId, privateOperation]);
+      denied = hasRootGrant ? undefined : entry.panelId;
+      return entries;
+    };
+    const response = await read(entry, route);
+    const body = await response.json();
+    if (hasRootGrant) {
+      expect(response.status, JSON.stringify(body)).toBe(502);
+      expect(body.error.code).toBe("SKILL_SOURCE_UNAVAILABLE");
+      for (const privateValue of [entry.panelId, skillRef(entry).name, "manifest", privateOperation])
+        expect(JSON.stringify(body)).not.toContain(privateValue);
+    } else {
+      expect(response.status, JSON.stringify(body)).toBe(200);
+      expect(body.pageSkillContext).toEqual({ mode: "member", locator: entry.entrance, member: null });
+    }
+  }
 });
