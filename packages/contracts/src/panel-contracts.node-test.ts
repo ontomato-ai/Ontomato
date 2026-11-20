@@ -95,6 +95,28 @@ test("current SDK describes the browser files and Node check from the same relea
   assert.equal(appsSdkReleaseManifestSchema.safeParse({ ...manifest, check: "/node/panel-check.mjs" }).success, false);
 });
 
+test("the SDK catalogue separates supply, configuration and run inputs", async () => {
+  const { appsSdkComponentCatalogSchema } = await import("./apps-sdk");
+  const component = {
+    componentId: "ObjectSummary", module: "@ontomato/sdk/base", exportName: "ObjectSummary",
+    role: "presentation", meaning: "Show the selected object as its owner describes it.",
+    data: { record: { results: ["panelRecord"], required: true } },
+    config: [{ name: "fields", type: "string[]", description: "Visible fields", required: false }],
+    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+    outputs: [],
+    ports: { props: [], events: [], slots: [] },
+  };
+  const catalogue = { version: "1.1.2", components: [component] };
+  assert.deepEqual(appsSdkComponentCatalogSchema.parse(catalogue), catalogue);
+  for (const datum of [{ results: [], required: true }, { results: ["notRegistered"], required: true }, { results: ["panelRecord"] }]) {
+    assert.equal(appsSdkComponentCatalogSchema.safeParse({
+      ...catalogue, components: [{ ...component, data: { record: datum } }],
+    }).success, false);
+  }
+  const { data: _data, ...displayOnly } = component;
+  assert.equal(appsSdkComponentCatalogSchema.safeParse({ ...catalogue, components: [displayOnly] }).success, true);
+});
+
 test("ontology object lists and reference pickers declare the named reads they use", async () => {
   const { registerDirectProjectionRequestSchema } = await import("./product-panels");
   const { panelReadResultSchemas } = await import("./panel-operations");
@@ -439,6 +461,48 @@ test("form saves address the draft target even when the slot receives a selected
     },
   });
   assert.deepEqual(save?.target, { source: "draft", slot: "definition" });
+});
+
+test("named operation reads publish buttons and form metadata binds to its real owner", () => {
+  const task = { kind: "object", objectType: SCHEDULED_TASK };
+  const projection = productProjectionInputSchema.parse({
+    name: "Run now", description: "", visibility: "domain", componentId: "@ontomato/sdk:OperationButton",
+    inputs: { task }, outputs: {}, config: {},
+    data: { operation: { source: { operation: platformOperation(RUN_NOW) }, read: "describe", params: {} } },
+  });
+  const manifest = panelManifestSchema.parse({
+    state: { selected: { type: task } },
+    members: { run: { target: { projectionId: "run-now" }, inputs: { task: { state: "selected" } } } },
+    events: {},
+  });
+  const [run] = projectionOperations(manifest, { slot: "run", ports: projectionPorts(projection, {}) });
+  assert.equal(run?.id, "run.runNow");
+  assert.equal(run?.handlerRef, RUN_NOW);
+  assert.deepEqual(run?.target, { source: "state", state: "selected" });
+  const twoSelections = panelManifestSchema.parse({
+    ...manifest, state: { ...manifest.state, other: { type: task } },
+    members: { run: { ...manifest.members.run, inputs: { other: { state: "other" }, task: { state: "selected" } } } },
+  });
+  const action = productProjectionInputSchema.parse({
+    ...projection, inputs: { other: task, task },
+    data: { operation: {
+      source: { operation: { kind: "Action", id: "approve" } }, read: "describe",
+      params: { target: { input: "task" } },
+    } },
+  });
+  const [execute] = projectionOperations(twoSelections, { slot: "run", ports: projectionPorts(action, {}) });
+  assert.equal(execute?.handlerRef, "actions.execute");
+  assert.deepEqual(execute?.target, { source: "state", state: "selected" });
+
+  const form = productProjectionInputSchema.parse({
+    ...projection, name: "Task form", componentId: "@ontomato/sdk:ObjectForm",
+    data: { form: { source: { object: { input: "task" } }, read: "form", params: {} } },
+  });
+  const formPorts = projectionPorts(form, { operations: [
+    { client: "@binding", name: "save", label: "Save", kind: "form.save", inputSchema: {} },
+    { client: "@binding", name: "delete", label: "Delete", kind: "action", inputSchema: {} },
+  ] });
+  assert.deepEqual(formPorts.operations.map(op => op.handlerRef), [`${SCHEDULED_TASK}.save`]);
 });
 
 test("read operation inputs can take parameter values and a binding from this panel instance", () => {

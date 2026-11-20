@@ -50,13 +50,19 @@ export const directProjectionDataSchema = z.object({
 }).strict();
 export type DirectProjectionData = z.infer<typeof directProjectionDataSchema>;
 
+export const directProjectionInputTypeSchema = z.union([
+  directPanelPortTypeSchema,
+  z.object({ kind: z.literal("json") }).strict(),
+]);
+
 export const directProjectionPortsSchema = z.object({
   componentId: z.enum([
     "@ontomato/sdk:ObjectList", "@ontomato/sdk:ObjectSummary", "@ontomato/sdk:ObjectForm", "@ontomato/sdk:OperationButton",
     "@ontomato/sdk:ReferencePicker", "@ontomato/sdk:ObjectGraph", "@ontomato/sdk:OntologyGraph", "@ontomato/sdk:ObjectRelations",
     "@ontomato/sdk:MetricChart", "@ontomato/sdk:ConversationEntry", "@ontomato/sdk:AppMenu",
+    "@ontomato/sdk:SegmentedControl",
   ]),
-  inputs: z.record(readKey, z.union([directPanelPortTypeSchema, z.object({ kind: z.literal("json") }).strict()])),
+  inputs: z.record(readKey, directProjectionInputTypeSchema),
   outputs: z.record(readKey, directPanelPortTypeSchema),
   data: z.record(readKey, directProjectionDataSchema),
   config: runtimeJsonObjectSchema,
@@ -397,6 +403,8 @@ export interface ProjectionOperation {
   inputSchema: Readonly<Record<string, OntologyParameterType>>;
   /** The SDK client operation this is, such as `schedules.runNow`; a registered handler, never a URL. */
   handlerRef: string;
+  /** The input explicitly selected by the read; null denotes an owner-supplied literal target. */
+  targetInput?: string | null;
 }
 
 /** The endpoints a projection publishes: what it binds, what it accepts and what it can do. */
@@ -418,24 +426,40 @@ export interface ProjectionPorts {
  * the operation, its label comes from the catalogue when a component declares it, and its handler is the reference the
  * binding is. Nothing here is written by a panel.
  */
-export function projectionPorts(projection: DirectProjectionPorts, meta: ComponentOperationMetadata): ProjectionPorts {
+export function projectionPorts(projection: DirectProjectionPorts & { name: string }, meta: ComponentOperationMetadata): ProjectionPorts {
   const references = projectionReadReferences(projection);
-  const handlerRefs = new Set<string>();
-  for (const ref of references) {
-    if (ref.kind === "PlatformOperation") handlerRefs.add(ref.id);
-    if (ref.kind === "Action") handlerRefs.add(EXECUTE_OBJECT_ACTION);
-    if (ref.kind === "PlatformObjectType")
-      for (const operation of platformObjectTypes[ref.id]?.operations ?? []) handlerRefs.add(operation);
+  const objectTypes = references.filter(ref => ref.kind === "PlatformObjectType").map(ref => ref.id);
+  const boundOperations = new Map<string, string | null | undefined>();
+  for (const { source, read, params } of Object.values(projection.data)) {
+    if (!("operation" in source) || read !== "describe") continue;
+    const handlerRef = source.operation.kind === "Action" ? EXECUTE_OBJECT_ACTION : source.operation.id;
+    const target = params.target;
+    boundOperations.set(handlerRef, target === undefined ? undefined : "input" in target ? target.input : null);
   }
-  const operations = (meta.operations ?? []).flatMap(({ client, name, label, kind, inputSchema }) => {
-    const handlerRef = `${client}.${name}`;
-    return handlerRefs.has(handlerRef) ? [{ name, label, kind, inputSchema, handlerRef }] : [];
-  });
+  const handlerRefs = new Set<string>();
+  for (const type of objectTypes) {
+    for (const operation of platformObjectTypes[type].operations ?? []) handlerRefs.add(operation);
+  }
+  for (const operation of boundOperations.keys()) handlerRefs.add(operation);
+
+  const operations = new Map<string, ProjectionOperation>();
+  for (const { client, name, label, kind, inputSchema } of meta.operations ?? []) {
+    for (const concreteClient of client === "@binding" ? objectTypes : [client]) {
+      const handlerRef = `${concreteClient}.${name}`;
+      if (handlerRefs.has(handlerRef)) operations.set(handlerRef, { name, label, kind, inputSchema, handlerRef });
+    }
+  }
+  for (const [handlerRef, targetInput] of boundOperations) {
+    const operation: ProjectionOperation = operations.get(handlerRef) ?? {
+      name: handlerRef.split(".").at(-1)!, label: projection.name, kind: "action", inputSchema: {}, handlerRef,
+    };
+    operations.set(handlerRef, targetInput === undefined ? operation : { ...operation, targetInput });
+  }
   return {
     binding: references.map(bindingKey).join(", "),
     inputs: Object.fromEntries(Object.entries(projection.inputs).filter((entry): entry is [string, DirectPanelPortType] => entry[1].kind !== "json")),
     outputs: projection.outputs,
-    operations,
+    operations: [...operations.values()],
   };
 }
 
@@ -446,12 +470,22 @@ export function projectionOperations(
 ): PanelOperation[] {
   const slot = manifest.members[registration.slot];
   if (!slot) throw new Error(`The panel declares no slot '${registration.slot}'`);
+  const targets = new Map(Object.entries(slot.inputs ?? {}).flatMap(([name, value]) => {
+    const kind = registration.ports.inputs[name]?.kind;
+    return "state" in value && (kind === "object" || kind === "object-union") ? [[name, value.state] as const] : [];
+  }));
+  function targetFor(operation: ProjectionOperation): PanelOperation["target"] {
+    if (operation.kind === "form.save") return { source: "draft", slot: registration.slot };
+    const state = typeof operation.targetInput === "string" ? targets.get(operation.targetInput)
+      : operation.targetInput !== null && targets.size === 1 ? targets.values().next().value : undefined;
+    return state === undefined ? undefined : { source: "state", state };
+  }
   return registration.ports.operations.map((operation) => ({
     id: panelOperationId(registration.slot, operation.name),
     label: operation.label,
     kind: operation.kind,
     inputSchema: { ...operation.inputSchema },
-    target: operation.kind === "form.save" ? { source: "draft", slot: registration.slot } : undefined,
+    target: targetFor(operation),
     slot: registration.slot,
     handlerRef: operation.handlerRef,
   }));
