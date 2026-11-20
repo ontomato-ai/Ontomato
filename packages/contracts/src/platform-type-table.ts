@@ -38,8 +38,17 @@ export const platformTypeTableEntrySchema = z.object({
 }).strict();
 export type PlatformTypeTableEntry = z.infer<typeof platformTypeTableEntrySchema>;
 
+const unavailableObjectActionSchema = z.object({
+  id: runtimeKeySchema,
+  objectType: runtimeKeySchema.optional(),
+  reason: z.string().min(1),
+}).strict();
+export type UnavailableObjectAction = z.infer<typeof unavailableObjectActionSchema>;
+
 /** The authenticated author catalogue, keyed by the owner type's ID. */
 export const platformTypeTableResponseSchema = z.object({
   objectTypes: z.record(runtimeKeySchema, platformTypeTableEntrySchema),
+  /** Broken published actions have no executable declaration. A missing target has no object type. */
+  unavailableActions: z.array(unavailableObjectActionSchema).optional(),
 }).strict();
 export type PlatformTypeTableResponse = z.infer<typeof platformTypeTableResponseSchema>;
