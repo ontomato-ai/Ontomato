@@ -2,7 +2,7 @@ import { z } from "zod";
 import { defaultAgentSchema } from "./default-agent";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
-import { panelManifestSchema, panelMessageKeySchema, panelObjectRefSchema, panelThemeOverridesSchema } from "./panel-manifest";
+import { panelManifestSchema, panelMessageKeySchema, panelThemeOverridesSchema } from "./panel-manifest";
 import { PanelLayoutError, parsePanelLayout } from "./panel-layout";
 import { directProjectionPortsSchema, validateDirectProjection } from "./panel-projection";
 import { applicationMetadataSchema } from "./application-metadata";
@@ -166,13 +166,9 @@ export const applicationPanelUseSchema = z.object({
 export type ApplicationPanelUse = z.infer<typeof applicationPanelUseSchema>;
 
 export const applicationEntryResolutionQuerySchema = z.object({ path: applicationPanelUsePathSchema }).strict();
-/** The entry owner supplies a stable cross-application key for menu activation. */
-export const applicationEntryMenuItemSchema = applicationPanelUseSchema.extend({
-  primaryKey: panelObjectRefSchema.shape.primaryKey.optional(),
-});
 export const applicationEntryMenuSchema = z.object({
   groups: applicationMetadataSchema.shape.groups,
-  panelUses: z.array(applicationEntryMenuItemSchema),
+  panelUses: z.array(applicationPanelUseSchema),
 }).strict();
 export const applicationEntryResolutionSchema = z.object({
   applicationId: id,

@@ -54,7 +54,7 @@ export const directProjectionPortsSchema = z.object({
   componentId: z.enum([
     "@ontomato/sdk:ObjectList", "@ontomato/sdk:ObjectSummary", "@ontomato/sdk:ObjectForm", "@ontomato/sdk:OperationButton",
     "@ontomato/sdk:ReferencePicker", "@ontomato/sdk:ObjectGraph", "@ontomato/sdk:OntologyGraph", "@ontomato/sdk:ObjectRelations",
-    "@ontomato/sdk:MetricChart", "@ontomato/sdk:ConversationEntry",
+    "@ontomato/sdk:MetricChart", "@ontomato/sdk:ConversationEntry", "@ontomato/sdk:AppMenu",
   ]),
   inputs: z.record(readKey, z.union([directPanelPortTypeSchema, z.object({ kind: z.literal("json") }).strict()])),
   outputs: z.record(readKey, directPanelPortTypeSchema),
