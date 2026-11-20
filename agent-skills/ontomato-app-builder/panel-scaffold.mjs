@@ -1,12 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { panelRegistrationRecords, requireApplicationId } from "./panel-registration.mjs";
+import { requireApplicationId } from "./panel-registration.mjs";
 
 const text = { kind: "scalar", type: "string" };
-const stateRef = state => ({ state });
-const inputRef = input => ({ input });
-const literal = literal => ({ literal });
-const namedRead = (source, read, params = {}) => ({ source, read, params });
 const slug = value => value.replace(/([a-z0-9])([A-Z])/gu, "$1-$2").toLowerCase();
 
 export function managementPanel(type, checks, typeTable, {
@@ -42,88 +38,57 @@ export function managementPanel(type, checks, typeTable, {
 
   const title = type.split(":").at(-1).replace(/([a-z0-9])([A-Z])/gu, "$1 $2");
   const object = { kind: "object", objectType: type };
-  const platformType = type.startsWith("platform:");
-  const operationKind = platformType ? "PlatformOperation" : "Action";
-  const typeSource = { type: { kind: platformType ? "PlatformObjectType" : "ObjectType", id: type } };
-  const selectedSource = { object: inputRef("item") };
   const state = { selected: { type: object, deepLink: true } };
   const members = {};
-  const projections = [];
-  function place(key, component, { inputs = {}, outputs = {}, config = {}, data = {}, operations }, bindings = {}) {
-    const projectionId = `${id}-${key}`;
-    projections.push({
-      id: projectionId,
-      mode: "create",
-      input: { name: `${title} ${key}`, description: "", visibility: "domain",
-        componentId: `@ontomato/sdk:${component}`, inputs, outputs, config, data, ...(operations && { operations }) },
-    });
-    members[key] = { target: { projectionId }, ...bindings };
-  }
 
   const search = Object.hasOwn(list.params, "search");
   const counts = reads.counts;
   const tabs = Object.hasOwn(list.params, "status") && counts?.result === "panelGroupCounts" &&
     counts.parameterMode === "fixed" && Object.hasOwn(counts.params, "by") &&
     checks.panelReadParameterSchemas[counts.params.by].safeParse("status").success;
-  const listInputs = { selected: object };
-  const listOutputs = { selected: object };
-  const listBindings = { selected: stateRef("selected") };
-  const selection = { kind: "list", items: object };
+  const listBindings = { selected: "selected" };
   if (buttons.some(({ batch }) => batch)) {
-    state.checked = { type: selection, default: [] };
-    listInputs.checked = selection;
-    listOutputs.checked = selection;
-    listBindings.checked = stateRef("checked");
+    state.checked = { type: { kind: "list", items: object }, default: [] };
+    listBindings.checked = "checked";
   }
   if (search) {
     state.search = { type: text, deepLink: true };
-    listInputs.search = text;
-    listBindings.search = stateRef("search");
+    listBindings.search = "search";
   }
   if (tabs) {
     const status = checks.panelReadParameterSchemas[list.params.status];
     state.status = { type: text, deepLink: true, ...(status.safeParse("all").success && { default: "all" }) };
-    listInputs.status = text;
-    listBindings.status = stateRef("status");
+    listBindings.status = "status";
     const shareSearch = search && Object.hasOwn(counts.params, "search");
-    place("tabs", "SegmentedControl", {
-      inputs: { value: text, ...(shareSearch && { search: text }) },
-      outputs: { value: text },
-      data: { counts: namedRead(typeSource, "counts", { by: literal("status") }) },
-    }, {
-      inputs: { value: stateRef("status"), ...(shareSearch && { search: stateRef("search") }) },
-    });
+    members.tabs = {
+      component: "SegmentedControl",
+      type,
+      data: { counts: { read: "counts", params: { by: { literal: "status" } } } },
+      state: { value: "status", ...(shareSearch && { search: "search" }) },
+    };
   }
-  place("list", "ObjectList", {
-    inputs: listInputs, outputs: listOutputs, data: { rows: namedRead(typeSource, listRead) },
-  }, { inputs: listBindings });
+  members.list = { component: "ObjectList", type, data: { rows: listRead }, state: listBindings };
 
   if (reads.record?.result === "panelRecord") {
     const shareSearch = search && reads.record.parameterMode === "fixed" && Object.hasOwn(reads.record.params, "search");
-    place("detail", "ObjectSummary", {
-      inputs: { item: object, ...(shareSearch && { search: text }) },
-      data: { record: namedRead(selectedSource, "record") },
-    }, { inputs: { item: stateRef("selected"), ...(shareSearch && { search: stateRef("search") }) } });
+    members.detail = {
+      component: "ObjectSummary", target: "selected", data: { record: "record" },
+      ...(shareSearch && { state: { search: "search" } }),
+    };
   }
   const edit = save?.effect === "write" && reads.form?.result === "panelFormDescription";
   const create = edit && reads.createForm?.result === "panelFormDescription";
   if (requestedSaves.length && !edit) throw new Error(`${save.id} has no declared form read`);
   if (edit) {
-    place("form", "ObjectForm", {
-      inputs: { item: object },
-      data: { form: namedRead(selectedSource, "form"), ...(create && { createForm: namedRead(typeSource, "createForm") }) },
-      operations: { save: { operation: { kind: operationKind, id: save.id }, target: inputRef("item") } },
-    }, { inputs: { item: stateRef("selected") } });
+    members.form = {
+      component: "ObjectForm", target: "selected",
+      data: { form: "form", ...(create && { createForm: "createForm" }) },
+      operation: save.id,
+    };
   }
   const buttonKeys = buttons.map(({ operation, batch }, index) => {
     const key = `${batch ? "batch" : "action"}${index + 1}`;
-    const input = operation.target.input;
-    const name = operation.id.split(".").at(-1);
-    place(key, "OperationButton", {
-      inputs: { [input]: batch ? selection : object },
-      operations: { [name]: { operation: { kind: operationKind, id: operation.id }, target: inputRef(input) } },
-      config: { operation: name },
-    }, { inputs: { [input]: stateRef(batch ? "checked" : "selected") } });
+    members[key] = { component: "OperationButton", operation: operation.id, target: batch ? "checked" : "selected" };
     return key;
   });
   const member = (key, attrs = "") => `<projection slot="${key}"${attrs}></projection>`;
@@ -177,12 +142,10 @@ export function managementPanel(type, checks, typeTable, {
     "",
   ].join("\n") : 'import { mountPanel } from "@ontomato/sdk/panel";\n\nawait mountPanel({});\n';
   const manifest = { state, members, events: {} };
-  const definition = { manifest, content: { html, module } };
-  checks.panelDefinitionContentSchema.parse(definition);
+  checks.panelAuthoringManifestSchema.parse(manifest);
   const entry = `/applications/${id}`;
   const material = {
-    projections,
-    panels: [{ id, mode: "create", input: { name: title, description: "", visibility: "domain", ...definition } }],
+    panels: [{ id, mode: "create", input: { name: title, description: "", visibility: "domain" } }],
     applications: [{
       id, mode: "create", input: {
         entry: { path: entry, renderer: "panels" },
@@ -192,7 +155,6 @@ export function managementPanel(type, checks, typeTable, {
       },
     }],
   };
-  panelRegistrationRecords(material, checks);
   return { html, module, manifest, material };
 }
 

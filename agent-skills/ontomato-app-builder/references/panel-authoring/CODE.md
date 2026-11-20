@@ -26,15 +26,42 @@ await mountPanel({
 });
 ```
 
-Bind the list's `selected` input and the detail's object input to the same public state. The list updates that
-state when the reader selects a record. Vue events can update page-local state, as the example does to leave
+Bind the list's `state.selected` and the detail's `target` to the same public state. The list updates that state
+when the reader selects a record. Vue events can update page-local state, as the example does to leave
 creation mode. Use `@click="clearSelection"` on a control that should clear both the detail and the list's selection.
 
 ## Read declared data
 
+Run `node "$SKILL/ontomato.mjs" panel type platform:AgentDefinition` to inspect an owner's reads and operations.
+Each named read lists its parameter names, `requiredParams` and the ID of its result schema. Find the matching
+schema under `resultSchemas`. Each operation lists its effect, target, batch support and input schema.
+
+For example, these two members share the public `selected` state:
+
+```json
+{
+  "list": {
+    "component": "ObjectList",
+    "type": "platform:AgentDefinition",
+    "data": {"rows": "list"},
+    "state": {"selected": "selected"}
+  },
+  "detail": {
+    "component": "PanelData",
+    "target": "selected",
+    "data": {"record": "record"}
+  }
+}
+```
+
+Use `type` for a type-wide read and `target` to read the object in a state field. The tool derives port types from
+the component catalogue, the owner type and read signatures. It uses explicit `data.<name>.params` bindings first,
+then state connections with the same parameter name, then allowed runtime parameters. Use
+`{"read":"counts","params":{"by":{"literal":"status"}}}` for a named literal and `{"state":"search"}`
+to bind a parameter explicitly to state.
+
 Use an official component when it fits the view. Place its projection with `<projection slot="list"></projection>`.
-For a custom Vue view, declare a projection with `componentId: "@ontomato/sdk:PanelData"` and `config: {}`. It supplies
-data for your Vue template to render. Name each datum in `data` and call `usePanelData` synchronously inside the
+For a custom Vue view, set the member's `component` to `"PanelData"`. It supplies data for your Vue template to render. Name each datum in `data` and call `usePanelData` synchronously inside the
 component’s `setup()`, before any `await`. The example’s `detail` member declares `data.record`.
 
 ```js
@@ -118,9 +145,10 @@ Pass the raw artifact path once to `URLSearchParams`. Opening the link fills the
 
 ## Register and open
 
-Write new projection definitions once, in each member's `target.projection`. Run `panel check <directory>` and
-`panel register <directory>` with the same `registration.json` metadata. Registration writes the projection ID back
-to `panel.json`. Keep it when rearranging or renaming the member. Use `target.projectionId` for an existing projection.
+Write each new projection directly in `manifest.members`. Run `panel check <directory>` and
+`panel register <directory>` with the same `registration.json` metadata. Registration writes the projection UUID
+as the member's `id` in `panel.json`. Keep it when rearranging or renaming the member. Use `target.projectionId`
+to reuse an existing projection.
 
 Start new application IDs with `app-`. Give every application use a `pageKey` unique within its domain. Set the use's localized `names` for the display
 title beside conversations. Use `panel.name` as its fallback. For an application delivery list, declare only extra

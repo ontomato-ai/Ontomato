@@ -390,8 +390,12 @@ async function panelCommand(api, workspaceId, [command, ...args]) {
       return client.register(JSON.parse(readInput(source)), report);
     }
     const sdk = currentSdkClient(connection);
-    const checks = await sdk.check(await sdk.current());
-    return registerPanelWorkspace(source, materialPath, checks, client, report);
+    const release = await sdk.current();
+    const checks = await sdk.check(release);
+    return registerPanelWorkspace(source, materialPath, checks, client, report, async () => {
+      const [catalogue, typeTable] = await Promise.all([sdk.components(release), readPlatformTypeTable(api, checks)]);
+      return { catalogue, typeTable };
+    });
   }
   if (command === "uses" && args.length === 1) {
     return printData(await requestJson(api, "GET", `/platform/applications/${encodeURIComponent(args[0])}/panel-uses`));
