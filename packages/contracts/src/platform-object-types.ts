@@ -61,6 +61,7 @@ const describeType = (name: string, layer?: PlatformObjectTypeDeclaration["layer
 });
 
 export const RUN_NOW = "schedules.runNow";
+export const DELETE_AGENT = "agents.delete";
 export const SET_ACTION_STATUS = "actions.setStatus";
 export const DELETE_ACTION = "actions.delete";
 export const APPROVE_KNOWLEDGE = "knowledge.approve";
@@ -95,7 +96,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     operations: [`${SCHEDULED_TASK}.save`, RUN_NOW],
   },
   [MODEL_OPTION]: { ...describeType("modelOption"), reads: referenceReads },
-  [MCP_SERVICE_OPTION]: describeType("mcpServiceOption"),
+  [MCP_SERVICE_OPTION]: { ...describeType("mcpServiceOption"), reads: referenceReads },
   [OBJECT_TYPE]: {
     ...describeType("objectType", "fact"),
     reads: { ...modelReads, ...metadataList },
@@ -164,7 +165,13 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
   },
   [ROLE]: describeType("role", "governance"),
-  [SDK_COMPONENT]: describeType("sdkComponent", "product"),
+  [SDK_COMPONENT]: {
+    ...describeType("sdkComponent", "product"),
+    reads: {
+      catalogue: { source: "type", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecordList" },
+      definition: { source: "object", parameterMode: "fixed", params: {}, result: "sdkComponentDefinition" },
+    },
+  },
   [PRODUCT_PROJECTION]: describeType("productProjection", "product"),
   [PRODUCT_PANEL]: describeType("productPanel", "product"),
   [APPLICATION]: describeType("application", "product"),
@@ -180,7 +187,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
       createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
     },
-    operations: [`${AGENT_DEFINITION}.save`],
+    operations: [`${AGENT_DEFINITION}.save`, DELETE_AGENT],
   },
   [ONTOLOGY_TYPE]: {
     ...describeType("ontologyType"),
