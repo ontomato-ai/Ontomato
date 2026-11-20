@@ -239,6 +239,7 @@ export class AgentChannel {
         if(delivered) return {input:(await this.facts.receipt(scope,delivered))!,delivery:null,replayed:true};
       }
       if(web) {
+        await this.runtime.store.readOpenAdmission(scope,web.runId);
         const original=await this.facts.receipt(scope,web.runId);
         if(original) {
           const message=original.message as AgentInput;
