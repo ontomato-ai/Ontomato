@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { panelOwnerOperationDescriptorSchema } from "@ontomato/contracts/panel-operations";
+import {
+  describePanelOperationFromDeclaration, panelOperationDeclarationSchema, panelOwnerOperationDescriptorSchema,
+} from "@ontomato/contracts/panel-operations";
 import { HttpError } from "../../../utils/errors";
 import type { PanelOperationHost } from "../../product-panels/server-operations";
 import {
-  ACTIONS_EXECUTE, describeObjectAction, objectActionOperation, resolveObjectAction, type ResolvedObjectAction,
+  ACTIONS_EXECUTE, OBJECT_ACTION_TARGET, describeObjectAction, objectActionDeclaration, objectActionOperation,
+  resolveObjectAction, type ResolvedObjectAction,
 } from "../object-actions";
 
 /*
- * A published Action executed on one customer object: resolved through the data engine's form as the authority, described
- * from its current parameters, and executed through the owner's form and execute with the owner's own refusals.
+ * A published Action executed on one customer object: declared from its stored parameters, resolved through the data
+ * engine's form as the authority, described from that same declaration, and executed through the owner's form and execute
+ * with the owner's own refusals.
  */
 
 type Init = NonNullable<Parameters<typeof fetch>[1]>;
@@ -35,7 +39,16 @@ const order = { objectType: "Order", primaryKey: "00123" };
 const stored = {
   id: "approve-order", name: "Approve order", status: "PUBLISHED", codeHash: "hash-1",
   target: { className: "Order", keyParameter: "order_id" },
+  function: {
+    name: "approve_order", code: "# ontomato-python:2",
+    parameters: [
+      { name: "order_id", type: "TYPE_STRING", description: "Order key" },
+      { name: "note", type: "TYPE_STRING", description: "Why" },
+      { name: "amount", type: "TYPE_NUMBER", description: null },
+    ],
+  },
 };
+const declaration = objectActionDeclaration(stored);
 const field = (key: string, label: string, required: boolean) => ({
   key, label, required, defaultValue: null, help: null, type: "text" as const, multiline: false, placeholder: null,
   maxLength: 200,
@@ -51,7 +64,7 @@ const refused = (code: string, message: string) => () => Response.json({ success
 
 const resolved: ResolvedObjectAction = {
   actionId: "approve-order", codeHash: "hash-1", name: "Approve order", keyParameter: "order_id", object: order,
-  form: openedForm,
+  declaration,
 };
 
 async function rejection(promise: Promise<unknown>): Promise<HttpError> {
@@ -116,38 +129,52 @@ describe("resolving an action on a customer object", () => {
   });
 });
 
-describe("describing an action on a customer object", () => {
-  it("names the shared handler and lists the action's own values without the bound key", () => {
-    const descriptor = describeObjectAction(resolved, { source: "input", input: "selected" });
+describe("declaring and describing an action on a customer object", () => {
+  it("declares one text value per stored parameter except the bound key, JSON text for a non-text type, none required", () => {
+    expect(panelOperationDeclarationSchema.parse(declaration)).toEqual(declaration);
+    expect(declaration).toEqual({
+      id: "approve-order", effect: "write", batch: false, target: { source: "input", input: OBJECT_ACTION_TARGET },
+      inputSchema: {
+        type: "object",
+        properties: {
+          values: {
+            type: "object",
+            properties: {
+              note: { type: "string", title: "note", description: "Why" },
+              amount: { type: "string", title: "amount", contentMediaType: "application/json" },
+            },
+            additionalProperties: false,
+          },
+        },
+        required: ["values"],
+        additionalProperties: false,
+      },
+    });
+  });
+
+  it("describes the shared handler from the same declaration an author reads", () => {
+    const descriptor = describeObjectAction(resolved);
 
     expect(panelOwnerOperationDescriptorSchema.parse(descriptor)).toEqual(descriptor);
+    expect(descriptor).toEqual(describePanelOperationFromDeclaration(declaration, {
+      handlerRef: ACTIONS_EXECUTE, label: "Approve order", resultSchema: descriptor.resultSchema,
+    }));
     expect(descriptor).toMatchObject({
       handlerRef: ACTIONS_EXECUTE, label: "Approve order", effect: "write", batch: false,
-      target: { source: "input", input: "selected" },
+      target: { source: "input", input: "target" }, inputSchema: declaration.inputSchema,
     });
-    expect(descriptor.inputSchema).toMatchObject({
-      properties: {
-        values: {
-          properties: { note: { type: "string", title: "Note" }, amount: { type: "string", title: "Amount" } },
-          required: ["amount"],
-        },
-      },
-      required: ["values"],
-    });
-    expect(Object.keys((descriptor.inputSchema.properties as { values: { properties: object } }).values.properties))
-      .not.toContain("order_id");
     expect(descriptor.inspectImpact).toBeUndefined();
   });
 });
 
 describe("executing an action on a customer object", () => {
-  const operation = objectActionOperation(resolved, "selected");
+  const operation = objectActionOperation(resolved);
   const target = { kind: "object" as const, ...order };
 
   it("binds the action and accepts only its own object", () => {
     expect(operation).toMatchObject({
       handlerRef: ACTIONS_EXECUTE, binding: { kind: "Action", id: "approve-order" }, kind: "action", batch: false,
-      targetType: "Order", targetInput: "selected",
+      targetType: "Order", targetInput: "target",
     });
     expect(operation.targetSchema.safeParse(target).success).toBe(true);
     expect(operation.targetSchema.safeParse({ ...target, primaryKey: "00124" }).success).toBe(false);

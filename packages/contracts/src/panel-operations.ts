@@ -11,27 +11,56 @@ import {
   platformOntologyCountsResponseSchema, platformOntologyNeighborsResponseSchema, platformOntologyObjectsResponseSchema,
   platformOntologySchemaResponseSchema, platformOntologyStartResponseSchema,
 } from "./platform-ontology";
+import type { PanelReadResultId } from "./platform-object-types";
 
-/** The owner selects a named input or form slot to resolve before invoking the operation. */
+const inputTarget = z.object({ source: z.literal("input"), input: runtimeKeySchema }).strict();
+const draftTarget = z.object({ source: z.literal("draft") }).strict();
+const noTarget = z.object({ source: z.literal("none") }).strict();
+
+/** A draft has no concrete member until a panel places its form. */
+export const panelOperationDeclarationTargetSchema = z.discriminatedUnion("source", [inputTarget, draftTarget, noTarget]);
+
 export const panelOwnerOperationTargetSchema = z.discriminatedUnion("source", [
-  z.object({ source: z.literal("input"), input: runtimeKeySchema }).strict(),
-  z.object({ source: z.literal("draft"), slot: runtimeKeySchema }).strict(),
-  z.object({ source: z.literal("none") }).strict(),
+  inputTarget,
+  draftTarget.extend({ slot: runtimeKeySchema }),
+  noTarget,
 ]);
 
+/** Static authoring metadata derived from the operation's owner registration. */
+export const panelOperationDeclarationSchema = z.object({
+  id: z.string().min(1).max(300),
+  effect: z.enum(["read", "write"]),
+  target: panelOperationDeclarationTargetSchema,
+  inputSchema: runtimeJsonObjectSchema,
+  batch: z.boolean(),
+}).strict();
+export type PanelOperationDeclaration = z.infer<typeof panelOperationDeclarationSchema>;
+
 /** The trusted owner supplies the effect and schemas. Requests carry only the operation identity and input. */
-export const panelOwnerOperationDescriptorSchema = z.object({
-  handlerRef: z.string().min(1).max(300),
+export const panelOwnerOperationDescriptorSchema = panelOperationDeclarationSchema.omit({ id: true }).extend({
+  handlerRef: panelOperationDeclarationSchema.shape.id,
   /** Display text supplied by the owner in the reader's locale. */
   label: z.string().min(1).max(200),
-  effect: z.enum(["read", "write"]),
   target: panelOwnerOperationTargetSchema,
-  inputSchema: runtimeJsonObjectSchema,
   resultSchema: runtimeJsonObjectSchema,
-  batch: z.boolean(),
   /** The owner handler shared by human and agent confirmation. */
   inspectImpact: z.object({ handlerRef: z.string().min(1).max(300) }).strict().optional(),
-}).strict();
+});
+export type PanelOwnerOperationDescriptor = z.infer<typeof panelOwnerOperationDescriptorSchema>;
+
+/** Combine the same declaration shown to authors with facts of the admitted runtime operation. */
+export function describePanelOperationFromDeclaration(
+  { id, target, ...staticFields }: PanelOperationDeclaration,
+  { handlerRef = id, slot, ...runtime }: Pick<PanelOwnerOperationDescriptor, "label" | "resultSchema" | "inspectImpact"> & {
+    handlerRef?: string;
+    slot?: string;
+  },
+): PanelOwnerOperationDescriptor {
+  return panelOwnerOperationDescriptorSchema.parse({
+    ...staticFields, ...runtime, handlerRef,
+    target: target.source === "draft" ? { ...target, slot } : target,
+  });
+}
 
 export const panelReadOperationDescriptorSchema = panelOwnerOperationDescriptorSchema.extend({
   effect: z.literal("read"),
@@ -57,6 +86,11 @@ export const panelReadResultSchemas = {
   chartTemplate: chartProjectionTemplateSchema,
   metricOutput: dashboardMetricOutputSchema,
 };
+
+export const panelReadResultIdSchema = z.custom<PanelReadResultId>(
+  value => typeof value === "string" && Object.hasOwn(panelReadResultSchemas, value),
+  "Expected a registered panel read result ID",
+);
 
 /** A read-only trial takes the current form values plus the execution parameter values. */
 export const panelReadOperationInputSchema = z.object({
