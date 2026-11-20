@@ -33,6 +33,14 @@ import FormFieldControl from "./FormFieldControl.vue";
  * whole draft (one it refuses is refused whole, with the fields and the reasons) and the form shows it, the changed
  * fields marked and nothing written, until the reader saves or discards.
  */
+/**
+ * What the form tells the page's code, which decides what the page shows next (a form's own buttons do not): the owner
+ * saved it — the object it saved, or the one it created — or the reader discarded what it held.
+ */
+const emit = defineEmits<{
+  saved: [object: { className: string; primaryKey: string }];
+  discarded: [];
+}>();
 const { t } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
@@ -294,6 +302,7 @@ useProjectionForm({
 function discard() {
   held = null;
   adopt(opened.value!);
+  emit("discarded");
   void panel.instance.settleDraft(slot.slot).catch(showRefusal);
 }
 
@@ -334,6 +343,7 @@ async function write(): Promise<unknown> {
     opened.value = { ...description.value!, values: values.value };
     changed.value = new Set();
     if (into.kind === "draft") moveTo({ kind: "object", objectType, primaryKey: saved.primaryKey });
+    emit("saved", { className: objectType, primaryKey: saved.primaryKey });
     // The save went through the coordinator, whose receipt reaches the host's one refresh port and is read again there.
 
     // A received draft ends with its save; a create draft first records the object it created. The save stands either

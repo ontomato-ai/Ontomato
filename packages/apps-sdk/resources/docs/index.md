@@ -93,6 +93,14 @@ declared owner read, such as the state that selects an object. The panel's own c
 catalogue to check which fields the component exposes. For translations, use locale tags, flat message keys and named
 placeholders such as `{name}` in `content.messages`; the template reads them with `t(…)`.
 
+A member's component tells the page what happened through its events, which the template listens to on
+`<projection>`; what the page shows next is the page's code to decide. An `ObjectForm` emits `saved` with the object it
+saved or created, and `discarded` when the reader throws away what it held — for example, back to the details:
+
+```html
+<projection slot="form" @saved="mode = 'view'" @discarded="mode = 'view'"></projection>
+```
+
 ### Draw a part yourself
 
 When no official component draws a part the way the page needs, the panel draws it itself. Declare a member whose
