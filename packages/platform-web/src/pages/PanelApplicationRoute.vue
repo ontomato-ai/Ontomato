@@ -7,7 +7,7 @@ import { panelAddress, panelAddressState, panelUsePath } from "@ontomato/contrac
 import { applicationRootPath } from "@ontomato/contracts/platform-identity";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
-import type { DisplayObjectRefresh } from "@ontomato/agent-shell-ui";
+import { PageComposer, type DisplayObjectRefresh } from "@ontomato/agent-shell-ui";
 import { countedTypesChangedKey } from "@ontomato/ontology-manager";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
@@ -180,6 +180,22 @@ const labels = computed<PanelHostLabels>(() => ({
 }));
 
 /**
+ * The composer at the foot of the page at its own address (big main's ruling, 2026-11-21): what a message written here
+ * asks about is the page above it, and a conversation entry in the panel expands it. Beside a conversation the
+ * conversation's own composer serves instead. Its configuration error is shown where it would be.
+ */
+const composerProblem = ref<string | null>(null);
+const composerLabels = computed(() => ({
+  placeholder: t("assistant.placeholder"),
+  send: t("assistant.send"),
+  stop: t("assistant.stop"),
+  agent: t("assistant.agent"),
+  pageAgentUnavailable: t("assistant.pageAgentUnavailable"),
+  collapseComposer: t("assistant.collapseComposer"),
+  expandComposer: t("assistant.expandComposer"),
+}));
+
+/**
  * The page's address without the panel's own state: this relation's own full path and the rest of the address's query — a draft an agent wrote for this page names itself there (`draftSessionId`, `draftRunId`,
  * `draftPath`), and the panel reads it from the address it is given. The state is the instance's to add.
  */
@@ -332,5 +348,24 @@ function reportDirty(page: KeptPage, dirty: boolean) {
       @reopened="markReopened(page)"
       @withdrawn="withdraw(page)"
     />
+    <!-- Offered once the panel's read named the page's skill: the agents are the ones that skill reaches. -->
+    <PageComposer
+      v-if="!props.navigate && shownPage?.pageSkill"
+      :page="shownPage.reported"
+      :labels="composerLabels"
+      :page-skill="shownPage.pageSkill"
+      @error="composerProblem = $event"
+    />
+    <p v-if="!props.navigate && composerProblem" class="page-composer-error" role="alert">{{ composerProblem }}</p>
   </template>
 </template>
+
+<style scoped>
+/* The page's own configuration error, where its composer would be: the reader is told, not left guessing. */
+.page-composer-error {
+  width: min(760px, 100%);
+  margin: 0 auto var(--spacing-md);
+  color: var(--el-color-danger);
+  font-size: var(--text-sm);
+}
+</style>
