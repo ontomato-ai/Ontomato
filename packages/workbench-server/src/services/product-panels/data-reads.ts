@@ -108,6 +108,9 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       list: async () => (await actions()).list(),
       record: async selection => (await actions()).record(selection.primaryKey!),
       form: async (selection, params) => (await actions()).form(selection.primaryKey!, formParams(params)),
+      createForm: async (_selection, params) => (await actions()).createForm(formParams(params)),
+      definition: async selection => (await actions()).definition(selection.primaryKey!),
+      explanation: async selection => (await actions()).explanation(selection.primaryKey!),
     },
     [METRIC_VIEW]: {
       result: (selection, params) => metrics.result(selection.primaryKey!, runtimeJsonObjectSchema.parse(params)),

@@ -1,4 +1,7 @@
 import { z } from "zod";
+import {
+  actionDefinitionSchema, actionExplanationSchema, type ActionDefinition, type ActionExplanation,
+} from "@ontomato/contracts/action-panel";
 import { ACTION, DELETE_ACTION, SET_ACTION_STATUS } from "@ontomato/contracts/panel-client-requests";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import type { PanelOperationDeclaration } from "@ontomato/contracts/panel-operations";
@@ -16,7 +19,8 @@ import { describeServerOperation, panelServerOperation } from "../product-panels
 
 /*
  * The action catalog's named reads for a direct panel, read as the viewer: the list and one action as records, the
- * owner's definition form for one action, and the descriptions of the status change and the delete the panel offers,
+ * owner's definition form for one action, the definition the owner derives from its explained code and that
+ * explanation, and the descriptions of the status change and the delete the panel offers,
  * described from their registered operations as every other platform operation is.
  * For an author's type table it also declares the published Actions that run on one customer object type.
  * The data engine answers the records' display names and the form in the reader's language; the column names are
@@ -41,6 +45,15 @@ export interface ObjectActionEntry {
   className: string;
   declaration: PanelOperationDeclaration;
 }
+
+/** The stored fields of one action its explanation is read from; the data engine names each segment's kind. */
+const explainedActionSchema = z.object({
+  function: z.object({ code: z.string().nullish() }).passthrough().nullish(),
+  codeHash: z.string().nullish(),
+  explanationVersion: z.number().int().nullish(),
+  codeSegments: z.array(z.unknown()).nullish(),
+  businessMeaning: z.unknown().optional(),
+}).passthrough();
 
 interface ActionFormParams {
   values?: PanelFormValues;
@@ -92,6 +105,23 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
     },
     async form(primaryKey: string, params: ActionFormParams): Promise<PanelFormDescription> {
       return definitionForm("action-form", { kind: "object", objectType: ACTION, primaryKey }, params);
+    },
+    /** What the data engine derives from the action's explained code: what it writes, reads, takes and checks. */
+    async definition(primaryKey: string): Promise<ActionDefinition> {
+      const action = await owner("action-definition", "/action/queryById", { id: primaryKey },
+        z.object({ definition: actionDefinitionSchema }).passthrough());
+      return action.definition;
+    },
+    /** The saved code and its explanation; an action saved before it was explained has no segments yet. */
+    async explanation(primaryKey: string): Promise<ActionExplanation> {
+      const action = await owner("action-explanation", "/action/queryById", { id: primaryKey }, explainedActionSchema);
+      return actionExplanationSchema.parse({
+        ...(action.function?.code != null && { code: action.function.code }),
+        ...(action.codeHash != null && { codeHash: action.codeHash }),
+        ...(action.explanationVersion != null && { explanationVersion: action.explanationVersion }),
+        codeSegments: action.codeSegments ?? [],
+        ...(action.businessMeaning != null && { businessMeaning: action.businessMeaning }),
+      });
     },
     /** The owner's form for a new action, which an agent drafts into after the owner adopts its trial run. */
     async createForm(params: ActionFormParams): Promise<PanelFormDescription> {
