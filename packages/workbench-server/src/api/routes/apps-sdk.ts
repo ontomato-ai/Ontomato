@@ -21,7 +21,7 @@ export function mountAppsSdkStatic(app: express.Express) {
   app.get(`${APPS_SDK_CURRENT_PATH}/*`, (req, res, next) => {
     void appSdkBuild().then(({ version }) => {
       const root = bundledAppsSdkDir(version);
-      const name = req.params[0];
+      const name = req.path.slice(APPS_SDK_CURRENT_PATH.length + 1);
       // Only look for compressed siblings inside the SDK root. sendFile checks the final path as well.
       const inside = path.resolve(root, name).startsWith(path.resolve(root) + path.sep);
       const chosen = inside ? ENCODINGS.find(({ encoding, extension }) =>
