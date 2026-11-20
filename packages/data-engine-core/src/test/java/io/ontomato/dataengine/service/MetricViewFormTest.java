@@ -168,6 +168,7 @@ class MetricViewFormTest {
     JSONObject form = form(JSONObject.of("target", JSONObject.of("kind", "draft")));
 
     JSONObject values = form.getJSONObject("values");
+    assertFalse(values.containsKey("id"));
     assertEquals("PENDING_REVIEW", values.getString("status"));
     assertEquals("USER", values.getString("origin"));
     assertEquals("OPERATION_READ", values.getJSONObject("function").getString("operation"));
