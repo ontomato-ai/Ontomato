@@ -1,200 +1,44 @@
 name: Images
 
-# Formal releases publish five final images; deployments only pull and run them.
-#
-# develop pushes publish the edge version, stable pushes publish the stable
-# version (the maintenance line of released versions), and formal v* tags publish
-# the stripped version plus latest. Branch images require the source Checks
-# workflow to pass for the same commit. Release tags keep their existing flow.
-#
-# Keep each ref's build, publication and verification together. A newer push to
-# the same branch cancels the superseded run, so only the current head publishes;
-# the head check still rejects stale reruns because cancellation can lose the race.
-
 on:
   workflow_dispatch:
-  push:
-    branches: ["develop", "stable"]
-    tags: ["v*"]
-
-concurrency:
-  group: images-${{ github.ref }}
-  # Tags run to completion; branches let the newest commit take over.
-  cancel-in-progress: ${{ github.ref_type == 'branch' }}
 
 permissions:
   contents: read
-  packages: write
-  actions: read
-
-env:
-  REGISTRY: ghcr.io/ontomato-ai
 
 jobs:
-  checks:
-    if: github.ref_type == 'branch'
-    uses: ./.github/workflows/pr-checks.yml
-
-  build:
-    outputs:
-      build-tag: ${{ steps.publish.outputs.build-tag }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
-    env:
-      ARCH: ${{ matrix.arch }}
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-
-      - uses: docker/setup-buildx-action@v4
-
-      - name: Log in to the registry
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-
-      # Cache refs are per image and per architecture: a cache export replaces
-      # the manifest under its ref, so it is never a published tag. The ref
-      # follows the published version, keeping develop, stable and each release
-      # on their own cache.
-      - name: Build the final images
-        env:
-          BUILD_CACHE_READ_ONLY: ${{ github.ref_type == 'branch' }}
-        run: &build-images |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then version="${GITHUB_REF_NAME#v}"; elif [ "$GITHUB_REF_NAME" = develop ]; then version=edge; else version="${GITHUB_REF_NAME//\//-}"; fi
-          BUILD_CACHE_REF="$REGISTRY/ontomato-workbench:cache-$version-$ARCH" $GHCR_RETRY make workbench ARCH="$ARCH"
-          maven_repo_url=$(cat .github/maven-wrapper-repo-url)
-          MVNW_REPOURL="$maven_repo_url" BUILD_CACHE_REF="$REGISTRY/ontomato-data-engine:cache-$version-$ARCH" \
-            $GHCR_RETRY make data-engine ARCH="$ARCH"
-          BUILD_CACHE_REF="$REGISTRY/ontomato-agent-runtime:cache-$version-$ARCH" $GHCR_RETRY make agent-runtime ARCH="$ARCH"
-          BUILD_CACHE_REF="$REGISTRY/ontomato-gateway:cache-$version-$ARCH" $GHCR_RETRY make gateway ARCH="$ARCH"
-
-      - name: Wait for source checks before publishing
-        if: github.ref_type == 'branch'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python3 scripts/ci-wait-checks.py
-
-      # Cache tags are writes too. Export only after the publication gate;
-      # the same runner reuses the layers built above.
-      - name: Export the build caches
-        if: github.ref_type == 'branch'
-        env:
-          GHCR_RETRY: bash scripts/ci-retry-ghcr.sh
-        run: *build-images
-
-      # Branch guard: an outdated branch run must not publish after the branch
-      # has advanced. Release-tag builds do not track a branch.
-      - name: Refuse a stale branch publish
-        run: |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then exit 0; fi
-          head=$(git rev-parse HEAD)
-          remote=$(git ls-remote "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "refs/heads/$GITHUB_REF_NAME" | cut -f1)
-          [ "$head" = "$remote" ] || {
-            echo "$GITHUB_REF_NAME has advanced to $remote; not publishing from stale $head" >&2
-            exit 1
-          }
-
-      - name: Publish the images of this architecture
-        id: publish
-        run: |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then version="${GITHUB_REF_NAME#v}"; elif [ "$GITHUB_REF_NAME" = develop ]; then version=edge; else version="${GITHUB_REF_NAME//\//-}"; fi
-          publish() {
-            local build
-            build=$(docker image inspect --format '{{index .Config.Labels "io.ontomato.build"}}' "$1")
-            docker tag "$1" "$2"
-            bash scripts/ci-retry-ghcr.sh docker push "$2"
-            docker tag "$1" "${2%:*}:$build-$ARCH"
-            bash scripts/ci-retry-ghcr.sh docker push "${2%:*}:$build-$ARCH"
-            echo "build-tag=$build" >> "$GITHUB_OUTPUT"
-          }
-          publish "ontomato:deploy-$ARCH" "$REGISTRY/ontomato-workbench:$version-$ARCH"
-          publish "datarag-opensource:deploy-$ARCH" "$REGISTRY/ontomato-data-engine:$version-$ARCH"
-          publish "ontomato-agent-runtime:deploy-$ARCH" "$REGISTRY/ontomato-agent-runtime:$version-$ARCH"
-          publish "ontomato-gateway:deploy-$ARCH" "$REGISTRY/ontomato-gateway:$version-$ARCH"
-          echo "CI_PUBLISH_RESULT=published tag=$version-$ARCH"
-
-  manifest:
-    needs: [build, checks]
-    if: ${{ !cancelled() && needs.build.result == 'success' && (github.ref_type == 'tag' || needs.checks.result == 'success') }}
+  dependency-http:
     runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Refuse a stale branch publish
-        run: |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then exit 0; fi
-          remote=$(git ls-remote "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "refs/heads/$GITHUB_REF_NAME" | cut -f1)
-          [ "${{ github.sha }}" = "$remote" ] || {
-            echo "$GITHUB_REF_NAME has advanced to $remote; not indexing from stale ${{ github.sha }}" >&2
-            exit 1
-          }
-
-      - name: Publish the multi-architecture images
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          if [ "$GITHUB_REF_TYPE" = tag ]; then version="${GITHUB_REF_NAME#v}"; elif [ "$GITHUB_REF_NAME" = develop ]; then version=edge; else version="${GITHUB_REF_NAME//\//-}"; fi
-          # index <image> <amd64 tag> <arm64 tag>
-          index() {
-            local tags=(-t "$REGISTRY/$1:$version" -t "$REGISTRY/$1:${{ needs.build.outputs.build-tag }}")
-            if [ "$GITHUB_REF_TYPE" = tag ]; then tags+=(-t "$REGISTRY/$1:latest"); fi
-            bash scripts/ci-retry-ghcr.sh docker buildx imagetools create \
-              "${tags[@]}" "$REGISTRY/$1:$2" "$REGISTRY/$1:$3"
-          }
-          for image in ontomato-workbench ontomato-data-engine ontomato-agent-runtime ontomato-gateway; do
-            index "$image" "$version-amd64" "$version-arm64"
-          done
-
-  # The deployment path: pull the published final images and start the stack.
-  verify:
-    needs: manifest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
-    env:
-      ARCH: ${{ matrix.arch }}
+        sample: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@v5
-
-      - name: Start the stack from the published images
-        id: stack-start
-        working-directory: deploy
+      - uses: docker/setup-buildx-action@v4
+      - name: Record HTTP responses from runner and Data Engine builder
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          if [ "$GITHUB_REF_TYPE" = tag ]; then export ONTOMATO_VERSION="${GITHUB_REF_NAME#v}"; elif [ "$GITHUB_REF_NAME" = develop ]; then export ONTOMATO_VERSION=edge; else export ONTOMATO_VERSION="${GITHUB_REF_NAME//\//-}"; fi
-          # .env.example is an inactive, fully commented reference; CI supplies its own site inputs.
-          cp .env.example .env
-          {
-            echo "ARCH=$ARCH"
-            echo "POSTGRES_PASSWORD=ci-verify-password"
-            echo "ONTOMATO_MODEL_RUNTIME_TOKEN=ci-verify-runtime-token"
-            echo "PUBLIC_HOST=127.0.0.1"
-          } >> .env
-          python3 prepare-env.py .env
-          echo "COMPOSE_FILE=docker-compose.yml:docker-compose.ghcr.yml" >> .env
-          docker compose up -d --wait --wait-timeout 300
-          for path in / /ontology-manager/ /api/data-query/health; do
-            curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors \
-              --output /dev/null "http://127.0.0.1:3000$path"
+          context=$(mktemp -d)
+          cat > "$context/probe.sh" <<'SCRIPT'
+          set -eu
+          for artifact in             org/springframework/boot/spring-boot-starter-parent/3.5.0/spring-boot-starter-parent-3.5.0.pom             org/springframework/boot/spring-boot-autoconfigure/3.5.0/spring-boot-autoconfigure-3.5.0.jar             ch/qos/logback/logback-classic/1.5.18/logback-classic-1.5.18.jar
+          do
+            for repository in https://repo.maven.apache.org/maven2 https://maven-central.storage-download.googleapis.com/maven2
+            do
+              printf '%s/%s\n' "$repository" "$artifact"
+              curl -sS --max-time 20 -D /tmp/ontomato-headers -o /tmp/ontomato-artifact "$repository/$artifact"
+              awk 'tolower($0) ~ /^(http\/|cf-ray:|retry-after:)/ {print}' /tmp/ontomato-headers
+              if grep -q '^HTTP/[^ ]* 200 ' /tmp/ontomato-headers; then
+                sha256sum /tmp/ontomato-artifact
+              fi
+            done
           done
-
-      - name: Show the stack state
-        if: always() && steps['stack-start'].outcome != 'skipped'
-        working-directory: deploy
-        run: |
-          docker compose ps -a
-          docker compose logs --tail 200
+          SCRIPT
+          sh "$context/probe.sh"
+          jdk_image=$(sed -n 's/^ARG JDK_IMAGE=//p' docker/data-engine/Dockerfile)
+          docker buildx build --progress=plain --no-cache --build-arg "JDK_IMAGE=$jdk_image" -f - "$context" <<'DOCKERFILE'
+          ARG JDK_IMAGE
+          FROM ${JDK_IMAGE}
+          COPY probe.sh /tmp/probe.sh
+          RUN sh /tmp/probe.sh
+          DOCKERFILE
