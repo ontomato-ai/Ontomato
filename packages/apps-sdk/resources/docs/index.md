@@ -89,7 +89,7 @@ await mountPanel({
 
 Declare `list` and `details` in `manifest.members` with the actual `target.projectionId`, and give typed inputs for the
 declared owner read, such as the state that selects an object. The panel's own code reads and sets public state with
-`instance.state`, and runs a member's operations with `instance.invoke(id, input?)`. Use the deployed component
+`instance.state`, and runs a member's operations with `usePanelOperation` (below). Use the deployed component
 catalogue to check which fields the component exposes. For translations, use locale tags, flat message keys and named
 placeholders such as `{name}` in `content.messages`; the template reads them with `t(…)`.
 
@@ -109,18 +109,17 @@ your choosing. Read each datum in the page's code with `usePanelData(member, nam
 
 ```js
 import { computed, ref } from "vue";
-import { mountPanel, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
+import { mountPanel, usePanelData, usePanelOperation } from "@ontomato/sdk/panel";
 
 await mountPanel({
   setup() {
-    const { instance } = usePanelContext();
     const cursor = ref(null);
     // The member's `rows` datum (an owner's query), with the cursor and page size as the page's own run-time values.
     const rows = usePanelData("board", "rows", () => ({ cursor: cursor.value, size: 20 }));
     const items = computed(() => (rows.value.status === "ready" ? rows.value.value.rows : []));
     const next = () => { cursor.value = rows.value.value?.nextCursor ?? null; };
     // The operation acts on the object the member's target input is bound to in the panel's state.
-    const approve = () => instance.invoke("board.approve");
+    const approve = usePanelOperation("board", "approve");
     return { rows, items, next, approve };
   },
 });
@@ -133,10 +132,20 @@ member binds changes, when the run-time values you pass change, and when an oper
 changed. Values you pass yourself are run-time parameters, which the platform checks against the catalogue and the
 read.
 
-The member's operations are the ones its projection names under `operations.<name>`. `instance.operations` lists those
-the owners admit now (an action on an object appears once the object is chosen), and `instance.invoke("<member>.<name>",
-input?)` runs one exactly as the page's header and an agent do. Never call the platform's business endpoints from the
-page.
+The member's operations are the ones its projection names under `operations.<name>`. Run one from the page's code
+with `usePanelOperation(member, name)`, called in setup like `usePanelData`: its `operation` is the owner's description
+while the owner admits it now — an action on an object once the object is chosen — and `null` otherwise, and `run(input?)`
+runs it exactly as the page's header and an agent do (a write is confirmed where its owner asks; a read answers what it
+read, or saves the file it sent):
+
+```js
+const approve = usePanelOperation("board", "approve");
+// <el-button :disabled="!approve.operation.value" @click="approve.run()">{{ approve.operation.value?.label }}</el-button>
+```
+
+To open another of the platform's pages, call `usePanelContext().navigate(address)` with an address such as
+`/agents/chat?agentId=…`; when the platform cannot open it, the page says why and the call rejects with that reason.
+Never call the platform's business endpoints from the page.
 
 Run the App Builder skill's `ontomato panel check` on the workspace directory. It uses the current release's
 declarations. Register the requested projections, panel and application uses through their owners, then open the
