@@ -14,7 +14,8 @@ import { componentFor } from "../catalogue-components";
  * The SDK's projection component: `<Projection slot="taskForm"/>`. A panel author places it and names the member;
  * everything else is the SDK's. It reads the member's projection by ID through this frame's request path under the
  * reader's own credential, finds the component of the record's `componentId` in this release's own catalogue, draws it
- * with the record's `config` as configuration and the member's inputs as values, derives its ports from the data it reads
+ * with the record's `config` as its only configuration (an attribute written on `<Projection>` configures nothing) and
+ * the member's inputs as values, derives its ports from the data it reads
  * and that catalogue entry, registers them with the instance, and gives the drawn component the member's data, read here
  * through this release's resource modules.
  *
@@ -120,7 +121,7 @@ provide(panelMemberKey, () => loaded.value!.member);
 <template>
   <p v-if="failure" role="alert">{{ failure.message }}</p>
   <div v-else-if="loading || !loaded" class="sdk-projection-loading"></div>
-  <component :is="loaded.component" v-else v-bind="{ ...loaded.projection.config, ...$attrs, ...inputs }">
+  <component :is="loaded.component" v-else v-bind="{ ...loaded.projection.config, ...inputs }">
     <template v-for="(_, name) in $slots" :key="name" #[name]="slotProps">
       <slot :name="name" v-bind="slotProps ?? {}"></slot>
     </template>

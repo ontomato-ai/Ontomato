@@ -12,7 +12,7 @@ import { PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
 import { changedPaths, fieldAt, movedPath, valueAt, withValueAt } from "../panel/form-values";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMember } from "../panel/member";
-import { memberFormSource, MemberDataUnavailable, type FormSource } from "../panel/member-forms";
+import { editedInput, memberFormSource, MemberDataUnavailable, type FormSource } from "../panel/member-forms";
 import { formControlsKey, rowControlKey, rowControlsOf } from "./form-controls";
 import FormFieldControl from "./FormFieldControl.vue";
 
@@ -22,11 +22,9 @@ import FormFieldControl from "./FormFieldControl.vue";
  * for a new object. When a field the owner marks `refreshOnChange` changes, the owner is asked again and its answer
  * replaces the fields and the values.
  *
- * The form edits the object the panel has selected, or — when nothing is and the projection's display says it
- * `creates` — a new one, saved through the owner's own create; the panel then selects the object the owner created.
- * A panel whose state says "creating" (`createWhen`: one of the slot's inputs equals a value) has the form on a new
- * object whatever is selected, so a list that selects its first row again cannot turn the new object into another; once
- * the new object is saved, that state is cleared and the form edits the object the owner created.
+ * The form edits the object the panel's state holds for it — the input its `form` datum reads its object from — or, when
+ * that state is empty and the projection declares a `createForm`, a new one, saved through the owner's own create; the
+ * panel then holds the object the owner created. A header "new" is an event that empties that state.
  * A field another projection draws (a reference chosen from its own catalogue, a data scope on a graph) is edited there,
  * through this form's field port, and is this form's value, dirty state and draft all the same.
  *
@@ -34,52 +32,31 @@ import FormFieldControl from "./FormFieldControl.vue";
  * whole draft (one it refuses is refused whole, with the fields and the reasons) and the form shows it, the changed
  * fields marked and nothing written, until the reader saves or discards.
  */
-const props = withDefaults(
-  defineProps<{
-    /** The slot input whose panel state names the object this form edits; the slot's first input by default. */
-    inputName?: string;
-    /** Whether, with nothing selected, the form creates a new object of the bound type. */
-    creates?: boolean;
-    /**
-     * The slot input whose panel state, while it equals `equals`, puts the form on a new object regardless of the
-     * selection; the form clears it once that object is saved. Requires `creates`.
-     */
-    createWhen?: { input: string; equals: string };
-  }>(),
-  { inputName: undefined, creates: false, createWhen: undefined },
-);
-
 const { t } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
 const objectType = projectionElement(slot.projection).id;
+const member = useMember();
 // The member's form is read by the instance (through this release's resource module in a frame) and saved through its
 // owner's operation, received by the platform's coordinator.
-// the bound type's resource module.
-const forms: FormSource = memberFormSource(useMember(), panel.instance);
+const forms: FormSource = memberFormSource(member, panel.instance);
 
-const state = computed(() => slotState(panel.manifest, slot.slot, props.inputName));
-const key = computed(() => selectedKey(panel.instance.state.values.value[state.value]));
-if (props.createWhen && !props.creates) throw new Error("A form told when it creates must also create: set `creates`");
-/** The panel state that says the form is creating, when the display names one. */
-const createState = computed(() => (props.createWhen ? slotState(panel.manifest, slot.slot, props.createWhen.input) : null));
-const creating = computed(() =>
-  createState.value !== null && panel.instance.state.values.value[createState.value] === props.createWhen!.equals);
+const editInput = editedInput(member.projection);
+/** Whether the form creates: the projection declares the owner's create form. */
+const creates = Object.hasOwn(member.projection.data, "createForm");
+/** The panel state the edited object is held in; a form that only creates holds none. */
+const state = computed(() => (editInput === undefined ? null : slotState(panel.manifest, slot.slot, editInput)));
+const key = computed(() => (state.value === null ? null : selectedKey(panel.instance.state.values.value[state.value])));
 const target = computed<PanelFormTarget | null>(() => {
-  if (creating.value) return { kind: "draft" };
   if (key.value) return { kind: "object", objectType, primaryKey: key.value };
-  return props.creates ? { kind: "draft" } : null;
+  return creates ? { kind: "draft" } : null;
 });
 const targetKey = (value: PanelFormTarget | null) => (value === null ? "" : value.kind === "object" ? value.primaryKey : "draft");
 
-/**
- * Puts the panel's state where the form shows `next`: a new object is the creating state where the panel has one (the
- * selection left as it is) or no selection; an existing one is that object selected, and creating no longer.
- */
+/** Puts the panel's state where the form shows `next`: an existing object held, or the state emptied for a new one. */
 function moveTo(next: PanelFormTarget) {
-  if (createState.value !== null) panel.instance.state.set(createState.value, next.kind === "draft" ? props.createWhen!.equals : null);
-  if (next.kind === "object") panel.instance.state.set(state.value, { className: objectType, primaryKey: next.primaryKey });
-  else if (createState.value === null) panel.instance.state.set(state.value, null);
+  if (state.value === null) return;
+  panel.instance.state.set(state.value, next.kind === "object" ? { className: objectType, primaryKey: next.primaryKey } : null);
 }
 
 /** The owner's description now: its fields, which follow the values the form holds. */
@@ -280,10 +257,10 @@ useProjectionForm({
     const create = draft.target.id === undefined;
     // A create draft for a form that creates nothing is refused as such, before any owner is asked about it — unless an
     // earlier save already created its object, which it then addresses.
-    if (create && !props.creates && !draft.created) throw new Error("This panel's form does not create objects");
+    if (create && !creates && !draft.created) throw new Error("This panel's form does not create objects");
     // The target whose owner form names the draft's operation: the create target of a form that creates, otherwise the
     // object the draft (or its earlier save) addresses.
-    const named: PanelFormTarget = create && props.creates
+    const named: PanelFormTarget = create && creates
       ? { kind: "draft" }
       : { kind: "object", objectType, primaryKey: draft.target.id ?? draft.created!.id };
     const namedForm = await forms.describe({ target: named, changedField: null });
