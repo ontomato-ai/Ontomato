@@ -64,7 +64,8 @@ async function readShortcuts(){try{pinnedAppIds.value=(await readHomeState()).fa
 onMounted(()=>{void readShortcuts();window.addEventListener(HOME_PREFERENCES_CHANGED,readShortcuts);});
 onBeforeUnmount(()=>window.removeEventListener(HOME_PREFERENCES_CHANGED,readShortcuts));
 watch(()=>route.path,()=>{void readShortcuts();});
-watch(() => host.navigation.value, () => { void catalog.refresh(); }, { immediate: true, deep: true });
+onMounted(() => { void catalog.refresh(); });
+watch(() => host.navigation.value, () => { void catalog.refresh(); }, { deep: true });
 // The home lists every application, so returning to it reads the catalog again; the first read above covers a shell
 // mounted on the home.
 watch(() => route.path === platformRoutes.home.path, (home) => { if (home) void catalog.refresh(); });

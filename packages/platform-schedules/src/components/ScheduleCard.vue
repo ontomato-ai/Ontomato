@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, type Component } from "vue";
-import { ArrowRight, Clock, Ellipsis } from "lucide-vue-next";
+import { ChevronDown, ChevronRight, CirclePause, Clock, Ellipsis } from "lucide-vue-next";
 import type { PlatformTask } from "@ontomato/contracts/platform-schedules";
 import { useScheduleText } from "../text";
 import {dropdownBoundaryOptions} from '@ontomato/foundation-ui/overlay';
@@ -35,10 +35,18 @@ const titleId = computed(() => `schedule-${props.task.id}`);
 /** The switch says whether the task runs on its schedule: a task the system paused does not, though its owner left it on. */
 const scheduled = computed(() => props.task.enabled && props.task.pause === null);
 const summary = computed(() => text.summary(props.task.summary));
+const hasEarlierResult = computed(() => !!props.task.latestResult && props.task.latestResult.runId !== props.task.lastRun?.id);
+
+function resultPreview(value: string | null) {
+  return value?.replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}(?:#{1,6}\s+|>\s*|[-*+]\s+)/gm, "")
+    .replace(/(\*\*|__|`+)(.*?)\1/g, "$2")
+    .replace(/\s+/g, " ").trim();
+}
 
 const next = computed(() => {
   const task = props.task;
-  if (task.pause) return t("card.pausedNext");
   if (!task.enabled) return t("card.off");
   return task.nextRunAt ? t("card.next", { time: text.moment(task.nextRunAt, task.timeZone) }) : t("card.noNext");
 });
@@ -49,9 +57,9 @@ const last = computed(() => {
   if (!run) return null;
   const point =
     run.status === "failed" || run.status === "skipped"
-      ? run.error && text.runReason(run.error)
+      ? run.error && t(`runError.${run.error.code}`)
       : run.status === "completed"
-        ? (run.resultSummary ?? (run.spendTime === null ? null : t("duration.took", { time: text.duration(run.spendTime) })))
+        ? (resultPreview(run.resultSummary) || (run.spendTime === null ? null : t("duration.took", { time: text.duration(run.spendTime) })))
         : null;
   return { status: run.status, label: text.runStatus(run.status), when: text.moment(run.startedAt, props.task.timeZone), point };
 });
@@ -81,18 +89,27 @@ function command(name: string | number | object) {
     </header>
     <h3 :id="titleId" class="title">{{ task.title }}</h3>
     <p v-if="summary" class="summary" :title="summary">{{ summary }}</p>
-    <p v-if="task.pause" class="pause">
-      <span>{{ t("card.paused", { reason: task.pause.message }) }}</span>
+    <div v-if="task.pause" class="pause">
+      <details>
+        <summary>
+          <CirclePause :size="14" aria-hidden="true" />
+          <span>{{ t("card.pausedNext") }}</span>
+          <ChevronDown class="pause-chevron" :size="14" aria-hidden="true" />
+        </summary>
+        <p>{{ task.pause.message }}</p>
+      </details>
       <button v-if="task.pause.code === 'definition_changed'" type="button" class="pause-action" @click="emit('edit')">
         {{ t("card.review") }}
       </button>
-    </p>
+    </div>
     <div class="meta">
       <p class="line">
         <Clock :size="14" class="line-icon" aria-hidden="true" />
         <span>{{ text.frequency(task.frequency) }}</span>
-        <span class="sep" aria-hidden="true" />
-        <span>{{ next }}</span>
+        <template v-if="!task.pause">
+          <span class="sep" aria-hidden="true" />
+          <span>{{ next }}</span>
+        </template>
       </p>
       <p v-if="last" class="line">
         <span class="dot" :class="last.status" aria-hidden="true" />
@@ -109,16 +126,21 @@ function command(name: string | number | object) {
       </p>
     </div>
     <footer class="foot">
-      <button
-        type="button"
-        class="result"
-        :disabled="!task.latestResult"
-        :title="task.latestResult ? undefined : t('card.noResult')"
-        @click="emit('openResult')"
-      >
-        <span>{{ t("card.viewResult") }}</span>
-        <ArrowRight :size="14" aria-hidden="true" />
-      </button>
+      <div class="result-actions">
+        <button
+          v-if="task.latestResult"
+          type="button"
+          class="result"
+          @click="emit('openResult')"
+        >
+          <span>{{ t(hasEarlierResult ? "card.viewEarlierResult" : "card.viewResult") }}</span>
+          <ChevronRight :size="14" aria-hidden="true" />
+        </button>
+        <span v-else class="no-result">{{ t('card.noResult') }}</span>
+        <button v-if="last?.status === 'failed' || last?.status === 'skipped'" type="button" class="result" @click="emit('records')">
+          {{ t("action.records") }}
+        </button>
+      </div>
       <el-dropdown trigger="click" placement="bottom-end" :popper-options="dropdownBoundaryOptions" :disabled="busy" @command="command">
         <button type="button" class="more" :aria-label="t('card.more', { title: task.title })" :disabled="busy">
           <Ellipsis :size="16" aria-hidden="true" />
@@ -195,19 +217,31 @@ function command(name: string | number | object) {
   align-items: baseline;
   gap: var(--spacing-xs) var(--spacing-sm);
   margin: 0;
-  padding: 6px var(--spacing-sm);
-  border-radius: var(--radius-sm);
-  background: var(--el-color-danger-light-9);
-  color: var(--el-color-danger);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
   font-weight: var(--font-medium);
 }
+.pause details { flex: 1; min-width: 0; }
+.pause summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  list-style: none;
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning-text);
+  cursor: pointer;
+}
+.pause summary::-webkit-details-marker { display: none; }
+.pause summary:hover { background: var(--el-color-warning-light-8); }
+.pause details[open] .pause-chevron { rotate: 180deg; }
+.pause p { margin: var(--spacing-xs) 0 0; color: var(--el-text-color-secondary); overflow-wrap: anywhere; }
 .pause-action {
   padding: 0;
   border: 0;
   background: none;
-  color: inherit;
+  color: var(--brand-link);
   font: inherit;
   text-decoration: underline;
   cursor: pointer;
@@ -230,7 +264,7 @@ function command(name: string | number | object) {
   line-height: var(--leading-xs);
   color: var(--el-text-color-regular);
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  flex-wrap: wrap;
 }
 .line.muted {
   color: var(--el-text-color-secondary);
@@ -247,6 +281,7 @@ function command(name: string | number | object) {
 }
 .point {
   min-width: 0;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -271,10 +306,10 @@ function command(name: string | number | object) {
   font-weight: var(--font-semibold);
 }
 .status.completed {
-  color: var(--el-color-success);
+  color: var(--el-color-success-text);
 }
 .status.failed {
-  color: var(--el-color-danger);
+  color: var(--el-color-danger-text);
 }
 .status.running {
   color: var(--brand-link);
@@ -289,7 +324,10 @@ function command(name: string | number | object) {
   gap: var(--spacing-sm);
   padding-top: var(--spacing-xs);
 }
+.result-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
+.no-result { color: var(--el-text-color-secondary); font-size: var(--text-xs); }
 .result {
+  min-height: 24px;
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs);

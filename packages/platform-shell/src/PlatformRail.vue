@@ -5,6 +5,8 @@ import type { PlatformAccount, PlatformApp, PlatformBrand, PlatformPreferences, 
 import { appIcon, ExternalLink } from "./icons";
 import PlatformAccountMenu from "./PlatformAccountMenu.vue";
 import PlatformBrandMark from "./PlatformBrandMark.vue";
+import { ElTooltip } from "element-plus";
+import { actionTooltipProps } from "@ontomato/foundation-ui/overlay";
 
 /**
  * The platform's own rail: the ground layer of the shell, with the expand control, every application in three sections
@@ -91,30 +93,32 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   <nav class="platform-rail" :class="{ collapsed }" :aria-label="labels.applications">
     <!-- Collapsed: the expand control alone. Expanded: the brand mark, the product name and the collapse control. -->
     <div v-if="collapsed" class="rail-brand">
+      <ElTooltip v-bind="actionTooltipProps" :content="labels.expandRail">
       <button
         type="button"
         class="rail-toggle"
         :aria-label="labels.expandRail"
-        :title="labels.expandRail"
         :aria-expanded="false"
         @click="toggle"
       >
         <PanelLeftOpen :size="16" aria-hidden="true" />
       </button>
+      </ElTooltip>
     </div>
     <div v-else class="rail-brand">
       <PlatformBrandMark :brand="markBrand" />
       <span class="brand-name">{{ brandName }}</span>
+      <ElTooltip v-bind="actionTooltipProps" :content="labels.collapseRail">
       <button
         type="button"
         class="rail-toggle"
         :aria-label="labels.collapseRail"
-        :title="labels.collapseRail"
         :aria-expanded="true"
         @click="toggle"
       >
         <PanelLeftClose :size="16" aria-hidden="true" />
       </button>
+      </ElTooltip>
     </div>
 
     <div class="rail-scroll">

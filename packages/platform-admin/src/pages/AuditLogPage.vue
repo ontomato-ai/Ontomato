@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from "vue";
-import { ElMessage } from "element-plus";
-import { RefreshCw, Search } from "lucide-vue-next";
+import { FileText, RefreshCw, Search } from "lucide-vue-next";
 import { usePlatformHost } from "../context";
 import { useI18n } from "vue-i18n";
 
@@ -21,6 +20,21 @@ interface AuditLog {
 
 const loading = ref(false);
 const logList = ref<AuditLog[]>([]);
+const loadError = ref(false);
+const detailOpen = ref(false);
+const selectedLog = ref<AuditLog>();
+let detailTrigger: HTMLElement | undefined;
+
+function openDetail(row: AuditLog, event: MouseEvent) {
+  detailTrigger = event.currentTarget as HTMLElement;
+  selectedLog.value = row;
+  detailOpen.value = true;
+}
+
+function restoreDetailFocus() {
+  detailTrigger?.focus();
+  detailTrigger = undefined;
+}
 
 const pageNum = ref(1);
 const pageSize = ref(20);
@@ -46,7 +60,9 @@ const operationTypes = [
 ];
 
 async function loadLogs() {
+  if (loading.value) return;
   loading.value = true;
+  loadError.value = false;
   try {
     const params: Record<string, any> = {
       pageNum: pageNum.value,
@@ -61,20 +77,23 @@ async function loadLogs() {
     const res = await api.queryAuditLogs(params);
     logList.value = res.data || [];
     total.value = res.totalRows || 0;
-  } catch (e: any) {
-    ElMessage.error(e.message || t("audit.loadFailed"));
+  } catch {
+    loadError.value = true;
     logList.value = [];
+    total.value = 0;
   } finally {
     loading.value = false;
   }
 }
 
 function handleSearch() {
+  if (loading.value) return;
   pageNum.value = 1;
   loadLogs();
 }
 
 function handlePageChange(page: number) {
+  if (loading.value) return;
   pageNum.value = page;
   loadLogs();
 }
@@ -119,13 +138,18 @@ onMounted(() => {
         />
       </el-select>
       </label>
-      <el-button type="primary" :icon="Search" @click="handleSearch">
+      <el-button type="primary" :icon="Search" :loading="loading" @click="handleSearch">
         {{ t("common.query") }}
       </el-button>
-      <el-button :icon="RefreshCw" @click="loadLogs">{{ t("common.refresh") }}</el-button>
+      <el-button :icon="RefreshCw" :disabled="loading" @click="loadLogs">{{ t("common.refresh") }}</el-button>
     </div>
 
+    <div v-if="loadError" class="audit-load-error" role="alert">
+      {{ t('audit.loadFailed') }}
+      <el-button @click="loadLogs">{{ t('common.retry') }}</el-button>
+    </div>
     <el-table
+      v-else
       v-loading="loading"
       :data="logList"
       border
@@ -161,15 +185,20 @@ onMounted(() => {
           <el-tag v-else>{{ row.operation }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column
-        prop="description"
-        :label="t('common.detail')"
-        min-width="300"
-        show-overflow-tooltip
-      />
+      <el-table-column prop="description" :label="t('common.detail')" min-width="240">
+        <template #default="{ row }">
+          <div v-if="row.description" class="audit-detail-cell">
+            <span class="audit-detail-preview" aria-hidden="true">{{ row.description }}</span>
+            <el-button link type="primary" :icon="FileText" aria-haspopup="dialog" @click="openDetail(row, $event)">
+              {{ t('common.detail') }}
+            </el-button>
+          </div>
+          <span v-else>—</span>
+        </template>
+      </el-table-column>
     </el-table>
 
-    <div class="pagination">
+    <div v-if="!loadError" class="pagination">
       <el-pagination
         background
         layout="total, prev, pager, next"
@@ -177,9 +206,22 @@ onMounted(() => {
         :total="total"
         :page-size="pageSize"
         :current-page="pageNum"
+        :disabled="loading"
         @current-change="handlePageChange"
       />
     </div>
+    <el-dialog
+      v-model="detailOpen"
+      :title="t('common.detail')"
+      width="min(640px, calc(100% - 2rem))"
+      destroy-on-close
+      @close-auto-focus="restoreDetailFocus"
+    >
+      <pre v-if="selectedLog" class="audit-detail-text" tabindex="0" role="region" :aria-label="t('common.detail')">{{ selectedLog.description }}</pre>
+      <template #footer>
+        <el-button @click="detailOpen = false">{{ t('common.close') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -209,6 +251,20 @@ onMounted(() => {
   font-size: var(--text-sm);
 }
 .audit-filter .el-select { width: 100%; }
+
+.audit-detail-cell { display: flex; align-items: center; gap: var(--spacing-sm); }
+.audit-detail-cell .el-button { flex: none; min-height: 24px; }
+.audit-detail-preview { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.audit-detail-text {
+  margin: 0;
+  max-block-size: 55dvh;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font: inherit;
+  line-height: var(--leading-relaxed);
+}
+.audit-load-error { color: var(--el-color-danger-text); display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
 
 .pagination {
   margin-top: var(--spacing-lg);

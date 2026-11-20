@@ -3,7 +3,7 @@ import { onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox, type UploadFile } from "element-plus";
 import { useI18n } from "vue-i18n";
-import { Download, Puzzle, Trash2, Upload } from "lucide-vue-next";
+import { Download, Trash2, Upload } from "lucide-vue-next";
 import type { SkillInfo } from "@ontomato/contracts/skills";
 import { PlatformPageHeader } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
@@ -103,16 +103,11 @@ async function upload(uploaded: UploadFile) {
       <ul v-else-if="skills.length" class="skill-grid">
         <li v-for="skill in skills" :key="skill.id" class="skill-card">
           <button type="button" class="card-open" @click="open(skill)">
-            <span class="card-head">
-              <Puzzle class="card-icon" :size="20" aria-hidden="true" />
-              <span class="card-name">{{ skill.title }}</span>
-              <el-tag size="small" :type="skill.writeRestriction ? 'info' : 'primary'" effect="plain" disable-transitions>
-                {{ skillSource(skill, t).label }}
-              </el-tag>
-            </span>
+            <span class="card-name" :title="skill.title">{{ skill.title }}</span>
             <span v-if="skill.description" class="card-description">{{ skill.description }}</span>
           </button>
           <span class="card-actions">
+            <span class="card-source">{{ skillSource(skill, t).label }}</span>
             <el-button size="small" text :icon="Download" @click="exportSkill(skill.id)">{{ t("common.export") }}</el-button>
             <!-- A skill the domain does not own (built-in, or a provider's) stays: its delete is there, greyed, and says why. -->
             <el-tooltip :disabled="!skill.writeRestriction" :content="skillSource(skill, t).noDelete ?? ''" placement="top">
@@ -162,7 +157,7 @@ async function upload(uploaded: UploadFile) {
 /* One card a skill: its name, where it came from and what it is for, its actions along the foot. */
 .skill-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
   gap: var(--spacing-md);
   margin: 0;
   padding: 0;
@@ -171,15 +166,14 @@ async function upload(uploaded: UploadFile) {
 .skill-card {
   display: flex;
   flex-direction: column;
-  min-height: 160px;
-  border: 1px solid var(--el-border-color-lighter);
+  min-width: 0;
+  border: 1px solid var(--el-border-color);
   border-radius: var(--radius-md);
-  background: var(--el-fill-color-blank);
-  transition: border-color var(--transition-fast), background-color var(--transition-fast);
+  background: var(--el-bg-color);
+  transition: border-color var(--transition-fast);
 }
 .skill-card:hover {
-  border-color: var(--el-border-color);
-  background: var(--el-fill-color-light);
+  border-color: var(--el-border-color-dark);
 }
 .card-open {
   display: flex;
@@ -187,7 +181,7 @@ async function upload(uploaded: UploadFile) {
   flex-direction: column;
   gap: var(--spacing-sm);
   width: 100%;
-  padding: var(--spacing-lg) var(--spacing-lg) var(--spacing-sm);
+  padding: var(--spacing-lg);
   border: 0;
   border-radius: var(--radius-md) var(--radius-md) 0 0;
   background: none;
@@ -200,39 +194,36 @@ async function upload(uploaded: UploadFile) {
   outline: 2px solid var(--el-color-primary);
   outline-offset: -2px;
 }
-.card-head {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  min-width: 0;
-}
-.card-icon {
-  flex: 0 0 auto;
-  color: var(--el-color-primary);
-}
 .card-name {
-  flex: 1;
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--text-base);
-  font-weight: var(--font-semibold);
+  font-size: var(--text-lg);
+  line-height: var(--leading-lg);
+  font-weight: var(--font-medium);
 }
 .card-description {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   color: var(--el-text-color-secondary);
   font-size: var(--text-sm);
   line-height: var(--leading-sm);
 }
 .card-actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 2px;
-  padding: 0 var(--spacing-sm) var(--spacing-sm);
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-sm) var(--spacing-sm) var(--spacing-lg);
+  border-block-start: 1px dashed var(--el-border-color);
+}
+.card-source {
+  margin-inline-end: auto;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  overflow-wrap: anywhere;
 }
 .card-actions :deep(.el-button) {
   margin: 0;

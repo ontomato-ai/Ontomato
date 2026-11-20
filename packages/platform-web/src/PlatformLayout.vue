@@ -89,9 +89,9 @@ function selectMenuPage(path:string){
  * an application of one page is named by its own header (the object browser). A page that draws its own header (the
  * ontology manager's, the external MCP services) is left to draw it, so no page has two.
  */
-const headerTitle = computed(() => (menu.value ? (props.shownPage?.title ?? "") : (activeApp.value?.label ?? "")));
+const headerTitle = computed(() => (menu.value ? props.shownPage?.title : activeApp.value?.label) ?? props.shownPage?.title ?? "");
 const headerDescription = computed(() =>
-  menu.value ? (props.shownPage?.description ?? null) : (activeApp.value?.description ?? null),
+  (menu.value ? props.shownPage?.description : activeApp.value?.description) ?? props.shownPage?.description ?? null,
 );
 const headerShown = computed(() => !props.blocked && props.shownPage !== null && !props.shownPage.ownHeader);
 const headerLabels = computed(() => ({

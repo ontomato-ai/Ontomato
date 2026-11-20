@@ -13,16 +13,40 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Product controls use their existing border and background states rather than an additional outline. */
-*,
-*::before,
-*::after {
-  outline: none !important;
-  outline-offset: 0 !important;
+:where(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
 }
 
 .el-overlay {
   background-color: var(--el-overlay-color-lighter);
+}
+
+/* Match the tooltip surface and motion across pages, including teleported hints. */
+html:root .el-popper.el-tooltip[role="tooltip"]:not(.el-select__popper, .el-dropdown__popper, .el-popover, .el-cascader__dropdown) {
+  max-width: min(320px, calc(100vw - 16px));
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 0 !important;
+  border-radius: var(--radius-sm);
+  background: var(--el-bg-color-overlay) !important;
+  color: var(--el-text-color-secondary) !important;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 4%), 0 2px 4px rgb(0 0 0 / 2%), 0 0 0 1px var(--el-border-color) !important;
+  backdrop-filter: none !important;
+  font-size: var(--text-xs) !important;
+  line-height: 1.2 !important;
+  overflow-wrap: anywhere;
+  transition-property: opacity;
+}
+html:root .el-popper.el-tooltip:not(.el-select__popper, .el-dropdown__popper, .el-popover, .el-cascader__dropdown) > .el-popper__arrow { display: none; }
+html:root .el-popper.el-tooltip.el-fade-in-linear-enter-active {
+  transition: opacity 160ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+html:root .el-popper.el-tooltip.el-fade-in-linear-leave-active { transition: opacity 100ms ease-in; }
+.el-popper.el-tooltip:is(.el-fade-in-linear-enter-from, .el-fade-in-linear-leave-to) {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  html:root .el-popper.el-tooltip:is(.el-fade-in-linear-enter-active, .el-fade-in-linear-leave-active) { transition: none; }
 }
 
 html.dark .el-loading-mask {
@@ -124,6 +148,21 @@ html.dark .el-loading-mask {
 .dialog-close { display: grid; place-items: center; width: var(--control-height-sm); height: var(--control-height-sm); padding: 0; border: 0; border-radius: var(--radius-sm); color: var(--el-text-color-secondary); background: transparent; cursor: pointer; transition: background-color var(--transition-fast), color var(--transition-fast); }
 .dialog-close:hover { color: var(--el-text-color-primary); background: var(--el-fill-color-light); }
 .dialog-close:active { background: var(--el-fill-color); }
+
+/* Overlay close icons are neutral controls, including in portaled overlays. */
+:root :is(.el-dialog__headerbtn, .el-message-box__headerbtn, .el-drawer__close-btn) {
+  color: var(--el-text-color-secondary);
+}
+:root :is(.el-dialog__headerbtn, .el-message-box__headerbtn, .el-drawer__close-btn):is(:hover, :focus-visible) {
+  color: var(--el-text-color-primary);
+}
+:root :is(.el-dialog__headerbtn, .el-message-box__headerbtn, .el-drawer__close-btn):focus-visible {
+  outline: 2px solid var(--el-text-color-secondary);
+  outline-offset: -4px;
+}
+html:root :is(.el-dialog__headerbtn, .el-message-box__headerbtn, .el-drawer__close-btn) > .el-icon {
+  color: inherit;
+}
 
 :is(.el-dialog, .el-message-box, .el-drawer) .el-button:not(.el-button--primary, .el-button--danger, .el-button--success, .el-button--warning, .el-button--info, .is-text, .is-link) {
   --el-button-hover-text-color: var(--el-text-color-primary);

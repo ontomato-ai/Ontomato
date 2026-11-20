@@ -6,10 +6,26 @@ defineProps<{
   label: string;
 }>();
 const emit = defineEmits<{ select: [id: string] }>();
+
+function move(event: KeyboardEvent) {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  const tab = event.target as HTMLElement;
+  const list = tab.closest('[role="tablist"]');
+  if (!list || tab.getAttribute('role') !== 'tab') return;
+  const buttons = [...list.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+  const index = buttons.indexOf(tab as HTMLButtonElement);
+  const rtl = getComputedStyle(list).direction === 'rtl';
+  const step = (event.key === 'ArrowRight' ? 1 : -1) * (rtl ? -1 : 1);
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + step + buttons.length) % buttons.length;
+  event.preventDefault();
+  buttons[next]?.focus();
+  buttons[next]?.click();
+  buttons[next]?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+}
 </script>
 
 <template>
-  <div class="page-tabs-bar" role="tablist" :aria-label="label">
+  <div class="page-tabs-bar" role="tablist" :aria-label="label" @keydown="move">
     <button
       v-for="tab in tabs"
       :key="tab.id"
@@ -17,7 +33,8 @@ const emit = defineEmits<{ select: [id: string] }>();
       role="tab"
       class="page-tab"
       :class="{ active: tab.id === activeId }"
-      :aria-selected="tab.id === activeId"
+       :aria-selected="tab.id === activeId"
+       :tabindex="tab.id === (activeId ?? tabs[0]?.id) ? 0 : -1"
       @click="tab.id !== activeId && emit('select', tab.id)"
     ><component :is="tab.icon" v-if="tab.icon" :size="16" aria-hidden="true"/>{{ tab.label }}</button>
   </div>

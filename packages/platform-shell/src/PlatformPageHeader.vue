@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { PlatformPageAction, PlatformPageDraft } from "./page-actions";
+import { ElTooltip } from "element-plus";
+import { actionTooltipProps } from "@ontomato/foundation-ui/overlay";
 
 /**
  * The one page header every page of the platform uses (DESIGN.md "Page architecture"): one row in the page gutter, the
@@ -49,19 +51,30 @@ const emit = defineEmits<{ discard: []; save: [] }>();
         <span v-if="draft?.dirty" class="unsaved" role="status">{{ labels.unsavedChanges }}</span>
         <!-- A page's own buttons, when it hands over markup rather than a list of actions. -->
         <slot name="actions" />
-        <button
-          v-for="action in actions ?? []"
-          :key="action.id"
-          type="button"
-          class="action"
-          :class="action.primary ? 'primary' : action.danger ? 'danger' : 'secondary'"
-          :disabled="action.disabled || action.loading"
-          :aria-busy="action.loading || undefined"
-          @click="action.onClick()"
-        >
-          <component :is="action.icon" v-if="action.icon" :size="16" aria-hidden="true" />
-          <span>{{ action.label }}</span>
-        </button>
+        <template v-for="action in actions ?? []" :key="action.id">
+          <ElTooltip
+            v-if="action.iconOnly && action.icon && !action.primary && !action.danger"
+            :content="action.label"
+            v-bind="actionTooltipProps"
+          >
+            <button type="button" class="action secondary icon-action" :aria-label="action.label"
+              :disabled="action.disabled || action.loading" :aria-busy="action.loading || undefined" @click="action.onClick()">
+              <component :is="action.icon" :size="16" aria-hidden="true" />
+            </button>
+          </ElTooltip>
+          <button
+            v-else
+            type="button"
+            class="action"
+            :class="action.primary ? 'primary' : action.danger ? 'danger' : 'secondary'"
+            :disabled="action.disabled || action.loading"
+            :aria-busy="action.loading || undefined"
+            @click="action.onClick()"
+          >
+            <component :is="action.icon" v-if="action.icon" :size="16" aria-hidden="true" />
+            <span>{{ action.label }}</span>
+          </button>
+        </template>
         <button
           v-if="draft?.dirty"
           type="button"
@@ -163,6 +176,15 @@ const emit = defineEmits<{ discard: []; save: [] }>();
   background: var(--el-bg-color);
   color: var(--el-text-color-regular);
 }
+.action.icon-action {
+  justify-content: center;
+  width: var(--control-height);
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--el-text-color-secondary);
+}
+.action.icon-action:disabled { color: var(--el-disabled-text-color); }
 .action.primary {
   border: 1px solid var(--el-color-primary);
   background: var(--el-color-primary);

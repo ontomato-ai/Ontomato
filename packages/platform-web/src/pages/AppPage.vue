@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { PlatformPageHeader } from "@ontomato/platform-shell";
-import type { Component } from "vue";
+import { PlatformPageHeader, type PlatformPageAction } from "@ontomato/platform-shell";
 
 /**
  * A page application's frame: the platform's one page header, then the page.
@@ -15,8 +14,9 @@ withDefaults(
   defineProps<{
     title: string;
     description?: string | null;
+    navigationHeader?: boolean;
     /** The page's own buttons at the right of the title row. */
-    actions?: readonly { id: string; label: string; primary?: boolean; icon?: Component; disabled?:boolean; loading?:boolean; onClick: () => void }[];
+    actions?: readonly PlatformPageAction[];
     /** The header's own words, from the host's i18n. */
     labels: { save: string; discard: string; unsavedChanges: string };
   }>(),
@@ -26,7 +26,7 @@ withDefaults(
 
 <template>
   <div class="app-page">
-    <PlatformPageHeader :title="title" :description="description" :actions="actions" :labels="labels" />
+    <PlatformPageHeader :class="{ 'app-navigation-header': navigationHeader }" :title="title" :description="description" :actions="actions" :labels="labels" />
     <div class="app-page-body platform-page-gutter">
       <slot />
     </div>
@@ -56,4 +56,14 @@ withDefaults(
   padding-block: var(--page-content-gap) var(--spacing-xl);
   container: platform-page / inline-size;
 }
+.app-page > .app-navigation-header {
+  padding-block: var(--spacing-xs);
+  border-bottom: 0;
+}
+.app-navigation-header :deep(.header-row) {
+  min-height: var(--page-header-height);
+  justify-content: flex-end;
+}
+.app-navigation-header :deep(.header-text:empty) { display: none; }
+.app-navigation-header :deep(.page-actions) { gap: var(--spacing-xs); }
 </style>

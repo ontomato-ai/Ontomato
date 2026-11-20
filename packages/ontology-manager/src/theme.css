@@ -298,8 +298,9 @@
   overflow: hidden;
 }
 
-:where(.ontology-manager) .el-table.admin-table::before {
-  height: 0;
+:where(.ontology-manager) .el-table.admin-table::before,
+:where(.ontology-manager) .el-table.admin-table:not(.el-table--border) > .el-table__inner-wrapper::before {
+  display: none;
 }
 
 :where(.ontology-manager) .el-table.admin-table th.el-table__cell {

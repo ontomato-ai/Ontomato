@@ -9,6 +9,7 @@ import ShellComposer from "./ShellComposer.vue";
 import ShellQuestions from "./ShellQuestions.vue";
 import ShellResponse from "./ShellResponse.vue";
 import ShellMarkdown from "./ShellMarkdown.vue";
+import AgentAvatar from "./AgentAvatar.vue";
 
 const props = defineProps<{
   items: ConversationItem[];
@@ -224,6 +225,10 @@ async function send(text: string) {
   <div class="conversation">
     <div v-if="empty" class="empty">
       <div class="empty-inner">
+        <div v-if="agent" class="empty-agent">
+          <AgentAvatar :icon="agent.icon" :size="36" />
+          <span>{{ agent.name }}</span>
+        </div>
         <h1 class="greeting">{{ labels.greeting }}</h1>
         <p v-if="agent?.description" class="agent-description">{{ agent.description }}</p>
         <ShellQuestions />
@@ -315,6 +320,8 @@ async function send(text: string) {
   width: min(100%, 720px);
   margin-top: -8vh;
 }
+.empty-agent { display: flex; align-items: center; justify-content: center; gap: var(--spacing-sm); margin-bottom: var(--spacing-md); color: var(--el-text-color-secondary); font-size: var(--text-sm); }
+.empty-agent span:last-child { min-width: 0; overflow-wrap: anywhere; }
 .greeting {
   margin: 0 0 8px;
   text-align: center;

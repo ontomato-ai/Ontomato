@@ -764,6 +764,27 @@ describe("Manager pages in the service router", () => {
     expect(views.at(-1)).toBe("/ontology/playground");
   });
 
+  it("retries a failed table read in place for the same object type", async () => {
+    const { root } = mountHost({ ...base, view: "/browser/data/Item" });
+    await settle();
+    const tablePath = "/data/getWholeClassDataByPage";
+    statusFor = (path) => path === tablePath ? 500 : 200;
+    (root().querySelectorAll<HTMLElement>(".data-browser-toolbar .el-segmented__item")[1]!).click();
+    await settle();
+    const feedback = () => root().querySelector<HTMLElement>(".table-feedback");
+    expect(feedback()?.querySelector('[role="alert"]')?.textContent).toBe("Load Data Failed");
+
+    statusFor = () => 200;
+    feedback()!.querySelector("button")!.click();
+    await settle();
+    expect(feedback()?.querySelector('[role="alert"]')).toBeFalsy();
+    expect(requests.filter(request => request.url.endsWith(tablePath)).map(request => request.body)).toEqual([
+      { classname: "Item", pagenum: 1, pagecount: 20 },
+      { classname: "Item", pagenum: 1, pagecount: 20 },
+    ]);
+    expect(root().querySelector(".el-table__body-wrapper")?.textContent).toContain("row-1");
+  });
+
   it("the frame follows the page theme and neither reads nor changes html.dark", async () => {
     const { host, root } = mountHost({ ...base, theme: "dark" });
     await settle();

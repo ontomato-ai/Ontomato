@@ -21,7 +21,7 @@ import {
   vLoading,
 } from "element-plus";
 import { useManagerFeedback } from "../feedback";
-import { Filter, Download, Plus, Trash2, Search, Settings2 } from "lucide-vue-next";
+import { Filter, Download, Plus, Trash2, Search, Settings2, RefreshCw } from "lucide-vue-next";
 import type { ObjectReference } from "@ontomato/contracts/object-views";
 import { businessNameAttribute, instanceName } from "../object-views/instance-name";
 import { useManagerClient, useOntologyText, useSharedText } from "../context";
@@ -76,6 +76,7 @@ const pageNum = ref(1);
 const pageSize = ref(20);
 const total = ref(0);
 const loading = ref(false);
+const tableError = ref(false);
 const viewMode = ref<"table" | "graph">("graph");
 
 const viewModeOptions = computed(() => [
@@ -259,16 +260,18 @@ async function loadClassList() {
       selectedClass.value =
         classList.value.find((item) => item.className === props.initialClass)?.className ||
         classList.value[0].className;
-      if (viewMode.value === "table") void loadData();
     }
   } catch (e: any) {
     message.error(e.message || t("dataBrowser.loadClassFailed"));
   }
 }
 
+let tableRequest = 0;
 async function loadData() {
   if (!selectedClass.value) return;
+  const request = ++tableRequest;
   loading.value = true;
+  tableError.value = false;
   try {
     const { rows, total: totalCount } = await loadObjectData(
       selectedClass.value,
@@ -276,29 +279,31 @@ async function loadData() {
       pageSize.value,
       searchQuery.value.trim() || undefined
     );
+    if (request !== tableRequest) return;
     dataList.value = rows;
     total.value = totalCount;
-    columnVisibility.value = {};
-    pendingColumnVisibility.value = {};
-    filterConditions.value = [];
-    appliedFilterConditions.value = [];
-    sortField.value = "";
-    sortOrder.value = "";
-    appliedSortField.value = "";
-    appliedSortOrder.value = "";
-  } catch (e: any) {
-    message.error(e.message || t("dataBrowser.loadDataFailed"));
+  } catch {
+    if (request !== tableRequest) return;
+    tableError.value = true;
     dataList.value = [];
     total.value = 0;
   } finally {
-    loading.value = false;
+    if (request === tableRequest) loading.value = false;
   }
 }
 
-function handleClassChange() {
+function resetClassState() {
+  ++tableRequest;
+  loading.value = false;
+  tableError.value = false;
+  dataList.value = [];
+  total.value = 0;
   pageNum.value = 1;
   searchQuery.value = "";
-  loadData();
+  columnVisibility.value = {};
+  pendingColumnVisibility.value = {};
+  clearAllFilters();
+  filterDrawerVisible.value = false;
 }
 
 function handleSearch() {
@@ -310,6 +315,11 @@ function handleSearchClear() {
   searchQuery.value = "";
   pageNum.value = 1;
   loadData();
+}
+
+function resetTableQuery() {
+  clearAllFilters();
+  handleSearchClear();
 }
 
 function handlePageChange(p: number) {
@@ -353,11 +363,14 @@ onMounted(() => {
 });
 
 watch(selectedClass, (className) => {
+  resetClassState();
   if (className) emit("classChange", className);
-});
+  if (viewMode.value === "table") void loadData();
+}, { flush: "sync" });
 
 watch(viewMode, (mode) => {
   if (mode === "table") void loadData();
+  else filterDrawerVisible.value = false;
 });
 
 watch(
@@ -365,8 +378,6 @@ watch(
   (className) => {
     if (!className || !classList.value.some((item) => item.className === className)) return;
     selectedClass.value = className;
-    pageNum.value = 1;
-    if (viewMode.value === "table") void loadData();
   }
 );
 </script>
@@ -380,7 +391,7 @@ watch(
         <div class="data-browser-filters">
           <el-select
             v-model="selectedClass" :placeholder="t('common.selectObjectClass')"
-            :aria-label="t('common.selectObjectClass')" class="class-selector" filterable @change="handleClassChange">
+            :aria-label="t('common.selectObjectClass')" class="class-selector" filterable>
             <el-option v-for="cls in classList" :key="cls.className" :label="cls.showName" :value="cls.className" />
           </el-select>
           <el-input
@@ -392,14 +403,14 @@ watch(
           {{ t("dataBrowser.filterCount", { n: appliedFilterConditions.length }) }}
         </el-tag>
         <div class="data-browser-actions">
-          <el-button :icon="Settings2" :disabled="!selectedClass" :aria-label="ot('ovConfigure')" @click="emit('configureView', selectedClass)">{{ ot('ovConfigure') }}</el-button>
+          <el-button text :icon="Settings2" :disabled="!selectedClass" :aria-label="ot('ovConfigure')" :title="ot('ovConfigure')" @click="emit('configureView', selectedClass)">{{ ot('ovConfigure') }}</el-button>
           <el-button
-            :icon="Filter" :title="t('dataBrowser.advancedFilter')"
+            text :icon="Filter" :title="t('dataBrowser.advancedFilter')"
             :aria-label="t('dataBrowser.advancedFilter')" @click="openFilterDrawer">
             <span class="action-label">{{ t('dataBrowser.advancedFilter') }}</span>
           </el-button>
           <el-dropdown>
-            <el-button :icon="Download" :title="t('common.export')" :aria-label="t('common.export')">
+            <el-button text :icon="Download" :title="t('common.export')" :aria-label="t('common.export')">
               <span class="action-label">{{ t('common.export') }}</span>
             </el-button>
             <template #dropdown>
@@ -420,11 +431,22 @@ watch(
     <el-table
       v-loading="loading"
       :data="filteredData"
-      border
       class="admin-table"
       height="100%"
       @row-dblclick="openObject"
     >
+      <template #empty>
+        <div v-if="!loading" class="table-feedback">
+          <template v-if="tableError">
+            <span role="alert">{{ t('dataBrowser.loadDataFailed') }}</span>
+            <el-button text :icon="RefreshCw" @click="loadData">{{ t('common.refresh') }}</el-button>
+          </template>
+          <template v-else>
+            <span role="status">{{ selectedClass ? ot('productNoRecordsInScope') : t('common.selectObjectClass') }}</span>
+            <el-button v-if="searchQuery.trim() || appliedFilterConditions.length" text @click="resetTableQuery">{{ t('dataBrowser.clearAll') }}</el-button>
+          </template>
+        </div>
+      </template>
       <el-table-column type="index" width="50" />
       <el-table-column :label="currentClassAttrs.find(attr => attr.name === titleAttribute?.name)?.showName || ot('ovTitle')" min-width="180" fixed="left">
         <template #default="scope"><el-button type="primary" link @click="openObject(scope.row)">{{ instanceName(currentClassAttrs, scope.row) }}</el-button></template>
@@ -525,7 +547,7 @@ watch(
       </template>
       </el-drawer>
     </template>
-    <InstanceGraph v-else :summary-target="graphSummaryTarget" @open-object="emit('openObject', $event)" />
+    <InstanceGraph v-show="viewMode === 'graph'" :summary-target="graphSummaryTarget" @open-object="emit('openObject', $event)" />
   </div>
 </template>
 
@@ -583,6 +605,7 @@ watch(
   min-width: 0;
   margin-top: var(--manager-content-gap);
 }
+.table-feedback { display: grid; justify-items: center; gap: var(--spacing-sm); padding: var(--spacing-xl) var(--spacing-md); line-height: var(--leading-base); }
 
 .data-browser-filters {
   display: flex;
@@ -617,17 +640,6 @@ watch(
 
 .data-browser-actions :deep(.el-button) {
   margin: 0;
-}
-
-.data-browser-table > :deep(.el-table) {
-  width: 100%;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-md);
-}
-
-.data-browser-table > :deep(.el-table)::before,
-.data-browser-table > :deep(.el-table .el-table__inner-wrapper)::before {
-  display: none;
 }
 
 .pagination {

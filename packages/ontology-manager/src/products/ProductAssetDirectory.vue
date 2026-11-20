@@ -89,7 +89,10 @@ onBeforeUnmount(()=>{clearTimeout(timer);generation++;});
 <template>
   <section class="product-directory">
     <PlatformPageHeader :title="ot('productDirectoryTitle')" :description="ot('productDirectoryDescription')"><template #actions><el-dropdown placement="bottom-end" :popper-options="dropdownBoundaryOptions" @command="(kind:string)=>emit('create',kind)"><el-button type="primary">{{ot('productCreateAsset')}}</el-button><template #dropdown><el-dropdown-menu><template v-for="(group,index) in creationGroups" :key="group.id"><el-dropdown-item disabled :divided="index>0">{{group.name}}</el-dropdown-item><el-dropdown-item v-for="type in group.types" :key="type.kind" :command="type.kind"><component :is="productIcons[type.kind]" :size="16" class="type-icon"/>{{type.name}}</el-dropdown-item></template></el-dropdown-menu></template></el-dropdown></template></PlatformPageHeader>
-    <div class="directory-types"><PlatformTabs :tabs="categoryTabs" :active-id="activeCategory" :label="ot('productAssetLayers')" @select="changeCategory"/><PlatformTabs :tabs="categoryTypeTabs" :active-id="activeKind" :label="ot('productAssetTypes')" @select="changeKind"/></div>
+    <div class="directory-types">
+      <PlatformTabs class="directory-layer-tabs" :tabs="categoryTabs" :active-id="activeCategory" :label="ot('productAssetLayers')" @select="changeCategory" />
+      <PlatformTabs class="directory-kind-tabs" :tabs="categoryTypeTabs" :active-id="activeKind" :label="ot('productAssetTypes')" @select="changeKind" />
+    </div>
     <div class="directory-overview"><div class="type-description" :title="categoryDescription"><strong>{{activeType.name}}</strong><span>{{activeType.description}}</span></div><div class="directory-tools"><el-button :loading="synchronizing" @click="synchronize">{{ot('productSyncPlatformAssets')}}</el-button><el-button :loading="graphLoading" @click="showGraph">{{ot('productAssetGraph')}}</el-button><el-button :loading="warningsLoading" :title="ot('productCheckDefaultsHint')" @click="checkDefaults">{{ot('productCheckDefaults')}}</el-button></div></div>
     <ProductGraphDialog v-if="graph" v-model="graphOpen" :graph="graph" @open="open"/>
     <div v-if="graphError" class="directory-graph"><el-alert :title="graphError" type="error" closable @close="graphError=''"/></div>
@@ -120,7 +123,51 @@ onBeforeUnmount(()=>{clearTimeout(timer);generation++;});
 .asset-date{white-space:nowrap;font-variant-numeric:tabular-nums}
 .product-directory{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}.directory-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:var(--manager-control-gap);padding:var(--manager-content-gap) var(--page-gutter);flex-shrink:0}.directory-toolbar>.el-input{width:260px}.directory-toolbar>.el-select{width:160px}.result-count{margin-inline-start:auto;color:var(--el-text-color-secondary);font-size:var(--text-xs)}.directory-error{margin:0 var(--page-gutter) var(--manager-content-gap);width:auto}.directory-table{flex:1;min-height:0;overflow:auto;margin:0 var(--page-gutter);border:1px solid var(--el-border-color);border-radius:var(--radius-md)}.asset-name{display:flex;align-items:center;gap:var(--manager-control-gap);border:0;background:none;color:var(--el-text-color-primary);font:inherit;text-align:start;width:100%;cursor:pointer;padding:var(--spacing-xs) 0}.asset-name>svg{flex-shrink:0;color:var(--el-text-color-secondary)}.asset-name>span{min-width:0}.asset-name strong,.asset-name small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60ch}.asset-name strong{font-weight:var(--font-semibold)}.asset-name small{font-size:var(--text-xs);color:var(--el-text-color-secondary);margin-top:var(--manager-label-gap)}.asset-name:focus-visible{outline:2px solid var(--el-color-primary)}.type-icon{margin-inline-end:var(--spacing-sm)}footer{display:flex;justify-content:flex-end;flex-shrink:0;padding:var(--manager-content-gap) var(--page-gutter);overflow-x:auto}.directory-table :deep(.el-table__row){cursor:pointer}@container ontology-manager (max-width:760px){.result-count{display:none}.directory-toolbar>.el-input{flex:1 1 200px}footer{justify-content:flex-start}}
 /* Match the Manager catalogs: one gutter, 16px content gaps and 8px control gaps. */
-.directory-types{padding-top:var(--manager-control-gap)}
+.directory-types {
+  display: grid;
+  gap: var(--spacing-sm);
+  min-width: 0;
+  padding-block-start: var(--spacing-md);
+}
+.directory-types :deep(.page-tabs-bar) {
+  gap: var(--spacing-xs);
+  max-width: 100%;
+  padding: var(--spacing-xs);
+  border-bottom: 0;
+  scrollbar-width: thin;
+}
+.directory-types :deep(.directory-layer-tabs) {
+  width: max-content;
+  box-sizing: border-box;
+  border-radius: var(--radius-md);
+  background: var(--el-fill-color-light);
+}
+.directory-types :deep(.directory-kind-tabs) { padding-inline: 0; }
+.directory-types :deep(.page-tab) {
+  height: var(--control-height-sm);
+  gap: var(--spacing-xs);
+  padding-inline: var(--spacing-sm);
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+.directory-types :deep(.page-tab:not(.active):hover) {
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
+}
+.directory-types :deep(.directory-layer-tabs .page-tab.active) {
+  background: var(--el-bg-color-overlay);
+  color: var(--el-text-color-primary);
+  box-shadow: var(--elevation-panel);
+  font-weight: var(--font-semibold);
+}
+.directory-types :deep(.directory-kind-tabs .page-tab.active) {
+  background: var(--el-color-primary-light-9);
+  color: var(--brand-link);
+  font-weight: var(--font-medium);
+}
 .type-description small{flex-basis:100%;color:var(--el-text-color-secondary);font-size:var(--text-xs)}
 .product-directory{font-size:var(--text-sm);line-height:var(--leading-sm)}
 .directory-overview .type-description{padding:0;min-width:0;flex:1 1 320px;gap:var(--manager-control-gap);line-height:var(--leading-sm)}

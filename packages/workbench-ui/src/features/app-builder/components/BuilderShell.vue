@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, shallowRef, watch, watchEffect } from "
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { PanelRightOpen } from "lucide-vue-next";
 import {
   AgentShell,
   ShellColumn,
@@ -177,7 +178,7 @@ const display = useConversationDisplay({
   feature: (id) => (id === PANEL_ID ? panelPage : null),
   context: () => pageContext.value,
   leave: { leaves: (address) => leave.leaves(address ?? ""), confirm: () => leave.confirm() },
-  initial: { page: panelPage, view: "side" },
+  initial: globalThis.matchMedia?.("(max-width: 1100px)").matches ? undefined : { page: panelPage, view: "side" },
 });
 const tab = ref<PanelTab>("preview");
 const file = ref<string | null>(null);
@@ -431,6 +432,9 @@ const columnEvents = {
           @select="openConversation($event, null)"
           @create="createWorkspace"
         />
+        <el-button v-if="!pageOpen && !display.target.value" text size="small" :icon="PanelRightOpen" @click="openPage('preview')">
+          {{ t("appBuilder.panel") }}
+        </el-button>
         <ComposerContext
           :page-open="pageOpen"
           :inline="inline"
@@ -471,7 +475,7 @@ const columnEvents = {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  gap: 6px;
+  gap: var(--spacing-xs);
   min-width: 0;
 }
 .composer-line.inline {

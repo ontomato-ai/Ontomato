@@ -22,7 +22,8 @@ import {
   Eye,
 } from "lucide-vue-next";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
-import { ElButton, ElPopover, ElSelect, ElOption, ElCheckbox, ElSwitch, ElSelectV2, vLoading } from "element-plus";
+import { ElButton, ElPopover, ElSelect, ElOption, ElCheckbox, ElSwitch, ElSelectV2, ElTooltip, vLoading } from "element-plus";
+import { actionTooltipProps } from "@ontomato/foundation-ui/overlay";
 import { useManagerFeedback } from "../feedback";
 import type { InstanceGraphEdge, InstanceGraphNode, InstanceGraphStatus, InstanceGraphSummary } from "../api";
 import { useManagerClient, useManagerContext, useOntologyText, useSharedText } from "../context";
@@ -56,6 +57,7 @@ const { loadInstanceGraphSummary, loadInstanceGraphConnections, searchInstanceGr
   useManagerClient();
 
 const graphRef = ref<HTMLDivElement | null>(null);
+const statisticsButton = ref<HTMLButtonElement | null>(null);
 const loading = ref(false);
 const connectionsLoading = ref(false);
 const error = ref("");
@@ -164,6 +166,7 @@ function nodeOptions(colors: ReturnType<typeof graphColors>) {
       lineWidth: 4,
       shadowColor: colors.shadow,
       shadowBlur: largeGraph.value ? 0 : 10,
+      label: !overview.value,
       labelText: (datum: any) => datum.data?.anchor ? "" : instanceGraphNodeLabel(datum.data.node.name, datum.id),
       labelFill: colors.text,
       labelFontSize: 12,
@@ -173,7 +176,7 @@ function nodeOptions(colors: ReturnType<typeof graphColors>) {
       cursor: "pointer" as const,
     },
     state: {
-      selected: { stroke: colors.primary, lineWidth: 5 },
+      selected: { stroke: colors.primary, lineWidth: 5, label: true },
     },
   };
 }
@@ -486,9 +489,15 @@ function updateClassGroups() {
     if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])) continue;
     const points = groups.get(node.class) || [];
     points.push({ x: point[0], y: point[1] }); groups.set(node.class, points);
-    const halfWidth = Math.max(18, textWidth(instanceGraphNodeLabel(node.name, node.id), 12) / 2) * zoom;
+    const named = node.id === selectedNode.value?.id;
+    const halfWidth = (named ? Math.max(18, textWidth(instanceGraphNodeLabel(node.name, node.id), 12) / 2) : 18) * zoom;
     instances.push({ x: point[0] - halfWidth, y: point[1] - 18 * zoom,
-      width: halfWidth * 2, height: 58 * zoom });
+      width: halfWidth * 2, height: (named ? 58 : 36) * zoom });
+  }
+  const toolbar = graphRef.value.closest('.instance-graph')?.querySelector('.graph-toolbar')?.getBoundingClientRect();
+  if (toolbar?.width && toolbar.height) {
+    const viewport = graphRef.value.getBoundingClientRect();
+    instances.push({ x: toolbar.left - viewport.left, y: toolbar.top - viewport.top, width: toolbar.width, height: toolbar.height });
   }
   classGroups.value = overviewClassHeadings([...groups].map(([name, points]) => {
     const label = classLabels.value[name] || name;
@@ -498,7 +507,7 @@ function updateClassGroups() {
     const left = Math.min(...points.map(p => p.x));
     const right = Math.max(...points.map(p => p.x));
     const top = Math.min(...points.map(p => p.y)) - 18 * zoom;
-    const bottom = Math.max(...points.map(p => p.y)) + 40 * zoom;
+    const bottom = Math.max(...points.map(p => p.y)) + 18 * zoom;
     return { name, bounds: { x: left, y: top, width: right - left, height: bottom - top }, width, height: 26 };
   }), instances, { x: 8, y: 8, width: graphRef.value.clientWidth - 16, height: graphRef.value.clientHeight - 16 });
 }
@@ -856,13 +865,14 @@ onBeforeUnmount(() => {
       <div v-if="summary && overview" class="sample-legend class-groups" :aria-label="t('nav.objectTypes')">
         <div v-for="group in classGroups" :key="group.name" class="class-group"
           :style="{ left: `${group.x}px`, top: `${group.y}px`, width: `${group.width}px`, height: `${group.height}px`, '--group-color': colorForClass(group.name) }">
-        <button
-          :title="`${classLabels[group.name] || group.name} · ${classCount(group.name, nodes.filter(node => node.class === group.name).length)}`"
+        <ElTooltip v-bind="actionTooltipProps" placement="top" :content="classLabels[group.name] || group.name">
+        <button type="button"
           :class="{ 'is-selected': selectedClass === group.name }" :aria-pressed="selectedClass === group.name"
           @click.stop="chooseClass(group.name)">
           <span class="legend-label">{{ classLabels[group.name] || group.name }}</span>
           <span class="legend-count">{{ classCount(group.name, nodes.filter(node => node.class === group.name).length) }}</span>
         </button>
+        </ElTooltip>
         </div>
       </div>
     </div>
@@ -935,7 +945,7 @@ onBeforeUnmount(() => {
         <span v-if="connectionsLoading && overview" class="summary-counts" role="status">{{ ot('instanceGraphGenerating') }}</span>
         <el-popover trigger="click" :width="300" :teleported="false" placement="bottom-start">
           <template #reference>
-            <button class="summary-info" :title="ot('instanceGraphStatistics')" :aria-label="ot('instanceGraphStatistics')"><Info :size="15" /></button>
+            <button ref="statisticsButton" type="button" class="summary-info" :aria-label="ot('instanceGraphStatistics')"><Info :size="15" aria-hidden="true" /></button>
           </template>
           <div class="summary-details">
             <strong>{{ ot('instanceGraphStatistics') }}</strong>
@@ -945,6 +955,7 @@ onBeforeUnmount(() => {
             <span v-if="overview && summary.overviewEdgesTruncated" class="graph-warning">{{ ot('instanceGraphSampleEdgesLimited') }}</span>
           </div>
         </el-popover>
+        <ElTooltip v-if="statisticsButton" v-bind="actionTooltipProps" virtual-triggering :virtual-ref="statisticsButton" :content="ot('instanceGraphStatistics')" />
       </div>
       <small v-if="overview && summary.overviewEdgesTruncated" class="graph-warning">{{ ot('instanceGraphSampleEdgesLimited') }}</small>
       <small v-if="summary.complete === false" role="alert" class="graph-warning">{{ ot('instanceGraphPartial', { failures: (summary.failures || []).join(', ') }) }}</small>
@@ -1337,7 +1348,7 @@ onBeforeUnmount(() => {
 .sample-legend button:hover { background: color-mix(in srgb, var(--group-color) 26%, var(--el-bg-color)); }
 .sample-legend button.is-selected { background: color-mix(in srgb, var(--group-color) 32%, var(--el-bg-color)); color: var(--el-text-color-primary); font-weight: var(--font-semibold); }
 .sample-legend button:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: -2px; }
-.legend-label { width: 100%; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: color-mix(in srgb, var(--group-color) 45%, var(--el-text-color-primary)); }
+.legend-label { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--el-text-color-primary); }
 .legend-count { flex: none; margin-left: 6px; color: var(--el-text-color-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .class-option-count { float: right; margin-left: 12px; color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums; }
 .instance-candidates { display: grid; gap: 2px; min-width: 0; max-height: 260px; overflow: auto; }

@@ -3,7 +3,7 @@ import { computed } from "vue";
 import { ArrowLeft, ArrowRight, Star } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
 import { AgentAvatar } from "@ontomato/agent-shell-ui";
-import { appIcon } from "@ontomato/platform-shell";
+import ApplicationGlyph from "./ApplicationGlyph.vue";
 import type { HomeItem } from "./items";
 
 /**
@@ -19,6 +19,9 @@ const props = defineProps<{
   item: HomeItem;
   /** Whether it is one of the reader's favourites. */
   favorite: boolean;
+  favoriteBusy?: boolean;
+  favoriteDisabled?: boolean;
+  variant?: "compact" | "preview";
   /** The favourite's place among the favourites, when the tile is shown in that row. */
   position?: { first: boolean; last: boolean };
 }>();
@@ -29,20 +32,25 @@ const tooltip = computed(() => (props.item.description ? `${props.item.label}\n$
 </script>
 
 <template>
-  <div class="home-tile">
+  <div class="home-tile" :class="{ 'home-tile-preview': variant === 'preview' }">
     <button type="button" class="home-tile-open" :title="tooltip" @click="emit('open')">
       <AgentAvatar v-if="item.kind === 'agent'" :icon="item.icon" :size="22" />
-      <component :is="appIcon(item.icon)" v-else class="home-tile-icon" :size="16" aria-hidden="true" />
-      <span class="home-tile-name">{{ item.label }}</span>
+      <ApplicationGlyph v-else class="home-tile-icon" :icon="item.icon" :size="16" />
+      <span class="home-tile-content">
+        <span class="home-tile-name">{{ item.label }}</span>
+        <span v-if="variant === 'preview' && item.description" class="home-tile-description">{{ item.description }}</span>
+      </span>
     </button>
     <button
       type="button"
       class="home-tile-action home-tile-star"
       :class="{ favorite }"
       :aria-pressed="favorite"
+      :aria-busy="favoriteBusy || undefined"
+      :aria-disabled="favoriteDisabled || undefined"
       :aria-label="t(favorite ? 'home.removeFavorite' : 'home.addFavorite', { name: item.label })"
       :title="t(favorite ? 'home.removeFavorite' : 'home.addFavorite', { name: item.label })"
-      @click="emit('toggleFavorite')"
+      @click="!favoriteDisabled && emit('toggleFavorite')"
     >
       <Star :size="14" :fill="favorite ? 'currentColor' : 'none'" aria-hidden="true" />
     </button>
@@ -109,14 +117,29 @@ const tooltip = computed(() => (props.item.description ? `${props.item.label}\n$
   outline: 2px solid var(--el-color-primary);
   outline-offset: -2px;
 }
-.home-tile-icon {
-  flex: 0 0 auto;
-  color: var(--el-color-primary);
-}
+.home-tile-content { display: grid; min-width: 0; gap: var(--spacing-xs); }
 .home-tile-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.home-tile-preview { height: auto; min-height: 106px; align-items: flex-start; border-radius: var(--radius-lg); }
+.home-tile-preview:hover { background: var(--el-bg-color); border-color: var(--el-border-color-dark); box-shadow: var(--elevation-panel); }
+.home-tile-preview .home-tile-open { align-self: stretch; align-items: flex-start; height: auto; padding: var(--spacing-lg); }
+.home-tile-preview .home-tile-name { font-weight: var(--font-semibold); }
+.home-tile-preview .home-tile-icon { margin-top: 3px; }
+.home-tile-preview .home-tile-star { margin: var(--spacing-sm) var(--spacing-sm) 0 0; }
+.home-tile-star[aria-disabled="true"] { cursor: wait; }
+.home-tile-star[aria-busy="true"] { opacity: 0.55; }
+.home-tile-description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
 }
 .home-tile-action {
   display: inline-flex;
