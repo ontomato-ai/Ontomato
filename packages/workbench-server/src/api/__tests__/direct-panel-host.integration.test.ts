@@ -137,13 +137,24 @@ it("checks projection data against the current release before registering or cha
 
   const catalogue = appsSdkComponentCatalogSchema.parse(JSON.parse(await readFile(cataloguePath, "utf8")));
   const others = catalogue.components.filter(component => component.componentId !== "ObjectSummary");
+  const declaredSummary = catalogue.components.find(component => component.componentId === "ObjectSummary")!;
   try {
     await writeFile(cataloguePath, JSON.stringify({ ...catalogue, components: others }));
     await rejects("catalogue-absent", summary, "PANEL_COMPONENT_UNAVAILABLE");
-    const { data: _data, ...codeOnly } = catalogue.components.find(component => component.componentId === "ObjectSummary")!;
+    const { data: _data, ...codeOnly } = declaredSummary;
     await writeFile(cataloguePath, JSON.stringify({ ...catalogue, components: [...others, codeOnly] }));
     await rejects("catalogue-code-only", summary, "PANEL_COMPONENT_NOT_PROJECTABLE");
     expect(grants.has("catalogue-absent") || grants.has("catalogue-code-only")).toBe(false);
+
+    const component = {
+      ...declaredSummary, module: "@fixture/widgets/base", componentId: "FixtureSummary", exportName: "FixtureSummary",
+    };
+    await writeFile(cataloguePath, JSON.stringify({ ...catalogue, components: [...others, component] }));
+    const registered = await request("PUT", "product-projections/catalogue-new-component", {
+      ...summary, componentId: "@fixture/widgets:FixtureSummary",
+    });
+    expect(registered.status).toBe(200);
+    expect(productProjectionResponseSchema.parse(await registered.json()).projection.componentId).toBe("@fixture/widgets:FixtureSummary");
   } finally {
     await writeFile(cataloguePath, JSON.stringify(catalogue));
   }
