@@ -192,7 +192,7 @@ test("short panel members can open the page composer with an explicit agent and 
   }
 });
 
-test("short members can name distinct data owners and declare a static segmented switch", async () => {
+test("short members can name distinct data owners but need a read or operation", async () => {
   const { panelAuthoringMemberSchema } = await import("./panel-check");
   const graph = {
     component: "ObjectGraph", type: "platform:ObjectType",
@@ -208,8 +208,31 @@ test("short members can name distinct data owners and declare a static segmented
     component: "SegmentedControl", config: { options: [{ value: "instance", label: "Instance" }] },
     state: { value: "mode" },
   };
-  assert.deepEqual(panelAuthoringMemberSchema.parse(mode), mode);
-  assert.equal(panelAuthoringMemberSchema.safeParse({ ...mode, component: "ObjectList" }).success, false);
+  assert.equal(panelAuthoringMemberSchema.safeParse(mode).success, false);
+  const counts = {
+    ...mode, type: BUSINESS_KNOWLEDGE,
+    data: { counts: { read: "counts", params: { by: { literal: "status" } } } },
+  };
+  assert.deepEqual(panelAuthoringMemberSchema.parse(counts), counts);
+});
+
+test("a short metric chart names its source card and takes the projection from that owner", async () => {
+  const { panelAuthoringMemberSchema } = await import("./panel-check");
+  const chart = {
+    component: "MetricChart", sourceCard: { dashboardId: "operations", cardId: "daily" },
+    state: { term: "selectedTerm" },
+  };
+  for (const component of [chart.component, "@ontomato/sdk:MetricChart"]) {
+    assert.deepEqual(panelAuthoringMemberSchema.parse({ ...chart, component }), { ...chart, component });
+  }
+  for (const invalid of [
+    { component: chart.component },
+    { ...chart, id: "9da36511-7755-4b61-b526-3be2694c1f2f" },
+    { ...chart, sourceCard: { ...chart.sourceCard, metricId: "override" } },
+    { ...chart, component: "ObjectList", type: BUSINESS_KNOWLEDGE, data: { rows: "query" } },
+  ]) {
+    assert.equal(panelAuthoringMemberSchema.safeParse(invalid).success, false);
+  }
 });
 
 test("projection registration accepts package-qualified components and leaves data keys to the catalogue", () => {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
+import { dashboardCardRequestSchema } from "./dashboard";
 import { defaultAgentSchema } from "./default-agent";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import { panelManifestSchema, panelMemberSchema, panelObjectRefSchema, panelStateRefSchema } from "./panel-manifest";
@@ -40,12 +41,22 @@ const inlineMemberSchema = z.object({
   operation: panelOperationDeclarationSchema.shape.id.optional().describe("Operation ID from the owner's entry in the type table."),
   state: z.record(stateKey, stateKey).optional().describe("Map typed component port names or owner read parameter names to panel state fields."),
   config: runtimeJsonObjectSchema.optional().describe("Component configuration from the released SDK catalogue."),
-  agent: z.union([z.literal("page-default"), defaultAgentSchema]).optional().describe("ConversationEntry agent: the current page default, an agent definition ID, or a platform preset."),
+  agent: z.union([z.literal("page-default"), defaultAgentSchema]).optional().describe("Required for ConversationEntry. Use the current page default, an agent definition ID, or a platform preset."),
   prefill: panelConversationEntrySchema.shape.prefill.describe("ConversationEntry text placed in the page composer without sending it."),
+  sourceCard: dashboardCardRequestSchema.optional().describe("Required for MetricChart. Use the dashboard ID and card ID; the source owner registers the chart and assigns its projection ID."),
   name: z.string().optional().describe("Projection display name. Defaults to the member name."),
   description: z.string().optional().describe("Projection description. Defaults to the member name."),
 }).strict().superRefine((member, ctx) => {
   const issue = (field: string[], message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path: field, message });
+  if (isOfficialComponent(member.component, "MetricChart")) {
+    if (member.sourceCard === undefined) issue(["sourceCard"], "MetricChart needs a source card");
+    for (const field of ["id", "type", "target", "data", "operation", "config", "agent", "prefill", "name", "description"] as const) {
+      if (member[field] !== undefined) issue([field], "MetricChart takes its projection definition from the source card");
+    }
+    return;
+  }
+  if (member.sourceCard !== undefined) issue(["sourceCard"], "This field is only for MetricChart");
+
   if (isOfficialComponent(member.component, "ConversationEntry")) {
     if (member.agent === undefined) issue(["agent"], "ConversationEntry needs an agent target");
     for (const field of ["type", "target", "data", "operation", "state"] as const) {
@@ -58,9 +69,7 @@ const inlineMemberSchema = z.object({
   }
 
   const data = Object.entries(member.data ?? {});
-  const hasStaticOptions = isOfficialComponent(member.component, "SegmentedControl")
-    && Array.isArray(member.config?.options) && member.config.options.length > 0;
-  if (!data.length && member.operation === undefined && !hasStaticOptions) {
+  if (!data.length && member.operation === undefined) {
     issue(["data"], "Declare a named read or an operation");
   }
   if (member.type === undefined && member.target === undefined) {
