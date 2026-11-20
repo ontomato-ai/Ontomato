@@ -412,6 +412,21 @@ describe("metric and function panel server operations", () => {
       .rejects.toMatchObject({ status: 422, code: "METRIC_VIEW_TEST_REFUSED" });
   });
 
+  it("reads a trial's own input from a read call that names no target, and refuses input it cannot read", async () => {
+    const draft = { name: "Revenue", function: { queryPackage: { manifest: { parameterDefs: [] } } } };
+    const tested = hostWith(() => Response.json({ success: true, data: { md: "ok" } }));
+    expect(await read(TEST_METRIC_VIEW).execute(tested.host, { input: { draft, parameters: {} } }))
+      .toEqual({ kind: "markdown", markdown: "ok" });
+    const ran = hostWith(() => Response.json({ success: true, data: [] }));
+    expect(await read(TEST_EXECUTE_METRIC_VIEW).execute(ran.host, { input: { draft, parameters: { year: 2026 }, bindingId: "b1" } }))
+      .toEqual({ kind: "json", value: { result: [] } });
+    expect(JSON.parse(String(ran.sent[0]?.init.body))).toEqual({ metricView: draft, param: { year: 2026 }, bindingId: "b1" });
+
+    const unread = hostWith(() => Response.json({ success: true, data: { md: "never" } }));
+    await expect(read(TEST_METRIC_VIEW).execute(unread.host, { input: { parameters: {} } })).rejects.toThrow();
+    expect(unread.sent).toEqual([]);
+  });
+
   it("runs a metric draft for JSON with its parameters and binding, and keeps a truncated run marked", async () => {
     const operation = read(TEST_EXECUTE_METRIC_VIEW);
     const draft = { id: "m1", name: "Revenue", function: { queryPackage: { manifest: { parameterDefs: [] } } } };

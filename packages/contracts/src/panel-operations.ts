@@ -111,10 +111,6 @@ export const panelReadOperationInputSchema = z.object({
   bindingId: runtimeKeySchema.optional(),
 }).strict();
 
-export const panelTrialOperationCallSchema = panelOperationCallSchema.omit({ draft: true }).extend({
-  input: panelReadOperationInputSchema,
-});
-
 /** A read passes the actual target and the input object declared by the operation's owner. */
 export const panelReadOperationCallSchema = z.object({
   target: panelFormTargetSchema.optional(),
