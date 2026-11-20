@@ -1,6 +1,5 @@
 import {
-  matchesDirectPanelValue, matchesObjectType, panelPlacementSchema, panelPortAccepts, panelStateFieldSchema, panelStateRefSchema,
-  type DirectPanelPortType, type PanelManifest,
+  matchesDirectPanelValue, matchesObjectType, panelPlacementSchema, panelPortAccepts, type DirectPanelPortType, type PanelManifest,
   type PanelPlacement,
 } from "@ontomato/contracts/panel-manifest";
 import { parsePanelLayout, type PanelLayoutNode } from "@ontomato/contracts/panel-layout";
@@ -8,7 +7,6 @@ import {
   panelNeedsFrame, productPanelInputSchema, productProjectionInputSchema, type ProductPanelInput, type ProductProjectionInput,
 } from "@ontomato/contracts/product-panels";
 import type { PoolClient } from "pg";
-import { z } from "zod";
 import { getPostgresPool, qualifiedTable as table } from "../../infrastructure/postgres";
 import { findCurrentProduct, type CurrentProductKind } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -97,43 +95,11 @@ function collectReferences(
   return references;
 }
 
-const storedSlotPanelSchema = productPanelInputSchema.innerType().extend({
-  sdkVersion: z.string().min(1),
-  manifest: z.object({
-    state: z.record(z.object({ deepLink: z.boolean().default(false) }).passthrough()
-      .transform(({ deepLink, ...type }) => ({
-        deepLink,
-        type: type.kind === "objects" ? { kind: "list", items: { kind: "object", objectType: type.objectType } } : type,
-      })).pipe(panelStateFieldSchema)),
-    slots: z.record(z.object({
-      projectionId: z.string().min(1),
-      inputs: z.record(panelStateRefSchema).default({}),
-      outputs: z.record(panelStateRefSchema).optional(),
-    })),
-  }),
-});
-
-/** During re-registration, a stored SDK slot still owns its dependency until its replacement is saved. */
-function storedPanelReferences(definition: Record<string, unknown>): ProductPanelInput {
-  if (!Object.hasOwn(definition, "sdkVersion")) return productPanelInputSchema.parse(definition);
-  const { sdkVersion: _version, manifest, ...panel } = storedSlotPanelSchema.parse(definition);
-  return {
-    ...panel,
-    manifest: {
-      state: manifest.state,
-      members: Object.fromEntries(Object.entries(manifest.slots).map(([key, { projectionId, ...ports }]) =>
-        [key, { target: { projectionId }, ...ports }])),
-      events: {},
-    },
-  };
-}
-
-async function loadPanels(domainId: string, client: QueryClient, replacing?: string) {
-  const { rows } = await client.query<{ id: string; definition: Record<string, unknown> }>(
-    `SELECT id,definition FROM ${table("product_panels")} WHERE domain_id=$1 AND id IS DISTINCT FROM $2 ORDER BY id`,
-    [domainId, replacing ?? null],
+async function loadPanels(domainId: string, client: QueryClient) {
+  const { rows } = await client.query<{ id: string; definition: unknown }>(
+    `SELECT id,definition FROM ${table("product_panels")} WHERE domain_id=$1 ORDER BY id`, [domainId],
   );
-  return new Map(rows.map(({ id, definition }) => [id, storedPanelReferences(definition)]));
+  return new Map(rows.map(({ id, definition }) => [id, productPanelInputSchema.parse(definition)]));
 }
 
 async function loadDetails(domainId: string, client: QueryClient) {
@@ -244,9 +210,7 @@ export async function validateCurrentProductReferences(
   owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string,
   input: ProductPanelInput | ProductProjectionInput, client: PoolClient,
 ) {
-  const [panels, details] = await Promise.all([
-    loadPanels(owner.domainId, client, kind === "panel" ? id : undefined), loadDetails(owner.domainId, client),
-  ]);
+  const [panels, details] = await Promise.all([loadPanels(owner.domainId, client), loadDetails(owner.domainId, client)]);
   if ("manifest" in input) panels.set(id, input);
   const saved = await loadSavedPlacements(owner.domainId, panels, client);
   if ("manifest" in input) {
