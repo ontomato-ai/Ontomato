@@ -335,7 +335,7 @@ async function remove() { if(!selected.value)return;await run(async()=>{await El
       <main v-else-if="selected" :key="selected.id">
         <header class="detail-heading">
           <div class="detail-identity"><component :is="typeIcons[selected.document.kind]" :size="22" class="detail-type-icon" aria-hidden="true"/><div><h2>{{productText(selected.name)}}</h2><div class="asset-meta"><span>{{typeName(selected.document.kind)}}</span><span>{{selected.editable?ot('productEditable'):ot('productReadOnly')}}</span></div></div></div>
-          <div class="toolbar"><el-button v-if="selected.editable" @click="edit(selected)">{{ot('productEdit')}}</el-button><el-button v-if="['page','layout-template'].includes(selected.document.kind)" @click="useHome">{{ot('productUseAsHome')}}</el-button><el-button v-if="selected.document.kind==='page'" type="primary" @click="emit('open',selected.id)">{{ot('productOpenPage')}}</el-button><el-dropdown @command="more"><el-button text :icon="MoreHorizontal" :aria-label="ot('productMoreActions')"/><template #dropdown><el-dropdown-menu><el-dropdown-item command="copy">{{ot('productCopy')}}</el-dropdown-item><el-dropdown-item v-if="selected.document.kind==='page'" command="template">{{ot('productSaveAsTemplate')}}</el-dropdown-item><el-dropdown-item v-if="selected.editable" command="delete" divided>{{ot('productDelete')}}</el-dropdown-item></el-dropdown-menu></template></el-dropdown></div>
+           <div class="toolbar"><el-button v-if="selected.editable" @click="edit(selected)">{{ot('productEdit')}}</el-button><el-button v-if="['page','layout-template'].includes(selected.document.kind)" @click="useHome">{{ot('productUseAsHome')}}</el-button><el-button v-if="selected.document.kind==='page'" type="primary" @click="emit('open',selected.id)">{{ot('productOpenPage')}}</el-button><el-dropdown trigger="click" @command="more"><button type="button" class="manager-icon-button" :aria-label="ot('productMoreActions')" :title="ot('productMoreActions')"><MoreHorizontal :size="16" aria-hidden="true" /></button><template #dropdown><el-dropdown-menu><el-dropdown-item command="copy">{{ot('productCopy')}}</el-dropdown-item><el-dropdown-item v-if="selected.document.kind==='page'" command="template">{{ot('productSaveAsTemplate')}}</el-dropdown-item><el-dropdown-item v-if="selected.editable" command="delete" divided>{{ot('productDelete')}}</el-dropdown-item></el-dropdown-menu></template></el-dropdown></div>
         </header>
         <p v-if="selected.description" class="asset-description">{{productText(selected.description)}}</p>
         <el-alert v-if="nativeBinding.agentId" :title="ot('productNativeAgentNote')" type="info" :closable="false"/>
@@ -406,7 +406,7 @@ async function remove() { if(!selected.value)return;await run(async()=>{await El
 .asset-group-title small{color:var(--el-text-color-placeholder)}
 .asset-row{min-height:52px;padding:var(--spacing-sm);border:0;border-radius:var(--radius-sm);gap:var(--spacing-sm)}
 .asset-row+.asset-row{margin-top:2px}
-.asset-row.active{box-shadow:none}
+.asset-row.active{box-shadow:none;background:var(--ui-selection-background,var(--el-color-primary-light-9))}
 .asset-label small{margin-top:2px;line-height:var(--leading-xs)}
 .list-tools{padding:var(--manager-content-gap);gap:var(--spacing-sm)}
 .detail-heading{align-items:flex-start;gap:var(--manager-content-gap);margin-bottom:var(--manager-content-gap)}

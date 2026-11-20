@@ -10,6 +10,7 @@ import { homeStateSchema, type HomeState } from "@ontomato/contracts/platform-ho
 import type { WorkspaceObjectReference } from "@ontomato/contracts/workspace-objects";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
+import { platformHostKey } from "@ontomato/platform-admin";
 import { nodeApiRequest } from "@ontomato/workbench-ui";
 import { defaultPersonalWorkspace, personalWorkspaceSchema, recentWorkListSchema, type RecentWork, type WorkspaceSection } from "@ontomato/contracts/personal-workspace";
 import { ManagerFrame, ObjectViewPage, ProductAssetRuntime, useProductText } from "@ontomato/ontology-manager";
@@ -17,6 +18,7 @@ import { DashboardCardPicker, DashboardMetricPreview } from "@ontomato/workbench
 import type { DashboardListItem } from "@ontomato/contracts/dashboard";
 import { platformSchedulesPath, platformTaskListSchema, type PlatformTask } from "@ontomato/contracts/platform-schedules";
 import { applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
+import ApplicationGlyph from "../features/home/ApplicationGlyph.vue";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import {dropdownBoundaryOptions} from '@ontomato/ontology-manager';
 import { useApplicationCatalog } from "../catalog";
@@ -29,10 +31,18 @@ import WorkspaceResourceDetail, { type WorkspaceResource } from "./WorkspaceReso
 import { agentHostCreateSessionResponseSchema, agentHostSessionSnapshotSchema, type AgentHostAgent, type AgentHostSession } from "@ontomato/contracts/agent-host";
 const { locale, t } = useI18n();
 const productText = useProductText();
-const props=defineProps<{productAssetId?:string;platformWidgetAsset?:ProductAsset;preview?:boolean;pinnedAssets?:ProductAsset[];embedded?:boolean;pageState?:Record<string,unknown>;unavailableAssets?:string[]}>();
+const props=defineProps<{productAssetId?:string;platformWidgetAsset?:ProductAsset;preview?:boolean;pinnedAssets?:ProductAsset[];embedded?:boolean;hidePageHeader?:boolean;pageState?:Record<string,unknown>;unavailableAssets?:string[]}>();
 const personalHome=computed(()=>!props.productAssetId&&!props.platformWidgetAsset&&!props.embedded);
-const today=computed(()=>new Intl.DateTimeFormat(locale.value,{month:'long',day:'numeric',weekday:'long'}).format(new Date()));
 const router = useRouter();
+const platformHost = inject(platformHostKey, null);
+const homeGreeting = computed(() => {
+  const name = platformHost?.account?.userName?.trim();
+  return name ? t(`home.greetingNamed.${homePeriod}`, { name }) : t(`home.greeting.${homePeriod}`);
+});
+const homePeriod = (() => {
+  const hour = new Date().getHours();
+  return hour >= 5 && hour < 12 ? 'morning' : hour >= 12 && hour < 18 ? 'afternoon' : 'evening';
+})();
 const openApplication=inject(openApplicationKey)!;
 const catalog = useApplicationCatalog();
 const config = ref(defaultPersonalWorkspace());
@@ -59,6 +69,7 @@ async function saveConfiguration(workspace:unknown) {
 }
 const configurationHeaders = () => ({"Content-Type":"application/json",...(configRevision.value ? {"If-Match":String(configRevision.value)} : {})});
 async function readProducts() {
+  if (busy.value.products) return;
   await load("products",async()=>{
     if(props.pinnedAssets){homeAsset.value=props.pinnedAssets.find(asset=>asset.id===props.productAssetId)??null;productAssets.value=props.pinnedAssets;return;}
     const home=await json(props.productAssetId?`/api/product-assets/${encodeURIComponent(props.productAssetId)}`:"/api/product-assets/home");homeAsset.value=productAssetSchema.parse(home.asset);
@@ -199,6 +210,10 @@ function conversationTitle(title: string) {
 const workspaceText = computed(() => ({
   heading: t("ontology.productHomeAskHeading"), description: t("ontology.productHomeAskDescription"), placeholder: t("ontology.productHomeAskPlaceholder"), send: t("ontology.productHomeSendQuestion"), stop: t("ontology.productHomeStop"), agent: t("ontology.productHomeAgent"), continue: t("ontology.productHomeContinueAnalysis"), empty: t("ontology.productHomeAnalysisEmpty"), untitled: t("ontology.productUntitledAnalysis"), resources: t("ontology.productHomeResources"), noAgent: t("ontology.productHomeNoAgent"), recent: t("ontology.productHomeRecentResources"),
 }));
+const showHomeComposer = computed(() => personalHome.value && ready.value && canChat.value && enabledAgents.value.length > 0 &&
+  productAssets.value.length > 0 &&
+  homeAsset.value?.document.kind === "page" && homeAsset.value.document.children.length > 0 &&
+  ![...productChildren(0), ...productChildren(1)].some(child => child.section === "assistant"));
 async function ask(question: string) {
   if(props.preview)return;
   if (!agentId.value || !enabledAgents.value.some(agent => agent.id === agentId.value)) return;
@@ -376,29 +391,53 @@ function taskSummary(value: string) {
     .split(/\n\s*\n/)[0]!.replace(/[*#`]/g, "").replace(/\s+/g, " ").trim();
 }
 const actions = computed(() => [
-  {id:'applications',label:t('ontology.productHomeAllApplications'),icon:AppWindow,onClick:()=>void router.push('/applications')},
-  { id: "refresh", label: text.value.refresh, icon: RefreshCw, disabled:refreshing.value||saving.value||editing.value, onClick: () => void refresh() },
-    ...(ready.value ? [{ id: "configure", label: text.value.configure, icon: Settings2, disabled:saving.value||!!busy.value.config||!!busy.value.products, onClick: () => configure() }] : []),
+  ...(!personalHome.value ? [{ id: 'applications', label: t('ontology.productHomeAllApplications'), icon: AppWindow, onClick: () => void router.push('/applications') }] : []),
+  { id: "refresh", label: text.value.refresh, icon: RefreshCw, iconOnly: true, disabled:refreshing.value||saving.value||editing.value, onClick: () => void refresh() },
+    ...(ready.value ? [{ id: "configure", label: text.value.configure, icon: Settings2, iconOnly: true, disabled:saving.value||!!busy.value.config||!!busy.value.products, onClick: () => configure() }] : []),
 ]);
 </script>
 <template>
-  <component :is="props.platformWidgetAsset||props.embedded?'div':AppPage" :class="{'platform-widget-host':props.platformWidgetAsset||props.embedded,'is-platform-widget':!!props.platformWidgetAsset}" :title="homeAsset ? productText(homeAsset.name) : text.title" :description="productText(homeAsset?.description ?? '')" :actions="actions" :labels="{ save: text.save, discard: text.cancel, unsavedChanges: text.unsaved }">
+  <component :is="props.platformWidgetAsset||props.embedded?'div':AppPage" :class="{'personal-home-page':personalHome,'platform-widget-host':props.platformWidgetAsset||props.embedded,'is-platform-widget':!!props.platformWidgetAsset}" :title="personalHome ? '' : homeAsset ? productText(homeAsset.name) : text.title" :description="personalHome ? undefined : productText(homeAsset?.description ?? '')" :navigation-header="personalHome" :hide-header="props.hidePageHeader" :actions="actions" :labels="{ save: text.save, discard: text.cancel, unsavedChanges: text.unsaved }">
     <div v-if="errors.config" role="alert" class="workspace-error">{{ errors.config }} <el-button @click="readConfig">{{ text.retry }}</el-button></div>
     <WorkspaceSkeleton v-if="!ready && busy.config" :label="text.loading" :rows="6" />
     <el-alert v-if="analysisError" :title="analysisError" type="error" :closable="false" />
-    <el-alert v-if="errors.products" :title="errors.products" type="error" :closable="false" />
-    <section v-if="personalHome" class="personal-workspace-intro"><div><span class="workspace-date">{{today}}</span><h1>{{t('ontology.productHomeIntroTitle')}}</h1><p>{{t('ontology.productHomeIntroDescription')}}</p></div><div class="workspace-quick-links"><button v-if="canChat&&enabledAgents.length" @click="router.push({path:platformRoutes.chat.path,query:{agentId:agentId??undefined}})"><Sparkles :size="18"/><span>{{t('ontology.productHomeStartAnalysis')}}</span><ArrowUpRight :size="15"/></button><button @click="router.push('/applications')"><AppWindow :size="18"/><span>{{t('ontology.productHomeExploreApplications')}}</span><ArrowUpRight :size="15"/></button></div></section>
+    <div v-if="errors.products" role="alert" class="workspace-error">
+      {{ errors.products }} <el-button @click="readProducts">{{ text.retry }}</el-button>
+    </div>
+    <div class="workspace-layout" :class="{ 'home-with-rail': personalHome && productChildren(1).length > 0 }" :style="pageGridStyle">
+    <section v-if="personalHome" class="personal-workspace-intro" aria-labelledby="workspace-intro-title">
+      <div class="home-welcome-heading">
+        <h1 id="workspace-intro-title">{{ homeGreeting }}</h1>
+      </div>
+      <div v-if="showHomeComposer" class="home-composer" :aria-label="workspaceText.heading">
+        <ShellComposer :busy="false" :disabled="!agentId || props.preview" :min-lines="4" :labels="{ placeholder: workspaceText.placeholder, send: workspaceText.send, stop: workspaceText.stop }" @send="ask">
+          <template #agent>
+            <AgentPicker variant="home" class="home-agent-picker" :agents="enabledAgents" :agent-id="agentId" :label="workspaceText.agent" @select="agentId = $event" />
+          </template>
+        </ShellComposer>
+      </div>
+      <nav class="workspace-quick-links" :aria-label="t('ontology.productHomeResources')">
+        <button v-if="canChat && enabledAgents.length" type="button" @click="router.push({ path: platformRoutes.chat.path, query: { agentId: agentId ?? undefined } })">
+          <Sparkles :size="16" aria-hidden="true" /><span>{{ t('ontology.productHomeStartAnalysis') }}</span>
+        </button>
+        <button type="button" @click="router.push('/applications')">
+          <AppWindow :size="16" aria-hidden="true" /><span>{{ t('ontology.productHomeExploreApplications') }}</span>
+        </button>
+      </nav>
+    </section>
     <div v-if="ready" class="workspace-grid" :class="{ 'personal-workspace':personalHome,'tasks-first': config.layout === 'tasks','product-layout':!!pageLayout,'single-column':pageLayout?.mode==='grid'||pageLayout?.mainWidth===12 }" :style="pageGridStyle">
-      <div v-for="(sections, column) in columns" :key="column" class="workspace-column" :class="{ 'activity-column': sections.includes('tasks') }">
+      <div v-for="(sections, column) in columns" :key="column" class="workspace-column" :class="{ 'activity-column': sections.includes('tasks'), 'workspace-side-column': column === 1 }">
       <div v-for="child in productChildren(column)" :key="child.id" class="product-placement" :style="{gridColumn:`span ${child.width??(child.span==='half'?6:12)}`}">
-    <el-alert v-if="props.unavailableAssets?.includes(child.id)" :title="t('ontology.productAssetContractChanged',{name:child.asset?productText(child.asset.name):child.id})" type="error" :closable="false"/>
+     <el-alert v-if="props.unavailableAssets?.includes(child.id)" :title="t('ontology.productAssetContractChanged',{name:child.asset?productText(child.asset.name):child.id})" type="error" :closable="false"/>
+     <WorkspaceSkeleton v-else-if="!child.asset && busy.products" :label="text.loading" :rows="3" />
+     <template v-else-if="!child.asset && errors.products" />
     <section v-else-if="child.section==='assistant'" class="workspace-welcome" :class="{'half-width':child.span==='half'}">
-      <div class="workspace-heading"><Sparkles :size="20" aria-hidden="true" /><h1>{{ child.asset ? productText(child.asset.name) : '' }}</h1></div>
+      <div class="workspace-heading"><Sparkles :size="20" aria-hidden="true" /><component :is="personalHome ? 'h2' : 'h1'">{{ child.asset ? productText(child.asset.name) : '' }}</component></div>
       <p v-if="child.asset?.description">{{ productText(child.asset.description) }}</p>
       <WorkspaceSkeleton v-if="busy.agents" :label="text.loading" :rows="1" composer />
       <div v-else-if="errors.agents" role="alert">{{ errors.agents }} <el-button @click="readAgents">{{ text.retry }}</el-button></div>
       <div v-else-if="canChat&&enabledAgents.length" class="workspace-ask">
-         <ShellComposer :busy="false" :labels="{ placeholder: child.asset?productText(platformWidget(child.asset.document)?.placeholder??''):'', send: workspaceText.send, stop: workspaceText.stop }" @send="ask">
+          <ShellComposer :busy="false" :disabled="!agentId || props.preview" :labels="{ placeholder: child.asset?productText(platformWidget(child.asset.document)?.placeholder??''):'', send: workspaceText.send, stop: workspaceText.stop }" @send="ask">
           <template #agent>
             <AgentPicker variant="pill" :agents="enabledAgents" :agent-id="agentId" :label="workspaceText.agent" @select="agentId = $event" />
           </template>
@@ -523,7 +562,7 @@ const actions = computed(() => [
             <div class="application-grid">
             <article v-for="app in selectedApps.slice(0,blockLimit(child.asset))" :key="app.id" class="application-resource">
               <a v-if="app.resource" class="application-card" :href="applicationHref(app.id)" @click.prevent="openApplication(app.id)">
-                 <AppWindow :size="18" class="resource-icon" aria-hidden="true" />
+                 <ApplicationGlyph :icon="app.resource.icon" :size="18" class="application-resource-icon" />
                 <span class="resource-body"><strong>{{ app.resource.names[locale] ?? app.resource.names.en }}</strong><span>{{ app.resource.descriptions[locale] ?? app.resource.descriptions.en ?? text.application }}</span></span>
               </a>
               <p v-else>{{ text.unavailable }}</p>
@@ -536,6 +575,7 @@ const actions = computed(() => [
       </template>
       </div>
       </div>
+    </div>
     </div>
     <el-dialog v-model="editing" :title="text.configure" width="min(740px, 94vw)" :close-on-click-modal="false" :close-on-press-escape="!saving" :show-close="!saving">
       <el-form label-position="top" :disabled="saving">
@@ -610,6 +650,10 @@ const actions = computed(() => [
   </component>
 </template>
 <style scoped>
+.home-composer {
+  min-width: 0;
+  --shell-composer-shadow: var(--elevation-composer);
+}
 .platform-widget-host:not(.is-platform-widget)>.workspace-grid>.workspace-column{display:grid}
 .workspace-column{grid-template-columns:repeat(12,minmax(0,1fr))!important}.product-placement{min-width:0}.product-placement>.workspace-section,.product-placement>.workspace-welcome{width:100%}.product-placement .workspace-welcome{margin-bottom:0}.workspace-column:empty{display:none}@container platform-page (max-width:600px){.product-placement{grid-column:1/-1!important}}
 .platform-widget-host{min-width:0}.platform-widget-host>.workspace-grid{display:block}.platform-widget-host>.workspace-grid>.workspace-column{display:block;border:0;padding:0}.platform-widget-host>.workspace-grid>.workspace-column:empty{display:none}.platform-widget-host .workspace-welcome{margin:0;padding:0}.platform-widget-host .workspace-section{padding:0;border:0}
@@ -699,7 +743,7 @@ p { color: var(--el-text-color-secondary); line-height: 1.6; overflow-wrap: anyw
 .task-group + .task-group { margin-top: var(--spacing-xl); }
 .task-group > h3 { margin-top: 0; }
 .recent-item { align-items: flex-start; }
-.recent-item .resource-icon { margin-top: 2px; }
+.recent-item .resource-icon { margin-top: 2px; color: var(--el-color-primary); }
 .activity-column .workspace-item { align-items: flex-start; }
 .activity-column .workspace-item > .el-button { margin-top: 0; flex-shrink: 0; }
 .workspace-error { color: var(--el-color-danger); }
@@ -752,9 +796,41 @@ p { color: var(--el-text-color-secondary); line-height: 1.6; overflow-wrap: anyw
 @container platform-page (max-width:600px){.workspace-column:first-child{grid-template-columns:minmax(0,1fr)}.workspace-column:first-child>.home-chart{grid-column:1/-1}.home-overview :deep(.widget-card){grid-column:span 6!important}.home-overview :deep(.view-grid){gap:var(--spacing-sm)}.home-overview :deep(.widget-card){padding:var(--spacing-md);flex-basis:120px}}
 </style>
 <style scoped>
-.personal-workspace-intro{display:flex;align-items:center;justify-content:space-between;gap:24px;margin:0 0 28px;padding:24px;background:linear-gradient(120deg,var(--el-fill-color-light),var(--el-bg-color));border:1px solid var(--el-border-color-light);border-radius:12px;flex-shrink:0}
-.workspace-date{font-size:var(--text-xs);color:var(--el-text-color-secondary)}.personal-workspace-intro h1{font-size:24px;line-height:1.4;margin:8px 0;font-weight:600}.personal-workspace-intro p{margin:0;font-size:var(--text-sm)}
-.workspace-quick-links{display:flex;flex-direction:column;gap:10px;min-width:210px}.workspace-quick-links button{display:flex;align-items:center;gap:12px;padding:12px 16px;border:1px solid var(--el-border-color-light);border-radius:8px;background:var(--el-bg-color);color:var(--el-text-color-primary);font:inherit;font-size:var(--text-sm);cursor:pointer}.workspace-quick-links button span{flex:1;text-align:start}.workspace-quick-links button:hover{border-color:var(--el-color-primary);color:var(--el-color-primary)}
+.workspace-layout { min-width: 0; }
+.personal-workspace-intro { display: grid; gap: var(--spacing-md); width: min(100%, 1240px); margin: 0 auto var(--spacing-xl); }
+.personal-workspace-intro > * { width: min(100%, var(--shell-content-max)); min-width: 0; }
+.home-welcome-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--spacing-sm) var(--spacing-lg); }
+.home-welcome-heading > h1 { min-width: 0; flex: 1 1 200px; }
+.home-agent-picker { min-width: 0; max-width: 100%; }
+.personal-workspace-intro > .home-composer { width: 100%; margin-block-start: var(--spacing-lg-xl); }
+.home-agent-picker :deep(.switch-trigger) {
+  min-height: var(--control-height);
+}
+.home-composer :deep(.composer-agent) { max-width: 100%; }
+@container platform-page (min-width: 1051px) {
+  .workspace-layout.home-with-rail {
+    display: grid;
+    grid-template-columns: minmax(0, var(--product-main-width, 2.2fr)) minmax(0, var(--product-side-width, 1fr));
+    grid-template-rows: auto 1fr;
+    align-items: start;
+    column-gap: var(--product-gap, var(--spacing-xl));
+    width: min(100%, 1240px);
+    margin-inline: auto;
+  }
+  .home-with-rail > .personal-workspace-intro { grid-area: 1 / 1; }
+  .home-with-rail > .workspace-grid.personal-workspace { display: contents; }
+  .home-with-rail .workspace-grid > .workspace-column { grid-area: 2 / 1; }
+  .home-with-rail .workspace-grid > .workspace-side-column { grid-area: 1 / 2 / 3; }
+}
+.workspace-date { font-size: var(--text-xs); color: var(--el-text-color-secondary); }
+.personal-workspace-intro h1 { font-size: var(--text-2xl); line-height: var(--spacing-2xl); margin: var(--spacing-xs) 0 0; font-weight: var(--font-semibold); overflow-wrap: anywhere; }
+.personal-workspace .workspace-heading h2 { font-size: var(--text-lg); }
+.workspace-quick-links { display: flex; flex-wrap: wrap; gap: var(--spacing-xs); }
+.workspace-quick-links button { display: inline-flex; align-items: center; gap: var(--spacing-sm); padding: var(--spacing-xs) var(--spacing-sm); min-height: var(--control-height-sm); max-width: 100%; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--el-text-color-secondary); font: inherit; text-align: start; cursor: pointer; }
+.workspace-quick-links button > svg { flex: none; }
+.workspace-quick-links button > span { min-width: 0; overflow-wrap: anywhere; }
+.workspace-quick-links button:hover { background: var(--el-fill-color); color: var(--el-text-color-primary); }
+.workspace-quick-links button:focus-visible { outline: 2px solid var(--brand-link); outline-offset: -2px; }
 .workspace-grid.personal-workspace{gap:24px}.personal-workspace .workspace-column{display:flex;flex-direction:column;gap:20px}.personal-workspace .workspace-column+.workspace-column{border:0;padding:0}.personal-workspace .workspace-product{padding:20px;border:1px solid var(--el-border-color-light);border-radius:10px;background:var(--el-bg-color)}.personal-workspace .product-placement{min-width:0}.personal-workspace :deep(.collection-projection>h3){font-size:15px;margin-bottom:8px}.personal-workspace :deep(.overview-note){display:none}
-@container platform-page (max-width:760px){.personal-workspace-intro{align-items:stretch;flex-direction:column;padding:20px}.personal-workspace-intro h1{font-size:21px}.workspace-quick-links{min-width:0}.workspace-grid.personal-workspace{grid-template-columns:minmax(0,1fr)}.personal-workspace .workspace-product{padding:16px}}
+@container platform-page (max-width:760px){.workspace-grid.personal-workspace{grid-template-columns:minmax(0,1fr)}.personal-workspace .workspace-product{padding:16px}}
 </style>

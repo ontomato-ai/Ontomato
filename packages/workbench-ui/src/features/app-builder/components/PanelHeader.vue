@@ -96,26 +96,26 @@ function openFromMark() {
   display: flex;
   flex: 1;
   min-width: 0;
-  align-items: stretch;
+  align-items: center;
   gap: var(--spacing-md);
 }
 /* The views give way last: only a language whose names do not fit even then shortens them. */
 .panel-tabs {
   display: flex;
   min-width: 0;
-  align-items: stretch;
-  gap: var(--spacing-lg);
+  align-items: center;
+  gap: var(--spacing-xs);
 }
 .panel-tab {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--spacing-xs);
   min-width: 0;
-  margin-bottom: -1px;
-  padding: 0;
+  min-height: var(--control-height-sm);
+  padding: 0 var(--spacing-sm);
   border: 0;
-  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--el-text-color-regular);
   font: inherit;
@@ -132,10 +132,11 @@ function openFromMark() {
   text-overflow: ellipsis;
 }
 .panel-tab:hover {
+  background: var(--el-fill-color-light);
   color: var(--el-text-color-primary);
 }
 .panel-tab.active {
-  border-bottom-color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
   color: var(--brand-link);
   font-weight: var(--font-medium);
 }

@@ -38,7 +38,7 @@ async function openAt(bottom: number) {
   app.mount(root);
   const trigger = root.querySelector<HTMLElement>(".switch-trigger")!;
   // The list is placed against the composer's own control, which is what the picker measures.
-  vi.spyOn(root.querySelector<HTMLElement>(".agent-switch")!, "getBoundingClientRect").mockReturnValue({
+  vi.spyOn(trigger, "getBoundingClientRect").mockReturnValue({
     top: bottom - 32, bottom, left: 40, right: 200, width: 160, height: 32, x: 40, y: bottom - 32, toJSON: () => ({}),
   } as DOMRect);
   trigger.click();
