@@ -1,6 +1,5 @@
-import { directPanelSchema, productPanelSchema } from "@ontomato/contracts/product-panels";
+import { productPanelSchema } from "@ontomato/contracts/product-panels";
 import type { PoolClient } from "pg";
-import { z } from "zod";
 import { currentProductRecord, findCurrentProduct } from "../../infrastructure/product-current";
 import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -9,8 +8,6 @@ import { requireProductGrant, type ProductOwner } from "../product-governance/gr
 
 type ObjectDetailResolution = { kind: "configured"; panelId: string } | { kind: "unconfigured" };
 type ObjectDetailPanelMapping = { className: string; panelId: string };
-
-const panelRecordSchema = z.union([directPanelSchema, productPanelSchema]);
 
 export async function findObjectDetailPanelId(domainId: string, className: string, client: Pick<PoolClient, "query"> = getPostgresPool()) {
   const { rows } = await client.query<{ panelId: string }>(
@@ -23,7 +20,7 @@ export async function findObjectDetailPanelId(domainId: string, className: strin
 export async function requireDetailPanel(domainId: string, panelId: string, client?: PoolClient) {
   const panel = await findCurrentProduct(domainId, "panel", panelId, client);
   if (!panel) throw new HttpError(404, "Mapped detail panel does not exist", "PRODUCT_NOT_FOUND");
-  if (!panelRecordSchema.safeParse(currentProductRecord(panel, false)).success)
+  if (!productPanelSchema.safeParse(currentProductRecord(panel, false)).success)
     throw new HttpError(404, "Mapped detail panel definition is invalid", "PRODUCT_UNAVAILABLE");
 }
 
