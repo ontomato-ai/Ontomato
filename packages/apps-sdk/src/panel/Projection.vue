@@ -67,7 +67,7 @@ function start(revision = 0) {
       projection, component,
       member: {
         key: props.slot, projection, inputs: memberInputs,
-        data: frameMemberData(projection, props.slot, panel!.instance, () => memberInputs.value),
+        data: frameMemberData(projection, props.slot, panel!.instance, () => memberInputs.value, panel!.readPanelData),
       },
     };
     loading.value = false;
