@@ -20,9 +20,12 @@ import {
   panelDefinitionSnapshotSchema, productDefinitionStreamFrameSchema, productDefinitionStreamRequestSchema,
   type ProductDefinitionRevision,
 } from "@ontomato/contracts/product-subscriptions";
+import { protectedSkillRef } from "../../core/skills/providers";
 import { installContentLayout } from "../../content/layout";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { readSseFrames } from "../../infrastructure/agent-runtime/client";
+import { ensureAssistantDefaultPromptSchema } from "../../infrastructure/postgres-migrations/20261105-assistant-default-prompts/schema";
+import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { configureI18n } from "../../i18n";
@@ -72,6 +75,8 @@ beforeAll(async () => {
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
   await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
+  await ensureAssistantSchema(state.pool);
+  await ensureAssistantDefaultPromptSchema(state.pool);
   contentRoot = await mkdtemp(path.join(os.tmpdir(), "direct-panel-host-"));
   cataloguePath = await writeBundledAppSdkFixture(contentRoot);
   installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
@@ -472,4 +477,53 @@ it("preserves a code panel's ID and revision rules and describes its member oper
   const unreachable = await validate({ ...application, delivery: { panels: [], projections: ["unreachable"] } });
   expect(unreachable.status).toBe(400);
   expect((await unreachable.json()).error.message).toContain("unreachable");
+});
+
+it("rejects an unavailable default agent before accepting a proposed application use", async () => {
+  const panelId = "default-agent-panel";
+  const saved = await request("PUT", "product-panels/" + panelId, {
+    name: "Panel with a default", description: "", visibility: "domain", revision: 0,
+    content: vuePanelContent(), manifest: { state: {}, members: {}, events: {} },
+  });
+  expect(saved.status, await saved.text()).toBe(200);
+
+  const ref = protectedSkillRef("product-panels", "pilot", panelId);
+  const anotherDomain = { ...ref, namespace: { kind: "domain", domainId: "elsewhere" } };
+  const governanceId = randomUUID();
+  const assistant = (id: string, kind: string, skills: unknown[]) => state.pool!.query(
+    `INSERT INTO "${state.schema}".assistant_agents (id, domain_id, kind, name, system_prompt, skills)
+     VALUES ($1, 'pilot', $2, $2, '', $3::jsonb)`,
+    [id, kind, JSON.stringify(skills)],
+  );
+  await assistant(governanceId, "knowledge-governance", [anotherDomain]);
+  await assistant(randomUUID(), "regular", []);
+
+  const proposed = (defaultAgent?: { kind: "preset"; agentKind: string } | { kind: "id"; id: string }) =>
+    fetch(state.base + APPLICATION_PANEL_REFERENCES_PATH, {
+      method: "POST", headers: { "Content-Type": "application/json", "X-Ontomato-Query-Service-Token": "fixture-service" },
+      body: JSON.stringify({
+        domainId: "pilot", uses: [{ id: "manage", panelId, defaultAgent }], delivery: { panels: [], projections: [] },
+      }),
+    });
+  const governance = { kind: "preset", agentKind: "knowledge-governance" } as const;
+  const missingSkill = await proposed(governance);
+  expect(missingSkill.status).toBe(409);
+  expect(await missingSkill.json()).toMatchObject({ error: {
+    code: "PAGE_DEFAULT_AGENT_UNAVAILABLE",
+    message: "Entry 'manage' default agent preset 'knowledge-governance' does not select the skill for panel 'default-agent-panel'.",
+  } });
+
+  await state.pool!.query(`UPDATE "${state.schema}".assistant_agents SET skills=$2::jsonb WHERE id=$1`,
+    [governanceId, JSON.stringify([ref])]);
+  expect((await proposed(governance)).status).toBe(204);
+  expect((await proposed({ kind: "preset", agentKind: "regular" })).status).toBe(204);
+  expect((await proposed()).status).toBe(204);
+
+  await state.pool!.query(`UPDATE "${state.schema}".assistant_agents SET enabled=false WHERE id=$1`, [governanceId]);
+  const disabled = await proposed({ kind: "id", id: governanceId });
+  expect(disabled.status).toBe(409);
+  expect(await disabled.json()).toMatchObject({ error: {
+    code: "PAGE_DEFAULT_AGENT_UNAVAILABLE",
+    message: `Entry 'manage' default agent '${governanceId}' is disabled.`,
+  } });
 });

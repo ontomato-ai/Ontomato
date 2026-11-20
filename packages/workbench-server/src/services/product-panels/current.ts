@@ -1,3 +1,4 @@
+import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import {
   METRIC_CHART_COMPONENT, chartProjectionSchema, productPanelInputSchema, productPanelSchema, productProjectionSchema,
   type ApplicationPanelReferencesRequest, type ProductPanel,
@@ -15,6 +16,10 @@ import type { ProductOwner } from "../product-governance/grants";
 import { grantedProductIds, registerProductResource, requireProductGrant } from "../product-governance/grants";
 import { assertAppBuilderAccess } from "../app-builder/access";
 import { notifyProductDefinitionChanged } from "./definition-stream";
+import { protectedSkillRef } from "../../core/skills/providers";
+import { assistantStore } from "../assistant/store";
+import { configuredAssistantSkills } from "../assistant/skill-selection";
+import { panelSkillProvider } from "./skill-provider";
 import { validateCurrentProductReferences } from "./references";
 import { validateProjectionComponent } from "./component-catalogue";
 
@@ -153,6 +158,7 @@ export async function validateApplicationPanelReferences(request: ApplicationPan
   await Promise.all([...projections].map(id => loadCurrentProduct(domainId, "projection", id)));
 
   const frame = framePanelId === undefined ? undefined : panels.get(framePanelId)!;
+  let definitions: Awaited<ReturnType<typeof assistantStore.agents>> | undefined;
   for (const use of uses) {
     const { state } = panels.get(use.panelId)!.manifest;
     for (const [name, ref] of Object.entries(use.inputs ?? {})) {
@@ -164,6 +170,22 @@ export async function validateApplicationPanelReferences(request: ApplicationPan
         throw new HttpError(400, `Entry '${use.id}' has incompatible input '${name}'`, "INVALID_PANEL_ENTRY_INPUT");
       }
     }
+
+    const { defaultAgent } = use;
+    if (!defaultAgent) continue;
+    definitions ??= await assistantStore.agents(domainId);
+    const selection = defaultAgent.kind === "id" ? `'${defaultAgent.id}'` : `preset '${defaultAgent.agentKind}'`;
+    const unavailable = (reason: string) =>
+      new HttpError(409, `Entry '${use.id}' default agent ${selection} ${reason}`, "PAGE_DEFAULT_AGENT_UNAVAILABLE");
+    const definition = definitions.find(agent => defaultAgent.kind === "id"
+      ? agent.id === defaultAgent.id : agent.kind === defaultAgent.agentKind);
+    if (!definition) throw unavailable("does not exist in this domain.");
+    if (!definition.enabled) throw unavailable("is disabled.");
+
+    const ref = protectedSkillRef(panelSkillProvider.id, domainId, use.panelId);
+    const key = runtimeSkillKey(ref);
+    if (!configuredAssistantSkills(definition, [ref]).some(skill => runtimeSkillKey(skill) === key))
+      throw unavailable(`does not select the skill for panel '${use.panelId}'.`);
   }
   for (const id of delivery.panels)
     if (!panels.has(id)) throw new HttpError(400, `Panel '${id}' is not reachable from the application`, "INVALID_PANEL_DELIVERY");
