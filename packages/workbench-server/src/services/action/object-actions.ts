@@ -66,7 +66,7 @@ function readStatus(code: string): number {
 }
 
 /** A negative owner answer to a read, in the owner's words and with the owner's code when it gave one. */
-function readRefusal(envelope: OwnerEnvelope, failureCode: string, fallbackMessage: string): HttpError {
+export function readRefusal(envelope: OwnerEnvelope, failureCode: string, fallbackMessage: string): HttpError {
   const outcome = ownerWriteFailure(envelope, failureCode, fallbackMessage);
   return new HttpError(outcome.kind === "failure" ? 500 : readStatus(outcome.code), outcome.message, outcome.code);
 }
