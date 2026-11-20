@@ -122,12 +122,13 @@ beforeAll(async () => {
     metricExecutions.push(req.body);
     res.json({ columns: [{ key: "name", label: null, type: null }], rows: [{ name: "north" }], truncation: null });
   });
-  app.get("/java/platform/applications/chart-pilot/panel-uses", (req, res) => {
+  app.get("/java/platform/applications/resolve-entry", (req, res, next) => {
+    if (req.query.applicationId !== "chart-pilot") { next(); return; }
     expect(req.header("tk")).toBe("bob");
     res.json({ success: true, data: {
-      applicationId: "chart-pilot", entry: { path: "/applications/chart-pilot", renderer: "panels" },
-      panelUses: [{ id: "chart", pageKey: "chart", path: "/applications/chart-pilot/chart", panelId: "chart-pilot",
-        access: { kind: "domain-member" } }],
+      applicationId: "chart-pilot", menu: { groups: [], panelUses: [] },
+      use: { id: "chart", pageKey: "chart", path: "/applications/chart-pilot/chart", panelId: "chart-pilot",
+        access: { kind: "domain-member" } },
     } });
   });
   app.use("/api", (req, _res, next) => {

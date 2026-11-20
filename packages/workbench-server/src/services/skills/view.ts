@@ -4,20 +4,19 @@ import {
   pageSkillsProjectionSchema, type PageSkillContext, type PageSkillEntrance, type PageSkillGroup,
   type PageSkillLocator, type PageSkillMember, type PageSkillSource,
 } from "@ontomato/contracts/page-skills";
-import { applicationPanelUsesResponseSchema } from "@ontomato/contracts/product-panels";
 import { config } from "../../config/application";
 import { isProtectedSkillName, protectedSkillRef } from "../../core/skills";
 import { skillRegistryManager, type ListedProtectedSkill } from "../../core/skills/registry/manager";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendResponseError, backendGet, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
+import { requirePanelEntry } from "../product-panels/application-use";
 import { grantedProductIds } from "../product-governance/grants";
 
 const javaPageSkills = z.object({
   success: z.literal(true),
   data: pageSkillsProjectionSchema,
 });
-const javaPanelUses = z.object({ success: z.literal(true), data: applicationPanelUsesResponseSchema });
 const LEGACY_AGGREGATE_NAME = /^panel-(?:menu|page)-(?:[a-z0-9]+(?:-[a-z0-9]+)*-)?[a-f0-9]{24}$/u;
 
 export interface SkillSourceIdentity {
@@ -75,21 +74,17 @@ async function javaPageSkillProjection(credentials: AssistantCredentials) {
 async function currentApplicationPanel(caller: PageSkillViewCaller, entrance: PageSkillEntrance,
   source: ApplicationUseSkillSource,
 ) {
-  let response;
+  let entry;
   try {
-    response = await backendGet("panel-use",
-      `${config.dataQuery.baseUrl}/platform/applications/${encodeURIComponent(source.applicationId)}/panel-uses`,
-      { headers: callerHeaders(caller.initiatorCredentials), retries: 1 });
+    entry = await requirePanelEntry(caller.initiatorCredentials, source);
   } catch (error) {
-    // Java refuses non-panel applications, inaccessible apps, and unknown apps at the source boundary.
     if (error instanceof BackendResponseError && [400, 403, 404].includes(error.status)) return null;
+    if (error instanceof HttpError && error.code === "PANEL_ENTRY_SOURCE_MISMATCH")
+      throw new HttpError(502, error.message, "SKILL_SOURCE_UNAVAILABLE");
     throw error;
   }
-  const { applicationId, panelUses } = javaPanelUses.parse(JSON.parse(response.text)).data;
-  if (applicationId !== source.applicationId)
-    throw new HttpError(502, "Panel use source returned another application", "SKILL_SOURCE_UNAVAILABLE");
-  const use = panelUses.find(use => use.id === source.useId && use.pageKey === entrance.pageKey);
-  if (!use) return null;
+  const { applicationId, use } = entry;
+  if (use.pageKey !== entrance.pageKey) return null;
   const actual = "permissionCode" in use.access ? { permissionCode: use.access.permissionCode, pageKey: use.pageKey }
     : { access: "domain-member" as const, pageKey: use.pageKey };
   return entranceKey(actual) === entranceKey(entrance) ? { use, applicationId, entrance: actual } : null;
