@@ -83,12 +83,15 @@ the result and affected task. A repeated dispatch reports the existing result.
 In `recipes.md`, describe how to use the declared reads, forms and operations for common tasks. Use the business
 owner's rules and actual operation descriptions for the page.
 
+Treat page selection as an object reference. Read the selected object's current fields through the owner's named
+`record` read before reporting properties such as status. Report a denied or failed read when it prevents a conclusion.
+
 For Business Knowledge at `/ontology/knowledge`, the owner supplies these rules.
 
 1. A record has a required title and body, tags, and a status. The body is the retrievable text. Use the owner's
    tag choices or create a new tag. Status `0` means pending review and `1` means approved, the default for manual creation.
 2. Split a search on whitespace. A match contains every term somewhere in its title, body or tags.
-3. Read the current record before editing. The owner uses last-write-wins updates.
+3. Use the selected object's ID to read `record` before reporting its status or editing it. The owner uses last-write-wins updates.
 4. In the default mode, hand a draft to the user for form saves. Execute declared writes after the user's confirmation
    or when the application allows automatic execution.
 5. Approval sets the status to `1`. A delete confirmation names the titles and number of entries because deletion is

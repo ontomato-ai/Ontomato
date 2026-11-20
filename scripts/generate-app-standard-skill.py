@@ -29,7 +29,7 @@ STATUS = ("## 六、平台现在做到哪了（2026-11-20）\n\n"
 
 
 def render_standard(text):
-    start = text.index("## 一、总的结构")
+    start = text.index("## 这套标准的原则")
     end = text.index("## 六、和现在的实现差在哪")
     body = text[start:end]
 
