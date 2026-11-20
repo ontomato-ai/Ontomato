@@ -228,23 +228,6 @@ export interface PlatformObjectOptions {
   resolve(values: readonly RuntimeJsonValue[]): Promise<readonly PlatformObjectOption[]>;
 }
 
-/** Offset-paged read request for a long-text source through a resource adapter. */
-export interface PlatformObjectSegmentQuery {
-  readonly parent?: PanelObjectIdentity;
-  readonly collection?: string;
-  readonly sourceId: string;
-  readonly offset: number;
-}
-
-/** One offset-paged slice of plain text returned by a resource adapter's `readSegment` port. */
-export interface PlatformObjectSegmentPage {
-  readonly sourceId: string;
-  readonly title: string;
-  readonly items: readonly { readonly id: string; readonly text: string }[];
-  readonly nextOffset: number | null;
-  readonly emptyHint?: string;
-}
-
 /** Per-type or per-relation-kind read outcome reported by a graph source; never collapsed into an empty graph. */
 export type PlatformGraphStatus = "ok" | "refused" | "failed" | "unavailable";
 
@@ -354,7 +337,6 @@ export interface PlatformObjectAdapter {
   list?(): Promise<readonly PlatformObjectRecord[]>;
   query?(query: PlatformObjectQuery): Promise<PlatformObjectQueryResult>;
   read?(primaryKey: string): Promise<PlatformObjectRecord>;
-  readSegment?(query: PlatformObjectSegmentQuery): Promise<PlatformObjectSegmentPage>;
   forms?: PlatformObjectForms;
   options?: PlatformObjectOptions;
   graph?: PlatformObjectGraph;
@@ -455,7 +437,7 @@ export function registeredPlatformObjects(): readonly string[] {
 }
 
 /** One part of a type's adapter, or a visible failure naming the type and the part it lacks. */
-export function adapterPart<Part extends "list" | "query" | "read" | "readSegment" | "forms" | "options" | "graph" | "metric">(
+export function adapterPart<Part extends "list" | "query" | "read" | "forms" | "options" | "graph" | "metric">(
   objectType: string,
   part: Part,
 ): NonNullable<PlatformObjectAdapter[Part]> {

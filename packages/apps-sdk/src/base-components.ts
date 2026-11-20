@@ -14,6 +14,7 @@ export const baseComponents = {
   ObjectGraph: () => import("./base/ObjectGraph.vue").then(module => module.default),
   PathTree: () => import("@ontomato/foundation-ui/tree").then(module => module.PathTree),
   SegmentedTextReader: () => import("@ontomato/foundation-ui/reader").then(module => module.SegmentedTextReader),
+  ObjectTextReader: () => import("./base/ObjectTextReader.vue").then(module => module.default),
   ConversationEntry: () => import("./base/ConversationEntry.vue").then(module => module.default),
   PanelData: () => import("./base/PanelData.vue").then(module => module.default),
   MetricChart: () => import("./base/MetricChart.vue").then(module => module.default),

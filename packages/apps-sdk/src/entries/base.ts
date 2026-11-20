@@ -17,6 +17,7 @@ export { default as TwoPaneLayout } from "../base/TwoPaneLayout.vue";
 export { default as SectionGroup } from "../base/SectionGroup.vue";
 export { default as ReferencePicker } from "../base/ReferencePicker.vue";
 export { default as ObjectGraph } from "../base/ObjectGraph.vue";
+export { default as ObjectTextReader } from "../base/ObjectTextReader.vue";
 export { default as ConversationEntry } from "../base/ConversationEntry.vue";
 export { default as PanelData } from "../base/PanelData.vue";
 export { default as MetricChart } from "../base/MetricChart.vue";
