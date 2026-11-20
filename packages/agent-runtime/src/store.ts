@@ -255,6 +255,23 @@ export class RuntimeStore {
     }
     await this.pool.end();
   }
+  async readOpenAdmission(scope: Scope, key: string, c?: PoolClient) {
+    if (c) {
+      // A writer serializes this key even across different sessions.
+      await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+        canonical([...values(scope), key]),
+      ]);
+    }
+    const old = (
+      await (c ?? this.pool).query(
+        `SELECT * FROM ${this.table("admissions")} WHERE host_id=$1 AND domain_id=$2 AND key=$3`,
+        [...values(scope), key],
+      )
+    ).rows[0];
+    if (old?.deleted)
+      throw new RuntimeError(410, "RESOURCE_DELETED", "Resource was deleted");
+    return old;
+  }
   async admission(
     c: PoolClient,
     scope: Scope,
@@ -263,19 +280,8 @@ export class RuntimeStore {
     fingerprint: string,
     sessionId: string,
   ) {
-    // Serializes the same key even when two requests target different sessions.
-    await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
-      canonical([...values(scope), key]),
-    ]);
-    const old = (
-      await c.query(
-        `SELECT * FROM ${this.table("admissions")} WHERE host_id=$1 AND domain_id=$2 AND key=$3`,
-        [...values(scope), key],
-      )
-    ).rows[0];
+    const old = await this.readOpenAdmission(scope, key, c);
     if (old) {
-      if (old.deleted)
-        throw new RuntimeError(410, "RESOURCE_DELETED", "Resource was deleted");
       if (
         old.operation !== operation ||
         old.fingerprint !== fingerprint ||
