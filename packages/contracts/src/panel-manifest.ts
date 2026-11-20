@@ -158,8 +158,7 @@ export const panelOperationKindSchema = z.enum(["form.save", "action", "state"])
 export type PanelOperationKind = z.infer<typeof panelOperationKindSchema>;
 
 /**
- * The object an operation acts on: a state field of the panel instance, so the reader's current selection is the
- * target, or the form draft's own target when the form creates an object.
+ * An operation targets the instance's selected object or checked object list, or a form's draft target.
  */
 export const panelOperationTargetSchema = z.discriminatedUnion("source", [
   z.object({ source: z.literal("state"), state: key }).strict(),

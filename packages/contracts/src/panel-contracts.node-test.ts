@@ -34,7 +34,7 @@ import {
 import {
   matchesObjectType, objectUnionTypes, ontologyObjectUnionTypeSchema, ontologyParameterTypeSchema,
   panelChildCollectionQuerySchema, panelChildObjectIdentitySchema, panelManifestSchema, panelOpenRequestSchema, panelStateFieldSchema,
-  panelStateOperationSchema, panelStateValueSchema, singleOntologyParameterTypeSchema,
+  panelOperationSchema, panelStateOperationSchema, panelStateValueSchema, singleOntologyParameterTypeSchema,
 } from "./panel-manifest";
 import { pageSelectionSchema } from "./page-context";
 import { pageDraftSchema } from "./page-draft";
@@ -559,6 +559,23 @@ test("named operation reads publish buttons and form metadata binds to its real 
     { client: "@binding", name: "delete", label: "Delete", kind: "action", inputSchema: {} },
   ] });
   assert.deepEqual(formPorts.operations.map(op => op.handlerRef), [`${SCHEDULED_TASK}.save`]);
+});
+
+test("a batch operation can target the checked object list", () => {
+  const selection = { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } };
+  const projection = productProjectionInputSchema.parse({
+    name: "Delete checked", description: "", visibility: "domain", componentId: "@ontomato/sdk:OperationButton",
+    inputs: { selection }, outputs: {}, config: { checked: "selection" },
+    data: { operation: { source: { operation: platformOperation(DELETE_KNOWLEDGE) }, read: "describe", params: {} } },
+  });
+  const manifest = panelManifestSchema.parse({
+    state: { checked: { type: selection, default: [] } },
+    members: { removeAll: { target: { projectionId: "delete-checked" }, inputs: { selection: { state: "checked" } } } },
+    events: {},
+  });
+  const ports = projectionPorts(projection, {});
+  const [remove] = projectionOperations(manifest, { slot: "removeAll", ports });
+  assert.deepEqual(panelOperationSchema.parse(remove).target, { source: "state", state: "checked" });
 });
 
 test("read operation inputs can take parameter values and a binding from this panel instance", () => {

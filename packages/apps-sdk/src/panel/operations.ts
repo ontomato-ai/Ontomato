@@ -1,6 +1,6 @@
 import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
 import { projectionOperations } from "@ontomato/contracts/panel-projection";
-import { operationCall, type PanelProjectionRegistration } from "./ports";
+import { operationInvocation, type PanelProjectionRegistration } from "./ports";
 import type { PanelOperationBinding } from "./types";
 import type { PanelStateStore } from "./state";
 import type { PanelFormAdapters } from "./draft";
@@ -39,7 +39,7 @@ export function panelOperations(
         invoke: (input?: Readonly<Record<string, unknown>>) =>
           operation.kind === "form.save"
             ? forms.submit(operation.slot!)
-            : write(operation.id, { call: operationCall(operation, state.values.value, input ?? {}) }),
+            : write(operation.id, operationInvocation(operation, state.values.value, input ?? {})),
       })),
     ),
     ...events.operations().map((operation) => ({ ...operation, invoke: () => events.invoke(operation.id) })),
