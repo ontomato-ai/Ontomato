@@ -23,6 +23,7 @@ export {
   pageSelectionSchema,
   pageContextSchema,
   samePageAddress,
+  writtenText,
   type CarriedTarget,
   type FileContext,
   type FileLinePrompt,

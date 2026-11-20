@@ -29,7 +29,7 @@ export {
 export { default as ShellColumn } from "./components/ShellColumn.vue";
 export { default as ToolStep } from "./components/ToolStep.vue";
 export { pageDockSpaceKey, useConversationContinuation, usePageDockSpace } from "./context";
-export { pageContextLine, pageLineAddress, pageMoved, samePageAddress, type PageContext, type PageLinePrompts, type PageSelection } from "./page-context";
+export { pageContextLine, pageLineAddress, pageMoved, samePageAddress, writtenText, type PageContext, type PageLinePrompts, type PageSelection } from "./page-context";
 export { pageCounterKey, usePageCounter, type PageCounter } from "./page-counter";
 export { entryAgent, servePageComposerKey, type ComposerEntry, type PageComposerExpand, type ServePageComposer } from "./page-composer-entry";
 export {
