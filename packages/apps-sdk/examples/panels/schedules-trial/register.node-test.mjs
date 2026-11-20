@@ -155,10 +155,10 @@ test("registers the trial's projections, panels and applications in that order",
   assert.ok(requests.every((request) => !JSON.stringify(request.body ?? {}).includes("a-credential")));
   const productRequests = requests.filter((request) => request.url.startsWith("/api/product"));
   assert.ok(productRequests.every((request) => request.method === "PUT" && request.body.revision === 0));
-  // Both panels use the deployment SDK. Q keeps its module.
+  // Both panels use the deployment SDK, and each carries its module.
   assert.deepEqual(productRequests.filter((request) => request.url.startsWith("/api/product-panels/"))
     .map(({ url, body }) => [decodeURIComponent(url), Object.hasOwn(body, "sdkVersion"), Object.hasOwn(body.content, "module")]), [
-    ["/api/product-panels/panel-schedules-trial", false, false],
+    ["/api/product-panels/panel-schedules-trial", false, true],
     ["/api/product-panels/panel-schedules-summary", false, true],
   ]);
   assert.ok(productRequests.filter((request) => request.url.startsWith("/api/product-projections/"))
