@@ -84,10 +84,11 @@ it("runs the trial's P without code: choose a task, see it summed up and in its 
     .map(request => request.body as Read).filter(read => read.dataName === name);
   const options = () => element.querySelectorAll<HTMLElement>("[data-member='tasks'] [role='option']");
   try {
-    // The list is there to choose from; nothing else is shown or read before a task is chosen.
+    // The list is there to choose from and the summary asks for a choice; nothing but the list is read before one.
     await vi.waitFor(() => expect(options()).toHaveLength(2));
     expect(element.querySelector("iframe")).toBeNull();
-    expect(element.querySelector("[data-member='summary']")).toBeNull();
+    expect(element.querySelector("[data-member='summary'] [data-state='awaiting']")).not.toBeNull();
+    expect(element.querySelector("[data-member='form']")).toBeNull();
     expect(["record", "form", "operation"].flatMap(reads)).toEqual([]);
 
     options()[0]!.click();
