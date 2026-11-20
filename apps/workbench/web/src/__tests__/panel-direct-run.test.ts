@@ -134,6 +134,19 @@ it("runs two different panels at once, each drawn from its own template", async 
   listMount.dispose();
 });
 
+it("draws each member in its own container, with no input left on the component's element", async () => {
+  const { module, mount, element } = run(`<Projection slot="run"/>`);
+  const { context } = await evaluate(module, "");
+  await drawn(element);
+  // An input the component reads through its slot is not one of its props: it reaches no element as an attribute.
+  context.instance.state.set("selectedTask", { className: SCHEDULED_TASK, primaryKey: "t-1" });
+  await nextTick();
+  const container = element.querySelector('[data-member="run"]');
+  expect(container?.querySelector(".sdk-operation-button button")).toBeTruthy();
+  expect(element.querySelector("[task]")).toBeNull();
+  (await mount).dispose();
+});
+
 it("mounts a module's component once", async () => {
   const { module, mount } = run(`<p>{{ words }}</p>`);
   await evaluate(module, "once");
