@@ -3,7 +3,8 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMemberData } from "../panel/member";
-import { APPLICATION_PANEL_USE, applicationMenuSections, type ApplicationMenu } from "./app-menu";
+import { APPLICATION_PANEL_USE } from "@ontomato/contracts/platform-object-types";
+import { applicationMenuSections, type ApplicationMenu } from "./app-menu";
 
 /**
  * The menu of an application whose pages are its entries, drawn in the application's frame (design §3).

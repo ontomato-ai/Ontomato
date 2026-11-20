@@ -6,7 +6,8 @@ import publicEn from "@ontomato/workbench-ui/locales/en";
 import type { MemberDataState } from "../../../../../packages/apps-sdk/src/panel/direct";
 import { panelMemberKey, type PanelMemberContext } from "../../../../../packages/apps-sdk/src/panel/member";
 import AppMenu from "../../../../../packages/apps-sdk/src/base/AppMenu.vue";
-import { APPLICATION_PANEL_USE, type ApplicationMenu } from "../../../../../packages/apps-sdk/src/base/app-menu";
+import { APPLICATION_PANEL_USE } from "@ontomato/contracts/platform-object-types";
+import type { ApplicationMenu } from "../../../../../packages/apps-sdk/src/base/app-menu";
 
 /*
  * The application's menu (design §3): it draws the one menu Java resolved and says only which entry the reader picked —

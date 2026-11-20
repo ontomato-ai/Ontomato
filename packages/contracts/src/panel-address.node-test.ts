@@ -3,20 +3,17 @@ import test from "node:test";
 import {
   PanelAddressError, deepLinkedStateOf, entryPathOf, readPanelAddress, resolveEntryPath, writePanelAddress,
 } from "./panel-address";
-import { directPanelStateFieldSchema, panelStateSchema, type DirectPanelStateField, type PanelState } from "./panel-manifest";
+import { panelStateSchema, type PanelState } from "./panel-manifest";
 
-/**
- * What the trial's two panels declare: the frame is a direct panel and shares a term, the content panel is written with
- * code and shows a selected task. Both shapes are read by the same port.
- */
-const frameState: Record<string, DirectPanelStateField> = {
-  term: directPanelStateFieldSchema.parse({ type: { kind: "scalar", type: "string" }, deepLink: true, external: true }),
-};
+/** What the trial's two panels declare: the frame shares a term, the content panel shows a selected task. */
+const frameState: PanelState = panelStateSchema.parse({
+  term: { type: { kind: "scalar", type: "string" }, deepLink: true, external: true },
+});
 const contentState: PanelState = panelStateSchema.parse({
-  selectedTask: { kind: "object", objectType: "platform:ScheduledTask", deepLink: true },
-  mode: { kind: "scalar", type: "string", deepLink: true },
-  tab: { kind: "scalar", type: "string" },
-  marked: { kind: "objects", objectType: "platform:ScheduledTask" },
+  selectedTask: { type: { kind: "object", objectType: "platform:ScheduledTask" }, deepLink: true },
+  mode: { type: { kind: "scalar", type: "string" }, deepLink: true },
+  tab: { type: { kind: "scalar", type: "string" } },
+  marked: { type: { kind: "list", items: { kind: "object", objectType: "platform:ScheduledTask" } } },
 });
 const task = { className: "platform:ScheduledTask", primaryKey: "10000000-0000-4000-8000-000000000004" };
 

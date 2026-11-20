@@ -12,11 +12,14 @@
  */
 
 /**
- * The platform object type an entry reference names. A menu entry is a thing of the platform's type table, so a jump to
- * one is an ordinary object reference; A registers the type in `contracts/src/platform-object-types.ts`, and the
- * component imports it from there once it is.
+ * The menu Java answers for an entry: the groups the application declares and the entries this reader may open. It is
+ * the shape of `applicationEntryMenuSchema` without the schema itself — the SDK bundles no validator for a datum the
+ * platform read for it, and the recorded answers are parsed with that schema where they are read.
  */
-export const APPLICATION_PANEL_USE = "platform:ApplicationPanelUse";
+export interface ApplicationMenu {
+  groups: readonly ApplicationMenuGroup[];
+  panelUses: readonly ApplicationMenuEntry[];
+}
 
 export interface ApplicationMenuGroup {
   key: string;
@@ -30,11 +33,6 @@ export interface ApplicationMenuEntry {
   path: string;
   names?: Record<string, string>;
   groupKey?: string | null;
-}
-
-export interface ApplicationMenu {
-  groups: readonly ApplicationMenuGroup[];
-  panelUses: readonly ApplicationMenuEntry[];
 }
 
 /** One group of the menu as it is drawn: what it is called and the entries in it, in the order they are offered. */

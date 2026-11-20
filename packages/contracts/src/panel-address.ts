@@ -1,6 +1,6 @@
 import {
-  matchesDirectPanelValue, matchesObjectType, panelChildObjectIdentitySchema, panelObjectRefSchema, panelOpenRequestSchema,
-  type DirectPanelStateField, type PanelDeepLinkStateValue, type PanelState, type PanelStateField,
+  matchesDirectPanelValue, panelOpenRequestSchema,
+  type PanelDeepLinkStateValue, type PanelState,
 } from "./panel-manifest";
 import { applicationPanelUsePathSchema } from "./product-panels";
 
@@ -76,46 +76,24 @@ export function entryPathOf(path: string): string {
   return parsed.data;
 }
 
-/** The state a panel declares, in either shape a panel is written in: a coded panel's manifest, or a direct panel's. */
-export type PanelStateDeclaration = PanelState | Record<string, DirectPanelStateField>;
-
 /**
  * The values of one segment that the panel may take from an address: only the fields it declares deep-linkable, each
  * checked against the type it declared. An undeclared or closed field is refused by name rather than dropped, because a
  * link that asked for something the panel no longer offers is a broken link, not an empty one.
  */
 export function deepLinkedStateOf(
-  declared: PanelStateDeclaration, values: Record<string, PanelDeepLinkStateValue>, segment: PanelAddressSegment,
+  declared: PanelState, values: Record<string, PanelDeepLinkStateValue>, segment: PanelAddressSegment,
 ): Record<string, PanelDeepLinkStateValue> {
   const kept: Record<string, PanelDeepLinkStateValue> = {};
   for (const [name, value] of Object.entries(values)) {
     const field = declared[name];
     if (!field) throw new PanelAddressError(`${segment}.${name}`, "The panel declares no such state field");
     if (!field.deepLink) throw new PanelAddressError(`${segment}.${name}`, "The panel does not accept this field in an address");
-    if (!matchesStateField(field, value))
+    if (!matchesDirectPanelValue(field.type, value))
       throw new PanelAddressError(`${segment}.${name}`, "The value does not match the state field's declared type");
     kept[name] = value;
   }
   return kept;
-}
-
-function matchesStateField(field: PanelStateField | DirectPanelStateField, value: PanelDeepLinkStateValue): boolean {
-  // A direct panel declares its field's type alone; a coded panel declares the object or scalar itself.
-  if ("personal" in field) return matchesDirectPanelValue(field.type, value);
-  switch (field.kind) {
-    case "object":
-    case "object-union": {
-      const ref = panelObjectRefSchema.safeParse(value);
-      return ref.success && matchesObjectType(field, ref.data.className);
-    }
-    case "child-object":
-      return panelChildObjectIdentitySchema.safeParse(value).success;
-    case "objects":
-      // A checked collection belongs to the instance, and its declaration never takes an address (deepLink is false).
-      return false;
-    case "scalar":
-      return matchesDirectPanelValue(field, value);
-  }
 }
 
 /** Where Java resolves an entry from its path: the same gateway prefix the application's use relations come from. */
