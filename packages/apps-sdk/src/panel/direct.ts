@@ -71,29 +71,44 @@ export interface DirectPanelInstance extends PanelInstance {
   projectionVersion(member: string): number;
 }
 
-/** The member inputs a datum reads: the one its source object is, and those its parameters take their values from. */
-export function inputsRead(data: DirectProjectionData): string[] {
-  const object = "object" in data.source && "input" in data.source.object ? [data.source.object.input] : [];
-  return [...object, ...Object.values(data.params).flatMap((param) => ("input" in param ? [param.input] : []))];
+/**
+ * What a datum's read takes now, parameter by parameter of its owner's signature, from three places in this order: the
+ * projection's own mapping (a literal, or one of its inputs); the member's panel state of the same name (an input or an
+ * output bound to it), which is the author's binding though the projection writes no mapping; and the member's own value
+ * the component set (`params`), which the platform checks against the component's catalogue as a run-time parameter.
+ */
+export function readParams(projection: DirectProjection, data: DirectProjectionData, inputs: MemberInputs, own: MemberInputs) {
+  const values: Record<string, RuntimeJsonValue | null> = {};
+  const runtime: Record<string, RuntimeJsonValue> = {};
+  for (const [param, source] of Object.entries(data.params))
+    values[param] = "literal" in source ? source.literal : inputs[source.input] ?? null;
+  const declaration = directReadDeclaration(projection, data);
+  const signature = declaration?.parameterMode === "fixed" ? Object.keys(declaration.params) : [];
+  for (const param of signature) {
+    if (Object.hasOwn(data.params, param)) continue;
+    if (Object.hasOwn(inputs, param)) values[param] = inputs[param] ?? null;
+    else if (own[param] !== undefined && own[param] !== null) values[param] = runtime[param] = own[param];
+    else values[param] = null;
+  }
+  return { values, runtime };
 }
 
-/** The values of the inputs a datum reads, as one comparable text: it is read again only when this changes. */
-export const readKey = (data: DirectProjectionData, inputs: MemberInputs) =>
-  JSON.stringify(inputsRead(data).map((name) => inputs[name] ?? null));
+/** What a datum reads now, as one comparable text: it is read again only when this changes. */
+export const readKey = (projection: DirectProjection, data: DirectProjectionData, inputs: MemberInputs, own: MemberInputs) =>
+  JSON.stringify([sourceObject(data, inputs) ?? null, readParams(projection, data, inputs, own).values]);
 
-/** The value each of a datum's read parameters takes now: its literal, or the input that holds it. */
-export function paramValues(data: DirectProjectionData, inputs: MemberInputs): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(data.params).map(([param, source]) =>
-    [param, "literal" in source ? source.literal : inputs[source.input] ?? null]));
+/** The value each of a datum's read parameters takes now (see `readParams`). */
+export function paramValues(projection: DirectProjection, data: DirectProjectionData, inputs: MemberInputs, own: MemberInputs) {
+  return readParams(projection, data, inputs, own).values;
 }
 
 /**
  * Whether a datum waits for what its read cannot go without: the object it is read from, or a parameter its owner
  * requires (a type to list objects of, a node to expand). A waiting datum is read nowhere; a literal is always there.
  */
-export function awaitsInputs(projection: DirectProjection, data: DirectProjectionData, inputs: MemberInputs): boolean {
+export function awaitsInputs(projection: DirectProjection, data: DirectProjectionData, inputs: MemberInputs, own: MemberInputs): boolean {
   if ("object" in data.source && stateObject(sourceObject(data, inputs)) === null) return true;
-  const values = paramValues(data, inputs);
+  const values = paramValues(projection, data, inputs, own);
   const declaration = directReadDeclaration(projection, data);
   const required = declaration?.parameterMode === "fixed" ? declaration.requiredParams ?? [] : [];
   return required.some((param) => values[param] === null);
@@ -135,12 +150,18 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       return found;
     },
     memberData(member: string, projection: DirectProjection, inputs: () => MemberInputs): MemberData {
+      const own = () => instance.ownParams(member);
       async function answer(name: string, values: MemberInputs): Promise<MemberDataState> {
         const data = projection.data[name];
         if (!data) throw new Error(`Member '${member}' declares no datum '${name}'`);
         // A datum waits for its object or a required parameter; no read is made for nothing.
-        if (awaitsInputs(projection, data, values)) return { status: "awaiting" };
-        const result = await options.read({ memberPath: [{ member }], dataName: name, inputs: values });
+        if (awaitsInputs(projection, data, values, own())) return { status: "awaiting" };
+        // What the member's component set itself goes apart from the author's inputs, and is checked as such.
+        const { runtime } = readParams(projection, data, values, own());
+        const result = await options.read({
+          memberPath: [{ member }], dataName: name, inputs: values,
+          ...(Object.keys(runtime).length ? { runtimeParams: runtime } : {}),
+        });
         if (result.status !== "ready") return result;
         // The host's answer is checked against the result the owner registered for this read.
         const declaration = directReadDeclaration(projection, data);
@@ -162,7 +183,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
           };
           const entry = { data: projection.data[name]!, inputs, reread };
           shown.add(entry);
-          watch(() => readKey(entry.data, inputs()), reread, { immediate: true });
+          watch(() => readKey(projection, entry.data, inputs(), own()), reread, { immediate: true });
           onScopeDispose(() => shown.delete(entry));
           return computed(() => state.value);
         },

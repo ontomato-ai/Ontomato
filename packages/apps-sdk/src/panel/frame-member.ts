@@ -50,14 +50,16 @@ function formOf(data: DirectProjectionData, object: PanelObjectValue | null, par
 }
 
 export function frameMemberData(projection: DirectProjection, slot: string, instance: PanelInstance, inputs: () => MemberInputs): MemberData {
+  /** What the member's component set itself; a frame's resource module takes it with the author's parameters. */
+  const own = () => instance.ownParams(slot);
   async function answer(name: string, values: MemberInputs): Promise<MemberDataState> {
     const data = projection.data[name];
     if (!data) throw new Error(`Projection ${projection.id} declares no datum '${name}'`);
     const declaration = directReadDeclaration(projection, data);
     if (!declaration) throw new Error(`No owner registers the read '${data.read}' that datum '${name}' names`);
-    if (awaitsInputs(projection, data, values)) return { status: "awaiting" };
+    if (awaitsInputs(projection, data, values, own())) return { status: "awaiting" };
     const object = objectOf(data, values);
-    const params = paramValues(data, values);
+    const params = paramValues(projection, data, values, own());
     const type = "type" in data.source ? data.source.type.id : object?.className;
     let value: unknown;
     switch (declaration.result) {
@@ -94,7 +96,7 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
         break;
       case "panelGraphNeighbors":
         value = await graphOf(type!).neighbors({
-          node: params.node as PanelObjectValue,
+          node: params.node as unknown as PanelObjectValue,
           ...(params.relationKinds ? { relationKinds: params.relationKinds as string[] } : {}),
           ...(params.layers ? { layers: params.layers as PlatformGraphNeighborsQuery["layers"] } : {}),
         });
@@ -139,7 +141,7 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
       };
       // An object an operation changed is read again where it is shown: its own datum, or a list of its type.
       const data = projection.data[name]!;
-      watch(() => readKey(data, inputs()), reread, { immediate: true });
+      watch(() => readKey(projection, data, inputs(), own()), reread, { immediate: true });
       onScopeDispose(instance.onObjectChanged((changed) => {
         const object = objectOf(data, inputs());
         if (!changed || (object && object.className === changed.objectType && object.primaryKey === changed.primaryKey)

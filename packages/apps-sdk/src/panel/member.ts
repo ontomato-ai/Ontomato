@@ -2,6 +2,7 @@ import { inject, type ComputedRef, type InjectionKey } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { MemberData, MemberDataState, MemberInputs } from "./direct";
+import { usePanelContext } from "./context";
 
 /*
  * The member a component is drawn as in a directly rendered panel (design 4.2): its projection with the named data it
@@ -44,6 +45,21 @@ export function readRun(projection: DirectProjection, name: string, params: Read
     const source = data.params[param];
     return source && "input" in source ? [[source.input, value]] : [];
   }));
+}
+
+/**
+ * One parameter of this member, as its component reads and sets it (a list's search, page, filter, checked or selected
+ * objects): the panel state the member binds it to — by its input of that name, else its output — or, unbound, the
+ * member's own value, which lives in this member alone and reaches the owner as a run-time parameter. Every datum whose
+ * read takes the parameter is read again when it changes.
+ */
+export interface MemberParam {
+  readonly value: ComputedRef<RuntimeJsonValue | null>;
+  set(value: RuntimeJsonValue | null): void;
+}
+
+export function useMemberParam(name: string): MemberParam {
+  return usePanelContext().instance.memberParam(member().key, name);
 }
 
 /** One more read of a named datum with values of the component's own for its read parameters, such as a form's values. */
