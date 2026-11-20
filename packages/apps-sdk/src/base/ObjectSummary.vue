@@ -15,7 +15,11 @@ import { textHighlightSegments } from "./text-highlight";
  * highlights, status tags, tag lists and clickable reference links follow the same record contract as `ObjectList`.
  */
 const props = defineProps<{
-  /** The facts to show, by the owner's field name, in this order; absent shows all of them in the owner's order. */
+  /**
+   * The owner's fields to show, by field name, in this order; absent, every field the owner's record gives, in its order.
+   * A field the owner gives a tone for (`tones`) is drawn as a coloured tag, a tag list (`tags`) as tags and a reference as
+   * a link the page hears as `navigate`; any other is text, its line breaks kept.
+   */
   fields?: readonly string[];
 }>();
 

@@ -4,6 +4,7 @@ import { computed, onMounted, provide, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElForm } from "element-plus/es/components/form/index";
+import { ElMessageBox } from "element-plus/es/components/message-box/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/panel-projection";
@@ -38,7 +39,9 @@ import FormFieldControl from "./FormFieldControl.vue";
  * saved it — the object it saved, or the one it created — or the reader discarded what it held.
  */
 const emit = defineEmits<{
+  /** The owner saved the form: the object it saved, or the one it created. */
   saved: [object: { className: string; primaryKey: string }];
+  /** The reader discarded the changes the form held. */
   discarded: [];
 }>();
 const { t } = useI18n();
@@ -171,9 +174,25 @@ function fail(reason: unknown) {
 
 onMounted(() => load(target.value));
 let pendingRefresh = false;
-watch(target, (next) => {
+/**
+ * The panel moved the form to another object (or to a new one) while it held the reader's unsaved changes: the reader is
+ * asked first, as the platform asks before leaving a page. Keeping them puts the panel back on the object being edited;
+ * discarding them is the form's own discard, and the form then shows where the panel moved.
+ */
+watch(target, async (next, previous) => {
   pendingRefresh = false;
-  if (targetKey(next) !== loaded) load(next);
+  if (targetKey(next) === loaded) return;
+  if (canSettle.value && !saving.value && previous !== null && targetKey(previous) === loaded) {
+    const leave = await ElMessageBox.confirm(t("platform.formLeaveUnsaved"), t("platform.unsavedChanges"), {
+      confirmButtonText: t("platform.discard"), cancelButtonText: t("platform.keepEditing"), type: "warning",
+    }).then(() => true, () => false);
+    if (!leave) {
+      moveTo(previous);
+      return;
+    }
+    discard();
+  }
+  if (targetKey(target.value) !== loaded) load(target.value);
 });
 function refreshWhenClean() {
   if (!pendingRefresh || canSettle.value || saving.value) return;
