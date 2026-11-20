@@ -22,6 +22,8 @@ A workspace is the application source tree. Business definitions remain in Java;
 
 When converting a platform page that needs a new owner read, operation or official component, use the [platform development examples](references/platform-development.md).
 
+For instances of customer ontology classes, bind the detail to the owner's `record` read and use a registered Action for changes. For platform resources with owner-declared forms, use the corresponding form and save operation.
+
 | Command | Result |
 | --- | --- |
 | `sdk read components.json` | Official components and ports in the current SDK |

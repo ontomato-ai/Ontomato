@@ -7,7 +7,7 @@ current owner declarations and SDK catalogue. Extend the owner or SDK where a re
 
 ## Add a named owner read or operation
 
-Scheduled tasks show the full path. The owner separates `list`, `record`, `form` and
+Scheduled tasks are a platform resource with an owner-declared form. The owner separates `list`, `record`, `form` and
 `schedules.runNow.describe`. The corresponding projections bind the list, selected task, owner form and operation
 button. Use `packages/apps-sdk/examples/panels/schedules-trial/definitions.mjs` and `p/panel.json` in that
 directory for the registered definitions and wiring.
