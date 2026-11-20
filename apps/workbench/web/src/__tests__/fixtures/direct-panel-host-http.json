@@ -69,8 +69,8 @@
       "domainId": "pilot",
       "ownerId": "reader",
       "revision": 1,
-      "createdAt": "2026-11-20T12:40:38.397Z",
-      "updatedAt": "2026-11-20T12:40:38.397Z",
+      "createdAt": "2026-11-20T13:27:57.861Z",
+      "updatedAt": "2026-11-20T13:27:57.861Z",
       "editable": true
     }
   },
@@ -163,19 +163,21 @@
           }
         },
         "outputs": {},
-        "data": {
-          "operation": {
-            "source": {
-              "operation": {
-                "kind": "PlatformOperation",
-                "id": "schedules.runNow"
-              }
+        "data": {},
+        "operations": {
+          "runNow": {
+            "operation": {
+              "kind": "PlatformOperation",
+              "id": "schedules.runNow"
             },
-            "read": "describe",
-            "params": {}
+            "target": {
+              "input": "task"
+            }
           }
         },
-        "config": {},
+        "config": {
+          "operation": "runNow"
+        },
         "name": "Run now",
         "description": "Runs the chosen scheduled task now, leaving its schedule as it is.",
         "visibility": "domain",
@@ -183,8 +185,8 @@
         "domainId": "pilot",
         "ownerId": "reader",
         "revision": 1,
-        "createdAt": "2026-11-20T12:40:38.385Z",
-        "updatedAt": "2026-11-20T12:40:38.385Z",
+        "createdAt": "2026-11-20T13:27:57.848Z",
+        "updatedAt": "2026-11-20T13:27:57.848Z",
         "editable": true
       }
     },
@@ -209,6 +211,17 @@
             "params": {}
           }
         },
+        "operations": {
+          "save": {
+            "operation": {
+              "kind": "PlatformOperation",
+              "id": "platform:ScheduledTask.save"
+            },
+            "target": {
+              "input": "task"
+            }
+          }
+        },
         "config": {},
         "name": "Task form",
         "description": "One scheduled task's form, as the application it belongs to declares it.",
@@ -217,8 +230,8 @@
         "domainId": "pilot",
         "ownerId": "reader",
         "revision": 1,
-        "createdAt": "2026-11-20T12:40:38.376Z",
-        "updatedAt": "2026-11-20T12:40:38.376Z",
+        "createdAt": "2026-11-20T13:27:57.834Z",
+        "updatedAt": "2026-11-20T13:27:57.834Z",
         "editable": true
       }
     },
@@ -252,8 +265,8 @@
         "domainId": "pilot",
         "ownerId": "reader",
         "revision": 1,
-        "createdAt": "2026-11-20T12:40:38.366Z",
-        "updatedAt": "2026-11-20T12:40:38.366Z",
+        "createdAt": "2026-11-20T13:27:57.824Z",
+        "updatedAt": "2026-11-20T13:27:57.824Z",
         "editable": true
       }
     },
@@ -293,8 +306,8 @@
         "domainId": "pilot",
         "ownerId": "reader",
         "revision": 1,
-        "createdAt": "2026-11-20T12:40:38.356Z",
-        "updatedAt": "2026-11-20T12:40:38.356Z",
+        "createdAt": "2026-11-20T13:27:57.813Z",
+        "updatedAt": "2026-11-20T13:27:57.813Z",
         "editable": true
       }
     }
