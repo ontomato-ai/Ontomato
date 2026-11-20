@@ -108,11 +108,18 @@ the full body as text with its original line breaks. The owner returns highlight
 
 ## Switch a built-in page to its panel
 
-Find the built-in preset agents that selected the old page skill. At the built-in entry's cutover, update each
-preset's bundled declaration to select the new built-in panel by its fixed ID. The platform resolves that panel
-to the corresponding skill in each domain. Keep the entry's default agent unchanged unless the product calls for
-a change. For Business Knowledge, restore the `knowledge-governance` preset as a candidate and keep the general
-assistant as the main entry's default. This step applies to built-in cutovers.
+1. Find the built-in presets that selected the old page skill. At cutover, update their bundled declarations
+   to select the new built-in panel by its fixed ID. Keep the entry's current default agent.
+2. Install the panel in each domain before running the system agent install or upgrade. The installer uses the
+   skill core's `protectedSkillRef("product-panels", domainId, panelId)` and writes the root skill reference to
+   the preset's `skills`, preserving the domain's edited selections. If a panel is absent from that domain,
+   skip its reference until an upgrade after installation. Implement the upgrade with the cutover where presets
+   currently have initialization only. Candidate discovery, effective skills and preparation use the persisted
+   selection through the existing rules.
+3. Verify an existing domain as part of cutover. For Business Knowledge, start with a previously installed
+   `knowledge-governance` preset and user-edited skill choices. Install the panel and run the upgrade once.
+   Confirm the edited choices remain and the preset is a candidate on the page. The main entry still defaults
+   to the general assistant.
 
 ## Add an official SDK component
 
