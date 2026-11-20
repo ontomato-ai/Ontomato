@@ -199,7 +199,7 @@ beforeEach(() => {
       },
       {
         permissionCode: "orders-menu",
-        defaults: [{ pageKey: "orders-page", agentKey: agentIds.orderCustom }],
+        defaults: [{ pageKey: "orders-page", defaultAgent: { kind: "id", id: agentIds.orderCustom } }],
       },
     ],
     registeredSkills: [publicDataBrowserSkill],
@@ -300,7 +300,7 @@ it("resolves application-use member queries through one view, filters by effecti
   expect(result.defaultAgentId).toBe(agentIds.orderCustom);
 
   // Without a matching pageKey default in the group, default falls back to regular.
-  projection.pageSkills[1] = { permissionCode: "orders-menu", defaults: [{ pageKey: "other-page", agentKey: agentIds.orderCustom }] };
+  projection.pageSkills[1] = { permissionCode: "orders-menu", defaults: [{ pageKey: "other-page", defaultAgent: { kind: "id", id: agentIds.orderCustom } }] };
   const fallbackDefault = await listAssistantAgents(
     owner,
     credentials,
