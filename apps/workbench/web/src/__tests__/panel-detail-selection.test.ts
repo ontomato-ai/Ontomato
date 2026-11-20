@@ -4,7 +4,7 @@ import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { detailSelectionGuard, type DetailSelection } from "../../../../../packages/platform-web/src/detail-selection";
 import { pilotPageResolver } from "../../../../../packages/platform-web/src/pilot-pages";
-import {
+import { panelAnswer,
   currentSdk, hostMessageOf, installPlatform, leaveFrame, manifestP, mountPlatformPage, nothingAt, panelHostFrame,
   panelRecord, panelSnapshot, panelUse, SCHEDULED_TASK, task, type Sent,
 } from "./panel-frame";
@@ -33,8 +33,8 @@ function answer(request: Sent) {
   if (request.path === `/api/data-query/platform/applications/${application}/panel-uses`) return Response.json({ data: {
     applicationId: application, entry: { path: "/", renderer: "panels" }, panelUses: [use],
   } });
-  if (request.path === `/api/product-panels/${panel.id}`) return Response.json({ panel });
-  if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel);
+  if (request.path === `/api/product-panels/${panel.id}`) return panelAnswer(panel, request);
+  if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel, undefined, request);
   if (request.path === "/api/apps-sdk/current") return currentSdk();
   return nothingAt(request);
 }

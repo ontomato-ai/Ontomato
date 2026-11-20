@@ -22,6 +22,7 @@ import {
   writeFrameDocument,
   type Sent,
   caseSetLabel,
+  panelAnswer
 } from "./panel-frame";
 
 const appA = "app-panels-trial-a";
@@ -48,9 +49,9 @@ function answer(request: Sent) {
     applicationId, entry: { path: "/", renderer: "panels" }, panelUses: [applicationId === appA ? useP : useQ],
   } });
   const panel = [p, q].find(panel => request.path === `/api/product-panels/${panel.id}`);
-  if (panel) return Response.json({ panel });
+  if (panel) return panelAnswer(panel, request);
   const snapshot = [p, q].find(panel => request.path === `/api/product-panels/${panel.id}/snapshot`);
-  if (snapshot) return panelSnapshot(snapshot);
+  if (snapshot) return panelSnapshot(snapshot, projections, request);
   const projection = Object.values(projections).find(projection => request.path === `/api/product-projections/${projection.id}`);
   if (projection) return Response.json({ projection });
   if (request.path === "/api/apps-sdk/current") return currentSdk();
@@ -201,7 +202,7 @@ it("renders and handles a new Element Plus menu in the author's card slot", asyn
     },
   };
   const { app, frame } = await open(panelAddress(`/applications/${appB}/summary`, deepState), false, request =>
-    request.path === `/api/product-panels/${q.id}` ? Response.json({ panel }) : answer(request));
+    request.path === `/api/product-panels/${q.id}` ? panelAnswer(panel, request) : answer(request));
   try {
     await startFrame(frame, () => ({ selected: ref("") }));
     const item = document.querySelector<HTMLElement>('#app [role="menuitem"]');
@@ -675,8 +676,8 @@ it("reconciles definitions and objects on foreground without replacing an unchan
   let panel = p;
   let summary = projections["projection-schedules-summary"]!;
   const { app, element, frame, sent } = await open(panelAddress(`/applications/${appA}/tasks`, deepState), false, request => {
-    if (request.path === `/api/product-panels/${panel.id}`) return Response.json({ panel });
-    if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel, { ...projections, [summary.id]: summary });
+    if (request.path === `/api/product-panels/${panel.id}`) return panelAnswer(panel, request);
+    if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel, { ...projections, [summary.id]: summary }, request);
     if (request.path === `/api/product-projections/${summary.id}`) return Response.json({ projection: summary });
     if (request.path === `${taskPath}/${task.id}`) return Response.json(current);
     if (request.path === `${taskPath}/applications/${task.appId}/form`)
