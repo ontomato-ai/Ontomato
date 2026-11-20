@@ -3,12 +3,16 @@ import { z } from "zod";
 import {
   applicationCatalogueCreateSchema, applicationEntriesUpdateSchema, applicationIdentityUpdateSchema,
 } from "@ontomato/contracts/application-catalogue";
-import { type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import { runtimeJsonObjectSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { panelFormTargetSchema, panelObjectIdentitySchema } from "@ontomato/contracts/panel-manifest";
 import { panelFormSaveInputSchema, panelFormValuesSchema } from "@ontomato/contracts/panel-projection";
-import { changeProductDomainGrantRequestSchema, changeProductGrantRequestSchema } from "@ontomato/contracts/product-governance";
 import {
-  applicationPanelUseSchema, copyProductCurrentRequestSchema, deleteProductCurrentQuerySchema, productCurrentIdParamsSchema,
+  changeProductDomainGrantRequestSchema, changeProductGrantRequestSchema,
+  changeProductPanelDomainGrantResponseSchema, productGrantChangeResponseSchema,
+} from "@ontomato/contracts/product-governance";
+import {
+  applicationPanelUseSchema, copyProductCurrentRequestSchema, deleteProductCurrentQuerySchema, deleteProductCurrentResponseSchema,
+  deleteProductPanelResponseSchema, productCurrentIdParamsSchema,
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
 } from "@ontomato/contracts/product-panels";
 import { APPLICATION, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
@@ -117,19 +121,22 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
       const copied = await copyCurrentProduct(owner, credentials, kind, sourceId, input);
       return { primaryKey: copied.id, data: { id: copied.id } };
     }),
-    action("delete", deleteProductCurrentQuerySchema, noData, async ({ owner, credentials }, primaryKey, { revision }) => {
-      await deleteCurrentProduct(owner, credentials, kind, primaryKey, revision);
-      return { primaryKey, data: {} };
-    }),
+    action("delete", deleteProductCurrentQuerySchema, kind === "panel" ? deleteProductPanelResponseSchema : deleteProductCurrentResponseSchema,
+      async ({ owner, credentials }, primaryKey, { revision }) => {
+        const result = await deleteCurrentProduct(owner, credentials, kind, primaryKey, revision);
+        return { primaryKey, data: runtimeJsonObjectSchema.parse(result) };
+      }),
     ...(["grant", "revoke"] as const).map(name => action(name, grantInput, noData,
       async ({ owner, credentials }, primaryKey, input) => {
         await changeCurrentProductGrant(owner, credentials, kind, primaryKey, { ...input, remove: name === "revoke" });
         return { primaryKey, data: {} };
       })),
-    action("share", changeProductDomainGrantRequestSchema, noData, async ({ owner, credentials }, primaryKey, { shared }) => {
-      await changeCurrentProductDomainGrant(owner, credentials, kind, primaryKey, shared);
-      return { primaryKey, data: {} };
-    }),
+    action("share", changeProductDomainGrantRequestSchema,
+      kind === "panel" ? changeProductPanelDomainGrantResponseSchema : productGrantChangeResponseSchema,
+      async ({ owner, credentials }, primaryKey, { shared }) => {
+        const result = await changeCurrentProductDomainGrant(owner, credentials, kind, primaryKey, shared);
+        return { primaryKey, data: runtimeJsonObjectSchema.parse(result) };
+      }),
   ];
 }
 
