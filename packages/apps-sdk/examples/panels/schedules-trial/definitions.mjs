@@ -67,8 +67,8 @@ export const projections = [
 ];
 
 /**
- * The two panels. P is written without code — its layout (`p/panel.html`) and its declaration (`p/panel.json`) — and the
- * platform draws it itself; Q keeps its module and runs in a frame, as a panel written with code does.
+ * The two panels, each a Vue component (`panel.html`'s `#app` template and `panel.mjs`) with its declaration: P's in
+ * `p/panel.json`, Q's in `q/declaration.mjs`.
  */
 export const panels = [
   {
@@ -87,10 +87,14 @@ export const panels = [
   },
 ];
 
-/** A panel's text: its HTML, its module when it has code, and its recipes when the directory has them. */
+/** A panel's text: its HTML, its module, and its recipes when the directory has them. */
 export function panelContent(directory) {
-  const optional = (name, file) => existsSync(join(HERE, directory, file)) ? { [name]: text(join(directory, file)) } : {};
-  return { html: text(join(directory, "panel.html")), ...optional("module", "panel.mjs"), ...optional("recipes", "recipes.md") };
+  const recipes = join(directory, "recipes.md");
+  return {
+    html: text(join(directory, "panel.html")),
+    module: text(join(directory, "panel.mjs")),
+    ...(existsSync(join(HERE, recipes)) ? { recipes: text(recipes) } : {}),
+  };
 }
 
 /**
