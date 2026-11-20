@@ -106,7 +106,7 @@ it("runs the same panel twice on a page, each with its own state, reads and unmo
   await nextTick();
   expect(first.element.querySelector(".mode")?.textContent).toBe("edit");
   expect(second.element.querySelector(".mode")?.textContent).toBe("list");
-  expect(mountTwo.values.value.mode).toBeNull();
+  expect(mountTwo.instance.state.values.value.mode).toBeNull();
 
   // The first run goes; the second keeps its component and reads on its own.
   mountOne.dispose();
