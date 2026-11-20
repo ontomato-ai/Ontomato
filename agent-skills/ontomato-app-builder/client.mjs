@@ -62,12 +62,6 @@ export async function analystCommand(cfg, argv, headers = {}) {
     "",
   );
   if (command === "agent") return agentChannelCommand(cfg,args,headers);
-  if (command === "retriever-cancel") {
-    const run=take(args,"--run");
-    if(args.length!==1 || !run) throw new Error("retriever-cancel requires sessionId --run runId from the task snapshot");
-    console.log(JSON.stringify(await json(process.env.ONTOMATO_RETRIEVAL_CALLBACK_URL || `${ontology}/ontology/retrievals/${encodeURIComponent(args[0])}/retriever/cancel`,await agentHeaders(cfg,headers),process.env.ONTOMATO_RETRIEVAL_CALLBACK_URL ? {operation:"cancel",retrievalId:args[0],retrievalRunId:run} : {expectedRoundId:run})));
-    return;
-  }
   if (command === "run") return runAction(ontology, args, headers);
   if (command === "pending") return pending(ontology, args, headers);
   if (command === "actions") return listActions(ontology, await commandHeaders(headers));
@@ -109,7 +103,7 @@ export async function analystCommand(cfg, argv, headers = {}) {
     body = { id: args[0], revision, parameters: args[1] ? readJson(args[1]) : {}, ...(bindingId ? { bindingId } : {}) };
   } else
     throw new Error(
-      "Commands: dataset-desc, classes, schema, relationships, dsl-reference, distinct-values, execute-dsl, metrics, execute-metric, knowledge, pending, actions, run, agent, retriever-cancel",
+      "Commands: dataset-desc, classes, schema, relationships, dsl-reference, distinct-values, execute-dsl, metrics, execute-metric, knowledge, pending, actions, run, agent",
     );
   // Resolve dynamic execution credentials only after input validation, once per command.
   headers = await commandHeaders(headers);
