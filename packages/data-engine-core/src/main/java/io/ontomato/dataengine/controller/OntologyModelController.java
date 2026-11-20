@@ -100,9 +100,14 @@ public class OntologyModelController {
 			code = "INVALID_REQUEST";
 			message = "Invalid request";
 		} else if (error instanceof org.springframework.web.ErrorResponse problem) {
+			// The deployment's API permission check refuses an ungranted reader with 403.
 			status = problem.getStatusCode().value();
-			code = status == 404 ? "NOT_FOUND" : "INVALID_REQUEST";
-			message = "Invalid request";
+			code = switch (status) {
+				case 403 -> "FORBIDDEN";
+				case 404 -> "NOT_FOUND";
+				default -> "INVALID_REQUEST";
+			};
+			message = status == 403 ? "Permission denied" : "Invalid request";
 		}
 		var detail = ScheduleJson.object("code", code, "message", message);
 		details.forEach((key, value) -> detail.set(key, ScheduleJson.JSON.valueToTree(value)));
