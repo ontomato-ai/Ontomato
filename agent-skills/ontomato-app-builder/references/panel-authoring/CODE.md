@@ -4,7 +4,8 @@ Write the Vue template and scoped panel styles in `panel.html`. Put the template
 declared member with `<projection slot="detail"></projection>`. Use Vue attributes, events, `v-if` and `v-for` for
 interactions. Panel CSS positions member containers. Design variables style components inside them.
 
-Declare named projections and public typed state in `panel.json`. Keep page-local state in Vue. An object state
+Declare projections using the [member fields](FIELDS.md) and declare public typed state in `panel.json`.
+Keep page-local state in Vue. An object state
 such as `selected` stores `{className, primaryKey}`. Enable `deepLink` when the address should restore the selection.
 Use `recipes.md` for tasks the assistant needs to know how to do.
 
@@ -173,6 +174,24 @@ const draftRoute = `#${usePath}?${query}`;
 ```
 
 Pass the raw artifact path once to `URLSearchParams`. Opening the link fills the owner form for the reader to save.
+
+## Open the page composer
+
+Add a `ConversationEntry` member in `manifest.members` when a named assistant or opening line belongs on the page.
+
+```json
+{
+  "reviewHelp": {
+    "component": "ConversationEntry",
+    "agent": "page-default",
+    "prefill": "Review the selected record with me.",
+    "name": "Review with the assistant"
+  }
+}
+```
+
+Place it with `<projection slot="reviewHelp"></projection>`. The button opens the composer and fills the
+optional opening line. The reader sends the message.
 
 ## Register and open
 
