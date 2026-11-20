@@ -1,3 +1,4 @@
+import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
@@ -85,10 +86,7 @@ const projection = {
 };
 const panel = {
   name: "Schedules", description: "", visibility: "domain",
-  content: { html: '<section style="display:flex;flex-direction:column">'
-    + '<panel-member ref="summary" style="width:100%"></panel-member>'
-    + '<panel-member ref="tasks"></panel-member><panel-member ref="form"></panel-member>'
-    + '<panel-member ref="run"></panel-member></section>' },
+  content: vuePanelContent("summary", "tasks", "form", "run"),
   manifest: {
     state: { selectedTask: { type: taskType, deepLink: true, external: true, personal: false, default: null } },
     members: {
@@ -407,10 +405,10 @@ it("reads back stable member keys and named data, and leaves the record intact a
   expect((await request("PUT", panelPath, { ...panel, revision: original.revision })).status).toBe(200);
   expect((await request("PUT", panelPath, { ...panel, revision: original.revision })).status).toBe(409);
   const current = (await (await request("GET", panelPath)).json()).panel;
-  const malformed = { ...panel, content: { html: '<section flow="column"></section>' }, revision: current.revision };
+  const malformed = { ...panel, content: { html: panel.content.html }, revision: current.revision };
   const rejected = await request("PUT", panelPath, malformed);
   expect(rejected.status).toBe(400);
-  expect(await rejected.json()).toMatchObject({ error: { message: expect.stringMatching(/^Panel 'panel-schedules-pilot', field 'content.html' – 1:\d+ .*flow/u) } });
+  expect(await rejected.json()).toMatchObject({ error: { message: "Panel 'panel-schedules-pilot', field 'content.module' is required" } });
   expect((await (await request("GET", panelPath)).json()).panel).toEqual(current);
 
   const source = { kind: "registered", applicationId: "app-schedules", useId: "pilot" };
@@ -523,8 +521,7 @@ it("reads the seven named ontology data items with the panel viewer", async () =
   const placement = { target: { projectionId: runtimeProjectionId } };
   const saveGraph = (placements: Record<string, typeof placement>, revision: number) => request("PUT", "product-panels/" + graphPanelId, {
     name: "Ontology", description: "", visibility: "domain", revision,
-    content: { html: "<section>" + Object.keys(placements)
-      .map(key => `<panel-member ref="${key}"></panel-member>`).join("") + "</section>" },
+    content: vuePanelContent(...Object.keys(placements)),
     manifest: { state, members: placements, events: {} },
   });
   const unbound = await saveGraph({ runtime: placement }, 0);
@@ -698,7 +695,7 @@ it("reads agent settings and reference options with the panel viewer", async () 
   }
   const saved = await request("PUT", "product-panels/" + agentPanelId, {
     name: "Agent settings", description: "", visibility: "domain", revision: 0,
-    content: { html: "<section>" + Object.keys(members).map(key => `<panel-member ref="${key}"></panel-member>`).join("") + "</section>" },
+    content: vuePanelContent(...Object.keys(members)),
     manifest: { state: { selectedAgent: { type: agentType.agent, default: null } }, members, events: {} },
   });
   expect(saved.status, await saved.text()).toBe(200);
@@ -777,7 +774,7 @@ async function ownerReadPanel(
   }
   const response = await request("PUT", "product-panels/panel-" + family, {
     name: family, description: "", visibility: "domain", revision: 0,
-    content: { html: "<section>" + Object.keys(members).map(name => `<panel-member ref="${name}"></panel-member>`).join("") + "</section>" },
+    content: vuePanelContent(...Object.keys(members)),
     manifest: { state, members, events: {} },
   });
   expect(response.status, await response.text()).toBe(200);

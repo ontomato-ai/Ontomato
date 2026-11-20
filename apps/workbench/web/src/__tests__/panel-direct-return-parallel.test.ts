@@ -8,7 +8,7 @@ import recorded from "./fixtures/direct-panel-host-http.json";
 import { panelAnswer, pageSkillContextFor, installPlatform, mountPlatformPage, nothingAt, panelUse, type Sent } from "./panel-frame";
 
 /*
- * Coming back to a direct panel's page (first gate, hot return): the page is rebuilt as a native page is — native views
+ * Coming back to a panel's page (first gate, hot return): the page is rebuilt as a native page is — native views
  * are not kept either — but its reads are not queued behind Java's answer for the application's use relations. The
  * shell's catalog already names the reader's relations, so the page reads its record, its members' projections and
  * their data at once, while Java's answer is read beside them; the page is shown only once that answer names it, and a

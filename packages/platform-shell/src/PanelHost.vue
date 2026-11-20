@@ -2,14 +2,13 @@
 import { computed, ref, watch } from "vue";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./panel-host";
-import { PanelLayout } from "./panel-layout";
 import { usePageActions } from "./page-actions";
 
 /**
  * One panel instance, shown full screen, beside a conversation or inside another application, or as an author's candidate
  * preview: the same component in all of them, because each only needs a source — a use relation with its current record,
- * or a workspace candidate — and a place to show it. A panel with no code is drawn here, its layout with each member its
- * instance draws; a panel with code runs in a frame of its own with this SDK version's modules. What either reports —
+ * or a workspace candidate — and a place to show it. The panel's component is mounted here, in the platform's document;
+ * the frame below is kept but no panel runs in it (user's ruling, 2026-11-20). What the panel reports —
  * what the reader looks at and its deep-linkable state — goes up through `context` and `display-address`, so the
  * enclosing page can reflect the view.
  */
@@ -61,10 +60,10 @@ const view = usePanelInstance(props.port, {
   withdrawn: () => emit("withdrawn"),
 });
 const frame = ref<HTMLIFrameElement | null>(null);
-/** Where a panel written with code goes in the page: the element its own component is mounted in, placed once. */
+/** Where the panel goes in the page: the element its own component is mounted in, placed once. */
 function placeCoded(place: unknown) {
   const shown = view.direct.value;
-  if (place instanceof HTMLElement && shown && "element" in shown && shown.element.parentElement !== place)
+  if (place instanceof HTMLElement && shown && shown.element.parentElement !== place)
     place.replaceChildren(shown.element);
 }
 watch(
@@ -107,13 +106,7 @@ defineExpose({ ...view, operations });
       :data-panel-instance="view.instance"
     >
       <p v-if="view.notice.value" role="status" class="panel-host-notice">{{ view.notice.value }}</p>
-      <PanelLayout
-        v-if="'layout' in view.direct.value"
-        :nodes="view.direct.value.layout"
-        :values="view.direct.value.mount.values.value"
-        :member="view.direct.value.mount.member"
-      />
-      <div v-else :ref="placeCoded" class="panel-host-coded" />
+      <div :ref="placeCoded" class="panel-host-coded" />
     </div>
     <iframe
       v-else-if="view.document.value && view.admitted.value"
@@ -159,13 +152,5 @@ defineExpose({ ...view, operations });
   min-height: 0;
   overflow: auto;
   padding: var(--spacing-md, 12px);
-}
-</style>
-
-<!-- A member's own element is drawn by a render function, so its rule is not scoped to this component. -->
-<style>
-.panel-host-direct panel-member {
-  display: block;
-  min-width: 0;
 }
 </style>

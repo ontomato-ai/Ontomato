@@ -3,7 +3,6 @@ import { defaultAgentSchema } from "./default-agent";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
 import { panelManifestSchema, panelMessageKeySchema, panelThemeOverridesSchema } from "./panel-manifest";
-import { PanelLayoutError, parsePanelLayout } from "./panel-layout";
 import { directProjectionPortsSchema, validateDirectProjection } from "./panel-projection";
 import { applicationMetadataSchema } from "./application-metadata";
 import { pageSkillContextSchema, pageSkillEntranceSchema } from "./page-skills";
@@ -89,39 +88,25 @@ export type PanelMessages = z.infer<typeof panelMessagesSchema>;
 /** The shared sources of a registered panel or workspace candidate. */
 export const productPanelContentSchema = z.object({
   html: panelText,
-  module: panelText.optional(),
+  module: panelText,
   style: panelText.optional(),
   recipes: panelText.optional(),
   messages: panelMessagesSchema.optional(),
 }).strict();
 export type ProductPanelContent = z.infer<typeof productPanelContentSchema>;
 
-const panelDefinitionContent = z.object({
+export const panelDefinitionContentSchema = z.object({
   content: productPanelContentSchema,
   manifest: panelManifestSchema,
   theme: panelThemeOverridesSchema.optional(),
   template: z.boolean().optional(),
 }).strict();
 
-function validatePanelLayout(definition: z.infer<typeof panelDefinitionContent>, ctx: z.RefinementCtx): void {
-  // A module supplies its own rendering. The platform interprets layout markup for module-free panels.
-  if (definition.content.module !== undefined) return;
-  try {
-    parsePanelLayout(definition.content.html, definition.manifest);
-  } catch (error) {
-    if (!(error instanceof PanelLayoutError)) throw error;
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["content", "html"], message: error.message, params: error.position });
-  }
-}
-
-export const panelDefinitionContentSchema = panelDefinitionContent.superRefine(validatePanelLayout);
 export type PanelDefinitionContent = z.infer<typeof panelDefinitionContentSchema>;
-const productPanelInput = panelDefinitionContent.extend(editableDefinitionFields);
-export const productPanelInputSchema = productPanelInput.superRefine(validatePanelLayout);
+export const productPanelInputSchema = panelDefinitionContentSchema.extend(editableDefinitionFields);
 export type ProductPanelInput = z.infer<typeof productPanelInputSchema>;
 
-const productPanelRecord = productPanelInput.extend(currentRecordFields);
-export const productPanelSchema = productPanelRecord.superRefine(validatePanelLayout);
+export const productPanelSchema = productPanelInputSchema.extend(currentRecordFields);
 export type ProductPanel = z.infer<typeof productPanelSchema>;
 export const currentPanelRecordSchema = productPanelSchema;
 
@@ -257,9 +242,9 @@ export const chartSourceInUseErrorSchema = z.object({
   details: z.object({ projectionIds: z.array(id).nonempty() }).strict(),
 }).strict();
 
-export const registerProductPanelRequestSchema = productPanelInput.extend({
+export const registerProductPanelRequestSchema = productPanelInputSchema.extend({
   revision: z.number().int().nonnegative(),
-}).superRefine(validatePanelLayout);
+});
 export type RegisterProductPanelRequest = z.infer<typeof registerProductPanelRequestSchema>;
 
 export const productPanelResponseSchema = z.object({
@@ -279,7 +264,7 @@ export const productCatalogQuerySchema = z.object({
 }).strict();
 export type ProductCatalogQuery = z.infer<typeof productCatalogQuerySchema>;
 
-export const productPanelSummarySchema = productPanelRecord.pick({
+export const productPanelSummarySchema = productPanelSchema.pick({
   id: true,
   name: true,
   description: true,

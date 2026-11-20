@@ -42,7 +42,6 @@ export {
   panelHostKey,
   panelFrameDocument,
   panelUnavailable,
-  runsDirect,
   usePanelHostPort,
   usePanelInstance,
   type DefinitionChanged,

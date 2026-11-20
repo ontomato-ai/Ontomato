@@ -10,17 +10,17 @@ import recorded from "./fixtures/direct-panel-host-http.json";
 import { panelAnswer, pageSkillContextFor, installPlatform, mountPlatformPage, nothingAt, panelUse, type Sent } from "./panel-frame";
 
 /*
- * The scheduled tasks trial as it is registered (design 8, first gate): P is its layout and its declaration, with no code,
- * and its four projections read the scheduled task owner's registered reads. At its application's address the platform
- * draws it without a frame: the reader picks a task from the list, sees it summed up and in its application's form,
+ * The scheduled tasks trial as it is registered (design 8, first gate): P is a Vue component and its declaration, and its
+ * four projections read the scheduled task owner's registered reads. At its application's address its component runs in
+ * the platform's document, without a frame: the reader picks a task from the list, sees it summed up and in its application's form,
  * runs it now, and picks another — all in one instance, each datum read through the platform as the reader.
  *
  * Real route, panel host, SDK instance and the trial's own material. Node's answers for the panel, its snapshot and its
  * projections are the ones Node gave for this material over HTTP (`fixtures/direct-panel-host-http.json`, recorded by
  * the workbench server's `direct-panel-host.integration.test.ts` with `DIRECT_PANEL_HOST_HTTP_EVIDENCE`), so a host
- * call Node would refuse for a direct panel is not hidden by a stand-in; the owners' data and operations are stand-ins.
+ * call Node would refuse for the panel is not hidden by a stand-in; the owners' data and operations are stand-ins.
  *
- * What this rules out: trial material the platform cannot draw without a frame; a choice that does not reach the
+ * What this rules out: trial material the platform cannot run without a frame; a choice that does not reach the
  * summary, the form and the button, or the address; a run that bypasses the host's confirmation, runs twice or leaves
  * what it changed unread; a new choice that rebuilds the panel or reads its projections again.
  */
@@ -83,7 +83,7 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-it("runs the trial's P without code: choose a task, see it summed up and in its form, run it now, choose another", async () => {
+it("runs the trial's P: choose a task, see it summed up and in its form, run it now, choose another", async () => {
   const sent = installPlatform(answer);
   const router = createRouter({ history: createMemoryHistory(), routes: [{
     path: "/applications/:applicationId/:panelPath",
@@ -121,12 +121,13 @@ it("runs the trial's P without code: choose a task, see it summed up and in its 
     expect(sent.filter(request => request.path.endsWith("/dispatch"))).toHaveLength(1);
 
     // Another task: the same instance follows it, and no projection is read again.
-    const layout = element.querySelector(".panel-layout");
+    const page = element.querySelector(".trial");
+    expect(page).not.toBeNull();
     const projectionReads = sent.filter(request => request.path.startsWith("/api/product-projections/")).length;
     options()[1]!.click();
     await vi.waitFor(() => expect(element.querySelector("[data-member='summary'] .sdk-object-summary-title")?.textContent).toBe("Weekly backup"));
     await vi.waitFor(() => expect(element.querySelector<HTMLInputElement>("[data-member='form'] [data-field='/name'] input")?.value).toBe("Task t-2"));
-    expect(element.querySelector(".panel-layout")).toBe(layout);
+    expect(element.querySelector(".trial")).toBe(page);
     expect(sent.filter(request => request.path.startsWith("/api/product-projections/")).length).toBe(projectionReads);
   } finally {
     app.unmount();

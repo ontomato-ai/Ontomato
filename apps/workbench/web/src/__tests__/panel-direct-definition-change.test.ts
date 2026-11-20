@@ -9,7 +9,7 @@ import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
-import { mountDirectPanel } from "../../../../../packages/apps-sdk/src/direct";
+import { mountDirectPanel } from "../../../../../packages/apps-sdk/src/panel/direct-mount";
 
 /*
  * A member's projection definition changing while the reader has unsaved input (design 5: no executable content is

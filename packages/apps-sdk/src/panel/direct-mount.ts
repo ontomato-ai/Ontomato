@@ -1,4 +1,4 @@
-import { effectScope, h, ref, watch, type DeepReadonly, type Ref, type VNode } from "vue";
+import { effectScope, h, ref, watch, type Ref, type VNode } from "vue";
 import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectPanelMount as HostDirectPanelMount, DirectPanelRun } from "@ontomato/platform-shell";
 import { createDirectPanelInstance, type DirectPanelInstance, type DirectPanelInstanceOptions } from "./direct";
@@ -9,7 +9,6 @@ import { panelHumanOperations } from "./human-operations";
 import type { PlatformRequests } from "./platform-objects";
 import { readPageDraft, readProjectionRecord, recordDraftCreated } from "./platform-requests";
 import { createPanelText } from "./text";
-import type { PanelFieldValue } from "./state";
 import PanelMember from "./PanelMember.vue";
 
 /*
@@ -34,15 +33,13 @@ export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions
 }
 
 /**
- * What the host draws and drives the instance with: the host's own view of a direct instance (the shell owns it, as the
- * one that uses it), with the instance itself and its members as the SDK draws them.
+ * One run of a panel the platform runs: the host's own view of it (the shell owns it, as the one that drives it), with
+ * the instance itself and its members as `<Projection>` draws them.
  */
 export interface DirectPanelMount extends HostDirectPanelMount {
   readonly instance: DirectPanelInstance;
-  /** The member the layout places under this key. */
+  /** The member the panel's template places under this key. */
   member(ref: string): VNode;
-  /** The instance's state now, which the layout's conditions read. */
-  readonly values: DeepReadonly<Ref<Record<string, PanelFieldValue>>>;
 }
 
 export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelMount {
@@ -92,7 +89,6 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
     return {
       instance,
       member: (ref) => h(PanelMember, { instance, member: ref, key: `${ref}:${instance.projectionVersion(ref)}` }),
-      values: instance.state.values,
       address: (url) => panelRun.address(url),
       refresh(target, affected) {
         // Unseen, what an operation changed is held as everything; seen, only the data it concerns are read again.

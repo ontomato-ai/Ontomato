@@ -1,3 +1,4 @@
+import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -131,7 +132,7 @@ beforeAll(async () => {
   revision = productProjectionResponseSchema.parse(payload).projection.revision;
   const panel = registerProductPanelRequestSchema.parse({
     name: "Referencing panel", description: "", visibility: "private", revision: 0,
-    content: { html: '<panel-member ref="summary"></panel-member>' },
+    content: vuePanelContent("summary"),
     manifest: {
       state: { caption: { type: portType }, selected: { type: portType } },
       members: { summary: { target: { projectionId }, inputs: { caption: { state: "caption" } },
@@ -204,7 +205,7 @@ it("rejects deleting a panel that is the current detail for a class", async () =
 
 async function savePanel(id: string, manifest: object, revision: number = 0) {
   return request("PUT", `product-panels/${id}`, "author", registerProductPanelRequestSchema.parse({
-    name: id, description: "", visibility: "domain", revision, content: { html: "<div></div>" }, manifest,
+    name: id, description: "", visibility: "domain", revision, content: vuePanelContent(), manifest,
   }));
 }
 

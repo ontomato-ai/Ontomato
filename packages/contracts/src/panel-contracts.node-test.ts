@@ -332,75 +332,35 @@ test("model reads and operations use their owner's fixed signatures", async () =
   }
 });
 
-test("a no-code task panel registers and parses the same members and layout", async () => {
-  const { registerProductPanelRequestSchema } = await import("./product-panels");
-  const { parsePanelLayout } = await import("./panel-layout");
-  const input = {
-    name: "Scheduled tasks", description: "", visibility: "domain", revision: 0,
-    content: { html: '<style>.tasks { display: grid; }</style>\n<main class="tasks">\n  <h2>Tasks &amp; runs</h2>\n  <hr>\n  <panel-member ref="tasks" class="list" style="min-width: 0"></panel-member>\n</main>' },
-    manifest: {
-      state: { selectedTask: { type: { kind: "object", objectType: "platform:ScheduledTask" }, deepLink: true, external: true, default: null } },
-      members: { tasks: { target: { projectionId: "projection-schedules-tasks" }, outputs: { selected: { state: "selectedTask" } } } },
-      events: {},
-    },
+test("panel registration and current reads require a module", async () => {
+  const { panelDefinitionContentSchema, registerProductPanelRequestSchema } = await import("./product-panels");
+  const content = {
+    html: '<style>.tasks { display: grid; }</style><div id="app"><projection slot="tasks"></projection></div>',
+    module: 'import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});',
   };
-  const panel = registerProductPanelRequestSchema.parse(input);
-  const layout = parsePanelLayout(panel.content.html, panel.manifest);
-  assert.equal(layout.css, ".tasks { display: grid; }");
-  const main = layout.nodes.find(node => node.kind === "element");
-  assert.equal(main?.tag, "main");
-  assert.deepEqual(main?.attrs, { class: "tasks" });
-  const elements = main?.children.filter(node => node.kind === "element");
-  assert.deepEqual(elements?.map(node => node.tag), ["h2", "hr"]);
-  const heading = elements?.[0]?.children[0];
-  assert.equal(heading?.kind === "text" && heading.value, "Tasks & runs");
-  const member = main?.children.find(node => node.kind === "member");
-  assert.equal(member?.ref, "tasks");
-  assert.deepEqual(member?.attrs, { class: "list", style: "min-width: 0" });
-
-  for (const [html, diagnostic] of [
-    ['<div>\n  <panel-member ref="tasks" onclick="run()"></panel-member>\n</div>', /2:29.*onclick/u],
-    ['<div>\n  <SCRIPT></SCRIPT>\n</div>', /2:3.*script/u],
-    ['<div>\n  <a HREF="&#106;avascript:void(0)">link</a>\n</div>', /2:6.*javascript:/u],
-    ...["iframe", "object", "embed"].map(tag => [`<div>\n  <${tag}></${tag}>\n</div>`, new RegExp(`2:3.*${tag}`, "u")] as const),
-  ] as const) {
-    assert.throws(() => parsePanelLayout(html, panel.manifest), diagnostic);
-    const result = registerProductPanelRequestSchema.safeParse({ ...input, content: { html } });
-    assert.equal(result.success, false);
-    assert.match(result.error!.issues[0]!.message, /Use members and events for interactions/u);
-  }
-  assert.throws(() => parsePanelLayout("<style></style>\n<style></style>", panel.manifest), /2:1.*one <style>/u);
-  assert.throws(() => parsePanelLayout('<div flow="column"></div>', panel.manifest), /1:6.*Use CSS.*flow/u);
-  assert.throws(() => parsePanelLayout('<div gap="small"></div>', panel.manifest), /1:6.*Use CSS.*gap/u);
-  assert.equal(registerProductPanelRequestSchema.safeParse({
-    ...input,
-    manifest: {
-      ...input.manifest,
-      members: { tasks: { ...input.manifest.members.tasks, params: { width: "half" } } },
-    },
-  }).success, false);
-  assert.throws(() => parsePanelLayout('<section when="selectedTask" eq="1"></section>', panel.manifest), /Comparison/u);
-  assert.throws(() => parsePanelLayout('<div><panel-member ref="tasks"><span></span></panel-member></div>', panel.manifest), /has no children/u);
-  assert.throws(() => parsePanelLayout('<panel-member ref="missing"></panel-member>', panel.manifest), /Undeclared member 'missing'/u);
-});
-
-test("the current registration accepts the shipped no-code layout and rejects an SDK pin", async () => {
-  const { registerProductPanelRequestSchema } = await import("./product-panels");
-  const material = await import(new URL("../../apps-sdk/examples/panels/schedules-trial/definitions.mjs", import.meta.url).href);
-  const [{ directory, manifest, name, description }] = material.panels;
-  const body = { content: material.panelContent(directory), manifest, name, description, visibility: "domain", revision: 0 };
-  assert.deepEqual(registerProductPanelRequestSchema.parse(body).content, body.content);
+  const manifest = {
+    state: {}, members: { tasks: { target: { projectionId: "projection-schedules-tasks" } } }, events: {},
+  };
+  const body = { name: "Scheduled tasks", description: "", visibility: "domain", revision: 0, content, manifest };
+  const current = {
+    ...body, id: "schedules", domainId: "domain", ownerId: "owner", revision: 1, editable: true,
+    createdAt: "2026-11-20T00:00:00Z", updatedAt: "2026-11-20T00:00:00Z",
+  };
+  assert.deepEqual(registerProductPanelRequestSchema.parse(body).content, content);
+  assert.deepEqual(productPanelResponseSchema.parse({ panel: current }).panel.content, content);
   assert.equal(registerProductPanelRequestSchema.safeParse({ ...body, sdkVersion: "1.1.2" }).success, false);
-  const moduleContent = { html: "<main id='app'></main>", module: "export {}" };
-  assert.deepEqual(registerProductPanelRequestSchema.parse({ ...body, content: moduleContent }).content, moduleContent);
-  const html = '<panel-member ref="not-declared"></panel-member>';
-  const invalidLayout = registerProductPanelRequestSchema.safeParse({ ...body, content: { html, style: "main {}" } });
-  assert.equal(invalidLayout.success, false);
-  assert.match(invalidLayout.error!.issues[0].message, /Undeclared member/u);
+  const retainedHtml = { html: content.html, style: ".tasks {}" };
+  for (const result of [
+    panelDefinitionContentSchema.safeParse({ content: retainedHtml, manifest }),
+    registerProductPanelRequestSchema.safeParse({ ...body, content: retainedHtml }),
+    productPanelResponseSchema.safeParse({ panel: { ...current, content: retainedHtml } }),
+  ]) {
+    assert.equal(result.success, false);
+    assert.deepEqual(result.error!.issues[0]!.path.slice(-2), ["content", "module"]);
+  }
 });
 
-test("nested layout and explicit events share typed state and placement", async () => {
-  const { parsePanelLayout } = await import("./panel-layout");
+test("a panel manifest validates events, state and placements", () => {
   const agent = { kind: "object", objectType: AGENT_DEFINITION };
   const input = {
     state: {
@@ -419,11 +379,6 @@ test("nested layout and explicit events share typed state and placement", async 
   };
   const manifest = panelManifestSchema.parse(input);
   assert.deepEqual(manifest.events.create, input.events.create);
-  const html = '<div each="agents"><panel-member ref="row"></panel-member></div><panel-member ref="$state.preview"></panel-member>';
-  const { nodes } = parsePanelLayout(html, manifest);
-  assert.equal(nodes[0]?.kind === "element" && nodes[0].each, "agents");
-  assert.throws(() => parsePanelLayout('<panel-member ref="row"></panel-member>', manifest), /repeat/u);
-  assert.throws(() => parsePanelLayout('<div each="agent"></div>', manifest), /list state/u);
   assert.equal(panelManifestSchema.safeParse({
     ...input, events: { bad: { do: { set: { fields: { agent: { literal: null } } } } } },
   }).success, false);
@@ -950,7 +905,10 @@ test("current panel reads can carry a page skill member for the verified entranc
     id: panel.id, domainId: panel.domainId, ownerId: panel.ownerId, revision: panel.revision,
     createdAt: panel.createdAt, updatedAt: panel.updatedAt, editable: panel.editable,
     name: panel.name, description: panel.description, visibility: panel.visibility,
-    content: { html: '<panel-member ref="tasks"></panel-member>' },
+    content: {
+      html: '<div id="app"><projection slot="tasks"></projection></div>',
+      module: 'import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});',
+    },
     manifest: { state: {}, members: { tasks: { target: { projectionId: "task-list" } } }, events: {} },
   };
   assert.deepEqual(productPanelResponseSchema.parse({ panel: directPanel }), { panel: directPanel });
