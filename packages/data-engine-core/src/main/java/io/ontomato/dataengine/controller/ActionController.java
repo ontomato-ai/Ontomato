@@ -39,10 +39,12 @@ import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.config.ControllerConst;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.security.CaseExecutionGuard;
+import io.ontomato.dataengine.service.ActionForm;
 import io.ontomato.dataengine.service.ActionService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.OwnerFieldRefusal;
 import io.ontomato.dataengine.service.OwnerRefusal;
+import io.ontomato.dataengine.service.PanelFormFields;
 import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.service.agent.ActionCreationService;
 import io.ontomato.dataengine.service.impl.ActionDraftService;
@@ -133,12 +135,38 @@ public class ActionController {
 		return ret;
 	}
 
+	/**
+	 * The Action a save writes. A request that names its submittedFields changes only those: the saved Action, or a new
+	 * one's defaults, with each submitted field taken from the request; a draft's explanation reference travels with it.
+	 * Without them, the request is the whole Action.
+	 */
+	private JSONObject submittedValues(JSONObject param, String domainId, String lang) throws Exception {
+		List<String> submitted = param.getList("submittedFields", String.class);
+		param.remove("submittedFields");
+		if (submitted == null) return param;
+		String id = param.getString("id");
+		JSONObject saved;
+		if (id == null) {
+			saved = ActionForm.defaultValues();
+		} else {
+			Action stored = actionService.queryById(id);
+			if (stored == null || !domainId.equals(stored.getDomainId()))
+				throw new OwnerRefusal("ACTION_NOT_FOUND", langService.get(lang, "Action.notFound"));
+			saved = PanelFormFields.asset(stored);
+		}
+		JSONObject values = PanelFormFields.withSubmitted(saved, param, submitted);
+		if (id != null) values.put("id", id);
+		if (param.containsKey("explanationRef")) values.put("explanationRef", param.get("explanationRef"));
+		return values;
+	}
+
 	@PostMapping("/action/save")
     @ResponseBody
-    public JSONObject save(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
+    public JSONObject save(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject request) {
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
+			JSONObject param = submittedValues(request, user.getDomainId(), lang);
 			Function acceptedFunction;
 			try {
 				acceptedFunction = Function.fromAsset(param);

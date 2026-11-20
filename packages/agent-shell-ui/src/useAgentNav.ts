@@ -189,6 +189,17 @@ export function useAgentNav(options: AgentNavOptions) {
     options.setAgentId(id);
   }
 
+  /**
+   * A new conversation with this agent, the page beside it kept: what a page's conversation entry asks for when the agent
+   * it names is not the open conversation's. The conversation that was open stays as it was, on its own agent.
+   */
+  function beginWith(id: string) {
+    options.setSessionId(null);
+    if (id === options.agentId()) return;
+    adoptingAgent = true;
+    options.setAgentId(id);
+  }
+
   return {
     agents,
     pageAgents,
@@ -202,6 +213,7 @@ export function useAgentNav(options: AgentNavOptions) {
     loadSessions,
     startNew,
     adoptAgent,
+    beginWith,
     selectSession,
     removeSession,
     renameSession,

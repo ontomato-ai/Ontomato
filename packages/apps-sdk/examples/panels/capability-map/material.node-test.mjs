@@ -93,6 +93,7 @@ test("capability-map panel input, candidate files, and locale messages validate 
     productPanelInputSchema,
     registerProductPanelRequestSchema,
     candidatePanelSourceSchema,
+    matchesDirectPanelValue,
   }, { PANEL_ID, panelInput, candidateFiles, messages, projections }) => {
     const input = panelInput();
     const parsedPanel = productPanelInputSchema.parse(input);
@@ -146,6 +147,18 @@ test("capability-map panel input, candidate files, and locale messages validate 
       allLabelKeysTranslated: [...eventLabelKeys, ...configLabelKeys].every(
         (key) => Boolean(messages.en[key]) && Boolean(messages["zh-CN"][key]),
       ),
+      selectedAcceptsOntologyType: matchesDirectPanelValue(parsedPanel.manifest.state.selected.type, {
+        className: "platform:OntologyType",
+        primaryKey: "platform:BusinessKnowledge",
+      }),
+      startAcceptsOntologyType: matchesDirectPanelValue(parsedPanel.manifest.state.start.type, {
+        className: "platform:OntologyType",
+        primaryKey: "platform:BusinessKnowledge",
+      }),
+      selectedRejectsUnlayeredOption: !matchesDirectPanelValue(parsedPanel.manifest.state.selected.type, {
+        className: "platform:ModelOption",
+        primaryKey: "m-1",
+      }),
     };
   }));
 
@@ -159,6 +172,9 @@ test("capability-map panel input, candidate files, and locale messages validate 
     allMembersReferenceDeclaredProjections: true,
     localesMatch: true,
     allLabelKeysTranslated: true,
+    selectedAcceptsOntologyType: true,
+    startAcceptsOntologyType: true,
+    selectedRejectsUnlayeredOption: true,
   });
 });
 
