@@ -6,8 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./style.css": "./src/style.css",
-    "./routes": "./src/routes.ts",
-    "./test-sanitizer": "./test-sanitizer.ts"
+    "./routes": "./src/routes.ts"
   },
   "scripts": {
     "typecheck": "vue-tsc --noEmit",
@@ -16,7 +15,6 @@
   "dependencies": {
     "@ontomato/contracts": "workspace:*",
     "@ontomato/foundation-ui": "workspace:*",
-    "dompurify": "3.4.17",
     "lucide-vue-next": "1.0.0",
     "parse5": "8.0.1"
   },
@@ -31,7 +29,6 @@
     "@vue/test-utils": "2.5.1",
     "element-plus": "2.13.6",
     "happy-dom": "20.14.3",
-    "jsdom": "30.1.3",
     "typescript": "5.9.3",
     "vite": "5.4.21",
     "vitest": "1.6.0",

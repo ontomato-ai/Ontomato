@@ -5,16 +5,16 @@ import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversat
 import type { DirectProjection, ProductPanel } from "@ontomato/contracts/product-panels";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { servePageComposer } from "../../../../../packages/platform-web/src/app-host";
-import { installPlatform, mountPlatformPage, nothingAt, panelAnswer, panelSnapshot, panelUse, type Sent } from "./panel-frame";
+import { installPlatform, mountPlatformPage, nothingAt, panelAnswer, panelSnapshot, panelUse, PLACE_EVERY_MEMBER, type Sent } from "./panel-frame";
 
 /*
- * A conversation entry in a panel the platform draws, at its application's address (big main's ruling, 2026-11-20):
+ * A conversation entry in a panel run in the platform's document, at its application's address (big main's ruling, 2026-11-20):
  * pressed, it expands the page's composer — the one shown last — with the agent and sentence its projection declares,
  * through the same function a frame's entry reaches once checked. Nothing is sent.
  *
  * Real route, panel host, SDK instance and component; the network and the composer are stand-ins.
  *
- * What this rules out: a direct panel's entry the host never hands a composer to (it threw before the host passed one).
+ * What this rules out: a panel's entry the host never hands a composer to (it threw before the host passed one).
  */
 
 const application = "app-knowledge";
@@ -26,7 +26,7 @@ const governance: PanelConversationEntry = {
 const base = { domainId: "d", ownerId: "o", revision: 1, createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "" };
 const panel: ProductPanel = {
   ...base, id: use.panelId, name: "Knowledge",
-  content: { html: `<panel-member ref="governance"></panel-member>` },
+  content: { html: '<div id="app"></div>', module: PLACE_EVERY_MEMBER },
   manifest: { state: {}, members: { governance: { target: { projectionId: "knowledge-governance" } } }, events: {} },
 };
 const projections: Record<string, DirectProjection> = {

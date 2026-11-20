@@ -309,7 +309,7 @@ it("takes a kept author page's targets out of the document's stream, and puts th
   });
   const mode = { kind: "author", definitions: panelAuthorDefinitions() } as const;
   const showing = ref<"p" | "q">("p");
-  const labels = { notStarted: "Not started", failures: { fileUnavailable: "File unavailable", scriptThrew: "Script threw", scriptRejected: "Script rejected" }, content: { htmlRemoved: "HTML removed", styleOutside: "Style outside" } };
+  const labels = { notStarted: "Not started", failures: { fileUnavailable: "File unavailable", scriptThrew: "Script threw", scriptRejected: "Script rejected" }, content: { styleOutside: "Style outside" } };
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/", component: { render: () => null } }] });
   await router.push("/");
   const page = mountPlatformPage(() => h("main", [

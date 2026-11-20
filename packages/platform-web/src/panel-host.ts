@@ -19,7 +19,7 @@ import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/v
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
 import { confirmPanelIntent, expandDeclaredComposer, registerCandidateFrame, registerPanelFrame } from "./app-host";
 import type { CodedPanelTarget, DirectPanelMount, DirectPanelRun, PanelHostPort, PanelSdkRelease } from "@ontomato/platform-shell";
-import { mountDirectPanel, panelModuleFor, type DirectPanelMountOptions, type PlatformRequests } from "@ontomato/apps-sdk/direct";
+import { panelModuleFor, type DirectPanelMountOptions, type PlatformRequests } from "@ontomato/apps-sdk/direct";
 import { workbenchI18n, workbenchLanguage } from "@ontomato/workbench-ui/i18n";
 import * as Vue from "vue";
 import { provideGlobalConfig } from "element-plus";
@@ -53,7 +53,7 @@ export const panelHostPaths = {
   panel: (panelId: string) => `/api/product-panels/${encodeURIComponent(panelId)}`,
   snapshot: (panelId: string) => `/api/product-panels/${encodeURIComponent(panelId)}/snapshot`,
   definitionStream: "/api/product-panels/definition-stream",
-  /** What a direct panel's member shows: one named datum, read by the platform as the reader. */
+  /** What a panel's member shows: one named datum, read by the platform as the reader. */
   read: "/api/product-panels/read",
   candidate: (workspaceId: string, ref: string) =>
     `/api/workspaces/${encodeURIComponent(workspaceId)}/panel-candidate?${new URLSearchParams({ ref })}`,
@@ -77,12 +77,12 @@ async function release(): Promise<PanelSdkRelease> {
   return { base: current.sdkBasePath, manifest: appsSdkReleaseManifestSchema.parse(await manifest.json()) };
 }
 
-/** A panel's current record: one record shape, whether the platform draws it or a frame runs its code. */
+/** A panel's current record. */
 async function panel(panelId: string) {
   return productPanelSchema.parse((await json(panelHostPaths.panel(panelId))).panel);
 }
 
-/** One named datum a direct panel's member shows, read by the platform as the reader, in one of its four states. */
+/** One named datum a panel's member shows, read by the platform as the reader, in one of its four states. */
 export async function readPanelData(request: ProductPanelReadRequest): Promise<ProductPanelReadResponse> {
   return productPanelReadResponseSchema.parse(await json(panelHostPaths.read, { method: "POST", body: JSON.stringify(request) }));
 }
@@ -127,7 +127,6 @@ export function platformPanelHost(
       const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(use.panelId)}?${page}`));
       // A read that names its page is answered with the page skill context; the host passes on what Node answered.
       pageSkill?.(pageSkillContextSchema.parse(answer.pageSkillContext));
-      // Where it runs, drawn here or in a frame, is the panel host's decision from the record's own content.
       return { kind: "registered", applicationId, use, panel: answer.panel };
     },
     pageKey: use.pageKey,
@@ -139,10 +138,8 @@ export function platformPanelHost(
     // its `connect`, and what keeps a frame of another application from being mistaken for this one. What it may ask for
     // is what the panel's record declares, for this use relation's page.
     frame: (frame, source, open) => registerPanelFrame(frame, shown, { pageKey: use.pageKey, manifest: source.panel.manifest }, open, changed),
-    // A panel without code is drawn in this document, as the same application's page: its members read through the
-    // platform as the reader, within this use, and a person's write is confirmed and dispatched here as a frame's is.
-    direct: (source, run) => mountDirectPanel(directOptions(source, run, shown, changed)),
-    // A panel written with code runs in this document too, on the same instance, reading within the same use.
+    // The panel runs in this document, as the same application's page: its members read through the platform as the
+    // reader, within this use, and a person's write is confirmed and dispatched here.
     coded: (source, run, target) => mountCoded(directOptions(source, run, shown, changed), target, source.panel.content.module!),
     // The relation this page opens is still the application's, bound to the same panel: a kept page shown again is
     // checked against Java's current relations before its frame may ask for anything.
@@ -180,11 +177,7 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
       pageKey: candidate.pageKey,
       manifest: source.panel.manifest,
     }, open),
-    // A workspace candidate is read as a panel written with code until Node answers direct candidates (D's loading).
-    direct: () => {
-      throw new Error("A workspace candidate without code cannot be previewed yet");
-    },
-    // A candidate written with code runs in this document as a registered one does. It runs as no application use, so it
+    // A candidate runs in this document as a registered one does. It runs as no application use, so it
     // runs no operation, and its members read as the candidate's workspace.
     coded: (source, run, target) => {
       const { global } = workbenchI18n();
@@ -208,7 +201,7 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
 }
 
 /**
- * The platform's requests as the reader, for a panel drawn in this document: the same paths a frame's SDK asks through
+ * The platform's requests as the reader, for a panel run in this document: the same paths a frame's SDK asks through
  * the bridge, sent here directly, Node's at `/api` and Java's under its data-query prefix.
  */
 const platformRequests: PlatformRequests = {
@@ -234,7 +227,7 @@ function directOptions(source: DirectPanelHostSource, run: DirectPanelRun, use: 
 }
 
 /**
- * Runs a panel written with code in this document: its module, once for this instance, with `vue` naming the platform's
+ * Runs a panel in this document: its module, once for this instance, with `vue` naming the platform's
  * Vue and `@ontomato/sdk/panel` an SDK of this instance's own, whose `mountPanel` mounts the panel's component into the
  * host's element on `options`' instance, with the platform's words and Element Plus's in the reader's language.
  */
