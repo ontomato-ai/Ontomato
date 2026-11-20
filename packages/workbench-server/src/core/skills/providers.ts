@@ -26,10 +26,8 @@ export interface SkillOffering {
 export interface ProtectedSkillOffering {
   kind: "protected";
   sourceKey: string;
-  scopeKey: string;
   entrances: readonly PageSkillEntrance[];
   resourceIds: readonly string[];
-  legacyAggregateRefs?: readonly RuntimeSkillRef[];
   readManifest(skill: RuntimeSkillRef): Promise<StandardSkillFrontmatter>;
   provide(skill: RuntimeSkillRef): Promise<SkillPackage>;
 }
@@ -40,8 +38,8 @@ export function isProtectedSkillName(name: string): boolean {
   return PROTECTED_SKILL_NAME.test(name);
 }
 
-export function protectedSkillRef(providerId: string, domainId: string, sourceKey: string, scopeKey: string): RuntimeSkillRef {
-  const hash = createHash("sha256").update(JSON.stringify([providerId, domainId, sourceKey, scopeKey])).digest("hex");
+export function protectedSkillRef(providerId: string, domainId: string, sourceKey: string): RuntimeSkillRef {
+  const hash = createHash("sha256").update(JSON.stringify([providerId, domainId, sourceKey])).digest("hex");
   return { namespace: { kind: "domain", domainId }, name: `pvt-${hash.slice(0, 48)}` };
 }
 

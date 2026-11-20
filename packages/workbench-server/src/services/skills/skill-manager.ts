@@ -71,7 +71,7 @@ class SkillManager {
   async getSkillReferences(domainId: string, id: string, access: ReferenceAccess) {
     const view = await readSkillView(domainId, access.credentials);
     const skill = requireSkill(view.registry, id);
-    const references = await listAnalysisAgentSkillReferences(domainId, view.storedRefsTo(skill.skill));
+    const references = await listAnalysisAgentSkillReferences(domainId, skill.skill);
     return readableReferences(references, access);
   }
   async deleteSkill(domainId: string, id: string, access: ReferenceAccess): Promise<SkillDeleteResult> {
@@ -79,7 +79,7 @@ class SkillManager {
       const view = await readSkillView(domainId, access.credentials);
       const skill = requireSkill(view.registry, id);
       const source = requireWritable(skill);
-      const references = await listAnalysisAgentSkillReferences(domainId, [skill.skill]);
+      const references = await listAnalysisAgentSkillReferences(domainId, skill.skill);
       const affectedAgents = await readableReferences(references, access);
       const trash = path.join(skillRegistryManager.getDomainSkillsRoot(domainId), ".trash", randomUUID());
       fs.mkdirSync(path.dirname(trash), { recursive: true });
