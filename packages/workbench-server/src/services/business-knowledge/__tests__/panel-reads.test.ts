@@ -7,9 +7,9 @@ import { createBusinessKnowledgeReadAdapter } from "../panel-reads";
 
 /*
  * The business knowledge named reads: the queried list in the page's own search, filter and page semantics, the status
- * counts of its tabs, one entry from the whole-domain list, the owner's form forwarded as the panel form, the two write
- * descriptions, and the owner's refusals kept as errors. The rows carry the field labels and status names of the owner's
- * form description, so one language names everything.
+ * counts of its tabs, one entry from the whole-domain list, the owner's form forwarded as the panel form, and the
+ * owner's refusals kept as errors. The rows carry the field labels and status names of the owner's form description, so
+ * one language names everything.
  */
 
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://owner.test" } } }));
@@ -212,25 +212,6 @@ it("forwards the owner's form for a draft and for one entry's target", async () 
     target: { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-2" }, changedField: "/status",
     values: { knowledgeTitle: "Return policy", knowledgeTags: ["Business"], status: 1 },
   });
-});
-
-it("describes the two writes without an owner request", async () => {
-  const fetchOwner = vi.fn(async (url: string) => {
-    throw new Error(`No owner request expected, got ${url}`);
-  });
-  vi.stubGlobal("fetch", fetchOwner);
-  const reads = createBusinessKnowledgeReadAdapter(viewer);
-
-  expect(panelReadResultSchemas.panelOperationDescriptor.parse(reads["knowledge.approve.describe"]())).toMatchObject({
-    handlerRef: "knowledge.approve", label: "Approve", effect: "write",
-    target: { source: "input", input: "knowledge" }, batch: true,
-  });
-  expect(panelReadResultSchemas.panelOperationDescriptor.parse(reads["knowledge.delete.describe"]())).toMatchObject({
-    handlerRef: "knowledge.delete", label: "Delete", effect: "write",
-    target: { source: "input", input: "knowledge" }, batch: true,
-    inspectImpact: { handlerRef: "knowledge.delete.inspect-impact" },
-  });
-  expect(fetchOwner).not.toHaveBeenCalled();
 });
 
 it("keeps the owner's refusals as errors, whichever endpoint answers them", async () => {

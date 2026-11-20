@@ -344,7 +344,6 @@ it("asks by the entry's title and approves the whole entry as the executor", asy
   } });
   mocks.projection.mockResolvedValue({ id: "run", name: "Approve", componentId: "@ontomato/sdk:OperationButton",
     binding: { kind: "PlatformOperation", id: APPROVE_KNOWLEDGE }, inputs: { knowledge: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
-    data: { describe: { source: { operation: APPROVE_KNOWLEDGE }, read: "describe", params: {} } },
   });
   // The label is read as the initiator; the dispatch's list read and the write go as the executor.
   const reads: Headers[] = [];
