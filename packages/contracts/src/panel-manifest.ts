@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { runtimeJsonValueSchema } from "./agent-runtime-values";
+import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema } from "./form-fields";
 import { pageDraftLinkSchema } from "./page-draft";
 import { APPLICATION_PANEL_USE, PRODUCT_PANEL, platformHasChildCollection, platformObjectTypes, platformOntologyLayers } from "./platform-object-types";
@@ -163,14 +163,15 @@ export type PanelOperationKind = z.infer<typeof panelOperationKindSchema>;
 export const panelOperationTargetSchema = z.discriminatedUnion("source", [
   z.object({ source: z.literal("state"), state: key }).strict(),
   z.object({ source: z.literal("draft"), slot: key }).strict(),
+  z.object({ source: z.literal("literal"), literal: panelObjectRefSchema }).strict(),
+  z.object({ source: z.literal("none") }).strict(),
 ]);
 export type PanelOperationTarget = z.infer<typeof panelOperationTargetSchema>;
 
 /**
  * An operation as the agent and the header both receive it. `handlerRef` names an operation the SDK publishes; it is
  * never a URL, SQL or function source, so a described operation is one somebody registered (overall design 5.1). The
- * SDK derives `form.save` and `action` descriptions from a slot's projection binding plus the client and component
- * metadata; a `state` operation comes from the panel's own declaration below.
+ * SDK receives the owner's admitted operation description. A state operation comes from the panel's own declaration.
  */
 export const panelOperationSchema = z
   .object({
@@ -178,7 +179,7 @@ export const panelOperationSchema = z
     label: z.string().min(1).max(200),
     kind: panelOperationKindSchema,
     /** The parameters the operation takes, by name; a form save's parameters are the owner's form fields, read live. */
-    inputSchema: z.record(key, ontologyParameterTypeSchema).default({}),
+    inputSchema: runtimeJsonObjectSchema.default({}),
     /** Absent on a state operation: what it changes is the panel's own state, not an object. */
     target: panelOperationTargetSchema.optional(),
     /** The slot whose projection publishes this operation; absent on a state operation. */

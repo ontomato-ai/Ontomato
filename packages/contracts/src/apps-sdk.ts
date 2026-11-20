@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { panelReadResultIdSchema } from "./panel-operations";
-import { componentOperationSchema, directProjectionInputTypeSchema } from "./panel-projection";
+import { directProjectionInputTypeSchema } from "./panel-projection";
 import { workspacePathSchema } from "./workspaces";
 
 /** Written by the image build beside its exact SDK version directory. */
@@ -70,7 +70,6 @@ export const appsSdkComponentCatalogEntrySchema = z.object({
   config: componentConfigSchema.optional(),
   inputs: z.record(name, directProjectionInputTypeSchema).optional(),
   outputs: z.array(name).optional(),
-  operations: z.array(componentOperationSchema).optional(),
   ports: z.object({
     props: componentConfigSchema,
     events: z.array(componentPortSchema),
