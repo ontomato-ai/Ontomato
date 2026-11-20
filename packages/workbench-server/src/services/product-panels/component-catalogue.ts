@@ -29,9 +29,6 @@ export async function validateProjectionComponent(id: string, projection: Produc
       throw new HttpError(400, `Projection '${id}', field 'data.${name}' is required by component '${projection.componentId}'`, "PANEL_COMPONENT_DATA_REQUIRED");
   }
   const reads = Object.entries(projection.data);
-  if (Object.keys(data).length && !reads.length)
-    throw new HttpError(400, `Component '${projection.componentId}' needs at least one declared read`, "PANEL_COMPONENT_DATA_REQUIRED");
-
   for (const [name, read] of reads) {
     if (!Object.hasOwn(data, name))
       throw new HttpError(400, `Projection '${id}', field 'data.${name}' is not declared by component '${projection.componentId}'`, "PANEL_COMPONENT_DATA_UNKNOWN");
