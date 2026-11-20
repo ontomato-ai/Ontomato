@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 
 for (const [command, option] of [
   [["distinct-values", "person", "id"], "--limit"],
@@ -129,7 +130,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
         : ok(value),
     };
     export const registerProductProjectionRequestSchema = {
-      safeParse: value => "data" in value ? ok(value) : invalid([{
+      safeParse: value => value.data !== undefined ? ok(value) : invalid([{
         code: "invalid_union",
         unionErrors: [
           { issues: [{ code: "invalid_type", received: "undefined", path: ["data"], message: "Required" }] },
@@ -149,6 +150,10 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
   const panelPath = "/api/product-panels/acceptance-panel";
   const projectionPath = "/api/product-projections/tasks";
   const usesPath = "/owner/platform/applications/app-acceptance/panel-uses";
+  const inlineProjectionId = "panel-projection-" + createHash("sha256").update('["inline-panel","tasks"]').digest("hex");
+  const inlineProjectionPath = `/api/product-projections/${inlineProjectionId}`;
+  const inlinePanelPath = "/api/product-panels/inline-panel";
+  const inlineRecords = new Map();
   const server = createServer(async (request, response) => {
     let content = "";
     for await (const chunk of request) content += chunk;
@@ -158,6 +163,19 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     if (request.url === "/api/apps-sdk/current") response.end(JSON.stringify(release));
     else if (request.url === `${sdkPath}/components.json`) response.end(JSON.stringify({ version: sdkVersion, components: [{ componentId: "ObjectList" }] }));
     else if (request.url === `${sdkPath}/node/panel-check.mjs`) response.end(checkModule);
+    else if ([inlinePanelPath, inlineProjectionPath].includes(request.url)) {
+      const kind = request.url === inlinePanelPath ? "panel" : "projection";
+      const existing = inlineRecords.get(request.url);
+      if (request.method === "PUT" && body.revision === (existing?.revision ?? 0)) {
+        const record = { ...body, revision: body.revision + 1 };
+        inlineRecords.set(request.url, record);
+        response.end(JSON.stringify({ [kind]: record }));
+      } else if (request.method === "GET" && existing) response.end(JSON.stringify({ [kind]: existing }));
+      else {
+        response.statusCode = request.method === "GET" ? 404 : 409;
+        response.end(JSON.stringify({ error: { message: "Record missing or changed" } }));
+      }
+    }
     else if (request.url === projectionPath) response.end(JSON.stringify({ projection: { componentId: "@ontomato/sdk:ObjectList" } }));
     else if (request.url === "/api/product-projections/unwritten") {
       response.statusCode = 404;
@@ -255,6 +273,36 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await writeFile(registration, JSON.stringify(localMaterial));
     await assert.rejects(run("panel", "check", directory), error =>
       error.stderr.includes("projection draft-list: data: required field is missing") && !error.stderr.includes("Expected chart"));
+
+    const authorProjection = { componentId: "@ontomato/sdk:ObjectList", data: {} };
+    manifest.members.tasks.target = { projection: authorProjection };
+    await writeFile(join(directory, "panel.json"), JSON.stringify({ manifest }));
+    const item = { id: "inline-panel", mode: "create", input: { name: "Inline", description: "", visibility: "private" } };
+    await writeFile(registration, JSON.stringify({ panels: [item] }));
+    requests.length = 0;
+    await run("panel", "check", directory);
+    assert.equal(requests.splice(0).some(([method, url]) => method !== "GET" || url.includes("/product-")), false);
+    await run("panel", "register", directory);
+    assert.deepEqual(requests.splice(0).filter(([method]) => method === "PUT").map(([, url, body]) => [url, body.revision]), [
+      [inlineProjectionPath, 0], [inlinePanelPath, 0],
+    ]);
+    assert.equal(inlineRecords.get(inlineProjectionPath).name, "tasks");
+    assert.equal(inlineRecords.get(inlineProjectionPath).visibility, "private");
+    assert.deepEqual(inlineRecords.get(inlinePanelPath).manifest.members.tasks.target, { projectionId: inlineProjectionId });
+
+    inlineRecords.set(inlineProjectionPath, { ...inlineRecords.get(inlineProjectionPath), name: "Renamed", revision: 4 });
+    await writeFile(registration, JSON.stringify({ panels: [{ ...item, mode: "update", revision: 1 }] }));
+    await run("panel", "register", directory);
+    assert.deepEqual(requests.splice(0).filter(([method]) => method === "PUT").map(([, url, body]) => [url, body.revision]), [
+      [inlineProjectionPath, 4], [inlinePanelPath, 1],
+    ]);
+    assert.equal(inlineRecords.get(inlineProjectionPath).name, "Renamed");
+
+    inlineRecords.delete(inlinePanelPath);
+    await writeFile(registration, JSON.stringify({ panels: [item] }));
+    await assert.rejects(run("panel", "register", directory), error =>
+      error.stderr.includes(`${inlineProjectionId} already exists and is not referenced by this member`));
+    assert.equal(requests.some(([method]) => method === "PUT"), false);
   } finally {
     await rm(directory, { recursive: true });
     await new Promise(resolve => server.close(resolve));
