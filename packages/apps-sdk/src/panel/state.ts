@@ -9,6 +9,7 @@ import {
   type PanelStateValue,
 } from "@ontomato/contracts/panel-manifest";
 import { platformObjectTypes } from "@ontomato/contracts/platform-object-types";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelSelection } from "./types";
 
 /*
@@ -53,7 +54,7 @@ export function stateObjects(value: DeepReadonly<PanelFieldValue> | undefined): 
  * What a panel instance starts with: values for the fields an open request or a link named. A field it leaves out starts
  * at its declared default, else empty; an object-typed field declares no object to open on: that belongs to the request.
  */
-export type PanelInitialState = Readonly<Record<string, PanelFieldValue>>;
+export type PanelInitialState = Readonly<Record<string, RuntimeJsonValue>>;
 
 export interface PanelStateStore {
   /** Every declared field, by name, as the panel's template and script read them. */
@@ -77,7 +78,7 @@ export interface PanelStateStore {
  * object-union field takes one top-level reference, a list its references, a child-object field a parent-scoped child
  * identity, a scalar its primitive type. Null clears the field.
  */
-export function checkPanelValue(manifest: PanelManifest, name: string, value: PanelFieldValue): PanelFieldValue {
+export function checkPanelValue(manifest: PanelManifest, name: string, value: unknown): PanelFieldValue {
   const field = manifest.state[name];
   if (!field) throw new Error(`Panel state has no field '${name}'`);
   const parsed = panelStateValueSchema.parse(value);
@@ -95,7 +96,7 @@ export function createPanelState(manifest: PanelManifest, initial: PanelInitialS
     Object.fromEntries(
       Object.entries(manifest.state).map(([name, field]) => {
         // An address or an open request names what it opens on; otherwise the field starts at its declared default.
-        const value = name in initial ? initial[name]! : (field.default ?? null) as PanelFieldValue;
+        const value = name in initial ? initial[name]! : field.default ?? null;
         return [name, checkPanelValue(manifest, name, value)];
       }),
     ),

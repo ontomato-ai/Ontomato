@@ -7,7 +7,7 @@ import type { MemberData, MemberDataState, MemberInputs } from "./direct";
  * The member a component is drawn as in a directly rendered panel (design 4.2): its projection with the named data it
  * declares, the data the instance reads for it, and the inputs its placement fills now. A component shows a datum
  * through `useMemberData` and asks for one more read with values of its own through `useMemberRead`; it never sends a request
- * of its own. In a panel's frame there is no member: the component reads as it did there.
+ * of its own. A projection is drawn as a member in a panel's frame too, where the frame reads its data.
  */
 export interface PanelMemberContext {
   readonly key: string;
@@ -16,19 +16,17 @@ export interface PanelMemberContext {
   readonly data: MemberData;
 }
 
-/** The member a projection is drawn as, read once its projection is loaded; null for a projection that is no member. */
-export const panelMemberKey: InjectionKey<() => PanelMemberContext | null> = Symbol("panel-member");
+/** The member a projection is drawn as, once its projection is loaded. */
+export const panelMemberKey: InjectionKey<() => PanelMemberContext> = Symbol("panel-member");
 
-/** The member this component is drawn as, or null for a projection with no named data (a frame's older records). */
-export function useMember(): PanelMemberContext | null {
-  return inject(panelMemberKey, null)?.() ?? null;
+/** The member this component is drawn as, in a panel's frame or in the platform's document. */
+export function useMember(): PanelMemberContext {
+  const found = inject(panelMemberKey, null);
+  if (!found) throw new Error("A member's component is drawn by <Projection> or a panel member, which provide its member");
+  return found();
 }
 
-function member(): PanelMemberContext {
-  const found = useMember();
-  if (!found) throw new Error("A member's data is read in a directly rendered panel, which draws the component as a member");
-  return found;
-}
+const member = useMember;
 
 /** A named datum of this member, read and kept current while the component is mounted. */
 export function useMemberData(name: string): ComputedRef<MemberDataState> {

@@ -15,6 +15,7 @@ import {
 import { registerHandler, type RegisteredHandler } from "./handlers";
 import { stateChildObject, stateObject, type PanelFieldValue } from "./state";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
+import { projectionReadReferences } from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyObjectsRequest, PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
 
 /*
@@ -389,10 +390,9 @@ export interface PlatformResources {
 }
 
 /**
- * What a frame calls before a projection registers its ports: every resource its record binds — its binding and, for a
- * graph, its edges' — and the client its component reads through, fetched and registered with the frame's request
- * path and words, once per module. A binding this version has
- * no module for is left to fail where it is used.
+ * What a frame calls before a projection registers its ports: the resource module of every platform type and operation
+ * its data reads, and the client its component reads through, fetched and registered with the frame's request path and
+ * words, once per module. An element this release has no module for is left to fail where it is read.
  */
 export function platformResourceLoader(requests: PlatformRequests, resources: PlatformResources, translate: (key: string) => string) {
   const loaded = new Map<() => Promise<unknown>, Promise<void>>();
@@ -405,12 +405,14 @@ export function platformResourceLoader(requests: PlatformRequests, resources: Pl
     }
     return pending;
   };
-  return async (projection: Pick<ProductProjection, "componentId" | "binding" | "graph">): Promise<void> => {
-    const bindings = [projection.binding, ...(projection.graph ? [projection.graph.edges.binding] : [])];
+  return async (projection: ProductProjection): Promise<void> => {
+    // Every element a projection's data reads: the platform types and operations this release has a module for.
+    const elements = projectionReadReferences(projection);
     await Promise.all([
-      ...bindings.map((binding) => binding.kind === "PlatformOperation"
-        ? once(resources.operations[binding.id], (factory) => registerHandler(factory(requests)))
-        : once(resources.objects[binding.id], (factory) => factory(requests, translate).forEach(registerPlatformObjectAdapter))),
+      ...elements.map((element) => element.kind === "PlatformOperation"
+        ? once(resources.operations[element.id], (factory) => registerHandler(factory(requests)))
+        : once(element.kind === "PlatformObjectType" ? resources.objects[element.id] : undefined,
+          (factory) => factory(requests, translate).forEach(registerPlatformObjectAdapter))),
       once(resources.components[projection.componentId], (register) => register(requests)),
     ]);
   };

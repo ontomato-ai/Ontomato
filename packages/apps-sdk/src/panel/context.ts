@@ -74,7 +74,7 @@ export interface PanelContext {
    * Fetches and registers the resource clients a projection record binds — its type or operation, and a graph's edge
    * type — before the projection registers its ports, so a panel downloads only the clients of what it shows.
    */
-  resources(projection: Pick<ProductProjection, "id" | "componentId" | "inputs" | "data">): Promise<void>;
+  resources(projection: ProductProjection): Promise<void>;
   /**
    * Asks the host to expand the page's composer with the slot's declared agent target and optional prefill text.
    * Never sends a message; the host enforces that the request matches the slot's declared projection.

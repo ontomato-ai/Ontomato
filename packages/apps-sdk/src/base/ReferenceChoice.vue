@@ -4,11 +4,11 @@ import { useI18n } from "vue-i18n";
 import { ElFormItem } from "element-plus/es/components/form/index";
 import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import { formFieldAt, usePanelContext, useProjectionSlot } from "../panel/context";
-import { adapterPart, type PlatformObjectOption, type PlatformObjectOptions } from "../panel/platform-objects";
+import { formFieldAt, usePanelContext } from "../panel/context";
+import type { PlatformObjectOption, PlatformObjectOptions } from "../panel/platform-objects";
 import type { PanelOptionList } from "@ontomato/contracts/panel-projection";
 import { MemberDataUnavailable } from "../panel/member-forms";
-import { useMember, useMemberRead } from "../panel/member";
+import { useMemberRead } from "../panel/member";
 
 /**
  * One reference field of a form in this panel at an absolute pointer, chosen from the catalogue of the type the
@@ -18,12 +18,11 @@ import { useMember, useMemberRead } from "../panel/member";
  * A row's field follows the row: `path` is its current absolute pointer.
  *
  * A member's choices are its `options` datum (searched and paged with the reader's words) and its `selected` datum (the
- * held values, as choices), read by the instance; a code projection's are the bound type's resource module's.
+ * held values, as choices), read by the instance: through the platform, or this release's resource module in a frame.
  */
 const props = defineProps<{ formSlot: string; path: string }>();
-const slot = useProjectionSlot();
 const field = formFieldAt(usePanelContext().instance, props.formSlot, () => props.path);
-const options: PlatformObjectOptions = useMember() ? memberOptions() : adapterPart(slot.projection.binding.id, "options");
+const options: PlatformObjectOptions = memberOptions();
 
 function memberOptions(): PlatformObjectOptions {
   const readOptions = useMemberRead("options");

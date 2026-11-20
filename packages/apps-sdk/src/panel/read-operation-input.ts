@@ -30,7 +30,7 @@ function sourceValue(instance: PanelInstance, source: Source): RuntimeJsonValue 
 
 /** The input of the operation `operation` of the projection in `slot`, with `draft` the values of the form it targets. */
 export function readOperationInput(instance: PanelInstance, slot: string, operation: string, draft: PanelFormValues): ReadOperationInput {
-  const declared = instance.manifest.slots[slot]?.readOperationInputs?.[operation];
+  const declared = instance.manifest.members[slot]?.readOperationInputs?.[operation];
   if (!declared) throw new Error(`Slot '${slot}' declares no inputs for its read operation '${operation}'`);
   const { parameters, bindingId } = declared;
   // A source that holds nothing yet is left out, never turned into null; the owner says what it requires.

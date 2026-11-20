@@ -14,7 +14,7 @@ import ReferenceChoice from "./ReferenceChoice.vue";
 const panel = usePanelContext();
 const slot = useProjectionSlot();
 const member = inject(panelMemberKey, null);
-const port = panel.manifest.slots[slot.slot]?.formField;
+const port = panel.manifest.members[slot.slot]?.formField;
 if (!port) throw new Error(`Slot '${slot.slot}' edits no form field: its declaration names no formField`);
 const { itemPath } = port;
 
