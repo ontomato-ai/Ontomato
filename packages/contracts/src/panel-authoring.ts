@@ -21,7 +21,7 @@ const authoringDataSchema = z.union([
   z.object({
     read: readName.describe("Read name from the owner's entry in the type table."),
     type: ownerType.optional().describe("Owner type for this datum. Omit to use the member's type or its target state's object type."),
-    params: z.record(readName, authoringParameterSchema).optional().describe("Read parameters from the owner signature, supplied as literal values or panel state field names."),
+    params: z.record(readName, authoringParameterSchema).optional().describe("Map owner read parameter names to {state: fieldName} or {literal: value}."),
   }).strict(),
 ]);
 
@@ -37,13 +37,13 @@ const inlineMemberSchema = z.object({
   ]).describe("Component name from the released SDK catalogue. Use its package-qualified ID if the name is ambiguous."),
   type: ownerType.optional().describe("Default owner type ID from the type table for this member's reads and operation."),
   target: stateKey.optional().describe("Panel state field holding the object for an object read or the object or object list targeted by an operation."),
-  data: z.record(readName, authoringDataSchema).optional().describe("Map the component's datum names to owner reads. Use a read name or an object with read, optional owner type, and optional params."),
+  data: z.record(readName, authoringDataSchema).optional().describe("Map the component's datum names to owner reads. Use a read name or {read, type?, params?}. Each params value is {state: fieldName} or {literal: value}."),
   operation: panelOperationDeclarationSchema.shape.id.optional().describe("Operation ID from the owner's entry in the type table."),
   state: z.record(stateKey, stateKey).optional().describe("Map typed component port names or owner read parameter names to panel state fields."),
   config: runtimeJsonObjectSchema.optional().describe("Component configuration from the released SDK catalogue."),
-  agent: z.union([z.literal("page-default"), defaultAgentSchema]).optional().describe("Required for ConversationEntry. Use the current page default, an agent definition ID, or a platform preset."),
+  agent: z.union([z.literal("page-default"), defaultAgentSchema]).optional().describe('Required for ConversationEntry. Use "page-default", {kind:"id", id}, or {kind:"preset", agentKind}.'),
   prefill: panelConversationEntrySchema.shape.prefill.describe("ConversationEntry text placed in the page composer without sending it."),
-  sourceCard: dashboardCardRequestSchema.optional().describe("Required for MetricChart. Use the dashboard ID and card ID; the source owner registers the chart and assigns its projection ID."),
+  sourceCard: dashboardCardRequestSchema.optional().describe("Required for MetricChart. Use {dashboardId, cardId}; the source owner registers the chart and assigns its projection ID."),
   name: z.string().optional().describe("Projection display name. Defaults to the member name."),
   description: z.string().optional().describe("Projection description. Defaults to the member name."),
 }).strict().superRefine((member, ctx) => {
