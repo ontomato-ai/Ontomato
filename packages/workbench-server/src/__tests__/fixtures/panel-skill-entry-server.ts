@@ -14,6 +14,7 @@ import { SkillRegistry, type InstalledSkill } from "../../../../agent-runtime/sr
 import { runtimeStartRunRequestSchema } from "@ontomato/contracts/agent-runtime";
 import { SessionSandbox } from "../../../../agent-runtime/src/sandbox";
 import { RuntimeStore } from "../../../../agent-runtime/src/store";
+import { RuntimeError } from "../../../../agent-runtime/src/errors";
 import { removeWorkerFiles } from "../../../../agent-runtime/src/worker";
 import { protectedSkillRef } from "../../core/skills/providers";
 import { installContentLayout } from "../../content/layout";
@@ -118,6 +119,7 @@ export async function startPanelSkillEntryServer(options: {
   const { default: assistantRouter } = await import("../../api/routes/assistant");
   const { agentChannelRouter } = await import("../../api/routes/agent-channel");
   const { appBuilderRouter } = await import("../../api/routes/app-builder");
+  const { mountAppsSdkStatic } = await import("../../api/routes/apps-sdk");
   registerPanelSkillProvider();
 
   app.post("/platform/agent-channel/callers", (req, res) => {
@@ -175,13 +177,14 @@ export async function startPanelSkillEntryServer(options: {
   app.post("/v1/sessions", async (req, res) => {
     res.status(201).json(await store.createSession(scope, req.header("Idempotency-Key")!));
   });
-  app.get("/v1/sessions/:session", async (req, res) => {
-    const [status] = await store.sessionStatuses(scope, [req.params.session]);
-    if (!status) {
-      res.status(404).json({ error: { code: "NOT_FOUND", message: "Session not found" } });
-      return;
-    }
-    res.json({ session: status.session, messages: [], pendingQuestions: [], latestRun: null });
+  app.get("/v1/sessions/:session", (req, res, next) => {
+    void store.session(scope, req.params.session).then(
+      session => res.json({ session, messages: [], pendingQuestions: [], latestRun: null }),
+      error => {
+        if (!(error instanceof RuntimeError)) return next(error);
+        res.status(error.status).json({ error: { code: error.code, message: error.message } });
+      },
+    );
   });
   app.post("/v1/channel/sessions/:session/bind", (_req, res) => res.sendStatus(204));
   // Stand in for the scheduler at its HTTP boundary. The actual host request supplies the actor, input and page context.
@@ -213,6 +216,7 @@ export async function startPanelSkillEntryServer(options: {
   app.use("/api/product-projections", productProjectionsRouter);
   app.use("/api/assistant", assistantRouter);
   app.use("/api", appBuilderRouter);
+  mountAppsSdkStatic(app);
   app.use("/internal/agent-channel", agentChannelRouter);
 
 
