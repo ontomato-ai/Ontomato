@@ -550,7 +550,8 @@ it("fills a panel's entry into this conversation, or starts one with the agent i
       return json({ session, messages: [], runs: [], latestRun: null, pendingQuestions: [], page: { messageSeq: 0, olderCursor: null } });
     if (url.pathname.endsWith("/sessions")) return json({ sessions: [session], nextCursor: null });
     const member = JSON.parse(url.searchParams.get("member") ?? "null") as { ref: { name: string } } | null;
-    if (member?.ref.name === "pvt-drawer-panel") return json({ agents: wire([every[0]!, every[2]!]), defaultAgentId: governance });
+    if (member?.ref.name === "pvt-drawer-panel")
+      return json({ agents: wire([every[0]!, every[2]!]), defaultAgentId: governance, presetAgentIds: { regular: assistant, "knowledge-governance": governance } });
     return json({ agents: wire(every) });
   });
   const host = createAgentHostClient({ request });
@@ -617,5 +618,11 @@ it("fills a panel's entry into this conversation, or starts one with the agent i
   await settle();
   expect(agentId.value).toBe(governance);
   expect(written()).not.toContain("Not for this page");
+
+  // A preset the page offers, named by the server's answer: a new conversation with that candidate takes the sentence.
+  served.at(-1)!({ target: { kind: "preset", agentKind: "regular" }, prefill: "Back to the assistant" });
+  await settle();
+  expect(agentId.value).toBe(assistant);
+  expect(written()).toContain("Back to the assistant");
   expect(request.mock.calls.some(([path]) => String(path).includes("/runs"))).toBe(false);
 });

@@ -10,6 +10,7 @@ import {
   runtimeIdSchema,
   runtimeTimestampSchema,
 } from "./agent-runtime-values";
+import { defaultAgentSchema } from "./default-agent";
 export const assistantAgentDefinitionSchema = agentHostAgentSchema.extend({
   executionUserId: z.string().trim().min(1).nullable(),
   modelSelection: modelSelectionSchema,
@@ -88,6 +89,8 @@ export const assistantAgentListSchema = z.object({
   agents: z.array(assistantAgentOptionSchema),
   /** Present only for a page-filtered directory. */
   defaultAgentId: runtimeIdSchema.optional(),
+  /** In a page-filtered directory, maps offered presets to their candidate agent IDs. */
+  presetAgentIds: z.record(defaultAgentSchema.options[1].shape.agentKind, runtimeIdSchema).optional(),
 }).strict();
 export type AssistantAgentList = z.infer<typeof assistantAgentListSchema>;
 /** Only accepted copied datasets receive a source; generic JSON files do not. */

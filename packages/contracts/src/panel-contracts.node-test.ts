@@ -1837,6 +1837,17 @@ test("conversation entries declare the exact composer target and can prefill wit
   assert.deepEqual(projection.conversationEntry, conversationEntry);
 });
 
+test("page candidate directories can identify the offered agents by preset", async () => {
+  const { assistantAgentListSchema } = await import("./assistant-chat");
+  const id = "7bec96be-2b73-4fe5-b0e1-9c4e12ed2697";
+  const agents = [{ id, name: "Knowledge governance", description: "", icon: null, enabled: true, effectiveSkills: [] }];
+  const directory = { agents, presetAgentIds: { "knowledge-governance": id } };
+  assert.deepEqual(assistantAgentListSchema.parse(directory), directory);
+  assert.deepEqual(assistantAgentListSchema.parse({ agents }), { agents });
+  assert.equal(assistantAgentListSchema.safeParse({ agents, presetAgentIds: { "": id } }).success, false);
+  assert.equal(assistantAgentListSchema.safeParse({ agents, presetAgentIds: { regular: "not-an-id" } }).success, false);
+});
+
 test("only the host can send frame activity messages", () => {
   assert.deepEqual(panelHostFrameMessageSchema.parse({ kind: "activity", active: false }), { kind: "activity", active: false });
   assert.equal(panelFrameMessageSchema.safeParse({ kind: "activity", active: true }).success, false);
