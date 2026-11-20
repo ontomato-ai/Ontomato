@@ -26,6 +26,7 @@ export const en = {
   "panels.knowledge.approve": "Approve",
   "panels.knowledge.delete": "Delete",
   "panels.confirmation.deleteObjectTypeImpact": "This deletes the selected object type, together with the relationships that touch it ({relationships} in total).",
+  "panels.knowledge.statusAll": "All",
   "panels.action.fields.status": "Status",
   "panels.action.fields.origin": "Origin",
   "panels.action.fields.createdBy": "Created by",
