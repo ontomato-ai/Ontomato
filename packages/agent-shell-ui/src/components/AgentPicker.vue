@@ -13,11 +13,13 @@ const props = withDefaults(
   defineProps<{
     agents: readonly Pick<AgentHostAgent, "id" | "name" | "description" | "icon">[];
     agentId: string | null;
+    /** The current agent when it is outside `agents` (an active conversation whose agent is not a page candidate). */
+    currentAgent?: Pick<AgentHostAgent, "id" | "name" | "description" | "icon"> | null;
     /** What it chooses ("Agent"): its accessible name, and the trigger's text while no agent is shown. */
     label: string;
     variant?: "head" | "pill";
   }>(),
-  { variant: "head" },
+  { variant: "head", currentAgent: null },
 );
 const emit = defineEmits<{ select: [id: string] }>();
 
@@ -26,7 +28,11 @@ const root = ref<HTMLElement | null>(null);
 const popup = ref<HTMLElement | null>(null);
 const popupStyle = ref<Record<string, string>>({});
 
-const current = computed(() => props.agents.find((agent) => agent.id === props.agentId) ?? null);
+const current = computed(
+  () =>
+    props.agents.find((agent) => agent.id === props.agentId) ??
+    (props.currentAgent?.id === props.agentId ? props.currentAgent : null),
+);
 /** The trigger's accessible name: what it switches, and the agent it currently shows. */
 const triggerLabel = computed(() => `${props.label}: ${current.value?.name ?? "—"}`);
 
