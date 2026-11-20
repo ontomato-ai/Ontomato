@@ -27,6 +27,7 @@ export const SDK_COMPONENT = "platform:SDKComponent";
 export const PRODUCT_PROJECTION = "platform:ProductProjection";
 export const PRODUCT_PANEL = "platform:ProductPanel";
 export const APPLICATION = "platform:Application";
+export const APPLICATION_PANEL_USE = "platform:ApplicationPanelUse";
 export const ONTOLOGY_TYPE = "platform:OntologyType";
 export const ONTOLOGY_RELATION_KIND = "platform:OntologyRelationKind";
 
@@ -153,6 +154,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [PRODUCT_PROJECTION]: describeType("productProjection", "product"),
   [PRODUCT_PANEL]: describeType("productPanel", "product"),
   [APPLICATION]: describeType("application", "product"),
+  [APPLICATION_PANEL_USE]: describeType("applicationPanelUse", "product"),
   [AGENT_DEFINITION]: {
     ...describeType("agentDefinition", "product"),
     reads: {
@@ -185,13 +187,13 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
 
 /** These families apply to the class or relationship identified by the current domain catalogue. */
 export const customerOntologyReads: Readonly<Record<string, PlatformReadDeclaration>> = {
-  query: { source: "type", parameterMode: "fixed", params: { filter: "filter", page: "page" }, result: "panelRecordQuery" },
+  query: { source: "type", parameterMode: "fixed", params: { search: "keyword", page: "page" }, result: "panelRecordQuery" },
   record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
   form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
 };
 export const customerRelationReads: Readonly<Record<string, PlatformReadDeclaration>> = {
   neighbors: {
-    source: "type", parameterMode: "fixed", params: { node: "graphNode", relationKinds: "relationKinds" },
+    source: "type", parameterMode: "fixed", params: { node: "graphNode", relationKinds: "relationKinds", limit: "neighborsLimit" },
     requiredParams: ["node"], result: "panelRelationNeighbors",
   },
 };

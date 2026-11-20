@@ -2,7 +2,7 @@ import { z } from "zod";
 import { defaultAgentSchema } from "./default-agent";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
-import { panelManifestSchema, panelMessageKeySchema, panelThemeOverridesSchema } from "./panel-manifest";
+import { panelManifestSchema, panelMessageKeySchema, panelObjectRefSchema, panelThemeOverridesSchema } from "./panel-manifest";
 import { PanelLayoutError, parsePanelLayout } from "./panel-layout";
 import { directProjectionPortsSchema, validateDirectProjection } from "./panel-projection";
 import { applicationMetadataSchema } from "./application-metadata";
@@ -166,9 +166,13 @@ export const applicationPanelUseSchema = z.object({
 export type ApplicationPanelUse = z.infer<typeof applicationPanelUseSchema>;
 
 export const applicationEntryResolutionQuerySchema = z.object({ path: applicationPanelUsePathSchema }).strict();
+/** The entry owner supplies a stable cross-application key for menu activation. */
+export const applicationEntryMenuItemSchema = applicationPanelUseSchema.extend({
+  primaryKey: panelObjectRefSchema.shape.primaryKey.optional(),
+});
 export const applicationEntryMenuSchema = z.object({
   groups: applicationMetadataSchema.shape.groups,
-  panelUses: z.array(applicationPanelUseSchema),
+  panelUses: z.array(applicationEntryMenuItemSchema),
 }).strict();
 export const applicationEntryResolutionSchema = z.object({
   applicationId: id,
@@ -207,14 +211,15 @@ export type ApplicationPanelReferencesRequest = z.infer<typeof applicationPanelR
 export const panelUseRefSchema = z.object({ applicationId: id, useId: id }).strict();
 export type PanelUseRef = z.infer<typeof panelUseRefSchema>;
 
-export const panelSkillSourceSchema = z.object({
-  skill: runtimeSkillRefSchema,
-  uses: z.array(applicationPanelUseSchema.pick({ pageKey: true, panelId: true, path: true }).extend({
-    applicationId: id,
-    useId: id,
-  })).nonempty(),
-}).strict();
+/** Java exposes registered entry facts to the authenticated provider service. */
+export const panelSkillSourceSchema = panelUseRefSchema.extend({
+  panelId: id,
+  path: applicationPanelUsePathSchema,
+  entrance: pageSkillEntranceSchema,
+});
 export type PanelSkillSource = z.infer<typeof panelSkillSourceSchema>;
+export const panelSkillSourcesResponseSchema = z.array(panelSkillSourceSchema);
+export const panelSkillSourcesQuerySchema = z.object({ domainId: id }).strict();
 
 /** The Java declaration is the sole takeover authority, including for legacy writers. */
 export const panelApplicationEntrySchema = z.object({

@@ -2,19 +2,10 @@ import { z } from "zod";
 import { runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema } from "./form-fields";
 import { pageDraftLinkSchema } from "./page-draft";
-import { platformHasChildCollection, platformObjectTypes, platformOntologyLayers } from "./platform-object-types";
+import { APPLICATION_PANEL_USE, platformHasChildCollection, platformObjectTypes, platformOntologyLayers } from "./platform-object-types";
 
-/*
- * What a panel's `panel.mjs` exports through `definePanel`: the state the panel keeps for one instance and the
- * projections it composes into slots, and nothing about how it is drawn (the HTML and the module own layout and
- * interaction). The SDK mounts the panel from this declaration, so a panel author never wires up page context, deep
- * links, draft dispatch or button execution by hand; the registry stores the declaration beside the panel's content,
- * and the graph reads it instead of the HTML.
- *
- * Operations a projection already defines — saving a form, running a task — are not declared here a second time: the
- * SDK derives them from the slot's projection binding and the component/client metadata, and describes them in this
- * file's `panelOperationSchema` shape. What the manifest adds is only the panel's own state and navigation operations.
- */
+/* The registered manifest describes a panel instance's state, placements, ports and events. Resource owners
+ * describe their own operations. A frame and a direct instance consume the same registered declaration. */
 
 const key = z
   .string()
@@ -103,27 +94,6 @@ export type OntologyParameterType = z.infer<typeof ontologyParameterTypeSchema>;
 export function matchesObjectType(field: OntologyObjectUnionType | z.infer<typeof ontologyObjectTypeSchema>, className: string): boolean {
   return field.kind === "object" ? field.objectType === className : objectUnionTypes(field).includes(className);
 }
-
-/**
- * One field of a panel's own state. Two instances of the same panel keep separate values, so a selection made in one is
- * never seen by the other; a shared projection receives the state as an input value instead (overall design 3.2, 10.1).
- * The first object a panel shows comes from opening it (a deep link or an open request), never from the declaration: a
- * primary key in a shared panel would open every user's instance on the same object.
- */
-const deepLink = z.boolean().default(false);
-export const panelStateFieldSchema = z.union([
-  ontologyObjectTypeSchema.extend({ deepLink }),
-  explicitObjectUnionTypeSchema.extend({ deepLink }),
-  layeredObjectUnionTypeSchema.extend({ deepLink }),
-  childObjectType.extend({ deepLink }).refine(declaredChildCollection, undeclaredCollection),
-  panelListTypeSchema.extend({ deepLink: z.literal(false).default(false) }),
-  ontologyScalarTypeSchema.extend({ deepLink }),
-]);
-export type PanelStateField = z.infer<typeof panelStateFieldSchema>;
-
-/** The state a panel declares: fields by name, each with its own type. */
-export const panelStateSchema = z.record(key, panelStateFieldSchema);
-export type PanelState = z.infer<typeof panelStateSchema>;
 
 /** An object reference in panel state. */
 export const panelObjectRefSchema = z.object({
@@ -373,19 +343,42 @@ export function matchesDirectPanelValue(type: DirectPanelPortType, value: unknow
   }
 }
 
-export const directPanelStateFieldSchema = z.object({
+/** A connection is valid when every value of its source type can go into the exposed target field. */
+export function panelPortAccepts(target: DirectPanelPortType, source: DirectPanelPortType): boolean {
+  if (target.kind === "object" || target.kind === "object-union") {
+    if (source.kind === "object") return matchesObjectType(target, source.objectType);
+    return source.kind === "object-union" && objectUnionTypes(source).every(type => matchesObjectType(target, type));
+  }
+  if (target.kind === "scalar") return source.kind === "scalar" && target.type === source.type;
+  if (target.kind === "child-object")
+    return source.kind === "child-object" && target.parentType === source.parentType && target.collection === source.collection;
+  if (target.kind === "list") return source.kind === "list" && panelPortAccepts(target.items, source.items);
+  if (source.kind !== "placement") return false;
+  const allowed = target.candidates;
+  const offered = source.candidates;
+  if ("rule" in allowed) return "rule" in offered && allowed.rule === offered.rule;
+  return "panelIds" in offered && offered.panelIds.every(id => allowed.panelIds.includes(id));
+}
+
+export const panelStateFieldSchema = z.object({
   type: directPanelPortTypeSchema,
   personal: z.boolean().default(false),
   deepLink: z.boolean().default(false),
   external: z.boolean().default(false),
   default: runtimeJsonValueSchema.optional(),
 }).strict().superRefine((field, ctx) => {
+  if (field.type.kind === "list" && field.deepLink)
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["deepLink"], message: "Object lists are instance state" });
   if (field.default !== undefined && (!matchesDirectPanelValue(field.type, field.default)
     || field.default !== null && ["object", "object-union", "child-object"].includes(field.type.kind))) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["default"], message: "Invalid default value for the declared state type" });
   }
 });
-export type DirectPanelStateField = z.infer<typeof directPanelStateFieldSchema>;
+export type PanelStateField = z.infer<typeof panelStateFieldSchema>;
+export const panelStateSchema = z.record(key, panelStateFieldSchema);
+export type PanelState = z.infer<typeof panelStateSchema>;
+export const directPanelStateFieldSchema = panelStateFieldSchema;
+export type DirectPanelStateField = PanelStateField;
 
 export const panelMemberSchema = z.object({
   target: panelMemberTargetSchema,
@@ -404,7 +397,12 @@ const openMember = z.object({
   inputs: eventInputs.optional(),
 }).strict();
 const openEntry = z.object({
-  mode: z.literal("entry"), applicationId: key, useId: key, inputs: eventInputs.optional(),
+  mode: z.literal("entry"),
+  entry: z.union([
+    z.object({ literal: panelObjectRefSchema.extend({ className: z.literal(APPLICATION_PANEL_USE) }) }).strict(),
+    panelStateRefSchema, itemValue, eventPayload,
+  ]),
+  inputs: eventInputs.optional(),
 }).strict();
 export const panelEventSchema = z.object({
   on: z.object({ member: key, output: key }).strict().optional(),
@@ -418,7 +416,7 @@ export const panelEventSchema = z.object({
 export type PanelEvent = z.infer<typeof panelEventSchema>;
 
 export const panelManifestSchema = z.object({
-  state: z.record(key, directPanelStateFieldSchema),
+  state: panelStateSchema,
   members: z.record(key, panelMemberSchema),
   events: z.record(key, panelEventSchema),
 }).strict().superRefine(({ state, members, events }, ctx) => {
@@ -463,6 +461,12 @@ export const panelManifestSchema = z.object({
       : ["open", action.open.inputs ?? {}] as const;
     if ("invoke" in action) requireName(members, action.invoke.member, [...path, "do", "invoke", "member"]);
     if ("open" in action && "member" in action.open) requireName(members, action.open.member, [...path, "do", "open", "member"]);
+    if ("open" in action && action.open.mode === "entry") {
+      const entry = action.open.entry;
+      if ("state" in entry) requireName(state, entry.state, [...path, "do", "open", "entry", "state"]);
+      if ("event" in entry && (!event.on || event.labelKey))
+        issue([...path, "do", "open", "entry"], "An event value requires an output-only trigger");
+    }
     for (const [field, value] of Object.entries(values)) {
       const valuePath = [...path, "do", operation, operation === "set" ? "fields" : "inputs", field];
       if (operation === "set") requireName(state, field, valuePath);
