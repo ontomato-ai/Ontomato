@@ -68,6 +68,7 @@ test("current SDK discovery carries the digest of the build and the component ca
   const current = {
     ...build, publicBasePath: "/tenant", sdkBasePath: root, manifestPath: `${root}/sdk.json`,
     docsPath: `${root}/docs/index.md`, referencePath: `${root}/docs/reference.md`, componentsPath: `${root}/components.json`,
+    checkPath: `${root}/node/panel-check.mjs`,
   };
   assert.deepEqual(appsSdkBuildSchema.parse(build), build);
   assert.deepEqual(appsSdkCurrentSchema.parse(current), current);
@@ -76,6 +77,24 @@ test("current SDK discovery carries the digest of the build and the component ca
     assert.equal(appsSdkCurrentSchema.safeParse({ ...current, digest: badDigest }).success, false);
   }
   assert.equal(appsSdkCurrentSchema.safeParse({ ...current, componentsPath: undefined }).success, false);
+  assert.equal(appsSdkCurrentSchema.safeParse({ ...current, checkPath: undefined }).success, true);
+});
+
+test("the Node check entry accepts the shipped no-code trial registration material", async () => {
+  const checker = await import("./panel-check");
+  const material = await import(new URL("../../apps-sdk/examples/panels/schedules-trial/definitions.mjs", import.meta.url).href);
+  const [{ directory, manifest, name, description }] = material.panels;
+  const definition = { content: material.panelContent(directory), manifest };
+  assert.equal(checker.directPanelDefinitionContentSchema.parse(definition).content.html, definition.content.html);
+  assert.ok(checker.parsePanelLayout(definition.content.html, checker.directPanelManifestSchema.parse(manifest)).length);
+
+  const registration = { ...definition, name, description, visibility: "domain", revision: 0 };
+  assert.equal(checker.registerDirectPanelRequestSchema.parse(registration).revision, 0);
+  assert.equal(checker.registerDirectPanelRequestSchema.safeParse({ ...registration, sdkVersion: "1.1.2" }).success, false);
+  for (const { input } of material.projections) {
+    assert.deepEqual(checker.directProjectionInputSchema.parse(input), input);
+    assert.deepEqual(checker.registerDirectProjectionRequestSchema.parse({ ...input, revision: 0 }), { ...input, revision: 0 });
+  }
 });
 
 test("a no-code task panel registers and parses the same members and layout", async () => {
