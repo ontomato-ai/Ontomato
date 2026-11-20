@@ -6,6 +6,7 @@ import type { PlatformScheduleForm, PlatformTask } from "@ontomato/contracts/pla
 import type { SchedulesApi } from "./api";
 import { scheduledTaskSaveDescription } from "./panel-operations";
 import { scheduledTaskRunNowOperation } from "./panel-server-operations";
+import { scheduledTaskFieldLabels } from "./panel-text";
 
 type TaskReadApi = Pick<SchedulesApi, "list" | "task" | "form">;
 const taskFieldPath = (key: string) => formFieldPointer("/", key);
@@ -15,10 +16,11 @@ interface TaskFormParams {
   changedField?: string | null;
 }
 
-function taskRecord(task: PlatformTask): PanelRecord {
+function taskRecord(task: PlatformTask, fieldLabels: Record<string, string>): PanelRecord {
   return {
     primaryKey: task.id,
     label: task.title,
+    fieldLabels,
     fields: {
       application: task.appId,
       settings: task.summary.map(item => `${item.label}: ${item.value}`).join("; "),
@@ -40,14 +42,14 @@ function typedField(field: FormField): PanelFormField {
 }
 
 const runNowRead = `${scheduledTaskRunNowOperation.handlerRef}.describe` as const;
-const scheduledTaskRunNowDescription = panelOwnerOperationDescriptorSchema.parse({
+const scheduledTaskRunNowDescription = {
   handlerRef: scheduledTaskRunNowOperation.handlerRef,
   effect: scheduledTaskRunNowOperation.effect,
   target: { source: "input", input: scheduledTaskRunNowOperation.targetInput },
   inputSchema: zodToJsonSchema(scheduledTaskRunNowOperation.inputSchema, { effectStrategy: "input" }),
   resultSchema: zodToJsonSchema(scheduledTaskRunNowOperation.resultSchema, { effectStrategy: "input" }),
   batch: scheduledTaskRunNowOperation.batch,
-});
+};
 
 type FormReader = (values: FormValues, changedField: string | null) => Promise<PlatformScheduleForm>;
 
@@ -80,13 +82,14 @@ async function checkDraft(readForm: FormReader, savedValues: FormValues, draft: 
   return { ...answer, values: { ...answer.values, ...submitted }, errors: [...answer.errors, ...errors] };
 }
 
-export function createScheduledTaskReads(api: TaskReadApi) {
+export function createScheduledTaskReads(api: TaskReadApi, translate: (key: string) => string) {
   return {
     async list() {
-      return (await api.list()).tasks.map(taskRecord);
+      const fieldLabels = scheduledTaskFieldLabels(translate);
+      return (await api.list()).tasks.map(task => taskRecord(task, fieldLabels));
     },
     async record(primaryKey: string) {
-      return taskRecord(await api.task(primaryKey));
+      return taskRecord(await api.task(primaryKey), scheduledTaskFieldLabels(translate));
     },
     async form(
       primaryKey: string, { values, changedField }: TaskFormParams,
@@ -108,7 +111,9 @@ export function createScheduledTaskReads(api: TaskReadApi) {
       };
     },
     [runNowRead]() {
-      return scheduledTaskRunNowDescription;
+      return panelOwnerOperationDescriptorSchema.parse({
+        ...scheduledTaskRunNowDescription, label: translate("platformSchedules.action.runNow"),
+      });
     },
   };
 }

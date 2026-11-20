@@ -7,10 +7,10 @@ import {
   type panelOperationImpactSchema, type panelReadOperationCallSchema, type panelSingleInvocationSchema,
 } from "@ontomato/contracts/panel-operations";
 import type { OntologyElementRef } from "@ontomato/contracts/product-panels";
-import { scheduledTaskServerOperations } from "@ontomato/platform-schedules/panel-server-operations";
 import { m6ServerOperations } from "../action/panel-operations";
 import { agentDefinitionOperations } from "../assistant/definition-operations";
 import { m5ServerOperations } from "../metric-function/panel-operations";
+import { scheduledTaskServerOperations } from "../scheduling/panel-operations";
 import { HttpError } from "../../utils/errors";
 
 export type PanelOperationTarget = PanelFormTarget;

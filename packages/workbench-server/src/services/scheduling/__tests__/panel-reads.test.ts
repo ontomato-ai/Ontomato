@@ -1,9 +1,11 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { scheduledTaskServerOperations } from "@ontomato/platform-schedules/panel-server-operations";
+import { createScheduledTaskServerOperations } from "@ontomato/platform-schedules/panel-server-operations";
 import { panelOperationOutcomeSchema } from "@ontomato/contracts/panel-agent";
 import { RUN_NOW, SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import examples from "../../../../../contracts/examples/platform-schedules.json";
+import { configureI18n, tForLocale } from "../../../i18n";
+import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { createScheduledTaskReadAdapter } from "../panel-reads";
 
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://owner.test" } } }));
@@ -12,6 +14,11 @@ const task = examples.creates.find(create => create.name === "operations-autotes
 const opening = examples.forms.find(form => form.name === "operations-empty")!.response;
 const refreshed = examples.forms.find(form => form.name === "operations-switch-to-inspection")!.response;
 const viewer = { token: "test-viewer", locale: "en" };
+
+configureI18n({
+  defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
+  packs: { en: { ...enLocaleMeta, messages: en } },
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -46,6 +53,9 @@ it("reads the viewer's task rows and selected summary, and recomputes the select
   expect(record).toMatchObject({
     primaryKey: task.id, label: task.title,
     fields: { application: task.appId, state: "on", nextRun: task.nextRunAt },
+    fieldLabels: {
+      application: "Application", settings: "Settings", state: "Status", nextRun: "Next run", lastRun: "Last run",
+    },
   });
   const form = panelReadResultSchemas.panelFormDescription.parse(await reads.form(task.id, {}));
   expect(form).toMatchObject({ values: task.content, revision: task.revision });
@@ -97,7 +107,7 @@ it("describes the registered write without dispatching it and propagates owner d
   const reads = createScheduledTaskReadAdapter(viewer);
   const operation = panelReadResultSchemas.panelOperationDescriptor.parse(reads[`${RUN_NOW}.describe`]());
   expect(operation).toMatchObject({
-    handlerRef: RUN_NOW, effect: "write", target: { source: "input", input: "task" },
+    handlerRef: RUN_NOW, label: "Run now", effect: "write", target: { source: "input", input: "task" },
   });
   expect(fetchOwner).not.toHaveBeenCalled();
   await expect(reads.record(task.id)).rejects.toMatchObject({
@@ -106,7 +116,7 @@ it("describes the registered write without dispatching it and propagates owner d
 });
 
 it("returns a rejected save with the owner's code and field pointer relative to the panel form", async () => {
-  const [save] = scheduledTaskServerOperations;
+  const [save] = createScheduledTaskServerOperations(tForLocale);
   const ownerTask = examples.creates.find(create => create.name === "ontology-with-line-arrays")!.response;
   const ownerForm = examples.forms.find(form => form.name === "ontology-selection-clears-old-parameters")!.response;
   const denial = examples.errors.find(error => error.name === "numeric-array-validation")!;
@@ -132,4 +142,23 @@ it("returns a rejected save with the owner's code and field pointer relative to 
     errors: [{ field: "/parameter:thresholds", code: "invalid_number", message: "第2行不是有效数字" }],
   });
   expect(outcome).not.toHaveProperty("details.fields");
+});
+
+it("reports a started run without replacing its structured result", async () => {
+  const [, runNow] = createScheduledTaskServerOperations(tForLocale);
+  const started = examples.runs.find(run => run.name === "agents-running")!;
+  const { taskId } = started.response;
+  const intentId = "50000000-0000-4000-8000-000000000001";
+  const request = async (path: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+    expect(path).toBe(`/api/data-query/platform/scheduled-tasks/${taskId}/runs`);
+    expect(init.method).toBe("POST");
+    expect(new Headers(init.headers).get("Idempotency-Key")).toBe(intentId);
+    return Response.json(started.response, { status: started.status });
+  };
+  const outcome = panelOperationOutcomeSchema.parse(await runNow.execute(
+    { request, locale: viewer.locale }, { kind: "object", objectType: SCHEDULED_TASK, primaryKey: taskId }, {}, intentId,
+  ));
+  expect(outcome).toMatchObject({
+    kind: "success", message: "The run has started.", data: { taskId, status: "running" },
+  });
 });
