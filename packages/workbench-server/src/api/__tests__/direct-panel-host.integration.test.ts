@@ -104,12 +104,13 @@ beforeAll(async () => {
       ] },
     }] });
   });
-  app.get("/platform/applications/app-mixed/panel-uses", (req, res) => {
+  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+    if (req.query.applicationId !== "app-mixed") { next(); return; }
     expect(req.header("tk")).toBe("host-reader");
     res.json({ success: true, data: {
-      applicationId: "app-mixed", entry: { path: "/applications/app-mixed", renderer: "panels" },
-      panelUses: [{ id: "mixed", pageKey: "mixed", path: "/applications/app-mixed/mixed",
-        panelId: codePanelId, access: { kind: "domain-member" } }],
+      applicationId: "app-mixed", menu: { groups: [], panelUses: [] },
+      use: { id: "mixed", pageKey: "mixed", path: "/applications/app-mixed/mixed",
+        panelId: codePanelId, access: { kind: "domain-member" } },
     } });
   });
   app.use("/api", (req, _res, next) => {

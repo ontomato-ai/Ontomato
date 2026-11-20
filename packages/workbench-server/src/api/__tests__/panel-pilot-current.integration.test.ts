@@ -150,23 +150,25 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ ids: [...resourceIds] });
   });
-  app.get("/platform/applications/app-schedules/panel-uses", (req, res) => {
+  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+    if (req.query.applicationId !== "app-schedules") { next(); return; }
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ success: true, data: {
       applicationId: "app-schedules",
-      entry: { path: "/applications/app-schedules", renderer: "panels" },
-      panelUses: [{ id: "pilot", pageKey: "pilot", path: "/applications/app-schedules/pilot", panelId,
-        access: { kind: "domain-member" } }],
+      menu: { groups: [], panelUses: [] },
+      use: { id: "pilot", pageKey: "pilot", path: "/applications/app-schedules/pilot", panelId,
+        access: { kind: "domain-member" } },
     } });
   });
-  app.get("/platform/applications/ontology-pilot/panel-uses", (req, res) => {
+  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+    if (req.query.applicationId !== "ontology-pilot") { next(); return; }
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ success: true, data: {
-      applicationId: "ontology-pilot", entry: { path: "/applications/ontology-pilot", renderer: "panels" },
-      panelUses: [{
+      applicationId: "ontology-pilot", menu: { groups: [], panelUses: [] },
+      use: {
         id: "graph", pageKey: "graph", path: "/applications/ontology-pilot/graph", panelId: graphPanelId,
         access: { kind: "domain-member" },
-      }],
+      },
     } });
   });
   app.post("/admin/getMetas", (req, res) => {
@@ -206,14 +208,15 @@ beforeAll(async () => {
       primary, { ...primary, name: "name", showName: "Name", primaryKey: false, businessKey: true },
     ]);
   });
-  app.get("/platform/applications/agent-settings/panel-uses", (req, res) => {
+  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+    if (req.query.applicationId !== "agent-settings") { next(); return; }
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ success: true, data: {
-      applicationId: "agent-settings", entry: { path: "/applications/agent-settings", renderer: "panels" },
-      panelUses: [{
+      applicationId: "agent-settings", menu: { groups: [], panelUses: [] },
+      use: {
         id: "settings", pageKey: "settings", path: "/applications/agent-settings/settings", panelId: agentPanelId,
         access: { kind: "domain-member" },
-      }],
+      },
     } });
   });
   app.get("/platform/page-skills", (req, res) => {
@@ -247,13 +250,13 @@ beforeAll(async () => {
     }
     res.json({ canSetExecutionUser: false, users: [] });
   });
-  app.get("/platform/applications/:family/panel-uses", (req, res) => {
-    const family = req.params.family;
+  app.get("/platform/applications/resolve-entry", (req, res) => {
+    const family = String(req.query.applicationId);
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ success: true, data: {
-      applicationId: family, entry: { path: `/applications/${family}`, renderer: "panels" },
-      panelUses: [{ id: "data", pageKey: "data", path: `/applications/${family}/data`,
-        panelId: `panel-${family}`, access: { kind: "domain-member" } }],
+      applicationId: family, menu: { groups: [], panelUses: [] },
+      use: { id: "data", pageKey: "data", path: `/applications/${family}/data`,
+        panelId: `panel-${family}`, access: { kind: "domain-member" } },
     } });
   });
   for (const endpoint of ["queryList", "queryById", "definitionForm"]) {

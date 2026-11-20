@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
 import { z } from "zod";
-import { dashboardCardPrimaryKey } from "@ontomato/contracts/dashboard";
+import { dashboardCardPrimaryKey, parseDashboardCardPrimaryKey } from "@ontomato/contracts/dashboard";
 import { DASHBOARD_CARD } from "@ontomato/contracts/platform-object-types";
-import { ontologyParameterTypeSchema, type OntologyParameterType } from "@ontomato/contracts/panel-manifest";
+import { ontologyParameterTypeSchema, panelObjectRefSchema, type OntologyParameterType } from "@ontomato/contracts/panel-manifest";
 import {
   chartProjectionSchema, METRIC_CHART_COMPONENT, productProjectionInputSchema,
-  type ChartProjectionSource, type ProductProjectionInput,
+  type ChartProjectionSource, type ProductProjection, type ProductProjectionInput,
 } from "@ontomato/contracts/product-panels";
 import { currentProductRecord, currentProductTables, findCurrentProduct } from "../../infrastructure/product-current";
 import { qualifiedTable as t } from "../../infrastructure/postgres";
@@ -55,14 +55,44 @@ async function requireChartProjection(owner: ProductOwner, credentials: Assistan
   return chartProjectionSchema.parse(currentProductRecord(row, verb === "edit"));
 }
 
-function association(projection: z.infer<typeof chartProjectionSchema>) {
-  return { source: projection.chartSource, dashboardOwnerId: projection.ownerId, metricId: projection.metricId };
+type ChartProjection = z.infer<typeof chartProjectionSchema>;
+const dashboardCardSourceSchema = z.object({
+  object: z.object({ literal: panelObjectRefSchema.extend({ className: z.literal(DASHBOARD_CARD) }) }),
+});
+
+function chartCardKey(projection: ChartProjection) {
+  const template = dashboardCardSourceSchema.parse(projection.data.template?.source);
+  const result = dashboardCardSourceSchema.parse(projection.data.result?.source);
+  const primaryKey = template.object.literal.primaryKey;
+  if (result.object.literal.primaryKey !== primaryKey) throw chartMismatch();
+  return primaryKey;
+}
+
+function chartMismatch() {
+  return new HttpError(409, "Chart registration no longer matches the source card", "CHART_SOURCE_MISMATCH");
+}
+
+export function requireChartReadRegistration(projection: ProductProjection, primaryKey: string) {
+  if (projection.componentId !== METRIC_CHART_COMPONENT)
+    throw new HttpError(400, "Dashboard card reads require a registered source-card projection", "CHART_SOURCE_REGISTRATION_REQUIRED");
+  const chart = projection as ChartProjection;
+  if (chartCardKey(chart) !== primaryKey) throw chartMismatch();
+  return { dashboardOwnerId: chart.ownerId, metricId: chart.metricId };
+}
+
+function association(projection: ChartProjection) {
+  return {
+    source: parseDashboardCardPrimaryKey(chartCardKey(projection)),
+    dashboardOwnerId: projection.ownerId,
+    metricId: projection.metricId,
+  };
 }
 
 export function createChartProjectionService(dashboards: typeof dashboardChartSources) {
   return {
     async register(owner: ProductOwner, credentials: AssistantCredentials, source: ChartProjectionSource) {
       const id = chartProjectionId(owner.domainId, source);
+      const primaryKey = dashboardCardPrimaryKey(source);
       const { projection, created } = await transaction(async client => {
         await lockProducts(client, owner);
         const card = await dashboards.forRegistration(owner, source, credentials, client);
@@ -74,17 +104,17 @@ export function createChartProjectionService(dashboards: typeof dashboardChartSo
           const editable = (await grantedProductIds("edit", credentials)).includes(id);
           const projection = chartProjectionSchema.parse(currentProductRecord(existing, editable));
           if (projection.ownerId !== owner.userId || projection.metricId !== card.metricId ||
-            projection.chartSource.dashboardId !== source.dashboardId || projection.chartSource.cardId !== source.cardId)
-            throw new HttpError(409, "Chart registration no longer matches the source card", "CHART_SOURCE_MISMATCH");
+            chartCardKey(projection) !== primaryKey)
+            throw chartMismatch();
           return { projection, created: false };
         }
         const inputs = panelInputs(card.parameterDefs);
         const cardSource = {
-          object: { literal: { className: DASHBOARD_CARD, primaryKey: dashboardCardPrimaryKey(source) } },
+          object: { literal: { className: DASHBOARD_CARD, primaryKey } },
         };
         const input: ProductProjectionInput = productProjectionInputSchema.parse({
           name: card.name, description: "", visibility: "private", componentId: METRIC_CHART_COMPONENT,
-          chartSource: source, metricId: card.metricId, inputs, outputs: {}, config: {},
+          metricId: card.metricId, inputs, outputs: {}, config: {},
           data: {
             template: { source: cardSource, read: "chartTemplate", params: {} },
             result: {
@@ -104,6 +134,8 @@ export function createChartProjectionService(dashboards: typeof dashboardChartSo
       const id = chartProjectionId(owner.domainId, source);
       const row = await findCurrentProduct(owner.domainId, "projection", id);
       if (row?.definition.componentId !== METRIC_CHART_COMPONENT) return null;
+      const projection = chartProjectionSchema.parse(currentProductRecord(row, false));
+      if (chartCardKey(projection) !== dashboardCardPrimaryKey(source)) return null;
       await requireProductGrant(id, "use", credentials);
       return id;
     },
@@ -120,22 +152,24 @@ export function createChartProjectionService(dashboards: typeof dashboardChartSo
   };
 }
 
-export async function findChartProjectionsForCards(client: PoolClient, domainId: string, dashboardId: string, cardIds: readonly string[]) {
+const CHART_CARD_KEY_SQL = "definition#>>'{data,template,source,object,literal,primaryKey}'";
+
+export async function findChartProjectionsForCards(client: PoolClient, domainId: string, cardKeys: readonly string[]) {
   const { rows } = await client.query<{ id: string }>(
     `SELECT id FROM ${t(currentProductTables.projection)}
      WHERE domain_id=$1 AND definition->>'componentId'=$2
-       AND definition#>>'{chartSource,dashboardId}'=$3 AND definition#>>'{chartSource,cardId}'=ANY($4::text[])`,
-    [domainId, METRIC_CHART_COMPONENT, dashboardId, cardIds],
+       AND ${CHART_CARD_KEY_SQL}=ANY($3::text[])`,
+    [domainId, METRIC_CHART_COMPONENT, cardKeys],
   );
   return rows.map(row => row.id);
 }
 
-export async function deleteChartProjectionsForDashboards(client: PoolClient, dashboards: readonly { domainId: string; dashboardId: string }[]) {
+export async function deleteChartProjectionsForDashboards(client: PoolClient, cards: readonly { domainId: string; primaryKey: string }[]) {
   await client.query(
     `DELETE FROM ${t(currentProductTables.projection)} AS projection
-     USING unnest($1::text[], $2::text[]) AS source(domain_id, dashboard_id)
+     USING unnest($1::text[], $2::text[]) AS source(domain_id, primary_key)
      WHERE projection.domain_id=source.domain_id AND definition->>'componentId'=$3
-       AND definition#>>'{chartSource,dashboardId}'=source.dashboard_id`,
-    [dashboards.map(source => source.domainId), dashboards.map(source => source.dashboardId), METRIC_CHART_COMPONENT],
+       AND projection.${CHART_CARD_KEY_SQL}=source.primary_key`,
+    [cards.map(card => card.domainId), cards.map(card => card.primaryKey), METRIC_CHART_COMPONENT],
   );
 }

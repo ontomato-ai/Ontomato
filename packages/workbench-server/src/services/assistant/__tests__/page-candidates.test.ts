@@ -243,8 +243,16 @@ beforeEach(() => {
       if (url.endsWith("/product-governance/resources")) {
         return Response.json({ ids: grantedIds });
       }
-      if (url.includes("/panel-uses")) {
-        return panelUsesHandler(url);
+      if (url.includes("/resolve-entry?")) {
+        const response = panelUsesHandler(url);
+        if (!response.ok) return response;
+        const { data } = await response.json();
+        const requested = new URL(url, "http://owner.test").searchParams.get("useId");
+        const use = data.panelUses.find((entry: { id: string }) => entry.id === requested);
+        if (!use) return Response.json({ error: { code: "NOT_FOUND", message: "Unknown use" } }, { status: 404 });
+        return Response.json({ success: true, data: {
+          applicationId: data.applicationId, use, menu: { groups: [], panelUses: [] },
+        } });
       }
       throw new Error(`Unexpected fetch URL: ${url}`);
     }),
@@ -460,7 +468,7 @@ it("rejects member queries with 403 and never falls back to the group's public m
     ),
   ).rejects.toMatchObject({ status: 403, code: "PAGE_SKILL_FORBIDDEN" });
 
-  // Java rejects /panel-uses with 403.
+  // Java rejects entry resolution with 403.
   grantedIds = ["panel-order", "proj-order"];
   panelUsesHandler = () => new Response("forbidden", { status: 403 });
   await expect(

@@ -361,16 +361,18 @@ test("a no-code task panel registers and parses the same members and layout", as
 });
 
 test("the current registration accepts the shipped no-code layout and rejects an SDK pin", async () => {
-  const { registerProductPanelRequestSchema, panelNeedsFrame } = await import("./product-panels");
+  const { registerProductPanelRequestSchema } = await import("./product-panels");
   const material = await import(new URL("../../apps-sdk/examples/panels/schedules-trial/definitions.mjs", import.meta.url).href);
   const [{ directory, manifest, name, description }] = material.panels;
   const body = { content: material.panelContent(directory), manifest, name, description, visibility: "domain", revision: 0 };
-  assert.equal(panelNeedsFrame(registerProductPanelRequestSchema.parse(body).content), false);
-  assert.equal(panelNeedsFrame({ html: "<main></main>", style: "main {}" }), false);
+  assert.deepEqual(registerProductPanelRequestSchema.parse(body).content, body.content);
   assert.equal(registerProductPanelRequestSchema.safeParse({ ...body, sdkVersion: "1.1.2" }).success, false);
-  assert.equal(panelNeedsFrame(registerProductPanelRequestSchema.parse({
-    ...body, content: { html: "<main id='app'></main>", module: "export {}" },
-  }).content), true);
+  const moduleContent = { html: "<main id='app'></main>", module: "export {}" };
+  assert.deepEqual(registerProductPanelRequestSchema.parse({ ...body, content: moduleContent }).content, moduleContent);
+  const html = '<panel-member ref="not-declared"></panel-member>';
+  const invalidLayout = registerProductPanelRequestSchema.safeParse({ ...body, content: { html, style: "main {}" } });
+  assert.equal(invalidLayout.success, false);
+  assert.match(invalidLayout.error!.issues[0].message, /Undeclared member/u);
 });
 
 test("nested layout and explicit events share typed state and placement", async () => {
@@ -1103,7 +1105,7 @@ const chartSource = { dashboardId: "board-a", cardId: "chart-1" };
 const card = { object: { literal: { className: DASHBOARD_CARD, primaryKey: dashboardCardPrimaryKey(chartSource) } } };
 const chartProjection = {
   name: "Departments", description: "", visibility: "private",
-  componentId: "@ontomato/sdk:MetricChart", chartSource, metricId: "department-metric",
+  componentId: "@ontomato/sdk:MetricChart", metricId: "department-metric",
   inputs: { department: { kind: "scalar", type: "string" } }, outputs: {}, config: {},
   data: {
     template: { source: card, read: "chartTemplate", params: {} },
@@ -1116,18 +1118,13 @@ test("the chart reads its registered source card with per-metric overrides", () 
     ...chartProjection, id: "projection-a", domainId: "domain", ownerId: "author",
     revision: 1, createdAt: "2026-11-19T00:00:00Z", updatedAt: "2026-11-19T00:00:00Z", editable: true,
   };
-  assert.deepEqual(registerChartProjectionResponseSchema.parse({ projection }).projection.chartSource, chartSource);
+  const parsed = registerChartProjectionResponseSchema.parse({ projection }).projection;
+  assert.deepEqual(parsed.data.template.source, card);
+  assert.deepEqual(parsed.data.result.source, card);
+  assert.equal(parsed.metricId, "department-metric");
   const renamed = { ...projection, data: { drawing: projection.data.template, points: projection.data.result } };
   assert.deepEqual(registerChartProjectionResponseSchema.parse({ projection: renamed }).projection.data, renamed.data);
-  const wrongCard = { object: { literal: {
-    className: DASHBOARD_CARD, primaryKey: dashboardCardPrimaryKey({ ...chartSource, cardId: "different-card" }),
-  } } };
-  assert.equal(registerChartProjectionResponseSchema.safeParse({ projection: {
-    ...projection, data: { ...projection.data, extra: { source: wrongCard, read: "chartTemplate", params: {} } },
-  } }).success, false);
-  assert.equal(productProjectionInputSchema.safeParse({
-    ...chartProjection, chartSource: { ...chartSource, cardId: "different-card" },
-  }).success, false);
+  assert.equal(productProjectionInputSchema.safeParse({ ...chartProjection, chartSource }).success, false);
   assert.equal(productProjectionInputSchema.safeParse({ ...chartProjection, chartFile: {} }).success, false);
 });
 

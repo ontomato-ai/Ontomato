@@ -101,15 +101,8 @@ beforeAll(async () => {
     expect(req.query.domainId).toBe("test-domain");
     res.json({ success: true, data: [] });
   });
-  app.get("/platform/applications/app-personal/panel-uses", (_req, res) => {
-    res.json({ success: true, data: {
-      applicationId: "app-personal", entry: { path: "/applications/app-personal", renderer: "panels" },
-      panelUses: [{ id: "main", pageKey: "main", path: "/applications/app-personal/main",
-        panelId: personalPanelId, access: { kind: "domain-member" } }],
-    } });
-  });
   app.get("/platform/applications/resolve-entry", (req, res) => {
-    expect(req.query.path).toBe("/applications/app-personal/main");
+    expect(req.query).toEqual({ applicationId: "app-personal", useId: "main" });
     res.json({ success: true, data: {
       applicationId: "app-personal", menu: { groups: [], panelUses: [] },
       use: { id: "main", pageKey: "main", path: "/applications/app-personal/main",
@@ -240,7 +233,11 @@ it("writes declared personal state under the authenticated viewer and isolates i
   });
   expect(child.status, await child.text()).toBe(200);
   const target = { panelId: personalChildId };
-  const root = await savePanel(personalPanelId, { state: {}, members: { left: { target }, right: { target } }, events: {} });
+  const defaultPlacement = { id: "preferred", target };
+  const root = await savePanel(personalPanelId, {
+    state: { destination: { type: { kind: "placement", candidates: { panelIds: [personalChildId] } }, default: defaultPlacement } },
+    members: { left: { target }, right: { target } }, events: {},
+  });
   expect(root.status, await root.text()).toBe(200);
   const source = { kind: "registered", applicationId: "app-personal", useId: "main" };
   const write = (user: string, member: string, values: object) => request("PUT", "product-panels/personal-state", user,
@@ -261,6 +258,15 @@ it("writes declared personal state under the authenticated viewer and isolates i
     expect(panelPersonalStateResponseSchema.parse(await response.json())).toEqual({ values });
   }
   expect((await read("author", "undeclared")).status).toBe(403);
+  const placementRead = (placement: typeof defaultPlacement) => request(
+    "POST", "product-panels/personal-state/read", "author", {
+      source, memberPath: [{ member: "$state.destination", selection: { placement } }], fields: ["chosen"],
+    });
+  // The placement comes from saved/default state, even when the layout does not mention it.
+  const admitted = await placementRead(defaultPlacement);
+  expect(admitted.status).toBe(200);
+  expect(panelPersonalStateResponseSchema.parse(await admitted.json())).toEqual({ values: {} });
+  expect((await placementRead({ ...defaultPlacement, target: { panelId: panelId } })).status).toBe(403);
 });
 
 it.each([

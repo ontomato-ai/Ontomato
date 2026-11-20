@@ -120,7 +120,7 @@ it("draws a chart a coded panel places through the platform's bridge, as the rea
     projection: {
       id: chart.id, domainId: "domain-1", ownerId: "owner-1", revision: 3, createdAt: "2026-11-21T00:00:00.000Z",
       updatedAt: "2026-11-21T00:00:00.000Z", editable: false, visibility: "domain", name: "Revenue", description: "",
-      componentId: "@ontomato/sdk:MetricChart", chartSource: source, metricId: chart.metricId,
+      componentId: "@ontomato/sdk:MetricChart", metricId: chart.metricId,
       inputs: { customer: { kind: "object", objectType: "Customer" } }, outputs: {}, config: {},
       data: {
         template: { source: { object: { literal: card } }, read: "chartTemplate", params: {} },
