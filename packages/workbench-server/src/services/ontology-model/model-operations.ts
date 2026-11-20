@@ -167,6 +167,26 @@ const deleteObjectTypeImpact: PanelImpactInspector = {
   },
 };
 
+/** The impact a single delete shows its confirming human or agent: the one record, under its owner-read name. */
+function deleteImpact(
+  handlerRef: string,
+  summaryKey: string,
+  objectType: string,
+  label: (host: PanelOperationHost, target: PanelRecordTarget) => Promise<string>,
+): PanelImpactInspector {
+  return {
+    handlerRef: `${handlerRef}.inspect-impact`,
+    async inspect(host, calls) {
+      const target = calls[0]!.target as PanelRecordTarget;
+      return {
+        summary: tForLocale(host.locale, summaryKey),
+        objects: [{ target: { objectType, primaryKey: target.primaryKey }, label: await label(host, target) }],
+        total: 1,
+      };
+    },
+  };
+}
+
 /**
  * The ontology model's three form saves, three delete actions and the set-primary-key action.
  * `affected` names every modified record and every object type whose catalog lists or counts changed.
@@ -406,6 +426,7 @@ export const ontologyModelServerOperations = [
     inputSchema: z.object({}).strict(),
     resultSchema: emptyResultSchema,
     targetLabel: attributeTargetLabel,
+    inspectImpact: deleteImpact(DELETE_ATTRIBUTE, "panels.confirmation.deleteAttributeImpact", ATTRIBUTE, attributeTargetLabel),
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const key = parseAttributePrimaryKey(target.primaryKey);
       const result = await postModelWrite(host, "/attribute/delete", key, emptyResultSchema);
@@ -430,6 +451,9 @@ export const ontologyModelServerOperations = [
     inputSchema: z.object({}).strict(),
     resultSchema: emptyResultSchema,
     targetLabel: relationshipTargetLabel,
+    inspectImpact: deleteImpact(
+      DELETE_RELATIONSHIP, "panels.confirmation.deleteRelationshipImpact", RELATIONSHIP, relationshipTargetLabel,
+    ),
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const result = await postModelWrite(
         host,

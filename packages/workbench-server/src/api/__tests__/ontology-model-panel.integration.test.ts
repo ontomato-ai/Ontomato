@@ -351,6 +351,9 @@ it("creates, refuses and deletes model objects through the panel coordinator aga
   const target = (literal: { className: string; primaryKey: string }) =>
     ({ kind: "object", objectType: literal.className, primaryKey: literal.primaryKey });
   const inUse = await operate("removeAttribute.delete", { target: target(joinAttribute), input: {} });
+  expect(inUse.confirmation).toMatchObject({ kind: "impact", impact: {
+    objects: [{ target: { objectType: ATTRIBUTE, primaryKey: joinAttribute.primaryKey }, label: "CODE" }], total: 1,
+  } });
   expect(inUse.receipt).toMatchObject({ outcome: {
     kind: "refusal", code: "ATTRIBUTE_IN_USE", message: "Attribute code joins relationship contains",
   } });

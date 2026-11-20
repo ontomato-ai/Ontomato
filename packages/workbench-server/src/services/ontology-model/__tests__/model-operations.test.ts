@@ -526,6 +526,25 @@ describe("ontology model server operations", () => {
     ).toBe("missing");
   });
 
+  it("describes a single attribute or relationship delete by the record's owner-read name", async () => {
+    const { host } = owner(path => ({
+      status: 200,
+      body: path.includes("/attributes?") ? [attributeView] : relationshipView,
+    }));
+    expect(await deleteAttribute.inspectImpact!.inspect(host, [{ target: attributeTarget, input: {} }])).toEqual({
+      summary: "This deletes the selected attribute; the owner refuses the primary key and an attribute a relationship joins on.",
+      objects: [{ target: { objectType: ATTRIBUTE, primaryKey: attributeTarget.primaryKey }, label: "Size" }],
+      total: 1,
+    });
+    expect(await deleteRelationship.inspectImpact!.inspect(host, [{ target: relationshipTarget, input: {} }])).toEqual({
+      summary: "This deletes the selected relationship.",
+      objects: [{ target: { objectType: RELATIONSHIP, primaryKey: "owns" }, label: "owns" }],
+      total: 1,
+    });
+    expect([deleteAttribute, deleteRelationship].map(operation => operation.inspectImpact!.handlerRef))
+      .toEqual(["attributes.delete.inspect-impact", "relationships.delete.inspect-impact"]);
+  });
+
   it("inspects object type deletion impact and propagates 404 errors", async () => {
     const impact = {
       relationships: [
