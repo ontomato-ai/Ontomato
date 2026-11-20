@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { panelReadParameterSchemas, type PanelRecord } from "@ontomato/contracts/panel-projection";
 import {
   platformOntologyNeighborsRequestSchema,
@@ -20,6 +21,12 @@ import {
   readPlatformOntologyStart,
 } from "./query";
 
+const platformOntologyObjectsReadParamsSchema = z.object({
+  type: panelReadParameterSchemas.ontologyType,
+  keyword: panelReadParameterSchemas.keyword.optional(),
+  page: panelReadParameterSchemas.page.optional(),
+}).strict();
+
 export interface PlatformOntologyObjectsReadParams {
   type: string;
   keyword?: string;
@@ -32,8 +39,8 @@ export interface PlatformOntologyReadAdapter {
   schema(): PlatformOntologySchemaResponse;
   counts(): Promise<PlatformOntologyCountsResponse>;
   start(): Promise<PlatformOntologyStartResponse>;
-  neighbors(params: PlatformOntologyNeighborsRequest): Promise<PlatformOntologyNeighborsResponse>;
-  objects(params: PlatformOntologyObjectsReadParams): Promise<PlatformOntologyObjectsResponse>;
+  neighbors(params: PlatformOntologyNeighborsRequest | Record<string, unknown>): Promise<PlatformOntologyNeighborsResponse>;
+  objects(params: PlatformOntologyObjectsReadParams | Record<string, unknown>): Promise<PlatformOntologyObjectsResponse>;
 }
 
 async function readOntologyMetadata(owner: ProductOwner, viewer: AssistantCredentials): Promise<RawOntologyMeta> {
@@ -97,15 +104,17 @@ export function createPlatformOntologyReadAdapter(
       };
     },
 
-    neighbors(params: PlatformOntologyNeighborsRequest): Promise<PlatformOntologyNeighborsResponse> {
+    neighbors(
+      params: PlatformOntologyNeighborsRequest | Record<string, unknown>,
+    ): Promise<PlatformOntologyNeighborsResponse> {
       const input = platformOntologyNeighborsRequestSchema.parse(params);
       return readPlatformOntologyNeighbors(owner, viewer, input, callerUserName);
     },
 
-    objects(params: PlatformOntologyObjectsReadParams): Promise<PlatformOntologyObjectsResponse> {
-      const type = panelReadParameterSchemas.ontologyType.parse(params.type);
-      const keyword = params.keyword === undefined ? undefined : panelReadParameterSchemas.keyword.parse(params.keyword);
-      const page = params.page === undefined ? undefined : panelReadParameterSchemas.page.parse(params.page);
+    objects(
+      params: PlatformOntologyObjectsReadParams | Record<string, unknown>,
+    ): Promise<PlatformOntologyObjectsResponse> {
+      const { type, keyword, page } = platformOntologyObjectsReadParamsSchema.parse(params);
       return readPlatformOntologyObjects(owner, viewer, {
         type,
         ...(keyword !== undefined ? { keyword } : {}),

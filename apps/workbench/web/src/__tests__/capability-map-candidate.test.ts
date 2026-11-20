@@ -23,7 +23,6 @@ import {
   nothingAt,
   panelHostFrame,
   READER,
-  SDK_VERSION,
   writeFrameDocument,
   type Sent,
 } from "./panel-frame";
@@ -84,7 +83,7 @@ vi.mock("@ontomato/foundation-ui/graph/g6", async () => {
 });
 
 function candidate(): CandidatePanelSource {
-  const files = Object.fromEntries(candidateFiles(SDK_VERSION).map((file) => [file.path, file.content]));
+  const files = Object.fromEntries(candidateFiles().map((file) => [file.path, file.content]));
   const { content, ...descriptor } = JSON.parse(files["panel.json"]!);
   return {
     kind: "candidate",
@@ -330,17 +329,22 @@ afterEach(() => {
 it("validates every projection and the capability-map panel input against contracts schemas", () => {
   const { projections: material } = projectionMaterial();
   for (const { input } of material) productProjectionInputSchema.parse(input);
-  const panel = productPanelInputSchema.parse(panelInput(SDK_VERSION));
+  const panel = productPanelInputSchema.parse(panelInput());
   expect(new Set(material.map(({ id }) => id))).toEqual(
-    new Set(Object.values(panel.manifest.slots).map((slot) => slot.projectionId)),
+    new Set(
+      Object.values(panel.manifest.members).flatMap((member) =>
+        "projectionId" in member.target ? [member.target.projectionId] : [],
+      ),
+    ),
   );
   expect(panel.content).toEqual(candidate().panel.content);
   const enMessages = panel.content.messages?.en ?? {};
   const zhMessages = panel.content.messages?.["zh-CN"] ?? {};
   expect(Object.keys(zhMessages).sort()).toEqual(Object.keys(enMessages).sort());
-  for (const operation of panel.manifest.operations) {
-    expect(enMessages[operation.labelKey]).toBeTruthy();
-    expect(zhMessages[operation.labelKey]).toBeTruthy();
+  for (const event of Object.values(panel.manifest.events)) {
+    if (!event.labelKey) continue;
+    expect(enMessages[event.labelKey]).toBeTruthy();
+    expect(zhMessages[event.labelKey]).toBeTruthy();
   }
 });
 
