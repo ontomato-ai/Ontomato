@@ -48,6 +48,11 @@ const props = withDefaults(
     statusField?: string;
     /** Key in `record.tags` rendered as tags on each item in compact list mode. */
     tagsField?: string;
+    /**
+     * Field key whose value is each item's summary line in compact list mode, beneath its label (such as a description);
+     * absent, the owner's own subtitle for the record is shown, if it gives one.
+     */
+    subtitleField?: string;
     /** Page size for cursor or page pagination when the read supports paging (defaults to 20). */
     pageSize?: number;
     /** Move single selection to the first visible item when the current selection disappears (never after cleared to null). */
@@ -470,6 +475,9 @@ function navigateTo(reference: PlatformFieldReference, columnKey: string) {
   emit("navigate", reference, columnKey);
 }
 
+/** The field each compact item's summary line shows: the one configured, else the owner's own subtitle. */
+const summaryKey = computed(() => props.subtitleField ?? "subtitle");
+
 function fieldValue(row: PlatformObjectRecord, key: string): string {
   if (key === "label") return row.label;
   if (key === "subtitle") return row.subtitle ?? "";
@@ -658,8 +666,8 @@ watch(someVisibleChecked, () => {
                 :data-tone="row.tones?.[statusField] ?? 'default'"
               >{{ row.fields[statusField] }}</span>
             </span>
-            <span v-if="row.subtitle" class="sdk-object-list-item-sub">
-              <template v-for="(part, index) in textHighlightSegments(row.subtitle, row.highlights?.subtitle)" :key="index">
+            <span v-if="fieldValue(row, summaryKey)" class="sdk-object-list-item-sub">
+              <template v-for="(part, index) in textHighlightSegments(fieldValue(row, summaryKey), row.highlights?.[summaryKey])" :key="index">
                 <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
               </template>
             </span>
