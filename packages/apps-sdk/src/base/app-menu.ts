@@ -11,6 +11,13 @@
  * An entry without a name never appears: a link may open it, the menu never offers it.
  */
 
+/**
+ * The platform object type an entry reference names. A menu entry is a thing of the platform's type table, so a jump to
+ * one is an ordinary object reference; A registers the type in `contracts/src/platform-object-types.ts`, and the
+ * component imports it from there once it is.
+ */
+export const APPLICATION_PANEL_USE = "platform:ApplicationPanelUse";
+
 export interface ApplicationMenuGroup {
   key: string;
   names: Record<string, string>;
