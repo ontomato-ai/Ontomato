@@ -9,3 +9,4 @@ export {
 export { directReadDeclaration, panelReadParameterSchemas } from "./panel-projection";
 export { panelReadResultSchemas } from "./panel-operations";
 export { platformObjectTypes } from "./platform-object-types";
+export { platformTypeTableResponseSchema } from "./platform-type-table";
