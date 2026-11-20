@@ -71,6 +71,13 @@ const taskRun = platformTaskRunSchema.parse({
 const ownerWrites: string[] = [];
 let ownerTasks: typeof task[] = [];
 const taskType = { kind: "object", objectType: "platform:ScheduledTask" };
+/** The metric and function owners' one definition each, answered by their catalogue reads and forms. */
+const catalogueOwners = [
+  { root: "metricView", objectType: "platform:MetricView",
+    definition: { id: "metric-pilot", name: "Example metric", statusLabel: "Published", function: { name: "example_query" } } },
+  { root: "function", objectType: "platform:Function",
+    definition: { id: "function-pilot", name: "example_query", operationLabel: "Read" } },
+] as const;
 /** The metric owner's output columns, its partial-result mark, and the refusals it answers some years with. */
 const columns = [{ key: "value", label: null, type: null }];
 const metricTruncation = { truncated: true as const, rowLimit: 1, truncationHint: "Narrow the year to see every customer" };
@@ -307,6 +314,29 @@ beforeAll(async () => {
           save: { method: "POST", path: "/action/save", bodySchema: {}, draftOperation: "action.update" },
         } });
       }
+    });
+  }
+  // The metric and function owners' catalogues: one definition each, its form for a saved or a new definition.
+  for (const { root, objectType, definition } of catalogueOwners) {
+    app.post(`/${root}/queryList`, (req, res) => {
+      expect(req.header("tk")).toBe("pilot-reader");
+      expect(req.header("Accept-Language")).toBe("zh-CN");
+      expect(req.body).toEqual({});
+      res.json({ success: true, data: [definition] });
+    });
+    app.post(`/${root}/queryById`, (req, res) => {
+      expect(req.header("tk")).toBe("pilot-reader");
+      res.json(req.body.id === definition.id ? { success: true, data: definition }
+        : { success: false, code: `${root === "metricView" ? "METRIC_VIEW" : "FUNCTION"}_NOT_FOUND`, message: "Definition not found" });
+    });
+    app.post(`/${root}/form`, (req, res) => {
+      expect(req.header("tk")).toBe("pilot-reader");
+      const draft = req.body.target.kind === "draft";
+      if (!draft) expect(req.body.target).toEqual({ kind: "object", objectType, primaryKey: definition.id });
+      res.json({ success: true, data: {
+        fields: [], values: req.body.values ?? { name: draft ? "" : definition.name }, errors: [],
+        save: { method: "POST", path: `/${root}/save`, bodySchema: {}, draftOperation: draft ? "create" : "update" },
+      } });
     });
   }
   app.post("/ontology/query/metrics/describe", (req, res) => {
@@ -829,6 +859,36 @@ async function ownerReadPanel(
     return productPanelReadResponseSchema.parse(await read.json());
   };
 }
+
+it("reads the metric and function catalogues, a definition and its forms with the panel viewer", async () => {
+  for (const { objectType, definition } of catalogueOwners) {
+    const type = { kind: "PlatformObjectType", id: objectType };
+    const selected = (primaryKey: string) => ({ object: { literal: { className: objectType, primaryKey } } });
+    const read = await ownerReadPanel(`owner-${objectType.slice("platform:".length).toLowerCase()}`, {
+      list: { componentId: "@ontomato/sdk:ObjectList", data: { rows: {
+        source: { type }, read: "query", params: { search: { literal: definition.name.slice(0, 4) }, size: { literal: 10 } },
+      } } },
+      summary: { componentId: "@ontomato/sdk:ObjectSummary", data: {
+        record: { source: selected(definition.id), read: "record", params: {} },
+      } },
+      missing: { componentId: "@ontomato/sdk:ObjectSummary", data: {
+        record: { source: selected("gone"), read: "record", params: {} },
+      } },
+      definition: { componentId: "@ontomato/sdk:ObjectForm", data: { form: {
+        source: selected(definition.id), read: "form",
+        params: { values: { literal: { name: "Draft" } }, changedField: { literal: "/name" } },
+      } } },
+      create: { componentId: "@ontomato/sdk:ObjectForm", data: { form: { source: { type }, read: "createForm", params: {} } } },
+    });
+    expect(await read("list", "rows")).toMatchObject({
+      status: "ready", value: { rows: [{ primaryKey: definition.id, label: definition.name }], total: 1 },
+    });
+    expect(await read("summary", "record")).toMatchObject({ status: "ready", value: { primaryKey: definition.id } });
+    expect(await read("missing", "record")).toEqual({ status: "error", message: "Definition not found" });
+    expect(await read("definition", "form")).toMatchObject({ status: "ready", value: { values: { name: "Draft" }, errors: [] } });
+    expect(await read("create", "form")).toMatchObject({ status: "ready", value: { values: { name: "" }, save: { draftOperation: "create" } } });
+  }
+});
 
 it("reads the SDK component catalogue and definition from the installed SDK release", async () => {
   const componentType = "platform:SDKComponent";

@@ -68,6 +68,23 @@ class FunctionPanelEndpointTest {
   }
 
   @Test
+  void aSingleReadRefusesAFunctionOutsideThisDomainOrMissing() throws Exception {
+    Function elsewhere = function("f9", "Other domain query", Function.OPERATION_READ);
+    elsewhere.setDomainId("other");
+    when(functionService.queryById("f9")).thenReturn(elsewhere);
+    when(functionService.queryById("missing")).thenReturn(null);
+
+    for (String id : List.of("f9", "missing")) {
+      JSONObject body = perform("/function/queryById", "{\"id\":\"" + id + "\"}");
+
+      assertFalse(body.getBooleanValue("success"));
+      assertEquals("FUNCTION_NOT_FOUND", body.getString("code"));
+      assertEquals("Function.notFound", body.getString("message"));
+      assertFalse(body.containsKey("data"));
+    }
+  }
+
+  @Test
   void aSingleReadCarriesTheOperationLabel() throws Exception {
     when(functionService.queryById("f1")).thenReturn(function("f1", "Revenue query", Function.OPERATION_READ));
 

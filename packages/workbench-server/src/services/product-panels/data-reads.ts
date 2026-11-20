@@ -10,8 +10,8 @@ import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contrac
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import {
-  ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE, ONTOLOGY_TYPE,
-  PRODUCT_PANEL, PRODUCT_PROJECTION, RELATIONSHIP, SDK_COMPONENT, type PlatformReadDeclaration,
+  ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE,
+  ONTOLOGY_TYPE, PRODUCT_PANEL, PRODUCT_PROJECTION, RELATIONSHIP, SDK_COMPONENT, type PlatformReadDeclaration,
 } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { assertPermission } from "../../identity/installed";
@@ -21,7 +21,7 @@ import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
 
 import { createDashboardCardReadAdapter } from "../dashboard/chart-sources";
-import { createMetricReadAdapter } from "../metric-function/panel-reads";
+import { createFunctionReadAdapter, createMetricReadAdapter } from "../metric-function/panel-reads";
 import { createCustomerOntologyReadAdapter } from "../ontology-model/customer-reads";
 import { createBusinessKnowledgeReadAdapter } from "../business-knowledge/panel-reads";
 import { createOntologyModelReadAdapter } from "../ontology-model/model-reads";
@@ -67,6 +67,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     return createActionReadAdapter(owner, viewer, callerUserName);
   };
   const metrics = createMetricReadAdapter(owner, viewer, callerUserName);
+  const functions = createFunctionReadAdapter(owner, viewer, callerUserName);
   const cards = createDashboardCardReadAdapter(owner, viewer);
   const formParams = (params: Record<string, unknown>) => ({
     values: panelReadParameterSchemas.panelFormValues.optional().parse(params.values),
@@ -125,7 +126,17 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       explanation: async selection => (await actions()).explanation(selection.primaryKey!),
     },
     [METRIC_VIEW]: {
+      query: (_selection, params) => metrics.query(params),
+      record: selection => metrics.record(selection.primaryKey!),
+      form: (selection, params) => metrics.form(selection.primaryKey!, formParams(params)),
+      createForm: (_selection, params) => metrics.createForm(formParams(params)),
       result: (selection, params) => metrics.result(selection.primaryKey!, runtimeJsonObjectSchema.parse(params)),
+    },
+    [FUNCTION]: {
+      query: (_selection, params) => functions.query(params),
+      record: selection => functions.record(selection.primaryKey!),
+      form: (selection, params) => functions.form(selection.primaryKey!, formParams(params)),
+      createForm: (_selection, params) => functions.createForm(formParams(params)),
     },
     [DASHBOARD_CARD]: {
       chartTemplate: ({ primaryKey }, _params, projection) => cards.chartTemplate(
