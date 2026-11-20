@@ -8,10 +8,14 @@ import express from "express";
 import multer from "multer";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
+import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
 import { panelHumanOperationPreparationSchema } from "@ontomato/contracts/panel-agent";
+import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { installContentLayout } from "../../content/layout";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
+import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
+import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
 import { buildTestAccess } from "../build-test-access";
 
@@ -36,24 +40,25 @@ vi.mock("../../utils/request-identity", async original => ({
 const objectType = "Order";
 const actionId = "approve-order";
 const use = { applicationId: "app-orders", useId: "orders", operationId: "approve.execute" };
+const orderType = { kind: "object", objectType };
+const orderRef = { className: objectType, primaryKey: "00123" };
 const projection = {
-  id: "approve", componentId: "@ontomato/sdk:OperationButton", name: "Approve order",
-  inputs: { target: { kind: "object", objectType } },
+  componentId: "@ontomato/sdk:OperationButton", name: "Approve order", description: "", visibility: "domain", revision: 0,
+  inputs: { target: orderType }, outputs: {}, config: {},
   data: { operation: { source: { operation: { kind: "Action", id: actionId } }, read: "describe", params: {} } },
 };
-vi.mock("../../services/product-panels/current", () => ({
-  readCurrentPanelRecord: async () => ({
-    manifest: {
-      state: { order: { type: { kind: "object", objectType } } },
-      members: { approve: { target: { projectionId: "approve" }, inputs: { target: { state: "order" } } } },
-      events: {},
+const panel = {
+  name: "Orders", description: "", visibility: "domain", revision: 0,
+  content: { html: '<section><panel-member ref="approve"></panel-member><panel-member ref="pinned"></panel-member></section>' },
+  manifest: {
+    state: { order: { type: orderType, default: null } },
+    members: {
+      approve: { target: { projectionId: "approve" }, inputs: { target: { state: "order" } } },
+      pinned: { target: { projectionId: "approve" }, inputs: { target: { literal: orderRef } } },
     },
-  }),
-  requireDirectPanelMember: async () => ({
-    member: { target: { projectionId: "approve" }, inputs: { target: { state: "order" } } },
-    projection,
-  }),
-}));
+    events: {},
+  },
+};
 
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
 if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
@@ -67,8 +72,9 @@ const stored = () => ({
     { name: "amount", type: "TYPE_NUMBER", description: "Approved amount" },
   ] },
 });
+const originalHash = "a".repeat(64);
 const owner = {
-  codeHash: "hash-1",
+  codeHash: originalHash,
   execute: (): { success: boolean; data?: unknown; code?: string; message?: string } => ({
     success: true, data: { result: "{\"answer\":true}", error: null, spendTime: 3, affects: ["Order", "Payment"], partialQuery: null },
   }),
@@ -86,13 +92,35 @@ beforeAll(async () => {
   state.schema = `object_actions_${randomUUID().replaceAll("-", "")}`;
   state.pool = new pg.Pool({ connectionString: database });
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
+  await ensureProductAssetsSchema(state.pool);
+  await ensureProductPanelsSchema(state.pool);
   await ensurePanelOperationsSchema(state.pool);
   contentRoot = await mkdtemp(path.join(os.tmpdir(), "object-actions-"));
+  await writeBundledAppSdkFixture(contentRoot);
   installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
-  const { panelOperationsRouter } = await import("../routes/product-panels");
+  vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "fixture-service");
+  const { panelOperationsRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
 
   const app = express();
   app.use(express.json());
+  const grants = new Set<string>();
+  app.post("/product-governance/register", (req, res) => {
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
+    grants.add(req.body.id);
+    res.json({ success: true });
+  });
+  app.post("/product-governance/check", (req, res) => {
+    res.json({ allowed: req.header("tk") === "alice" && grants.has(req.body.id) });
+  });
+  app.post("/product-governance/resources", (req, res) => {
+    expect(req.header("tk")).toBe("alice");
+    res.json({ ids: [...grants] });
+  });
+  app.post("/action/queryList", (req, res) => {
+    expect(req.header("tk")).toBe("alice");
+    expect(req.body).toEqual({ status: "PUBLISHED" });
+    res.json({ success: true, data: [stored()] });
+  });
   app.get(`/platform/applications/${use.applicationId}/panel-uses`, (req, res) => {
     if (req.header("tk") !== "alice") { res.sendStatus(403); return; }
     res.json({ success: true, data: {
@@ -110,7 +138,11 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("alice");
     owner.forms.push(req.body);
     const { values } = req.body as { values?: Record<string, string> };
-    const base = { fields: [], values: { order_id: "00123", amount: values?.amount ?? "" } };
+    const fields = ["order_id", "amount"].map(key => ({
+      key, label: key, required: false, defaultValue: null, help: null,
+      type: "text", multiline: false, placeholder: null, maxLength: 200,
+    }));
+    const base = { fields, values: { order_id: "00123", amount: values?.amount ?? "" } };
     if (values === undefined) { res.json({ success: true, data: { ...base, errors: [], parameters: null } }); return; }
     if (!values.amount) {
       res.json({ success: true, data: {
@@ -130,14 +162,20 @@ beforeAll(async () => {
     Object.assign(req, { userId, domainId: "domain", token: userId, locale: "en" });
     next();
   }, buildTestAccess, panelOperationsRouter);
+  app.use("/api/product-panels", productPanelsRouter);
+  app.use("/api/product-projections", productProjectionsRouter);
   server = await new Promise<Server>(resolve => {
     const listening = app.listen(0, "127.0.0.1", () => resolve(listening));
   });
   state.base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const savedProjection = await request("/product-projections/approve", projection, "PUT");
+  expect(savedProjection.status, await savedProjection.text()).toBe(200);
+  const savedPanel = await request("/product-panels/panel-orders", panel, "PUT");
+  expect(savedPanel.status, await savedPanel.text()).toBe(200);
 });
 
 beforeEach(() => {
-  owner.codeHash = "hash-1";
+  owner.codeHash = originalHash;
   owner.execute = () => ({
     success: true, data: { result: "{\"answer\":true}", error: null, spendTime: 3, affects: ["Order", "Payment"], partialQuery: null },
   });
@@ -151,12 +189,13 @@ afterAll(async () => {
   await state.pool!.query(`DROP SCHEMA "${state.schema}" CASCADE`);
   await state.pool!.end();
   await rm(contentRoot, { recursive: true });
+  vi.unstubAllEnvs();
 });
 
-function request(path: string, body?: object) {
+function request(path: string, body?: object, method = "POST") {
   return fetch(state.base + "/api" + path, {
     headers: { tk: "alice", "Content-Type": "application/json" },
-    ...(body && { method: "POST", body: JSON.stringify(body) }),
+    ...(body && { method, body: JSON.stringify(body) }),
   });
 }
 
@@ -168,13 +207,28 @@ async function intent(values: Record<string, string>) {
 
 const dispatch = (intentId: string) => request(`/panel-operations/intents/${intentId}/dispatch`, {});
 
-it("freezes the Action, its code and the object, then runs the owner's typed parameters as the reader", async () => {
+it("describes and freezes the Action, its code and the object, then runs the owner's typed parameters as the reader", async () => {
+  const describe = await request("/product-panels/read", {
+    source: { kind: "registered", applicationId: use.applicationId, useId: use.useId },
+    memberPath: [{ member: "approve" }], dataName: "operation", inputs: { target: orderRef },
+  });
+  expect(describe.status).toBe(200);
+  const described = productPanelReadResponseSchema.parse(await describe.json());
+  expect(described).toMatchObject({ status: "ready", value: {
+    handlerRef: "actions.execute", label: "Approve order", target: { source: "input", input: "target" },
+    inputSchema: { properties: { values: { properties: { amount: { type: "string", contentMediaType: "application/json" } } } } },
+  } });
+
   const prepared = await intent({ amount: "12.5" });
   expect(prepared.confirmation).toEqual({ kind: "none" });
   expect(owner.executions).toEqual([]);
   const stored = await state.pool!.query(`SELECT intent FROM "${state.schema}".panel_operation_intents WHERE id=$1`, [prepared.intentId]);
   expect(stored.rows[0].intent.operation).toMatchObject({
-    handlerRef: "actions.execute", action: { actionId, codeHash: "hash-1", object: { objectType, primaryKey: "00123" } },
+    handlerRef: "actions.execute", action: { actionId, codeHash: originalHash, object: { objectType, primaryKey: "00123" } },
+  });
+
+  expect(described.status === "ready" && described.value).toMatchObject({
+    inputSchema: stored.rows[0].intent.operation.inputSchema,
   });
 
   const result = await dispatch(prepared.intentId);
@@ -215,10 +269,21 @@ it("keeps the owner's coded execution refusal in the owner's words", async () =>
 
 it("does not run an Action whose code changed after the person decided", async () => {
   const prepared = await intent({ amount: "12.5" });
-  owner.codeHash = "hash-2";
+  owner.codeHash = "b".repeat(64);
 
   const result = await dispatch(prepared.intentId);
   expect(result.status).toBe(409);
   expect(await result.json()).toMatchObject({ error: { code: "INTENT_CHANGED" } });
+  expect(owner.executions).toEqual([]);
+});
+
+it("refuses a different target from the member's pinned object before consulting the owner", async () => {
+  const response = await request("/panel-operations/intents", {
+    ...use, operationId: "pinned.execute",
+    call: { target: { ...order, primaryKey: "another-order" }, input: { values: {} } },
+  });
+  expect(response.status).toBe(400);
+  expect(await response.json()).toMatchObject({ error: { code: "TARGET_ID_MISMATCH" } });
+  expect(owner.forms).toEqual([]);
   expect(owner.executions).toEqual([]);
 });
