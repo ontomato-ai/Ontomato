@@ -17,6 +17,7 @@ export interface PanelLayoutContainer {
   tag: "div" | "section";
   flow: "row" | "column" | "grid";
   gap: "none" | "small" | "medium" | "large";
+  fill?: "height";
   when?: PanelLayoutCondition;
   each?: string;
   children: PanelLayoutNode[];
@@ -44,7 +45,7 @@ interface Attribute {
 }
 
 const memberAttributes = new Set(["ref"]);
-const containerAttributes = new Set(["flow", "gap", "when", "eq", "ne", "each"]);
+const containerAttributes = new Set(["flow", "gap", "fill", "when", "eq", "ne", "each"]);
 
 /** Parse the declared layout without browser HTML repair or interpretation. */
 export function parsePanelLayout(html: string, manifest: DirectPanelManifest): PanelLayoutNode[] {
@@ -164,6 +165,7 @@ export function parsePanelLayout(html: string, manifest: DirectPanelManifest): P
         kind: "container", tag,
         flow: choice(attrs, "flow", ["row", "column", "grid"], "column"),
         gap: choice(attrs, "gap", ["none", "small", "medium", "large"], "medium"),
+        ...(attrs.has("fill") && { fill: choice<"height">(attrs, "fill", ["height"], "height") }),
         ...(when && { when }), ...(each && { each: each.value }), children: [], position: positionAt(start),
       };
     }

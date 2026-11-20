@@ -306,6 +306,34 @@ test("the current registration accepts the shipped no-code layout and rejects an
   }).content), true);
 });
 
+test("direct layout recognizes height fill on containers and locates an invalid value", async () => {
+  const { parsePanelLayout } = await import("./panel-layout");
+  const manifest = panelManifestSchema.parse({
+    state: {},
+    members: Object.fromEntries(["toolbar", "list", "detail"].map(name => [name, { target: { projectionId: name } }])),
+    events: {},
+  });
+  const [column] = parsePanelLayout(`
+    <div flow="column" fill="height">
+      <panel-member ref="toolbar"></panel-member>
+      <section flow="row" fill="height">
+        <panel-member ref="list"></panel-member>
+        <panel-member ref="detail"></panel-member>
+      </section>
+    </div>
+  `, manifest);
+  assert.ok(column?.kind === "container");
+  assert.equal(column.fill, "height");
+  const [toolbar, row] = column.children;
+  assert.ok(toolbar?.kind === "member" && toolbar.ref === "toolbar");
+  assert.ok(row?.kind === "container" && row.flow === "row");
+  assert.equal(row.fill, "height");
+  assert.deepEqual(row.children.map(node => node.kind === "member" && node.ref), ["list", "detail"]);
+  assert.equal(Object.hasOwn(parsePanelLayout("<section></section>", manifest)[0]!, "fill"), false);
+  assert.throws(() => parsePanelLayout('<div fill="height">\n  <section fill="width"></section>\n</div>', manifest),
+    /2:12 Invalid value for 'fill'/u);
+});
+
 test("nested layout and explicit events share typed state and placement", async () => {
   const { parsePanelLayout } = await import("./panel-layout");
   const agent = { kind: "object", objectType: AGENT_DEFINITION };
