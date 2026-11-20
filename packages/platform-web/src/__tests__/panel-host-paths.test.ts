@@ -38,6 +38,18 @@ const requested: { method: string; url: string }[] = [];
 let subscriptionSignal: AbortSignal | undefined;
 const target = { kind: "panel", id: "panel-a" } as const;
 
+/** What Node answers for the deployment's current SDK, and the manifest of that release. */
+const current = {
+  version: "1.1.0", digest: "a".repeat(64), publicBasePath: "", sdkBasePath: "/apps-sdk/current",
+  manifestPath: "/apps-sdk/current/sdk.json", componentsPath: "/apps-sdk/current/components.json",
+  checkPath: "/apps-sdk/current/node/panel-check.mjs", docsPath: "/apps-sdk/current/docs/index.md", referencePath: "/apps-sdk/current/docs/reference.md",
+};
+const manifest = {
+  version: "1.1.0", product: "workbench", executionContext: 1, hostTransport: 1, messageBridge: 2,
+  entries: { vue: "vue.js", "@ontomato/sdk/panel": "panel.js" }, stylesheet: "styles/sdk.css", components: "components.json",
+  check: "node/panel-check.mjs", libraries: { vue: "3.5.0" }, docs: "docs/index.md",
+};
+
 beforeEach(() => {
   requested.length = 0;
   subscriptionSignal = undefined;
@@ -50,8 +62,8 @@ beforeEach(() => {
       subscriptionSignal = init?.signal;
       return new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } });
     }
-    const body = url.endsWith("/apps-sdk/current")
-        ? { version: "1.1.0", digest: "a".repeat(64), publicBasePath: "", sdkBasePath: "/apps-sdk/1.1.0", manifestPath: "", componentsPath: "", docsPath: "", referencePath: "" }
+    const body = url.endsWith("/api/apps-sdk/current") ? current
+        : url === current.manifestPath ? manifest
         : url.includes("/panel-uses")
           ? { data: { applicationId: "app-a", entry: { path: "/tasks", renderer: "panels" }, panelUses: [] } }
           : url.endsWith("/snapshot") ? { panel: { id: "panel-a", revision: 1 }, projections: [] } : { panel: null };
@@ -86,23 +98,24 @@ describe("the panel host's addresses", () => {
     // The record's contents are the stand-in's business, not this test's: what it asserts is the address each read went
     // to. A read that refuses is as good an observation as one that answers.
     await port.panel("panel-a").catch(() => {});
-    // The SDK's root is where Node serves its builds; a frame loads the exact version its definition names under it.
-    expect(await port.sdkRoot()).toBe("/apps-sdk");
+    // The deployment's one current release: Node names it and where it is, and its manifest is read from there.
+    expect(await port.release()).toEqual({ base: "/apps-sdk/current", manifest });
     await port.snapshot("panel-a");
     const observer = panelAuthorDefinitions().observe([target], () => {}, error => { throw error; });
     await candidatePanelHost({ id: "7c9e6679-7425-40de-944b-e07fc1f90ae7", ref: "working", pageKey: "tasks" }).source().catch(() => {});
-    await vi.waitFor(() => expect(requested.length).toBe(6));
+    await vi.waitFor(() => expect(requested.length).toBe(7));
     expect(requested.map((one) => `${one.method} ${one.url}`)).toEqual([
       "GET /api/data-query/platform/applications/app-a/panel-uses",
       "GET /api/product-panels/panel-a",
       "GET /api/apps-sdk/current",
+      "GET /apps-sdk/current/sdk.json",
       "GET /api/product-panels/panel-a/snapshot",
       "POST /api/product-panels/definition-stream",
       "GET /api/workspaces/7c9e6679-7425-40de-944b-e07fc1f90ae7/panel-candidate?ref=working",
     ]);
     observer.close();
     expect(subscriptionSignal?.aborted).toBe(true);
-    expect(requested).toHaveLength(6);
+    expect(requested).toHaveLength(7);
   });
 });
 

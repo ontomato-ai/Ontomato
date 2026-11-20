@@ -49,6 +49,7 @@ export {
   type DirectPanelMount,
   type DirectPanelRun,
   type HostedPanelSource,
+  type PanelSdkRelease,
   type PanelHostLabels,
   type PanelFrameRegistration,
   type PanelHostPort,

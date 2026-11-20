@@ -8,7 +8,7 @@ import { productPanelInputSchema, productProjectionInputSchema, type ProductProj
 import { appBuilderPages } from "../../../../../packages/platform-web/src/workbench-routes";
 import PanelCandidateRoute from "../../../../../packages/platform-web/src/pages/PanelCandidateRoute.vue";
 import { candidateFiles, panelInput, projectionMaterial } from "../../../../../packages/apps-sdk/examples/panels/agent-settings/material.mjs";
-import {
+import { SDK_MANIFEST_PATH,
   currentSdk, hostMessageOf, inside, installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelHostFrame, READER,
   SDK_VERSION, writeFrameDocument, type Sent,
 } from "./panel-frame";
@@ -140,7 +140,7 @@ const node = (id: string) => document.querySelector<SVGGElement>(`#app [data-nod
 const formSave = () => [...document.querySelectorAll<HTMLButtonElement>("#app .sdk-owner-form-actions button")]
   .find(button => button.textContent?.trim() === "Save")!;
 const fromFrame = (sent: Sent[]) => sent.filter(request => request.path !== `/api/workspaces/${WORKSPACE}/panel-candidate`
-  && request.path !== "/api/apps-sdk/current" && request.path !== "/api/product-panels/definition-stream");
+  && request.path !== "/api/apps-sdk/current" && request.path !== SDK_MANIFEST_PATH && request.path !== "/api/product-panels/definition-stream");
 
 /** Picks one choice of a picker the way a reader does: open its list and click the choice. */
 async function pick(path: string, label: string) {
@@ -230,9 +230,10 @@ it("edits one agent's definition as one form: its fields, model, skills and data
     // Every request the frame made went out as the reader, marked with the preview's context; none was live.
     expect(fromFrame(sent).every(request => request.credential === READER
       && request.execution === JSON.stringify({ kind: "build-test", contextId: null }))).toBe(true);
-    // Only the host's own reads (the candidate, the SDK root, the author definition stream) went out unmarked.
+    // Only the host's own reads (the candidate, the current SDK release and its manifest, the author definition stream) went
+    // out unmarked.
     expect(sent.filter(request => request.execution === null).map(request => request.path)).toEqual(sent.filter(request => [
-      `/api/workspaces/${WORKSPACE}/panel-candidate`, "/api/apps-sdk/current", "/api/product-panels/definition-stream",
+      `/api/workspaces/${WORKSPACE}/panel-candidate`, "/api/apps-sdk/current", SDK_MANIFEST_PATH, "/api/product-panels/definition-stream",
     ].includes(request.path)).map(request => request.path));
     expect(sent.some(request => request.path.startsWith("/api/product-panels") || request.path.includes("/platform/applications"))).toBe(false);
   } finally {
