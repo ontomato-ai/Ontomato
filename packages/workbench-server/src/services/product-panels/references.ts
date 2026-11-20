@@ -2,7 +2,6 @@ import {
   matchesDirectPanelValue, matchesObjectType, panelPlacementSchema, panelPortAccepts, type DirectPanelPortType, type PanelManifest,
   type PanelPlacement,
 } from "@ontomato/contracts/panel-manifest";
-import { parsePanelLayout, type PanelLayoutNode } from "@ontomato/contracts/panel-layout";
 import {
   authoredReadParameterSource, directReadDeclaration, missingRequiredReadParameters, panelReadInputMatches, panelReadParameterId,
 } from "@ontomato/contracts/panel-projection";
@@ -29,7 +28,6 @@ type Reference = {
   key: string;
   target: Target;
   wiring: Wiring;
-  itemType?: DirectPanelPortType;
   fromObjectDetail?: true;
 };
 
@@ -37,36 +35,15 @@ function fixedTarget(target: PanelPlacement["target"]): Target {
   return "panelId" in target ? { kind: "panel", id: target.panelId } : { kind: "projection", id: target.projectionId };
 }
 
-export function repeatItemTypes(panel: ProductPanelInput): Map<string, DirectPanelPortType> {
-  const items = new Map<string, DirectPanelPortType>();
-  // A panel written with code draws its own members: its layout names none of them.
-  if (panel.content.module !== undefined) return items;
-  const { state } = panel.manifest;
-  function collect(nodes: PanelLayoutNode[], item?: DirectPanelPortType) {
-    for (const node of nodes) {
-      if (node.kind === "member") {
-        if (item) items.set(node.ref, item);
-      } else if (node.kind === "element") {
-        const source = node.each === undefined ? undefined : state[node.each].type;
-        collect(node.children, source?.kind === "list" ? source.items : item);
-      }
-    }
-  }
-  collect(parsePanelLayout(panel.content.html, panel.manifest).nodes);
-  return items;
-}
-
 function collectReferences(
   panel: ProductPanelInput, details: ReadonlyMap<string, string>, saved: readonly SavedPlacement[] = [],
 ): Reference[] {
   const { state, members } = panel.manifest;
-  const usesItem = Object.values(members).some(member => Object.values(member.inputs ?? {}).some(input => "item" in input));
-  const repeatTypes = usesItem ? repeatItemTypes(panel) : new Map<string, DirectPanelPortType>();
   const references: Reference[] = [];
   for (const [key, wiring] of Object.entries(members)) {
     const { target } = wiring;
     const add = (target: Target, fromObjectDetail?: true) =>
-      references.push({ key, target, wiring, itemType: repeatTypes.get(key), fromObjectDetail });
+      references.push({ key, target, wiring, fromObjectDetail });
     if ("panelId" in target || "projectionId" in target) {
       add(fixedTarget(target));
     } else if ("fromState" in target) {
@@ -178,7 +155,7 @@ function ports(definition: ProductPanelInput | ProductProjectionInput) {
 }
 
 async function incompatiblePort(
-  source: PanelManifest, { key, wiring, itemType }: Reference, definition: ProductPanelInput | ProductProjectionInput,
+  source: PanelManifest, { key, wiring }: Reference, definition: ProductPanelInput | ProductProjectionInput,
   readCatalogue = readPanelComponentCatalogue,
 ) {
   const target = ports(definition);
@@ -200,7 +177,9 @@ async function incompatiblePort(
     const type = target.inputs[name];
     if (!type && "state" in value && implicit.has(name)) continue;
     if (!type) return `input '${name}' was removed or is not exposed`;
-    const offered = "state" in value ? source.state[value.state]?.type : itemType;
+    // The view supplies a repeated row as an input; the read boundary checks its value against this port.
+    if ("item" in value) continue;
+    const offered = "state" in value ? source.state[value.state]?.type : undefined;
     if (!("literal" in value) && offered === undefined) return `input '${name}' has no declared value source`;
     if (type.kind === "json") continue;
     const accepts = "literal" in value ? matchesDirectPanelValue(type, value.literal)

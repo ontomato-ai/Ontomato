@@ -142,12 +142,26 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     },
   };
   const checkModule = `
+    const ok = data => ({ success: true, data });
+    const invalid = issues => ({ success: false, error: { issues } });
+    export const registerProductPanelRequestSchema = {
+      safeParse: value => "sdkVersion" in value
+        ? invalid([{ path: ["sdkVersion"], message: "The current SDK refuses sdkVersion" }])
+        : ok(value),
+    };
+    export const registerProductProjectionRequestSchema = {
+      safeParse: value => value.data !== undefined ? ok(value) : invalid([{
+        code: "invalid_union",
+        unionErrors: [
+          { issues: [{ code: "invalid_type", received: "undefined", path: ["data"], message: "Required" }] },
+          { issues: [{ code: "invalid_literal", path: ["componentId"], message: "Expected chart" }] },
+        ],
+      }]),
+    };
     const parse = value => {
       if ("sdkVersion" in value) throw new Error("The current SDK refuses sdkVersion");
       return value;
     };
-    export const registerProductPanelRequestSchema = { parse };
-    export const registerProductProjectionRequestSchema = { parse };
     export const platformTypeTableResponseSchema = { parse };
     export const panelReadParameterSchemas = {
       reviewStatus: { safeParse: value => ({ success: value === "all" }) },
@@ -166,6 +180,9 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
   const panelPath = "/api/product-panels/acceptance-panel";
   const projectionPath = "/api/product-projections/tasks";
   const usesPath = "/owner/platform/applications/app-acceptance/panel-uses";
+  const inlinePanelPath = "/api/product-panels/inline-panel";
+  const inlineRecords = new Map();
+  let rejectInlinePanel = false;
   const server = createServer(async (request, response) => {
     let content = "";
     for await (const chunk of request) content += chunk;
@@ -178,7 +195,25 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       ["ObjectList", "ObjectSummary", "ObjectForm", "SegmentedControl", "OperationButton"].map(componentId => ({ componentId })) }));
     else if (request.url === `${sdkPath}/node/panel-check.mjs`) response.end(checkModule);
     else if (request.url === projectionPath) response.end(JSON.stringify({ projection: { componentId: "@ontomato/sdk:ObjectList" } }));
-    else if (request.url === candidatePath) response.end(JSON.stringify(source));
+    else if (request.url === "/api/product-projections/unwritten") {
+      response.statusCode = 404;
+      response.end(JSON.stringify({ error: { code: "PRODUCT_UNAVAILABLE" } }));
+    } else if (request.url === "/api/product-projections/hidden") {
+      response.statusCode = 403;
+      response.end(JSON.stringify({ error: { message: "Product use Grant required" } }));
+    } else if (request.url === inlinePanelPath || request.url.startsWith("/api/product-projections/")) {
+      const kind = request.url === inlinePanelPath ? "panel" : "projection";
+      const existing = inlineRecords.get(request.url);
+      if (request.method === "PUT" && !(kind === "panel" && rejectInlinePanel) && body.revision === (existing?.revision ?? 0)) {
+        const record = { ...body, revision: body.revision + 1 };
+        inlineRecords.set(request.url, record);
+        response.end(JSON.stringify({ [kind]: record }));
+      } else if (request.method === "GET" && existing) response.end(JSON.stringify({ [kind]: existing }));
+      else {
+        response.statusCode = request.method === "GET" ? 404 : 409;
+        response.end(JSON.stringify({ error: { message: "Record missing or changed" } }));
+      }
+    } else if (request.url === candidatePath) response.end(JSON.stringify(source));
     else if (request.url === panelPath && body?.revision === 6) {
       response.statusCode = 409;
       response.end(JSON.stringify({ error: { message: "Revision conflict" } }));
@@ -284,6 +319,76 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await writeFile(reviewMaterial, JSON.stringify(incorrect));
     await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
       error.stderr.includes(`projection ${batch.id}: operation reviews.approve requires the owner target input review`));
+    await writeFile(layout, '<panel-member ref="tasks"></panel-member>');
+    const reference = async id => {
+      manifest.members.tasks.target.projectionId = id;
+      await writeFile(join(directory, "panel.json"), JSON.stringify({ manifest }));
+    };
+    const registration = join(directory, "registration.json");
+    const localMaterial = { projections: [{
+      id: "draft-list", mode: "create", input: { componentId: "@ontomato/sdk:ObjectList", data: {} },
+    }] };
+    await writeFile(registration, JSON.stringify(localMaterial));
+    await reference("draft-list");
+    await run("panel", "check", directory);
+    assert.equal(requests.splice(0).some(([method, url]) => method !== "GET" || url.includes("/product-")), false);
+
+    await reference("unwritten");
+    await assert.rejects(run("panel", "check", directory), error =>
+      error.stderr.includes("projection unwritten was not found in the material or on the platform"));
+    await reference("hidden");
+    await assert.rejects(run("panel", "check", directory), error =>
+      error.stderr.includes("projection hidden: 403") && error.stderr.includes("Product use Grant required"));
+
+    delete localMaterial.projections[0].input.data;
+    await writeFile(registration, JSON.stringify(localMaterial));
+    await assert.rejects(run("panel", "check", directory), error =>
+      error.stderr.includes("projection draft-list: data: required field is missing") && !error.stderr.includes("Expected chart"));
+
+    const authorProjection = { componentId: "@ontomato/sdk:ObjectList", data: {} };
+    manifest.members.tasks.target = { projection: authorProjection };
+    const descriptor = join(directory, "panel.json");
+    await writeFile(descriptor, JSON.stringify({ manifest }));
+    const item = { id: "inline-panel", mode: "create", input: { name: "Inline", description: "", visibility: "private" } };
+    await writeFile(registration, JSON.stringify({ panels: [item] }));
+    requests.length = 0;
+    await run("panel", "check", directory);
+    assert.equal(requests.splice(0).some(([method, url]) => method !== "GET" || url.includes("/product-")), false);
+    assert.equal(await readFile(descriptor, "utf8"), JSON.stringify({ manifest }));
+
+    rejectInlinePanel = true;
+    await assert.rejects(run("panel", "register", directory), error => error.stderr.includes("panel inline-panel: PUT"));
+    const savedSource = JSON.parse(await readFile(descriptor, "utf8"));
+    const savedTarget = savedSource.manifest.members.tasks.target;
+    assert.match(savedTarget.projection.id, /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u);
+    const inlineProjectionId = savedTarget.projection.id;
+    const inlineProjectionPath = `/api/product-projections/${inlineProjectionId}`;
+    assert.deepEqual(savedTarget.projection, { ...authorProjection, id: inlineProjectionId });
+    assert.deepEqual(requests.splice(0).filter(([method]) => method === "PUT").map(([, url, body]) => [url, body.revision]), [
+      [inlineProjectionPath, 0], [inlinePanelPath, 0],
+    ]);
+
+    rejectInlinePanel = false;
+    await run("panel", "register", directory);
+    assert.deepEqual(requests.splice(0).filter(([method]) => method === "PUT").map(([, url, body]) => [url, body.revision]), [
+      [inlineProjectionPath, 1], [inlinePanelPath, 0],
+    ]);
+    assert.equal(inlineRecords.get(inlineProjectionPath).name, "tasks");
+    assert.equal(inlineRecords.get(inlineProjectionPath).visibility, "private");
+    assert.deepEqual(inlineRecords.get(inlinePanelPath).manifest.members.tasks.target, { projectionId: inlineProjectionId });
+
+    inlineRecords.set(inlineProjectionPath, { ...inlineRecords.get(inlineProjectionPath), name: "Renamed", revision: 4 });
+    savedSource.manifest.members = { renamedTasks: savedSource.manifest.members.tasks };
+    await writeFile(descriptor, JSON.stringify(savedSource));
+    await writeFile(layout, '<panel-member ref="renamedTasks"></panel-member>');
+    await writeFile(registration, JSON.stringify({ panels: [{ ...item, mode: "update", revision: 1 }] }));
+    await run("panel", "register", directory);
+    assert.deepEqual(requests.splice(0).filter(([method]) => method === "PUT").map(([, url, body]) => [url, body.revision]), [
+      [inlineProjectionPath, 4], [inlinePanelPath, 1],
+    ]);
+    assert.equal(inlineRecords.get(inlineProjectionPath).name, "Renamed");
+    assert.deepEqual(inlineRecords.get(inlinePanelPath).manifest.members.renamedTasks.target, { projectionId: inlineProjectionId });
+    assert.equal(inlineRecords.size, 2);
   } finally {
     await rm(directory, { recursive: true });
     await new Promise(resolve => server.close(resolve));

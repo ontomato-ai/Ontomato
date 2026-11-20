@@ -209,13 +209,11 @@ it("supports dynamic type queries, status separation, search/paging reset and fu
   const pickerProj: ProductProjection = {
     ...current, id: "type-object-picker", name: "Type Object Picker", description: "",
     componentId: "@ontomato/sdk:ObjectList",
-    inputs: { type: { kind: "scalar", type: "string" }, keyword: { kind: "scalar", type: "string" }, page: { kind: "json" } },
+    inputs: { type: { kind: "scalar", type: "string" } },
     outputs: { selected: nodeType },
-    config: { searchable: true, showCount: true, pageSize: 2, emptyTypeText: "picker.selectType" },
+    config: { pageSize: 2 },
     data: {
-      objects: { source: ontologySource, read: "objects", params: {
-        type: { input: "type" }, keyword: { input: "keyword" }, page: { input: "page" },
-      } },
+      objects: { source: ontologySource, read: "objects", params: { type: { input: "type" } } },
     },
   };
   const manifest = definePanel({
@@ -321,10 +319,10 @@ it("supports dynamic type queries, status separation, search/paging reset and fu
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const mounted = await mountPanel({});
 
-  // 1) No type selected yet -> prompt shown via panel.t, zero queries, no count/pagination
+  // 1) No type selected yet -> DataState awaiting shown, zero queries, no count/pagination
   await vi.waitFor(() => {
-    const status = document.querySelector('[data-status="no-type"]');
-    expect(status?.textContent).toContain("Choose a type from the graph");
+    const status = document.querySelector('[data-state="awaiting"]');
+    expect(status?.textContent).toContain("Select an item first");
   });
   expect(queries).toHaveLength(0);
   expect(document.querySelector(".sdk-object-list-count")).toBeNull();

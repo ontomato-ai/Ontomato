@@ -17,6 +17,7 @@ import {
 } from "./platform-objects";
 import { fieldAt, valueAt } from "./form-values";
 import { projectionElement } from "./projection-element";
+import type { PanelReadPort } from "./direct";
 import type { PanelText } from "./text";
 
 /*
@@ -80,6 +81,11 @@ export interface PanelContext {
    * Never sends a message; the host enforces that the request matches the slot's declared projection.
    */
   expandPageComposer(request: AppBridgeExpandPageComposer): Promise<void>;
+  /**
+   * The platform's read entry for this panel's members' data, as the reader: a member, a datum and its values in, the
+   * owner's answer out. In a frame it goes over the frame's request path; the host fills in which panel it is.
+   */
+  readPanelData: PanelReadPort;
 }
 
 /**

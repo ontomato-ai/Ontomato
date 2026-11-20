@@ -1,42 +1,49 @@
 <script setup lang="ts">
 import { computed, inject, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import {
-  panelContextKey,
-  projectionKey,
-  slotInputState,
-  slotOutputState,
-} from "../panel/context";
-import { panelMemberKey, useMemberData } from "../panel/member";
+import type { PanelGroupCounts } from "@ontomato/contracts/panel-projection";
+import { panelContextKey } from "../panel/context";
+import { panelMemberKey, useMemberData, useMemberParam } from "../panel/member";
 import type { SegmentedControlOption } from "./segmented-control-types";
 
 type ScalarValue = string | number | boolean;
 
+interface ResolvedOption {
+  readonly value: ScalarValue;
+  readonly label: string;
+  readonly count?: number;
+  readonly disabled?: boolean;
+}
+
 /**
- * Segmented switcher that reads and writes one declared scalar panel state (or a controlled `modelValue` when used
- * outside a panel state binding). When drawn as a projection member declaring a `counts` (`panelGroupCounts`) datum,
- * it renders each option's count beside its label while remaining interactive across all datum states.
+ * Segmented switcher for one declared scalar panel state (or a controlled `modelValue` outside a panel). When placed
+ * as a member declaring `data.counts` (`panelGroupCounts`), options come directly from the owner's ordered
+ * `[{ key, label, count }]` list; static `options` are used otherwise or while counts are unavailable.
  */
 const props = withDefaults(
   defineProps<{
-    /** Mutually exclusive choices with `{ value, labelKey }` or literal `label`. */
-    options: readonly SegmentedControlOption<ScalarValue>[];
-    /** Declared scalar panel state field name to read and write (for example `"mode"`). */
+    /** Static mutually exclusive choices when not supplied by `data.counts`. */
+    options?: readonly SegmentedControlOption<ScalarValue>[];
+    /** Declared scalar panel state field name when placed directly in a panel template outside a member. */
     state?: string;
-    /** Controlled scalar value when not bound to panel state. */
+    /** Controlled scalar value when used outside a panel state binding. */
     modelValue?: ScalarValue | null;
     /** Value treated as active when the bound panel state is currently `null`. */
     defaultValue?: ScalarValue | null;
-    /** Accessible label for the segmented radio group. */
+    /** Accessible label text for the segmented radio group. */
     ariaLabel?: string;
+    /** Panel message key (or platform i18n key) for the accessible label. */
+    ariaLabelKey?: string;
     /** Disables all options. */
     disabled?: boolean;
   }>(),
   {
+    options: undefined,
     state: undefined,
     modelValue: undefined,
     defaultValue: undefined,
     ariaLabel: undefined,
+    ariaLabelKey: undefined,
     disabled: false,
   },
 );
@@ -48,87 +55,80 @@ const emit = defineEmits<{
 
 const { t, te } = useI18n();
 const panel = inject(panelContextKey, null);
-const slot = inject(projectionKey, null);
 const memberGetter = inject(panelMemberKey, null);
 const member = memberGetter ? memberGetter() : null;
 const countsData = member && "counts" in member.projection.data ? useMemberData("counts") : null;
+const valueParam = member && !props.state ? useMemberParam("value") : null;
 const buttonRefs = ref<HTMLButtonElement[]>([]);
 
-const groupCounts = computed<Readonly<Record<string, number>> | null>(() =>
-  countsData?.value.status === "ready"
-    ? (countsData.value.value as unknown as Readonly<Record<string, number>>)
-    : null,
+function resolveKey(key: string): string {
+  if (panel) {
+    const fromPanel = panel.t(key);
+    if (fromPanel !== key) return fromPanel;
+  }
+  if (te(key)) return t(key);
+  return key;
+}
+
+const resolvedAriaLabel = computed<string | undefined>(() =>
+  props.ariaLabelKey ? resolveKey(props.ariaLabelKey) : props.ariaLabel,
 );
 
-const boundState = computed<string | null>(() => {
-  if (props.state) return props.state;
-  if (panel && slot) {
-    return (
-      slotOutputState(panel.manifest, slot.slot, "value")
-      ?? slotInputState(panel.manifest, slot.slot, "value")
-    );
+const resolvedOptions = computed<readonly ResolvedOption[]>(() => {
+  if (countsData?.value.status === "ready") {
+    const counts = countsData.value.value as unknown as PanelGroupCounts;
+    return counts.map(({ key, label, count }) => ({ value: key, label, count }));
   }
-  return null;
+  return (props.options ?? []).map((option) => ({
+    value: option.value,
+    label: option.label ?? (option.labelKey ? resolveKey(option.labelKey) : String(option.value)),
+    disabled: option.disabled,
+  }));
 });
 
 const currentValue = computed<ScalarValue | null>(() => {
-  if (boundState.value) {
-    if (!panel) throw new Error(`SegmentedControl state '${boundState.value}' requires a panel context`);
-    const raw = panel.instance.state.values.value[boundState.value];
+  if (props.state) {
+    if (!panel) throw new Error(`SegmentedControl state '${props.state}' requires a panel context`);
+    const raw = panel.instance.state.values.value[props.state];
     if (raw !== null && raw !== undefined && typeof raw !== "object") return raw;
     return props.defaultValue ?? null;
   }
-  if (member && "value" in member.inputs.value) {
-    const raw = member.inputs.value.value;
+  if (valueParam) {
+    const raw = valueParam.value.value;
     if (raw !== null && raw !== undefined && typeof raw !== "object") return raw;
+    return props.defaultValue ?? null;
   }
   return props.modelValue ?? props.defaultValue ?? null;
 });
 
-function optionLabel(option: SegmentedControlOption<ScalarValue>): string {
-  if (option.label !== undefined) return option.label;
-  if (option.labelKey) {
-    if (panel) {
-      const fromPanel = panel.t(option.labelKey);
-      if (fromPanel !== option.labelKey) return fromPanel;
-    }
-    if (te(option.labelKey)) return t(option.labelKey);
-    return option.labelKey;
-  }
-  return String(option.value);
-}
-
-function optionCount(option: SegmentedControlOption<ScalarValue>): number | undefined {
-  const count = groupCounts.value?.[String(option.value)];
-  return typeof count === "number" ? count : undefined;
-}
-
-function select(option: SegmentedControlOption<ScalarValue>) {
+function select(option: ResolvedOption) {
   if (props.disabled || option.disabled || option.value === currentValue.value) return;
   if (props.state) {
     if (!panel) throw new Error(`SegmentedControl state '${props.state}' requires a panel context`);
     panel.instance.state.set(props.state, option.value);
-  } else if (panel && slot) {
-    if (!slotOutputState(panel.manifest, slot.slot, "value") && boundState.value) {
-      panel.instance.state.set(boundState.value, option.value);
+  } else if (panel && member) {
+    if (panel.manifest.members[member.key]?.outputs?.value) {
+      void panel.instance.output(member.key, "value", option.value);
+    } else {
+      valueParam!.set(option.value);
     }
-    void panel.instance.output(slot.slot, "value", option.value);
   }
   emit("update:modelValue", option.value);
   emit("change", option.value);
 }
 
-function isOptionTabbable(option: SegmentedControlOption<ScalarValue>, index: number): boolean {
+function isOptionTabbable(option: ResolvedOption, index: number): boolean {
   if (props.disabled || option.disabled) return false;
   if (option.value === currentValue.value) return true;
-  const hasActive = props.options.some((item) => !item.disabled && item.value === currentValue.value);
-  if (hasActive) return false;
-  return props.options.findIndex((item) => !item.disabled) === index;
+  const list = resolvedOptions.value;
+  if (list.some((item) => !item.disabled && item.value === currentValue.value)) return false;
+  return list.findIndex((item) => !item.disabled) === index;
 }
 
 function onKeydown(event: KeyboardEvent, currentIndex: number) {
   if (props.disabled) return;
-  const enabledIndices = props.options
+  const list = resolvedOptions.value;
+  const enabledIndices = list
     .map((option, index) => (option.disabled ? -1 : index))
     .filter((index) => index >= 0);
   if (enabledIndices.length === 0) return;
@@ -146,7 +146,7 @@ function onKeydown(event: KeyboardEvent, currentIndex: number) {
   }
   if (targetIndex === null) return;
   event.preventDefault();
-  select(props.options[targetIndex]!);
+  select(list[targetIndex]!);
   buttonRefs.value[targetIndex]?.focus();
 }
 </script>
@@ -155,11 +155,11 @@ function onKeydown(event: KeyboardEvent, currentIndex: number) {
   <div
     class="sdk-segmented-control"
     role="radiogroup"
-    :aria-label="ariaLabel"
+    :aria-label="resolvedAriaLabel"
     :aria-disabled="disabled || undefined"
   >
     <button
-      v-for="(option, index) in options"
+      v-for="(option, index) in resolvedOptions"
       :key="String(option.value)"
       ref="buttonRefs"
       type="button"
@@ -173,8 +173,8 @@ function onKeydown(event: KeyboardEvent, currentIndex: number) {
       @click="select(option)"
       @keydown="onKeydown($event, index)"
     >
-      <span>{{ optionLabel(option) }}</span>
-      <span v-if="optionCount(option) !== undefined" class="sdk-segmented-count">{{ optionCount(option) }}</span>
+      <span>{{ option.label }}</span>
+      <span v-if="option.count !== undefined" class="sdk-segmented-count">{{ option.count }}</span>
     </button>
   </div>
 </template>

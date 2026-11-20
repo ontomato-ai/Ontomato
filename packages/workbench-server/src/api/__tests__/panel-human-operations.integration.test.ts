@@ -75,12 +75,13 @@ beforeAll(async () => {
 
   const app = express();
   app.use(express.json());
-  app.get("/platform/applications/app-tasks/panel-uses", (req, res) => {
+  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+    if (req.query.applicationId !== "app-tasks") { next(); return; }
     if (req.header("tk") !== "alice") { res.sendStatus(403); return; }
     res.json({ success: true, data: {
-      applicationId: use.applicationId, entry: { path: "/applications/app-tasks", renderer: "panels" },
-      panelUses: [{ id: use.useId, pageKey: "tasks", path: "/applications/app-tasks/tasks",
-        panelId: "panel-tasks", access: { kind: "domain-member" } }],
+      applicationId: use.applicationId, menu: { groups: [], panelUses: [] },
+      use: { id: use.useId, pageKey: "tasks", path: "/applications/app-tasks/tasks",
+        panelId: "panel-tasks", access: { kind: "domain-member" } },
     } });
   });
   app.get("/platform/scheduled-tasks/:taskId", (req, res) => {

@@ -14,6 +14,9 @@ import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { noOperations } from "./panel-frame";
 
+/** A frame here reads through its resource modules; any read through the platform fails the test. */
+const noPlatformRead = async (): Promise<never> => { throw new Error("This test reads through the frame's modules"); };
+
 /*
  * The member data the reads A registered for the first stage's other panels give components, in the platform's document
  * and in a code panel's frame: the ontology's objects of a chosen type, its graph, a reference's choices and held values,
@@ -30,8 +33,8 @@ const ontology = (data: DirectProjection["data"], inputs: DirectProjection["inpu
   ...record, id: "ontology", name: "Ontology", componentId: "@ontomato/sdk:ObjectList", inputs, outputs: {}, config: {}, data,
 });
 const typeObjects = ontology(
-  { objects: { source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } }, read: "objects", params: { type: { input: "type" }, keyword: { input: "keyword" }, page: { input: "page" } } } },
-  { type: { kind: "scalar", type: "string" }, keyword: { kind: "scalar", type: "string" }, page: { kind: "json" } },
+  { objects: { source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } }, read: "objects", params: { type: { input: "type" } } } },
+  { type: { kind: "scalar", type: "string" } },
 );
 const graph = ontology(
   {
@@ -135,7 +138,7 @@ it("answers the ontology's reads in a code panel's frame as the platform's reads
     recordDraftCreated: async () => {}, readProjection: async () => { throw new Error("unused"); },
   });
 
-  const graphData = frameMemberData(graph, "graph", instance, () => ({ node: null }));
+  const graphData = frameMemberData(graph, "graph", instance, () => ({ node: null }), noPlatformRead);
   expect(await graphData.read("neighbors", {})).toEqual({ status: "awaiting" });
   expect(sent).toEqual([]);
   expect(await graphData.read("counts", {})).toEqual({ status: "ready", value: { counts: [{ type: USER, layer: "governance", status: "ok", count: 4 }] } });
@@ -143,9 +146,9 @@ it("answers the ontology's reads in a code panel's frame as the platform's reads
   expect(await graphData.read("neighbors", { node: { className: USER, primaryKey: "u-1" } }))
     .toEqual({ status: "ready", value: { node: user, neighbors: [], edges: [], relations: [] } });
 
-  const objectData = frameMemberData(typeObjects, "objects", instance, () => ({ type: null }));
+  const objectData = frameMemberData(typeObjects, "objects", instance, () => ({ type: null }), noPlatformRead);
   expect(await objectData.read("objects", {})).toEqual({ status: "awaiting" });
-  expect(await objectData.read("objects", { type: ACTION, keyword: "ref", page: { number: 2, size: 10 } }))
+  expect(await objectData.read("objects", { type: ACTION, search: "ref", page: { number: 2, size: 10 } }))
     .toEqual({ status: "ready", value: objectsAnswer(ACTION, 2, 10) });
   expect(sent.map(({ path, body }) => [path, body])).toEqual([
     ["/platform-ontology/counts", undefined],
@@ -178,7 +181,7 @@ it("reads a reference's choices and held values, and a type's create form, as a 
       selected: { source: { type: { kind: "PlatformObjectType", id: MODEL_OPTION } }, read: "resolve", params: { values: { input: "values" } } },
     },
   };
-  const pickerData = frameMemberData(picker, "model", instance, () => ({}));
+  const pickerData = frameMemberData(picker, "model", instance, () => ({}), noPlatformRead);
   expect(await pickerData.read("options", {})).toEqual({ status: "ready", value: { options: [choice] } });
   expect(await pickerData.read("selected", { values: ["gpt"] }))
     .toEqual({ status: "ready", value: { options: [{ ...choice, unavailable: { reason: "Retired" } }] } });
@@ -189,7 +192,7 @@ it("reads a reference's choices and held values, and a type's create form, as a 
     inputs: { values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } }, outputs: {}, config: {},
     data: { createForm: { source: { type: { kind: "PlatformObjectType", id: AGENT_DEFINITION } }, read: "createForm", params: { values: { input: "values" }, changedField: { input: "changedField" } } } },
   };
-  const formData = frameMemberData(form, "definition", instance, () => ({}));
+  const formData = frameMemberData(form, "definition", instance, () => ({}), noPlatformRead);
   // The member's form source reads the type's create form for a new object, with the values the form holds.
   const source = memberFormSource({ key: "definition", projection: form, inputs: { value: {} } as never, data: formData }, instance);
   expect(await source.describe({ target: { kind: "draft" }, values: { name: "Analyst" }, changedField: "/name" })).toEqual(description);

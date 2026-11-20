@@ -186,15 +186,15 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectList",
     role: "control",
     meaning:
-      "Lists or tabulates platform objects or declared child collections of the bound type through its resource adapter's query or list port, providing search, faceted filters (two-way bindable to scalar panel state via slot inputs/outputs), safe highlight rendering, paging, single viewing selection, optional explicit multi-selection and clickable reference navigation without embedding business query rules.",
-    effects: "Reads the bound type's list or query as the reader; it writes only the panel's own state.",
+      "Lists or tabulates platform objects of the bound type from its member's `rows` or `objects` datum, inferring search, pagination and explicit multi-selection from the owner's read signature and the member's bindings, with safe highlight rendering, single viewing selection and clickable reference navigation.",
+    effects: "Reads the bound type's list, query or ontology objects datum as the reader; it writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*"],
     // Either list shape draws the table, and an ontology type lists its declared objects instead: no single one of these
     // is what a placement must declare, so none is required.
     data: {
-      // The list pages itself; search and filters are the panel's state, bound by the author.
-      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false, runtimeParams: ["cursor", "size"] },
-      objects: { results: ["panelOntologyObjects"], required: false, runtimeParams: ["page"] },
+      // The list supplies unbound search and paging values at runtime; authored state bindings take precedence.
+      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false, runtimeParams: ["search", "cursor", "size", "page"] },
+      objects: { results: ["panelOntologyObjects"], required: false, runtimeParams: ["search", "page"] },
     },
     outputs: ["selected", "checked", "navigate", "search"],
   }),
@@ -342,7 +342,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "SegmentedControl",
     role: "control",
     meaning:
-      "Switches one declared scalar panel state between mutually exclusive options supplied by the panel template or display configuration, and shows each option's platform count where the placement reads them. It binds no ontology element.",
+      "Switches one declared scalar panel state between mutually exclusive options supplied by the owner's `counts` datum (`[{key, label, count}]`) or static configuration. It binds no ontology element.",
     data: { counts: { results: ["panelGroupCounts"], required: false } },
     outputs: ["value"],
   }),

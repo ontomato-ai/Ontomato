@@ -183,12 +183,15 @@ it("admits protected packages only through the initiator's exact entrance and ev
       expect(JSON.parse(String(init.body))).toEqual({ verb: "use" });
       return Response.json({ ids });
     }
-    if (url.endsWith("/platform/applications/app-test/panel-uses"))
+    if (url.includes("/platform/applications/resolve-entry?")) {
+      if (new URL(url, "http://owner.test").searchParams.get("useId") !== source.useId)
+        return Response.json({ error: { code: "NOT_FOUND", message: "Unknown use" } }, { status: 404 });
       return Response.json({ success: true, data: {
-        applicationId: source.applicationId, entry: { path: "/applications/app-test", renderer: "panels" },
-        panelUses: [{ id: source.useId, pageKey: entrance.pageKey, panelId: "panel-a",
-          path: "/applications/app-test/panel", access: { permissionCode: entrance.permissionCode } }],
+        applicationId: source.applicationId, menu: { groups: [], panelUses: [] },
+        use: { id: source.useId, pageKey: entrance.pageKey, panelId: "panel-a",
+          path: "/applications/app-test/panel", access: { permissionCode: entrance.permissionCode } },
       } });
+    }
     return Response.json({ skill: protectedRef, digest: "b".repeat(64), description: "Protected member" });
   });
   vi.stubGlobal("fetch", upstream);
@@ -274,20 +277,24 @@ it("publishes one member across admitted entrances alongside the native permissi
     readManifest: async () => offer.manifest, provide: offer.provide }];
   const published: RuntimeSkillRef[] = [];
   const grants = vi.fn(() => Response.json({ ids: ["knowledge-panel"] }));
-  const uses = vi.fn(() => Response.json({ success: true, data: {
-    applicationId: "ontology", entry: { path: "/ontology", renderer: "ontology" },
-    panelUses: entrances.map(({ permissionCode, pageKey }) => ({ id: pageKey, pageKey, path: `/ontology/${pageKey}`,
-      access: { permissionCode }, panelId: "knowledge-panel" })),
-  } }));
+  const uses = vi.fn((useId: string | null) => {
+    const entrance = entrances.find(entry => entry.pageKey === useId);
+    if (!entrance) return Response.json({ error: { code: "NOT_FOUND", message: "Unknown use" } }, { status: 404 });
+    const { permissionCode, pageKey } = entrance;
+    return Response.json({ success: true, data: {
+      applicationId: "ontology", menu: { groups: [], panelUses: [] },
+      use: { id: pageKey, pageKey, path: `/ontology/${pageKey}`, access: { permissionCode }, panelId: "knowledge-panel" },
+    } });
+  });
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     if (url.endsWith("/platform/page-skills")) return Response.json({ success: true, data: {
       admittedEntrances: entrances, registeredSkills: [native], pageSkills: [{ permissionCode: "business-knowledge", skill: native,
         defaults: [{ pageKey: "governance-report", defaultAgent: { kind: "preset", agentKind: "knowledge-governance" } }] }],
     } });
     if (url.endsWith("/product-governance/resources")) return grants();
-    if (url.endsWith("/ontology/panel-uses")) {
+    if (url.includes("/platform/applications/resolve-entry?")) {
       expect(new Headers(init.headers).get("tk")).toBe(credentials.token);
-      return uses();
+      return uses(new URL(url, "http://owner.test").searchParams.get("useId"));
     }
     if (url.endsWith("/ontology/ai/knowledge-governance/skill-package")) {
       published.push(native);
@@ -313,7 +320,7 @@ it("publishes one member across admitted entrances alongside the native permissi
     { mode: "member", locator: first, member: null })).currentPage).toBeNull();
   grants.mockReturnValueOnce(Response.json({ unexpected: "source failure" }));
   await expect(readAssistantSkillView(domain, credentials)).rejects.toMatchObject({ code: "PRODUCT_GOVERNANCE_UNAVAILABLE" });
-  const wrongApp = await uses().json();
+  const wrongApp = await uses(second.pageKey).json();
   wrongApp.data.applicationId = "other-app";
   uses.mockReturnValueOnce(Response.json(wrongApp));
   await expect(resolveCurrentPageSkillMember(view, second, member)).rejects.toMatchObject({ code: "SKILL_SOURCE_UNAVAILABLE" });

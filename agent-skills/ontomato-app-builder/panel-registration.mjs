@@ -25,13 +25,37 @@ function productBody({ mode, revision, input }) {
   return { ...input, revision: mode === "create" ? 0 : revision };
 }
 
+function registrationIssues(issues) {
+  return issues.flatMap(issue => {
+    if (issue.code === "invalid_union") {
+      const mismatchedComponent = ({ issues }) => issues.some(item =>
+        item.path.at(-1) === "componentId" && ["invalid_literal", "invalid_enum_value"].includes(item.code));
+      const [branch] = [...issue.unionErrors].sort((left, right) =>
+        Number(mismatchedComponent(left)) - Number(mismatchedComponent(right)) || left.issues.length - right.issues.length);
+      return registrationIssues(branch.issues);
+    }
+    if (issue.code === "unrecognized_keys") {
+      return issue.keys.map(key => `${[...issue.path, key].join(".")}: unexpected field`);
+    }
+    const field = issue.path.join(".") || "input";
+    const message = issue.code === "invalid_type" && issue.received === "undefined" ? "required field is missing" : issue.message;
+    return [`${field}: ${message}`];
+  });
+}
+
 export function panelRegistrationRecords({ projections = [], panels = [] }, checks) {
   return [
     ["projection", projections, checks.registerProductProjectionRequestSchema],
     ["panel", panels, checks.registerProductPanelRequestSchema],
   ].map(([kind, records, schema]) => [
     kind,
-    records.map(item => ({ id: item.id, body: schema.parse(productBody(item)) })),
+    records.map(item => {
+      const result = schema.safeParse(productBody(item));
+      if (!result.success) {
+        throw new Error(`${kind} ${item.id}: ${registrationIssues(result.error.issues).join("\n")}`);
+      }
+      return { id: item.id, body: result.data };
+    }),
   ]);
 }
 
@@ -44,15 +68,21 @@ export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workben
     redirect: "error",
   });
   const call = async (base, method, path, body) => readAnswer(await send(base, method, path, body), method, path);
+  async function currentRecord(kind, id) {
+    const path = productPath(kind, id);
+    const response = await send(workbenchUrl, "GET", path);
+    return response.status === 404 ? null : (await readAnswer(response, "GET", path))[kind];
+  }
 
   return {
+    currentRecord,
     async currentRevision(kind, id) {
       const answer = await call(workbenchUrl, "GET", productPath(kind, id));
       const revision = answer[kind].revision;
       if (!Number.isSafeInteger(revision) || revision <= 0) throw new Error(`${kind} ${id}: owner response has no current revision`);
       return revision;
     },
-    async register(material, onRegistered) {
+    async register(material, onRegistered, checks) {
       const { projections = [], panels = [], applications = [], ...unknown } = material;
       if (Object.keys(unknown).length) throw new Error(`Unknown registration fields: ${Object.keys(unknown).join(", ")}`);
 
@@ -60,16 +90,15 @@ export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workben
         for (const item of items) {
           try {
             await write(item);
+            await onRegistered(kind, item.id);
           } catch (error) {
             throw new Error(`${kind} ${item.id}: ${error.message}`, { cause: error });
           }
-          onRegistered(kind, item.id);
         }
       }
 
       if (projections.length || panels.length) {
-        const release = await sdk.current();
-        const checks = await sdk.check(release);
+        checks ??= await sdk.check(await sdk.current());
         const writes = panelRegistrationRecords({ projections, panels }, checks);
         for (const [kind, items] of writes) {
           await apply(kind, items, async ({ id, body }) => {

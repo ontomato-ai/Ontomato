@@ -181,12 +181,23 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         when(identity.getCurrentUser()).thenReturn(viewer);
         http.perform(get(path).param("purpose", "management")).andExpect(status().isForbidden());
         http.perform(get(path)).andExpect(status().isOk()).andExpect(jsonPath("$.data.panelUses.length()").value(1));
-        http.perform(get("/platform/applications/resolve-entry").param("path", "/applications/app-school/main"))
+        var resolve = "/platform/applications/resolve-entry";
+        var byPath = http.perform(get(resolve).param("path", "/applications/app-school/main"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.framePanelId").value("panel-frame"))
             .andExpect(jsonPath("$.data.theme.light['--el-color-primary']").value("#123456"))
             .andExpect(jsonPath("$.data.use.inputs.term.literal").hasJsonPath())
-            .andExpect(jsonPath("$.data.delivery").doesNotHaveJsonPath());
+            .andExpect(jsonPath("$.data.delivery").doesNotHaveJsonPath()).andReturn().getResponse().getContentAsString();
+        var byUse = http.perform(get(resolve).param("applicationId", "app-school").param("useId", "school"))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertEquals(JSON.parseObject(byPath), JSON.parseObject(byUse));
+        http.perform(get(resolve).param("applicationId", "app-school").param("useId", "private"))
+            .andExpect(status().isForbidden());
+        http.perform(get(resolve).param("applicationId", "app-school").param("useId", "missing"))
+            .andExpect(status().isNotFound());
+        http.perform(get(resolve).param("applicationId", "app-school")).andExpect(status().isBadRequest());
+        http.perform(get(resolve).param("path", "/applications/app-school/main")
+                .param("applicationId", "app-school").param("useId", "school")).andExpect(status().isBadRequest());
 
         when(identity.getCurrentUser()).thenReturn(owner);
         http.perform(put(path).contentType(MediaType.APPLICATION_JSON).content("""
@@ -220,6 +231,9 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.use.path").value(detail))
             .andExpect(jsonPath("$.data.use.access.permissionCode").value("data-browser"))
             .andExpect(jsonPath("$.data.use.names").doesNotHaveJsonPath());
+        http.perform(get("/platform/applications/resolve-entry").param("applicationId", "browser")
+                .param("useId", "browser-detail:客户"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.use.path").value(detail));
         http.perform(get("/platform/applications/resolve-entry").param("path", "/browser/detail/Unconfigured"))
             .andExpect(status().isNotFound());
     }
