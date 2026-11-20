@@ -434,7 +434,7 @@ it("reads back stable member keys and named data, and leaves the record intact a
   const target = { kind: "object", objectType: taskType.objectType, primaryKey: task.id };
   let runNowReceipt: unknown;
   for (const [operationId, input] of [
-    ["form.save", { values: task.content, revision: task.revision }], ["run.runNow", {}],
+    ["form.save", { values: task.content, revision: task.revision, submittedFields: ["/instruction"] }], ["run.runNow", {}],
   ] as const) {
     const prepared = await request("POST", "panel-operations/intents", {
       applicationId: source.applicationId, useId: source.useId, operationId, call: { target, input },
