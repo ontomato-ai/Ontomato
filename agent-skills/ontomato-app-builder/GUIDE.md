@@ -16,7 +16,7 @@ A workspace is the application source tree. Business definitions remain in Java;
 ## Panels and application uses
 
 1. Use `sdk read components.json` and `sdk read docs/components.md` to see the current release's official components and their inputs and outputs. Inspect the actual ontology resources, projections and application uses. Reuse existing records and ask the owner for any missing business capability or named read.
-2. Write `panel.html` using the layout elements documented by the SDK, and `panel.json` with `{manifest, content?}`. The manifest declares members and typed state. Optional `content.messages` supplies translations. Use `recipes.md` for task guidance. Declare the members the platform should render.
+2. Write the Vue panel source. Declare its projections and public typed state in `panel.json` as `{manifest, content?}`. Use `recipes.md` for the assistant's common tasks and optional `content.messages` for translations. Use Vue's own state and events for local interactions.
 3. Run `panel check <workspace directory>` to validate the layout, declarations and references.
 4. Submit the selected projections, panels and application uses with `panel register`, then open the application's declared entry. Use an application ID and route you control.
 
