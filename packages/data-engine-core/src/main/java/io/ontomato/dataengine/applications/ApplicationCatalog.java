@@ -420,14 +420,32 @@ public class ApplicationCatalog {
         if (detailClass != null) return resolveObjectDetail(canonical, detailClass, user);
         for (var app : applicationsInDomain(user.getDomainId())) {
             if (!hasAssignedPanelPaths(app)) continue;
-            var declared = app.getList("panelUses", ApplicationPanelUse.class);
-            if (declared.stream().noneMatch(use -> canonical.equals(use.path()))) continue;
-            if (!access.canEnter(app, user)) throw denied();
-            var allowed = visiblePanelUses(app, user);
-            var use = allowed.stream().filter(entry -> canonical.equals(entry.path())).findFirst().orElseThrow(ApplicationCatalog::denied);
-            return entryResolution(app, use, allowed);
+            var declared = app.getList("panelUses", ApplicationPanelUse.class).stream()
+                .filter(use -> canonical.equals(use.path())).findFirst();
+            if (declared.isPresent()) return resolveDeclaredEntry(app, declared.get().id(), user);
         }
         throw entryNotFound();
+    }
+
+    public JSONObject resolveEntry(String applicationId, String useId, User user) {
+        if ("browser".equals(applicationId) && useId.startsWith(OBJECT_DETAIL_KEY_PREFIX)) {
+            var className = useId.substring(OBJECT_DETAIL_KEY_PREFIX.length());
+            if (className.isEmpty()) throw entryNotFound();
+            var path = OBJECT_DETAIL_ROOT + UriUtils.encodePathSegment(className, StandardCharsets.UTF_8);
+            return resolveEntry(path, user);
+        }
+        var app = require(applicationId);
+        if (!inDomain(app, user)) throw denied();
+        if (!hasAssignedPanelPaths(app) || app.getList("panelUses", ApplicationPanelUse.class).stream().noneMatch(use -> useId.equals(use.id())))
+            throw entryNotFound();
+        return resolveDeclaredEntry(app, useId, user);
+    }
+
+    private JSONObject resolveDeclaredEntry(JSONObject app, String useId, User user) {
+        if (!access.canEnter(app, user)) throw denied();
+        var allowed = visiblePanelUses(app, user);
+        var use = allowed.stream().filter(entry -> useId.equals(entry.id())).findFirst().orElseThrow(ApplicationCatalog::denied);
+        return entryResolution(app, use, allowed);
     }
 
     private static String objectDetailClass(String path) {
