@@ -81,6 +81,17 @@ describe("action panel server operations", () => {
     });
   });
 
+  it("passes the fields a partial save submitted to the owner, which changes only those", async () => {
+    const operation = write(`${ACTION}.save`);
+    const { host, sent } = hostWith(() => Response.json({ success: true, data: { id: "a1", name: "Approve open order" } }));
+
+    await operation.execute(host, actionTarget, { values: { name: "Approve open order" }, submittedFields: ["/name"] });
+
+    expect(JSON.parse(String(sent[0]?.init.body))).toEqual({
+      name: "Approve open order", id: "a1", submittedFields: ["/name"],
+    });
+  });
+
   it("keeps an explicit owner code as the save refusal and an unclassified save as a failure", async () => {
     const operation = write(`${ACTION}.save`);
     const refused = hostWith(() =>

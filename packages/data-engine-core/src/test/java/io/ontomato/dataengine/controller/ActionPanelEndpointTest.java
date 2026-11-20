@@ -22,6 +22,7 @@ import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.OwnerFieldRefusal;
 import io.ontomato.dataengine.service.OwnerRefusal;
+import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.bean.action.Action;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -30,6 +31,7 @@ import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.SpringBeanUtil;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.support.GenericApplicationContext;
 import org.springframework.http.MediaType;
@@ -75,6 +77,47 @@ class ActionPanelEndpointTest {
     ReflectionTestUtils.setField(controller, "subjectDirectory", subjects);
     ReflectionTestUtils.setField(controller, "objectMapper", new ObjectMapper());
     when(langService.get(anyString(), anyString())).thenAnswer(call -> call.getArgument(1));
+  }
+
+  @Test
+  void aSaveNamingItsSubmittedFieldsChangesOnlyThoseAndKeepsTheRestOfTheAction() throws Exception {
+    Function function = new Function();
+    function.setId("f1");
+    function.setName("Write order");
+    function.setOperation(Function.OPERATION_WRITE);
+    function.setParameters(List.of());
+    function.setCode("# ontomato-python:2\nprint(1)");
+    function.setLogic("Approves the order");
+    function.setDomainId("domain");
+    Action stored = new Action();
+    stored.setId("a1");
+    stored.setName("Approve order");
+    stored.setDescription("Approve a pending order");
+    stored.setOrigin(Action.ORIGIN_USER);
+    stored.setStatus(Action.STATUS_PENDING_REVIEW);
+    stored.setDomainId("domain");
+    stored.setSubmissionCriteria(JSONObject.parseObject("""
+        {"conditions":[{"objectParameter":"order_id","className":"Order","field":"status","operator":"=","value":"open"}]}"""));
+    stored.setCreateTimestamp(1_700_000_000_000L);
+    stored.setFunction(function);
+    when(actionService.queryById("a1")).thenReturn(stored);
+    ArgumentCaptor<Action> saved = ArgumentCaptor.forClass(Action.class);
+    when(actionService.save(saved.capture(), isNull(), any(), eq("en"))).thenAnswer(call -> call.getArgument(0));
+
+    // An agent's save sends only the field it wrote.
+    JSONObject body = perform("/action/save", """
+        {"id":"a1","name":"Approve open order","submittedFields":["/name"]}""");
+
+    assertTrue(body.getBooleanValue("success"), body.toJSONString());
+    Action action = saved.getValue();
+    assertEquals("Approve open order", action.getName());
+    assertEquals("Approve a pending order", action.getDescription());
+    assertEquals(Action.ORIGIN_USER, action.getOrigin());
+    assertEquals(Action.STATUS_PENDING_REVIEW, action.getStatus());
+    assertEquals("open", action.getSubmissionCriteria().getJSONArray("conditions").getJSONObject(0).getString("value"));
+    assertEquals(1_700_000_000_000L, action.getCreateTimestamp());
+    assertEquals("f1", action.getFunction().getId());
+    assertEquals("# ontomato-python:2\nprint(1)", action.getFunction().getCode());
   }
 
   @Test
