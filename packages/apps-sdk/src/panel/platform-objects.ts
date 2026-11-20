@@ -1,5 +1,6 @@
 import type { DeepReadonly } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import type { chartProjectionTemplateSchema, DashboardMetricOutput } from "@ontomato/contracts/dashboard";
 import {
   panelFormTargetSchema,
   type PanelFormTarget,
@@ -357,6 +358,17 @@ export interface PlatformObjectAdapter {
   forms?: PlatformObjectForms;
   options?: PlatformObjectOptions;
   graph?: PlatformObjectGraph;
+  metric?: PlatformObjectMetric;
+}
+
+/**
+ * A registered chart's two reads in a panel's frame, for the chart projection the frame read: its source card's chart
+ * file and saved parameters, and its MetricView's output for those parameters with `parameters` laid over them — what
+ * the card's owner answers on the platform's own read. The chart projection names both the source and the MetricView.
+ */
+export interface PlatformObjectMetric {
+  template(chart: { id: string }): Promise<ReturnType<typeof chartProjectionTemplateSchema.parse>>;
+  result(chart: { id: string; metricId: string }, parameters: Readonly<Record<string, RuntimeJsonValue>>): Promise<DashboardMetricOutput>;
 }
 
 /**
@@ -382,17 +394,12 @@ export type PlatformOperationFactory = (requests: PlatformRequests) => Registere
 export interface PlatformResources {
   objects: Readonly<Record<string, () => Promise<PlatformWordedAdapterFactory>>>;
   operations: Readonly<Record<string, () => Promise<PlatformOperationFactory>>>;
-  /**
-   * The clients a component reads its own resource through, by the component a projection draws (`MetricChart`'s chart
-   * source): the module registers its client with the frame's request path.
-   */
-  components: Readonly<Record<string, () => Promise<(requests: PlatformRequests) => void>>>;
 }
 
 /**
  * What a frame calls before a projection registers its ports: the resource module of every platform type and operation
- * its data reads, and the client its component reads through, fetched and registered with the frame's request path and
- * words, once per module. An element this release has no module for is left to fail where it is read.
+ * its data reads, fetched and registered with the frame's request path and words, once per module. An element this
+ * release has no module for is left to fail where it is read.
  */
 export function platformResourceLoader(requests: PlatformRequests, resources: PlatformResources, translate: (key: string) => string) {
   const loaded = new Map<() => Promise<unknown>, Promise<void>>();
@@ -408,13 +415,10 @@ export function platformResourceLoader(requests: PlatformRequests, resources: Pl
   return async (projection: ProductProjection): Promise<void> => {
     // Every element a projection's data reads: the platform types and operations this release has a module for.
     const elements = projectionReadReferences(projection);
-    await Promise.all([
-      ...elements.map((element) => element.kind === "PlatformOperation"
-        ? once(resources.operations[element.id], (factory) => registerHandler(factory(requests)))
-        : once(element.kind === "PlatformObjectType" ? resources.objects[element.id] : undefined,
-          (factory) => factory(requests, translate).forEach(registerPlatformObjectAdapter))),
-      once(resources.components[projection.componentId], (register) => register(requests)),
-    ]);
+    await Promise.all(elements.map((element) => element.kind === "PlatformOperation"
+      ? once(resources.operations[element.id], (factory) => registerHandler(factory(requests)))
+      : once(element.kind === "PlatformObjectType" ? resources.objects[element.id] : undefined,
+        (factory) => factory(requests, translate).forEach(registerPlatformObjectAdapter))));
   };
 }
 
@@ -451,7 +455,7 @@ export function registeredPlatformObjects(): readonly string[] {
 }
 
 /** One part of a type's adapter, or a visible failure naming the type and the part it lacks. */
-export function adapterPart<Part extends "list" | "query" | "read" | "readSegment" | "forms" | "options" | "graph">(
+export function adapterPart<Part extends "list" | "query" | "read" | "readSegment" | "forms" | "options" | "graph" | "metric">(
   objectType: string,
   part: Part,
 ): NonNullable<PlatformObjectAdapter[Part]> {
