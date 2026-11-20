@@ -98,7 +98,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       address,
       isDirty: () => instance.dirty(),
       readPageDraft: (sessionId, runId, path) => readPageDraft(requests, sessionId, runId, path),
-      projectionChanged: (id) => instance.projectionChanged(id),
+      projectionChanged: (id, revision) => instance.projectionChanged(id, revision),
       refreshObject: (target) => (target ? instance.refresh({ objects: [target], objectTypes: [] }) : instance.refreshAll()),
       reports: run,
     });
