@@ -80,7 +80,7 @@ export async function startPanelSkillEntryServer(options: {
     prompts: [{ from: path.join(workbenchServerResourceRoot, "prompts"), to: "." }] });
   configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { messages: en, ...enLocaleMeta } } });
   const requirePermission: WorkbenchIdentity["requirePermission"] = () => (_req, _res, next) => next();
-  installWorkbenchIdentity({ requireDomainId: () => domainId, requirePermission } as unknown as WorkbenchIdentity);
+  installWorkbenchIdentity({ requireDomainId: () => domainId, requirePermission, assertPermission: async () => undefined } as unknown as WorkbenchIdentity);
   state.schema = `panel_entry_${randomUUID().replaceAll("-", "")}`;
   const store = new RuntimeStore(database, state.schema);
   state.pool = store.pool;
