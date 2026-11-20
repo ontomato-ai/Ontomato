@@ -164,14 +164,14 @@ beforeEach(() => {
 });
 
 describe("platform-ontology composite query", () => {
-  it("exposes all four layers, 18 object types, and 27 relation kinds directly from contracts", () => {
+  it("exposes all four layers, declared layered object types, and 27 relation kinds directly from contracts", () => {
     const schema = readPlatformOntologySchema();
+    const expectedTypes = Object.entries(platformObjectTypes).filter(([, decl]) => Boolean(decl.layer));
     expect(schema.layers).toEqual(["fact", "capability", "governance", "product"]);
-    expect(schema.objectTypes).toHaveLength(18);
+    expect(schema.objectTypes).toHaveLength(expectedTypes.length);
     expect(schema.relationKinds).toBe(platformRelationKinds);
     expect(schema.relationKinds).toHaveLength(27);
 
-    const expectedTypes = Object.entries(platformObjectTypes).filter(([, decl]) => Boolean(decl.layer));
     expect(schema.objectTypes.map((t) => t.id)).toEqual(expectedTypes.map(([id]) => id));
     expect(schema.objectTypes.every((t) => t.labelKey.startsWith("platformOntology.types."))).toBe(true);
     expect(schema.relationKinds.every((r) => r.labelKey === `platformOntology.relations.${r.id}`)).toBe(true);
@@ -209,6 +209,7 @@ describe("platform-ontology composite query", () => {
     expect(byType.get("platform:AgentDefinition")).toMatchObject({ status: "refused" });
     expect(byType.get("platform:Trigger")).toMatchObject({ status: "failed" });
     expect(byType.get("platform:SDKComponent")).toMatchObject({ status: "unavailable" });
+    expect(byType.get("platform:ApplicationPanelUse")).toMatchObject({ status: "unavailable" });
 
     // /admin/getMetas must be called only once across ObjectType + Attribute + Relationship
     const metaCalls = vi.mocked(backendPost).mock.calls.filter(([, url]) => String(url).endsWith("/admin/getMetas"));

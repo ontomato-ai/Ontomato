@@ -28,6 +28,7 @@ import {
   ACTION,
   AGENT_DEFINITION,
   APPLICATION,
+  APPLICATION_PANEL_USE,
   ATTRIBUTE,
   BUSINESS_KNOWLEDGE,
   DEFINITION,
@@ -75,6 +76,7 @@ const M3B_DEFERRED_TYPES = new Set<string>([
   PRODUCT_PROJECTION,
   PRODUCT_PANEL,
   APPLICATION,
+  APPLICATION_PANEL_USE,
 ]);
 
 function nodeKey(ref: PlatformOntologyNodeRef): string {
