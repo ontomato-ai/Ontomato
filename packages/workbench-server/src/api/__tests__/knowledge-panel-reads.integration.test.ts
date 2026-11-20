@@ -177,6 +177,9 @@ const projections = {
         params: { values: { input: "values" }, changedField: { input: "changedField" } },
       },
     },
+    operations: {
+      save: { operation: { kind: "PlatformOperation", id: `${BUSINESS_KNOWLEDGE}.save` }, target: { input: "entry" } },
+    },
   }),
   "projection-knowledge-create-form": productProjectionInputSchema.parse({
     name: "Create knowledge form", description: "", visibility: "domain",
@@ -688,6 +691,31 @@ it("rejects a forged member path, an undeclared operation and an unauthorized ta
     },
   });
   expect(ownerWrites).toEqual([]);
+});
+
+it("saves only the fields the form submitted, so the owner keeps the ones left alone", async () => {
+  const prepared = await request("POST", "panel-operations/intents", {
+    applicationId: "app-knowledge", useId: "knowledge", operationId: "form.save",
+    call: {
+      target: { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-2" },
+      input: {
+        values: {
+          knowledgeID: "k-2", knowledgeTitle: "Stale title", knowledgeText: "Returns require a receipt within 30 days",
+          knowledgeTags: [], status: 1,
+        },
+        submittedFields: ["/knowledgeText"],
+      },
+    },
+  });
+  expect(prepared.status, await prepared.clone().text()).toBe(200);
+  const { intentId } = await prepared.json();
+  const dispatched = await request("POST", `panel-operations/intents/${intentId}/dispatch`, {});
+  expect(dispatched.status).toBe(200);
+  expect(await dispatched.json()).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
+  expect(ownerWrites).toEqual([
+    { path: "/admin/editBussinessKnowledge", body: { knowledgeID: "k-2", knowledgeText: "Returns require a receipt within 30 days" } },
+  ]);
+  ownerWrites.length = 0;
 });
 
 it("checks the operation target at registration and when preparing a button", async () => {

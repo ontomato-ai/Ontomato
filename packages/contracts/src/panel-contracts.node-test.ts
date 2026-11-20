@@ -349,7 +349,8 @@ test("feedback, governance records and the skill library read through their owne
   assert.deepEqual(required(FEEDBACK_RECORD, "counts"), ["by"]);
   assert.deepEqual(required(KNOWLEDGE_GOVERNANCE_RECORD, "sourcePage"), ["source"]);
   assert.deepEqual(required(SKILL, "file"), ["path"]);
-  assert.deepEqual(platformObjectTypes[SKILL].operations, [DELETE_SKILL]);
+  assert.deepEqual(platformObjectTypes[SKILL].operations, [DELETE_SKILL, EXPORT_SKILL]);
+  assert.deepEqual(platformObjectTypes[FEEDBACK_RECORD].operations, [EXPORT_FEEDBACK]);
 });
 
 test("model reads and operations use their owner's fixed signatures", async () => {

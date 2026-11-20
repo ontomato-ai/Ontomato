@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { AGENT_DEFINITION, DELETE_SKILL, SKILL } from "@ontomato/contracts/panel-client-requests";
+import { panelDownloadReceiptSchema } from "@ontomato/contracts/panel-download";
+import { AGENT_DEFINITION, DELETE_SKILL, EXPORT_SKILL, SKILL } from "@ontomato/contracts/panel-client-requests";
 import { tForLocale } from "../../i18n";
 import { assertPermission } from "../../identity/installed";
 import { HttpError } from "../../utils/errors";
@@ -9,6 +10,7 @@ import type {
   PanelOperationHost,
   PanelOperationTarget,
   PanelRecordTarget,
+  PanelReadServerOperation,
   PanelServerOperation,
   SinglePanelOperationOutcome,
 } from "../product-panels/server-operations";
@@ -120,3 +122,22 @@ export const skillServerOperations = [
     },
   },
 ] satisfies readonly PanelServerOperation[];
+
+export const skillExportOperation: PanelReadServerOperation = {
+  handlerRef: EXPORT_SKILL,
+  kind: "action",
+  binding: { kind: "PlatformOperation", id: EXPORT_SKILL },
+  effect: "read",
+  batch: false,
+  targetType: SKILL,
+  target: { source: "input", input: "skill" },
+  targetSchema: skillObjectTarget,
+  inputSchema: deleteInputSchema,
+  resultSchema: panelDownloadReceiptSchema,
+  async execute({ executor: { owner, credentials } }, call) {
+    const { primaryKey } = skillObjectTarget.parse(call.target);
+    const skillManager = await loadSkillManager();
+    const bytes = await skillManager.exportSkill(owner.domainId, primaryKey, credentials);
+    return { kind: "file", bytes: new Uint8Array(bytes), suggestedName: `${primaryKey}.zip`, mime: "application/zip" };
+  },
+};
