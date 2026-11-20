@@ -198,12 +198,8 @@ export function createOntologyModelReadAdapter(
 
   function refusedFields(error: unknown) {
     if (!(error instanceof BackendResponseError) || error.status !== 422) return null;
-    try {
-      const { error: refused } = modelErrorSchema.parse(JSON.parse(error.detail));
-      return refused.code === "FIELD_VALIDATION_FAILED" ? refused.fields ?? [] : null;
-    } catch {
-      return null;
-    }
+    const { error: refused } = modelErrorSchema.parse(JSON.parse(error.detail));
+    return refused.code === "FIELD_VALIDATION_FAILED" ? refused.fields ?? [] : null;
   }
 
   async function describeForm(
@@ -224,16 +220,15 @@ export function createOntologyModelReadAdapter(
       const answer = await ownerForm(formPath, { target, values, changedField: null });
       return { ...answer, errors: [] };
     } catch (error) {
-      const fields = refusedFields(error);
-      if (fields === null) throw error;
-      const opening = await ownerForm(formPath, { target, changedField: null });
+      const refused = refusedFields(error);
+      if (refused === null) throw error;
       // Owner pointers use `/values/<key>` while form fields use `/<key>`. `invalid_format` and `already_exists`
       // await alignment in A's shared `formFieldErrorCodeSchema`.
-      return {
-        ...opening,
-        values,
-        errors: fields.map(item => ({ ...item, field: item.field.replace(/^\/values\//, "/") })) as FormFieldError[],
-      };
+      const errors = refused.map(item => ({ ...item, field: item.field.replace(/^\/values\//, "/") })) as FormFieldError[];
+      // A mid-edit refresh describes the form around the draft without refusing it, so options that depend on
+      // other values (a relationship's join fields follow its end classes) match what was submitted.
+      const around = await ownerForm(formPath, { target, values, changedField: errors[0]!.field });
+      return { ...around, values, errors };
     }
   }
 

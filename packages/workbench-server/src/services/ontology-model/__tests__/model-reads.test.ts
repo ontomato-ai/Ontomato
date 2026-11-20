@@ -409,9 +409,11 @@ describe("ontology model read adapter", () => {
   });
 
   it("merges 422 field validation refusals into the form description for both createForm and form", async () => {
+    const refreshes: unknown[] = [];
     stubOwner(request => {
       if (request.method !== "POST" || !forms[request.url.pathname]) return catalogRoute(request);
       const body = request.body!;
+      if (body.changedField !== null) refreshes.push(body);
       if (body.values !== undefined && body.changedField === null) {
         return Response.json({
           error: {
@@ -433,6 +435,8 @@ describe("ontology model read adapter", () => {
       save: { draftOperation: "objectType.create" },
     });
     expect(createResult.fields.map(field => field.path)).toContain("/primaryKeyName");
+    // The form is re-described around the refused draft, not the empty opening form.
+    expect(refreshes.at(-1)).toEqual({ target: { kind: "draft" }, values: createDraft, changedField: "/showName" });
 
     const editDraft = { className: "Device", name: "site_id", showName: "", attrDesc: "", enable: true, businessKey: false, primaryKey: false };
     const editResult = panelFormDescriptionSchema.parse(
