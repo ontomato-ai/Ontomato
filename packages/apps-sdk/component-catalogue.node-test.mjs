@@ -33,6 +33,8 @@ const DECLARED_DATA = {
   ObjectRelations: { neighbors: ["panelRelationNeighbors"] },
   MetricChart: { template: ["chartTemplate"], result: ["metricOutput"] },
   SegmentedControl: { counts: ["panelGroupCounts"] },
+  // Readable as a member it reads nothing; an empty table says so, and Node registers it on that declaration.
+  ConversationEntry: {},
 };
 
 test("the built SDK's components.json is the catalogue its contract declares", (t) => {

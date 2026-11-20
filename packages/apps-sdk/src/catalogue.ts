@@ -416,5 +416,7 @@ export const components: readonly ComponentMetadata[] = [
       "Renders a generic button for a projection's declared conversationEntry. Clicking it asks the platform host to expand the page's composer with the declared agent target and optional prefill text without sending a message.",
     effects: "Requests the host to expand the page's composer with the projection's declared conversationEntry; performs no writes and never sends messages.",
     bindsElement: ["PlatformObjectType:platform:AgentDefinition"],
+    // A button the host acts on: it reads nothing from the platform, and says so, so a placement may carry it as a member.
+    data: {},
   }),
 ];
