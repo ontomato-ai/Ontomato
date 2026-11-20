@@ -10,7 +10,12 @@ import org.springframework.web.util.UriUtils;
 /** Java owns entry facts; panels retain only their shared content and manifest. */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ApplicationPanelUse(String id, String pageKey, String panelId, String path,
-                                  Access access, DefaultAgentTarget defaultAgent, Map<String,String> names) {
+                                  Access access, DefaultAgentTarget defaultAgent, Map<String,String> names,
+                                  Map<String, Map<String, Object>> inputs, String groupKey) {
+    public ApplicationPanelUse(String id, String pageKey, String panelId, String path, Access access,
+                               DefaultAgentTarget defaultAgent, Map<String, String> names) {
+        this(id, pageKey, panelId, path, access, defaultAgent, names, null, null);
+    }
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Access(String permissionCode, String kind) {}
 
@@ -18,7 +23,7 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
 
     static List<ApplicationPanelUse> canonical(List<ApplicationPanelUse> uses) {
         var normalized = uses.stream().map(use -> new ApplicationPanelUse(use.id, use.pageKey, use.panelId,
-            canonicalPath(use.path), use.access, use.defaultAgent, use.names)).toList();
+            canonicalPath(use.path), use.access, use.defaultAgent, use.names, use.inputs, use.groupKey)).toList();
         validate(normalized);
         return normalized;
     }
@@ -60,6 +65,14 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
             if (use.names() != null && (use.names().get("en") == null || use.names().get("en").isBlank()
                 || use.names().values().stream().anyMatch(name -> name == null || name.isEmpty())))
                 throw ApplicationCatalog.bad("A panel use's names require a nonblank English name and nonempty translations");
+            if (use.inputs() != null) {
+                for (var input : use.inputs().entrySet()) {
+                    var source = input.getValue();
+                    if (input.getKey().isBlank() || source == null || source.size() != 1 ||
+                        !(source.containsKey("literal") || source.get("frameState") instanceof String name && !name.isBlank()))
+                        throw ApplicationCatalog.bad("Invalid input " + input.getKey() + " on panel entry " + use.pageKey());
+                }
+            }
         }
     }
 }

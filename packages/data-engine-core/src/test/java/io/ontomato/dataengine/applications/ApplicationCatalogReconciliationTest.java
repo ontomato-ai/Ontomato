@@ -76,6 +76,23 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         assertEquals("browser", catalog.require("browser").getString("id"));
     }
 
+    @Test void aBuiltinCannotBorrowAnotherBuiltinsEntryCode() throws Exception {
+        new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
+        var before = records();
+        var original = builtin("other", "native");
+        var use = new ApplicationPanelUse("detail", "detail", "panel-detail", "/other/detail",
+            new ApplicationPanelUse.Access("data-browser", null), null, null);
+        var metadata = original.declaration();
+        var declaration = new ApplicationCatalog.Declaration(metadata.names(), metadata.descriptions(), metadata.icon(),
+            metadata.groups(), metadata.permissions(), List.of(), List.of(use));
+        var other = new ApplicationCatalog.Builtin(original.id(), original.kind(), original.rail(), original.category(), original.sort(),
+            JSONObject.of("renderer", "panels", "path", "/other"), List.of("data-browser"), null, declaration);
+
+        assertEquals(400, assertThrows(org.springframework.web.server.ResponseStatusException.class,
+            () -> catalog.builtins("workbench", List.of(other))).getStatusCode().value());
+        assertEquals(before, records());
+    }
+
     @Test void upgradesStoredDefaultAgentTargetsWithoutChangingTheirMeaning() {
         catalog.builtins("data-engine", List.of(builtin("ontology", "native")));
         jdbc.update("UPDATE sys_application SET panel_uses=?::jsonb, page_skills=?::jsonb WHERE id='ontology'", """

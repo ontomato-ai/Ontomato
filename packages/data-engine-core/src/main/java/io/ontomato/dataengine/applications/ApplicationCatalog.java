@@ -2,6 +2,7 @@ package io.ontomato.dataengine.applications;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONWriter;
 import com.alibaba.fastjson2.TypeReference;
 import io.ontomato.dataengine.core.bean.User;
 import java.util.*;
@@ -15,6 +16,7 @@ import org.springframework.http.HttpStatus;
 @Service
 public class ApplicationCatalog {
     public record PanelUseLocation(String applicationId, Map<String, String> names, String useId, String path) {}
+    public record EntryMenu(List<Group> groups, List<ApplicationPanelUse> panelUses) {}
     public static final String DOMAIN_MEMBER_ENTRY = "domain-member";
     private record PanelSkillGroup(PageSkills.Mapping mapping, PanelSkills.Source source) {}
     public record Group(String key, Map<String,String> names, int sort) {}
@@ -51,7 +53,9 @@ public class ApplicationCatalog {
                 "rail", row.getString("rail"), "category", row.getString("category"), "sort", row.getInt("sort"), "entry", JSON.parseObject(row.getString("entry")),
                 "entryAccess", JSON.parseArray(row.getString("entry_access")), "scheduleAdapter", row.getString("schedule_adapter"),
                 "releaseId", row.getString("release_id"), "pageSkills", JSON.parseArray(row.getString("page_skills"), PageSkills.Mapping.class),
-                "panelUses", JSON.parseArray(row.getString("panel_uses"), ApplicationPanelUse.class)));
+                "panelUses", JSON.parseArray(row.getString("panel_uses"), ApplicationPanelUse.class),
+                "groups", JSON.parseArray(row.getString("groups"), Group.class),
+                "permissions", JSON.parseArray(row.getString("declaration_permissions"), Permission.class)));
     }
     public PageSkills.Projection pageSkills(User user) {
         var domainId = user.getDomainId();
@@ -119,6 +123,7 @@ public class ApplicationCatalog {
         var entry = new JSONObject(app.getJSONObject("entry"));
         entry.remove("upstream"); entry.remove("upstreamPrefix");
         result.put("entry",entry);
+        result.remove("permissions");
         if (panelManaged(app)) result.put("panelUses", visiblePanelUses(app, user));
         return result;
     }
@@ -152,6 +157,16 @@ public class ApplicationCatalog {
                 var root = builtinPanelRoot(d.entry());
                 if ((root != null && inAssignedSpace(root)) || declaration.panelUses().stream().anyMatch(use -> inAssignedSpace(use.path())))
                     throw bad("Built-in applications cannot occupy the assigned application space");
+                var editionCodes = access.builtinPermissions(d.id()).stream().map(Permission::code).toList();
+                var codes = new HashSet<>(d.entryAccess());
+                codes.addAll(editionCodes);
+                declaration.permissions().stream().map(Permission::code).forEach(codes::add);
+                codes.remove(DOMAIN_MEMBER_ENTRY);
+                validateUsePermissions(declaration.panelUses(), codes);
+                validateUseGroups(declaration.panelUses(), declaration.groups());
+                var claimed = new HashSet<>(declaration.permissions().stream().map(Permission::code).toList());
+                declaration.panelUses().stream().map(use -> use.access().permissionCode()).filter(Objects::nonNull).forEach(claimed::add);
+                validateBuiltinPermissionOwnership(d.id(), claimed, editionCodes);
                 validateMappings(d.id(), null, d.entry(), declaration.pageSkills(), declaration.panelUses());
                 save(d.id(), null, service, null, d.kind(), d.rail(), d.category(), d.sort(), d.entry(), d.entryAccess(), d.scheduleAdapter(), null, declaration);
                 access.declare(require(d.id()), declaration, old.isEmpty());
@@ -185,7 +200,7 @@ public class ApplicationCatalog {
         if(!List.of("hosted","connected","product").contains(kind))throw bad("Invalid user application kind");
         if (!id.startsWith("app-") || user.getDomainId() == null) throw bad("A user application requires an app- ID and domain");
         for (var permission : declaration.permissions())
-            if (!permission.code().startsWith(permissionPrefix(id))) throw bad("Application permission prefix required");
+            if (!ownsPermissionCode(id, permission.code())) throw bad("Application permission prefix required");
         return transactions.execute(tx -> {
             lockCatalog();
             var old = all().stream().filter(a -> id.equals(a.getString("id"))).findFirst();
@@ -204,16 +219,47 @@ public class ApplicationCatalog {
             return JSONObject.of("applicationId", id, "releaseId", releaseId, "entryPath",path);
         });
     }
+    private void validateBuiltinPermissionOwnership(String id, Set<String> codes, List<String> editionCodes) {
+        if (codes.isEmpty()) return;
+        for (var app : applicationsInDomain(null)) {
+            var owner = app.getString("id");
+            if (id.equals(owner)) continue;
+            var declared = new HashSet<>(app.getList("permissions", Permission.class).stream().map(Permission::code).toList());
+            access.builtinPermissions(owner).stream().map(Permission::code).forEach(declared::add);
+            var entryAccess = app.getList("entryAccess", String.class);
+            for (var code : codes) {
+                if (declared.contains(code) || (entryAccess.contains(code) && !editionCodes.contains(code)))
+                    throw bad("Permission " + code + " belongs to " + owner);
+            }
+        }
+    }
+
+    private static void validateUsePermissions(List<ApplicationPanelUse> uses, Set<String> codes) {
+        for (var use : uses) {
+            var code = use.access().permissionCode();
+            if (code != null && !codes.contains(code))
+                throw bad("Panel entry " + use.pageKey() + " must use this application's declared permission: " + code);
+        }
+    }
+
+    private static void validateUseGroups(List<ApplicationPanelUse> uses, List<Group> groups) {
+        var keys = new HashSet<>(groups.stream().map(Group::key).toList());
+        for (var use : uses) {
+            if (use.groupKey() != null && !keys.contains(use.groupKey()))
+                throw bad("Unknown group " + use.groupKey() + " on panel entry " + use.pageKey());
+        }
+    }
+
     private void save(String id, String domain, String service, String owner, String kind, String rail, String category, int sort,
                       JSONObject entry, List<String> entryAccess, String adapter, String releaseId, Declaration d) {
         db.update("""
-            INSERT INTO sys_application(id,domain_id,owner_service,owner_user_id,kind,names,descriptions,icon,rail,category,sort,entry,entry_access,schedule_adapter,release_id,groups,entry_path,page_skills,panel_uses,updated_at)
-            VALUES(?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?,?::jsonb,?::jsonb,?,?,?::jsonb,?,?::jsonb,?::jsonb,now()) ON CONFLICT(id) DO UPDATE SET
+            INSERT INTO sys_application(id,domain_id,owner_service,owner_user_id,kind,names,descriptions,icon,rail,category,sort,entry,entry_access,schedule_adapter,release_id,groups,entry_path,page_skills,panel_uses,declaration_permissions,updated_at)
+            VALUES(?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?,?::jsonb,?::jsonb,?,?,?::jsonb,?,?::jsonb,?::jsonb,?::jsonb,now()) ON CONFLICT(id) DO UPDATE SET
             names=excluded.names,descriptions=excluded.descriptions,icon=excluded.icon,rail=excluded.rail,category=excluded.category,sort=excluded.sort,
             entry=excluded.entry,entry_access=excluded.entry_access,schedule_adapter=excluded.schedule_adapter,
-            release_id=excluded.release_id,groups=excluded.groups,entry_path=excluded.entry_path,page_skills=excluded.page_skills,panel_uses=excluded.panel_uses,updated_at=now()
+            release_id=excluded.release_id,groups=excluded.groups,entry_path=excluded.entry_path,page_skills=excluded.page_skills,panel_uses=excluded.panel_uses,declaration_permissions=excluded.declaration_permissions,updated_at=now()
             """, id,domain,service,owner,kind,JSON.toJSONString(d.names()),JSON.toJSONString(d.descriptions()),d.icon(),rail,category,sort,
-            entry.toJSONString(),JSON.toJSONString(entryAccess),adapter,releaseId,JSON.toJSONString(d.groups()),entry.getString("path"),JSON.toJSONString(d.pageSkills()),JSON.toJSONString(d.panelUses()));
+            entry.toJSONString(),JSON.toJSONString(entryAccess),adapter,releaseId,JSON.toJSONString(d.groups()),entry.getString("path"),JSON.toJSONString(d.pageSkills()),JSON.toJSONString(d.panelUses(), JSONWriter.Feature.WriteMapNullValue),JSON.toJSONString(d.permissions()));
     }
     public static void validateId(String id) {
         if (id == null || !id.matches("[a-z][a-z0-9-]{0,63}")) throw bad("Invalid application ID");
@@ -226,7 +272,7 @@ public class ApplicationCatalog {
             if (group.key() == null || group.names() == null || !group.names().containsKey("en") || !groups.add(group.key())) throw bad("Invalid permission group");
         }
         for (var permission : d.permissions()) {
-            if (permission.code() == null || permission.names() == null || !permission.names().containsKey("en") ||
+            if (permission.code() == null || DOMAIN_MEMBER_ENTRY.equals(permission.code()) || permission.names() == null || !permission.names().containsKey("en") ||
                 !groups.contains(permission.groupKey()) || !codes.add(permission.code())) throw bad("Invalid permission declaration");
         }
         PageSkills.validate(d.pageSkills());
@@ -326,6 +372,24 @@ public class ApplicationCatalog {
             throw denied();
     }
 
+    public JSONObject resolveEntry(String path, User user) {
+        var canonical = ApplicationPanelUse.canonicalPath(path);
+        for (var app : applicationsInDomain(user.getDomainId())) {
+            if (!panelManaged(app) || !hasAssignedPanelPaths(app)) continue;
+            var declared = app.getList("panelUses", ApplicationPanelUse.class);
+            if (declared.stream().noneMatch(use -> canonical.equals(use.path()))) continue;
+            if (!access.canEnter(app, user)) throw denied();
+            var allowed = visiblePanelUses(app, user);
+            var use = allowed.stream().filter(entry -> canonical.equals(entry.path())).findFirst().orElseThrow(ApplicationCatalog::denied);
+            var named = allowed.stream().filter(entry -> entry.names() != null).toList();
+            var groupKeys = new HashSet<>(named.stream().map(ApplicationPanelUse::groupKey).toList());
+            var groups = app.getList("groups", Group.class).stream().filter(group -> groupKeys.contains(group.key()))
+                .sorted(Comparator.comparingInt(Group::sort)).toList();
+            return JSONObject.of("applicationId", app.getString("id"), "use", use, "menu", new EntryMenu(groups, named));
+        }
+        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Panel entry not found");
+    }
+
     public JSONObject panelUses(String id, User user) {
         var app = require(id);
         if (!panelManaged(app)) throw bad("Application is not managed by panels");
@@ -357,7 +421,12 @@ public class ApplicationCatalog {
         if (supplied != null && (!supplied.pageSkills().isEmpty() || !supplied.panelUses().isEmpty())) throw bad("Supply panelUses only once");
         if (supplied != null) {
             validate(supplied);
-            for (var permission : supplied.permissions()) if (!permission.code().startsWith(permissionPrefix(id))) throw bad("Application permission prefix required");
+            for (var permission : supplied.permissions()) if (!ownsPermissionCode(id, permission.code())) throw bad("Application permission prefix required");
+        }
+        for (var use : uses) {
+            var code = use.access().permissionCode();
+            if (code != null && !ownsPermissionCode(id, code))
+                throw bad("Panel entry " + use.pageKey() + " requires this application's permission prefix: " + code);
         }
         var ids = uses.stream().map(ApplicationPanelUse::panelId).distinct().toList();
         for (var panelId : ids) if (!grants.allowed(panelId, "use")) throw denied();
@@ -373,11 +442,17 @@ public class ApplicationCatalog {
             var entryAccess = body.entryAccess() == null ? old.getList("entryAccess", String.class) : body.entryAccess();
             if (entryAccess.size() != 1 || !(DOMAIN_MEMBER_ENTRY.equals(entryAccess.getFirst()) || ownsPermissionCode(id, entryAccess.getFirst())))
                 throw bad("Entry access must be domain-member or one permission of this application");
+            if (uses.stream().anyMatch(use -> use.access().permissionCode() != null)) {
+                var permissions = supplied == null ? old.getList("permissions", Permission.class) : supplied.permissions();
+                validateUsePermissions(uses, new HashSet<>(permissions.stream().map(Permission::code).toList()));
+            }
+            if (uses.stream().anyMatch(use -> use.groupKey() != null))
+                validateUseGroups(uses, supplied == null ? old.getList("groups", Group.class) : supplied.groups());
             var entry = JSONObject.of("path", entryPath, "renderer", "panels");
             validateMappings(id, user.getDomainId(), entry, List.of(), uses);
             if (old != null && supplied == null) {
                 db.update("UPDATE sys_application SET entry=?::jsonb,entry_path=?,entry_access=?::jsonb,panel_uses=?::jsonb,page_skills='[]'::jsonb,updated_at=now() WHERE id=?",
-                    entry.toJSONString(), entryPath, JSON.toJSONString(entryAccess), JSON.toJSONString(uses), id);
+                    entry.toJSONString(), entryPath, JSON.toJSONString(entryAccess), JSON.toJSONString(uses, JSONWriter.Feature.WriteMapNullValue), id);
             } else {
                 var declaration = new Declaration(supplied.names(), supplied.descriptions(), supplied.icon(), supplied.groups(), supplied.permissions(), List.of(), uses);
                 save(id, user.getDomainId(), "workbench", old == null ? user.getId() : old.getString("ownerUserId"),

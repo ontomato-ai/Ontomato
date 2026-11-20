@@ -35,6 +35,10 @@ public class ApplicationController {
     public record PanelEntry(String path, String renderer) {}
     public record PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
                                     ApplicationCatalog.Declaration declaration, List<String> entryAccess) {}
+    @GetMapping("/platform/applications/resolve-entry")
+    @io.ontomato.dataengine.controller.BuildTestAccess(io.ontomato.dataengine.controller.BuildTestAccess.Access.NO_BUSINESS_DATA)
+    public R<JSONObject> resolveEntry(@RequestParam String path) { return R.of(catalog.resolveEntry(path, current())); }
+
     @GetMapping("/platform/applications/{id}/panel-uses")
     @io.ontomato.dataengine.controller.BuildTestAccess(io.ontomato.dataengine.controller.BuildTestAccess.Access.NO_BUSINESS_DATA)
     public R<JSONObject> panelUses(@PathVariable String id) { return R.of(catalog.panelUses(id, current())); }
