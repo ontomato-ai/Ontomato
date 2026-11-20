@@ -10,6 +10,7 @@ such as `selected` stores `{className, primaryKey}`. Enable `deepLink` when the 
 Use `recipes.md` for tasks the assistant needs to know how to do.
 
 In the required `panel.mjs`, import the SDK, read panel state from the current context and call `mountPanel`.
+The direct runtime supplies exactly two module imports, `vue` and `@ontomato/sdk/panel`.
 The platform runs all panels directly. The repository's `packages/apps-sdk/src/panel/mount.ts` implements the
 legacy iframe runtime. Use this skill and the current SDK guide as the only authoring references. Read the SDK
 guide with `node "$SKILL/ontomato.mjs" sdk read docs/index.md`.

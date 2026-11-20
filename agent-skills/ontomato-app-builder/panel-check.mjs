@@ -68,7 +68,14 @@ async function workspaceDefinition(directory, files, checks, panel, loadAuthorin
   const result = checks.panelDefinitionContentSchema.safeParse({
     ...descriptor, manifest: expanded.manifest, content: { ...content, ...Object.fromEntries(contents) },
   });
-  if (result.success) return { definition: result.data, inline: expanded.inline, charts: expanded.charts, descriptorFile, document, source };
+  if (result.success) {
+    try {
+      await checks.checkPanelModuleImports(result.data.content.module);
+    } catch (error) {
+      throw new Error(`${resolve(directory, "panel.mjs")}: ${error.message}`, { cause: error });
+    }
+    return { definition: result.data, inline: expanded.inline, charts: expanded.charts, descriptorFile, document, source };
+  }
 
   const diagnostics = result.error.issues.map(issue => {
     const source = issue.path[0] === "content" && sources.find(([key]) => key === issue.path[1]);

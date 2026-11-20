@@ -187,6 +187,12 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     export const platformTypeTableResponseSchema = { parse };
     export const panelAuthoringManifestSchema = { parse };
     export const appsSdkComponentCatalogSchema = { parse };
+    export const applicationIconNames = ["settings", "ontology"];
+    export const applicationCatalogueRecordSchema = { parse };
+    export const applicationIdentityUpdateSchema = { parse, partial: () => ({ parse }) };
+    export async function checkPanelModuleImports(source) {
+      if (source.includes("element-plus")) throw new Error("A panel's module imports element-plus, which the platform does not give it");
+    }
     export const CHART_PROJECTION_SOURCES_PATH = "/product-projections/chart-sources";
     export const chartProjectionLookupResponseSchema = { parse };
     export const registerChartProjectionResponseSchema = { parse };
@@ -249,6 +255,9 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
   const panelPath = "/api/product-panels/acceptance-panel";
   const projectionPath = "/api/product-projections/tasks";
   const usesPath = "/owner/platform/applications/app-acceptance/panel-uses";
+  const applicationRecordPath = "/owner/platform/applications/catalogue/app-acceptance";
+  const identityPath = "/owner/platform/applications/app-acceptance/identity";
+  let identity = { names: { en: "Original" }, descriptions: { en: "Keep the description" }, icon: "settings" };
   const inlinePanelPath = "/api/product-panels/inline-panel";
   const chartPath = "/api/product-projections/chart-sources";
   const chartProjection = { id: "source-owned-chart", componentId: "@ontomato/sdk:MetricChart", data: {} };
@@ -299,7 +308,11 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       response.statusCode = 409;
       response.end(JSON.stringify({ error: { message: "Revision conflict" } }));
     } else if (request.url === panelPath) response.end(JSON.stringify({ panel: { revision: 8 } }));
-    else if (request.url === usesPath) response.end(JSON.stringify({ success: true, data: { panelUses: [] } }));
+    else if (request.url === applicationRecordPath) response.end(JSON.stringify({ success: true, data: identity }));
+    else if (request.url === identityPath && request.method === "PUT") {
+      identity = body;
+      response.end(JSON.stringify({ success: true, data: identity }));
+    } else if (request.url === usesPath) response.end(JSON.stringify({ success: true, data: { panelUses: [] } }));
     else {
       response.statusCode = 404;
       response.end(JSON.stringify({ error: "Unexpected request" }));
@@ -338,6 +351,19 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       applications: [{ id: "acceptance", mode: "create", input: application }],
     })), error => error.stderr.includes("Application ID must start with app-"));
     assert.deepEqual(requests, []);
+    const identityMaterial = { applications: [{ id: "app-acceptance", mode: "update", input: {
+      ...application, declaration: { names: { en: "Updated" }, icon: "ontology" },
+    } }] };
+    await run("panel", "register", JSON.stringify(identityMaterial));
+    assert.deepEqual(requests.splice(0).slice(2).map(([method, url, body]) => [method, url, body]), [
+      ["GET", applicationRecordPath, undefined],
+      ["PUT", usesPath, application],
+      ["PUT", identityPath, { names: { en: "Updated" }, descriptions: { en: "Keep the description" }, icon: "ontology" }],
+    ]);
+    await run("panel", "register", JSON.stringify(identityMaterial));
+    assert.deepEqual(requests.splice(0).slice(2).map(([method, url]) => [method, url]), [
+      ["GET", applicationRecordPath], ["PUT", usesPath],
+    ]);
     const material = { panels: [{ id: "acceptance-panel", mode: "update", revision: 7, input: { ...input, sdkVersion } }] };
     await assert.rejects(run("panel", "register", JSON.stringify(material)), error => error.stderr.includes("The current SDK refuses sdkVersion"));
     assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), [
@@ -378,6 +404,19 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), [
       ["GET", "/api/apps-sdk/current"], ["GET", `${sdkPath}/node/panel-check.mjs`], ["GET", "/api/app-builder/type-table"],
     ]);
+    await writeFile(moduleFile, 'import { ElButton } from "element-plus";');
+    await assert.rejects(run("panel", "check", directory), error =>
+      error.stderr.includes("panel.mjs: A panel's module imports element-plus"));
+    await writeFile(moduleFile, panel.content.module);
+    const badIconFile = join(directory, "bad-icon.json");
+    const badIcon = structuredClone(identityMaterial);
+    badIcon.applications[0].input.declaration.icon = "graph";
+    await writeFile(badIconFile, JSON.stringify(badIcon));
+    await assert.rejects(run("panel", "check", directory, "--material", badIconFile), error =>
+      error.stderr.includes("application app-acceptance: declaration.icon 'graph' is not available"));
+    await assert.rejects(run("panel", "register", JSON.stringify(badIcon)), error =>
+      error.stderr.includes("application app-acceptance: declaration.icon 'graph' is not available"));
+    assert.equal(requests.splice(0).some(([method]) => method !== "GET"), false);
     await rm(moduleFile);
     await assert.rejects(run("panel", "check", directory), error => error.stderr.includes("panel.mjs: required Vue module is missing"));
     await writeFile(moduleFile, panel.content.module);

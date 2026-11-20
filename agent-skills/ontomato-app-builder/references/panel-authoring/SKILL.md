@@ -21,6 +21,9 @@ declared read or operation. Keep business rules, confirmation and permissions wi
 4. Check and register the workspace, then open the registered application entry. Use the page's input box
    for the [assistant check](#check-the-assistant-from-the-page).
 
+For stale data or code, inspect the network response and compare it with the current record's `revision`.
+Keep the shared browser's site data intact, including `localStorage`, `sessionStorage` and cookies.
+
 Page selection supplies an object reference and may include its display name. If a page task needs current fields
 such as status, expose the owner's `record` read that takes this reference. Use `recipes.md` for the owner's
 page-specific rules.

@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { currentSdkClient } from "./current-sdk.mjs";
 
 const productPath = (kind, id) => `/api/product-${kind}s/${encodeURIComponent(id)}`;
@@ -47,7 +48,20 @@ function registrationIssues(issues) {
   });
 }
 
-export function panelRegistrationRecords({ projections = [], panels = [] }, checks) {
+export function panelRegistrationRecords({ projections = [], panels = [], applications = [] }, checks) {
+  for (const { id, mode, input } of applications) {
+    if (input.declaration === undefined) continue;
+    try {
+      const { icon } = mode === "update"
+        ? checks.applicationIdentityUpdateSchema.partial().parse(input.declaration)
+        : input.declaration;
+      if (icon !== undefined && !checks.applicationIconNames.includes(icon)) {
+        throw new Error(`declaration.icon '${icon}' is not available. Choose one of ${checks.applicationIconNames.join(", ")}`);
+      }
+    } catch (error) {
+      throw new Error(`application ${id}: ${error.message}`, { cause: error });
+    }
+  }
   return [
     ["projection", projections, checks.registerProductProjectionRequestSchema],
     ["panel", panels, checks.registerProductPanelRequestSchema],
@@ -115,9 +129,9 @@ export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workben
         }
       }
 
-      if (projections.length || panels.length) {
+      if (projections.length || panels.length || applications.some(({ input }) => input.declaration !== undefined)) {
         checks ??= await sdk.check(await sdk.current());
-        const writes = panelRegistrationRecords({ projections, panels }, checks);
+        const writes = panelRegistrationRecords({ projections, panels, applications }, checks);
         for (const [kind, items] of writes) {
           await apply(kind, items, async ({ id, body }) => {
             const answer = await call(workbenchUrl, "PUT", productPath(kind, id), body);
@@ -129,22 +143,34 @@ export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workben
       }
       await apply("application", applications, async ({ id, mode, input }) => {
         requireMode(mode);
-        const path = `/platform/applications/${encodeURIComponent(id)}/panel-uses`;
+        const application = `/platform/applications/${encodeURIComponent(id)}`;
+        const path = `${application}/panel-uses`;
         if (mode === "create") {
           if (input.declaration === undefined || input.entryAccess === undefined) {
             throw new Error("Application creation requires declaration and entryAccess");
           }
-          // Java currently exposes a single PUT. Reject an occupied ID before sending its creation body.
+          // Reject an occupied ID before sending its creation body.
           const existing = await send(ontologyUrl, "GET", path);
           if (existing.status !== 404) {
             await readAnswer(existing, "GET", path);
             throw new Error("Application already exists");
           }
-        } else if (input.declaration !== undefined || input.entryAccess !== undefined) {
-          // Without creation metadata the owner's PUT requires an existing application.
-          throw new Error("Use updates take entry and panelUses only");
+          await call(ontologyUrl, "PUT", path, input);
+          return;
         }
-        await call(ontologyUrl, "PUT", path, input);
+
+        const { declaration, ...entries } = input;
+        if (entries.entryAccess !== undefined) throw new Error("Application update takes entry, panelUses and optional identity");
+        let identity;
+        if (declaration !== undefined) {
+          const answer = await call(ontologyUrl, "GET", `/platform/applications/catalogue/${encodeURIComponent(id)}`);
+          const { names, descriptions, icon } = checks.applicationCatalogueRecordSchema.parse(answer.data);
+          const current = { names, descriptions, icon };
+          const requested = checks.applicationIdentityUpdateSchema.parse({ ...current, ...declaration });
+          if (!isDeepStrictEqual(current, requested)) identity = requested;
+        }
+        await call(ontologyUrl, "PUT", path, entries);
+        if (identity) await call(ontologyUrl, "PUT", `${application}/identity`, identity);
       });
     },
   };
