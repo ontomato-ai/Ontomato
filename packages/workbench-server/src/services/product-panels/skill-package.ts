@@ -3,7 +3,7 @@ import { stringify } from "yaml";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { type RuntimeSkillRef, type StandardSkillFrontmatter } from "@ontomato/contracts/agent-runtime-skills";
-import { panelOperationId } from "@ontomato/contracts/panel-manifest";
+import { panelManifestSchema, panelOperationId } from "@ontomato/contracts/panel-manifest";
 import { PAGE_DRAFT_QUERY_KEYS } from "@ontomato/contracts/page-draft";
 import { panelClientReads } from "@ontomato/contracts/panel-client-requests";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
@@ -12,6 +12,7 @@ import { productPanelInputSchema, productProjectionInputSchema, type PanelSkillS
 import type { ProtectedSkillOffering } from "../../core/skills";
 import { getDefaultLocale } from "../../i18n";
 import { findCurrentProduct, type CurrentProductKind } from "../../infrastructure/product-current";
+import { HttpError } from "../../utils/errors";
 import { readPanelComponentCatalogue } from "./component-catalogue";
 import { allowsOperationDraft, boundProjectionOperations, type BoundProjectionOperation } from "./operation-bindings";
 
@@ -37,11 +38,37 @@ function panelSkillManifest(skill: RuntimeSkillRef, panel: PanelDescription, sou
   };
 }
 
+function panelSkillFailure(panelId: string, error: unknown) {
+  const reason = error instanceof Error ? error.message : String(error);
+  return Object.assign(new HttpError(502, `Panel '${panelId}' skill is unavailable: ${reason}`, "SKILL_SOURCE_UNAVAILABLE"), { cause: error });
+}
+
+function parseDefinition<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, definition: unknown, kind: CurrentProductKind, id: string): T {
+  const parsed = schema.safeParse(definition);
+  if (parsed.success) return parsed.data;
+  let issue = parsed.error.issues[0]!;
+  if (issue.code === z.ZodIssueCode.invalid_union && issue.path.length === 0) {
+    const choices = issue.unionErrors;
+    issue = choices.reduce((best, choice) => choice.issues.length < best.issues.length ? choice : best).issues[0]!;
+  }
+  const field = issue.path.length ? `field '${issue.path.join(".")}'` : "definition";
+  throw new Error(`${kind} '${id}', ${field}: ${issue.message}`, { cause: parsed.error });
+}
+
 async function currentDefinition(domainId: string, kind: CurrentProductKind, id: string) {
-  const row = await findCurrentProduct(domainId, kind, id);
-  if (!row) throw new Error(`Panel skill references a missing ${kind}: ${id}`);
+  const row = await findCurrentProduct(domainId, kind, id).catch(error => {
+    throw new Error(`Unable to read current ${kind} '${id}'`, { cause: error });
+  });
+  if (!row) throw new Error(`Missing current ${kind} '${id}'`);
   return row.definition;
 }
+
+const declaredMembers = panelManifestSchema.innerType().shape.members;
+const panelDependencies = z.object({
+  manifest: z.object({
+    members: z.record(declaredMembers.keySchema, declaredMembers.valueSchema.pick({ target: true }).strip()),
+  }),
+});
 
 /** The registry receives dependencies before it asks an admitted offering for package contents. */
 export async function panelSkillOfferings(domainId: string, sources: readonly PanelSkillSource[]): Promise<ProtectedSkillOffering[]> {
@@ -56,18 +83,28 @@ export async function panelSkillOfferings(domainId: string, sources: readonly Pa
   function projection(id: string) {
     const found = projections.get(id);
     if (found) return found;
-    const read = currentDefinition(domainId, "projection", id).then(definition => productProjectionInputSchema.parse(definition));
+    const read = currentDefinition(domainId, "projection", id)
+      .then(definition => parseDefinition(productProjectionInputSchema, definition, "projection", id));
     projections.set(id, read);
     return read;
   }
   let release: ReturnType<typeof readPanelComponentCatalogue> | undefined;
   return Promise.all([...panels].map(async ([id, entrances]): Promise<ProtectedSkillOffering> => {
-    const panel = productPanelInputSchema.parse(await currentDefinition(domainId, "panel", id));
-    const projectionIds = [...new Set(Object.values(panel.manifest.members)
+    const definition = await currentDefinition(domainId, "panel", id).catch(error => { throw panelSkillFailure(id, error); });
+    let dependencies: z.infer<typeof panelDependencies>;
+    try {
+      dependencies = parseDefinition(panelDependencies, definition, "panel", id);
+    } catch (error) {
+      throw panelSkillFailure(id, error);
+    }
+    const projectionIds = [...new Set(Object.values(dependencies.manifest.members)
       .flatMap(({ target }) => "projectionId" in target ? [target.projectionId] : []))];
     async function buildSnapshot() {
+      const panel = parseDefinition(productPanelInputSchema, definition, "panel", id);
       const [sdk, entries] = await Promise.all([
-        release ??= readPanelComponentCatalogue(),
+        release ??= readPanelComponentCatalogue().catch(error => {
+          throw new Error("Unable to read the current SDK component catalogue", { cause: error });
+        }),
         Promise.all(projectionIds.map(async projectionId => [projectionId, await projection(projectionId)] as const)),
       ]);
       const description = describePanel(panel, new Map(entries), sdk.components);
@@ -77,7 +114,7 @@ export async function panelSkillOfferings(domainId: string, sources: readonly Pa
       };
     }
     let snapshot: ReturnType<typeof buildSnapshot> | undefined;
-    const read = () => snapshot ??= buildSnapshot();
+    const read = () => snapshot ??= buildSnapshot().catch(error => { throw panelSkillFailure(id, error); });
     return {
       kind: "protected",
       sourceKey: id,
@@ -97,7 +134,7 @@ export async function panelSkillOfferings(domainId: string, sources: readonly Pa
 }
 
 type PanelDescription = ReturnType<typeof describePanel>;
-type OperationDescription = BoundProjectionOperation & { id: string; label: string; draft: boolean };
+type OperationDescription = BoundProjectionOperation & { id: string; label: string; draft: boolean; projectionId: string };
 
 function describePanel(
   panel: ProductPanelInput, records: ReadonlyMap<string, ProductProjectionInput>, components: ComponentCatalogue,
@@ -115,7 +152,7 @@ function describePanel(
       text: `- ${member} — ${projection.name} (${projectionId}), ${projection.componentId}. ${projection.description} ${component.meaning} Inputs: ${JSON.stringify(declaration.inputs ?? {})}. Named data: ${JSON.stringify(data)}. Configuration: ${JSON.stringify(projection.config)}.`,
       bindings: projectionBindingKeys(projection),
       operations: boundProjectionOperations(projection).map(bound => ({
-        ...bound, id: panelOperationId(member, bound.name), label: projection.name,
+        ...bound, id: panelOperationId(member, bound.name), label: projection.name, projectionId,
         draft: bound.owner !== undefined && allowsOperationDraft(projection, bound.owner.handler),
       })),
     }];
@@ -174,10 +211,10 @@ function describeSkill({ name, description, content, state, events, projections,
   ].filter(Boolean).join("\n\n");
 }
 
-function describeOperation({ id, label, binding, owner, draft }: OperationDescription): string {
+function describeOperation({ id, label, binding, owner, draft, projectionId }: OperationDescription): string {
   const target = JSON.stringify(binding.target ?? null);
   if (!owner && binding.operation.kind === "PlatformOperation")
-    throw new Error(`No platform owner registration for ${binding.operation.id}`);
+    throw new Error(`Projection '${projectionId}' declares '${id}' with no platform owner registration for ${binding.operation.id}`);
   if (!owner) return `- ${label} (${id}), Action ${binding.operation.id}, target ${target}. Read the admitted description for the actual selected object with operations:true on /api/product-panels/read before invoking it.`;
   const { handler, declaration } = owner;
   const summary = `- ${label} (${id}), kind ${handler.kind}, handlerRef ${handler.handlerRef}, target ${target}.`;

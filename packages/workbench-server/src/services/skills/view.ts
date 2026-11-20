@@ -5,7 +5,8 @@ import {
   type PageSkillLocator, type PageSkillMember, type PageSkillSource,
 } from "@ontomato/contracts/page-skills";
 import { config } from "../../config/application";
-import { isProtectedSkillName, protectedSkillRef } from "../../core/skills";
+import type { PanelUseRef } from "@ontomato/contracts/product-panels";
+import { isProtectedSkillName, protectedSkillRef, type ProtectedSkillOffering } from "../../core/skills";
 import { skillRegistryManager, type ListedProtectedSkill } from "../../core/skills/registry/manager";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendResponseError, backendGet, buildBackendHeaders } from "../../utils/backend-client";
@@ -140,6 +141,36 @@ function pageAuthorization(domainId: string, java: Awaited<ReturnType<typeof jav
     }
   }
   return { groups, publicSkills, registered, allowedPageKeys, admitted, current, byEntrance };
+}
+
+/** Resolve the skill of this registered entry without loading the domain's skill catalogue. */
+export async function readRegisteredPanelPageSkillContext(
+  caller: PageSkillViewCaller,
+  entrance: PageSkillEntrance,
+  source: ApplicationUseSkillSource,
+  loadedPanel: { id: string },
+  provider: { id: string; findByUse(domainId: string, use: PanelUseRef): Promise<ProtectedSkillOffering | null> },
+): Promise<PageSkillContext> {
+  const absent = { mode: "member" as const, locator: entrance, member: null };
+  const actual = await currentApplicationPanel(caller, entrance, source);
+  if (!actual || actual.use.panelId !== loadedPanel.id) return absent;
+  const use = { applicationId: actual.applicationId, useId: actual.use.id };
+  const offering = await provider.findByUse(caller.domainId, use);
+  if (!offering || offering.sourceKey !== loadedPanel.id) return absent;
+
+  const ref = protectedSkillRef(provider.id, caller.domainId, offering.sourceKey);
+  const listed: ListedProtectedSkill = { ...offering, providerId: provider.id, skill: ref };
+  const [java, grants] = await Promise.all([
+    javaPageSkillProjection(caller.initiatorCredentials),
+    grantedProductIds("use", caller.initiatorCredentials),
+  ]);
+  const pages = pageAuthorization(caller.domainId, java, [listed], new Set(grants), []);
+  if (!pages.byEntrance.get(entranceKey(actual.entrance))?.includes(listed)) return absent;
+  await offering.readManifest(ref);
+  return {
+    mode: "member", locator: actual.entrance,
+    member: { source: { kind: "application-use", ...use }, memberPath: [], ref },
+  };
 }
 
 /** Resolve one current view. All supply closures and existence facts refer to this source enumeration. */

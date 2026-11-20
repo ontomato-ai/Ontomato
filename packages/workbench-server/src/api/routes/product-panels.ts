@@ -36,16 +36,17 @@ import { readProductPanelData } from "../../services/product-panels/data-reads";
 import { productDefinitionStreamRequestSchema, type ProductDefinitionStreamFrame } from "@ontomato/contracts/product-subscriptions";
 import { authorizeDefinitionStream, requirePanelDefinitions } from "../../services/product-panels/definition-stream";
 import type { createChartProjectionService } from "../../services/product-panels/chart-sources";
-import { pageSkillMemberContext, readSkillView } from "../../services/skills/view";
+import { panelSkillProvider } from "../../services/product-panels/skill-provider";
+import { readRegisteredPanelPageSkillContext } from "../../services/skills/view";
 
 async function withPageSkillContext<T extends { panel: { id: string } }>(
   response: T, query: ProductPanelReadQuery, caller: ReturnType<typeof context>,
 ) {
   if (!("applicationId" in query)) return response;
   const { applicationId, useId, ...entrance } = query;
-  const view = await readSkillView(caller.owner.domainId, caller.credentials);
-  const pageSkillContext = await pageSkillMemberContext(
-    view, entrance, { kind: "application-use", applicationId, useId }, response.panel,
+  const pageSkillContext = await readRegisteredPanelPageSkillContext(
+    { domainId: caller.owner.domainId, initiatorCredentials: caller.credentials },
+    entrance, { kind: "application-use", applicationId, useId }, response.panel, panelSkillProvider,
   );
   return { ...response, pageSkillContext };
 }
