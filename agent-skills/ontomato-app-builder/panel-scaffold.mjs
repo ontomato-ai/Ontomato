@@ -132,9 +132,27 @@ export function managementPanel(type, checks, typeTable, {
     }, { inputs: { [input]: stateRef(batch ? "checked" : "selected") } });
     return key;
   });
-  const member = ref => `  <panel-member ref="${ref}"></panel-member>`;
-  const keys = ["newRecord", "tabs", ...buttonKeys, "list", "detail", "form"];
-  const html = ['<section flow="column" gap="medium">', ...keys.filter(key => key in members).map(member), "</section>", ""].join("\n");
+  const member = (ref, indent) => `${" ".repeat(indent)}<panel-member ref="${ref}"></panel-member>`;
+  const toolbar = ["newRecord", "tabs", ...buttonKeys].filter(key => key in members);
+  const detail = ["detail", "form"].filter(key => key in members);
+  const html = [
+    '<section flow="column" gap="medium" fill="height">',
+    ...(toolbar.length ? [
+      '  <section flow="row" gap="small">',
+      ...toolbar.map(key => member(key, 4)),
+      "  </section>",
+    ] : []),
+    '  <section flow="row" gap="medium" fill="height">',
+    member("list", 4),
+    ...(detail.length ? [
+      '    <section flow="column" gap="medium">',
+      ...detail.map(key => member(key, 6)),
+      "    </section>",
+    ] : []),
+    "  </section>",
+    "</section>",
+    "",
+  ].join("\n");
   const manifest = { state, members, events };
   const definition = { manifest, content: { html } };
   checks.panelDefinitionContentSchema.parse(definition);

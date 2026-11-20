@@ -27,7 +27,8 @@ input. The starter includes the owner save when the type declares a form and sav
 Use `--operation <owner operation ID>` for a button targeting the selected record and `--batch <owner operation ID>`
 for a button targeting checked records. Repeat either flag to add more buttons. The starter takes the target input
 name and batch support from the type table. For operations with extra required inputs, wire the owner form or
-operation inputs. The starter places these controls above the list. Online `panel check` uses the same type table
+operation inputs. The starter puts these controls in the toolbar above the two independently scrolling columns.
+Online `panel check` uses the same type table
 to check button targets before registration.
 
 ## Effect and wiring
@@ -44,6 +45,7 @@ to check button targets before registration.
 | Batch operation | Bind `ObjectList.outputs.checked` to a list of object references. Bind the button's owner-named target input to that list. A list target invokes a batch for an owner operation that declares batch support. |
 | Highlight search hits | Bind the detail's `inputs.search` to the list's search state when the owner record read declares `search`. The owner returns highlight ranges, and ObjectList and ObjectSummary render them. |
 | Carry state in the address | Mark the state fields to restore with `deepLink: true` in the manifest. Keep transient multi-selection in panel state. |
+| Keep the toolbar above two scrolling columns | Put `fill="height"` on the outer column and the row below the toolbar. Keep the toolbar at content height. Put the list in the left column and group the detail and form in the right column. Each column scrolls in a direct panel. Below 36rem, scrolling returns to the outer container. |
 
 Bind a member's same-named input and output through `outputs` once. Same-named state bindings supply read parameters.
 Use `params` for literals or to name a different input. Components declare the parameters they supply at runtime. ObjectForm
