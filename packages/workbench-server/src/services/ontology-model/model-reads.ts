@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import { formFieldKey, type FormFieldError } from "@ontomato/contracts/form-fields";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import {
@@ -9,64 +10,34 @@ import {
   type PanelFormValues,
   type PanelRecord,
 } from "@ontomato/contracts/panel-projection";
-import { ATTRIBUTE, OBJECT_TYPE, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
+import { panelOwnerOperationDescriptorSchema } from "@ontomato/contracts/panel-operations";
+import {
+  ATTRIBUTE,
+  DELETE_ATTRIBUTE,
+  DELETE_OBJECT_TYPE,
+  DELETE_RELATIONSHIP,
+  OBJECT_TYPE,
+  RELATIONSHIP,
+  SET_PRIMARY_KEY,
+} from "@ontomato/contracts/platform-object-types";
 import { config } from "../../config/application";
+import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendResponseError, backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
-
-/** The owner's typed views of the three model objects, as `OntologyModelController` answers them. */
-export const objectTypeViewSchema = z.object({
-  className: z.string(),
-  showName: z.string(),
-  classDesc: z.string(),
-  attributeCount: z.number(),
-  businessKeyCount: z.number(),
-  relationshipCount: z.number(),
-  primaryKey: z.object({ status: z.string(), name: z.string().optional() }),
-}).strict();
-
-export const attributeViewSchema = z.object({
-  className: z.string(),
-  name: z.string(),
-  showName: z.string(),
-  type: z.string(),
-  attrDesc: z.string(),
-  enable: z.boolean(),
-  businessKey: z.boolean(),
-  primaryKey: z.boolean(),
-}).strict();
-
-export const relationshipViewSchema = z.object({
-  relationship: z.string(),
-  fromclass: z.string(),
-  toclass: z.string(),
-  desc: z.string(),
-  fromField: z.string(),
-  toField: z.string(),
-}).strict();
-
-export type ObjectTypeView = z.infer<typeof objectTypeViewSchema>;
-export type AttributeView = z.infer<typeof attributeViewSchema>;
-export type RelationshipView = z.infer<typeof relationshipViewSchema>;
-
-/** The owner's answer for a refused request, as the controller's error handler shapes it. */
-export const modelErrorSchema = z.object({
-  error: z.object({
-    code: z.string(),
-    message: z.string(),
-    fields: z.array(z.object({ field: z.string(), code: z.string(), message: z.string() }).strict()).optional(),
-  }).passthrough(),
-});
-
-const attributePrimaryKeySchema = z.tuple([z.string().min(1), z.string().min(1)]);
-
-/** Splits an attribute's two-part JSON primary key into its owning class name and attribute name. */
-export function parseAttributePrimaryKey(primaryKey: string): { className: string; name: string } {
-  const [className, name] = attributePrimaryKeySchema.parse(JSON.parse(primaryKey));
-  return { className, name };
-}
+import type { PanelWriteServerOperation } from "../product-panels/server-operations";
+import {
+  attributeViewSchema,
+  modelErrorSchema,
+  objectTypeViewSchema,
+  parseAttributePrimaryKey,
+  relationshipViewSchema,
+  type AttributeView,
+  type ObjectTypeView,
+  type RelationshipView,
+} from "./model-views";
+import { ontologyModelServerOperations } from "./model-operations";
 
 /** Java's form endpoints return fields, values and save metadata without an errors array. */
 const modelFormSchema = panelFormDescriptionSchema.omit({ errors: true });
@@ -81,11 +52,26 @@ export interface OntologyModelFormParams {
   changedField?: string | null;
 }
 
+/** The label key of each action operation the ontology model registers; the rest of its description is the operation's own. */
+const actionLabels = {
+  [DELETE_OBJECT_TYPE]: "panels.ontologyModel.operations.deleteObjectType",
+  [DELETE_ATTRIBUTE]: "panels.ontologyModel.operations.deleteAttribute",
+  [DELETE_RELATIONSHIP]: "panels.ontologyModel.operations.deleteRelationship",
+  [SET_PRIMARY_KEY]: "panels.ontologyModel.operations.setPrimaryKey",
+} as const;
+export type OntologyModelAction = keyof typeof actionLabels;
+
+type ModelActionOperation = Extract<PanelWriteServerOperation, { kind: "action" }>;
+const modelOperations: readonly PanelWriteServerOperation[] = ontologyModelServerOperations;
+type PanelOwnerOperationDescriptor = z.infer<typeof panelOwnerOperationDescriptorSchema>;
+
 export interface OntologyModelReadAdapter {
   list(typeId: string, params?: OntologyModelListParams): Promise<PanelRecord[]>;
   record(typeId: string, primaryKey: string): Promise<PanelRecord>;
   form(typeId: string, primaryKey: string, params?: OntologyModelFormParams): Promise<PanelFormDescription>;
   createForm(typeId: string, params?: OntologyModelFormParams): Promise<PanelFormDescription>;
+  /** The `<operation>.describe` read: the action as the coordinator dispatches it, labelled in the viewer's language. */
+  describe(operation: OntologyModelAction): PanelOwnerOperationDescriptor;
 }
 
 function objectTypeRecord(view: ObjectTypeView, fieldLabels: Record<string, string>): PanelRecord {
@@ -308,7 +294,23 @@ export function createOntologyModelReadAdapter(
     return reader;
   }
 
+  function describe(handlerRef: OntologyModelAction): PanelOwnerOperationDescriptor {
+    const operation = modelOperations.find((item): item is ModelActionOperation =>
+      item.kind === "action" && item.handlerRef === handlerRef)!;
+    return panelOwnerOperationDescriptorSchema.parse({
+      handlerRef,
+      label: tForLocale(viewer.locale, actionLabels[handlerRef]),
+      effect: operation.effect,
+      batch: operation.batch,
+      target: { source: "input", input: operation.targetInput },
+      inputSchema: zodToJsonSchema(operation.inputSchema, { effectStrategy: "input" }),
+      resultSchema: zodToJsonSchema(operation.resultSchema, { effectStrategy: "input" }),
+      ...(operation.inspectImpact && { inspectImpact: { handlerRef: operation.inspectImpact.handlerRef } }),
+    });
+  }
+
   return {
+    describe,
     list: async (typeId, params) => readerFor(typeId).list(params),
     record: async (typeId, primaryKey) => readerFor(typeId).record(primaryKey),
     form: async (typeId, primaryKey, params) => readerFor(typeId).form(primaryKey, params),

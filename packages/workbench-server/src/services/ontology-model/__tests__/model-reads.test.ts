@@ -1,9 +1,27 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ATTRIBUTE, OBJECT_TYPE, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
+import {
+  ATTRIBUTE,
+  DELETE_ATTRIBUTE,
+  DELETE_OBJECT_TYPE,
+  DELETE_RELATIONSHIP,
+  OBJECT_TYPE,
+  platformObjectTypes,
+  RELATIONSHIP,
+  SET_PRIMARY_KEY,
+} from "@ontomato/contracts/platform-object-types";
 import { panelFormDescriptionSchema, panelRecordListSchema, panelRecordSchema } from "@ontomato/contracts/panel-projection";
+import { configureI18n } from "../../../i18n";
+import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { createOntologyModelReadAdapter } from "../model-reads";
 
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://owner.test/" } } }));
+
+configureI18n({
+  defaultLocale: "en",
+  appTextLocale: "en",
+  languageSwitchEnabled: false,
+  packs: { en: { ...enLocaleMeta, messages: en } },
+});
 
 const owner = { domainId: "test-domain", userId: "test-owner" };
 const viewer = { token: "test-viewer", locale: "en", apiKey: "viewer-key", headers: { "x-scope": "domain" } };
@@ -472,5 +490,31 @@ describe("ontology model read adapter", () => {
     await expect(adapter.createForm(RELATIONSHIP, { values: { relationship: "bad" } }))
       .rejects.toMatchObject({ status: 409, code: "MODEL_INVALID" });
     await expect(adapter.list("platform:Unknown")).rejects.toThrow("Unsupported ontology model type: platform:Unknown");
+  });
+
+  it("describes each registered action operation from the operation the coordinator dispatches", () => {
+    const adapter = createOntologyModelReadAdapter(owner, viewer);
+    for (const [typeId, operation] of [
+      [OBJECT_TYPE, DELETE_OBJECT_TYPE],
+      [ATTRIBUTE, DELETE_ATTRIBUTE],
+      [ATTRIBUTE, SET_PRIMARY_KEY],
+      [RELATIONSHIP, DELETE_RELATIONSHIP],
+    ] as const) {
+      expect(platformObjectTypes[typeId]!.reads).toHaveProperty([`${operation}.describe`]);
+      expect(platformObjectTypes[typeId]!.operations).toContain(operation);
+    }
+
+    expect(adapter.describe(DELETE_OBJECT_TYPE)).toMatchObject({
+      handlerRef: DELETE_OBJECT_TYPE,
+      label: "Delete object type",
+      effect: "write",
+      batch: false,
+      target: { source: "input", input: "objectType" },
+      inspectImpact: { handlerRef: `${DELETE_OBJECT_TYPE}.inspect-impact` },
+    });
+    const setPrimaryKey = adapter.describe(SET_PRIMARY_KEY);
+    expect(setPrimaryKey).toMatchObject({ label: "Set as primary key", target: { source: "input", input: "attribute" } });
+    expect(setPrimaryKey).not.toHaveProperty("inspectImpact");
+    expect(adapter.describe(DELETE_RELATIONSHIP).target).toEqual({ source: "input", input: "relationship" });
   });
 });

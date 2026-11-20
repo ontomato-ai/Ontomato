@@ -4,7 +4,15 @@ import type { FormFieldError } from "@ontomato/contracts/form-fields";
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
 import { panelFormTargetSchema, type PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
-import { ATTRIBUTE, OBJECT_TYPE, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
+import {
+  ATTRIBUTE,
+  DELETE_ATTRIBUTE,
+  DELETE_OBJECT_TYPE,
+  DELETE_RELATIONSHIP,
+  OBJECT_TYPE,
+  RELATIONSHIP,
+  SET_PRIMARY_KEY,
+} from "@ontomato/contracts/platform-object-types";
 import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
 import type {
@@ -21,7 +29,7 @@ import {
   objectTypeViewSchema,
   parseAttributePrimaryKey,
   relationshipViewSchema,
-} from "./model-reads";
+} from "./model-views";
 
 const modelPath = `${DATA_QUERY_GATEWAY}/ontology/model`;
 
@@ -31,11 +39,6 @@ const emptyResultSchema = z.object({}).strict();
 const classDeletionSchema = z.object({ relationships: z.array(z.string()) }).strict();
 const deletionImpactSchema = z.object({ relationships: z.array(relationshipViewSchema) }).strict();
 const setPrimaryKeyResultSchema = z.object({ attributes: z.array(attributeViewSchema) }).strict();
-
-const DELETE_OBJECT_TYPE = "objectTypes.delete";
-const DELETE_ATTRIBUTE = "attributes.delete";
-const DELETE_RELATIONSHIP = "relationships.delete";
-const SET_PRIMARY_KEY = "attributes.setPrimaryKey";
 
 const targets = (type: string) => z.discriminatedUnion("kind", [
   panelFormTargetSchema.options[0].extend({ objectType: z.literal(type), primaryKey: z.string().min(1) }).strict(),
