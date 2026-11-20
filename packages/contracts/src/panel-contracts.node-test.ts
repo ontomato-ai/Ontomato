@@ -141,6 +141,32 @@ test("the SDK catalogue permits a wildcard for author-named data", async () => {
   }
 });
 
+test("the checker accepts short data and operation members with reusable projection identities", async () => {
+  const { panelAuthoringManifestSchema } = await import("./panel-check");
+  const list = {
+    id: "9da36511-7755-4b61-b526-3be2694c1f2f",
+    component: "ObjectList", type: BUSINESS_KNOWLEDGE,
+    data: { rows: "query" }, state: { selected: "selected", search: "search" },
+  };
+  const approve = { component: "OperationButton", operation: APPROVE_KNOWLEDGE, target: "selected", config: { type: "primary" } };
+  const state = {
+    selected: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+    search: { type: { kind: "scalar", type: "string" } },
+  };
+  const reused = { target: { projectionId: "registered-summary" } };
+  const manifest = { state, members: { list, approve, reused }, events: {} };
+  const parsed = panelAuthoringManifestSchema.parse(manifest);
+  assert.deepEqual(parsed.members, manifest.members);
+  assert.equal(panelAuthoringManifestSchema.safeParse({
+    ...manifest, members: { list: {
+      ...list, data: { rows: { read: "query", params: { search: { state: "search" }, status: { literal: "pending" } } } },
+    } },
+  }).success, true);
+  for (const member of [{ ...list, inputs: {} }, { ...list, id: "not-a-uuid" }, { component: "ObjectList" }]) {
+    assert.equal(panelAuthoringManifestSchema.safeParse({ ...manifest, members: { list: member } }).success, false);
+  }
+});
+
 test("projection registration accepts package-qualified components and leaves data keys to the catalogue", () => {
   const input = {
     name: "Task list", description: "", visibility: "domain", revision: 0, inputs: {}, outputs: {}, config: {},
