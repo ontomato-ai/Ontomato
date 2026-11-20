@@ -191,6 +191,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
       createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
     },
+    operations: [`${AGENT_DEFINITION}.save`],
   },
   [ONTOLOGY_TYPE]: {
     ...describeType("ontologyType"),
