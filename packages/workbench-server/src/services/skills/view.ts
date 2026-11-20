@@ -10,6 +10,7 @@ import { isProtectedSkillName, protectedSkillRef } from "../../core/skills";
 import { skillRegistryManager, type ListedProtectedSkill } from "../../core/skills/registry/manager";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendResponseError, backendGet, buildBackendHeaders } from "../../utils/backend-client";
+import { HttpError } from "../../utils/errors";
 import { grantedProductIds } from "../product-governance/grants";
 
 const javaPageSkills = z.object({
@@ -85,7 +86,8 @@ async function currentApplicationPanel(caller: PageSkillViewCaller, entrance: Pa
     throw error;
   }
   const { applicationId, panelUses } = javaPanelUses.parse(JSON.parse(response.text)).data;
-  if (applicationId !== source.applicationId) return null;
+  if (applicationId !== source.applicationId)
+    throw new HttpError(502, "Panel use source returned another application", "SKILL_SOURCE_UNAVAILABLE");
   const use = panelUses.find(use => use.id === source.useId && use.pageKey === entrance.pageKey);
   if (!use) return null;
   const actual = "permissionCode" in use.access ? { permissionCode: use.access.permissionCode, pageKey: use.pageKey }

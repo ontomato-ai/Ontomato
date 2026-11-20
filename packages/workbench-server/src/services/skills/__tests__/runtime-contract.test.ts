@@ -313,6 +313,10 @@ it("publishes one member across admitted entrances alongside the native permissi
     { mode: "member", locator: first, member: null })).currentPage).toBeNull();
   grants.mockReturnValueOnce(Response.json({ unexpected: "source failure" }));
   await expect(readAssistantSkillView(domain, credentials)).rejects.toMatchObject({ code: "PRODUCT_GOVERNANCE_UNAVAILABLE" });
+  const wrongApp = await uses().json();
+  wrongApp.data.applicationId = "other-app";
+  uses.mockReturnValueOnce(Response.json(wrongApp));
+  await expect(resolveCurrentPageSkillMember(view, second, member)).rejects.toMatchObject({ code: "SKILL_SOURCE_UNAVAILABLE" });
   uses.mockReturnValueOnce(Response.json({ success: false }));
   await expect(resolveCurrentPageSkillMember(view, second, member)).rejects.toThrow();
 });
