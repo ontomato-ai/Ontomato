@@ -19,18 +19,6 @@ export interface PanelProjectionRegistration {
   ports: ProjectionPorts;
 }
 
-/**
- * What a panel contains, as its declaration alone says (overall design 3.3): every slot's projection, in declaration
- * order. The graph reads this instead of the HTML, which is why a slot that is not drawn yet is still here.
- */
-export function panelContains(manifest: PanelManifest) {
-  return Object.entries(manifest.slots).map(([slot, declaration]) => ({
-    slot,
-    projectionId: declaration.projectionId,
-    inputs: Object.fromEntries(Object.entries(declaration.inputs).map(([input, ref]) => [input, ref.state])),
-  }));
-}
-
 /** The values a slot passes its projection now, by the parameter each fills; a field with no value passes null. */
 /**
  * What one operation of a projection does now: the object its declaration's target names, with the values the caller
@@ -60,7 +48,11 @@ export function slotInputValues(
   slot: string,
   values: Readonly<Record<string, PanelFieldValue>>,
 ): Record<string, PanelFieldValue> {
-  const declaration = manifest.slots[slot];
-  if (!declaration) throw new Error(`The panel declares no slot '${slot}'`);
-  return Object.fromEntries(Object.entries(declaration.inputs).map(([input, ref]) => [input, values[ref.state] ?? null]));
+  const declaration = manifest.members[slot];
+  if (!declaration) throw new Error(`The panel declares no member '${slot}'`);
+  return Object.fromEntries(Object.entries(declaration.inputs ?? {}).map(([input, source]) => {
+    if ("state" in source) return [input, values[source.state] ?? null];
+    if ("literal" in source) return [input, source.literal as PanelFieldValue];
+    throw new Error(`Member '${slot}' fills '${input}' from a repeated item, which this SDK release does not place`);
+  }));
 }

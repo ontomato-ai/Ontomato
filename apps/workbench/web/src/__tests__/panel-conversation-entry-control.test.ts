@@ -1,7 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createApp, inject } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
-import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { servePageComposerKey, type PageComposerExpand } from "../../../../../packages/agent-shell-ui/src/page-composer-entry";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
@@ -31,17 +30,18 @@ function entryProjection(
   id: string,
   name: string,
   conversationEntry: ProductProjection["conversationEntry"],
-  display: Record<string, unknown> = {},
+  config: ProductProjection["config"] = {},
 ): ProductProjection {
   return {
     ...current,
     id,
     name,
     description: "",
-    componentId: "ConversationEntry",
-    binding: { kind: "PlatformObjectType", id: AGENT_DEFINITION },
+    componentId: "@ontomato/sdk:ConversationEntry",
     inputs: {},
-    display,
+    outputs: {},
+    config,
+    data: {},
     ...(conversationEntry ? { conversationEntry } : {}),
   };
 }
@@ -80,12 +80,12 @@ it("expands the page composer with exact projection-declared targets (preset, id
   };
   const manifest = definePanel({
     state: {},
-    slots: {
-      preset: { projectionId: "entry-preset", inputs: {} },
-      specific: { projectionId: "entry-id", inputs: {} },
-      fallback: { projectionId: "entry-default", inputs: {} },
+    members: {
+      preset: { target: { projectionId: "entry-preset" }, inputs: {} },
+      specific: { target: { projectionId: "entry-id" }, inputs: {} },
+      fallback: { target: { projectionId: "entry-default" }, inputs: {} },
     },
-    operations: [],
+    events: {},
   });
   const panel = panelRecord("panel-conv-entry", "Conversation entries", manifest);
   panel.content.messages = { en: { "entry.preset": "Start review" } };
@@ -147,11 +147,11 @@ it("surfaces visible errors when conversationEntry is missing or the host has no
   };
   const manifest = definePanel({
     state: {},
-    slots: {
-      valid: { projectionId: "entry-valid", inputs: {} },
-      missing: { projectionId: "entry-missing", inputs: {} },
+    members: {
+      valid: { target: { projectionId: "entry-valid" }, inputs: {} },
+      missing: { target: { projectionId: "entry-missing" }, inputs: {} },
     },
-    operations: [],
+    events: {},
   });
   const panel = panelRecord("panel-conv-err", "Conversation errors", manifest);
   panel.content.html = `

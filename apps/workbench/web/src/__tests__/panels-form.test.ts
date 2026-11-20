@@ -47,9 +47,9 @@ const fields = (operation: string): readonly FormField[] => [
 
 function panelFor(objectType: string) {
   return definePanel({
-    state: { selectedTask: { kind: "object", objectType, deepLink: true } },
-    slots: { form: { projectionId: "projection-schedules-form", inputs: { task: { state: "selectedTask" } } } },
-    operations: [],
+    state: { selectedTask: { type: { kind: "object", objectType }, deepLink: true } },
+    members: { form: { target: { projectionId: "projection-schedules-form" }, inputs: { task: { state: "selectedTask" } } } },
+    events: {},
   });
 }
 
@@ -77,10 +77,11 @@ function mounted(save: (values: Record<string, string>, revision: number) => Pro
       name: "Task form",
       description: "",
       visibility: "domain",
-      componentId: "ObjectForm",
-      binding: { kind: "PlatformObjectType", id: objectType },
-      inputs: { task: { kind: "object", objectType } },
-      display: {},
+      componentId: "@ontomato/sdk:ObjectForm",
+      inputs: { task: { kind: "object", objectType }, values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
+      outputs: {},
+      config: {},
+      data: { form: { source: { object: { input: "task" } }, read: "form", params: { values: { input: "values" }, changedField: { input: "changedField" } } } },
     }),
   });
   // The owner, as the scheduled tasks' typed adapter answers: the operation decides which other fields exist.
@@ -140,10 +141,11 @@ function mounted(save: (values: Record<string, string>, revision: number) => Pro
       name: "Task form",
       description: "",
       visibility: "domain",
-      componentId: "ObjectForm",
-      binding: { kind: "PlatformObjectType", id: objectType },
-      inputs: { task: { kind: "object", objectType } },
-      display: {},
+      componentId: "@ontomato/sdk:ObjectForm",
+      inputs: { task: { kind: "object", objectType }, values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
+      outputs: {},
+      config: {},
+      data: { form: { source: { object: { input: "task" } }, read: "form", params: { values: { input: "values" }, changedField: { input: "changedField" } } } },
     },
     inputs: {},
   };
@@ -151,7 +153,7 @@ function mounted(save: (values: Record<string, string>, revision: number) => Pro
     defineComponent({
       setup: () => {
         provide(panelContextKey, {
-          panel: { content: { html: "", module: "" }, manifest: panel, sdkVersion: "1.1.1" },
+          panel: { content: { html: "", module: "" }, manifest: panel },
           manifest: panel,
           instance,
           projection: (id: string) => instance.projection(id),

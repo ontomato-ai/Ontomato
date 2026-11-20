@@ -33,7 +33,7 @@ const taskInput = { kind: "object" as const, objectType: SCHEDULED_TASK };
 const projections: Record<string, DirectProjection> = {
   "direct-tasks": direct("direct-tasks", {
     componentId: "@ontomato/sdk:ObjectList", inputs: {},
-    data: { rows: { source: { type: SCHEDULED_TASK }, read: "list", params: {} } },
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
   }),
   "direct-summary": direct("direct-summary", {
     componentId: "@ontomato/sdk:ObjectSummary", inputs: { task: taskInput },
@@ -41,14 +41,14 @@ const projections: Record<string, DirectProjection> = {
   }),
   "direct-run": direct("direct-run", {
     componentId: "@ontomato/sdk:OperationButton", inputs: { task: taskInput },
-    data: { describe: { source: { operation: RUN_NOW }, read: "describe", params: {} } },
+    data: { operation: { source: { operation: { kind: "PlatformOperation", id: RUN_NOW } }, read: "describe", params: {} } },
   }),
 };
-const slot = (projectionId: string) => ({ projectionId, inputs: {} });
+const slot = (projectionId: string) => ({ target: { projectionId }, inputs: {} });
 const panel = panelRecord("panel-q", "Q", definePanel({
   state: {},
-  slots: { tasks: slot("direct-tasks"), summary: slot("direct-summary"), run: slot("direct-run") },
-  operations: [],
+  members: { tasks: slot("direct-tasks"), summary: slot("direct-summary"), run: slot("direct-run") },
+  events: {},
 }));
 const use = panelUse("use-q", "q", panel.id, "/applications/app-q/q");
 const tasks = "/platform/scheduled-tasks";

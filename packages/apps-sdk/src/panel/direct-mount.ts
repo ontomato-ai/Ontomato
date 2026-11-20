@@ -1,7 +1,8 @@
 import { effectScope, h, ref, watch, type DeepReadonly, type Ref, type VNode } from "vue";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageDraftLink } from "@ontomato/contracts/page-draft";
-import type { DirectPanelManifest, PanelDeepLinkStateValue, PanelObjectIdentity, PanelOperation } from "@ontomato/contracts/panel-manifest";
+import type { PanelManifest, PanelObjectIdentity, PanelOperation } from "@ontomato/contracts/panel-manifest";
+import type { PanelHostMessage } from "@ontomato/contracts/panel-host";
 import type { DefinitionRevision } from "@ontomato/contracts/product-subscriptions";
 import { createDirectPanelInstance, type DirectPanelInstance, type DirectPanelInstanceOptions, type PanelOperationAffected } from "./direct";
 import { runPanel } from "./lifecycle";
@@ -29,8 +30,8 @@ export interface DirectPanelRun {
   url(): string;
   label(): string;
   /** The deep-linkable state the address requested. */
-  initial: Readonly<Record<string, PanelDeepLinkStateValue>>;
-  state(state: Record<string, PanelDeepLinkStateValue>, fromAddress: string): void;
+  initial: PanelHostMessage["state"];
+  state(state: PanelHostMessage["state"], fromAddress: string): void;
   context(context: PageContext): void;
   operations(operations: PanelOperation[]): void;
   dirty(dirty: boolean): void;
@@ -40,7 +41,7 @@ export interface DirectPanelRun {
 }
 
 export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions, "read" | "confirmOperation" | "translate" | "reportDraftError"> {
-  manifest: DirectPanelManifest;
+  manifest: PanelManifest;
   run: DirectPanelRun;
   /** The platform's request path, as the reader: drafts, projection records and the coordinator's operations. */
   requests: PlatformRequests;

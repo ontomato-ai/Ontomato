@@ -12,7 +12,7 @@ import { ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFra
  */
 
 const application = "app-panels-layout";
-const panel = panelRecord("panel-layout", "Layout panel", definePanel({ state: {}, slots: {}, operations: [] }));
+const panel = panelRecord("panel-layout", "Layout panel", definePanel({ state: {}, members: {}, events: {} }));
 panel.content.html = `
 <div id="app">
   <two-pane-layout>

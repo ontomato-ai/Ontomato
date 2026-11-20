@@ -1,7 +1,7 @@
 import { BUILD_TEST_SDK_CAPABILITY } from "../contracts/src/build-tests.ts";
 // Builds one product's apps SDK: `node build.mjs <edition module> <output root>`. The output root then holds exactly
-// current.json and one version directory with the browser modules, the stylesheet, the docs, the examples and the Node
-// module a check of panel sources runs (`node/panel-check.mjs`) of that version. The source
+// current.json and one release directory with the browser modules, the stylesheet, the docs, the examples and the Node
+// module a check of panel sources runs. A platform serves the one release it ships at `/apps-sdk/current/`. The source
 // facts come from the image builder in APPS_SDK_BUILD (scripts/workbench/build-images.mjs).
 import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -10,6 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import vue from "@vitejs/plugin-vue";
 import { build, normalizePath } from "vite";
 import { finalizeSdk, VERSION_PLACEHOLDER } from "./content-version.mjs";
+import { CHECK, ENTRIES, STYLESHEET } from "./release-entries.mjs";
 import { elementComponents } from "./element-components.mjs";
 import { panelAppearance } from "./panel-appearance.mjs";
 import { sdkChunks } from "./sdk-chunks.mjs";
@@ -18,30 +19,6 @@ import { catalogueMarkdown, checkCatalogue, componentMetadata, componentPorts, r
 const HERE = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
-/** The public modules: the import-map specifier an app uses, the file it maps to, and the entry source. */
-const ENTRIES = [
-  { specifier: "vue", file: "vue.js", source: "src/entries/vue.ts" },
-  { specifier: "element-plus", file: "element-plus.js", source: "src/entries/element-plus.ts" },
-  { specifier: "echarts", file: "echarts.js", source: "src/entries/echarts.js" },
-  { specifier: "@ontomato/sdk", file: "sdk.js", source: "src/entries/sdk.ts" },
-  { specifier: "@ontomato/sdk/chart", file: "chart.js", source: "src/entries/chart.ts" },
-  { specifier: "@ontomato/sdk/markdown", file: "markdown.js", source: "src/entries/markdown.ts" },
-  { specifier: "@ontomato/sdk/form", file: "form.js", source: "src/entries/form.ts" },
-  { specifier: "@ontomato/sdk/code", file: "code.js", source: "src/entries/code.ts" },
-  { specifier: "@ontomato/sdk/preview", file: "preview.js", source: "src/entries/preview.ts" },
-  { specifier: "@ontomato/sdk/chat", file: "chat.js", source: "src/entries/chat.ts" },
-  { specifier: "@ontomato/sdk/panel", file: "panel.js", source: "src/entries/panel.ts" },
-  { specifier: "@ontomato/sdk/base", file: "base.js", source: "src/entries/base.ts" },
-  { specifier: "@ontomato/sdk/graph", file: "graph.js", source: "src/entries/graph.ts" },
-];
-const STYLESHEET = "styles/sdk.css";
-/** The Node module of the parsers and schemas a check of no-code panel sources runs (the contracts' `panel-check.ts`). */
-const CHECK = "node/panel-check.mjs";
-/** What a check of no-code panel sources takes from it, by these names. */
-const CHECK_EXPORTS = [
-  "directPanelDefinitionContentSchema", "directPanelManifestSchema", "directProjectionInputSchema",
-  "registerDirectPanelRequestSchema", "registerDirectProjectionRequestSchema", "parsePanelLayout", "PanelLayoutError",
-];
 /** The third-party libraries apps program against directly; their versions are part of an SDK version's contract. */
 const LIBRARIES = ["vue", "element-plus", "echarts"];
 
@@ -70,8 +47,9 @@ function oneVueRuntime() {
   };
 }
 
-function head(version) {
-  const base = `/apps-sdk/${version}`;
+/** The page head of a hosted application at a root deployment; one deployed under a prefix takes the platform's sdkBasePath. */
+function head() {
+  const base = "/apps-sdk/current";
   const imports = Object.fromEntries(ENTRIES.map((entry) => [entry.specifier, `${base}/${entry.file}`]));
   return [
     `<link rel="stylesheet" href="${base}/${STYLESHEET}">`,
@@ -82,15 +60,21 @@ function head(version) {
 }
 
 function render(text, version) {
-  return text.replaceAll("{{head}}", head(version)).replaceAll("{{version}}", version);
+  return text.replaceAll("{{head}}", head()).replaceAll("{{version}}", version);
 }
 
 const libraryVersion = (name) => JSON.parse(readFileSync(require.resolve(`${name}/package.json`), "utf8")).version;
 
+/** What a check of panel sources needs from the release: the platform's own parsers and declarations, by these names. */
+const CHECK_EXPORTS = [
+  "parsePanelLayout", "PanelLayoutError", "panelManifestSchema", "panelDefinitionContentSchema", "productProjectionInputSchema",
+  "registerProductPanelRequestSchema", "registerProductProjectionRequestSchema", "directReadDeclaration", "platformObjectTypes",
+  "panelReadParameterSchemas", "panelReadResultSchemas",
+];
+
 /**
- * The contracts' panel check as one Node module with its dependencies inside, so a command line checks a panel's sources
- * with this version's own parsers and schemas, without the platform's sources. It is loaded once here, as a command line
- * loads it.
+ * The contracts' panel check as one Node module with its dependencies inside, so a command line runs the release's own
+ * parsers and declarations without the platform's sources. It is loaded once here, as a command line loads it.
  */
 async function buildCheck(outDir) {
   await build({
