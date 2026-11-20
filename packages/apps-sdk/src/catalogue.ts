@@ -274,8 +274,8 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "MetricChart",
     role: "presentation",
     meaning:
-      "Draws one registered chart as its source card draws it: the card's chart file, which its dashboard owner hands over for this projection, filled with the bound MetricView's output for the MetricView's own defaults and the values the panel binds. The projection keeps no drawing, query or data of its own.",
-    effects: "Reads the chart's source template through the product service and the MetricView through the data engine, both as the reader.",
+      "Draws one chart as its source card draws it: the card's chart file (`template`) filled with a MetricView's output (`result`) for the card's saved parameters and the values the panel binds over them. The platform supplies both, and an output with no rows is the owner's empty answer. The projection keeps no drawing, query or data of its own.",
+    effects: "Sends no request of its own: the platform reads the source card's template and the MetricView's output, both as the reader.",
     bindsElement: ["MetricView:*"],
     // The chart file and the output it is filled with: drawn once both are read.
     data: {
