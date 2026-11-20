@@ -189,7 +189,7 @@ const sdkBasePath = "/apps-sdk/current";
 export const SDK_MANIFEST_PATH = `${sdkBasePath}/sdk.json`;
 
 /** The current release's static manifest, with files relative to the release directory. */
-const sdkManifest: AppsSdkReleaseManifest = {
+export const sdkManifest: AppsSdkReleaseManifest = {
   version: "1.2.0",
   product: "workbench",
   executionContext: 1,
@@ -244,7 +244,7 @@ export const registered = (applicationId: string, use: ApplicationPanelUse, pane
 
 /** The page skill ref Node names for a panel read for one page: one ref per panel, by a name derived from the panel alone. */
 export const memberRefOf = (panelId: string) => ({
-  namespace: { kind: "domain" as const, domainId: "domain-test" },
+  namespace: { kind: "provider" as const, provider: "product-panels" },
   name: `pvt-${[...panelId].map(char => char.charCodeAt(0).toString(16)).join("").slice(0, 48).padEnd(48, "0")}`,
 });
 
