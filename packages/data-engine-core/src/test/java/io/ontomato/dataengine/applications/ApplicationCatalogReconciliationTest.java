@@ -303,6 +303,9 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.rows[0].id").value("app-hosted"))
             .andExpect(jsonPath("$.data.rows[0].canMaintain").value(true))
             .andExpect(jsonPath("$.data.rows[0].canEditEntries").value(false));
+        http.perform(get(CATALOGUE + "/app-hosted")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.entry.path").value("/apps/app-hosted/"))
+            .andExpect(jsonPath("$.data.entry.renderer").doesNotHaveJsonPath());
         http.perform(get(CATALOGUE + "/app-catalogue")).andExpect(status().isOk())
             .andExpect(jsonPath("$.data.panelUses.length()").value(2))
             .andExpect(jsonPath("$.data.entryAccess[0]").value("domain-member"));
