@@ -44,10 +44,7 @@ async function referenceAccess({ owner, credentials }: PanelOperationActor) {
 
 async function skillTitle(host: PanelOperationHost, target: PanelRecordTarget): Promise<string> {
   const skillManager = await loadSkillManager();
-  const found = (await skillManager.getAllSkills(host.initiator.owner.domainId, host.initiator.credentials))
-    .find(skill => skill.id === target.primaryKey);
-  if (!found) throw new HttpError(404, "Skill not found", "SKILL_NOT_FOUND");
-  return found.title;
+  return (await skillManager.getSkillInfo(host.initiator.owner.domainId, target.primaryKey, host.initiator.credentials)).title;
 }
 
 const deleteSkillImpact: PanelImpactInspector = {
