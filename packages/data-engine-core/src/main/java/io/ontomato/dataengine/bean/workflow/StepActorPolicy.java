@@ -25,6 +25,15 @@ public class StepActorPolicy {
     private String metricRevision;
     private String principalField;
     private Map<String, Object> parameters;
+    /**
+     * MetricView parameter name to frozen Run/Step/business context expression.
+     *
+     * <p>Supported expressions are {@code $run.id}, {@code $run.templateRef},
+     * {@code $run.requester}, {@code $step.id}, {@code $step.ref},
+     * {@code $step.roleCode}, {@code $business.className}, {@code $business.id}, and
+     * {@code $business.<field>}. Bound values override static parameters.</p>
+     */
+    private Map<String, String> parameterBindings;
     /** Optional mapping from the MetricView value to a principal candidate. */
     private Map<String, String> valueMap;
 

@@ -712,6 +712,7 @@ const ontologyEn = {
     "The subject used to run the MetricView or Agent request. Leave blank to use the Praxis system principal.",
   workflowPolicySystemPrincipal: "Praxis system principal",
   workflowPolicyParameters: "Metric parameters (JSON)",
+  workflowPolicyParameterBindings: "Dynamic parameter bindings (JSON)",
   workflowPolicyValueMap: "Value map (JSON)",
   workflowAgentId: "Agent ID",
   workflowAgentInstruction: "Assignment instruction",
