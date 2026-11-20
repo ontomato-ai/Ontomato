@@ -8,18 +8,27 @@ import { assistantAgentInputSchema } from "@ontomato/contracts/assistant-chat";
 import { AGENT_DEFINITION } from "@ontomato/contracts/panel-client-requests";
 import { panelFormDescriptionSchema } from "@ontomato/contracts/panel-projection";
 
-const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", pageSkills: vi.fn(), validateSkills: vi.fn().mockResolvedValue([]), setting: vi.fn(), prepare: vi.fn() }));
+const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", assertPermission: vi.fn(), skillView: vi.fn(), hiddenSkills: vi.fn(), visibleSkills: vi.fn(), validateSkills: vi.fn().mockResolvedValue([]), setting: vi.fn(), prepare: vi.fn() }));
 vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
 }));
 vi.mock("../../infrastructure/agent-runtime/client", () => ({ RuntimeClient: class { async modelOptions() { return { models: [{ ref: "test/configured", type: "chat", displayName: "Configured" }], defaultModelId: "test/configured" }; } } }));
+vi.mock("../../identity/installed", async original => ({
+  ...await original<typeof import("../../identity/installed")>(),
+  assertPermission: state.assertPermission,
+}));
 vi.mock("../../services/assistant/execution-setting", () => ({
   validateExecutionSetting: state.setting,
   prepareExecutionSetting: state.prepare,
   readExecutionOptions: async () => ({ canSetExecutionUser: false, users: [], selected: null }),
 }));
-vi.mock("../../services/assistant/skills", () => ({ validateAssistantSkills: state.validateSkills, readPageSkills: state.pageSkills }));
+vi.mock("../../services/assistant/skills", () => ({
+  validateAssistantSkills: state.validateSkills,
+  readAssistantSkillView: state.skillView,
+  hasHiddenAssistantSkillRefs: state.hiddenSkills,
+  visibleAssistantSkillRefs: state.visibleSkills,
+}));
 vi.mock("../../services/skills/operations", () => ({ withDomainSkills: async (_domain: string, work: () => Promise<unknown>) => work() }));
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
@@ -27,7 +36,8 @@ import { installWorkbenchIdentity } from "../../identity/installed";
 import type { WorkbenchIdentity } from "../../identity/types";
 import assistantRouter from "../routes/assistant";
 import { HttpError } from "../../utils/errors";
-import { createAgentDefinition, saveAgentDefinition, validateAgentDefinition } from "../../services/assistant/definitions";
+import { createAgentDefinition, filterReadableAgentDefinitions, saveAgentDefinition, saveAgentDefinitionSnapshot, validateAgentDefinition, type AgentDefinitionSkillSelection } from "../../services/assistant/definitions";
+import { readAssistantSkillView } from "../../services/assistant/skills";
 import { agentDefinitionOperations } from "../../services/assistant/definition-operations";
 import { readDiagnosisModel, saveDiagnosisModel } from "../../services/ops-diagnosis/model-settings";
 
@@ -67,7 +77,9 @@ describe("agent definitions on PostgreSQL", () => {
         BEGIN INSERT INTO "${state.schema}".skill_writes VALUES (NEW.id); RETURN NEW; END $$;
       CREATE TRIGGER record_skill_write AFTER UPDATE OF skills ON "${state.schema}".assistant_agents
         FOR EACH ROW EXECUTE FUNCTION "${state.schema}".record_skill_write()`);
-    state.pageSkills.mockResolvedValue({ registeredSkills: [], pageSkills: [] });
+    state.skillView.mockResolvedValue({});
+    state.hiddenSkills.mockImplementation((_refs, skillView: { hidden?: boolean }) => skillView.hidden === true);
+    state.visibleSkills.mockImplementation((refs, skillView: { hidden?: boolean }) => skillView.hidden ? [] : refs);
     configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { messages: en, ...enLocaleMeta } } });
     const requirePermission: WorkbenchIdentity["requirePermission"] = () => (_req, _res, next) => next();
     installWorkbenchIdentity({ requireDomainId: () => owner.domainId, requirePermission } as unknown as WorkbenchIdentity);
@@ -114,14 +126,18 @@ describe("agent definitions on PostgreSQL", () => {
     const id = randomUUID();
     expect((await write("POST", id, { ...form, skills: [savedSkill] })).status).toBe(201);
     state.validateSkills.mockClear();
-    state.pageSkills.mockClear();
+    state.skillView.mockClear();
+    state.hiddenSkills.mockClear();
+    state.skillView.mockResolvedValueOnce({ hidden: true });
     const updated = await write("PUT", id, { ...form, name: "Renamed", systemPrompt: "After", modelSelection: { modelId: "test/configured" } });
     expect(updated.status).toBe(200);
+    expect(await updated.json()).toMatchObject({ skills: [] });
     expect(await stored(id)).toMatchObject({
       name: "Renamed", system_prompt: "After", model_selection: { modelId: "test/configured" }, skills: [savedSkill],
     });
     expect(state.validateSkills).not.toHaveBeenCalled();
-    expect(state.pageSkills).not.toHaveBeenCalled();
+    expect(state.hiddenSkills).not.toHaveBeenCalled();
+    expect(state.skillView).toHaveBeenCalledTimes(1);
     expect(await skillWrites(id)).toBe(0);
     expect((await write("POST", randomUUID(), form)).status).toBe(400);
   });
@@ -146,7 +162,10 @@ describe("agent definitions on PostgreSQL", () => {
     expect(panelFormDescriptionSchema.parse(await draft.json())).toMatchObject({ values, errors });
     expect(panelFormDescriptionSchema.parse(await (await describeForm()).json()).errors).toEqual([]);
 
+    const credentials = { token: "editor", locale: "en" };
+    const actor = { owner, credentials };
     const host = {
+      initiator: actor, executor: actor, skillView: await readAssistantSkillView(owner.domainId, credentials),
       requestWorkbench: (path: string, init: NonNullable<Parameters<typeof fetch>[1]>) =>
         fetch(new URL(`/api${path}`, base), { ...init, headers: { "Content-Type": "application/json" } }),
       request: async () => { throw new Error("The definition owner is the Workbench Server"); },
@@ -155,13 +174,41 @@ describe("agent definitions on PostgreSQL", () => {
     expect(receipt).toMatchObject({ kind: "refusal", code: "INVALID_REQUEST", errors });
     expect((await stored(id)).name).toBe(form.name);
   });
+
+  it("keeps visible skills in the display of an update draft that omits skills", async () => {
+    const id = randomUUID();
+    const hiddenSkill = { ...savedSkill, name: "hidden-page-skill" };
+    expect((await write("POST", id, { ...form, skills: [savedSkill, hiddenSkill] })).status).toBe(201);
+    state.validateSkills.mockClear();
+    state.hiddenSkills.mockClear();
+
+    const target = { kind: "object", objectType: AGENT_DEFINITION, primaryKey: id };
+    const values = { ...form, name: "Draft name", modelSelection: { modelId: null },
+      classNames: [], enabledMcpServiceIds: [], executionUserId: null };
+    const describeForm = async (draft?: typeof values) => {
+      state.skillView.mockResolvedValueOnce({ hidden: true });
+      state.visibleSkills.mockImplementationOnce((refs: typeof savedSkill[]) => refs.filter(ref => ref.name !== hiddenSkill.name));
+      const response = await fetch(base + "/form", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target, values: draft, changedField: null }),
+      });
+      expect(response.status).toBe(200);
+      return panelFormDescriptionSchema.parse(await response.json());
+    };
+    const baseline = await describeForm();
+    const draft = await describeForm(values);
+    expect(draft.values.name).toBe(values.name);
+    expect(baseline.values.skills).toEqual([savedSkill]);
+    expect(draft.values.skills).toEqual(baseline.values.skills);
+    expect(state.validateSkills).not.toHaveBeenCalled();
+    expect(state.hiddenSkills).not.toHaveBeenCalled();
+    expect((await stored(id)).skills).toEqual([savedSkill, hiddenSkill]);
+    expect(await skillWrites(id)).toBe(0);
+  });
   it("clears an explicitly submitted empty skill array through the existing validator", async () => {
     const id = randomUUID();
     expect((await write("POST", id, { ...form, skills: [savedSkill] })).status).toBe(201);
-    state.pageSkills.mockResolvedValueOnce({
-      registeredSkills: [savedSkill],
-      pageSkills: [{ permissionCode: "visible", skill: savedSkill }],
-    });
+    state.skillView.mockResolvedValueOnce({ hidden: false });
     expect((await write("PUT", id, { ...form, skills: [] })).status).toBe(200);
     expect(state.validateSkills).toHaveBeenLastCalledWith(owner.domainId, [], expect.objectContaining({ token: "editor" }), expect.anything());
     expect((await stored(id)).skills).toEqual([]);
@@ -176,7 +223,7 @@ describe("agent definitions on PostgreSQL", () => {
       expect((await write("POST", id, { ...form, skills: [savedSkill] })).status).toBe(201);
       const before = await stored(id);
       state.prepare.mockClear();
-      state.pageSkills.mockResolvedValueOnce({ registeredSkills: [savedSkill], pageSkills: [] });
+      state.skillView.mockResolvedValueOnce({ hidden: true });
       const refusal = await write("PUT", id, { ...form, name: "Must not persist", executionUserId: "other", skills });
       expect(refusal.status).toBe(403);
       expect(await refusal.text()).not.toContain(savedSkill.name);
@@ -220,6 +267,45 @@ describe("agent definitions on PostgreSQL", () => {
     expect((await createAgentDefinition(id, input, owner, {})).modelSelection).toEqual({ modelId: "test/configured" });
     await expect(saveAgentDefinition(id, { ...input, modelSelection: { modelId: "test/missing" } }, owner, {})).rejects.toMatchObject({ status: 400 });
     expect((await saveAgentDefinition(id, { ...input, modelSelection: { modelId: null } }, owner, {})).modelSelection).toEqual({ modelId: null });
+  });
+  it("checks an agent operation's skill selection as the initiator and its execution settings as the executor", async () => {
+    const id = randomUUID();
+    expect((await write("POST", id, { ...form, skills: [savedSkill] })).status).toBe(201);
+    const before = await stored(id);
+    const executor = { ...owner, userId: "executor" }, executorCredentials = { apiKey: "executor-key", locale: "en" };
+    const initiatorCredentials = { token: "initiator-token", locale: "en" };
+    const selection = { credentials: initiatorCredentials, view: { hidden: true } as unknown as AgentDefinitionSkillSelection["view"] };
+    const update = assistantAgentInputSchema.parse({ ...form, skills: [], executionUserId: "other" });
+    state.prepare.mockClear();
+    await expect(saveAgentDefinitionSnapshot(id, update, executor, executorCredentials, selection))
+      .rejects.toMatchObject({ code: "SKILL_SELECTION_INCOMPLETE" });
+    expect(state.setting).toHaveBeenLastCalledWith(executor, null, "other", executorCredentials);
+    expect(state.prepare).not.toHaveBeenCalled();
+    expect(await stored(id)).toEqual(before);
+
+    const visible = { ...selection, view: { hidden: false } as unknown as AgentDefinitionSkillSelection["view"] };
+    await saveAgentDefinitionSnapshot(id, update, executor, executorCredentials, visible);
+    expect(state.validateSkills).toHaveBeenLastCalledWith(owner.domainId, [], initiatorCredentials, visible.view);
+    expect(state.prepare).toHaveBeenLastCalledWith(executor, null, "other", executorCredentials);
+    expect((await stored(id)).skills).toEqual([]);
+  });
+
+  it("filters reference candidates with the definition's read permission and visibility rule", async () => {
+    const readable = randomUUID(), builder = randomUUID(), foreign = randomUUID();
+    await state.pool!.query(`INSERT INTO "${state.schema}".assistant_agents (id, domain_id, kind)
+      VALUES ($1,$2,'custom'), ($3,$2,'app-builder'), ($4,'foreign','custom')`,
+      [readable, owner.domainId, builder, foreign]);
+    state.assertPermission.mockResolvedValueOnce(undefined);
+    const candidates = [readable, builder, foreign, randomUUID()];
+    const credentials = { token: "editor" };
+    expect(await filterReadableAgentDefinitions(owner, credentials, candidates)).toEqual(new Set([readable]));
+    expect(state.assertPermission).toHaveBeenLastCalledWith(credentials, ["analysis-agent"]);
+
+    state.assertPermission.mockRejectedValueOnce(new HttpError(403, "Denied"));
+    expect(await filterReadableAgentDefinitions(owner, credentials, candidates)).toEqual(new Set());
+    const unavailable = new HttpError(502, "Permission service unavailable");
+    state.assertPermission.mockRejectedValueOnce(unavailable);
+    await expect(filterReadableAgentDefinitions(owner, credentials, candidates)).rejects.toBe(unavailable);
   });
   it("keeps diagnosis selection domain-owned and validates changes", async () => {
     expect(await readDiagnosisModel("diagnosis-a")).toEqual({ modelSelection: { modelId: null } });

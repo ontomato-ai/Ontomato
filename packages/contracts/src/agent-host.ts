@@ -3,6 +3,7 @@ import { presentationBindingSchema, presentationFrameSchema, presentationReceipt
 import { panelObjectIdentitySchema } from "./panel-manifest";
 import { panelOperationAffectedSchema } from "./panel-operations";
 import { z } from "zod";
+import { pageSkillContextSchema } from "./page-skills";
 import {
   runtimeMessageRecordSchema,
   runtimeRunSnapshotSchema,
@@ -150,6 +151,7 @@ export const agentHostSendRequestSchema = z
     selectedOption: z.number().int().nonnegative().optional(),
     /** Only a new human run can use the binding; steering does not change the running view. */
     presentationBinding: presentationBindingSchema.optional(),
+    pageSkillContext: pageSkillContextSchema.optional(),
     /** Structured variables supplied by an external workflow or integration. */
     variables: z.record(z.unknown()).optional(),
   })

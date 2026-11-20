@@ -13,10 +13,17 @@ import {
 } from "../../infrastructure/postgres";
 import { assistantStore, type AssistantOwner, type AgentRow } from "./store";
 import { HttpError } from "../../utils/errors";
+import { assertPermission } from "../../identity/installed";
 import { resolveAssistantSkillReferences } from "./skill-references";
 import { AgentDefinitionFieldError } from "./definition-form-schema";
-import { readPageSkills, validateAssistantSkills } from "./skills";
-import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import {
+  hasHiddenAssistantSkillRefs,
+  readAssistantSkillView,
+  validateAssistantSkills,
+  visibleAssistantSkillRefs,
+  type AssistantSkillView,
+} from "./skills";
+import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { tForLocale } from "../../i18n";
 import { withDomainSkills } from "../skills/operations";
 import { effectiveSystemPrompt, storedSystemPrompt } from "./prompts";
@@ -41,21 +48,58 @@ const view = (a: AgentRow, locale?: string) =>
     sortOrder: a.sort_order,
     systemPrompt: effectiveSystemPrompt(a, locale),
   });
+export const agentDefinitionPermissions = ["analysis-agent"] as const;
+const isReadableDefinition = (kind: string) => !isAppBuilderKind(kind);
+
+export async function filterReadableAgentDefinitions(
+  owner: AssistantOwner, credentials: AssistantCredentials, ids: readonly string[],
+): Promise<ReadonlySet<string>> {
+  try {
+    await assertPermission(credentials, agentDefinitionPermissions);
+  } catch (error) {
+    if (error instanceof HttpError && error.status === 403) return new Set();
+    throw error;
+  }
+  const { rows } = await getPostgresPool().query<Pick<AgentRow, "id" | "kind">>(
+    `SELECT id,kind FROM ${t("assistant_agents")} WHERE domain_id=$1 AND id=ANY($2::uuid[])`,
+    [owner.domainId, ids],
+  );
+  return new Set(rows.filter(({ kind }) => isReadableDefinition(kind)).map(({ id }) => id));
+}
+
 async function editableAgent(id: string, owner: AssistantOwner) {
   const agent = await assistantStore.agent(id, owner);
-  if (isAppBuilderKind(agent.kind)) throw new HttpError(404, "Agent definition not found", "NOT_FOUND");
+  if (!isReadableDefinition(agent.kind)) throw new HttpError(404, "Agent definition not found", "NOT_FOUND");
   return agent;
 }
-export async function readAgentDefinition(id: string, owner: AssistantOwner, locale?: string) {
+export async function readStoredAgentDefinition(id: string, owner: AssistantOwner, locale?: string) {
   return view(await editableAgent(id, owner), locale);
 }
-/** The checks every save makes before it writes; a draft's validation runs exactly these and changes nothing. */
+
+export function projectAgentDefinitionSkills(
+  definition: Awaited<ReturnType<typeof readStoredAgentDefinition>>,
+  skillView: AssistantSkillView,
+) {
+  return { ...definition, skills: visibleAssistantSkillRefs(definition.skills, skillView) };
+}
+
+export async function readAgentDefinition(id: string, owner: AssistantOwner, credentials: AssistantCredentials) {
+  const definition = await readStoredAgentDefinition(id, owner, credentials.locale);
+  return projectAgentDefinitionSkills(definition, await readAssistantSkillView(owner.domainId, credentials));
+}
+export interface AgentDefinitionSkillSelection {
+  credentials: AssistantCredentials;
+  view: AssistantSkillView;
+}
+
+/** The operator governs execution settings; the initiator's view governs the skill selection. */
 export async function checkedDefinition(
   input: AssistantAgentUpdateInput,
   owner: AssistantOwner,
   credentials: AssistantCredentials,
   oldExecutionUserId: string | null,
   oldSkills: readonly RuntimeSkillRef[],
+  selection?: AgentDefinitionSkillSelection,
 ) {
   const executionUserId = input.executionUserId === undefined ? oldExecutionUserId : input.executionUserId;
   try {
@@ -73,20 +117,16 @@ export async function checkedDefinition(
     throw AgentDefinitionFieldError.fromOption(error, "/modelSelection/modelId", "target_unavailable");
   }
   if (input.skills === undefined) return { executionUserId };
-  const projection = oldSkills.length ? await readPageSkills(credentials) : undefined;
-  if (projection) {
-    const registered = new Set(projection.registeredSkills.map(runtimeSkillKey));
-    const visible = new Set(projection.pageSkills.map(({ skill }) => runtimeSkillKey(skill)));
-    if (oldSkills.map(runtimeSkillKey).some(key => registered.has(key) && !visible.has(key))) {
-      const message = tForLocale(credentials.locale, "panels.agentForm.hiddenSkillSelection");
-      throw new AgentDefinitionFieldError(403, message, "SKILL_SELECTION_INCOMPLETE", [
-        { field: "/skills", code: "target_unavailable", message },
-      ]);
-    }
+  const access = selection ?? { credentials, view: await readAssistantSkillView(owner.domainId, credentials) };
+  if (hasHiddenAssistantSkillRefs(oldSkills, access.view)) {
+    const message = tForLocale(access.credentials.locale, "panels.agentForm.hiddenSkillSelection");
+    throw new AgentDefinitionFieldError(403, message, "SKILL_SELECTION_INCOMPLETE", [
+      { field: "/skills", code: "target_unavailable", message },
+    ]);
   }
   try {
     const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
-    await validateAssistantSkills(owner.domainId, skills, credentials, projection);
+    await validateAssistantSkills(owner.domainId, skills, access.credentials, access.view);
     return { skills, executionUserId };
   } catch (error) {
     if (!(error instanceof HttpError) || error.status !== 400 || !["SKILL_NOT_FOUND", "INVALID_REQUEST"].includes(error.code ?? "")) throw error;
@@ -102,15 +142,24 @@ export async function validateAgentDefinition(
   await checkedDefinition(draft.form, owner, credentials, old?.execution_user_id ?? null, old?.skills ?? []);
 }
 export async function saveAgentDefinition(
+  id: string, input: AssistantAgentUpdateInput, owner: AssistantOwner, credentials: AssistantCredentials,
+) {
+  const { definition, skillView } = await saveAgentDefinitionSnapshot(id, input, owner, credentials);
+  return projectAgentDefinitionSkills(definition, skillView);
+}
+
+export async function saveAgentDefinitionSnapshot(
   id: string,
   input: AssistantAgentUpdateInput,
   owner: AssistantOwner,
   credentials: AssistantCredentials,
+  selection?: AgentDefinitionSkillSelection,
 ) {
   const locale = credentials.locale;
   return withDomainSkills(owner.domainId, async () => {
     const agent = await editableAgent(id, owner);
-    const { skills, executionUserId } = await checkedDefinition(input, owner, credentials, agent.execution_user_id, agent.skills);
+    const access = selection ?? { credentials, view: await readAssistantSkillView(owner.domainId, credentials) };
+    const { skills, executionUserId } = await checkedDefinition(input, owner, credentials, agent.execution_user_id, agent.skills, access);
     if (input.executionUserId != null && input.executionUserId !== agent.execution_user_id)
       await prepareExecutionSetting(owner, agent.execution_user_id, input.executionUserId, credentials);
     await transaction(async client=>{
@@ -136,17 +185,26 @@ export async function saveAgentDefinition(
     const updated=await client.query(`SELECT * FROM ${t('assistant_agents')} WHERE id=$1 AND domain_id=$2`,[id,owner.domainId]);
     await synchronizeNativeProfile(client,owner,updated.rows[0],locale);
     });
-    return readAgentDefinition(id, owner, locale);
+    return { definition: await readStoredAgentDefinition(id, owner, locale), skillView: access.view };
   });
 }
 export async function createAgentDefinition(
+  id: string, input: AssistantAgentInput, owner: AssistantOwner, credentials: AssistantCredentials,
+) {
+  const { definition, skillView } = await createAgentDefinitionSnapshot(id, input, owner, credentials);
+  return projectAgentDefinitionSkills(definition, skillView);
+}
+
+export async function createAgentDefinitionSnapshot(
   id: string,
   input: AssistantAgentInput,
   owner: AssistantOwner,
   credentials: AssistantCredentials,
+  selection?: AgentDefinitionSkillSelection,
 ) {
   return withDomainSkills(owner.domainId, async () => {
-    const { skills, executionUserId } = await checkedDefinition(input, owner, credentials, null, []);
+    const access = selection ?? { credentials, view: await readAssistantSkillView(owner.domainId, credentials) };
+    const { skills, executionUserId } = await checkedDefinition(input, owner, credentials, null, [], access);
     const pool = getPostgresPool();
     const existing = (
       await pool.query(
@@ -177,7 +235,7 @@ export async function createAgentDefinition(
         executionUserId,
       ],
     );
-    const actual = await readAgentDefinition(id, owner);
+    const actual = await readStoredAgentDefinition(id, owner);
     // The insert won: this call created the definition, so there is nothing to replay. A write that
     // changed nothing means the same id was replayed, which is only valid with the same definition.
     if (!inserted.rowCount) {
@@ -194,12 +252,15 @@ export async function createAgentDefinition(
           "IDEMPOTENCY_CONFLICT",
         );
     }
-    return actual;
+    return { definition: actual, skillView: access.view };
   });
 }
 
-export async function listAgentDefinitions(owner: AssistantOwner, locale?: string) {
-  return { agents: (await assistantStore.agents(owner.domainId)).map((a) => view(a, locale)) };
+export async function listAgentDefinitions(owner: AssistantOwner, credentials: AssistantCredentials) {
+  const [agents, skillView] = await Promise.all([
+    assistantStore.agents(owner.domainId), readAssistantSkillView(owner.domainId, credentials),
+  ]);
+  return { agents: agents.map(agent => projectAgentDefinitionSkills(view(agent, credentials.locale), skillView)) };
 }
 export async function deleteAgentDefinition(id: string, owner: AssistantOwner) {
   await editableAgent(id, owner);

@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import os from "node:os";
+import path from "node:path";
 import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
@@ -8,11 +11,11 @@ import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { panelHumanOperationPreparationSchema } from "@ontomato/contracts/panel-agent";
 import { platformTaskRunSchema, platformTaskSchema } from "@ontomato/contracts/platform-schedules";
 import scheduleExamples from "../../../../contracts/examples/platform-schedules.json";
+import { installContentLayout } from "../../content/layout";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
 import { buildTestAccess } from "../build-test-access";
-import { panelOperationsRouter } from "../routes/product-panels";
 
 const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "" }));
 vi.mock("../../infrastructure/postgres", () => ({
@@ -24,7 +27,6 @@ vi.mock("../../utils/request-identity", async original => ({
   ...await original<typeof import("../../utils/request-identity")>(),
   requireDomainId: (req: { domainId: string }) => req.domainId,
 }));
-vi.mock("../../services/assistant/skills", () => ({ readPageSkills: vi.fn() }));
 
 const objectType = "platform:ScheduledTask";
 const use = { applicationId: "app-tasks", useId: "tasks", operationId: "run.runNow" };
@@ -56,6 +58,7 @@ const run = platformTaskRunSchema.parse({
 });
 const call = { target: { kind: "object", objectType, primaryKey: task.id }, input: {} };
 let server: Server;
+let contentRoot: string;
 let ownerReads = 0;
 const ownerWrites: { credential: string | undefined; idempotencyKey: string | undefined }[] = [];
 
@@ -68,6 +71,9 @@ beforeAll(async () => {
   state.pool = new pg.Pool({ connectionString: database });
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
   await ensurePanelOperationsSchema(state.pool);
+  contentRoot = await mkdtemp(path.join(os.tmpdir(), "panel-human-operations-"));
+  installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
+  const { panelOperationsRouter } = await import("../routes/product-panels");
 
   const app = express();
   app.use(express.json());
@@ -105,6 +111,7 @@ afterAll(async () => {
   await new Promise<void>(resolve => server.close(() => resolve()));
   await state.pool!.query(`DROP SCHEMA "${state.schema}" CASCADE`);
   await state.pool!.end();
+  await rm(contentRoot, { recursive: true });
 });
 
 function request(path: string, user: string, body?: object, preview = false) {
