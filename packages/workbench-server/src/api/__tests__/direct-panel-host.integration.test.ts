@@ -423,7 +423,6 @@ it("preserves a code panel's ID and revision rules and describes its member oper
   const application = {
     domainId: "pilot",
     uses: [{ id: "mixed", panelId: codePanelId, inputs: { selectedTask: { literal: null } } }],
-    delivery: { panels: [codePanelId], projections: [summaryId, runId] },
   };
   const validate = (body: object, token = "fixture-service") => fetch(state.base + APPLICATION_PANEL_REFERENCES_PATH, {
     method: "POST",
@@ -433,7 +432,7 @@ it("preserves a code panel's ID and revision rules and describes its member oper
   expect((await validate(application, "reader")).status).toBe(403);
   const allowed = await validate(application);
   expect(allowed.status, await allowed.text()).toBe(204);
-  expect((await validate({ ...application, delivery: { panels: [], projections: [] } })).status).toBe(204);
+  expect((await validate({ ...application, delivery: { panels: [], projections: [] } })).status).toBe(400);
   const framePanelId = "panel-app-frame";
   const frameSaved = await request("PUT", "product-panels/" + framePanelId, {
     name: "Application frame", description: "", visibility: "domain", revision: 0, content: { html: "<div></div>" },
@@ -450,7 +449,8 @@ it("preserves a code panel's ID and revision rules and describes its member oper
   }] });
   expect(invalidInput.status).toBe(400);
   expect((await invalidInput.json()).error.message).toContain("selectedTask");
-  const unreachable = await validate({ ...application, delivery: { panels: [], projections: ["unreachable"] } });
-  expect(unreachable.status).toBe(400);
-  expect((await unreachable.json()).error.message).toContain("unreachable");
+  await state.pool!.query(`DELETE FROM "${state.schema}".product_projections WHERE id=$1`, [summaryId]);
+  const missingDependency = await validate(application);
+  expect(missingDependency.status).toBe(404);
+  expect(await missingDependency.json()).toMatchObject({ error: { code: "PRODUCT_UNAVAILABLE" } });
 });

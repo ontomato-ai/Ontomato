@@ -135,7 +135,7 @@ export async function saveCurrentPanel(owner: ProductOwner, credentials: Assista
 
 /** Java authorizes the registrant. This service call checks the current definitions used by the declaration. */
 export async function validateApplicationPanelReferences(request: ApplicationPanelReferencesRequest) {
-  const { domainId, framePanelId, uses, delivery } = request;
+  const { domainId, framePanelId, uses } = request;
   const panels = new Map<string, ProductPanelInput>();
   const projections = new Set<string>();
   const pending = new Set(uses.map(use => use.panelId));
@@ -165,8 +165,4 @@ export async function validateApplicationPanelReferences(request: ApplicationPan
       }
     }
   }
-  for (const id of delivery.panels)
-    if (!panels.has(id)) throw new HttpError(400, `Panel '${id}' is not reachable from the application`, "INVALID_PANEL_DELIVERY");
-  for (const id of delivery.projections)
-    if (!projections.has(id)) throw new HttpError(400, `Projection '${id}' is not reachable from the application`, "INVALID_PANEL_DELIVERY");
 }

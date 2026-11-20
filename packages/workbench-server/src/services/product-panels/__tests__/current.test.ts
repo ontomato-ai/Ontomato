@@ -107,7 +107,7 @@ it("rejects missing projection IDs, unknown slot inputs and mismatched ontology 
 
 it("does not accept a legacy asset ID as a current panel reference", async () => {
   const request = (panelId: string) => ({
-    domainId: owner.domainId, uses: [{ id: "use", panelId }], delivery: { panels: [], projections: [] },
+    domainId: owner.domainId, uses: [{ id: "use", panelId }],
   });
   await expect(validateApplicationPanelReferences(request("legacy-page"))).rejects.toMatchObject({ code: "INVALID_PANEL_REFERENCE" });
   await seedProjection(); const { revision, ...input } = panel(); await saveCurrentPanel(owner, credentials, "p", input, revision);
