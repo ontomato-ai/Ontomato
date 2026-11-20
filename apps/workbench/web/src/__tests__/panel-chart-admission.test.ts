@@ -74,7 +74,7 @@ describe("what a frame showing a chart may ask for", () => {
       [chartProjectionSourcePath(chart.id), "", "GET", null],
       [chartProjectionSourcePath(chart.id), "", "PUT", { chartFile: { option: {} } }],
       ["/ontology/query/metrics/describe", "/data-query", "POST", { id: METRIC }],
-      ["/ontology/query/metrics/execute", "/data-query", "POST", { id: METRIC, revision: 3, parameters: { department: "sales" } }],
+      ["/ontology/query/metrics/execute", "/data-query", "POST", { id: METRIC, revision: "3", parameters: { department: "sales" } }],
     ] as const)
       await expect(request(path, service, method, body), `${method} ${service}${path}`).resolves.toMatchObject({ status: 200 });
     expect(sent.map(({ method, path, search }) => `${method} ${path}${search}`)).toEqual([
@@ -94,7 +94,7 @@ describe("what a frame showing a chart may ask for", () => {
     await request(`/product-projections/${summary.id}`, "");
     const before = sent.length;
     for (const [path, service, method, body] of [
-      ["/ontology/query/metrics/execute", "/data-query", "POST", { id: "salary-metric", revision: 3, parameters: {} }],
+      ["/ontology/query/metrics/execute", "/data-query", "POST", { id: "salary-metric", revision: "3", parameters: {} }],
       ["/ontology/query/metrics/execute", "/data-query", "POST", { id: METRIC, parameters: {} }],
       ["/ontology/query/metrics/describe", "/data-query", "POST", { id: "salary-metric" }],
       ["/metricView/execute", "/data-query", "POST", { id: METRIC, param: { department: "sales" } }],
