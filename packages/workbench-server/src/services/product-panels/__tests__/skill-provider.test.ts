@@ -17,7 +17,6 @@ import { parseSkillMarkdown } from "../../../core/skills/manifest";
 import { SkillSourceRecordError, type SkillSourceFailure } from "../../../core/skills/providers";
 import { backendGet } from "../../../utils/backend-client";
 import { findCurrentProduct, type CurrentProductRow } from "../../../infrastructure/product-current";
-import { registeredPanelOperation } from "../server-operations";
 
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://java.test" } } }));
 vi.mock("../../../config/environment", () => ({
@@ -368,6 +367,7 @@ it("keeps the package and recipes for a panel independent of its entrance", asyn
     expect(markdown).toContain('"form": {}');
     const draftSection = markdown.split("### Draft a change")[1]!.split("### Declared operations")[0]!;
     expect(draftSection).toContain("Use the owner-described values in `form`.");
+    const { registeredPanelOperation } = await import("../server-operations");
     const save = registeredPanelOperation("platform:ScheduledTask.save")?.handler;
     assert.equal(save?.kind, "form.save");
     expect(markdown.split("### Declared operations")[1]!).toContain(save.formInstructions);
