@@ -261,6 +261,9 @@ importers:
       '@ontomato/platform-schedules':
         specifier: workspace:*
         version: link:../platform-schedules
+      '@ontomato/platform-shell':
+        specifier: workspace:*
+        version: link:../platform-shell
       '@ontomato/workbench-ui':
         specifier: workspace:*
         version: link:../workbench-ui
