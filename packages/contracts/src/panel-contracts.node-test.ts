@@ -239,6 +239,46 @@ test("knowledge detail can share list search and customer instances have no form
   }).success, false);
 });
 
+test("knowledge lists accept scalar status and counts preserve the owner's order and labels", async () => {
+  const { panelGroupCountsSchema, panelReadInputMatches } = await import("./panel-projection");
+  const projection = {
+    name: "Knowledge", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectList",
+    inputs: {}, outputs: {}, config: {},
+  };
+  const query = { source: { type: platformType(BUSINESS_KNOWLEDGE) }, read: "query", params: { status: { literal: "pending" } } };
+  assert.equal(productProjectionInputSchema.safeParse({ ...projection, data: { rows: query } }).success, true);
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...projection, data: { rows: { ...query, params: { filter: { literal: { status: "pending" } } } } },
+  }).success, false);
+  assert.equal(panelReadInputMatches("knowledgeStatus", { kind: "scalar", type: "string" }), true);
+
+  const counts = [
+    { key: "all", label: "全部", count: 3 },
+    { key: "pending", label: "待审核", count: 1 },
+    { key: "approved", label: "已通过", count: 2 },
+  ];
+  assert.deepEqual(panelGroupCountsSchema.parse(counts), counts);
+  assert.equal(panelGroupCountsSchema.safeParse({ all: 3, pending: 1, approved: 2 }).success, false);
+});
+
+test("ontology object lists use search while reference options keep keyword", () => {
+  const projection = {
+    name: "Find an ontology object", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectList",
+    inputs: {}, outputs: {}, config: {},
+  };
+  const objects = { source: { type: platformType(ONTOLOGY_TYPE) }, read: "objects" };
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...projection, data: { objects: { ...objects, params: { type: { literal: USER }, search: { literal: "Lee" } } } },
+  }).success, true);
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...projection, data: { objects: { ...objects, params: { type: { literal: USER }, keyword: { literal: "Lee" } } } },
+  }).success, false);
+  const options = { source: { type: platformType(USER) }, read: "options" };
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...projection, componentId: "@ontomato/sdk:ReferencePicker", data: { options: { ...options, params: { keyword: { literal: "Lee" } } } },
+  }).success, true);
+});
+
 test("model reads and operations use their owner's fixed signatures", async () => {
   const { directReadDeclaration } = await import("./panel-projection");
   const base = {
