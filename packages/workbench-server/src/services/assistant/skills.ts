@@ -3,12 +3,13 @@ import { GOVERNANCE_SKILL } from "./governance-definition";
 import { APP_BUILDER_SKILL } from "../app-builder/definition";
 import path from "node:path";
 import { runtimeSkillKey, type RuntimeSkillRef, type RuntimeSkillVersion } from "@ontomato/contracts/agent-runtime-skills";
+import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import type { SkillInfo } from "@ontomato/contracts/skills";
 import { assistantSkillCatalogSchema, type AssistantSkillOption } from "@ontomato/contracts/assistant-chat";
 import { skillRegistryManager } from "../../core/skills/registry/manager";
 import { HttpError } from "../../utils/errors";
 import { skillManager } from "../skills/skill-manager";
-import { readSkillView } from "../skills/view";
+import { readSkillView, resolveCurrentPageSkillMember } from "../skills/view";
 import {
   publishOntologyAssistantSkill, publishSkill, publishSkillPackage, workbenchBuiltinSkillRoot,
 } from "../agent-runtime/skills";
@@ -16,7 +17,7 @@ import { tForLocale } from "../../i18n";
 import { InvalidSkillPackageError, readSkillMarkdown } from "../../core/skills/manifest";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 
-export { pageSkillMemberContext, resolvePageSkillMember, resolvePageSkillSource } from "../skills/view";
+export { pageSkillMemberContext, resolveCurrentPageSkillMember, resolvePageSkillSource } from "../skills/view";
 
 const RETRIEVAL_SKILLS = new Set(["ontomato-analyst-assistant"]);
 const ANALYST_SKILL: RuntimeSkillRef = { namespace: { kind: "provider", provider: "ontology" }, name: "ontomato-analyst-assistant" };
@@ -96,11 +97,11 @@ export async function readAssistantSkillView(domainId: string, initiatorCredenti
 export type AssistantSkillView = Awaited<ReturnType<typeof readAssistantSkillView>>;
 
 export function visibleAssistantSkillRefs(refs: readonly RuntimeSkillRef[], view: AssistantSkillView): RuntimeSkillRef[] {
-  return view.expandStoredRefs(refs).filter(view.hasSkill);
+  return [...new Map(refs.filter(view.hasSkill).map(ref => [runtimeSkillKey(ref), ref])).values()];
 }
 
 export function hasHiddenAssistantSkillRefs(refs: readonly RuntimeSkillRef[], view: AssistantSkillView): boolean {
-  return view.expandStoredRefs(refs).some(view.hiddenStoredSkill);
+  return refs.some(view.hiddenStoredSkill);
 }
 
 export function effectiveAssistantSkills(
@@ -171,15 +172,21 @@ function unavailableRunSkill() {
 
 /** One initiator view binds this turn to the versions returned by the selected publishers. */
 export async function prepareAssistantSkills(domainId: string, agent: { kind: string; skills: readonly RuntimeSkillRef[] },
-  initiatorCredentials: AssistantCredentials,
+  initiatorCredentials: AssistantCredentials, pageSkillContext?: PageSkillContext,
 ) {
   const view = await readAssistantSkillView(domainId, initiatorCredentials);
-  for (const ref of view.expandStoredRefs(agent.skills)) {
+  for (const ref of agent.skills) {
     if (!view.hasSkill(ref) && !view.unavailableStoredPageSkill(ref)) throw unavailableRunSkill();
+  }
+  let currentPage = null;
+  if (pageSkillContext?.mode === "member" && pageSkillContext.member) {
+    currentPage = await resolveCurrentPageSkillMember(view, pageSkillContext.locator, pageSkillContext.member);
+    if (!currentPage) throw new HttpError(403, "Page skill is unavailable", "PAGE_SKILL_FORBIDDEN");
   }
   const selected = effectiveAssistantSkills(agent, view);
   checkSkillSelection(selected, view);
   const skills: RuntimeSkillVersion[] = [];
   for (const ref of selected) skills.push(await publishSelectedSkill(domainId, ref, view));
-  return { skills, pageDrafts: selected.some(view.pageSkillIsAvailable) };
+  return { skills, pageDrafts: selected.some(view.pageSkillIsAvailable),
+    currentPage: currentPage && loadedPageSkillVersion(currentPage.member.ref, skills) ? currentPage : null };
 }

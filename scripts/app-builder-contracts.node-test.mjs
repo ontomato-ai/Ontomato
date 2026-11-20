@@ -24,6 +24,9 @@ for (const [command, option] of [
 
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { analystCommand } from "../agent-skills/ontomato-analyst/client.mjs";
 
@@ -94,7 +97,7 @@ test("agent dispatch carries build-test context and preserves the entry-point re
   } finally {await new Promise(resolve=>server.close(resolve));}
 });
 
-test("the app-builder CLI reads the exact SDK and author candidate, then registers explicit current material", async () => {
+test("the app-builder CLI uses the current checker and registers no-code material", async () => {
   const workspaceId = "11111111-1111-4111-8111-111111111111";
   const ref = "f".repeat(40);
   const sdkVersion = "4.1.9-dev." + "a".repeat(64);
@@ -113,8 +116,29 @@ test("the app-builder CLI reads the exact SDK and author candidate, then registe
   };
   const requests = [];
   const sdkPath = `/apps-sdk/${sdkVersion}`;
+  const release = {
+    version: sdkVersion, digest: "b".repeat(64), publicBasePath: "/public",
+    sdkBasePath: "/public" + sdkPath, checkPath: "/public" + sdkPath + "/node/panel-check.mjs",
+    componentsPath: "/public" + sdkPath + "/components.json",
+  };
+  const checkModule = `
+    const parse = value => {
+      if ("sdkVersion" in value) throw new Error("The current SDK refuses sdkVersion");
+      return value;
+    };
+    export const registerDirectPanelRequestSchema = { parse };
+    export const registerDirectProjectionRequestSchema = { parse };
+    export const directPanelDefinitionContentSchema = {
+      safeParse(value) {
+        return value.content.html === "<bad>"
+          ? { success: false, error: { issues: [{ path: ["content", "html"], params: { line: 1, column: 2 }, message: "Rejected by the release parser" }] } }
+          : { success: true, data: value };
+      }
+    };
+  `;
   const candidatePath = `/api/workspaces/${workspaceId}/panel-candidate?ref=${ref}`;
   const panelPath = "/api/product-panels/acceptance-panel";
+  const projectionPath = "/api/product-projections/tasks";
   const usesPath = "/owner/platform/applications/app-acceptance/panel-uses";
   const server = createServer(async (request, response) => {
     let content = "";
@@ -122,10 +146,15 @@ test("the app-builder CLI reads the exact SDK and author candidate, then registe
     const body = content ? JSON.parse(content) : undefined;
     requests.push([request.method, request.url, body, request.headers["x-api-key"]]);
     response.setHeader("content-type", "application/json");
-    if (request.url === `${sdkPath}/components.json`) response.end(JSON.stringify({ version: sdkVersion, components: [] }));
-    else if (request.url === `${sdkPath}/sdk.json`) response.end(JSON.stringify({ version: sdkVersion }));
+    if (request.url === "/api/apps-sdk/current") response.end(JSON.stringify(release));
+    else if (request.url === `${sdkPath}/components.json`) response.end(JSON.stringify({ version: sdkVersion, components: [{ componentId: "ObjectList" }] }));
+    else if (request.url === `${sdkPath}/node/panel-check.mjs`) response.end(checkModule);
+    else if (request.url === projectionPath) response.end(JSON.stringify({ projection: { componentId: "@ontomato/sdk:ObjectList" } }));
     else if (request.url === candidatePath) response.end(JSON.stringify(source));
-    else if (request.url === panelPath) response.end(JSON.stringify({ panel: { revision: 8 } }));
+    else if (request.url === panelPath && body?.revision === 6) {
+      response.statusCode = 409;
+      response.end(JSON.stringify({ error: { message: "Revision conflict" } }));
+    } else if (request.url === panelPath) response.end(JSON.stringify({ panel: { revision: 8 } }));
     else if (request.url === usesPath) response.end(JSON.stringify({ success: true, data: { panelUses: [] } }));
     else {
       response.statusCode = 404;
@@ -134,30 +163,62 @@ test("the app-builder CLI reads the exact SDK and author candidate, then registe
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
+  const directory = await mkdtemp(join(tmpdir(), "ontomato-panel-check-"));
   const run = (...args) => promisify(execFile)(process.execPath, ["agent-skills/ontomato-app-builder/ontomato.mjs", ...args], {
     env: { ...process.env, ONTOMATO_WORKBENCH_URL: base, ONTOMATO_ONTOLOGY_URL: base + "/owner",
       ONTOMATO_API_KEY: "author-key", ONTOMATO_WORKSPACE_ID: workspaceId },
   });
   try {
-    const catalog = await run("sdk", "read", sdkVersion, "components.json");
+    const catalog = await run("sdk", "read", "components.json");
     assert.equal(JSON.parse(catalog.stdout).version, sdkVersion);
     const preview = JSON.parse((await run("panel", "preview", ref)).stdout);
     assert.deepEqual(preview, source);
-    const input = { ...preview.panel, name: "Acceptance", description: "", visibility: "private" };
+    const input = {
+      content: { html: "<section></section>" },
+      manifest: { members: {}, state: {}, events: {} },
+      name: "Acceptance", description: "", visibility: "private",
+    };
     const application = { entry: { path: "/acceptance", renderer: "panels" }, panelUses: [] };
     const result = await run("panel", "register", JSON.stringify({
       panels: [{ id: "acceptance-panel", mode: "update", revision: 7, input }],
       applications: [{ id: "app-acceptance", mode: "update", input: application }],
     }));
     assert.equal(result.stdout, "panel acceptance-panel\napplication app-acceptance\n");
-    assert.deepEqual(requests, [
+    assert.deepEqual(requests.splice(0), [
+      ["GET", "/api/apps-sdk/current", undefined, "author-key"],
       ["GET", `${sdkPath}/components.json`, undefined, "author-key"],
       ["GET", candidatePath, undefined, "author-key"],
-      ["GET", `${sdkPath}/sdk.json`, undefined, "author-key"],
       ["PUT", panelPath, { ...input, revision: 7 }, "author-key"],
       ["PUT", usesPath, application, "author-key"],
     ]);
+    const stale = { id: "acceptance-panel", mode: "update", input, revision: 6 };
+    await assert.rejects(run("panel", "register", JSON.stringify({
+      panels: [stale, { ...stale, id: "later-panel", revision: 7 }],
+    })), error => error.stderr.includes("409 Revision conflict"));
+    assert.deepEqual(requests.splice(0).filter(([method]) => method === "PUT").map(([, url]) => url), [panelPath]);
+
+    const manifest = { members: { tasks: { target: { projectionId: "tasks" } } }, state: {}, events: {} };
+    await writeFile(join(directory, "panel.json"), JSON.stringify({ manifest }));
+    const layout = join(directory, "panel.html");
+    await writeFile(layout, '<panel-member ref="tasks"></panel-member>');
+    const checked = await run("panel", "check", directory);
+    assert.deepEqual(JSON.parse(checked.stdout), { status: "valid", version: sdkVersion, digest: release.digest, unchecked: [] });
+    assert.deepEqual(new Map(requests.splice(0).map(([method, url]) => [url, method])), new Map([
+      ["/api/apps-sdk/current", "GET"], [`${sdkPath}/node/panel-check.mjs`, "GET"],
+      [`${sdkPath}/components.json`, "GET"], [projectionPath, "GET"],
+    ]));
+    const materialPath = join(directory, "registration.json");
+    await writeFile(materialPath, JSON.stringify({
+      projections: [{ id: "tasks", mode: "create", input: { componentId: "@ontomato/sdk:ObjectList" } }],
+    }));
+    const checkedMaterial = await run("panel", "check", directory, "--material", materialPath);
+    assert.deepEqual(JSON.parse(checkedMaterial.stdout).unchecked, []);
+    assert.equal(requests.splice(0).some(([method, url]) => method !== "GET" || url === projectionPath), false);
+    await writeFile(layout, "<bad>");
+    await assert.rejects(run("panel", "check", directory), error => error.stderr.includes(`${layout}:1:2: Rejected by the release parser`));
+    assert.equal(requests.some(([method, url]) => method !== "GET" || url === projectionPath), false);
   } finally {
+    await rm(directory, { recursive: true });
     await new Promise(resolve => server.close(resolve));
   }
 });
