@@ -210,6 +210,7 @@ export const m7ServerOperations = [
   },
   {
     handlerRef: APPROVE_KNOWLEDGE,
+    labelKey: "panels.knowledge.approve",
     kind: "action",
     binding: { kind: "PlatformOperation", id: APPROVE_KNOWLEDGE },
     effect: "write",
@@ -232,6 +233,7 @@ export const m7ServerOperations = [
   },
   {
     handlerRef: DELETE_KNOWLEDGE,
+    labelKey: "panels.knowledge.delete",
     kind: "action",
     binding: { kind: "PlatformOperation", id: DELETE_KNOWLEDGE },
     effect: "write",

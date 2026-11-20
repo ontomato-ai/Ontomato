@@ -7,9 +7,7 @@ import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contrac
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import {
-  ACTION, ATTRIBUTE, DASHBOARD_CARD, DELETE_ACTION, DELETE_ATTRIBUTE, DELETE_OBJECT_TYPE, DELETE_RELATIONSHIP,
-  METRIC_VIEW, OBJECT_TYPE, ONTOLOGY_TYPE, RELATIONSHIP, SET_ACTION_STATUS, SET_PRIMARY_KEY,
-  platformObjectTypes, type PlatformReadDeclaration,
+  ACTION, ATTRIBUTE, DASHBOARD_CARD, METRIC_VIEW, OBJECT_TYPE, ONTOLOGY_TYPE, RELATIONSHIP, type PlatformReadDeclaration,
 } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { assertPermission } from "../../identity/installed";
@@ -17,8 +15,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
-import { describeObjectAction } from "../action/object-actions";
-import { createActionReadAdapter } from "../action/panel-reads";
+
 import { createDashboardCardReadAdapter } from "../dashboard/chart-sources";
 import { createMetricReadAdapter } from "../metric-function/panel-reads";
 import { createCustomerOntologyReadAdapter } from "../ontology-model/customer-reads";
@@ -29,7 +26,6 @@ import type { SkillResolveRequest } from "../skills/panel-reads";
 import { requireChartReadRegistration } from "./chart-sources";
 import { readPanelComponentCatalogue } from "./component-catalogue";
 import { requireRegisteredPanelRoot, resolvePanelMemberPath } from "./member-path";
-import { resolvePlacedObjectAction } from "./object-action-placement";
 
 type ReadInputs = ProductPanelReadRequest["inputs"];
 type ReadMember = ProductPanel["manifest"]["members"][string];
@@ -60,7 +56,10 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   };
   const knowledge = createBusinessKnowledgeReadAdapter(viewer);
   const model = createOntologyModelReadAdapter(owner, viewer, callerUserName);
-  const actions = createActionReadAdapter(owner, viewer, callerUserName);
+  const actions = async () => {
+    const { createActionReadAdapter } = await import("../action/panel-reads");
+    return createActionReadAdapter(owner, viewer, callerUserName);
+  };
   const metrics = createMetricReadAdapter(owner, viewer, callerUserName);
   const cards = createDashboardCardReadAdapter(owner, viewer);
   const formParams = (params: Record<string, unknown>) => ({
@@ -91,11 +90,9 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   };
   return {
     [ACTION]: {
-      list: () => actions.list(),
-      record: selection => actions.record(selection.primaryKey!),
-      form: (selection, params) => actions.form(selection.primaryKey!, formParams(params)),
-      [`${SET_ACTION_STATUS}.describe`]: () => actions[`${SET_ACTION_STATUS}.describe`](),
-      [`${DELETE_ACTION}.describe`]: () => actions[`${DELETE_ACTION}.describe`](),
+      list: async () => (await actions()).list(),
+      record: async selection => (await actions()).record(selection.primaryKey!),
+      form: async (selection, params) => (await actions()).form(selection.primaryKey!, formParams(params)),
     },
     [METRIC_VIEW]: {
       result: (selection, params) => metrics.result(selection.primaryKey!, runtimeJsonObjectSchema.parse(params)),
@@ -133,13 +130,9 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
         return (await skills()).resolve({ values: params.values as SkillResolveRequest["values"] });
       },
     },
-    [OBJECT_TYPE]: { ...modelReads, [`${DELETE_OBJECT_TYPE}.describe`]: () => model.describe(DELETE_OBJECT_TYPE) },
-    [ATTRIBUTE]: {
-      ...modelReads,
-      [`${DELETE_ATTRIBUTE}.describe`]: () => model.describe(DELETE_ATTRIBUTE),
-      [`${SET_PRIMARY_KEY}.describe`]: () => model.describe(SET_PRIMARY_KEY),
-    },
-    [RELATIONSHIP]: { ...modelReads, [`${DELETE_RELATIONSHIP}.describe`]: () => model.describe(DELETE_RELATIONSHIP) },
+    [OBJECT_TYPE]: modelReads,
+    [ATTRIBUTE]: modelReads,
+    [RELATIONSHIP]: modelReads,
     [ONTOLOGY_TYPE]: {
       schema: async () => (await ontology()).schema(),
       counts: async () => (await ontology()).counts(),
@@ -154,7 +147,6 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
         values: panelReadParameterSchemas.formValues.optional().parse(params.values),
         changedField: panelReadParameterSchemas.changedField.optional().parse(params.changedField),
       }),
-      "schedules.runNow.describe": () => schedules["schedules.runNow.describe"](),
     },
     [BUSINESS_KNOWLEDGE]: {
       query: (_selection, params) => knowledge.query(params),
@@ -162,8 +154,6 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       record: (selection, params) => knowledge.record(selection.primaryKey!, params),
       form: (selection, params) => knowledge.form(selection.primaryKey!, params),
       createForm: (_selection, params) => knowledge.form(undefined, params),
-      "knowledge.approve.describe": () => knowledge["knowledge.approve.describe"](),
-      "knowledge.delete.describe": () => knowledge["knowledge.delete.describe"](),
     },
   };
 }
@@ -242,14 +232,10 @@ function readSelection({ source, read }: DirectProjectionData, inputs: ReadInput
   if ("type" in source) return {
     kind: source.type.kind === "PlatformObjectType" ? "platform" : "customer", typeId: source.type.id, method: read,
   };
-  if ("object" in source) {
-    const value = "literal" in source.object ? source.object.literal : inputs[source.object.input];
-    if (value == null) throw new HttpError(400, "Select an object before reading its data", "PANEL_SELECTION_REQUIRED");
-    const { className, primaryKey } = panelObjectRefSchema.parse(value);
-    return { kind: className.startsWith("platform:") ? "platform" : "customer", typeId: className, method: read, primaryKey };
-  }
-  const [typeId] = Object.entries(platformObjectTypes).find(([, entry]) => entry.operations?.includes(source.operation.id))!;
-  return { kind: "platform", typeId, method: `${source.operation.id}.${read}` };
+  const value = "literal" in source.object ? source.object.literal : inputs[source.object.input];
+  if (value == null) throw new HttpError(400, "Select an object before reading its data", "PANEL_SELECTION_REQUIRED");
+  const { className, primaryKey } = panelObjectRefSchema.parse(value);
+  return { kind: className.startsWith("platform:") ? "platform" : "customer", typeId: className, method: read, primaryKey };
 }
 
 export async function readProductPanelData(
@@ -257,26 +243,20 @@ export async function readProductPanelData(
 ): Promise<ProductPanelReadResponse> {
   try {
     const { member, projection, panel, viewer: readViewer } = await resolveReadMember(owner, viewer, request);
+    const inputs = effectiveInputs(projection, member, request.inputs);
+    if ("operations" in request) {
+      const { readAdmittedProjectionOperations } = await import("./direct-operations");
+      const value = await readAdmittedProjectionOperations({ owner, credentials: readViewer },
+        { panel, projection, member, slot: request.memberPath.at(-1)!.member }, inputs);
+      return { status: "ready", value };
+    }
     if (!Object.hasOwn(projection.data, request.dataName)) return { status: "forbidden" };
     const data = projection.data[request.dataName];
-    const inputs = effectiveInputs(projection, member, request.inputs);
     const declaration = directReadDeclaration(projection, data)!;
     const params = await readParameters(projection, member, request.dataName, data, declaration, inputs, request.runtimeParams);
     if (declaration.parameterMode === "fixed") {
       for (const name of declaration.requiredParams ?? [])
         if (!Object.hasOwn(params, name)) throw new HttpError(400, `Missing read parameter: ${name}`, "PANEL_INPUT_REQUIRED");
-    }
-    if ("operation" in data.source && data.source.operation.kind === "Action") {
-      const resolved = await resolvePlacedObjectAction(
-        { owner, credentials: readViewer }, { panel, projection, member, memberName: request.memberPath.at(-1)!.member, data }, data.source.operation.id,
-        name => {
-          const value = name === undefined ? undefined : inputs[name];
-          if (value == null) return undefined;
-          const { className, primaryKey } = panelObjectRefSchema.parse(value);
-          return { objectType: className, primaryKey };
-        },
-      );
-      return { status: "ready", value: describeObjectAction(resolved) };
     }
     const selection = readSelection(data, inputs);
     const read = selection.kind === "customer"
@@ -291,14 +271,6 @@ export async function readProductPanelData(
     if (declaration.result === "metricOutput") {
       const value = panelReadResultSchemas.metricOutput.parse(result);
       return value.rows.length || value.truncation ? { status: "ready", value } : { status: "empty" };
-    }
-    if (declaration.result === "panelOperationDescriptor" && "operation" in data.source
-      && data.source.operation.kind === "PlatformOperation") {
-      const described = panelReadResultSchemas.panelOperationDescriptor.parse(result);
-      const { describeServerOperation, panelServerOperation } = await import("./server-operations");
-      const handler = panelServerOperation(data.source.operation.id);
-      const slot = described.target.source === "draft" ? described.target.slot : undefined;
-      return { status: "ready", value: describeServerOperation(handler, described.label, slot) };
     }
     return { status: "ready", value: panelReadResultSchemas[declaration.result].parse(result) };
   } catch (error) {

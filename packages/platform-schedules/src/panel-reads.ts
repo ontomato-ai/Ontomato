@@ -43,6 +43,7 @@ function typedField(field: FormField): PanelFormField {
 
 const runNowRead = `${scheduledTaskRunNowOperation.handlerRef}.describe` as const;
 const scheduledTaskRunNowDescription = {
+  kind: "action",
   handlerRef: scheduledTaskRunNowOperation.handlerRef,
   effect: scheduledTaskRunNowOperation.effect,
   target: { source: "input", input: scheduledTaskRunNowOperation.targetInput },

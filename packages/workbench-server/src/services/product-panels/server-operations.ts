@@ -1,13 +1,12 @@
 import type { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { panelWriteOperationSnapshotSchema, type PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
-import type { PanelFormTarget, PanelObjectIdentity, PanelOperation, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
+import type { PanelFormTarget, PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import {
-  describePanelOperationFromDeclaration, panelOperationDeclarationSchema, panelReadOperationDescriptorSchema,
+  describePanelOperationFromDeclaration, panelOperationDeclarationSchema, type PanelOwnerOperationDescriptor,
   type PanelReadOperationResult, type panelBatchInvocationSchema,
   type panelOperationImpactSchema, type panelReadOperationCallSchema, type panelSingleInvocationSchema,
 } from "@ontomato/contracts/panel-operations";
-import type { DirectProjectionPorts } from "@ontomato/contracts/panel-projection";
 import { runtimeJsonObjectSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { AssistantSkillView } from "../assistant/skills";
 import type { AssistantOwner } from "../assistant/store";
@@ -45,6 +44,7 @@ export interface PanelOperationHost {
 interface ServerOperation {
   handlerRef: string;
   binding: OntologyElementRef;
+  labelKey?: string;
   effect: "write";
   inspectImpact?: PanelImpactInspector;
   targetType: string;
@@ -104,13 +104,10 @@ const registrations: readonly PanelServerOperation[] = [
 const operations = new Map(registrations.map(operation => [operation.handlerRef, operation]));
 const jsonSchema = (schema: z.ZodTypeAny) => zodToJsonSchema(schema, { effectStrategy: "input" });
 
-export function panelServerOperationSupportsBatch(handlerRef: string): boolean {
-  return operations.get(handlerRef)?.batch === true;
-}
-
-function operationDeclaration(handler: PanelServerOperation) {
+export function operationDeclaration(handler: PanelServerOperation) {
   return panelOperationDeclarationSchema.parse({
     id: handler.handlerRef,
+    kind: handler.kind,
     effect: handler.effect,
     batch: handler.batch,
     target: handler.kind === "action" && handler.effect === "write"
@@ -119,34 +116,19 @@ function operationDeclaration(handler: PanelServerOperation) {
   });
 }
 
-export function panelOperationTargetPort(
-  port: DirectProjectionPorts["inputs"][string] | undefined, targetType: string, batch: boolean,
-) {
-  if (port?.kind === "object" && port.objectType === targetType) return port;
-  if (port?.kind === "list" && batch && port.items.kind === "object" && port.items.objectType === targetType) return port;
-}
-
 export function registeredPanelOperation(id: string) {
   const handler = operations.get(id);
-  if (handler) return { declaration: operationDeclaration(handler), targetType: handler.effect === "write" ? handler.targetType : undefined };
+  if (handler) return { handler, declaration: operationDeclaration(handler), targetType: handler.effect === "write" ? handler.targetType : undefined };
 }
 
-export function describeServerOperation(handler: PanelServerOperation, label: string, slot?: string) {
+export function describeServerOperation(handler: PanelServerOperation, label: string, slot?: string,
+  target?: PanelOwnerOperationDescriptor["target"],
+) {
   return describePanelOperationFromDeclaration(operationDeclaration(handler), {
-    label, slot,
+    label, slot, target,
     resultSchema: runtimeJsonObjectSchema.parse(jsonSchema(handler.resultSchema)),
     ...(handler.effect === "write" && handler.inspectImpact && { inspectImpact: { handlerRef: handler.inspectImpact.handlerRef } }),
   });
-}
-
-export function snapshotPanelWrite(handler: PanelWriteServerOperation, operation: PanelOperation, slot: string) {
-  return panelWriteOperationSnapshotSchema.parse({
-    ...describeServerOperation(handler, operation.label, slot), id: operation.id, kind: handler.kind, slot,
-  });
-}
-
-export function describePanelRead(handler: PanelReadServerOperation, label: string) {
-  return panelReadOperationDescriptorSchema.parse(describeServerOperation(handler, label, handler.target.slot));
 }
 
 export function panelResultProjection(handlerRef: string) {

@@ -151,6 +151,7 @@ const deleteOperation = knowledgeAction(DELETE_KNOWLEDGE);
 /** The owner's description of one write, as the confirming reader and an agent both take it. */
 const actionDescription = (operation: ReturnType<typeof knowledgeAction>) => ({
   handlerRef: operation.handlerRef,
+  kind: operation.kind,
   effect: operation.effect,
   target: { source: "input", input: operation.targetInput },
   inputSchema: zodToJsonSchema(operation.inputSchema, { effectStrategy: "input" }),
