@@ -70,7 +70,9 @@ const CHECK_EXPORTS = [
   "panelManifestSchema", "panelDefinitionContentSchema", "productProjectionInputSchema",
   "registerProductPanelRequestSchema", "registerProductProjectionRequestSchema", "directReadDeclaration", "platformObjectTypes",
   "panelReadParameterSchemas", "panelReadResultSchemas", "appsSdkComponentCatalogSchema",
-  "panelAuthoringManifestSchema", "panelAuthoringMemberSchema", "expandPanelAuthoringMember",
+  "panelAuthoringManifestSchema", "panelAuthoringMemberSchema", "expandPanelAuthoringMember", "bindPanelAuthoringChart",
+  "CHART_PROJECTION_SOURCES_PATH", "chartProjectionLookupResponseSchema", "registerChartProjectionResponseSchema",
+  "productProjectionResponseSchema",
 ];
 
 /**
@@ -170,7 +172,8 @@ async function main() {
     }),
   });
   writeFileSync(join(outDir, "components.json"), `${JSON.stringify(catalogue, null, 2)}\n`);
-  writeFileSync(join(outDir, "docs/components.md"), render(catalogueMarkdown(version, components), version));
+  // The document reads the catalogue as it ships: each component's data, configuration and events beside its meaning.
+  writeFileSync(join(outDir, "docs/components.md"), render(catalogueMarkdown(version, catalogue.components), version));
   writeFileSync(join(outDir, "docs/reference.md"), [
     `# @ontomato/sdk ${version}: reference`,
     "",

@@ -29,9 +29,13 @@ import { stateObject, stateObjects } from "../panel/state";
  */
 const props = withDefaults(
   defineProps<{
-    /** The operation it runs: the projection's local name for it, under `operations`. */
+    /**
+     * The operation it runs: the projection's local name for it under `operations`. The button shows the owner's label once the
+     * owner admits it, and until then that a choice is needed (an action on an object is admitted once it is chosen); its target is the input
+     * the operation names, and a target bound to the panel's checked list makes it one batch over every checked item.
+     */
     operation: string;
-    /** The button's style: the page's main action, or a danger one. Display only. */
+    /** How the button looks: `primary` for the page's main action, `danger` for one that removes; it changes nothing else. */
     type?: "primary" | "danger" | "default";
   }>(),
   { type: "default" },

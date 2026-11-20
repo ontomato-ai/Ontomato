@@ -291,6 +291,29 @@ it("only opens for an entry naming no candidate, keeping its own agent and its t
   }
 });
 
+it("takes the preset an entry names when the page says which candidate it is, and only opens for one it does not offer", async () => {
+  const drawn = draw({
+    pageAgents: async () => ({
+      agents: [agent("assistant", "Assistant"), agent("governance", "Knowledge governance")],
+      defaultAgentId: "assistant",
+      presetAgentIds: { regular: "assistant", "knowledge-governance": "governance" },
+    }),
+  });
+  await settle();
+
+  drawn.served.at(-1)!({ target: { kind: "preset", agentKind: "knowledge-governance" }, prefill: "Review the pending knowledge" });
+  await settle();
+  expect(drawn.shown().agentId).toBe("governance");
+  expect(box(drawn.root)!.value).toBe("Review the pending knowledge");
+
+  // A preset that is no candidate here: the composer opens on the agent it has, its text untouched.
+  drawn.served.at(-1)!({ target: { kind: "preset", agentKind: "analysis" }, prefill: "Not for this page" });
+  await settle();
+  expect(drawn.shown().agentId).toBe("governance");
+  expect(box(drawn.root)!.value).toBe("Review the pending knowledge");
+  expect(drawn.ask).not.toHaveBeenCalled();
+});
+
 it("serves entries only while it is drawn, and withdraws when the page goes", async () => {
   const none = draw({ pageSkill: unavailableMemberSkill });
   await settle();

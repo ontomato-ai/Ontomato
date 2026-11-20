@@ -1,7 +1,7 @@
 import { computed, nextTick, ref, shallowRef, watch } from "vue";
 import type { AgentHostAgent, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
-import type { AgentHostClient } from "./host";
+import type { AgentHostClient, PageAgents } from "./host";
 
 export interface AgentNavOptions {
   /** The host port; read lazily so the nav follows a replaced client. */
@@ -29,7 +29,7 @@ export type AgentNav = ReturnType<typeof useAgentNav>;
 export function useAgentNav(options: AgentNavOptions) {
   const agents = ref<AgentHostAgent[]>([]);
   /** The open page's agents while a page with its own skill is open; null when it has none or none is open. */
-  const pageAgents = ref<{ agents: AgentHostAgent[]; defaultAgentId?: string } | null>(null);
+  const pageAgents = ref<PageAgents | null>(null);
   /** The page whose skill the composer is choosing agents for, as the shell reports it opening and closing. */
   // A snapshot the page reported, replaced whole and never edited in place.
   const page = shallowRef<PageSkillContext | null>(null);

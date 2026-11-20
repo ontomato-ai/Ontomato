@@ -1,10 +1,11 @@
 /** Node release entry for checking the same panel sources accepted by the platform. */
 export { appsSdkComponentCatalogSchema, appsSdkComponentDatum } from "./apps-sdk";
 export { panelAuthoringManifestSchema, panelAuthoringMemberSchema } from "./panel-authoring";
-export { expandPanelAuthoringMember } from "./panel-authoring-expansion";
+export { bindPanelAuthoringChart, expandPanelAuthoringMember } from "./panel-authoring-expansion";
 export { panelManifestSchema, panelPortAccepts } from "./panel-manifest";
 export {
-  panelDefinitionContentSchema, productProjectionInputSchema,
+  chartProjectionLookupResponseSchema, panelDefinitionContentSchema, productProjectionInputSchema,
+  productProjectionResponseSchema, registerChartProjectionResponseSchema,
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
 } from "./product-panels";
 export {
@@ -14,3 +15,4 @@ export {
 export { panelReadResultSchemas } from "./panel-operations";
 export { platformObjectTypes } from "./platform-object-types";
 export { platformTypeTableResponseSchema } from "./platform-type-table";
+export { CHART_PROJECTION_SOURCES_PATH } from "./panel-client-requests";

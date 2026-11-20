@@ -292,3 +292,31 @@ it("tells the page's code the form was saved, with the object, and that it was d
   await vi.waitFor(() => expect(discarded).toHaveBeenCalledTimes(1));
   expect(saved).toHaveBeenCalledTimes(1);
 });
+
+it("asks before moving the form off unsaved changes, and keeps them or discards them as the reader answers", async () => {
+  const { instance, element, prepared } = open(owner, { selectedTask: task("t-1") });
+  await vi.waitFor(() => expect(input(element, "/name")?.value).toBe("t-1"));
+  const note = input(element, "/note");
+  note.value = "half done";
+  note.dispatchEvent(new Event("input"));
+  await nextTick();
+  const answer = (label: string) => vi.waitFor(() => {
+    const button = [...document.querySelectorAll<HTMLButtonElement>(".el-message-box__btns button")]
+      .find((item) => item.textContent?.trim() === label);
+    if (!button) throw new Error(`No "${label}" in the question yet`);
+    button.click();
+  });
+
+  // The reader picks another task: they are asked, keep editing, and the panel is back on the task they edit.
+  instance.state.set("selectedTask", task("t-2"));
+  await answer("Keep editing");
+  await vi.waitFor(() => expect(instance.state.values.value.selectedTask).toEqual(task("t-1")));
+  expect(input(element, "/note").value).toBe("half done");
+
+  // Asked again, they discard: the other task is shown, and nothing was saved.
+  instance.state.set("selectedTask", task("t-2"));
+  await answer("Discard");
+  await vi.waitFor(() => expect(input(element, "/name")?.value).toBe("t-2"));
+  expect(input(element, "/note").value).toBe("");
+  expect(prepared).toEqual([]);
+});

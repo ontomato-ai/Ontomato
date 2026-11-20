@@ -42,19 +42,34 @@ interface ParsedListData {
  */
 const props = withDefaults(
   defineProps<{
-    /** Multi-column table definition; when absent, renders a compact selectable list. */
+    /**
+     * The table's columns, each a field of the owner's records (`key`, its header `labelKey`, and how it is drawn); absent,
+     * the list is compact: each item shows its label, then `statusField`, `subtitleField` and `tagsField` as configured.
+     */
     columns?: readonly ObjectListColumn[];
-    /** Field key rendered as a status tag on each item in compact list mode. */
+    /**
+     * The field shown as a status tag at the end of each compact item. Its colour is the owner's tone for that field on the
+     * record (`tones`): an owner that gives none has it shown as plain text, and the colour is the owner's to give.
+     */
     statusField?: string;
-    /** Key in `record.tags` rendered as tags on each item in compact list mode. */
+    /** The key in the owner's record `tags` whose values are shown as small tags beneath each compact item. */
     tagsField?: string;
-    /** Page size for cursor or page pagination when the read supports paging (defaults to 20). */
+    /**
+     * Field key whose value is each item's summary line in compact list mode, beneath its label (such as a description);
+     * absent, the owner's own subtitle for the record is shown, if it gives one.
+     */
+    subtitleField?: string;
+    /** How many items a page holds when the owner's read pages (a query's cursor, or page numbers); 20 by default. */
     pageSize?: number;
-    /** Move single selection to the first visible item when the current selection disappears (never after cleared to null). */
+    /**
+     * Keeps something selected: when nothing is selected (on first showing, too) or the selected item is no longer listed
+     * (deleted, or filtered out), the first listed item is selected; an empty list clears the selection. A selection the
+     * reader cleared on purpose is left cleared.
+     */
     fallbackToFirst?: boolean;
-    /** Whether clicking an already-selected item clears the single selection. */
+    /** Whether clicking the selected item again clears the selection; off, a click always selects. */
     toggleable?: boolean;
-    /** Optional empty-state message key resolved via `panel.t`. */
+    /** The panel's message key for what an empty list says, in place of the platform's own words. */
     emptyText?: string;
   }>(),
   {
@@ -470,6 +485,9 @@ function navigateTo(reference: PlatformFieldReference, columnKey: string) {
   emit("navigate", reference, columnKey);
 }
 
+/** The field each compact item's summary line shows: the one configured, else the owner's own subtitle. */
+const summaryKey = computed(() => props.subtitleField ?? "subtitle");
+
 function fieldValue(row: PlatformObjectRecord, key: string): string {
   if (key === "label") return row.label;
   if (key === "subtitle") return row.subtitle ?? "";
@@ -658,8 +676,8 @@ watch(someVisibleChecked, () => {
                 :data-tone="row.tones?.[statusField] ?? 'default'"
               >{{ row.fields[statusField] }}</span>
             </span>
-            <span v-if="row.subtitle" class="sdk-object-list-item-sub">
-              <template v-for="(part, index) in textHighlightSegments(row.subtitle, row.highlights?.subtitle)" :key="index">
+            <span v-if="fieldValue(row, summaryKey)" class="sdk-object-list-item-sub">
+              <template v-for="(part, index) in textHighlightSegments(fieldValue(row, summaryKey), row.highlights?.[summaryKey])" :key="index">
                 <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
               </template>
             </span>
