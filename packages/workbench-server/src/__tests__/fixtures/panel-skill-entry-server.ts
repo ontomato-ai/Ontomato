@@ -117,6 +117,7 @@ export async function startPanelSkillEntryServer(options: {
   const { productPanelsRouter, productProjectionsRouter } = await import("../../api/routes/product-panels");
   const { default: assistantRouter } = await import("../../api/routes/assistant");
   const { agentChannelRouter } = await import("../../api/routes/agent-channel");
+  const { appBuilderRouter } = await import("../../api/routes/app-builder");
   registerPanelSkillProvider();
 
   app.post("/platform/agent-channel/callers", (req, res) => {
@@ -211,6 +212,7 @@ export async function startPanelSkillEntryServer(options: {
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
   app.use("/api/assistant", assistantRouter);
+  app.use("/api", appBuilderRouter);
   app.use("/internal/agent-channel", agentChannelRouter);
 
 
