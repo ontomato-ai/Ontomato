@@ -498,19 +498,24 @@ test("time controls and schedule frequencies accept local times at minute precis
 
 test("form saves address the draft target even when the slot receives a selected object", () => {
   const agent = { kind: "object", objectType: AGENT_DEFINITION } as const;
+  const projection = productProjectionInputSchema.parse({
+    name: "Agent definition", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectForm",
+    inputs: { record: agent }, outputs: {}, config: {},
+    data: {
+      form: { source: { object: { input: "record" } }, read: "form", params: {} },
+      createForm: { source: { type: platformType(AGENT_DEFINITION) }, read: "createForm", params: {} },
+    },
+  });
   const manifest = panelManifestSchema.parse({
     state: { selectedAgent: { type: agent } },
     members: { definition: { target: { projectionId: "definition-form" }, inputs: { record: { state: "selectedAgent" } } } },
     events: {},
   });
-  const [save] = projectionOperations(manifest, {
-    slot: "definition",
-    ports: {
-      binding: binding(AGENT_DEFINITION),
-      inputs: { record: agent },
-      operations: [{ name: "save", label: "Save", kind: "form.save", handlerRef: "platform:AgentDefinition.save", inputSchema: {} }],
-    },
+  const ports = projectionPorts(projection, {
+    operations: [{ client: "@binding", name: "save", label: "Save", kind: "form.save", inputSchema: {} }],
   });
+  const [save] = projectionOperations(manifest, { slot: "definition", ports });
+  assert.equal(save?.handlerRef, `${AGENT_DEFINITION}.save`);
   assert.deepEqual(save?.target, { source: "draft", slot: "definition" });
 });
 
