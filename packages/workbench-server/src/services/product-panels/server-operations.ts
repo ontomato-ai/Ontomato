@@ -1,11 +1,12 @@
 import type { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
+import type { PanelDownloadFile } from "@ontomato/contracts/panel-download";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import type { PanelFormTarget, PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import {
   describePanelOperationFromDeclaration, panelOperationDeclarationSchema, type PanelOwnerOperationDescriptor,
   type PanelReadOperationResult, type panelBatchInvocationSchema,
-  type panelOperationImpactSchema, type panelReadOperationCallSchema, type panelSingleInvocationSchema,
+  type panelOperationImpactSchema, type panelReadOperationCallSchema, type panelReadOperationJsonResultSchema, type panelSingleInvocationSchema,
 } from "@ontomato/contracts/panel-operations";
 import { runtimeJsonObjectSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { AssistantSkillView } from "../assistant/skills";
@@ -79,17 +80,21 @@ export type PanelWriteServerOperation = ServerOperation & (
 );
 
 type ReadCall = z.infer<typeof panelReadOperationCallSchema>;
+type ReadTarget = Extract<PanelOwnerOperationDescriptor["target"], { source: "draft" | "input" | "none" }>;
+type ReadResult = z.infer<typeof panelReadOperationJsonResultSchema> | ({ kind: "file" } & PanelDownloadFile);
+
 export interface PanelReadServerOperation {
   handlerRef: string;
   binding: OntologyElementRef;
   kind: "action";
   effect: "read";
   batch: false;
-  target: { source: "draft"; slot: string };
+  target: ReadTarget;
+  targetType?: string;
   targetSchema: z.ZodType<ReadCall["target"]>;
   inputSchema: z.ZodType<ReadCall["input"]>;
   resultSchema: z.ZodType<PanelReadOperationResult>;
-  execute(host: PanelOperationHost, call: ReadCall): Promise<PanelReadOperationResult>;
+  execute(host: PanelOperationHost, call: ReadCall): Promise<ReadResult>;
 }
 
 export type PanelServerOperation = PanelWriteServerOperation | PanelReadServerOperation;
@@ -114,15 +119,16 @@ export function operationDeclaration(handler: PanelServerOperation) {
     kind: handler.kind,
     effect: handler.effect,
     batch: handler.batch,
-    target: handler.kind === "action" && handler.effect === "write"
-      ? { source: "input", input: handler.targetInput } : { source: "draft" },
+    target: handler.effect === "read" && handler.target.source !== "draft" ? handler.target
+      : handler.kind === "action" && handler.effect === "write" ? { source: "input", input: handler.targetInput }
+      : { source: "draft" },
     inputSchema: jsonSchema(handler.inputSchema),
   });
 }
 
 export function registeredPanelOperation(id: string) {
   const handler = operations.get(id);
-  if (handler) return { handler, declaration: operationDeclaration(handler), targetType: handler.effect === "write" ? handler.targetType : undefined };
+  if (handler) return { handler, declaration: operationDeclaration(handler), targetType: handler.targetType };
 }
 
 export function describeServerOperation(handler: PanelServerOperation, label: string, slot?: string,

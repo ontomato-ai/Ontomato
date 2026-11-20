@@ -127,6 +127,17 @@ describe("metric and function panel server operations", () => {
       .toEqual({ kind: "refusal", code: "FUNCTION_QUERY_PACKAGE_INVALID", message: packageError.message, errors: [packageError] });
   });
 
+  it("sends the fields a save submitted with its values, so the owner keeps every other saved value", async () => {
+    const metric = hostWith(() => Response.json({ success: true, data: { id: "m1", name: "Revenue" } }));
+    await write(`${METRIC_VIEW}.save`).execute(metric.host, metricTarget,
+      { values: { description: "Weekly" }, submittedFields: ["/description"] });
+    expect(JSON.parse(String(metric.sent[0]?.init.body))).toEqual({ description: "Weekly", id: "m1", submittedFields: ["/description"] });
+
+    const fn = hostWith(() => Response.json({ success: true, data: { id: "f1", name: "Revenue query" } }));
+    await write(`${FUNCTION}.save`).execute(fn.host, functionTarget, { values: { name: "Revenue query" } });
+    expect(JSON.parse(String(fn.sent[0]?.init.body))).toEqual({ name: "Revenue query", id: "f1" });
+  });
+
   it("keeps an uncoded write error as a known failure", async () => {
     const operation = write(`${METRIC_VIEW}.save`);
     const { host } = hostWith(() => Response.json({ success: false, message: "The definition store could not complete the write" }));
@@ -410,6 +421,21 @@ describe("metric and function panel server operations", () => {
     const plainRefusal = hostWith(() => Response.json({ success: false, message: "Read Function not found" }));
     await expect(operation.execute(plainRefusal.host, { target: metricTarget, input: { draft, parameters: {} } }))
       .rejects.toMatchObject({ status: 422, code: "METRIC_VIEW_TEST_REFUSED" });
+  });
+
+  it("reads a trial's own input from a read call that names no target, and refuses input it cannot read", async () => {
+    const draft = { name: "Revenue", function: { queryPackage: { manifest: { parameterDefs: [] } } } };
+    const tested = hostWith(() => Response.json({ success: true, data: { md: "ok" } }));
+    expect(await read(TEST_METRIC_VIEW).execute(tested.host, { input: { draft, parameters: {} } }))
+      .toEqual({ kind: "markdown", markdown: "ok" });
+    const ran = hostWith(() => Response.json({ success: true, data: [] }));
+    expect(await read(TEST_EXECUTE_METRIC_VIEW).execute(ran.host, { input: { draft, parameters: { year: 2026 }, bindingId: "b1" } }))
+      .toEqual({ kind: "json", value: { result: [] } });
+    expect(JSON.parse(String(ran.sent[0]?.init.body))).toEqual({ metricView: draft, param: { year: 2026 }, bindingId: "b1" });
+
+    const unread = hostWith(() => Response.json({ success: true, data: { md: "never" } }));
+    await expect(read(TEST_METRIC_VIEW).execute(unread.host, { input: { parameters: {} } })).rejects.toThrow();
+    expect(unread.sent).toEqual([]);
   });
 
   it("runs a metric draft for JSON with its parameters and binding, and keeps a truncated run marked", async () => {

@@ -16,9 +16,11 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.config.ControllerConst;
 import io.ontomato.dataengine.core.bean.User;
+import io.ontomato.dataengine.service.FunctionForm;
 import io.ontomato.dataengine.service.FunctionService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.OwnerRefusal;
+import io.ontomato.dataengine.service.PanelFormFields;
 import io.ontomato.dataengine.util.SystemUtils;
 
 import lombok.extern.slf4j.Slf4j;
@@ -36,13 +38,36 @@ public class FunctionController {
 	@Autowired
 	private ObjectMapper objectMapper;
 
+	/**
+	 * The Function a save writes. A request that names its submittedFields changes only those: the saved Function, or a
+	 * new one's defaults, with each submitted field taken from the request. Without them, the request is the whole Function.
+	 */
+	private JSONObject submittedValues(JSONObject param, String domainId, String lang) {
+		List<String> submitted = param.getList("submittedFields", String.class);
+		param.remove("submittedFields");
+		if (submitted == null) return param;
+		String id = param.getString("id");
+		JSONObject saved;
+		if (id == null) {
+			saved = FunctionForm.defaultValues();
+		} else {
+			Function stored = functionService.queryById(id);
+			if (stored == null || !domainId.equals(stored.getDomainId()))
+				throw new OwnerRefusal("FUNCTION_NOT_FOUND", langService.get(lang, "Function.notFound"));
+			saved = PanelFormFields.asset(stored);
+		}
+		JSONObject values = PanelFormFields.withSubmitted(saved, param, submitted);
+		if (id != null) values.put("id", id);
+		return values;
+	}
+
 	@PostMapping("/function/save")
     @ResponseBody
     public JSONObject save(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
-			Function function = Function.fromInput(param);
+			Function function = Function.fromInput(submittedValues(param, user.getDomainId(), lang));
 			function.setDomainId(user.getDomainId());
 			ret.put("data", withDisplay(functionService.save(function, lang), lang));
 			ret.put("success", true);

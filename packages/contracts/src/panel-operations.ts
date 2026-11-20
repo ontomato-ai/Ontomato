@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema, runtimeKeySchema } from "./agent-runtime-values";
-import { panelObjectIdentitySchema, panelObjectRefSchema, panelOperationCallSchema } from "./panel-manifest";
+import { panelDownloadReceiptSchema } from "./panel-download";
+import { panelFormTargetSchema, panelObjectIdentitySchema, panelObjectRefSchema, panelOperationCallSchema } from "./panel-manifest";
 import {
   panelFormDescriptionSchema, panelFormValuesSchema, panelGroupCountsSchema, panelOptionListSchema,
   panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema, panelRelationNeighborsSchema,
@@ -127,15 +128,18 @@ export const panelReadOperationInputSchema = z.object({
   bindingId: runtimeKeySchema.optional(),
 }).strict();
 
-export const panelReadOperationCallSchema = panelOperationCallSchema.omit({ draft: true }).extend({
-  input: panelReadOperationInputSchema,
-});
+/** A read passes the actual target and the input object declared by the operation's owner. */
+export const panelReadOperationCallSchema = z.object({
+  target: panelFormTargetSchema.optional(),
+  input: runtimeJsonObjectSchema,
+}).strict();
 
-/** A read returns content for this panel instance. */
-export const panelReadOperationResultSchema = z.discriminatedUnion("kind", [
+/** The JSON success body of a read. File-producing reads send bytes with attachment headers. */
+export const panelReadOperationJsonResultSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("markdown"), markdown: z.string() }).strict(),
   z.object({ kind: z.literal("json"), value: runtimeJsonValueSchema }).strict(),
 ]);
+export const panelReadOperationResultSchema = z.union([panelReadOperationJsonResultSchema, panelDownloadReceiptSchema]);
 export type PanelReadOperationResult = z.infer<typeof panelReadOperationResultSchema>;
 
 

@@ -170,7 +170,7 @@ export const APPLICATION_PANEL_REFERENCES_PATH = "/internal/product-panels/valid
 export const applicationPanelReferencesRequestSchema = z.object({
   domainId: id,
   framePanelId: id.optional(),
-  uses: z.array(applicationPanelUseSchema.pick({ id: true, panelId: true, inputs: true })),
+  uses: z.array(applicationPanelUseSchema.pick({ id: true, panelId: true, inputs: true, defaultAgent: true })),
   delivery: applicationDeliverySchema.pick({ panels: true, projections: true }),
 }).strict();
 export type ApplicationPanelReferencesRequest = z.infer<typeof applicationPanelReferencesRequestSchema>;

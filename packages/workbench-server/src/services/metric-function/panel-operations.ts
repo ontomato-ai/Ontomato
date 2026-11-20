@@ -121,7 +121,7 @@ const deleteFunctionImpact: PanelImpactInspector = {
  * draft, and an optional saved binding, and its owner checks that the metric may run.
  */
 const METRIC_FORM_SLOT = "definition";
-const metricTrialTarget = metricSaveTarget.nullable();
+const metricTrialTarget = metricSaveTarget.optional();
 const parameterDefinitionsSchema = z.array(z.object({ name: z.string() }).passthrough());
 const trialDraftSchema = z.object({
   function: z.object({
@@ -150,11 +150,25 @@ function withParameterValues(draft: Record<string, unknown>, parameters: Record<
   return copy;
 }
 
+/** A read call carries its input as a JSON object; a metric trial reads its draft, parameter values and binding from it. */
+function trialInput(call: z.infer<typeof panelReadOperationCallSchema>) {
+  return panelReadOperationInputSchema.parse(call.input);
+}
+
 /** The owner's answer to a trial; a refusal keeps the owner's reason and code. */
 async function trial(host: Host, path: string, body: unknown, refusalCode: string) {
   const envelope = await ownerPost(host, path, body, trialEnvelopeSchema);
   if (!envelope.success) throw new HttpError(422, envelope.message ?? "The owner refused the trial", envelope.code ?? refusalCode);
   return envelope;
+}
+
+/**
+ * The owner's save body for the chosen target. Submitted fields go with it, so the owner changes only those and keeps
+ * every other saved value; without them the values are the whole definition.
+ */
+function ownerSaveBody(target: PanelOperationTarget, input: Record<string, unknown>) {
+  const { values, submittedFields } = saveInputSchema.parse(input);
+  return { ...valuesForTarget(target, values), ...(submittedFields && { submittedFields }) };
 }
 
 const formInstructions = "Read the form for the intended target. Use its fields, values and save.bodySchema for the values, and save.draftOperation for the draft. Carry the complete form values in call.input.";
@@ -182,8 +196,7 @@ export const m5ServerOperations = [
       },
     },
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
-      return save(host, "/metricView/save", valuesForTarget(target, saveInputSchema.parse(input).values),
-        "METRIC_VIEW_SAVE_FAILED", METRIC_VIEW, [METRIC_VIEW, FUNCTION]);
+      return save(host, "/metricView/save", ownerSaveBody(target, input), "METRIC_VIEW_SAVE_FAILED", METRIC_VIEW, [METRIC_VIEW, FUNCTION]);
     },
   },
   {
@@ -269,8 +282,7 @@ export const m5ServerOperations = [
       },
     },
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
-      return save(host, "/function/save", valuesForTarget(target, saveInputSchema.parse(input).values),
-        "FUNCTION_SAVE_FAILED", FUNCTION, [FUNCTION]);
+      return save(host, "/function/save", ownerSaveBody(target, input), "FUNCTION_SAVE_FAILED", FUNCTION, [FUNCTION]);
     },
   },
   {
@@ -302,7 +314,7 @@ export const m5ServerOperations = [
     inputSchema: panelReadOperationInputSchema,
     resultSchema: markdownResultSchema,
     async execute(host: Host, call: z.infer<typeof panelReadOperationCallSchema>) {
-      const { draft, parameters } = call.input;
+      const { draft, parameters } = trialInput(call);
       const envelope = await trial(host, "/metricView/test", withParameterValues(draft, parameters), "METRIC_VIEW_TEST_REFUSED");
       return { kind: "markdown" as const, markdown: testedContentSchema.parse(envelope.data).md };
     },
@@ -318,7 +330,7 @@ export const m5ServerOperations = [
     inputSchema: panelReadOperationInputSchema,
     resultSchema: jsonResultSchema,
     async execute(host: Host, call: z.infer<typeof panelReadOperationCallSchema>) {
-      const { draft, parameters, bindingId } = call.input;
+      const { draft, parameters, bindingId } = trialInput(call);
       const envelope = await trial(host, "/metricView/testExecute",
         { metricView: draft, param: parameters, ...(bindingId ? { bindingId } : {}) }, "METRIC_VIEW_TEST_EXECUTE_REFUSED");
       // A truncated run is a partial result: the reader sees that it is, and why, beside the rows.

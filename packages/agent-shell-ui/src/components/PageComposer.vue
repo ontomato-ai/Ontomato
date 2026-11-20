@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, inject, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import type { ShellLabels } from "../types";
 import { usePageCounter } from "../page-counter";
+import { entryAgent, servePageComposerKey, type ComposerEntry, type PageComposerExpand } from "../page-composer-entry";
 import AgentPicker from "./AgentPicker.vue";
 import ShellComposer from "./ShellComposer.vue";
 
@@ -36,6 +37,8 @@ const counter = usePageCounter()!;
  */
 const agents = ref<readonly AgentHostAgent[]>([]);
 const chosen = ref<string | null>(null);
+/** The page's registered default among its candidates, which a conversation entry may name. */
+const pageDefault = ref<string | null>(null);
 let load = 0;
 
 watch(
@@ -45,6 +48,7 @@ watch(
     const seq = ++load;
     agents.value = [];
     chosen.value = null;
+    pageDefault.value = null;
     if (skill?.mode === "member" && skill.member === null) return;
     const candidates = skill
       ? counter.pageAgents(skill)
@@ -58,6 +62,7 @@ watch(
         // The page's registered default (the platform's own agent when it registered none), else the remembered one, else the first.
         const initial = offered(defaultAgentId) ? defaultAgentId : offered(remembered) ? remembered : agents.value[0]?.id;
         chosen.value = initial ?? null;
+        pageDefault.value = defaultAgentId ?? null;
       })
       // The page's own configuration keeps its own words and the service's reason; anything else is the service's error.
       .catch((reason: unknown) => {
@@ -85,11 +90,35 @@ function ask(text: string) {
   if (!agentId.value) return;
   counter.ask(agentId.value, text, props.page);
 }
+
+/**
+ * A panel's conversation entry on this page (design U18): the composer opens, takes the agent the entry names when it is
+ * one of this page's candidates, and fills the entry's sentence for the reader to send. An agent it cannot name leaves
+ * the composer on its own agent and only opens it. Nothing is sent from here.
+ */
+const entry = shallowRef<ComposerEntry | null>(null);
+const expand: PageComposerExpand = (request) => {
+  const named = entryAgent(request.target, agents.value, pageDefault.value);
+  if (named) chosen.value = named;
+  entry.value = { text: named ? request.prefill ?? null : null, seq: (entry.value?.seq ?? 0) + 1 };
+};
+/** The composer serves the page's entries while it is drawn, which is while the page offers it an agent. */
+const serve = inject(servePageComposerKey, null);
+let withdraw: (() => void) | null = null;
+watch(
+  () => agents.value.length > 0,
+  (drawn) => {
+    withdraw?.();
+    withdraw = drawn && serve ? serve(expand) : null;
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => withdraw?.());
 </script>
 
 <template>
   <div v-if="agents.length" class="page-ask">
-    <ShellComposer floating :busy="false" :labels="labels" @send="ask">
+    <ShellComposer floating :busy="false" :labels="labels" :entry="entry" @send="ask">
       <template #agent>
         <AgentPicker variant="pill" :agents="agents" :agent-id="agentId" :label="labels.agent" @select="chosen = $event" />
       </template>

@@ -37,7 +37,9 @@ import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.BackendSessionEntrance;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
+import io.ontomato.dataengine.service.MetricViewForm;
 import io.ontomato.dataengine.service.MetricViewService;
+import io.ontomato.dataengine.service.PanelFormFields;
 import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.SessionCancelledException;
 import io.ontomato.dataengine.service.SubjectDirectory;
@@ -107,6 +109,28 @@ public class MetricViewController {
 		return ret;
 	}
 	
+	/**
+	 * The metric a save writes. A request that names its submittedFields changes only those: the saved metric, or a new
+	 * one's defaults, with each submitted field taken from the request. Without them, the request is the whole metric.
+	 */
+	private JSONObject submittedValues(JSONObject param, String domainId) {
+		List<String> submitted = param.getList("submittedFields", String.class);
+		param.remove("submittedFields");
+		if (submitted == null) return param;
+		String id = param.getString("id");
+		JSONObject saved;
+		if (id == null) {
+			saved = MetricViewForm.defaults();
+		} else {
+			MetricView stored = metricViewService.queryById(id, domainId);
+			if (stored == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
+			saved = PanelFormFields.asset(stored);
+		}
+		JSONObject values = PanelFormFields.withSubmitted(saved, param, submitted);
+		if (id != null) values.put("id", id);
+		return values;
+	}
+
 	@PostMapping("/metricView/save")
     @ResponseBody
     public JSONObject save(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
@@ -114,8 +138,9 @@ public class MetricViewController {
 		try {
 			User user = SystemUtils.getCurUser();
 			if (param.containsKey("type")) throw new OwnerRefusal("METRIC_VIEW_TYPE_RETIRED", "MetricView type is retired; edit parameter bindings on a dynamic metric");
-            var acceptedFunction = Function.fromAsset(param);
-            MetricView metricView = param.to(MetricView.class);
+			JSONObject values = submittedValues(param, user.getDomainId());
+            var acceptedFunction = Function.fromAsset(values);
+            MetricView metricView = values.to(MetricView.class);
             metricView.setFunction(acceptedFunction);
 			metricView.setDomainId(user.getDomainId());
 			// The saved Function belongs to the caller's domain whatever the request says; the DAO keys the vector write by it.

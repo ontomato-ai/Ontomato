@@ -12,7 +12,7 @@ import { PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
 import { changedPaths, fieldAt, movedPath, valueAt, withValueAt } from "../panel/form-values";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMember } from "../panel/member";
-import { editedInput, formSave, memberFormSource, MemberDataUnavailable, type FormSource } from "../panel/member-forms";
+import { editedInput, memberFormSource, MemberDataUnavailable, type FormSource } from "../panel/member-forms";
 import { formControlsKey, rowControlKey, rowControlsOf } from "./form-controls";
 import FormFieldControl from "./FormFieldControl.vue";
 
@@ -23,8 +23,8 @@ import FormFieldControl from "./FormFieldControl.vue";
  * replaces the fields and the values.
  *
  * The form edits the object the panel's state holds for it — the input its `form` datum reads its object from — or, when
- * that state is empty and its owner admits the save as a create (the owner creates, and the projection reads its
- * `createForm`), a new one; the panel then holds the object the owner created. The save is the one operation of its
+ * that state is empty and the projection reads its owner's `createForm`, a new one — whether this reader may create is
+ * the owner's to judge when it is saved; the panel then holds the object the owner created. The save is the one operation of its
  * projection the owner describes as a form's save, whatever the projection calls it. A header "new" is an event that empties that state.
  * A field another projection draws (a reference chosen from its own catalogue, a data scope on a graph) is edited there,
  * through this form's field port, and is this form's value, dirty state and draft all the same.
@@ -33,6 +33,14 @@ import FormFieldControl from "./FormFieldControl.vue";
  * whole draft (one it refuses is refused whole, with the fields and the reasons) and the form shows it, the changed
  * fields marked and nothing written, until the reader saves or discards.
  */
+/**
+ * What the form tells the page's code, which decides what the page shows next (a form's own buttons do not): the owner
+ * saved it — the object it saved, or the one it created — or the reader discarded what it held.
+ */
+const emit = defineEmits<{
+  saved: [object: { className: string; primaryKey: string }];
+  discarded: [];
+}>();
 const { t } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
@@ -48,11 +56,14 @@ const creates = Object.values(member.projection.data).some((data) => data.read =
 /** The panel state the edited object is held in; a form that only creates holds none. */
 const state = computed(() => (editInput === undefined ? null : slotState(panel.manifest, slot.slot, editInput)));
 const key = computed(() => (state.value === null ? null : selectedKey(panel.instance.state.values.value[state.value])));
-/** The form's save as its owner admits it now: whether, with nothing chosen, it creates is the owner's to say. */
-const save = computed(() => formSave(member.operations.value));
+/**
+ * What the form shows: the chosen object, or, with nothing chosen, a new one when the projection reads its owner's create
+ * form — an owner declares one only when it creates. This is known from the projection at once, never from an answer
+ * still on its way; whether this reader may create is the owner's to judge when the new object is saved.
+ */
 const target = computed<PanelFormTarget | null>(() => {
   if (key.value) return { kind: "object", objectType, primaryKey: key.value };
-  return save.value?.descriptor.target.source === "draft" ? { kind: "draft" } : null;
+  return creates ? { kind: "draft" } : null;
 });
 const targetKey = (value: PanelFormTarget | null) => (value === null ? "" : value.kind === "object" ? value.primaryKey : "draft");
 
@@ -291,6 +302,7 @@ useProjectionForm({
 function discard() {
   held = null;
   adopt(opened.value!);
+  emit("discarded");
   void panel.instance.settleDraft(slot.slot).catch(showRefusal);
 }
 
@@ -331,6 +343,7 @@ async function write(): Promise<unknown> {
     opened.value = { ...description.value!, values: values.value };
     changed.value = new Set();
     if (into.kind === "draft") moveTo({ kind: "object", objectType, primaryKey: saved.primaryKey });
+    emit("saved", { className: objectType, primaryKey: saved.primaryKey });
     // The save went through the coordinator, whose receipt reaches the host's one refresh port and is read again there.
 
     // A received draft ends with its save; a create draft first records the object it created. The save stands either
