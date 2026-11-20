@@ -1,10 +1,6 @@
 import { z } from "zod";
-import type { PanelRecord } from "@ontomato/contracts/panel-projection";
-import {
-  platformOntologyNeighborsResponseSchema,
-  platformOntologyRelationStatusSchema,
-  type PlatformOntologyNode,
-} from "@ontomato/contracts/platform-ontology";
+import type { PanelRecord, PanelRecordQuery, PanelRelationNeighbors } from "@ontomato/contracts/panel-projection";
+import type { PlatformOntologyNode } from "@ontomato/contracts/platform-ontology";
 import { config } from "../../config/application";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendUnavailableError, backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
@@ -57,16 +53,6 @@ const dslAnswerSchema = z.union([
   z.object({ data: z.array(z.object({ answer: z.array(z.record(z.unknown())) })).min(1) }),
 ]);
 
-/**
- * A neighbors result keeps M3's platformOntologyNeighborsResponseSchema shape and adds each relation's `truncated`,
- * so the one row over the limit reports "more behind this relation" without being returned. A's final schema for this
- * read lands as a rename or reshape of exactly this.
- */
-export const customerNeighborsSchema = platformOntologyNeighborsResponseSchema.extend({
-  relations: z.array(platformOntologyRelationStatusSchema.extend({ truncated: z.boolean() })),
-});
-export type CustomerOntologyNeighbors = z.infer<typeof customerNeighborsSchema>;
-
 export interface CustomerOntologyNodeRef {
   className: string;
   primaryKey: string;
@@ -74,23 +60,23 @@ export interface CustomerOntologyNodeRef {
 
 export interface CustomerOntologyQueryParams {
   search?: string;
-  page?: number;
-  size?: number;
+  page?: { number: number; size: number };
 }
 
 export interface CustomerOntologyNeighborsParams {
-  relationKinds?: string[];
+  node: CustomerOntologyNodeRef;
+  relationKinds?: readonly string[];
   limit?: number;
 }
 
-/** The customer-ontology reads a projection can name: a class's rows, one object, or an object's neighbors. */
+/**
+ * The customer-ontology reads a projection can name: a class's rows and one object (an ObjectType source), and an
+ * object's neighbors along one relationship (a Relationship source). Changes to an object go through actions.
+ */
 export interface CustomerOntologyReadAdapter {
-  query(typeId: string, params: CustomerOntologyQueryParams): Promise<{ items: PanelRecord[]; total: number }>;
+  query(typeId: string, params: CustomerOntologyQueryParams): Promise<PanelRecordQuery>;
   record(typeId: string, primaryKey: string): Promise<PanelRecord>;
-  neighbors(
-    node: CustomerOntologyNodeRef,
-    params: CustomerOntologyNeighborsParams,
-  ): Promise<CustomerOntologyNeighbors>;
+  neighbors(relationshipId: string, params: CustomerOntologyNeighborsParams): Promise<PanelRelationNeighbors>;
 }
 
 const NEIGHBORS_LIMIT_DEFAULT = 50;
@@ -159,21 +145,12 @@ function relationDirections(relation: ClassRelationship, anchorClass: string): N
   return directions;
 }
 
-/** Select the relations to read: the class's whole catalog, or the declared kinds, with the unmatched ones kept for their failure. */
-function planRelations(
-  catalog: readonly ClassRelationship[],
-  declared: readonly string[] | undefined,
-  anchorClass: string,
-): NeighborRelationPlan[] {
-  if (declared === undefined)
-    return catalog.map(relation => ({ relationKind: relation.relationship, directions: relationDirections(relation, anchorClass) }));
-  const byName = new Map(catalog.map(relation => [relation.relationship, relation]));
-  return [...new Set(declared)].map(name => {
-    const relation = byName.get(name);
-    return relation
-      ? { relationKind: name, directions: relationDirections(relation, anchorClass) }
-      : { relationKind: name, unknownReason: "Relationship does not exist or does not touch this class" };
-  });
+/** The source relationship's plan for the anchor's class, or its failure when the class's model has no such relationship. */
+function planRelation(catalog: readonly ClassRelationship[], relationshipId: string, anchorClass: string): NeighborRelationPlan {
+  const relation = catalog.find(item => item.relationship === relationshipId);
+  return relation
+    ? { relationKind: relationshipId, directions: relationDirections(relation, anchorClass) }
+    : { relationKind: relationshipId, unknownReason: "Relationship does not exist or does not touch this class" };
 }
 
 /**
@@ -230,11 +207,11 @@ function assembleCustomerNeighbors(
   limit: number,
   reads: readonly NeighborRelationRead[],
   attributesOf: (className: string) => readonly ClassAttribute[],
-): CustomerOntologyNeighbors {
+): PanelRelationNeighbors {
   const severity = { ok: 0, refused: 1, failed: 2 } as const;
   const anchorRef = { className: anchor.className, primaryKey: anchor.primaryKey };
-  const edges: CustomerOntologyNeighbors["edges"] = [];
-  const relations: CustomerOntologyNeighbors["relations"] = [];
+  const edges: PanelRelationNeighbors["edges"] = [];
+  const relations: PanelRelationNeighbors["relations"] = [];
   const neighbors = new Map<string, PlatformOntologyNode>();
 
   for (const read of reads) {
@@ -362,31 +339,34 @@ export function createCustomerOntologyReadAdapter(
   }
 
   return {
-    async query(typeId, { search, page, size }) {
+    async query(typeId, { search, page }) {
       const attributes = await classAttributes(typeId);
       const response = await backendPost(
         "customer-class-page",
         `${baseUrl}/data/getWholeClassDataByPage`,
-        { classname: typeId, pagenum: page ?? 1, pagecount: size ?? 20, search },
+        { classname: typeId, pagenum: page?.number ?? 1, pagecount: page?.size ?? 20, search },
         options,
       );
       const answer = classPageSchema.parse(JSON.parse(response.text));
       if (!answer.success) throw new HttpError(403, answer.message, "CUSTOMER_DATA_PERMISSION");
-      return { items: answer.data.map(row => panelRecord(attributes, row)), total: answer.total_count };
+      return { rows: answer.data.map(row => panelRecord(attributes, row)), total: answer.total_count };
     },
 
     async record(typeId, primaryKey) {
       return readObject(typeId, primaryKey, await classAttributes(typeId));
     },
 
-    async neighbors(node, params) {
-      const limit = Math.min(params.limit ?? NEIGHBORS_LIMIT_DEFAULT, NEIGHBORS_LIMIT_MAX);
+    async neighbors(relationshipId, { node, relationKinds, limit: requested }) {
+      // The source names its relationship; a parameter cannot point the read at another one.
+      if (relationKinds?.some(kind => kind !== relationshipId))
+        throw new HttpError(400, "relationKinds can only name the source relationship", "PANEL_INPUT_TYPE_MISMATCH");
+      const limit = Math.min(requested ?? NEIGHBORS_LIMIT_DEFAULT, NEIGHBORS_LIMIT_MAX);
       const anchorAttributes = await classAttributes(node.className);
       const [anchorRecord, catalog] = await Promise.all([
         readObject(node.className, node.primaryKey, anchorAttributes),
         classRelationships(node.className),
       ]);
-      const plans = planRelations(catalog, params.relationKinds, node.className);
+      const plans = [planRelation(catalog, relationshipId, node.className)];
 
       // The attributes each class needs are read once per call and reused; a self-loop's target is the anchor's own class.
       const attributesByClass = new Map<string, ClassAttribute[]>([[node.className, anchorAttributes]]);
