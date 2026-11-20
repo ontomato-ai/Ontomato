@@ -1,6 +1,8 @@
 import {
   runtimeEnvironmentSchema,
   runtimeIdentityEnvironment,
+  runtimeRegisteredSkillSchema,
+  type RuntimeSkillVersion,
 } from "@ontomato/contracts/agent-runtime-skills";
 import { removeWorkerFiles } from "../worker";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -49,6 +51,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
     name: "fixture-skill",
   };
   const skillBody = "Read scripts/run.mjs and execute it with bash.";
+  let skillVersion: RuntimeSkillVersion;
   async function api(
     route: string,
     body?: unknown,
@@ -68,7 +71,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
     definition: {
       systemPrompt: "Use standard skills",
       modelId: null,
-      skills: [skill],
+      skills: [skillVersion],
       externalMcp,
       ...(toolCallPolicy ? { toolCallPolicy } : {}),
       sandbox: {
@@ -324,25 +327,22 @@ describe("standard runtime real HTTP/PG/processes", () => {
     }, {}, "PUT");
     expect(saved.status).toBe(200);
 
-    expect(
-      (
-        await api("/v1/skills", {
-          skill,
-          files: [
-            {
-              path: "SKILL.md",
-              content:
-                "---\nname: fixture-skill\ndescription: Write a fixture file\n---\n" + skillBody + "\n",
-            },
-            {
-              path: "scripts/run.mjs",
-              content:
-                "import {writeFile} from 'node:fs/promises'; await writeFile('outputs/result.txt', JSON.stringify({value:0,flag:false,empty:null,env:!!process.env.ONTOMATO_TK})); console.log('done');",
-            },
-          ],
-        })
-      ).status,
-    ).toBe(201);
+    const published = await api("/v1/skills", {
+      skill,
+      files: [
+        {
+          path: "SKILL.md",
+          content: "---\nname: fixture-skill\ndescription: Write a fixture file\n---\n" + skillBody + "\n",
+        },
+        {
+          path: "scripts/run.mjs",
+          content: "import {writeFile} from 'node:fs/promises'; await writeFile('outputs/result.txt', JSON.stringify({value:0,flag:false,empty:null,env:!!process.env.ONTOMATO_TK})); console.log('done');",
+        },
+      ],
+    });
+    expect(published.status).toBe(201);
+    const { skill: ref, digest } = runtimeRegisteredSkillSchema.parse(published.body);
+    skillVersion = { skill: ref, digest };
   });
   afterAll(async () => {
     await stop();
@@ -396,10 +396,21 @@ describe("standard runtime real HTTP/PG/processes", () => {
     expect(mcpCalls).toHaveLength(2);
   });
   it("runs the ordinary skill via PI bash, preserves reasoning_content and immutable files", async () => {
+    const replacement = await api("/v1/skills", {
+      skill,
+      files: [{ path: "SKILL.md", content: "---\nname: fixture-skill\ndescription: A different package\n---\n" }],
+    });
+    expect(replacement.status).toBe(201);
     const s = await session(),
       first = await run(s, "create"),
       done = await settle(first.id);
     expect(done.run.stopReason, logs).toBe("stop");
+    expect(done.run.resolvedSkills[0].digest).toBe(skillVersion.digest);
+    const changed = { ...first.request, definition: {
+      ...first.request.definition,
+      skills: [{ skill: skillVersion.skill, digest: replacement.body.digest }],
+    }};
+    expect((await api(`/v1/sessions/${s}/runs`, changed, { "idempotency-key": first.id })).status).toBe(409);
     const reply = await api(`/v1/runs/${first.id}/final-reply`);
     expect(reply.status).toBe(200);
     // The answer is the run's last assistant message, named by the run and its agent_end.

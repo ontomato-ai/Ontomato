@@ -2,6 +2,7 @@ package io.ontomato.dataengine.service;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import io.ontomato.dataengine.service.agent.AgentRuntimeClient.SkillVersion;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -82,7 +83,7 @@ public class RuntimeCodeClient {
     return skillResource("python/query_runtime.py");
   }
 
-  public void registerSkill() throws Exception {
+  public SkillVersion registerSkill() throws Exception {
     List<Map<String, String>> files = new ArrayList<>();
     for (String file :
         List.of(
@@ -93,17 +94,11 @@ public class RuntimeCodeClient {
             "references/dsl.md"))
       files.add(
           Map.of("path", file, "content", skillResource("ontology-skills/ontomato-analyst/" + file)));
-    request(
-        null,
-        "ontology-skill-registration",
-        "/v1/skills",
-        "POST",
-        Map.of("skill", SKILL, "files", files),
-        null);
+    return runtime.publishSkill("ontology-skill-registration", SKILL, files);
   }
 
   /** Publish the restricted entry point with the complete package's shared client files. */
-  public void registerAssistantSkill() throws Exception {
+  public SkillVersion registerAssistantSkill() throws Exception {
     List<Map<String, String>> files = new ArrayList<>();
     files.add(
         Map.of(
@@ -114,13 +109,7 @@ public class RuntimeCodeClient {
     for (String file : List.of("ontomato.mjs", "client.mjs", "application.yml"))
       files.add(
           Map.of("path", file, "content", skillResource("ontology-skills/ontomato-analyst/" + file)));
-    request(
-        null,
-        "ontology-assistant-skill-registration",
-        "/v1/skills",
-        "POST",
-        Map.of("skill", ASSISTANT_SKILL, "files", files),
-        null);
+    return runtime.publishSkill("ontology-assistant-skill-registration", ASSISTANT_SKILL, files);
   }
 
   public JSONObject execution(String domain, String id) throws Exception {

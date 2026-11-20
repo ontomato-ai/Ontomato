@@ -16,6 +16,7 @@ import {
   runtimeRegisterSkillRequestSchema,
   standardSkillFrontmatterSchema,
   type RuntimeSkillRef,
+  type RuntimeSkillVersion,
 } from "@ontomato/contracts/agent-runtime-skills";
 import type { RuntimeRegisteredSkill } from "@ontomato/contracts/agent-runtime";
 import { RuntimeStore, canonical, digest } from "./store";
@@ -114,37 +115,31 @@ export class SkillRegistry {
       ON CONFLICT(identity,digest) DO NOTHING`,
       [canonical(pkg.skill), hash, registered],
     );
-    await this.store.pool.query(
-      `INSERT INTO ${this.store.table("skill_names")} VALUES($1,$2)
-      ON CONFLICT(identity) DO UPDATE SET digest=excluded.digest`,
-      [canonical(pkg.skill), hash],
-    );
     return registered;
   }
   async resolve(
     host: RuntimeHost,
     domain: string,
-    ref: RuntimeSkillRef,
+    version: RuntimeSkillVersion,
   ): Promise<InstalledSkill> {
-    this.authorize(host, domain, ref);
+    const { skill, digest: hash } = version;
+    this.authorize(host, domain, skill);
     const row = (
       await this.store.pool.query(
-        `SELECT s.metadata FROM ${this.store.table("skills")} s
-      JOIN ${this.store.table("skill_names")} n USING(identity,digest) WHERE identity=$1`,
-        [canonical(ref)],
+        `SELECT metadata->>'description' AS description FROM ${this.store.table("skills")} WHERE identity=$1 AND digest=$2`,
+        [canonical(skill), hash],
       )
     ).rows[0];
     if (!row)
-      throw new RuntimeError(422, "SKILL_NOT_FOUND", "Skill is not published");
-    const registered = row.metadata as RuntimeRegisteredSkill;
+      throw new RuntimeError(422, "SKILL_NOT_FOUND", "Selected skill version is not published");
     const directory = path.join(
       this.root,
-      digest(ref.namespace),
-      ref.name,
-      registered.digest,
+      digest(skill.namespace),
+      skill.name,
+      hash,
     );
     await readFile(path.join(directory, "SKILL.md"));
-    return { ...registered, directory };
+    return { ...version, description: row.description, directory };
   }
 }
 export function skillCatalog(workspace: string, skills: InstalledSkill[]) {

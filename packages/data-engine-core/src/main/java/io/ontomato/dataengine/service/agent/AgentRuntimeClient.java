@@ -11,6 +11,8 @@ import java.net.URI;
 import java.net.http.*;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -132,6 +134,17 @@ public class AgentRuntimeClient {
       throws Exception {
     String value = text(domain, correlation, path, method, body, key);
     return value.isBlank() ? new JSONObject() : JSON.parseObject(value);
+  }
+
+  public record SkillVersion(Map<String, Object> skill, String digest) {}
+
+  public SkillVersion publishSkill(String correlation, Map<String, Object> skill,
+      List<Map<String, String>> files) throws Exception {
+    var registered = json(null, correlation, "/v1/skills", "POST", Map.of("skill", skill, "files", files), null);
+    String digest = registered.getString("digest");
+    if (!skill.equals(registered.getJSONObject("skill")) || digest == null || !digest.matches("[a-f0-9]{64}"))
+      throw new AgentHttpException(502, "DEPENDENCY_UNAVAILABLE", "Runtime returned an invalid published skill version");
+    return new SkillVersion(skill, digest);
   }
 
   /** Cancellation of the servlet request must cancel the upstream HTTP call as well. */

@@ -27,8 +27,9 @@ import express, {
 } from "express";
 import cors from "cors";
 import path from "path";
-import { skillRegistryManager } from "../core/skills/index";
 import { normalizeSkillPackagePath } from "../core/skills/manifest";
+import { readSkillView } from "../services/skills/view";
+import { asyncHandler } from "../api/utils/http";
 import { config } from "../config/application";
 import analysisTasksRouter from "../api/routes/analysis-tasks";
 import dashboardsRouter from "../api/routes/dashboards";
@@ -131,7 +132,7 @@ export function createWorkbenchApp(): Express {
 
   app.use(
     "/api/skills/resources",
-    async (req: Request, res: Response, next: NextFunction) => {
+    asyncHandler(async (req: Request, res: Response) => {
       const verification = await identity.resolveSkillResourceDomain(req);
       if (!verification.ok) {
         res.status(verification.status).json({
@@ -146,35 +147,26 @@ export function createWorkbenchApp(): Express {
       res.setHeader("Pragma", "no-cache");
       res.setHeader("Expires", "0");
       res.setHeader("Referrer-Policy", "no-referrer");
-      try {
-        await runWithLogContext(
-          { domainId, token: verification.token, apiKey: verification.apiKey },
-          async () => {
-            const registry = await skillRegistryManager.forDomain(domainId);
-            // The two segments before the ID are the historical shape of these addresses, kept for HTML already saved
-            // with them; they no longer say anything about the package.
-            const [, , , id, ...segments] = decodeURIComponent(req.path).split("/");
-            const skill = registry.getSkillById(id);
-            const relative = normalizeSkillPackagePath(segments.join("/"));
-            if (!skill || !relative) {
-              res.sendStatus(404);
-              return;
-            }
-            const file = (await skill.provide()).files.find((entry) => entry.path === relative);
-            if (!file) {
-              res.sendStatus(404);
-              return;
-            }
-            res.type(path.extname(relative) || "application/octet-stream");
-            res.send(Buffer.from(file.content, "utf8"));
-          },
-        );
-      } catch (error) {
-        const code = (error as { code?: string }).code;
-        if (code === "ENOENT" || code === "ENOTDIR") res.sendStatus(404);
-        else next(error);
-      }
-    },
+      const { token, apiKey } = verification;
+      await runWithLogContext({ domainId, token, apiKey }, async () => {
+        const { registry } = await readSkillView(domainId, { token, apiKey });
+        // Saved HTML still has two historical path segments before the skill name.
+        const [, , , id, ...segments] = decodeURIComponent(req.path).split("/");
+        const skill = registry.getSkillById(id);
+        const relative = normalizeSkillPackagePath(segments.join("/"));
+        if (!skill || !relative) {
+          res.sendStatus(404);
+          return;
+        }
+        const file = (await skill.provide()).files.find(entry => entry.path === relative);
+        if (!file) {
+          res.sendStatus(404);
+          return;
+        }
+        res.type(path.extname(relative) || "application/octet-stream");
+        res.send(Buffer.from(file.content, "utf8"));
+      });
+    }),
   );
 
   app.use("/api/health", createHealthRouter());

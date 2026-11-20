@@ -107,6 +107,10 @@ class OntologyGenerationContractTest {
     runtime = mock(AgentRuntimeClient.class);
     when(runtime.ontologyUrl()).thenReturn("http://ontology.invalid");
     code = mock(RuntimeCodeClient.class);
+    String skillDigest = "a".repeat(64);
+    when(code.registerSkill()).thenReturn(new AgentRuntimeClient.SkillVersion(RuntimeCodeClient.SKILL, skillDigest));
+    when(runtime.publishSkill(anyString(), anyMap(), anyList())).thenAnswer(
+        call -> new AgentRuntimeClient.SkillVersion(call.getArgument(1), skillDigest));
     sessions = mock(SessionRegistryService.class);
     when(sessions.getNodeId()).thenReturn("fixture-node");
     var callers=mock(AgentCaller.class);
