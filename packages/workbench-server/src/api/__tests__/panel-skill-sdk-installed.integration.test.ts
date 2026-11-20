@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -15,6 +15,20 @@ import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { installWorkbenchIdentity } from "../../identity/installed";
 import type { WorkbenchIdentity } from "../../identity/types";
 
+import { RuntimeStore } from "../../../../agent-runtime/src/store";
+import { SkillRegistry } from "../../../../agent-runtime/src/skills";
+import { SessionSandbox } from "../../../../agent-runtime/src/sandbox";
+import { removeWorkerFiles } from "../../../../agent-runtime/src/worker";
+import { pageSkillContextSchema } from "@ontomato/contracts/page-skills";
+import type { PanelSkillSource } from "@ontomato/contracts/product-panels";
+import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
+import { ensureAssistantDefaultPromptSchema } from "../../infrastructure/postgres-migrations/20261105-assistant-default-prompts/schema";
+import { ensureAgentExecutionSchema } from "../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
+import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
+import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
+import { protectedSkillRef } from "../../core/skills/providers";
+import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
+
 const fixture = vi.hoisted(() => ({
   pool: undefined as pg.Pool | undefined, schema: "", runtimeUrl: "",
   domainId: "sdk-history", panelId: "settings",
@@ -25,7 +39,7 @@ const fixture = vi.hoisted(() => ({
       entrance: { permissionCode: "analysis-agent", pageKey: "settings" } },
     { applicationId: "other-settings", useId: "other-panel", panelId: "settings", path: "/applications/other-settings/other",
       entrance: { permissionCode: "business-knowledge", pageKey: "other-settings" } },
-  ],
+  ] as PanelSkillSource[],
 }));
 const governance = { namespace: { kind: "provider" as const, provider: "ontology" }, name: "knowledge-governance" };
 const governanceDefault = { kind: "preset" as const, agentKind: "governance-report" };
@@ -40,49 +54,7 @@ vi.mock("../../config/environment", async original => {
     ...environment.agentRuntime(), url: fixture.runtimeUrl, token: "fixture-runtime", queryServiceToken: "fixture-platform",
   }) } };
 });
-vi.mock("../../utils/backend-client", async original => ({
-  ...await original<typeof import("../../utils/backend-client")>(),
-  backendGet: async (endpoint: string, url: string, { headers }: { headers: Record<string, string> }) => {
-    let data;
-    if (endpoint === "panel-skill-sources") {
-      expect(headers["X-Ontomato-Query-Service-Token"]).toBe("fixture-platform");
-      expect(new URL(url, "http://ontology.test").searchParams.get("domainId")).toBe(fixture.domainId);
-      data = fixture.uses;
-    } else {
-      expect(headers.tk).toBe("editor");
-      if (endpoint === "page-skills") {
-        data = {
-          pageSkills: fixture.uses.map(({ entrance }) => ({
-            permissionCode: entrance.permissionCode,
-            ...(fixture.native && entrance.permissionCode === "business-knowledge" && {
-              skill: governance,
-              defaults: [{ pageKey: entrance.pageKey, defaultAgent: governanceDefault }],
-            }),
-          })),
-          registeredSkills: fixture.native ? [governance] : [],
-          admittedEntrances: fixture.uses.map(({ entrance }) => entrance),
-        };
-      } else {
-        expect(endpoint).toBe("resolve-panel-entry");
-        const query = new URL(url, "http://owner.test").searchParams;
-        const use = fixture.uses.find(({ applicationId, useId }) =>
-          query.get("applicationId") === applicationId && query.get("useId") === useId)!;
-        data = {
-          applicationId: use.applicationId, menu: { groups: [], panelUses: [] },
-          use: { id: use.useId, panelId: use.panelId, path: use.path, pageKey: use.entrance.pageKey,
-            access: { permissionCode: use.entrance.permissionCode } },
-        };
-      }
-    }
-    return { text: JSON.stringify({ success: true, data }) };
-  },
-  backendPost: async (endpoint: string, _url: string, body: unknown, { headers }: { headers: Record<string, string> }) => {
-    expect(endpoint).toBe("product-grant-resources");
-    expect(headers.tk).toBe("editor");
-    expect(body).toEqual({ verb: "use" });
-    return { text: JSON.stringify({ ids: fixture.grants }) };
-  },
-}));
+vi.mock("../../config/application", () => ({ config: { dataQuery: { get baseUrl() { return fixture.runtimeUrl; } } } }));
 
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
 if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
@@ -92,7 +64,11 @@ let root: string;
 let base: string;
 let skill: RuntimeSkillRef;
 const published = vi.fn();
-const digest = "b".repeat(64);
+const runtimeHost = { id: "workbench", providers: [], domainSkills: true, token: "fixture-runtime" };
+let runtimeStore: RuntimeStore;
+let registry: SkillRegistry;
+let digest: string;
+const regularId = randomUUID();
 
 beforeAll(async () => {
   root = await mkdtemp(path.join(tmpdir(), "bundled-sdk-skill-"));
@@ -105,25 +81,22 @@ beforeAll(async () => {
 
   fixture.schema = `sdk_history_${randomUUID().replaceAll("-", "")}`;
   fixture.pool = new pg.Pool({ connectionString: database });
-  await fixture.pool.query(`CREATE SCHEMA "${fixture.schema}";
-    CREATE TABLE "${fixture.schema}".product_panels (
-      id text, domain_id text, owner_id text, definition jsonb, revision integer, created_at timestamptz, updated_at timestamptz
-    );
-    CREATE TABLE "${fixture.schema}".product_projections (LIKE "${fixture.schema}".product_panels);
-    CREATE TABLE "${fixture.schema}".assistant_agents (
-      id uuid PRIMARY KEY, domain_id text, kind text, name text, description text, enabled boolean,
-      system_prompt text, model_selection jsonb, skills jsonb, icon text, class_names jsonb,
-      enabled_mcp_service_ids jsonb, sort_order integer, execution_user_id text, model_reference_migrated boolean
-    );
-    CREATE TABLE "${fixture.schema}".product_native_agent_bindings (domain_id text, agent_id text, asset_id text)`);
-  await fixture.pool.query(`INSERT INTO "${fixture.schema}".product_panels VALUES ($1,$2,'editor',$3,1,now(),now())`, [
+  runtimeStore = new RuntimeStore(database, fixture.schema);
+  await runtimeStore.initialize();
+  registry = new SkillRegistry(runtimeStore, path.join(root, "published"));
+  await ensureAssistantSchema(fixture.pool);
+  await ensureAssistantDefaultPromptSchema(fixture.pool);
+  await ensureAgentExecutionSchema(fixture.pool);
+  await ensureProductAssetsSchema(fixture.pool);
+  await ensureProductPanelsSchema(fixture.pool);
+  await fixture.pool.query(`INSERT INTO "${fixture.schema}".product_panels (id,domain_id,owner_id,definition) VALUES ($1,$2,'editor',$3)`, [
     fixture.panelId, fixture.domainId, {
       name: "Settings panel", description: "", visibility: "domain",
       content: { html: "", module: "" },
       manifest: { state: {}, members: { records: { target: { projectionId: "records" } } }, events: {} },
     },
   ]);
-  await fixture.pool.query(`INSERT INTO "${fixture.schema}".product_projections VALUES ('records',$1,'editor',$2,1,now(),now())`, [
+  await fixture.pool.query(`INSERT INTO "${fixture.schema}".product_projections (id,domain_id,owner_id,definition) VALUES ('records',$1,'editor',$2)`, [
     fixture.domainId, {
       name: "Records", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectList",
       inputs: {}, outputs: {}, config: {},
@@ -137,22 +110,62 @@ beforeAll(async () => {
     name: `panel-menu-settings-${"a".repeat(24)}` }])]);
 
   const { registerPanelSkillProvider } = await import("../../services/product-panels/skill-provider");
-  const { protectedSkillRef } = await import("../../core/skills/providers");
+  const { productPanelsRouter } = await import("../routes/product-panels");
   const { default: assistantRouter } = await import("../routes/assistant");
   registerPanelSkillProvider();
   skill = protectedSkillRef("product-panels", fixture.domainId, fixture.panelId);
   const app = express();
   app.use(express.json());
-  app.post("/v1/skills", (req, res) => {
+  app.get("/platform/applications/panel-skill-sources", (req, res) => {
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-platform");
+    expect(req.query.domainId).toBe(fixture.domainId);
+    res.json({ success: true, data: fixture.uses });
+  });
+  app.get("/platform/page-skills", (req, res) => {
+    expect(req.header("tk")).toBe("editor");
+    res.json({ success: true, data: {
+      pageSkills: fixture.uses.map(({ entrance }) => "permissionCode" in entrance ? {
+        permissionCode: entrance.permissionCode,
+        ...(fixture.native && entrance.permissionCode === "business-knowledge" && {
+          skill: governance, defaults: [{ pageKey: entrance.pageKey, defaultAgent: governanceDefault }],
+        }),
+      } : { ...entrance, defaults: [{ pageKey: entrance.pageKey, defaultAgent: { kind: "preset", agentKind: "regular" } }] }),
+      registeredSkills: fixture.native ? [governance] : [], admittedEntrances: fixture.uses.map(use => use.entrance),
+    } });
+  });
+  app.get("/platform/applications/resolve-entry", (req, res) => {
+    expect(req.header("tk")).toBe("editor");
+    const { applicationId, useId, panelId, path, entrance } = fixture.uses.find(use =>
+      req.query.applicationId === use.applicationId && req.query.useId === use.useId)!;
+    res.json({ success: true, data: { applicationId, menu: { groups: [], panelUses: [] },
+      use: { id: useId, panelId, path, pageKey: entrance.pageKey,
+        access: "permissionCode" in entrance ? { permissionCode: entrance.permissionCode } : { kind: entrance.access } } } });
+  });
+  app.post("/product-governance/check", (req, res) => {
+    res.json({ allowed: req.header("tk") === "editor" && fixture.grants.includes(req.body.id) });
+  });
+  app.post("/product-governance/resources", (req, res) => {
+    expect(req.header("tk")).toBe("editor");
+    res.json({ ids: fixture.grants });
+  });
+  app.post("/product-governance/service-resources", (req, res) => {
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-platform");
+    expect(req.body).toMatchObject({ domainId: fixture.domainId, userId: "editor" });
+    res.json({ ids: fixture.grants });
+  });
+  app.post("/v1/skills", async (req, res) => {
     const pkg = runtimeRegisterSkillRequestSchema.parse(req.body);
     expect(req.header("X-Domain-Id")).toBe(fixture.domainId);
     published(pkg);
-    res.json({ skill: pkg.skill, digest, description: "Published panel package" });
+    const registered = await registry.register(runtimeHost, fixture.domainId, pkg);
+    digest = registered.digest;
+    res.json(registered);
   });
   app.use((req, _res, next) => {
     Object.assign(req, { userId: "editor", domainId: fixture.domainId, token: "editor", locale: "en" });
     next();
   });
+  app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/assistant", assistantRouter);
   server = app.listen(0, "127.0.0.1");
   await new Promise<void>(resolve => server.once("listening", resolve));
@@ -166,7 +179,8 @@ afterAll(async () => {
     await fixture.pool.query(`DROP SCHEMA "${fixture.schema}" CASCADE`);
     await fixture.pool.end();
   }
-  if (root) await rm(root, { recursive: true });
+  if (runtimeStore) await runtimeStore.close();
+  if (root) await removeWorkerFiles(root);
 });
 
 it("lists a code panel's protected skill from the bundled current SDK and saves its selection", async () => {
@@ -224,4 +238,74 @@ it("keeps the native governance skill and preset alongside the protected panel i
     defaults: [{ pageKey: "other-settings", defaultAgent: governanceDefault }],
   }]);
   expect(effectiveAssistantSkills({ kind: "regular", skills: [] }, view)).toHaveLength(2);
+});
+
+it("opens registered panel entries, selects the regular assistant and installs the exact current page skill", async () => {
+  const { prepareAssistantSkills } = await import("../../services/assistant/skills");
+  const { assistantStore } = await import("../../services/assistant/store");
+  const pages = [
+    { applicationId: "app-business-knowledge-panel", useId: "business-knowledge-panel-use", panelId: "panel-business-knowledge",
+      path: "/applications/app-business-knowledge-panel/manage", entrance: { access: "domain-member", pageKey: "business-knowledge-panel" } },
+    { applicationId: "app-panels-trial-a", useId: "use-trial-a-tasks", panelId: "panel-schedules-trial",
+      path: "/applications/app-panels-trial-a/tasks", entrance: { access: "domain-member", pageKey: "panels-trial-a-tasks" } },
+  ] satisfies PanelSkillSource[];
+  fixture.uses = pages;
+  fixture.native = false;
+  fixture.grants = ["records", ...pages.map(page => page.panelId)];
+  for (const page of pages) {
+    await fixture.pool!.query(`INSERT INTO "${fixture.schema}".product_panels (id,domain_id,owner_id,definition)
+      VALUES($1,$2,'editor',$3)`, [page.panelId, fixture.domainId, {
+      name: page.entrance.pageKey, description: "", visibility: "domain", content: vuePanelContent("records"),
+      manifest: { state: {}, members: { records: { target: { projectionId: "records" } } }, events: {} },
+    }]);
+  }
+  await fixture.pool!.query(`INSERT INTO "${fixture.schema}".assistant_agents (id,domain_id,kind,name,system_prompt,skills)
+    VALUES($1,$2,'regular','Assistant',NULL,'[]')`, [regularId, fixture.domainId]);
+  const credentials = { token: "editor", locale: "en" };
+  const owner = { domainId: fixture.domainId, userId: "editor" };
+  const scope = { hostId: runtimeHost.id, domainId: fixture.domainId };
+  for (const { applicationId, useId, panelId, entrance, path: pagePath } of pages) {
+    const panelUrl = `${fixture.runtimeUrl}/api/product-panels/${panelId}?${new URLSearchParams({ applicationId, useId, ...entrance })}`;
+    const opened = await fetch(panelUrl);
+    const page = await opened.json();
+    expect(opened.status, JSON.stringify(page)).toBe(200);
+    const context = pageSkillContextSchema.parse(page.pageSkillContext);
+    const member = { source: { kind: "application-use", applicationId, useId }, memberPath: [],
+      ref: protectedSkillRef("product-panels", owner.domainId, panelId) };
+    expect(context).toEqual({ mode: "member", locator: entrance, member });
+    if (context.mode !== "member" || !context.member) throw new Error("Expected an admitted panel member");
+
+    const locator = new URLSearchParams(context.locator);
+    const missing = await fetch(`${base}/agents?${locator}`);
+    expect(missing.status).toBe(403);
+    expect(await missing.json()).toMatchObject({ error: { code: "PAGE_SKILL_FORBIDDEN" } });
+    locator.set("member", JSON.stringify(context.member));
+    const candidateUrl = `${base}/agents?${locator}`;
+    const result = await fetch(candidateUrl);
+    const candidates = await result.json();
+    expect(result.status, JSON.stringify(candidates)).toBe(200);
+    expect(candidates.defaultAgentId).toBe(regularId);
+    expect(candidates.agents).toContainEqual(expect.objectContaining({ id: regularId, enabled: true }));
+    const agent = await assistantStore.agent(candidates.defaultAgentId, owner);
+    const prepared = await prepareAssistantSkills(owner.domainId, agent, credentials, context);
+    expect(prepared.currentPage).toEqual({ entrance, member, path: pagePath });
+    const installed = await Promise.all(prepared.skills.map(version => registry.resolve(runtimeHost, owner.domainId, version)));
+    const sessionId = randomUUID();
+    await runtimeStore.createSession(scope, sessionId);
+    const sandbox = new SessionSandbox(runtimeStore, root, { development: true, python: "python3" }, scope, sessionId);
+    await sandbox.prepare(installed);
+    const version = installed.find(entry => entry.skill.name === member.ref.name)!;
+    expect(version).toMatchObject({ skill: member.ref, digest: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    expect(await readFile(path.join(sandbox.workspace, "skills", member.ref.name, "SKILL.md"), "utf8"))
+      .toEqual(await readFile(path.join(version.directory, "SKILL.md"), "utf8"));
+
+    fixture.grants = pages.map(page => page.panelId);
+    const denied = await fetch(panelUrl);
+    expect(denied.status).toBe(200);
+    expect((await denied.json()).pageSkillContext).toEqual({ mode: "member", locator: entrance, member: null });
+    expect((await fetch(candidateUrl)).status).toBe(403);
+    await expect(prepareAssistantSkills(owner.domainId, agent, credentials, context))
+      .rejects.toMatchObject({ status: 403, code: "PAGE_SKILL_FORBIDDEN" });
+    fixture.grants.push("records");
+  }
 });

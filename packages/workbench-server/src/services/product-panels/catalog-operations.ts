@@ -11,7 +11,7 @@ import {
   changeProductPanelDomainGrantResponseSchema, productGrantChangeResponseSchema,
 } from "@ontomato/contracts/product-governance";
 import {
-  applicationPanelUseSchema, copyProductCurrentRequestSchema, deleteProductCurrentQuerySchema, deleteProductCurrentResponseSchema,
+  METRIC_CHART_COMPONENT, applicationPanelUseSchema, copyProductCurrentRequestSchema, deleteProductCurrentQuerySchema, deleteProductCurrentResponseSchema,
   deleteProductPanelResponseSchema, productCurrentIdParamsSchema,
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
 } from "@ontomato/contracts/product-panels";
@@ -22,12 +22,14 @@ import { applicationCatalogueClient } from "./application-catalogue";
 import {
   changeCurrentProductDomainGrant, changeCurrentProductGrant, copyCurrentProduct, deleteCurrentProduct,
 } from "./catalog";
-import { readCurrentPanel, readCurrentProjection, saveCurrentPanel, saveCurrentProjection } from "./current";
+import { readCurrentPanel, readCurrentProjection, requireCurrentProduct, saveCurrentPanel, saveCurrentProjection } from "./current";
+import { applySubmittedFields } from "./submitted-form-values";
 import type { PanelOperationHost, PanelWriteServerOperation, SinglePanelOperationOutcome } from "./server-operations";
 
 const savedId = productCurrentIdParamsSchema;
 const noData = z.object({}).strict();
 const grantInput = changeProductGrantRequestSchema.omit({ remove: true });
+const chartMetadata = registerProductProjectionRequestSchema.options[1].omit({ revision: true }).strip();
 type OutcomeData = Record<string, RuntimeJsonValue>;
 
 function writeInput<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, input: unknown): T {
@@ -62,16 +64,25 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
     resultSchema: savedId,
     draftOperation: target => target.kind === "draft" ? `${kind}.create` : `${kind}.update`,
     draftInput: input => panelFormSaveInputSchema.parse(input).values,
-    formInstructions: "Read the owner form. Submit its complete values and current revision when editing.",
+    formInstructions: "Read the owner form. For edits, send the current revision and the JSON Pointers of the fields you changed.",
     create: {
       draftValues: values => panelFormValuesSchema.parse(values),
       createdObject: data => ({ objectType: type, primaryKey: savedId.parse(data).id }),
     },
     async execute({ executor: { owner, credentials } }, target, input) {
       return write(type, async () => {
-        const { values: { id, ...values }, revision } = writeInput(panelFormSaveInputSchema, input);
+        const { values: { id, ...submitted }, revision, submittedFields } = writeInput(panelFormSaveInputSchema, input);
         const primaryKey = target.kind === "object" ? target.primaryKey : writeInput(savedId.shape.id, target.id ?? id ?? randomUUID());
         const expectedRevision = target.kind === "draft" ? 0 : writeInput(updateRevision, revision);
+        let values = submitted;
+        if (target.kind === "object" && submittedFields !== undefined) {
+          const { definition } = await requireCurrentProduct(owner, credentials, kind, primaryKey, "edit");
+          if (!submittedFields.length) return { primaryKey, data: { id: primaryKey } };
+          const current = kind === "projection" && definition.componentId === METRIC_CHART_COMPONENT
+            ? chartMetadata.parse(definition) : runtimeJsonObjectSchema.parse(definition);
+          values = applySubmittedFields(current, submitted, submittedFields);
+        }
+
         if (kind === "projection") {
           await saveCurrentProjection(owner, credentials, primaryKey,
             writeInput(registerProductProjectionRequestSchema, { ...values, revision: expectedRevision }));
@@ -154,14 +165,14 @@ const applicationSave: PanelWriteServerOperation = {
   resultSchema: savedId,
   draftOperation: target => target.kind === "draft" ? "create" : "saveIdentity",
   draftInput: input => panelFormSaveInputSchema.parse(input).values,
-  formInstructions: "Read the application owner's form for the required section and submit its full values.",
+  formInstructions: "Read the application owner's form for the required section and send the JSON Pointers of the fields you changed.",
   create: {
     draftValues: values => panelFormValuesSchema.parse(values),
     createdObject: data => ({ objectType: APPLICATION, primaryKey: savedId.parse(data).id }),
   },
   async execute({ executor: { credentials } }, target, input) {
     return write(APPLICATION, async () => {
-      const { values } = writeInput(panelFormSaveInputSchema, input);
+      const { values, submittedFields } = writeInput(panelFormSaveInputSchema, input);
       const java = applicationCatalogueClient(credentials);
       if (target.kind === "draft") {
         const body = writeInput(applicationCatalogueCreateSchema, values);
@@ -171,8 +182,15 @@ const applicationSave: PanelWriteServerOperation = {
       }
 
       const id = target.primaryKey;
-      if ("panelUses" in values) await java.saveEntries(id, writeInput(applicationEntriesUpdateSchema, values));
-      else await java.saveIdentity(id, writeInput(applicationIdentityUpdateSchema, values));
+      if (submittedFields?.length === 0) return { primaryKey: id, data: { id } };
+      const entries = submittedFields === undefined ? "panelUses" in values
+        : submittedFields.some(pointer => Object.hasOwn(applicationEntriesUpdateSchema.shape, pointer.split("/", 2)[1]));
+      const section = entries ? "entries" : "identity";
+      const body = submittedFields === undefined ? values : applySubmittedFields(
+        (await java.form({ section, target, changedField: null })).values, values, submittedFields,
+      );
+      if (entries) await java.saveEntries(id, writeInput(applicationEntriesUpdateSchema, body));
+      else await java.saveIdentity(id, writeInput(applicationIdentityUpdateSchema, body));
       return { primaryKey: id, data: { id } };
     });
   },
