@@ -2,7 +2,7 @@ import { runtimeFileMetadataSchema } from "./agent-runtime-artifacts";
 import { z } from "zod";
 import {
   runtimeEnvironmentSchema,
-  runtimeSkillRefSchema,
+  runtimeSkillVersionSchema,
 } from "./agent-runtime-skills";
 import {
   runtimeIdSchema,
@@ -46,14 +46,7 @@ export const codeExecutionRequestSchema = z
     arguments: z.array(z.string()),
     outputPaths: z.array(runtimeRelativePathSchema),
     environment: runtimeEnvironmentSchema,
-    libraries: z.array(
-      z
-        .object({
-          skill: runtimeSkillRefSchema,
-          path: runtimeRelativePathSchema,
-        })
-        .strict(),
-    ),
+    libraries: z.array(runtimeSkillVersionSchema.extend({ path: runtimeRelativePathSchema })),
     limits: codeLimitsSchema,
   })
   .strict()
