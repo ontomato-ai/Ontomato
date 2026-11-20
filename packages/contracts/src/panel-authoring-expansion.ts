@@ -103,7 +103,9 @@ export function expandPanelAuthoringMember(
     ]);
     const params = Object.fromEntries([...parameterNames].map(param => {
       const paramPath = `${path}.params.${param}`;
-      const parameterId = panelReadParameterId(declaration, param) ?? fail(paramPath, "Parameter is not registered for this read");
+      if (declaration.parameterMode === "fixed" && !Object.hasOwn(declaration.params, param))
+        fail(paramPath, "Parameter is not registered for this read");
+      const parameterId = panelReadParameterId(declaration, param)!;
       if (Object.hasOwn(member.state ?? {}, param)) consumedState.add(param);
       const supplied = Object.hasOwn(explicit, param) ? explicit[param] : { state: member.state![param] };
       if ("literal" in supplied) {
