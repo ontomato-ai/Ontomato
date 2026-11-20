@@ -31,6 +31,7 @@ const approve = {
   id: "approve-order", name: "Approve order", description: "Approve a pending order", status: "PUBLISHED",
   statusLabel: "Published", origin: "USER", originLabel: "User", createdBy: "u1", createdByName: "Alice",
   reviewedBy: null, reviewedByName: null, function: { name: "approve_order", code: "# ontomato-python:2" },
+  modifyTimestamp: Date.UTC(2026, 10, 20, 8, 30),
 };
 const form = {
   fields: [{
@@ -73,8 +74,14 @@ describe("action catalog reads", () => {
     expect(panelRecordListSchema.parse(records)).toEqual(records);
     expect(records).toEqual([{
       primaryKey: "approve-order", label: "Approve order", subtitle: "Approve a pending order",
-      fieldLabels: { status: "Status", origin: "Origin", createdBy: "Created by", reviewedBy: "Reviewed by", function: "Function" },
-      fields: { status: "Published", origin: "User", createdBy: "Alice", reviewedBy: "", function: "approve_order" },
+      fieldLabels: {
+        status: "Status", origin: "Origin", createdBy: "Created by", reviewedBy: "Reviewed by", function: "Function",
+        updatedAt: "Updated",
+      },
+      fields: {
+        status: "Published", origin: "User", createdBy: "Alice", reviewedBy: "", function: "approve_order",
+        updatedAt: "2026-11-20T08:30:00.000Z",
+      },
     }]);
   });
 
@@ -98,6 +105,17 @@ describe("action catalog reads", () => {
         target: { kind: "object", objectType: ACTION, primaryKey: "approve-order" },
         values: { name: "Approve" }, changedField: "/function/parameters",
       },
+    ]);
+  });
+
+  it("asks the owner for the form of a new action an agent drafts into", async () => {
+    const sent = ownerAnswering({ "/action/definitionForm": ok({ ...form, save: { ...form.save, draftOperation: "action.create" } }) });
+
+    const created = await createActionReadAdapter(owner, viewer).createForm({ values: { name: "Approve" }, changedField: null });
+
+    expect(created.save.draftOperation).toBe("action.create");
+    expect(sent.map(request => request.body)).toEqual([
+      { target: { kind: "draft" }, values: { name: "Approve" }, changedField: null },
     ]);
   });
 

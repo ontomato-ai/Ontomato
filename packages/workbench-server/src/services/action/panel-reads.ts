@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ACTION, DELETE_ACTION, SET_ACTION_STATUS } from "@ontomato/contracts/panel-client-requests";
+import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import type { PanelOperationDeclaration } from "@ontomato/contracts/panel-operations";
 import {
   panelFormDescriptionSchema, type PanelFormDescription, type PanelFormValues, type PanelRecord,
@@ -29,6 +30,7 @@ const actionSchema = z.object({
   statusLabel: z.string().nullish(),
   originLabel: z.string().nullish(),
   createdByName: z.string().nullish(),
+  modifyTimestamp: z.number().int().nullish(),
   reviewedByName: z.string().nullish(),
   function: z.object({ name: z.string().nullish() }).passthrough().nullish(),
 }).passthrough();
@@ -57,6 +59,7 @@ function actionRecord(action: ActionAsset, fieldLabels: Record<string, string>):
       createdBy: action.createdByName ?? "",
       reviewedBy: action.reviewedByName ?? "",
       function: action.function?.name ?? "",
+      updatedAt: action.modifyTimestamp == null ? "" : new Date(action.modifyTimestamp).toISOString(),
     },
   };
 }
@@ -66,12 +69,18 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
   const base = config.dataQuery.baseUrl.replace(/\/$/, "");
   const translate = (key: string) => tForLocale(viewer.locale, key);
   const fieldLabels = () => Object.fromEntries(
-    ["status", "origin", "createdBy", "reviewedBy", "function"].map(name => [name, translate(`panels.action.fields.${name}`)]),
+    ["status", "origin", "createdBy", "reviewedBy", "function", "updatedAt"]
+      .map(name => [name, translate(`panels.action.fields.${name}`)]),
   );
   async function owner<T>(name: string, path: string, body: unknown, schema: z.ZodType<T>): Promise<T> {
     const envelope = ownerEnvelopeSchema.parse(JSON.parse((await backendPost(name, base + path, body, options)).text));
     if (!envelope.success) throw readRefusal(envelope, "ACTION_READ_FAILED", "The owner could not read the actions");
     return schema.parse(envelope.data);
+  }
+  function definitionForm(name: string, target: PanelFormTarget, { values, changedField }: ActionFormParams) {
+    return owner(name, "/action/definitionForm", {
+      target, ...(values !== undefined && { values }), changedField: changedField ?? null,
+    }, panelFormDescriptionSchema);
   }
   return {
     async list(): Promise<PanelRecord[]> {
@@ -81,12 +90,12 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
     async record(primaryKey: string): Promise<PanelRecord> {
       return actionRecord(await owner("action-record", "/action/queryById", { id: primaryKey }, actionSchema), fieldLabels());
     },
-    async form(primaryKey: string, { values, changedField }: ActionFormParams): Promise<PanelFormDescription> {
-      return owner("action-form", "/action/definitionForm", {
-        target: { kind: "object", objectType: ACTION, primaryKey },
-        ...(values !== undefined && { values }),
-        changedField: changedField ?? null,
-      }, panelFormDescriptionSchema);
+    async form(primaryKey: string, params: ActionFormParams): Promise<PanelFormDescription> {
+      return definitionForm("action-form", { kind: "object", objectType: ACTION, primaryKey }, params);
+    },
+    /** The owner's form for a new action, which an agent drafts into after the owner adopts its trial run. */
+    async createForm(params: ActionFormParams): Promise<PanelFormDescription> {
+      return definitionForm("action-create-form", { kind: "draft" }, params);
     },
     /**
      * The published Actions of the viewer's domain that run on an object, each with the object type its stored target
