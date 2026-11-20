@@ -24,6 +24,7 @@ import { protectedSkillRef } from "../../core/skills/providers";
 import { installContentLayout } from "../../content/layout";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { readSseFrames } from "../../infrastructure/agent-runtime/client";
+import { ensureAssistantDefaultPromptSchema } from "../../infrastructure/postgres-migrations/20261105-assistant-default-prompts/schema";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
@@ -75,6 +76,7 @@ beforeAll(async () => {
   await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
   await ensureAssistantSchema(state.pool);
+  await ensureAssistantDefaultPromptSchema(state.pool);
   contentRoot = await mkdtemp(path.join(os.tmpdir(), "direct-panel-host-"));
   cataloguePath = await writeBundledAppSdkFixture(contentRoot);
   installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
