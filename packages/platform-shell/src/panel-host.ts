@@ -19,6 +19,7 @@ import {
 import type { PanelObjectIdentity, PanelOperation } from "@ontomato/contracts/panel-manifest";
 import type { PanelOperationAffected } from "@ontomato/contracts/panel-operations";
 import { parsePanelLayout, type PanelLayoutNode } from "@ontomato/contracts/panel-layout";
+import { adoptPanelStyle, cleanPanelHtml, PanelStyleOutsideError, scopedPanelStyle } from "./panel-content";
 import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
 import { panelNeedsFrame, type PanelDefinitionContent, type ProductPanel } from "@ontomato/contracts/product-panels";
 
@@ -173,7 +174,14 @@ export interface PanelInstanceView {
   /** The message written into the frame's document; empty while the record is being read or when no frame runs it. */
   readonly document: Readonly<Ref<string>>;
   /** A panel the platform draws: its layout and its started instance; null when a frame runs the panel. */
-  readonly direct: Readonly<ShallowRef<{ layout: PanelLayoutNode[]; mount: DirectPanelMount } | null>>;
+  readonly direct: Readonly<ShallowRef<DirectInstance | null>>;
+  /** What names this instance's element, where its panel's CSS applies. */
+  readonly instance: string;
+  /**
+   * What the author of a panel the platform draws should know without the panel failing: part of its HTML was removed
+   * as it was drawn, or its CSS reached outside it and applies nowhere.
+   */
+  readonly notice: Readonly<ShallowRef<string>>;
   /** The reader's deep-linkable state, as the address carries it. */
   readonly state: Ref<PanelHostState>;
   /** The instance's address, with its state; never a credential or a form value. */
@@ -210,7 +218,18 @@ export interface PanelHostLabels {
    * `{file}` stands for that file), and a script that failed while it ran or rejected with nothing to say.
    */
   failures: { fileUnavailable: string; scriptThrew: string; scriptRejected: string };
+  /** What a panel the platform draws tells its author: its HTML had content removed, its CSS reached outside it. */
+  content: { htmlRemoved: string; styleOutside: string };
 }
+
+/** A panel the platform draws: its parsed layout and its running instance. */
+export interface DirectInstance {
+  layout: PanelLayoutNode[];
+  mount: DirectPanelMount;
+}
+
+/** Each instance's own name for its element, so its panel's CSS reaches it and no other. */
+let instances = 0;
 
 export interface PanelInstanceOptions {
   /** The words the host shows the reader. */
@@ -265,7 +284,11 @@ const loading: DisplayLoad = { status: "loading" };
 export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOptions): PanelInstanceView {
   const source = shallowRef<HostedPanelSource | null>(null);
   const admitted = shallowRef(!port.admitted);
-  const direct = shallowRef<{ layout: PanelLayoutNode[]; mount: DirectPanelMount } | null>(null);
+  const direct = shallowRef<DirectInstance | null>(null);
+  const instance = `panel-${++instances}`;
+  const notice = shallowRef("");
+  /** Takes the drawn panel's CSS away again. */
+  let dropStyle: (() => void) | undefined;
   const pageContext = shallowRef<PageContext | null>(null);
   const document = shallowRef("");
   const error = shallowRef("");
@@ -398,7 +421,17 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     frameAddress = requestedAddress;
     frameReady = false;
     displayLoad.value = loading;
-    const layout = parsePanelLayout(next.panel.content.html, next.panel.manifest);
+    const cleaned = cleanPanelHtml(next.panel.content.html);
+    const { nodes: layout, css } = parsePanelLayout(cleaned.html, next.panel.manifest);
+    notice.value = cleaned.removed ? options.labels.content.htmlRemoved : "";
+    if (css) {
+      try {
+        dropStyle = adoptPanelStyle(scopedPanelStyle(css, instance));
+      } catch (failure) {
+        if (!(failure instanceof PanelStyleOutsideError)) throw failure;
+        notice.value = options.labels.content.styleOutside;
+      }
+    }
     const mount = port.direct(next, {
       pageKey: port.pageKey,
       url: () => address.value,
@@ -418,6 +451,9 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   function endDirect() {
     direct.value?.mount.dispose();
     direct.value = null;
+    dropStyle?.();
+    dropStyle = undefined;
+    notice.value = "";
   }
 
   /** What decides how a source is drawn: its content and declaration, not its revision or identity. */
@@ -719,6 +755,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     ready,
     refresh,
     direct,
+    instance,
+    notice,
     admitted,
     invoke(id, input) {
       if (direct.value) return direct.value.mount.invoke(id, input);

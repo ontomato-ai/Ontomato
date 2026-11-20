@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
-import type { DirectPanelHostSource } from "@ontomato/contracts/panel-host";
 import { usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./panel-host";
 import { PanelLayout } from "./panel-layout";
 import { usePageActions } from "./page-actions";
@@ -62,8 +61,6 @@ const view = usePanelInstance(props.port, {
   withdrawn: () => emit("withdrawn"),
 });
 const frame = ref<HTMLIFrameElement | null>(null);
-/** The declared members of the panel the platform draws, for the widths its layout places them at. */
-const members = computed(() => (view.direct.value ? (view.source.value as DirectPanelHostSource).panel.manifest.members : {}));
 watch(
   () => frame.value,
   (element) => view.frame(element?.contentWindow ?? null),
@@ -97,10 +94,15 @@ defineExpose({ ...view, operations });
     <header v-if="title" class="panel-host-title">{{ title }}</header>
     <p v-if="view.error.value" role="alert" class="panel-host-error">{{ view.error.value }}</p>
     <!-- Drawn while Java's answer is coming, so its members read at once; shown only once that answer names the page. -->
-    <div v-else-if="view.direct.value" v-show="view.admitted.value" class="panel-host-direct">
+    <div
+      v-else-if="view.direct.value"
+      v-show="view.admitted.value"
+      class="panel-host-direct"
+      :data-panel-instance="view.instance"
+    >
+      <p v-if="view.notice.value" role="status" class="panel-host-notice">{{ view.notice.value }}</p>
       <PanelLayout
         :nodes="view.direct.value.layout"
-        :members="members"
         :values="view.direct.value.mount.values.value"
         :member="view.direct.value.mount.member"
       />
@@ -133,6 +135,11 @@ defineExpose({ ...view, operations });
   padding: 12px;
   color: var(--el-color-danger);
 }
+.panel-host-notice {
+  margin: 0 0 var(--spacing-sm, 8px);
+  color: var(--el-color-warning);
+  font-size: 12px;
+}
 .panel-host-frame {
   border: 0;
   flex: 1;
@@ -147,31 +154,10 @@ defineExpose({ ...view, operations });
 }
 </style>
 
-<!-- The direct layout's containers are drawn by a render function, so their rules are not scoped to this component. -->
+<!-- A member's own element is drawn by a render function, so its rule is not scoped to this component. -->
 <style>
-.panel-layout {
-  container-type: inline-size;
-  display: flex;
+.panel-host-direct panel-member {
+  display: block;
   min-width: 0;
-}
-.panel-layout-gap-none { gap: 0; }
-.panel-layout-gap-small { gap: var(--spacing-sm, 8px); }
-.panel-layout-gap-medium { gap: var(--spacing-md, 12px); }
-.panel-layout-gap-large { gap: var(--spacing-lg, 16px); }
-.panel-layout-column { flex-direction: column; }
-.panel-layout-row { flex-flow: row wrap; }
-.panel-layout-grid {
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-}
-.panel-layout-member { min-width: 0; }
-/* In a row, a member with a declared width takes that share of twelve columns; one without takes what is left. */
-.panel-layout-row > * { flex: 1 1 0; min-width: 0; }
-.panel-layout-row > .panel-layout-member[style] { flex: 0 0 calc(var(--panel-layout-span) / 12 * 100%); }
-.panel-layout-grid > * { grid-column: span 12; }
-.panel-layout-grid > .panel-layout-member[style] { grid-column: span var(--panel-layout-span); }
-@container (max-width: 36rem) {
-  .panel-layout-row > *, .panel-layout-row > .panel-layout-member[style] { flex: 0 0 100%; }
-  .panel-layout-grid > *, .panel-layout-grid > .panel-layout-member[style] { grid-column: span 12; }
 }
 </style>

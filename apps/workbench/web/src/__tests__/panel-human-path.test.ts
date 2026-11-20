@@ -776,6 +776,7 @@ it("shares one definition stream across author panels, restores a changed collec
   const labels = {
     notStarted: "Panel has not started",
     failures: { fileUnavailable: "File unavailable", scriptThrew: "Script threw", scriptRejected: "Script rejected" },
+    content: { htmlRemoved: "HTML removed", styleOutside: "Style outside" },
   };
   const portA = platformPanelHost(appA, useP, ignoreChanges, mode);
   const portB = platformPanelHost(appB, useQ, ignoreChanges, mode);
