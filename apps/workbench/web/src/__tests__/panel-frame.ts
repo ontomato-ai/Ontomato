@@ -6,6 +6,8 @@ import { createApp, defineComponent, h, ref, resolveComponent } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { definePanel, type PanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { PanelHostMessage } from "@ontomato/contracts/panel-host";
+import { appsSdkCurrentSchema } from "@ontomato/contracts/apps-sdk";
+import type { PanelMemberSnapshot } from "@ontomato/contracts/product-subscriptions";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import {
   platformScheduleFormSchema,
@@ -15,7 +17,7 @@ import {
   type PlatformTask,
   type PlatformTaskRun,
 } from "@ontomato/contracts/platform-schedules";
-import type { ApplicationPanelUse, DirectPanel, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
+import type { ApplicationPanelUse, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
@@ -75,41 +77,45 @@ const current = {
 };
 const taskInput = { kind: "object" as const, objectType: SCHEDULED_TASK };
 
-type ProjectionFields = Pick<ProductProjection, "id" | "name" | "componentId" | "binding" | "inputs" | "display">;
+type ProjectionFields = Pick<Exclude<ProductProjection, { componentId: "@ontomato/sdk:MetricChart" }>, "id" | "name" | "componentId" | "inputs" | "outputs" | "config" | "data">;
 const projection = (fields: ProjectionFields): ProductProjection => ({ ...current, description: fields.name, ...fields });
 
 const trialProjections: ProjectionFields[] = [
   {
     id: "projection-schedules-summary",
     name: "Task summary",
-    componentId: "ObjectSummary",
-    binding: { kind: "PlatformObjectType", id: SCHEDULED_TASK },
+    componentId: "@ontomato/sdk:ObjectSummary",
     inputs: { task: taskInput },
-    display: { fields: ["application", "settings", "state", "nextRun"] },
+    outputs: {},
+    config: { fields: ["application", "settings", "state", "nextRun"] },
+    data: { record: { source: { object: { input: "task" } }, read: "record", params: {} } },
   },
   {
     id: "projection-schedules-tasks",
     name: "Scheduled tasks",
-    componentId: "ObjectList",
-    binding: { kind: "PlatformObjectType", id: SCHEDULED_TASK },
+    componentId: "@ontomato/sdk:ObjectList",
     inputs: { value: taskInput },
-    display: {},
+    outputs: { selected: taskInput },
+    config: {},
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
   },
   {
     id: "projection-schedules-form",
     name: "Task form",
-    componentId: "ObjectForm",
-    binding: { kind: "PlatformObjectType", id: SCHEDULED_TASK },
-    inputs: { task: taskInput },
-    display: {},
+    componentId: "@ontomato/sdk:ObjectForm",
+    inputs: { task: taskInput, values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
+    outputs: {},
+    config: {},
+    data: { form: { source: { object: { input: "task" } }, read: "form", params: { values: { input: "values" }, changedField: { input: "changedField" } } } },
   },
   {
     id: "projection-schedules-run",
     name: "Run now",
-    componentId: "OperationButton",
-    binding: { kind: "PlatformOperation", id: "schedules.runNow" },
+    componentId: "@ontomato/sdk:OperationButton",
     inputs: { task: taskInput },
-    display: {},
+    outputs: {},
+    config: {},
+    data: { operation: { source: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, read: "describe", params: {} } },
   },
 ];
 
@@ -118,8 +124,8 @@ export const projections: Record<string, ProductProjection> = Object.fromEntries
   trialProjections.map((fields) => [fields.id, projection(fields)]),
 );
 
-const selectedTask = { selectedTask: { kind: "object" as const, objectType: SCHEDULED_TASK, deepLink: true } };
-const slot = (projectionId: string, input: string) => ({ projectionId, inputs: { [input]: { state: "selectedTask" } } });
+const selectedTask = { selectedTask: { type: { kind: "object" as const, objectType: SCHEDULED_TASK }, deepLink: true } };
+const slot = (projectionId: string, input: string) => ({ target: { projectionId }, inputs: { [input]: { state: "selectedTask" } } });
 
 /**
  * The scheduled tasks panel as it was written with code: HTML that places its four projections for the SDK in a frame.
@@ -155,46 +161,39 @@ export const framedTasksPanelHtml = `<style>
 /** The framed scheduled tasks panel's declaration: the list, the summary, the form and the run button. */
 export const manifestP = definePanel({
   state: selectedTask,
-  slots: {
-    tasks: slot("projection-schedules-tasks", "value"),
+  members: {
+    tasks: {
+      ...slot("projection-schedules-tasks", "value"),
+      outputs: { selected: { state: "selectedTask" } },
+    },
     summary: slot("projection-schedules-summary", "task"),
     form: slot("projection-schedules-form", "task"),
     run: slot("projection-schedules-run", "task"),
   },
-  operations: [],
+  events: {},
 });
 
 /** Panel Q's declaration (`q/declaration.mjs`): the summary and nothing of P. */
 export const manifestQ = definePanel({
   state: selectedTask,
-  slots: { summary: slot("projection-schedules-summary", "task") },
-  operations: [],
+  members: { summary: slot("projection-schedules-summary", "task") },
+  events: {},
 });
 
-/**
- * The exact SDK version the trial's panel records name: an installed development build, with its content hash. It is not
- * the version the platform currently serves, so a frame that loads it shows the host followed the record.
- */
+/** The old workspace sample version used by tests that still exercise that input. */
 export const SDK_VERSION = `1.1.1-dev.${"0123456789abcdef".repeat(4)}`;
 
-/** What Node answers for the SDK it currently serves; a panel's frame loads the version its record names instead. */
-export const currentSdk = () => Response.json({
-  version: "1.2.0", digest: "a".repeat(64), publicBasePath: "", sdkBasePath: "/apps-sdk/current",
-  manifestPath: SDK_MANIFEST_PATH, componentsPath: "/apps-sdk/current/components.json",
-  checkPath: "/apps-sdk/current/node/panel-check.mjs", docsPath: "/apps-sdk/current/docs/index.md",
-  referencePath: "/apps-sdk/current/docs/reference.md",
-});
-/** Where the current release's manifest is served, and what it names: every frame loads exactly these modules. */
-export const SDK_MANIFEST_PATH = "/apps-sdk/current/sdk.json";
-export const sdkManifest = {
-  version: "1.2.0", product: "workbench", executionContext: 1, hostTransport: 1, messageBridge: 2,
-  entries: { vue: "vue.js", "element-plus": "element-plus.js", "@ontomato/sdk": "sdk.js", "@ontomato/sdk/panel": "panel.js", "@ontomato/sdk/base": "base.js" },
-  stylesheet: "styles/sdk.css", components: "components.json", check: "node/panel-check.mjs", libraries: { vue: "3.5.0" }, docs: "docs/index.md",
-};
+/** What Node answers for the SDK currently served to panels. */
+export const currentSdk = () => Response.json(appsSdkCurrentSchema.parse({
+  version: "1.2.0", digest: "a".repeat(64), publicBasePath: "", sdkBasePath: "/apps-sdk/1.2.0",
+  manifestPath: "/apps-sdk/1.2.0/sdk.json", componentsPath: "/apps-sdk/1.2.0/components.json",
+  checkPath: "/apps-sdk/1.2.0/node/panel-check.mjs",
+  docsPath: "/apps-sdk/1.2.0/docs/index.md", referencePath: "/apps-sdk/1.2.0/docs/reference.md",
+}));
 
 /** A panel's current record; its HTML has the element the SDK mounts into, and the test supplies the component. */
 export function panelRecord(id: string, name: string, manifest: PanelManifest): ProductPanel {
-  return { ...current, id, name, description: name, content: { html: '<div id="app"></div>', module: "" }, manifest, sdkVersion: SDK_VERSION };
+  return { ...current, id, name, description: name, content: { html: '<div id="app"></div>', module: "" }, manifest };
 }
 
 /** A use relation of one of the trial's applications, as Java declares it. */
@@ -214,39 +213,6 @@ export const ignoreChanges = () => {};
 
 export const registered = (applicationId: string, use: ApplicationPanelUse, panel: ProductPanel) =>
   ({ kind: "registered", applicationId, use, panel }) as const;
-
-/** The page skill member Node names for a panel read for one page, by a name derived from the panel alone. */
-/**
- * The skill reference Node answers for a panel's member, as the trusted service derives it: the host passes it on and
- * never derives one itself, so any stable stand-in serves the tests.
- */
-export const skillRefOf = (panelId: string) => ({
-  namespace: { kind: "provider" as const, provider: "product-panels" },
-  name: `pvt-${[...panelId].map(char => char.charCodeAt(0).toString(16)).join("").slice(0, 48).padEnd(48, "0")}`,
-});
-
-/**
- * The page skill context Node answers for a panel read or a snapshot read made for one page: which member a message
- * beside that page reaches. A read that names no page gets none.
- */
-export function pageSkillContextFor(panel: Pick<ProductPanel, "id">, request: Sent) {
-  const query = new URLSearchParams(request.search);
-  const applicationId = query.get("applicationId");
-  if (!applicationId) return undefined;
-  const pageKey = query.get("pageKey")!;
-  const permissionCode = query.get("permissionCode");
-  const locator = permissionCode ? { permissionCode, pageKey } : { access: "domain-member", pageKey };
-  return {
-    mode: "member", locator,
-    member: { source: { kind: "application-use", applicationId, useId: query.get("useId")! }, memberPath: [], ref: skillRefOf(panel.id) },
-  };
-}
-
-/** Node's answer for a panel read: the panel, and the page skill context when the read names the page it is shown for. */
-export function panelAnswer(panel: ProductPanel | DirectPanel, request: Sent) {
-  const pageSkillContext = pageSkillContextFor(panel, request);
-  return Response.json({ panel, ...(pageSkillContext ? { pageSkillContext } : {}) });
-}
 
 /** One request that reached the network, as the platform sent it for the frame. */
 export interface Sent {
@@ -300,8 +266,6 @@ export function installPlatform(answer: (request: Sent) => Response | Promise<Re
       body: typeof init?.body === "string" ? JSON.parse(init.body) : (init?.body instanceof FormData ? init.body : null),
     };
     sent.push(request);
-    // The release manifest is a static file of the current release, the same for every test.
-    if (request.path === SDK_MANIFEST_PATH) return Response.json(sdkManifest);
     return answer(request);
   });
   return sent;
@@ -352,9 +316,9 @@ export function inside(frame: Window) {
 
 /** Writes the frame's document as the panel host does for a registered use: the panel's renderable definition and the run's facts. */
 export function writePanelDocument(source: ReturnType<typeof registered>, url: string, state: PanelHostMessage["state"]) {
-  const { applicationId, use, panel: { content, manifest, sdkVersion, name } } = source;
+  const { applicationId, use, panel: { content, manifest, name } } = source;
   writeFrameDocument({
-    kind: "panel-host-message", panel: { content, manifest, sdkVersion }, pageKey: use.pageKey, use: { applicationId, useId: use.id }, url, label: name, state,
+    kind: "panel-host-message", panel: { content, manifest }, pageKey: use.pageKey, use: { applicationId, useId: use.id }, url, label: name, state,
   });
 }
 
@@ -416,16 +380,21 @@ export function leaveFrame() {
   document.body.innerHTML = "";
 }
 
-/** Node's snapshot of a panel's revisions, with the page skill context when the read names the page it is shown for. */
-export function panelSnapshot(panel: ProductPanel | DirectPanel, current: Record<string, { revision: number }> = projections, request?: Sent) {
-  const ids = new Set("slots" in panel.manifest
-    ? Object.values(panel.manifest.slots).map(slot => slot.projectionId)
-    : Object.values(panel.manifest.members).map(member => member.target.projectionId));
-  const pageSkillContext = request && pageSkillContextFor(panel, request);
+export function panelSnapshot(panel: ProductPanel, current = projections) {
+  const revisions = new Map<string, number>();
+  const members: PanelMemberSnapshot[] = [];
+  for (const [member, { target }] of Object.entries(panel.manifest.members)) {
+    if ("projectionId" in target) {
+      const id = target.projectionId;
+      const revision = current[id]!.revision;
+      revisions.set(id, revision);
+      members.push({ status: "ready", memberPath: [{ member }], target: { kind: "projection", id }, revision });
+    }
+  }
   return Response.json({
     panel: { id: panel.id, revision: panel.revision },
-    projections: [...ids].map(id => ({ id, revision: current[id]!.revision })),
-    ...(pageSkillContext ? { pageSkillContext } : {}),
+    projections: [...revisions].map(([id, revision]) => ({ id, revision })),
+    members,
   });
 }
 
@@ -439,7 +408,7 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
   const panel = panelRecord(
     "panel-schedules-form",
     "Task form (trial)",
-    definePanel({ state: selectedTask, slots: { form: slot(formProjection.id, "task") }, operations: [] }),
+    definePanel({ state: selectedTask, members: { form: slot(formProjection.id, "task") }, events: {} }),
   );
   const use = panelUse("use-trial-a-form", "panels-trial-a-form", panel.id, "/applications/app-panels-trial-a/form");
   // The operations application's form for the task, with a second case set to choose from.
@@ -465,9 +434,9 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
         success: true,
         data: { applicationId: "app-panels-trial-a", entry: { path: "/panels-trial-a", renderer: "panels" }, panelUses: [use] },
       });
-    if (request.path === `/api/product-panels/${panel.id}`) return panelAnswer(panel, request);
+    if (request.path === `/api/product-panels/${panel.id}`) return Response.json({ panel });
     if (request.path === "/api/apps-sdk/current") return currentSdk();
-    if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel, projections, request);
+    if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel);
     if (request.path === `/api/product-projections/${formProjection.id}`)
       return served.then(() => Response.json({ projection: formProjection }));
     if (request.path === `/api/data-query/platform/scheduled-tasks/${task.id}`) return Response.json(task);

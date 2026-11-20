@@ -26,9 +26,9 @@ const application = "app-panels-trial-b";
 const answered = recorded.projections["projection-schedules-summary"];
 const x = productProjectionResponseSchema.parse(answered).projection;
 const q = panelRecord("panel-schedules-summary", "Task summary (trial)", definePanel({
-  state: { selectedTask: { kind: "object", objectType: SCHEDULED_TASK, deepLink: true } },
-  slots: { summary: { projectionId: x.id, inputs: { task: { state: "selectedTask" } } } },
-  operations: [],
+  state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
+  members: { summary: { target: { projectionId: x.id }, inputs: { task: { state: "selectedTask" } } } },
+  events: {},
 }));
 const use = panelUse("use-trial-b-summary", "panels-trial-b-summary", q.id, `/applications/${application}/summary`);
 function answer(request: Sent) {

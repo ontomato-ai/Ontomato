@@ -5,7 +5,6 @@ import {
   ACTION,
   APPLICATION,
   OBJECT_TYPE,
-  ONTOLOGY_RELATION_KIND,
   ONTOLOGY_TYPE,
   ROLE,
   USER,
@@ -124,31 +123,37 @@ const current = {
   visibility: "domain" as const,
 };
 
-const graphProjection = (
-  id: string,
-  display: Record<string, unknown> = {},
-): ProductProjection => ({
+const graphSource = { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } } as const;
+const graphObject = { kind: "object-union" as const, layers: [...platformOntologyLayers] as [typeof platformOntologyLayers[number], ...typeof platformOntologyLayers[number][]] };
+const graphProjection = (id: string): ProductProjection => ({
   ...current,
   id,
   name: "Platform Capability Graph",
   description: "",
-  componentId: "OntologyGraph",
-  binding: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE },
-  graph: {
-    nodeIdentity: { kind: "object-union", layers: [...platformOntologyLayers] },
-    edges: {
-      binding: { kind: "PlatformObjectType", id: ONTOLOGY_RELATION_KIND },
-      sourcePath: "/from",
-      targetPath: "/to",
-    },
-  },
+  componentId: "@ontomato/sdk:OntologyGraph",
   inputs: {
     mode: { kind: "scalar", type: "string" },
-    start: { kind: "object-union", layers: [...platformOntologyLayers] },
-    selected: { kind: "object-union", layers: [...platformOntologyLayers] },
+    start: graphObject,
+    selected: graphObject,
     query: { kind: "scalar", type: "string" },
+    node: graphObject,
+    layers: { kind: "json" },
+    relationKinds: { kind: "json" },
   },
-  display,
+  outputs: {
+    selectedNode: graphObject,
+    selectedType: { kind: "scalar", type: "string" },
+  },
+  config: {},
+  data: {
+    schema: { source: graphSource, read: "schema", params: {} },
+    counts: { source: graphSource, read: "counts", params: {} },
+    start: { source: graphSource, read: "start", params: {} },
+    neighbors: {
+      source: graphSource, read: "neighbors",
+      params: { node: { input: "node" }, layers: { input: "layers" }, relationKinds: { input: "relationKinds" } },
+    },
+  },
 });
 
 function hostWith(
@@ -181,11 +186,11 @@ it("validates object-union state via contracts and formats panelSelection with t
   );
   const manifest = definePanel({
     state: {
-      layered: { kind: "object-union", layers: ["governance", "capability"], deepLink: false },
-      explicit: { kind: "object-union", objectTypes: [USER, ACTION], deepLink: false },
+      layered: { type: { kind: "object-union", layers: ["governance", "capability"] }, deepLink: false },
+      explicit: { type: { kind: "object-union", objectTypes: [USER, ACTION] }, deepLink: false },
     },
-    slots: {},
-    operations: [],
+    members: {},
+    events: {},
   });
 
   // Accepts declared types and preserves full { className, primaryKey }
@@ -226,15 +231,15 @@ it("renders type mode in four-layer columns with count statuses, internal layer 
   const projections = { "cap-graph": graphProjection("cap-graph") };
   const manifest = definePanel({
     state: {
-      mode: { kind: "scalar", type: "string", deepLink: false },
-      start: { kind: "object-union", layers: [...platformOntologyLayers], deepLink: false },
-      selected: { kind: "object-union", layers: [...platformOntologyLayers], deepLink: false },
-      selectedType: { kind: "scalar", type: "string", deepLink: false },
-      query: { kind: "scalar", type: "string", deepLink: false },
+      mode: { type: { kind: "scalar", type: "string" }, deepLink: false },
+      start: { type: { kind: "object-union", layers: [...platformOntologyLayers] }, deepLink: false },
+      selected: { type: { kind: "object-union", layers: [...platformOntologyLayers] }, deepLink: false },
+      selectedType: { type: { kind: "scalar", type: "string" }, deepLink: false },
+      query: { type: { kind: "scalar", type: "string" }, deepLink: false },
     },
-    slots: {
+    members: {
       graph: {
-        projectionId: "cap-graph",
+        target: { projectionId: "cap-graph" },
         inputs: {
           mode: { state: "mode" },
           start: { state: "start" },
@@ -247,7 +252,7 @@ it("renders type mode in four-layer columns with count statuses, internal layer 
         },
       },
     },
-    operations: [],
+    events: {},
   });
   const panel = panelRecord("panel-cap-type", "Capability Map", manifest);
   panel.content.html = `<div id="app"><Projection slot="graph"></Projection></div>`;
@@ -356,14 +361,14 @@ it("runs instance mode with default start, incremental neighbor expand, full obj
   const projections = { "cap-graph": graphProjection("cap-graph") };
   const manifest = definePanel({
     state: {
-      mode: { kind: "scalar", type: "string", deepLink: false },
-      start: { kind: "object-union", layers: [...platformOntologyLayers], deepLink: false },
-      selected: { kind: "object-union", layers: [...platformOntologyLayers], deepLink: false },
-      query: { kind: "scalar", type: "string", deepLink: false },
+      mode: { type: { kind: "scalar", type: "string" }, deepLink: false },
+      start: { type: { kind: "object-union", layers: [...platformOntologyLayers] }, deepLink: false },
+      selected: { type: { kind: "object-union", layers: [...platformOntologyLayers] }, deepLink: false },
+      query: { type: { kind: "scalar", type: "string" }, deepLink: false },
     },
-    slots: {
+    members: {
       graph: {
-        projectionId: "cap-graph",
+        target: { projectionId: "cap-graph" },
         inputs: {
           mode: { state: "mode" },
           start: { state: "start" },
@@ -375,7 +380,7 @@ it("runs instance mode with default start, incremental neighbor expand, full obj
         },
       },
     },
-    operations: [],
+    events: {},
   });
   const panel = panelRecord("panel-cap-instance", "Capability Map", manifest);
   panel.content.html = `<div id="app"><Projection slot="graph"></Projection></div>`;
@@ -512,18 +517,18 @@ it("separates no-neighbors, owner-refused and read-failed states without collaps
   const projections = { "cap-graph": graphProjection("cap-graph") };
   const manifest = definePanel({
     state: {
-      mode: { kind: "scalar", type: "string", deepLink: false },
-      start: { kind: "object-union", layers: [...platformOntologyLayers], deepLink: false },
-      selected: { kind: "object-union", layers: [...platformOntologyLayers], deepLink: false },
+      mode: { type: { kind: "scalar", type: "string" }, deepLink: false },
+      start: { type: { kind: "object-union", layers: [...platformOntologyLayers] }, deepLink: false },
+      selected: { type: { kind: "object-union", layers: [...platformOntologyLayers] }, deepLink: false },
     },
-    slots: {
+    members: {
       graph: {
-        projectionId: "cap-graph",
+        target: { projectionId: "cap-graph" },
         inputs: { mode: { state: "mode" }, start: { state: "start" }, selected: { state: "selected" } },
         outputs: { selectedNode: { state: "selected" } },
       },
     },
-    operations: [],
+    events: {},
   });
   const panel = panelRecord("panel-cap-states", "Capability Map", manifest);
   panel.content.html = `<div id="app"><Projection slot="graph"></Projection></div>`;

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { projectionElement } from "../panel/direct";
 import { computed, onMounted, ref, shallowRef, watch } from "vue";
 import type { PanelChildObjectIdentity, PanelObjectIdentity, PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import { ElEmpty } from "element-plus/es/components/empty/index";
@@ -65,7 +66,7 @@ const emit = defineEmits<{
 const slot = useProjectionSlot();
 const panel = usePanelContext();
 const objects = useProjectionObjects();
-const objectType = slot.projection.binding.id;
+const objectType = projectionElement(slot.projection).id;
 
 const records = shallowRef<readonly PlatformObjectRecord[]>([]);
 const loading = ref(true);
@@ -81,7 +82,7 @@ const selectedState = computed(() => {
 const selectedField = computed(() => (selectedState.value ? panel.manifest.state[selectedState.value] : undefined));
 const childCollection = computed<string | null>(() => {
   if (props.collection) return props.collection;
-  return selectedField.value?.kind === "child-object" ? selectedField.value.collection : null;
+  return selectedField.value?.type.kind === "child-object" ? selectedField.value.type.collection : null;
 });
 const childMode = computed(() => Boolean(props.parentInput || childCollection.value));
 const parentState = computed(

@@ -1,5 +1,4 @@
 import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
-import type { ProductProjection } from "@ontomato/contracts/product-panels";
 
 /*
  * Where a projection's operations are found (overall design 5.1): a `handlerRef` such as `schedules.runNow` names one
@@ -36,13 +35,4 @@ export function handlerFor(handlerRef: string): RegisteredHandler {
 /** The references this version can run: what a projection may bind. */
 export function registeredHandlers(): readonly string[] {
   return [...handlers.keys()];
-}
-
-/**
- * The handler references a projection record publishes: the component's declared ones, except that a record bound to a
- * `PlatformOperation` publishes that operation alone — the record says which one it is.
- */
-export function projectionHandlerRefs(projection: ProductProjection, declared: readonly string[]): readonly string[] {
-  if (projection.binding.kind !== "PlatformOperation") return declared;
-  return [projection.binding.id];
 }

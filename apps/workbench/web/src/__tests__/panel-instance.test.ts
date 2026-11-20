@@ -1,9 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick, ref, shallowRef } from "vue";
-import { definePanel, type PanelManifest } from "@ontomato/contracts/panel-manifest";
+import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { PanelDefinitionContent, ProductProjection } from "@ontomato/contracts/product-panels";
 import { createPanelInstance, applyPanelRequest } from "../../../../../packages/apps-sdk/src/panel/instance";
-import { PanelFormAdapters, receivePanelDraft, type ReceivedPanelDraft } from "../../../../../packages/apps-sdk/src/panel/draft";
 import { portsOf } from "../../../../../packages/apps-sdk/src/panel/ports-of";
 import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import { registeredHandlers } from "../../../../../packages/apps-sdk/src/panel/handlers";
@@ -12,7 +11,7 @@ import Projection from "../../../../../packages/apps-sdk/src/panel/Projection.vu
 import { panelContextKey } from "../../../../../packages/apps-sdk/src/panel/context";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 
-import { noOperations } from "./panel-frame";
+import { noOperations, projections, SCHEDULED_TASK } from "./panel-frame";
 /*
  * A panel declares its state and places its projections, and the SDK does the rest: it reads each projection by ID,
  * draws the component the catalogue names, derives the projection's ports from the record and the catalogue, and runs an
@@ -21,55 +20,35 @@ import { noOperations } from "./panel-frame";
  * (so changing it changes nothing), and an operation whose button reaches a handler of the panel's own.
  */
 
-const SCHEDULED_TASK = "platform:ScheduledTask";
-
-/** The panel of the trial scenario: a task list, the task's form, and a button that runs the selected task now. */
+/** The panel of the trial scenario: a task summary, the task's form, and a button that runs the selected task now. */
 const panel = definePanel({
   state: {
-    selectedTask: { kind: "object", objectType: SCHEDULED_TASK, deepLink: true },
-    application: { kind: "object", objectType: "platform:Application", deepLink: false },
-    search: { kind: "scalar", type: "string", deepLink: false },
+    selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true },
+    application: { type: { kind: "object", objectType: "platform:Application" } },
+    search: { type: { kind: "scalar", type: "string" } },
   },
-  slots: {
-    tasks: { projectionId: "projection-x", inputs: {} },
-    taskForm: { projectionId: "projection-task-form", inputs: { task: { state: "selectedTask" } } },
-    runTask: { projectionId: "projection-run-task", inputs: { task: { state: "selectedTask" } } },
+  members: {
+    tasks: { target: { projectionId: "projection-x" }, inputs: { task: { state: "selectedTask" } } },
+    taskForm: { target: { projectionId: "projection-task-form" }, inputs: { task: { state: "selectedTask" } } },
+    runTask: { target: { projectionId: "projection-run-task" }, inputs: { task: { state: "selectedTask" } } },
   },
-  operations: [{ id: "task.clear", labelKey: "tasks.clear", kind: "state", sets: { selectedTask: null } }],
+  events: {
+    "task.clear": { labelKey: "tasks.clear", do: { set: { fields: { selectedTask: { literal: null } } } } },
+  },
 });
 
-/** What the host handed the frame: the panel's content, declaration and SDK version, without the record's identity. */
+/** What the host handed the frame: the panel's content and declaration, without the record's identity. */
 const registered: PanelDefinitionContent = {
   content: { html: '<div id="app"></div>', module: 'import {mountPanel} from "@ontomato/sdk/panel";' },
   manifest: panel,
-  sdkVersion: "1.1.1",
 };
 
 /** The records the platform holds, as the frame reads them by ID. */
-function record(id: string, componentId: string, binding: ProductProjection["binding"]): ProductProjection {
-  return {
-    id,
-    domainId: "domain-1",
-    ownerId: "owner-1",
-    revision: 1,
-    createdAt: "2026-11-18T00:00:00.000Z",
-    updatedAt: "2026-11-18T00:00:00.000Z",
-    editable: false,
-    name: id,
-    description: "",
-    visibility: "domain",
-    componentId,
-    binding,
-    inputs: componentId === "FormFields" ? { task: { kind: "object", objectType: SCHEDULED_TASK } } : {},
-    display: {},
-  };
-}
-
-const records = new Map<string, ProductProjection>([
-  ["projection-x", record("projection-x", "MarkdownView", { kind: "PlatformObjectType", id: SCHEDULED_TASK })],
-  ["projection-task-form", record("projection-task-form", "FormFields", { kind: "PlatformOperation", id: "schedules.update" })],
-  ["projection-run-task", record("projection-run-task", "MarkdownView", { kind: "PlatformOperation", id: "schedules.runNow" })],
-]);
+const records: Record<string, ProductProjection> = {
+  "projection-x": { ...projections["projection-schedules-summary"]!, id: "projection-x" },
+  "projection-task-form": { ...projections["projection-schedules-form"]!, id: "projection-task-form" },
+  "projection-run-task": { ...projections["projection-schedules-run"]!, id: "projection-run-task" },
+};
 
 /** The panel's own words, in the language the platform hands the frame. */
 const locale = ref("en");
@@ -84,7 +63,7 @@ function instance(initial?: Record<string, unknown>, coordinator = noOperations)
     label: () => "Scheduled tasks",
     initial: initial as never,
     recordDraftCreated: async () => {},
-    readProjection: async (id) => records.get(id)!,
+    readProjection: async (id) => records[id]!,
   });
 }
 
@@ -111,24 +90,18 @@ describe("a panel's instance", () => {
 
   it("takes a projection's ports from its record alone, with no panel-written port", async () => {
     const panelInstance = instance({ selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" } });
-    // The list binds a read-only platform object and publishes no operation: the catalogue's entry for the component
-    // says so, and the panel says nothing about it.
-    expect(portsOf(await panelInstance.projection("projection-x"))).toEqual({
-      binding: `PlatformObjectType:${SCHEDULED_TASK}`,
-      inputs: {},
-      operations: [],
-    });
-    // A record bound to a platform operation publishes that operation: its handler is the reference the record names,
-    // and the panel says nothing about it either.
+    const summary = portsOf(await panelInstance.projection("projection-x"));
+    expect(summary.inputs).toEqual({ task: { kind: "object", objectType: SCHEDULED_TASK } });
+    expect(summary.operations).toEqual([]);
+
     const form = portsOf(await panelInstance.projection("projection-task-form"));
-    expect(form.binding).toBe("PlatformOperation:schedules.update");
-    expect(form.operations.map((operation) => operation.handlerRef)).toEqual(["schedules.update"]);
+    expect(form.operations.map((operation) => operation.handlerRef)).toEqual([`${SCHEDULED_TASK}.save`]);
   });
 
   it("draws the component the catalogue names, and refuses one this version has not got", async () => {
     // A component is fetched the first time a projection names it, and the same one twice is one fetch.
-    expect(await componentFor("MarkdownView")).not.toBe(await componentFor("FormFields"));
-    expect(await componentFor("MarkdownView")).toBe(await componentFor("MarkdownView"));
+    expect(await componentFor("ObjectSummary")).not.toBe(await componentFor("ObjectForm"));
+    expect(await componentFor("ObjectSummary")).toBe(await componentFor("ObjectSummary"));
     await expect(componentFor("NoSuchComponent")).rejects.toThrow(/no component 'NoSuchComponent'/);
   });
 
@@ -227,7 +200,7 @@ describe("a panel's module", () => {
     const reads: string[] = [];
     panelInstance.projection = async (id) => {
       reads.push(id);
-      return records.get(id)!;
+      return records[id]!;
     };
     const element = document.createElement("div");
     const app = createApp({ setup: () => () => h(Panel) });

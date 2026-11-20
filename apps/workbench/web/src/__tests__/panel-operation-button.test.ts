@@ -2,7 +2,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import { AGENT_DEFINITION, DELETE_AGENT, FUNCTION, TEST_EXECUTE_METRIC_VIEW } from "@ontomato/contracts/panel-client-requests";
+import { BUSINESS_KNOWLEDGE, DELETE_KNOWLEDGE } from "@ontomato/contracts/platform-object-types";
+import type { PanelOperationDescriptor } from "../../../../../packages/apps-sdk/src/panel/human-operations";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
   inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
@@ -11,102 +12,89 @@ import {
 import { randomId } from "@ontomato/contracts/random-id";
 /*
  * A person's operations from the panel's buttons, through the platform's real host, bridge and admission, with Node's
- * coordinator answered here: the button reads the owner's description, runs a read there and returns what it read, and
- * for a write prepares one intent that the host confirms in its own dialog (where the owner or a batch asks) and
- * dispatches once. (U4 trial runs, U9 confirmation before a delete, U3 one batch over the checked objects.)
+ * coordinator answered here: the button reads the owner's description and prepares one intent that the host confirms
+ * in its own dialog and dispatches once, for one entry or for the checked entries.
  *
- * The mistakes these catch: a write the frame runs itself; a trial that saves or reports a change; a delete sent before
+ * The mistakes these catch: a write the frame runs itself; a delete sent before
  * the reader saw what it removes, or after they cancelled; a batch that asks once per object or loses which ones failed;
  * a list that forgets the checked objects a batch did not change.
  */
 
-const APPLICATION = "app-agents";
-const agent = (primaryKey: string) => ({ objectType: AGENT_DEFINITION, primaryKey });
-const record = (id: string, componentId: string, binding: ProductProjection["binding"], inputs: ProductProjection["inputs"], display = {}): ProductProjection => ({
+const APPLICATION = "app-knowledge";
+const knowledge = (primaryKey: string) => ({ objectType: BUSINESS_KNOWLEDGE, primaryKey });
+const entry = { kind: "object", objectType: BUSINESS_KNOWLEDGE } as const;
+const entries = { kind: "list", items: entry } as const;
+const record = (id: string, inputs: ProductProjection["inputs"], config: ProductProjection["config"] = {}): ProductProjection => ({
   domainId: "domain-1", ownerId: "owner-1", revision: 1, createdAt: "2026-11-19T00:00:00.000Z",
   updatedAt: "2026-11-19T00:00:00.000Z", editable: false, visibility: "domain",
-  id, name: id, description: "", componentId, binding, inputs, display,
+  id, name: id, description: "", componentId: "@ontomato/sdk:OperationButton", inputs, outputs: {}, config,
+  data: { operation: {
+    source: { operation: { kind: "PlatformOperation", id: DELETE_KNOWLEDGE } }, read: "describe", params: {},
+  } },
 });
-const remove = { kind: "PlatformOperation" as const, id: DELETE_AGENT };
 const projections: Record<string, ProductProjection> = {
-  "agent-remove": record("agent-remove", "OperationButton", remove, { agent: { kind: "object", objectType: AGENT_DEFINITION } }),
-  "agents-remove": record("agents-remove", "OperationButton", remove,
-    { agents: { kind: "objects", objectType: AGENT_DEFINITION } }, { checked: "agents" }),
-  "function-form": record("function-form", "ObjectForm", { kind: "PlatformObjectType", id: FUNCTION }, { fn: { kind: "object", objectType: FUNCTION } }),
-  "function-trial": record("function-trial", "OperationButton", { kind: "PlatformOperation", id: TEST_EXECUTE_METRIC_VIEW },
-    { fn: { kind: "object", objectType: FUNCTION } }),
+  "knowledge-remove": record("knowledge-remove", { entry }),
+  "knowledge-remove-all": record("knowledge-remove-all", { entry: entries }, { checked: "entry" }),
 };
 const manifest = definePanel({
   state: {
-    selectedAgent: { kind: "object", objectType: AGENT_DEFINITION, deepLink: false },
-    checkedAgents: { kind: "objects", objectType: AGENT_DEFINITION, deepLink: false },
-    selectedFunction: { kind: "object", objectType: FUNCTION, deepLink: false },
-    month: { kind: "scalar", type: "string", deepLink: false },
+    selectedKnowledge: { type: entry },
+    checkedKnowledge: { type: entries },
   },
-  slots: {
-    remove: { projectionId: "agent-remove", inputs: { agent: { state: "selectedAgent" } } },
-    removeAll: { projectionId: "agents-remove", inputs: { agents: { state: "checkedAgents" } } },
-    definition: { projectionId: "function-form", inputs: { fn: { state: "selectedFunction" } } },
-    trial: {
-      projectionId: "function-trial", inputs: { fn: { state: "selectedFunction" } },
-      readOperationInputs: { testExecute: { parameters: { fields: { month: { state: "month" } } } } },
-    },
+  members: {
+    remove: { target: { projectionId: "knowledge-remove" }, inputs: { entry: { state: "selectedKnowledge" } } },
+    removeAll: { target: { projectionId: "knowledge-remove-all" }, inputs: { entry: { state: "checkedKnowledge" } } },
   },
-  operations: [],
+  events: {},
 });
-const panel = panelRecord("panel-agents-operations", "Agents", manifest);
-const use = panelUse("use-agents-operations", "agents-operations", panel.id, "/applications/app-agents/agents");
+const panel = panelRecord("panel-knowledge-operations", "Business knowledge", manifest);
+const use = panelUse("use-knowledge-operations", "knowledge-operations", panel.id, "/applications/app-knowledge/entries");
 
 const impact = {
-  summary: "Removing Analyst also removes its two schedules.", total: 1,
-  objects: [{ target: agent("a"), label: "Analyst" }],
+  summary: "Removing the shipping note also removes its two references.", total: 1,
+  objects: [{ target: knowledge("a"), label: "Shipping note" }],
 };
 /** The owner's descriptions, by the panel's operation ID. */
-const descriptions: Record<string, unknown> = {
+const descriptions: Record<string, PanelOperationDescriptor> = {
   "remove.delete": {
-    handlerRef: DELETE_AGENT, label: "Delete", effect: "write", target: { source: "input", input: "agent" }, inputSchema: {}, resultSchema: {},
-    batch: false, inspectImpact: { handlerRef: "agents.delete.impact" },
+    handlerRef: DELETE_KNOWLEDGE, label: "Delete", effect: "write", target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {},
+    batch: false, inspectImpact: { handlerRef: "knowledge.delete.impact" },
   },
   "removeAll.delete": {
-    handlerRef: DELETE_AGENT, label: "Delete all", effect: "write", target: { source: "input", input: "agent" }, inputSchema: {}, resultSchema: {}, batch: true,
-  },
-  "trial.testExecute": {
-    handlerRef: TEST_EXECUTE_METRIC_VIEW, label: "Test", effect: "read", target: { source: "draft", slot: "definition" },
-    inputSchema: {}, resultSchema: {}, batch: false,
+    handlerRef: DELETE_KNOWLEDGE, label: "Delete all", effect: "write", target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {},
+    batch: true, inspectImpact: { handlerRef: "knowledge.delete.impact" },
   },
 };
-const deleted = { kind: "success", data: {}, affected: { objects: [agent("a")], objectTypes: [AGENT_DEFINITION] } };
+const deleted = { kind: "success", data: {}, affected: { objects: [knowledge("a")], objectTypes: [BUSINESS_KNOWLEDGE] } };
 const batchOutcome = {
   kind: "batch",
   items: [
-    { target: agent("a"), outcome: { kind: "success", data: {} } },
-    { target: agent("b"), outcome: { kind: "refusal", code: "IN_USE", message: "Planner runs two schedules" } },
-    { target: agent("c"), outcome: { kind: "failure", code: "OWNER_FAILED", message: "The definitions service failed" } },
+    { target: knowledge("a"), outcome: { kind: "success", data: {} } },
+    { target: knowledge("b"), outcome: { kind: "refusal", code: "IN_USE", message: "Another entry uses this note" } },
+    { target: knowledge("c"), outcome: { kind: "failure", code: "OWNER_FAILED", message: "The knowledge service failed" } },
   ],
-  affected: { objects: [agent("a")], objectTypes: [AGENT_DEFINITION] },
+  affected: { objects: [knowledge("a")], objectTypes: [BUSINESS_KNOWLEDGE] },
 };
 
-/** Node's coordinator and the function owner, as the frame and its host reach them. */
+/** Node's coordinator, as the frame and its host reach it. */
 function coordinator() {
   const intents = new Map<string, Record<string, unknown>>();
   return (request: Sent): Response => {
     const projected = /^\/api\/product-projections\/(.+)$/.exec(request.path);
     if (projected) return Response.json({ projection: projections[projected[1]!] });
-    if (request.path === "/api/data-query/function/form")
-      return Response.json({ success: true, data: {
-        fields: [{ path: "/name", label: "Name", control: { kind: "text" }, valueSchema: {}, required: false, readOnly: false }],
-        values: { id: "fn-1", name: "Revenue" },
-        errors: [],
-        save: { method: "POST", path: "/function/save", bodySchema: {}, draftOperation: "function.update" },
-      } });
     if (request.path === "/api/panel-operations/descriptor")
       return Response.json(descriptions[new URLSearchParams(request.search).get("operationId")!]);
-    if (request.path === "/api/panel-operations/read") return Response.json({ kind: "markdown", markdown: "**42** orders in October" });
     if (request.method === "POST" && request.path === "/api/panel-operations/intents") {
       const body = request.body as { operationId: string; calls?: { target: { primaryKey: string } }[] };
       const intentId = randomId();
       const confirmation = body.calls
-        ? { kind: "batch", targets: { total: body.calls.length, objects: body.calls.map(({ target }) => ({ target: agent(target.primaryKey), label: target.primaryKey })) } }
+        ? {
+          kind: "batch", impact,
+          targets: {
+            total: body.calls.length,
+            objects: body.calls.map(({ target }) => ({ target: knowledge(target.primaryKey), label: target.primaryKey })),
+          },
+        }
         : { kind: "impact", impact };
       const preparation = { intentId, operationId: body.operationId, label: "Delete", confirmation };
       intents.set(intentId, preparation);
@@ -162,34 +150,19 @@ afterEach(() => {
   vi.resetModules();
 });
 
-it("runs a trial from the form the owner targets and the inputs the slot declares, shows what it read, and changes nothing", async () => {
-  const { context, sent, changed } = await open({ selectedFunction: { className: FUNCTION, primaryKey: "fn-1" }, month: "2026-10" }, "definition", "trial");
-  await vi.waitFor(() => expect(context.instance.forms.handle("definition")?.values.value.name).toBe("Revenue"), { timeout: 5000 });
-  context.instance.forms.handle("definition")!.set("/name", "Revenue (net)");
-  await click(0);
-  await vi.waitFor(() => expect(buttonOf(0).querySelector(".sdk-operation-result")?.textContent).toContain("42 orders in October"));
-  // The reader's unsaved draft and the declared parameter, as the owner's read takes them.
-  expect(sent.find((request) => request.path === "/api/panel-operations/read")!.body).toEqual({
-    applicationId: APPLICATION, useId: use.id, operationId: "trial.testExecute",
-    call: { target: { kind: "object", objectType: FUNCTION, primaryKey: "fn-1" }, input: { draft: { id: "fn-1", name: "Revenue (net)" }, parameters: { month: "2026-10" } } },
-  });
-  expect(writes(sent)).toEqual(["/api/data-query/function/form", "/api/panel-operations/read"]);
-  expect(changed).toEqual([]);
-});
-
 it("names what a delete removes in the host's dialog first, writes nothing on cancel, and dispatches once on confirm", async () => {
-  const { sent, changed, hostChanges } = await open({ selectedAgent: { className: AGENT_DEFINITION, primaryKey: "a" } }, "remove");
+  const { sent, changed, hostChanges } = await open({ selectedKnowledge: { className: BUSINESS_KNOWLEDGE, primaryKey: "a" } }, "remove");
   await click(0);
   let box = await dialog();
   expect(box.textContent).toContain(impact.summary);
-  expect(box.textContent).toContain("Analyst");
+  expect(box.textContent).toContain("Shipping note");
   dialogButton(box, "Cancel").click();
   await vi.waitFor(() => expect(buttonOf(0).querySelector("button")!.disabled).toBe(false));
   // Prepared and abandoned: the owner's delete was never dispatched.
   expect(writes(sent)).toEqual(["/api/panel-operations/intents"]);
   expect(sent.find((request) => request.path === "/api/panel-operations/intents")!.body).toEqual({
     applicationId: APPLICATION, useId: use.id, operationId: "remove.delete",
-    call: { target: { kind: "object", ...agent("a") }, input: {} },
+    call: { target: { kind: "object", ...knowledge("a") }, input: {} },
   });
 
   await vi.waitFor(() => expect(document.querySelector(".el-message-box")).toBeNull());
@@ -199,14 +172,14 @@ it("names what a delete removes in the host's dialog first, writes nothing on ca
   await vi.waitFor(() => expect(buttonOf(0).querySelector("[data-outcome=success]")?.textContent).toBe("Done"));
   expect(writes(sent).filter((path) => path.endsWith("/dispatch"))).toHaveLength(1);
   // What the owner reported changed goes to the host's refresh port once; the frame rereads nothing from the receipt.
-  expect(hostChanges).toEqual([{ target: null, affected: { objects: [agent("a")], objectTypes: [AGENT_DEFINITION] } }]);
+  expect(hostChanges).toEqual([{ target: null, affected: { objects: [knowledge("a")], objectTypes: [BUSINESS_KNOWLEDGE] } }]);
   expect(changed).toEqual([]);
 });
 
 it("runs one batch over the checked objects, reports each, and keeps checked the ones it did not change", async () => {
-  const checked = ["a", "b", "c"].map((primaryKey) => ({ className: AGENT_DEFINITION, primaryKey }));
+  const checked = ["a", "b", "c"].map((primaryKey) => ({ className: BUSINESS_KNOWLEDGE, primaryKey }));
   const { context, sent } = await open({}, "removeAll");
-  context.instance.state.set("checkedAgents", checked);
+  context.instance.state.set("checkedKnowledge", checked);
   await nextTick();
   await click(0);
   dialogButton(await dialog(), "Delete").click();
@@ -214,12 +187,12 @@ it("runs one batch over the checked objects, reports each, and keeps checked the
   // One intent, one dispatch, all three calls.
   expect(sent.filter((request) => request.path === "/api/panel-operations/intents").map((request) => request.body)).toEqual([{
     applicationId: APPLICATION, useId: use.id, operationId: "removeAll.delete",
-    calls: ["a", "b", "c"].map((primaryKey) => ({ target: { kind: "object", ...agent(primaryKey) }, input: {} })),
+    calls: ["a", "b", "c"].map((primaryKey) => ({ target: { kind: "object", ...knowledge(primaryKey) }, input: {} })),
   }]);
   expect(writes(sent).filter((path) => path.endsWith("/dispatch"))).toHaveLength(1);
   const items = [...buttonOf(0).querySelectorAll("li")].map((item) => [item.getAttribute("data-outcome"), item.textContent]);
   expect(items).toEqual([
-    ["success", "a: Done"], ["refusal", "b: Planner runs two schedules"], ["failure", "c: The definitions service failed"],
+    ["success", "a: Done"], ["refusal", "b: Another entry uses this note"], ["failure", "c: The knowledge service failed"],
   ]);
-  expect(context.instance.state.values.value.checkedAgents).toEqual(checked.slice(1));
+  expect(context.instance.state.values.value.checkedKnowledge).toEqual(checked.slice(1));
 });

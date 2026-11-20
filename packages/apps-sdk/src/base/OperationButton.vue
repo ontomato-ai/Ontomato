@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, shallowRef } from "vue";
+import { computed, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { panelOperationId, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
@@ -10,7 +10,7 @@ import type { PanelOperationDescriptor } from "../panel/human-operations";
 import { readOperationInput } from "../panel/read-operation-input";
 import OperationResult from "./OperationResult.vue";
 import { DataState } from "@ontomato/foundation-ui/data-state";
-import { useMember, useMemberData } from "../panel/member";
+import { useMemberData } from "../panel/member";
 import { stateObject, stateObjects } from "../panel/state";
 
 /**
@@ -46,14 +46,10 @@ const slot = useProjectionSlot();
 const panel = usePanelContext();
 const running = ref(false);
 const failure = shallowRef<Error | null>(null);
-const member = useMember();
-/** In a directly rendered panel, the owner's description is the member's `operation` datum, read by the instance. */
-const operationData = member ? useMemberData("operation") : null;
-const frameDescriptor = shallowRef<PanelOperationDescriptor | null>(null);
-const descriptor = computed(() => {
-  if (!operationData) return frameDescriptor.value;
-  return operationData.value.status === "ready" ? operationData.value.value as PanelOperationDescriptor : null;
-});
+/** The owner's description is the member's `operation` datum, read by the instance. */
+const operationData = useMemberData("operation");
+const descriptor = computed(() =>
+  operationData.value.status === "ready" ? operationData.value.value as PanelOperationDescriptor : null);
 const read = shallowRef<PanelReadOperationResult | null>(null);
 const receipt = shallowRef<PanelHumanOperationDispatchResponse | null>(null);
 
@@ -68,15 +64,12 @@ const published = computed(() => {
   return found;
 });
 const operationId = computed(() => panelOperationId(slot.slot, published.value.name));
-/** A member's button shows only once its description is read, so the owner's name is there to show. */
-const label = computed(() => (operationData ? descriptor.value!.label : published.value.label));
+/** The button shows only once its description is read, so the owner's name, in the reader's language, is there. */
+const label = computed(() => descriptor.value!.label);
 
 const fail = (reason: unknown) => {
   failure.value = reason instanceof Error ? reason : new Error(String(reason));
 };
-onMounted(() => {
-  if (!operationData) panel.instance.describeOperation(operationId.value).then((described) => { frameDescriptor.value = described; }, fail);
-});
 
 const values = computed(() => panel.instance.state.values.value);
 /** The object it acts on: what the panel has selected in the state this slot's input is filled from. */

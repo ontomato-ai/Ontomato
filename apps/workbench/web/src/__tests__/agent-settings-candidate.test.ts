@@ -1,6 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { h, nextTick } from "vue";
 import { createMemoryHistory, createRouter, RouterView, type RouteRecordRaw } from "vue-router";
+import { definePanel } from "@ontomato/contracts/panel-manifest";
+import { MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SKILL, USER } from "@ontomato/contracts/platform-object-types";
 import type { CandidatePanelSource } from "@ontomato/contracts/panel-host";
 import { PANEL_HOST_CHANNEL, panelAddress } from "@ontomato/contracts/panel-host";
 import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/panel-projection";
@@ -31,23 +33,101 @@ const OTHER = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a02";
 const AGENT_DEFINITION = "platform:AgentDefinition";
 const previewPath = `/app-builder/${WORKSPACE}/panel-preview/working/agent-settings`;
 
-/** What D's candidate port answers for the workspace holding `material.mjs`'s files. */
+const selectedAgent = { kind: "object", objectType: AGENT_DEFINITION } as const;
+const agentInput = { agent: { state: "selectedAgent" } };
+const formField = (path: string) => ({ slot: "definition", path });
+const manifest = definePanel({
+  state: {
+    selectedAgent: { type: selectedAgent, deepLink: true },
+    mode: { type: { kind: "scalar", type: "string" }, deepLink: true },
+  },
+  members: {
+    agents: {
+      target: { projectionId: "agent-list" },
+      inputs: { value: { state: "selectedAgent" } },
+      outputs: { selected: { state: "selectedAgent" } },
+    },
+    summary: { target: { projectionId: "agent-summary" }, inputs: agentInput },
+    definition: { target: { projectionId: "agent-definition-form" }, inputs: agentInput },
+    model: { target: { projectionId: "agent-model-choice" }, formField: formField("/modelSelection/modelId") },
+    skills: { target: { projectionId: "agent-skill-choice" }, formField: formField("/skills") },
+    executor: { target: { projectionId: "agent-executor-choice" }, formField: formField("/executionUserId") },
+    scope: { target: { projectionId: "agent-data-scope" }, formField: formField("/classNames") },
+  },
+  events: {
+    newAgent: {
+      labelKey: "agents.creating",
+      do: { set: { fields: { selectedAgent: { literal: null }, mode: { literal: "create" } } } },
+    },
+  },
+});
+
+/** The candidate port's reply for the panel's HTML, module, recipes and messages. */
 function candidate(): CandidatePanelSource {
   const files = Object.fromEntries(candidateFiles(SDK_VERSION).map(file => [file.path, file.content]));
-  const { content, ...descriptor } = JSON.parse(files["panel.json"]!);
+  const { content } = JSON.parse(files["panel.json"]!);
   return {
     kind: "candidate",
     workspace: { id: WORKSPACE, ref: "working" },
-    panel: { ...descriptor, content: { html: files["panel.html"], module: files["panel.mjs"], recipes: files["recipes.md"], ...content } },
+    panel: { manifest, content: { html: files["panel.html"]!, module: files["panel.mjs"], recipes: files["recipes.md"], ...content } },
     previewContext: { kind: "build-test", test: null },
   };
 }
 
-/** The projections as the univ_demo registration made them, by their final IDs. */
-const projections: Record<string, ProductProjection> = Object.fromEntries(projectionMaterial().projections.map(({ id, input }) => [id, {
-  ...input, id, domainId: "domain-1", ownerId: "owner-1", revision: 1, createdAt: "2026-11-19T00:00:00.000Z",
-  updatedAt: "2026-11-19T00:00:00.000Z", editable: false,
-} as ProductProjection]));
+const typeSource = (id: string) => ({ type: { kind: "PlatformObjectType" as const, id } });
+const agentSource = { object: { input: "agent" } };
+const formParams = { values: { input: "values" }, changedField: { input: "changedField" } };
+type ProjectionFields = Pick<Exclude<ProductProjection, { componentId: "@ontomato/sdk:MetricChart" }>,
+  "componentId" | "inputs" | "outputs" | "config" | "data">;
+const picker = (id: string): ProjectionFields => {
+  const source = typeSource(id);
+  return {
+    componentId: "@ontomato/sdk:ReferencePicker",
+    inputs: { values: { kind: "json" } }, outputs: {}, config: {},
+    data: {
+      options: { source, read: "options", params: {} },
+      selected: { source, read: "resolve", params: { values: { input: "values" } } },
+    },
+  };
+};
+const fieldsByProjection: Record<string, ProjectionFields> = {
+  "agent-list": {
+    componentId: "@ontomato/sdk:ObjectList",
+    inputs: { value: selectedAgent }, outputs: { selected: selectedAgent }, config: {},
+    data: { rows: { source: typeSource(AGENT_DEFINITION), read: "list", params: {} } },
+  },
+  "agent-summary": {
+    componentId: "@ontomato/sdk:ObjectSummary",
+    inputs: { agent: selectedAgent }, outputs: {}, config: { fields: ["description", "enabled"] },
+    data: { record: { source: agentSource, read: "record", params: {} } },
+  },
+  "agent-definition-form": {
+    componentId: "@ontomato/sdk:ObjectForm",
+    inputs: { agent: selectedAgent, values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
+    outputs: {}, config: { creates: true },
+    data: {
+      form: { source: agentSource, read: "form", params: formParams },
+      createForm: { source: typeSource(AGENT_DEFINITION), read: "createForm", params: formParams },
+    },
+  },
+  "agent-model-choice": picker(MODEL_OPTION),
+  "agent-skill-choice": picker(SKILL),
+  "agent-executor-choice": picker(USER),
+  "agent-data-scope": {
+    componentId: "@ontomato/sdk:ObjectGraph",
+    inputs: {}, outputs: {}, config: { edgeEnds: { source: "/fromclass", target: "/toclass" } },
+    data: {
+      nodes: { source: typeSource(OBJECT_TYPE), read: "list", params: {} },
+      edges: { source: typeSource(RELATIONSHIP), read: "list", params: {} },
+    },
+  },
+};
+const projections: Record<string, ProductProjection> = Object.fromEntries(
+  projectionMaterial().projections.map(({ id, input: { name, description, visibility } }) => [id, {
+    ...fieldsByProjection[id]!, id, name, description, visibility, domainId: "domain-1", ownerId: "owner-1",
+    revision: 1, createdAt: "2026-11-19T00:00:00.000Z", updatedAt: "2026-11-19T00:00:00.000Z", editable: false,
+  }]),
+);
 
 const sql = { namespace: { kind: "domain", domainId: "domain-1" }, name: "sql" };
 const chart = { namespace: { kind: "domain", domainId: "domain-1" }, name: "chart" };
@@ -163,7 +243,8 @@ it("registers what the owners accept: every projection the panel names, and the 
   const { projections: material } = projectionMaterial();
   for (const { input } of material) productProjectionInputSchema.parse(input);
   const panel = productPanelInputSchema.parse(panelInput(SDK_VERSION));
-  expect(new Set(material.map(({ id }) => id))).toEqual(new Set(Object.values(panel.manifest.slots).map(slot => slot.projectionId)));
+  expect(new Set(material.map(({ id }) => id))).toEqual(new Set(Object.values(panel.manifest.members)
+    .flatMap(({ target }) => "projectionId" in target ? [target.projectionId] : [])));
   expect(panel.content).toEqual(candidate().panel.content);
 });
 

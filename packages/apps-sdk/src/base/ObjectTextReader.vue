@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { projectionElement } from "../panel/direct";
 import { computed, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { panelChildCollectionQuerySchema, type PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
@@ -61,7 +62,7 @@ const { t } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
 const objects = useProjectionObjects();
-const objectType = slot.projection.binding.id;
+const objectType = projectionElement(slot.projection).id;
 
 const childMode = computed(() => Boolean(props.parentInput || props.collection));
 const parentState = computed(
