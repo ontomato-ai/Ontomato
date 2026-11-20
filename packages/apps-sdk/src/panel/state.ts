@@ -1,7 +1,6 @@
 import { computed, readonly, ref, type DeepReadonly, type Ref } from "vue";
 import {
-  matchesObjectType,
-  objectUnionTypes,
+  matchesDirectPanelValue,
   panelStateValueSchema,
   type PanelChildObjectIdentity,
   type PanelDeepLinkStateValue,
@@ -52,8 +51,7 @@ export function stateObjects(value: DeepReadonly<PanelFieldValue> | undefined): 
 
 /**
  * What a panel instance starts with: values for the fields an open request or a link named. A field it leaves out starts
- * empty, and an object-typed field starts with no object: which object to open on belongs to the request, never to the
- * shared declaration.
+ * at its declared default, else empty; an object-typed field declares no object to open on: that belongs to the request.
  */
 export type PanelInitialState = Readonly<Record<string, PanelFieldValue>>;
 
@@ -75,43 +73,17 @@ export interface PanelStateStore {
 }
 
 /**
- * Checks a value against the field a panel declared. `object` and `object-union` take a top-level reference,
- * `objects` a collection of such references (an instance's checked objects), `child-object` a parent-scoped child
- * identity matching the declared parent type, and `scalar` its own primitive type. Null clears the field.
+ * Checks a value against the field a panel declared, by the contract's own rule for the field's type: an object or
+ * object-union field takes one top-level reference, a list its references, a child-object field a parent-scoped child
+ * identity, a scalar its primitive type. Null clears the field.
  */
 export function checkPanelValue(manifest: PanelManifest, name: string, value: PanelFieldValue): PanelFieldValue {
   const field = manifest.state[name];
   if (!field) throw new Error(`Panel state has no field '${name}'`);
   const parsed = panelStateValueSchema.parse(value);
-  if (parsed === null) return null;
-  if (field.kind === "objects") {
-    if (!Array.isArray(parsed)) throw new TypeError(`Panel state '${name}' is a collection of ${field.objectType} references`);
-    const other = parsed.find((member) => member.className !== field.objectType);
-    if (other) throw new TypeError(`Panel state '${name}' holds ${field.objectType} references, not ${other.className}`);
-    return parsed;
-  }
-  if (field.kind === "object" || field.kind === "object-union") {
-    const expected = field.kind === "object" ? field.objectType : objectUnionTypes(field).join(" | ");
-    const objectRef = stateObject(parsed);
-    if (!objectRef) throw new TypeError(`Panel state '${name}' is a ${expected} reference`);
-    if (!matchesObjectType(field, objectRef.className))
-      throw new TypeError(`Panel state '${name}' is a ${expected} reference, not ${objectRef.className}`);
-    return objectRef;
-  }
-  if (field.kind === "child-object") {
-    const childRef = stateChildObject(parsed);
-    if (!childRef)
-      throw new TypeError(`Panel state '${name}' is a ${field.parentType}/${field.collection} child reference`);
-    if (childRef.parent.objectType !== field.parentType)
-      throw new TypeError(`Panel state '${name}' is a ${field.parentType}/${field.collection} child reference, not ${childRef.parent.objectType}`);
-    return childRef;
-  }
-  if (typeof parsed === "object") throw new TypeError(`Panel state '${name}' is a ${field.type}`);
-  if (field.type === "date" && (typeof parsed !== "string" || !Number.isFinite(Date.parse(parsed))))
-    throw new TypeError(`Panel state '${name}' is a date`);
-  if (field.type !== "date" && typeof parsed !== field.type)
-    throw new TypeError(`Panel state '${name}' is a ${field.type}`);
-  return parsed;
+  if (!matchesDirectPanelValue(field.type, parsed))
+    throw new TypeError(`Panel state '${name}' holds no ${JSON.stringify(field.type)} value: ${JSON.stringify(parsed)}`);
+  return parsed as PanelFieldValue;
 }
 
 /**
@@ -121,7 +93,11 @@ export function checkPanelValue(manifest: PanelManifest, name: string, value: Pa
 export function createPanelState(manifest: PanelManifest, initial: PanelInitialState = {}): PanelStateStore {
   const values = ref<Record<string, PanelFieldValue>>(
     Object.fromEntries(
-      Object.keys(manifest.state).map((name) => [name, name in initial ? checkPanelValue(manifest, name, initial[name]!) : null]),
+      Object.entries(manifest.state).map(([name, field]) => {
+        // An address or an open request names what it opens on; otherwise the field starts at its declared default.
+        const value = name in initial ? initial[name]! : (field.default ?? null) as PanelFieldValue;
+        return [name, checkPanelValue(manifest, name, value)];
+      }),
     ),
   );
   const fields = new Map<string, DeepReadonly<Ref<PanelFieldValue>>>(
@@ -178,7 +154,7 @@ export function panelSelection(
   names: ReadonlyMap<string, string>,
   translate: (key: string) => string,
 ): PanelSelection[] {
-  return Object.entries(manifest.state).flatMap(([name, field]) => {
+  return Object.entries(manifest.state).flatMap(([name, { type: field }]) => {
     if (field.kind === "child-object") {
       const child = stateChildObject(values[name]);
       if (!child) return [];

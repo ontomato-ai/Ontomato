@@ -48,7 +48,7 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
         throw new Error(`Member '${member.key}' reads its form from no object one of its inputs names`);
       run[data.source.object.input] = { className: target.objectType, primaryKey: target.primaryKey };
     }
-    return { name, run, type: "type" in data.source ? data.source.type : null };
+    return { name, run, type: "type" in data.source ? data.source.type.id : null };
   }
 
   return {

@@ -40,7 +40,7 @@ function formOf(data: DirectProjectionData, object: PanelObjectValue | null, par
   const target: PanelFormTarget = object
     ? { kind: "object", objectType: object.className, primaryKey: object.primaryKey }
     : { kind: "draft" };
-  const objectType = object ? object.className : (data.source as { type: string }).type;
+  const objectType = object ? object.className : (data.source as { type: { id: string } }).type.id;
   return adapterPart(objectType, "forms").describe({
     target,
     ...(params.values === undefined || params.values === null ? {} : { values: params.values as Record<string, RuntimeJsonValue> }),
@@ -57,7 +57,7 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
     if (awaitsInputs(projection, data, values)) return { status: "awaiting" };
     const object = objectOf(data, values);
     const params = paramValues(data, values);
-    const type = "type" in data.source ? data.source.type : object?.className;
+    const type = "type" in data.source ? data.source.type.id : object?.className;
     let value: unknown;
     switch (declaration.result) {
       case "panelRecordList":
@@ -70,7 +70,7 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
         value = await formOf(data, object, params);
         break;
       case "panelOperationDescriptor":
-        value = await instance.describeOperation(panelOperationId(slot, (data.source as { operation: string }).operation.split(".").pop()!));
+        value = await instance.describeOperation(panelOperationId(slot, (data.source as { operation: { id: string } }).operation.id.split(".").pop()!));
         break;
       case "panelOptionList": {
         const options = adapterPart(type!, "options");
@@ -131,7 +131,7 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
       onScopeDispose(instance.onObjectChanged((changed) => {
         const object = objectOf(data, inputs());
         if (!changed || (object && object.className === changed.objectType && object.primaryKey === changed.primaryKey)
-          || ("type" in data.source && data.source.type === changed.objectType)) reread();
+          || ("type" in data.source && data.source.type.id === changed.objectType)) reread();
       }));
       return computed(() => state.value);
     },
