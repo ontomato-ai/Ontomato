@@ -40,6 +40,13 @@ const agentForm: ProductProjection = {
   data: {
     createForm: { source: { type: { kind: "PlatformObjectType", id: "platform:AgentDefinition" } }, read: "createForm", params: { values: { input: "values" }, changedField: { input: "changedField" } } },
   },
+  // The definitions service's own save; with no agent to edit, a new agent's.
+  operations: { save: { operation: { kind: "PlatformOperation", id: "platform:AgentDefinition.save" } } },
+};
+/** The definitions service's save as Node admits it for the form: a create, the form holding no agent. */
+const createAgent = {
+  kind: "form.save", handlerRef: "platform:AgentDefinition.save", label: "Save", effect: "write",
+  target: { source: "draft", slot: "definition" }, inputSchema: {}, resultSchema: {}, batch: false,
 };
 const summary = projections["projection-schedules-summary"]!;
 
@@ -75,6 +82,9 @@ function network(candidate: () => CandidatePanelSource | Response) {
     }
     if (request.path === `/api/product-projections/${agentForm.id}`) return Response.json({ projection: agentForm });
     if (request.path === `/api/product-projections/${summary.id}`) return Response.json({ projection: summary });
+    // Node answers what a candidate's member can do as it would for the panel's application: the preview then runs none.
+    if (request.path === "/api/product-panels/read" && (request.body as { operations?: true }).operations)
+      return Response.json({ status: "ready", value: { save: createAgent } });
     // Node answers a candidate's member read as the author's workspace, with the context it confirms for it.
     if (request.path === "/api/product-panels/read") return Response.json({ status: "ready", value: {
       fields: [{ path: "/name", label: "Name", control: { kind: "text" }, valueSchema: {}, required: false, readOnly: false }],

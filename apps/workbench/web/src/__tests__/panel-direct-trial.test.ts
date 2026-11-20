@@ -40,10 +40,20 @@ const form = (name: string) => ({
   fields: [field("/name", "Name")], values: { name }, errors: [], revision: 3,
   save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
 });
-const runNow = { handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
+const runNow = { kind: "action", handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
 const INTENT = "5f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d05";
 
-type Read = { dataName: string; memberPath: [{ member: string }]; inputs: { task?: { primaryKey: string }; values?: { name: string } } };
+type Read = {
+  dataName?: string; operations?: true; memberPath: [{ member: string }]; inputs: { task?: { primaryKey: string } | null; values?: { name: string } };
+};
+/** The owners' descriptions of what each member can do, as Node admits them for its inputs. */
+const saveTask = { kind: "form.save", handlerRef: `${SCHEDULED_TASK}.save`, label: "Save", effect: "write", inputSchema: {}, resultSchema: {}, batch: false };
+function admitted({ memberPath: [{ member }], inputs }: Read) {
+  if (!inputs.task) return {};
+  if (member === "run") return { runNow };
+  if (member === "form") return { save: { ...saveTask, target: { source: "input", input: "task" } } };
+  return {};
+}
 function answer(request: Sent) {
   if (request.path === `/api/data-query/platform/applications/${application}/panel-uses`)
     return Response.json({ data: { applicationId: application, entry: { path: "/", renderer: "panels" }, panelUses: [use] } });
@@ -52,8 +62,10 @@ function answer(request: Sent) {
   const projection = /^\/api\/product-projections\/(.+)$/.exec(request.path);
   if (projection) return Response.json(projections[decodeURIComponent(projection[1]!)]);
   if (request.path === "/api/product-panels/read") {
-    const { dataName, inputs } = request.body as Read;
-    const value = dataName === "rows" ? rows : dataName === "operation" ? runNow
+    const read = request.body as Read;
+    if (read.operations) return Response.json({ status: "ready", value: admitted(read) });
+    const { dataName, inputs } = read;
+    const value = dataName === "rows" ? rows
       : dataName === "record" ? rows.find(row => row.primaryKey === inputs.task!.primaryKey)
       : form(inputs.values?.name ?? `Task ${inputs.task!.primaryKey}`);
     return Response.json({ status: "ready", value });

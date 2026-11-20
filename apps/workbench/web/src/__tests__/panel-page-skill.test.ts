@@ -47,6 +47,11 @@ function answer(request: Sent): Response | Promise<Response> {
   if (request.path === `/api/product-panels/${p.id}/snapshot`) return (snapshotHold ?? Promise.resolve()).then(() => panelSnapshot(p, projections, request));
   if (request.path === `/api/product-panels/${q.id}/snapshot`) return panelSnapshot(q, projections, request);
   if (request.path === "/api/apps-sdk/current") return currentSdk();
+  // The panel's members, as Node holds them: their projections, no data, and nothing they can do.
+  const projection = Object.values(projections).find(one => request.path === `/api/product-projections/${one.id}`);
+  if (projection) return Response.json({ projection });
+  if (request.path === "/api/product-panels/read")
+    return Response.json((request.body as { operations?: true }).operations ? { status: "ready", value: {} } : { status: "empty" });
   return nothingAt(request);
 }
 

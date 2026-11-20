@@ -9,7 +9,7 @@ import PanelApplicationRoute from "../../../../../packages/platform-web/src/page
 import type { DisplayObjectRefresh } from "../../../../../packages/agent-shell-ui/src/conversation-display";
 import { panelAnswer,
   currentSdk, installPlatform, leaveFrame, manifestP, nothingAt, panelRecord, panelSnapshot, panelUse, SCHEDULED_TASK,
-  task, type Sent,
+  projections, task, type Sent,
 } from "./panel-frame";
 
 /*
@@ -33,6 +33,11 @@ function answer(request: Sent) {
   if (request.path === `/api/product-panels/${panel.id}`) return panelAnswer(panel, request);
   if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel, undefined, request);
   if (request.path === "/api/apps-sdk/current") return currentSdk();
+  // The panel's members, as Node holds them: their projections, no data, and nothing they can do.
+  const projection = Object.values(projections).find(one => request.path === `/api/product-projections/${one.id}`);
+  if (projection) return Response.json({ projection });
+  if (request.path === "/api/product-panels/read")
+    return Response.json((request.body as { operations?: true }).operations ? { status: "ready", value: {} } : { status: "empty" });
   return nothingAt(request);
 }
 

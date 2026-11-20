@@ -135,3 +135,46 @@ it("says so when the projection declares no such datum", async () => {
   await vi.waitFor(() => expect(element.querySelector(".task")?.textContent).toBe("The projection of member 'task' declares no datum 'rows'"));
   (await mount).dispose();
 });
+
+it("keeps a member whose projection cannot be read to itself: the rest of the panel goes on", async () => {
+  const element = document.createElement("div");
+  document.body.append(element);
+  const failed: unknown[] = [];
+  let mounted!: (mount: DirectPanelMount) => void;
+  const mount = new Promise<DirectPanelMount>((resolve) => { mounted = resolve; });
+  const twoMembers: DirectPanelManifest = {
+    ...manifest,
+    members: { ...manifest.members, hidden: { target: { projectionId: "hidden" }, inputs: { task: { state: "selectedTask" } } } },
+  };
+  const module = panelModuleFor({
+    mounted, element, template: `<p class="task">{{ shown }}</p><Projection slot="hidden"/>`,
+    install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
+    manifest: twoMembers,
+    run: {
+      pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: chosen("t-1") },
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
+      failed: (reason) => failed.push(reason),
+    },
+    messages: {}, locale: ref("en"), defaultLocale: "en",
+    // The reader may not use the hidden member's projection; the platform says so.
+    requests: { request: async (path: string) => (path.endsWith("/hidden")
+      ? Response.json({ error: { message: "Product use Grant required" } }, { status: 403 })
+      : Response.json({ projection: taskData })) },
+    use: { applicationId: "app-tasks", useId: "tasks" },
+    expandPageComposer: noOperations.expandPageComposer,
+    confirmOperation: noOperations.confirmOperation,
+    read: async (request): Promise<ProductPanelReadResponse> =>
+      ({ status: "ready", value: (request.operations ? { runNow } : record("t-1")) as never }),
+  });
+  await module.mountPanel({
+    setup() {
+      const task = module.usePanelData("task", "record");
+      return { shown: computed(() => (task.value.status === "ready" ? (task.value.value as { label: string }).label : task.value.status)) };
+    },
+  });
+  // The readable member reads and is shown; the other says why where it is placed; the panel itself has not failed.
+  await vi.waitFor(() => expect(element.querySelector(".task")?.textContent).toBe("Task t-1"));
+  await vi.waitFor(() => expect(element.querySelector('[data-member="hidden"]')?.textContent).toContain("Product use Grant required"));
+  expect(failed).toEqual([]);
+  (await mount).dispose();
+});
