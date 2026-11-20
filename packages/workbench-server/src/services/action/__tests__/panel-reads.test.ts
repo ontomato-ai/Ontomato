@@ -31,6 +31,7 @@ const approve = {
   id: "approve-order", name: "Approve order", description: "Approve a pending order", status: "PUBLISHED",
   statusLabel: "Published", origin: "USER", originLabel: "User", createdBy: "u1", createdByName: "Alice",
   reviewedBy: null, reviewedByName: null, function: { name: "approve_order", code: "# ontomato-python:2" },
+  modifyTimestamp: Date.UTC(2026, 10, 20, 8, 30),
 };
 const form = {
   fields: [{
@@ -73,8 +74,14 @@ describe("action catalog reads", () => {
     expect(panelRecordListSchema.parse(records)).toEqual(records);
     expect(records).toEqual([{
       primaryKey: "approve-order", label: "Approve order", subtitle: "Approve a pending order",
-      fieldLabels: { status: "Status", origin: "Origin", createdBy: "Created by", reviewedBy: "Reviewed by", function: "Function" },
-      fields: { status: "Published", origin: "User", createdBy: "Alice", reviewedBy: "", function: "approve_order" },
+      fieldLabels: {
+        status: "Status", origin: "Origin", createdBy: "Created by", reviewedBy: "Reviewed by", function: "Function",
+        updatedAt: "Updated",
+      },
+      fields: {
+        status: "Published", origin: "User", createdBy: "Alice", reviewedBy: "", function: "approve_order",
+        updatedAt: "2026-11-20T08:30:00.000Z",
+      },
     }]);
   });
 
@@ -98,6 +105,45 @@ describe("action catalog reads", () => {
         target: { kind: "object", objectType: ACTION, primaryKey: "approve-order" },
         values: { name: "Approve" }, changedField: "/function/parameters",
       },
+    ]);
+  });
+
+  it("reads the definition the owner derives and the saved explanation, with the owner's kind names", async () => {
+    const definition = {
+      version: 1, source: "DERIVED", verified: false, name: "Approve order", description: null, codeHash: "a".repeat(64),
+      explanationVersion: 3, execution: { kind: "FUNCTION", operation: "OPERATION_WRITE" },
+      effects: [{ kind: "UPDATE_OBJECT", kindLabel: "Update object", className: "Order" }], affects: ["Order"],
+    };
+    const segment = { id: "s1", kind: "UPDATE_OBJECT", kindLabel: "Update object", title: "Approve", codeRange: { start: 1, end: 4 } };
+    const explained = {
+      ...approve, codeHash: "a".repeat(64), explanationVersion: 3, definition,
+      function: { ...approve.function, code: "# ontomato-python:2\nprint(1)" },
+      codeSegments: [segment], businessMeaning: { operations: ["Approve the order"], negativeEffect: "" },
+    };
+    ownerAnswering({ "/action/queryById": ok(explained) });
+    const adapter = createActionReadAdapter(owner, viewer);
+
+    expect(await adapter.definition("approve-order")).toEqual(definition);
+    expect(await adapter.explanation("approve-order")).toEqual({
+      code: "# ontomato-python:2\nprint(1)", codeHash: "a".repeat(64), explanationVersion: 3, codeSegments: [segment],
+      businessMeaning: { operations: ["Approve the order"], negativeEffect: "" },
+    });
+
+    ownerAnswering({ "/action/queryById": ok({ ...approve, codeHash: null, codeSegments: null, businessMeaning: null }) });
+    expect(await adapter.explanation("approve-order")).toEqual({ code: "# ontomato-python:2", codeSegments: [] });
+
+    ownerAnswering({ "/action/queryById": ok({ ...explained, codeSegments: [{ ...segment, kindLabel: undefined }] }) });
+    await expect(adapter.explanation("approve-order")).rejects.toThrow();
+  });
+
+  it("asks the owner for the form of a new action an agent drafts into", async () => {
+    const sent = ownerAnswering({ "/action/definitionForm": ok({ ...form, save: { ...form.save, draftOperation: "action.create" } }) });
+
+    const created = await createActionReadAdapter(owner, viewer).createForm({ values: { name: "Approve" }, changedField: null });
+
+    expect(created.save.draftOperation).toBe("action.create");
+    expect(sent.map(request => request.body)).toEqual([
+      { target: { kind: "draft" }, values: { name: "Approve" }, changedField: null },
     ]);
   });
 

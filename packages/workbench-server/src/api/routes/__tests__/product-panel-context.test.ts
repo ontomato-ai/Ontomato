@@ -6,11 +6,11 @@ import { pageSkillContextSchema } from "@ontomato/contracts/page-skills";
 import { protectedSkillRef } from "../../../core/skills/providers";
 import { HttpError } from "../../../utils/errors";
 
-const mocks = vi.hoisted(() => ({ panel: vi.fn(), snapshot: vi.fn(), view: vi.fn(), member: vi.fn() }));
+const mocks = vi.hoisted(() => ({ panel: vi.fn(), snapshot: vi.fn(), member: vi.fn() }));
 vi.mock("../../../services/product-panels/operations", () => ({ ownPanelSettings: vi.fn() }));
 vi.mock("../../../services/product-panels/current", () => ({ readCurrentPanelRecord: mocks.panel }));
 vi.mock("../../../services/product-panels/definition-stream", () => ({ requirePanelDefinitions: mocks.snapshot }));
-vi.mock("../../../services/skills/view", () => ({ readSkillView: mocks.view, pageSkillMemberContext: mocks.member }));
+vi.mock("../../../services/skills/view", () => ({ readRegisteredPanelPageSkillContext: mocks.member }));
 vi.mock("../../../utils/request-identity", async original => ({
   ...await original<typeof import("../../../utils/request-identity")>(),
   requireDomainId: () => "domain",
@@ -24,7 +24,6 @@ const snapshot = { panel: { id: panel.id, revision: panel.revision }, projection
 const source = { kind: "application-use", applicationId: "app", useId: "use-1" };
 const menu = { pageKey: "ontology-agents", permissionCode: "analysis-agent" };
 const domain = { pageKey: "agent-directory", access: "domain-member" };
-const view = { caller: owner.userId };
 let base: string;
 let server: Server;
 beforeAll(async () => {
@@ -44,8 +43,10 @@ afterAll(async () => {
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.panel.mockResolvedValue(panel);
-  mocks.snapshot.mockResolvedValue(snapshot);
-  mocks.view.mockResolvedValue(view);
+  mocks.snapshot.mockImplementation(async (_owner, _credentials, _id, readContext) => {
+    const pageSkillContext = await readContext?.(snapshot.panel);
+    return { ...snapshot, ...(pageSkillContext && { pageSkillContext }) };
+  });
 });
 const read = (path: string, entrance: Record<string, string>) => fetch(base + path + "?" + new URLSearchParams({
   applicationId: source.applicationId, useId: source.useId, ...entrance,
@@ -64,15 +65,16 @@ it.each([
   pageSkillContextSchema.parse(body.pageSkillContext);
   expect(body).toEqual({ ...response, pageSkillContext });
   expect(readOwner).toHaveBeenCalledTimes(1);
-  expect(mocks.view).toHaveBeenCalledWith(owner.domainId, expect.objectContaining({ token: "caller-token" }));
   expect(mocks.member).toHaveBeenCalledTimes(1);
-  expect(mocks.member).toHaveBeenCalledWith(view, entrance, source, loaded);
+  expect(mocks.member).toHaveBeenCalledWith({
+    domainId: owner.domainId, initiatorCredentials: expect.objectContaining({ token: "caller-token" }),
+  }, entrance, source, loaded, expect.objectContaining({ id: "product-panels", findByUse: expect.any(Function) }));
   expect(mocks.member.mock.calls[0]![3]).toBe(loaded);
 });
 
 it.each(["", "/snapshot"])("keeps %s unchanged without query and refuses malformed intent before reads", async path => {
   expect(await (await fetch(base + path)).json()).toEqual(path ? snapshot : { panel });
-  expect(mocks.view).not.toHaveBeenCalled();
+  expect(mocks.member).not.toHaveBeenCalled();
   mocks.panel.mockClear();
   mocks.snapshot.mockClear();
   expect((await fetch(base + path + "?applicationId=app")).status).toBe(400);
@@ -93,7 +95,7 @@ it("returns member null on the same snapshot revision when the helper finds a no
 it("propagates owner denial and source failure through the original error boundary", async () => {
   mocks.snapshot.mockRejectedValueOnce(new HttpError(403, "Panel unavailable", "FORBIDDEN"));
   expect((await read("/snapshot", menu)).status).toBe(403);
-  expect(mocks.view).not.toHaveBeenCalled();
+  expect(mocks.member).not.toHaveBeenCalled();
   mocks.member.mockRejectedValueOnce(new HttpError(503, "Source unavailable", "DEPENDENCY_UNAVAILABLE"));
   const failure = await read("", menu);
   expect(failure.status).toBe(503);

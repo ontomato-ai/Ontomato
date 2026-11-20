@@ -2,7 +2,9 @@ import { appsSdkComponentDatum } from "@ontomato/contracts/apps-sdk";
 import { z } from "zod";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
-import { AGENT_DEFINITION, BUSINESS_KNOWLEDGE, MODEL_OPTION, SCHEDULED_TASK, SKILL, USER } from "@ontomato/contracts/panel-client-requests";
+import {
+  AGENT_DEFINITION, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, KNOWLEDGE_GOVERNANCE_RECORD, MODEL_OPTION, SCHEDULED_TASK, SKILL, USER,
+} from "@ontomato/contracts/panel-client-requests";
 import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
@@ -85,17 +87,31 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     const { createAgentOptionReadAdapters } = await import("../assistant/panel-reads");
     return createAgentOptionReadAdapters(viewer);
   };
+  const skillLibrary = async () => {
+    const { createSkillReadAdapter } = await import("../skills/panel-reads");
+    return createSkillReadAdapter(owner, viewer, callerUserName);
+  };
   const skills = async () => {
     const { agentDefinitionPermissions } = await import("../assistant/definitions");
     await assertPermission(viewer, agentDefinitionPermissions);
-    const { createSkillReadAdapter } = await import("../skills/panel-reads");
-    return createSkillReadAdapter(owner, viewer, callerUserName);
+    return skillLibrary();
+  };
+  const feedback = async () => {
+    const { createFeedbackReadAdapter } = await import("../admin/feedback-panel-reads");
+    return createFeedbackReadAdapter(owner, viewer);
+  };
+  const governance = async () => {
+    const { createKnowledgeGovernanceReadAdapter } = await import("../assistant/governance-panel-reads");
+    return createKnowledgeGovernanceReadAdapter(viewer);
   };
   return {
     [ACTION]: {
       list: async () => (await actions()).list(),
       record: async selection => (await actions()).record(selection.primaryKey!),
       form: async (selection, params) => (await actions()).form(selection.primaryKey!, formParams(params)),
+      createForm: async (_selection, params) => (await actions()).createForm(formParams(params)),
+      definition: async selection => (await actions()).definition(selection.primaryKey!),
+      explanation: async selection => (await actions()).explanation(selection.primaryKey!),
     },
     [METRIC_VIEW]: {
       query: (_selection, params) => metrics.query(params),
@@ -156,6 +172,18 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       async resolve(_selection, params) {
         return (await skills()).resolve({ values: params.values as SkillResolveRequest["values"] });
       },
+      async query(_selection, params) {
+        return (await skillLibrary()).query(params);
+      },
+      async record(selection) {
+        return (await skillLibrary()).record(selection.primaryKey!);
+      },
+      async files(selection) {
+        return (await skillLibrary()).files(selection.primaryKey!);
+      },
+      async file(selection, params) {
+        return (await skillLibrary()).file(selection.primaryKey!, params);
+      },
     },
     [OBJECT_TYPE]: modelReads,
     [ATTRIBUTE]: modelReads,
@@ -181,6 +209,17 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       record: (selection, params) => knowledge.record(selection.primaryKey!, params),
       form: (selection, params) => knowledge.form(selection.primaryKey!, params),
       createForm: (_selection, params) => knowledge.form(undefined, params),
+    },
+    [FEEDBACK_RECORD]: {
+      query: async (_selection, params) => (await feedback()).query(params),
+      counts: async (_selection, params) => (await feedback()).counts(params),
+      record: async selection => (await feedback()).record(selection.primaryKey!),
+    },
+    [KNOWLEDGE_GOVERNANCE_RECORD]: {
+      record: async selection => (await governance()).record(selection.primaryKey!),
+      issues: async selection => (await governance()).issues(selection.primaryKey!),
+      sources: async selection => (await governance()).sources(selection.primaryKey!),
+      sourcePage: async (selection, params) => (await governance()).sourcePage(selection.primaryKey!, params),
     },
   };
 }

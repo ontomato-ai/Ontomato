@@ -280,13 +280,30 @@ beforeAll(async () => {
     app.post("/action/" + endpoint, (req, res) => {
       expect(req.header("tk")).toBe("pilot-reader");
       expect(req.header("Accept-Language")).toBe("zh-CN");
-      const action = { id: "review", name: "Review", statusLabel: "Published" };
+      const action = {
+        id: "review", name: "Review", statusLabel: "Published", codeHash: "c".repeat(64), explanationVersion: 3,
+        function: { name: "review", code: "# ontomato-python:2" },
+        definition: {
+          version: 1, source: "DERIVED", verified: false, name: "Review", description: null, codeHash: "c".repeat(64),
+          explanationVersion: 3, effects: [{ kind: "UPDATE_OBJECT", kindLabel: "更新对象", className: "Order" }], affects: ["Order"],
+        },
+        codeSegments: [{
+          id: "s1", kind: "TRY_CATCH", kindLabel: "异常捕获", title: "Guarded update", codeRange: { start: 1, end: 6 },
+          trySegs: [{ id: "s2", kind: "UPDATE_OBJECT", kindLabel: "更新对象", title: "Approve", codeRange: { start: 2, end: 3 } }],
+        }],
+      };
       if (endpoint === "queryList") {
         expect(req.body).toEqual({});
         res.json({ success: true, data: [action] });
       } else if (endpoint === "queryById") {
         expect(req.body).toEqual({ id: action.id });
         res.json({ success: true, data: action });
+      } else if (req.body.target.kind === "draft") {
+        expect(req.body).toEqual({ target: { kind: "draft" }, values: { name: "New review" }, changedField: null });
+        res.json({ success: true, data: {
+          fields: [], values: req.body.values, errors: [],
+          save: { method: "POST", path: "/action/save", bodySchema: {}, draftOperation: "action.create" },
+        } });
       } else {
         expect(req.body).toMatchObject({
           target: { kind: "object", objectType: "platform:Action", primaryKey: action.id },
@@ -908,7 +925,7 @@ it("reads the SDK component catalogue and definition from the installed SDK rele
   });
 });
 
-it("dispatches the action catalog's three reads and both operation descriptions", async () => {
+it("dispatches the action catalog's reads and both operation descriptions", async () => {
   const action = { className: "platform:Action", primaryKey: "review" };
   const actionType = { kind: "object", objectType: action.className };
   const selected = { object: { literal: action } };
@@ -926,6 +943,15 @@ it("dispatches the action catalog's three reads and both operation descriptions"
         values: { literal: { name: "Draft review" } }, changedField: { literal: "/name" },
       } },
     } },
+    create: { componentId: "@ontomato/sdk:ObjectForm", data: {
+      createForm: { source: { type: { kind: "PlatformObjectType", id: action.className } }, read: "createForm", params: {
+        values: { literal: { name: "New review" } }, changedField: { literal: null },
+      } },
+    } },
+    explained: { componentId: "@ontomato/sdk:PanelData", data: {
+      definition: { source: selected, read: "definition", params: {} },
+      explanation: { source: selected, read: "explanation", params: {} },
+    } },
     status: operation("actions.setStatus"),
     remove: operation("actions.delete"),
   }, { selected: { type: actionType, default: null } }, {
@@ -935,6 +961,21 @@ it("dispatches the action catalog's three reads and both operation descriptions"
   expect(await read("list", "rows")).toMatchObject({ status: "ready", value: [{ primaryKey: "review", label: "Review" }] });
   expect(await read("summary", "record")).toMatchObject({ status: "ready", value: { fields: { status: "Published" } } });
   expect(await read("definition", "form")).toMatchObject({ status: "ready", value: { values: { name: "Draft review" }, errors: [] } });
+  expect(await read("create", "createForm")).toMatchObject({
+    status: "ready", value: { values: { name: "New review" }, save: { draftOperation: "action.create" } },
+  });
+  expect(await read("explained", "definition")).toMatchObject({
+    status: "ready", value: { source: "DERIVED", effects: [{ kind: "UPDATE_OBJECT", kindLabel: "更新对象" }], affects: ["Order"] },
+  });
+  expect(await read("explained", "explanation")).toEqual({
+    status: "ready", value: {
+      code: "# ontomato-python:2", codeHash: "c".repeat(64), explanationVersion: 3,
+      codeSegments: [{
+        id: "s1", kind: "TRY_CATCH", kindLabel: "异常捕获", title: "Guarded update", codeRange: { start: 1, end: 6 },
+        trySegs: [{ id: "s2", kind: "UPDATE_OBJECT", kindLabel: "更新对象", title: "Approve", codeRange: { start: 2, end: 3 } }],
+      }],
+    },
+  });
   const readOperations = async (member: string) => (await request("POST", "product-panels/read", {
     source: { kind: "registered", applicationId: "owner-actions", useId: "data" },
     memberPath: [{ member }], operations: true, inputs: { action },

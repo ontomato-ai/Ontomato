@@ -154,6 +154,30 @@ it("provides a single protected source for all uses of the same panel and lists 
     { headers: { "X-Ontomato-Query-Service-Token": "fixture-platform-service" }, retries: 1 });
 });
 
+it("loads only the requested panel skill and pinpoints an invalid dependent projection", async () => {
+  javaSources(uses);
+  const brokenId = "projection-schedules-run";
+  extraProjections.set(brokenId, {
+    ...runProjection,
+    data: { operation: { source: { operation: "schedules.runNow" }, read: "describe", params: {} } },
+  });
+  const summary = await panelSkillProvider.findByUse(domainId, uses[2]!);
+  await expect(summary!.readManifest(taskRef)).resolves.toMatchObject({ name: taskRef.name });
+  expect(vi.mocked(findCurrentProduct).mock.calls).toEqual([
+    [domainId, "panel", uses[2]!.panelId],
+    [domainId, "projection", "projection-schedules-summary"],
+  ]);
+
+  const broken = await panelSkillProvider.findByUse(domainId, uses[0]!);
+  expect(broken?.resourceIds).toContain(brokenId);
+  const failure = {
+    code: "SKILL_SOURCE_UNAVAILABLE",
+    message: expect.stringContaining(`Panel '${uses[0]!.panelId}' skill is unavailable: projection '${brokenId}', field 'data.operation.source'`),
+  };
+  await expect(broken!.readManifest(taskRef)).rejects.toMatchObject(failure);
+  await expect(broken!.provide(taskRef)).rejects.toMatchObject(failure);
+});
+
 it("uses the panel's default-locale text for declared state operation labels", async () => {
   configureI18n({
     defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
