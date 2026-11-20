@@ -33,11 +33,24 @@ import FormFieldControl from "./FormFieldControl.vue";
  * A draft an agent wrote reaches the form whose owner names the draft's operation for its target; the owner checks the
  * whole draft (one it refuses is refused whole, with the fields and the reasons) and the form shows it, the changed
  * fields marked and nothing written, until the reader saves or discards.
+ *
+ * A page that opens the form under a parent (an attribute created in its class, a relationship from its two ends) fixes
+ * the fields that parent decides, through `fixedFields`: the form shows each with the page's value, read-only, and
+ * submits it with every save. The owner's form does not know which page it is in, so the page says it; the owner checks
+ * the value as it checks any other.
  */
 /**
  * What the form tells the page's code, which decides what the page shows next (a form's own buttons do not): the owner
  * saved it — the object it saved, or the one it created — or the reader discarded what it held.
  */
+const props = withDefaults(defineProps<{
+  /**
+   * The fields the page fixes, by the owner's JSON Pointer path: each value comes from a field of the panel's state
+   * (`{state}`, as it holds it) or is written here (`{literal}`). The form shows them read-only and submits them with
+   * every save.
+   */
+  fixedFields?: Record<string, { state: string } | { literal: RuntimeJsonValue }>;
+}>(), { fixedFields: () => ({}) });
 const emit = defineEmits<{
   /** The owner saved the form: the object it saved, or the one it created. */
   saved: [object: { className: string; primaryKey: string }];
@@ -91,6 +104,28 @@ const failure = shallowRef<Error | null>(null);
 /** The owner's refusal of the last save, shown with the form the reader still holds; its fields' messages on the fields. */
 const refusal = shallowRef<Error | null>(null);
 
+for (const [path, from] of Object.entries(props.fixedFields)) {
+  if ("state" in from && !(from.state in panel.manifest.state))
+    throw new Error(`The fixed field ${path} names the state '${from.state}', which the panel does not declare`);
+}
+/** The fixed fields' values now, by path. */
+const fixedValues = computed<Readonly<Record<string, RuntimeJsonValue>>>(() => Object.fromEntries(Object.entries(props.fixedFields).map(
+  ([path, from]) => [path, "state" in from ? (panel.instance.state.values.value[from.state] ?? null) as RuntimeJsonValue : from.literal])));
+/** Whether a path is a fixed field or inside one. */
+const isFixed = (path: string) => Object.keys(fixedValues.value).some((fixed) => path === fixed || path.startsWith(`${fixed}/`));
+/** Values with the fixed fields as the page fixes them. */
+function fixValues(next: PanelFormValues): PanelFormValues {
+  return Object.entries(fixedValues.value).reduce((all, [path, value]) => withValueAt(all, path, value) as PanelFormValues, next);
+}
+/** An owner's description with the fixed fields read-only and their values the page's. */
+function fixDescription(next: PanelFormDescription): PanelFormDescription {
+  return {
+    ...next,
+    fields: next.fields.map((field) => (field.path in fixedValues.value ? { ...field, readOnly: true } : field)),
+    values: fixValues(next.values),
+  };
+}
+
 const fields = computed(() => description.value?.fields ?? []);
 /**
  * The fields this form draws itself; a reference is drawn by the projection that edits it, an avatar by the page that
@@ -127,9 +162,9 @@ function adopt(
   written: ReadonlySet<string> = new Set(),
 ) {
   submitted.value = written;
-  opened.value = baseline;
-  description.value = shown;
-  values.value = shown.values;
+  opened.value = fixDescription(baseline);
+  description.value = fixDescription(shown);
+  values.value = description.value.values;
   changed.value = marked;
   refusal.value = null;
   // The owner's verdict on the values it returned: a field it does not accept says why, on that field.
@@ -228,8 +263,17 @@ useProjectionObjectRefresh((id) => id === key.value, () => {
 });
 watch([canSettle, saving], refreshWhenClean);
 
+// The page's fixed values follow the state they come from: what the form opened with and what it shows both take them.
+watch(() => JSON.stringify(fixedValues.value), () => {
+  if (!opened.value || !description.value) return;
+  opened.value = fixDescription(opened.value);
+  description.value = fixDescription(description.value);
+  values.value = fixValues(values.value);
+});
+
 /** One field changed: the form holds the value; a field the owner's form depends on has the owner asked again. */
 function set(path: string, value: RuntimeJsonValue) {
+  if (isFixed(path)) throw new Error(`The page fixes the field ${path}; it is not edited in the form`);
   // The described field the edit is in: a row's or an object's field submits the array or object it belongs to.
   const described = fields.value.find((item) => path === item.path || path.startsWith(`${item.path}/`));
   if (described) submitted.value = new Set([...submitted.value, described.path]);
@@ -241,8 +285,8 @@ function set(path: string, value: RuntimeJsonValue) {
   // The owner changes the fields for these edits; the opened reading, its revision and the discard baseline stay.
   void forms.describe({ target: asked, values: values.value, changedField: path }).then((answer) => {
     if (loaded !== askedKey) return;
-    description.value = answer;
-    values.value = answer.values;
+    description.value = fixDescription(answer);
+    values.value = description.value.values;
     errors.value = fieldMessages(answer.errors);
   }, fail);
 }
@@ -355,7 +399,8 @@ async function write(): Promise<unknown> {
   try {
     const revision = opened.value!.revision;
     const saved = await forms.save(into, {
-      values: values.value, submittedFields: [...submitted.value], ...(revision === undefined ? {} : { revision }),
+      values: values.value, submittedFields: [...new Set([...submitted.value, ...Object.keys(fixedValues.value)])],
+      ...(revision === undefined ? {} : { revision }),
     });
     submitted.value = new Set();
     held = null;
