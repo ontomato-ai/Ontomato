@@ -393,6 +393,7 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.params.taskId).toBe(task.id);
     expect(req.body.revision).toBe(task.revision);
+    expect(req.body.content).toEqual(task.content);
     ownerWrites.push("save");
     res.json({ ...task, revision: task.revision + 1 });
   });
@@ -500,7 +501,11 @@ it("reads back stable member keys and named data, and leaves the record intact a
   const target = { kind: "object", objectType: taskType.objectType, primaryKey: task.id };
   let runNowReceipt: unknown;
   for (const [operationId, input] of [
-    ["form.save", { values: task.content, revision: task.revision, submittedFields: ["/instruction"] }], ["run.runNow", {}],
+    ["form.save", {
+      values: { ...task.content, unsubmitted: "" },
+      revision: task.revision,
+      submittedFields: ["/instruction"],
+    }], ["run.runNow", {}],
   ] as const) {
     const prepared = await request("POST", "panel-operations/intents", {
       applicationId: source.applicationId, useId: source.useId, operationId, call: { target, input },

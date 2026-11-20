@@ -167,17 +167,27 @@ describe("action catalog reads", () => {
     const approveOrder = objectAction("approve-order", "Order");
     const closeInvoice = objectAction("close-invoice", "Invoice");
     const sent = ownerAnswering({
-      "/action/queryList": ok([approveOrder, { ...objectAction("import-orders", "Order"), target: null }, closeInvoice]),
+      "/action/queryList": ok([
+        approveOrder, { ...objectAction("import-orders", "Order"), target: null },
+        { ...objectAction("broken-invoice", "Invoice"), function: { parameters: [{ name: null, type: "TYPE_STRING" }] } },
+        closeInvoice,
+      ]),
     });
     const adapter = createActionReadAdapter(owner, viewer);
 
-    const all = await adapter.objectActions();
-    expect(all).toEqual([
+    const { actions, unavailableActions } = await adapter.objectActions();
+    expect(actions).toEqual([
       { className: "Order", declaration: objectActionDeclaration(approveOrder) },
       { className: "Invoice", declaration: objectActionDeclaration(closeInvoice) },
     ]);
-    for (const { declaration } of all) expect(panelOperationDeclarationSchema.parse(declaration)).toEqual(declaration);
-    expect((await adapter.objectActions("Invoice")).map(entry => entry.declaration.id)).toEqual(["close-invoice"]);
+    expect(unavailableActions).toEqual([{
+      id: "broken-invoice", objectType: "Invoice",
+      reason: expect.stringContaining("function.parameters.0.name"),
+    }]);
+    for (const { declaration } of actions) expect(panelOperationDeclarationSchema.parse(declaration)).toEqual(declaration);
+    const invoices = await adapter.objectActions("Invoice");
+    expect(invoices.actions.map(entry => entry.declaration.id)).toEqual(["close-invoice"]);
+    expect(invoices.unavailableActions).toEqual(unavailableActions);
     expect(sent.map(request => request.body)).toEqual([{ status: "PUBLISHED" }, { status: "PUBLISHED" }]);
   });
 

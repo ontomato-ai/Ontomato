@@ -5,7 +5,7 @@ import { platformTaskRunSchema, platformTaskSchema } from "@ontomato/contracts/p
 import { RUN_NOW, SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import type { PlatformSchedulesHost } from "./host";
 import { createSchedulesApi, ScheduleRequestError } from "./api";
-import { scheduledTaskDraftOperation, scheduledTaskPanelOperations, scheduledTaskPanelSaveSchema } from "./panel-operations";
+import { scheduledTaskDraftOperation, scheduledTaskPanelOperations, scheduledTaskPanelSaveSchema, scheduledTaskSubmittedValues } from "./panel-operations";
 
 type Host = Pick<PlatformSchedulesHost, "request"> & { locale?: string };
 type Target = Extract<PanelOperationCall["target"], { kind: "object" }>;
@@ -73,12 +73,15 @@ const scheduledTaskSaveOperation = {
   resultSchema: platformTaskSchema,
   targetLabel,
   draftOperation: () => scheduledTaskDraftOperation,
-  draftInput: (input: Record<string, unknown>) => scheduledTaskPanelSaveSchema.parse(input).values,
+  draftInput(input: Record<string, unknown>) {
+    const { values, submittedFields } = scheduledTaskPanelSaveSchema.parse(input);
+    return scheduledTaskSubmittedValues(values, submittedFields);
+  },
   formInstructions: "Use the application's form response for the field keys. Send the returned string values and the current task revision in call.input.",
   execute(host: Host, target: Target, input: Record<string, unknown>, _intentId: string) {
-    const { values, revision } = scheduledTaskPanelSaveSchema.parse(input);
+    const { values, revision, submittedFields } = scheduledTaskPanelSaveSchema.parse(input);
     return outcome(async () => {
-      const data = await scheduledTaskPanelOperations(host).save(target.primaryKey, values, revision);
+      const data = await scheduledTaskPanelOperations(host).save(target.primaryKey, values, revision, submittedFields);
       return { data, taskId: data.id };
     });
   },
