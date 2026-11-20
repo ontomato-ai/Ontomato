@@ -1,3 +1,4 @@
+import { vuePanelContent } from "../../../__tests__/fixtures/vue-panel";
 import express from "express";
 import {randomUUID} from "node:crypto";
 import type {Server} from "node:http";
@@ -61,7 +62,7 @@ beforeEach(()=>{
     const current = { domainId: owner.domainId, ownerId: "author", createdAt: new Date(0), updatedAt: new Date(0) };
     if (sql.includes("FROM product_panels")) return { rows: [{
       ...current, id: panelId, revision: 3, definition: {
-        name: "Panel", description: "", visibility: "domain", content: { html: '<panel-member ref="summary"></panel-member>' },
+        name: "Panel", description: "", visibility: "domain", content: vuePanelContent("summary"),
         manifest: { state: {}, members: { summary: { target: { projectionId: "projection-live" } } }, events: {} },
       },
     }] };
