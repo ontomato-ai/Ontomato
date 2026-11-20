@@ -207,14 +207,15 @@ export type ApplicationPanelReferencesRequest = z.infer<typeof applicationPanelR
 export const panelUseRefSchema = z.object({ applicationId: id, useId: id }).strict();
 export type PanelUseRef = z.infer<typeof panelUseRefSchema>;
 
-export const panelSkillSourceSchema = z.object({
-  skill: runtimeSkillRefSchema,
-  uses: z.array(applicationPanelUseSchema.pick({ pageKey: true, panelId: true, path: true }).extend({
-    applicationId: id,
-    useId: id,
-  })).nonempty(),
-}).strict();
+/** Java exposes registered entry facts to the authenticated provider service. */
+export const panelSkillSourceSchema = panelUseRefSchema.extend({
+  panelId: id,
+  path: applicationPanelUsePathSchema,
+  entrance: pageSkillEntranceSchema,
+});
 export type PanelSkillSource = z.infer<typeof panelSkillSourceSchema>;
+export const panelSkillSourcesResponseSchema = z.array(panelSkillSourceSchema);
+export const panelSkillSourcesQuerySchema = z.object({ domainId: id }).strict();
 
 /** The Java declaration is the sole takeover authority, including for legacy writers. */
 export const panelApplicationEntrySchema = z.object({

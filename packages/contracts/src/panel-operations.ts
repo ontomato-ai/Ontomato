@@ -6,6 +6,7 @@ import {
   panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema, panelRelationNeighborsSchema,
 } from "./panel-projection";
 import { chartProjectionTemplateSchema, dashboardMetricOutputSchema } from "./dashboard";
+import { applicationEntryMenuSchema } from "./product-panels";
 import {
   platformOntologyCountsResponseSchema, platformOntologyNeighborsResponseSchema, platformOntologyObjectsResponseSchema,
   platformOntologySchemaResponseSchema, platformOntologyStartResponseSchema,
@@ -43,6 +44,7 @@ export const panelReadResultSchemas = {
   panelRecord: panelRecordSchema,
   panelRecordQuery: panelRecordQuerySchema,
   panelGroupCounts: panelGroupCountsSchema,
+  panelApplicationMenu: applicationEntryMenuSchema,
   panelFormDescription: panelFormDescriptionSchema,
   panelOperationDescriptor: panelOwnerOperationDescriptorSchema,
   panelOptionList: panelOptionListSchema,
