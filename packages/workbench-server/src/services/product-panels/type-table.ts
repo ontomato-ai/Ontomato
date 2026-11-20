@@ -1,15 +1,26 @@
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { PanelPlacement } from "@ontomato/contracts/panel-manifest";
 import { projectionOperationTargetMatches } from "@ontomato/contracts/panel-projection";
-import { platformObjectTypes } from "@ontomato/contracts/platform-object-types";
+import { customerOntologyReads, platformObjectTypes } from "@ontomato/contracts/platform-object-types";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { platformTypeTableResponseSchema } from "@ontomato/contracts/platform-type-table";
 import type { ProductProjectionInput } from "@ontomato/contracts/product-panels";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { createActionReadAdapter } from "../action/panel-reads";
+import { createOntologyModelReadAdapter } from "../ontology-model/model-reads";
+import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
 import { registeredPanelOperation } from "./server-operations";
 import { allowsOperationDraft, boundProjectionOperations } from "./operation-bindings";
+
+async function customerTypeCatalogue(owner: ProductOwner, viewer: AssistantCredentials) {
+  try {
+    return await createOntologyModelReadAdapter(owner, viewer).objectTypeOptions();
+  } catch (error) {
+    if (!(error instanceof HttpError && (error.status === 401 || error.status === 403))) throw error;
+    return { unavailable: { reason: error.message || `The customer type catalogue returned HTTP ${error.status}` } };
+  }
+}
 
 export async function readPanelTypeTable(owner: ProductOwner, viewer: AssistantCredentials) {
   const objectTypes = new Map(Object.entries(platformObjectTypes).map(([id, { operations, ...entry }]) => [
@@ -21,7 +32,15 @@ export async function readPanelTypeTable(owner: ProductOwner, viewer: AssistantC
       }),
     },
   ]));
-  const { actions, unavailableActions } = await createActionReadAdapter(owner, viewer).objectActions();
+  const [catalogue, { actions, unavailableActions }] = await Promise.all([
+    customerTypeCatalogue(owner, viewer),
+    createActionReadAdapter(owner, viewer).objectActions(),
+  ]);
+  if ("options" in catalogue) {
+    for (const { primaryKey } of catalogue.options) {
+      if (!objectTypes.has(primaryKey)) objectTypes.set(primaryKey, { reads: customerOntologyReads, operations: undefined });
+    }
+  }
   for (const { className, declaration } of actions) {
     const entry = objectTypes.get(className);
     if (entry) (entry.operations ??= []).push(declaration);
@@ -32,6 +51,7 @@ export async function readPanelTypeTable(owner: ProductOwner, viewer: AssistantC
   return platformTypeTableResponseSchema.parse({
     objectTypes: Object.fromEntries(objectTypes), resultSchemas,
     ...(unavailableActions.length > 0 && { unavailableActions }),
+    ...("unavailable" in catalogue && { customerTypesUnavailable: catalogue.unavailable }),
   });
 }
 

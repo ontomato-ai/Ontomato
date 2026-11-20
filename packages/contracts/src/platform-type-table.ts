@@ -52,5 +52,7 @@ export const platformTypeTableResponseSchema = z.object({
   resultSchemas: z.record(z.lazy(() => panelReadResultIdSchema), runtimeJsonObjectSchema),
   /** Broken published actions have no executable declaration. A missing target has no object type. */
   unavailableActions: z.array(unavailableObjectActionSchema).optional(),
+  /** The owner refused the class catalogue without returning class identities. */
+  customerTypesUnavailable: z.object({ reason: z.string().min(1) }).strict().optional(),
 }).strict();
 export type PlatformTypeTableResponse = z.infer<typeof platformTypeTableResponseSchema>;
