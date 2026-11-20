@@ -8,7 +8,8 @@ Declare named projections and public typed state in `panel.json`. Keep page-loca
 such as `selected` stores `{className, primaryKey}`. Enable `deepLink` when the address should restore the selection.
 Use `recipes.md` for tasks the assistant needs to know how to do.
 
-In `panel.mjs`, import the host runtime, read panel state from the current context and mount your component.
+In the required `panel.mjs`, import the SDK, read panel state from the current context and call `mountPanel`.
+The platform runs all panels directly.
 
 ```js
 import { computed } from "vue";
@@ -33,8 +34,8 @@ creation mode. Use `@click="clearSelection"` on a control that should clear both
 
 Use an official component when it fits the view. Place its projection with `<projection slot="list"></projection>`.
 For a custom Vue view, declare a projection with `componentId: "@ontomato/sdk:PanelData"` and `config: {}`. It supplies
-data for your Vue template to render. Name each datum in `data` and use `usePanelData` in `setup()`.
-The example's `detail` member declares `data.record`.
+data for your Vue template to render. Name each datum in `data` and call `usePanelData` synchronously inside the
+component’s `setup()`, before any `await`. The example’s `detail` member declares `data.record`.
 
 ```js
 import { usePanelData } from "@ontomato/sdk/panel";
@@ -75,6 +76,7 @@ A member with a checked-object list can invoke a batch when the owner declares s
 
 An `ObjectForm` projection binds one owner operation whose kind is `form.save`. The component sends `call.input`
 with `values`, the `revision` from the owner form when present, and `submittedFields` as JSON Pointer strings.
+Fields omitted from `submittedFields` remain unchanged.
 For a custom save control, pass the same current form values:
 
 ```js
@@ -120,10 +122,10 @@ Write new projection definitions once, in each member's `target.projection`. Run
 `panel register <directory>` with the same `registration.json` metadata. Registration writes the projection ID back
 to `panel.json`. Keep it when rearranging or renaming the member. Use `target.projectionId` for an existing projection.
 
-Give every application use a `pageKey` unique within its domain. Set the use's localized `names` for the display
+Start new application IDs with `app-`. Give every application use a `pageKey` unique within its domain. Set the use's localized `names` for the display
 title beside conversations. Use `panel.name` as its fallback. For an application delivery list, declare only extra
 `packages`, `agents` and `skills`. The platform derives panel and projection dependencies from registered uses.
 
 Use the [agent directory example](../../examples/vue-agent-directory/panel.html) for the complete layout and owner
-form wiring. Give your own panel and use their own IDs. The example opens at `/applications/example-vue-agent-directory/manage`.
+form wiring. Give your own panel and use their own IDs. The example opens at `/applications/app-example-vue-agent-directory/manage`.
 Exercise a read, an owner save and a draft from the registered use.
