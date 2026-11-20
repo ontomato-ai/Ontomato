@@ -70,7 +70,9 @@ const CHECK_EXPORTS = [
   "panelManifestSchema", "panelDefinitionContentSchema", "productProjectionInputSchema",
   "registerProductPanelRequestSchema", "registerProductProjectionRequestSchema", "directReadDeclaration", "platformObjectTypes",
   "panelReadParameterSchemas", "panelReadResultSchemas", "appsSdkComponentCatalogSchema",
-  "panelAuthoringManifestSchema", "panelAuthoringMemberSchema", "expandPanelAuthoringMember",
+  "panelAuthoringManifestSchema", "panelAuthoringMemberSchema", "expandPanelAuthoringMember", "bindPanelAuthoringChart",
+  "CHART_PROJECTION_SOURCES_PATH", "chartProjectionLookupResponseSchema", "registerChartProjectionResponseSchema",
+  "productProjectionResponseSchema",
 ];
 
 /**
