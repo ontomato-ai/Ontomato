@@ -1,38 +1,32 @@
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterEach, expect, it, vi } from "vitest";
 import { defineComponent, h, nextTick, ref } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import ElementPlus from "element-plus";
-import { PANEL_HOST_CHANNEL, panelAddress, panelAddressState } from "@ontomato/contracts/panel-host";
+import { panelAddress, panelAddressState } from "@ontomato/contracts/panel-host";
 import type { ProductDefinitionTarget } from "@ontomato/contracts/product-subscriptions";
 import { PanelHost, provideUnsavedChanges } from "@ontomato/platform-shell";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { panelAuthorDefinitions, panelHostPaths, platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
-  framedTasksPanelHtml, ignoreChanges,
-  currentSdk, hostMessageOf, panelAnswer, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt, panelRecord,
-  panelSnapshot, panelUse, projections, SCHEDULED_TASK, task, taskForm, writeFrameDocument, type Sent,
+  ignoreChanges, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt, panelAnswer, panelRecord,
+  panelSnapshot, panelUse, projections, SCHEDULED_TASK, task, type Sent,
 } from "./panel-frame";
 
 /*
- * A panel application's recent pages kept across page switches (design 7.2.1), through the platform's own route, panel
- * host, app host and bridge, with the SDK running the first page's frame. Only the network is a stand-in.
+ * A panel application's recent pages kept across page switches (design 7.2.1), through the platform's own route and
+ * panel host, with each page's panel — written with code — running in the platform's document. Only the network is a
+ * stand-in.
  *
- * What this rules out: going A→B→A rebuilding A's frame and loading its SDK again; a page shown again before its objects
- * are read, or held back until its definition check answers; a changed definition kept on screen, or adopted over an
- * unsaved form; an unsaved page dropped to make room; a kept page that still holds a stream, asks the platform for
- * anything new or moves the address; and kept pages surviving the reader leaving their application.
+ * What this rules out: going A→B→A running A's module again or reading its record again; a page shown again before its
+ * objects are read, or held back until its definition check answers; a changed definition kept on screen; an unsaved
+ * page dropped to make room; a kept page that reads anything while it is out of view or moves the address; and kept pages
+ * surviving the reader leaving their application.
  */
 
 const appA = "app-keep-a";
 const appB = "app-keep-b";
-const trial = join(dirname(fileURLToPath(import.meta.url)), "../../../../../packages/apps-sdk/examples/panels/schedules-trial");
 let p = panelRecord("panel-keep-p", "Tasks", manifestP);
 const q = panelRecord("panel-keep-q", "Summary", manifestQ);
-p.content.html = framedTasksPanelHtml;
-q.content.html = readFileSync(join(trial, "q/panel.html"), "utf8");
 const at = (path: string) => `/applications/${appA}/${path}`;
 const allUses = [
   panelUse("use-tasks", "keep-tasks", p.id, at("tasks")),
@@ -40,10 +34,9 @@ const allUses = [
   panelUse("use-more", "keep-more", p.id, at("more")),
   panelUse("use-other", "keep-other", q.id, at("other")),
 ];
-/** The relations Java answers now, and the task the owner answers now: tests change them while a page is kept. */
+/** The relations Java answers now, and the task's label the owner answers now: tests change them while a page is kept. */
 let uses = allUses;
-let shownTask = task;
-const taskPath = "/api/data-query/platform/scheduled-tasks";
+let shownLabel = task.title;
 const deepState = { selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id } };
 const secondTask = { ...task, id: "ac186b00-a3dd-46d2-b404-72065d877a34", title: "Second scheduled task" };
 
@@ -52,6 +45,22 @@ let snapshotGate: Promise<void> | null = null;
 /** The reader's answer to the platform's unsaved-changes question. */
 let leaveAnswer = true;
 const asked = vi.fn(async () => leaveAnswer);
+
+const field = (path: string, label: string) => ({ path, label, control: { kind: "text" as const }, valueSchema: {}, required: false, readOnly: false });
+type Read = { dataName: string; inputs: { task?: { primaryKey: string } } };
+function read(request: Sent) {
+  const { dataName, inputs } = request.body as Read;
+  if (dataName === "rows")
+    return [task, secondTask].map(one => ({ primaryKey: one.id, label: one.title, fields: {} }));
+  if (dataName === "record")
+    return { primaryKey: inputs.task!.primaryKey, label: inputs.task!.primaryKey === task.id ? shownLabel : secondTask.title, fields: {} };
+  if (dataName === "operation")
+    return { handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
+  return {
+    fields: [field("/name", "Name")], values: { name: "Nightly" }, errors: [], revision: 3,
+    save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+  };
+}
 
 function answer(request: Sent) {
   if (request.path === `/api/data-query/platform/applications/${appA}/panel-uses`)
@@ -68,12 +77,7 @@ function answer(request: Sent) {
   if (request.path === `/api/product-panels/${q.id}/snapshot`) return panelSnapshot(q, projections, request);
   const projection = Object.values(projections).find(one => request.path === `/api/product-projections/${one.id}`);
   if (projection) return Response.json({ projection });
-  if (request.path === "/api/apps-sdk/current") return currentSdk();
-  if (request.path === taskPath) return Response.json({ tasks: [task, secondTask], timeZone: task.timeZone });
-  if (request.path === `${taskPath}/${task.id}`) return Response.json(shownTask);
-  if (request.path === `${taskPath}/${secondTask.id}`) return Response.json(secondTask);
-  if (request.path === `${taskPath}/applications/${task.appId}/form`)
-    return Response.json({ ...taskForm, values: (request.body as { values: typeof taskForm.values }).values });
+  if (request.path === "/api/product-panels/read") return Response.json({ status: "ready", value: read(request) });
   return nothingAt(request);
 }
 
@@ -96,91 +100,51 @@ async function openApplication(address: string) {
   return { ...page, router, sent };
 }
 
-/** Every load of a frame's document: a node kept in place may still have its document loaded again. */
-function documentLoads(frame: HTMLIFrameElement) {
-  const loads: string[] = [];
-  frame.addEventListener("load", () => loads.push(frame.srcdoc));
-  new MutationObserver(() => loads.push(frame.srcdoc)).observe(frame, { attributes: true, attributeFilter: ["srcdoc"] });
-  return loads;
-}
-
 const reopened = () => performance.getEntriesByName("ontomato:panel-page-reopened").length;
 
-const frames = (element: HTMLElement) => [...element.querySelectorAll<HTMLIFrameElement>("iframe.panel-host-frame")];
-const shown = (frame: HTMLIFrameElement) => frame.closest<HTMLElement>(".panel-host")!.style.display !== "none";
-const shownFrame = (element: HTMLElement) => vi.waitFor(() => {
-  const found = frames(element).find(frame => shown(frame) && frame.getAttribute("srcdoc"));
+/** Each page's panel, as the element its component is mounted in, in the order the pages are kept. */
+const panels = (element: HTMLElement) => [...element.querySelectorAll<HTMLElement>(".panel-host-coded > *")];
+const shown = (panel: HTMLElement) => panel.closest<HTMLElement>(".panel-host-direct")!.style.display !== "none";
+/** The page shown now, once its panel has drawn a member. */
+const shownPanel = (element: HTMLElement) => vi.waitFor(() => {
+  const found = panels(element).find(panel => shown(panel) && panel.querySelector("[data-member]"));
   if (!found) throw new Error("No page is shown");
   return found;
 });
-
-/** Runs the SDK in a frame the host drew, as its browser would. */
-async function startFrame(frame: HTMLIFrameElement) {
-  const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
-  const { contextTransport } = await import("../../../../../packages/apps-sdk/src/context");
-  const vue = await import("vue");
-  writeFrameDocument(hostMessageOf(frame.srcdoc));
-  inside(frame.contentWindow!);
-  const mounted = await mountPanel({ setup: () => ({}) });
-  return { ...mounted, ref: vue.ref, transport: contextTransport(mounted.appContext) };
-}
-
-/** What a frame says to its host, as a frame the SDK does not run in this test would say it. */
-function fromFrame(frame: HTMLIFrameElement, message: Record<string, unknown>) {
-  window.dispatchEvent(new MessageEvent("message", { source: frame.contentWindow, data: { channel: PANEL_HOST_CHANNEL, ...message } }));
-}
-
-/** Resolves once the given frame has told its host it holds unsaved changes. */
-const unsavedSaid = (frame: HTMLIFrameElement) => new Promise<void>(resolve => window.addEventListener("message", event => {
-  if (event.source === frame.contentWindow && event.data?.kind === "dirty" && event.data.dirty) resolve();
-}));
+const summaryTitle = (panel: HTMLElement) => panel.querySelector("[data-member='summary'] .sdk-object-summary-title")?.textContent;
+const reads = (sent: Sent[], dataName?: string) => sent.filter(request => request.path === "/api/product-panels/read"
+  && (dataName === undefined || (request.body as Read).dataName === dataName));
 
 afterEach(() => {
   snapshotGate = null;
   leaveAnswer = true;
   asked.mockClear();
   uses = allUses;
-  shownTask = task;
-  p = { ...p, revision: 1, content: { ...p.content, html: framedTasksPanelHtml } };
+  shownLabel = task.title;
+  p = { ...p, revision: 1 };
   performance.clearMarks();
   leaveFrame();
-  vi.resetModules();
 });
 
-it("shows a page kept within its application as it was left: no document loaded again, no SDK loaded again", async () => {
+it("shows a page kept within its application as it was left: its module not run again, its record not read again", async () => {
   const { app, element, router, sent } = await openApplication(panelAddress(at("tasks"), deepState));
   try {
-    const tasks = await shownFrame(element);
-    const loads = documentLoads(tasks);
-    // A kept frame is never taken out of the document: a browser loads a moved frame again.
+    const tasks = await shownPanel(element);
+    await vi.waitFor(() => expect(summaryTitle(tasks)).toBe(task.title));
     const moved: Node[] = [];
     new MutationObserver(records => records.forEach(record => moved.push(...record.removedNodes))).observe(element, { childList: true, subtree: true });
-    const { transport } = await startFrame(tasks);
-    await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary-title")?.textContent).toBe(task.title));
-    const srcdoc = tasks.srcdoc;
 
     await router.push(at("summary"));
-    const summary = await shownFrame(element);
+    const summary = await shownPanel(element);
     expect(summary).not.toBe(tasks);
     expect(shown(tasks)).toBe(false);
 
-    // The kept page asks the platform for nothing new, and what it reports does not move the reader's address.
-    const before = sent.length;
-    await expect(transport.request(`${taskPath.slice("/api/data-query".length)}/${task.id}`, {}, "/data-query")).rejects.toThrow("This page is not shown");
-    fromFrame(tasks, { kind: "state", fromAddress: hostMessageOf(srcdoc).url, state: { selectedTask: { className: SCHEDULED_TASK, primaryKey: secondTask.id } } });
-    fromFrame(tasks, { kind: "dirty", dirty: true });
-    fromFrame(tasks, { kind: "dirty", dirty: false });
-    await nextTick();
-    expect(sent.length).toBe(before);
-    expect(router.currentRoute.value.fullPath).toBe(at("summary"));
-    expect(asked).not.toHaveBeenCalled();
-
-    // Back by its bare address: the same frame is shown at once, at the state it was left at — but it asks for nothing
+    // Back by its bare address: the same panel is shown at once, at the state it was left at — but it reads nothing
     // until its relation and its definitions have been checked.
     let release!: () => void;
     snapshotGate = new Promise(resolve => (release = resolve));
-    const taskReads = () => sent.filter(request => request.path === `${taskPath}/${task.id}`).length;
-    const readsBefore = taskReads();
+    const recordReads = () => reads(sent, "record").filter(request => (request.body as Read).inputs.task?.primaryKey === task.id).length;
+    const readsBefore = recordReads();
     await router.push(at("tasks"));
     await nextTick();
     expect(shown(tasks)).toBe(true);
@@ -190,21 +154,16 @@ it("shows a page kept within its application as it was left: no document loaded 
       expect(panelAddressState(router.currentRoute.value.fullPath)).toEqual(deepState);
     });
     await vi.waitFor(() => expect(sent.filter(request => request.path.endsWith("/panel-uses"))).toHaveLength(2));
-    await expect(transport.request(`${taskPath.slice("/api/data-query".length)}/${task.id}`, {}, "/data-query")).rejects.toThrow("This page is not shown");
-    expect(taskReads()).toBe(readsBefore);
+    expect(recordReads()).toBe(readsBefore);
     expect(reopened()).toBe(0);
 
-    // Checked: the frame may ask again, and its objects are read again whether or not anything changed.
+    // Checked: its objects are read again whether or not anything changed; its record and module were not.
     release();
     await vi.waitFor(() => expect(reopened()).toBe(1));
-    await vi.waitFor(() => expect(taskReads()).toBeGreaterThan(readsBefore));
-    // The relation and the definitions were checked side by side; the record and the SDK were not read again.
+    await vi.waitFor(() => expect(recordReads()).toBeGreaterThan(readsBefore));
     expect(sent.filter(request => request.path === `/api/product-panels/${p.id}/snapshot`)).toHaveLength(2);
     expect(sent.filter(request => request.path === `/api/product-panels/${p.id}`)).toHaveLength(1);
-    expect(sent.filter(request => request.path === "/api/apps-sdk/current")).toHaveLength(2);
-    expect(frames(element)).toEqual([tasks, summary]);
-    expect(tasks.srcdoc).toBe(srcdoc);
-    expect(loads).toEqual([]);
+    expect(panels(element)).toEqual([tasks, summary]);
     expect(moved.some(node => node.contains(tasks))).toBe(false);
     // A viewer's pages hold no stream, shown or kept.
     expect(sent.some(request => request.path === panelHostPaths.definitionStream)).toBe(false);
@@ -216,30 +175,29 @@ it("shows a page kept within its application as it was left: no document loaded 
 it("shows the new value of an object changed while its page was kept", async () => {
   const { app, element, router } = await openApplication(panelAddress(at("tasks"), deepState));
   try {
-    const tasks = await shownFrame(element);
-    await startFrame(tasks);
-    await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary-title")?.textContent).toBe(task.title));
+    const tasks = await shownPanel(element);
+    await vi.waitFor(() => expect(summaryTitle(tasks)).toBe(task.title));
     await router.push(at("summary"));
-    await shownFrame(element);
-    // An agent renames the task while the page is kept: nothing is sent to the kept frame for it.
-    shownTask = { ...task, revision: task.revision + 1, title: "Renamed while away" };
+    await shownPanel(element);
+    // An agent renames the task while the page is kept: nothing reaches the kept page for it.
+    shownLabel = "Renamed while away";
     await router.push(at("tasks"));
-    await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary-title")?.textContent).toBe("Renamed while away"));
+    await vi.waitFor(() => expect(summaryTitle(tasks)).toBe("Renamed while away"));
   } finally {
     app.unmount();
   }
 });
 
-it("loads a kept page's current definition when it changed while the reader was away", async () => {
+it("starts a kept page anew from its current definition when it changed while the reader was away", async () => {
   const { app, element, router, sent } = await openApplication(at("tasks"));
   try {
-    const tasks = await shownFrame(element);
-    await startFrame(tasks);
+    const tasks = await shownPanel(element);
     await router.push(at("summary"));
-    await shownFrame(element);
-    p = { ...p, revision: 2, content: { ...p.content, html: `${p.content.html}<p id="rearranged"></p>` } };
+    await shownPanel(element);
+    p = { ...p, revision: 2, content: { ...p.content, html: '<div id="app" class="rearranged"></div>' } };
     await router.push(at("tasks"));
-    await vi.waitFor(() => expect(hostMessageOf(tasks.srcdoc).panel.content.html).toContain('id="rearranged"'));
+    await vi.waitFor(() => expect(element.querySelector(".panel-host-coded > .rearranged")).not.toBeNull());
+    expect(tasks.isConnected).toBe(false);
     expect(sent.filter(request => request.path === `/api/product-panels/${p.id}`)).toHaveLength(2);
   } finally {
     app.unmount();
@@ -249,16 +207,15 @@ it("loads a kept page's current definition when it changed while the reader was 
 it("ends a kept page whose use relation was withdrawn or bound to another panel", async () => {
   const { app, element, router } = await openApplication(at("tasks"));
   try {
-    const tasks = await shownFrame(element);
+    const tasks = await shownPanel(element);
     await router.push(at("summary"));
-    await shownFrame(element);
+    await shownPanel(element);
     // The tasks page is now bound to the summary panel: the kept instance is not that page any more.
     uses = allUses.map(use => use.id === "use-tasks" ? { ...use, panelId: q.id } : use);
     await router.push(at("tasks"));
     await vi.waitFor(() => expect(tasks.isConnected).toBe(false));
-    const rebound = await shownFrame(element);
-    await vi.waitFor(() => expect(hostMessageOf(rebound.srcdoc).pageKey).toBe("keep-tasks"));
-    expect(hostMessageOf(rebound.srcdoc).panel.manifest).toEqual(q.manifest);
+    const rebound = await shownPanel(element);
+    expect([...rebound.querySelectorAll("[data-member]")].map(member => member.getAttribute("data-member"))).toEqual(["summary"]);
     expect(reopened()).toBe(0);
   } finally {
     app.unmount();
@@ -268,43 +225,47 @@ it("ends a kept page whose use relation was withdrawn or bound to another panel"
 it("keeps the shown page and the clean page left last, and makes room by the page left longest ago", async () => {
   const { app, element, router } = await openApplication(at("tasks"));
   try {
-    const tasks = await shownFrame(element);
+    const tasks = await shownPanel(element);
     await router.push(at("summary"));
-    const summary = await shownFrame(element);
+    const summary = await shownPanel(element);
     await router.push(at("more"));
-    const more = await shownFrame(element);
+    const more = await shownPanel(element);
     expect(tasks.isConnected).toBe(false);
-    expect(frames(element)).toEqual([summary, more]);
+    expect(panels(element)).toEqual([summary, more]);
     // Back and forth between the two kept pages keeps both.
     await router.push(at("summary"));
     await vi.waitFor(() => expect(shown(summary)).toBe(true));
-    expect(frames(element)).toEqual([summary, more]);
+    expect(panels(element)).toEqual([summary, more]);
     // A new page: the one left longest ago (more) makes room, not the page being left.
     await router.push(at("other"));
-    await shownFrame(element);
+    await shownPanel(element);
     expect(more.isConnected).toBe(false);
     expect(summary.isConnected).toBe(true);
-    expect(frames(element)).toHaveLength(2);
+    expect(panels(element)).toHaveLength(2);
   } finally {
     app.unmount();
   }
 });
 
 it("leaves a page with unsaved changes only through the platform's question, and its instance goes with them", async () => {
-  const { app, element, router } = await openApplication(at("tasks"));
+  const { app, element, router } = await openApplication(panelAddress(at("tasks"), deepState));
   try {
-    const tasks = await shownFrame(element);
-    const { context, ref: frameRef } = await startFrame(tasks);
-    const said = unsavedSaid(tasks);
-    context.holdUnsaved(frameRef(true));
-    await said;
+    const tasks = await shownPanel(element);
+    const name = await vi.waitFor(() => {
+      const input = tasks.querySelector<HTMLInputElement>("[data-member='form'] [data-field='/name'] input");
+      if (!input) throw new Error("The form is not drawn yet");
+      return input;
+    });
+    name.value = "Renamed by the reader";
+    name.dispatchEvent(new Event("input"));
+    await nextTick();
 
     // Cancelled: the reader stays on the page, with its changes.
     leaveAnswer = false;
     await router.push(at("summary"));
     expect(asked).toHaveBeenCalledTimes(1);
     expect(router.currentRoute.value.path).toBe(at("tasks"));
-    expect(frames(element)).toEqual([tasks]);
+    expect(panels(element)).toEqual([tasks]);
 
     // Left without saving: the page's instance is gone, and coming back opens it afresh.
     leaveAnswer = true;
@@ -312,7 +273,7 @@ it("leaves a page with unsaved changes only through the platform's question, and
     await vi.waitFor(() => expect(router.currentRoute.value.path).toBe(at("summary")));
     await vi.waitFor(() => expect(tasks.isConnected).toBe(false));
     await router.push(at("tasks"));
-    const reopenedTasks = await shownFrame(element);
+    const reopenedTasks = await shownPanel(element);
     expect(reopenedTasks).not.toBe(tasks);
   } finally {
     app.unmount();
@@ -322,14 +283,14 @@ it("leaves a page with unsaved changes only through the platform's question, and
 it("drops every kept page when the reader leaves the application", async () => {
   const { app, element, router } = await openApplication(at("tasks"));
   try {
-    const tasks = await shownFrame(element);
+    const tasks = await shownPanel(element);
     await router.push(at("summary"));
-    const summary = await shownFrame(element);
+    const summary = await shownPanel(element);
     await router.push(`/applications/${appB}/summary`);
-    const other = await shownFrame(element);
+    const other = await shownPanel(element);
     expect(tasks.isConnected).toBe(false);
     expect(summary.isConnected).toBe(false);
-    expect(frames(element)).toEqual([other]);
+    expect(panels(element)).toEqual([other]);
   } finally {
     app.unmount();
   }
