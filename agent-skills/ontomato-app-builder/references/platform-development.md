@@ -19,8 +19,9 @@ directory for the registered definitions and wiring.
    errors or per-relation result the component needs to render.
 2. Register the read with the public contract owner. Give the stable type or operation ID, read name,
    `type`, `object` or `operation` source, parameter schemas and required parameters, and the result schema. Give a
-   projection declaration using `data.<name> = { source, read, params }`. Bind each parameter to a declared input
-   or literal. The named read adapter is mounted in
+   projection declaration using `data.<name> = { source, read, params }`. A matching member binding supplies a
+   same-named parameter. Use `params` for literals or different input names. A component supplies the runtime
+   parameters named in its SDK declaration. The named read adapter is mounted in
    `packages/workbench-server/src/services/product-panels/data-reads.ts`. This dispatcher resolves the actual
    placement and source and returns the result to the component under the reader's identity. The read request carries
    `source`, `memberPath`, `dataName` and `inputs`. A ready result carries `value`; loading belongs to the
@@ -41,8 +42,8 @@ directory for the registered definitions and wiring.
    `packages/workbench-server/src/services/product-panels/__tests__/operations.test.ts`.
 
 The task-list projection uses `data.rows = { source: { type: { kind: "PlatformObjectType", id: "platform:ScheduledTask" } }, read: "list", params: {} }`.
-The summary uses `data.record = { source: { object: { input: "task" } }, read: "record", params: {} }`. The form
-binds `params.values` to `{ input: "values" }` and `params.changedField` to `{ input: "changedField" }`.
+The summary uses `data.record = { source: { object: { input: "task" } }, read: "record", params: {} }`.
+ObjectForm supplies `values` and `changedField` at runtime.
 The list's `selected` output and the summary, form and button inputs share a panel state of type
 `{ kind: "object", objectType: "platform:ScheduledTask" }`. The member wiring maps the values through `{ state: "selectedTask" }`.
 The button reads `data.operation = { source: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, read: "describe", params: {} }`.
@@ -99,9 +100,10 @@ For Business Knowledge at `/ontology/knowledge`, the owner supplies these rules.
 6. Use the Business Knowledge page for creating, editing, reviewing and deleting records. Use the existing
    `knowledge-governance` agent for extracting or organizing knowledge from conversations and documents.
 
-For Business Knowledge search, give the list, status counts and detail the same panel state as their `search` input.
-In `query`, `counts` and `record`, map `params.search` to `{ input: "search" }`. The counts read also takes
-`params.by: { literal: "status" }`. The detail receives the selected knowledge record. Use `ObjectSummary` to show
+For Business Knowledge search, bind the list's `outputs.search` to the `search` state. Bind the status counts and
+detail members' `inputs.search` to that same state. The `query`, `counts` and `record` reads receive it by name.
+The counts read also takes `params.by: { literal: "status" }`. Bind the selected tab's `status` state to the
+list's `inputs.status`. The detail receives the selected knowledge record. Use `ObjectSummary` to show
 the full body as text with its original line breaks. The owner returns highlight ranges in the record for the current search.
 
 ## Switch a built-in page to its panel
