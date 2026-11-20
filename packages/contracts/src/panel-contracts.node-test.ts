@@ -95,6 +95,28 @@ test("current SDK describes the browser files and Node check from the same relea
   assert.equal(appsSdkReleaseManifestSchema.safeParse({ ...manifest, check: "/node/panel-check.mjs" }).success, false);
 });
 
+test("the SDK catalogue separates supply, configuration and run inputs", async () => {
+  const { appsSdkComponentCatalogSchema } = await import("./apps-sdk");
+  const component = {
+    componentId: "ObjectSummary", module: "@ontomato/sdk/base", exportName: "ObjectSummary",
+    role: "presentation", meaning: "Show the selected object as its owner describes it.",
+    data: { record: { results: ["panelRecord"], required: true } },
+    config: [{ name: "fields", type: "string[]", description: "Visible fields", required: false }],
+    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+    outputs: [],
+    ports: { props: [], events: [], slots: [] },
+  };
+  const catalogue = { version: "1.1.2", components: [component] };
+  assert.deepEqual(appsSdkComponentCatalogSchema.parse(catalogue), catalogue);
+  for (const datum of [{ results: [], required: true }, { results: ["notRegistered"], required: true }, { results: ["panelRecord"] }]) {
+    assert.equal(appsSdkComponentCatalogSchema.safeParse({
+      ...catalogue, components: [{ ...component, data: { record: datum } }],
+    }).success, false);
+  }
+  const { data: _data, ...displayOnly } = component;
+  assert.equal(appsSdkComponentCatalogSchema.safeParse({ ...catalogue, components: [displayOnly] }).success, true);
+});
+
 test("ontology object lists and reference pickers declare the named reads they use", async () => {
   const { registerDirectProjectionRequestSchema } = await import("./product-panels");
   const { panelReadResultSchemas } = await import("./panel-operations");
@@ -168,6 +190,57 @@ test("owner query rows carry only actual highlight ranges on their display text"
   assert.deepEqual(panelRecordQuerySchema.parse({ rows: [row], total: 1 }), { rows: [row], total: 1 });
   assert.equal(panelRecordSchema.safeParse({ ...row, highlights: {} }).success, false);
   assert.equal(panelRecordSchema.safeParse({ ...row, highlights: { label: [{ start: 4, end: 2 }] } }).success, false);
+});
+
+test("knowledge detail can share list search and customer instances have no form read", () => {
+  const base = {
+    name: "Detail", description: "", visibility: "domain", inputs: {}, outputs: {}, config: {},
+    componentId: "@ontomato/sdk:ObjectSummary",
+  };
+  const record = {
+    source: { object: { literal: { className: BUSINESS_KNOWLEDGE, primaryKey: "knowledge-1" } } },
+    read: "record", params: { search: { literal: "policy" } },
+  };
+  assert.equal(productProjectionInputSchema.safeParse({ ...base, data: { record } }).success, true);
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...base, data: { record: { ...record, params: { search: { literal: 1 } } } },
+  }).success, false);
+  const customer = { source: { object: { literal: { className: "Customer", primaryKey: "customer-1" } } }, params: {} };
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...base, data: { record: { ...customer, read: "record" } },
+  }).success, true);
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...base, componentId: "@ontomato/sdk:ObjectForm", data: { form: { ...customer, read: "form" } },
+  }).success, false);
+});
+
+test("model reads and operations use their owner's fixed signatures", async () => {
+  const { directReadDeclaration } = await import("./panel-projection");
+  const base = {
+    name: "Model", description: "", visibility: "domain", inputs: {}, outputs: {}, config: {},
+    componentId: "@ontomato/sdk:ObjectList",
+  };
+  for (const type of [OBJECT_TYPE, ATTRIBUTE, RELATIONSHIP]) {
+    const options = type === OBJECT_TYPE ? {} : { className: { literal: "Customer" } };
+    const projection = productProjectionInputSchema.parse({
+      ...base, data: {
+        rows: { source: { type: platformType(type) }, read: "list", params: options },
+        record: { source: { object: { literal: { className: type, primaryKey: "item" } } }, read: "record", params: {} },
+        form: { source: { object: { literal: { className: type, primaryKey: "item" } } }, read: "form", params: {} },
+        createForm: { source: { type: platformType(type) }, read: "createForm", params: {} },
+      },
+    });
+    assert.equal(directReadDeclaration(projection, projection.data.rows)?.result, "panelRecordList");
+    assert.equal(directReadDeclaration(projection, projection.data.form)?.result, "panelFormDescription");
+    assert.ok(platformObjectTypes[type].operations?.includes(`${type}.save`));
+  }
+  for (const operation of ["objectTypes.delete", "attributes.delete", "relationships.delete", "attributes.setPrimaryKey"]) {
+    const projection = productProjectionInputSchema.parse({
+      ...base, componentId: "@ontomato/sdk:OperationButton",
+      data: { operation: { source: { operation: platformOperation(operation) }, read: "describe", params: {} } },
+    });
+    assert.equal(directReadDeclaration(projection, projection.data.operation)?.result, "panelOperationDescriptor");
+  }
 });
 
 test("a no-code task panel registers and parses the same members and layout", async () => {
@@ -439,6 +512,48 @@ test("form saves address the draft target even when the slot receives a selected
     },
   });
   assert.deepEqual(save?.target, { source: "draft", slot: "definition" });
+});
+
+test("named operation reads publish buttons and form metadata binds to its real owner", () => {
+  const task = { kind: "object", objectType: SCHEDULED_TASK };
+  const projection = productProjectionInputSchema.parse({
+    name: "Run now", description: "", visibility: "domain", componentId: "@ontomato/sdk:OperationButton",
+    inputs: { task }, outputs: {}, config: {},
+    data: { operation: { source: { operation: platformOperation(RUN_NOW) }, read: "describe", params: {} } },
+  });
+  const manifest = panelManifestSchema.parse({
+    state: { selected: { type: task } },
+    members: { run: { target: { projectionId: "run-now" }, inputs: { task: { state: "selected" } } } },
+    events: {},
+  });
+  const [run] = projectionOperations(manifest, { slot: "run", ports: projectionPorts(projection, {}) });
+  assert.equal(run?.id, "run.runNow");
+  assert.equal(run?.handlerRef, RUN_NOW);
+  assert.deepEqual(run?.target, { source: "state", state: "selected" });
+  const twoSelections = panelManifestSchema.parse({
+    ...manifest, state: { ...manifest.state, other: { type: task } },
+    members: { run: { ...manifest.members.run, inputs: { other: { state: "other" }, task: { state: "selected" } } } },
+  });
+  const action = productProjectionInputSchema.parse({
+    ...projection, inputs: { other: task, task },
+    data: { operation: {
+      source: { operation: { kind: "Action", id: "approve" } }, read: "describe",
+      params: { target: { input: "task" } },
+    } },
+  });
+  const [execute] = projectionOperations(twoSelections, { slot: "run", ports: projectionPorts(action, {}) });
+  assert.equal(execute?.handlerRef, "actions.execute");
+  assert.deepEqual(execute?.target, { source: "state", state: "selected" });
+
+  const form = productProjectionInputSchema.parse({
+    ...projection, name: "Task form", componentId: "@ontomato/sdk:ObjectForm",
+    data: { form: { source: { object: { input: "task" } }, read: "form", params: {} } },
+  });
+  const formPorts = projectionPorts(form, { operations: [
+    { client: "@binding", name: "save", label: "Save", kind: "form.save", inputSchema: {} },
+    { client: "@binding", name: "delete", label: "Delete", kind: "action", inputSchema: {} },
+  ] });
+  assert.deepEqual(formPorts.operations.map(op => op.handlerRef), [`${SCHEDULED_TASK}.save`]);
 });
 
 test("read operation inputs can take parameter values and a binding from this panel instance", () => {

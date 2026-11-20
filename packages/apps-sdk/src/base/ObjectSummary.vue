@@ -1,34 +1,22 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, shallowRef, watch } from "vue";
+import { projectionElement } from "../panel/direct";
+import { computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
-import {
-  slotOutputState,
-  slotState,
-  usePanelContext,
-  useProjectionObjectRefresh,
-  useProjectionObjects,
-  useProjectionSlot,
-} from "../panel/context";
-import { useMember, useMemberData } from "../panel/member";
-import {
-  selectedKey,
-  type PlatformFieldReference,
-  type PlatformObjectRecord,
-} from "../panel/platform-objects";
+import { usePanelContext, useProjectionSlot } from "../panel/context";
+import { useMemberData } from "../panel/member";
+import type { PlatformFieldReference, PlatformObjectRecord } from "../panel/platform-objects";
 import { textHighlightSegments } from "./text-highlight";
 
 /**
- * One platform object as a few facts a reader recognises it by. In a directly rendered panel the instance supplies its
- * `record` datum through the host read port; in a panel frame the bound type's resource adapter reads it. Which facts
+ * One platform object as a few facts a reader recognises it by: the member's `record` datum, which the instance reads
+ * through the platform in its document and through this release's resource module in a panel's frame. Which facts
  * are shown, and in what order, is the projection's configuration; what each holds is the object's owner's. Safe range
  * highlights, status tags, tag lists and clickable reference links follow the same record contract as `ObjectList`.
  */
 const props = defineProps<{
   /** The facts to show, by the owner's field name, in this order; absent shows all of them in the owner's order. */
   fields?: readonly string[];
-  /** The slot input whose panel state names the object; the first, by default. */
-  input?: string;
 }>();
 
 const emit = defineEmits<{
@@ -39,22 +27,12 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
-const objectType = slot.projection.binding.id;
-const member = useMember();
-/** In a directly rendered panel, the summary is the member's `record` datum, read by the instance. */
-const recordData = member ? useMemberData("record") : null;
+const objectType = projectionElement(slot.projection).id;
+/** The summary is the member's `record` datum, read by the instance: in a panel's frame and in the platform's document. */
+const recordData = useMemberData("record");
 
-const frameRecord = shallowRef<PlatformObjectRecord | null>(null);
-const frameLoading = ref(true);
-const frameFailure = shallowRef<Error | null>(null);
-const frameKey = computed(() =>
-  recordData ? null : selectedKey(panel.instance.state.values.value[slotState(panel.manifest, slot.slot, props.input)]),
-);
-
-const record = computed<PlatformObjectRecord | null>(() => {
-  if (!recordData) return frameRecord.value;
-  return recordData.value.status === "ready" ? (recordData.value.value as unknown as PlatformObjectRecord) : null;
-});
+const record = computed<PlatformObjectRecord | null>(() =>
+  recordData.value.status === "ready" ? (recordData.value.value as unknown as PlatformObjectRecord) : null);
 
 const shown = computed(() => {
   const fields = record.value?.fields ?? {};
@@ -64,62 +42,21 @@ const shown = computed(() => {
   return (props.fields ?? Object.keys(fields)).filter(present);
 });
 
-const result = computed<DataStateResult<PlatformObjectRecord>>(() => {
-  if (recordData) return recordData.value as DataStateResult<PlatformObjectRecord>;
-  if (frameFailure.value) return { status: "error", message: frameFailure.value.message };
-  if (frameLoading.value) return { status: "loading" };
-  if (!frameKey.value) return { status: "awaiting" };
-  return frameRecord.value ? { status: "ready", value: frameRecord.value } : { status: "empty" };
-});
+const result = computed(() => recordData.value as DataStateResult<PlatformObjectRecord>);
 const labels = computed(() => ({
   empty: t("platform.dataEmpty"),
   forbidden: t("platform.dataForbidden"),
   awaiting: t("platform.dataAwaiting"),
 }));
 
-if (recordData) {
-  watch(record, (found) => {
-    if (found) panel.instance.nameObjects(found.className ?? objectType, [found]);
-  }, { immediate: true });
-} else {
-  const objects = useProjectionObjects();
-  let requestSeq = 0;
+watch(record, (found) => {
+  if (found) panel.instance.nameObjects(found.className ?? objectType, [found]);
+}, { immediate: true });
 
-  const load = (primaryKey: string | null) => {
-    const seq = ++requestSeq;
-    frameFailure.value = null;
-    if (!primaryKey) {
-      frameRecord.value = null;
-      frameLoading.value = false;
-      return;
-    }
-    frameLoading.value = true;
-    void objects.read(primaryKey).then(
-      (found) => {
-        if (seq !== requestSeq) return;
-        frameRecord.value = found;
-        frameLoading.value = false;
-      },
-      (reason: unknown) => {
-        if (seq !== requestSeq) return;
-        frameFailure.value = reason instanceof Error ? reason : new Error(String(reason));
-        frameLoading.value = false;
-      },
-    );
-  };
-
-  onMounted(() => load(frameKey.value));
-  watch(frameKey, (next) => load(next));
-  useProjectionObjectRefresh((id) => id === frameKey.value, () => load(frameKey.value));
-}
-
+/** A reference the reader followed is handed over at the output named for its field, or at `navigate`. */
 function navigateTo(reference: PlatformFieldReference, fieldName: string) {
-  const targetState =
-    slotOutputState(panel.manifest, slot.slot, fieldName)
-    ?? slotOutputState(panel.manifest, slot.slot, "navigate");
-  if (targetState) {
-    panel.instance.state.set(targetState, { className: reference.className, primaryKey: reference.primaryKey });
-  }
+  const output = panel.manifest.members[slot.slot]?.outputs?.[fieldName] ? fieldName : "navigate";
+  void panel.instance.output(slot.slot, output, { className: reference.className, primaryKey: reference.primaryKey });
   emit("navigate", reference, fieldName);
 }
 </script>
@@ -159,11 +96,11 @@ function navigateTo(reference: PlatformFieldReference, fieldName: string) {
               <span v-else-if="current.tags?.[name]?.length" class="sdk-object-summary-tags">
                 <span v-for="tag in current.tags[name]" :key="tag" class="sdk-object-summary-tag" data-tone="info">{{ tag }}</span>
               </span>
-              <template v-else-if="current.fields[name]">
+              <span v-else-if="current.fields[name]" class="sdk-object-summary-text">
                 <template v-for="(part, index) in textHighlightSegments(current.fields[name]!, current.highlights?.[name])" :key="index">
                   <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                 </template>
-              </template>
+              </span>
               <template v-else>—</template>
             </dd>
           </template>
@@ -185,6 +122,10 @@ dt {
 }
 dd {
   margin: 0;
+}
+/* An owner's text keeps its own line breaks: a knowledge item's body reads as its owner wrote it. */
+.sdk-object-summary-text {
+  white-space: pre-wrap;
 }
 .sdk-object-summary-title {
   font-size: 14px;

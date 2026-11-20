@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { defineComponent, h, onBeforeUnmount, provide } from "vue";
+import { defineComponent, h, inject, onBeforeUnmount, provide } from "vue";
 import { projectionKey, usePanelContext, useProjectionSlot } from "../panel/context";
+import { panelMemberKey } from "../panel/member";
 import { rowControlKey, rowControlsOf } from "./form-controls";
 import ReferenceChoice from "./ReferenceChoice.vue";
 
@@ -12,16 +13,18 @@ import ReferenceChoice from "./ReferenceChoice.vue";
  */
 const panel = usePanelContext();
 const slot = useProjectionSlot();
-const port = panel.manifest.slots[slot.slot]?.formField;
+const member = inject(panelMemberKey, null);
+const port = panel.manifest.members[slot.slot]?.formField;
 if (!port) throw new Error(`Slot '${slot.slot}' edits no form field: its declaration names no formField`);
 const { itemPath } = port;
 
 if (itemPath) {
-  // The row's choice is drawn inside the form, under this projection's slot: its binding names the catalogue.
+  // The row's choice is drawn inside the form, under this projection's slot and member: they name its catalogue.
   const RowChoice = defineComponent({
     props: { path: { type: String, required: true } },
     setup(row) {
       provide(projectionKey, slot);
+      if (member) provide(panelMemberKey, member);
       return () => h(ReferenceChoice, { formSlot: port.slot, path: row.path });
     },
   });

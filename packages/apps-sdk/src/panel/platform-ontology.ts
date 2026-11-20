@@ -167,6 +167,7 @@ export const platformOntologyAdapters: PlatformObjectAdapterFactory = (
     counts: client.counts,
     start: client.start,
     neighbors: client.neighbors,
+    objects: client.objects,
   };
 
   return [
