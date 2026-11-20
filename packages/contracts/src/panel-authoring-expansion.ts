@@ -1,15 +1,13 @@
 import { appsSdkComponentDatum, type AppsSdkComponentCatalogEntry } from "./apps-sdk";
 import type { PanelAuthoringMember } from "./panel-authoring";
-import { panelPortAccepts, type DirectPanelPortType, type PanelManifest, type PanelMember } from "./panel-manifest";
+import { panelPortAccepts, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelStateRef } from "./panel-manifest";
 import {
-  missingRequiredReadParameters, panelReadInputMatches, panelReadParameterId, panelReadParameterSchemas,
+  missingRequiredReadParameters, panelLocalOperationNameSchema, panelReadInputMatches, panelReadParameterId, panelReadParameterSchemas,
   projectionOperationTargetMatches, type DirectProjectionData, type DirectProjectionPorts, type ProjectionOperationBinding,
 } from "./panel-projection";
 import type { PlatformTypeTableResponse } from "./platform-type-table";
 
 type ShortMember = Extract<PanelAuthoringMember, { component: string }>;
-type Inputs = NonNullable<PanelMember["inputs"]>;
-type Outputs = NonNullable<PanelMember["outputs"]>;
 
 function qualifiedId(component: AppsSdkComponentCatalogEntry): string {
   const packageName = component.module.split("/", component.module.startsWith("@") ? 2 : 1).join("/");
@@ -69,9 +67,9 @@ export function expandPanelAuthoringMember(
   const type = typeId === undefined ? undefined : objectTypes[typeId];
   const targetPort = ownerOperation?.operation.target.source === "input" ? ownerOperation.operation.target.input : "target";
   const inputTypes = new Map<string, DirectProjectionPorts["inputs"][string]>();
-  const inputBindings = new Map<string, Inputs[string] & { state: string }>();
+  const inputBindings = new Map<string, PanelStateRef>();
   const outputTypes = new Map<string, DirectPanelPortType>();
-  const outputBindings = new Map<string, Outputs[string]>();
+  const outputBindings = new Map<string, PanelStateRef>();
   const consumedState = new Set<string>();
 
   function bindInput(name: string, fieldName: string, path: string) {
@@ -165,9 +163,11 @@ export function expandPanelAuthoringMember(
     };
     if (!projectionOperationTargetMatches({ inputs: Object.fromEntries(inputTypes) }, binding, operation, ownerType))
       fail("target", `Operation '${operation.id}' requires a compatible target of type '${ownerType}'`);
-    const name = operation.id.split(".").at(-1)!;
+    const localName = panelLocalOperationNameSchema.safeParse(operation.id.split(".").at(-1));
+    if (!localName.success) return fail("operation", `'${operation.id}' has no usable local operation name`);
+    const name = localName.data;
     operations = { [name]: binding };
-    if (component.componentId === "OperationButton") {
+    if (component.config?.some(field => field.name === "operation")) {
       if (Object.hasOwn(config, "operation") && config.operation !== name)
         fail("config.operation", `Expected '${name}' for operation '${operation.id}'`);
       config.operation = name;

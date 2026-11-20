@@ -4,6 +4,7 @@ import { appsSdkComponentCatalogEntrySchema } from "./apps-sdk";
 import { expandPanelAuthoringMember, panelAuthoringMemberSchema, panelManifestSchema } from "./panel-check";
 import { panelOperationDeclarationSchema } from "./panel-operations";
 import { platformObjectTypes } from "./platform-object-types";
+import { platformTypeTableEntrySchema } from "./platform-type-table";
 import { productProjectionInputSchema } from "./product-panels";
 
 const type = "platform:BusinessKnowledge";
@@ -18,7 +19,9 @@ const components = [
     data: { rows: { results: ["panelRecordQuery"], required: true, runtimeParams: ["cursor", "size"] } },
     outputs: { selected: { kind: "object", objectType: "@binding" }, search },
   }),
-  buildComponent("OperationButton", { data: {} }),
+  buildComponent("OperationButton", {
+    data: {}, config: [{ name: "operation", type: "string", description: "The local operation name.", required: true }],
+  }),
   buildComponent("ObjectForm", {
     data: {
       form: { results: ["panelFormDescription"], required: false },
@@ -35,7 +38,7 @@ const save = panelOperationDeclarationSchema.parse({
   target: { source: "draft" }, inputSchema: { type: "object" },
 });
 const typeTable = { objectTypes: {
-  [type]: { reads: platformObjectTypes[type].reads, operations: [approve, save] },
+  [type]: platformTypeTableEntrySchema.parse({ reads: platformObjectTypes[type].reads, operations: [approve, save] }),
 } };
 const state = panelManifestSchema.parse({
   state: {
@@ -114,4 +117,24 @@ test("short authoring reports bad ports and ambiguous operations at the member's
     component: "OperationButton", operation: approve.id,
   }, { objectTypes: { ...typeTable.objectTypes, org: { reads: undefined, operations: [approve] } } }),
   /Member 'approve', field 'operation'.*ambiguous/);
+});
+
+test("a required read parameter can come from the component's declared runtime values", () => {
+  const owner = "platform:OntologyType";
+  const table = { objectTypes: {
+    [owner]: platformTypeTableEntrySchema.parse({ reads: platformObjectTypes[owner].reads }),
+  } };
+  const member = panelAuthoringMemberSchema.parse({
+    component: "Graph", type: owner, data: { neighborhood: "neighbors" },
+  });
+  assert("component" in member);
+  const graph = (runtimeParams: string[]) => buildComponent("Graph", {
+    data: { "*": { results: ["panelGraphNeighbors"], required: false, runtimeParams } },
+  });
+  assert.deepEqual(expandPanelAuthoringMember("graph", member, {
+    state, typeTable: table, components: [graph(["node"])],
+  }).projection.data.neighborhood.params, {});
+  assert.throws(() => expandPanelAuthoringMember("graph", member, {
+    state, typeTable: table, components: [graph([])],
+  }), /Member 'graph', field 'data.neighborhood.params.node'.*Required/);
 });
