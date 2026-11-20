@@ -2,6 +2,8 @@ import express from "express";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
+import { pageSkillContextSchema } from "@ontomato/contracts/page-skills";
+import { protectedSkillRef } from "../../../core/skills/providers";
 import { HttpError } from "../../../utils/errors";
 
 const mocks = vi.hoisted(() => ({ panel: vi.fn(), snapshot: vi.fn(), view: vi.fn(), member: vi.fn() }));
@@ -53,11 +55,14 @@ it.each([
   { path: "", loaded: panel, readOwner: mocks.panel, response: { panel }, entrance: menu },
   { path: "/snapshot", loaded: snapshot.panel, readOwner: mocks.snapshot, response: snapshot, entrance: domain },
 ])("resolves $path from the caller and the already read owner response", async ({ path, loaded, readOwner, response, entrance }) => {
-  const pageSkillContext = { mode: "member", locator: entrance, member: { source, memberKey: "member" } };
+  const ref = protectedSkillRef("product-panels", owner.domainId, panel.id);
+  const pageSkillContext = { mode: "member", locator: entrance, member: { source, memberPath: [], ref } };
   mocks.member.mockResolvedValue(pageSkillContext);
   const result = await read(path, entrance);
   expect(result.status).toBe(200);
-  expect(await result.json()).toEqual({ ...response, pageSkillContext });
+  const body = await result.json();
+  pageSkillContextSchema.parse(body.pageSkillContext);
+  expect(body).toEqual({ ...response, pageSkillContext });
   expect(readOwner).toHaveBeenCalledTimes(1);
   expect(mocks.view).toHaveBeenCalledWith(owner.domainId, expect.objectContaining({ token: "caller-token" }));
   expect(mocks.member).toHaveBeenCalledTimes(1);
