@@ -9,7 +9,7 @@ import { nativeProfileId } from "../product-assets/platform-assets";
 import { profileIdForAgent } from "../product-assets/agent-profile";
 import { assistantStore, type AssistantOwner } from "./store";
 import { assistantDescription, assistantName } from "./labels";
-import { effectiveAssistantSkills, readAssistantSkillView, resolvePageSkillMember } from "./skills";
+import { effectiveAssistantSkills, readAssistantSkillView, resolveCurrentPageSkillMember } from "./skills";
 
 function locatorOf(entrance: PageSkillEntrance): PageSkillLocator {
   return "permissionCode" in entrance
@@ -31,8 +31,10 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
       ? { permissionCode: query.permissionCode, pageKey: query.pageKey }
       : { access: query.access, pageKey: query.pageKey };
     const locator = locatorOf(entrance);
-    const skill = "source" in query
-      ? await resolvePageSkillMember(view, entrance, { source: query.source, memberKey: query.memberKey })
+    // A member query names the page's actual member; the skill system checks its source, path and ref again for this
+    // initiator, so another entrance's admission never stands in for this one.
+    const skill = "member" in query
+      ? (await resolveCurrentPageSkillMember(view, entrance, query.member))?.member.ref ?? null
       : view.publicPageSkill(locator);
     if (!skill) throw new HttpError(403, "Page skill is unavailable", "PAGE_SKILL_FORBIDDEN");
     const group = view.pageSkills.find(entry => sameLocator(entry.locator, locator));

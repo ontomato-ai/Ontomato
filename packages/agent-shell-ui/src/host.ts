@@ -288,11 +288,8 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
       if (page.mode === "public")
         return assistantAgentListSchema.parse(await json(`/agents?${query({ ...page.locator })}`));
       if (page.member === null) return { agents: [] };
-      const params = {
-        ...page.locator,
-        source: JSON.stringify(page.member.source),
-        memberKey: page.member.memberKey,
-      };
+      // The member as the page's snapshot gave it, in one parameter; the server checks it again before it narrows.
+      const params = { ...page.locator, member: JSON.stringify(page.member) };
       return assistantAgentListSchema.parse(await json(`/agents?${query(params)}`));
     },
     listSessions(agentId, cursor) {
