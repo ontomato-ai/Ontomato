@@ -230,5 +230,6 @@ it("searches a catalogue by name or description in any case and pages what it ke
   expect(keys(second)).toEqual(["m3"]);
   expect(second).not.toHaveProperty("nextCursor");
   expect(keys(await reads.query({}))).toEqual(["m0", "m1", "m2", "m3"]);
-  await expect(reads.query({ cursor: "later" })).rejects.toMatchObject({ status: 400, code: "INVALID_CURSOR" });
+  for (const cursor of ["later", "", " ", "0x10", "1e2", "-1", "1.5"])
+    await expect(reads.query({ cursor })).rejects.toMatchObject({ status: 400, code: "INVALID_CURSOR" });
 });

@@ -43,8 +43,10 @@ const catalogueQuerySchema = z.object({
  */
 function queried(records: readonly PanelRecord[], params: Record<string, unknown>): PanelRecordQuery {
   const { search, cursor, size } = catalogueQuerySchema.parse(params);
+  // A cursor is the decimal offset this query answered as nextCursor.
+  if (cursor !== undefined && !/^\d+$/.test(cursor))
+    throw new HttpError(400, "The cursor does not name a position in the list", "INVALID_CURSOR");
   const offset = cursor === undefined ? 0 : Number(cursor);
-  if (!Number.isInteger(offset) || offset < 0) throw new HttpError(400, "The cursor does not name a position in the list", "INVALID_CURSOR");
   const term = search?.trim().toLowerCase();
   const kept = term ? records.filter(record => `${record.label} ${record.subtitle ?? ""}`.toLowerCase().includes(term)) : records;
   return {
