@@ -1,8 +1,10 @@
 <div flow="row" gap="small">
   <panel-member ref="tasks"></panel-member>
-  <section when="selectedTask" ne="null">
+  <section>
     <panel-member ref="summary"></panel-member>
-    <panel-member ref="form"></panel-member>
-    <panel-member ref="run"></panel-member>
+    <section when="selectedTask" ne="null">
+      <panel-member ref="form"></panel-member>
+      <panel-member ref="run"></panel-member>
+    </section>
   </section>
 </div>

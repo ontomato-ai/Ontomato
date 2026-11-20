@@ -72,6 +72,12 @@ export interface PanelHostPort<Source extends HostedPanelSource = HostedPanelSou
    * checked against when it is shown again. A candidate has no relation to check.
    */
   current?(): Promise<boolean>;
+  /**
+   * The check a page opened ahead of Java's answer waits for: whether that answer names its use relation, bound to the
+   * same panel. The page reads meanwhile and is shown only once it has passed. Absent when the relation was already
+   * Java's answer.
+   */
+  admitted?: Promise<boolean>;
   mode: PanelDefinitionMode;
 }
 
@@ -168,6 +174,8 @@ export interface PanelInstanceView {
   readonly dirty: Readonly<ShallowRef<boolean>>;
   /** Resolves once the source is read. */
   readonly ready: Promise<void>;
+  /** Whether the page may be shown: Java's answer names its use relation (always, when it opened from that answer). */
+  readonly admitted: Readonly<ShallowRef<boolean>>;
   /**
    * Objects the instance may show changed (U10): what it shows of the target is read again — everything it shows when
    * there is none — and a direct instance also matches the owner's affected objects and types against what it read.
@@ -245,6 +253,7 @@ const loading: DisplayLoad = { status: "loading" };
  */
 export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOptions): PanelInstanceView {
   const source = shallowRef<HostedPanelSource | null>(null);
+  const admitted = shallowRef(!port.admitted);
   const direct = shallowRef<{ layout: PanelLayoutNode[]; mount: DirectPanelMount } | null>(null);
   const pageContext = shallowRef<PageContext | null>(null);
   const document = shallowRef("");
@@ -293,9 +302,17 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
    */
   async function load() {
     try {
+      // The page reads what it shows while Java's answer is still coming; it is shown once that answer names it.
       const read = await port.source();
       if (!active) return;
       await adopt(read);
+      if (!active) return;
+      if (!(await (port.admitted ?? true))) {
+        if (active) options.withdrawn?.();
+        return;
+      }
+      if (!active) return;
+      admitted.value = true;
       if (port.mode.kind === "author") follow(read);
       // A viewer's panel is reconciled with a short read; the frame does not wait for it.
       else if (read.kind === "registered")
@@ -691,6 +708,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     ready,
     refresh,
     direct,
+    admitted,
     invoke(id, input) {
       if (direct.value) return direct.value.mount.invoke(id, input);
       if (!frame) return Promise.reject(new Error(options.labels.notStarted));

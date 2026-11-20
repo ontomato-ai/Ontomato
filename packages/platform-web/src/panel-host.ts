@@ -94,8 +94,12 @@ export type PanelObjectChange = DisplayObjectChange;
  */
 export function platformPanelHost(
   applicationId: string, use: ApplicationPanelUse, changed: (change: PanelObjectChange) => void, mode: PanelDefinitionMode = { kind: "view" },
+  /** Java's answer for the application, when the page was opened from the shell's catalog before it came. */
+  relations?: Promise<readonly ApplicationPanelUse[]>,
 ): PanelHostPort<Extract<PanelHostSource | DirectPanelHostSource, { kind: "registered" }>> {
   const shown = { applicationId, useId: use.id };
+  const names = (records: readonly ApplicationPanelUse[]) =>
+    records.some(relation => relation.id === use.id && relation.panelId === use.panelId);
   return {
     async source() {
       const record = await panel(use.panelId);
@@ -117,8 +121,9 @@ export function platformPanelHost(
     // The relation this page opens is still the application's, bound to the same panel: a kept page shown again is
     // checked against Java's current relations before its frame may ask for anything.
     async current() {
-      return (await panelUsesOf(applicationId)).some(relation => relation.id === use.id && relation.panelId === use.panelId);
+      return names(await panelUsesOf(applicationId));
     },
+    ...(relations ? { admitted: relations.then(names) } : {}),
     snapshot,
     mode,
   };
