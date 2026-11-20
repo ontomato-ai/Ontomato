@@ -57,15 +57,21 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
     if (!pageFilter) return assistantAgentListSchema.parse({ agents });
     const { skillKey, defaultAgent } = pageFilter;
     const candidates = agents.filter(agent => agent.enabled && agent.effectiveSkills.some(skill => runtimeSkillKey(skill) === skillKey));
-    const candidateIds = new Set(candidates.map(agent => agent.id));
-    const presetAgentIds = new Map(definitions.filter(agent => candidateIds.has(agent.id)).map(agent => [agent.kind, agent.id]));
-    if (defaultAgent.kind === "id" && !candidateIds.has(defaultAgent.id))
+    const selected = defaultAgent.kind === "id"
+      ? candidates.find(agent => agent.id === defaultAgent.id)
+      : candidates.find(agent => definitions.some(row => row.id === agent.id && row.kind === defaultAgent.agentKind));
+    if (!selected && defaultAgent.kind === "id")
       throw new HttpError(409, "The page's default agent is unavailable", "PAGE_DEFAULT_AGENT_UNAVAILABLE");
-    const defaultAgentId = defaultAgent.kind === "id" ? defaultAgent.id : presetAgentIds.get(defaultAgent.agentKind);
+
+    const candidateIds = new Set(candidates.map(agent => agent.id));
+    // User-created definitions store their own ID as their kind.
+    const presetAgentIds = Object.fromEntries(definitions
+      .filter(agent => agent.kind !== agent.id && candidateIds.has(agent.id))
+      .map(agent => [agent.kind, agent.id]));
     return assistantAgentListSchema.parse({
       agents: candidates,
-      presetAgentIds: Object.fromEntries(presetAgentIds),
-      ...(defaultAgentId ? { defaultAgentId } : {}),
+      presetAgentIds,
+      ...(selected ? { defaultAgentId: selected.id } : {}),
     });
   });
 }
