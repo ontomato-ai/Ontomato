@@ -271,12 +271,19 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert(reviewLayout.indexOf('ref="batch2"') < reviewLayout.indexOf('ref="list"'));
     const reviewMaterial = join(review, "registration.json");
     await run("panel", "check", review, "--material", reviewMaterial);
+    const reviewPanel = join(review, "panel.json");
+    const incorrectPanel = JSON.parse(await readFile(reviewPanel, "utf8"));
+    incorrectPanel.manifest.members.batch2.inputs = { entry: { state: "checked" } };
+    await writeFile(reviewPanel, JSON.stringify(incorrectPanel));
+    await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
+      error.stderr.includes("member batch2 (projection review-queue-manager-batch2): bind operation reviews.approve's target input review"));
+    await writeFile(reviewPanel, JSON.stringify({ manifest: reviewManifest }));
     const incorrect = JSON.parse(await readFile(reviewMaterial, "utf8"));
     const batch = incorrect.projections.find(({ id }) => id.endsWith("-batch2"));
     delete batch.input.inputs.review;
     await writeFile(reviewMaterial, JSON.stringify(incorrect));
     await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
-      error.stderr.includes(`projection ${batch.id}: the target input for operation reviews.approve`));
+      error.stderr.includes(`projection ${batch.id}: operation reviews.approve requires the owner target input review`));
   } finally {
     await rm(directory, { recursive: true });
     await new Promise(resolve => server.close(resolve));

@@ -28,7 +28,8 @@ Use `--operation <owner operation ID>` for a button targeting the selected recor
 for a button targeting checked records. Repeat either flag to add more buttons. The starter takes the target input
 name and batch support from the type table. For operations with extra required inputs, wire the owner form or
 operation inputs. The starter places these controls above the list. Online `panel check` uses the same type table
-to check button targets before registration.
+to check button targets before registration. Use the exact `operation.target.input` name in the projection's
+inputs and in the member's state binding, for either the selected object or the checked list.
 
 ## Effect and wiring
 
