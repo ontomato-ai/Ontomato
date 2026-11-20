@@ -1,29 +1,38 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, shallowRef } from "vue";
+import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElEmpty } from "element-plus/es/components/empty/index";
 import { ElFormItem } from "element-plus/es/components/form/index";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
+import type { PanelRecord } from "@ontomato/contracts/panel-projection";
 import { GraphCanvas, type GraphCanvasEdge, type GraphCanvasNode } from "@ontomato/foundation-ui/graph";
-import { useFormField, useProjectionObjects, useProjectionSlot } from "../panel/context";
+import { useFormField } from "../panel/context";
 import { valueAt } from "../panel/form-values";
+import { useMember, useMemberData } from "../panel/member";
+
+interface EdgeEndsConfig {
+  readonly source: string;
+  readonly target: string;
+}
 
 /**
  * Objects of one type as a graph, joined by the objects of another (classes joined by their relationships), with a form
- * field of this panel chosen on it: the projection's binding lists the nodes, its `graph.edges` binding lists the edges
- * and names, by pointer into each edge record's fields, the two nodes it joins. Choosing a node adds it to or removes it
- * from the field its slot's field port names; the nodes one drawn edge away from a chosen one are marked, and one
- * action adds them all. What the field means — that an empty list is the default scope, say — is its owner's, in its
- * help; who may read what the nodes stand for is decided where the data is read, never on this graph.
+ * field of this panel chosen on it. The member's `nodes` and `edges` datums (`panelRecordList`) supply the records, and
+ * `config.edgeEnds` (`source`, `target`) points to the endpoint keys inside each edge's fields. Choosing a node adds it
+ * to or removes it from the field its member's formField port names; the nodes one drawn edge away from a chosen one
+ * are marked, and one action adds them all. What the field means — that an empty list is the default scope, say — is
+ * its owner's, in its help; who may read what the nodes stand for is decided where the data is read, never on this
+ * graph.
  */
+const props = defineProps<{
+  /** JSON Pointers into each edge record's `fields` naming its source and target node keys. */
+  edgeEnds?: EdgeEndsConfig;
+}>();
+
 const { t } = useI18n();
-const slot = useProjectionSlot();
 const field = useFormField();
-const graph = slot.projection.graph;
-if (!graph) throw new Error(`The projection in slot '${slot.slot}' declares no graph: it names no edges to draw`);
-const nodeSource = useProjectionObjects();
-const edgeSource = useProjectionObjects(graph.edges.binding.id);
+const member = useMember();
 
 /** The node an edge record names at a declared pointer: its owner's key there, or a visible failure. */
 function endpoint(edge: string, fields: Readonly<Record<string, string>>, path: string): string {
@@ -32,25 +41,68 @@ function endpoint(edge: string, fields: Readonly<Record<string, string>>, path: 
   return value;
 }
 
-const nodes = shallowRef<readonly GraphCanvasNode[]>([]);
-const links = shallowRef<readonly GraphCanvasEdge[]>([]);
-const loading = ref(true);
-const failure = shallowRef<Error | null>(null);
+function resolveEdgeEnds(raw: unknown): EdgeEndsConfig {
+  const candidate = raw as Partial<EdgeEndsConfig> | undefined;
+  if (!candidate || typeof candidate.source !== "string" || typeof candidate.target !== "string") {
+    throw new Error(`The projection in member '${member.key}' declares no edgeEnds (source, target)`);
+  }
+  return { source: candidate.source, target: candidate.target };
+}
 
-onMounted(() => {
-  void Promise.all([nodeSource.list(), edgeSource.list()]).then(([nodeRecords, edgeRecords]) => {
-    nodes.value = nodeRecords.map((record) => ({ id: record.primaryKey, label: record.label }));
-    links.value = edgeRecords.map((record) => ({
-      id: record.primaryKey,
-      source: endpoint(record.primaryKey, record.fields, graph.edges.sourcePath),
-      target: endpoint(record.primaryKey, record.fields, graph.edges.targetPath),
-    }));
-    loading.value = false;
-  }, (reason: unknown) => {
-    failure.value = reason instanceof Error ? reason : new Error(String(reason));
-    loading.value = false;
-  });
+const edgeEnds = resolveEdgeEnds(props.edgeEnds ?? member.projection.config.edgeEnds);
+const nodesState = useMemberData("nodes");
+const edgesState = useMemberData("edges");
+
+const resolved = computed<{
+  nodes: readonly GraphCanvasNode[];
+  links: readonly GraphCanvasEdge[];
+  loading: boolean;
+  error: string | null;
+}>(() => {
+  const n = nodesState.value;
+  const e = edgesState.value;
+  if (n.status === "loading" || e.status === "loading") {
+    return { nodes: [], links: [], loading: true, error: null };
+  }
+  if (n.status === "forbidden" || e.status === "forbidden") {
+    return { nodes: [], links: [], loading: false, error: t("platform.dataForbidden") };
+  }
+  if (n.status === "error") {
+    return { nodes: [], links: [], loading: false, error: n.message };
+  }
+  if (e.status === "error") {
+    return { nodes: [], links: [], loading: false, error: e.message };
+  }
+  if (n.status !== "ready" || (e.status !== "ready" && e.status !== "empty")) {
+    return { nodes: [], links: [], loading: false, error: null };
+  }
+  const nodeRecords = n.value as unknown as readonly PanelRecord[];
+  const edgeRecords = e.status === "ready" ? (e.value as unknown as readonly PanelRecord[]) : [];
+  try {
+    return {
+      nodes: nodeRecords.map((record) => ({ id: record.primaryKey, label: record.label })),
+      links: edgeRecords.map((record) => ({
+        id: record.primaryKey,
+        source: endpoint(record.primaryKey, record.fields, edgeEnds.source),
+        target: endpoint(record.primaryKey, record.fields, edgeEnds.target),
+      })),
+      loading: false,
+      error: null,
+    };
+  } catch (reason: unknown) {
+    return {
+      nodes: [],
+      links: [],
+      loading: false,
+      error: reason instanceof Error ? reason.message : String(reason),
+    };
+  }
 });
+
+const nodes = computed(() => resolved.value.nodes);
+const links = computed(() => resolved.value.links);
+const loading = computed(() => resolved.value.loading);
+const readError = computed(() => resolved.value.error);
 
 const selected = computed(() => {
   const value = field.value.value;
@@ -87,10 +139,11 @@ function includeAdjacent() {
     class="sdk-object-graph"
     :class="{ 'sdk-object-graph-changed': field.changed.value }"
     :label="field.field.value.label"
-    :error="field.error.value ?? failure?.message"
+    :error="field.error.value ?? readError ?? undefined"
     :data-field="field.field.value.path"
   >
     <el-skeleton v-if="loading" :rows="4" animated></el-skeleton>
+    <template v-else-if="readError"></template>
     <el-empty v-else-if="!nodes.length" :image-size="48"></el-empty>
     <div v-else class="sdk-object-graph-body">
       <GraphCanvas
