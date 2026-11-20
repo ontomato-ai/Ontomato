@@ -2,20 +2,39 @@ package io.ontomato.dataengine.applications;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONWriter;
 import com.alibaba.fastjson2.TypeReference;
 import io.ontomato.dataengine.core.bean.User;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.util.UriUtils;
 import org.springframework.http.HttpStatus;
 
 @Service
 public class ApplicationCatalog {
     public record PanelUseLocation(String applicationId, Map<String, String> names, String useId, String path) {}
+    public record EntryMenu(List<Group> groups, List<ApplicationPanelUse> panelUses) {}
+    public record ThemeOverrides(Map<String, String> light, Map<String, String> dark) {}
+    public record Delivery(List<String> panels, List<String> projections, List<String> packages, List<String> agents,
+                           List<PageSkills.Skill> skills) {}
+    private record PanelSettings(String framePanelId, ThemeOverrides theme, Delivery delivery) {
+        JSONObject json() {
+            var result = new JSONObject();
+            if (framePanelId != null) result.put("framePanelId", framePanelId);
+            if (theme != null) result.put("theme", theme);
+            if (delivery != null) result.put("delivery", delivery);
+            return result;
+        }
+    }
     public static final String DOMAIN_MEMBER_ENTRY = "domain-member";
+    private static final String OBJECT_DETAIL_ROOT = "/browser/detail/";
+    private static final String OBJECT_DETAIL_KEY_PREFIX = "browser-detail:";
+    private static final int OBJECT_DETAIL_CLASS_MAX_LENGTH = 200 - OBJECT_DETAIL_KEY_PREFIX.length();
     public record Group(String key, Map<String,String> names, int sort) {}
     public record Permission(String code, Map<String,String> names, String groupKey, int sort) {}
     public record Declaration(Map<String,String> names, Map<String,String> descriptions, String icon,
@@ -50,7 +69,10 @@ public class ApplicationCatalog {
                 "rail", row.getString("rail"), "category", row.getString("category"), "sort", row.getInt("sort"), "entry", JSON.parseObject(row.getString("entry")),
                 "entryAccess", JSON.parseArray(row.getString("entry_access")), "scheduleAdapter", row.getString("schedule_adapter"),
                 "releaseId", row.getString("release_id"), "pageSkills", JSON.parseArray(row.getString("page_skills"), PageSkills.Mapping.class),
-                "panelUses", JSON.parseArray(row.getString("panel_uses"), ApplicationPanelUse.class)));
+                "panelUses", JSON.parseArray(row.getString("panel_uses"), ApplicationPanelUse.class),
+                "groups", JSON.parseArray(row.getString("groups"), Group.class),
+                "permissions", JSON.parseArray(row.getString("declaration_permissions"), Permission.class),
+                "panelSettings", JSON.parseObject(row.getString("panel_settings"))));
     }
     public PageSkills.Projection pageSkills(User user) {
         var domainId = user.getDomainId();
@@ -116,6 +138,8 @@ public class ApplicationCatalog {
         var entry = new JSONObject(app.getJSONObject("entry"));
         entry.remove("upstream"); entry.remove("upstreamPrefix");
         result.put("entry",entry);
+        result.remove("permissions");
+        result.remove("panelSettings");
         if (panelManaged(app)) result.put("panelUses", visiblePanelUses(app, user));
         else if (hasPanelUseRegistration(app))
             result.put("panelUses", canEnter(app, user) ? visiblePanelUses(app, user) : List.of());
@@ -150,6 +174,23 @@ public class ApplicationCatalog {
                 var root = builtinPanelRoot(d.entry());
                 if ((root != null && inAssignedSpace(root)) || declaration.panelUses().stream().anyMatch(use -> inAssignedSpace(use.path())))
                     throw bad("Built-in applications cannot occupy the assigned application space");
+                var editionCodes = access.builtinPermissions(d.id()).stream().map(Permission::code).toList();
+                var codes = new HashSet<>(d.entryAccess());
+                codes.addAll(editionCodes);
+                declaration.permissions().stream().map(Permission::code).forEach(codes::add);
+                codes.remove(DOMAIN_MEMBER_ENTRY);
+                validateUsePermissions(declaration.panelUses(), codes);
+                validateUseGroups(declaration.panelUses(), declaration.groups());
+                var claimed = new HashSet<>(declaration.permissions().stream().map(Permission::code).toList());
+                declaration.panelUses().stream().map(use -> use.access().permissionCode()).filter(Objects::nonNull).forEach(claimed::add);
+                var ownedCodes = new HashSet<>(editionCodes);
+                if (!claimed.isEmpty() && "data-engine".equals(service) && old.isPresent()) {
+                    // A retained native group owns its menu; another app may only reference it in entryAccess.
+                    var priorGroups = old.get().getList("pageSkills", PageSkills.Mapping.class);
+                    declaration.pageSkills().stream().filter(priorGroups::contains).map(PageSkills.Mapping::permissionCode)
+                        .filter(Objects::nonNull).forEach(ownedCodes::add);
+                }
+                validateBuiltinPermissionOwnership(d.id(), claimed, ownedCodes);
                 validateMappings(d.id(), null, d.entry(), declaration.pageSkills(), declaration.panelUses());
                 save(d.id(), null, service, null, d.kind(), d.rail(), d.category(), d.sort(), d.entry(), d.entryAccess(), d.scheduleAdapter(), null, declaration);
                 access.declare(require(d.id()), declaration, old.isEmpty());
@@ -183,7 +224,7 @@ public class ApplicationCatalog {
         if(!List.of("hosted","connected","product").contains(kind))throw bad("Invalid user application kind");
         if (!id.startsWith("app-") || user.getDomainId() == null) throw bad("A user application requires an app- ID and domain");
         for (var permission : declaration.permissions())
-            if (!permission.code().startsWith(permissionPrefix(id))) throw bad("Application permission prefix required");
+            if (!ownsPermissionCode(id, permission.code())) throw bad("Application permission prefix required");
         return transactions.execute(tx -> {
             lockCatalog();
             var old = all().stream().filter(a -> id.equals(a.getString("id"))).findFirst();
@@ -202,16 +243,52 @@ public class ApplicationCatalog {
             return JSONObject.of("applicationId", id, "releaseId", releaseId, "entryPath",path);
         });
     }
+    private void validateBuiltinPermissionOwnership(String id, Set<String> codes, Set<String> ownedCodes) {
+        if (codes.isEmpty()) return;
+        for (var app : applicationsInDomain(null)) {
+            var owner = app.getString("id");
+            if (id.equals(owner)) continue;
+            var declared = new HashSet<>(app.getList("permissions", Permission.class).stream().map(Permission::code).toList());
+            access.builtinPermissions(owner).stream().map(Permission::code).forEach(declared::add);
+            var entryAccess = app.getList("entryAccess", String.class);
+            for (var code : codes) {
+                if (declared.contains(code) || (entryAccess.contains(code) && !ownedCodes.contains(code)))
+                    throw bad("Permission " + code + " belongs to " + owner);
+            }
+        }
+    }
+
+    private static void validateUsePermissions(List<ApplicationPanelUse> uses, Set<String> codes) {
+        for (var use : uses) {
+            var code = use.access().permissionCode();
+            if (code != null && !codes.contains(code))
+                throw bad("Panel entry " + use.pageKey() + " must use this application's declared permission: " + code);
+        }
+    }
+
+    private static void validateUseGroups(List<ApplicationPanelUse> uses, List<Group> groups) {
+        var keys = new HashSet<>(groups.stream().map(Group::key).toList());
+        for (var use : uses) {
+            if (use.groupKey() != null && !keys.contains(use.groupKey()))
+                throw bad("Unknown group " + use.groupKey() + " on panel entry " + use.pageKey());
+        }
+    }
+
     private void save(String id, String domain, String service, String owner, String kind, String rail, String category, int sort,
                       JSONObject entry, List<String> entryAccess, String adapter, String releaseId, Declaration d) {
+        save(id, domain, service, owner, kind, rail, category, sort, entry, entryAccess, adapter, releaseId, d, new JSONObject());
+    }
+
+    private void save(String id, String domain, String service, String owner, String kind, String rail, String category, int sort,
+                      JSONObject entry, List<String> entryAccess, String adapter, String releaseId, Declaration d, JSONObject panelSettings) {
         db.update("""
-            INSERT INTO sys_application(id,domain_id,owner_service,owner_user_id,kind,names,descriptions,icon,rail,category,sort,entry,entry_access,schedule_adapter,release_id,groups,entry_path,page_skills,panel_uses,updated_at)
-            VALUES(?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?,?::jsonb,?::jsonb,?,?,?::jsonb,?,?::jsonb,?::jsonb,now()) ON CONFLICT(id) DO UPDATE SET
+            INSERT INTO sys_application(id,domain_id,owner_service,owner_user_id,kind,names,descriptions,icon,rail,category,sort,entry,entry_access,schedule_adapter,release_id,groups,entry_path,page_skills,panel_uses,declaration_permissions,panel_settings,updated_at)
+            VALUES(?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?,?::jsonb,?::jsonb,?,?,?::jsonb,?,?::jsonb,?::jsonb,?::jsonb,?::jsonb,now()) ON CONFLICT(id) DO UPDATE SET
             names=excluded.names,descriptions=excluded.descriptions,icon=excluded.icon,rail=excluded.rail,category=excluded.category,sort=excluded.sort,
             entry=excluded.entry,entry_access=excluded.entry_access,schedule_adapter=excluded.schedule_adapter,
-            release_id=excluded.release_id,groups=excluded.groups,entry_path=excluded.entry_path,page_skills=excluded.page_skills,panel_uses=excluded.panel_uses,updated_at=now()
+            release_id=excluded.release_id,groups=excluded.groups,entry_path=excluded.entry_path,page_skills=excluded.page_skills,panel_uses=excluded.panel_uses,declaration_permissions=excluded.declaration_permissions,panel_settings=excluded.panel_settings,updated_at=now()
             """, id,domain,service,owner,kind,JSON.toJSONString(d.names()),JSON.toJSONString(d.descriptions()),d.icon(),rail,category,sort,
-            entry.toJSONString(),JSON.toJSONString(entryAccess),adapter,releaseId,JSON.toJSONString(d.groups()),entry.getString("path"),JSON.toJSONString(d.pageSkills()),JSON.toJSONString(d.panelUses()));
+            entry.toJSONString(),JSON.toJSONString(entryAccess),adapter,releaseId,JSON.toJSONString(d.groups()),entry.getString("path"),JSON.toJSONString(d.pageSkills()),JSON.toJSONString(d.panelUses(), JSONWriter.Feature.WriteMapNullValue),JSON.toJSONString(d.permissions()),panelSettings.toJSONString());
     }
     public static void validateId(String id) {
         if (id == null || !id.matches("[a-z][a-z0-9-]{0,63}")) throw bad("Invalid application ID");
@@ -224,7 +301,7 @@ public class ApplicationCatalog {
             if (group.key() == null || group.names() == null || !group.names().containsKey("en") || !groups.add(group.key())) throw bad("Invalid permission group");
         }
         for (var permission : d.permissions()) {
-            if (permission.code() == null || permission.names() == null || !permission.names().containsKey("en") ||
+            if (permission.code() == null || DOMAIN_MEMBER_ENTRY.equals(permission.code()) || permission.names() == null || !permission.names().containsKey("en") ||
                 !groups.contains(permission.groupKey()) || !codes.add(permission.code())) throw bad("Invalid permission declaration");
         }
         PageSkills.validate(d.pageSkills());
@@ -302,6 +379,8 @@ public class ApplicationCatalog {
         for (var app : applications) {
             if (!hasAssignedPanelPaths(app)) continue;
             for (var use : app.getList("panelUses", ApplicationPanelUse.class)) {
+                if (objectDetailClass(use.path()) != null)
+                    throw bad("Panel path belongs to the object detail resolver: " + use.path());
                 if (!paths.add(use.path())) throw bad("Duplicate panel path: " + use.path());
                 for (var root : roots.entrySet())
                     if (!root.getKey().equals(app.getString("id")) && !inAssignedSpace(use.path()) && ApplicationPanelUse.under(use.path(), root.getValue()))
@@ -335,12 +414,88 @@ public class ApplicationCatalog {
             throw denied();
     }
 
+    public JSONObject resolveEntry(String path, User user) {
+        var canonical = ApplicationPanelUse.canonicalPath(path);
+        var detailClass = objectDetailClass(canonical);
+        if (detailClass != null) return resolveObjectDetail(canonical, detailClass, user);
+        for (var app : applicationsInDomain(user.getDomainId())) {
+            if (!hasAssignedPanelPaths(app)) continue;
+            var declared = app.getList("panelUses", ApplicationPanelUse.class);
+            if (declared.stream().noneMatch(use -> canonical.equals(use.path()))) continue;
+            if (!access.canEnter(app, user)) throw denied();
+            var allowed = visiblePanelUses(app, user);
+            var use = allowed.stream().filter(entry -> canonical.equals(entry.path())).findFirst().orElseThrow(ApplicationCatalog::denied);
+            return entryResolution(app, use, allowed);
+        }
+        throw entryNotFound();
+    }
+
+    private static String objectDetailClass(String path) {
+        if (!path.startsWith(OBJECT_DETAIL_ROOT)) return null;
+        var segment = path.substring(OBJECT_DETAIL_ROOT.length());
+        if (segment.isEmpty() || segment.contains("/")) return null;
+        return UriUtils.decode(segment, StandardCharsets.UTF_8);
+    }
+
+    private JSONObject resolveObjectDetail(String path, String className, User user) {
+        if (className.length() > OBJECT_DETAIL_CLASS_MAX_LENGTH)
+            throw bad("Object detail class names must be at most " + OBJECT_DETAIL_CLASS_MAX_LENGTH + " UTF-16 code units");
+        var browser = require("browser");
+        if (user.getDomainId() == null || !canEnter(browser, user)) throw denied();
+        var panelId = panels.objectDetailPanel(user.getDomainId(), className);
+        if (panelId == null) throw entryNotFound();
+        if (!grants.allowed(panelId, "use")) throw denied();
+        var key = OBJECT_DETAIL_KEY_PREFIX + className;
+        var permission = browser.getList("entryAccess", String.class).getFirst();
+        var use = new ApplicationPanelUse(key, key, panelId, path, new ApplicationPanelUse.Access(permission, null), null, null);
+        return entryResolution(browser, use, visiblePanelUses(browser, user));
+    }
+
+    private static JSONObject entryResolution(JSONObject app, ApplicationPanelUse use, List<ApplicationPanelUse> allowed) {
+        var named = allowed.stream().filter(entry -> entry.names() != null).toList();
+        var groupKeys = new HashSet<>(named.stream().map(ApplicationPanelUse::groupKey).toList());
+        var groups = app.getList("groups", Group.class).stream().filter(group -> groupKeys.contains(group.key()))
+            .sorted(Comparator.comparingInt(Group::sort)).toList();
+        var result = JSONObject.of("applicationId", app.getString("id"), "use", use, "menu", new EntryMenu(groups, named));
+        var settings = app.getJSONObject("panelSettings");
+        if (settings.containsKey("framePanelId")) result.put("framePanelId", settings.getString("framePanelId"));
+        if (settings.containsKey("theme")) result.put("theme", settings.getJSONObject("theme"));
+        return result;
+    }
+
+    private static ResponseStatusException entryNotFound() {
+        return new ResponseStatusException(HttpStatus.NOT_FOUND, "Panel entry not found");
+    }
+
     public JSONObject panelUses(String id, User user) {
         var app = require(id);
         if (!hasPanelUseRegistration(app)) throw bad("Application has no panel use registration");
         if (!inDomain(app, user) || !access.canEnter(app, user)) throw denied();
         return JSONObject.of("applicationId", id, "entry", app.getJSONObject("entry"), "panelUses", visiblePanelUses(app, user));
     }
+    public JSONObject managePanelUses(String id, User user) {
+        var app = require(id);
+        if (!inDomain(app, user) || !access.canMaintain(app, user)) throw denied();
+        if (!hasPanelUseRegistration(app)) throw bad("Application has no panel use registration");
+        var declaration = JSONObject.of("names", app.getJSONObject("names"), "descriptions", app.getJSONObject("descriptions"),
+            "icon", app.getString("icon"), "groups", app.getList("groups", Group.class),
+            "permissions", app.getList("permissions", Permission.class));
+        var result = JSONObject.of("applicationId", id, "entry", app.getJSONObject("entry"),
+            "panelUses", app.getList("panelUses", ApplicationPanelUse.class), "declaration", declaration,
+            "entryAccess", app.getList("entryAccess", String.class));
+        result.putAll(app.getJSONObject("panelSettings"));
+        return result;
+    }
+
+    private static void validatePanelSettings(PanelSettings settings) {
+        if (settings.framePanelId() != null && settings.framePanelId().isBlank())
+            throw bad("framePanelId must be nonblank");
+        var delivery = settings.delivery();
+        if (delivery != null && (delivery.panels() == null || delivery.projections() == null || delivery.packages() == null
+            || delivery.agents() == null || delivery.skills() == null))
+            throw bad("Delivery requires panels, projections, packages, agents and skills");
+    }
+
     private List<ApplicationPanelUse> visiblePanelUses(JSONObject app, User user) {
         if (!hasAssignedPanelPaths(app))
             throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -371,11 +526,20 @@ public class ApplicationCatalog {
         if (supplied != null && (!supplied.pageSkills().isEmpty() || !supplied.panelUses().isEmpty())) throw bad("Supply panelUses only once");
         if (supplied != null) {
             validate(supplied);
-            for (var permission : supplied.permissions()) if (!permission.code().startsWith(permissionPrefix(id))) throw bad("Application permission prefix required");
+            for (var permission : supplied.permissions()) if (!ownsPermissionCode(id, permission.code())) throw bad("Application permission prefix required");
         }
-        var ids = uses.stream().map(ApplicationPanelUse::panelId).distinct().toList();
+        for (var use : uses) {
+            var code = use.access().permissionCode();
+            if (code != null && !ownsPermissionCode(id, code))
+                throw bad("Panel entry " + use.pageKey() + " requires this application's permission prefix: " + code);
+        }
+        var settings = new PanelSettings(body.framePanelId(), body.theme(), body.delivery());
+        validatePanelSettings(settings);
+        existing.ifPresent(app -> requireDomainMaintainer(app, user));
+        var ids = new HashSet<>(uses.stream().map(ApplicationPanelUse::panelId).toList());
+        if (settings.framePanelId() != null) ids.add(settings.framePanelId());
         for (var panelId : ids) if (!grants.allowed(panelId, "use")) throw denied();
-        panels.requireCurrent(user.getDomainId(), ids);
+        panels.requireCurrent(user.getDomainId(), settings.framePanelId(), uses, settings.delivery());
         return transactions.execute(tx -> {
             lockCatalog();
             var current = all().stream().filter(app -> id.equals(app.getString("id"))).findFirst();
@@ -387,16 +551,23 @@ public class ApplicationCatalog {
             var entryAccess = body.entryAccess() == null ? old.getList("entryAccess", String.class) : body.entryAccess();
             if (entryAccess.size() != 1 || !(DOMAIN_MEMBER_ENTRY.equals(entryAccess.getFirst()) || ownsPermissionCode(id, entryAccess.getFirst())))
                 throw bad("Entry access must be domain-member or one permission of this application");
+            if (uses.stream().anyMatch(use -> use.access().permissionCode() != null)) {
+                var permissions = supplied == null ? old.getList("permissions", Permission.class) : supplied.permissions();
+                validateUsePermissions(uses, new HashSet<>(permissions.stream().map(Permission::code).toList()));
+            }
+            if (uses.stream().anyMatch(use -> use.groupKey() != null))
+                validateUseGroups(uses, supplied == null ? old.getList("groups", Group.class) : supplied.groups());
             var entry = JSONObject.of("path", entryPath, "renderer", "panels");
             validateMappings(id, user.getDomainId(), entry, List.of(), uses);
             if (old != null && supplied == null) {
-                db.update("UPDATE sys_application SET entry=?::jsonb,entry_path=?,entry_access=?::jsonb,panel_uses=?::jsonb,page_skills='[]'::jsonb,updated_at=now() WHERE id=?",
-                    entry.toJSONString(), entryPath, JSON.toJSONString(entryAccess), JSON.toJSONString(uses), id);
+                db.update("UPDATE sys_application SET entry=?::jsonb,entry_path=?,entry_access=?::jsonb,panel_uses=?::jsonb,panel_settings=?::jsonb,page_skills='[]'::jsonb,updated_at=now() WHERE id=?",
+                    entry.toJSONString(), entryPath, JSON.toJSONString(entryAccess), JSON.toJSONString(uses, JSONWriter.Feature.WriteMapNullValue),
+                    settings.json().toJSONString(), id);
             } else {
                 var declaration = new Declaration(supplied.names(), supplied.descriptions(), supplied.icon(), supplied.groups(), supplied.permissions(), List.of(), uses);
                 save(id, user.getDomainId(), "workbench", old == null ? user.getId() : old.getString("ownerUserId"),
                     "product", old == null ? "apps" : old.getString("rail"), old == null ? "business" : old.getString("category"),
-                    old == null ? 100 : old.getIntValue("sort"), entry, entryAccess, null, null, declaration);
+                    old == null ? 100 : old.getIntValue("sort"), entry, entryAccess, null, null, declaration, settings.json());
                 access.declare(require(id), declaration, old == null);
             }
             return JSONObject.of("applicationId", id, "entry", entry, "panelUses", uses);
