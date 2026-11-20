@@ -83,8 +83,8 @@ the result and affected task. A repeated dispatch reports the existing result.
 In `recipes.md`, describe how to use the declared reads, forms and operations for common tasks. Use the business
 owner's rules and actual operation descriptions for the page.
 
-Treat page selection as an object reference. Read the selected object's current fields through the owner's named
-`record` read before reporting properties such as status. Report a denied or failed read when it prevents a conclusion.
+Page selection identifies the object. When a page task needs current attributes, make the owner's named `record`
+read available through the selected reference. Use recipes for rules specific to that owner.
 
 For Business Knowledge at `/ontology/knowledge`, the owner supplies these rules.
 
@@ -103,6 +103,14 @@ For Business Knowledge search, give the list, status counts and detail the same 
 In `query`, `counts` and `record`, map `params.search` to `{ input: "search" }`. The counts read also takes
 `params.by: { literal: "status" }`. The detail receives the selected knowledge record. Use `ObjectSummary` to show
 the full body as text with its original line breaks. The owner returns highlight ranges in the record for the current search.
+
+## Switch a built-in page to its panel
+
+Find the built-in preset agents that selected the old page skill. At the built-in entry's cutover, update each
+preset's bundled declaration to select the new built-in panel by its fixed ID. The platform resolves that panel
+to the corresponding skill in each domain. Keep the entry's default agent unchanged unless the product calls for
+a change. For Business Knowledge, restore the `knowledge-governance` preset as a candidate and keep the general
+assistant as the main entry's default. This step applies to built-in cutovers.
 
 ## Add an official SDK component
 

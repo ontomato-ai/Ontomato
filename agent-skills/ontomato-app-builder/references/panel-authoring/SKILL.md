@@ -16,9 +16,9 @@ declared read or operation. Keep business rules, confirmation and permissions wi
    projections. Add common page tasks in `recipes.md` when an agent needs them.
 4. Check the workspace, register the projection and panel records, and open the application entry.
 
-In `recipes.md`, tell the assistant how to identify and read the selected record. The selection gives the object's
-identity and may include its display name. Before describing a current field such as status, use the owner's
-declared `record` read with that identity. If the read is denied or fails, say the field could not be confirmed.
+Page selection supplies an object reference and may include its display name. If a page task needs current fields
+such as status, expose the owner's `record` read that takes this reference. Use `recipes.md` for the owner's
+page-specific rules.
 
 Use `ConversationEntry` when a page needs a button that opens the composer with a specific agent and an optional
 opening line. The reader still sends the message. Use the page's existing composer for general questions.
