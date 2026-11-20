@@ -16,6 +16,7 @@ import static org.mockito.Mockito.when;
 
 import io.ontomato.dataengine.bean.action.Action;
 import io.ontomato.dataengine.bean.workflow.RunContract;
+import io.ontomato.dataengine.bean.workflow.StepActorPolicy;
 import io.ontomato.dataengine.bean.workflow.Workflow;
 import io.ontomato.dataengine.bean.workflow.WorkflowStep;
 import io.ontomato.dataengine.dao.ActionDao;
@@ -132,6 +133,36 @@ class WorkflowServiceImplTest {
     var refused = assertThrows(IllegalArgumentException.class, () -> service.activate("w1", DOMAIN, "U1"));
 
     assertTrue(refused.getMessage().contains("unknown action"), refused.getMessage());
+  }
+
+  @Test
+  void aRuleActorPolicyRequiresMetricAndRevision() {
+    WorkflowStep configured = step(1, "LEADER", "approve");
+    StepActorPolicy policy = new StepActorPolicy();
+    policy.setMode(StepActorPolicy.MODE_RULE);
+    policy.setMetricViewId("metric-1");
+    configured.setActorPolicy(policy);
+    Workflow workflow = workflow(configured);
+    when(workflows.queryByIdForUpdate("w1", DOMAIN)).thenReturn(workflow);
+
+    var refused = assertThrows(IllegalArgumentException.class, () -> service.activate("w1", DOMAIN, "U1"));
+
+    assertTrue(refused.getMessage().contains("metricRevision"), refused.getMessage());
+  }
+
+  @Test
+  void manualAndReservedAutomaticInvocationModesAreRecognized() {
+    WorkflowStep manual = step(1, "LEADER", "approve");
+    manual.setInvocationMode(WorkflowStep.INVOCATION_MANUAL);
+    Workflow draft = workflow(manual);
+    service.save(draft);
+    verify(workflows).saveDraft(draft);
+
+    WorkflowStep automatic = step(1, "LEADER", "approve");
+    automatic.setInvocationMode(WorkflowStep.INVOCATION_AUTOMATIC);
+    Workflow reserved = workflow(automatic);
+    service.save(reserved);
+    verify(workflows, times(2)).saveDraft(any());
   }
 
   @Test

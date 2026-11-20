@@ -232,7 +232,7 @@ export const assistantService = {
     const { agent: a } = await this.admitAgent(body.agent.agentId,owner,credentials,authority);
     const executionUserId = isAppBuilderKind(a.kind) ? null : a.execution_user_id;
     const executionCredentials = await agentExecutionCredentials(a.id, executionUserId, owner, credentials);
-    const context = isAppBuilderKind(a.kind) ? z.object({ workspaceId: z.string().uuid() }).strict().safeParse(body.context) : null;
+    const context = isAppBuilderKind(a.kind) ? z.object({ workspaceId: z.string().uuid(), variables: z.record(z.unknown()).optional() }).strict().safeParse(body.context) : null;
     if (context && !context.success) throw new HttpError(400,"App builder requires context.workspaceId containing an owned workspace UUID","CONTEXT_REQUIRED");
     const workspace = context?.success ? context.data.workspaceId : undefined;
     if (workspace) await new RuntimeClient(owner.domainId,undefined,owner.userId).request(`/v1/channel/sessions/${sessionId}/workspace`,"POST",{ workspaceId: workspace,ownerId: owner.userId });
@@ -241,7 +241,10 @@ export const assistantService = {
     const { row: turn } = await assistantStore.reserve(sessionId,id,message,owner,a.class_names);
     const request = await withDomainSkills(owner.domainId,async () => {
       const prepare = isAppBuilderKind(a.kind) ? prepareAppBuilderRun : prepareAnalystRun;
-      return prepare({ a,session,turn,message,input,inputId:body.inputId,ontologyContext:null,owner,credentials,executionUserId,executionCredentials,reader:visibilityReader(body) });
+      const variables = z.record(z.unknown()).safeParse(
+        body.context && typeof body.context === "object" ? body.context.variables : undefined,
+      );
+      return prepare({ a,session,turn,message,input,inputId:body.inputId,ontologyContext:null,owner,credentials,executionUserId,executionCredentials,externalVariables:variables.success?variables.data:undefined,reader:visibilityReader(body) });
     });
     await assistantStore.admitted(id,message);
     if (isAppBuilderKind(a.kind)) {
@@ -270,7 +273,7 @@ export const assistantService = {
     const actor = await openAgentCaller(owner, credentials), agent = { providerId: "workbench", agentId: session.agent_id };
     await client.request(`/v1/channel/sessions/${sessionId}/bind`, "POST", { agent, actor });
     const channel: AgentRunContext = { agent, actor, authority: { classNames: a.class_names, executionKind: isAppBuilderKind(a.kind) ? "build-test" : "live" }, requestedBy: null, root: { session: { providerId: "workbench", sessionId }, runId: id }, userRecipient: entry === "human" ? {session: {providerId: "workbench",sessionId: sessionId},actor} : null };
-    const accepted = agentHostSendResultSchema.omit({snapshot:true}).parse(await client.request(`/v1/channel/sessions/${sessionId}/runs`, "POST", { channel, credential: {token:credentials.token ?? null,apiKey:credentials.apiKey ?? null}, language: resolveLocale(credentials.locale), input: { role: "user", content: input.message, timestamp: Date.now() }, replyTo: input.replyTo, selectedOption: input.selectedOption, ...(session.workspace_id ? { context: { workspaceId: session.workspace_id } } : {}), presentationBinding: entry === "human" ? input.presentationBinding : undefined }, id));
+    const accepted = agentHostSendResultSchema.omit({snapshot:true}).parse(await client.request(`/v1/channel/sessions/${sessionId}/runs`, "POST", { channel, credential: {token:credentials.token ?? null,apiKey:credentials.apiKey ?? null}, language: resolveLocale(credentials.locale), input: { role: "user", content: input.message, timestamp: Date.now() }, replyTo: input.replyTo, selectedOption: input.selectedOption, ...(session.workspace_id || input.variables ? { context: { ...(session.workspace_id ? { workspaceId: session.workspace_id } : {}), ...(input.variables ? { variables: input.variables } : {}) } } : {}), presentationBinding: entry === "human" ? input.presentationBinding : undefined }, id));
     return agentHostSendResultSchema.parse({ ...accepted, snapshot: accepted.delivery.delivery === "run" && accepted.delivery.status === "running" ? publicSnapshot(await client.run(accepted.delivery.runId)) : null });
 
   },
