@@ -225,7 +225,7 @@ const projections = {
 const panel = productPanelInputSchema.parse({
   name: "Business knowledge", description: "", visibility: "domain",
   content: {
-    html: '<section flow="column"><panel-member ref="counts"></panel-member><panel-member ref="list"></panel-member><panel-member ref="detail"></panel-member><panel-member ref="form"></panel-member><panel-member ref="createForm"></panel-member><panel-member ref="approve"></panel-member><panel-member ref="remove"></panel-member></section>',
+    html: '<style>.knowledge { display: flex; flex-direction: column; }</style><section class="knowledge"><panel-member ref="counts"></panel-member><panel-member ref="list"></panel-member><panel-member ref="detail"></panel-member><panel-member ref="form"></panel-member><panel-member ref="createForm"></panel-member><panel-member ref="approve"></panel-member><panel-member ref="remove"></panel-member></section>',
   },
   manifest: {
     state: {

@@ -63,7 +63,7 @@ function answer(request: Sent) {
 }
 
 const reads = (sent: Sent[]) => sent.filter(request => request.path === "/api/product-panels/read").map(request => request.body as Read);
-const member = (root: ParentNode, name: string) => root.querySelector<HTMLElement>(`.panel-host-coded [data-member='${name}']`);
+const member = (root: HTMLElement, name: string) => root.querySelector<HTMLElement>(`.panel-host-coded [data-member='${name}']`);
 
 async function openPage(address: string) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{
