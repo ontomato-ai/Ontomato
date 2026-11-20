@@ -32,7 +32,7 @@ import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 
-const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "" }));
+const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "", denyCustomerTypes: false }));
 vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
@@ -105,6 +105,18 @@ beforeAll(async () => {
       entryAccess: ["app-builder"], scheduleAdapter: null, releaseId: null,
     }] });
   });
+  app.get("/ontology/model/object-types", (req, res) => {
+    expect(req.header("tk")).toBe("host-reader");
+    expect(req.header("Accept-Language")).toBe("en");
+    if (state.denyCustomerTypes) {
+      res.status(403).json({ success: false, code: "ONTOLOGY_FORBIDDEN", message: "The author may not read the domain's object types" });
+      return;
+    }
+    res.json(["expense", "CostCenter"].map(className => ({
+      className, showName: className, classDesc: "", attributeCount: 1,
+      businessKeyCount: 0, relationshipCount: 0, primaryKey: { status: "ok", name: "id" },
+    })));
+  });
   app.post("/action/queryList", (req, res) => {
     expect(req.header("tk")).toBe("host-reader");
     expect(req.body).toEqual({ status: "PUBLISHED" });
@@ -159,6 +171,12 @@ it("reads the authoritative operation type table while isolating stale published
   expect(objectTypes["platform:ScheduledTask"].operations).toContainEqual(expect.objectContaining({
     id: "schedules.runNow", target: { source: "input", input: "task" }, batch: false, effect: "write",
   }));
+  const customerReads = {
+    query: { source: "type", parameterMode: "fixed", params: { search: "keyword", page: "page" }, result: "panelRecordQuery" },
+    record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+  };
+  expect(objectTypes.CostCenter).toEqual({ reads: customerReads });
+  expect(objectTypes.expense.reads).toEqual(customerReads);
   expect(objectTypes.expense.operations).toEqual([expect.objectContaining({
     id: "approve-expense", target: { source: "input", input: "target" }, batch: false, effect: "write",
     inputSchema: expect.objectContaining({
@@ -170,6 +188,24 @@ it("reads the authoritative operation type table while isolating stale published
   expect(raw).not.toContain("author-private");
   const denied = await fetch(state.base + "/api/app-builder/type-table", { headers: { "X-Test-Token": "ordinary-reader" } });
   expect(denied.status).toBe(403);
+});
+
+it("keeps the author type table available when Java denies access to the customer type catalogue", async () => {
+  state.denyCustomerTypes = true;
+  try {
+    const response = await request("GET", "app-builder/type-table");
+    expect(response.status, await response.clone().text()).toBe(200);
+    const table = platformTypeTableResponseSchema.parse(await response.json());
+    expect(table).toMatchObject({
+      customerTypesUnavailable: { reason: "The author may not read the domain's object types" },
+    });
+    expect(table.objectTypes["platform:ScheduledTask"].operations).toContainEqual(expect.objectContaining({ id: "schedules.runNow" }));
+    expect(table.objectTypes.expense.operations).toContainEqual(expect.objectContaining({ id: "approve-expense" }));
+    expect(table.objectTypes.expense.reads).toBeUndefined();
+    expect(table.objectTypes.CostCenter).toBeUndefined();
+  } finally {
+    state.denyCustomerTypes = false;
+  }
 });
 
 it("identifies malformed registrations and missing author references without bypassing use grants", async () => {
