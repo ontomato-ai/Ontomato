@@ -2,19 +2,26 @@ package io.ontomato.dataengine.applications;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.ontomato.dataengine.service.IdentityService;
+import io.ontomato.dataengine.service.ProductGrantService;
 import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import io.ontomato.dataengine.test.PostgresTestDatabase;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -25,14 +32,22 @@ import org.springframework.transaction.support.TransactionTemplate;
 class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     private ApplicationCatalog catalog;
     private MockMvc http;
+    private ApplicationAccess access;
+    private IdentityService identity;
+    private ProductGrantService grants;
+    private PanelResources panels;
 
     @BeforeEach void setup() {
         new ApplicationCatalogUpgrade(jdbc).afterPropertiesSet();
+        access = mock(ApplicationAccess.class);
+        identity = mock(IdentityService.class);
+        grants = mock(ProductGrantService.class);
+        panels = mock(PanelResources.class);
         catalog = new ApplicationCatalog(jdbc,
-            new TransactionTemplate(new DataSourceTransactionManager(dataSource)), mock(ApplicationAccess.class), "{}",
-            mock(PanelResources.class), mock(io.ontomato.dataengine.service.ProductGrantService.class));
-        http = MockMvcBuilders.standaloneSetup(new ApplicationController(catalog, mock(IdentityService.class),
+            new TransactionTemplate(new DataSourceTransactionManager(dataSource)), access, "{}", panels, grants);
+        http = MockMvcBuilders.standaloneSetup(new ApplicationController(catalog, identity,
             new WorkbenchServiceAuthentication("test-service")))
+            .setControllerAdvice(new ApplicationErrors())
             .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
     }
     private ApplicationCatalog.Builtin builtin(String id, String kind) {
@@ -74,6 +89,163 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         catalog.builtins("data-engine", List.of(builtin("browser", "native")));
         assertEquals("ontology", catalog.require("ontology").getString("id"));
         assertEquals("browser", catalog.require("browser").getString("id"));
+    }
+
+    @Test void aNativeKnowledgeGroupKeepsItsGovernanceSkillAndPresetWithAnAdmittedPanelMember() throws Exception {
+        new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
+        var ontology = JSON.parseObject(new ClassPathResource("applications/ontology.json").getContentAsString(StandardCharsets.UTF_8),
+            ApplicationCatalog.Builtin.class);
+        var metadata = ontology.declaration();
+        var use = new ApplicationPanelUse("knowledge-use", "knowledge", "panel-knowledge", "/ontology/knowledge",
+            new ApplicationPanelUse.Access("business-knowledge", null),
+            new DefaultAgentTarget("id", "knowledge-agent", null), null);
+        var declaration = new ApplicationCatalog.Declaration(metadata.names(), metadata.descriptions(), metadata.icon(),
+            metadata.groups(), metadata.permissions(), metadata.pageSkills(), List.of(use));
+        catalog.builtins("data-engine", List.of(new ApplicationCatalog.Builtin(ontology.id(), ontology.kind(), ontology.rail(),
+            ontology.category(), ontology.sort(), ontology.entry(), ontology.entryAccess(), ontology.scheduleAdapter(), declaration)));
+
+        var viewer = new QueryAccessService.GrantUser("viewer", "domain");
+        when(identity.getCurrentUser()).thenReturn(viewer);
+        when(access.canEnter(any(), eq(viewer))).thenReturn(true);
+        when(access.pageSkills(anyList(), eq(viewer))).thenAnswer(call -> call.getArgument(0));
+        when(access.panelUses(List.of(use), viewer)).thenReturn(List.of(use));
+        when(grants.allowed("panel-knowledge", "use")).thenReturn(true);
+
+        http.perform(get(ApplicationController.PANEL_SKILL_SOURCES).param("domainId", "domain")
+                .header(WorkbenchServiceAuthentication.HEADER, "test-service"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data[0].entrance.permissionCode").value("business-knowledge"))
+            .andExpect(jsonPath("$.data[0].path").value("/ontology/knowledge"));
+        http.perform(get("/platform/applications/ontology/panel-uses"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.entry.renderer").value("ontology"))
+            .andExpect(jsonPath("$.data.panelUses[0].id").value("knowledge-use"));
+        http.perform(get("/platform/applications/resolve-entry").param("path", "/ontology/knowledge"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.use.id").value("knowledge-use"));
+        http.perform(get("/platform/page-skills")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.pageSkills.length()").value(metadata.pageSkills().size()))
+            .andExpect(jsonPath("$.data.pageSkills[0].skill.name").value("knowledge-governance"))
+            .andExpect(jsonPath("$.data.pageSkills[0].defaults[0].pageKey").value("governance-report"))
+            .andExpect(jsonPath("$.data.pageSkills[0].defaults[0].defaultAgent.agentKind").value("knowledge-governance"))
+            .andExpect(jsonPath("$.data.pageSkills[0].defaults[1].pageKey").value("knowledge"))
+            .andExpect(jsonPath("$.data.admittedEntrances[0].pageKey").value("knowledge"))
+            .andExpect(jsonPath("$.data.registeredSkills[0].name").value("knowledge-governance"));
+    }
+
+    @Test void aBuiltinCannotBorrowAnotherBuiltinsEntryCode() throws Exception {
+        new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
+        var before = records();
+        var original = builtin("other", "native");
+        var use = new ApplicationPanelUse("detail", "detail", "panel-detail", "/other/detail",
+            new ApplicationPanelUse.Access("data-browser", null), null, null);
+        var metadata = original.declaration();
+        var declaration = new ApplicationCatalog.Declaration(metadata.names(), metadata.descriptions(), metadata.icon(),
+            metadata.groups(), metadata.permissions(), List.of(), List.of(use));
+        var other = new ApplicationCatalog.Builtin(original.id(), original.kind(), original.rail(), original.category(), original.sort(),
+            JSONObject.of("renderer", "panels", "path", "/other"), List.of("data-browser"), null, declaration);
+
+        assertEquals(400, assertThrows(org.springframework.web.server.ResponseStatusException.class,
+            () -> catalog.builtins("workbench", List.of(other))).getStatusCode().value());
+        assertEquals(before, records());
+    }
+
+    @Test void managementRetainsFullUsesAndResolveReturnsTheSavedEntrySettings() throws Exception {
+        var owner = new QueryAccessService.GrantUser("author", "domain");
+        var viewer = new QueryAccessService.GrantUser("viewer", "domain");
+        when(identity.getCurrentUser()).thenReturn(owner);
+        when(grants.allowed(anyString(), eq("use"))).thenReturn(true);
+        when(access.canEnter(any(), any())).thenReturn(true);
+        when(access.canMaintain(any(), eq(owner))).thenReturn(true);
+        when(access.panelUses(anyList(), any())).thenAnswer(call -> List.of(call.<List<ApplicationPanelUse>>getArgument(0).getFirst()));
+        var path = "/platform/applications/app-school/panel-uses";
+        http.perform(put(path).contentType(MediaType.APPLICATION_JSON).content("""
+            {"entry":{"path":"/applications/app-school","renderer":"panels"},"entryAccess":["domain-member"],
+             "declaration":{"names":{"en":"School"},"descriptions":{},"icon":"school",
+               "groups":[{"key":"school","names":{"en":"School"},"sort":1}],
+               "permissions":[{"code":"app:app-school:private","names":{"en":"Private"},"groupKey":"school","sort":1}]},
+             "framePanelId":"panel-frame","theme":{"light":{"--el-color-primary":"#123456"}},
+             "delivery":{"panels":["panel-frame","panel-school"],"projections":["projection-school"],"packages":[],"agents":[],"skills":[]},
+             "panelUses":[
+               {"id":"school","pageKey":"school","panelId":"panel-school","path":"/applications/app-school/main","access":{"kind":"domain-member"},
+                "names":{"en":"School"},"groupKey":"school","inputs":{"term":{"literal":null}}},
+               {"id":"private","pageKey":"private","panelId":"panel-school","path":"/applications/app-school/private",
+                "access":{"permissionCode":"app:app-school:private"}}]}
+            """)).andExpect(status().isOk());
+
+        http.perform(get(path).param("purpose", "management")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.panelUses.length()").value(2))
+            .andExpect(jsonPath("$.data.declaration.permissions[0].code").value("app:app-school:private"))
+            .andExpect(jsonPath("$.data.framePanelId").value("panel-frame"))
+            .andExpect(jsonPath("$.data.delivery.projections[0]").value("projection-school"));
+        when(identity.getCurrentUser()).thenReturn(viewer);
+        http.perform(get(path).param("purpose", "management")).andExpect(status().isForbidden());
+        http.perform(get(path)).andExpect(status().isOk()).andExpect(jsonPath("$.data.panelUses.length()").value(1));
+        http.perform(get("/platform/applications/resolve-entry").param("path", "/applications/app-school/main"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.framePanelId").value("panel-frame"))
+            .andExpect(jsonPath("$.data.theme.light['--el-color-primary']").value("#123456"))
+            .andExpect(jsonPath("$.data.use.inputs.term.literal").hasJsonPath())
+            .andExpect(jsonPath("$.data.delivery").doesNotHaveJsonPath());
+
+        when(identity.getCurrentUser()).thenReturn(owner);
+        http.perform(put(path).contentType(MediaType.APPLICATION_JSON).content("""
+            {"entry":{"path":"/applications/app-school","renderer":"panels"},"panelUses":[]}
+            """)).andExpect(status().isOk());
+        http.perform(get(path).param("purpose", "management")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.framePanelId").doesNotHaveJsonPath())
+            .andExpect(jsonPath("$.data.theme").doesNotHaveJsonPath())
+            .andExpect(jsonPath("$.data.delivery").doesNotHaveJsonPath())
+            .andExpect(jsonPath("$.data.declaration.names.en").value("School"))
+            .andExpect(jsonPath("$.data.entryAccess[0]").value("domain-member"));
+
+    }
+
+    @Test void objectBrowserDetailChecksReaderBeforeLookingUpTheClassAndChecksTheActualPanel() throws Exception {
+        new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
+        var reader = new QueryAccessService.GrantUser("viewer", "domain");
+        when(identity.getCurrentUser()).thenReturn(reader);
+        http.perform(get("/platform/applications/resolve-entry").param("path", "/browser/detail/Customer"))
+            .andExpect(status().isForbidden());
+        verifyNoInteractions(panels, grants);
+
+        when(access.canEnter(any(), eq(reader))).thenReturn(true);
+        when(panels.objectDetailPanel("domain", "客户")).thenReturn("panel-customer");
+        var detail = "/browser/detail/%E5%AE%A2%E6%88%B7";
+        http.perform(get("/platform/applications/resolve-entry").param("path", detail)).andExpect(status().isForbidden());
+        when(grants.allowed("panel-customer", "use")).thenReturn(true);
+        http.perform(get("/platform/applications/resolve-entry").param("path", detail)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.use.id").value("browser-detail:客户"))
+            .andExpect(jsonPath("$.data.use.pageKey").value("browser-detail:客户"))
+            .andExpect(jsonPath("$.data.use.path").value(detail))
+            .andExpect(jsonPath("$.data.use.access.permissionCode").value("data-browser"))
+            .andExpect(jsonPath("$.data.use.names").doesNotHaveJsonPath());
+        http.perform(get("/platform/applications/resolve-entry").param("path", "/browser/detail/Unconfigured"))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test void browserDetailDerivesOnlyIdsThatFitTheContractAndRejectsPercentInTheClass() throws Exception {
+        new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
+        var reader = new QueryAccessService.GrantUser("viewer", "domain");
+        when(identity.getCurrentUser()).thenReturn(reader);
+        when(access.canEnter(any(), eq(reader))).thenReturn(true);
+        var root = "/browser/detail/";
+        var resolve = "/platform/applications/resolve-entry";
+        var limit = "x".repeat(185);
+        var overLimit = limit + "x";
+        when(panels.objectDetailPanel("domain", limit)).thenReturn("panel-customer");
+        when(grants.allowed("panel-customer", "use")).thenReturn(true);
+
+        http.perform(get(resolve).param("path", root + limit)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.use.id").value("browser-detail:" + limit))
+            .andExpect(jsonPath("$.data.use.pageKey").value("browser-detail:" + limit));
+        assertAll(
+            () -> http.perform(get(resolve).param("path", root + overLimit)).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("185"))),
+            () -> http.perform(get(resolve).param("path", root + "Discount%25")).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("percent sign"))));
+        verify(panels).objectDetailPanel("domain", limit);
+        verifyNoMoreInteractions(panels);
     }
 
     @Test void upgradesStoredDefaultAgentTargetsWithoutChangingTheirMeaning() {

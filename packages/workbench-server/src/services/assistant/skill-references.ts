@@ -28,15 +28,12 @@ export function resolveAssistantSkillReferences(
 }
 export async function listAnalysisAgentSkillReferences(
   domainId: string,
-  skills: readonly RuntimeSkillRef[],
+  skill: RuntimeSkillRef,
 ): Promise<AnalysisAgentSkillReference[]> {
   const { rows } = await getPostgresPool().query<{ id: string; name: string }>(
     `SELECT id,name FROM ${t("assistant_agents")}
-     WHERE domain_id=$1 AND EXISTS (
-       SELECT 1 FROM jsonb_array_elements($2::jsonb) selected(ref)
-       WHERE skills @> jsonb_build_array(selected.ref)
-     )`,
-    [domainId, JSON.stringify(skills)],
+     WHERE domain_id=$1 AND skills @> $2::jsonb`,
+    [domainId, JSON.stringify([skill])],
   );
   return rows.map(({ id, name }) => ({ id, name, usesAnalysis: true, usesVisualization: false }));
 }

@@ -16,7 +16,7 @@ vi.mock("../../skills/operations",()=>({withDomainSkills:async(_domain:string,fn
 vi.mock("../../product-assets/platform-assets",()=>({nativeProfileId:async()=>null}));
 vi.mock("../../product-assets/agent-profile",()=>({profileSourceForSession:async()=>null,agentProfileForAgent:async()=>null,profileForSession:async()=>null}));
 vi.mock("../../agent-runtime/callback-credential",()=>({callbackCredential:mocks.callback}));
-vi.mock("../../agent-host/caller",()=>({restoreAgentCaller:async()=>({owner:{domainId:"domain",userId:"user"},credentials:{}})}));
+vi.mock("../../agent-host/caller",()=>({openAgentCaller:async()=>({id:runId,domainId:owner.domainId}),restoreAgentCaller:async()=>({owner:{domainId:"domain",userId:"user"},credentials:{}})}));
 vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://ontology"}}}));
 vi.mock("../../../config/query-settings",()=>({getQueryTimeoutMs:()=>900_000}));
 vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({callbackUrl:"http://workbench"})}}));
@@ -26,6 +26,7 @@ vi.mock("../../../platform/agent-runtime/runtime",()=>({messageText:(message:{co
 import { assistantService } from "../service";
 import { assistantScheduleApplication } from "../scheduling";
 import { agentChannelService } from "../../agent-host/channel";
+import { agentHostSendRequestSchema } from "@ontomato/contracts/agent-host";
 import type { AgentPrepareRequest } from "@ontomato/contracts/agent-channel";
 configureI18n({defaultLocale:"en",appTextLocale:"en",languageSwitchEnabled:false,packs:{en:{messages:en,...enLocaleMeta}}});
 const owner={domainId:"domain",userId:"user"},sessionId="11111111-1111-4111-8111-111111111111",runId="22222222-2222-4222-8222-222222222222",agentId="33333333-3333-4333-8333-333333333333";
@@ -52,6 +53,32 @@ it("governance-only preparation registers caller bounds without query preparatio
   expect(prepared.environment.values).not.toHaveProperty("ONTOMATO_RETRIEVAL_CALLER_ID");
   expect(mocks.callback.mock.calls.find(([claim])=>claim.pathPrefix.endsWith("/governance-window"))![0].expiresAt).toBe(new Date((await mocks.turn()).created_at).getTime()+900_000);
   expect(mocks.overview).not.toHaveBeenCalled();expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({continuationIds:[],recentUserMessages:[],executionUserId:null}),{token:"user"});expect(mocks.recordWindow).not.toHaveBeenCalled();
+});
+it("carries the displayed member into human preparation and prompts with the checked canonical placement", async () => {
+  const locator = { permissionCode: "business-knowledge", pageKey: "knowledge" };
+  const source = { kind: "application-use" as const, applicationId: "ontology", useId: "knowledge-use" };
+  const member = { source, memberPath: [], ref: { namespace: { kind: "domain" as const, domainId: owner.domainId }, name: "panel-a" } };
+  const pageSkillContext = { mode: "member" as const, locator, member };
+  const currentPage = { entrance: locator, member, path: "/ontology/knowledge" };
+  const credentials = { token: "human" };
+  const message = "Use the shown panel";
+  const input = agentHostSendRequestSchema.parse({ message, pageSkillContext });
+  mocks.request.mockResolvedValueOnce(undefined).mockResolvedValueOnce({
+    delivery: { messageId: runId, sessionRef: { providerId: "workbench", sessionId }, runId, delivery: "run", status: "starting" },
+    input: { id: runId, runId, messageSeq: 1, contextSeq: null, message: { role: "user", content: message, timestamp: 1 } },
+    pendingQuestions: [], replayed: false,
+  });
+  await assistantService.send(sessionId, runId, input, owner, credentials, "human");
+  const [, , request] = mocks.request.mock.calls[1];
+  expect(request.context).toEqual({ pageSkillContext });
+  const prepare = { ...preparation(), ...request.channel, input: request.input, context: request.context };
+  mocks.skills.mockResolvedValueOnce({ skills: [{ skill: member.ref, digest }], pageDrafts: true, currentPage });
+  const result = await assistantService.prepare(prepare, owner, credentials);
+  expect(mocks.skills).toHaveBeenCalledWith(owner.domainId, expect.anything(), credentials, pageSkillContext);
+  expect(result.definition.systemPrompt).toContain(JSON.stringify(currentPage));
+  const resumed = await assistantService.prepare({ ...prepare, runId: agentId }, owner, credentials);
+  expect(mocks.skills).toHaveBeenLastCalledWith(owner.domainId, expect.anything(), credentials, undefined);
+  expect(resumed.definition.systemPrompt).not.toContain(currentPage.path);
 });
 it("the selected query skill opens and records its actual scope regardless of preset kind",async()=>{
   const querySkill={namespace:{kind:"provider",provider:"ontology"},name:"ontomato-analyst-assistant"};

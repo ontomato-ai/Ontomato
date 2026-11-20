@@ -79,9 +79,34 @@ it('does not accept an upstream path or headers on the fixed retrieval business 
 
 it.each([
   ["GET", "workbench/api/assistant/agent-definitions"],
+  ["GET", `workbench/api/assistant/agent-definitions/${other}`],
   ["POST", "workbench/api/assistant/agent-definitions/form"],
   ["POST", "workbench/api/assistant/agent-definitions/validate"],
   ["GET", "workbench/api/assistant/agent-skills"],
+])("uses the initiator's visibility for %s %s", async (method, path) => {
+ const upstream = vi.fn(async (_url: string, _request: NonNullable<Parameters<typeof fetch>[1]>) => Response.json({}));
+ vi.stubGlobal("fetch", upstream);
+ mocks.run.mockResolvedValue({ status: "running", channel: {} });
+ expect((await call(path, { tk: "oq.business.grant" }, method)).status).toBe(200);
+ expect(upstream.mock.calls[0]?.[1].headers).toMatchObject({ tk: "initiator-token" });
+ expect(upstream.mock.calls[0]?.[1].headers).not.toHaveProperty("X-API-Key");
+ expect(mocks.run).toHaveBeenCalledWith({ userId: "U", domainId: "domain" }, run);
+ expect(mocks.restore).not.toHaveBeenCalled();
+});
+
+it.each([
+  "workbench/api/assistant/agent-skills",
+  "workbench/api/platform-ontology/counts",
+])("keeps the active-run requirement on %s", async path => {
+ const upstream = vi.fn();
+ vi.stubGlobal("fetch", upstream);
+ mocks.run.mockResolvedValue({ status: "stopped", channel: {} });
+ expect((await call(path, {}, "GET")).status).toBe(409);
+ expect(upstream).not.toHaveBeenCalled();
+ expect(mocks.restore).not.toHaveBeenCalled();
+});
+
+it.each([
   ["GET", "workbench/api/mcp/services/names"],
   ["GET", "ontology/model-options"],
   ["GET", "ontology/platform/agent-execution/options?selected=worker"],
@@ -118,14 +143,16 @@ it.each([
   "/api/skills/reporting/references",
   "/api/skills/reporting/files",
   "/api/skills/reporting/file?path=references%2Freadme.md",
-])("forwards the declared skill read %s with the executor credential", async path => {
+])("forwards the declared skill read %s with the initiator credential", async path => {
  const upstream = vi.fn(async (_url: string, _request: NonNullable<Parameters<typeof fetch>[1]>) => Response.json({}));
  vi.stubGlobal("fetch", upstream);
+ mocks.run.mockResolvedValue({ status: "running", channel: {} });
  expect((await call("workbench" + path, { tk: "oq.business.grant" }, "GET")).status).toBe(200);
  const [url, request] = upstream.mock.calls[0]!;
  expect(url).toBe("http://workbench.test" + path);
- expect(request).toMatchObject({ method: "GET", headers: { "X-API-Key": "selected-user-key" } });
- expect(request.headers).not.toHaveProperty("tk");
+ expect(request).toMatchObject({ method: "GET", headers: { tk: "initiator-token" } });
+ expect(request.headers).not.toHaveProperty("X-API-Key");
+ expect(mocks.restore).not.toHaveBeenCalled();
 });
 
 it.each([
@@ -149,17 +176,20 @@ it.each([
   ["GET", "/api/platform-ontology/start", undefined],
   ["POST", "/api/platform-ontology/neighbors", { node: { className: "platform:User", primaryKey: "V" }, relationKinds: ["owns"] }],
   ["POST", "/api/platform-ontology/objects", { type: "platform:User", keyword: "V", page: 1 }],
-])("forwards the platform ontology read %s %s with the executor credential", async (method, path, body) => {
+])("forwards the platform ontology read %s %s with the initiator credential", async (method, path, body) => {
  const upstream = vi.fn(async (_url: string, _request: NonNullable<Parameters<typeof fetch>[1]>) => Response.json({}));
  vi.stubGlobal("fetch", upstream);
+ mocks.run.mockResolvedValue({ status: "running", channel: {} });
  const response = await nativeFetch(base+`/api/assistant/executions/${run}/workbench`+path, {
    method, headers: { "content-type": "application/json", "X-Ontomato-Callback-Credential": credential(), "X-Ontomato-Run-Id": run, tk: "oq.business.grant" },
    body: body === undefined ? undefined : JSON.stringify(body),
  });
  expect(response.status).toBe(200);
  expect(upstream.mock.calls[0]?.[0]).toBe("http://workbench.test" + path);
- expect(upstream.mock.calls[0]?.[1]).toMatchObject({ method, body: body === undefined ? undefined : JSON.stringify(body), headers: { "X-API-Key": "selected-user-key" } });
- expect(upstream.mock.calls[0]?.[1].headers).not.toHaveProperty("tk");
+ expect(upstream.mock.calls[0]?.[1]).toMatchObject({ method, body: body === undefined ? undefined : JSON.stringify(body), headers: { tk: "initiator-token" } });
+ expect(upstream.mock.calls[0]?.[1].headers).not.toHaveProperty("X-API-Key");
+ expect(mocks.run).toHaveBeenCalledWith({ userId: "U", domainId: "domain" }, run);
+ expect(mocks.restore).not.toHaveBeenCalled();
 });
 
 it.each([

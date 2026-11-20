@@ -1,6 +1,7 @@
 import { closeGovernanceWindow } from "./governance";
 import { adoptAuthoringDefinition, authoringDraftKind, closeAuthoringRun } from "./authoring";
 import { executionSkillEnvironment } from "./execution-callback";
+import { pageSkillContextSchema } from "@ontomato/contracts/page-skills";
 import { agentHostSendResultSchema, type AgentHostSendRequest } from "@ontomato/contracts/agent-host";
 import { resolveLocale } from "../../i18n";
 import { assertAppBuilderAccess } from "../app-builder/access";
@@ -244,7 +245,10 @@ export const assistantService = {
       const variables = z.record(z.unknown()).safeParse(
         body.context && typeof body.context === "object" ? body.context.variables : undefined,
       );
-      return prepare({ a,session,turn,message,input,inputId:body.inputId,ontologyContext:null,owner,credentials,executionUserId,executionCredentials,externalVariables:variables.success?variables.data:undefined,reader:visibilityReader(body) });
+      const reader = visibilityReader(body);
+      const pageSkillContext = reader === "user" && input.role === "user" && body.root.runId === id
+        ? pageSkillContextSchema.optional().parse(body.context?.pageSkillContext) : undefined;
+      return prepare({ a,session,turn,message,input,pageSkillContext,inputId:body.inputId,ontologyContext:null,owner,credentials,executionUserId,executionCredentials,externalVariables:variables.success?variables.data:undefined,reader });
     });
     await assistantStore.admitted(id,message);
     if (isAppBuilderKind(a.kind)) {
@@ -273,7 +277,20 @@ export const assistantService = {
     const actor = await openAgentCaller(owner, credentials), agent = { providerId: "workbench", agentId: session.agent_id };
     await client.request(`/v1/channel/sessions/${sessionId}/bind`, "POST", { agent, actor });
     const channel: AgentRunContext = { agent, actor, authority: { classNames: a.class_names, executionKind: isAppBuilderKind(a.kind) ? "build-test" : "live" }, requestedBy: null, root: { session: { providerId: "workbench", sessionId }, runId: id }, userRecipient: entry === "human" ? {session: {providerId: "workbench",sessionId: sessionId},actor} : null };
-    const accepted = agentHostSendResultSchema.omit({snapshot:true}).parse(await client.request(`/v1/channel/sessions/${sessionId}/runs`, "POST", { channel, credential: {token:credentials.token ?? null,apiKey:credentials.apiKey ?? null}, language: resolveLocale(credentials.locale), input: { role: "user", content: input.message, timestamp: Date.now() }, replyTo: input.replyTo, selectedOption: input.selectedOption, ...(session.workspace_id || input.variables ? { context: { ...(session.workspace_id ? { workspaceId: session.workspace_id } : {}), ...(input.variables ? { variables: input.variables } : {}) } } : {}), presentationBinding: entry === "human" ? input.presentationBinding : undefined }, id));
+    const context = {
+      ...(session.workspace_id ? { workspaceId: session.workspace_id } : {}),
+      ...(input.variables ? { variables: input.variables } : {}),
+      ...(entry === "human" && !isAppBuilderKind(a.kind) && input.pageSkillContext
+        ? { pageSkillContext: input.pageSkillContext } : {}),
+    };
+    const accepted = agentHostSendResultSchema.omit({snapshot:true}).parse(await client.request(
+      `/v1/channel/sessions/${sessionId}/runs`, "POST", {
+        channel, credential: { token: credentials.token ?? null, apiKey: credentials.apiKey ?? null },
+        language: resolveLocale(credentials.locale), input: { role: "user", content: input.message, timestamp: Date.now() },
+        replyTo: input.replyTo, selectedOption: input.selectedOption,
+        ...(Object.keys(context).length ? { context } : {}),
+        presentationBinding: entry === "human" ? input.presentationBinding : undefined,
+      }, id));
     return agentHostSendResultSchema.parse({ ...accepted, snapshot: accepted.delivery.delivery === "run" && accepted.delivery.status === "running" ? publicSnapshot(await client.run(accepted.delivery.runId)) : null });
 
   },

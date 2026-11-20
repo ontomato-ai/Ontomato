@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
-import type { AgentPageQuery } from "../host";
+import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import type { ShellLabels } from "../types";
 import { usePageCounter } from "../page-counter";
 import AgentPicker from "./AgentPicker.vue";
@@ -21,7 +21,7 @@ const props = defineProps<{
   page: string;
   labels: Pick<ShellLabels, "placeholder" | "send" | "stop" | "agent" | "pageAgentUnavailable" | "collapseComposer" | "expandComposer">;
   /** The page's own skill declaration, when it has one; it is the one the page hands its conversation too. */
-  pageSkill?: AgentPageQuery;
+  pageSkill?: PageSkillContext;
 }>();
 const emit = defineEmits<{ error: [message: string] }>();
 const counter = usePageCounter()!;
@@ -36,20 +36,37 @@ const counter = usePageCounter()!;
  */
 const agents = ref<readonly AgentHostAgent[]>([]);
 const chosen = ref<string | null>(null);
-const candidates = props.pageSkill
-  ? counter.pageAgents(props.pageSkill)
-  : counter.agents().then((list) => ({ agents: list, defaultAgentId: undefined as string | undefined }));
-void candidates
-  .then(({ agents: list, defaultAgentId }) => {
-    agents.value = list.filter((agent) => agent.enabled);
-    const offered = (id: string | null | undefined) => agents.value.some((agent) => agent.id === id);
-    const remembered = props.pageSkill ? null : counter.preferredAgentId.value;
-    // The page's registered default (the platform's own agent when it registered none), else the remembered one, else the first.
-    const initial = offered(defaultAgentId) ? defaultAgentId : offered(remembered) ? remembered : agents.value[0]?.id;
-    chosen.value = initial ?? null;
-  })
-  // The page's own configuration keeps its own words and the service's reason; anything else is the service's error.
-  .catch((reason: unknown) => emit("error", candidatesFailureReason(reason, props.labels.pageAgentUnavailable)));
+let load = 0;
+
+watch(
+  () => (props.pageSkill ? JSON.stringify(props.pageSkill) : null),
+  () => {
+    const skill = props.pageSkill;
+    const seq = ++load;
+    agents.value = [];
+    chosen.value = null;
+    if (skill?.mode === "member" && skill.member === null) return;
+    const candidates = skill
+      ? counter.pageAgents(skill)
+      : counter.agents().then((list) => ({ agents: list, defaultAgentId: undefined as string | undefined }));
+    void candidates
+      .then(({ agents: list, defaultAgentId }) => {
+        if (seq !== load) return;
+        agents.value = list.filter((agent) => agent.enabled);
+        const offered = (id: string | null | undefined) => agents.value.some((agent) => agent.id === id);
+        const remembered = skill ? null : counter.preferredAgentId.value;
+        // The page's registered default (the platform's own agent when it registered none), else the remembered one, else the first.
+        const initial = offered(defaultAgentId) ? defaultAgentId : offered(remembered) ? remembered : agents.value[0]?.id;
+        chosen.value = initial ?? null;
+      })
+      // The page's own configuration keeps its own words and the service's reason; anything else is the service's error.
+      .catch((reason: unknown) => {
+        if (seq !== load) return;
+        emit("error", candidatesFailureReason(reason, props.labels.pageAgentUnavailable));
+      });
+  },
+  { immediate: true },
+);
 /** The agent the message goes to: the one chosen here, else the one selected when the page opened. */
 const agentId = computed(() => chosen.value ?? agents.value[0]?.id ?? null);
 

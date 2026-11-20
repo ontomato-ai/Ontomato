@@ -1,7 +1,8 @@
-import { createApp, h, ref, type App } from "vue";
+import { createApp, h, ref, type App, type Ref } from "vue";
 import { afterEach, expect, it, vi } from "vitest";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
-import type { AgentPageQuery } from "../host";
+import { assistantAgentsQuerySchema, type PageSkillContext } from "@ontomato/contracts/page-skills";
+import { createAgentHostClient } from "../host";
 import type { ShellLabels } from "../types";
 import { pageCounterKey, type PageCounter } from "../page-counter";
 import PageComposer from "../components/PageComposer.vue";
@@ -34,7 +35,25 @@ const labels = {
 } as Pick<ShellLabels, "placeholder" | "send" | "stop" | "agent" | "pageAgentUnavailable" | "collapseComposer" | "expandComposer">;
 
 const agent = (id: string, name: string): AgentHostAgent => ({ id, name, description: "", icon: null, enabled: true });
-const dashboardSkill: AgentPageQuery = { pageKey: "dashboard", access: "domain-member" };
+const dashboardSkill: PageSkillContext = { mode: "public", locator: { pageKey: "dashboard", access: "domain-member" } };
+const homeMemberSkill: PageSkillContext = {
+  mode: "member",
+  locator: { pageKey: "home", access: "domain-member" },
+  member: { source: { kind: "home" }, memberKey: "pvt-home-panel" },
+};
+const drawerMemberSkill: PageSkillContext = {
+  mode: "member",
+  locator: { pageKey: "home", access: "domain-member" },
+  member: {
+    source: { kind: "object-detail", useId: "use-order", object: { className: "Order", primaryKey: "ord-1" } },
+    memberKey: "pvt-order-detail",
+  },
+};
+const unavailableMemberSkill: PageSkillContext = {
+  mode: "member",
+  locator: { pageKey: "home", access: "domain-member" },
+  member: null,
+};
 
 const roots: HTMLElement[] = [];
 const apps: App[] = [];
@@ -44,7 +63,9 @@ afterEach(() => {
 });
 
 /** The page's composer, mounted the way a page draws it, over a counter that answers with these agents. */
-function draw(counter: Partial<Pick<PageCounter, "agents" | "pageAgents">> & { withoutSkill?: boolean }) {
+function draw(
+  counter: Partial<Pick<PageCounter, "agents" | "pageAgents">> & { withoutSkill?: boolean; pageSkill?: PageSkillContext | Ref<PageSkillContext | undefined> },
+) {
   const pageAgents = vi.fn(counter.pageAgents ?? (async () => ({ agents: [] as AgentHostAgent[] })));
   const agents = vi.fn(counter.agents ?? (async () => [] as AgentHostAgent[]));
   const ask = vi.fn();
@@ -53,12 +74,17 @@ function draw(counter: Partial<Pick<PageCounter, "agents" | "pageAgents">> & { w
   const root = document.createElement("div");
   document.body.append(root);
   roots.push(root);
+  const skillRef = counter.withoutSkill
+    ? ref<PageSkillContext | undefined>(undefined)
+    : counter.pageSkill && "value" in counter.pageSkill
+      ? counter.pageSkill
+      : ref<PageSkillContext | undefined>(counter.pageSkill ?? dashboardSkill);
   // The picker is the composer's own control; reading its props is how the test sees who the message would go to.
   const app = createApp({
     render: () => h(PageComposer, {
       page: "/dashboards?dashboardId=board-a",
       labels,
-      ...(counter.withoutSkill ? {} : { pageSkill: dashboardSkill }),
+      ...(skillRef.value ? { pageSkill: skillRef.value } : {}),
       onError: (message: string) => errors.push(message),
     }),
   });
@@ -66,7 +92,7 @@ function draw(counter: Partial<Pick<PageCounter, "agents" | "pageAgents">> & { w
   app.mount(root);
   apps.push(app);
   const shown = () => seen.at(-1)!;
-  return { root, pageAgents, agents, ask, errors, shown };
+  return { root, pageAgents, agents, ask, errors, shown, skillRef };
 }
 
 it("offers only the page's candidates and starts from its registered default", async () => {
@@ -135,4 +161,81 @@ it("shows the service's own error when the candidates could not be read at all",
   await new Promise((resolve) => setTimeout(resolve));
 
   expect(drawn.errors).toEqual(["Failed to fetch"]);
+});
+
+it("offers no candidates and sends no request when a member context has member: null", async () => {
+  const drawn = draw({ pageSkill: unavailableMemberSkill });
+  await new Promise((resolve) => setTimeout(resolve));
+
+  expect(drawn.pageAgents).not.toHaveBeenCalled();
+  expect(drawn.agents).not.toHaveBeenCalled();
+  expect(drawn.errors).toEqual([]);
+  expect(drawn.root.querySelector(".page-ask")).toBeNull();
+});
+
+it("re-queries candidates when the displayed member changes and clears previous candidates on switch", async () => {
+  const skillRef = ref<PageSkillContext | undefined>(homeMemberSkill);
+  const drawn = draw({
+    pageSkill: skillRef,
+    pageAgents: async (skill) => {
+      if (skill.mode === "member" && skill.member?.memberKey === "pvt-home-panel") {
+        return { agents: [agent("home-agent", "Home")], defaultAgentId: "home-agent" };
+      }
+      if (skill.mode === "member" && skill.member?.memberKey === "pvt-order-detail") {
+        return { agents: [agent("order-agent", "Order")], defaultAgentId: "order-agent" };
+      }
+      return { agents: [] };
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve));
+
+  expect(drawn.pageAgents).toHaveBeenCalledWith(homeMemberSkill);
+  expect(drawn.shown().agentId).toBe("home-agent");
+
+  // Switching to an object drawer re-queries with the drawer member.
+  skillRef.value = drawerMemberSkill;
+  await new Promise((resolve) => setTimeout(resolve));
+  expect(drawn.pageAgents).toHaveBeenLastCalledWith(drawerMemberSkill);
+  expect(drawn.shown().agentId).toBe("order-agent");
+
+  // Switching to member: null clears the previous member's candidates without sending a request.
+  const callsBeforeNull = drawn.pageAgents.mock.calls.length;
+  skillRef.value = unavailableMemberSkill;
+  await new Promise((resolve) => setTimeout(resolve));
+  expect(drawn.pageAgents).toHaveBeenCalledTimes(callsBeforeNull);
+  expect(drawn.root.querySelector(".page-ask")).toBeNull();
+});
+
+it("encodes public and member queries through the real host client and skips network calls for member: null", async () => {
+  const requestedUrls: string[] = [];
+  const request = vi.fn(async (path: string) => {
+    requestedUrls.push(path);
+    return new Response(
+      JSON.stringify({
+        agents: [{ ...agent("11111111-1111-4111-8111-111111111111", "Assistant"), effectiveSkills: [] }],
+        defaultAgentId: "11111111-1111-4111-8111-111111111111",
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  });
+  const host = createAgentHostClient({ request });
+
+  await host.listPageAgents(dashboardSkill);
+  expect(requestedUrls).toHaveLength(1);
+  const publicParams = Object.fromEntries(new URL(requestedUrls[0]!, "http://host.test").searchParams);
+  expect(assistantAgentsQuerySchema.parse(publicParams)).toEqual({ pageKey: "dashboard", access: "domain-member" });
+
+  await host.listPageAgents(drawerMemberSkill);
+  expect(requestedUrls).toHaveLength(2);
+  const memberParams = Object.fromEntries(new URL(requestedUrls[1]!, "http://host.test").searchParams);
+  expect(assistantAgentsQuerySchema.parse(memberParams)).toEqual({
+    pageKey: "home",
+    access: "domain-member",
+    source: { kind: "object-detail", useId: "use-order", object: { className: "Order", primaryKey: "ord-1" } },
+    memberKey: "pvt-order-detail",
+  });
+
+  const empty = await host.listPageAgents(unavailableMemberSkill);
+  expect(empty).toEqual({ agents: [] });
+  expect(requestedUrls).toHaveLength(2);
 });

@@ -5,7 +5,7 @@ import { panelAddress } from "@ontomato/contracts/panel-host";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import type { DirectPanel, DirectProjection } from "@ontomato/contracts/product-panels";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
-import { installPlatform, mountPlatformPage, nothingAt, panelUse, READER, type Sent } from "./panel-frame";
+import { panelAnswer, panelSnapshot, installPlatform, mountPlatformPage, nothingAt, panelUse, READER, type Sent } from "./panel-frame";
 
 /*
  * A panel without code at its application's address (direct rendering design 5, 8): the platform draws it in its own
@@ -68,9 +68,9 @@ const task = (primaryKey: string) => ({ className: SCHEDULED_TASK, primaryKey })
 function answer(request: Sent) {
   if (request.path === `/api/data-query/platform/applications/${application}/panel-uses`)
     return Response.json({ data: { applicationId: application, entry: { path: "/", renderer: "panels" }, panelUses: [use] } });
-  if (request.path === `/api/product-panels/${panel.id}`) return Response.json({ panel });
+  if (request.path === `/api/product-panels/${panel.id}`) return panelAnswer(panel, request);
   if (request.path === `/api/product-panels/${panel.id}/snapshot`)
-    return Response.json({ panel: { id: panel.id, revision: 1 }, projections: Object.values(projections).map(({ id, revision }) => ({ id, revision })) });
+    return panelSnapshot(panel, projections, request);
   const projection = /^\/api\/product-projections\/(.+)$/.exec(request.path);
   if (projection) return Response.json({ projection: projections[decodeURIComponent(projection[1]!)] });
   if (request.path === "/api/product-panels/read") {
