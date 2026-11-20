@@ -37,7 +37,8 @@ directory for the registered definitions and wiring.
    dispatch a declared operation. Verify the actual target, permission and business result. Use an empty and a denied
    read when the page needs to tell those cases apart. The dedicated test command is
    `pnpm --filter @ontomato/workbench-server exec vitest run src/api/__tests__/panel-pilot-current.integration.test.ts`
-   with `RUNTIME_TEST_DATABASE_URL` set to a disposable PostgreSQL database.
+   with `RUNTIME_TEST_DATABASE_URL` set to a disposable PostgreSQL database. The agent confirmation cases are in
+   `packages/workbench-server/src/services/product-panels/__tests__/operations.test.ts`.
 
 The task-list projection uses `data.rows = { source: { type: "platform:ScheduledTask" }, read: "list", params: {} }`.
 The summary uses `data.record = { source: { object: { input: "task" } }, read: "record", params: {} }`. The form
@@ -47,6 +48,35 @@ The list's `selected` output and the summary, form and button inputs share a pan
 The button reads `data.operation = { source: { operation: "schedules.runNow" }, read: "describe", params: {} }`.
 Its owner description names the write effect and targets the `task` input. In that placement the operation is
 `run.runNow`, with writes going through the operation dispatcher.
+
+Use a real selected task UUID for `<taskId>` in the following summary read. The reader's authentication and the
+registered use determine whether this request can read the task.
+
+```json
+{
+  "source": {
+    "kind": "registered",
+    "applicationId": "app-panels-trial-a",
+    "useId": "use-trial-a-tasks"
+  },
+  "memberPath": [{ "member": "summary" }],
+  "dataName": "record",
+  "inputs": {
+    "task": { "className": "platform:ScheduledTask", "primaryKey": "<taskId>" }
+  }
+}
+```
+
+The ready result includes `primaryKey`, `label`, `fields` and the owner's localized `fieldLabels`.
+Read the `run` member's `operation` data to discover the button's owner description.
+
+For an agent run with the page skill loaded, the same operation is requested through
+`POST $ONTOMATO_PANEL_OPERATIONS_URL/operate` with the run's callback credential and run ID. The request contains
+a new intent UUID, the same application and use, `operationId: "run.runNow"`, and a `call` with
+`target: { kind: "object", objectType: "platform:ScheduledTask", primaryKey: "<taskId>" }` and `input: {}`.
+A `confirmation-required` result ends that tool call without a write. After the initiating person confirms,
+the answering run uses its own credentials to dispatch that intent. The owner write starts the run and returns
+the result and affected task. A repeated dispatch reports the existing result.
 
 ## Add an official SDK component
 
