@@ -12,7 +12,7 @@
     "members": {
       "list": {
         "target": {
-          "projectionId": "example-agent-management-list"
+          "projectionId": "app-example-agent-management-list"
         },
         "inputs": {
           "selected": {
@@ -22,7 +22,7 @@
       },
       "detail": {
         "target": {
-          "projectionId": "example-agent-management-detail"
+          "projectionId": "app-example-agent-management-detail"
         },
         "inputs": {
           "item": {
@@ -32,7 +32,7 @@
       },
       "form": {
         "target": {
-          "projectionId": "example-agent-management-form"
+          "projectionId": "app-example-agent-management-form"
         },
         "inputs": {
           "item": {
