@@ -1,5 +1,9 @@
+import path from "path";
 import express, { Express, Request, Response } from "express";
 import { webDistDir } from "../content/layout";
+
+const SHELL_CACHE_CONTROL = "no-cache, no-store";
+const ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable";
 
 // File types a browser fetches as resources. A miss for one of these must not answer with the
 // page HTML: the browser would run the HTML as code or style and the page stays blank.
@@ -24,7 +28,18 @@ function resourceExtension(pathName: string): string | null {
  */
 export function mountWebDist(app: Express): void {
   const staticPath = webDistDir();
-  app.use(express.static(staticPath));
+  app.use(
+    express.static(staticPath, {
+      setHeaders(res, filePath) {
+        const relative = path.relative(staticPath, filePath).split(path.sep).join("/");
+        if (relative === "index.html" || path.extname(filePath).toLowerCase() === ".html") {
+          res.setHeader("Cache-Control", SHELL_CACHE_CONTROL);
+        } else if (relative.startsWith("assets/")) {
+          res.setHeader("Cache-Control", ASSET_CACHE_CONTROL);
+        }
+      },
+    }),
+  );
   app.get("*", (req: Request, res: Response) => {
     const extension = resourceExtension(req.path);
     if (extension && RESOURCE_EXTENSIONS.has(extension)) {
@@ -33,6 +48,7 @@ export function mountWebDist(app: Express): void {
     }
     // A gateway serving under a base path forwards it here, so the redirect stays inside it.
     const prefix = String(req.headers["x-forwarded-prefix"] ?? "").replace(/\/+$/, "");
+    res.setHeader("Cache-Control", SHELL_CACHE_CONTROL);
     res.redirect(302, `${prefix}/#${req.originalUrl}`);
   });
 }

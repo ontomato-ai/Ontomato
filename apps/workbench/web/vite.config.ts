@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig, loadEnv } from "vite";
 import vue from "@vitejs/plugin-vue";
+import { entryRecoveryPlugin } from "@ontomato/platform-web/entry-recovery";
 import { elementComponents } from "../../../packages/apps-sdk/element-components.mjs";
 import { panelAppearance } from "../../../packages/apps-sdk/panel-appearance.mjs";
 
@@ -14,7 +15,7 @@ export default defineConfig(async ({ command, mode }) => {
   const prefix = env.PUBLIC_BASE_PATH || "";
   return {
   base: command === "serve" ? `${prefix}/` : "./",
-  plugins: [vue(), elementComponents(), await panelAppearance(editionSource)],
+  plugins: [entryRecoveryPlugin(), vue(), elementComponents(), await panelAppearance(editionSource)],
   resolve: { alias: [{ find: /^apps-sdk:edition$/, replacement: editionSource }] },
   root: fileURLToPath(new URL(".", import.meta.url)),
   build: {
