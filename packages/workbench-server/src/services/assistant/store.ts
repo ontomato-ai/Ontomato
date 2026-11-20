@@ -110,8 +110,8 @@ export const assistantStore = {
     );
     return (await db().query(`SELECT * FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind=$2`, [domainId, APP_BUILDER_KIND])).rows[0];
   },
-  async agent(id: string, owner: AssistantOwner): Promise<AgentRow> {
-    const r = await db().query(
+  async agent(id: string, owner: AssistantOwner, c: pg.Pool | pg.PoolClient = db()): Promise<AgentRow> {
+    const r = await c.query(
       `SELECT * FROM ${table("assistant_agents")} WHERE id=$1 AND domain_id=$2`,
       [id, owner.domainId],
     );

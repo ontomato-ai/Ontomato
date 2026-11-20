@@ -5,7 +5,7 @@ import type {
 import { Request, Response, Router } from "express";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { listFeedback } from "../../services/admin/feedback-store";
-import { feedbackCsv } from "../../services/admin/feedback-export";
+import { exportFeedback, feedbackExportTimeZone } from "../../services/admin/feedback-export";
 import { requirePermission } from "../../identity/installed";
 import { asyncHandler, buildAttachmentContentDisposition } from "../utils/http";
 import { HttpError } from "../../utils/errors";
@@ -26,39 +26,25 @@ function feedbackId(value: string): string {
   return value;
 }
 
-/** The viewer's IANA time zone, required so exported times are the reader's rather than the server's. */
-function viewerTimeZone(value: unknown): string {
-  const name = typeof value === "string" ? value.trim() : "";
-  try {
-    new Intl.DateTimeFormat("en", { timeZone: name }).format();
-  } catch {
-    throw new HttpError(400, "A valid IANA time zone is required", "INVALID_REQUEST");
-  }
-  return name;
-}
-
 router.get(
   "/export",
   requirePermission(["user-feedback"]),
   asyncHandler(async (req: Request, res: Response) => {
     const identity = req as AuthenticatedRequest;
-    const timeZone = viewerTimeZone(req.query.timeZone);
-    const data = await listFeedback({
+    const file = await exportFeedback({
+      timeZone: feedbackExportTimeZone(req.query.timeZone),
       domainId: identity.domainId,
       sourceType: normalizeSourceType(req.query.sourceType) || undefined,
       rating: normalizeRating(req.query.rating) || undefined,
-      keyword:
-        typeof req.query.keyword === "string" ? req.query.keyword : undefined,
-      all: true,
+      keyword: typeof req.query.keyword === "string" ? req.query.keyword : undefined,
       locale: identity.locale,
     });
-    const fileName = `feedback_records_${new Date().toISOString().slice(0, 10)}.csv`;
     res
       .set({
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": buildAttachmentContentDisposition(fileName),
+        "Content-Disposition": buildAttachmentContentDisposition(file.suggestedName),
       })
-      .send(feedbackCsv(data.records, identity.locale, timeZone));
+      .send(file.bytes);
   }),
 );
 
