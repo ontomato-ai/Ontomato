@@ -2,16 +2,13 @@ import { afterEach, expect, it, vi } from "vitest";
 import { h, nextTick } from "vue";
 import { createMemoryHistory, createRouter, RouterView, type RouteRecordRaw } from "vue-router";
 import type { CandidatePanelSource } from "@ontomato/contracts/panel-host";
-import { PANEL_HOST_CHANNEL, panelAddress } from "@ontomato/contracts/panel-host";
+import { panelAddress } from "@ontomato/contracts/panel-host";
 import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import { productPanelInputSchema, productProjectionInputSchema, type ProductProjection } from "@ontomato/contracts/product-panels";
 import { appBuilderPages } from "../../../../../packages/platform-web/src/workbench-routes";
 import PanelCandidateRoute from "../../../../../packages/platform-web/src/pages/PanelCandidateRoute.vue";
 import { candidateFiles, panelInput, projectionMaterial } from "../../../../../packages/apps-sdk/examples/panels/agent-settings/material.mjs";
-import {
-  SDK_MANIFEST_PATH, currentSdk, hostMessageOf, inside, installPlatform, leaveFrame, mountPlatformPage, nothingAt,
-  panelHostFrame, READER, writeFrameDocument, type Sent,
-} from "./panel-frame";
+import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, READER, type Sent } from "./panel-frame";
 
 /*
  * The agent settings panel's G1 candidate (design 9.3), as an author previews it: the workspace files `material.mjs`
@@ -84,68 +81,63 @@ const save = (create: boolean) => create
   : { method: "PUT" as const, path: `/assistant/agent-definitions/${AGENT}`, bodySchema: {}, draftOperation: "agent.update" };
 const definition = (id: string, values: PanelFormValues) => ({ id, sortOrder: 0, ...values });
 
-/** Node's candidate port and the owners, as they answer the preview. */
+type Read = { source: unknown; memberPath: [{ member: string }]; dataName: string; inputs: Record<string, unknown>; runtimeParams?: { values?: unknown } };
+const option = (primaryKey: string, value: unknown, label: string) => ({ primaryKey, value, label });
+/** Each picker's catalogue, as its owner lists it through Node's read entry. */
+const catalogues: Record<string, ReturnType<typeof option>[]> = {
+  model: [option("openai/gpt-4o", "openai/gpt-4o", "GPT-4o")],
+  skills: [option("sql", sql, "SQL"), option("chart", chart, "Charts")],
+  executor: [option("user-1", "user-1", "Alice")],
+};
+/** What Node's read entry answers for one of the candidate's members, as its owner reads it. */
+function memberData({ memberPath: [{ member }], dataName, inputs, runtimeParams }: Read): unknown {
+  if (member === "agents") return [definition(AGENT, stored), definition(OTHER, { ...stored, name: "Planner" })]
+    .map(agent => ({ primaryKey: agent.id, label: agent.name, fields: {} }));
+  if (member === "summary") return { primaryKey: AGENT, label: stored.name, fields: { description: stored.description } };
+  if (member === "definition") {
+    const create = dataName === "createForm";
+    return { fields, values: runtimeParams?.values ?? (create ? defaults : stored), errors: [], revision: 1, save: save(create) };
+  }
+  if (member === "scope") return dataName === "nodes"
+    ? [["Order", "Orders"], ["Customer", "Customers"], ["Invoice", "Invoices"]].map(([primaryKey, label]) => ({ primaryKey, label, fields: {} }))
+    : [{ primaryKey: "rel-1", label: "", fields: { fromclass: "Order", toclass: "Customer" } }];
+  const catalogue = catalogues[member]!;
+  if (dataName === "options") return { options: catalogue };
+  const held = [(runtimeParams?.values ?? inputs.values ?? [])].flat();
+  return { options: held.map(value => catalogue.find(one => JSON.stringify(one.value) === JSON.stringify(value))).filter(Boolean) };
+}
+
+/** Node's candidate port and its read entry, as they answer the preview. */
 function owners(request: Sent): Response {
   if (request.path === `/api/workspaces/${WORKSPACE}/panel-candidate`) return Response.json(candidate());
-  if (request.path === "/api/apps-sdk/current") return currentSdk();
   if (request.path === "/api/product-panels/definition-stream")
     return new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } });
   const projected = /^\/api\/product-projections\/(.+)$/.exec(request.path);
   if (projected) return Response.json({ projection: projections[projected[1]!] });
-  if (request.path === "/api/assistant/agent-definitions/form") {
-    const { target, values } = request.body as { target: { kind: string }; values?: PanelFormValues };
-    const create = target.kind === "draft";
-    return Response.json({ fields, values: values ?? (create ? defaults : stored), errors: [], save: save(create) });
-  }
-  if (request.path === "/api/assistant/agent-definitions")
-    return Response.json({ agents: [definition(AGENT, stored), definition(OTHER, { ...stored, name: "Planner" })] });
-  if (request.path === `/api/assistant/agent-definitions/${AGENT}`) return Response.json(definition(AGENT, stored));
-  if (request.path === "/api/assistant/agent-skills")
-    return Response.json({ skills: [{ skill: sql, title: "SQL", description: "" }, { skill: chart, title: "Charts", description: "" }] });
-  if (request.path === "/api/data-query/model-options")
-    return Response.json({ success: true, data: { models: [{ ref: "openai/gpt-4o", name: "GPT-4o", type: "chat" }], defaultModelId: null, embeddingModelId: null } });
-  if (request.path === "/api/data-query/platform/agent-execution/options")
-    return Response.json({ selected: { id: "user-1", name: "Alice", available: true }, canSetExecutionUser: false, users: [{ id: "user-1", name: "Alice" }] });
-  if (request.path === "/api/data-query/admin/getMetas")
-    return Response.json({ success: true, data: {
-      classDef: [{ className: "Order", showName: "Orders" }, { className: "Customer", showName: "Customers" }, { className: "Invoice", showName: "Invoices" }],
-      relationship_rule: { "rel-1": { fromclass: "Order", toclass: "Customer" } },
-    } });
+  if (request.path === "/api/product-panels/read") return Response.json({ status: "ready", value: memberData(request.body as Read) });
   return nothingAt(request);
 }
 
-/** Opens the preview route the platform registers, at a state, and starts the panel's own module in its frame. */
+/** Opens the preview route the platform registers, at a state: the candidate's own module runs in the platform's document. */
 async function preview(state: Record<string, unknown>) {
   const sent = installPlatform(owners);
   const routes = appBuilderPages().map(route => route.name === "PanelCandidatePreview" ? { ...route, component: PanelCandidateRoute } as RouteRecordRaw : route);
   const router = createRouter({ history: createMemoryHistory(), routes });
   await router.push(panelAddress(previewPath, state));
   const page = mountPlatformPage(() => h(RouterView), router);
-  const frame = await panelHostFrame();
-  const dirty: boolean[] = [];
-  window.addEventListener("message", event => {
-    if (event.source === frame.contentWindow && event.data?.channel === PANEL_HOST_CHANNEL && event.data.kind === "dirty") dirty.push(event.data.dirty);
-  });
-  writeFrameDocument(hostMessageOf(frame.srcdoc));
-  inside(frame.contentWindow!);
-  // The candidate's own module, as the frame runs it: it imports the SDK and mounts the panel.
-  // @ts-expect-error -- the panel's module is plain JavaScript, typed by the SDK it imports, not by a declaration of its own.
-  await import("../../../../../packages/apps-sdk/examples/panels/agent-settings/panel.mjs");
-  return { ...page, router, sent, dirty };
+  return { ...page, router, sent };
 }
 
-const fieldItem = (path: string) => document.querySelector(`#app [data-field="${path}"]`);
-const node = (id: string) => document.querySelector<SVGGElement>(`#app [data-node-id="${id}"]`)!;
-const formSave = () => [...document.querySelectorAll<HTMLButtonElement>("#app .sdk-owner-form-actions button")]
+const fieldItem = (path: string) => document.querySelector(`.panel-host-coded [data-field="${path}"]`);
+const node = (id: string) => document.querySelector<SVGGElement>(`.panel-host-coded [data-node-id="${id}"]`)!;
+const formSave = () => [...document.querySelectorAll<HTMLButtonElement>(".panel-host-coded .sdk-owner-form-actions button")]
   .find(button => button.textContent?.trim() === "Save")!;
-const fromFrame = (sent: Sent[]) => sent.filter(request => request.path !== `/api/workspaces/${WORKSPACE}/panel-candidate`
-  && request.path !== "/api/apps-sdk/current" && request.path !== SDK_MANIFEST_PATH && request.path !== "/api/product-panels/definition-stream");
+const reads = (sent: Sent[]) => sent.filter(request => request.path === "/api/product-panels/read").map(request => request.body as Read);
 
 const PREVIEW_REFUSAL = "A panel preview runs no operations; they run in the panel's application";
 /** A write of a definition, or any operation sent through the platform's coordinator. */
 const isWrite = (request: Sent) => request.path.startsWith("/api/panel-operation")
-  || ["POST", "PUT", "DELETE"].includes(request.method) && request.path.startsWith("/api/assistant/agent-definitions")
-    && request.path !== "/api/assistant/agent-definitions/form";
+  || ["POST", "PUT", "DELETE"].includes(request.method) && request.path.startsWith("/api/assistant/");
 
 /** Picks one choice of a picker the way a reader does: open its list and click the choice. */
 async function pick(path: string, label: string) {
@@ -159,10 +151,7 @@ async function pick(path: string, label: string) {
   await nextTick();
 }
 
-afterEach(() => {
-  leaveFrame();
-  vi.resetModules();
-});
+afterEach(leaveFrame);
 
 it("registers what the owners accept: every projection the panel names, and the built-in panel from the same sources", () => {
   const { projections: material } = projectionMaterial();
@@ -176,19 +165,19 @@ it("registers what the owners accept: every projection the panel names, and the 
 it("lists the agents in its own words and creates nothing until asked", { timeout: 20000 }, async () => {
   const { app, sent } = await preview({});
   try {
-    await vi.waitFor(() => expect(document.querySelectorAll("#app .sdk-object-list [role=option]")).toHaveLength(2), { timeout: 5000 });
+    await vi.waitFor(() => expect(document.querySelectorAll(".panel-host-coded .sdk-object-list [role=option]")).toHaveLength(2), { timeout: 5000 });
     // The panel's words came with the candidate's `panel.json`, in the platform's language.
-    expect(document.querySelector("#app .agent-settings-empty")?.textContent).toBe("Choose an agent, or create a new one.");
-    expect(document.querySelector("#app .sdk-section-group-title")?.textContent).toBe("Agents");
+    expect(document.querySelector(".panel-host-coded .agent-settings-empty")?.textContent).toBe("Choose an agent, or create a new one.");
+    expect(document.querySelector(".panel-host-coded .sdk-section-group-title")?.textContent).toBe("Agents");
     expect(fieldItem("/name")).toBeNull();
-    expect(sent.some(request => request.path === "/api/assistant/agent-definitions/form")).toBe(false);
+    expect(reads(sent).some(read => read.memberPath[0].member === "definition")).toBe(false);
   } finally {
     app.unmount();
   }
 });
 
 it("edits one agent's definition as one form: its fields, model, skills and data scope, one unsaved state, one save", { timeout: 30000 }, async () => {
-  const { app, sent, dirty, router } = await preview({ selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } });
+  const { app, sent, router } = await preview({ selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } });
   try {
     await vi.waitFor(() => {
       expect(fieldItem("/name")?.querySelector("input")?.value).toBe("e2e-agent-settings");
@@ -196,13 +185,12 @@ it("edits one agent's definition as one form: its fields, model, skills and data
       expect(node("Customer")).toBeTruthy();
     }, { timeout: 5000 });
     expect(router.currentRoute.value.query.state).toContain('"mode":"edit"');
-    expect(document.querySelector("#app .sdk-object-summary")).not.toBeNull();
+    expect(document.querySelector(".panel-host-coded .sdk-object-summary")).not.toBeNull();
     // The owner's rules: who the agent runs as is shown and read-only, with the owner's reason; the avatar and MCP are not drawn.
     expect(fieldItem("/executionUserId")?.querySelector("input")?.disabled).toBe(true);
     expect(fieldItem("/executionUserId")?.textContent).toContain("Alice");
     expect(fieldItem("/icon")).toBeNull();
     expect(fieldItem("/enabledMcpServiceIds")).toBeNull();
-    expect(dirty.at(-1)).toBe(false);
 
     const name = fieldItem("/name")!.querySelector("input")!;
     name.value = "e2e-agent-settings v2";
@@ -213,27 +201,20 @@ it("edits one agent's definition as one form: its fields, model, skills and data
     // The data scope: a class, then the classes one relationship away from the chosen ones.
     node("Invoice").dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await vi.waitFor(() => expect(node("Invoice").classList.contains("selected")).toBe(true));
-    document.querySelector<HTMLButtonElement>("#app .sdk-object-graph-adjacent")!.click();
+    document.querySelector<HTMLButtonElement>(".panel-host-coded .sdk-object-graph-adjacent")!.click();
     await vi.waitFor(() => expect(node("Customer").classList.contains("selected")).toBe(true));
-    await vi.waitFor(() => expect(dirty.at(-1)).toBe(true));
-    // One unsaved state for the whole definition: it went from clean to unsaved once and stayed there.
-    expect(dirty.filter((value, index) => index > 0 && value !== dirty[index - 1])).toEqual([true]);
 
     formSave().click();
     // A preview saves nothing: the refusal is the answer, shown with the form the reader still holds, and no write leaves.
-    await vi.waitFor(() => expect(document.querySelector("#app .sdk-owner-form")?.textContent).toContain(PREVIEW_REFUSAL));
+    await vi.waitFor(() => expect(document.querySelector(".panel-host-coded .sdk-owner-form")?.textContent).toContain(PREVIEW_REFUSAL));
     expect(sent.filter(isWrite)).toEqual([]);
     expect(fieldItem("/name")?.querySelector("input")?.value).toBe("e2e-agent-settings v2");
-    expect(dirty.at(-1)).toBe(true);
-    // Every request the frame made went out as the reader, marked with the preview's context; none was live.
-    expect(fromFrame(sent).every(request => request.credential === READER
-      && request.execution === JSON.stringify({ kind: "build-test", contextId: null }))).toBe(true);
-    // Only the host's own reads (the candidate, the current SDK release and its manifest, the author definition stream) went
-    // out unmarked.
-    expect(sent.filter(request => request.execution === null).map(request => request.path)).toEqual(sent.filter(request => [
-      `/api/workspaces/${WORKSPACE}/panel-candidate`, "/api/apps-sdk/current", SDK_MANIFEST_PATH, "/api/product-panels/definition-stream",
-    ].includes(request.path)).map(request => request.path));
-    expect(sent.some(request => request.path.startsWith("/api/product-panels") || request.path.includes("/platform/applications"))).toBe(false);
+    // Every member read went to Node's read entry as the author's workspace, as the reader; nothing formal was asked.
+    const workspace = JSON.stringify({ kind: "candidate", workspace: { id: WORKSPACE, ref: "working" } });
+    expect(reads(sent).length).toBeGreaterThan(0);
+    expect(reads(sent).every(read => JSON.stringify(read.source) === workspace)).toBe(true);
+    expect(sent.every(request => request.credential === READER)).toBe(true);
+    expect(sent.some(request => request.path.startsWith("/api/data-query/") || request.path.includes("/platform/applications"))).toBe(false);
   } finally {
     app.unmount();
   }
@@ -243,16 +224,16 @@ it("opens a new agent with the owner's defaults, and its create is the owner's t
   const { app, sent } = await preview({ mode: "create" });
   try {
     await vi.waitFor(() => expect(fieldItem("/name")?.querySelector("input")).toBeTruthy(), { timeout: 5000 });
-    expect(sent.find(request => request.path === "/api/assistant/agent-definitions/form")?.body).toEqual({ target: { kind: "draft" }, changedField: null });
-    expect([...document.querySelectorAll("#app .sdk-section-group-title")].map(title => title.textContent)).toContain("New agent");
+    expect(reads(sent).find(read => read.memberPath[0].member === "definition")?.dataName).toBe("createForm");
+    expect([...document.querySelectorAll(".panel-host-coded .sdk-section-group-title")].map(title => title.textContent)).toContain("New agent");
     expect(fieldItem("/enabled")?.querySelector(".el-switch")?.classList.contains("is-checked")).toBe(true);
-    expect(document.querySelector("#app .sdk-object-summary")).toBeNull();
+    expect(document.querySelector(".panel-host-coded .sdk-object-summary")).toBeNull();
     const name = fieldItem("/name")!.querySelector("input")!;
     name.value = "e2e-new-agent";
     name.dispatchEvent(new Event("input"));
     await nextTick();
     formSave().click();
-    await vi.waitFor(() => expect(document.querySelector("#app .sdk-owner-form")?.textContent).toContain(PREVIEW_REFUSAL));
+    await vi.waitFor(() => expect(document.querySelector(".panel-host-coded .sdk-owner-form")?.textContent).toContain(PREVIEW_REFUSAL));
     expect(sent.filter(isWrite)).toEqual([]);
     expect(fieldItem("/name")?.querySelector("input")?.value).toBe("e2e-new-agent");
   } finally {

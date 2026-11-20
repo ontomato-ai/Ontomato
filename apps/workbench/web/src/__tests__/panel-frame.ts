@@ -531,7 +531,8 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
         fields: [{
           path: "/caseSetId", label: caseSetLabel, required: false, readOnly: false, valueSchema: {},
           control: { kind: "select", options: [
-            { value: task.content.caseSetId, label: "Regression (12)" }, { value: "set-smoke", label: "Smoke (8)" },
+            { value: task.content.caseSetId, label: "Regression (12)", description: null, disabled: false, disabledReason: null },
+            { value: "set-smoke", label: "Smoke (8)", description: null, disabled: false, disabledReason: null },
           ] },
         }],
         values, errors: [], revision: task.revision,
