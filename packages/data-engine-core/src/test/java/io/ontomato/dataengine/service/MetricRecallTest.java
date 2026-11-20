@@ -88,7 +88,7 @@ class MetricRecallTest {
   }
 
   private JSONObject recall(MetricRecall... hits) {
-    when(metrics.recall(anyString(), anyString(), anyDouble())).thenReturn(List.of(hits));
+    when(metrics.recall(anyString(), anyString(), anyDouble(), anyInt())).thenReturn(List.of(hits));
     return JSONObject.from(ontology.recall(JSONObject.of("question", "How many people?"), access));
   }
 
@@ -105,7 +105,7 @@ class MetricRecallTest {
     assertEquals(OntologyQueryService.revision(metric), item.getString("revision"));
     assertEquals(35, item.getJSONArray("parameterDefs").getJSONObject(0).getIntValue("value"));
     assertNull(item.get("preset"));
-    verify(metrics).recall("How many people?", user.getDomainId(), 0.80);
+    verify(metrics).recall("How many people?", user.getDomainId(), 0.80, 50);
   }
 
   @Test
@@ -131,7 +131,7 @@ class MetricRecallTest {
     metric("hidden", "expense");
     metric("outside", "org");
     metric("visible", "person");
-    when(metrics.recall(anyString(), anyString(), anyDouble())).thenReturn(List.of(
+    when(metrics.recall(anyString(), anyString(), anyDouble(), anyInt())).thenReturn(List.of(
         new MetricRecall("hidden", null, 0.60), new MetricRecall("outside", null, 0.61),
         new MetricRecall("visible", null, 0.62)));
     assertEquals(List.of("outside", "visible"), ids(ontology.recall(JSONObject.of("question", "How many?"), access)));

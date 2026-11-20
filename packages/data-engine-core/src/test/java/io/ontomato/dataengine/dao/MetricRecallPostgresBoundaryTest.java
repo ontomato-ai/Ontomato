@@ -88,12 +88,14 @@ class MetricRecallPostgresBoundaryTest extends PostgresTestDatabase {
     metric(views, "writes", "d1", MetricView.STATUS_PUBLISHED, Function.OPERATION_WRITE, new float[] { 1, 0 }, null, null);
     metric(views, "elsewhere", "d2", MetricView.STATUS_PUBLISHED, Function.OPERATION_READ, new float[] { 1, 0 }, null, null);
 
-    var found = views.recall("How many people?", "d1", 0.80);
+    var found = views.recall("How many people?", "d1", 0.80, 50);
     assertEquals(List.of("near", "preset-metric"), found.stream().map(MetricRecall::metricId).toList(),
         "Published read metrics within the cutoff, nearest first");
     assertNull(found.get(0).bindingId());
     assertEquals("preset", found.get(1).bindingId(), "The preset is nearer than its metric's own brief");
     assertTrue(found.get(0).distance() < found.get(1).distance());
-    assertTrue(views.recall("How many people?", "d1", 0.40).isEmpty(), "An absolute cutoff, not a cluster");
+    assertTrue(views.recall("How many people?", "d1", 0.40, 50).isEmpty(), "An absolute cutoff, not a cluster");
+    assertEquals(List.of("near"), views.recall("How many people?", "d1", 0.80, 1).stream()
+        .map(MetricRecall::metricId).toList(), "The row limit is applied after ordering");
   }
 }

@@ -524,6 +524,8 @@ public class OntologyQueryService {
    */
   static final double RECALL_MAX_DISTANCE = 0.80;
   static final int RECALL_MAX_METRICS = 5;
+  /** Hits read from SQL: presets repeat a metric and unreadable metrics drop out before the cap is reached. */
+  static final int RECALL_MAX_ROWS = 50;
 
   public Object recall(JSONObject body, QueryAccessService.Access access) {
     if (body == null || !body.keySet().equals(Set.of("question"))
@@ -535,11 +537,10 @@ public class OntologyQueryService {
         available.stream().map(c -> (String) c.get("className")).collect(java.util.stream.Collectors.toSet());
     List<JSONObject> items = new ArrayList<>();
     Set<String> taken = new HashSet<>();
-    for (var hit : metrics.recall(question, access.user().getDomainId(), RECALL_MAX_DISTANCE)) {
+    for (var hit : metrics.recall(question, access.user().getDomainId(), RECALL_MAX_DISTANCE, RECALL_MAX_ROWS)) {
       if (items.size() == RECALL_MAX_METRICS) break;
       if (!taken.add(hit.metricId())) continue;
       MetricView metric = metrics.queryById(hit.metricId(), access.user().getDomainId());
-      if (metric == null || !MetricView.STATUS_PUBLISHED.equals(metric.getStatus())) continue;
       if (readableSource(metric, access, available, availableNames) == null) continue;
       Set<String> involved = involvedClasses(metric, metricAnalysis(metric));
       if (!access.classNames().isEmpty() && !access.classNames().containsAll(involved)) continue;

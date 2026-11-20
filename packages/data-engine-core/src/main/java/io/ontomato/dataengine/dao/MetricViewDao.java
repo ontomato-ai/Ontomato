@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -305,7 +304,6 @@ public class MetricViewDao extends BaseDao {
 
 	public List<Object[]> find(String question, String className, int maxResult, double minScore, String domainId) {
 		return retrievalGate.read(domainId, () -> search(question, className, maxResult, minScore, domainId));
-
 	}
 
 	/** Runs inside the read boundary: the query vector and the rows belong to one generation. */
@@ -421,28 +419,26 @@ public class MetricViewDao extends BaseDao {
             if (!retained.contains(id)) jdbcTemplate.update("DELETE FROM metric_view_binding WHERE id=? AND metric_view_id=?", id, metric.getId());
     }
 
-    public record RecallHit(String metricId, String bindingId, double distance) {}
     /**
      * One embedding of the question against both published briefs. Raw L2 distance is the whole ranking: a preset hit
-     * and a metric hit compete on the same scale, so the nearest one names the preset a recall item carries.
+     * and a metric hit compete on the same scale, so the nearest one names the preset a recall item carries. The cutoff,
+     * the order and the row limit stay in SQL, so a growing catalogue never travels back to Java whole.
      */
-    public List<MetricRecall> recall(String question, String domainId, double maxDistance) {
+    public List<MetricRecall> recall(String question, String domainId, double maxDistance, int maxRows) {
         return retrievalGate.read(domainId, () -> {
             PGvector vector = new PGvector(embeddingService.embedding(question, domainId));
             return jdbcTemplate.query(
-                "SELECT m.id,NULL::varchar AS binding_id,m.brief_vector <-> ?::vector AS distance FROM metric_view m"
+                "SELECT metric_id,binding_id,distance FROM ("
+                    + "SELECT m.id AS metric_id,NULL::varchar AS binding_id,m.brief_vector <-> ?::vector AS distance FROM metric_view m"
                     + " JOIN function f ON f.id=m.function_id AND f.domain_id=m.domain_id WHERE m.type='GENERAL' AND m.status=?"
                     + " AND f.operation=? AND m.domain_id=? AND m.brief_vector IS NOT NULL"
                     + " UNION ALL SELECT b.metric_view_id,b.id,b.brief_vector <-> ?::vector FROM metric_view_binding b"
                     + " JOIN metric_view m ON m.id=b.metric_view_id JOIN function f ON f.id=m.function_id AND f.domain_id=m.domain_id"
-                    + " WHERE m.type='GENERAL' AND m.status=? AND f.operation=? AND m.domain_id=? AND b.brief_vector IS NOT NULL",
+                    + " WHERE m.type='GENERAL' AND m.status=? AND f.operation=? AND m.domain_id=? AND b.brief_vector IS NOT NULL"
+                    + ") hits WHERE distance<=? ORDER BY distance,metric_id,binding_id NULLS FIRST LIMIT ?",
                 (rs, n) -> new MetricRecall(rs.getString(1), rs.getString(2), rs.getDouble(3)),
                 vector, MetricView.STATUS_PUBLISHED, Function.OPERATION_READ, domainId,
-                vector, MetricView.STATUS_PUBLISHED, Function.OPERATION_READ, domainId).stream()
-                .filter(hit -> hit.distance() <= maxDistance)
-                .sorted(java.util.Comparator.comparingDouble(MetricRecall::distance)
-                    .thenComparing(MetricRecall::metricId)
-                    .thenComparing(hit -> Objects.toString(hit.bindingId(), ""))).toList();
+                vector, MetricView.STATUS_PUBLISHED, Function.OPERATION_READ, domainId, maxDistance, maxRows);
         });
     }
 

@@ -424,8 +424,8 @@ public class MetricViewServiceImpl implements MetricViewService {
   }
 
   @Override
-  public List<MetricRecall> recall(String question, String domainId, double maxDistance) {
-    return metricViewDao.recall(question, domainId, maxDistance);
+  public List<MetricRecall> recall(String question, String domainId, double maxDistance, int maxRows) {
+    return metricViewDao.recall(question, domainId, maxDistance, maxRows);
   }
 
   @Override
