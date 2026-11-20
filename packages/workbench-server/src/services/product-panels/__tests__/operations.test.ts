@@ -42,14 +42,17 @@ vi.mock("../current",()=>({
     const { binding, ...projection } = await mocks.projection(owner, credentials, member.target.projectionId);
     const form = Object.keys(projection.inputs)[0];
     const action = binding.kind === "PlatformOperation" || binding.kind === "Action";
-    const data = action
-      ? { operation: { source: { operation: binding }, read: "describe", params: {} } }
-      : form
-        ? { form: { source: { object: { input: form } }, read: "form", params: {} } }
-        : { createForm: { source: { type: binding }, read: "createForm", params: {} } };
-    return { member, projection: {
-      ...projection, data, componentId: action ? "@ontomato/sdk:OperationButton" : "@ontomato/sdk:ObjectForm",
-    } };
+    const shortName = binding.kind === "Action" ? "execute" : binding.id.split(".").at(-1)!;
+    const data = action ? {} : form
+      ? { form: { source: { object: { input: form } }, read: "form", params: {} } }
+      : { createForm: { source: { type: binding }, read: "createForm", params: {} } };
+    const operations = {
+      [action ? shortName : "save"]: {
+        operation: action ? binding : { kind: "PlatformOperation", id: `${binding.id}.save` },
+        ...(form && { target: { input: form } }),
+      },
+    };
+    return { member, projection: { ...projection, data, operations } };
   },
 }));
 import {
@@ -67,6 +70,12 @@ const use={id:"tasks",pageKey:"tasks",path:"/applications/A/tasks",panelId:"P",a
 let intents:Map<string,PanelOperationIntent>, automatic:boolean, current:RuntimeRun, human:Record<string,unknown>|null;
 const action=()=>({intentId:uuid(5),applicationId:"A",useId:"tasks",operationId:"run.runNow",call:{target:{kind:"object" as const,objectType:"platform:ScheduledTask",primaryKey:uuid(9)},input:{}}});
 const save=()=>({...action(),operationId:"form.save",call:{...action().call,input:{revision:4,values:{title:"draft"}}}});
+function mockRegisteredOperation(handler: serverOperations.PanelServerOperation) {
+ return vi.spyOn(serverOperations, "registeredPanelOperation").mockReturnValue({
+   handler, declaration: serverOperations.operationDeclaration(handler),
+   targetType: handler.effect === "write" ? handler.targetType : undefined,
+ });
+}
 function agentQuestionId() {
  const intent = intents.get(uuid(5))!;
  if (isPanelHumanOperationIntent(intent)) throw new Error("Expected an agent intent");
@@ -275,7 +284,7 @@ it("dispatches through the registered owner without a resource-specific coordina
  const handler={handlerRef:"test.perform",kind:"action" as const,binding:{kind:"PlatformOperation" as const,id:"test.perform"},effect:"write" as const,batch:false as const,targetInput:"task",targetType:"test:Thing",
    targetSchema:z.object({kind:z.literal("object"),objectType:z.literal("test:Thing"),primaryKey:z.string()}),inputSchema:z.object({value:z.number()}),resultSchema:z.object({done:z.boolean()}),
    targetLabel:vi.fn(),execute:vi.fn(async()=>({kind:"success" as const,data:{done:true}}))};
- vi.spyOn(serverOperations,"panelServerOperation").mockReturnValue(handler);
+ mockRegisteredOperation(handler);
  const panel=await mocks.panel();panel.manifest.state.task.type.objectType="test:Thing";
  mocks.projection.mockResolvedValue({id:"run",name:"Perform",componentId:"run",binding:handler.binding,inputs:{task:{kind:"object",objectType:handler.targetType}}});
  const input={...action(),operationId:"run.perform",call:{target:{kind:"object" as const,objectType:handler.targetType,primaryKey:"opaque-key"},input:{value:7}}};
@@ -482,7 +491,7 @@ function installBatchOwner() {
     execute: vi.fn(),
     executeBatch: vi.fn(),
   };
-  vi.spyOn(serverOperations, "panelServerOperation").mockReturnValue(handler);
+  mockRegisteredOperation(handler);
   mocks.projection.mockResolvedValue({
     id: "run", name: "Set status", componentId: "run", binding, inputs: { task: { kind: "object", objectType } },
   });
@@ -658,7 +667,7 @@ it("refuses to dispatch an agent intent from the human route", async () => {
 it("requires confirmation for a batch without an impact inspector", async () => {
   const { handler, request } = installBatchOwner();
   const { inspectImpact: _inspector, ...withoutInspector } = handler;
-  vi.mocked(serverOperations.panelServerOperation).mockReturnValue(withoutInspector);
+  mockRegisteredOperation(withoutInspector);
   const { intentId: _id, ...input } = request;
   const { confirmation } = await prepareHumanPanelOperation(owner, credentials, input);
   expect(confirmation).toEqual({ kind: "batch", targets: {
@@ -680,7 +689,7 @@ it("runs a registered read using the reader and preview context without creating
     await host.request("/api/data-query/metricView/testExecute", { method: "POST", body: JSON.stringify(call.input) });
     return { kind: "json" as const, value: [{ amount: 3 }] };
   });
-  vi.spyOn(serverOperations, "panelServerOperation").mockReturnValue({
+  mockRegisteredOperation({
     handlerRef: binding.id, effect: "read", kind: "action", batch: false, binding,
     target: { source: "draft", slot: "form" }, targetSchema: z.object({ kind: z.literal("draft") }).strict(),
     inputSchema: panelReadOperationInputSchema, resultSchema: panelReadOperationResultSchema, execute,

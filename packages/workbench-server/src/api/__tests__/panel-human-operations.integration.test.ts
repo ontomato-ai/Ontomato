@@ -42,7 +42,7 @@ vi.mock("../../services/product-panels/current", () => ({
     member: { target: { projectionId: "run" }, inputs: { task: { state: "task" } } },
     projection: {
       id: "run", componentId: "@ontomato/sdk:OperationButton", name: "Run now", inputs: { task: { kind: "object", objectType } },
-      data: { operation: { source: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, read: "describe", params: {} } },
+      data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
     },
   }),
 }));

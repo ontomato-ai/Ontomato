@@ -3,6 +3,7 @@ import { stringify } from "yaml";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { type RuntimeSkillRef, type StandardSkillFrontmatter } from "@ontomato/contracts/agent-runtime-skills";
+import { panelOperationId } from "@ontomato/contracts/panel-manifest";
 import { PAGE_DRAFT_QUERY_KEYS } from "@ontomato/contracts/page-draft";
 import { panelClientReads } from "@ontomato/contracts/panel-client-requests";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
@@ -12,8 +13,7 @@ import type { ProtectedSkillOffering } from "../../core/skills";
 import { getDefaultLocale } from "../../i18n";
 import { findCurrentProduct, type CurrentProductKind } from "../../infrastructure/product-current";
 import { readPanelComponentCatalogue } from "./component-catalogue";
-import { directProjectionWriteDescriptions } from "./direct-operations";
-import { panelServerOperation, panelServerOperationSupportsBatch } from "./server-operations";
+import { allowsOperationDraft, boundProjectionOperations, type BoundProjectionOperation } from "./operation-bindings";
 
 type ComponentCatalogue = Awaited<ReturnType<typeof readPanelComponentCatalogue>>["components"];
 const verbs = new Intl.ListFormat("en", { type: "conjunction" });
@@ -97,7 +97,7 @@ export async function panelSkillOfferings(domainId: string, sources: readonly Pa
 }
 
 type PanelDescription = ReturnType<typeof describePanel>;
-type OperationDescription = ReturnType<typeof directProjectionWriteDescriptions>[number];
+type OperationDescription = BoundProjectionOperation & { id: string; label: string; draft: boolean };
 
 function describePanel(
   panel: ProductPanelInput, records: ReadonlyMap<string, ProductProjectionInput>, components: ComponentCatalogue,
@@ -114,7 +114,10 @@ function describePanel(
     return [{
       text: `- ${member} — ${projection.name} (${projectionId}), ${projection.componentId}. ${projection.description} ${component.meaning} Inputs: ${JSON.stringify(declaration.inputs ?? {})}. Named data: ${JSON.stringify(data)}. Configuration: ${JSON.stringify(projection.config)}.`,
       bindings: projectionBindingKeys(projection),
-      operations: directProjectionWriteDescriptions(projection, member),
+      operations: boundProjectionOperations(projection).map(bound => ({
+        ...bound, id: panelOperationId(member, bound.name), label: projection.name,
+        draft: bound.owner !== undefined && allowsOperationDraft(projection, bound.owner.handler),
+      })),
     }];
   });
   const operations = projections.flatMap(projection => projection.operations);
@@ -126,7 +129,7 @@ function describePanel(
     content: panel.content,
     projections,
     operations,
-    forms: operations.filter(operation => operation.kind === "form.save"),
+    forms: operations.filter(operation => operation.owner?.handler.kind === "form.save"),
     reads: describeReads(new Set(projections.flatMap(projection => projection.bindings))),
   };
 }
@@ -159,7 +162,7 @@ function describeSkill({ name, description, content, state, events, projections,
       ...operations.map(describeOperation),
       ...(operations.length ? [] : ["No operations."]),
       "Call the declared operation with POST `$ONTOMATO_PANEL_OPERATIONS_URL/operate`, JSON `{intentId:<new UUID>,applicationId,useId,operationId,call:{target,input}}`. Send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. Never call a write owner endpoint directly from a platform panel skill.",
-      ...(operations.some(operation => panelServerOperationSupportsBatch(operation.handlerRef)) ? [
+      ...(operations.some(operation => operation.owner?.declaration.batch) ? [
         "For an operation marked as batch-capable, use `calls:[{target,input},...]` in place of `call`. Submit all concrete targets and their inputs under one intent for one confirmation. A batch result reports the owner's outcome for each item when available.",
       ] : []),
       "Use the applicationId and useId from the current page context and the operationId declared above. If the host did not provide a current use, ask the reader to open the panel before attempting a panel operation.",
@@ -171,19 +174,19 @@ function describeSkill({ name, description, content, state, events, projections,
   ].filter(Boolean).join("\n\n");
 }
 
-function describeOperation(operation: OperationDescription): string {
-  const summary = `- ${operation.label} (${operation.id}), kind ${operation.kind}, handlerRef ${operation.handlerRef}, target ${JSON.stringify(operation.target ?? null)}.`;
-  if (operation.kind !== "form.save") {
-    const batch = panelServerOperationSupportsBatch(operation.handlerRef) ? " Batch-capable." : "";
-    return `${summary} Input ${JSON.stringify(operation.inputSchema)}.${batch}`;
+function describeOperation({ id, label, binding, owner, draft }: OperationDescription): string {
+  const target = JSON.stringify(binding.target ?? null);
+  if (!owner && binding.operation.kind === "PlatformOperation")
+    throw new Error(`No platform owner registration for ${binding.operation.id}`);
+  if (!owner) return `- ${label} (${id}), Action ${binding.operation.id}, target ${target}. Read the admitted description for the actual selected object with operations:true on /api/product-panels/read before invoking it.`;
+  const { handler, declaration } = owner;
+  const summary = `- ${label} (${id}), kind ${handler.kind}, handlerRef ${handler.handlerRef}, target ${target}.`;
+  if (handler.kind !== "form.save") {
+    return `${summary} Input ${JSON.stringify(declaration.inputSchema)}.${declaration.batch ? " Batch-capable." : ""}`;
   }
-  const owner = panelServerOperation(operation.handlerRef);
-  if (owner.kind !== "form.save") throw new Error(`Expected a form owner for ${operation.handlerRef}`);
   const schema = (value: z.ZodTypeAny) => JSON.stringify(zodToJsonSchema(value, { $refStrategy: "none" }));
-  const created = owner.create
-    ? " For automatic save from an existing create draft, supply its artifact location as call.draft {sessionId,runId,path}."
-    : "";
-  return `${summary} Call target schema ${schema(owner.targetSchema)}. Call input schema ${schema(owner.inputSchema)}. ${owner.formInstructions}${created}`;
+  const created = draft ? " For automatic save from an existing create draft, supply its artifact location as call.draft {sessionId,runId,path}." : "";
+  return `${summary} Call target schema ${schema(handler.targetSchema)}. Call input schema ${schema(handler.inputSchema)}. ${handler.formInstructions}${created}`;
 }
 
 function describeReads(bindings: ReadonlySet<string>): string {
@@ -217,10 +220,10 @@ function describeReads(bindings: ReadonlySet<string>): string {
 function describeDraft(forms: readonly OperationDescription[]): string {
   if (!forms.length) return "";
   const owners = forms.map(form => {
-    const owner = panelServerOperation(form.handlerRef);
-    if (owner.kind !== "form.save") throw new Error(`Expected a form owner for ${form.handlerRef}`);
+    const owner = form.owner?.handler;
+    if (owner?.kind !== "form.save") throw new Error(`Expected a form owner for ${form.id}`);
     const target = { kind: "object" as const, objectType: owner.targetType, primaryKey: "<object id>" };
-    return { id: form.id, update: owner.draftOperation(target), create: owner.create && owner.draftOperation({ kind: "draft" }) };
+    return { id: form.id, update: owner.draftOperation(target), create: form.draft && owner.draftOperation({ kind: "draft" }) };
   });
   return [
     "### Draft a change",

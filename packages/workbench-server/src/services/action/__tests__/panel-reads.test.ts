@@ -9,6 +9,10 @@ import { objectActionDeclaration } from "../object-actions";
 import { createActionReadAdapter } from "../panel-reads";
 
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://owner.test/" } } }));
+// The operation registry these describes come from also registers the agent operations, whose page skills these reads never load.
+vi.mock("../../assistant/skills", () => ({
+  readAssistantSkillView: vi.fn(), resolvePageSkillSource: vi.fn(), loadedPageSkillVersion: vi.fn(),
+}));
 
 /*
  * The action catalog's named reads: the reader's credentials and language reach the owner, the owner's display names

@@ -124,6 +124,7 @@ export const m6ServerOperations = [
   },
   {
     handlerRef: DELETE_ACTION,
+    labelKey: "panels.action.operations.delete",
     kind: "action",
     binding: { kind: "PlatformOperation", id: DELETE_ACTION },
     effect: "write",
@@ -142,6 +143,7 @@ export const m6ServerOperations = [
   },
   {
     handlerRef: SET_ACTION_STATUS,
+    labelKey: "panels.action.operations.setStatus",
     kind: "action",
     binding: { kind: "PlatformOperation", id: SET_ACTION_STATUS },
     effect: "write",
