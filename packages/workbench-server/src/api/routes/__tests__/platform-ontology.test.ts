@@ -5,19 +5,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { platformObjectTypes, platformRelationKinds } from "@ontomato/contracts/platform-object-types";
 import { installWorkbenchIdentity } from "../../../identity/installed";
 import type { WorkbenchIdentity } from "../../../identity/types";
-import { AuthFailedError, backendPost } from "../../../utils/backend-client";
+import { AuthFailedError, backendGet, backendPost } from "../../../utils/backend-client";
 import { listAgentDefinitions } from "../../../services/assistant/definitions";
 import { assistantSkillCatalog } from "../../../services/assistant/skills";
 import { listPublishedDefinitions } from "../../../services/business-definitions/definitions";
+import { grantedProductIds } from "../../../services/product-governance/grants";
+import { readPanelComponentCatalogue } from "../../../services/product-panels/component-catalogue";
 import { platformOntologyRouter } from "../platform-ontology";
 
 vi.mock("../../../utils/backend-client", async (original) => ({
   ...(await original<typeof import("../../../utils/backend-client")>()),
+  backendGet: vi.fn(),
   backendPost: vi.fn(),
 }));
 vi.mock("../../../services/assistant/definitions", () => ({ listAgentDefinitions: vi.fn() }));
 vi.mock("../../../services/assistant/skills", () => ({ assistantSkillCatalog: vi.fn() }));
 vi.mock("../../../services/business-definitions/definitions", () => ({ listPublishedDefinitions: vi.fn() }));
+vi.mock("../../../services/product-governance/grants", () => ({ grantedProductIds: vi.fn() }));
+vi.mock("../../../services/product-panels/component-catalogue", () => ({ readPanelComponentCatalogue: vi.fn() }));
 
 let server: Server;
 let base: string;
@@ -32,6 +37,18 @@ beforeEach(async () => {
   vi.mocked(listPublishedDefinitions).mockResolvedValue([]);
   vi.mocked(assistantSkillCatalog).mockResolvedValue({ skills: [] });
   vi.mocked(listAgentDefinitions).mockResolvedValue({ agents: [] });
+  vi.mocked(grantedProductIds).mockResolvedValue([]);
+  vi.mocked(readPanelComponentCatalogue).mockResolvedValue({
+    version: "1.0.0",
+    digest: "sha256:test",
+    components: new Map(),
+  });
+  vi.mocked(backendGet).mockResolvedValue({
+    text: JSON.stringify({ success: true, data: [] }),
+    headers: new Headers(),
+    status: 200,
+    statusText: "OK",
+  });
   vi.mocked(backendPost).mockResolvedValue({
     text: JSON.stringify({ success: true, data: [] }),
     headers: new Headers(),

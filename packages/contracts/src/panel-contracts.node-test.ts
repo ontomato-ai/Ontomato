@@ -49,7 +49,7 @@ import {
   platformOntologySchemaResponseSchema, platformOntologyStartResponseSchema,
 } from "./platform-ontology";
 import {
-  DEFINITION, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, USER as ONTOLOGY_USER,
+  APPLICATION_PANEL_USE, DEFINITION, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, PRODUCT_PROJECTION, USER as ONTOLOGY_USER,
   platformObjectTypes, platformOntologyLayers, platformRelationKinds,
 } from "./platform-object-types";
 import {
@@ -1537,6 +1537,30 @@ test("the four-layer topology points to declared kinds and distinguishes stored 
   }
   assert.equal(platformRelationKinds.find(relation => relation.id === "user.published-workflow")?.derived, false);
   assert.equal(platformRelationKinds.find(relation => relation.id === "role.can-author-workflow")?.derived, true);
+  assert.equal(platformRelationKinds.find(relation => relation.id === "panel.contains-panel")?.derived, false);
+  assert.equal(platformRelationKinds.find(relation => relation.id === "panel.provides-skill")?.derived, true);
+  assert.equal(platformObjectTypes[APPLICATION_PANEL_USE]?.layer, undefined);
+
+  const projectionNode = { className: PRODUCT_PROJECTION, primaryKey: "proj-1", label: "Projection", layer: "product" as const };
+  const boundTypeNode = { className: ONTOLOGY_TYPE, primaryKey: "platform:BusinessKnowledge", label: "platform:BusinessKnowledge", layer: "capability" as const };
+  const boundEdge = {
+    id: "projection.binds-target:proj-1->platform:BusinessKnowledge",
+    relationKind: "projection.binds-target",
+    from: { className: projectionNode.className, primaryKey: projectionNode.primaryKey },
+    to: { className: boundTypeNode.className, primaryKey: boundTypeNode.primaryKey },
+    direction: "outgoing" as const,
+    derived: false,
+    binding: { reads: ["query", "counts"], operations: ["platform:BusinessKnowledge.save"], viaInput: true },
+  };
+  assert.deepEqual(
+    platformOntologyNeighborsResponseSchema.parse({
+      node: projectionNode,
+      neighbors: [boundTypeNode],
+      edges: [boundEdge],
+      relations: [{ relationKind: "projection.binds-target", status: "ok", edgeCount: 1 }],
+    }).edges[0],
+    boundEdge,
+  );
 });
 
 const operationIntentId = "bda3d9bd-afc1-4dfa-92c2-41efda234bad";

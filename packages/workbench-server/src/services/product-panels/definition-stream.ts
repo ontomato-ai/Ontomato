@@ -38,9 +38,14 @@ export async function authorizeDefinitionStream(
     snapshot: () => Promise.all(targets.map(target => definitionRevision(owner.domainId, target))),
   };
 }
-export async function requirePanelDefinitions(owner:ProductOwner,credentials:AssistantCredentials,panelId:string):Promise<PanelDefinitionSnapshot>{
+export async function requirePanelDefinitions(
+  owner: ProductOwner, credentials: AssistantCredentials, panelId: string,
+  readPageSkillContext?: (root: PanelDefinitionSnapshot['panel']) => Promise<PanelDefinitionSnapshot['pageSkillContext']>,
+): Promise<PanelDefinitionSnapshot> {
   const row = await requireDefinition(owner, credentials, 'panel', panelId);
   const panel = productPanelSchema.parse(currentProductRecord(row, false));
+  const root = { id: panel.id, revision: panel.revision };
+  const pageSkillContext = await readPageSkillContext?.(root);
   const fixedMembers = Object.entries(panel.manifest.members).filter(([, { target }]) =>
     'projectionId' in target || 'panelId' in target);
   const members = await Promise.all(fixedMembers.map(async ([member]): Promise<PanelMemberSnapshot> => {
@@ -59,7 +64,7 @@ export async function requirePanelDefinitions(owner:ProductOwner,credentials:Ass
     if (member.status === 'ready' && member.target.kind === 'projection')
       projections.set(member.target.id, { id: member.target.id, revision: member.revision });
   }
-  return { panel: { id: panelId, revision: panel.revision }, members, projections: [...projections.values()] };
+  return { panel: root, members, projections: [...projections.values()], ...(pageSkillContext && { pageSkillContext }) };
 }
 export async function requireDefinition(owner:ProductOwner,credentials:AssistantCredentials,kind:CurrentProductKind,id:string){
   await requireProductGrant(id,'use',credentials);

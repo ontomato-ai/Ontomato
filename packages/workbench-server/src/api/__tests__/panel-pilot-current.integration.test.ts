@@ -71,6 +71,13 @@ const taskRun = platformTaskRunSchema.parse({
 const ownerWrites: string[] = [];
 let ownerTasks: typeof task[] = [];
 const taskType = { kind: "object", objectType: "platform:ScheduledTask" };
+/** The metric and function owners' one definition each, answered by their catalogue reads and forms. */
+const catalogueOwners = [
+  { root: "metricView", objectType: "platform:MetricView",
+    definition: { id: "metric-pilot", name: "Example metric", statusLabel: "Published", function: { name: "example_query" } } },
+  { root: "function", objectType: "platform:Function",
+    definition: { id: "function-pilot", name: "example_query", operationLabel: "Read" } },
+] as const;
 /** The metric owner's output columns, its partial-result mark, and the refusals it answers some years with. */
 const columns = [{ key: "value", label: null, type: null }];
 const metricTruncation = { truncated: true as const, rowLimit: 1, truncationHint: "Narrow the year to see every customer" };
@@ -273,13 +280,30 @@ beforeAll(async () => {
     app.post("/action/" + endpoint, (req, res) => {
       expect(req.header("tk")).toBe("pilot-reader");
       expect(req.header("Accept-Language")).toBe("zh-CN");
-      const action = { id: "review", name: "Review", statusLabel: "Published" };
+      const action = {
+        id: "review", name: "Review", statusLabel: "Published", codeHash: "c".repeat(64), explanationVersion: 3,
+        function: { name: "review", code: "# ontomato-python:2" },
+        definition: {
+          version: 1, source: "DERIVED", verified: false, name: "Review", description: null, codeHash: "c".repeat(64),
+          explanationVersion: 3, effects: [{ kind: "UPDATE_OBJECT", kindLabel: "更新对象", className: "Order" }], affects: ["Order"],
+        },
+        codeSegments: [{
+          id: "s1", kind: "TRY_CATCH", kindLabel: "异常捕获", title: "Guarded update", codeRange: { start: 1, end: 6 },
+          trySegs: [{ id: "s2", kind: "UPDATE_OBJECT", kindLabel: "更新对象", title: "Approve", codeRange: { start: 2, end: 3 } }],
+        }],
+      };
       if (endpoint === "queryList") {
         expect(req.body).toEqual({});
         res.json({ success: true, data: [action] });
       } else if (endpoint === "queryById") {
         expect(req.body).toEqual({ id: action.id });
         res.json({ success: true, data: action });
+      } else if (req.body.target.kind === "draft") {
+        expect(req.body).toEqual({ target: { kind: "draft" }, values: { name: "New review" }, changedField: null });
+        res.json({ success: true, data: {
+          fields: [], values: req.body.values, errors: [],
+          save: { method: "POST", path: "/action/save", bodySchema: {}, draftOperation: "action.create" },
+        } });
       } else {
         expect(req.body).toMatchObject({
           target: { kind: "object", objectType: "platform:Action", primaryKey: action.id },
@@ -290,6 +314,29 @@ beforeAll(async () => {
           save: { method: "POST", path: "/action/save", bodySchema: {}, draftOperation: "action.update" },
         } });
       }
+    });
+  }
+  // The metric and function owners' catalogues: one definition each, its form for a saved or a new definition.
+  for (const { root, objectType, definition } of catalogueOwners) {
+    app.post(`/${root}/queryList`, (req, res) => {
+      expect(req.header("tk")).toBe("pilot-reader");
+      expect(req.header("Accept-Language")).toBe("zh-CN");
+      expect(req.body).toEqual({});
+      res.json({ success: true, data: [definition] });
+    });
+    app.post(`/${root}/queryById`, (req, res) => {
+      expect(req.header("tk")).toBe("pilot-reader");
+      res.json(req.body.id === definition.id ? { success: true, data: definition }
+        : { success: false, code: `${root === "metricView" ? "METRIC_VIEW" : "FUNCTION"}_NOT_FOUND`, message: "Definition not found" });
+    });
+    app.post(`/${root}/form`, (req, res) => {
+      expect(req.header("tk")).toBe("pilot-reader");
+      const draft = req.body.target.kind === "draft";
+      if (!draft) expect(req.body.target).toEqual({ kind: "object", objectType, primaryKey: definition.id });
+      res.json({ success: true, data: {
+        fields: [], values: req.body.values ?? { name: draft ? "" : definition.name }, errors: [],
+        save: { method: "POST", path: `/${root}/save`, bodySchema: {}, draftOperation: draft ? "create" : "update" },
+      } });
     });
   }
   app.post("/ontology/query/metrics/describe", (req, res) => {
@@ -813,6 +860,36 @@ async function ownerReadPanel(
   };
 }
 
+it("reads the metric and function catalogues, a definition and its forms with the panel viewer", async () => {
+  for (const { objectType, definition } of catalogueOwners) {
+    const type = { kind: "PlatformObjectType", id: objectType };
+    const selected = (primaryKey: string) => ({ object: { literal: { className: objectType, primaryKey } } });
+    const read = await ownerReadPanel(`owner-${objectType.slice("platform:".length).toLowerCase()}`, {
+      list: { componentId: "@ontomato/sdk:ObjectList", data: { rows: {
+        source: { type }, read: "query", params: { search: { literal: definition.name.slice(0, 4) }, size: { literal: 10 } },
+      } } },
+      summary: { componentId: "@ontomato/sdk:ObjectSummary", data: {
+        record: { source: selected(definition.id), read: "record", params: {} },
+      } },
+      missing: { componentId: "@ontomato/sdk:ObjectSummary", data: {
+        record: { source: selected("gone"), read: "record", params: {} },
+      } },
+      definition: { componentId: "@ontomato/sdk:ObjectForm", data: { form: {
+        source: selected(definition.id), read: "form",
+        params: { values: { literal: { name: "Draft" } }, changedField: { literal: "/name" } },
+      } } },
+      create: { componentId: "@ontomato/sdk:ObjectForm", data: { form: { source: { type }, read: "createForm", params: {} } } },
+    });
+    expect(await read("list", "rows")).toMatchObject({
+      status: "ready", value: { rows: [{ primaryKey: definition.id, label: definition.name }], total: 1 },
+    });
+    expect(await read("summary", "record")).toMatchObject({ status: "ready", value: { primaryKey: definition.id } });
+    expect(await read("missing", "record")).toEqual({ status: "error", message: "Definition not found" });
+    expect(await read("definition", "form")).toMatchObject({ status: "ready", value: { values: { name: "Draft" }, errors: [] } });
+    expect(await read("create", "form")).toMatchObject({ status: "ready", value: { values: { name: "" }, save: { draftOperation: "create" } } });
+  }
+});
+
 it("reads the SDK component catalogue and definition from the installed SDK release", async () => {
   const componentType = "platform:SDKComponent";
   const typeSource = { type: { kind: "PlatformObjectType", id: componentType } };
@@ -848,7 +925,7 @@ it("reads the SDK component catalogue and definition from the installed SDK rele
   });
 });
 
-it("dispatches the action catalog's three reads and both operation descriptions", async () => {
+it("dispatches the action catalog's reads and both operation descriptions", async () => {
   const action = { className: "platform:Action", primaryKey: "review" };
   const actionType = { kind: "object", objectType: action.className };
   const selected = { object: { literal: action } };
@@ -866,6 +943,15 @@ it("dispatches the action catalog's three reads and both operation descriptions"
         values: { literal: { name: "Draft review" } }, changedField: { literal: "/name" },
       } },
     } },
+    create: { componentId: "@ontomato/sdk:ObjectForm", data: {
+      createForm: { source: { type: { kind: "PlatformObjectType", id: action.className } }, read: "createForm", params: {
+        values: { literal: { name: "New review" } }, changedField: { literal: null },
+      } },
+    } },
+    explained: { componentId: "@ontomato/sdk:PanelData", data: {
+      definition: { source: selected, read: "definition", params: {} },
+      explanation: { source: selected, read: "explanation", params: {} },
+    } },
     status: operation("actions.setStatus"),
     remove: operation("actions.delete"),
   }, { selected: { type: actionType, default: null } }, {
@@ -875,6 +961,21 @@ it("dispatches the action catalog's three reads and both operation descriptions"
   expect(await read("list", "rows")).toMatchObject({ status: "ready", value: [{ primaryKey: "review", label: "Review" }] });
   expect(await read("summary", "record")).toMatchObject({ status: "ready", value: { fields: { status: "Published" } } });
   expect(await read("definition", "form")).toMatchObject({ status: "ready", value: { values: { name: "Draft review" }, errors: [] } });
+  expect(await read("create", "createForm")).toMatchObject({
+    status: "ready", value: { values: { name: "New review" }, save: { draftOperation: "action.create" } },
+  });
+  expect(await read("explained", "definition")).toMatchObject({
+    status: "ready", value: { source: "DERIVED", effects: [{ kind: "UPDATE_OBJECT", kindLabel: "更新对象" }], affects: ["Order"] },
+  });
+  expect(await read("explained", "explanation")).toEqual({
+    status: "ready", value: {
+      code: "# ontomato-python:2", codeHash: "c".repeat(64), explanationVersion: 3,
+      codeSegments: [{
+        id: "s1", kind: "TRY_CATCH", kindLabel: "异常捕获", title: "Guarded update", codeRange: { start: 1, end: 6 },
+        trySegs: [{ id: "s2", kind: "UPDATE_OBJECT", kindLabel: "更新对象", title: "Approve", codeRange: { start: 2, end: 3 } }],
+      }],
+    },
+  });
   const readOperations = async (member: string) => (await request("POST", "product-panels/read", {
     source: { kind: "registered", applicationId: "owner-actions", useId: "data" },
     memberPath: [{ member }], operations: true, inputs: { action },

@@ -1164,7 +1164,9 @@ export default {
         "binds-target": "Binds target"
       },
       "panel": {
-        "contains-projection": "Contains projection"
+        "contains-projection": "Contains projection",
+        "contains-panel": "Contains panel",
+        "provides-skill": "Provides skill"
       },
       "application": {
         "uses-panel": "Uses panel"
