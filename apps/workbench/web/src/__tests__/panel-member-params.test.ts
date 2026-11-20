@@ -17,7 +17,9 @@ import { noOperations } from "./panel-frame";
  * run-time parameter. A datum is read again whenever a value it takes changes.
  *
  * What this rules out: a search the author bound to the panel's state sent as the component's own; a page the component
- * keeps sent as the author's; a read that does not follow a value it takes; a member's own value leaking to another.
+ * keeps sent as the author's; an output (the selection) sent to the owner as if it were a read's input; a read that does
+ * not follow a value it takes; a member's own value leaking to another; a form's values the projection does not map
+ * lost instead of going as the component's own.
  */
 
 const record = { domainId: "d", ownerId: "o", revision: 1, createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "" };
@@ -55,20 +57,20 @@ it("sends what the panel's state binds as the author's input and what the member
   let rows!: ComputedRef<MemberDataState>;
   scope.run(() => { rows = instance.memberData("list", knowledge, inputsOf("list")).use("rows"); });
   await nextTick();
-  expect(reads).toEqual([{ memberPath: [{ member: "list" }], dataName: "rows", inputs: { search: null, selected: null } }]);
+  expect(reads).toEqual([{ memberPath: [{ member: "list" }], dataName: "rows", inputs: { search: null } }]);
 
   // The search box sets the bound state; the address carries it, and the list is read with it as the author's input.
   const search = instance.memberParam("list", "search");
   search.set("refund");
   await nextTick();
   expect(instance.state.values.value.q).toBe("refund");
-  expect(reads.at(-1)).toEqual({ memberPath: [{ member: "list" }], dataName: "rows", inputs: { search: "refund", selected: null } });
+  expect(reads.at(-1)).toEqual({ memberPath: [{ member: "list" }], dataName: "rows", inputs: { search: "refund" } });
 
   // The next page is the list's own: it goes as a run-time value, and no other member sees it.
   instance.memberParam("list", "cursor").set("c-2");
   await nextTick();
   expect(reads.at(-1)).toEqual({
-    memberPath: [{ member: "list" }], dataName: "rows", inputs: { search: "refund", selected: null }, runtimeParams: { cursor: "c-2" },
+    memberPath: [{ member: "list" }], dataName: "rows", inputs: { search: "refund" }, runtimeParams: { cursor: "c-2" },
   });
   expect(instance.memberParam("other", "cursor").value.value).toBeNull();
 
@@ -78,5 +80,11 @@ it("sends what the panel's state binds as the author's input and what the member
   expect(instance.state.values.value.picked).toEqual({ className: BUSINESS_KNOWLEDGE, primaryKey: "k-1" });
   expect(instance.memberParam("list", "selected").value.value).toEqual({ className: BUSINESS_KNOWLEDGE, primaryKey: "k-1" });
   expect(rows.value.status).toBe("ready");
+
+  // A one-off read with the component's own values: those the projection does not map go as run-time values.
+  await instance.memberData("list", knowledge, inputsOf("list")).read("rows", { cursor: "c-3", size: 5 });
+  expect(reads.at(-1)).toEqual({
+    memberPath: [{ member: "list" }], dataName: "rows", inputs: { search: "refund" }, runtimeParams: { cursor: "c-3", size: 5 },
+  });
   scope.stop();
 });
