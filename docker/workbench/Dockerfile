@@ -55,6 +55,8 @@ WORKDIR /build/workspace/${WORKSPACE}/apps/workbench
 RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm build:web
 # The current apps SDK release is staged beside the web bundle in the Workbench image.
 RUN pnpm build:sdk
+# Build standalone workbench skill bundles and third-party license notices into the package resources before staging.
+RUN pnpm --filter @ontomato/workbench-server build:skills
 RUN TARGETPLATFORM=${TARGETPLATFORM} node /tmp/tools/workbench/stage-app.mjs
 RUN cp /tmp/launch.sh /stage/launch.sh \
  && chmod 0755 /stage/launch.sh \

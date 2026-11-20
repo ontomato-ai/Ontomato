@@ -1,4 +1,4 @@
-// Rebuild the committed runtime packages of the three chart skills from their single source before publishing.
+// Build the runtime packages of the three chart skills from their single source.
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";

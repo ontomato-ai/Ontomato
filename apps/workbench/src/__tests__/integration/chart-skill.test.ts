@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
 
+import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 // The generated chart skill ships with the shared service package's skills/ resources, outside the package export surface; located from the package root and loaded directly.
 const serverRoot = dirname(dirname(createRequire(import.meta.url).resolve("@ontomato/workbench-server")));
-const { chartFile } = await import(
-  pathToFileURL(join(serverRoot, "skills/executable/visualization/echarts/scripts/index.mjs")).href
-);
+const chartSkillEntry = join(serverRoot, "skills/executable/visualization/echarts/scripts/index.mjs");
+if (!existsSync(chartSkillEntry)) {
+  execFileSync(process.execPath, [join(serverRoot, "chart-skill/build.mjs")], { stdio: "inherit" });
+}
+const { chartFile } = await import(pathToFileURL(chartSkillEntry).href);
 
 const rows = [
   { equipment_type: "A", temperature: 30 },
