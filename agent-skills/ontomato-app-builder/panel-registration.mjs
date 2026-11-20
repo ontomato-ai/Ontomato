@@ -23,6 +23,16 @@ function productBody({ mode, revision, input }) {
   return { ...input, revision: mode === "create" ? 0 : revision };
 }
 
+export function panelRegistrationRecords({ projections = [], panels = [] }, checks) {
+  return [
+    ["projection", projections, checks.registerDirectProjectionRequestSchema],
+    ["panel", panels, checks.registerDirectPanelRequestSchema],
+  ].map(([kind, records, schema]) => [
+    kind,
+    records.map(item => ({ id: item.id, body: schema.parse(productBody(item)) })),
+  ]);
+}
+
 export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workbenchUrl}/api/data-query`, headers = {} }) {
   const send = (base, method, path, body) => fetch(base + path, {
     method,

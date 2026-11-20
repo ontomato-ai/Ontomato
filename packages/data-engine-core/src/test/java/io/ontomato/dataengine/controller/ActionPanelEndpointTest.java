@@ -9,13 +9,21 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import io.ontomato.dataengine.bean.PythonExecuteResult;
+import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.core.bean.User;
+import io.ontomato.dataengine.security.CaseExecutionGuard;
 import io.ontomato.dataengine.service.ActionService;
+import io.ontomato.dataengine.service.BuildTestContextService;
+import io.ontomato.dataengine.service.BusinessConfigService;
+import io.ontomato.dataengine.service.ExecutionTarget;
 import io.ontomato.dataengine.service.FormFields;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.OwnerFieldRefusal;
+import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.agent.AgentExecutionScope;
+import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.SpringBeanUtil;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,20 +38,35 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class ActionPanelEndpointTest {
   private final ActionService actionService = mock(ActionService.class);
   private final LangService langService = mock(LangService.class);
-  private final ActionController controller = new ActionController(mock(AgentExecutionScope.class));
+  private final CaseExecutionGuard caseExecutionGuard = mock(CaseExecutionGuard.class);
+  private final BusinessConfigService businessConfigService = mock(BusinessConfigService.class);
+  private final BuildTestContextService buildTests = mock(BuildTestContextService.class);
+  private final IdentityService identityService = mock(IdentityService.class);
+  private final AgentExecutionScope agentExecutionScope = mock(AgentExecutionScope.class);
+  private final ActionController controller = new ActionController(agentExecutionScope);
 
   @BeforeEach
   void setup() {
     User user = mock(User.class);
+    when(user.getId()).thenReturn("user-1");
     when(user.getDomainId()).thenReturn("domain");
-    IdentityService identityService = mock(IdentityService.class);
     when(identityService.getCurrentUser()).thenReturn(user);
+    when(identityService.getCurrentUserDataPermission()).thenReturn(new UserDataPermission());
+    BusinessConfig config = new BusinessConfig();
+    config.setDslCookerTimeout(60000L);
+    when(businessConfigService.get("domain")).thenReturn(config);
+    when(buildTests.resolve(any())).thenReturn(ExecutionTarget.LIVE);
+    when(agentExecutionScope.target(any(), any(), any(), any())).thenAnswer(call -> call.getArgument(3));
     GenericApplicationContext context = new GenericApplicationContext();
     context.registerBean(IdentityService.class, () -> identityService);
     context.refresh();
     new SpringBeanUtil().setApplicationContext(context);
     ReflectionTestUtils.setField(controller, "actionService", actionService);
     ReflectionTestUtils.setField(controller, "langService", langService);
+    ReflectionTestUtils.setField(controller, "identityService", identityService);
+    ReflectionTestUtils.setField(controller, "caseExecutionGuard", caseExecutionGuard);
+    ReflectionTestUtils.setField(controller, "businessConfigService", businessConfigService);
+    ReflectionTestUtils.setField(controller, "buildTests", buildTests);
     when(langService.get(anyString(), anyString())).thenAnswer(call -> call.getArgument(1));
   }
 
@@ -82,6 +105,56 @@ class ActionPanelEndpointTest {
     assertEquals("/function/operation", errors.getJSONObject(0).getString("field"));
     assertEquals("invalid_option", errors.getJSONObject(0).getString("code"));
     assertEquals("expected OPERATION_WRITE", errors.getJSONObject(0).getString("message"));
+  }
+
+  @Test
+  void anUngrantedExecuteReturnsARefusalCode() throws Exception {
+    when(actionService.execute(eq("a1"), any(JSONObject.class), eq("en"), any(), any(), anyInt(), any()))
+        .thenThrow(new OwnerRefusal("ACTION_NOT_GRANTED", "No role grants this action"));
+
+    JSONObject body = performExecute("a1", "{}");
+
+    assertFalse(body.getBooleanValue("success"));
+    assertEquals("ACTION_NOT_GRANTED", body.getString("code"));
+    assertEquals("No role grants this action", body.getString("message"));
+  }
+
+  @Test
+  void aPythonExecutionErrorStaysAnUncodedFailure() throws Exception {
+    PythonExecuteResult result = new PythonExecuteResult();
+    result.setError("program failed");
+    when(actionService.execute(eq("a1"), any(JSONObject.class), eq("en"), any(), any(), anyInt(), any()))
+        .thenReturn(result);
+
+    JSONObject body = performExecute("a1", "{}");
+
+    assertFalse(body.getBooleanValue("success"));
+    assertFalse(body.containsKey("code"));
+    assertEquals("program failed", body.getString("message"));
+  }
+
+  @Test
+  void anUngrantedFormReturnsARefusalCode() throws Exception {
+    when(actionService.form(any(), any(), any(), any(), eq("en"), any()))
+        .thenThrow(new OwnerRefusal("ACTION_NOT_GRANTED", "No role grants this action"));
+
+    JSONObject body = perform("/action/form", """
+        {"id":"a1"}""");
+
+    assertFalse(body.getBooleanValue("success"));
+    assertEquals("ACTION_NOT_GRANTED", body.getString("code"));
+    assertEquals("No role grants this action", body.getString("message"));
+  }
+
+  private JSONObject performExecute(String id, String param) throws Exception {
+    var mvc = MockMvcBuilders.standaloneSetup(controller)
+        .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+    var response = mvc.perform(post("/action/execute")
+            .header("Accept-Language", "en")
+            .param("id", id)
+            .param("param", param))
+        .andExpect(status().isOk()).andReturn().getResponse();
+    return JSON.parseObject(response.getContentAsString());
   }
 
   private JSONObject perform(String path, String body) throws Exception {
