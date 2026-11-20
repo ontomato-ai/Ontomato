@@ -1,21 +1,24 @@
 # Ontomato apps SDK {{version}}
 
-Follow the [Product Layer and Application Composition Standard](https://infohub.eloyzh.de/o/standard-66842053) when composing a panel application. Use this installed SDK version's component catalogue and contracts. The hosted ProductAsset and frozen release examples below apply to maintenance of existing hosted applications.
+Follow the [Product Layer and Application Composition Standard](https://infohub.eloyzh.de/o/standard-66842053) when composing a panel application. Use the component catalogue and contracts of the SDK release the platform serves. The hosted ProductAsset and frozen release examples below apply to maintenance of existing hosted applications.
 
 Panel applications compose registered projections using the deployment's current SDK. Each projection names its
 owner-provided data and operations. A panel provides the layout, typed state and optional recipes. The platform renders
 a panel without a module directly and supplies the current data. For maintenance of an existing hosted source application,
 see [Page skeleton](#page-skeleton).
 
-## What is in this version
+This directory is the one SDK release the platform serves, at `/apps-sdk/current/`. An upgraded platform serves its own
+release there: every page and panel runs on the release of the platform that shows it.
+
+## What is in this release
 
 | Path | Content |
 | --- | --- |
-| `sdk.json` | The version, the product, the module files, the check module and the versions of the libraries |
+| `sdk.json` | The version, the product, the module files, the stylesheet, the check module and the versions of the libraries |
 | `docs/index.md` | This guide |
 | `docs/reference.md` | The API of every `@ontomato/sdk` module, generated from their sources |
 | `components.json`, `docs/components.md` | Base components and their ports for this exact SDK |
-| `node/panel-check.mjs` | The platform's own parsers and schemas of no-code panel sources, as one Node module: a check of a panel's layout, declaration and projections before they are registered runs these |
+| `node/panel-check.mjs` | The platform's own parsers and declarations of panel sources, as one Node module: a check of a panel's layout, declaration and projections before it is registered runs these |
 | `docs/element-plus.web-types.json` | Element Plus's own metadata for every component of the bundled version: attributes, events, slots |
 | `examples/basic.html` | Platform context, Element Plus, a chart in the platform's theme, a Markdown text, a CSV text in the code editor previewed as a table, and an HTML document in a sandboxed frame |
 | `examples/metric-action.html` | A published MetricView in a table and a chart, or its result as read-only JSON, the selected row as page context, then an Action through its form and a fresh read through the template ref of `<metric-view-data>` |
@@ -79,14 +82,16 @@ same manifest members. Existing code can reference a member with the public `<pr
 
 ## Page skeleton
 
-Put the stylesheet and the import map of this version into the page's `<head>`, before any module script:
+Put the stylesheet and the import map of the platform's SDK into the page's `<head>`, before any module script:
 
 ```html
 {{head}}
 ```
 
 The paths start at the platform's root. When the platform is deployed under a path prefix, such as `/wenshu`, every
-`/apps-sdk/...` path starts with that prefix: `/wenshu/apps-sdk/...`. Use one version on a page; never mix two.
+`/apps-sdk/...` path starts with that prefix: take it from `sdkBasePath` of `GET /api/apps-sdk/current`, which is
+`/wenshu/apps-sdk/current`. A hosted application's page is published with these links, so it always loads the SDK of
+the platform that serves it.
 
 The stylesheet gives the page the platform's text and background: its font, size, line height, text colour and page
 background, in both the light and the dark theme. Don't set them on `body` again; style only what is your page's own.
@@ -100,7 +105,6 @@ container: it adds the room after the container's content, and adds nothing when
 <div class="results shell-dock-room">…</div>
 ```
 
-A page built against an older SDK does not get this class; the room it reads comes with the version the page loads.
 
 ```html
 <div id="app" v-cloak>
@@ -463,8 +467,8 @@ bundled version. Messages and dialogs come from the named exports: `ElMessage.su
 
 - `x.y.z` is a released SDK. `x.y.z-dev.<digest>` is a development build, named by a digest of the version's own
   content: a build with the same content has the same version, and any change makes a new one.
-- A version directory never changes, and installing a newer platform keeps the older versions. To move an app to a
-  newer SDK, change the version in its stylesheet link and import map, then test the app again.
+- A platform serves exactly one release, at `/apps-sdk/current/`, and the module files and the stylesheet there keep
+  their names from one release to the next. An upgraded platform serves its own: test an app on it again.
 
 ### Explicit execution parameters (5.0)
 

@@ -55,29 +55,59 @@ const current = {
   domainId: "domain-1", ownerId: "owner-1", revision: 1, createdAt: "2026-11-19T00:00:00.000Z",
   updatedAt: "2026-11-19T00:00:00.000Z", editable: false, visibility: "domain" as const,
 };
-const projection = (id: string, componentId: string, binding: string, more: Partial<ProductProjection> = {}): ProductProjection => ({
-  ...current, id, name: id, description: "", componentId, binding: { kind: "PlatformObjectType", id: binding },
-  inputs: {}, display: {}, ...more,
+const projection = (
+  id: string,
+  fields: Pick<Exclude<ProductProjection, { componentId: "@ontomato/sdk:MetricChart" }>, "componentId" | "inputs" | "data">,
+  config: ProductProjection["config"] = {},
+): ProductProjection => ({
+  ...current, id, name: id, description: "", outputs: {}, config, ...fields,
 });
+const formInputs = {
+  agent: { kind: "object", objectType: AGENT_DEFINITION },
+  values: { kind: "json" },
+  changedField: { kind: "scalar", type: "string" },
+} as const;
+const formParams = { values: { input: "values" }, changedField: { input: "changedField" } };
+const referencePicker = (id: string, objectType: string) => {
+  const source = { type: { kind: "PlatformObjectType" as const, id: objectType } };
+  return projection(id, {
+    componentId: "@ontomato/sdk:ReferencePicker",
+    inputs: { values: { kind: "json" } },
+    data: {
+      options: { source, read: "options", params: {} },
+      selected: { source, read: "resolve", params: { values: { input: "values" } } },
+    },
+  });
+};
 const projections: Record<string, ProductProjection> = {
-  "agent-definition-form": projection("agent-definition-form", "ObjectForm", AGENT_DEFINITION, {
-    inputs: { agent: { kind: "object", objectType: AGENT_DEFINITION } }, display: { creates: true },
-  }),
-  "agent-skill-choice": projection("agent-skill-choice", "ReferencePicker", SKILL),
-  "agent-model-choice": projection("agent-model-choice", "ReferencePicker", MODEL_OPTION),
-  "agent-data-scope": projection("agent-data-scope", "ObjectGraph", OBJECT_TYPE, {
-    graph: { edges: { binding: { kind: "PlatformObjectType", id: RELATIONSHIP }, sourcePath: "/fromclass", targetPath: "/toclass" } },
-  }),
+  "agent-definition-form": projection("agent-definition-form", {
+    componentId: "@ontomato/sdk:ObjectForm",
+    inputs: formInputs,
+    data: {
+      form: { source: { object: { input: "agent" } }, read: "form", params: formParams },
+      createForm: { source: { type: { kind: "PlatformObjectType", id: AGENT_DEFINITION } }, read: "createForm", params: formParams },
+    },
+  }, { creates: true }),
+  "agent-skill-choice": referencePicker("agent-skill-choice", SKILL),
+  "agent-model-choice": referencePicker("agent-model-choice", MODEL_OPTION),
+  "agent-data-scope": projection("agent-data-scope", {
+    componentId: "@ontomato/sdk:ObjectGraph",
+    inputs: {},
+    data: {
+      nodes: { source: { type: { kind: "PlatformObjectType", id: OBJECT_TYPE } }, read: "list", params: {} },
+      edges: { source: { type: { kind: "PlatformObjectType", id: RELATIONSHIP } }, read: "list", params: {} },
+    },
+  }, { edgeEnds: { source: "/fromclass", target: "/toclass" } }),
 };
 const manifest = definePanel({
-  state: { selectedAgent: { kind: "object", objectType: AGENT_DEFINITION, deepLink: true } },
-  slots: {
-    definition: { projectionId: "agent-definition-form", inputs: { agent: { state: "selectedAgent" } } },
-    skills: { projectionId: "agent-skill-choice", inputs: {}, formField: { slot: "definition", path: "/skills" } },
-    model: { projectionId: "agent-model-choice", inputs: {}, formField: { slot: "definition", path: "/modelSelection/modelId" } },
-    scope: { projectionId: "agent-data-scope", inputs: {}, formField: { slot: "definition", path: "/classNames" } },
+  state: { selectedAgent: { type: { kind: "object", objectType: AGENT_DEFINITION }, deepLink: true } },
+  members: {
+    definition: { target: { projectionId: "agent-definition-form" }, inputs: { agent: { state: "selectedAgent" } } },
+    skills: { target: { projectionId: "agent-skill-choice" }, inputs: {}, formField: { slot: "definition", path: "/skills" } },
+    model: { target: { projectionId: "agent-model-choice" }, inputs: {}, formField: { slot: "definition", path: "/modelSelection/modelId" } },
+    scope: { target: { projectionId: "agent-data-scope" }, inputs: {}, formField: { slot: "definition", path: "/classNames" } },
   },
-  operations: [],
+  events: {},
 });
 const panel = panelRecord("panel-agent-settings", "Agent settings", manifest);
 const use = panelUse("use-agent-settings", "agent-settings", panel.id, "/ontology/agents");

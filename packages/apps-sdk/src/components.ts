@@ -1,6 +1,7 @@
 import type { Component } from "vue";
 import type { ComponentOperation } from "@ontomato/contracts/panel-projection";
 import type { OntologyParameterType } from "@ontomato/contracts/panel-manifest";
+import type { PanelReadResultId } from "@ontomato/contracts/platform-object-types";
 
 /*
  * What a component of this SDK version offers a projection (overall design 3.1, 3.2): its identity, whether it presents
@@ -33,6 +34,15 @@ export interface ComponentMetadata {
   readonly meaning: string;
   /** Its side effects, when it has any: a save, a run, a request. Absent for a component that only displays. */
   readonly effects?: string;
+  /**
+   * The facts it reads from the platform, by the name a projection's `data` gives each: what results that read may
+   * produce, and whether every placement must supply it. A component that reads no platform data omits this, or declares
+   * an empty table to say so.
+   */
+  readonly data?: Readonly<Record<string, {
+    readonly results: readonly PanelReadResultId[];
+    readonly required: boolean;
+  }>>;
   /** The ontology elements it may bind, as `Kind:id` or `Kind:*` when any of that kind does. */
   readonly bindsElement?: readonly string[];
   /** The parameters it takes, by name; a projection's `inputs` are these. */

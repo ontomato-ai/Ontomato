@@ -1,9 +1,10 @@
 import { computed, onScopeDispose, shallowReactive, shallowRef, watch, type ComputedRef } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import type { DirectPanelManifest, PanelManifest, PanelStateField } from "@ontomato/contracts/panel-manifest";
+import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
+import type { OntologyElementRef } from "@ontomato/contracts/ontology-element-ref";
 import { panelOperationAffectedSchema, panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
-import { directReadDeclaration, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
-import type { DirectProjection, ProductProjection } from "@ontomato/contracts/product-panels";
+import { directReadDeclaration, projectionReadReferences, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
+import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { PanelDataState, ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { createPanelInstance, type PanelInstance, type PanelInstanceOptions } from "./instance";
 import { stateObject, type PanelFieldValue } from "./state";
@@ -17,8 +18,7 @@ import type { PanelContext } from "./context";
  * change, and again when an operation reports it changed. A read whose source object is not selected yet is not made;
  * the datum says a selection is needed. An answer for an earlier selection is never shown for the new one.
  *
- * The declaration's members are the old declaration's slots for the machinery both kinds of panel share (state, forms,
- * drafts, page context, operations), so a member key is a slot name everywhere in the SDK.
+ * A panel's frame and the platform's document read the same declaration; a member key is what the SDK calls a slot.
  */
 
 /** The objects and types an operation reports it changed. */
@@ -49,7 +49,7 @@ export interface MemberData {
 }
 
 export interface DirectPanelInstance extends PanelInstance {
-  readonly direct: DirectPanelManifest;
+  readonly direct: PanelManifest;
   /** The panel's own words, in the current language. */
   readonly text: PanelText;
   /** The member's projection, read once for this instance. */
@@ -71,21 +71,6 @@ export interface DirectPanelInstance extends PanelInstance {
   projectionVersion(member: string): number;
 }
 
-/** The old declaration the shared machinery reads: members as slots, typed state fields as kinds, no state operations. */
-function sharedManifest(direct: DirectPanelManifest): PanelManifest {
-  return {
-    state: Object.fromEntries(Object.entries(direct.state).map(([name, field]) =>
-      [name, { ...field.type, deepLink: field.deepLink } as PanelStateField])),
-    slots: Object.fromEntries(Object.entries(direct.members).map(([member, declaration]) => [member, {
-      projectionId: declaration.target.projectionId,
-      inputs: Object.fromEntries(Object.entries(declaration.inputs ?? {}).flatMap(([input, source]) =>
-        "state" in source ? [[input, source]] : [])),
-      ...(declaration.outputs ? { outputs: declaration.outputs } : {}),
-    }])),
-    operations: [],
-  };
-}
-
 /** The member inputs a datum reads: the one its source object is, and those its parameters take their values from. */
 export function inputsRead(data: DirectProjectionData): string[] {
   const object = "object" in data.source && "input" in data.source.object ? [data.source.object.input] : [];
@@ -96,6 +81,24 @@ export function inputsRead(data: DirectProjectionData): string[] {
 export const readKey = (data: DirectProjectionData, inputs: MemberInputs) =>
   JSON.stringify(inputsRead(data).map((name) => inputs[name] ?? null));
 
+/** The value each of a datum's read parameters takes now: its literal, or the input that holds it. */
+export function paramValues(data: DirectProjectionData, inputs: MemberInputs): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(data.params).map(([param, source]) =>
+    [param, "literal" in source ? source.literal : inputs[source.input] ?? null]));
+}
+
+/**
+ * Whether a datum waits for what its read cannot go without: the object it is read from, or a parameter its owner
+ * requires (a type to list objects of, a node to expand). A waiting datum is read nowhere; a literal is always there.
+ */
+export function awaitsInputs(projection: DirectProjection, data: DirectProjectionData, inputs: MemberInputs): boolean {
+  if ("object" in data.source && stateObject(sourceObject(data, inputs)) === null) return true;
+  const values = paramValues(data, inputs);
+  const declaration = directReadDeclaration(projection, data);
+  const required = declaration?.parameterMode === "fixed" ? declaration.requiredParams ?? [] : [];
+  return required.some((param) => values[param] === null);
+}
+
 /** The object a datum is read from now, when its source is one: the literal, or the input that holds it. */
 function sourceObject(data: DirectProjectionData, inputs: MemberInputs): PanelFieldValue | undefined {
   if (!("object" in data.source)) return undefined;
@@ -103,17 +106,14 @@ function sourceObject(data: DirectProjectionData, inputs: MemberInputs): PanelFi
   return "literal" in object ? object.literal : (inputs[object.input] as PanelFieldValue | undefined);
 }
 
-export function createDirectPanelInstance(direct: DirectPanelManifest, options: DirectPanelInstanceOptions): DirectPanelInstance {
-  const defaults = Object.fromEntries(Object.entries(direct.state).flatMap(([name, field]) =>
-    field.default === undefined ? [] : [[name, field.default]]));
+export function createDirectPanelInstance(direct: PanelManifest, options: DirectPanelInstanceOptions): DirectPanelInstance {
   const projections = new Map<string, Promise<DirectProjection>>();
   /** The revision each member's projection was last read at. */
   const readRevisions = new Map<string, number>();
   const versions = shallowReactive(new Map<string, number>());
   let active = true;
-  const instance = createPanelInstance(sharedManifest(direct), {
+  const instance = createPanelInstance(direct, {
     ...options,
-    initial: { ...defaults, ...options.initial },
     // The shared machinery reads no projection of a direct panel; its members are read here.
     readProjection: () => Promise.reject(new Error("A direct panel's members read their projections through the instance")),
   });
@@ -124,11 +124,9 @@ export function createDirectPanelInstance(direct: DirectPanelManifest, options: 
     direct,
     text: options.text,
     projectionOf(member: string) {
-      const declaration = direct.members[member];
-      if (!declaration) throw new Error(`The panel declares no member '${member}'`);
       let found = projections.get(member);
       if (!found) {
-        found = options.readProjection(declaration.target.projectionId).then((projection) => {
+        found = options.readProjection(memberProjectionId(direct, member)).then((projection) => {
           readRevisions.set(member, projection.revision);
           return projection;
         });
@@ -140,14 +138,14 @@ export function createDirectPanelInstance(direct: DirectPanelManifest, options: 
       async function answer(name: string, values: MemberInputs): Promise<MemberDataState> {
         const data = projection.data[name];
         if (!data) throw new Error(`Member '${member}' declares no datum '${name}'`);
-        // A datum read from an object waits for that object; no read is made for nothing.
-        if ("object" in data.source && stateObject(sourceObject(data, values)) === null) return { status: "awaiting" };
+        // A datum waits for its object or a required parameter; no read is made for nothing.
+        if (awaitsInputs(projection, data, values)) return { status: "awaiting" };
         const result = await options.read({ memberPath: [{ member }], dataName: name, inputs: values });
         if (result.status !== "ready") return result;
         // The host's answer is checked against the result the owner registered for this read.
         const declaration = directReadDeclaration(projection, data);
         if (!declaration) throw new Error(`No owner registers the read '${data.read}' that datum '${name}' names`);
-        return { status: "ready", value: panelReadResultSchemas[declaration.result].parse(result.value) };
+        return { status: "ready", value: panelReadResultSchemas[declaration.result].parse(result.value) as RuntimeJsonValue };
       }
 
       return {
@@ -176,7 +174,7 @@ export function createDirectPanelInstance(direct: DirectPanelManifest, options: 
         const object = stateObject(sourceObject(data, inputs()));
         if (object && affected.objects.some((changed) => changed.objectType === object.className && changed.primaryKey === object.primaryKey))
           reread();
-        else if ("type" in data.source && affected.objectTypes.includes(data.source.type)) reread();
+        else if ("type" in data.source && affected.objectTypes.includes(data.source.type.id)) reread();
       }
       for (const object of affected.objects) instance.objectChanged(object);
     },
@@ -188,8 +186,8 @@ export function createDirectPanelInstance(direct: DirectPanelManifest, options: 
       active = next;
     },
     projectionChanged(id: string, revision?: number) {
-      for (const [member, declaration] of Object.entries(direct.members)) {
-        if (declaration.target.projectionId !== id) continue;
+      for (const member of Object.keys(direct.members)) {
+        if (memberProjectionId(direct, member) !== id) continue;
         if (revision !== undefined && revision <= (readRevisions.get(member) ?? 0)) continue;
         projections.delete(member);
         versions.set(member, (versions.get(member) ?? 0) + 1);
@@ -225,27 +223,21 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
 /** A direct projection's component, as this version's catalogue names it. */
 export const memberComponentId = (projection: DirectProjection) => projection.componentId.replace(/^@ontomato\/sdk:/, "");
 
+/** The ontology element a projection is about: what its first datum reads (a type, an operation, an object's type). */
+export function projectionElement(projection: DirectProjection): OntologyElementRef {
+  const [element] = projectionReadReferences(projection);
+  if (!element) throw new Error(`Projection ${projection.id} reads nothing a component can be about`);
+  return element;
+}
+
 /**
- * A direct projection as the machinery both kinds of panel share reads a projection: the type or operation its first
- * datum is about as its binding, its object and scalar inputs, and its configuration as its display.
+ * The projection a member places. A member placed from the panel's state or the current entry is a later stage's; this
+ * release places fixed projections only.
  */
-export function memberRecord(projection: DirectProjection): ProductProjection {
-  const [first] = Object.values(projection.data);
-  if (!first) throw new Error(`Projection ${projection.id} declares no data`);
-  const objectType = (object: { literal: { className: string } } | { input: string }) => {
-    if ("literal" in object) return object.literal.className;
-    const input = projection.inputs[object.input];
-    if (input?.kind !== "object") throw new Error(`Input '${object.input}' of projection ${projection.id} is no object input`);
-    return input.objectType;
-  };
-  const binding = "operation" in first.source
-    ? { kind: "PlatformOperation" as const, id: first.source.operation }
-    : { kind: "PlatformObjectType" as const, id: "type" in first.source ? first.source.type : objectType(first.source.object) };
-  return {
-    ...projection,
-    componentId: memberComponentId(projection),
-    binding,
-    inputs: Object.fromEntries(Object.entries(projection.inputs).flatMap(([name, type]) => (type.kind === "json" ? [] : [[name, type]]))),
-    display: projection.config,
-  } as ProductProjection;
+export function memberProjectionId(manifest: PanelManifest, member: string): string {
+  const declaration = manifest.members[member];
+  if (!declaration) throw new Error(`The panel declares no member '${member}'`);
+  if (!("projectionId" in declaration.target))
+    throw new Error(`Member '${member}' is not placed as one projection, which is all this SDK release draws`);
+  return declaration.target.projectionId;
 }

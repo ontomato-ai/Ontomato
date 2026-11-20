@@ -47,22 +47,9 @@ const current = {
   visibility: "domain" as const,
 };
 
-function projectionRecord(
-  id: string,
-  componentId: string,
-  display: Record<string, unknown> = {},
-): ProductProjection {
-  return {
-    ...current,
-    id,
-    name: id,
-    description: "",
-    componentId,
-    binding: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE },
-    inputs: {},
-    display,
-  };
-}
+const ontologySource = { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } } as const;
+const allLayers = [...platformOntologyLayers] as [typeof platformOntologyLayers[number], ...typeof platformOntologyLayers[number][]];
+const nodeType = { kind: "object-union" as const, layers: allLayers };
 
 function hostWith(
   projections: readonly ProductProjection[],
@@ -84,19 +71,24 @@ afterEach(() => {
 });
 
 it("renders ObjectRelations grouped by relation kind with distinct statuses and writes full identity on peer click", async () => {
-  const relProj = projectionRecord("node-relations", "ObjectRelations");
+  const relProj: ProductProjection = {
+    ...current, id: "node-relations", name: "Node Relations", description: "",
+    componentId: "@ontomato/sdk:ObjectRelations",
+    inputs: { selected: nodeType }, outputs: { selected: nodeType }, config: {},
+    data: { neighbors: { source: ontologySource, read: "neighbors", params: { node: { input: "selected" } } } },
+  };
   const manifest = definePanel({
     state: {
-      selected: { kind: "object-union", layers: [...platformOntologyLayers], deepLink: false },
+      selected: { type: { kind: "object-union", layers: [...platformOntologyLayers] }, deepLink: false },
     },
-    slots: {
+    members: {
       relations: {
-        projectionId: relProj.id,
+        target: { projectionId: relProj.id },
         inputs: { selected: { state: "selected" } },
         outputs: { selected: { state: "selected" } },
       },
     },
-    operations: [],
+    events: {},
   });
   const panel = panelRecord("panel-node-relations", "Node Relations", manifest);
   panel.content.html = `<div id="app"><Projection slot="relations"></Projection></div>`;
@@ -214,25 +206,31 @@ it("renders ObjectRelations grouped by relation kind with distinct statuses and 
 });
 
 it("supports dynamic type queries, status separation, search/paging reset and full identity selection in ObjectList", async () => {
-  const pickerProj = projectionRecord("type-object-picker", "ObjectList", {
-    searchable: true,
-    showCount: true,
-    pageSize: 2,
-    emptyTypeText: "picker.selectType",
-  });
+  const pickerProj: ProductProjection = {
+    ...current, id: "type-object-picker", name: "Type Object Picker", description: "",
+    componentId: "@ontomato/sdk:ObjectList",
+    inputs: { type: { kind: "scalar", type: "string" }, keyword: { kind: "scalar", type: "string" }, page: { kind: "json" } },
+    outputs: { selected: nodeType },
+    config: { searchable: true, showCount: true, pageSize: 2, emptyTypeText: "picker.selectType" },
+    data: {
+      objects: { source: ontologySource, read: "objects", params: {
+        type: { input: "type" }, keyword: { input: "keyword" }, page: { input: "page" },
+      } },
+    },
+  };
   const manifest = definePanel({
     state: {
-      selectedType: { kind: "scalar", type: "string", deepLink: false },
-      start: { kind: "object-union", layers: [...platformOntologyLayers], deepLink: false },
+      selectedType: { type: { kind: "scalar", type: "string" }, deepLink: false },
+      start: { type: { kind: "object-union", layers: [...platformOntologyLayers] }, deepLink: false },
     },
-    slots: {
+    members: {
       picker: {
-        projectionId: pickerProj.id,
+        target: { projectionId: pickerProj.id },
         inputs: { type: { state: "selectedType" } },
         outputs: { selected: { state: "start" } },
       },
     },
-    operations: [],
+    events: {},
   });
   const panel = panelRecord("panel-type-picker", "Type Object Picker", manifest);
   panel.content.html = `<div id="app"><Projection slot="picker"></Projection></div>`;
@@ -403,10 +401,10 @@ it("switches declared scalar panel state with SegmentedControl (unbound in catal
 
   const manifest = definePanel({
     state: {
-      mode: { kind: "scalar", type: "string", deepLink: true },
+      mode: { type: { kind: "scalar", type: "string" }, deepLink: true },
     },
-    slots: {},
-    operations: [],
+    members: {},
+    events: {},
   });
   const panel = panelRecord("panel-segmented", "Mode Switcher", manifest);
   panel.content.html = `

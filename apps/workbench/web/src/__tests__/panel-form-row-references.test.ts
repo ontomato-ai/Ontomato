@@ -3,20 +3,20 @@ import { nextTick } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/panel-projection";
-import { FUNCTION, OBJECT_TYPE } from "@ontomato/contracts/panel-client-requests";
+import { AGENT_DEFINITION, SKILL } from "@ontomato/contracts/platform-object-types";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
-  ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
+  humanIntents, ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
 /*
- * A reference in each row of an owner form (M6's action parameters: each parameter's classes), through the platform's
- * real bridge and admission. The panel declares one ReferencePicker projection bound to the class catalogue with the
- * port `{slot: "definition", path: "/function/parameters", itemPath: "/classNames"}`; the form draws its choice in every
- * row at `/function/parameters/<i>/classNames`. Also the time control, whose value is the owner's HH:mm.
+ * A skill reference in each row of an owner form, through the platform's
+ * real bridge and admission. The panel declares one ReferencePicker projection reading the skill catalogue with the
+ * port `{slot: "definition", path: "/function/parameters", itemPath: "/skills"}`; the form draws its choice in every
+ * row at `/function/parameters/<i>/skills`. Also the time control, whose value is the owner's HH:mm.
  *
  * The mistakes these catch: a row's reference drawn nowhere (or as "cannot be edited"); a choice written to the wrong
- * row, or left at the old index after its row moved; one catalogue read per row instead of the projection's one; a
+ * row, or left at the old index after its row moved; each row loading its own projection instead of sharing one; a
  * cleared time saved as text where the owner admits null.
  */
 
@@ -30,72 +30,95 @@ const fields: Field[] = [
     fields: [field("/parameters", "Parameters", {
       kind: "object-array",
       itemKeyPath: "/name",
-      defaultItem: { name: "", classNames: [] },
+      defaultItem: { name: "", skills: [] },
       itemFields: [
         field("/name", "Parameter", { kind: "text" }),
-        field("/classNames", "Classes", { kind: "reference", objectType: OBJECT_TYPE, multiple: true }),
+        field("/skills", "Skills", { kind: "reference", objectType: SKILL, multiple: true }),
       ],
     })],
   }, { required: true }),
   field("/runAt", "Runs at", { kind: "time" }, { valueSchema: { type: ["string", "null"] } }),
 ];
-const ID = "fn-1";
+const ID = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a01";
+const skill = (name: string) => ({ namespace: { kind: "domain" as const, domainId: "domain-1" }, name });
+const sql = skill("sql");
+const chart = skill("chart");
+const review = skill("review");
 const stored: PanelFormValues = {
   id: ID,
   name: "Ship order",
-  function: { parameters: [{ name: "order", classNames: ["Order"] }, { name: "buyer", classNames: ["Customer"] }] },
+  function: { parameters: [{ name: "order", skills: [sql] }, { name: "buyer", skills: [chart] }] },
   runAt: "09:30",
 };
 const parameters = (values: PanelFormValues) => (values.function as { parameters: PanelFormValues[] }).parameters;
-const save = { method: "POST" as const, path: "/function/save", bodySchema: {}, draftOperation: "function.update" };
-const record = (id: string, componentId: string, binding: string, inputs: ProductProjection["inputs"] = {}): ProductProjection => ({
+const save = { method: "PUT" as const, path: "/assistant/agent-definitions/:id", bodySchema: {}, draftOperation: "agent.update" };
+const current = {
   domainId: "domain-1", ownerId: "owner-1", revision: 1, createdAt: "2026-11-19T00:00:00.000Z",
-  updatedAt: "2026-11-19T00:00:00.000Z", editable: false, visibility: "domain",
-  id, name: id, description: "", componentId, binding: { kind: "PlatformObjectType", id: binding }, inputs, display: {},
-});
-const projections: Record<string, ProductProjection> = {
-  "action-form": record("action-form", "ObjectForm", FUNCTION, { fn: { kind: "object", objectType: FUNCTION } }),
-  "parameter-classes": record("parameter-classes", "ReferencePicker", OBJECT_TYPE),
+  updatedAt: "2026-11-19T00:00:00.000Z", editable: false, visibility: "domain" as const, description: "",
+  outputs: {}, config: {},
 };
-const manifest = definePanel({
-  state: { selected: { kind: "object", objectType: FUNCTION, deepLink: true } },
-  slots: {
-    definition: { projectionId: "action-form", inputs: { fn: { state: "selected" } } },
-    classes: {
-      projectionId: "parameter-classes", inputs: {},
-      formField: { slot: "definition", path: "/function/parameters", itemPath: "/classNames" },
+const skillSource = { type: { kind: "PlatformObjectType", id: SKILL } } as const;
+const projections: Record<string, ProductProjection> = {
+  "agent-form": {
+    ...current, id: "agent-form", name: "Agent form", componentId: "@ontomato/sdk:ObjectForm",
+    inputs: {
+      agent: { kind: "object", objectType: AGENT_DEFINITION },
+      values: { kind: "json" }, changedField: { kind: "scalar", type: "string" },
+    },
+    data: { form: {
+      source: { object: { input: "agent" } }, read: "form",
+      params: { values: { input: "values" }, changedField: { input: "changedField" } },
+    } },
+  },
+  "parameter-skills": {
+    ...current, id: "parameter-skills", name: "Parameter skills", componentId: "@ontomato/sdk:ReferencePicker",
+    inputs: { values: { kind: "json" } },
+    data: {
+      options: { source: skillSource, read: "options", params: {} },
+      selected: { source: skillSource, read: "resolve", params: { values: { input: "values" } } },
     },
   },
-  operations: [],
+};
+const manifest = definePanel({
+  state: { selected: { type: { kind: "object", objectType: AGENT_DEFINITION }, deepLink: true } },
+  members: {
+    definition: { target: { projectionId: "agent-form" }, inputs: { agent: { state: "selected" } } },
+    skills: {
+      target: { projectionId: "parameter-skills" },
+      formField: { slot: "definition", path: "/function/parameters", itemPath: "/skills" },
+    },
+  },
+  events: {},
 });
 const panel = panelRecord("panel-row-references", "Row references", manifest);
-/** The same form in a panel that declares no projection for the rows' classes. */
+/** The same form in a panel that declares no projection for the rows' skills. */
 const bare = panelRecord("panel-row-references-bare", "Row references", definePanel({
-  state: manifest.state, slots: { definition: manifest.slots.definition! }, operations: [],
+  state: manifest.state, members: { definition: manifest.members.definition! }, events: {},
 }));
 
-const ok = (data: unknown) => Response.json({ success: true, data });
-async function open(slots: string[], shown = panel, saved: (values: PanelFormValues) => Response = ok) {
-  const use = panelUse("use-row-references", "row-references", shown.id, "/ontology/actions");
+async function open(slots: string[], shown = panel) {
+  const use = panelUse("use-row-references", "row-references", shown.id, "/ontology/agents");
+  const intents = humanIntents(() => ({ kind: "success", data: {} }), { source: "input", input: "agent" });
   const sent = installPlatform((request: Sent) => {
     const projected = /^\/api\/product-projections\/(.+)$/.exec(request.path);
     if (projected) return Response.json({ projection: projections[projected[1]!] });
-    if (request.path === "/api/data-query/function/form") {
+    if (request.path === "/api/assistant/agent-definitions/form") {
       const { values } = request.body as { values?: PanelFormValues };
-      return ok({ fields, values: values ?? stored, errors: [], save });
+      return Response.json({ fields, values: values ?? stored, errors: [], save });
     }
-    if (request.path === "/api/data-query/function/save") return saved(request.body as PanelFormValues);
-    if (request.path === "/api/data-query/admin/getMetas")
-      return ok({
-        classDef: [{ className: "Order", showName: "Orders" }, { className: "Customer", showName: "Customers" }, { className: "Invoice", showName: "Invoices" }],
-        relationship_rule: {},
-      });
-    return nothingAt(request);
+    if (request.path === "/api/assistant/agent-skills") {
+      return Response.json({ skills: [
+        { skill: sql, title: "SQL", description: "" },
+        { skill: chart, title: "Charts", description: "" },
+        { skill: review, title: "Review", description: "" },
+      ] });
+    }
+    return intents(request) ?? nothingAt(request);
   });
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
   platformPanelHost("ontology", use, ignoreChanges).frame(frame, registered("ontology", use, shown), true);
-  writePanelDocument(registered("ontology", use, shown), "/ontology/actions", { selected: { className: FUNCTION, primaryKey: ID } } as never);
+  writePanelDocument(registered("ontology", use, shown), use.path, { selected: { className: AGENT_DEFINITION, primaryKey: ID } } as never);
   inside(frame);
   const mounted = await mountPanel(panelOf(...slots));
   await vi.waitFor(() => expect(item("/name")?.querySelector("input")?.value).toBe("Ship order"), { timeout: 5000 });
@@ -114,28 +137,29 @@ async function choose(path: string, label: string) {
   [...listbox.querySelectorAll<HTMLElement>(".el-select-dropdown__item")].find((option) => option.textContent?.trim() === label)!.click();
   await nextTick();
 }
-const saves = (sent: Sent[]) => sent.filter((request) => request.path === "/api/data-query/function/save");
+const saves = (sent: Sent[]) => sent.filter((request) => request.path === "/api/panel-operations/intents")
+  .map(({ body }) => (body as { call: { input: { values: PanelFormValues } } }).call.input.values);
 
 afterEach(() => {
   leaveFrame();
   vi.resetModules();
 });
 
-it("draws the declared class choice in each parameter row, and a choice follows its row when it moves", async () => {
-  const { context, sent } = await open(["definition", "classes"]);
+it("draws the declared skill choice in each parameter row, and a choice follows its row when it moves", async () => {
+  const { context, sent } = await open(["definition", "skills"]);
   await vi.waitFor(() => {
-    expect(item("/function/parameters/0/classNames")?.textContent).toContain("Orders");
-    expect(item("/function/parameters/1/classNames")?.textContent).toContain("Customers");
+    expect(item("/function/parameters/0/skills")?.textContent).toContain("SQL");
+    expect(item("/function/parameters/1/skills")?.textContent).toContain("Charts");
   }, { timeout: 5000 });
   expect(document.querySelector("#app .sdk-form-field-unavailable")).toBeNull();
-  // The rows' choices drew from one catalogue read of the one projection, not one per row.
-  expect(sent.filter((request) => request.path === "/api/data-query/admin/getMetas")).toHaveLength(1);
+  // Every row uses the same ReferencePicker projection. Selected values resolve in the context of each row.
+  expect(sent.filter((request) => request.path === "/api/product-projections/parameter-skills")).toHaveLength(1);
 
-  await choose("/function/parameters/1/classNames", "Invoices");
+  await choose("/function/parameters/1/skills", "Review");
   const form = context.instance.forms.handle("definition")!;
   expect(parameters(form.values.value)).toEqual([
-    { name: "order", classNames: ["Order"] },
-    { name: "buyer", classNames: ["Customer", "Invoice"] },
+    { name: "order", skills: [sql] },
+    { name: "buyer", skills: [chart, review] },
   ]);
   // The row's choice is the form's own edit, marked on the form like any other.
   expect(context.instance.dirty()).toBe(true);
@@ -143,29 +167,28 @@ it("draws the declared class choice in each parameter row, and a choice follows 
   // The second row moves up: its choice is drawn and edited at index 0 now.
   button(row("/function/parameters/1"), "Move up").click();
   await nextTick();
-  await vi.waitFor(() => expect(item("/function/parameters/0/classNames")?.textContent).toContain("Invoices"));
-  await choose("/function/parameters/0/classNames", "Orders");
+  await vi.waitFor(() => expect(item("/function/parameters/0/skills")?.textContent).toContain("Review"));
+  await choose("/function/parameters/0/skills", "SQL");
   expect(parameters(form.values.value)).toEqual([
-    { name: "buyer", classNames: ["Customer", "Invoice", "Order"] },
-    { name: "order", classNames: ["Order"] },
+    { name: "buyer", skills: [chart, review, sql] },
+    { name: "order", skills: [sql] },
   ]);
 
   await context.instance.invoke("definition.save");
-  expect(parameters(saves(sent)[0]!.body as PanelFormValues)[0]).toEqual({ name: "buyer", classNames: ["Customer", "Invoice", "Order"] });
-  // Every request went through the frame's admission, under the class projection's binding.
-  expect(sent.every((request) => request.credential !== null)).toBe(true);
+  expect(parameters(saves(sent)[0]!)[0]).toEqual({ name: "buyer", skills: [chart, review, sql] });
+  // Every request went through the frame's admission, under the form and the skill projection's declared reads.
   expect(sent.every((request) => request.credential !== null)).toBe(true);
 });
 
 it("says a row reference no projection of the panel is declared for cannot be edited, instead of hiding it", async () => {
   await open(["definition"], bare);
   const alerts = [...document.querySelectorAll("#app .sdk-form-row .sdk-form-field-unavailable")].map((alert) => alert.textContent?.trim());
-  expect(alerts).toEqual(["Classes: This field cannot be edited here yet", "Classes: This field cannot be edited here yet"]);
-  expect(item("/function/parameters/0/classNames")).toBeNull();
+  expect(alerts).toEqual(["Skills: This field cannot be edited here yet", "Skills: This field cannot be edited here yet"]);
+  expect(item("/function/parameters/0/skills")).toBeNull();
 });
 
 it("edits a time as the owner's HH:mm, and a cleared one as null where the owner admits null", async () => {
-  const { context, sent } = await open(["definition", "classes"]);
+  const { context, sent } = await open(["definition", "skills"]);
   const input = item("/runAt")!.querySelector("input")!;
   expect(input.type).toBe("time");
   expect(input.value).toBe("09:30");
@@ -173,10 +196,10 @@ it("edits a time as the owner's HH:mm, and a cleared one as null where the owner
   input.dispatchEvent(new Event("input"));
   await nextTick();
   await context.instance.invoke("definition.save");
-  expect((saves(sent)[0]!.body as PanelFormValues).runAt).toBe("18:05");
+  expect(saves(sent)[0]!.runAt).toBe("18:05");
   input.value = "";
   input.dispatchEvent(new Event("input"));
   await nextTick();
   await context.instance.invoke("definition.save");
-  expect((saves(sent)[1]!.body as PanelFormValues).runAt).toBeNull();
+  expect(saves(sent)[1]!.runAt).toBeNull();
 });

@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
+import { dashboardCardPrimaryKey } from "@ontomato/contracts/dashboard";
+import { DASHBOARD_CARD } from "@ontomato/contracts/platform-object-types";
 import { chartProjectionSourcePath } from "@ontomato/contracts/panel-client-requests";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
@@ -23,19 +25,28 @@ import { ignoreChanges,
  */
 
 const METRIC = "department-metric";
+const chartSource = { dashboardId: "board-a", cardId: "chart-1" };
+const card = { object: { literal: { className: DASHBOARD_CARD, primaryKey: dashboardCardPrimaryKey(chartSource) } } };
 const chart: ProductProjection = {
   id: "chart-departments", domainId: "domain-1", ownerId: "owner-1", revision: 1, editable: false,
   createdAt: "2026-11-19T00:00:00.000Z", updatedAt: "2026-11-19T00:00:00.000Z",
   name: "Departments", description: "", visibility: "private",
-  componentId: "MetricChart", binding: { kind: "MetricView", id: METRIC },
+  componentId: "@ontomato/sdk:MetricChart",
+  chartSource,
+  metricId: METRIC,
   inputs: { department: { kind: "scalar", type: "string" } },
-  display: { chartSource: { dashboardId: "board-a", cardId: "chart-1" } },
+  outputs: {},
+  config: {},
+  data: {
+    template: { source: card, read: "chartTemplate", params: {} },
+    result: { source: card, read: "result", params: { department: { input: "department" } } },
+  },
 };
 const summary = projections["projection-schedules-summary"]!;
 const panel = panelRecord("panel-departments", "Departments", definePanel({
   state: {},
-  slots: { chart: { projectionId: chart.id, inputs: {} }, summary: { projectionId: summary.id, inputs: {} } },
-  operations: [],
+  members: { chart: { target: { projectionId: chart.id }, inputs: {} }, summary: { target: { projectionId: summary.id }, inputs: {} } },
+  events: {},
 }));
 const use = panelUse("use-departments", "departments", panel.id, "/applications/app-charts/departments");
 const lookup = "/product-projections/chart-sources?dashboardId=board-a&cardId=chart-1";

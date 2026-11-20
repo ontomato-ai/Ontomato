@@ -1,16 +1,16 @@
 import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
-import { panelStateOperation, projectionOperations } from "@ontomato/contracts/panel-projection";
+import { projectionOperations } from "@ontomato/contracts/panel-projection";
 import { operationCall, type PanelProjectionRegistration } from "./ports";
 import type { PanelOperationBinding } from "./types";
 import type { PanelStateStore } from "./state";
 import type { PanelFormAdapters } from "./draft";
-import type { PanelText } from "./text";
+import type { PanelEvents } from "./events";
 import type { PanelWriteInvocation } from "./human-operations";
 
 /*
  * The operations a panel instance offers (overall design 3.4, 5.1, "list and execute operations"): the ones its slots'
- * projections publish, derived from the registered ports rather than written again, and the state changes its
- * declaration adds. Each is the description an agent reads and the handler a header button and an agent's call both
+ * projections publish, derived from the registered ports rather than written again, and the events its declaration
+ * offers for explicit invocation (a header button, an agent's call). Each is the description an agent reads and the handler a header button and an agent's call both
  * reach, so one operation has one implementation and there is no second "similar command".
  *
  * A person's action runs as an agent's does: the platform's coordinator freezes it as one intent, the host confirms it
@@ -18,13 +18,13 @@ import type { PanelWriteInvocation } from "./human-operations";
  * implementation, the owner's registered one. A form's save stays the form's own, and a state change the panel's.
  */
 
-/** What a panel offers: its projections' operations, then its own state changes, each with the handler to run. */
+/** What a panel offers: its projections' operations, then its explicitly invoked events, each with what runs it. */
 export function panelOperations(
   manifest: PanelManifest,
   registrations: readonly PanelProjectionRegistration[],
   state: PanelStateStore,
   forms: PanelFormAdapters,
-  text: PanelText,
+  events: PanelEvents,
   write: (operationId: string, invocation: PanelWriteInvocation) => Promise<unknown>,
 ): PanelOperationBinding[] {
   return [
@@ -42,13 +42,6 @@ export function panelOperations(
             : write(operation.id, { call: operationCall(operation, state.values.value, input ?? {}) }),
       })),
     ),
-    ...manifest.operations.map((operation) => ({
-      // A state operation is the panel's own, so its name is one of the panel's words, in the current language.
-      ...panelStateOperation(operation, (key) => text(key)),
-      invoke: async () => {
-        state.setState(operation.sets);
-        return operation.sets;
-      },
-    })),
+    ...events.operations().map((operation) => ({ ...operation, invoke: () => events.invoke(operation.id) })),
   ];
 }

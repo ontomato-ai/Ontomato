@@ -18,7 +18,7 @@ import { platformLayoutRoute } from "../../../../../packages/platform-web/src/la
 import {
   framedTasksPanelHtml, ignoreChanges,
   hostMessageOf, inspectionTaskForm, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt,
-  currentSdk, humanIntents, panelHostFrame, panelRecord, panelSnapshot, panelUse, projections, READER, run, SCHEDULED_TASK, SDK_VERSION, task, taskForm,
+  currentSdk, humanIntents, panelHostFrame, panelRecord, panelSnapshot, panelUse, projections, READER, run, SCHEDULED_TASK, task, taskForm,
   writeFrameDocument,
   type Sent,
   caseSetLabel,
@@ -708,7 +708,7 @@ it("reconciles definitions and objects on foreground without replacing an unchan
     expect(frame.srcdoc).toBe(srcdoc);
 
     foreground.set("hidden");
-    summary = { ...summary, revision: summary.revision + 1, display: { fields: ["settings"] } };
+    summary = { ...summary, revision: summary.revision + 1, config: { ...summary.config, fields: ["settings"] } };
     foreground.set("visible");
     await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary dt")?.textContent).toBe("Settings"));
     expect(definitionReads().slice(initialDefinitions).map(request => request.path)).toEqual([
@@ -729,7 +729,7 @@ it("reconciles definitions and objects on foreground without replacing an unchan
     panel = { ...p, revision: p.revision + 2, content: { ...p.content, html: `${p.content.html}<p id="rearranged"></p>` } };
     foreground.set("visible");
     await vi.waitFor(() => expect(hostMessageOf(frame.srcdoc).panel.content.html).toContain('id="rearranged"'));
-    expect(hostMessageOf(frame.srcdoc).panel).toEqual({ content: panel.content, manifest: panel.manifest, sdkVersion: SDK_VERSION });
+    expect(hostMessageOf(frame.srcdoc).panel).toEqual({ content: panel.content, manifest: panel.manifest });
     expect(sent.filter(request => request.path.startsWith("/api/product-assets/"))).toEqual([]);
   } finally {
     app.unmount();
@@ -802,7 +802,7 @@ it("shares one definition stream across author panels, restores a changed collec
 
     // The shared projection changed while the old request closed and the reduced collection opened.
     const previous = summary;
-    summary = { ...summary, revision: summary.revision + 1, display: { fields: ["settings"] } };
+    summary = { ...summary, revision: summary.revision + 1, config: { ...summary.config, fields: ["settings"] } };
     send(reduced, { kind: "snapshot", definitions: [{ kind: "projection", id: summary.id, revision: summary.revision }] });
     await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary dt")?.textContent).toBe("Settings"));
     send(reduced, { kind: "definition-changed", definition: { kind: "projection", id: summary.id, revision: previous.revision } });

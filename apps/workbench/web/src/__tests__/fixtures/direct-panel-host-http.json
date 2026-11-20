@@ -129,7 +129,10 @@
         "data": {
           "operation": {
             "source": {
-              "operation": "schedules.runNow"
+              "operation": {
+                "kind": "PlatformOperation",
+                "id": "schedules.runNow"
+              }
             },
             "read": "describe",
             "params": {}
@@ -214,7 +217,10 @@
         "data": {
           "rows": {
             "source": {
-              "type": "platform:ScheduledTask"
+              "type": {
+                "kind": "PlatformObjectType",
+                "id": "platform:ScheduledTask"
+              }
             },
             "read": "list",
             "params": {}
