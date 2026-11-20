@@ -9,13 +9,13 @@ import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { APPLICATION, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
+import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { HttpError } from "../../utils/errors";
-import { createApplicationReadAdapter } from "../../services/product-panels/application-catalogue";
 import { installContentLayout } from "../../content/layout";
 import { config } from "../../config/application";
 import { createProductPanelReadAdapter } from "../../services/product-panels/catalog-reads";
@@ -94,8 +94,16 @@ beforeAll(async () => {
     VALUES ($1,'catalogue-data',$2,$3)`, [owner.domainId, owner.userId, {
     name: "Catalogue data", description: "", visibility: "domain", componentId: "@ontomato/sdk:PanelData",
     inputs: {}, outputs: {}, config: {},
-    data: { listing: { source: { type: { kind: "PlatformObjectType", id: PRODUCT_PANEL } }, read: "query",
-      params: { search: { literal: "directory" }, sort: { literal: "name" }, size: { literal: 1 } } } },
+    data: {
+      listing: { source: { type: { kind: "PlatformObjectType", id: PRODUCT_PANEL } }, read: "query",
+        params: { search: { literal: "directory" }, sort: { literal: "name" }, size: { literal: 1 } } },
+      apps: { source: { type: { kind: "PlatformObjectType", id: APPLICATION } }, read: "query",
+        params: { search: { literal: "App" }, scope: { literal: "visible" }, size: { literal: 4 } } },
+      appRecord: { source: { object: { literal: { className: APPLICATION, primaryKey: applicationId } } }, read: "record", params: {} },
+      appEntries: { source: { object: { literal: { className: APPLICATION, primaryKey: applicationId } } }, read: "entries", params: {} },
+      appDraft: { source: { type: { kind: "PlatformObjectType", id: APPLICATION } }, read: "form",
+        params: { section: { literal: "create" }, target: { literal: { kind: "draft" } } } },
+    },
   }]);
 
   root = await mkdtemp(join(tmpdir(), "m2-catalogue-"));
@@ -194,22 +202,28 @@ it("uses the registered save operation to write the current panel and refuses a 
   expect(await adapter.record("one")).toMatchObject({ name: "Alpha revised directory", revision: 2 });
 });
 
-it("dispatches catalogue query through the real panel HTTP path to PostgreSQL", async () => {
+async function readCatalogue(dataName: string) {
   const response = await fetch(base + "/api/product-panels/read", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       source: { kind: "registered", applicationId, useId: publicUse.id },
-      memberPath: [{ member: "list" }], inputs: {}, dataName: "listing",
+      memberPath: [{ member: "list" }], inputs: {}, dataName,
     }),
   });
   expect(response.status).toBe(200);
-  expect(await response.json()).toMatchObject({ status: "ready", value: { items: [{ id: "one" }], nextCursor: expect.any(String) } });
+  const result = productPanelReadResponseSchema.parse(await response.json());
+  if (result.status !== "ready") throw new Error(JSON.stringify(result));
+  return result.value;
+}
+
+it("dispatches catalogue query through the real panel HTTP path to PostgreSQL", async () => {
+  expect(await readCatalogue("listing")).toMatchObject({ items: [{ id: "one" }], nextCursor: expect.any(String) });
 });
 
-it("uses the Java catalogue for reader entries and keeps the complete table when an executor changes it", async () => {
-  const apps = createApplicationReadAdapter(owner, viewer);
-  await expect(apps.query({ search: "App", scope: "visible", size: 4 })).resolves.toMatchObject({ rows: [{ id: applicationId }] });
-  await expect(apps.entries(applicationId)).resolves.toEqual({ applicationId, entry, panelUses: [publicUse] });
+it("dispatches application reads from current PostgreSQL records and preserves the complete table when an executor changes it", async () => {
+  expect(await readCatalogue("apps")).toMatchObject({ rows: [{ id: applicationId }] });
+  expect(await readCatalogue("appRecord")).toMatchObject({ id: applicationId, canMaintain: false, panelUses: [publicUse] });
+  expect(await readCatalogue("appEntries")).toEqual({ applicationId, entry, panelUses: [publicUse] });
 
   const actor = { owner, credentials: viewer };
   const executor = { owner, credentials: { token: "executor" } };
@@ -227,7 +241,7 @@ it("uses the Java catalogue for reader entries and keeps the complete table when
     body: { ...entryValues, panelUses: [publicUse, hiddenUse, added] },
   });
 
-  const draft = await apps.form({ section: "create", target: { kind: "draft" }, changedField: null });
+  const draft = panelReadResultSchemas.panelFormDescription.parse(await readCatalogue("appDraft"));
   await expect(save.execute(host, { kind: "draft" }, { values: draft.values }, "create"))
     .resolves.toMatchObject({ kind: "success", data: { id: draftId } });
   expect(writes.at(-1)).toEqual({
