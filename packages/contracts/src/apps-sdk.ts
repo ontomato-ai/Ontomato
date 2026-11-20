@@ -12,6 +12,7 @@ export const appsSdkCurrentSchema = appsSdkBuildSchema.extend({
   sdkBasePath: z.string(),
   manifestPath: z.string(),
   componentsPath: z.string(),
+  checkPath: z.string().optional(),
   docsPath: z.string(),
   referencePath: z.string(),
 }).strict();
