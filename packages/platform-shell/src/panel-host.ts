@@ -10,19 +10,22 @@ import {
   panelAddressState,
   panelFrameMessageSchema,
   panelMessageOf,
-  type DirectPanelHostSource,
   type PanelDefinitionMode,
   type PanelHostFrameMessage,
   type PanelHostSource,
   type PanelHostMessage,
   type PanelRefreshPort,
 } from "@ontomato/contracts/panel-host";
-import type { PanelObjectIdentity, PanelOperation, PanelDeepLinkStateValue } from "@ontomato/contracts/panel-manifest";
+import type { PanelObjectIdentity, PanelOperation } from "@ontomato/contracts/panel-manifest";
 import type { PanelOperationAffected } from "@ontomato/contracts/panel-operations";
 import { parsePanelLayout, type PanelLayoutNode } from "@ontomato/contracts/panel-layout";
 import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
-import type { DirectPanel, PanelDefinitionContent, ProductPanel } from "@ontomato/contracts/product-panels";
+import { panelNeedsFrame, type PanelDefinitionContent, type ProductPanel } from "@ontomato/contracts/product-panels";
+
+/** An instance's deep-linkable state as the host carries it: what the host message hands the frame. */
+export type PanelHostState = PanelHostMessage["state"];
 import { randomId } from "@ontomato/contracts/random-id";
+import type { AppsSdkReleaseManifest } from "@ontomato/contracts/apps-sdk";
 
 /*
  * A panel instance in the platform (overall design 3.4, "generic PanelHost"): the same component shows the panel full
@@ -53,19 +56,22 @@ export interface PanelHostPort<Source extends HostedPanelSource = HostedPanelSou
   /** The application use this instance shows, as the message names it to the frame; a candidate preview has none. */
   readonly use: PanelUseRef | null;
   /** A registered panel's current record, read again when its revision moves. */
-  panel(panelId: string): Promise<ProductPanel | DirectPanel>;
-  /** Where the platform serves its SDK builds, e.g. `/apps-sdk`: a definition's frame loads `<root>/<its sdkVersion>`. */
-  sdkRoot(): Promise<string>;
+  panel(panelId: string): Promise<ProductPanel>;
+  /**
+   * The SDK release the deployment serves now — its files' base and its manifest — which a panel written with code runs
+   * on in its frame. There is one; a definition names none.
+   */
+  release(): Promise<PanelSdkRelease>;
   /**
    * Registers the frame the panel runs in: the execution context and identity for the page it shows, what the frame
    * may ask the platform for, which the source's manifest declares, and whether it may ask for anything now.
    */
-  frame(frame: Window, source: Extract<Source, PanelHostSource>, open: boolean): PanelFrameRegistration;
+  frame(frame: Window, source: Source, open: boolean): PanelFrameRegistration;
   /**
    * Starts a panel without code in the platform's own document: its instance, which reads what its members show through
    * the platform as the reader, and draws each member the layout places. The host keeps the instance's lifecycle.
    */
-  direct(source: Extract<Source, DirectPanelHostSource>, run: DirectPanelRun): DirectPanelMount;
+  direct(source: Source, run: DirectPanelRun): DirectPanelMount;
   snapshot(panelId: string): Promise<PanelDefinitionSnapshot>;
   /**
    * Whether the use relation this host opens is still the application's, bound to the same panel: what a kept page is
@@ -81,19 +87,24 @@ export interface PanelHostPort<Source extends HostedPanelSource = HostedPanelSou
   mode: PanelDefinitionMode;
 }
 
-/** What a host shows: a panel written with code, or a direct panel the platform draws. */
-export type HostedPanelSource = PanelHostSource | DirectPanelHostSource;
-
-/** The projections a source places: a direct panel's members, or a coded panel's slots. */
-function projectionIdsOf(shown: HostedPanelSource): string[] {
-  return runsDirect(shown)
-    ? Object.values(shown.panel.manifest.members).map(member => member.target.projectionId)
-    : Object.values(shown.panel.manifest.slots).map(slot => slot.projectionId);
+/** The deployment's current SDK release: where its files are served, and its manifest's modules and stylesheet. */
+export interface PanelSdkRelease {
+  /** Browser path of the release's root, the deployment prefix included. */
+  base: string;
+  manifest: AppsSdkReleaseManifest;
 }
 
-/** Whether the platform draws this source itself: a record with no module of its own. */
-export function runsDirect(source: HostedPanelSource): source is DirectPanelHostSource {
-  return !("module" in source.panel.content);
+/** What a host shows: a panel written with code, or a direct panel the platform draws. */
+export type HostedPanelSource = PanelHostSource;
+
+/** The projections a source places directly: its members whose target is a fixed projection. */
+function projectionIdsOf(shown: HostedPanelSource): string[] {
+  return Object.values(shown.panel.manifest.members).flatMap(member => ("projectionId" in member.target ? [member.target.projectionId] : []));
+}
+
+/** Whether the platform draws this source itself: its content has no code or style of its own to isolate in a frame. */
+export function runsDirect(source: HostedPanelSource): boolean {
+  return !panelNeedsFrame(source.panel.content);
 }
 
 /** What the host hands a direct instance: where it is, what its address asks for, and where it reports. */
@@ -104,12 +115,12 @@ export interface DirectPanelRun {
   url: () => string;
   label: () => string;
   /** The declared deep-linkable state the address asks for. */
-  initial: Record<string, PanelDeepLinkStateValue>;
+  initial: PanelHostState;
   /**
    * Its deep-linkable state, as it holds it at the address it was told last: the host carries it into the address, and
    * ignores a report for an address it has since replaced. The first report says the instance runs.
    */
-  state(state: Record<string, PanelDeepLinkStateValue>, fromAddress: string): void;
+  state(state: PanelHostState, fromAddress: string): void;
   context(context: PageContext): void;
   operations(operations: readonly PanelOperation[]): void;
   dirty(dirty: boolean): void;
@@ -164,7 +175,7 @@ export interface PanelInstanceView {
   /** A panel the platform draws: its layout and its started instance; null when a frame runs the panel. */
   readonly direct: Readonly<ShallowRef<{ layout: PanelLayoutNode[]; mount: DirectPanelMount } | null>>;
   /** The reader's deep-linkable state, as the address carries it. */
-  readonly state: Ref<Record<string, PanelDeepLinkStateValue>>;
+  readonly state: Ref<PanelHostState>;
   /** The instance's address, with its state; never a credential or a form value. */
   readonly address: Ref<string>;
   /** The operations the instance offers, as its frame reported them. */
@@ -260,7 +271,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const error = shallowRef("");
   const displayLoad = shallowRef(loading);
   const dirty = shallowRef(false);
-  const state = shallowRef<Record<string, PanelDeepLinkStateValue>>({});
+  const state = shallowRef<PanelHostState>({});
   const address = shallowRef("");
   const operations = shallowRef<readonly PanelOperation[]>([]);
   let frame: Window | null = null;
@@ -325,26 +336,26 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
   }
 
-  /** Where the platform serves its SDK builds: read once, and only for a panel that runs in a frame. */
-  let sdkRoot: Promise<string> | undefined;
+  /** The current SDK release: read once, and only for a panel that runs in a frame. */
+  let release: Promise<PanelSdkRelease> | undefined;
 
   /** Shows a source: drawn by the platform when it has no code, in a frame when it has. */
   async function adopt(next: HostedPanelSource) {
     error.value = "";
-    const requested = requestedState(next.panel) as Record<string, PanelDeepLinkStateValue>;
+    const requested = requestedState(next.panel) as PanelHostState;
     const requestedAddress = panelAddress(pageAddress(), requested);
     if (runsDirect(next)) {
       adoptDirect(next, requested, requestedAddress);
       return;
     }
-    const root = await (sdkRoot ??= port.sdkRoot());
+    const current = await (release ??= port.release());
     if (!active) return;
-    const { content, manifest, sdkVersion } = next.panel;
+    const { content, manifest } = next.panel;
     // Only the renderable definition crosses into the frame; the record's identity and a candidate's preview context stay
     // with the host.
     const message: PanelHostMessage = {
       kind: "panel-host-message",
-      panel: { content, manifest, sdkVersion },
+      panel: { content, manifest },
       pageKey: port.pageKey,
       use: port.use,
       url: requestedAddress,
@@ -353,7 +364,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       label: options.label(next),
       state: requested,
     };
-    const written = panelFrameDocument(message.panel, `${root}/${sdkVersion}`, message, options.labels.failures);
+    const written = panelFrameDocument(message.panel, current, message, options.labels.failures);
     source.value = next;
     // A new revision with the same definition is the document the frame already runs: it keeps its instance.
     if (written === document.value) return;
@@ -374,7 +385,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
    * Starts a panel the platform draws: its layout, parsed against its declaration, and its instance, which reports here
    * what a frame would report in its messages. A new revision with the same definition keeps the running instance.
    */
-  function adoptDirect(next: DirectPanelHostSource, requested: Record<string, PanelDeepLinkStateValue>, requestedAddress: string) {
+  function adoptDirect(next: HostedPanelSource, requested: PanelHostState, requestedAddress: string) {
     const shown = source.value;
     source.value = next;
     if (direct.value && shown && JSON.stringify(definitionOf(shown)) === JSON.stringify(definitionOf(next))) return;
@@ -418,7 +429,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
    * The instance reported its state at an address: a report for an address since replaced is stale. The first says the
    * instance runs — what waited for that (a definition change, a refresh, an address the page moved to) happens now.
    */
-  function stateReported(next: Record<string, PanelDeepLinkStateValue>, fromAddress: string) {
+  function stateReported(next: PanelHostState, fromAddress: string) {
     if (fromAddress !== frameAddress) return;
     if (!frameReady) {
       frameReady = true;
@@ -434,7 +445,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   }
 
   /** The instance's deep-linkable state changed: the address carries it. */
-  function reportState(next: Record<string, PanelDeepLinkStateValue>) {
+  function reportState(next: PanelHostState) {
     state.value = next;
     address.value = panelAddress(pageAddress(), next);
   }
@@ -743,22 +754,6 @@ function withoutDraftLink(address: string) {
 /** Escapes a text so it is data or code inside its own element and never ends the element it sits in. */
 const escapeForElement = (text: string) => text.replaceAll("</", "<\\/");
 
-/** The module file of each public specifier this SDK version serves (its `build.mjs` entries). */
-const MODULES: Readonly<Record<string, string>> = {
-  vue: "vue.js",
-  "element-plus": "element-plus.js",
-  echarts: "echarts.js",
-  "@ontomato/sdk": "sdk.js",
-  "@ontomato/sdk/chart": "chart.js",
-  "@ontomato/sdk/markdown": "markdown.js",
-  "@ontomato/sdk/form": "form.js",
-  "@ontomato/sdk/code": "code.js",
-  "@ontomato/sdk/preview": "preview.js",
-  "@ontomato/sdk/chat": "chat.js",
-  "@ontomato/sdk/panel": "panel.js",
-  "@ontomato/sdk/base": "base.js",
-  "@ontomato/sdk/graph": "graph.js",
-};
 
 /**
  * Runs before the panel's module, in a script of its own, and tells the host what the frame cannot otherwise say. A
@@ -799,29 +794,31 @@ const failureListener = (words: PanelHostLabels["failures"]) => `
  */
 export function panelFrameDocument(
   record: PanelDefinitionContent,
-  sdkBase: string,
+  release: PanelSdkRelease,
   message: PanelHostMessage,
   failures: PanelHostLabels["failures"],
 ): string {
+  // The deployment's one current release names its public modules and stylesheet: the frame imports exactly those.
   const imports = Object.fromEntries(
-    Object.entries(MODULES).map(([specifier, file]) => [specifier, `${sdkBase}/${file}`]),
+    Object.entries(release.manifest.entries).map(([specifier, file]) => [specifier, `${release.base}/${file}`]),
   );
   return [
     "<!doctype html>",
     '<html><head><meta charset="utf-8">',
-    `<link rel="stylesheet" href="${sdkBase}/styles/sdk.css">`,
+    `<link rel="stylesheet" href="${release.base}/${release.manifest.stylesheet}">`,
     '<script type="importmap">',
     escapeForElement(JSON.stringify({ imports })),
     "</script>",
     "<script>",
     escapeForElement(failureListener(failures)),
+    // A panel's own style is isolated with it in its frame.
+    ...(record.content.style === undefined ? [] : ["<style>", escapeForElement(record.content.style), "</style>"]),
     "</script></head><body>",
     record.content.html,
     '<script type="application/json" data-panel-host-message>',
     escapeForElement(JSON.stringify(message)),
     "</script>",
-    '<script type="module">',
-    escapeForElement(record.content.module),
-    "</script></body></html>",
+    ...(record.content.module === undefined ? [] : ['<script type="module">', escapeForElement(record.content.module), "</script>"]),
+    "</body></html>",
   ].join("\n");
 }
