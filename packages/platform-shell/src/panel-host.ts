@@ -23,6 +23,7 @@ import { parsePanelLayout, type PanelLayoutNode } from "@ontomato/contracts/pane
 import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
 import type { DirectPanel, PanelDefinitionContent, ProductPanel } from "@ontomato/contracts/product-panels";
 import { randomId } from "@ontomato/contracts/random-id";
+import type { AppsSdkReleaseManifest } from "@ontomato/contracts/apps-sdk";
 
 /*
  * A panel instance in the platform (overall design 3.4, "generic PanelHost"): the same component shows the panel full
@@ -54,8 +55,11 @@ export interface PanelHostPort<Source extends HostedPanelSource = HostedPanelSou
   readonly use: PanelUseRef | null;
   /** A registered panel's current record, read again when its revision moves. */
   panel(panelId: string): Promise<ProductPanel | DirectPanel>;
-  /** Where the platform serves its SDK builds, e.g. `/apps-sdk`: a definition's frame loads `<root>/<its sdkVersion>`. */
-  sdkRoot(): Promise<string>;
+  /**
+   * The SDK release the deployment serves now — its files' base and its manifest — which a panel written with code runs
+   * on in its frame. There is one; a definition names none.
+   */
+  release(): Promise<PanelSdkRelease>;
   /**
    * Registers the frame the panel runs in: the execution context and identity for the page it shows, what the frame
    * may ask the platform for, which the source's manifest declares, and whether it may ask for anything now.
@@ -79,6 +83,13 @@ export interface PanelHostPort<Source extends HostedPanelSource = HostedPanelSou
    */
   admitted?: Promise<boolean>;
   mode: PanelDefinitionMode;
+}
+
+/** The deployment's current SDK release: where its files are served, and its manifest's modules and stylesheet. */
+export interface PanelSdkRelease {
+  /** Browser path of the release's root, the deployment prefix included. */
+  base: string;
+  manifest: AppsSdkReleaseManifest;
 }
 
 /** What a host shows: a panel written with code, or a direct panel the platform draws. */
@@ -325,8 +336,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
   }
 
-  /** Where the platform serves its SDK builds: read once, and only for a panel that runs in a frame. */
-  let sdkRoot: Promise<string> | undefined;
+  /** The current SDK release: read once, and only for a panel that runs in a frame. */
+  let release: Promise<PanelSdkRelease> | undefined;
 
   /** Shows a source: drawn by the platform when it has no code, in a frame when it has. */
   async function adopt(next: HostedPanelSource) {
@@ -337,7 +348,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       adoptDirect(next, requested, requestedAddress);
       return;
     }
-    const root = await (sdkRoot ??= port.sdkRoot());
+    const current = await (release ??= port.release());
     if (!active) return;
     const { content, manifest, sdkVersion } = next.panel;
     // Only the renderable definition crosses into the frame; the record's identity and a candidate's preview context stay
@@ -353,7 +364,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       label: options.label(next),
       state: requested,
     };
-    const written = panelFrameDocument(message.panel, `${root}/${sdkVersion}`, message, options.labels.failures);
+    const written = panelFrameDocument(message.panel, current, message, options.labels.failures);
     source.value = next;
     // A new revision with the same definition is the document the frame already runs: it keeps its instance.
     if (written === document.value) return;
@@ -743,22 +754,6 @@ function withoutDraftLink(address: string) {
 /** Escapes a text so it is data or code inside its own element and never ends the element it sits in. */
 const escapeForElement = (text: string) => text.replaceAll("</", "<\\/");
 
-/** The module file of each public specifier this SDK version serves (its `build.mjs` entries). */
-const MODULES: Readonly<Record<string, string>> = {
-  vue: "vue.js",
-  "element-plus": "element-plus.js",
-  echarts: "echarts.js",
-  "@ontomato/sdk": "sdk.js",
-  "@ontomato/sdk/chart": "chart.js",
-  "@ontomato/sdk/markdown": "markdown.js",
-  "@ontomato/sdk/form": "form.js",
-  "@ontomato/sdk/code": "code.js",
-  "@ontomato/sdk/preview": "preview.js",
-  "@ontomato/sdk/chat": "chat.js",
-  "@ontomato/sdk/panel": "panel.js",
-  "@ontomato/sdk/base": "base.js",
-  "@ontomato/sdk/graph": "graph.js",
-};
 
 /**
  * Runs before the panel's module, in a script of its own, and tells the host what the frame cannot otherwise say. A
@@ -799,17 +794,18 @@ const failureListener = (words: PanelHostLabels["failures"]) => `
  */
 export function panelFrameDocument(
   record: PanelDefinitionContent,
-  sdkBase: string,
+  release: PanelSdkRelease,
   message: PanelHostMessage,
   failures: PanelHostLabels["failures"],
 ): string {
+  // The deployment's one current release names its public modules and stylesheet: the frame imports exactly those.
   const imports = Object.fromEntries(
-    Object.entries(MODULES).map(([specifier, file]) => [specifier, `${sdkBase}/${file}`]),
+    Object.entries(release.manifest.entries).map(([specifier, file]) => [specifier, `${release.base}/${file}`]),
   );
   return [
     "<!doctype html>",
     '<html><head><meta charset="utf-8">',
-    `<link rel="stylesheet" href="${sdkBase}/styles/sdk.css">`,
+    `<link rel="stylesheet" href="${release.base}/${release.manifest.stylesheet}">`,
     '<script type="importmap">',
     escapeForElement(JSON.stringify({ imports })),
     "</script>",

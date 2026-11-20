@@ -98,7 +98,7 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
         pageKey: use.pageKey,
         use: { applicationId: input.applicationId ?? "app-a", useId: use.id },
         panel: stand.panel,
-        sdkRoot: () => stand.sdkRoot(),
+        release: () => stand.release(),
         frame: stand.frame,
         // These trial panels run in frames: they have modules of their own.
         direct: () => { throw new Error("A panel with a module is not drawn directly"); },
@@ -107,7 +107,7 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
       };
     },
     panel: async (panelId: string) => input.panels.get(panelId)!,
-    sdkRoot: async () => "/apps-sdk",
+    release: async () => release,
     frame: (frame: Window) => {
       frames.set(frame, []);
       const post = frame.postMessage.bind(frame);
@@ -156,6 +156,16 @@ function fromFrame(frame: Window, message: Record<string, unknown>): void {
 }
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** The deployment's current SDK release, as Node and its manifest name it. */
+const release = {
+  base: "/apps-sdk/current",
+  manifest: {
+    version: "1.1.0", product: "workbench", executionContext: 1, hostTransport: 1, messageBridge: 2,
+    entries: { vue: "vue.js", "@ontomato/sdk/panel": "panel.js" }, stylesheet: "styles/sdk.css", components: "components.json",
+    check: "node/panel-check.mjs", libraries: { vue: "3.5.0" }, docs: "docs/index.md",
+  },
+};
 
 describe("the panel host", () => {
   it("opens one instance per application use, each from its own relation and record", async () => {
@@ -338,7 +348,7 @@ describe("the panel host", () => {
     const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
     const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
     // The SDK's current version is refused — the request the platform's own host once sent to the wrong address.
-    port.sdkRoot = async () => {
+    port.release = async () => {
       throw new Error("GET /api/data-query/app-builder/apps-sdk/current failed: 403 Product use Grant required");
     };
     const scope = effectScope();
@@ -382,7 +392,7 @@ describe("the panel host", () => {
       const module = readFileSync(join(trial, directory, "panel.mjs"), "utf8");
       const document = panelFrameDocument(
         { ...record(`panel-${directory}`, `Trial ${directory}`, panelP), content: { html, module } },
-        "/apps-sdk/1.1.0",
+        release,
         { kind: "panel-host-message", panel: definition(record(`panel-${directory}`, `Trial ${directory}`, panelP)), pageKey: `trial-${directory}`, use: null, url: "/applications/app-panels-trial-a/tasks", label: "Scheduled tasks", state: {} },
         labels.failures,
       );
@@ -403,7 +413,7 @@ describe("the panel host", () => {
 
   it("reports what the frame could not load or run, instead of drawing nothing", () => {
     const panel = record("panel-p", "Scheduled tasks", panelP);
-    const document = panelFrameDocument(panel, "/apps-sdk/1.1.0", {
+    const document = panelFrameDocument(panel, release, {
       kind: "panel-host-message",
       panel: definition(panel),
       pageKey: "schedules",
@@ -423,9 +433,9 @@ describe("the panel host", () => {
     expect(document).toContain('words.fileUnavailable.replace("{file}"');
   });
 
-  it("runs the panel's own text with this SDK version's modules", () => {
+  it("runs the panel's own text with the modules and stylesheet the current release names", () => {
     const panel = record("panel-p", "Scheduled tasks", panelP);
-    const document = panelFrameDocument(panel, "/apps-sdk/1.1.0", {
+    const document = panelFrameDocument(panel, release, {
       kind: "panel-host-message",
       panel: definition(panel),
       pageKey: "schedules",
@@ -434,8 +444,11 @@ describe("the panel host", () => {
       label: "Scheduled tasks",
       state: {},
     }, labels.failures);
-    expect(document).toContain('"@ontomato/sdk/panel":"/apps-sdk/1.1.0/panel.js"');
-    expect(document).toContain("/apps-sdk/1.1.0/styles/sdk.css");
+    // Exactly the release's own modules, under its base: no table of modules or version path of the host's own.
+    expect(JSON.parse(/<script type="importmap">\n(.*)\n<\/script>/.exec(document)![1]!)).toEqual({
+      imports: { vue: "/apps-sdk/current/vue.js", "@ontomato/sdk/panel": "/apps-sdk/current/panel.js" },
+    });
+    expect(document).toContain('<link rel="stylesheet" href="/apps-sdk/current/styles/sdk.css">');
     expect(document).toContain("data-panel-host-message");
     // The panel's module is content, never a template of the host's own document.
     expect(document).toContain('import {mountPanel} from "@ontomato/sdk/panel";');

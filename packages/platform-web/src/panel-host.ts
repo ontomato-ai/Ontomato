@@ -3,7 +3,7 @@ import {
   applicationPanelUsesResponseSchema, directPanelSchema, productPanelResponseSchema, productPanelSchema, type ApplicationPanelUse,
   type ProductPanelReadQuery,
 } from "@ontomato/contracts/product-panels";
-import { appsSdkCurrentSchema } from "@ontomato/contracts/apps-sdk";
+import { appsSdkCurrentSchema, appsSdkReleaseManifestSchema } from "@ontomato/contracts/apps-sdk";
 import {
   panelDefinitionSnapshotSchema, productDefinitionStreamFrameSchema,
   type ProductDefinitionRevision, type ProductDefinitionTarget,
@@ -18,7 +18,7 @@ import { pageSkillContextSchema, type PageSkillContext } from "@ontomato/contrac
 import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
 import { confirmPanelIntent, registerCandidateFrame, registerPanelFrame } from "./app-host";
-import type { DirectPanelRun, PanelHostPort } from "@ontomato/platform-shell";
+import type { DirectPanelRun, PanelHostPort, PanelSdkRelease } from "@ontomato/platform-shell";
 import { mountDirectPanel, type PlatformRequests } from "@ontomato/apps-sdk/direct";
 import { workbenchI18n } from "@ontomato/workbench-ui/i18n";
 import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
@@ -63,9 +63,15 @@ async function json(path: string, init: RequestInit = {}) {
   return body;
 }
 
-/** Where Node serves its installed SDK builds; each definition's frame loads the exact version it names there. */
-async function sdkRoot() {
-  return `${appsSdkCurrentSchema.parse(await json(panelHostPaths.appsSdkCurrent)).publicBasePath}/apps-sdk`;
+/**
+ * The deployment's one current SDK release, which a panel written with code runs on in its frame: Node names it and
+ * where its files are, and its manifest names the modules and the stylesheet the frame loads.
+ */
+async function release(): Promise<PanelSdkRelease> {
+  const current = appsSdkCurrentSchema.parse(await json(panelHostPaths.appsSdkCurrent));
+  const manifest = await fetch(current.manifestPath);
+  if (!manifest.ok) throw new Error(`The SDK release manifest could not be read: ${current.manifestPath}`);
+  return { base: current.sdkBasePath, manifest: appsSdkReleaseManifestSchema.parse(await manifest.json()) };
 }
 
 /** A panel's current record: one written with code carries its module and SDK version, a direct one neither. */
@@ -126,7 +132,7 @@ export function platformPanelHost(
     pageKey: use.pageKey,
     use: shown,
     panel,
-    sdkRoot,
+    release,
     // The frame is this application's: the address the reader is on names it, and a panel shown beside a conversation is
     // the same application's page. Registering it under that ID is what lets the bridge recognise the frame and answer
     // its `connect`, and what keeps a frame of another application from being mistaken for this one. What it may ask for
@@ -166,7 +172,7 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
     pageKey: candidate.pageKey,
     use: null,
     panel,
-    sdkRoot,
+    release,
     frame: (frame, source, open) => registerCandidateFrame(frame, buildExecutionContext(source.workspace.id, source.previewContext.test), {
       pageKey: candidate.pageKey,
       manifest: source.panel.manifest,
