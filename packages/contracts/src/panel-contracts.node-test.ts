@@ -174,6 +174,67 @@ test("the checker accepts short data and operation members with reusable project
   }
 });
 
+test("short panel members can open the page composer with an explicit agent and prefill", async () => {
+  const { panelAuthoringMemberSchema } = await import("./panel-check");
+  const member = { component: "ConversationEntry", agent: "page-default", prefill: "Review this domain's knowledge." };
+  assert.deepEqual(panelAuthoringMemberSchema.parse(member), member);
+  for (const agent of [{ kind: "id", id: "governance-agent" }, { kind: "preset", agentKind: "knowledge-governance" }]) {
+    const qualified = { ...member, component: "@ontomato/sdk:ConversationEntry", agent };
+    assert.deepEqual(panelAuthoringMemberSchema.parse(qualified), qualified);
+  }
+  for (const invalid of [
+    { component: member.component, prefill: member.prefill },
+    { ...member, agent: "governance-agent" },
+    { ...member, data: { rows: "query" } },
+    { ...member, component: "OperationButton", operation: APPROVE_KNOWLEDGE },
+  ]) {
+    assert.equal(panelAuthoringMemberSchema.safeParse(invalid).success, false);
+  }
+});
+
+test("short members can name distinct data owners but need a read or operation", async () => {
+  const { panelAuthoringMemberSchema } = await import("./panel-check");
+  const graph = {
+    component: "ObjectGraph", type: "platform:ObjectType",
+    data: { nodes: "list", edges: { type: "platform:Relationship", read: "list" } },
+  };
+  assert.deepEqual(panelAuthoringMemberSchema.parse(graph), graph);
+  assert.equal(panelAuthoringMemberSchema.safeParse({ ...graph, type: undefined }).success, false);
+  assert.equal(panelAuthoringMemberSchema.safeParse({
+    ...graph, type: undefined,
+    data: { ...graph.data, nodes: { type: "platform:ObjectType", read: "list" } },
+  }).success, true);
+  const mode = {
+    component: "SegmentedControl", config: { options: [{ value: "instance", label: "Instance" }] },
+    state: { value: "mode" },
+  };
+  assert.equal(panelAuthoringMemberSchema.safeParse(mode).success, false);
+  const counts = {
+    ...mode, type: BUSINESS_KNOWLEDGE,
+    data: { counts: { read: "counts", params: { by: { literal: "status" } } } },
+  };
+  assert.deepEqual(panelAuthoringMemberSchema.parse(counts), counts);
+});
+
+test("a short metric chart names its source card and takes the projection from that owner", async () => {
+  const { panelAuthoringMemberSchema } = await import("./panel-check");
+  const chart = {
+    component: "MetricChart", sourceCard: { dashboardId: "operations", cardId: "daily" },
+    state: { term: "selectedTerm" },
+  };
+  for (const component of [chart.component, "@ontomato/sdk:MetricChart"]) {
+    assert.deepEqual(panelAuthoringMemberSchema.parse({ ...chart, component }), { ...chart, component });
+  }
+  for (const invalid of [
+    { component: chart.component },
+    { ...chart, id: "9da36511-7755-4b61-b526-3be2694c1f2f" },
+    { ...chart, sourceCard: { ...chart.sourceCard, metricId: "override" } },
+    { ...chart, component: "ObjectList", type: BUSINESS_KNOWLEDGE, data: { rows: "query" } },
+  ]) {
+    assert.equal(panelAuthoringMemberSchema.safeParse(invalid).success, false);
+  }
+});
+
 test("projection registration accepts package-qualified components and leaves data keys to the catalogue", () => {
   const input = {
     name: "Task list", description: "", visibility: "domain", revision: 0, inputs: {}, outputs: {}, config: {},
