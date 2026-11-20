@@ -2,7 +2,8 @@
   "panel": {
     "panel": {
       "content": {
-        "html": "<style>\n  /* The list beside the chosen task; on a narrow panel the task goes under the list. */\n  .trial { display: flex; flex-wrap: wrap; gap: var(--spacing-sm, 8px); }\n  .tasks { flex: 1 1 18rem; min-width: 0; }\n  .task { flex: 2 1 24rem; min-width: 0; display: flex; flex-direction: column; gap: var(--spacing-sm, 8px); }\n</style>\n<div class=\"trial\">\n  <panel-member ref=\"tasks\" class=\"tasks\"></panel-member>\n  <section class=\"task\">\n    <panel-member ref=\"summary\"></panel-member>\n    <section when=\"selectedTask\" ne=\"null\" class=\"task\">\n      <panel-member ref=\"form\"></panel-member>\n      <panel-member ref=\"run\"></panel-member>\n    </section>\n  </section>\n</div>\n",
+        "html": "<!--\n  Panel P: the reader's scheduled tasks beside the chosen one — its summary, and once a task is chosen its form and the\n  button that runs it now. On a narrow panel the task goes under the list.\n\n  A fragment: the host's document is the one with html, head and body in it.\n-->\n<style>\n  [v-cloak] { display: none; }\n  .trial { display: flex; flex-wrap: wrap; gap: var(--spacing-sm, 8px); }\n  .tasks { flex: 1 1 18rem; min-width: 0; }\n  .task { flex: 2 1 24rem; min-width: 0; display: flex; flex-direction: column; gap: var(--spacing-sm, 8px); }\n</style>\n<div id=\"app\" class=\"trial\" v-cloak>\n  <div class=\"tasks\">\n    <projection slot=\"tasks\"></projection>\n  </div>\n  <section class=\"task\">\n    <projection slot=\"summary\"></projection>\n    <template v-if=\"chosen\">\n      <projection slot=\"form\"></projection>\n      <projection slot=\"run\"></projection>\n    </template>\n  </section>\n</div>\n",
+        "module": "import { computed } from \"vue\";\nimport { mountPanel, usePanelContext } from \"@ontomato/sdk/panel\";\n\n/*\n * Panel P: the list, the summary, the form and the run-now button its declaration composes. Reading, saving and running\n * are the SDK's; what this module adds is whether a task is chosen, which the template shows the form and the button for.\n */\nconst Trial = {\n  setup() {\n    const { instance } = usePanelContext();\n    const chosen = computed(() => instance.state.values.value.selectedTask != null);\n    return { chosen };\n  },\n};\n\nawait mountPanel(Trial);\n",
         "recipes": "# Scheduled tasks panel: how this scenario works\n\nWhat this panel is for, and the few things about it a reader of the platform cannot work out from the panel itself. The\npanel's declaration (its state and the projections it composes) and its projections say the rest, and the platform\ndescribes those from their current definitions.\n\n## What it covers\n\nOne of the reader's scheduled tasks, from the task's own application: pick it, see it, change it through the form its\napplication declares, save it, and run it now. It does not create, delete, enable, disable or list runs.\n\n## How a task is chosen\n\nThe list is the platform's own `platform:ScheduledTask` objects — the reader's tasks in the service's order. Choosing a\nrow writes that task into the panel's `selectedTask`, and the summary, the form and the button take it from there. A\nsecond click on the chosen row lets go of it.\n\nThe choice belongs to the panel instance, not to the panel: two readers, or two pages of the same reader, keep their own.\n\n## How the form changes\n\nThe form is the task's application's own: which fields it has, which of them a change makes the others depend on, and\nwhat a save accepts are all the application's answers. Changing such a field asks the application again, and its whole\nanswer replaces the fields and their values — a field the new answer removed disappears with its value.\n\nOnly one application's form changes with a field today: the operations application, whose first field chooses between\nrunning automated tests and running an inspection, each with its own fields.\n\n## How a change gets here from an agent\n\nA run may write a draft for this page and hand the reader a link. Opening it fills the form, marks the fields the draft\nchanged, and leaves them unsaved; the reader saves. Nothing is written until they do.\n\n## What a save and a run act on\n\nBoth act on the task currently selected in the panel instance. Saving writes it through its application's own interface\nwith the task's own revision, so a task somebody else changed meanwhile is refused rather than overwritten. Running it\nnow starts one execution and leaves the schedule as it is.\n"
       },
       "manifest": {
@@ -69,8 +70,8 @@
       "domainId": "pilot",
       "ownerId": "reader",
       "revision": 1,
-      "createdAt": "2026-11-20T12:40:38.397Z",
-      "updatedAt": "2026-11-20T12:40:38.397Z",
+      "createdAt": "2026-11-20T14:06:20.906Z",
+      "updatedAt": "2026-11-20T14:06:20.906Z",
       "editable": true
     }
   },
@@ -163,19 +164,21 @@
           }
         },
         "outputs": {},
-        "data": {
-          "operation": {
-            "source": {
-              "operation": {
-                "kind": "PlatformOperation",
-                "id": "schedules.runNow"
-              }
+        "data": {},
+        "operations": {
+          "runNow": {
+            "operation": {
+              "kind": "PlatformOperation",
+              "id": "schedules.runNow"
             },
-            "read": "describe",
-            "params": {}
+            "target": {
+              "input": "task"
+            }
           }
         },
-        "config": {},
+        "config": {
+          "operation": "runNow"
+        },
         "name": "Run now",
         "description": "Runs the chosen scheduled task now, leaving its schedule as it is.",
         "visibility": "domain",
@@ -183,8 +186,8 @@
         "domainId": "pilot",
         "ownerId": "reader",
         "revision": 1,
-        "createdAt": "2026-11-20T12:40:38.385Z",
-        "updatedAt": "2026-11-20T12:40:38.385Z",
+        "createdAt": "2026-11-20T14:06:20.897Z",
+        "updatedAt": "2026-11-20T14:06:20.897Z",
         "editable": true
       }
     },
@@ -209,6 +212,17 @@
             "params": {}
           }
         },
+        "operations": {
+          "save": {
+            "operation": {
+              "kind": "PlatformOperation",
+              "id": "platform:ScheduledTask.save"
+            },
+            "target": {
+              "input": "task"
+            }
+          }
+        },
         "config": {},
         "name": "Task form",
         "description": "One scheduled task's form, as the application it belongs to declares it.",
@@ -217,8 +231,8 @@
         "domainId": "pilot",
         "ownerId": "reader",
         "revision": 1,
-        "createdAt": "2026-11-20T12:40:38.376Z",
-        "updatedAt": "2026-11-20T12:40:38.376Z",
+        "createdAt": "2026-11-20T14:06:20.889Z",
+        "updatedAt": "2026-11-20T14:06:20.889Z",
         "editable": true
       }
     },
@@ -252,8 +266,8 @@
         "domainId": "pilot",
         "ownerId": "reader",
         "revision": 1,
-        "createdAt": "2026-11-20T12:40:38.366Z",
-        "updatedAt": "2026-11-20T12:40:38.366Z",
+        "createdAt": "2026-11-20T14:06:20.882Z",
+        "updatedAt": "2026-11-20T14:06:20.882Z",
         "editable": true
       }
     },
@@ -293,8 +307,8 @@
         "domainId": "pilot",
         "ownerId": "reader",
         "revision": 1,
-        "createdAt": "2026-11-20T12:40:38.356Z",
-        "updatedAt": "2026-11-20T12:40:38.356Z",
+        "createdAt": "2026-11-20T14:06:20.875Z",
+        "updatedAt": "2026-11-20T14:06:20.875Z",
         "editable": true
       }
     }

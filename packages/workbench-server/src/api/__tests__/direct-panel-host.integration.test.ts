@@ -25,6 +25,9 @@ import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-
 import { readSseFrames } from "../../infrastructure/agent-runtime/client";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
+import { configureI18n } from "../../i18n";
+import { en, enLocaleMeta } from "../../i18n/locales/en";
+import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 
 const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "" }));
 vi.mock("../../infrastructure/postgres", () => ({
@@ -60,6 +63,10 @@ const grants = new Set<string>();
 const codePanelId = "panel-schedules-mixed";
 
 beforeAll(async () => {
+  configureI18n({
+    defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
+    packs: { en: { ...enLocaleMeta, messages: en } },
+  });
   state.schema = `direct_panel_host_${randomUUID().replaceAll("-", "")}`;
   state.pool = new pg.Pool({ connectionString: database });
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
@@ -160,7 +167,7 @@ it("identifies malformed registrations and missing author references without byp
 
   const panel = {
     name: "Author panel", description: "", visibility: "private", revision: 0,
-    content: { html: '<section><panel-member ref="summary"></panel-member></section>' },
+    content: vuePanelContent("summary"),
     manifest: { state: {}, members: { summary: { target: { projectionId: "author-missing" } } }, events: {} },
   };
   const extraField = await request("PUT", "product-panels/author-panel", { ...panel, typo: true });
@@ -437,7 +444,7 @@ it("preserves a code panel's ID and revision rules and describes its member oper
   expect((await validate({ ...application, delivery: { panels: [], projections: [] } })).status).toBe(204);
   const framePanelId = "panel-app-frame";
   const frameSaved = await request("PUT", "product-panels/" + framePanelId, {
-    name: "Application frame", description: "", visibility: "domain", revision: 0, content: { html: "<div></div>" },
+    name: "Application frame", description: "", visibility: "domain", revision: 0, content: vuePanelContent(),
     manifest: { state: { choice: panelState.selectedTask }, members: {}, events: {} },
   });
   expect(frameSaved.status, await frameSaved.text()).toBe(200);

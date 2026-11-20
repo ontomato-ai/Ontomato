@@ -8,7 +8,12 @@
         "description": "",
         "visibility": "domain",
         "componentId": "@ontomato/sdk:ObjectList",
-        "inputs": {},
+        "inputs": {
+          "selected": {
+            "kind": "object",
+            "objectType": "platform:AgentDefinition"
+          }
+        },
         "outputs": {
           "selected": {
             "kind": "object",
@@ -95,33 +100,18 @@
             "read": "createForm",
             "params": {}
           }
-        }
-      }
-    },
-    {
-      "id": "example-agent-management-newRecord",
-      "mode": "create",
-      "input": {
-        "name": "Agent Definition newRecord",
-        "description": "",
-        "visibility": "domain",
-        "componentId": "@ontomato/sdk:SegmentedControl",
-        "inputs": {},
-        "outputs": {
-          "value": {
-            "kind": "scalar",
-            "type": "string"
-          }
         },
-        "config": {
-          "options": [
-            {
-              "value": "new",
-              "label": "New"
+        "operations": {
+          "save": {
+            "operation": {
+              "kind": "PlatformOperation",
+              "id": "platform:AgentDefinition.save"
+            },
+            "target": {
+              "input": "item"
             }
-          ]
-        },
-        "data": {}
+          }
+        }
       }
     }
   ],
@@ -141,12 +131,6 @@
                 "objectType": "platform:AgentDefinition"
               },
               "deepLink": true
-            },
-            "newAction": {
-              "type": {
-                "kind": "scalar",
-                "type": "string"
-              }
             }
           },
           "members": {
@@ -154,7 +138,7 @@
               "target": {
                 "projectionId": "example-agent-management-list"
               },
-              "outputs": {
+              "inputs": {
                 "selected": {
                   "state": "selected"
                 }
@@ -179,41 +163,13 @@
                   "state": "selected"
                 }
               }
-            },
-            "newRecord": {
-              "target": {
-                "projectionId": "example-agent-management-newRecord"
-              },
-              "outputs": {
-                "value": {
-                  "state": "newAction"
-                }
-              }
             }
           },
-          "events": {
-            "newRecord": {
-              "on": {
-                "member": "newRecord",
-                "output": "value"
-              },
-              "do": {
-                "set": {
-                  "fields": {
-                    "selected": {
-                      "literal": null
-                    },
-                    "newAction": {
-                      "literal": null
-                    }
-                  }
-                }
-              }
-            }
-          }
+          "events": {}
         },
         "content": {
-          "html": "<section flow=\"column\" gap=\"medium\">\n  <panel-member ref=\"newRecord\"></panel-member>\n  <panel-member ref=\"list\"></panel-member>\n  <panel-member ref=\"detail\"></panel-member>\n  <panel-member ref=\"form\"></panel-member>\n</section>\n"
+          "html": "<style>\n  .management { display: grid; gap: 1rem; }\n  .management-toolbar { display: flex; flex-wrap: wrap; gap: .75rem; }\n  .management-body { display: grid; gap: 1rem; }\n  .management-columns { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }\n  .management-detail { display: grid; gap: 1rem; align-content: start; }\n  @media (max-width: 36rem) { .management-columns { grid-template-columns: minmax(0, 1fr); } }\n</style>\n<div id=\"app\">\n  <section class=\"management\">\n    <div class=\"management-toolbar\">\n      <button type=\"button\" @click=\"newRecord\">New</button>\n    </div>\n    <div class=\"management-body management-columns\">\n      <projection slot=\"list\" @update:selected=\"stopCreating\"></projection>\n      <div class=\"management-detail\">\n        <projection slot=\"detail\" v-if=\"selected\"></projection>\n        <projection slot=\"form\" v-if=\"selected || creating\"></projection>\n      </div>\n    </div>\n  </section>\n</div>\n",
+          "module": "import { computed, ref } from \"vue\";\nimport { mountPanel, usePanelContext } from \"@ontomato/sdk/panel\";\n\nawait mountPanel({\n  setup() {\n    const { instance } = usePanelContext();\n    const selected = computed(() => instance.state.values.value.selected);\n    const creating = ref(false);\n    function newRecord() {\n      creating.value = true;\n      instance.state.set(\"selected\", null);\n    }\n    function stopCreating() {\n      creating.value = false;\n    }\n    return { selected, creating, newRecord, stopCreating };\n  },\n});\n"
         }
       }
     }

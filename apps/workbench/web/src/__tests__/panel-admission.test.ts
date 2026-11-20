@@ -48,9 +48,17 @@ const draftOf = (pageKey: string) => ({
 });
 
 const affected = { objects: [{ objectType: SCHEDULED_TASK, primaryKey: task.id }], objectTypes: [SCHEDULED_TASK] };
+const owned = (kind: "form.save" | "action", handlerRef: string) => ({
+  kind, handlerRef, label: handlerRef, effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false,
+});
+// For the chosen task, its owners admit the form's save and run-now; the list and the summary do nothing.
 const intents = humanIntents((operationId) => operationId === "form.save"
   ? { kind: "success", data: {}, affected }
-  : { kind: "success", data: { runId: run.id } });
+  : { kind: "success", data: { runId: run.id } }, undefined, {
+  admitted: (member, inputs) => !inputs.task ? {}
+    : member === "form" ? { save: owned("form.save", `${SCHEDULED_TASK}.save`) }
+      : member === "run" ? { runNow: owned("action", "schedules.runNow") } : {},
+});
 function answer(request: Sent) {
   const prepared = intents(request);
   if (prepared) return prepared;
@@ -128,9 +136,9 @@ describe("what a panel's frame may ask the platform for", () => {
         `GET ${tasks}`,
         `GET ${tasks}/${task.id}`,
         `POST ${tasks}/applications/${task.appId}/form`,
-        // Running the task now: the frame reads the operation's description and prepares an intent; the host reads it
-        // back and dispatches it.
-        "GET /api/panel-operations/descriptor",
+        // What the members can do, as their owners admit it, through the platform's read entry; then running the task
+        // now: the frame prepares an intent, the host reads it back and dispatches it.
+        "POST /api/product-panels/read",
         "POST /api/panel-operations/intents",
         "GET /api/panel-operation-intents/:intent",
         "POST /api/panel-operations/intents/:intent/dispatch",

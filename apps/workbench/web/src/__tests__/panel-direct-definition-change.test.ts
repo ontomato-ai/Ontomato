@@ -9,7 +9,7 @@ import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
-import { mountDirectPanel } from "../../../../../packages/apps-sdk/src/direct";
+import { mountDirectPanel } from "../../../../../packages/apps-sdk/src/panel/direct-mount";
 
 /*
  * A member's projection definition changing while the reader has unsaved input (design 5: no executable content is
@@ -27,7 +27,14 @@ const formProjection = (): DirectProjection => ({
   ...base, id: "task-form", revision, name: revision === 1 ? "Task form" : "Task form v2", componentId: "@ontomato/sdk:ObjectForm",
   inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: {},
   data: { form: { source: { object: { input: "task" } }, read: "form", params: {} } },
+  operations: { save: { operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.save` }, target: { input: "task" } } },
 });
+/** The owner's save of the chosen task, as it admits it. */
+const admitted: ProductPanelReadResponse = { status: "ready", value: { save: {
+  kind: "form.save", handlerRef: `${SCHEDULED_TASK}.save`, label: "Save", effect: "write", target: { source: "input", input: "task" },
+  inputSchema: {}, resultSchema: {}, batch: false,
+} } };
+
 const manifest: DirectPanelManifest = {
   state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false } },
   members: { form: { target: { projectionId: "task-form" }, inputs: { task: { state: "selectedTask" } } } },
@@ -69,7 +76,7 @@ it("keeps the reader's unsaved input when the member's definition changes, and d
     requests, use: { applicationId: "app-tasks", useId: "tasks" }, messages: {}, locale: ref("en"), defaultLocale: "en",
     expandPageComposer: noOperations.expandPageComposer,
     confirmOperation: async ({ intentId }) => ({ decision: "confirm", response: { kind: "dispatched", intentId, outcome: { kind: "success", data: {} } } }),
-    read: async (): Promise<ProductPanelReadResponse> => ({ status: "ready", value: description as never }),
+    read: async (request): Promise<ProductPanelReadResponse> => (request.operations ? admitted : { status: "ready", value: description as never }),
   });
   const element = document.createElement("div");
   document.body.append(element);

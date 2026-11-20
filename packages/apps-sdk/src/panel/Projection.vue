@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, provide, ref, shallowRef, useAttrs, watch, type Component } from "vue";
+import { computed, effectScope, inject, onBeforeUnmount, provide, ref, shallowRef, useAttrs, watch, type Component, type EffectScope } from "vue";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { type MemberInputs } from "./direct";
 import { memberComponentId, memberProjectionId } from "./projection-element";
 import { frameMemberData } from "./frame-member";
 import { panelMemberKey, type PanelMemberContext } from "./member";
-import { portsOf } from "./ports-of";
+import { portsOf, readsOwnerForm } from "./ports-of";
+import { admittedOperations, watchMemberOperations } from "./member-operations";
 import { slotInputValues } from "./ports";
 import { panelContextKey, projectionKey, type ProjectionSlot } from "./context";
 import { componentFor } from "../catalogue-components";
@@ -42,6 +43,8 @@ const inputs = ref<Record<string, unknown>>({});
 /** A member's inputs are JSON as the state holds them. */
 const memberInputs = computed(() => inputs.value as MemberInputs);
 let registered: (() => void) | undefined;
+/** What the member's operations are read in, for the projection drawn now. */
+let operationsScope: EffectScope | undefined;
 let readGeneration = 0;
 let requestedRevision = 0;
 
@@ -61,16 +64,22 @@ function start(revision = 0) {
     // The ports are the record's and its catalogue entry's, registered before the component draws, so a form finds its
     // own save among them and the header and an agent can list them.
     registered?.();
+    operationsScope?.stop();
+    operationsScope = effectScope();
+    const { state: operations } = operationsScope.run(() =>
+      watchMemberOperations(panel!.readPanelData, projection, props.slot, () => memberInputs.value))!;
     registered = panel!.instance.register({
       slot: props.slot,
       projectionId: projection.id,
       ports: portsOf(projection),
+      get operations() { return admittedOperations(operations.value); },
+      takesDrafts: readsOwnerForm(projection),
     });
     requestedRevision = 0;
     loaded.value = {
       projection, component,
       member: {
-        key: props.slot, projection, inputs: memberInputs,
+        key: props.slot, projection, inputs: memberInputs, operations,
         data: frameMemberData(projection, props.slot, panel!.instance, () => memberInputs.value, panel!.readPanelData),
       },
     };
@@ -95,6 +104,7 @@ const stop = panel.projectionsChanged((id, revision) => {
   if (revision === undefined || revision > Math.max(currentRevision, requestedRevision)) start(revision);
 });
 onBeforeUnmount(() => {
+  operationsScope?.stop();
   readGeneration++;
   stop();
   registered?.();

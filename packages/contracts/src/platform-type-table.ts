@@ -9,7 +9,7 @@ const readParameterIdSchema = z.custom<PanelReadParameterId>(
   "Expected a registered panel read parameter ID",
 );
 const readDeclaration = {
-  source: z.enum(["type", "object", "operation"]),
+  source: z.enum(["type", "object"]),
   result: panelReadResultIdSchema,
 };
 export const platformTypeReadDeclarationSchema = z.discriminatedUnion("parameterMode", [

@@ -2,7 +2,8 @@
 
 Follow the [Product Layer and Application Composition Standard](https://infohub.eloyzh.de/o/standard-66842053) and the current SDK guide. Use current product records. Keep business logic and permission checks with the resource owners. Use the deployment, domain and authorized business scope already established with the user. Obtain technical names, IDs, parameters and relationships from the platform through its discovery commands and owner interfaces.
 
-When planning how to bring an existing application onto the platform, start with the [application decomposition skill](references/app-standard/SKILL.md).
+Start with the [Vue panel skill and complete example](references/panel-authoring/SKILL.md). When planning how to
+bring an existing application onto the platform, use the [application decomposition skill](references/app-standard/SKILL.md).
 
 ## Connection and workspace
 
@@ -19,7 +20,7 @@ For a management page, start with the [complete example and wiring recipes](refe
 
 1. Use `sdk read components.json` and `sdk read docs/components.md` to see the current release's official components and their inputs and outputs. Inspect the actual ontology resources, projections and application uses. Reuse existing records and ask the owner for any missing business capability or named read.
 2. Write the Vue panel source. Declare its projections and public typed state in `panel.json` as `{manifest, content?}`. Use `recipes.md` for the assistant's common tasks and optional `content.messages` for translations. Use Vue's own state and events for local interactions.
-3. Run `panel check <workspace directory>` to validate the layout, declarations and references.
+3. Run `panel check <workspace directory>` to validate the panel source, declarations and references.
 4. Submit the selected projections, panels and application uses with `panel register`, then open the application's declared entry. Use an application ID and route you control.
 
 When converting a platform page that needs a new owner read, operation or official component, use the [platform development examples](references/platform-development.md).
@@ -31,15 +32,15 @@ For instances of customer ontology classes, bind the detail to the owner's `reco
 | `sdk read components.json` | Official components and ports in the current SDK |
 | `panel projection <id>`, `panel get <id>` | Authorized current projection or panel, including its revision |
 | `panel applications`, `panel uses <applicationId>` | Java navigation catalog and visible use relations |
-| `panel scaffold <type> <new directory> [--id <application id>] [--operation <id>] [--batch <id>]` | Draft a management page from the type table. Select single and batch buttons by owner operation ID. |
-| `panel check <directory> [--material <file>] [--sdk-dir <release directory>]` | Check the layout and declaration with the SDK parser, and resolve registered references using the current viewer's access. With an installed release directory, check offline and list unresolved references. |
+| `panel scaffold <type> <new directory> [--id <application id>] [--operation <id>] [--batch <id>]` | Draft a Vue management panel from the type table. Select single and batch buttons by owner operation ID. |
+| `panel check <directory> [--material <file>] [--sdk-dir <release directory>]` | Check the panel source and declaration with the current SDK schemas, and resolve registered references using the author's access. With an installed release directory, check offline and list unresolved references. |
 | `panel register <directory> [--material <file>]` | Register a panel from its workspace sources, including its inline projections |
 | `panel register <JSON or @file>` | Register selected current definitions and application uses under the author's permissions |
 
 ### Write projections inside the panel
 
 In `panel.json`, put a new projection in `manifest.members.<key>.target.projection`. Use the same component,
-named data, input and output declarations, and config as a separately registered projection. Keep state bindings
+named data, input and output declarations, operation bindings and config as a separately registered projection. Keep state bindings
 on the member. For example, a member named `agents` can use this target:
 
 ```json

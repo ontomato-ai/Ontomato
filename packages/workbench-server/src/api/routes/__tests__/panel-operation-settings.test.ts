@@ -133,9 +133,7 @@ it("returns the server descriptor only for a current use of the authenticated re
    projection: {
      ...record, id: "run", componentId: "@ontomato/sdk:OperationButton", name: "Run now",
      inputs: { task }, outputs: {}, config: {},
-     data: { operation: {
-       source: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, read: "describe", params: {},
-     } },
+     data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
    },
  });
 

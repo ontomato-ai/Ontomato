@@ -1,6 +1,6 @@
 import { displayLoadSchema, PANEL_LOAD_ERROR_CODES, type DisplayLoad } from "@ontomato/contracts/agent-presentation";
 import type { PanelDefinitionSnapshot, ProductDefinitionRevision, ProductDefinitionTarget } from "@ontomato/contracts/product-subscriptions";
-import { inject, onScopeDispose, shallowRef, watch, type InjectionKey, type Ref, type ShallowRef, type VNodeChild } from "vue";
+import { inject, onScopeDispose, shallowRef, watch, type InjectionKey, type Ref, type ShallowRef } from "vue";
 import { onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import { PAGE_DRAFT_QUERY_KEYS, pageDraftLink, type PageDraftLink } from "@ontomato/contracts/page-draft";
@@ -18,8 +18,7 @@ import {
 } from "@ontomato/contracts/panel-host";
 import type { PanelObjectIdentity, PanelOperation } from "@ontomato/contracts/panel-manifest";
 import type { PanelOperationAffected } from "@ontomato/contracts/panel-operations";
-import { parsePanelLayout, type PanelLayoutNode } from "@ontomato/contracts/panel-layout";
-import { adoptPanelStyle, cleanPanelHtml, PanelStyleOutsideError, scopedPanelStyle, splitCodedPanelHtml } from "./panel-content";
+import { adoptPanelStyle, PanelStyleOutsideError, scopedPanelStyle, splitCodedPanelHtml } from "./panel-content";
 import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
 import type { PanelDefinitionContent, ProductPanel } from "@ontomato/contracts/product-panels";
 
@@ -33,10 +32,10 @@ import type { AppsSdkReleaseManifest } from "@ontomato/contracts/apps-sdk";
  * screen, beside a conversation and inside another application, because all three only need a use relation, the current
  * record and somewhere to show it.
  *
- * Where it runs is the record's (direct rendering design 5): a panel with no code of its own — a layout and a declaration
- * — is drawn by the platform in its own document; a panel with a module runs that module in a frame of its own, with this
- * SDK version's modules. Both are one instance with one lifecycle here: the same address state, page context, draft,
- * operations, refresh and definition changes, reported from the frame's messages or from the direct instance alike.
+ * Every panel is a Vue component — its `panel.html` template and its module — run in the platform's own document (user's
+ * ruling, 2026-11-20: Vue is the only way a panel is written). Its instance has one lifecycle here: the address state,
+ * page context, draft, operations, refresh and definition changes it reports. The frame a panel once ran in is kept but
+ * no longer one way a panel runs (user's ruling, 2026-11-20): it has no entry, and nothing below falls back to it.
  *
  * What the host does, and a panel's author therefore does not: read the use relation and the record, keep the declared
  * deep-linkable state in the address, hand the reader's page context to whoever writes the message, pass a changed
@@ -69,14 +68,10 @@ export interface PanelHostPort<Source extends HostedPanelSource = HostedPanelSou
    */
   frame(frame: Window, source: Source, open: boolean): PanelFrameRegistration;
   /**
-   * Starts a panel without code in the platform's own document: its instance, which reads what its members show through
-   * the platform as the reader, and draws each member the layout places. The host keeps the instance's lifecycle.
-   */
-  direct(source: Source, run: DirectPanelRun): DirectPanelMount;
-  /**
-   * Starts a panel written with code in the platform's own document: its module, run once for this instance, mounts its
-   * component into `target.element` from `target.template`, on the same instance a panel without code runs on. It
-   * settles once the module has mounted it, and fails with whatever stopped the module.
+   * Starts a panel in the platform's own document: its module, run once for this instance, mounts its component into
+   * `target.element` from `target.template`. Its instance reads what its members show through the platform as the reader;
+   * the host keeps the instance's lifecycle. It settles once the module has mounted it, and fails with whatever stopped
+   * the module.
    */
   coded(source: Source, run: DirectPanelRun, target: CodedPanelTarget): Promise<DirectPanelMount>;
   snapshot(panelId: string): Promise<PanelDefinitionSnapshot>;
@@ -101,7 +96,7 @@ export interface PanelSdkRelease {
   manifest: AppsSdkReleaseManifest;
 }
 
-/** What a host shows: a panel written with code, or a direct panel the platform draws. */
+/** What a host shows: a registered use relation with its record, or an author's candidate. */
 export type HostedPanelSource = PanelHostSource;
 
 /** The projections a source places directly: its members whose target is a fixed projection. */
@@ -109,12 +104,7 @@ function projectionIdsOf(shown: HostedPanelSource): string[] {
   return Object.values(shown.panel.manifest.members).flatMap(member => ("projectionId" in member.target ? [member.target.projectionId] : []));
 }
 
-/** Whether the platform draws this source itself: its content has no code or style of its own to isolate in a frame. */
-export function runsDirect(source: HostedPanelSource): boolean {
-  return source.panel.content.module === undefined;
-}
-
-/** What the host hands a direct instance: where it is, what its address asks for, and where it reports. */
+/** What the host hands a panel's instance: where it is, what its address asks for, and where it reports. */
 export interface DirectPanelRun {
   /** The page's registration key, which a draft names. */
   pageKey: string;
@@ -137,12 +127,8 @@ export interface DirectPanelRun {
   failed(reason: unknown): void;
 }
 
-/** A started direct instance. */
+/** A started panel instance, as its host drives it. */
 export interface DirectPanelMount {
-  /** Draws a member the layout places. */
-  member(ref: string): VNodeChild;
-  /** The instance's state, as its layout's conditions read it. */
-  readonly values: Readonly<Ref<Readonly<Record<string, unknown>>>>;
   /** The address changed outside the instance (the reader went back, a link was followed): its state follows. */
   address(url: string): void;
   /** Objects it may show changed: it reads again what it shows of them. */
@@ -179,14 +165,11 @@ export interface PanelInstanceView {
   readonly pageContext: Readonly<ShallowRef<PageContext | null>>;
   /** The message written into the frame's document; empty while the record is being read or when no frame runs it. */
   readonly document: Readonly<Ref<string>>;
-  /** A panel the platform draws: its layout and its started instance; null when a frame runs the panel. */
+  /** The running panel: the element its component is mounted in, and its instance; null until it runs. */
   readonly direct: Readonly<ShallowRef<DirectInstance | null>>;
   /** What names this instance's element, where its panel's CSS applies. */
   readonly instance: string;
-  /**
-   * What the author of a panel the platform draws should know without the panel failing: part of its HTML was removed
-   * as it was drawn, or its CSS reached outside it and applies nowhere.
-   */
+  /** What the panel's author should know without the panel failing: its CSS reached outside it and applies nowhere. */
   readonly notice: Readonly<ShallowRef<string>>;
   /** The reader's deep-linkable state, as the address carries it. */
   readonly state: Ref<PanelHostState>;
@@ -224,17 +207,17 @@ export interface PanelHostLabels {
    * `{file}` stands for that file), and a script that failed while it ran or rejected with nothing to say.
    */
   failures: { fileUnavailable: string; scriptThrew: string; scriptRejected: string };
-  /** What a panel the platform draws tells its author: its HTML had content removed, its CSS reached outside it. */
-  content: { htmlRemoved: string; styleOutside: string };
+  /** What a panel tells its author: its CSS reached outside it. */
+  content: { styleOutside: string };
 }
 
-/** A panel the platform draws: its parsed layout and its running instance. */
-export type DirectInstance =
-  | { layout: PanelLayoutNode[]; mount: DirectPanelMount }
-  /** A panel written with code: the element its own component is mounted in, which the host places in the page. */
-  | { element: HTMLElement; mount: DirectPanelMount };
+/** A running panel: the element its own component is mounted in, which the host places in the page, and its instance. */
+export interface DirectInstance {
+  element: HTMLElement;
+  mount: DirectPanelMount;
+}
 
-/** Where a panel written with code mounts: the element the host made for it, and the template its `#app` holds. */
+/** Where a panel mounts: the element the host made for it, and the template its `#app` holds. */
 export interface CodedPanelTarget {
   element: HTMLElement;
   template: string;
@@ -374,19 +357,15 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   /** The current SDK release: read once, and only for a panel that runs in a frame. */
   let release: Promise<PanelSdkRelease> | undefined;
 
-  /** Shows a source: drawn by the platform when it has no code, in a frame when it has. */
+  /** Shows a source: its component, run in this document. */
   async function adopt(next: HostedPanelSource) {
     error.value = "";
     const requested = requestedState(next.panel) as PanelHostState;
     const requestedAddress = panelAddress(pageAddress(), requested);
-    // A panel written with code runs in the platform's document too (user's ruling, 2026-11-20): the frame below is no
+    // A panel runs in the platform's document (user's ruling, 2026-11-20): the frame below is kept but no
     // longer a way a panel runs.
     if (next.panel.content.module !== undefined) {
       await adoptCoded(next, requested, requestedAddress);
-      return;
-    }
-    if (runsDirect(next)) {
-      adoptDirect(next, requested, requestedAddress);
       return;
     }
     const current = await (release ??= port.release());
@@ -423,23 +402,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   }
 
   /**
-   * Starts a panel the platform draws: its layout, parsed against its declaration, and its instance, which reports here
-   * what a frame would report in its messages. A new revision with the same definition keeps the running instance.
-   */
-  function adoptDirect(next: HostedPanelSource, requested: PanelHostState, requestedAddress: string) {
-    if (!replaceDirect(next, requested, requestedAddress)) return;
-    const cleaned = cleanPanelHtml(next.panel.content.html);
-    const { nodes: layout, css } = parsePanelLayout(cleaned.html, next.panel.manifest);
-    notice.value = cleaned.removed ? options.labels.content.htmlRemoved : "";
-    adoptStyle(css);
-    const mount = port.direct(next, directRun(next, requested));
-    mount.activate(bridgeOpen);
-    direct.value = { layout, mount };
-  }
-
-  /**
-   * Starts a panel written with code in this document: its HTML split into the template its `#app` holds, the element it
-   * mounts into (carrying `#app`'s own attributes) and its CSS, scoped to this instance as a panel without code's is.
+   * Starts a panel in this document: its HTML split into the template its `#app` holds, the element it mounts into
+   * (carrying `#app`'s own attributes) and its CSS, scoped to this instance.
    * A source adopted while the module ran replaces it: the mount that comes back late is let go.
    */
   async function adoptCoded(next: HostedPanelSource, requested: PanelHostState, requestedAddress: string) {
@@ -826,7 +790,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     frame(window) {
       frame = window;
       registration?.dispose();
-      registration = window && source.value && !runsDirect(source.value) ? port.frame(window, source.value, bridgeOpen) : undefined;
+      registration = window && source.value ? port.frame(window, source.value, bridgeOpen) : undefined;
     },
   };
 }

@@ -8,7 +8,7 @@ import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
-import { mountDirectPanel } from "../../../../../packages/apps-sdk/src/direct";
+import { mountDirectPanel } from "../../../../../packages/apps-sdk/src/panel/direct-mount";
 
 /*
  * A directly rendered page coming back to the foreground while the reader is about to type into its clean form: the
@@ -27,7 +27,14 @@ const formProjection: DirectProjection = {
   ...base, id: "task-form", revision: 4, name: "Task form", componentId: "@ontomato/sdk:ObjectForm",
   inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: {},
   data: { form: { source: { object: { input: "task" } }, read: "form", params: {} } },
+  operations: { save: { operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.save` }, target: { input: "task" } } },
 };
+/** The owner's save of the chosen task, as it admits it. */
+const admitted: ProductPanelReadResponse = { status: "ready", value: { save: {
+  kind: "form.save", handlerRef: `${SCHEDULED_TASK}.save`, label: "Save", effect: "write", target: { source: "input", input: "task" },
+  inputSchema: {}, resultSchema: {}, batch: false,
+} } };
+
 const manifest: DirectPanelManifest = {
   state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false } },
   members: { form: { target: { projectionId: "task-form" }, inputs: { task: { state: "selectedTask" } } } },
@@ -64,7 +71,8 @@ it("keeps what the reader types into a clean form as the page comes back, its de
     use: { applicationId: "app-tasks", useId: "tasks" }, messages: {}, locale: ref("en"), defaultLocale: "en",
     expandPageComposer: noOperations.expandPageComposer,
     confirmOperation: async () => { throw new Error("Nothing is saved here"); },
-    read: async (): Promise<ProductPanelReadResponse> => {
+    read: async (request): Promise<ProductPanelReadResponse> => {
+      if (request.operations) return admitted;
       formReads += 1;
       if (!holdNext) return ready();
       holdNext = false;

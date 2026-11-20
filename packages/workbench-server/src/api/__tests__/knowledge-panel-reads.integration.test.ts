@@ -8,6 +8,7 @@ import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE, DELETE_KNOWLEDGE } from "@ontomato/contracts/panel-client-requests";
+import { productPanelOperationsReadResponseSchema } from "@ontomato/contracts/panel-host";
 import { productPanelInputSchema, productProjectionInputSchema } from "@ontomato/contracts/product-panels";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { installContentLayout } from "../../content/layout";
@@ -34,8 +35,10 @@ if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable Po
 let server: Server | undefined;
 let contentRoot: string;
 const resourceIds = new Set<string>();
+const ownerWrites: { path: string; body: unknown }[] = [];
 const panelId = "panel-knowledge-m7";
 const knowledgeType = { kind: "object", objectType: BUSINESS_KNOWLEDGE } as const;
+const targetList = { kind: "list", items: knowledgeType } as const;
 
 const ownerEntries = {
   "k-1": {
@@ -198,12 +201,9 @@ const projections = {
     inputs: { knowledge: knowledgeType },
     outputs: {},
     config: {},
-    data: {
-      operation: {
-        source: { operation: { kind: "PlatformOperation", id: APPROVE_KNOWLEDGE } },
-        read: "describe",
-        params: {},
-      },
+    data: {},
+    operations: {
+      approve: { operation: { kind: "PlatformOperation", id: APPROVE_KNOWLEDGE }, target: { input: "knowledge" } },
     },
   }),
   "projection-knowledge-delete": productProjectionInputSchema.parse({
@@ -212,12 +212,20 @@ const projections = {
     inputs: { knowledge: knowledgeType },
     outputs: {},
     config: {},
-    data: {
-      operation: {
-        source: { operation: { kind: "PlatformOperation", id: DELETE_KNOWLEDGE } },
-        read: "describe",
-        params: {},
-      },
+    data: {},
+    operations: {
+      delete: { operation: { kind: "PlatformOperation", id: DELETE_KNOWLEDGE }, target: { input: "knowledge" } },
+    },
+  }),
+  "projection-knowledge-delete-checked": productProjectionInputSchema.parse({
+    name: "Delete checked knowledge", description: "", visibility: "domain",
+    componentId: "@ontomato/sdk:OperationButton",
+    inputs: { selection: targetList },
+    outputs: {},
+    config: {},
+    data: {},
+    operations: {
+      remove: { operation: { kind: "PlatformOperation", id: DELETE_KNOWLEDGE }, target: { input: "selection" } },
     },
   }),
 };
@@ -225,12 +233,45 @@ const projections = {
 const panel = productPanelInputSchema.parse({
   name: "Business knowledge", description: "", visibility: "domain",
   content: {
-    html: '<style>.knowledge { display: flex; flex-direction: column; }</style><section class="knowledge"><panel-member ref="counts"></panel-member><panel-member ref="list"></panel-member><panel-member ref="detail"></panel-member><panel-member ref="form"></panel-member><panel-member ref="createForm"></panel-member><panel-member ref="approve"></panel-member><panel-member ref="remove"></panel-member></section>',
+    html: [
+      '<div id="app" class="knowledge-panel" v-cloak>',
+      '  <div class="knowledge-list">',
+      '    <projection slot="counts"></projection>',
+      '    <projection slot="list"></projection>',
+      '    <projection v-if="hasChecked" slot="removeAll"></projection>',
+      "  </div>",
+      '  <section class="knowledge-detail">',
+      '    <template v-if="chosen">',
+      '      <projection slot="detail"></projection>',
+      '      <projection slot="form"></projection>',
+      '      <projection slot="approve"></projection>',
+      '      <projection slot="remove"></projection>',
+      "    </template>",
+      '    <projection v-else slot="createForm"></projection>',
+      "  </section>",
+      "</div>",
+    ].join("\n"),
+    module: [
+      'import { computed } from "vue";',
+      'import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";',
+      "",
+      "const BusinessKnowledgePanel = {",
+      "  setup() {",
+      "    const { instance } = usePanelContext();",
+      "    const chosen = computed(() => instance.state.values.value.selectedEntry != null);",
+      "    const hasChecked = computed(() => (instance.state.values.value.checked?.length ?? 0) > 0);",
+      "    return { chosen, hasChecked };",
+      "  },",
+      "};",
+      "",
+      "await mountPanel(BusinessKnowledgePanel);",
+    ].join("\n"),
   },
   manifest: {
     state: {
       status: { type: { kind: "scalar", type: "string" }, deepLink: true, external: true, personal: false, default: "all" },
       selectedEntry: { type: knowledgeType, deepLink: true, external: true, personal: false, default: null },
+      checked: { type: targetList, default: [] },
     },
     members: {
       counts: { target: { projectionId: "projection-knowledge-counts" }, outputs: { value: { state: "status" } } },
@@ -240,6 +281,7 @@ const panel = productPanelInputSchema.parse({
       createForm: { target: { projectionId: "projection-knowledge-create-form" } },
       approve: { target: { projectionId: "projection-knowledge-approve" }, inputs: { knowledge: { state: "selectedEntry" } } },
       remove: { target: { projectionId: "projection-knowledge-delete" }, inputs: { knowledge: { state: "selectedEntry" } } },
+      removeAll: { target: { projectionId: "projection-knowledge-delete-checked" }, inputs: { selection: { state: "checked" } } },
     },
     events: {},
   },
@@ -273,8 +315,7 @@ beforeAll(async () => {
     res.json({ success: true });
   });
   app.post("/product-governance/check", (req, res) => {
-    expect(req.header("tk")).toBe("knowledge-reader");
-    res.json({ allowed: resourceIds.has(req.body.id) });
+    res.json({ allowed: req.header("tk") === "knowledge-reader" && resourceIds.has(req.body.id) });
   });
   app.post("/product-governance/resources", (req, res) => {
     expect(req.header("tk")).toBe("knowledge-reader");
@@ -282,7 +323,8 @@ beforeAll(async () => {
   });
   app.get("/platform/applications/resolve-entry", (req, res, next) => {
     if (req.query.applicationId !== "app-knowledge") { next(); return; }
-    expect(req.header("tk")).toBe("knowledge-reader");
+    // Java admits the entry to the outsider too: what refuses them is the product's use Grant.
+    expect(["knowledge-reader", "outsider"]).toContain(req.header("tk"));
     res.json({
       success: true,
       data: {
@@ -296,15 +338,26 @@ beforeAll(async () => {
     });
   });
   app.post("/admin/getBussinessKnowledge", (req, res) => {
-    expect(req.header("tk")).toBe("knowledge-reader");
+    if (req.header("tk") !== "knowledge-reader") { res.sendStatus(403); return; }
     res.json({ success: true, data: ownerEntries });
   });
   app.post("/admin/bussinessKnowledge/form", (req, res) => {
     expect(req.header("tk")).toBe("knowledge-reader");
     res.json({ success: true, data: ownerFormDescription(req.body.target, req.body.values) });
   });
+  app.post("/admin/editBussinessKnowledge", (req, res) => {
+    expect(req.header("tk")).toBe("knowledge-reader");
+    ownerWrites.push({ path: "/admin/editBussinessKnowledge", body: req.body });
+    res.json({ success: true });
+  });
+  app.post("/admin/delBussinessKnowledge", (req, res) => {
+    expect(req.header("tk")).toBe("knowledge-reader");
+    ownerWrites.push({ path: "/admin/delBussinessKnowledge", body: req.body });
+    res.json({ success: true });
+  });
   app.use("/api", (req, _res, next) => {
-    Object.assign(req, { domainId: "knowledge-domain", userId: "reader", token: "knowledge-reader", locale: req.header("Accept-Language") });
+    const token = req.header("tk") ?? "knowledge-reader";
+    Object.assign(req, { domainId: "knowledge-domain", userId: token, token, locale: req.header("Accept-Language") });
     next();
   });
   app.use("/api/product-panels", productPanelsRouter);
@@ -328,9 +381,11 @@ afterAll(async () => {
   if (contentRoot) await rm(contentRoot, { recursive: true });
 });
 
-function request(method: string, resource: string, body?: object, locale = "en") {
+function request(method: string, resource: string, body?: object, locale = "en", headers?: Record<string, string>) {
   return fetch(`${state.base}/api/${resource}`, {
-    method, headers: { "Content-Type": "application/json", "Accept-Language": locale }, body: JSON.stringify(body),
+    method,
+    headers: { "Content-Type": "application/json", "Accept-Language": locale, ...headers },
+    body: JSON.stringify(body),
   });
 }
 
@@ -470,69 +525,213 @@ it("serves business knowledge panel reads over real HTTP routes backed by Postgr
     value: { values: { knowledgeTitle: "Return rule", knowledgeTags: ["Policy", "Updated"], status: 1 }, errors: [] },
   });
 
-  // approve.describe & delete.describe: both batch: true, delete includes inspectImpact.
-  const approveDesc = await (await read("approve", "operation", {}, "zh-CN")).json();
-  expect(approveDesc).toMatchObject({
-    status: "ready",
-    value: { handlerRef: APPROVE_KNOWLEDGE, effect: "write", batch: true, label: "通过" },
-  });
-  const deleteDesc = await (await read("remove", "operation", {}, "zh-CN")).json();
-  expect(deleteDesc).toMatchObject({
+  // Explicit operation declarations: read via /product-panels/read with operations: true, then prepare and dispatch single and batch writes.
+  const readOperations = async (member: string, inputs: object, locale = "zh-CN") => {
+    const res = await request("POST", "product-panels/read", {
+      source: { kind: "registered", applicationId: "app-knowledge", useId: "knowledge" },
+      memberPath: [{ member }],
+      operations: true,
+      inputs,
+    }, locale);
+    expect(res.status).toBe(200);
+    return productPanelOperationsReadResponseSchema.parse(await res.json());
+  };
+
+  expect(await readOperations("approve", { knowledge: k2Ref })).toMatchObject({
     status: "ready",
     value: {
-      handlerRef: DELETE_KNOWLEDGE,
-      effect: "write",
-      batch: true,
-      label: "删除",
-      inspectImpact: { handlerRef: `${DELETE_KNOWLEDGE}.inspect-impact` },
+      approve: {
+        kind: "action",
+        handlerRef: APPROVE_KNOWLEDGE,
+        effect: "write",
+        batch: true,
+        label: "通过",
+        target: { source: "input", input: "knowledge" },
+      },
     },
   });
+  expect(await readOperations("remove", { knowledge: k2Ref })).toMatchObject({
+    status: "ready",
+    value: {
+      delete: {
+        kind: "action",
+        handlerRef: DELETE_KNOWLEDGE,
+        effect: "write",
+        batch: true,
+        label: "删除",
+        target: { source: "input", input: "knowledge" },
+        inspectImpact: { handlerRef: `${DELETE_KNOWLEDGE}.inspect-impact` },
+      },
+    },
+  });
+  expect(await readOperations("removeAll", { selection: [k2Ref, k3Ref] })).toMatchObject({
+    status: "ready",
+    value: {
+      remove: {
+        kind: "action",
+        handlerRef: DELETE_KNOWLEDGE,
+        effect: "write",
+        batch: true,
+        label: "删除",
+        target: { source: "input", input: "selection" },
+        inspectImpact: { handlerRef: `${DELETE_KNOWLEDGE}.inspect-impact` },
+      },
+    },
+  });
+
+  const preparedBatchDelete = await request("POST", "panel-operations/intents", {
+    applicationId: "app-knowledge",
+    useId: "knowledge",
+    operationId: "removeAll.remove",
+    calls: [
+      { target: { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-2" }, input: {} },
+      { target: { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-3" }, input: {} },
+    ],
+  });
+  expect(preparedBatchDelete.status, await preparedBatchDelete.clone().text()).toBe(200);
+  const batchPreparation = await preparedBatchDelete.json();
+  expect(batchPreparation).toMatchObject({
+    operationId: "removeAll.remove",
+    confirmation: {
+      kind: "batch",
+      targets: {
+        total: 2,
+        objects: [
+          { target: { objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-2" }, label: "Return rule" },
+          { target: { objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-3" }, label: "Night cutoff" },
+        ],
+      },
+      impact: {
+        summary: "This deletes the selected business knowledge (2 in total).",
+        total: 2,
+      },
+    },
+  });
+  const batchDispatch = await request("POST", `panel-operations/intents/${batchPreparation.intentId}/dispatch`, {});
+  expect(batchDispatch.status).toBe(200);
+  expect(await batchDispatch.json()).toMatchObject({
+    kind: "dispatched",
+    intentId: batchPreparation.intentId,
+    outcome: {
+      kind: "batch",
+      items: [
+        { target: { objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-2" }, outcome: { kind: "success", data: {} } },
+        { target: { objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-3" }, outcome: { kind: "success", data: {} } },
+      ],
+    },
+  });
+  expect(ownerWrites).toEqual([
+    { path: "/admin/delBussinessKnowledge", body: { knowledgeID: "k-2" } },
+    { path: "/admin/delBussinessKnowledge", body: { knowledgeID: "k-3" } },
+  ]);
+  ownerWrites.length = 0;
 });
 
-it("checks the operation target at registration and when preparing a legacy button", async () => {
+it("rejects a forged member path, an undeclared operation and an unauthorized target", async () => {
+  const k2Target = { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-2" };
+  const intent = (operationId: string, target = k2Target, headers?: Record<string, string>) =>
+    request("POST", "panel-operations/intents", {
+      applicationId: "app-knowledge", useId: "knowledge", operationId, call: { target, input: {} },
+    }, "en", headers);
+
+  const forgedIntent = await intent("forged.approve");
+  expect(forgedIntent.status).toBe(403);
+  expect(await forgedIntent.json()).toMatchObject({
+    error: { code: "FORBIDDEN", message: "Panel does not declare member 'forged'" },
+  });
+  const forgedRead = await request("POST", "product-panels/read", {
+    source: { kind: "registered", applicationId: "app-knowledge", useId: "knowledge" },
+    memberPath: [{ member: "forged" }],
+    operations: true,
+    inputs: {},
+  });
+  expect(forgedRead.status).toBe(200);
+  expect(await forgedRead.json()).toEqual({ status: "forbidden" });
+
+  const unlistedOperation = await intent("approve.unlisted");
+  expect(unlistedOperation.status).toBe(422);
+  expect(await unlistedOperation.json()).toMatchObject({
+    error: { code: "OPERATION_UNAVAILABLE", message: "The panel member does not declare operation 'approve.unlisted'" },
+  });
+
+  const forbiddenTarget = { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-forbidden" };
+  const refusedDelete = await intent("remove.delete", forbiddenTarget);
+  expect(refusedDelete.status).toBe(404);
+  expect(await refusedDelete.json()).toMatchObject({
+    error: { code: "KNOWLEDGE_UNAVAILABLE", message: "Business knowledge k-forbidden is not in this domain" },
+  });
+  const refusedBatchDelete = await request("POST", "panel-operations/intents", {
+    applicationId: "app-knowledge", useId: "knowledge", operationId: "removeAll.remove",
+    calls: [{ target: forbiddenTarget, input: {} }],
+  });
+  expect(refusedBatchDelete.status).toBe(404);
+  expect(await refusedBatchDelete.json()).toMatchObject({
+    error: { code: "KNOWLEDGE_UNAVAILABLE", message: "Business knowledge k-forbidden is not in this domain" },
+  });
+  const refusedReader = await intent("approve.approve", k2Target, { tk: "outsider" });
+  expect(refusedReader.status).toBe(403);
+  expect(await refusedReader.json()).toMatchObject({
+    error: { code: "PRODUCT_FORBIDDEN", message: "Product use Grant required" },
+  });
+  const preparedForbiddenApprove = await intent("approve.approve", forbiddenTarget);
+  expect(preparedForbiddenApprove.status).toBe(200);
+  const { intentId } = await preparedForbiddenApprove.json();
+  const dispatchedForbiddenApprove = await request("POST", `panel-operations/intents/${intentId}/dispatch`, {});
+  expect(dispatchedForbiddenApprove.status).toBe(200);
+  expect(await dispatchedForbiddenApprove.json()).toMatchObject({
+    kind: "dispatched",
+    intentId,
+    outcome: {
+      kind: "refusal",
+      code: "KNOWLEDGE_APPROVE_REFUSED",
+      message: "Business knowledge k-forbidden is not in this domain",
+    },
+  });
+  expect(ownerWrites).toEqual([]);
+});
+
+it("checks the operation target at registration and when preparing a button", async () => {
   const intent = {
     applicationId: "app-knowledge", useId: "knowledge", operationId: "approve.approve",
     call: { target: { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-2" }, input: {} },
   };
   const approve = projections["projection-knowledge-approve"];
-  const legacyProjectionId = "projection-knowledge-approve-entry";
-  const savedProjection = await request("PUT", "product-projections/" + legacyProjectionId, {
-    ...approve, inputs: { entry: knowledgeType }, revision: 0,
+  const badProjectionTarget = await request("PUT", "product-projections/projection-knowledge-approve-bad-target", {
+    ...approve,
+    operations: { approve: { operation: { kind: "PlatformOperation", id: APPROVE_KNOWLEDGE }, target: { input: "entry" } } },
+    revision: 0,
   });
-  expect(savedProjection.status, await savedProjection.text()).toBe(200);
-  const legacyPanel = { ...panel, manifest: { ...panel.manifest, members: {
-    ...panel.manifest.members,
-    approve: { target: { projectionId: legacyProjectionId }, inputs: { entry: { state: "selectedEntry" } } },
-  } } };
-  const badMember = await request("PUT", "product-panels/" + panelId, { ...legacyPanel, revision: 1 });
-  expect(badMember.status).toBe(400);
-  expect(await badMember.json()).toMatchObject({ error: {
-    code: "PANEL_PORT_MISMATCH",
-    message: expect.stringContaining("operation 'knowledge.approve' expects target input 'knowledge'"),
+  expect(badProjectionTarget.status).toBe(400);
+  expect(await badProjectionTarget.json()).toMatchObject({ error: {
+    code: "INVALID_REQUEST",
+    message: expect.stringContaining("The operation needs a declared object or list input"),
   } });
 
   const wrongProjectionId = "projection-knowledge-approve-task";
   const wrongProjection = await request("PUT", "product-projections/" + wrongProjectionId, {
     ...approve, revision: 0, inputs: { knowledge: { kind: "object", objectType: "platform:ScheduledTask" } },
   });
-  expect(wrongProjection.status, await wrongProjection.text()).toBe(200);
-  const wrongType = await request("PUT", "product-panels/" + panelId, {
-    ...panel, revision: 1, manifest: { ...panel.manifest, members: {
-      ...panel.manifest.members,
-      approve: { target: { projectionId: wrongProjectionId }, inputs: { knowledge: { state: "selectedEntry" } } },
-    } },
-  });
-  expect(wrongType.status).toBe(400);
-  expect(await wrongType.json()).toMatchObject({ error: {
+  expect(wrongProjection.status).toBe(400);
+  expect(await wrongProjection.json()).toMatchObject({ error: {
+    code: "PANEL_OPERATION_TARGET_MISMATCH",
+    message: expect.stringContaining("operation 'approve' takes a target of type 'platform:BusinessKnowledge'"),
+  } });
+
+  const unboundPanel = { ...panel, manifest: { ...panel.manifest, members: {
+    ...panel.manifest.members,
+    approve: { target: { projectionId: "projection-knowledge-approve" }, inputs: {} },
+  } } };
+  const badMember = await request("PUT", "product-panels/" + panelId, { ...unboundPanel, revision: 1 });
+  expect(badMember.status).toBe(400);
+  expect(await badMember.json()).toMatchObject({ error: {
     code: "PANEL_PORT_MISMATCH",
-    message: expect.stringContaining("input 'knowledge' of type 'platform:BusinessKnowledge'"),
+    message: expect.stringContaining("operation 'approve' expects input 'knowledge', but it is not connected"),
   } });
 
   const accepted = await request("POST", "panel-operations/intents", intent);
   expect(accepted.status).toBe(200);
   expect(await accepted.json()).toMatchObject({ operationId: "approve.approve", confirmation: { kind: "none" } });
 
-  const targetList = { kind: "list", items: knowledgeType };
   const batchProjectionId = "projection-knowledge-approve-batch";
   const savedBatch = await request("PUT", "product-projections/" + batchProjectionId, {
     ...approve, inputs: { knowledge: targetList }, revision: 0,
@@ -540,7 +739,7 @@ it("checks the operation target at registration and when preparing a legacy butt
   expect(savedBatch.status, await savedBatch.text()).toBe(200);
   const batchPanel = await request("PUT", "product-panels/" + panelId, {
     ...panel, revision: 1, manifest: {
-      ...panel.manifest, state: { ...panel.manifest.state, checked: { type: targetList, default: [] } },
+      ...panel.manifest,
       members: { ...panel.manifest.members,
         approve: { target: { projectionId: batchProjectionId }, inputs: { knowledge: { state: "checked" } } },
       },
@@ -556,7 +755,7 @@ it("checks the operation target at registration and when preparing a legacy butt
 
   // A published definition may predate the registration check.
   await state.pool!.query(`UPDATE "${state.schema}".product_panels SET definition=$1 WHERE id=$2`, [
-    JSON.stringify(legacyPanel), panelId,
+    JSON.stringify(unboundPanel), panelId,
   ]);
   const wrongTarget = await request("POST", "panel-operations/intents", intent);
   expect(wrongTarget.status).toBe(422);

@@ -307,6 +307,7 @@ export const ontologyModelServerOperations = [
   },
   {
     handlerRef: DELETE_OBJECT_TYPE,
+    labelKey: "panels.ontologyModel.operations.deleteObjectType",
     kind: "action",
     binding: { kind: "PlatformOperation", id: DELETE_OBJECT_TYPE },
     effect: "write",
@@ -336,6 +337,7 @@ export const ontologyModelServerOperations = [
   },
   {
     handlerRef: DELETE_ATTRIBUTE,
+    labelKey: "panels.ontologyModel.operations.deleteAttribute",
     kind: "action",
     binding: { kind: "PlatformOperation", id: DELETE_ATTRIBUTE },
     effect: "write",
@@ -359,6 +361,7 @@ export const ontologyModelServerOperations = [
   },
   {
     handlerRef: DELETE_RELATIONSHIP,
+    labelKey: "panels.ontologyModel.operations.deleteRelationship",
     kind: "action",
     binding: { kind: "PlatformOperation", id: DELETE_RELATIONSHIP },
     effect: "write",
@@ -389,6 +392,7 @@ export const ontologyModelServerOperations = [
   },
   {
     handlerRef: SET_PRIMARY_KEY,
+    labelKey: "panels.ontologyModel.operations.setPrimaryKey",
     kind: "action",
     binding: { kind: "PlatformOperation", id: SET_PRIMARY_KEY },
     effect: "write",

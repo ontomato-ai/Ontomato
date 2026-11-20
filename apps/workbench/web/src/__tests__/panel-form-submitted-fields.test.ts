@@ -40,7 +40,7 @@ const current = {
 };
 const projection = (
   id: string,
-  fields: Pick<Exclude<ProductProjection, { componentId: "@ontomato/sdk:MetricChart" }>, "componentId" | "inputs" | "data">,
+  fields: Pick<Exclude<ProductProjection, { componentId: "@ontomato/sdk:MetricChart" }>, "componentId" | "inputs" | "data" | "operations">,
   config: ProductProjection["config"] = {},
 ): ProductProjection => ({
   ...current, id, name: id, description: "", outputs: {}, config, ...fields,
@@ -69,6 +69,7 @@ const projections: Record<string, ProductProjection> = {
     data: {
       form: { source: { object: { input: "agent" } }, read: "form", params: formParams },
     },
+    operations: { save: { operation: { kind: "PlatformOperation", id: `${AGENT_DEFINITION}.save` }, target: { input: "agent" } } },
   }),
   "agent-skills": referencePicker("agent-skills", SKILL),
 };
@@ -99,7 +100,7 @@ function owner(request: Sent, held: PanelFormValues): Response | undefined {
 }
 
 async function open(draft?: PanelFormValues, shown: PanelFormValues = stored) {
-  const intents = humanIntents(() => ({ kind: "success", data: {} }));
+  const intents = humanIntents(() => ({ kind: "success", data: {} }), { source: "input", input: "agent" });
   const sent = installPlatform((request) => {
     if (draft && request.path === draftAt) return Response.json({ pageKey: use.pageKey, operation: "agent.update", target: { id: AGENT }, form: draft });
     return intents(request) ?? owner(request, shown) ?? nothingAt(request);

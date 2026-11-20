@@ -68,10 +68,10 @@ function instance(initial?: Record<string, unknown>) {
 }
 
 describe("a panel's projection", () => {
-  it("publishes the operation its record binds, with the handler the catalogue names", async () => {
-    expect(portsOf(records.get("projection-schedules-run")!).operations).toEqual([
-      { name: "runNow", label: "Run now", kind: "action", inputSchema: {}, handlerRef: "schedules.runNow" },
-    ]);
+  it("offers the owner's operation its record names, under the record's own name for it", async () => {
+    expect(records.get("projection-schedules-run")!.operations).toEqual({
+      runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } },
+    });
   });
 
   it("runs the selected task, not some other one, through the platform's coordinator", async () => {
@@ -89,7 +89,15 @@ describe("a panel's projection", () => {
       recordDraftCreated: async () => {},
       readProjection: async (id) => records.get(id)!,
     });
-    first.register({ slot: "run", projectionId: "projection-schedules-run", ports: portsOf(records.get("projection-schedules-run")!) });
+    first.register({
+      slot: "run", projectionId: "projection-schedules-run", ports: portsOf(records.get("projection-schedules-run")!),
+      // Run-now as its owner admits it for the chosen task.
+      operations: { runNow: {
+        kind: "action", handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" },
+        inputSchema: {}, resultSchema: {}, batch: false,
+      } },
+      takesDrafts: false,
+    });
     await first.invoke("run.runNow");
     expect(prepare).toHaveBeenCalledWith("run.runNow", { call: { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-1" }, input: {} } });
   });
@@ -234,7 +242,11 @@ describe("a panel's module", () => {
       t: (key: string) => key,
       resources: async () => {},
       expandPageComposer: async () => {},
-      readPanelData: async () => { throw new Error("This test reads no member data through the platform"); },
+      // A member's operations are read through the platform; its data, here, through this release's modules.
+      readPanelData: async (request) => {
+        if (request.operations) return { status: "ready", value: {} };
+        throw new Error("This test reads no member data through the platform");
+      },
     });
     app.mount(document.createElement("div"));
     await nextTick();

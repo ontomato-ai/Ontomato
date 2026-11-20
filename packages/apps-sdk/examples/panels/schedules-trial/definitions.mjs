@@ -8,7 +8,8 @@ import declarationQ from "./q/declaration.mjs";
  * themselves, and the two applications that use them.
  *
  * A projection is one SDK component with the data it shows, each item a read its owner registered (the scheduled task's
- * list, record, form and run-now description), and nothing about who draws it or where. X is the summary of one
+ * list, record and form), the owners' operations it offers (the task's save, run now), and nothing about who draws it or
+ * where. X is the summary of one
  * scheduled task; P and Q both use it, so changing its display changes both. The other projections are P's alone.
  */
 
@@ -54,6 +55,7 @@ export const projections = [
     {
       inputs: { task },
       data: { form: read({ object: { input: "task" } }, "form") },
+      operations: { save: { operation: { kind: "PlatformOperation", id: `${TASK}.save` }, target: { input: "task" } } },
     },
   ),
   // P's button: the platform's own operation to run a task now.
@@ -62,13 +64,18 @@ export const projections = [
     "Run now",
     "Runs the chosen scheduled task now, leaving its schedule as it is.",
     "OperationButton",
-    { inputs: { task }, data: { operation: read({ operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, "describe") } },
+    {
+      inputs: { task },
+      data: {},
+      operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
+      config: { operation: "runNow" },
+    },
   ),
 ];
 
 /**
- * The two panels. P is written without code — its layout (`p/panel.html`) and its declaration (`p/panel.json`) — and the
- * platform draws it itself; Q keeps its module and runs in a frame, as a panel written with code does.
+ * The two panels, each a Vue component (`panel.html`'s `#app` template and `panel.mjs`) with its declaration: P's in
+ * `p/panel.json`, Q's in `q/declaration.mjs`.
  */
 export const panels = [
   {
@@ -87,10 +94,14 @@ export const panels = [
   },
 ];
 
-/** A panel's text: its HTML, its module when it has code, and its recipes when the directory has them. */
+/** A panel's text: its HTML, its module, and its recipes when the directory has them. */
 export function panelContent(directory) {
-  const optional = (name, file) => existsSync(join(HERE, directory, file)) ? { [name]: text(join(directory, file)) } : {};
-  return { html: text(join(directory, "panel.html")), ...optional("module", "panel.mjs"), ...optional("recipes", "recipes.md") };
+  const recipes = join(directory, "recipes.md");
+  return {
+    html: text(join(directory, "panel.html")),
+    module: text(join(directory, "panel.mjs")),
+    ...(existsSync(join(HERE, recipes)) ? { recipes: text(recipes) } : {}),
+  };
 }
 
 /**

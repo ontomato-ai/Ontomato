@@ -40,6 +40,7 @@ const projections: Record<string, ProductProjection> = {
       form: { source: { object: { input: "agent" } }, read: "form", params: {} },
       createForm: { source, read: "createForm", params: {} },
     },
+    operations: { save: { operation: { kind: "PlatformOperation", id: `${AGENT_DEFINITION}.save` }, target: { input: "agent" } } },
   },
 };
 const manifest = definePanel({
@@ -63,7 +64,7 @@ async function open(state: Record<string, unknown>) {
       kind: "success", data: {},
       affected: { objects: [{ objectType: AGENT_DEFINITION, primaryKey: CREATED }], objectTypes: [AGENT_DEFINITION] },
     };
-  }, { source: "input", input: "agent" });
+  }, { source: "input", input: "agent" }, { creates: true });
   const sent = installPlatform((request: Sent) => {
     const projected = /^\/api\/product-projections\/(.+)$/.exec(request.path);
     if (projected) return Response.json({ projection: projections[projected[1]!] });

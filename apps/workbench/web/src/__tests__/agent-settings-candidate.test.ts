@@ -81,7 +81,15 @@ const save = (create: boolean) => create
   : { method: "PUT" as const, path: `/assistant/agent-definitions/${AGENT}`, bodySchema: {}, draftOperation: "agent.update" };
 const definition = (id: string, values: PanelFormValues) => ({ id, sortOrder: 0, ...values });
 
-type Read = { source: unknown; memberPath: [{ member: string }]; dataName: string; inputs: Record<string, unknown>; runtimeParams?: { values?: unknown } };
+type Read = {
+  source: unknown; memberPath: [{ member: string }]; dataName?: string; operations?: true; inputs: Record<string, unknown>; runtimeParams?: { values?: unknown };
+};
+/** What a member can do, as Node admits it for the member's inputs: the definition's save edits the shown agent, else creates. */
+function admitted({ memberPath: [{ member }], inputs }: Read): unknown {
+  if (member !== "definition") return {};
+  const target = inputs.agent ? { source: "input", input: "agent" } : { source: "draft", slot: "definition" };
+  return { save: { kind: "form.save", handlerRef: `${AGENT_DEFINITION}.save`, label: "Save", effect: "write", target, inputSchema: {}, resultSchema: {}, batch: false } };
+}
 const option = (primaryKey: string, value: unknown, label: string) => ({ primaryKey, value, label });
 /** Each picker's catalogue, as its owner lists it through Node's read entry. */
 const catalogues: Record<string, ReturnType<typeof option>[]> = {
@@ -113,7 +121,10 @@ function owners(request: Sent): Response {
     return new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } });
   const projected = /^\/api\/product-projections\/(.+)$/.exec(request.path);
   if (projected) return Response.json({ projection: projections[projected[1]!] });
-  if (request.path === "/api/product-panels/read") return Response.json({ status: "ready", value: memberData(request.body as Read) });
+  if (request.path === "/api/product-panels/read") {
+    const read = request.body as Read;
+    return Response.json({ status: "ready", value: read.operations ? admitted(read) : memberData(read) });
+  }
   return nothingAt(request);
 }
 
@@ -169,7 +180,8 @@ it("lists the agents in its own words and creates nothing until asked", { timeou
     expect(document.querySelector(".panel-host-coded .agent-settings-empty")?.textContent).toBe("Choose an agent, or create a new one.");
     expect(document.querySelector(".panel-host-coded .sdk-section-group-title")?.textContent).toBe("Agents");
     expect(fieldItem("/name")).toBeNull();
-    expect(reads(sent).some(read => read.memberPath[0].member === "definition")).toBe(false);
+    // The definition's operations are known from the start; its form is not read until asked for.
+    expect(reads(sent).some(read => read.memberPath[0].member === "definition" && read.dataName)).toBe(false);
   } finally {
     app.unmount();
   }
@@ -223,7 +235,7 @@ it("opens a new agent with the owner's defaults, and its create is the owner's t
   const { app, sent } = await preview({ mode: "create" });
   try {
     await vi.waitFor(() => expect(fieldItem("/name")?.querySelector("input")).toBeTruthy(), { timeout: 5000 });
-    expect(reads(sent).find(read => read.memberPath[0].member === "definition")?.dataName).toBe("createForm");
+    expect(reads(sent).find(read => read.memberPath[0].member === "definition" && read.dataName)?.dataName).toBe("createForm");
     expect([...document.querySelectorAll(".panel-host-coded .sdk-section-group-title")].map(title => title.textContent)).toContain("New agent");
     expect(fieldItem("/enabled")?.querySelector(".el-switch")?.classList.contains("is-checked")).toBe(true);
     expect(document.querySelector(".panel-host-coded .sdk-object-summary")).toBeNull();

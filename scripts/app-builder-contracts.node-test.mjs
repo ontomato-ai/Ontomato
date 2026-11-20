@@ -129,7 +129,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
           form: { source: "object", parameterMode: "fixed", params: {}, result: "panelFormDescription" },
           createForm: { source: "type", parameterMode: "fixed", params: {}, result: "panelFormDescription" },
         },
-        operations: [{ id: "platform:AgentDefinition.save", effect: "write", target: { source: "draft" }, inputSchema: {}, batch: false }],
+        operations: [{ id: "platform:AgentDefinition.save", kind: "form.save", effect: "write", target: { source: "draft" }, inputSchema: {}, batch: false }],
       },
       "platform:ReviewQueue": {
         reads: {
@@ -137,13 +137,23 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
           counts: { source: "type", parameterMode: "fixed", params: { by: "countField", search: "keyword" }, result: "panelGroupCounts" },
           record: { source: "object", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecord" },
         },
-        operations: [{ id: "reviews.approve", effect: "write", target: { source: "input", input: "review" }, inputSchema: {}, batch: true }],
+        operations: [{ id: "reviews.approve", kind: "action", effect: "write", target: { source: "input", input: "review" }, inputSchema: {}, batch: true }],
       },
     },
   };
+  const datum = (...results) => ({ results, required: false });
+  const catalogue = { version: sdkVersion, components: [
+    { componentId: "ObjectList", data: { rows: datum("panelRecordList", "panelRecordQuery") } },
+    { componentId: "ObjectSummary", data: { record: datum("panelRecord") } },
+    { componentId: "ObjectForm", data: { form: datum("panelFormDescription"), createForm: datum("panelFormDescription") } },
+    { componentId: "SegmentedControl", data: { counts: datum("panelGroupCounts") } },
+    { componentId: "OperationButton", data: {} },
+    { componentId: "Data", data: { "*": datum("panelRecordList") } },
+  ] };
   const checkModule = `
     const ok = data => ({ success: true, data });
     const invalid = issues => ({ success: false, error: { issues } });
+    const parse = value => value;
     export const registerProductPanelRequestSchema = {
       safeParse: value => "sdkVersion" in value
         ? invalid([{ path: ["sdkVersion"], message: "The current SDK refuses sdkVersion" }])
@@ -158,11 +168,16 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
         ],
       }]),
     };
-    const parse = value => {
-      if ("sdkVersion" in value) throw new Error("The current SDK refuses sdkVersion");
-      return value;
-    };
     export const platformTypeTableResponseSchema = { parse };
+    export const appsSdkComponentDatum = (data, name) => data[name] ?? data["*"];
+    export const directReadDeclaration = (_projection, read) => ({ result: {
+      list: "panelRecordList", query: "panelRecordQuery", record: "panelRecord", counts: "panelGroupCounts",
+      form: "panelFormDescription", createForm: "panelFormDescription",
+    }[read.read] });
+    export const panelOperationTargetPort = (port, type, batch) =>
+      port?.objectType === type || (batch && port?.kind === "list" && port.items.objectType === type) ? port : undefined;
+    export const projectionOperationTargetMatches = (projection, binding, declaration, type) =>
+      Boolean(panelOperationTargetPort(projection.inputs[binding.target?.input], type, declaration.batch));
     export const panelReadParameterSchemas = {
       reviewStatus: { safeParse: value => ({ success: value === "all" }) },
       countField: { safeParse: value => ({ success: value === "status" }) },
@@ -170,9 +185,9 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     export const panelDefinitionContentSchema = {
       parse,
       safeParse(value) {
-        return value.content.html === "<bad>"
-          ? { success: false, error: { issues: [{ path: ["content", "html"], params: { line: 1, column: 2 }, message: "Rejected by the release parser" }] } }
-          : { success: true, data: value };
+        return typeof value.content.module === "string"
+          ? ok(value)
+          : invalid([{ path: ["content", "module"], message: "Required" }]);
       }
     };
   `;
@@ -191,8 +206,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     response.setHeader("content-type", "application/json");
     if (request.url === "/api/apps-sdk/current") response.end(JSON.stringify(release));
     else if (request.url === "/api/app-builder/type-table") response.end(JSON.stringify(typeTable));
-    else if (request.url === `${sdkPath}/components.json`) response.end(JSON.stringify({ version: sdkVersion, components:
-      ["ObjectList", "ObjectSummary", "ObjectForm", "SegmentedControl", "OperationButton"].map(componentId => ({ componentId })) }));
+    else if (request.url === `${sdkPath}/components.json`) response.end(JSON.stringify(catalogue));
     else if (request.url === `${sdkPath}/node/panel-check.mjs`) response.end(checkModule);
     else if (request.url === projectionPath) response.end(JSON.stringify({ projection: { componentId: "@ontomato/sdk:ObjectList" } }));
     else if (request.url === "/api/product-projections/unwritten") {
@@ -266,21 +280,25 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     const manifest = { members: { tasks: { target: { projectionId: "tasks" } } }, state: {}, events: {} };
     await writeFile(join(directory, "panel.json"), JSON.stringify({ manifest }));
     const layout = join(directory, "panel.html");
-    await writeFile(layout, '<panel-member ref="tasks"></panel-member>');
+    const tasksTemplate = '<div id="app"><projection slot="tasks"></projection></div>';
+    await writeFile(layout, tasksTemplate);
+    const moduleFile = join(directory, "panel.mjs");
+    await writeFile(moduleFile, panel.content.module);
     const checked = await run("panel", "check", directory);
     assert.deepEqual(JSON.parse(checked.stdout), { status: "valid", version: sdkVersion, digest: release.digest, unchecked: [] });
     assert.deepEqual(new Map(requests.splice(0).map(([method, url]) => [url, method])), new Map([
       ["/api/apps-sdk/current", "GET"], [`${sdkPath}/node/panel-check.mjs`, "GET"],
       [`${sdkPath}/components.json`, "GET"], ["/api/app-builder/type-table", "GET"], [projectionPath, "GET"],
     ]));
-    await writeFile(layout, "<bad>");
-    await assert.rejects(run("panel", "check", directory), error => error.stderr.includes(`${layout}:1:2: Rejected by the release parser`));
+    await rm(moduleFile);
+    await assert.rejects(run("panel", "check", directory), error => error.stderr.includes("panel.json:content.module: Required"));
+    await writeFile(moduleFile, panel.content.module);
     assert.equal(requests.some(([method, url]) => method !== "GET" || url === projectionPath), false);
     requests.length = 0;
     const draft = join(directory, "manager");
     const scaffold = await run("panel", "scaffold", "platform:AgentDefinition", draft, "--id", "example-agent-management", "--operation", "platform:AgentDefinition.save");
     assert.equal(JSON.parse(scaffold.stdout).entry, "/applications/example-agent-management/manage");
-    for (const name of ["panel.html", "panel.json", "registration.json"]) {
+    for (const name of ["panel.html", "panel.mjs", "panel.json", "registration.json"]) {
       const sample = await readFile(join("agent-skills/ontomato-app-builder/examples/agent-management", name), "utf8");
       assert.equal(await readFile(join(draft, name), "utf8"), sample);
     }
@@ -295,15 +313,23 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.deepEqual(queries.rows.params, {});
     assert.deepEqual(queries.record.params, {});
     assert.deepEqual(queries.counts.params, { by: { literal: "status" } });
-    assert.deepEqual(reviewManifest.members.list.outputs.search, { state: "search" });
-    assert.deepEqual(reviewManifest.members.list.inputs, { status: { state: "status" } });
-    assert.deepEqual(reviewManifest.members.tabs.outputs.value, { state: "status" });
+    assert.deepEqual(reviewManifest.members.list.inputs, {
+      selected: { state: "selected" }, checked: { state: "checked" }, search: { state: "search" }, status: { state: "status" },
+    });
+    assert.deepEqual(reviewManifest.members.tabs.inputs.value, { state: "status" });
     assert.deepEqual(reviewManifest.members.detail.inputs.search, { state: "search" });
-    assert.deepEqual(reviewManifest.members.list.outputs.checked, { state: "checked" });
     assert.deepEqual(reviewManifest.members.action1.inputs, { review: { state: "selected" } });
     assert.deepEqual(reviewManifest.members.batch2.inputs, { review: { state: "checked" } });
+    const reviewButton = reviewProjections.find(({ id }) => id.endsWith("-batch2")).input;
+    assert.deepEqual(reviewButton.config, { operation: "approve" });
+    assert.deepEqual(reviewButton.operations, { approve: {
+      operation: { kind: "PlatformOperation", id: "reviews.approve" }, target: { input: "review" },
+    } });
+    assert.deepEqual(reviewButton.data, {});
     const reviewLayout = await readFile(join(review, "panel.html"), "utf8");
-    assert(reviewLayout.indexOf('ref="batch2"') < reviewLayout.indexOf('ref="list"'));
+    assert(reviewLayout.indexOf('slot="batch2"') < reviewLayout.indexOf('slot="list"'));
+    const reviewSources = JSON.parse(await readFile(join(review, "registration.json"), "utf8")).panels[0].input.content;
+    assert.deepEqual(reviewSources, { html: reviewLayout, module: await readFile(join(review, "panel.mjs"), "utf8") });
     const reviewMaterial = join(review, "registration.json");
     await run("panel", "check", review, "--material", reviewMaterial);
     const reviewPanel = join(review, "panel.json");
@@ -311,15 +337,20 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     incorrectPanel.manifest.members.batch2.inputs = { entry: { state: "checked" } };
     await writeFile(reviewPanel, JSON.stringify(incorrectPanel));
     await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
-      error.stderr.includes("member batch2 (projection review-queue-manager-batch2): bind operation reviews.approve's target input review"));
+      error.stderr.includes("member batch2 (projection review-queue-manager-batch2): bind operation approve (reviews.approve)'s target input review"));
     await writeFile(reviewPanel, JSON.stringify({ manifest: reviewManifest }));
     const incorrect = JSON.parse(await readFile(reviewMaterial, "utf8"));
     const batch = incorrect.projections.find(({ id }) => id.endsWith("-batch2"));
     delete batch.input.inputs.review;
     await writeFile(reviewMaterial, JSON.stringify(incorrect));
     await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
-      error.stderr.includes(`projection ${batch.id}: operation reviews.approve requires the owner target input review`));
-    await writeFile(layout, '<panel-member ref="tasks"></panel-member>');
+      error.stderr.includes(`projection ${batch.id}: operation approve (reviews.approve) has an invalid target input review`));
+    batch.input.operations.approve.operation.id = "reviews.undeclared";
+    await writeFile(reviewMaterial, JSON.stringify(incorrect));
+    await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
+      error.stderr.includes(`projection ${batch.id}: operation approve (reviews.undeclared) is not declared in the type table`));
+    requests.length = 0;
+    await writeFile(layout, tasksTemplate);
     const reference = async id => {
       manifest.members.tasks.target.projectionId = id;
       await writeFile(join(directory, "panel.json"), JSON.stringify({ manifest }));
@@ -345,7 +376,9 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await assert.rejects(run("panel", "check", directory), error =>
       error.stderr.includes("projection draft-list: data: required field is missing") && !error.stderr.includes("Expected chart"));
 
-    const authorProjection = { componentId: "@ontomato/sdk:ObjectList", data: {} };
+    const authorProjection = { componentId: "@ontomato/sdk:Data", data: { agents: {
+      source: { type: { kind: "PlatformObjectType", id: "platform:AgentDefinition" } }, read: "list", params: {},
+    } } };
     manifest.members.tasks.target = { projection: authorProjection };
     const descriptor = join(directory, "panel.json");
     await writeFile(descriptor, JSON.stringify({ manifest }));
@@ -355,6 +388,16 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await run("panel", "check", directory);
     assert.equal(requests.splice(0).some(([method, url]) => method !== "GET" || url.includes("/product-")), false);
     assert.equal(await readFile(descriptor, "utf8"), JSON.stringify({ manifest }));
+
+    const originalRead = authorProjection.data.agents;
+    authorProjection.data.agents = {
+      source: { type: { kind: "PlatformObjectType", id: "platform:ReviewQueue" } }, read: "query", params: {},
+    };
+    await writeFile(descriptor, JSON.stringify({ manifest }));
+    await assert.rejects(run("panel", "check", directory), error =>
+      error.stderr.includes("data.agents returns 'panelRecordQuery'") && error.stderr.includes("accepts panelRecordList"));
+    authorProjection.data.agents = originalRead;
+    await writeFile(descriptor, JSON.stringify({ manifest }));
 
     rejectInlinePanel = true;
     await assert.rejects(run("panel", "register", directory), error => error.stderr.includes("panel inline-panel: PUT"));
@@ -380,7 +423,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     inlineRecords.set(inlineProjectionPath, { ...inlineRecords.get(inlineProjectionPath), name: "Renamed", revision: 4 });
     savedSource.manifest.members = { renamedTasks: savedSource.manifest.members.tasks };
     await writeFile(descriptor, JSON.stringify(savedSource));
-    await writeFile(layout, '<panel-member ref="renamedTasks"></panel-member>');
+    await writeFile(layout, '<div id="app"><projection slot="renamedTasks"></projection></div>');
     await writeFile(registration, JSON.stringify({ panels: [{ ...item, mode: "update", revision: 1 }] }));
     await run("panel", "register", directory);
     assert.deepEqual(requests.splice(0).filter(([method]) => method === "PUT").map(([, url, body]) => [url, body.revision]), [

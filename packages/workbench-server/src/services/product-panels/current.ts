@@ -60,7 +60,7 @@ export const readCurrentPanelRecord = readCurrentPanel;
 
 export async function requireDirectPanelMember(owner: ProductOwner, credentials: AssistantCredentials, panel: Pick<ProductPanel, "manifest">, key: string) {
   if (!Object.hasOwn(panel.manifest.members, key))
-    throw new HttpError(403, "Panel member is not available", "FORBIDDEN");
+    throw new HttpError(403, `Panel does not declare member '${key}'`, "FORBIDDEN");
   const member = panel.manifest.members[key];
   if (!("projectionId" in member.target))
     throw new HttpError(422, "The member does not reference a fixed projection", "PANEL_MEMBER_TARGET_UNSUPPORTED");

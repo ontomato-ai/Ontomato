@@ -97,12 +97,19 @@ function mounted(save: (input: PanelFormSaveInput) => Promise<PanelOperationOutc
   const form = vi.fn(async (_primaryKey: string) => typed("autotest", { operation: "autotest", caseSetId: "cases-1" }));
   const changed = vi.fn(async (values: Record<string, string>) =>
     typed(values.operation!, values.operation === "inspection" ? { operation: "inspection", instruction: values.instruction ?? "" } : values));
-  const unregister = instance.register({ slot: "form", projectionId: projection.id, ports: portsOf(projection) });
+  // The owner's save of the chosen task, as it admits it.
+  const operations = computed(() => ({ status: "ready" as const, value: { save: {
+    kind: "form.save" as const, handlerRef: `${SCHEDULED_TASK}.save`, label: "Save", effect: "write" as const,
+    target: { source: "input" as const, input: "task" }, inputSchema: {}, resultSchema: {}, batch: false,
+  } } }));
+  const unregister = instance.register({
+    slot: "form", projectionId: projection.id, ports: portsOf(projection), operations: operations.value.value, takesDrafts: true,
+  });
 
   const inputs = computed(() => ({ task }));
   const slot: ProjectionSlot = { slot: "form", projection, inputs: inputs.value };
   const member: PanelMemberContext = {
-    key: "form", projection, inputs,
+    key: "form", projection, inputs, operations,
     data: {
       use() { throw new Error("The form reads its description on demand"); },
       async read(_name, { values, changedField }, { task } = {}) {

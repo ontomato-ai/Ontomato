@@ -1,6 +1,6 @@
 import { computed, onScopeDispose, shallowRef, watch } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import { panelOperationId, type PanelFormTarget } from "@ontomato/contracts/panel-manifest";
+import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { directReadDeclaration, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
@@ -16,8 +16,7 @@ import { stateObject, type PanelFieldValue } from "./state";
  * the same member data as in the platform's document, read here through this release's resource modules for the
  * projection's type — rows by its list, a record by its single read, a form by its form (a create form for the type),
  * choices by its options, the ontology graph by its graph reads, a registered chart's drawing and output by its source
- * card's metric reads — and an operation's description from the coordinator, until every caller reads through the
- * platform (design 4.2, step 4). A datum waits, unread, for its object or a parameter its owner requires. A module that
+ * card's metric reads — until every caller reads through the platform (design 4.2, step 4). A datum waits, unread, for its object or a parameter its owner requires. A module that
  * cannot answer rejects; a shown datum says why.
  */
 
@@ -77,9 +76,6 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
         break;
       case "panelFormDescription":
         value = await formOf(data, object, params);
-        break;
-      case "panelOperationDescriptor":
-        value = await instance.describeOperation(panelOperationId(slot, (data.source as { operation: { id: string } }).operation.id.split(".").pop()!));
         break;
       case "panelOptionList": {
         const options = adapterPart(type!, "options");

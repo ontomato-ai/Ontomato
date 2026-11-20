@@ -1,3 +1,4 @@
+import { appsSdkComponentDatum } from "@ontomato/contracts/apps-sdk";
 import {
   matchesDirectPanelValue, matchesObjectType, panelPlacementSchema, panelPortAccepts, type DirectPanelPortType, type PanelManifest,
   type PanelPlacement,
@@ -205,7 +206,7 @@ async function incompatiblePort(
     for (const { name, datum, declaration } of reads) {
       if (!missingRequiredReadParameters(declaration, datum.params, undefined, wiring).length) continue;
       const { components } = await readCatalogue();
-      const runtimeParams = components.get(definition.componentId)?.data?.[name]?.runtimeParams;
+      const runtimeParams = appsSdkComponentDatum(components.get(definition.componentId)?.data, name)?.runtimeParams;
       const [missing] = missingRequiredReadParameters(declaration, datum.params, runtimeParams, wiring);
       if (missing !== undefined) return `data '${name}' requires parameter '${missing}'`;
     }
@@ -226,8 +227,13 @@ export async function validateCurrentProductReferences(
   let catalogue: ReturnType<typeof readPanelComponentCatalogue> | undefined;
   const readCatalogue = () => catalogue ??= readPanelComponentCatalogue();
   let checkOperationTarget: ReturnType<typeof panelOperationTargetCheck> | undefined;
+  if ("componentId" in input && input.operations) {
+    checkOperationTarget = (await import("./type-table")).panelOperationTargetCheck(owner, credentials);
+    const issue = await checkOperationTarget(input);
+    if (issue) throw new HttpError(400, `Projection '${id}': ${issue}`, "PANEL_OPERATION_TARGET_MISMATCH");
+  }
   const checkMember = async (manifest: PanelManifest, reference: Reference, definition: ProductPanelInput | ProductProjectionInput) => {
-    if ("componentId" in definition && definition.componentId === "@ontomato/sdk:OperationButton") {
+    if ("componentId" in definition && definition.operations) {
       checkOperationTarget ??= (await import("./type-table")).panelOperationTargetCheck(owner, credentials);
       const issue = await checkOperationTarget(definition, reference.wiring);
       if (issue) return issue;

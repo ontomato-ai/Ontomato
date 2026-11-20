@@ -17,7 +17,7 @@ const current = {
   visibility: "domain" as const,
 };
 
-type ProjectionFields = Pick<ProductProjection, "id" | "componentId" | "data"> & Partial<Pick<ProductProjection, "inputs" | "conversationEntry">>
+type ProjectionFields = Pick<ProductProjection, "id" | "componentId" | "data"> & Partial<Pick<ProductProjection, "inputs" | "conversationEntry" | "operations" | "config">>
   & { metricId?: string };
 
 /** A projection's current record as Node answers it; a chart's also names its source card and metric. */

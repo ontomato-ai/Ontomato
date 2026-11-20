@@ -20,14 +20,17 @@ export function managementPanel(type, checks, typeTable, {
   if (list?.source !== "type" || list.parameterMode !== "fixed" || !["panelRecordList", "panelRecordQuery"].includes(list.result)) {
     throw new Error(`${type} has no declared management list read`);
   }
-  const save = `${type}.save`;
   const registered = new Map((owner.operations ?? []).map(operation => [operation.id, operation]));
+  const formSaves = [...registered.values()].filter(operation => operation.kind === "form.save");
+  const requestedSaves = formSaves.filter(operation => operations.includes(operation.id));
+  if (requestedSaves.length > 1) throw new Error(`${type}: select one form save operation`);
+  const save = requestedSaves[0] ?? (formSaves.length === 1 ? formSaves[0] : undefined);
   const buttons = [];
   for (const [ids, batch] of [[new Set(operations), false], [new Set(batches), true]]) {
     for (const operationId of ids) {
       const operation = registered.get(operationId);
       if (!operation) throw new Error(`${type} does not declare operation ${operationId}`);
-      if (operationId === save && !batch) continue;
+      if (operation.kind === "form.save" && !batch) continue;
       if (operation.effect !== "write" || operation.target.source !== "input" || operation.inputSchema.required?.length) {
         throw new Error(`${operationId} requires an authored form or operation inputs`);
       }
@@ -39,19 +42,19 @@ export function managementPanel(type, checks, typeTable, {
   const title = type.split(":").at(-1).replace(/([a-z0-9])([A-Z])/gu, "$1 $2");
   const object = { kind: "object", objectType: type };
   const platformType = type.startsWith("platform:");
+  const operationKind = platformType ? "PlatformOperation" : "Action";
   const typeSource = { type: { kind: platformType ? "PlatformObjectType" : "ObjectType", id: type } };
   const selectedSource = { object: inputRef("item") };
   const state = { selected: { type: object, deepLink: true } };
   const members = {};
-  const events = {};
   const projections = [];
-  function place(key, component, { inputs = {}, outputs = {}, config = {}, data = {} }, bindings = {}) {
+  function place(key, component, { inputs = {}, outputs = {}, config = {}, data = {}, operations }, bindings = {}) {
     const projectionId = `${id}-${key}`;
     projections.push({
       id: projectionId,
       mode: "create",
       input: { name: `${title} ${key}`, description: "", visibility: "domain",
-        componentId: `@ontomato/sdk:${component}`, inputs, outputs, config, data },
+        componentId: `@ontomato/sdk:${component}`, inputs, outputs, config, data, ...(operations && { operations }) },
     });
     members[key] = { target: { projectionId }, ...bindings };
   }
@@ -61,38 +64,38 @@ export function managementPanel(type, checks, typeTable, {
   const tabs = Object.hasOwn(list.params, "status") && counts?.result === "panelGroupCounts" &&
     counts.parameterMode === "fixed" && Object.hasOwn(counts.params, "by") &&
     checks.panelReadParameterSchemas[counts.params.by].safeParse("status").success;
-  const listInputs = {};
+  const listInputs = { selected: object };
   const listOutputs = { selected: object };
-  const outputs = { selected: stateRef("selected") };
+  const listBindings = { selected: stateRef("selected") };
   const selection = { kind: "list", items: object };
   if (buttons.some(({ batch }) => batch)) {
     state.checked = { type: selection, default: [] };
+    listInputs.checked = selection;
     listOutputs.checked = selection;
-    outputs.checked = stateRef("checked");
+    listBindings.checked = stateRef("checked");
   }
   if (search) {
     state.search = { type: text, deepLink: true };
     listInputs.search = text;
-    listOutputs.search = text;
-    outputs.search = stateRef("search");
+    listBindings.search = stateRef("search");
   }
   if (tabs) {
     const status = checks.panelReadParameterSchemas[list.params.status];
     state.status = { type: text, deepLink: true, ...(status.safeParse("all").success && { default: "all" }) };
     listInputs.status = text;
+    listBindings.status = stateRef("status");
     const shareSearch = search && Object.hasOwn(counts.params, "search");
     place("tabs", "SegmentedControl", {
-      inputs: shareSearch ? { search: text } : {},
+      inputs: { value: text, ...(shareSearch && { search: text }) },
       outputs: { value: text },
       data: { counts: namedRead(typeSource, "counts", { by: literal("status") }) },
     }, {
-      outputs: { value: stateRef("status") },
-      ...(shareSearch && { inputs: { search: stateRef("search") } }),
+      inputs: { value: stateRef("status"), ...(shareSearch && { search: stateRef("search") }) },
     });
   }
   place("list", "ObjectList", {
     inputs: listInputs, outputs: listOutputs, data: { rows: namedRead(typeSource, listRead) },
-  }, { outputs, ...(tabs && { inputs: { status: stateRef("status") } }) });
+  }, { inputs: listBindings });
 
   if (reads.record?.result === "panelRecord") {
     const shareSearch = search && reads.record.parameterMode === "fixed" && Object.hasOwn(reads.record.params, "search");
@@ -101,42 +104,79 @@ export function managementPanel(type, checks, typeTable, {
       data: { record: namedRead(selectedSource, "record") },
     }, { inputs: { item: stateRef("selected"), ...(shareSearch && { search: stateRef("search") }) } });
   }
-  const edit = registered.get(save)?.effect === "write" && reads.form?.result === "panelFormDescription";
+  const edit = save?.effect === "write" && reads.form?.result === "panelFormDescription";
   const create = edit && reads.createForm?.result === "panelFormDescription";
-  if (operations.includes(save) && !edit) throw new Error(`${save} has no declared form read`);
+  if (requestedSaves.length && !edit) throw new Error(`${save.id} has no declared form read`);
   if (edit) {
     place("form", "ObjectForm", {
       inputs: { item: object },
       data: { form: namedRead(selectedSource, "form"), ...(create && { createForm: namedRead(typeSource, "createForm") }) },
+      operations: { save: { operation: { kind: operationKind, id: save.id }, target: inputRef("item") } },
     }, { inputs: { item: stateRef("selected") } });
   }
-  if (create) {
-    state.newAction = { type: text };
-    place("newRecord", "SegmentedControl", {
-      outputs: { value: text }, config: { options: [{ value: "new", label: "New" }] },
-    }, { outputs: { value: stateRef("newAction") } });
-    events.newRecord = {
-      on: { member: "newRecord", output: "value" },
-      do: { set: { fields: { selected: literal(null), newAction: literal(null) } } },
-    };
-  }
-
   const buttonKeys = buttons.map(({ operation, batch }, index) => {
     const key = `${batch ? "batch" : "action"}${index + 1}`;
     const input = operation.target.input;
-    const source = { operation: { kind: platformType ? "PlatformOperation" : "Action", id: operation.id } };
-    const params = platformType ? {} : { target: inputRef(input) };
+    const name = operation.id.split(".").at(-1);
     place(key, "OperationButton", {
       inputs: { [input]: batch ? selection : object },
-      data: { operation: namedRead(source, "describe", params) },
+      operations: { [name]: { operation: { kind: operationKind, id: operation.id }, target: inputRef(input) } },
+      config: { operation: name },
     }, { inputs: { [input]: stateRef(batch ? "checked" : "selected") } });
     return key;
   });
-  const member = ref => `  <panel-member ref="${ref}"></panel-member>`;
-  const keys = ["newRecord", "tabs", ...buttonKeys, "list", "detail", "form"];
-  const html = ['<section flow="column" gap="medium">', ...keys.filter(key => key in members).map(member), "</section>", ""].join("\n");
-  const manifest = { state, members, events };
-  const definition = { manifest, content: { html } };
+  const member = (key, attrs = "") => `<projection slot="${key}"${attrs}></projection>`;
+  const controls = [...(create ? ['<button type="button" @click="newRecord">New</button>'] : []),
+    ...(tabs ? [member("tabs")] : []), ...buttonKeys.map(key => member(key))];
+  const details = [
+    ...(members.detail ? [member("detail", ' v-if="selected"')] : []),
+    ...(edit ? [member("form", create ? ' v-if="selected || creating"' : ' v-if="selected"')] : []),
+  ];
+  const html = [
+    "<style>",
+    "  .management { display: grid; gap: 1rem; }",
+    "  .management-toolbar { display: flex; flex-wrap: wrap; gap: .75rem; }",
+    "  .management-body { display: grid; gap: 1rem; }",
+    "  .management-columns { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }",
+    "  .management-detail { display: grid; gap: 1rem; align-content: start; }",
+    "  @media (max-width: 36rem) { .management-columns { grid-template-columns: minmax(0, 1fr); } }",
+    "</style>",
+    '<div id="app">',
+    '  <section class="management">',
+    ...(controls.length ? ['    <div class="management-toolbar">', ...controls.map(control => `      ${control}`), "    </div>"] : []),
+    `    <div class="management-body${details.length ? " management-columns" : ""}">`,
+    `      ${member("list", create ? ' @update:selected="stopCreating"' : "")}`,
+    ...(details.length ? ['      <div class="management-detail">', ...details.map(detail => `        ${detail}`), "      </div>"] : []),
+    "    </div>",
+    "  </section>",
+    "</div>",
+    "",
+  ].join("\n");
+  const module = details.length ? [
+    `import { computed${create ? ", ref" : ""} } from "vue";`,
+    'import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";',
+    "",
+    "await mountPanel({",
+    "  setup() {",
+    "    const { instance } = usePanelContext();",
+    "    const selected = computed(() => instance.state.values.value.selected);",
+    ...(create ? [
+      "    const creating = ref(false);",
+      "    function newRecord() {",
+      "      creating.value = true;",
+      '      instance.state.set("selected", null);',
+      "    }",
+      "    function stopCreating() {",
+      "      creating.value = false;",
+      "    }",
+      "    return { selected, creating, newRecord, stopCreating };",
+    ] : ["    return { selected };"]),
+    "  },",
+    "});",
+    "",
+  ].join("\n") : 'import { mountPanel } from "@ontomato/sdk/panel";\n\nawait mountPanel({});\n';
+  const manifest = { state, members, events: {} };
+  const definition = { manifest, content: { html, module } };
   checks.panelDefinitionContentSchema.parse(definition);
   const entry = `/applications/${id}`;
   const material = {
@@ -152,14 +192,15 @@ export function managementPanel(type, checks, typeTable, {
     }],
   };
   panelRegistrationRecords(material, checks);
-  return { html, manifest, material };
+  return { html, module, manifest, material };
 }
 
-export async function writeManagementPanel(directory, { html, manifest, material }) {
+export async function writeManagementPanel(directory, { html, module, manifest, material }) {
   await mkdir(directory);
   const json = value => JSON.stringify(value, null, 2) + "\n";
   await Promise.all([
     writeFile(join(directory, "panel.html"), html),
+    writeFile(join(directory, "panel.mjs"), module),
     writeFile(join(directory, "panel.json"), json({ manifest })),
     writeFile(join(directory, "registration.json"), json(material)),
   ]);

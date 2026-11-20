@@ -18,7 +18,7 @@ release there: every page and panel runs on the release of the platform that sho
 | `docs/index.md` | This guide |
 | `docs/reference.md` | The API of every `@ontomato/sdk` module, generated from their sources |
 | `components.json`, `docs/components.md` | Base components and their ports for this exact SDK |
-| `node/panel-check.mjs` | The platform's own parsers and declarations of panel sources, as one Node module: a check of a panel's layout, declaration and projections before it is registered runs these |
+| `node/panel-check.mjs` | The platform's own declarations of panel sources, as one Node module: a check of a panel's declaration and projections before it is registered runs these |
 | `docs/element-plus.web-types.json` | Element Plus's own metadata for every component of the bundled version: attributes, events, slots |
 | `examples/basic.html` | Platform context, Element Plus, a chart in the platform's theme, a Markdown text, a CSV text in the code editor previewed as a table, and an HTML document in a sandboxed frame |
 | `examples/metric-action.html` | A published MetricView in a table and a chart, or its result as read-only JSON, the selected row as page context, then an Action through its form and a fresh read through the template ref of `<metric-view-data>` |
@@ -50,35 +50,89 @@ scripts, styles or fonts from the internet, because many installations have no i
 
 ## Compose a panel
 
+A panel is page code — a Vue template, its style and its script — and a declaration of the projections it uses and the
+state it makes public. The platform runs the panel's code in its own page.
+
 Choose official components and ports from [the catalogue](components.md). A projection names an owner read, its
-source and parameters, and the component which renders the result. Map the member's inputs and outputs to the
+source and parameters, and the component which renders the result. Map each member's inputs and outputs to the
 panel's typed state. Mark state intended for the address with `deepLink`. Keep business rules in the owning capability.
 
 | Workspace file | Content |
 | --- | --- |
-| `panel.html` | Declarative layout with `<panel-member ref="…">` references to manifest members |
-| `panel.json` | `{manifest, content?}`. Use `manifest.members` for the placements and `content.messages` for optional translations |
+| `panel.html` | The page: the Vue template inside `#app`, placing members with `<projection slot="…">`, and an optional `<style>` that applies inside this panel only |
+| `panel.mjs` | The page's script: its component, mounted with `mountPanel` |
+| `panel.json` | `{manifest, content?}`. Use `manifest.members` for the members and `content.messages` for optional translations |
 | `recipes.md` | Optional task guidance |
 
-A layout can place a declared member by name.
-
 ```html
-<section flow="column">
-  <panel-member ref="details"></panel-member>
-</section>
+<div id="app" class="tasks">
+  <h2>{{ t("tasks.title") }}</h2>
+  <projection slot="list"></projection>
+  <projection v-if="selected" slot="details"></projection>
+</div>
+<style>
+  .tasks { display: grid; gap: 16px; }
+</style>
 ```
 
-Declare `details` in `manifest.members` with the actual `target.projectionId`. Give typed inputs for the declared
-owner read, such as the state that selects an object. Use the deployed component catalogue to check which fields
-and operations the component exposes. For translations, use locale tags, flat message keys and named placeholders
-such as `{name}` in `content.messages`.
+```js
+import { computed } from "vue";
+import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
 
-Run the App Builder skill's `ontomato panel check` on the workspace directory. It uses the current release's layout
-parser and declarations. Register the requested projections, panel and application uses through their owners, then open
-the application's declared entry.
+await mountPanel({
+  setup() {
+    const { instance } = usePanelContext();
+    return { selected: computed(() => instance.state.values.value.selectedTask) };
+  },
+});
+```
 
-A maintained panel with a module may continue to use the host's published module API. It shares the current SDK and the
-same manifest members. Existing code can reference a member with the public `<projection slot="…">` attribute.
+Declare `list` and `details` in `manifest.members` with the actual `target.projectionId`, and give typed inputs for the
+declared owner read, such as the state that selects an object. The panel's own code reads and sets public state with
+`instance.state`, and runs a member's operations with `instance.invoke(id, input?)`. Use the deployed component
+catalogue to check which fields the component exposes. For translations, use locale tags, flat message keys and named
+placeholders such as `{name}` in `content.messages`; the template reads them with `t(…)`.
+
+### Draw a part yourself
+
+When no official component draws a part the way the page needs, the panel draws it itself. Declare a member whose
+projection uses `@ontomato/sdk:PanelData`: it draws nothing and takes any data the projection names, under names of
+your choosing. Read each datum in the page's code with `usePanelData(member, name)`:
+
+```js
+import { computed, ref } from "vue";
+import { mountPanel, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
+
+await mountPanel({
+  setup() {
+    const { instance } = usePanelContext();
+    const cursor = ref(null);
+    // The member's `rows` datum (an owner's query), with the cursor and page size as the page's own run-time values.
+    const rows = usePanelData("board", "rows", () => ({ cursor: cursor.value, size: 20 }));
+    const items = computed(() => (rows.value.status === "ready" ? rows.value.value.rows : []));
+    const next = () => { cursor.value = rows.value.value?.nextCursor ?? null; };
+    // The operation acts on the object the member's target input is bound to in the panel's state.
+    const approve = () => instance.invoke("board.approve");
+    return { rows, items, next, approve };
+  },
+});
+```
+
+`usePanelData` reads the way every member's data is read: by the projection's read and its mappings, through the
+platform, as the reader. It answers `loading`, `awaiting` (an object or a required parameter has no value yet; nothing
+is read), `ready` with `value`, `empty`, `forbidden` or `error` with `message`. It reads again when the panel state the
+member binds changes, when the run-time values you pass change, and when an operation reports that what it shows
+changed. Values you pass yourself are run-time parameters, which the platform checks against the catalogue and the
+read.
+
+The member's operations are the ones its projection names under `operations.<name>`. `instance.operations` lists those
+the owners admit now (an action on an object appears once the object is chosen), and `instance.invoke("<member>.<name>",
+input?)` runs one exactly as the page's header and an agent do. Never call the platform's business endpoints from the
+page.
+
+Run the App Builder skill's `ontomato panel check` on the workspace directory. It uses the current release's
+declarations. Register the requested projections, panel and application uses through their owners, then open the
+application's declared entry.
 
 ## Page skeleton
 

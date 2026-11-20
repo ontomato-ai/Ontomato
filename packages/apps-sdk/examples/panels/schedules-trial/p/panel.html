@@ -1,16 +1,24 @@
+<!--
+  Panel P: the reader's scheduled tasks beside the chosen one — its summary, and once a task is chosen its form and the
+  button that runs it now. On a narrow panel the task goes under the list.
+
+  A fragment: the host's document is the one with html, head and body in it.
+-->
 <style>
-  /* The list beside the chosen task; on a narrow panel the task goes under the list. */
+  [v-cloak] { display: none; }
   .trial { display: flex; flex-wrap: wrap; gap: var(--spacing-sm, 8px); }
   .tasks { flex: 1 1 18rem; min-width: 0; }
   .task { flex: 2 1 24rem; min-width: 0; display: flex; flex-direction: column; gap: var(--spacing-sm, 8px); }
 </style>
-<div class="trial">
-  <panel-member ref="tasks" class="tasks"></panel-member>
+<div id="app" class="trial" v-cloak>
+  <div class="tasks">
+    <projection slot="tasks"></projection>
+  </div>
   <section class="task">
-    <panel-member ref="summary"></panel-member>
-    <section when="selectedTask" ne="null" class="task">
-      <panel-member ref="form"></panel-member>
-      <panel-member ref="run"></panel-member>
-    </section>
+    <projection slot="summary"></projection>
+    <template v-if="chosen">
+      <projection slot="form"></projection>
+      <projection slot="run"></projection>
+    </template>
   </section>
 </div>
