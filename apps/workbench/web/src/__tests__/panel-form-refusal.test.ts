@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
-import { platformScheduleErrorSchema } from "@ontomato/contracts/platform-schedules";
+import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import { mountPanel } from "../../../../../packages/apps-sdk/src/panel/mount";
-import { ignoreChanges,
+import { formSaveCalls, humanIntents, ignoreChanges,
   SCHEDULED_TASK,
   inside,
   installPlatform,
@@ -22,8 +22,8 @@ import { ignoreChanges,
 } from "./panel-frame";
 
 /*
- * The scheduled tasks service refusing a save, all the way to the panel: the service's answer goes back through the
- * platform's app host and the message bridge, into the SDK's request layer, `createSchedulesApi` and the generic form.
+ * The scheduled tasks service refusing a save, all the way to the panel: the coordinator's outcome reaches the
+ * form through the platform app host and the message bridge.
  * The mistake this rules out is the one the real path made: a refusal arriving without its status and body, so the
  * reader was told "no answer" instead of why the service refused, and saw no field marked.
  */
@@ -41,32 +41,25 @@ const panel = panelRecord(
 const use = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", panel.id, "/applications/app-panels-trial-a/tasks");
 const taskPath = `/api/data-query/platform/scheduled-tasks/${task.id}`;
 
-/** The service's own refusal bodies, checked against its contract. */
-const conflict = platformScheduleErrorSchema.parse({
-  error: { code: "REVISION_CONFLICT", message: "This task was changed by someone else; reopen it to see their change." },
-  correlationId: "conflict-1",
-});
-const invalid = platformScheduleErrorSchema.parse({
-  error: {
-    code: "FIELD_VALIDATION_FAILED",
-    message: "Check the marked fields",
-    fields: [{ field: "/content/caseSetId", code: "invalid_option", message: "This case set no longer exists" }],
-  },
-  correlationId: "invalid-1",
-});
+const conflict = {
+  kind: "refusal", code: "REVISION_CONFLICT", message: "This task was changed by someone else; reopen it to see their change.",
+} satisfies PanelOperationOutcome;
+const invalid = {
+  kind: "refusal", code: "FIELD_VALIDATION_FAILED", message: "Check the marked fields",
+  errors: [{ field: "/caseSetId", code: "invalid_option", message: "This case set no longer exists" }],
+} satisfies PanelOperationOutcome;
 
 afterEach(leaveFrame);
 
 describe("a panel's form when the owner refuses a save", () => {
   it("shows the owner's reason, marks the field it names, and keeps the reader's form", { timeout: 15000 }, async () => {
-    // The service refuses the first save as a concurrent change (409) and the second as an invalid field (422).
-    const refusals = [Response.json(conflict, { status: 409 }), Response.json(invalid, { status: 422 })];
+    const refusals = [conflict, invalid];
+    const intents = humanIntents(() => refusals.shift()!);
     const sent = installPlatform((request: Sent) => {
       if (request.path === `/api/product-projections/${formProjection.id}`) return Response.json({ projection: formProjection });
       if (request.path === taskPath && request.method === "GET") return Response.json(task);
       if (request.path === `/api/data-query/platform/scheduled-tasks/applications/${task.appId}/form`) return Response.json(taskForm);
-      if (request.path === taskPath && request.method === "PUT") return refusals.shift()!;
-      return nothingAt(request);
+      return intents(request) ?? nothingAt(request);
     });
     const frame = panelFrame();
     platformPanelHost("app-panels-trial-a", use, ignoreChanges).frame(frame, registered("app-panels-trial-a", use, panel), true);
@@ -79,26 +72,30 @@ describe("a panel's form when the owner refuses a save", () => {
 
     // The save the header offers: the form's own, at the revision the form was read at.
     const save = context.instance.operations.value.find((operation) => operation.kind === "form.save")!;
-    const writes = () => sent.filter((request) => request.method === "PUT");
+    const writes = () => formSaveCalls(sent);
 
     // Somebody else changed the task first: the service's reason, beside the reader's form, and nothing read again.
-    await expect(context.instance.invoke(save.id)).rejects.toThrow(conflict.error.message);
-    await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-refusal")?.textContent).toBe(conflict.error.message));
+    await expect(context.instance.invoke(save.id)).rejects.toThrow(conflict.message);
+    await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-refusal")?.textContent).toBe(conflict.message));
     expect(document.querySelector('[data-field="/caseSetId"]')).not.toBeNull();
     expect(writes()).toHaveLength(1);
-    expect(writes()[0]!.body).toMatchObject({ revision: task.revision, content: task.content });
+    expect(writes()[0]!.input).toEqual({ revision: task.revision, values: task.content, submittedFields: [] });
     const afterConflict = sent.length;
 
     // A value the service finds invalid: its reason, and its message on the field it names.
-    await expect(context.instance.invoke(save.id)).rejects.toThrow(invalid.error.message);
+    await expect(context.instance.invoke(save.id)).rejects.toThrow(invalid.message);
     await vi.waitFor(() =>
       expect(document.querySelector('[data-field="/caseSetId"] .el-form-item__error')?.textContent?.trim()).toBe(
-        invalid.error.fields![0]!.message,
+        invalid.errors[0]!.message,
       ),
     );
-    expect(document.querySelector(".sdk-owner-form-refusal")?.textContent).toBe(invalid.error.message);
-    // One write per save, and no retry or re-read after either refusal: the save reads the task and its form, then writes.
+    expect(document.querySelector(".sdk-owner-form-refusal")?.textContent).toBe(invalid.message);
+    // One prepare, one reread of the frozen intent and one dispatch. The form is left exactly as it was.
     expect(writes()).toHaveLength(2);
-    expect(sent.slice(afterConflict).map((request) => request.method)).toEqual(["GET", "POST", "PUT"]);
+    expect(sent.slice(afterConflict).map(({ method, path }) => [method, path])).toEqual([
+      ["POST", "/api/panel-operations/intents"],
+      ["GET", expect.stringMatching(/^\/api\/panel-operation-intents\/[^/]+$/)],
+      ["POST", expect.stringMatching(/^\/api\/panel-operations\/intents\/[^/]+\/dispatch$/)],
+    ]);
   });
 });

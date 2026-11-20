@@ -25,6 +25,7 @@ it("clears child selection atomically when switching parent and carries child-ob
   const instance = createPanelInstance(manifest, {
     ...noOperations,
     text: (key) => key,
+    translate: () => "Governance record",
     pageKey: "governance-test",
     url: () => "/applications/app-test/governance",
     label: () => "Governance report",
@@ -38,7 +39,7 @@ it("clears child selection atomically when switching parent and carries child-ob
   expect(instance.state.values.value.selectedIssue).toEqual(issue);
   expect(instance.pageContext.value.selection).toEqual([
     { kind: KNOWLEDGE_GOVERNANCE_RECORD, id: "rec-1", label: `Record 1 (${KNOWLEDGE_GOVERNANCE_RECORD} rec-1)` },
-    { kind: "child-object", parent: issue.parent, collection: "issues", id: issue.primaryKey, label: "Record 1 / Issue 1B (opaque-r1-i2)" },
+    { kind: "child-object", parent: issue.parent, collection: "issues", id: issue.primaryKey, label: "Governance record Record 1 / Issue 1B (opaque-r1-i2)" },
   ]);
 
   const states: unknown[] = [];
