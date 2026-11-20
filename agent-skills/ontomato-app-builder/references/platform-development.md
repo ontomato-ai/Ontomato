@@ -7,9 +7,9 @@ current owner declarations and SDK catalogue. Extend the owner or SDK where a re
 
 ## Add a named owner read or operation
 
-Scheduled tasks are a platform resource with an owner-declared form. The owner separates `list`, `record`, `form` and
-`schedules.runNow.describe`. The corresponding projections bind the list, selected task, owner form and operation
-button. Use `packages/apps-sdk/examples/panels/schedules-trial/definitions.mjs` and `p/panel.json` in that
+Scheduled tasks are a platform resource with an owner-declared form. The owner supplies the `list`, `record` and
+`form` reads and the `schedules.runNow` operation. The corresponding projections bind the list, selected task,
+owner form and operation button. Use `packages/apps-sdk/examples/panels/schedules-trial/definitions.mjs` and `p/panel.json` in that
 directory for the registered definitions and wiring.
 
 1. Find the existing business interface. For scheduled tasks, Workbench calls it in
@@ -17,8 +17,8 @@ directory for the registered definitions and wiring.
    `packages/platform-schedules/src/panel-reads.ts` supplies the read functions. Keep the viewer's permission, language,
    business validation and test-data rules in the owner calls. Return the shared result, including any form field
    errors or per-relation result the component needs to render.
-2. Register the read with the public contract owner. Give the stable type or operation ID, read name,
-   `type`, `object` or `operation` source, parameter schemas and required parameters, and the result schema. Give a
+2. Register the read with the public contract owner. Give the stable type ID, read name, `type` or `object` source,
+   parameter schemas and required parameters, and the result schema. Give a
    projection declaration using `data.<name> = { source, read, params }`. A same-named member state binding supplies
    the parameter. Use `params` for literals or to name a different input. The named read adapter is mounted in
    `packages/workbench-server/src/services/product-panels/data-reads.ts`. This dispatcher resolves the actual
@@ -45,9 +45,9 @@ The summary uses `data.record = { source: { object: { input: "task" } }, read: "
 supplies `values` and `changedField` at runtime through its component declaration.
 The list's `selected` output and the summary, form and button inputs share a panel state of type
 `{ kind: "object", objectType: "platform:ScheduledTask" }`. The member wiring maps the values through `{ state: "selectedTask" }`.
-The button reads `data.operation = { source: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, read: "describe", params: {} }`.
-Its owner description names the write effect and targets the `task` input. The operation ID is the member key
-followed by the last segment of the owner operation ID, here `run.runNow`. One object target runs a single operation.
+The button declares `operations.runNow = { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } }`
+and `config.operation = "runNow"`. Its owner description names the write effect. The placed operation ID is the
+member key and the local name, here `run.runNow`. One object target runs a single operation.
 A list of object targets runs a batch when the owner declares batch support.
 
 Use a real selected task UUID for `<taskId>` in the following summary read. The reader's authentication and the
@@ -69,7 +69,8 @@ registered use determine whether this request can read the task.
 ```
 
 The ready result includes `primaryKey`, `label`, `fields` and the owner's localized `fieldLabels`.
-Read the `run` member's `operation` data to discover the button's owner description.
+On the same read endpoint, send `operations: true` for the `run` member to get the owner descriptions keyed by
+local operation name. Supply that member's inputs, including the selected task for this example.
 
 For an agent run with the page skill loaded, the same operation is requested through
 `POST $ONTOMATO_PANEL_OPERATIONS_URL/operate` with the run's callback credential and run ID. The request contains

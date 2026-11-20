@@ -130,7 +130,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
           form: { source: "object", parameterMode: "fixed", params: {}, result: "panelFormDescription" },
           createForm: { source: "type", parameterMode: "fixed", params: {}, result: "panelFormDescription" },
         },
-        operations: [{ id: "platform:AgentDefinition.save", effect: "write", target: { source: "draft" }, inputSchema: {}, batch: false }],
+        operations: [{ id: "platform:AgentDefinition.save", kind: "form.save", effect: "write", target: { source: "draft" }, inputSchema: {}, batch: false }],
       },
       "platform:ReviewQueue": {
         reads: {
@@ -138,7 +138,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
           counts: { source: "type", parameterMode: "fixed", params: { by: "countField", search: "keyword" }, result: "panelGroupCounts" },
           record: { source: "object", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecord" },
         },
-        operations: [{ id: "reviews.approve", effect: "write", target: { source: "input", input: "review" }, inputSchema: {}, batch: true }],
+        operations: [{ id: "reviews.approve", kind: "action", effect: "write", target: { source: "input", input: "review" }, inputSchema: {}, batch: true }],
       },
     },
   };
@@ -161,6 +161,10 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       }]),
     };
     export const platformTypeTableResponseSchema = { parse };
+    export const panelOperationTargetPort = (port, type, batch) =>
+      port?.objectType === type || (batch && port?.kind === "list" && port.items.objectType === type) ? port : undefined;
+    export const projectionOperationTargetMatches = (projection, binding, declaration, type) =>
+      Boolean(panelOperationTargetPort(projection.inputs[binding.target?.input], type, declaration.batch));
     export const panelReadParameterSchemas = {
       reviewStatus: { safeParse: value => ({ success: value === "all" }) },
       countField: { safeParse: value => ({ success: value === "status" }) },
@@ -303,6 +307,12 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.deepEqual(reviewManifest.members.list.outputs.checked, { state: "checked" });
     assert.deepEqual(reviewManifest.members.action1.inputs, { review: { state: "selected" } });
     assert.deepEqual(reviewManifest.members.batch2.inputs, { review: { state: "checked" } });
+    const reviewButton = reviewProjections.find(({ id }) => id.endsWith("-batch2")).input;
+    assert.deepEqual(reviewButton.config, { operation: "approve" });
+    assert.deepEqual(reviewButton.operations, { approve: {
+      operation: { kind: "PlatformOperation", id: "reviews.approve" }, target: { input: "review" },
+    } });
+    assert.deepEqual(reviewButton.data, {});
     const reviewLayout = await readFile(join(review, "panel.html"), "utf8");
     assert(reviewLayout.indexOf('ref="batch2"') < reviewLayout.indexOf('ref="list"'));
     const reviewMaterial = join(review, "registration.json");
@@ -312,14 +322,14 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     incorrectPanel.manifest.members.batch2.inputs = { entry: { state: "checked" } };
     await writeFile(reviewPanel, JSON.stringify(incorrectPanel));
     await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
-      error.stderr.includes("member batch2 (projection review-queue-manager-batch2): bind operation reviews.approve's target input review"));
+      error.stderr.includes("member batch2 (projection review-queue-manager-batch2): bind operation approve (reviews.approve)'s target input review"));
     await writeFile(reviewPanel, JSON.stringify({ manifest: reviewManifest }));
     const incorrect = JSON.parse(await readFile(reviewMaterial, "utf8"));
     const batch = incorrect.projections.find(({ id }) => id.endsWith("-batch2"));
     delete batch.input.inputs.review;
     await writeFile(reviewMaterial, JSON.stringify(incorrect));
     await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
-      error.stderr.includes(`projection ${batch.id}: operation reviews.approve requires the owner target input review`));
+      error.stderr.includes(`projection ${batch.id}: operation approve (reviews.approve) has an invalid target input review`));
     requests.length = 0;
     await writeFile(layout, '<panel-member ref="tasks"></panel-member>');
     const reference = async id => {

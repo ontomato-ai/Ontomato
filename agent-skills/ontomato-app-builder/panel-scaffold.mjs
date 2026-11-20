@@ -20,14 +20,17 @@ export function managementPanel(type, checks, typeTable, {
   if (list?.source !== "type" || list.parameterMode !== "fixed" || !["panelRecordList", "panelRecordQuery"].includes(list.result)) {
     throw new Error(`${type} has no declared management list read`);
   }
-  const save = `${type}.save`;
   const registered = new Map((owner.operations ?? []).map(operation => [operation.id, operation]));
+  const formSaves = [...registered.values()].filter(operation => operation.kind === "form.save");
+  const requestedSaves = formSaves.filter(operation => operations.includes(operation.id));
+  if (requestedSaves.length > 1) throw new Error(`${type}: select one form save operation`);
+  const save = requestedSaves[0] ?? (formSaves.length === 1 ? formSaves[0] : undefined);
   const buttons = [];
   for (const [ids, batch] of [[new Set(operations), false], [new Set(batches), true]]) {
     for (const operationId of ids) {
       const operation = registered.get(operationId);
       if (!operation) throw new Error(`${type} does not declare operation ${operationId}`);
-      if (operationId === save && !batch) continue;
+      if (operation.kind === "form.save" && !batch) continue;
       if (operation.effect !== "write" || operation.target.source !== "input" || operation.inputSchema.required?.length) {
         throw new Error(`${operationId} requires an authored form or operation inputs`);
       }
@@ -39,19 +42,20 @@ export function managementPanel(type, checks, typeTable, {
   const title = type.split(":").at(-1).replace(/([a-z0-9])([A-Z])/gu, "$1 $2");
   const object = { kind: "object", objectType: type };
   const platformType = type.startsWith("platform:");
+  const operationKind = platformType ? "PlatformOperation" : "Action";
   const typeSource = { type: { kind: platformType ? "PlatformObjectType" : "ObjectType", id: type } };
   const selectedSource = { object: inputRef("item") };
   const state = { selected: { type: object, deepLink: true } };
   const members = {};
   const events = {};
   const projections = [];
-  function place(key, component, { inputs = {}, outputs = {}, config = {}, data = {} }, bindings = {}) {
+  function place(key, component, { inputs = {}, outputs = {}, config = {}, data = {}, operations }, bindings = {}) {
     const projectionId = `${id}-${key}`;
     projections.push({
       id: projectionId,
       mode: "create",
       input: { name: `${title} ${key}`, description: "", visibility: "domain",
-        componentId: `@ontomato/sdk:${component}`, inputs, outputs, config, data },
+        componentId: `@ontomato/sdk:${component}`, inputs, outputs, config, data, ...(operations && { operations }) },
     });
     members[key] = { target: { projectionId }, ...bindings };
   }
@@ -101,13 +105,14 @@ export function managementPanel(type, checks, typeTable, {
       data: { record: namedRead(selectedSource, "record") },
     }, { inputs: { item: stateRef("selected"), ...(shareSearch && { search: stateRef("search") }) } });
   }
-  const edit = registered.get(save)?.effect === "write" && reads.form?.result === "panelFormDescription";
+  const edit = save?.effect === "write" && reads.form?.result === "panelFormDescription";
   const create = edit && reads.createForm?.result === "panelFormDescription";
-  if (operations.includes(save) && !edit) throw new Error(`${save} has no declared form read`);
+  if (requestedSaves.length && !edit) throw new Error(`${save.id} has no declared form read`);
   if (edit) {
     place("form", "ObjectForm", {
       inputs: { item: object },
       data: { form: namedRead(selectedSource, "form"), ...(create && { createForm: namedRead(typeSource, "createForm") }) },
+      operations: { save: { operation: { kind: operationKind, id: save.id }, target: inputRef("item") } },
     }, { inputs: { item: stateRef("selected") } });
   }
   if (create) {
@@ -124,11 +129,11 @@ export function managementPanel(type, checks, typeTable, {
   const buttonKeys = buttons.map(({ operation, batch }, index) => {
     const key = `${batch ? "batch" : "action"}${index + 1}`;
     const input = operation.target.input;
-    const source = { operation: { kind: platformType ? "PlatformOperation" : "Action", id: operation.id } };
-    const params = platformType ? {} : { target: inputRef(input) };
+    const name = operation.id.split(".").at(-1);
     place(key, "OperationButton", {
       inputs: { [input]: batch ? selection : object },
-      data: { operation: namedRead(source, "describe", params) },
+      operations: { [name]: { operation: { kind: operationKind, id: operation.id }, target: inputRef(input) } },
+      config: { operation: name },
     }, { inputs: { [input]: stateRef(batch ? "checked" : "selected") } });
     return key;
   });

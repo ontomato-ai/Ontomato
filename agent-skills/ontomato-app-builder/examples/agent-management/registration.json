@@ -95,6 +95,17 @@
             "read": "createForm",
             "params": {}
           }
+        },
+        "operations": {
+          "save": {
+            "operation": {
+              "kind": "PlatformOperation",
+              "id": "platform:AgentDefinition.save"
+            },
+            "target": {
+              "input": "item"
+            }
+          }
         }
       }
     },

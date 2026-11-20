@@ -66,33 +66,26 @@ async function workspaceDefinition(directory, files, checks, panel) {
   throw new Error(diagnostics.join("\n"));
 }
 
-function checkOperation(id, projection, typeTable, placements, state) {
-  const name = projection.data.operation?.source.operation?.id;
-  const declarations = Object.entries(typeTable.objectTypes).flatMap(([type, owner]) =>
-    (owner.operations ?? []).filter(operation => operation.id === name).map(operation => [type, operation]));
-  if (declarations.length === 0) throw new Error(`projection ${id}: operation ${name ?? "(missing)"} is not declared in the type table`);
-  function targetMatches(type, operation, port) {
-    if (port?.kind === "list") return operation.batch && port.items.objectType === type;
-    if (port?.kind === "object-union") {
-      return "objectTypes" in port ? port.objectTypes.includes(type) : port.layers.includes(typeTable.objectTypes[type].layer);
-    }
-    return port?.kind === "object" && port.objectType === type;
-  }
-  const matched = declarations.filter(([type, operation]) => operation.target.source !== "input" ||
-    targetMatches(type, operation, projection.inputs[operation.target.input]));
-  const inputs = [...new Set(declarations.flatMap(([, operation]) => operation.target.source === "input" ? [operation.target.input] : []))];
-  if (matched.length === 0) throw new Error(`projection ${id}: operation ${name} requires the owner target input ${inputs.join(" or ")}`);
-  for (const [member, placement] of placements) {
-    const bound = matched.some(([type, operation]) => {
-      if (operation.target.source !== "input") return true;
-      const binding = placement.inputs?.[operation.target.input];
-      if (binding === undefined) return false;
-      if (!("state" in binding)) return true;
-      const target = state[binding.state].type;
-      const port = projection.inputs[operation.target.input];
-      return (port.kind === "list") === (target.kind === "list") && targetMatches(type, operation, target);
+function checkOperations(id, projection, typeTable, placements, state, checks) {
+  for (const [name, binding] of Object.entries(projection.operations ?? {})) {
+    const { id: operationId, kind } = binding.operation;
+    const declarations = Object.entries(typeTable.objectTypes).flatMap(([type, owner]) => {
+      if (kind !== (type.startsWith("platform:") ? "PlatformOperation" : "Action")) return [];
+      return (owner.operations ?? []).filter(operation => operation.id === operationId).map(operation => [type, operation]);
     });
-    if (!bound) throw new Error(`member ${member} (projection ${id}): bind operation ${name}'s target input ${inputs.join(" or ")} to an object or checked list`);
+    const label = `operation ${name} (${operationId})`;
+    if (declarations.length === 0) throw new Error(`projection ${id}: ${label} is not declared in the type table`);
+    const matched = declarations.filter(([type, operation]) => checks.projectionOperationTargetMatches(projection, binding, operation, type));
+    const input = binding.target?.input;
+    if (matched.length === 0) throw new Error(`projection ${id}: ${label} has an invalid ${input ? `target input ${input}` : "target"}`);
+    if (input === undefined) continue;
+    const portKind = projection.inputs[input].kind;
+    for (const [member, placement] of placements) {
+      const value = placement.inputs?.[input];
+      const bound = value && (!("state" in value) || matched.some(([type, operation]) =>
+        checks.panelOperationTargetPort(state[value.state].type, type, operation.batch)?.kind === portKind));
+      if (!bound) throw new Error(`member ${member} (projection ${id}): bind ${label}'s target input ${input} to an object or checked list`);
+    }
   }
 }
 
@@ -177,9 +170,7 @@ export async function checkPanelWorkspace(directory, { checks, catalogue, versio
       if (!components.has(record.componentId)) {
         throw new Error(`${resolve(directory, "panel.json")}: projection ${id} uses unavailable SDK component ${record.componentId}`);
       }
-      if (typeTable && record.componentId === "@ontomato/sdk:OperationButton") {
-        checkOperation(id, record, typeTable, placements.get(id), manifest.state);
-      }
+      if (typeTable) checkOperations(id, record, typeTable, placements.get(id), manifest.state, checks);
     }
   }
   return { status: "valid", version, ...(digest && { digest }), unchecked };
