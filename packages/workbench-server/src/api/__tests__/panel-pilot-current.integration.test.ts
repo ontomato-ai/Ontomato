@@ -65,6 +65,15 @@ const taskRun = platformTaskRunSchema.parse({
 const ownerWrites: string[] = [];
 let ownerTasks: typeof task[] = [];
 const taskType = { kind: "object", objectType: "platform:ScheduledTask" };
+/** The metric owner's output columns, its partial-result mark, and the refusals it answers some years with. */
+const columns = [{ key: "value", label: null, type: null }];
+const metricTruncation = { truncated: true as const, rowLimit: 1, truncationHint: "Narrow the year to see every customer" };
+const metricRefusals: Record<number, { status: number; message: string }> = {
+  1990: { status: 400, message: "Missing parameter: region" },
+  1991: { status: 403, message: "Field is outside the authorized scope" },
+  1992: { status: 404, message: "Executable read metric not found" },
+  1993: { status: 409, message: "Metric specification changed; retrieve it again" },
+};
 const projection = {
   name: "Task summary", description: "", visibility: "domain",
   componentId: "@ontomato/sdk:ObjectSummary",
@@ -267,7 +276,6 @@ beforeAll(async () => {
       }
     });
   }
-  const columns = [{ key: "value", label: null, type: null }];
   app.post("/ontology/query/metrics/describe", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.header("Accept-Language")).toBe("zh-CN");
@@ -278,7 +286,14 @@ beforeAll(async () => {
   app.post("/ontology/query/metrics/execute", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.body).toMatchObject({ id: "metric-pilot", revision: "metric-r2", parameters: { customer: "p1" } });
-    res.json({ columns, rows: req.body.parameters.year === 2023 ? [] : [{ value: 15 }], truncation: null });
+    const { year } = req.body.parameters;
+    const refusal = metricRefusals[year];
+    if (refusal) {
+      res.status(refusal.status).json({ error: { code: "ONTOLOGY_QUERY_FAILED", message: refusal.message } });
+      return;
+    }
+    const truncation = year === 2024 || year === 2025 ? metricTruncation : null;
+    res.json({ columns, rows: year === 2023 || year === 2025 ? [] : [{ value: 15 }], truncation });
   });
   app.post("/data/getWholeClassDataByPage", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
@@ -288,20 +303,8 @@ beforeAll(async () => {
   });
   app.post("/data/queryInfoByNode", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
-    expect(req.body.class).toBe("person");
-    switch (req.body.id) {
-      case "person:p1":
-        res.json({ success: true, data: { data: { name: "Alice" } } });
-        break;
-      case "person:p-denied":
-        res.json({ success: false, code: "DATA_PERMISSION_DENIED", message: "No data permission" });
-        break;
-      case "person:p-missing":
-        res.json({ success: false, code: "OBJECT_NOT_FOUND", message: "Object not found" });
-        break;
-      default:
-        res.sendStatus(400);
-    }
+    expect(req.body).toEqual({ class: "person", id: "person:p1" });
+    res.json({ success: true, data: { data: { name: "Alice" } } });
   });
   app.post("/dsl/executeV1", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
@@ -739,29 +742,60 @@ it("dispatches the action catalog's three reads and both operation descriptions"
   });
 });
 
-it("passes named metric parameters to the owner and reports untruncated zero rows as empty", async () => {
+/** Reads a MetricView result through a registered projection whose SDK component this fixture declares as its consumer. */
+async function withMetricProjection(
+  family: string, projection: { inputs: object; params: object },
+  check: (read: (inputs: object) => Promise<ReturnType<typeof productPanelReadResponseSchema.parse>>) => Promise<void>,
+) {
   const installed = await readFile(cataloguePath, "utf8");
   const catalogue = appsSdkComponentCatalogSchema.parse(JSON.parse(installed));
-  // This Node fixture declares a projection consumer for the owner's result.
   await writeFile(cataloguePath, JSON.stringify({
     ...catalogue, components: catalogue.components.map(component => component.componentId === "MetricViewData"
       ? { ...component, data: { result: { results: ["metricOutput"], required: true } } } : component),
   }));
   try {
-    const read = await ownerReadPanel("owner-metric", {
+    const read = await ownerReadPanel(family, {
       metric: {
-        componentId: "@ontomato/sdk:MetricViewData", inputs: { year: { kind: "scalar", type: "number" } },
+        componentId: "@ontomato/sdk:MetricViewData", inputs: projection.inputs,
         data: { result: {
           source: { object: { literal: { className: "platform:MetricView", primaryKey: "metric-pilot" } } },
-          read: "result", params: { customer: { literal: { className: "person", primaryKey: "p1" } }, year: { input: "year" } },
+          read: "result", params: projection.params,
         } },
       },
     });
-    expect(await read("metric", "result", { year: 2026 })).toMatchObject({ status: "ready", value: { rows: [{ value: 15 }] } });
-    expect(await read("metric", "result", { year: 2023 })).toEqual({ status: "empty" });
+    await check(inputs => read("metric", "result", inputs));
   } finally {
     await writeFile(cataloguePath, installed);
   }
+}
+
+it("passes named metric parameters to the owner and reports untruncated zero rows as empty", async () => {
+  await withMetricProjection("owner-metric", {
+    inputs: { year: { kind: "scalar", type: "number" } },
+    params: { customer: { literal: { className: "person", primaryKey: "p1" } }, year: { input: "year" } },
+  }, async read => {
+    expect(await read({ year: 2026 })).toMatchObject({ status: "ready", value: { rows: [{ value: 15 }] } });
+    expect(await read({ year: 2023 })).toEqual({ status: "empty" });
+  });
+});
+
+it("gives a metric parameter the chosen object's key and keeps the owner's truncation and refusals", async () => {
+  await withMetricProjection("owner-metric-outcomes", {
+    inputs: { customer: { kind: "object", objectType: "person" }, year: { kind: "scalar", type: "number" } },
+    params: { customer: { input: "customer" }, year: { input: "year" } },
+  }, async read => {
+    const customer = { className: "person", primaryKey: "p1" };
+    // A partial result is still the owner's answer, with its hint, even when the processed part has no rows.
+    expect(await read({ customer, year: 2024 })).toEqual({
+      status: "ready", value: { columns, rows: [{ value: 15 }], truncation: metricTruncation },
+    });
+    expect(await read({ customer, year: 2025 })).toEqual({
+      status: "ready", value: { columns, rows: [], truncation: metricTruncation },
+    });
+    for (const [year, { status, message }] of Object.entries(metricRefusals))
+      expect(await read({ customer, year: Number(year) }))
+        .toEqual(status === 403 ? { status: "forbidden" } : { status: "error", message });
+  });
 });
 
 it("reads a customer type and a relationship by the registered source identity", async () => {
@@ -771,20 +805,16 @@ it("reads a customer type and a relationship by the registered source identity",
       source: { type: { kind: "ObjectType", id: "person" } }, read: "query",
       params: { search: { literal: "Ali" }, page: { literal: { number: 2, size: 3 } } },
     } } },
-    detail: { componentId: "@ontomato/sdk:ObjectSummary", inputs: { person: { kind: "object", objectType: "person" } },
-      data: { record: { source: { object: { input: "person" } }, read: "record", params: {} } },
-    },
+    detail: { componentId: "@ontomato/sdk:ObjectSummary", data: { record: {
+      source: { object: { literal: person } }, read: "record", params: {},
+    } } },
     relations: { componentId: "@ontomato/sdk:ObjectRelations", data: { neighbors: {
       source: { type: { kind: "Relationship", id: "person_to_org" } }, read: "neighbors",
       params: { node: { literal: person }, limit: { literal: 10 } },
     } } },
   });
   expect(await read("rows", "rows")).toMatchObject({ status: "ready", value: { rows: [{ label: "Alice" }], total: 12 } });
-  expect(await read("detail", "record", { person })).toMatchObject({ status: "ready", value: { primaryKey: "p1", label: "Alice" } });
-  expect(await read("detail", "record", { person: { ...person, primaryKey: "p-denied" } }))
-    .toEqual({ status: "forbidden" });
-  expect(await read("detail", "record", { person: { ...person, primaryKey: "p-missing" } }))
-    .toEqual({ status: "error", message: "Object not found" });
+  expect(await read("detail", "record")).toMatchObject({ status: "ready", value: { primaryKey: "p1", label: "Alice" } });
   expect(await read("relations", "neighbors")).toMatchObject({
     status: "ready", value: { neighbors: [{ primaryKey: "org1", label: "Example Org" }] },
   });

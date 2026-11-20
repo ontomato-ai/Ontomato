@@ -171,7 +171,7 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
     use: null,
     panel,
     release,
-    frame: (frame, source, open) => registerCandidateFrame(frame, buildExecutionContext(source.workspace.id, source.previewContext.test), {
+    frame: (frame, source, open) => registerCandidateFrame(frame, buildExecutionContext(source.workspace.id, source.previewContext.test), source.workspace, {
       pageKey: candidate.pageKey,
       manifest: source.panel.manifest,
     }, open),

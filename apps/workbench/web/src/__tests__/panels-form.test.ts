@@ -130,6 +130,7 @@ function mounted(save: (input: PanelFormSaveInput) => Promise<PanelOperationOutc
           t: (key: string) => key,
           resources: async () => {},
           expandPageComposer: async () => {},
+          readPanelData: async () => { throw new Error("This test reads no member data through the platform"); },
         });
         provide(projectionKey, slot);
         provide(panelMemberKey, () => member);
