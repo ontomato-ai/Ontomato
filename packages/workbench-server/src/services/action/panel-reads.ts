@@ -1,7 +1,6 @@
 import { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import { ACTION, DELETE_ACTION, SET_ACTION_STATUS } from "@ontomato/contracts/panel-client-requests";
-import { panelOwnerOperationDescriptorSchema, type PanelOperationDeclaration } from "@ontomato/contracts/panel-operations";
+import type { PanelOperationDeclaration } from "@ontomato/contracts/panel-operations";
 import {
   panelFormDescriptionSchema, type PanelFormDescription, type PanelFormValues, type PanelRecord,
 } from "@ontomato/contracts/panel-projection";
@@ -12,11 +11,12 @@ import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { ownerEnvelopeSchema } from "../product-panels/data-query-operations";
 import type { ProductOwner } from "../product-governance/grants";
 import { objectActionDeclaration, readRefusal, storedObjectActionSchema } from "./object-actions";
-import { m6ServerOperations } from "./panel-operations";
+import { describeServerOperation, panelServerOperation } from "../product-panels/server-operations";
 
 /*
  * The action catalog's named reads for a direct panel, read as the viewer: the list and one action as records, the
- * owner's definition form for one action, and the descriptions of the status change and the delete the panel offers.
+ * owner's definition form for one action, and the descriptions of the status change and the delete the panel offers,
+ * described from their registered operations as every other platform operation is.
  * For an author's type table it also declares the published Actions that run on one customer object type.
  * The data engine answers the records' display names and the form in the reader's language; the column names are
  * this owner's text.
@@ -61,21 +61,6 @@ function actionRecord(action: ActionAsset, fieldLabels: Record<string, string>):
   };
 }
 
-type CatalogAction = Extract<(typeof m6ServerOperations)[number], { kind: "action" }>;
-
-/** The description of one of the catalog's write operations, from the operation the coordinator dispatches. */
-function operationDescription(handlerRef: string, label: string) {
-  const operation = m6ServerOperations.find((item): item is CatalogAction =>
-    item.kind === "action" && item.handlerRef === handlerRef)!;
-  return panelOwnerOperationDescriptorSchema.parse({
-    handlerRef, label, effect: operation.effect, batch: operation.batch,
-    target: { source: "input", input: operation.targetInput },
-    inputSchema: zodToJsonSchema(operation.inputSchema, { effectStrategy: "input" }),
-    resultSchema: zodToJsonSchema(operation.resultSchema, { effectStrategy: "input" }),
-    ...(operation.inspectImpact && { inspectImpact: { handlerRef: operation.inspectImpact.handlerRef } }),
-  });
-}
-
 export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string) {
   const options = { headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers) };
   const base = config.dataQuery.baseUrl.replace(/\/$/, "");
@@ -117,10 +102,10 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
           : []);
     },
     [`${SET_ACTION_STATUS}.describe`]() {
-      return operationDescription(SET_ACTION_STATUS, translate("panels.action.operations.setStatus"));
+      return describeServerOperation(panelServerOperation(SET_ACTION_STATUS), translate("panels.action.operations.setStatus"));
     },
     [`${DELETE_ACTION}.describe`]() {
-      return operationDescription(DELETE_ACTION, translate("panels.action.operations.delete"));
+      return describeServerOperation(panelServerOperation(DELETE_ACTION), translate("panels.action.operations.delete"));
     },
   };
 }

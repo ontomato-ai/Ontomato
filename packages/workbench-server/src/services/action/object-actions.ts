@@ -130,6 +130,7 @@ export function objectActionDeclaration(
   const parameters = action.function.parameters.filter(parameter => parameter.name !== action.target.keyParameter);
   return {
     id: action.id,
+    kind: "action",
     effect: "write",
     target: { source: "input", input: OBJECT_ACTION_TARGET },
     batch: false,
