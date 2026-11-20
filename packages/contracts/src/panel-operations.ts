@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema, runtimeKeySchema } from "./agent-runtime-values";
-import { panelObjectIdentitySchema, panelOperationCallSchema } from "./panel-manifest";
+import { panelObjectIdentitySchema, panelObjectRefSchema, panelOperationCallSchema } from "./panel-manifest";
 import {
   panelFormDescriptionSchema, panelFormValuesSchema, panelGroupCountsSchema, panelOptionListSchema,
   panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema, panelRelationNeighborsSchema,
@@ -23,12 +23,14 @@ export const panelOperationDeclarationTargetSchema = z.discriminatedUnion("sourc
 export const panelOwnerOperationTargetSchema = z.discriminatedUnion("source", [
   inputTarget,
   draftTarget.extend({ slot: runtimeKeySchema }),
+  z.object({ source: z.literal("literal"), literal: panelObjectRefSchema }).strict(),
   noTarget,
 ]);
 
 /** Static authoring metadata derived from the operation's owner registration. */
 export const panelOperationDeclarationSchema = z.object({
   id: z.string().min(1).max(300),
+  kind: z.enum(["form.save", "action"]),
   effect: z.enum(["read", "write"]),
   target: panelOperationDeclarationTargetSchema,
   inputSchema: runtimeJsonObjectSchema,
@@ -51,14 +53,15 @@ export type PanelOwnerOperationDescriptor = z.infer<typeof panelOwnerOperationDe
 /** Combine the same declaration shown to authors with facts of the admitted runtime operation. */
 export function describePanelOperationFromDeclaration(
   { id, target, ...staticFields }: PanelOperationDeclaration,
-  { handlerRef = id, slot, ...runtime }: Pick<PanelOwnerOperationDescriptor, "label" | "resultSchema" | "inspectImpact"> & {
+  { handlerRef = id, slot, target: placedTarget, ...runtime }: Pick<PanelOwnerOperationDescriptor, "label" | "resultSchema" | "inspectImpact"> & {
     handlerRef?: string;
     slot?: string;
+    target?: PanelOwnerOperationDescriptor["target"];
   },
 ): PanelOwnerOperationDescriptor {
   return panelOwnerOperationDescriptorSchema.parse({
     ...staticFields, ...runtime, handlerRef,
-    target: target.source === "draft" ? { ...target, slot } : target,
+    target: placedTarget ?? (target.source === "draft" ? { ...target, slot } : target),
   });
 }
 

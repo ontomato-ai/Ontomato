@@ -41,7 +41,7 @@ type PanelReadSignature =
   | { parameterMode: "owner"; parameter: PanelReadParameterId };
 
 export type PlatformReadDeclaration = PanelReadSignature & {
-  source: "type" | "object" | "operation";
+  source: "type" | "object";
   result: PanelReadResultId;
 };
 
@@ -69,11 +69,6 @@ export const DELETE_OBJECT_TYPE = "objectTypes.delete";
 export const DELETE_ATTRIBUTE = "attributes.delete";
 export const DELETE_RELATIONSHIP = "relationships.delete";
 export const SET_PRIMARY_KEY = "attributes.setPrimaryKey";
-const operationDescription = {
-  source: "operation", parameterMode: "fixed", params: {}, result: "panelOperationDescriptor",
-} as const;
-
-
 const referenceReads = {
   options: { source: "type", parameterMode: "fixed", params: {}, result: "panelOptionList" },
   resolve: { source: "type", parameterMode: "fixed", params: { values: "optionValues" }, requiredParams: ["values"], result: "panelOptionList" },
@@ -96,7 +91,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
       form: { source: "object", parameterMode: "fixed", params: { values: "formValues", changedField: "changedField" }, result: "panelFormDescription" },
-      [`${RUN_NOW}.describe`]: operationDescription,
     },
     operations: [`${SCHEDULED_TASK}.save`, RUN_NOW],
   },
@@ -104,20 +98,19 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [MCP_SERVICE_OPTION]: describeType("mcpServiceOption"),
   [OBJECT_TYPE]: {
     ...describeType("objectType", "fact"),
-    reads: { ...modelReads, ...metadataList, [`${DELETE_OBJECT_TYPE}.describe`]: operationDescription },
+    reads: { ...modelReads, ...metadataList },
     operations: [`${OBJECT_TYPE}.save`, DELETE_OBJECT_TYPE],
   },
   [ATTRIBUTE]: {
     ...describeType("attribute", "fact"),
     reads: {
       ...modelReads, list: modelListByClass,
-      [`${DELETE_ATTRIBUTE}.describe`]: operationDescription, [`${SET_PRIMARY_KEY}.describe`]: operationDescription,
     },
     operations: [`${ATTRIBUTE}.save`, DELETE_ATTRIBUTE, SET_PRIMARY_KEY],
   },
   [RELATIONSHIP]: {
     ...describeType("relationship", "fact"),
-    reads: { ...modelReads, list: modelListByClass, [`${DELETE_RELATIONSHIP}.describe`]: operationDescription },
+    reads: { ...modelReads, list: modelListByClass },
     operations: [`${RELATIONSHIP}.save`, DELETE_RELATIONSHIP],
   },
   [METRIC_VIEW]: {
@@ -138,8 +131,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       ...metadataList,
       record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
-      [`${SET_ACTION_STATUS}.describe`]: operationDescription,
-      [`${DELETE_ACTION}.describe`]: operationDescription,
     },
     operations: [`${ACTION}.save`, SET_ACTION_STATUS, DELETE_ACTION],
   },
@@ -161,8 +152,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       record: { source: "object", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecord" },
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
       createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
-      [`${APPROVE_KNOWLEDGE}.describe`]: operationDescription,
-      [`${DELETE_KNOWLEDGE}.describe`]: operationDescription,
     },
     operations: [`${BUSINESS_KNOWLEDGE}.save`, APPROVE_KNOWLEDGE, DELETE_KNOWLEDGE],
   },
@@ -225,10 +214,6 @@ export const customerRelationReads: Readonly<Record<string, PlatformReadDeclarat
     requiredParams: ["node"], result: "panelRelationNeighbors",
   },
 };
-export const objectActionReads: Readonly<Record<string, PlatformReadDeclaration>> = {
-  describe: { source: "operation", parameterMode: "owner", parameter: "ontologyParameter", result: "panelOperationDescriptor" },
-};
-
 export function platformHasChildCollection(parentType: string, collection: string): boolean {
   return platformObjectTypes[parentType]?.childCollections?.includes(collection) ?? false;
 }

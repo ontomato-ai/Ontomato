@@ -40,7 +40,7 @@ import { pageSelectionSchema } from "./page-context";
 import { pageDraftSchema } from "./page-draft";
 import {
   panelFormDescriptionSchema, panelFormFrequencyValueSchema, panelFormRequestSchema, panelFormSaveInputSchema, panelFormTimeValueSchema,
-  panelObjectListColumnSchema, panelStateOperation, projectionBindingKeys, projectionOperations, projectionPorts,
+  panelObjectListColumnSchema, panelStateOperation, projectionBindingKeys, projectionOperation, projectionOperationTargetMatches, projectionPorts,
 } from "./panel-projection";
 import { platformTaskFrequencySchema } from "./platform-schedules";
 import {
@@ -179,16 +179,16 @@ test("fixed owner signatures and per-definition read parameters are distinct", a
     inputs: { selected: { kind: "object", objectType: "Customer" } },
   };
   const projected = productProjectionInputSchema.parse({
-    ...base, componentId: "@ontomato/sdk:OperationButton",
-    data: { operation: {
-      source: { operation: { kind: "Action", id: "approve-customer" } }, read: "describe",
-      params: { target: { input: "selected" } },
+    ...base, componentId: "@ontomato/sdk:ObjectList",
+    data: { result: {
+      source: { object: { literal: { className: "platform:MetricView", primaryKey: "projected-metric" } } },
+      read: "result", params: { customer: { input: "selected" } },
     } },
   });
-  assert.deepEqual(projectionReadReferences(projected), [{ kind: "Action", id: "approve-customer" }]);
-  const owner = directReadDeclaration(projected, projected.data.operation)!;
+  assert.deepEqual(projectionReadReferences(projected), [platformType("platform:MetricView")]);
+  const owner = directReadDeclaration(projected, projected.data.result)!;
   assert.equal(owner.parameterMode, "owner");
-  assert.equal(panelReadParameterId(owner, "target"), "ontologyParameter");
+  assert.equal(panelReadParameterId(owner, "customer"), "ontologyParameter");
   const group = productProjectionInputSchema.parse({
     ...base, componentId: "@ontomato/sdk:ObjectList",
     data: { counts: {
@@ -302,9 +302,9 @@ test("model reads and operations use their owner's fixed signatures", async () =
   for (const operation of ["objectTypes.delete", "attributes.delete", "relationships.delete", "attributes.setPrimaryKey"]) {
     const projection = productProjectionInputSchema.parse({
       ...base, componentId: "@ontomato/sdk:OperationButton",
-      data: { operation: { source: { operation: platformOperation(operation) }, read: "describe", params: {} } },
+      data: {}, operations: { perform: { operation: platformOperation(operation) } },
     });
-    assert.equal(directReadDeclaration(projection, projection.data.operation)?.result, "panelOperationDescriptor");
+    assert.equal(projection.operations?.perform.operation.id, operation);
   }
 });
 
@@ -469,7 +469,6 @@ test("direct task reads use the registered source, parameters and result envelop
   const declaredReads = [
     [{ type: platformType("platform:ScheduledTask") }, "list", "type", "panelRecordList"],
     [{ object: { literal: { className: "platform:ScheduledTask", primaryKey: "task-1" } } }, "record", "object", "panelRecord"],
-    [{ operation: platformOperation(RUN_NOW) }, "describe", "operation", "panelOperationDescriptor"],
   ] as const;
   for (const [source, read, kind, result] of declaredReads) {
     const declaration = directReadDeclaration(projection, directProjectionDataSchema.parse({ source, read, params: {} }));
@@ -489,6 +488,10 @@ test("direct task reads use the registered source, parameters and result envelop
     dataName: "form", inputs: { task: { className: "platform:ScheduledTask", primaryKey: "task-1" } },
   };
   assert.deepEqual(productPanelReadRequestSchema.parse(request), request);
+  const { dataName: _dataName, ...scope } = request;
+  const operations = { ...scope, operations: true };
+  assert.deepEqual(productPanelReadRequestSchema.parse(operations), operations);
+  assert.equal(productPanelReadRequestSchema.safeParse({ ...request, operations: true }).success, false);
   const runtimeRequest = { ...request, runtimeParams: { values: { start: "09:00" }, changedField: "/start" } };
   assert.deepEqual(productPanelReadRequestSchema.parse(runtimeRequest), runtimeRequest);
   assert.equal(productPanelReadRequestSchema.safeParse({ ...request, runtimeParams: [] }).success, false);
@@ -497,6 +500,9 @@ test("direct task reads use the registered source, parameters and result envelop
   assert.equal(productPanelReadResponseSchema.safeParse({ status: "forbidden", value: [] }).success, false);
   assert.equal(productPanelReadResponseSchema.safeParse({ status: "loading" }).success, false);
   assert.deepEqual(panelDataStateSchema.parse({ status: "loading" }), { status: "loading" });
+  assert.equal(directProjectionDataSchema.safeParse({
+    source: { operation: platformOperation(RUN_NOW) }, read: "describe", params: {},
+  }).success, false);
   const row = { primaryKey: "task-1", label: "Morning report", fields: { state: "on" } };
   assert.deepEqual(panelReadResultSchemas.panelRecordList.parse([row]), [row]);
   assert.deepEqual(productPanelReadResponseSchema.parse({ status: "ready", value: row }), { status: "ready", value: row });
@@ -515,16 +521,18 @@ test("the current projection response admits named direct reads through the fram
     record: { source: { object: { input: "task" } }, read: "record", params: {} },
     fixedRecord: { source: { object: { literal: { className: SCHEDULED_TASK, primaryKey: taskId } } }, read: "record", params: {} },
     list: { source: { type: platformType(SCHEDULED_TASK) }, read: "list", params: {} },
-    run: { source: { operation: platformOperation(RUN_NOW) }, read: "describe", params: {} },
   };
-  const response = (data: object) => productProjectionResponseSchema.parse({ projection: { ...projection, data } });
+  const operations = { run: { operation: platformOperation(RUN_NOW), target: { input: "task" } } };
+  const response = (data: object, operations?: object) => productProjectionResponseSchema.parse({
+    projection: { ...projection, data, ...(operations && { operations }) },
+  });
   const taskKey = binding(SCHEDULED_TASK);
   const operationKey = bindingKey({ kind: "PlatformOperation", id: RUN_NOW });
   for (const read of [data.record, data.fixedRecord, data.list])
     assert.deepEqual(projectionBindingKeys(response({ read }).projection), [taskKey]);
-  assert.deepEqual(projectionBindingKeys(response({ run: data.run }).projection), [operationKey]);
-  const parsed = response(data);
-  assert.deepEqual(parsed.projection, { ...projection, data });
+  assert.deepEqual(projectionBindingKeys(response({}, operations).projection), [operationKey]);
+  const parsed = response(data, operations);
+  assert.deepEqual(parsed.projection, { ...projection, data, operations });
   const keys = projectionBindingKeys(parsed.projection);
   assert.deepEqual(keys, [taskKey, operationKey]);
   assert.equal(clientSends(keys, "GET", "/data-query", `/platform/scheduled-tasks/${taskId}`), true);
@@ -532,7 +540,7 @@ test("the current projection response admits named direct reads through the fram
 });
 
 test("direct panel read replies retain the owner's localized field and operation labels", async () => {
-  const { productPanelReadResponseSchema } = await import("./panel-host");
+  const { productPanelOperationsReadResponseSchema, productPanelReadResponseSchema } = await import("./panel-host");
   const { panelReadResultSchemas } = await import("./panel-operations");
   const row = {
     primaryKey: "11111111-1111-4111-8111-111111111111", label: "每日检查",
@@ -540,7 +548,7 @@ test("direct panel read replies retain the owner's localized field and operation
     fieldLabels: { application: "应用", settings: "设置", state: "状态", nextRun: "下次运行" },
   };
   const operation = {
-    handlerRef: RUN_NOW, label: "立即运行", effect: "write", batch: false,
+    handlerRef: RUN_NOW, label: "立即运行", kind: "action", effect: "write", batch: false,
     target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {},
   };
   const replyValue = (value: unknown) => {
@@ -550,8 +558,11 @@ test("direct panel read replies retain the owner's localized field and operation
   };
   assert.deepEqual(panelReadResultSchemas.panelRecordList.parse(replyValue([row])), [row]);
   assert.deepEqual(panelReadResultSchemas.panelRecord.parse(replyValue(row)), row);
-  assert.deepEqual(panelReadResultSchemas.panelOperationDescriptor.parse(replyValue(operation)), operation);
-  assert.equal(panelReadResultSchemas.panelOperationDescriptor.safeParse({ ...operation, label: undefined }).success, false);
+  const actions = { status: "ready", value: { runNow: operation } };
+  assert.deepEqual(productPanelOperationsReadResponseSchema.parse(actions), actions);
+  assert.equal(productPanelOperationsReadResponseSchema.safeParse({
+    ...actions, value: { runNow: { ...operation, label: undefined } },
+  }).success, false);
   assert.equal(panelReadResultSchemas.panelRecord.safeParse({ ...row, fieldLabels: { state: 1 } }).success, false);
 });
 
@@ -591,86 +602,57 @@ test("time controls and schedule frequencies accept local times at minute precis
   }
 });
 
-test("form saves address the draft target even when the slot receives a selected object", () => {
-  const agent = { kind: "object", objectType: AGENT_DEFINITION } as const;
+test("explicit operation bindings use the owner's type and the admitted member target", () => {
+  const task = { kind: "object", objectType: SCHEDULED_TASK } as const;
+  const ownerType = { target: { source: "input", input: "object" }, batch: false } as const;
+  const operations = {
+    runNow: { operation: platformOperation(RUN_NOW), target: { input: "record" } },
+    save: { operation: platformOperation(SCHEDULED_TASK + ".save"), target: { input: "record" } },
+  };
   const projection = productProjectionInputSchema.parse({
-    name: "Agent definition", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectForm",
-    inputs: { record: agent }, outputs: {}, config: {},
-    data: {
-      form: { source: { object: { input: "record" } }, read: "form", params: {} },
-      createForm: { source: { type: platformType(AGENT_DEFINITION) }, read: "createForm", params: {} },
+    name: "Tasks", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectForm",
+    inputs: { record: task }, outputs: {}, config: {}, operations,
+    data: { form: { source: { object: { input: "record" } }, read: "form", params: {} } },
+  });
+  const binding = projection.operations!.runNow;
+  assert.equal(projectionOperationTargetMatches(projection, binding, ownerType, SCHEDULED_TASK), true);
+  assert.equal(projectionOperationTargetMatches(projection, binding, ownerType, BUSINESS_KNOWLEDGE), false);
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...projection, operations: { runNow: { ...binding, target: { input: "missing" } } },
+  }).success, false);
+  const manifest = panelManifestSchema.parse({
+    state: { selectedTask: { type: task } },
+    members: {
+      list: { target: { projectionId: "tasks" }, inputs: { record: { state: "selectedTask" } } },
     },
-  });
-  const manifest = panelManifestSchema.parse({
-    state: { selectedAgent: { type: agent } },
-    members: { definition: { target: { projectionId: "definition-form" }, inputs: { record: { state: "selectedAgent" } } } },
     events: {},
   });
-  const ports = projectionPorts(projection, {
-    operations: [{ client: "@binding", name: "save", label: "Save", kind: "form.save", inputSchema: {} }],
+  const description = {
+    handlerRef: RUN_NOW, effect: "write", kind: "action", label: "Run now", batch: false,
+    target: { source: "input", input: "record" }, inputSchema: { type: "object" }, resultSchema: {},
+  } as const;
+  const run = projectionOperation(manifest, "list", "runNow", description);
+  assert.equal(run.id, "list.runNow");
+  assert.deepEqual(panelOperationSchema.parse(run).target, { source: "state", state: "selectedTask" });
+  assert.deepEqual(run.inputSchema, { type: "object" });
+  const save = projectionOperation(manifest, "list", "save", {
+    ...description, handlerRef: SCHEDULED_TASK + ".save", kind: "form.save", label: "Save",
   });
-  const [save] = projectionOperations(manifest, { slot: "definition", ports });
-  assert.equal(save?.handlerRef, `${AGENT_DEFINITION}.save`);
-  assert.deepEqual(save?.target, { source: "draft", slot: "definition" });
+  assert.deepEqual(panelOperationSchema.parse(save).target, { source: "draft", slot: "list" });
+  assert.deepEqual(projectionBindingKeys(projection), [bindingKey(platformType(SCHEDULED_TASK)),
+    bindingKey(platformOperation(RUN_NOW)), bindingKey(platformOperation(SCHEDULED_TASK + ".save"))]);
 });
 
-test("named operation reads publish buttons and form metadata binds to its real owner", () => {
-  const task = { kind: "object", objectType: SCHEDULED_TASK };
-  const projection = productProjectionInputSchema.parse({
-    name: "Run now", description: "", visibility: "domain", componentId: "@ontomato/sdk:OperationButton",
-    inputs: { task }, outputs: {}, config: {},
-    data: { operation: { source: { operation: platformOperation(RUN_NOW) }, read: "describe", params: {} } },
-  });
-  const manifest = panelManifestSchema.parse({
-    state: { selected: { type: task } },
-    members: { run: { target: { projectionId: "run-now" }, inputs: { task: { state: "selected" } } } },
-    events: {},
-  });
-  const [run] = projectionOperations(manifest, { slot: "run", ports: projectionPorts(projection, {}) });
-  assert.equal(run?.id, "run.runNow");
-  assert.equal(run?.handlerRef, RUN_NOW);
-  assert.deepEqual(run?.target, { source: "state", state: "selected" });
-  const twoSelections = panelManifestSchema.parse({
-    ...manifest, state: { ...manifest.state, other: { type: task } },
-    members: { run: { ...manifest.members.run, inputs: { other: { state: "other" }, task: { state: "selected" } } } },
-  });
-  const action = productProjectionInputSchema.parse({
-    ...projection, inputs: { other: task, task },
-    data: { operation: {
-      source: { operation: { kind: "Action", id: "approve" } }, read: "describe",
-      params: { target: { input: "task" } },
-    } },
-  });
-  const [execute] = projectionOperations(twoSelections, { slot: "run", ports: projectionPorts(action, {}) });
-  assert.equal(execute?.handlerRef, "actions.execute");
-  assert.deepEqual(execute?.target, { source: "state", state: "selected" });
-
-  const form = productProjectionInputSchema.parse({
-    ...projection, name: "Task form", componentId: "@ontomato/sdk:ObjectForm",
-    data: { form: { source: { object: { input: "task" } }, read: "form", params: {} } },
-  });
-  const formPorts = projectionPorts(form, { operations: [
-    { client: "@binding", name: "save", label: "Save", kind: "form.save", inputSchema: {} },
-    { client: "@binding", name: "delete", label: "Delete", kind: "action", inputSchema: {} },
-  ] });
-  assert.deepEqual(formPorts.operations.map(op => op.handlerRef), [`${SCHEDULED_TASK}.save`]);
-});
-
-test("a batch operation can target the checked object list", () => {
+test("an explicit batch operation can bind a checked object list", () => {
   const selection = { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } };
   const projection = productProjectionInputSchema.parse({
     name: "Delete checked", description: "", visibility: "domain", componentId: "@ontomato/sdk:OperationButton",
-    inputs: { selection }, outputs: {}, config: { checked: "selection" },
-    data: { operation: { source: { operation: platformOperation(DELETE_KNOWLEDGE) }, read: "describe", params: {} } },
+    inputs: { selection }, outputs: {}, config: {}, data: {},
+    operations: { remove: { operation: platformOperation(DELETE_KNOWLEDGE), target: { input: "selection" } } },
   });
-  const manifest = panelManifestSchema.parse({
-    state: { checked: { type: selection, default: [] } },
-    members: { removeAll: { target: { projectionId: "delete-checked" }, inputs: { selection: { state: "checked" } } } },
-    events: {},
-  });
-  const ports = projectionPorts(projection, {});
-  const [remove] = projectionOperations(manifest, { slot: "removeAll", ports });
-  assert.deepEqual(panelOperationSchema.parse(remove).target, { source: "state", state: "checked" });
+  const declaration = { target: { source: "input", input: "knowledge" }, batch: true } as const;
+  assert.equal(projectionOperationTargetMatches(projection, projection.operations!.remove, declaration, BUSINESS_KNOWLEDGE), true);
+  assert.equal(projectionOperationTargetMatches(projection, projection.operations!.remove, { ...declaration, batch: false }, BUSINESS_KNOWLEDGE), false);
 });
 
 test("read operation inputs can take parameter values and a binding from this panel instance", () => {
@@ -984,7 +966,7 @@ test("a graph has two admitted sources and can use either a form field or separa
     },
   });
   assert.deepEqual(projectionBindingKeys(projection), [binding(OBJECT_TYPE), binding(RELATIONSHIP)]);
-  assert.deepEqual(projectionPorts(projection, {}).outputs, projection.outputs);
+  assert.deepEqual(projectionPorts(projection).outputs, projection.outputs);
 
   const range = panelManifestSchema.parse({
     state: {}, events: {},
@@ -1009,7 +991,7 @@ test("a named relationship is a binding identity and supplies no inferred edge s
     data: { neighbors: { source: { type: relationship }, read: "neighbors", params: { node: { input: "node" } } } },
   });
   assert.deepEqual(projectionBindingKeys(projection), ["Relationship:manages"]);
-  assert.deepEqual(projectionPorts(projection, {}).outputs, {});
+  assert.deepEqual(projectionPorts(projection).outputs, {});
 });
 
 test("canonical relation paths are already routable and carry no view state", () => {
@@ -1093,7 +1075,7 @@ test("a panel operation descriptor admits exactly the three use and operation qu
   assert.deepEqual(panelOperationRefSchema.parse(query), query);
   assert.equal(panelOperationRefSchema.safeParse({ ...query, effect: "read" }).success, false);
   const description = {
-    handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" },
+    handlerRef: "schedules.runNow", label: "Run now", kind: "action", effect: "write", target: { source: "input", input: "task" },
     inputSchema: {}, resultSchema: {}, batch: false,
   };
   assert.deepEqual(panelOperationDescriptorResponseSchema.parse(description), description);
@@ -1248,7 +1230,7 @@ test("a read-only trial carries the current draft and parameters without a write
   assert.deepEqual(readPanelOperationRequestSchema.parse(request), request);
   assert.equal(readPanelOperationRequestSchema.safeParse({ ...request, effect: "read" }).success, false);
   const owner = {
-    handlerRef: "metricViews.testExecute", label: "Test", effect: "read", batch: false, target: { source: "draft", slot: "definition" },
+    handlerRef: "metricViews.testExecute", label: "Test", kind: "action", effect: "read", batch: false, target: { source: "draft", slot: "definition" },
     inputSchema: { type: "object" }, resultSchema: { type: "object" },
   };
   assert.deepEqual(panelReadOperationDescriptorSchema.parse(owner), owner);
@@ -1263,10 +1245,10 @@ test("the author type table and live descriptions share operation declarations",
   const { panelOperationDeclarationSchema, describePanelOperationFromDeclaration } = await import("./panel-operations");
   const { platformTypeTableResponseSchema } = await import("./platform-type-table");
   const run = panelOperationDeclarationSchema.parse({
-    id: RUN_NOW, effect: "write", batch: false, target: { source: "input", input: "task" }, inputSchema: { type: "object" },
+    id: RUN_NOW, kind: "action", effect: "write", batch: false, target: { source: "input", input: "task" }, inputSchema: { type: "object" },
   });
   const save = panelOperationDeclarationSchema.parse({
-    id: `${SCHEDULED_TASK}.save`, effect: "write", batch: false, target: { source: "draft" }, inputSchema: { type: "object" },
+    id: SCHEDULED_TASK + ".save", kind: "form.save", effect: "write", batch: false, target: { source: "draft" }, inputSchema: { type: "object" },
   });
   const table = {
     objectTypes: { [SCHEDULED_TASK]: { reads: platformObjectTypes[SCHEDULED_TASK].reads, operations: [run, save] } },
@@ -1399,7 +1381,7 @@ test("mixed graphs declare selected node types separately from the read bindings
     inputs: { start: nodeIdentity }, outputs: { selectedNode: nodeIdentity }, config: {},
     data: { neighbors: { source: { type: platformType(ONTOLOGY_TYPE) }, read: "neighbors", params: { node: { input: "start" } } } },
   });
-  assert.deepEqual(projectionPorts(projection, {}).outputs?.selectedNode, nodeIdentity);
+  assert.deepEqual(projectionPorts(projection).outputs?.selectedNode, nodeIdentity);
   assert.deepEqual(projection.inputs.start, nodeIdentity);
   const manifest = panelManifestSchema.parse({
     state: { selected: { type: nodeIdentity } },
