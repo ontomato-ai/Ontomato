@@ -2,10 +2,10 @@ import { afterEach, expect, it, vi } from "vitest";
 import { computed, nextTick, ref } from "vue";
 import { createI18n } from "vue-i18n";
 import publicEn from "@ontomato/workbench-ui/locales/en";
-import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
+import { definePanel, type DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
-import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { BUSINESS_KNOWLEDGE, SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import { panelModuleFor, type DirectPanelMount } from "../../../../../packages/apps-sdk/src/direct";
 import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 import { noOperations } from "./panel-frame";
@@ -200,4 +200,67 @@ it("says where to call it when it is called outside a component's setup", async 
   });
   // At a module's top level (or after an await in setup), not in a panel's frame: the reason names the call's place.
   expect(() => module.usePanelData("task", "record")).toThrow("Call usePanelData in a component's setup, before any await");
+});
+
+it("reads a list and its counts again when an operation reports their type changed", async () => {
+  const counted: DirectProjection = {
+    ...base, id: "knowledge", name: "Knowledge", componentId: "@ontomato/sdk:PanelData",
+    inputs: {}, outputs: {}, config: {},
+    data: {
+      rows: { source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } }, read: "query", params: {} },
+      counts: { source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } }, read: "counts", params: { by: { literal: "status" } } },
+    },
+  };
+  const element = document.createElement("div");
+  document.body.append(element);
+  const reads: PanelMemberReadRequest[] = [];
+  let pending = 7;
+  let mounted!: (mount: DirectPanelMount) => void;
+  const mount = new Promise<DirectPanelMount>((resolve) => { mounted = resolve; });
+  const module = panelModuleFor({
+    mounted, element, template: `<p class="counts">{{ pendingCount }}</p><p class="rows">{{ rowCount }}</p>`,
+    install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
+    manifest: definePanel({ state: {}, members: { board: { target: { projectionId: counted.id } } }, events: {} }),
+    run: {
+      pageKey: "board", url: () => "/board", label: () => "Board", initial: {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
+      failed: (reason) => { throw reason; },
+    },
+    messages: {}, locale: ref("en"), defaultLocale: "en",
+    requests: { request: async () => Response.json({ projection: counted }) },
+    use: { applicationId: "app-board", useId: "board" },
+    expandPageComposer: noOperations.expandPageComposer,
+    confirmOperation: noOperations.confirmOperation,
+    read: async (request): Promise<ProductPanelReadResponse> => {
+      reads.push(request);
+      if (request.operations) return { status: "ready", value: {} as never };
+      return request.dataName === "counts"
+        ? { status: "ready", value: [{ key: "pending", label: "Pending", count: pending }] as never }
+        : { status: "ready", value: { rows: Array.from({ length: pending }, (_, index) => record(`k-${index}`)) } as never };
+    },
+  });
+  await module.mountPanel({
+    setup() {
+      const counts = module.usePanelData("board", "counts");
+      const rows = module.usePanelData("board", "rows");
+      return {
+        pendingCount: computed(() => (counts.value.status === "ready" ? (counts.value.value as { count: number }[])[0]!.count : "…")),
+        rowCount: computed(() => (rows.value.status === "ready" ? (rows.value.value as { rows: unknown[] }).rows.length : "…")),
+      };
+    },
+  });
+  const run = await mount;
+  await vi.waitFor(() => expect(element.querySelector(".counts")?.textContent).toBe("7"));
+
+  // An operation approved four: the owner reports the type changed, and the host hands that to the run.
+  pending = 3;
+  run.refresh(null, { objects: [], objectTypes: [BUSINESS_KNOWLEDGE] });
+  await vi.waitFor(() => expect(element.querySelector(".counts")?.textContent).toBe("3"));
+  await vi.waitFor(() => expect(element.querySelector(".rows")?.textContent).toBe("3"));
+  // A change to another type reads nothing of these again.
+  const before = reads.filter((read) => read.dataName).length;
+  run.refresh(null, { objects: [], objectTypes: ["platform:Other"] });
+  await nextTick();
+  expect(reads.filter((read) => read.dataName).length).toBe(before);
+  run.dispose();
 });
