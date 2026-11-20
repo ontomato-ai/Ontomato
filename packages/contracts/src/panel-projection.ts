@@ -2,7 +2,8 @@ import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema, formValuesSchema, panelFormOptionSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
-import { ontologyParameterTypeSchema, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, singleOntologyParameterTypeSchema, type OntologyParameterType, type PanelManifest, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
+import { directPanelPortTypeSchema, ontologyParameterTypeSchema, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, type OntologyParameterType, type PanelManifest, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
+import { platformOntologyNeighborsRequestSchema, platformOntologyObjectsRequestSchema } from "./platform-ontology";
 import { platformObjectTypes, type PlatformObjectTypeDeclaration, type PlatformReadDeclaration } from "./platform-object-types";
 import type { ProductProjectionInput } from "./product-panels";
 
@@ -40,15 +41,46 @@ export const directProjectionDataSchema = z.object({
 export type DirectProjectionData = z.infer<typeof directProjectionDataSchema>;
 
 export const directProjectionPortsSchema = z.object({
-  componentId: z.enum(["@ontomato/sdk:ObjectList", "@ontomato/sdk:ObjectSummary", "@ontomato/sdk:ObjectForm", "@ontomato/sdk:OperationButton"]),
-  inputs: z.record(readKey, z.union([singleOntologyParameterTypeSchema, z.object({ kind: z.literal("json") }).strict()])),
-  outputs: z.record(readKey, singleOntologyParameterTypeSchema),
+  componentId: z.enum([
+    "@ontomato/sdk:ObjectList", "@ontomato/sdk:ObjectSummary", "@ontomato/sdk:ObjectForm", "@ontomato/sdk:OperationButton",
+    "@ontomato/sdk:ReferencePicker", "@ontomato/sdk:ObjectGraph", "@ontomato/sdk:OntologyGraph", "@ontomato/sdk:ObjectRelations",
+  ]),
+  inputs: z.record(readKey, z.union([directPanelPortTypeSchema, z.object({ kind: z.literal("json") }).strict()])),
+  outputs: z.record(readKey, directPanelPortTypeSchema),
   data: z.record(readKey, directProjectionDataSchema),
   config: runtimeJsonObjectSchema,
 }).strict();
 export type DirectProjectionPorts = z.infer<typeof directProjectionPortsSchema>;
 
-export const panelReadParameterSchemas = { formValues: formValuesSchema, changedField: fieldPath.nullable() };
+const positiveInteger = z.number().int().positive();
+export const panelReadParameterSchemas = {
+  formValues: formValuesSchema,
+  panelFormValues: panelFormValuesSchema,
+  changedField: fieldPath.nullable(),
+  keyword: z.string(),
+  page: z.object({ number: positiveInteger, size: positiveInteger }).strict(),
+  optionValues: z.array(runtimeJsonValueSchema),
+  graphNode: platformOntologyNeighborsRequestSchema.shape.node,
+  relationKinds: platformOntologyNeighborsRequestSchema.shape.relationKinds.unwrap(),
+  layers: platformOntologyNeighborsRequestSchema.shape.layers.unwrap(),
+  ontologyType: platformOntologyObjectsRequestSchema.shape.type,
+};
+
+type ReadParameter = keyof typeof panelReadParameterSchemas;
+type ReadInput = DirectProjectionPorts["inputs"][string];
+
+function readInputMatches(parameter: ReadParameter, input: ReadInput | undefined): boolean {
+  switch (parameter) {
+    case "changedField":
+    case "keyword":
+    case "ontologyType":
+      return input?.kind === "scalar" && input.type === "string";
+    case "graphNode":
+      return input?.kind === "object" || input?.kind === "object-union" || input?.kind === "json";
+    default:
+      return input?.kind === "json";
+  }
+}
 
 type DirectObjectSource = Extract<DirectProjectionData["source"], { object: unknown }>["object"];
 
@@ -96,6 +128,9 @@ export function validateDirectProjection(projection: DirectProjectionPorts, ctx:
       }
       continue;
     }
+    for (const param of declaration.requiredParams ?? []) {
+      if (!Object.hasOwn(params, param)) issue([...path, "params", param], "Required parameter needs a source");
+    }
     for (const [param, value] of Object.entries(params)) {
       const parameter = declaration.params[param];
       if (!parameter) {
@@ -104,9 +139,8 @@ export function validateDirectProjection(projection: DirectProjectionPorts, ctx:
         if (!panelReadParameterSchemas[parameter].safeParse(value.literal).success)
           issue([...path, "params", param, "literal"], "Value does not match the read parameter type");
       } else {
-        const input = projection.inputs[value.input];
-        const valid = parameter === "formValues" ? input?.kind === "json" : input?.kind === "scalar" && input.type === "string";
-        if (!valid) issue([...path, "params", param, "input"], "Input does not match the read parameter type");
+        if (!readInputMatches(parameter, projection.inputs[value.input]))
+          issue([...path, "params", param, "input"], "Input does not match the read parameter type");
       }
     }
   }
@@ -122,6 +156,21 @@ export const panelRecordSchema = z.object({
 }).strict();
 export type PanelRecord = z.infer<typeof panelRecordSchema>;
 export const panelRecordListSchema = z.array(panelRecordSchema);
+
+export const panelOptionSchema = z.object({
+  primaryKey: panelObjectRefSchema.shape.primaryKey,
+  value: runtimeJsonValueSchema,
+  label: z.string(),
+  description: z.string().optional(),
+  unavailable: z.object({ reason: z.string().min(1) }).strict().optional(),
+}).strict();
+export type PanelOption = z.infer<typeof panelOptionSchema>;
+
+export const panelOptionListSchema = z.object({
+  options: z.array(panelOptionSchema),
+  total: z.number().int().nonnegative().optional(),
+}).strict();
+export type PanelOptionList = z.infer<typeof panelOptionListSchema>;
 
 /** The frequency control edits the same value as the scheduled-task control. */
 export {
