@@ -96,7 +96,8 @@ defineExpose({ ...view, operations });
   <section class="panel-host">
     <header v-if="title" class="panel-host-title">{{ title }}</header>
     <p v-if="view.error.value" role="alert" class="panel-host-error">{{ view.error.value }}</p>
-    <div v-else-if="view.direct.value" class="panel-host-direct">
+    <!-- Drawn while Java's answer is coming, so its members read at once; shown only once that answer names the page. -->
+    <div v-else-if="view.direct.value" v-show="view.admitted.value" class="panel-host-direct">
       <PanelLayout
         :nodes="view.direct.value.layout"
         :members="members"
@@ -105,7 +106,7 @@ defineExpose({ ...view, operations });
       />
     </div>
     <iframe
-      v-else-if="view.document.value"
+      v-else-if="view.document.value && view.admitted.value"
       ref="frame"
       class="panel-host-frame"
       :title="title ?? label"
