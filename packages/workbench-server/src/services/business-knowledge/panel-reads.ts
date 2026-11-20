@@ -1,30 +1,24 @@
 import { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
-import {
-  APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE, DELETE_KNOWLEDGE,
-} from "@ontomato/contracts/panel-client-requests";
-import { panelOwnerOperationDescriptorSchema } from "@ontomato/contracts/panel-operations";
+import { BUSINESS_KNOWLEDGE } from "@ontomato/contracts/panel-client-requests";
 import {
   panelFormDescriptionSchema, panelReadParameterSchemas, type PanelFormDescription, type PanelRecord,
   type PanelTextHighlightRange,
 } from "@ontomato/contracts/panel-projection";
 import { config } from "../../config/application";
-import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { ownerEnvelopeSchema } from "../product-panels/data-query-operations";
 import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
-import { knowledgeEntrySchema, m7ServerOperations } from "./panel-operations";
+import { knowledgeEntrySchema } from "./panel-operations";
 
 /*
  * The business knowledge owner's named reads, called with the viewer's credentials: the queried list with the status
- * counts of its tabs, one entry, the form and the two write descriptions. The owner keeps entries whole by domain and
- * has no single read, so every entry read fetches the whole domain and selects here. The list keeps the page it
- * replaces: space-separated terms matched case-insensitively somewhere in title, content or tags, entries whose title
- * hits more terms first, then the status filter and cursor paging over the result. Field labels and the two status
- * names come from the owner's form description in the reader's language — the one source the owner gives them in, not
- * a second one written here.
+ * counts of its tabs, one entry, and the form. The owner keeps entries whole by domain and has no single read, so every
+ * entry read fetches the whole domain and selects here. The list keeps the page it replaces: space-separated terms
+ * matched case-insensitively somewhere in title, content or tags, entries whose title hits more terms first, then the
+ * status filter and cursor paging over the result. Field labels and the two status names come from the owner's form
+ * description in the reader's language — the one source the owner gives them in, not a second one written here.
  */
 
 type KnowledgeEntry = z.infer<typeof knowledgeEntrySchema>;
@@ -140,26 +134,6 @@ function entryRow(entry: KnowledgeEntry, text: EntryText, terms: readonly string
   };
 }
 
-const knowledgeAction = (handlerRef: string) => {
-  const operation = m7ServerOperations.find(item => item.handlerRef === handlerRef);
-  if (operation?.kind !== "action") throw new Error(`The knowledge owner declares no action ${handlerRef}`);
-  return operation;
-};
-const approveOperation = knowledgeAction(APPROVE_KNOWLEDGE);
-const deleteOperation = knowledgeAction(DELETE_KNOWLEDGE);
-
-/** The owner's description of one write, as the confirming reader and an agent both take it. */
-const actionDescription = (operation: ReturnType<typeof knowledgeAction>) => ({
-  handlerRef: operation.handlerRef,
-  kind: operation.kind,
-  effect: operation.effect,
-  target: { source: "input", input: operation.targetInput },
-  inputSchema: zodToJsonSchema(operation.inputSchema, { effectStrategy: "input" }),
-  resultSchema: zodToJsonSchema(operation.resultSchema, { effectStrategy: "input" }),
-  batch: operation.batch,
-  ...(operation.inspectImpact ? { inspectImpact: { handlerRef: operation.inspectImpact.handlerRef } } : {}),
-});
-
 export function createBusinessKnowledgeReadAdapter(viewer: AssistantCredentials, signal?: AbortSignal) {
   const options = {
     headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers),
@@ -238,18 +212,6 @@ export function createBusinessKnowledgeReadAdapter(viewer: AssistantCredentials,
     /** The form for a target: a draft's blank one, or one entry's with submitted values and a changed field. */
     async form(primaryKey: string | undefined, params: Record<string, unknown>) {
       return ownerForm(primaryKey, params);
-    },
-    /** The approve write's description, as a panel's button and an agent's call both take it. */
-    ["knowledge.approve.describe"]() {
-      return panelOwnerOperationDescriptorSchema.parse({
-        ...actionDescription(approveOperation), label: tForLocale(viewer.locale, "panels.knowledge.approve"),
-      });
-    },
-    /** The delete write's description, with the impact a confirmation reads. */
-    ["knowledge.delete.describe"]() {
-      return panelOwnerOperationDescriptorSchema.parse({
-        ...actionDescription(deleteOperation), label: tForLocale(viewer.locale, "panels.knowledge.delete"),
-      });
     },
   };
 }
