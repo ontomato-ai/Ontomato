@@ -3,7 +3,7 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import { panelOperationId, type PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { directReadDeclaration, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
-import type { DirectProjection } from "@ontomato/contracts/product-panels";
+import { METRIC_CHART_COMPONENT, type DirectProjection } from "@ontomato/contracts/product-panels";
 import { awaitsInputs, paramValues, readKey, type MemberData, type MemberDataState, type MemberInputs } from "./direct";
 import type { PanelInstance } from "./instance";
 import { adapterPart, type PlatformGraphNeighborsQuery, type PlatformObjectRecord } from "./platform-objects";
@@ -15,9 +15,10 @@ import { stateObject, type PanelFieldValue } from "./state";
  * A direct projection placed in a panel's frame (an older code panel using a declared projection): its components get
  * the same member data as in the platform's document, read here through this release's resource modules for the
  * projection's type — rows by its list, a record by its single read, a form by its form (a create form for the type),
- * choices by its options, the ontology graph by its graph reads — and an operation's description from the coordinator,
- * until every caller reads through the platform (design 4.2, step 4). A datum waits, unread, for its object or a
- * parameter its owner requires. A module that cannot answer rejects; a shown datum says why.
+ * choices by its options, the ontology graph by its graph reads, a registered chart's drawing and output by its source
+ * card's metric reads — and an operation's description from the coordinator, until every caller reads through the
+ * platform (design 4.2, step 4). A datum waits, unread, for its object or a parameter its owner requires. A module that
+ * cannot answer rejects; a shown datum says why.
  */
 
 /** The graph reads of a type's module. */
@@ -105,6 +106,17 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
           ...(params.keyword ? { keyword: params.keyword as string } : {}),
           ...(page ? { page: page.number, pageSize: page.size } : {}),
         });
+        break;
+      }
+      case "chartTemplate":
+      case "metricOutput": {
+        // A frame reaches a chart's source only through the registered chart projection it read.
+        if (projection.componentId !== METRIC_CHART_COMPONENT)
+          throw new Error(`Only a registered chart reads '${data.read}' in a panel's frame`);
+        const metric = adapterPart(object!.className, "metric");
+        value = declaration.result === "chartTemplate"
+          ? await metric.template(projection)
+          : await metric.result(projection, params as Record<string, RuntimeJsonValue>);
         break;
       }
     }
