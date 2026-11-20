@@ -1,6 +1,6 @@
 import { defineComponent, h, type PropType, type VNodeChild } from "vue";
 import type { PanelLayoutCondition, PanelLayoutNode } from "@ontomato/contracts/panel-layout";
-import type { DirectPanelMember } from "@ontomato/contracts/panel-manifest";
+import type { PanelMember } from "@ontomato/contracts/panel-manifest";
 
 /*
  * A direct panel's layout, drawn by the platform (direct rendering design 1.1–1.2): the parsed node tree mapped to the
@@ -25,7 +25,7 @@ export const PanelLayout = defineComponent({
   name: "PanelLayout",
   props: {
     nodes: { type: Array as PropType<readonly PanelLayoutNode[]>, required: true },
-    members: { type: Object as PropType<Readonly<Record<string, DirectPanelMember>>>, required: true },
+    members: { type: Object as PropType<Readonly<Record<string, PanelMember>>>, required: true },
     values: { type: Object as PropType<Readonly<Record<string, unknown>>>, required: true },
     /** Draws the member the layout places under this key. */
     member: { type: Function as PropType<(ref: string) => VNodeChild>, required: true },

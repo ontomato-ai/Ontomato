@@ -33,21 +33,21 @@ const labels: PanelHostLabels = {
 /** Panel P: a task list, the task's form and a button that runs it. Its list and summary are the shared projection X. */
 const panelP = definePanel({
   state: {
-    selectedTask: { kind: "object", objectType: SCHEDULED_TASK, deepLink: true },
-    search: { kind: "scalar", type: "string", deepLink: false },
+    selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true },
+    search: { type: { kind: "scalar", type: "string" } },
   },
-  slots: {
-    tasks: { projectionId: "projection-x", inputs: {} },
-    taskForm: { projectionId: "projection-task-form", inputs: { task: { state: "selectedTask" } } },
+  members: {
+    tasks: { target: { projectionId: "projection-x" } },
+    taskForm: { target: { projectionId: "projection-task-form" }, inputs: { task: { state: "selectedTask" } } },
   },
-  operations: [],
+  events: {},
 });
 
 /** Panel Q: the same projection X and nothing of P. */
 const panelQ = definePanel({
-  state: { selectedTask: { kind: "object", objectType: SCHEDULED_TASK, deepLink: true } },
-  slots: { summary: { projectionId: "projection-x", inputs: { task: { state: "selectedTask" } } } },
-  operations: [],
+  state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
+  members: { summary: { target: { projectionId: "projection-x" }, inputs: { task: { state: "selectedTask" } } } },
+  events: {},
 });
 
 function record(id: string, name: string, manifest: ProductPanel["manifest"]): ProductPanel {
@@ -64,12 +64,11 @@ function record(id: string, name: string, manifest: ProductPanel["manifest"]): P
     visibility: "domain",
     content: { html: `<div id="panel"></div>`, module: `import {mountPanel} from "@ontomato/sdk/panel";` },
     manifest,
-    sdkVersion: "1.1.0",
   };
 }
 
 /** The renderable definition a record's frame receives. */
-const definition = ({ content, manifest, sdkVersion }: ProductPanel) => ({ content, manifest, sdkVersion });
+const definition = ({ content, manifest }: ProductPanel) => ({ content, manifest });
 
 function useRelation(id: string, pageKey: string, panelId: string, path: string): ApplicationPanelUse {
   return {
@@ -207,7 +206,7 @@ describe("the panel host", () => {
     const panels = new Map([
       ["panel-p", record("panel-p", "Scheduled tasks", panelP)],
       ["panel-q", record("panel-q", "Task summary", panelQ)],
-      ["panel-r", record("panel-r", "Application only", definePanel({ state: {}, slots: { form: { projectionId: "projection-other", inputs: {} } }, operations: [] }))],
+      ["panel-r", record("panel-r", "Application only", definePanel({ state: {}, members: { form: { target: { projectionId: "projection-other" } } }, events: {} }))],
     ]);
     const port = platform({
       panels,

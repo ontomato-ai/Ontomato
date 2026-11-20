@@ -1,6 +1,6 @@
 import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
 import {
-  applicationPanelUsesResponseSchema, directPanelSchema, productPanelResponseSchema, productPanelSchema, type ApplicationPanelUse,
+  applicationPanelUsesResponseSchema, productPanelResponseSchema, productPanelSchema, type ApplicationPanelUse,
   type ProductPanelReadQuery,
 } from "@ontomato/contracts/product-panels";
 import { appsSdkCurrentSchema, appsSdkReleaseManifestSchema } from "@ontomato/contracts/apps-sdk";
@@ -74,10 +74,9 @@ async function release(): Promise<PanelSdkRelease> {
   return { base: current.sdkBasePath, manifest: appsSdkReleaseManifestSchema.parse(await manifest.json()) };
 }
 
-/** A panel's current record: one written with code carries its module and SDK version, a direct one neither. */
+/** A panel's current record: one record shape, whether the platform draws it or a frame runs its code. */
 async function panel(panelId: string) {
-  const record = (await json(panelHostPaths.panel(panelId))).panel;
-  return "module" in record.content ? productPanelSchema.parse(record) : directPanelSchema.parse(record);
+  return productPanelSchema.parse((await json(panelHostPaths.panel(panelId))).panel);
 }
 
 /** One named datum a direct panel's member shows, read by the platform as the reader, in one of its four states. */
@@ -125,9 +124,8 @@ export function platformPanelHost(
       const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(use.panelId)}?${page}`));
       // A read that names its page is answered with the page skill context; the host passes on what Node answered.
       pageSkill?.(pageSkillContextSchema.parse(answer.pageSkillContext));
-      const record = answer.panel;
-      // A record with an SDK version is written with code and runs in a frame; one without is drawn directly.
-      return "sdkVersion" in record ? { kind: "registered", applicationId, use, panel: record } : { kind: "registered", applicationId, use, panel: record };
+      // Where it runs, drawn here or in a frame, is the panel host's decision from the record's own content.
+      return { kind: "registered", applicationId, use, panel: answer.panel };
     },
     pageKey: use.pageKey,
     use: shown,
