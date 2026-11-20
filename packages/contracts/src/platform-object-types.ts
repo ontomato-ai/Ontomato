@@ -154,7 +154,10 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [PRODUCT_PROJECTION]: describeType("productProjection", "product"),
   [PRODUCT_PANEL]: describeType("productPanel", "product"),
   [APPLICATION]: describeType("application", "product"),
-  [APPLICATION_PANEL_USE]: describeType("applicationPanelUse", "product"),
+  [APPLICATION_PANEL_USE]: {
+    ...describeType("applicationPanelUse", "product"),
+    reads: { visible: { source: "type", parameterMode: "fixed", params: {}, result: "panelApplicationMenu" } },
+  },
   [AGENT_DEFINITION]: {
     ...describeType("agentDefinition", "product"),
     reads: {

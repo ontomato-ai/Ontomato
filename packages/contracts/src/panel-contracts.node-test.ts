@@ -159,6 +159,17 @@ test("fixed owner signatures and per-definition read parameters are distinct", a
   }).success, false);
 });
 
+test("owner query rows carry only actual highlight ranges on their display text", async () => {
+  const { panelRecordQuerySchema, panelRecordSchema } = await import("./panel-projection");
+  const row = {
+    primaryKey: "knowledge-1", label: "差旅报销", fields: { status: "已通过" },
+    highlights: { label: [{ start: 2, end: 4 }] },
+  };
+  assert.deepEqual(panelRecordQuerySchema.parse({ rows: [row], total: 1 }), { rows: [row], total: 1 });
+  assert.equal(panelRecordSchema.safeParse({ ...row, highlights: {} }).success, false);
+  assert.equal(panelRecordSchema.safeParse({ ...row, highlights: { label: [{ start: 4, end: 2 }] } }).success, false);
+});
+
 test("a no-code task panel registers and parses the same members and layout", async () => {
   const { registerProductPanelRequestSchema } = await import("./product-panels");
   const { parsePanelLayout } = await import("./panel-layout");
@@ -265,6 +276,9 @@ test("entry resolution and personal-state scope use the actual use and nested pa
   const request = { source: { kind: "registered", applicationId: "app-tasks", useId: "tasks" }, memberPath, values: { selected: null } };
   assert.deepEqual(panelPersonalStateWriteRequestSchema.parse(request), request);
   assert.equal(panelPersonalStateWriteRequestSchema.safeParse({ ...request, domainId: "other" }).success, false);
+  assert.equal(panelPersonalStateWriteRequestSchema.safeParse({
+    ...request, source: { kind: "candidate", workspace: { id: "eeb5fc31-8ecf-46a9-882f-728ce4ba3fff", ref: "working" } },
+  }).success, false);
   const snapshot = { panel: { id: use.panelId, revision: 1 }, projections: [], members: [{ status: "forbidden", memberPath }] };
   assert.deepEqual(panelDefinitionSnapshotSchema.parse(snapshot), snapshot);
   assert.equal(panelDefinitionSnapshotSchema.safeParse({

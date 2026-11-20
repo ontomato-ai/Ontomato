@@ -2,7 +2,7 @@ import { z } from "zod";
 import { runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema } from "./form-fields";
 import { pageDraftLinkSchema } from "./page-draft";
-import { APPLICATION_PANEL_USE, platformHasChildCollection, platformObjectTypes, platformOntologyLayers } from "./platform-object-types";
+import { APPLICATION_PANEL_USE, PRODUCT_PANEL, platformHasChildCollection, platformObjectTypes, platformOntologyLayers } from "./platform-object-types";
 
 /* The registered manifest describes a panel instance's state, placements, ports and events. Resource owners
  * describe their own operations. A frame and a direct instance consume the same registered declaration. */
@@ -428,7 +428,17 @@ export const panelManifestSchema = z.object({
   }
   for (const [member, declaration] of Object.entries(members)) {
     const path = ["members", member];
-    if ("fromState" in declaration.target) requireName(state, declaration.target.fromState, [...path, "target", "fromState"]);
+    if ("fromState" in declaration.target) {
+      const { fromState, candidates } = declaration.target;
+      const sourcePath = [...path, "target", "fromState"];
+      if (!Object.hasOwn(state, fromState)) requireName(state, fromState, sourcePath);
+      else {
+        const type = state[fromState].type;
+        if ("rule" in candidates ? type.kind !== "object" && type.kind !== "object-union"
+          : type.kind !== "object" || type.objectType !== PRODUCT_PANEL)
+          issue(sourcePath, "The state type does not match this placement's candidates");
+      }
+    }
     for (const [name, input] of Object.entries(declaration.inputs ?? {}))
       if ("state" in input) requireName(state, input.state, [...path, "inputs", name, "state"]);
     for (const [name, output] of Object.entries(declaration.outputs ?? {}))
@@ -471,6 +481,13 @@ export const panelManifestSchema = z.object({
       const valuePath = [...path, "do", operation, operation === "set" ? "fields" : "inputs", field];
       if (operation === "set") requireName(state, field, valuePath);
       if ("state" in value) requireName(state, value.state, [...valuePath, "state"]);
+      if (operation === "set" && Object.hasOwn(state, field)) {
+        const target = state[field].type;
+        if ("literal" in value && !matchesDirectPanelValue(target, value.literal))
+          issue([...valuePath, "literal"], "The value does not match the target state type");
+        if ("state" in value && Object.hasOwn(state, value.state) && !panelPortAccepts(target, state[value.state].type))
+          issue([...valuePath, "state"], "The source state type does not match the target state type");
+      }
       if ("event" in value && (!event.on || event.labelKey))
         issue([...valuePath, "event"], "An event value requires an output-only trigger");
     }

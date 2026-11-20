@@ -54,7 +54,7 @@ export const directProjectionPortsSchema = z.object({
   componentId: z.enum([
     "@ontomato/sdk:ObjectList", "@ontomato/sdk:ObjectSummary", "@ontomato/sdk:ObjectForm", "@ontomato/sdk:OperationButton",
     "@ontomato/sdk:ReferencePicker", "@ontomato/sdk:ObjectGraph", "@ontomato/sdk:OntologyGraph", "@ontomato/sdk:ObjectRelations",
-    "@ontomato/sdk:MetricChart", "@ontomato/sdk:ConversationEntry",
+    "@ontomato/sdk:MetricChart", "@ontomato/sdk:ConversationEntry", "@ontomato/sdk:AppMenu",
   ]),
   inputs: z.record(readKey, z.union([directPanelPortTypeSchema, z.object({ kind: z.literal("json") }).strict()])),
   outputs: z.record(readKey, directPanelPortTypeSchema),
@@ -199,6 +199,15 @@ export function validateDirectProjection(projection: DirectProjectionPorts, ctx:
   }
 }
 
+/** A half-open UTF-16 range in the displayed text supplied by the owner. */
+export const panelTextHighlightRangeSchema = z.object({
+  start: z.number().int().nonnegative(),
+  end: z.number().int().nonnegative(),
+}).strict().refine(range => range.end > range.start, {
+  path: ["end"], message: "A highlight must cover at least one character",
+});
+export type PanelTextHighlightRange = z.infer<typeof panelTextHighlightRangeSchema>;
+
 export const panelRecordSchema = z.object({
   primaryKey: panelObjectRefSchema.shape.primaryKey,
   label: z.string(),
@@ -206,6 +215,9 @@ export const panelRecordSchema = z.object({
   fields: z.record(z.string()),
   /** Field names supplied by the owner in the reader's locale, keyed by the names in fields. */
   fieldLabels: z.record(z.string()).optional(),
+  /** Display field keys (including label and subtitle). Omit this property when nothing matched. */
+  highlights: z.record(z.array(panelTextHighlightRangeSchema).min(1))
+    .refine(fields => Object.keys(fields).length > 0, "Omit highlights when there are no matches").optional(),
 }).strict();
 export type PanelRecord = z.infer<typeof panelRecordSchema>;
 export const panelRecordListSchema = z.array(panelRecordSchema);

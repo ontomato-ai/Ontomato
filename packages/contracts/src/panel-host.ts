@@ -64,9 +64,11 @@ export const productPanelReadRequestSchema = z.object({
 export type ProductPanelReadRequest = z.infer<typeof productPanelReadRequestSchema>;
 
 const panelPersonalStateScopeSchema = z.object({
-  source: productPanelReadSourceSchema,
+  source: productPanelReadSourceSchema.options[0],
   memberPath: panelMemberPathSchema,
 }).strict();
+export const PANEL_PERSONAL_STATE_PATH = "/product-panels/personal-state";
+export const PANEL_PERSONAL_STATE_READ_PATH = `${PANEL_PERSONAL_STATE_PATH}/read`;
 export const panelPersonalStateReadRequestSchema = panelPersonalStateScopeSchema.extend({
   fields: z.array(z.string().min(1)).nonempty(),
 });
