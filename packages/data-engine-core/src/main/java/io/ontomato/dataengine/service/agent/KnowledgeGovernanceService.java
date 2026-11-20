@@ -67,12 +67,12 @@ public class KnowledgeGovernanceService {
     for (String key : input.keySet()) schemas.put(key,JSONSchema.of(input.getJSONObject(key)));
   }
 
-  public void publishSkill() throws Exception {
+  public AgentRuntimeClient.SkillVersion publishSkill() throws Exception {
     var files=new ArrayList<Map<String,String>>();
     for (String path:List.of("SKILL.md","scripts/governance.mjs","references/commands.md","references/extraction.md"))
       files.add(Map.of("path",path,"content",definitions.resource("ontology-skills/knowledge-governance/"+path)));
-    runtime.json(null,"governance-skill","/v1/skills","POST",Map.of("skill",Map.of(
-      "namespace",Map.of("kind","provider","provider","ontology"),"name","knowledge-governance"),"files",files),null);
+    return runtime.publishSkill("governance-skill",Map.of(
+      "namespace",Map.of("kind","provider","provider","ontology"),"name","knowledge-governance"),files);
   }
 
   private static JSONObject emptyWork() {

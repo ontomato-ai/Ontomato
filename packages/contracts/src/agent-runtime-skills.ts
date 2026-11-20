@@ -36,13 +36,15 @@ export function runtimeSkillKey(skill: RuntimeSkillRef): string {
     skill.namespace.kind === "provider" ? skill.namespace.provider : skill.namespace.domainId,
     skill.name]);
 }
-export const runtimeRegisteredSkillSchema = z
+export const runtimeSkillVersionSchema = z
   .object({
     skill: runtimeSkillRefSchema,
     digest: z.string().regex(/^[a-f0-9]{64}$/),
-    description: z.string().min(1).max(1024),
   })
   .strict();
+export const runtimeRegisteredSkillSchema = runtimeSkillVersionSchema.extend({
+  description: z.string().min(1).max(1024),
+});
 export const runtimeRegisterSkillRequestSchema = z
   .object({
     skill: runtimeSkillRefSchema,
@@ -111,6 +113,7 @@ export const runtimeEnvironmentSchema = z
         });
   });
 export type RuntimeSkillRef = z.infer<typeof runtimeSkillRefSchema>;
+export type RuntimeSkillVersion = z.infer<typeof runtimeSkillVersionSchema>;
 export type RuntimeEnvironment = z.infer<typeof runtimeEnvironmentSchema>;
 
 export type RuntimeRegisteredSkill = z.infer<typeof runtimeRegisteredSkillSchema>;

@@ -165,7 +165,7 @@ describe("session sandbox prepares an isolated workspace", () => {
         definition: {
           systemPrompt: "",
           modelId: null,
-          skills: skills.map((skill) => skill.skill),
+          skills: skills.map(({ skill, digest }) => ({ skill, digest })),
           sandbox: {
             limits: codeLimitsSchema.parse({
               memoryBytes: codeExecutionVirtualAddressSpaceBytes,
