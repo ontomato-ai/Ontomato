@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { stringify } from "yaml";
@@ -10,8 +11,8 @@ import { panelAddress, panelUsePath } from "@ontomato/contracts/panel-host";
 import type { PanelOperation } from "@ontomato/contracts/panel-manifest";
 import { componentOperationSchema, directReadDeclaration, panelStateOperation, projectionBindingKeys, projectionOperations, projectionPorts } from "@ontomato/contracts/panel-projection";
 import {
-  directPanelInputSchema, directProjectionInputSchema, productPanelContentSchema, productPanelInputSchema,
-  productProjectionInputSchema, type DirectPanelInput, type DirectProjectionInput, type PanelSkillSource,
+  directPanelInputSchema, directProjectionInputSchema, productPanelInputSchema, productProjectionInputSchema,
+  type DirectPanelInput, type DirectProjectionInput, type PanelSkillSource, type ProductPanelInput,
 } from "@ontomato/contracts/product-panels";
 import { installedAppsSdkDir } from "../../content/layout";
 import type { SkillOffering } from "../../core/skills";
@@ -33,11 +34,14 @@ type ComponentMetadata = z.infer<typeof catalogue>["components"][number];
 type ComponentCatalogue = ReadonlyMap<string, ComponentMetadata>;
 type Use = PanelSkillSource["uses"][number];
 
-const panelMetadata = productPanelInputSchema.omit({ content: true });
 const skillProjectionSchema = z.union([productProjectionInputSchema, directProjectionInputSchema]);
-type SkillPanel = (z.infer<typeof panelMetadata> & { content: unknown }) | DirectPanelInput;
+type SkillPanel = ProductPanelInput | DirectPanelInput;
 type SkillProjection = z.infer<typeof skillProjectionSchema>;
 const verbs = new Intl.ListFormat("en", { type: "conjunction" });
+
+function fingerprint(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
 
 function panelSkillManifest(skill: RuntimeSkillRef, panels: readonly PanelDescription[]): StandardSkillFrontmatter {
   const actions = [
@@ -73,40 +77,42 @@ async function currentDefinition(domainId: string, kind: CurrentProductKind, id:
 export async function panelSkillOfferings(domainId: string, sources: readonly PanelSkillSource[]): Promise<SkillOffering[]> {
   if (!sources.length) return [];
   const panelIds = new Set(sources.flatMap(source => source.uses.map(use => use.panelId)));
-  const panels = new Map<string, SkillPanel>(await Promise.all([...panelIds].map(async id => {
-    const definition = await currentDefinition(domainId, "panel", id);
-    if (!("sdkVersion" in definition)) return [id, directPanelInputSchema.parse(definition)] as const;
-    const { content, ...metadata } = definition;
-    return [id, { ...panelMetadata.parse(metadata), content }] as const;
-  })));
+  const [release, panelEntries] = await Promise.all([
+    readCurrentAppSdkComponents(),
+    Promise.all([...panelIds].map(async id => {
+      const definition = await currentDefinition(domainId, "panel", id);
+      if (!("sdkVersion" in definition)) return [id, directPanelInputSchema.parse(definition)] as const;
+      return [id, productPanelInputSchema.parse(definition)] as const;
+    })),
+  ]);
+  const panels = new Map<string, SkillPanel>(panelEntries);
+  const components = parseComponentCatalogue(release.version, release.catalogue);
   const projectionsByPanel = new Map([...panels].map(([id, panel]) => [id, "sdkVersion" in panel
     ? Object.values(panel.manifest.slots).map(slot => slot.projectionId)
     : Object.values(panel.manifest.members).map(member => member.target.projectionId)]));
   const projectionIds = new Set([...projectionsByPanel.values()].flat());
   const projectionRecords = new Map(await Promise.all([...projectionIds].map(async id =>
     [id, skillProjectionSchema.parse(await currentDefinition(domainId, "projection", id))] as const)));
-  const versions = new Set([...panels].flatMap(([id, panel]) => "sdkVersion" in panel &&
-    projectionsByPanel.get(id)!.some(projectionId => !("data" in projectionRecords.get(projectionId)!))
-    ? [panel.sdkVersion] : []));
-  const hasDirectProjection = [...projectionRecords.values()].some(projection => "data" in projection);
-  const [catalogues, currentCatalogue] = await Promise.all([
-    Promise.all([...versions].map(async version => [version, await readComponentCatalogue(version)] as const)),
-    hasDirectProjection
-      ? readCurrentAppSdkComponents().then(({ version, catalogue: raw }) => parseComponentCatalogue(version, raw))
-      : undefined,
-  ]);
-  const components = new Map(catalogues);
-  const descriptions = new Map([...panels].map(([id, panel]) =>
-    [id, describePanel(panel, projectionRecords, currentCatalogue, "sdkVersion" in panel ? components.get(panel.sdkVersion) : undefined)]));
+  const snapshots = new Map([...panels].map(([id, panel]) => {
+    const projections = projectionsByPanel.get(id)!.map(projectionId => [projectionId, projectionRecords.get(projectionId)!]);
+    return [id, {
+      description: describePanel(panel, projectionRecords, components),
+      fingerprint: fingerprint([id, panel, projections, release.version, release.digest]),
+    }] as const;
+  }));
 
   return sources.map(({ skill, uses }) => {
     const ids = new Set(uses.map(use => use.panelId));
-    const manifest = panelSkillManifest(skill, [...ids].map(id => descriptions.get(id)!));
+    const selected = [...ids].map(id => snapshots.get(id)!);
+    const manifest = {
+      ...panelSkillManifest(skill, selected.map(snapshot => snapshot.description)),
+      metadata: { "ontomato-panel-fingerprint": fingerprint(selected.map(snapshot => snapshot.fingerprint)) },
+    };
     return {
       skill,
       manifest,
       async provide() {
-        const sections = uses.map(use => describeUse(use, descriptions.get(use.panelId)!));
+        const sections = uses.map(use => describeUse(use, snapshots.get(use.panelId)!.description));
         return { skill, files: [{ path: "SKILL.md", content: `---\n${stringify(manifest)}---\n\n${sections.join("\n\n")}\n` }] };
       },
     };
@@ -117,15 +123,15 @@ type PanelDescription = ReturnType<typeof describePanel>;
 
 function describePanel(
   panel: SkillPanel, records: ReadonlyMap<string, SkillProjection>,
-  currentCatalogue: ComponentCatalogue | undefined, pinnedCatalogue: ComponentCatalogue | undefined,
+  components: ComponentCatalogue,
 ) {
-  const componentFor = (components: ComponentCatalogue, id: string, projectionId: string) => {
+  const componentFor = (id: string, projectionId: string) => {
     const component = components.get(id);
     if (!component) throw new Error(`SDK component ${id} is missing for projection ${projectionId}`);
     return component;
   };
   const directProjection = (member: string, projectionId: string, projection: DirectProjectionInput, inputs: object) => {
-    const component = componentFor(currentCatalogue!, projection.componentId.slice("@ontomato/sdk:".length), projectionId);
+    const component = componentFor(projection.componentId.slice("@ontomato/sdk:".length), projectionId);
     const data = Object.fromEntries(Object.entries(projection.data).map(([key, read]) =>
       [key, { ...read, result: directReadDeclaration(projection, read)!.result }]));
     return {
@@ -138,7 +144,7 @@ function describePanel(
   const projections = "slots" in manifest ? Object.entries(manifest.slots).map(([slot, declaration]) => {
     const projection = records.get(declaration.projectionId)!;
     if ("data" in projection) return directProjection(slot, declaration.projectionId, projection, declaration.inputs);
-    const component = componentFor(pinnedCatalogue!, projection.componentId, declaration.projectionId);
+    const component = componentFor(projection.componentId, declaration.projectionId);
     const ports = projectionPorts(projection, component);
     const bindings = projectionBindingKeys(projection);
     const graph = projection.graph
@@ -161,7 +167,7 @@ function describePanel(
     description: panel.description,
     state: manifest.state,
     stateOperations: "operations" in manifest ? manifest.operations : [],
-    content: () => "sdkVersion" in panel ? productPanelContentSchema.parse(panel.content) : panel.content,
+    content: panel.content,
     projections,
     operations,
     forms: operations.filter(operation => operation.kind === "form.save"),
@@ -171,7 +177,7 @@ function describePanel(
 
 function describeUse(use: Use, { name, description, content, state, stateOperations, projections, operations: projectionOperations, forms, reads }: PanelDescription): string {
   const address = panelUsePath(use.path);
-  const { recipes, messages } = content();
+  const { recipes, messages } = content;
   const resolveLabel = (key: string) => messages?.[getDefaultLocale()]?.[key] ?? key;
   const operations = [...projectionOperations, ...stateOperations.map(operation => panelStateOperation(operation, resolveLabel))];
   return [

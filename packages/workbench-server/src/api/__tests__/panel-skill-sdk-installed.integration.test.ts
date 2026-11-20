@@ -40,7 +40,7 @@ vi.mock("../../utils/backend-client", async original => ({
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
 if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
 const older = "1.1.2-dev.installed";
-const bundled = "1.1.2-dev.current";
+const current = "1.1.2-dev.current";
 const agentId = randomUUID();
 let server: Server;
 let root: string;
@@ -49,14 +49,16 @@ let base: string;
 beforeAll(async () => {
   root = await mkdtemp(path.join(tmpdir(), "installed-sdk-skill-"));
   const publicSkills = path.join(root, "public");
-  await Promise.all([mkdir(publicSkills), ...[
-    ["data", older], ["dist", bundled],
-  ].map(async ([area, version]) => {
-    const sdk = path.join(root, area!, "apps-sdk", version!);
-    await mkdir(sdk, { recursive: true });
-    await writeFile(path.join(sdk, "components.json"), JSON.stringify({ version, components: [] }));
-  })]);
-  await writeFile(path.join(root, "dist/apps-sdk/current.json"), JSON.stringify({ version: bundled }));
+  const installed = path.join(root, "data/apps-sdk", current);
+  const distribution = path.join(root, "dist/apps-sdk");
+  await Promise.all([mkdir(publicSkills), mkdir(installed, { recursive: true }), mkdir(distribution, { recursive: true })]);
+  await Promise.all([
+    writeFile(path.join(distribution, "current.json"), JSON.stringify({ version: current, digest: "a".repeat(64) })),
+    writeFile(path.join(installed, "sdk.json"), JSON.stringify({ components: "components.json" })),
+    writeFile(path.join(installed, "components.json"), JSON.stringify({
+      version: current, components: [{ componentId: "ObjectList", meaning: "Displays current objects" }],
+    })),
+  ]);
   installContentLayout({ runtimeRoot: root, prompts: [], publicSkillsRoot: publicSkills, runtimeResources: [] });
   configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { messages: en, ...enLocaleMeta } } });
   const requirePermission: WorkbenchIdentity["requirePermission"] = () => (_req, _res, next) => next();
@@ -68,6 +70,7 @@ beforeAll(async () => {
     CREATE TABLE "${fixture.schema}".product_panels (
       id text, domain_id text, owner_id text, definition jsonb, revision integer, created_at timestamptz, updated_at timestamptz
     );
+    CREATE TABLE "${fixture.schema}".product_projections (LIKE "${fixture.schema}".product_panels);
     CREATE TABLE "${fixture.schema}".assistant_agents (
       id uuid PRIMARY KEY, domain_id text, kind text, name text, description text, enabled boolean,
       system_prompt text, model_selection jsonb, skills jsonb, icon text, class_names jsonb,
@@ -77,7 +80,14 @@ beforeAll(async () => {
   await fixture.pool.query(`INSERT INTO "${fixture.schema}".product_panels VALUES ($1,$2,'editor',$3,1,now(),now())`, [
     fixture.panelId, fixture.domainId, {
       name: "Older panel", description: "", visibility: "domain", sdkVersion: older,
-      content: { html: "", module: "" }, manifest: { state: {}, slots: {}, operations: [] },
+      content: { html: "", module: "" },
+      manifest: { state: {}, slots: { records: { projectionId: "records", inputs: {} } }, operations: [] },
+    },
+  ]);
+  await fixture.pool.query(`INSERT INTO "${fixture.schema}".product_projections VALUES ('records',$1,'editor',$2,1,now(),now())`, [
+    fixture.domainId, {
+      name: "Records", description: "", visibility: "domain", componentId: "ObjectList",
+      binding: { kind: "PlatformObjectType", id: "platform:AgentDefinition" }, inputs: {}, display: {},
     },
   ]);
   await fixture.pool.query(`INSERT INTO "${fixture.schema}".assistant_agents
@@ -109,7 +119,7 @@ afterAll(async () => {
   if (root) await rm(root, { recursive: true });
 });
 
-it("lists a panel's skill and saves a definition using its installed older SDK", async () => {
+it("lists a version-pinned panel's skill from the installed current SDK and saves its selection", async () => {
   const [listed, saved] = await Promise.all([
     fetch(base + "/agent-skills"),
     fetch(`${base}/agent-definitions/${agentId}`, {

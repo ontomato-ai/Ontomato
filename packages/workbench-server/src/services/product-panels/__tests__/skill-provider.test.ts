@@ -96,8 +96,11 @@ beforeEach(async () => {
   await writeFile(path.join(installed, "sdk.json"), JSON.stringify({ components: "catalogue/metadata.json" }));
   await writeFile(path.join(installed, "catalogue/metadata.json"), JSON.stringify({
     version: currentVersion,
-    components: components.map(component => component.componentId === "ObjectSummary"
-      ? { ...component, meaning: "Summary from the current SDK release." } : component),
+    components: components.map(component => {
+      if (component.componentId === "ObjectSummary") return { ...component, meaning: "Summary from the current SDK release." };
+      if (component.componentId === "ObjectList") return { ...component, meaning: "List from the current SDK release." };
+      return component;
+    }),
   }));
   installContentLayout({ runtimeRoot: root, prompts: [], publicSkillsRoot: root, runtimeResources: [] });
   vi.mocked(findCurrentProduct).mockImplementation(async (requestedDomain, kind, id) => {
@@ -177,7 +180,7 @@ it("reads the direct trial panel from the current SDK catalogue", async () => {
   expect(markdown).toContain('Named data: {"record":');
 });
 
-it("describes a direct projection in a code panel using the current SDK beside the pinned SDK", async () => {
+it("describes both projection styles in a code panel using the same current SDK", async () => {
   const source = memberSources[2]!;
   const id = source.uses[0]!.panelId;
   const panel = panels.get(id)!;
@@ -194,9 +197,24 @@ it("describes a direct projection in a code panel using the current SDK beside t
   const [offering] = await panelSkillProvider.list({ domainId });
   const markdown = (await offering!.provide()).files[0]!.content;
   expect(markdown).toContain("Summary from the current SDK release.");
-  expect(markdown).toContain("List from the pinned SDK release.");
+  expect(markdown).toContain("List from the current SDK release.");
   expect(markdown).toContain('Named data: {"record":');
   expect(markdown).toContain('"read":"record","params":{},"result":"panelRecord"');
+});
+
+it("binds the current SDK digest to the supplied panel bytes for the lifetime of the offering", async () => {
+  javaSources([memberSources[0]!]);
+  const [first] = await panelSkillProvider.list({ domainId });
+  const original = await first!.provide();
+  const filename = path.join(root, "dist/apps-sdk/current.json");
+  const current = JSON.parse(await readFile(filename, "utf8"));
+  await writeFile(filename, JSON.stringify({ ...current, digest: "b".repeat(64) }));
+
+  const [second] = await panelSkillProvider.list({ domainId });
+  expect(await first!.provide()).toEqual(original);
+  const updated = await second!.provide();
+  expect(updated.skill).toEqual(original.skill);
+  expect(updated.files[0]!.content).not.toBe(original.files[0]!.content);
 });
 
 it("assembles one current package for a shared menu with a section per use and the original recipes", async () => {
