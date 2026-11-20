@@ -62,8 +62,11 @@ export interface DirectPanelInstance extends PanelInstance {
   refreshAll(): void;
   /** While the reader does not see the instance it reads nothing; a refresh when seen again brings it up to date. */
   setActive(active: boolean): void;
-  /** A projection's definition changed: its members read it again and draw it anew. */
-  projectionChanged(id: string): void;
+  /**
+   * A projection's definition changed: its members read it again and draw it anew. A revision no later than the one a
+   * member was read at (a snapshot naming every projection as it is) changes nothing for that member.
+   */
+  projectionChanged(id: string, revision?: number): void;
   /** How many times a member's projection was read anew, which its drawing is keyed by. */
   projectionVersion(member: string): number;
 }
@@ -104,6 +107,8 @@ export function createDirectPanelInstance(direct: DirectPanelManifest, options: 
   const defaults = Object.fromEntries(Object.entries(direct.state).flatMap(([name, field]) =>
     field.default === undefined ? [] : [[name, field.default]]));
   const projections = new Map<string, Promise<DirectProjection>>();
+  /** The revision each member's projection was last read at. */
+  const readRevisions = new Map<string, number>();
   const versions = shallowReactive(new Map<string, number>());
   let active = true;
   const instance = createPanelInstance(sharedManifest(direct), {
@@ -122,7 +127,13 @@ export function createDirectPanelInstance(direct: DirectPanelManifest, options: 
       const declaration = direct.members[member];
       if (!declaration) throw new Error(`The panel declares no member '${member}'`);
       let found = projections.get(member);
-      if (!found) projections.set(member, (found = options.readProjection(declaration.target.projectionId)));
+      if (!found) {
+        found = options.readProjection(declaration.target.projectionId).then((projection) => {
+          readRevisions.set(member, projection.revision);
+          return projection;
+        });
+        projections.set(member, found);
+      }
       return found;
     },
     memberData(member: string, projection: DirectProjection, inputs: () => MemberInputs): MemberData {
@@ -176,9 +187,10 @@ export function createDirectPanelInstance(direct: DirectPanelManifest, options: 
     setActive(next: boolean) {
       active = next;
     },
-    projectionChanged(id: string) {
+    projectionChanged(id: string, revision?: number) {
       for (const [member, declaration] of Object.entries(direct.members)) {
         if (declaration.target.projectionId !== id) continue;
+        if (revision !== undefined && revision <= (readRevisions.get(member) ?? 0)) continue;
         projections.delete(member);
         versions.set(member, (versions.get(member) ?? 0) + 1);
       }
