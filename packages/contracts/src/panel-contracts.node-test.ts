@@ -461,10 +461,15 @@ test("entry resolution and personal-state scope use the actual use and nested pa
     menu: { groups: [{ key: "plan", names: { en: "Plan" }, sort: 0 }], panelUses: [use] },
   };
   assert.deepEqual(applicationEntryResolutionSchema.parse(response), response);
-  assert.equal(applicationPanelReferencesRequestSchema.safeParse({
-    domainId: "domain", framePanelId: "site-frame", uses: [{ id: use.id, panelId: use.panelId, inputs: use.inputs }],
+  const references = {
+    domainId: "domain", framePanelId: "site-frame",
+    uses: [
+      { id: use.id, panelId: use.panelId, inputs: use.inputs },
+      { id: "configured", panelId: use.panelId, defaultAgent: { kind: "preset", agentKind: "regular" } },
+    ],
     delivery: { panels: [use.panelId], projections: ["projection-tasks"] },
-  }).success, true);
+  };
+  assert.deepEqual(applicationPanelReferencesRequestSchema.parse(references), references);
   const memberPath = [{ member: "frame" }, {
     member: "preview", selection: { placement: { id: "current", target: { panelId: use.panelId } } },
   }];
