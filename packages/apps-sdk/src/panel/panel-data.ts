@@ -1,4 +1,4 @@
-import { computed, effectScope, getCurrentScope, inject, shallowRef, toValue, watch, type ComputedRef, type EffectScope, type MaybeRefOrGetter } from "vue";
+import { computed, effectScope, getCurrentInstance, getCurrentScope, inject, shallowRef, toValue, watch, type ComputedRef, type EffectScope, type MaybeRefOrGetter } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { MemberDataState } from "./direct";
 import { directMountKey } from "./direct-projection";
@@ -27,8 +27,11 @@ export function usePanelData(
   name: string,
   runtimeParams?: MaybeRefOrGetter<Readonly<Record<string, RuntimeJsonValue | null>>>,
 ): ComputedRef<MemberDataState> {
+  // Where it is called comes first: outside a component's setup, or after an await in it, nothing it needs can be found.
+  if (!getCurrentInstance())
+    throw new Error("Call usePanelData in a component's setup, before any await: it reads the member through the component that calls it");
   const mount = inject(directMountKey, null);
-  if (!mount) throw new Error("usePanelData reads in a panel the platform runs, from the panel's own code");
+  if (!mount) throw new Error("usePanelData reads in a panel the platform runs in its own page; this component is not drawn by one");
   const { instance } = mount;
   if (!Object.hasOwn(instance.direct.members, member)) throw new Error(`The panel declares no member '${member}'`);
   const scope = getCurrentScope();

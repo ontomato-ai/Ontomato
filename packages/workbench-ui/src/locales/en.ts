@@ -232,6 +232,7 @@ export default {
     "operationUnknown": "Whether it was done is not known. {message}",
     "operationBatchDone": "{done} of {total} done",
     "operationChecked": "{label} ({count} checked)",
+    "operationDownloaded": "Downloaded {name}",
     "dataEmpty": "Nothing to show",
     "dataForbidden": "You do not have access to this",
     "dataAwaiting": "Select an item first"

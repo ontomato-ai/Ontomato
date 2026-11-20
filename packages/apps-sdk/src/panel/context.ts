@@ -82,6 +82,11 @@ export interface PanelContext {
    */
   expandPageComposer(request: AppBridgeExpandPageComposer): Promise<void>;
   /**
+   * Opens one of the platform's addresses, such as `/agents/chat?agentId=…`. When it cannot — not the platform's own
+   * address, a page the reader may not open — the platform says why on the page, and this rejects with that reason.
+   */
+  navigate(address: string): Promise<void>;
+  /**
    * The platform's read entry for this panel's members' data, as the reader: a member, a datum and its values in, the
    * owner's answer out. In a frame it goes over the frame's request path; the host fills in which panel it is.
    */

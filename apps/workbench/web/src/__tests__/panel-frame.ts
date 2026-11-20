@@ -550,11 +550,12 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
 /** The coordinator of an instance a test builds by hand and runs no operation of: any call to it fails the test. */
 const unused = () => Promise.reject(new Error("This test runs no operation of the panel"));
 export const noOperations: {
-  operations: PanelHumanOperations; confirmOperation: ConfirmPanelOperation; expandPageComposer: () => never;
+  operations: PanelHumanOperations; confirmOperation: ConfirmPanelOperation; expandPageComposer: () => never; navigate: () => never;
 } = {
   operations: { describe: unused, read: unused, prepare: unused }, confirmOperation: unused,
   // A test that opens the page's composer gives its own; any other call to it fails the test.
   expandPageComposer: () => { throw new Error("This test opens no composer"); },
+  navigate: () => { throw new Error("This test opens no address"); },
 };
 
 /** The form save calls that reached the coordinator. */

@@ -78,7 +78,8 @@ it("reads the page's record, projections and data while Java's answer is coming,
 
     relations.release([use]);
     await vi.waitFor(() => expect(element.querySelector<HTMLElement>(".panel-host-direct")?.style.display).toBe(""));
-    expect(element.querySelectorAll("[data-member='tasks'] [role='option']")).toHaveLength(1);
+    // Shown, its list draws the row it read once the module has mounted it.
+    await vi.waitFor(() => expect(element.querySelectorAll("[data-member='tasks'] [role='option']")).toHaveLength(1));
     // The page did not start again for Java's answer: its record and projections were read once.
     expect(sent.filter(request => request.path === "/api/product-panels/panel-schedules-trial")).toHaveLength(1);
     expect(sent.filter(request => request.path === "/api/product-projections/projection-schedules-tasks")).toHaveLength(1);
