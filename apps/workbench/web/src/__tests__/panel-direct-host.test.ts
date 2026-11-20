@@ -3,7 +3,7 @@ import { h, nextTick } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
-import type { DirectPanel, DirectProjection } from "@ontomato/contracts/product-panels";
+import type { ProductPanel, DirectProjection } from "@ontomato/contracts/product-panels";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { installPlatform, mountPlatformPage, nothingAt, panelUse, READER, type Sent } from "./panel-frame";
 
@@ -24,7 +24,7 @@ import { installPlatform, mountPlatformPage, nothingAt, panelUse, READER, type S
 const application = "app-direct";
 const use = panelUse("use-direct-tasks", "direct-tasks", "panel-direct-tasks", `/applications/${application}/tasks`);
 const base = { domainId: "d", ownerId: "o", revision: 1, createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "" };
-const panel: DirectPanel = {
+const panel: ProductPanel = {
   ...base, id: use.panelId, name: "Scheduled tasks",
   content: {
     html: `<div flow="row" gap="small">
@@ -53,7 +53,7 @@ const projections: Record<string, DirectProjection> = {
   "task-run": {
     ...base, id: "task-run", name: "Run now", componentId: "@ontomato/sdk:OperationButton",
     inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: {},
-    data: { operation: { source: { operation: "schedules.runNow" }, read: "describe", params: {} } },
+    data: { operation: { source: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, read: "describe", params: {} } },
   },
 };
 const field = (path: string, label: string) => ({ path, label, control: { kind: "text" as const }, valueSchema: {}, required: false, readOnly: false });

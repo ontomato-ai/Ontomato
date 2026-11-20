@@ -357,7 +357,8 @@ it("takes a kept author page's targets out of the document's stream, and puts th
   ]), router);
   page.app.use(ElementPlus);
   const targetsOf = (panel: typeof p) => [{ kind: "panel", id: panel.id },
-    ...new Set(Object.values(panel.manifest.slots).map(slot => slot.projectionId))].map(target =>
+    ...new Set(Object.values(panel.manifest.members).flatMap(({ target }) =>
+      "projectionId" in target ? [target.projectionId] : []))].map(target =>
     typeof target === "string" ? { kind: "projection", id: target } : target);
   try {
     await vi.waitFor(() => expect(streams.at(-1)).toEqual(targetsOf(p)));

@@ -34,22 +34,51 @@ const fields: PanelFormDescription["fields"] = [
 ];
 const AGENT = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a01";
 const save = { method: "PUT" as const, path: "/assistant/agent-definitions/:id", bodySchema: {}, draftOperation: "agent.update" };
-const record = (id: string, componentId: string, binding: string, more: Partial<ProductProjection> = {}): ProductProjection => ({
+const current = {
   domainId: "domain-1", ownerId: "owner-1", revision: 1, createdAt: "2026-11-19T00:00:00.000Z",
-  updatedAt: "2026-11-19T00:00:00.000Z", editable: false, visibility: "domain",
-  id, name: id, description: "", componentId, binding: { kind: "PlatformObjectType", id: binding }, inputs: {}, display: {}, ...more,
+  updatedAt: "2026-11-19T00:00:00.000Z", editable: false, visibility: "domain" as const,
+};
+const projection = (
+  id: string,
+  fields: Pick<Exclude<ProductProjection, { componentId: "@ontomato/sdk:MetricChart" }>, "componentId" | "inputs" | "data">,
+  config: ProductProjection["config"] = {},
+): ProductProjection => ({
+  ...current, id, name: id, description: "", outputs: {}, config, ...fields,
 });
+const formInputs = {
+  agent: { kind: "object", objectType: AGENT_DEFINITION },
+  values: { kind: "json" },
+  changedField: { kind: "scalar", type: "string" },
+} as const;
+const formParams = { values: { input: "values" }, changedField: { input: "changedField" } };
+const referencePicker = (id: string, objectType: string) => {
+  const source = { type: { kind: "PlatformObjectType" as const, id: objectType } };
+  return projection(id, {
+    componentId: "@ontomato/sdk:ReferencePicker",
+    inputs: { values: { kind: "json" } },
+    data: {
+      options: { source, read: "options", params: {} },
+      selected: { source, read: "resolve", params: { values: { input: "values" } } },
+    },
+  });
+};
 const projections: Record<string, ProductProjection> = {
-  "agent-form": record("agent-form", "ObjectForm", AGENT_DEFINITION, { inputs: { agent: { kind: "object", objectType: AGENT_DEFINITION } } }),
-  "agent-skills": record("agent-skills", "ReferencePicker", SKILL),
+  "agent-form": projection("agent-form", {
+    componentId: "@ontomato/sdk:ObjectForm",
+    inputs: formInputs,
+    data: {
+      form: { source: { object: { input: "agent" } }, read: "form", params: formParams },
+    },
+  }),
+  "agent-skills": referencePicker("agent-skills", SKILL),
 };
 const manifest = definePanel({
-  state: { selectedAgent: { kind: "object", objectType: AGENT_DEFINITION, deepLink: true } },
-  slots: {
-    definition: { projectionId: "agent-form", inputs: { agent: { state: "selectedAgent" } } },
-    skills: { projectionId: "agent-skills", inputs: {}, formField: { slot: "definition", path: "/skills" } },
+  state: { selectedAgent: { type: { kind: "object", objectType: AGENT_DEFINITION }, deepLink: true } },
+  members: {
+    definition: { target: { projectionId: "agent-form" }, inputs: { agent: { state: "selectedAgent" } } },
+    skills: { target: { projectionId: "agent-skills" }, inputs: {}, formField: { slot: "definition", path: "/skills" } },
   },
-  operations: [],
+  events: {},
 });
 const panel = panelRecord("panel-submitted", "Agents", manifest);
 const use = panelUse("use-submitted", "submitted", panel.id, "/ontology/agents");

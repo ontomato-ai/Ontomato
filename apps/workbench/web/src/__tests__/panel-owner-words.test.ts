@@ -88,9 +88,9 @@ it("draws the owner's field names, button name and run message in a directly ren
 it("names a task's fields in a code panel's frame by the owner's words, in the reader's language", async () => {
   const application = "app-panels-trial-b";
   const q = panelRecord("panel-schedules-summary", "Task summary (trial)", definePanel({
-    state: { selectedTask: { kind: "object", objectType: SCHEDULED_TASK, deepLink: true } },
-    slots: { summary: { projectionId: summary.id, inputs: { task: { state: "selectedTask" } } } },
-    operations: [],
+    state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
+    members: { summary: { target: { projectionId: summary.id }, inputs: { task: { state: "selectedTask" } } } },
+    events: {},
   }));
   const use = panelUse("use-trial-b-summary", "panels-trial-b-summary", q.id, `/applications/${application}/summary`);
   installPlatform((request: Sent) => {

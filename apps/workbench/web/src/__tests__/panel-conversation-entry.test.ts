@@ -25,10 +25,11 @@ const projection: ProductProjection = {
   id: governance,
   name: "Governance",
   description: "Governance",
-  componentId: "ConversationEntry",
-  binding: { kind: "PlatformObjectType", id: "platform:AgentDefinition" },
+  componentId: "@ontomato/sdk:ConversationEntry",
   inputs: {},
-  display: {},
+  outputs: {},
+  config: {},
+  data: {},
   conversationEntry: declared,
   domainId: "domain-1",
   ownerId: "owner-1",
@@ -40,8 +41,8 @@ const projection: ProductProjection = {
 };
 const panel = panelRecord("panel-knowledge", "Business knowledge", definePanel({
   state: {},
-  slots: { governance: { projectionId: governance, inputs: {} } },
-  operations: [],
+  members: { governance: { target: { projectionId: governance }, inputs: {} } },
+  events: {},
 }));
 const use = panelUse("use-knowledge", "business-knowledge", panel.id, "/applications/app-knowledge/knowledge");
 

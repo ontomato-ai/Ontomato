@@ -30,14 +30,14 @@ const ontology = (data: DirectProjection["data"], inputs: DirectProjection["inpu
   ...record, id: "ontology", name: "Ontology", componentId: "@ontomato/sdk:ObjectList", inputs, outputs: {}, config: {}, data,
 });
 const typeObjects = ontology(
-  { objects: { source: { type: ONTOLOGY_TYPE }, read: "objects", params: { type: { input: "type" }, keyword: { input: "keyword" }, page: { input: "page" } } } },
+  { objects: { source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } }, read: "objects", params: { type: { input: "type" }, keyword: { input: "keyword" }, page: { input: "page" } } } },
   { type: { kind: "scalar", type: "string" }, keyword: { kind: "scalar", type: "string" }, page: { kind: "json" } },
 );
 const graph = ontology(
   {
-    counts: { source: { type: ONTOLOGY_TYPE }, read: "counts", params: {} },
-    start: { source: { type: ONTOLOGY_TYPE }, read: "start", params: {} },
-    neighbors: { source: { type: ONTOLOGY_TYPE }, read: "neighbors", params: { node: { input: "node" } } },
+    counts: { source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } }, read: "counts", params: {} },
+    start: { source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } }, read: "start", params: {} },
+    neighbors: { source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } }, read: "neighbors", params: { node: { input: "node" } } },
   },
   { node: { kind: "json" } },
 );
@@ -98,7 +98,7 @@ it("answers the ontology's reads in a code panel's frame as the platform's reads
     },
   };
   platformOntologyAdapters(requests).forEach(registerPlatformObjectAdapter);
-  const instance = createPanelInstance(definePanel({ state: {}, slots: {}, operations: [] }), {
+  const instance = createPanelInstance(definePanel({ state: {}, members: {}, events: {} }), {
     text: (key) => key, pageKey: "map", url: () => "/map", label: () => "Map", initial: {}, ...noOperations,
     recordDraftCreated: async () => {}, readProjection: async () => { throw new Error("unused"); },
   });
@@ -134,7 +134,7 @@ it("reads a reference's choices and held values, and a type's create form, as a 
   };
   const describe = vi.fn(async () => description);
   registerPlatformObjectAdapter({ objectType: AGENT_DEFINITION, forms: { describe, save: vi.fn() } });
-  const instance = createPanelInstance(definePanel({ state: {}, slots: {}, operations: [] }), {
+  const instance = createPanelInstance(definePanel({ state: {}, members: {}, events: {} }), {
     text: (key) => key, pageKey: "agents", url: () => "/agents", label: () => "Agents", initial: {}, ...noOperations,
     recordDraftCreated: async () => {}, readProjection: async () => { throw new Error("unused"); },
   });
@@ -142,8 +142,8 @@ it("reads a reference's choices and held values, and a type's create form, as a 
     ...record, id: "model", name: "Model", componentId: "@ontomato/sdk:ReferencePicker",
     inputs: { values: { kind: "json" } }, outputs: {}, config: {},
     data: {
-      options: { source: { type: MODEL_OPTION }, read: "options", params: {} },
-      selected: { source: { type: MODEL_OPTION }, read: "resolve", params: { values: { input: "values" } } },
+      options: { source: { type: { kind: "PlatformObjectType", id: MODEL_OPTION } }, read: "options", params: {} },
+      selected: { source: { type: { kind: "PlatformObjectType", id: MODEL_OPTION } }, read: "resolve", params: { values: { input: "values" } } },
     },
   };
   const pickerData = frameMemberData(picker, "model", instance, () => ({}));
@@ -155,7 +155,7 @@ it("reads a reference's choices and held values, and a type's create form, as a 
   const form: DirectProjection = {
     ...record, id: "definition", name: "Agent", componentId: "@ontomato/sdk:ObjectForm",
     inputs: { values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } }, outputs: {}, config: {},
-    data: { createForm: { source: { type: AGENT_DEFINITION }, read: "createForm", params: { values: { input: "values" }, changedField: { input: "changedField" } } } },
+    data: { createForm: { source: { type: { kind: "PlatformObjectType", id: AGENT_DEFINITION } }, read: "createForm", params: { values: { input: "values" }, changedField: { input: "changedField" } } } },
   };
   const formData = frameMemberData(form, "definition", instance, () => ({}));
   // The member's form source reads the type's create form for a new object, with the values the form holds.
