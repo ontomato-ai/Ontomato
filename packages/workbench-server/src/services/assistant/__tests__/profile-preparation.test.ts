@@ -71,3 +71,11 @@ it.each(['regular','analysis'])('prepares the default %s with reusable chart pro
  expect(run.definition.systemPrompt).toContain('Do not hand-write ECharts options');
  expect(run.definition.systemPrompt).not.toContain('containing an ECharts option object as plain JSON');
 });
+it('tells a run for the user that the page line only locates, so attributes are read rather than guessed',async()=>{
+ const user=await prepareAnalystRun({...request(),reader:'user'});
+ expect(user.definition.systemPrompt).toContain('That line only locates');
+ expect(user.definition.systemPrompt).toContain("read its current value with the page skill's reads");
+ // A delegated run is not read by the user and has no page beside it.
+ const delegated=await prepareAnalystRun({...request(),reader:'delegated'});
+ expect(delegated.definition.systemPrompt).not.toContain('That line only locates');
+});
