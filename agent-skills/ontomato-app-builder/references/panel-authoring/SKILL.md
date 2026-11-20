@@ -13,7 +13,8 @@ declared read or operation. Keep business rules, confirmation and permissions wi
 2. Write new projection definitions in `panel.json` and reference existing projections by ID. Use an official
    display component when it fits. For a custom Vue view, use a `PanelData` projection with `usePanelData`.
    Declare the public state that the assistant, address or other panels need.
-3. Write the template and interactions in Vue. The declared member keys connect the layout to the projections.
+3. Write the template and interactions in Vue. The platform runs the panel directly from `panel.html` and
+   the required `panel.mjs`. The declared member keys connect the layout to the projections.
    Add common page tasks in `recipes.md` when the assistant needs them.
 4. Check the workspace, register the projection and panel records, and open the application entry.
 
@@ -29,23 +30,24 @@ node "$SKILL/ontomato.mjs" panel check "$WORKSPACE"
 node "$SKILL/ontomato.mjs" panel register "$WORKSPACE"
 ```
 
-Use a fresh application ID and a path under `/applications/<application-id>/`. In `registration.json`, provide
+Use a fresh application ID starting with `app-` and a path under `/applications/<application-id>/`. In `registration.json`, provide
 one panel item with `id`, `mode` and `input` containing its name, description and visibility. Create omits
 `revision`. Application creation supplies `entry`, `declaration`, `entryAccess` and `panelUses`. Each use
 supplies its domain-unique `pageKey`, `panelId`, `path` and `access`. The platform derives the page skill.
+Omit `defaultAgent` for the general assistant. Specify a preset only if the preset already selects this panel's skill.
 
 For a temporary domain application, the application item can have this shape. Choose your own IDs and use the
 actual panel ID.
 
 ```json
 {
-  "id": "my-management-page",
+  "id": "app-my-management-page",
   "mode": "create",
   "input": {
-    "entry": {"path": "/applications/my-management-page", "renderer": "panels"},
+    "entry": {"path": "/applications/app-my-management-page", "renderer": "panels"},
     "declaration": {"names": {"en": "Management page"}, "descriptions": {"en": "Management example"}, "icon": "settings", "groups": [], "permissions": []},
     "entryAccess": ["domain-member"],
-    "panelUses": [{"id": "my-use", "pageKey": "management", "panelId": "my-panel", "path": "/applications/my-management-page/manage", "access": {"kind": "domain-member"}}]
+    "panelUses": [{"id": "my-use", "pageKey": "app-my-management-page-manage", "panelId": "my-panel", "path": "/applications/app-my-management-page/manage", "access": {"kind": "domain-member"}}]
   }
 }
 ```

@@ -47,9 +47,11 @@ async function workspaceDefinition(directory, files, checks, panel) {
       Object.keys(content).some(key => key !== "messages")) {
     throw new Error(`${descriptorFile}: content only accepts messages`);
   }
+  if (!files.includes("panel.mjs")) throw new Error(`${resolve(directory, "panel.mjs")}: required Vue module is missing`);
   const sources = [
     ["html", "panel.html"],
-    ...[["module", "panel.mjs"], ["recipes", "recipes.md"]].filter(([, file]) => files.includes(file)),
+    ["module", "panel.mjs"],
+    ...(files.includes("recipes.md") ? [["recipes", "recipes.md"]] : []),
   ];
   const contents = await Promise.all(sources.map(async ([key, file]) => [
     key, await readFile(resolve(directory, file), "utf8"),
