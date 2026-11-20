@@ -296,8 +296,8 @@ async function assetCommand(api, prefix, argv, workspaceId) {
   usage();
 }
 
-async function workbench(api, method, endpoint, body) {
-  return readJson(await fetch(`${api.envUrl}/api${endpoint}`, {
+async function workbench(api, method, endpoint, body, decode = readJson) {
+  return decode(await fetch(`${api.envUrl}/api${endpoint}`, {
     method, headers: { ...headers(api), "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body), redirect: "error",
   }));
@@ -314,10 +314,15 @@ async function checkCurrentPanel(api, directory, materialPath) {
   const sdk = currentSdkClient({ workbenchUrl: api.envUrl, headers: headers(api) });
   const release = await sdk.current();
   const [checks, catalogue] = await Promise.all([sdk.check(release), sdk.components(release)]);
-  const lookup = async (kind, id) => {
-    const answer = await workbench(api, "GET", `/product-${kind}s/${encodeURIComponent(id)}`);
-    return answer[kind];
-  };
+  const lookup = (kind, id) => workbench(api, "GET", `/product-${kind}s/${encodeURIComponent(id)}`, undefined,
+    async response => {
+      if (response.status === 404) return null;
+      try {
+        return (await readJson(response))[kind];
+      } catch (error) {
+        throw new Error(`${kind} ${id}: ${error.message}`, { cause: error });
+      }
+    });
   return print(await checkPanelWorkspace(directory, { checks, catalogue, version: release.version, digest: release.digest, lookup, materialPath }));
 }
 
