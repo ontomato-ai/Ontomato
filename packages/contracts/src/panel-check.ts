@@ -2,7 +2,7 @@
 export { appsSdkComponentCatalogSchema, appsSdkComponentDatum } from "./apps-sdk";
 export { panelAuthoringManifestSchema, panelAuthoringMemberSchema } from "./panel-authoring";
 export { expandPanelAuthoringMember } from "./panel-authoring-expansion";
-export { panelManifestSchema } from "./panel-manifest";
+export { panelManifestSchema, panelPortAccepts } from "./panel-manifest";
 export {
   panelDefinitionContentSchema, productProjectionInputSchema,
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
