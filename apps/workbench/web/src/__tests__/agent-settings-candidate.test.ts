@@ -91,9 +91,8 @@ const catalogues: Record<string, ReturnType<typeof option>[]> = {
 };
 /** What Node's read entry answers for one of the candidate's members, as its owner reads it. */
 function memberData({ memberPath: [{ member }], dataName, inputs, runtimeParams }: Read): unknown {
-  if (member === "agents") return [definition(AGENT, stored), definition(OTHER, { ...stored, name: "Planner" })]
-    .map(agent => ({ primaryKey: agent.id, label: agent.name, fields: {} }));
-  if (member === "summary") return { primaryKey: AGENT, label: stored.name, fields: { description: stored.description } };
+  if (member === "agents") return [[AGENT, String(stored.name)], [OTHER, "Planner"]].map(([primaryKey, label]) => ({ primaryKey, label, fields: {} }));
+  if (member === "summary") return { primaryKey: AGENT, label: String(stored.name), fields: { description: String(stored.description) } };
   if (member === "definition") {
     const create = dataName === "createForm";
     return { fields, values: runtimeParams?.values ?? (create ? defaults : stored), errors: [], revision: 1, save: save(create) };

@@ -12,7 +12,7 @@ import test from "node:test";
  *   `productProjectionInputSchema` and `registerProductProjectionRequestSchema`, using
  *   `{ kind: "PlatformObjectType", id: "platform:OntologyType" }` data reads and runtime-supplied list search/page.
  * - The panel manifest validates against `panelManifestSchema` (`members` + `events`), carries no `sdkVersion`,
- *   keeps its own module, and matches `candidatePanelSourceSchema`.
+ *   keeps its rendering module (`content.module`), and matches `candidatePanelSourceSchema`.
  * - Every `en` / `zh-CN` message key matches across locales and covers all event and projection config label keys.
  */
 
@@ -136,7 +136,8 @@ test("capability-map panel input, candidate files, and locale messages validate 
 
     return {
       panelId: PANEL_ID,
-      hasModule: parsedPanel.content.module !== undefined,
+      hasModule: typeof parsedPanel.content.module === "string" && parsedPanel.content.module.trim().length > 0,
+      candidateHasModule: typeof candidate.panel.content.module === "string" && candidate.panel.content.module.trim().length > 0,
       rejectsSdkPin,
       candidateHasSdkVersion: Object.hasOwn(descriptor, "sdkVersion"),
       candidateMembers: Object.keys(candidate.panel.manifest.members).sort(),
@@ -151,6 +152,7 @@ test("capability-map panel input, candidate files, and locale messages validate 
   assert.deepEqual(result, {
     panelId: "capability-map",
     hasModule: true,
+    candidateHasModule: true,
     rejectsSdkPin: true,
     candidateHasSdkVersion: false,
     candidateMembers: ["graph", "mode", "relations", "typeObjects", "userPicker"],

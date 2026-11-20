@@ -7,7 +7,7 @@ import {
   authoredReadParameterSource, directReadDeclaration, missingRequiredReadParameters, panelReadInputMatches, panelReadParameterId,
 } from "@ontomato/contracts/panel-projection";
 import {
-  panelNeedsFrame, productPanelInputSchema, productProjectionInputSchema, type ProductPanelInput, type ProductProjectionInput,
+  productPanelInputSchema, productProjectionInputSchema, type ProductPanelInput, type ProductProjectionInput,
 } from "@ontomato/contracts/product-panels";
 import type { PoolClient } from "pg";
 import { getPostgresPool, qualifiedTable as table } from "../../infrastructure/postgres";
@@ -39,7 +39,8 @@ function fixedTarget(target: PanelPlacement["target"]): Target {
 
 export function repeatItemTypes(panel: ProductPanelInput): Map<string, DirectPanelPortType> {
   const items = new Map<string, DirectPanelPortType>();
-  if (panelNeedsFrame(panel.content)) return items;
+  // A panel written with code draws its own members: its layout names none of them.
+  if (panel.content.module !== undefined) return items;
   const { state } = panel.manifest;
   function collect(nodes: PanelLayoutNode[], item?: DirectPanelPortType) {
     for (const node of nodes) {
