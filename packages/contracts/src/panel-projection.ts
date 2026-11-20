@@ -56,12 +56,7 @@ export const directProjectionInputTypeSchema = z.union([
 ]);
 
 export const directProjectionPortsSchema = z.object({
-  componentId: z.enum([
-    "@ontomato/sdk:ObjectList", "@ontomato/sdk:ObjectSummary", "@ontomato/sdk:ObjectForm", "@ontomato/sdk:OperationButton",
-    "@ontomato/sdk:ReferencePicker", "@ontomato/sdk:ObjectGraph", "@ontomato/sdk:OntologyGraph", "@ontomato/sdk:ObjectRelations",
-    "@ontomato/sdk:MetricChart", "@ontomato/sdk:ConversationEntry", "@ontomato/sdk:AppMenu",
-    "@ontomato/sdk:SegmentedControl",
-  ]),
+  componentId: z.string().regex(/^(?:@[^@\s/:]+\/)?[^@\s/:]+:[^@\s/:]+$/u, "Expected a package-qualified component name"),
   inputs: z.record(readKey, directProjectionInputTypeSchema),
   outputs: z.record(readKey, directPanelPortTypeSchema),
   data: z.record(readKey, directProjectionDataSchema),
@@ -119,7 +114,7 @@ function readInputMatches(parameter: PanelReadParameterId, input: ReadInput | un
 
 type DirectObjectSource = Extract<DirectProjectionData["source"], { object: unknown }>["object"];
 
-function directObjectSourceType(projection: Pick<DirectProjectionPorts, "inputs">, object: DirectObjectSource): string | undefined {
+export function directObjectSourceType(projection: Pick<DirectProjectionPorts, "inputs">, object: DirectObjectSource): string | undefined {
   if ("literal" in object) return object.literal.className;
   const input = projection.inputs[object.input];
   return input?.kind === "object" ? input.objectType : undefined;
