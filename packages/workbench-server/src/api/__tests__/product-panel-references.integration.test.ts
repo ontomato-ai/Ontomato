@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Server } from "node:http";
@@ -7,6 +7,8 @@ import type { AddressInfo } from "node:net";
 import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { appsSdkReleaseManifestSchema } from "@ontomato/contracts/apps-sdk";
+import { SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
 import {
   productPanelInUseErrorSchema, productPanelResponseSchema, productPanelUsedBySchema,
   productProjectionInUseErrorSchema, productProjectionResponseSchema,
@@ -50,7 +52,13 @@ const portType = { kind: "scalar", type: "string" } as const;
 const projectionInput = {
   name: "Referenced projection", description: "", visibility: "domain",
   componentId: "@ontomato/sdk:ObjectSummary",
-  inputs: { caption: portType }, outputs: { selected: portType }, data: {}, config: {},
+  inputs: { caption: portType }, outputs: { selected: portType }, config: {},
+  data: {
+    record: {
+      source: { object: { literal: { className: SCHEDULED_TASK, primaryKey: "00000000-0000-4000-8000-000000000001" } } },
+      read: "record", params: {},
+    },
+  },
 };
 
 beforeAll(async () => {
@@ -62,6 +70,28 @@ beforeAll(async () => {
   await ensureProductPanelsSchema(state.pool);
 
   contentRoot = await mkdtemp(join(tmpdir(), "product-panel-references-"));
+  const version = "1.0.0-references-fixture";
+  const distribution = join(contentRoot, "dist/apps-sdk");
+  const bundled = join(distribution, version);
+  const manifest = appsSdkReleaseManifestSchema.parse({
+    version, product: "ontomato", executionContext: 1, hostTransport: 1, messageBridge: 2,
+    entries: { "@ontomato/sdk/base": "base.js" }, stylesheet: "styles/sdk.css", components: "components.json",
+    check: "node/panel-check.mjs", libraries: {}, docs: "docs/index.md",
+  });
+  await mkdir(bundled, { recursive: true });
+  await Promise.all([
+    writeFile(join(distribution, "current.json"), JSON.stringify({ version, digest: "a".repeat(64) })),
+    writeFile(join(bundled, "sdk.json"), JSON.stringify(manifest)),
+    writeFile(join(bundled, manifest.components), JSON.stringify({
+      version,
+      components: [{
+        componentId: "ObjectSummary", module: "@ontomato/sdk/base", exportName: "ObjectSummary",
+        role: "presentation", meaning: "Displays one object record.",
+        data: { record: { results: ["panelRecord"], required: true } },
+        outputs: ["navigate"], ports: { props: [], events: [], slots: [] },
+      }],
+    })),
+  ]);
   installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
   const { productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const app = express();
