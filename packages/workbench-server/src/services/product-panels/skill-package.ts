@@ -9,7 +9,7 @@ import { panelClientReads } from "@ontomato/contracts/panel-client-requests";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
 import { directReadDeclaration, projectionBindingKeys } from "@ontomato/contracts/panel-projection";
 import { productPanelInputSchema, productProjectionInputSchema, type PanelSkillSource, type ProductPanelInput, type ProductProjectionInput } from "@ontomato/contracts/product-panels";
-import { SkillSourceRecordError, type ProtectedSkillOffering, type SkillSourceContext } from "../../core/skills/providers";
+import { SkillSourceRecordError, type ProtectedSkillOffering, type SkillSourceFailure } from "../../core/skills/providers";
 import { getDefaultLocale } from "../../i18n";
 import { findCurrentProduct, type CurrentProductRow } from "../../infrastructure/product-current";
 import { readPanelComponentCatalogue } from "./component-catalogue";
@@ -68,10 +68,10 @@ const panelDependencies = z.object({
   }),
 });
 
-/** The registry receives dependencies before it asks an admitted offering for package contents. */
-export async function panelSkillOfferings(
-  domainId: string, sources: readonly PanelSkillSource[], reportSourceFailure?: SkillSourceContext["reportSourceFailure"],
-): Promise<ProtectedSkillOffering[]> {
+/** Supply dependency facts before reading an admitted panel's package. */
+export async function panelSkillSources(
+  domainId: string, sources: readonly PanelSkillSource[],
+): Promise<(ProtectedSkillOffering | SkillSourceFailure)[]> {
   const panels = new Map<string, Map<string, PageSkillEntrance>>();
   for (const { panelId, entrance } of sources) {
     const entrances = panels.get(panelId) ?? new Map<string, PageSkillEntrance>();
@@ -88,17 +88,16 @@ export async function panelSkillOfferings(
     return read;
   }
   let release: ReturnType<typeof readPanelComponentCatalogue> | undefined;
-  const offerings = await Promise.all([...panels].map(async ([id, byEntrance]): Promise<ProtectedSkillOffering | undefined> => {
+  return Promise.all([...panels].map(async ([id, byEntrance]): Promise<ProtectedSkillOffering | SkillSourceFailure> => {
     const row = await findCurrentProduct(domainId, "panel", id);
     const entrances = [...byEntrance.values()];
     let dependencies: z.infer<typeof panelDependencies>;
     try {
       dependencies = parseDefinition(panelDependencies, row, id);
     } catch (error) {
-      if (!(error instanceof SkillSourceRecordError) || !reportSourceFailure) throw error;
+      if (!(error instanceof SkillSourceRecordError)) throw error;
       const { field, reason } = error.detail;
-      reportSourceFailure({ sourceKey: id, entrances, knownRequiredResourceIds: [id], ...(field ? { field } : {}), reason });
-      return undefined;
+      return { sourceKey: id, entrances, knownRequiredResourceIds: [id], ...(field ? { field } : {}), reason };
     }
     const projectionIds = [...new Set(Object.values(dependencies.manifest.members)
       .flatMap(({ target }) => "projectionId" in target ? [target.projectionId] : []))];
@@ -136,7 +135,6 @@ export async function panelSkillOfferings(
       },
     };
   }));
-  return offerings.filter(offering => offering !== undefined);
 }
 
 type PanelDescription = ReturnType<typeof describePanel>;
