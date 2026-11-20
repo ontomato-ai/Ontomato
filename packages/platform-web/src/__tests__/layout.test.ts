@@ -84,7 +84,7 @@ describe("the platform layout", () => {
     const panel = {
       ...product, id: "app-panel", names: { en: "Operations panel" }, releaseId: null,
       entry: { path: "/operations-panel", renderer: "panels" },
-      panelUses: ["tasks", "summary"].map(id => ({ id, pageKey: id, panelId: id, path: `/${id}`, access: { kind: "domain-member" as const }, names: { en: id } })),
+      panelUses: ["tasks", "summary"].map(id => ({ id, pageKey: id, panelId: id, path: `/applications/app-panel/${id}`, access: { kind: "domain-member" as const }, names: { en: id } })),
     };
     const applications = appDeclarations(generatedNavigation(), closedAccess([]), catalogPartition([...catalog, product, panel], "en"), t);
     await wrapper.setProps({ apps: applications, dynamicAppIds: [product.id, panel.id], pinnedAppIds: [] });
