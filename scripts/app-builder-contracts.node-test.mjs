@@ -141,6 +141,15 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       },
     },
   };
+  const datum = (...results) => ({ results, required: false });
+  const catalogue = { version: sdkVersion, components: [
+    { componentId: "ObjectList", data: { rows: datum("panelRecordList", "panelRecordQuery") } },
+    { componentId: "ObjectSummary", data: { record: datum("panelRecord") } },
+    { componentId: "ObjectForm", data: { form: datum("panelFormDescription"), createForm: datum("panelFormDescription") } },
+    { componentId: "SegmentedControl", data: { counts: datum("panelGroupCounts") } },
+    { componentId: "OperationButton", data: {} },
+    { componentId: "Data", data: { "*": datum("panelRecordList") } },
+  ] };
   const checkModule = `
     const ok = data => ({ success: true, data });
     const invalid = issues => ({ success: false, error: { issues } });
@@ -160,6 +169,11 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       }]),
     };
     export const platformTypeTableResponseSchema = { parse };
+    export const appsSdkComponentDatum = (data, name) => data[name] ?? data["*"];
+    export const directReadDeclaration = (_projection, read) => ({ result: {
+      list: "panelRecordList", query: "panelRecordQuery", record: "panelRecord", counts: "panelGroupCounts",
+      form: "panelFormDescription", createForm: "panelFormDescription",
+    }[read.read] });
     export const panelOperationTargetPort = (port, type, batch) =>
       port?.objectType === type || (batch && port?.kind === "list" && port.items.objectType === type) ? port : undefined;
     export const projectionOperationTargetMatches = (projection, binding, declaration, type) =>
@@ -192,8 +206,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     response.setHeader("content-type", "application/json");
     if (request.url === "/api/apps-sdk/current") response.end(JSON.stringify(release));
     else if (request.url === "/api/app-builder/type-table") response.end(JSON.stringify(typeTable));
-    else if (request.url === `${sdkPath}/components.json`) response.end(JSON.stringify({ version: sdkVersion, components:
-      ["ObjectList", "ObjectSummary", "ObjectForm", "SegmentedControl", "OperationButton"].map(componentId => ({ componentId })) }));
+    else if (request.url === `${sdkPath}/components.json`) response.end(JSON.stringify(catalogue));
     else if (request.url === `${sdkPath}/node/panel-check.mjs`) response.end(checkModule);
     else if (request.url === projectionPath) response.end(JSON.stringify({ projection: { componentId: "@ontomato/sdk:ObjectList" } }));
     else if (request.url === "/api/product-projections/unwritten") {
@@ -357,7 +370,9 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await assert.rejects(run("panel", "check", directory), error =>
       error.stderr.includes("projection draft-list: data: required field is missing") && !error.stderr.includes("Expected chart"));
 
-    const authorProjection = { componentId: "@ontomato/sdk:ObjectList", data: {} };
+    const authorProjection = { componentId: "@ontomato/sdk:Data", data: { agents: {
+      source: { type: { kind: "PlatformObjectType", id: "platform:AgentDefinition" } }, read: "list", params: {},
+    } } };
     manifest.members.tasks.target = { projection: authorProjection };
     const descriptor = join(directory, "panel.json");
     await writeFile(descriptor, JSON.stringify({ manifest }));
@@ -367,6 +382,16 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await run("panel", "check", directory);
     assert.equal(requests.splice(0).some(([method, url]) => method !== "GET" || url.includes("/product-")), false);
     assert.equal(await readFile(descriptor, "utf8"), JSON.stringify({ manifest }));
+
+    const originalRead = authorProjection.data.agents;
+    authorProjection.data.agents = {
+      source: { type: { kind: "PlatformObjectType", id: "platform:ReviewQueue" } }, read: "query", params: {},
+    };
+    await writeFile(descriptor, JSON.stringify({ manifest }));
+    await assert.rejects(run("panel", "check", directory), error =>
+      error.stderr.includes("data.agents returns 'panelRecordQuery'") && error.stderr.includes("accepts panelRecordList"));
+    authorProjection.data.agents = originalRead;
+    await writeFile(descriptor, JSON.stringify({ manifest }));
 
     rejectInlinePanel = true;
     await assert.rejects(run("panel", "register", directory), error => error.stderr.includes("panel inline-panel: PUT"));

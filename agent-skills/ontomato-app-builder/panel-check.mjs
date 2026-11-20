@@ -27,7 +27,8 @@ function expandInlineProjections(manifest, panel) {
     const { id = randomUUID(), componentId, data, inputs = {}, outputs = {}, config = {}, operations, name, description, ...unknown } = projection;
     if (Object.keys(unknown).length) throw new Error(`Member ${member}: unknown projection fields ${Object.keys(unknown).join(", ")}`);
     if (componentId === "@ontomato/sdk:MetricChart") throw new Error(`Member ${member}: register the chart through its source card and reference its ID`);
-    inline.push({ member, id, needsId: projection.id === undefined, input: { componentId, data, inputs, outputs, config, operations, name, description } });
+    const input = { componentId, data, inputs, outputs, config, name, description, ...(operations !== undefined && { operations }) };
+    inline.push({ member, id, needsId: projection.id === undefined, input });
     return [member, { ...bindings, target: { projectionId: id } }];
   });
   return { manifest: inline.length ? { ...manifest, members: Object.fromEntries(members) } : manifest, inline };
@@ -88,6 +89,25 @@ function checkOperations(id, projection, typeTable, placements, state, checks) {
       const bound = value && (!("state" in value) || matched.some(([type, operation]) =>
         checks.panelOperationTargetPort(state[value.state].type, type, operation.batch)?.kind === portKind));
       if (!bound) throw new Error(`member ${member} (projection ${id}): bind ${label}'s target input ${input} to an object or checked list`);
+    }
+  }
+}
+
+function checkProjectionData(id, projection, component, checks) {
+  if (!("data" in projection)) return;
+  const { data } = component;
+  if (data === undefined) throw new Error(`projection ${id}: component ${projection.componentId} does not declare projection data`);
+  for (const [name, declaration] of Object.entries(data)) {
+    if (declaration.required && !Object.hasOwn(projection.data, name)) {
+      throw new Error(`projection ${id}: data.${name} is required by ${projection.componentId}`);
+    }
+  }
+  for (const [name, read] of Object.entries(projection.data)) {
+    const datum = checks.appsSdkComponentDatum(data, name);
+    if (!datum) throw new Error(`projection ${id}: data.${name} is not declared by ${projection.componentId}`);
+    const { result } = checks.directReadDeclaration(projection, read);
+    if (!datum.results.includes(result)) {
+      throw new Error(`projection ${id}: data.${name} returns '${result}'. ${projection.componentId} accepts ${datum.results.join(", ")}`);
     }
   }
 }
@@ -155,7 +175,7 @@ export async function checkPanelWorkspace(directory, { checks, catalogue, versio
       kind, new Map(items.map(({ id, body }) => [id, body])),
     ]),
   );
-  const components = new Set(catalogue.components.map(({ componentId }) => `@ontomato/sdk:${componentId}`));
+  const components = new Map(catalogue.components.map(component => [`@ontomato/sdk:${component.componentId}`, component]));
   const references = new Map();
   const placements = new Map();
   for (const [key, member] of Object.entries(manifest.members)) {
@@ -178,9 +198,11 @@ export async function checkPanelWorkspace(directory, { checks, catalogue, versio
     } else if (record === undefined) {
       unchecked.push({ kind, id });
     } else if (kind === "projection") {
-      if (!components.has(record.componentId)) {
+      const component = components.get(record.componentId);
+      if (!component) {
         throw new Error(`${resolve(directory, "panel.json")}: projection ${id} uses unavailable SDK component ${record.componentId}`);
       }
+      checkProjectionData(id, record, component, checks);
       if (typeTable) checkOperations(id, record, typeTable, placements.get(id), manifest.state, checks);
     }
   }
