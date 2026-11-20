@@ -174,6 +174,44 @@ test("the checker accepts short data and operation members with reusable project
   }
 });
 
+test("short panel members can open the page composer with an explicit agent and prefill", async () => {
+  const { panelAuthoringMemberSchema } = await import("./panel-check");
+  const member = { component: "ConversationEntry", agent: "page-default", prefill: "Review this domain's knowledge." };
+  assert.deepEqual(panelAuthoringMemberSchema.parse(member), member);
+  for (const agent of [{ kind: "id", id: "governance-agent" }, { kind: "preset", agentKind: "knowledge-governance" }]) {
+    const qualified = { ...member, component: "@ontomato/sdk:ConversationEntry", agent };
+    assert.deepEqual(panelAuthoringMemberSchema.parse(qualified), qualified);
+  }
+  for (const invalid of [
+    { component: member.component, prefill: member.prefill },
+    { ...member, agent: "governance-agent" },
+    { ...member, data: { rows: "query" } },
+    { ...member, component: "OperationButton", operation: APPROVE_KNOWLEDGE },
+  ]) {
+    assert.equal(panelAuthoringMemberSchema.safeParse(invalid).success, false);
+  }
+});
+
+test("short members can name distinct data owners and declare a static segmented switch", async () => {
+  const { panelAuthoringMemberSchema } = await import("./panel-check");
+  const graph = {
+    component: "ObjectGraph", type: "platform:ObjectType",
+    data: { nodes: "list", edges: { type: "platform:Relationship", read: "list" } },
+  };
+  assert.deepEqual(panelAuthoringMemberSchema.parse(graph), graph);
+  assert.equal(panelAuthoringMemberSchema.safeParse({ ...graph, type: undefined }).success, false);
+  assert.equal(panelAuthoringMemberSchema.safeParse({
+    ...graph, type: undefined,
+    data: { ...graph.data, nodes: { type: "platform:ObjectType", read: "list" } },
+  }).success, true);
+  const mode = {
+    component: "SegmentedControl", config: { options: [{ value: "instance", label: "Instance" }] },
+    state: { value: "mode" },
+  };
+  assert.deepEqual(panelAuthoringMemberSchema.parse(mode), mode);
+  assert.equal(panelAuthoringMemberSchema.safeParse({ ...mode, component: "ObjectList" }).success, false);
+});
+
 test("projection registration accepts package-qualified components and leaves data keys to the catalogue", () => {
   const input = {
     name: "Task list", description: "", visibility: "domain", revision: 0, inputs: {}, outputs: {}, config: {},
