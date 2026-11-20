@@ -4,6 +4,10 @@ import { useI18n } from "vue-i18n";
 import { ElEmpty } from "element-plus/es/components/empty/index";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
 import { matchesObjectType, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import type {
+  PlatformOntologyCountsResponse,
+  PlatformOntologyStartResponse,
+} from "@ontomato/contracts/platform-ontology";
 import { platformObjectTypes, platformRelationKinds } from "@ontomato/contracts/platform-object-types";
 import {
   G6GraphCanvas,
@@ -21,12 +25,16 @@ import {
   useProjectionGraph,
   useProjectionSlot,
 } from "../panel/context";
+import type { MemberDataState } from "../panel/direct";
+import { useMember, useMemberRead, type PanelMemberContext } from "../panel/member";
 import type {
   PlatformGraphEdge,
+  PlatformGraphNeighborsResult,
   PlatformGraphNode,
   PlatformGraphRelationStatus,
   PlatformGraphSchema,
   PlatformGraphTypeCount,
+  PlatformObjectGraph,
 } from "../panel/platform-objects";
 
 type PanelObjectValue = Extract<PanelStateValue, { className: string }>;
@@ -42,7 +50,8 @@ import {
  * Projection-level interactive graph powered by G6 (`@ontomato/foundation-ui/graph/g6`), shared by the four-layer
  * platform capability map (M3: type mode + instance mode) and the object browser instance graph (M4: instance mode).
  *
- * Reads through the bound resource adapter's `graph` port (`schema`, `counts`, `start`, `neighbors`) and keeps layer
+ * In a directly rendered projection, reads `schema`, `counts`, `start`, and `neighbors` through the member's named
+ * data port; in a legacy frame projection, reads through the bound resource adapter's `graph` port. Keeps layer
  * filters, expanded nodes, dragged coordinates and viewport as internal view state rather than panel state. Node
  * selection always writes complete `{ className, primaryKey }` identities.
  */
@@ -61,7 +70,7 @@ const props = withDefaults(
     /** Accessible graph label; falls back to the projection's name. */
     label?: string;
     /** Initial enabled layers; defaults to all layers present in schema or loaded nodes. */
-    layers?: readonly string[];
+    layers?: readonly string[] | null;
     /** Show layer filter pills when multiple layers exist. */
     showLayerFilter?: boolean;
     /** Show legend strip. */
@@ -93,10 +102,44 @@ const emit = defineEmits<{
   "update:selectedType": [typeId: string | null];
 }>();
 
+class MemberReadForbiddenError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MemberReadForbiddenError";
+  }
+}
+
 const { t, te } = useI18n();
 const panel = usePanelContext();
 const slot = useProjectionSlot();
-const graphSource = useProjectionGraph();
+const member = useMember();
+
+function createMemberGraphSource(ctx: PanelMemberContext): PlatformObjectGraph {
+  const unwrap = <T>(state: MemberDataState): T => {
+    if (state.status === "ready") return state.value as unknown as T;
+    if (state.status === "forbidden") throw new MemberReadForbiddenError(t("platform.dataForbidden"));
+    if (state.status === "error") throw new Error(state.message);
+    throw new Error(t("platform.dataAwaiting"));
+  };
+  if (!ctx.projection.data.neighbors) throw new Error(`Member '${ctx.key}' declares no 'neighbors' datum`);
+  const readSchema = ctx.projection.data.schema ? useMemberRead("schema") : undefined;
+  const readCounts = ctx.projection.data.counts ? useMemberRead("counts") : undefined;
+  const readStart = ctx.projection.data.start ? useMemberRead("start") : undefined;
+  const readNeighbors = useMemberRead("neighbors");
+  return {
+    ...(readSchema ? { schema: async () => unwrap<PlatformGraphSchema>(await readSchema({})) } : {}),
+    ...(readCounts ? { counts: async () => unwrap<PlatformOntologyCountsResponse>(await readCounts({})).counts } : {}),
+    ...(readStart ? { start: async () => unwrap<PlatformOntologyStartResponse>(await readStart({})).node } : {}),
+    neighbors: async (query) =>
+      unwrap<PlatformGraphNeighborsResult>(await readNeighbors({
+        node: { className: query.node.className, primaryKey: query.node.primaryKey },
+        ...(query.layers ? { layers: [...query.layers] } : {}),
+        ...(query.relationKinds ? { relationKinds: [...query.relationKinds] } : {}),
+      })),
+  };
+}
+
+const graphSource = member ? createMemberGraphSource(member) : useProjectionGraph();
 
 const relationLabelKeyById = new Map(platformRelationKinds.map((kind) => [kind.id, kind.labelKey]));
 
@@ -106,7 +149,18 @@ const paletteSize = ref(0);
 
 const loading = ref(false);
 const expanding = ref(false);
+const forbidden = ref(false);
 const errorMessage = ref<string | null>(null);
+
+function recordFailure(reason: unknown) {
+  if (reason instanceof MemberReadForbiddenError) {
+    forbidden.value = true;
+    errorMessage.value = null;
+    return;
+  }
+  forbidden.value = false;
+  errorMessage.value = reason instanceof Error ? reason.message : String(reason);
+}
 
 // Type-mode state
 const typeSchema = shallowRef<PlatformGraphSchema | null>(null);
@@ -123,8 +177,9 @@ const relationStatusesByNode = shallowRef<Map<string, readonly PlatformGraphRela
 const instancePositions = shallowRef<Map<string, GraphCanvasPoint>>(new Map());
 
 // Internal view state (deliberately excluded from panel state)
-const enabledLayers = shallowRef<Set<string>>(new Set(props.layers ?? []));
-const layersInitialized = ref(Boolean(props.layers?.length));
+const initialLayers = Array.isArray(props.layers) ? props.layers : [];
+const enabledLayers = shallowRef<Set<string>>(new Set(initialLayers));
+const layersInitialized = ref(initialLayers.length > 0);
 const manualPositions = shallowRef<Map<string, GraphCanvasPoint>>(new Map());
 const currentViewport = shallowRef<GraphCanvasViewport | null>(null);
 const focusedNodeId = ref<string | null>(null);
@@ -133,6 +188,17 @@ let loadGeneration = 0;
 
 const activeMode = computed<"type" | "instance">(() => (props.mode === "type" ? "type" : "instance"));
 const accessibleLabel = computed(() => props.label ?? slot.projection.name);
+
+const declaredNodeIdentity = computed(() => {
+  if (slot.projection.graph?.nodeIdentity) return slot.projection.graph.nodeIdentity;
+  if (!member) return undefined;
+  const candidate =
+    member.projection.outputs.selectedNode
+    ?? member.projection.outputs.selected
+    ?? member.projection.inputs.selected
+    ?? member.projection.inputs.start;
+  return candidate && (candidate.kind === "object" || candidate.kind === "object-union") ? candidate : undefined;
+});
 
 function resolveKey(key: string | undefined, fallback: string): string {
   if (!key) return fallback;
@@ -166,7 +232,7 @@ const availableLayers = computed<readonly string[]>(() => {
     }
     return [...discovered];
   }
-  const declaredIdentity = slot.projection.graph?.nodeIdentity;
+  const declaredIdentity = declaredNodeIdentity.value;
   if (declaredIdentity && "layers" in declaredIdentity) {
     return declaredIdentity.layers;
   }
@@ -449,7 +515,7 @@ function resolveTypeSelectionState(): string | null {
 }
 
 function writeSelectedNode(refValue: PanelObjectValue | null) {
-  const declaredIdentity = slot.projection.graph?.nodeIdentity;
+  const declaredIdentity = declaredNodeIdentity.value;
   if (refValue && declaredIdentity && !matchesObjectType(declaredIdentity, refValue.className)) {
     throw new TypeError(`Graph node '${refValue.className}' is outside the projection's declared nodeIdentity`);
   }
@@ -469,6 +535,7 @@ function writeSelectedType(typeId: string | null) {
 // ---- Data loading & incremental 1-hop expansion ----
 async function loadTypeMode(generation: number) {
   loading.value = true;
+  forbidden.value = false;
   errorMessage.value = null;
   try {
     const schemaPromise = graphSource.schema!();
@@ -486,7 +553,7 @@ async function loadTypeMode(generation: number) {
     void canvas.value?.fit({ maxZoom: 1.15, padding: 36 });
   } catch (reason: unknown) {
     if (generation !== loadGeneration) return;
-    errorMessage.value = reason instanceof Error ? reason.message : String(reason);
+    recordFailure(reason);
   } finally {
     if (generation === loadGeneration) loading.value = false;
   }
@@ -499,6 +566,7 @@ async function expandInstanceNode(refValue: PanelObjectValue, generation: number
 
   if (isRoot) loading.value = true;
   else expanding.value = true;
+  forbidden.value = false;
   errorMessage.value = null;
 
   const activeLayers = availableLayers.value.length > 0 ? [...enabledLayers.value] : undefined;
@@ -556,7 +624,7 @@ async function expandInstanceNode(refValue: PanelObjectValue, generation: number
     }
   } catch (reason: unknown) {
     if (generation !== loadGeneration) return;
-    errorMessage.value = reason instanceof Error ? reason.message : String(reason);
+    recordFailure(reason);
   } finally {
     expandingNodeIds.delete(nodeId);
     if (generation === loadGeneration) {
@@ -568,6 +636,7 @@ async function expandInstanceNode(refValue: PanelObjectValue, generation: number
 
 async function loadInstanceMode(generation: number) {
   loading.value = true;
+  forbidden.value = false;
   errorMessage.value = null;
   instanceNodes.value = new Map();
   instanceEdges.value = new Map();
@@ -600,7 +669,7 @@ async function loadInstanceMode(generation: number) {
     await expandInstanceNode(startRef, generation, true);
   } catch (reason: unknown) {
     if (generation !== loadGeneration) return;
-    errorMessage.value = reason instanceof Error ? reason.message : String(reason);
+    recordFailure(reason);
     loading.value = false;
   }
 }
@@ -746,7 +815,10 @@ onMounted(() => {
       </span>
     </div>
 
-    <div v-if="errorMessage" class="sdk-ontology-graph-notice is-error" role="alert" data-graph-state="error">
+    <div v-if="forbidden" class="sdk-ontology-graph-notice is-warning" role="status" data-graph-state="forbidden">
+      {{ t("platform.dataForbidden") }}
+    </div>
+    <div v-else-if="errorMessage" class="sdk-ontology-graph-notice is-error" role="alert" data-graph-state="error">
       {{ errorMessage }}
     </div>
 
@@ -766,7 +838,7 @@ onMounted(() => {
     </template>
 
     <el-skeleton v-if="loading && canvasNodes.length === 0" :rows="6" animated class="sdk-ontology-graph-skeleton" />
-    <el-empty v-else-if="!loading && !errorMessage && canvasNodes.length === 0" :description="t('platform.graphEmpty')" :image-size="48" />
+    <el-empty v-else-if="!loading && !forbidden && !errorMessage && canvasNodes.length === 0" :description="t('platform.graphEmpty')" :image-size="48" />
     <div v-else class="sdk-ontology-graph-frame">
       <G6GraphCanvas
         ref="canvas"
