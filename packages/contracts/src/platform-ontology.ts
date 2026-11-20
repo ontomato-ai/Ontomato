@@ -54,11 +54,15 @@ export const platformOntologyTypeSchema = z.object({
 export type PlatformOntologyType = z.infer<typeof platformOntologyTypeSchema>;
 
 export const platformOntologySchemaResponseSchema = z.object({
-  layers: z.array(platformOntologyLayerSchema).readonly(),
-  objectTypes: z.array(platformOntologyTypeSchema).readonly(),
-  relationKinds: z.array(platformRelationKindDeclarationSchema).readonly(),
+  layers: z.array(platformOntologyLayerSchema),
+  objectTypes: z.array(platformOntologyTypeSchema),
+  relationKinds: z.array(platformRelationKindDeclarationSchema),
 }).strict();
-export type PlatformOntologySchemaResponse = z.infer<typeof platformOntologySchemaResponseSchema>;
+type PlatformOntologySchemaJson = z.infer<typeof platformOntologySchemaResponseSchema>;
+/** The owner can return its immutable catalogue. The wire parser returns ordinary JSON arrays. */
+export type PlatformOntologySchemaResponse = {
+  [K in keyof PlatformOntologySchemaJson]: Readonly<PlatformOntologySchemaJson[K]>;
+};
 
 export const platformOntologyTypeCountSchema = z.object({
   type: typeId,
