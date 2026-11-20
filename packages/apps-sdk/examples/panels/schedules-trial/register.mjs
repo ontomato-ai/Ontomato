@@ -2,28 +2,26 @@
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import {
-  directPanelInputSchema,
-  directProjectionInputSchema,
   productPanelInputSchema,
+  productProjectionInputSchema,
   registerApplicationPanelUsesRequestSchema,
 } from "@ontomato/contracts/product-panels";
 import { panelRegistrationClient } from "../../../../../agent-skills/ontomato-app-builder/panel-registration.mjs";
 import { panelContent, panels, projections, applications } from "./definitions.mjs";
 
 async function main() {
-  const { values: { base, mode, token, "token-file": tokenFile, "sdk-version": sdkVersion, revisions } } = parseArgs({
+  const { values: { base, mode, token, "token-file": tokenFile, revisions } } = parseArgs({
     options: {
       base: { type: "string" },
       mode: { type: "string" },
       token: { type: "string" },
       "token-file": { type: "string" },
-      "sdk-version": { type: "string" },
       revisions: { type: "string" },
     },
   });
-  if (!base || !["snapshot", "create", "update"].includes(mode) || (mode !== "snapshot" && !sdkVersion)
+  if (!base || !["snapshot", "create", "update"].includes(mode)
     || (mode === "update" && !revisions) || (token !== undefined && tokenFile !== undefined)) {
-    throw new Error("Usage: register.mjs --base <url> --mode snapshot|create|update [--token-file <path> | --token <credential>] [--sdk-version <exact version>] [--revisions <json|@file>]");
+    throw new Error("Usage: register.mjs --base <url> --mode snapshot|create|update [--token-file <path> | --token <credential>] [--revisions <json|@file>]");
   }
 
   const credential = tokenFile === undefined ? token : readFileSync(tokenFile, "utf8").trim();
@@ -43,17 +41,16 @@ async function main() {
 
   const creating = mode === "create";
   const expected = creating ? {} : JSON.parse(revisions.startsWith("@") ? readFileSync(revisions.slice(1), "utf8") : revisions);
-  // A panel without code is a direct panel, which names no SDK version; a panel with a module is pinned to the one given.
   const panelItems = panels.map(({ id, directory, name, description, manifest }) => {
     const content = panelContent(directory);
     const definition = { name, description, visibility: "domain", content, manifest };
     return {
       id, mode, revision: expected[id],
-      input: content.module === undefined ? directPanelInputSchema.parse(definition) : productPanelInputSchema.parse({ ...definition, sdkVersion }),
+      input: productPanelInputSchema.parse(definition),
     };
   });
   await client.register({
-    projections: projections.map(({ id, input }) => ({ id, mode, revision: expected[id], input: directProjectionInputSchema.parse(input) })),
+    projections: projections.map(({ id, input }) => ({ id, mode, revision: expected[id], input: productProjectionInputSchema.parse(input) })),
     panels: panelItems,
     applications: applications.map(({ applicationId: id, entry, panelUses, declaration, entryAccess }) => ({
       id, mode,
