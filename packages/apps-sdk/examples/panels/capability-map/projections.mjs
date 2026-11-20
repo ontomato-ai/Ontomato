@@ -137,6 +137,7 @@ export default [
         }),
       },
       config: {
+        type: USER,
         searchable: true,
         showCount: true,
         pageSize: 20,
