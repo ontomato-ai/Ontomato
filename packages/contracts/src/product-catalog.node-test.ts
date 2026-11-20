@@ -4,6 +4,7 @@ import {
   copyProductCurrentRequestSchema,
   deleteProductCurrentQuerySchema,
   deleteProductCurrentResponseSchema,
+  deleteProductPanelResponseSchema,
   productCatalogQuerySchema,
   productCurrentIdParamsSchema,
   productPanelInUseErrorSchema,
@@ -15,6 +16,7 @@ import {
 } from "./product-panels";
 import {
   changeProductDomainGrantRequestSchema,
+  changeProductPanelDomainGrantResponseSchema,
   changeProductGrantRequestSchema,
   productGrantChangeResponseSchema,
   productGrantsResponseSchema,
@@ -33,7 +35,7 @@ test("the product catalog accepts HTTP queries and returns cursor pages of summa
     id: "sales", name: "Sales", description: "", ownerId: "owner", visibility: "private",
     updatedAt: "2026-11-20T00:00:00Z", revision: 1, editable: false,
   };
-  const panels = { items: [summary], nextCursor: null };
+  const panels = { items: [{ ...summary, template: true }, { ...summary, id: "regular" }], nextCursor: null };
   const projections = {
     items: [{ ...summary, componentId: "@ontomato/sdk:ObjectList" }],
     nextCursor: "owner:cursor==",
@@ -51,6 +53,8 @@ test("copy and deletion reuse current ID rules and require a valid revision for 
     assert.equal(deleteProductCurrentQuerySchema.safeParse(query).success, false);
   }
   assert.deepEqual(deleteProductCurrentResponseSchema.parse({ success: true }), { success: true });
+  const panelDeletion = { success: true, deletedProjectionIds: ["removed"], retainedProjectionIdsWithoutEdit: ["retained"] };
+  assert.deepEqual(deleteProductPanelResponseSchema.parse(panelDeletion), panelDeletion);
 });
 
 test("a blocked deletion returns exactly the corresponding used-by details", () => {
@@ -75,6 +79,8 @@ test("product governance lists domain grants and changes domain sharing through 
   assert.equal(changeProductGrantRequestSchema.safeParse({ ...domainGrant, remove: true }).success, false);
   assert.deepEqual(changeProductDomainGrantRequestSchema.parse({ shared: false }), { shared: false });
   assert.deepEqual(productGrantChangeResponseSchema.parse({ success: true }), { success: true });
+  const panelSharing = { success: true, skippedProjectionIds: ["restricted"] };
+  assert.deepEqual(changeProductPanelDomainGrantResponseSchema.parse(panelSharing), panelSharing);
 });
 
 test("declares typed catalogue reads that reuse the current product records and list responses", async () => {

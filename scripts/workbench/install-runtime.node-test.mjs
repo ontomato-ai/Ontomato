@@ -204,3 +204,25 @@ test("license inventory uses the installed closure, excluding uninstalled report
   rmSync(sdk, { recursive: true });
   assert.throws(() => installedLicenseReport(report, fixture.runtime, fixture.index), /ENOENT/);
 });
+
+test("one installed license representative covers peer snapshots of the same artifact", (t) => {
+  const fixture = installed(t);
+  const base = fixture.index[EXPRESS];
+  const peer = `node_modules/.pnpm/${EXPRESS}_zod@3.25.76/node_modules/express`;
+  manifest(fixture.runtime, peer, "express");
+  const sdk = join(fixture.runtime, fixture.index["@modelcontextprotocol/sdk@1.29.0"]);
+  const report = {
+    MIT: [
+      { name: "express", versions: ["4.22.1"], paths: [join(fixture.runtime, base)] },
+      { name: "@modelcontextprotocol/sdk", versions: ["1.29.0"], paths: [sdk] },
+    ],
+  };
+  const peerKey = `${EXPRESS}(zod@3.25.76)`;
+  const result = installedLicenseReport(report, fixture.runtime, { ...fixture.index, [peerKey]: peer });
+  assert.deepEqual(result.MIT[0].paths, [base, peer].map(path => realpathSync(join(fixture.runtime, path))));
+  const patchKey = `${EXPRESS}(patch_hash=patched)(zod@3.25.76)`;
+  assert.throws(
+    () => installedLicenseReport(report, fixture.runtime, { ...fixture.index, [patchKey]: peer }),
+    /license report is missing installed packages/,
+  );
+});

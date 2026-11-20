@@ -255,7 +255,7 @@ export const productPanelResponseSchema = z.object({
 }).strict();
 export type ProductPanelResponse = z.infer<typeof productPanelResponseSchema>;
 
-export const productPanelSummarySchema = productPanelSchema.pick({
+const productCurrentSummarySchema = productPanelSchema.pick({
   id: true,
   name: true,
   description: true,
@@ -265,7 +265,10 @@ export const productPanelSummarySchema = productPanelSchema.pick({
   revision: true,
   editable: true,
 });
-export const productProjectionSummarySchema = productPanelSummarySchema.extend(
+export const productPanelSummarySchema = productCurrentSummarySchema.extend(
+  productPanelSchema.pick({ template: true }).shape,
+);
+export const productProjectionSummarySchema = productCurrentSummarySchema.extend(
   projectionDefinition.pick({ componentId: true }).shape,
 );
 export type ProductPanelSummary = z.infer<typeof productPanelSummarySchema>;
@@ -285,6 +288,10 @@ export const deleteProductCurrentQuerySchema = z.object({
   revision: z.coerce.number().pipe(currentRecordFields.revision),
 }).strict();
 export const deleteProductCurrentResponseSchema = z.object({ success: z.literal(true) }).strict();
+export const deleteProductPanelResponseSchema = deleteProductCurrentResponseSchema.extend({
+  deletedProjectionIds: z.array(id),
+  retainedProjectionIdsWithoutEdit: z.array(id),
+});
 
 /** Copy returns the same response shape as reading the new current record. */
 export const copyProductCurrentRequestSchema = productCurrentIdParamsSchema.extend({
