@@ -121,7 +121,7 @@ const deleteFunctionImpact: PanelImpactInspector = {
  * draft, and an optional saved binding, and its owner checks that the metric may run.
  */
 const METRIC_FORM_SLOT = "definition";
-const metricTrialTarget = metricSaveTarget.nullable();
+const metricTrialTarget = metricSaveTarget.optional();
 const parameterDefinitionsSchema = z.array(z.object({ name: z.string() }).passthrough());
 const trialDraftSchema = z.object({
   function: z.object({
@@ -302,7 +302,8 @@ export const m5ServerOperations = [
     inputSchema: panelReadOperationInputSchema,
     resultSchema: markdownResultSchema,
     async execute(host: Host, call: z.infer<typeof panelReadOperationCallSchema>) {
-      const { draft, parameters } = call.input;
+      // The coordinator passes the call's input as JSON; the trial's own input is this owner's to read.
+      const { draft, parameters } = panelReadOperationInputSchema.parse(call.input);
       const envelope = await trial(host, "/metricView/test", withParameterValues(draft, parameters), "METRIC_VIEW_TEST_REFUSED");
       return { kind: "markdown" as const, markdown: testedContentSchema.parse(envelope.data).md };
     },
@@ -318,7 +319,7 @@ export const m5ServerOperations = [
     inputSchema: panelReadOperationInputSchema,
     resultSchema: jsonResultSchema,
     async execute(host: Host, call: z.infer<typeof panelReadOperationCallSchema>) {
-      const { draft, parameters, bindingId } = call.input;
+      const { draft, parameters, bindingId } = panelReadOperationInputSchema.parse(call.input);
       const envelope = await trial(host, "/metricView/testExecute",
         { metricView: draft, param: parameters, ...(bindingId ? { bindingId } : {}) }, "METRIC_VIEW_TEST_EXECUTE_REFUSED");
       // A truncated run is a partial result: the reader sees that it is, and why, beside the rows.
