@@ -96,18 +96,25 @@ const projection = {
   data: { record: { source: { object: { input: "task" } }, read: "record", params: {} } },
   config: { fields: ["state"] },
 };
+const runIdType = { kind: "scalar", type: "string" } as const;
 const panel = {
   name: "Schedules", description: "", visibility: "domain",
   content: vuePanelContent("summary", "tasks", "form", "run", "create", "history", "manage"),
   manifest: {
-    state: { selectedTask: { type: taskType, deepLink: true, external: true, personal: false, default: null } },
+    state: {
+      selectedTask: { type: taskType, deepLink: true, external: true, personal: false, default: null },
+      selectedRunId: { type: runIdType },
+    },
     members: {
       summary: { target: { projectionId }, inputs: { task: { state: "selectedTask" } } },
       tasks: { target: { projectionId: "projection-pilot-list" } },
       form: { target: { projectionId: "projection-pilot-form" }, inputs: { task: { state: "selectedTask" } } },
       run: { target: { projectionId: "projection-pilot-run" }, inputs: { task: { state: "selectedTask" } } },
       create: { target: { projectionId: "projection-pilot-create-task" } },
-      history: { target: { projectionId: "projection-pilot-task-history" }, inputs: { task: { state: "selectedTask" } } },
+      history: {
+        target: { projectionId: "projection-pilot-task-history" },
+        inputs: { task: { state: "selectedTask" }, runId: { state: "selectedRunId" } },
+      },
       manage: { target: { projectionId: "projection-pilot-manage-task" }, inputs: { task: { state: "selectedTask" } } },
     },
     events: {},
@@ -511,10 +518,10 @@ it("reads back stable member keys and named data, and leaves the record intact a
       operations: { create: { operation: operationRef("platform:ScheduledTask.create") } },
     },
     "projection-pilot-task-history": {
-      ...projection, componentId: "@ontomato/sdk:PanelData", config: {},
+      ...projection, componentId: "@ontomato/sdk:PanelData", config: {}, inputs: { ...projection.inputs, runId: runIdType },
       data: {
         runs: { ...projection.data.record, read: "runs", params: { cursor: { literal: "previous-page" } } },
-        run: { ...projection.data.record, read: "run", params: { runId: { literal: taskRun.id } } },
+        run: { ...projection.data.record, read: "run", params: { runId: { input: "runId" } } },
       },
     },
     "projection-pilot-manage-task": {
@@ -571,7 +578,7 @@ it("reads back stable member keys and named data, and leaves the record intact a
   expect(await (await read("history", "runs", { task: taskRef })).json()).toEqual({
     status: "ready", value: { runs: [taskRun], nextCursor: "next-page" },
   });
-  expect(await (await read("history", "run", { task: taskRef })).json()).toEqual({ status: "ready", value: taskRun });
+  expect(await (await read("history", "run", { task: taskRef, runId: taskRun.id })).json()).toEqual({ status: "ready", value: taskRun });
   const operation = await (await request("POST", "product-panels/read", {
     source, memberPath: [{ member: "run" }], operations: true, inputs: { task: taskRef },
   })).json();
