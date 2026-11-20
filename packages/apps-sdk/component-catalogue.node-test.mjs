@@ -30,7 +30,7 @@ const DECLARED_DATA = {
   ReferencePicker: { options: ["panelOptionList"], selected: ["panelOptionList"] },
   ObjectGraph: { nodes: ["panelRecordList"], edges: ["panelRecordList"] },
   OntologyGraph: { schema: ["panelGraphSchema"], counts: ["panelGraphCounts"], start: ["panelGraphStart"], neighbors: ["panelGraphNeighbors"] },
-  ObjectRelations: { neighbors: ["panelRelationNeighbors"] },
+  ObjectRelations: { neighbors: ["panelGraphNeighbors", "panelRelationNeighbors"] },
   MetricChart: { template: ["chartTemplate"], result: ["metricOutput"] },
   SegmentedControl: { counts: ["panelGroupCounts"] },
   // Readable as a member it reads nothing; an empty table says so, and Node registers it on that declaration.
