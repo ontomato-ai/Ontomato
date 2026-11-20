@@ -40,6 +40,9 @@ describe("default assistant prompts", () => {
     const template=getPromptTemplate(`assistant.${kind}.system`);
     expect(template).toContain("ontomato-analyst-assistant/SKILL.md");
     expect(template).not.toMatch(/ontomato-analyst-assistant\s+ask|\bask\s+--|--resume|cancel-retriever|resume (?:that|the same|that same) retrieval/i);
+    expect(template).toMatch(/only when the user requests them/i);
+    expect(template).toMatch(/only the accepted dataset files used as evidence/i);
+    expect(template).not.toMatch(/Show every dataset file you obtained/i);
     const customized="Use ontomato-analyst-assistant ask according to my own instructions";
     expect(effectiveSystemPrompt({kind,system_prompt:customized})).toBe(customized);
   });
