@@ -8,7 +8,7 @@ import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { panelHumanOperationDispatchResponseSchema, panelHumanOperationPreparationSchema } from "@ontomato/contracts/panel-agent";
-import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
+import { productPanelOperationsReadResponseSchema, productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
 import {
   ATTRIBUTE, DELETE_ATTRIBUTE, DELETE_OBJECT_TYPE, OBJECT_TYPE, RELATIONSHIP,
 } from "@ontomato/contracts/platform-object-types";
@@ -165,7 +165,8 @@ function javaOwner(app: express.Express) {
 }
 
 const type = (id: string, read: string, params = {}) => ({ source: { type: { kind: "PlatformObjectType", id } }, read, params });
-const describe = (id: string) => ({ source: { operation: { kind: "PlatformOperation", id } }, read: "describe", params: {} });
+/** An owner's operation the projection names, under its own local name, acting on the object one of its inputs holds. */
+const operation = (id: string, input?: string) => ({ operation: { kind: "PlatformOperation", id }, ...(input && { target: { input } }) });
 const projections: Record<string, object> = {
   types: { componentId: "@ontomato/sdk:ObjectList", data: { rows: type(OBJECT_TYPE, "list") } },
   attributes: { componentId: "@ontomato/sdk:ObjectList", data: { rows: type(ATTRIBUTE, "list", { className: { literal: "warehouse" } }) } },
@@ -174,14 +175,17 @@ const projections: Record<string, object> = {
     componentId: "@ontomato/sdk:ObjectSummary", inputs: { objectType: { kind: "object", objectType: OBJECT_TYPE } },
     data: { record: { source: { object: { input: "objectType" } }, read: "record", params: {} } },
   },
-  create: { componentId: "@ontomato/sdk:ObjectForm", data: { form: type(OBJECT_TYPE, "createForm") } },
+  create: {
+    componentId: "@ontomato/sdk:ObjectForm", data: { form: type(OBJECT_TYPE, "createForm") },
+    operations: { save: operation(`${OBJECT_TYPE}.save`) },
+  },
   removeType: {
     componentId: "@ontomato/sdk:OperationButton", inputs: { objectType: { kind: "object", objectType: OBJECT_TYPE } },
-    data: { operation: describe(DELETE_OBJECT_TYPE) },
+    data: {}, operations: { delete: operation(DELETE_OBJECT_TYPE, "objectType") }, config: { operation: "delete" },
   },
   removeAttribute: {
     componentId: "@ontomato/sdk:OperationButton", inputs: { attribute: { kind: "object", objectType: ATTRIBUTE } },
-    data: { operation: describe(DELETE_ATTRIBUTE) },
+    data: {}, operations: { delete: operation(DELETE_ATTRIBUTE, "attribute") }, config: { operation: "delete" },
   },
 };
 const warehouse = { className: OBJECT_TYPE, primaryKey: "warehouse" };
@@ -272,6 +276,15 @@ async function read(member: string, dataName: string) {
   return reply.value;
 }
 
+/** The operations a member can do, as the owners admit them for its placement. */
+async function operations(member: string) {
+  const response = await request("POST", "product-panels/read", { source: use, memberPath: [{ member }], operations: true, inputs: {} });
+  expect(response.status, member).toBe(200);
+  const reply = productPanelOperationsReadResponseSchema.parse(await response.json());
+  if (reply.status !== "ready") throw new Error(`${member}/operations: ${JSON.stringify(reply)}`);
+  return reply.value;
+}
+
 async function operate(operationId: string, call: object) {
   const prepared = await request("POST", "panel-operations/intents", {
     applicationId: use.applicationId, useId: use.useId, operationId, call,
@@ -309,8 +322,8 @@ it("serves the ontology model's catalog reads to a panel viewer through the owne
   expect(await read("create", "form")).toMatchObject({
     values: { className: "" }, errors: [], save: { draftOperation: "objectType.create" },
   });
-  expect(await read("removeType", "operation")).toMatchObject({
-    handlerRef: DELETE_OBJECT_TYPE, label: "Delete object type", effect: "write", batch: false,
+  expect((await operations("removeType")).delete).toMatchObject({
+    kind: "action", handlerRef: DELETE_OBJECT_TYPE, label: "Delete object type", effect: "write", batch: false,
     target: { source: "input", input: "objectType" }, inspectImpact: { handlerRef: `${DELETE_OBJECT_TYPE}.inspect-impact` },
   });
   // Lists and records read under the readers' GET permission; className filters reach the owner.
