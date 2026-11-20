@@ -184,6 +184,11 @@
   --elevation-composer: 0 6px 20px rgba(0, 0, 0, 0.08);
   --elevation-overlay: 0 0 0 1px var(--el-border-color), 0 8px 24px rgba(0, 0, 0, 0.1);
   --elevation-modal: 0 8px 24px rgba(0, 0, 0, 0.08), 0 24px 64px rgba(0, 0, 0, 0.16);
+  /* The public shadow variables (src/theme.ts): each names a level, so a theme can move it to another level. */
+  --shadow-flat: var(--elevation-flat);
+  --shadow-panel: var(--elevation-panel);
+  --shadow-overlay: var(--elevation-overlay);
+  --shadow-modal: var(--elevation-modal);
   /* Existing shadow names on the DESIGN levels: page-flow cards and buttons are flat, floating layers are overlays. */
   --shadow-card: var(--elevation-flat);
   --shadow-card-hover: var(--elevation-flat);
