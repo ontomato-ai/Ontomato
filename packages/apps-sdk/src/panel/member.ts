@@ -3,6 +3,7 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { MemberData, MemberDataState, MemberInputs } from "./direct";
 import { usePanelContext } from "./context";
+import type { MemberOperationsState } from "./member-operations";
 
 /*
  * The member a component is drawn as in a directly rendered panel (design 4.2): its projection with the named data it
@@ -15,6 +16,8 @@ export interface PanelMemberContext {
   readonly projection: DirectProjection;
   readonly inputs: ComputedRef<MemberInputs>;
   readonly data: MemberData;
+  /** The operations its projection names, as the owners admit them for its inputs now, by local name. */
+  readonly operations: ComputedRef<MemberOperationsState>;
 }
 
 /** The member a projection is drawn as, once its projection is loaded. */
@@ -32,6 +35,11 @@ const member = useMember;
 /** A named datum of this member, read and kept current while the component is mounted. */
 export function useMemberData(name: string): ComputedRef<MemberDataState> {
   return member().data.use(name);
+}
+
+/** This member's operations, as their owners admit them now, by the projection's local name. */
+export function useMemberOperations(): ComputedRef<MemberOperationsState> {
+  return member().operations;
 }
 
 /**

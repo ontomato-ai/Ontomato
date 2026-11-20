@@ -5,6 +5,7 @@ import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import { slotInputState, usePanelContext, useProjectionSlot } from "../panel/context";
 import { PlatformUploadConflict } from "../panel/platform-objects";
 import { stateObject } from "../panel/state";
+import { useMemberOperations } from "../panel/member";
 
 /**
  * File upload/import control bound to a declared `PlatformOperation`. Optionally presents format rules before opening
@@ -14,8 +15,8 @@ import { stateObject } from "../panel/state";
  */
 const props = withDefaults(
   defineProps<{
-    /** Operation published by this projection to invoke; defaults to the first published operation. */
-    operation?: string;
+    /** The operation it runs: the projection's local name for it, under `operations`. */
+    operation: string;
     /** Optional slot input whose panel state holds the target object, when the upload targets one object. */
     input?: string;
     /** Optional extra parameters merged into `call.input` alongside `{ file, overwrite }`. */
@@ -42,7 +43,6 @@ const props = withDefaults(
     disabled?: boolean;
   }>(),
   {
-    operation: "",
     input: undefined,
     params: undefined,
     label: undefined,
@@ -75,15 +75,12 @@ const uploading = ref(false);
 const failure = shallowRef<Error | null>(null);
 const pendingConflict = shallowRef<{ file: File; message: string } | null>(null);
 
-const published = computed(() => {
-  const registration = panel.instance.projections.value.find((item) => item.slot === slot.slot);
-  if (!registration) throw new Error(`The projection in slot '${slot.slot}' is not registered yet`);
-  const found = props.operation
-    ? registration.ports.operations.find((item) => item.name === props.operation)
-    : registration.ports.operations[0];
-  if (!found) throw new Error(`The projection in slot '${slot.slot}' publishes no operation '${props.operation}'`);
-  return found;
-});
+/** The member's operations, as their owners admit them now. */
+const operations = useMemberOperations();
+if (!Object.hasOwn(slot.projection.operations ?? {}, props.operation))
+  throw new Error(`The projection in member '${slot.slot}' names no operation '${props.operation}'`);
+/** The owner's description of the upload; nothing is sent until the owner admits it. */
+const published = computed(() => (operations.value.status === "ready" ? operations.value.value[props.operation] ?? null : null));
 
 const targetState = computed(() => slotInputState(panel.manifest, slot.slot, props.input));
 const target = computed<PanelOperationCall["target"]>(() => {
@@ -92,7 +89,7 @@ const target = computed<PanelOperationCall["target"]>(() => {
   return selected && { kind: "object", objectType: selected.className, primaryKey: selected.primaryKey };
 });
 
-const triggerLabel = computed(() => (props.label ? panel.t(props.label) : published.value.label));
+const triggerLabel = computed(() => (props.label ? panel.t(props.label) : published.value?.label ?? ""));
 const hasRulesDialog = computed(() => Boolean(props.intro || props.rules?.length));
 const allowedExtensions = computed(() =>
   (props.accept ?? "")
@@ -100,7 +97,7 @@ const allowedExtensions = computed(() =>
     .map((token) => token.trim().toLowerCase())
     .filter((token) => token.startsWith(".")),
 );
-const isDisabled = computed(() => props.disabled || uploading.value || (targetState.value !== null && target.value === null));
+const isDisabled = computed(() => props.disabled || uploading.value || published.value === null || (targetState.value !== null && target.value === null));
 
 function openPicker() {
   if (fileInput.value) {
@@ -125,7 +122,7 @@ async function submitFile(file: File, overwrite: boolean) {
   uploading.value = true;
   failure.value = null;
   try {
-    const result = await panel.invoke(published.value.handlerRef, {
+    const result = await panel.invoke(published.value!.handlerRef, {
       target: target.value,
       input: { ...(props.params ?? {}), file, overwrite },
     });

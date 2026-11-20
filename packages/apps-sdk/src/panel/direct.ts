@@ -11,6 +11,7 @@ import { createPanelInstance, type PanelInstance, type PanelInstanceOptions } fr
 import { stateObject, type PanelFieldValue } from "./state";
 import type { PanelText } from "./text";
 import type { PanelContext } from "./context";
+import { watchMemberOperations, type MemberOperationsState } from "./member-operations";
 
 /*
  * A panel drawn directly in the platform's own document (design 4.2): the instance holds its state and its members'
@@ -36,7 +37,7 @@ export type MemberPlacement = Pick<PanelManifest["members"][string], "inputs" | 
 
 export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "readProjection"> {
   /** Reads one named datum of one member, as the platform's read entry answers it for this panel's source. */
-  read(request: Omit<ProductPanelReadRequest, "source">): Promise<ProductPanelReadResponse>;
+  read: PanelReadPort;
   /** Reads a member's current projection by ID, as the reader. */
   readProjection(id: string): Promise<DirectProjection>;
   /**
@@ -72,6 +73,8 @@ export interface DirectPanelInstance extends PanelInstance {
   projectionOf(member: string): Promise<DirectProjection>;
   /** The data of one member, whose inputs are `inputs` as the member's placement fills them now. */
   memberData(member: string, projection: DirectProjection, inputs: () => MemberInputs): MemberData;
+  /** The operations one member can do now, as the owner admits them for its inputs; kept current while it is drawn. */
+  memberOperations(member: string, projection: DirectProjection, inputs: () => MemberInputs): ComputedRef<MemberOperationsState>;
   /** An operation's reported changes: the shown data they concern are read again. */
   refresh(affected: PanelOperationAffected): void;
   /** Every shown datum is read again, and every component that reads its own data is told to. */
@@ -155,8 +158,13 @@ export function awaitsInputs(projection: DirectProjection, data: DirectProjectio
   return required.some((param) => values[param] === null || values[param] === undefined);
 }
 
-/** The platform's read entry for a panel's member data, as the reader: the host fills in which panel it is. */
-export type PanelReadPort = (request: Omit<ProductPanelReadRequest, "source">) => Promise<ProductPanelReadResponse>;
+/** One read of a member's — a named datum, or the operations it can do — without the panel, which the host fills in. */
+export type PanelMemberReadRequest =
+  | (Omit<Extract<ProductPanelReadRequest, { dataName: string }>, "source"> & { operations?: never })
+  | (Omit<Extract<ProductPanelReadRequest, { operations: true }>, "source"> & { dataName?: never });
+
+/** The platform's read entry for a panel's members, as the reader: the host fills in which panel it is. */
+export type PanelReadPort = (request: PanelMemberReadRequest) => Promise<ProductPanelReadResponse>;
 
 /**
  * One named datum of a member, read through the platform's read entry: unread while it waits for its object or a
@@ -203,6 +211,8 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   });
   /** Every datum shown now, with how to read it again when an operation reports its source changed. */
   const shown = new Set<{ data: DirectProjectionData; inputs: () => MemberInputs; reread(): void }>();
+  /** Every member's operations read now, read again with everything shown. */
+  const operationReads = new Set<() => void>();
 
   const directInstance: DirectPanelInstance = Object.assign(instance, {
     direct,
@@ -251,6 +261,12 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
         },
       };
     },
+    memberOperations(member: string, projection: DirectProjection, inputs: () => MemberInputs) {
+      const { state, reread } = watchMemberOperations(options.read, projection, member, inputs, () => active);
+      operationReads.add(reread);
+      onScopeDispose(() => operationReads.delete(reread));
+      return state;
+    },
     refresh(affected: PanelOperationAffected) {
       for (const { data, inputs, reread } of shown) {
         const object = stateObject(sourceObject(data, inputs()));
@@ -262,6 +278,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     },
     refreshAll() {
       for (const { reread } of shown) reread();
+      for (const reread of operationReads) reread();
       instance.refreshObjects();
     },
     setActive(next: boolean) {

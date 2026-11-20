@@ -26,8 +26,9 @@ const record = { domainId: "d", ownerId: "o", revision: 1, createdAt: "", update
 const removeAll: ProductProjection = {
   ...record, id: "knowledge-delete-checked", name: "Delete", componentId: "@ontomato/sdk:OperationButton",
   inputs: { selection: { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } } }, outputs: {},
-  config: { checked: "selection", type: "danger" },
-  data: { operation: { source: { operation: { kind: "PlatformOperation", id: DELETE_KNOWLEDGE } }, read: "describe", params: {} } },
+  config: { operation: "delete", type: "danger" },
+  data: {},
+  operations: { delete: { operation: { kind: "PlatformOperation", id: DELETE_KNOWLEDGE }, target: { input: "selection" } } },
 };
 const manifest = definePanel({
   state: { checked: { type: { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } } } },
@@ -35,7 +36,7 @@ const manifest = definePanel({
   events: {},
 });
 const deleteKnowledge = {
-  handlerRef: DELETE_KNOWLEDGE, label: "Delete", effect: "write", target: { source: "input", input: "selection" },
+  kind: "action", handlerRef: DELETE_KNOWLEDGE, label: "Delete", effect: "write", target: { source: "input", input: "selection" },
   inputSchema: {}, resultSchema: {}, batch: true,
 };
 
@@ -63,7 +64,8 @@ function open() {
     } } }),
     recordDraftCreated: async () => {},
     readProjection: async () => removeAll,
-    read: async () => ({ status: "ready", value: deleteKnowledge as never }),
+    // The owner admits deleting the checked items; the button reads no datum.
+    read: async (request) => ({ status: "ready", value: (request.operations ? { delete: deleteKnowledge } : null) as never }),
   });
   const element = document.createElement("div");
   document.body.append(element);

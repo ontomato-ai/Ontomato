@@ -4,17 +4,16 @@ import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { panelOperationId, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
-import type { PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
+import type { PanelOwnerOperationDescriptor, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import { slotInputState, usePanelContext, useProjectionSlot } from "../panel/context";
-import type { PanelOperationDescriptor } from "../panel/human-operations";
 import { readOperationInput } from "../panel/read-operation-input";
 import OperationResult from "./OperationResult.vue";
-import { DataState } from "@ontomato/foundation-ui/data-state";
-import { useMemberData } from "../panel/member";
+import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
+import { useMemberOperations } from "../panel/member";
 import { stateObject, stateObjects } from "../panel/state";
 
 /**
- * The button of one operation a projection publishes, run as the reader the way an agent's call runs: the platform's
+ * The button of one operation a projection names, run as the reader the way an agent's call runs: the platform's
  * coordinator holds the owner's description of it, so what the button does follows the owner, not the button.
  *
  * A read (a trial run) takes the form the owner's operation targets and the inputs the slot's declaration names
@@ -24,11 +23,14 @@ import { stateObject, stateObjects } from "../panel/state";
  * owner reports changed are read again. Items a batch did not change stay checked. What a write returned is the owner's
  * record of it, not something to show the reader: the button says what the owner said of it, or that it was done.
  *
- * A declared (direct) projection's button is named by the owner's description, in the reader's language; a code
- * projection's by the operation its component publishes.
+ * The operation is one its projection names (`operation`, the projection's local name for it); the button is named by
+ * its owner's description, in the reader's language, and shows that a choice is needed while the owner admits it for
+ * nothing chosen.
  */
-withDefaults(
+const props = withDefaults(
   defineProps<{
+    /** The operation it runs: the projection's local name for it, under `operations`. */
+    operation: string;
     /** The button's style: the page's main action, or a danger one. Display only. */
     type?: "primary" | "danger" | "default";
   }>(),
@@ -40,22 +42,21 @@ const slot = useProjectionSlot();
 const panel = usePanelContext();
 const running = ref(false);
 const failure = shallowRef<Error | null>(null);
-/** The owner's description is the member's `operation` datum, read by the instance. */
-const operationData = useMemberData("operation");
-const descriptor = computed(() =>
-  operationData.value.status === "ready" ? operationData.value.value as PanelOperationDescriptor : null);
+/** The member's operations, as their owners admit them now. */
+const operations = useMemberOperations();
+if (!Object.hasOwn(slot.projection.operations ?? {}, props.operation))
+  throw new Error(`The projection in member '${slot.slot}' names no operation '${props.operation}'`);
+/** The owner's description of this button's operation; absent while its owner does not admit it (nothing chosen yet). */
+const descriptor = computed<PanelOwnerOperationDescriptor | null>(() =>
+  operations.value.status === "ready" ? operations.value.value[props.operation] ?? null : null);
+/** What the button shows instead while there is nothing to press: the read in progress, or what it was answered. */
+const pending = computed<DataStateResult | null>(() => {
+  if (operations.value.status !== "ready") return operations.value;
+  return descriptor.value ? null : { status: "awaiting" };
+});
 const read = shallowRef<PanelReadOperationResult | null>(null);
 const receipt = shallowRef<PanelHumanOperationDispatchResponse | null>(null);
-
-/** The one operation this button's projection publishes: the operation its `operation` datum describes. */
-const published = computed(() => {
-  const registration = panel.instance.projections.value.find((item) => item.slot === slot.slot);
-  if (!registration) throw new Error(`The projection in slot '${slot.slot}' is not registered yet`);
-  const [found] = registration.ports.operations;
-  if (!found) throw new Error(`The projection in slot '${slot.slot}' publishes no operation`);
-  return found;
-});
-const operationId = computed(() => panelOperationId(slot.slot, published.value.name));
+const operationId = computed(() => panelOperationId(slot.slot, props.operation));
 /**
  * The button shows only once its description is read, so the owner's name, in the reader's language, is there. A batch
  * button also says how many objects it acts on, so it never reads as the single one beside it.
@@ -102,7 +103,7 @@ async function run() {
     if (described.effect === "read") {
       const { target: owned } = described;
       const draft = owned.source === "draft" ? panel.instance.forms.handle(owned.slot)!.values.value : {};
-      const input = readOperationInput(panel.instance, slot.slot, published.value.name, draft);
+      const input = readOperationInput(panel.instance, slot.slot, props.operation, draft);
       read.value = await panel.instance.readOperation(operationId.value, { target: target.value, input });
       return;
     }
@@ -145,7 +146,7 @@ const done = computed(() => items.value.filter((item) => item.outcome.kind === "
 
 <template>
   <div class="sdk-operation-button">
-    <data-state v-if="operationData && operationData.status !== 'ready'" :result="operationData" :labels="labels"></data-state>
+    <data-state v-if="pending" :result="pending" :labels="labels"></data-state>
     <el-button v-else :type="type" :loading="running" :disabled="!ready" @click="run">{{ label }}</el-button>
     <p v-if="failure" role="alert">{{ failure.message }}</p>
     <operation-result v-if="read" :result="read"></operation-result>

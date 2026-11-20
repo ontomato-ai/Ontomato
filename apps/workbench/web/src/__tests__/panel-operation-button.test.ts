@@ -24,17 +24,16 @@ const APPLICATION = "app-knowledge";
 const knowledge = (primaryKey: string) => ({ objectType: BUSINESS_KNOWLEDGE, primaryKey });
 const entry = { kind: "object", objectType: BUSINESS_KNOWLEDGE } as const;
 const entries = { kind: "list", items: entry } as const;
-const record = (id: string, inputs: ProductProjection["inputs"], config: ProductProjection["config"] = {}): ProductProjection => ({
+const record = (id: string, inputs: ProductProjection["inputs"]): ProductProjection => ({
   domainId: "domain-1", ownerId: "owner-1", revision: 1, createdAt: "2026-11-19T00:00:00.000Z",
   updatedAt: "2026-11-19T00:00:00.000Z", editable: false, visibility: "domain",
-  id, name: id, description: "", componentId: "@ontomato/sdk:OperationButton", inputs, outputs: {}, config,
-  data: { operation: {
-    source: { operation: { kind: "PlatformOperation", id: DELETE_KNOWLEDGE } }, read: "describe", params: {},
-  } },
+  id, name: id, description: "", componentId: "@ontomato/sdk:OperationButton", inputs, outputs: {}, config: { operation: "delete" },
+  data: {},
+  operations: { delete: { operation: { kind: "PlatformOperation", id: DELETE_KNOWLEDGE }, target: { input: "entry" } } },
 });
 const projections: Record<string, ProductProjection> = {
   "knowledge-remove": record("knowledge-remove", { entry }),
-  "knowledge-remove-all": record("knowledge-remove-all", { entry: entries }, { checked: "entry" }),
+  "knowledge-remove-all": record("knowledge-remove-all", { entry: entries }),
 };
 const manifest = definePanel({
   state: {
@@ -57,11 +56,11 @@ const impact = {
 /** The owner's descriptions, by the panel's operation ID. */
 const descriptions: Record<string, PanelOperationDescriptor> = {
   "remove.delete": {
-    handlerRef: DELETE_KNOWLEDGE, label: "Delete", effect: "write", target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {},
+    kind: "action", handlerRef: DELETE_KNOWLEDGE, label: "Delete", effect: "write", target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {},
     batch: false, inspectImpact: { handlerRef: "knowledge.delete.impact" },
   },
   "removeAll.delete": {
-    handlerRef: DELETE_KNOWLEDGE, label: "Delete all", effect: "write", target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {},
+    kind: "action", handlerRef: DELETE_KNOWLEDGE, label: "Delete all", effect: "write", target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {},
     batch: true, inspectImpact: { handlerRef: "knowledge.delete.impact" },
   },
 };
@@ -82,8 +81,11 @@ function coordinator() {
   return (request: Sent): Response => {
     const projected = /^\/api\/product-projections\/(.+)$/.exec(request.path);
     if (projected) return Response.json({ projection: projections[projected[1]!] });
-    if (request.path === "/api/panel-operations/descriptor")
-      return Response.json(descriptions[new URLSearchParams(request.search).get("operationId")!]);
+    // A member's operations, as the owner admits them: the delete, by the projection's name for it.
+    if (request.method === "POST" && request.path === "/api/product-panels/read") {
+      const { memberPath } = request.body as { operations: true; memberPath: { member: string }[] };
+      return Response.json({ status: "ready", value: { delete: descriptions[`${memberPath.at(-1)!.member}.delete`] } });
+    }
     if (request.method === "POST" && request.path === "/api/panel-operations/intents") {
       const body = request.body as { operationId: string; calls?: { target: { primaryKey: string } }[] };
       const intentId = randomId();
@@ -142,7 +144,9 @@ const dialog = () => vi.waitFor(() => {
 });
 const dialogButton = (box: HTMLElement, text: string) =>
   [...box.querySelectorAll<HTMLButtonElement>("button")].find((element) => element.textContent?.trim() === text)!;
-const writes = (sent: Sent[]) => sent.filter((request) => request.method !== "GET").map((request) => request.path);
+/** What was sent that writes: the platform's read entry is asked by POST and writes nothing. */
+const writes = (sent: Sent[]) => sent.filter((request) => request.method !== "GET" && request.path !== "/api/product-panels/read")
+  .map((request) => request.path);
 
 afterEach(() => {
   document.querySelectorAll(".el-message-box__wrapper, .el-overlay").forEach((element) => element.remove());

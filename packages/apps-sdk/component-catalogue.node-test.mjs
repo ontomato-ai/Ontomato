@@ -26,7 +26,7 @@ const DECLARED_DATA = {
   ObjectList: { rows: ["panelRecordList", "panelRecordQuery"], objects: ["panelOntologyObjects"] },
   ObjectSummary: { record: ["panelRecord"] },
   ObjectForm: { form: ["panelFormDescription"], createForm: ["panelFormDescription"] },
-  OperationButton: { operation: ["panelOperationDescriptor"] },
+  OperationButton: {},
   ReferencePicker: { options: ["panelOptionList"], selected: ["panelOptionList"] },
   ObjectGraph: { nodes: ["panelRecordList"], edges: ["panelRecordList"] },
   OntologyGraph: { schema: ["panelGraphSchema"], counts: ["panelGraphCounts"], start: ["panelGraphStart"], neighbors: ["panelGraphNeighbors"] },

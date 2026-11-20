@@ -2,11 +2,11 @@ import { expect, it, vi } from "vitest";
 import { effectScope, nextTick, type ComputedRef } from "vue";
 import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
-import type { ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import { createDirectPanelInstance, type MemberDataState } from "../../../../../packages/apps-sdk/src/panel/direct";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 import { noOperations } from "./panel-frame";
+import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 
 /*
  * Each named datum of a member is read again only when an input it reads changes. The pilot's task list takes the
@@ -41,7 +41,7 @@ const manifest: DirectPanelManifest = {
 const row = (primaryKey: string) => ({ primaryKey, label: primaryKey, fields: {} });
 
 it("reads a list's rows once while the selection changes, and the selected record again for each selection", async () => {
-  const reads: Omit<ProductPanelReadRequest, "source">[] = [];
+  const reads: PanelMemberReadRequest[] = [];
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
     text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, provide, shallowRef, type Component } from "vue";
+import { computed, getCurrentScope, onBeforeUnmount, provide, shallowRef, type Component } from "vue";
 import { useI18n } from "vue-i18n";
 import { DataState } from "@ontomato/foundation-ui/data-state";
 import { componentFor } from "../catalogue-components";
@@ -7,7 +7,8 @@ import { panelContextKey, projectionKey, type ProjectionSlot } from "./context";
 import { directPanelContext, type DirectPanelInstance, type MemberInputs } from "./direct";
 import { memberComponentId } from "./projection-element";
 import { panelMemberKey, type PanelMemberContext } from "./member";
-import { portsOf } from "./ports-of";
+import { portsOf, readsOwnerForm } from "./ports-of";
+import { admittedOperations } from "./member-operations";
 import { slotInputValues } from "./ports";
 
 /**
@@ -33,13 +34,20 @@ const inputs = computed<MemberInputs>(() => slotInputValues(props.instance.manif
 
 
 let release: (() => void) | undefined;
+/** The member's own scope: what it reads once its projection is loaded ends with it. */
+const scope = getCurrentScope()!;
 void props.instance.projectionOf(props.member).then(async (projection) => {
   const component = await componentFor(memberComponentId(projection));
-  release = props.instance.register({ slot: props.member, projectionId: projection.id, ports: portsOf(projection) });
+  const operations = scope.run(() => props.instance.memberOperations(props.member, projection, () => inputs.value))!;
+  release = props.instance.register({
+    slot: props.member, projectionId: projection.id, ports: portsOf(projection),
+    get operations() { return admittedOperations(operations.value); },
+    takesDrafts: readsOwnerForm(projection),
+  });
   loaded.value = {
     component,
     slot: { slot: props.member, projection, get inputs() { return inputs.value; } },
-    member: { key: props.member, projection, inputs, data: props.instance.memberData(props.member, projection, () => inputs.value) },
+    member: { key: props.member, projection, inputs, operations, data: props.instance.memberData(props.member, projection, () => inputs.value) },
   };
 }).catch((reason: unknown) => {
   failure.value = reason instanceof Error ? reason : new Error(String(reason));

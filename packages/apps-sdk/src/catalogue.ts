@@ -217,7 +217,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     meaning:
       "Draws one platform object's form exactly as its owner declares it, asks the owner again when a field the form depends on changes, and keeps the reader's draft until it is saved.",
-    effects: "Reads the owner's form and saves through the owner's own interface; the save is the projection's own operation.",
+    effects: "Reads the owner's form and saves through the owner's own interface; it saves through the owner's form save its projection names.",
     bindsElement: ["PlatformObjectType:*", "Action:*"],
     // A form edits an existing record or creates a new one; which of the two a placement shows is its own choice.
     data: {
@@ -225,9 +225,6 @@ export const components: readonly ComponentMetadata[] = [
       form: { results: ["panelFormDescription"], required: false, runtimeParams: ["values", "changedField"] },
       createForm: { results: ["panelFormDescription"], required: false, runtimeParams: ["values", "changedField"] },
     },
-    // The owner's own save: `@binding` stands for the type the projection binds, so one declared operation serves every
-    // type this version registers.
-    operations: [{ client: "@binding", name: "save", label: "Save", kind: "form.save", inputSchema: {} }],
   }),
   defineComponentMeta({
     componentId: "OperationButton",
@@ -235,11 +232,11 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "OperationButton",
     role: "control",
     meaning:
-      "The button of one operation a projection publishes: it shows the operation's own label and runs it on the object the panel has selected, through the handler the operation names.",
-    effects: "Runs the projection's operation as the reader, with the object the panel has selected.",
+      "The button of one operation its projection names (`config.operation`, the projection's local name for it): it shows the owner's label and runs it on the object, or the checked objects, its target input holds.",
+    effects: "Runs the named operation as the reader, as its owner admits it now.",
     bindsElement: ["PlatformOperation:*"],
-    // The button is the operation's own: without its description there is no label to press.
-    data: { operation: { results: ["panelOperationDescriptor"], required: true } },
+    // The button reads no datum: its operation is the projection's, described by its owner as admitted now.
+    data: {},
   }),
   defineComponentMeta({
     componentId: "ReferencePicker",

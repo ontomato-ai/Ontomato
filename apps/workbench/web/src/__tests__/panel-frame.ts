@@ -79,7 +79,7 @@ const current = {
 };
 const taskInput = { kind: "object" as const, objectType: SCHEDULED_TASK };
 
-type ProjectionFields = Pick<Exclude<ProductProjection, { componentId: "@ontomato/sdk:MetricChart" }>, "id" | "name" | "componentId" | "inputs" | "outputs" | "config" | "data">;
+type ProjectionFields = Pick<Exclude<ProductProjection, { componentId: "@ontomato/sdk:MetricChart" }>, "id" | "name" | "componentId" | "inputs" | "outputs" | "config" | "data" | "operations">;
 const projection = (fields: ProjectionFields): ProductProjection => ({ ...current, description: fields.name, ...fields });
 
 const trialProjections: ProjectionFields[] = [
@@ -109,6 +109,7 @@ const trialProjections: ProjectionFields[] = [
     outputs: {},
     config: {},
     data: { form: { source: { object: { input: "task" } }, read: "form", params: { values: { input: "values" }, changedField: { input: "changedField" } } } },
+    operations: { save: { operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.save` }, target: { input: "task" } } },
   },
   {
     id: "projection-schedules-run",
@@ -116,8 +117,9 @@ const trialProjections: ProjectionFields[] = [
     componentId: "@ontomato/sdk:OperationButton",
     inputs: { task: taskInput },
     outputs: {},
-    config: {},
-    data: { operation: { source: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, read: "describe", params: {} } },
+    config: { operation: "runNow" },
+    data: {},
+    operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
   },
 ];
 
@@ -549,9 +551,29 @@ export function formSaveCalls(sent: readonly Sent[]) {
  * reads it back and dispatches it once, and `outcome` is what the owner's registered operation returned for it. Nothing
  * here needs confirming; the host's dialog is the host's own test.
  */
-export function humanIntents(outcome: (operationId: string, call: PanelOperationCall) => unknown, target: { source: "input"; input: string } = { source: "input", input: "task" }) {
+export function humanIntents(
+  outcome: (operationId: string, call: PanelOperationCall) => unknown,
+  target: { source: "input"; input: string } = { source: "input", input: "task" },
+  { creates = false, admitted }: {
+    creates?: boolean;
+    /** What the owners admit each member, by local name, where it is more than a form's save (an action's button). */
+    admitted?: (member: string, inputs: Record<string, unknown>) => Record<string, unknown>;
+  } = {},
+) {
   const prepared = new Map<string, { preparation: PanelHumanOperationPreparation; call: PanelOperationCall }>();
   return (request: Sent): Response | undefined => {
+    // The form's save as its owner admits it for the member's inputs (`operations.save`): the chosen object's, a new
+    // one's while none is chosen where the form creates, and none otherwise.
+    if (request.method === "POST" && request.path === "/api/product-panels/read" && (request.body as { operations?: true }).operations) {
+      const { memberPath, inputs } = request.body as { memberPath: { member: string }[]; inputs: Record<string, unknown> };
+      const save = (admitted: object) => ({
+        save: { kind: "form.save", handlerRef: "owner.write", label: "Write", effect: "write", target: admitted, inputSchema: {}, resultSchema: {}, batch: false },
+      });
+      const member = memberPath.at(-1)!.member;
+      const value = admitted ? admitted(member, inputs)
+        : inputs[target.input] ? save(target) : creates ? save({ source: "draft", slot: member }) : {};
+      return Response.json({ status: "ready", value });
+    }
     // The owner's write: one object it acts on, with nothing to confirm.
     if (request.method === "GET" && request.path === "/api/panel-operations/descriptor")
       return Response.json({ handlerRef: "owner.write", label: "Write", effect: "write", target, inputSchema: {}, resultSchema: {}, batch: false });

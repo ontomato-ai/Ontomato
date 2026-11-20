@@ -2,12 +2,12 @@ import { afterEach, expect, it, vi } from "vitest";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { BUSINESS_KNOWLEDGE, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import type { ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
 import { frameMemberData } from "../../../../../packages/apps-sdk/src/panel/frame-member";
 import { createPanelInstance } from "../../../../../packages/apps-sdk/src/panel/instance";
 import { registerPlatformObjectAdapter } from "../../../../../packages/apps-sdk/src/panel/platform-objects";
 import { readPanelData } from "../../../../../packages/apps-sdk/src/panel/platform-requests";
 import { noOperations } from "./panel-frame";
+import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 
 /*
  * A code panel's member reads its data where a directly rendered one does (big main's ruling, 2026-11-20): through the
@@ -52,7 +52,7 @@ it("reads a type with no resource module through the platform's read entry, over
       return Response.json({ status: "ready", value: { rows: [{ primaryKey: "k-1", label: "Night cutoff", fields: {} }], total: 1 } });
     },
   };
-  const read = (request: Omit<ProductPanelReadRequest, "source">) => readPanelData(requests, request);
+  const read = (request: PanelMemberReadRequest) => readPanelData(requests, request);
   const data = frameMemberData(knowledge, "list", instance(), () => ({ status: "pending" }), read);
 
   expect(await data.read("rows", { cursor: "c-2", size: 20 })).toEqual({

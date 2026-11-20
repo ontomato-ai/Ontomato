@@ -143,12 +143,9 @@ export function useProjectionSlot(): ProjectionSlot {
 export function useProjectionForm(adapter: PanelFormAdapter): void {
   const context = usePanelContext();
   const drawn = useProjectionSlot();
-  const saves = context.instance.projections.value
-    .find((registration) => registration.slot === drawn.slot)?.ports.operations.some((item) => item.kind === "form.save");
-  if (!saves) {
-    const type = projectionElement(drawn.projection).id;
-    throw new Error(`Owner type '${type}' registers no '${type}.save', so the form in member '${drawn.slot}' cannot save`);
-  }
+  // A form saves through an operation its projection names; which one is the owner's form save its description says.
+  if (Object.keys(drawn.projection.operations ?? {}).length === 0)
+    throw new Error(`The projection in member '${drawn.slot}' names no operation, so its form cannot save`);
   onBeforeUnmount(context.instance.forms.register(drawn.slot, adapter));
 }
 
