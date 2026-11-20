@@ -174,8 +174,13 @@ it("checks projection data against the current release before registering or cha
   await rejects("catalogue-wrong-result", { ...summary, data: { record: rows } }, "PANEL_COMPONENT_DATA_RESULT_MISMATCH");
   await rejects("catalogue-unknown-data", { ...summary, data: { ...summary.data, extra: rows } }, "PANEL_COMPONENT_DATA_UNKNOWN");
   await rejects("catalogue-missing-record", { ...summary, data: {} }, "PANEL_COMPONENT_DATA_REQUIRED");
-  await rejects("catalogue-missing-alternative", { ...summary, componentId: "@ontomato/sdk:ObjectList", data: {} }, "PANEL_COMPONENT_DATA_REQUIRED");
   expect([...grants].some(id => id.startsWith("catalogue-"))).toBe(false);
+
+  const optional = await request("PUT", "product-projections/catalogue-optional-data", {
+    ...summary, componentId: "@ontomato/sdk:SegmentedControl", data: {}, inputs: {},
+    config: { options: [{ value: "all", label: "All" }] },
+  });
+  expect(optional.status, await optional.text()).toBe(200);
 
   const id = "catalogue-existing";
   const saved = await request("PUT", "product-projections/" + id, summary);

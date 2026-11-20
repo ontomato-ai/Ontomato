@@ -36,20 +36,24 @@ export function requireOrdinaryProjection(input: Pick<ProductProjectionInput, "c
   if (input.componentId === METRIC_CHART_COMPONENT)
     throw new HttpError(400, "Register a chart through its source card", "CHART_SOURCE_REGISTRATION_REQUIRED");
 }
-async function readCurrentRecord(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string) {
-  const row = await findCurrentProduct(owner.domainId, kind, id);
+async function readCurrentRecord(
+  owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string, reportMissingToAuthor: boolean,
+) {
+  const row = reportMissingToAuthor
+    ? await findCurrentProduct(owner.domainId, kind, id)
+    : await requireCurrentProduct(owner, credentials, kind, id, "use");
   if (!row) {
     await assertAppBuilderAccess(credentials);
     throw new HttpError(404, `${kind === "panel" ? "Panel" : "Projection"} '${id}' does not exist`, "PRODUCT_UNAVAILABLE");
   }
-  await requireProductGrant(id, "use", credentials);
+  if (reportMissingToAuthor) await requireProductGrant(id, "use", credentials);
   return currentProductRecord(row, (await grantedProductIds("edit", credentials)).includes(id));
 }
-export async function readCurrentProjection(owner: ProductOwner, credentials: AssistantCredentials, id: string) {
-  return productProjectionSchema.parse(await readCurrentRecord(owner, credentials, "projection", id));
+export async function readCurrentProjection(owner: ProductOwner, credentials: AssistantCredentials, id: string, reportMissingToAuthor = false) {
+  return productProjectionSchema.parse(await readCurrentRecord(owner, credentials, "projection", id, reportMissingToAuthor));
 }
-export async function readCurrentPanel(owner: ProductOwner, credentials: AssistantCredentials, id: string) {
-  return productPanelSchema.parse(await readCurrentRecord(owner, credentials, "panel", id));
+export async function readCurrentPanel(owner: ProductOwner, credentials: AssistantCredentials, id: string, reportMissingToAuthor = false) {
+  return productPanelSchema.parse(await readCurrentRecord(owner, credentials, "panel", id, reportMissingToAuthor));
 }
 export const readCurrentProjectionRecord = readCurrentProjection;
 export const readCurrentPanelRecord = readCurrentPanel;

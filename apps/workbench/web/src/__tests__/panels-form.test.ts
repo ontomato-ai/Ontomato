@@ -105,7 +105,7 @@ function mounted(save: (input: PanelFormSaveInput) => Promise<PanelOperationOutc
     key: "form", projection, inputs,
     data: {
       use() { throw new Error("The form reads its description on demand"); },
-      async read(_name, { task, values, changedField }) {
+      async read(_name, { values, changedField }, { task } = {}) {
         const primaryKey = (task as { primaryKey: string }).primaryKey;
         if (values === undefined) return { status: "ready", value: await form(primaryKey) };
         const draft = values as Record<string, string>;

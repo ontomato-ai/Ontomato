@@ -2,7 +2,7 @@ import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema, formValuesSchema, panelFormOptionSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
-import { directPanelPortTypeSchema, ontologyParameterTypeSchema, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, type DirectPanelPortType, type OntologyParameterType, type PanelManifest, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
+import { directPanelPortTypeSchema, ontologyParameterTypeSchema, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, type DirectPanelPortType, type OntologyParameterType, type PanelManifest, type PanelMember, type PanelOperation, type PanelStateOperation, type PanelStateRef } from "./panel-manifest";
 import { ontologyElementRefSchema, type OntologyElementRef } from "./ontology-element-ref";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import {
@@ -93,7 +93,7 @@ export const panelReadParameterSchemas = {
 
 type ReadInput = DirectProjectionPorts["inputs"][string];
 
-function readInputMatches(parameter: PanelReadParameterId, input: ReadInput | undefined): boolean {
+export function panelReadInputMatches(parameter: PanelReadParameterId, input: ReadInput | undefined): boolean {
   switch (parameter) {
     case "changedField":
     case "keyword":
@@ -176,7 +176,33 @@ export function panelReadParameterId(declaration: PlatformReadDeclaration, name:
   return declaration.parameterMode === "owner" ? declaration.parameter : declaration.params[name];
 }
 
-/** Match a declared read to its owner and verify that every parameter has a supported source. */
+/**
+ * A read parameter without a projection mapping is an input with the same name and the type in the read signature.
+ * A member's state binding supplies that input before any component runtime parameter can.
+ */
+export function authoredReadParameterSource(
+  params: DirectProjectionData["params"],
+  name: string,
+  member?: Pick<PanelMember, "inputs" | "outputs">,
+): DirectProjectionData["params"][string] | PanelStateRef | undefined {
+  if (Object.hasOwn(params, name)) return params[name];
+  const input = member?.inputs?.[name];
+  return input && "state" in input ? input : member?.outputs?.[name];
+}
+
+/** Registration checks the projection, its placement and the active catalogue for a required parameter's source. */
+export function missingRequiredReadParameters(
+  declaration: PlatformReadDeclaration,
+  params: DirectProjectionData["params"],
+  runtimeParams: readonly string[] = [],
+  member?: Pick<PanelMember, "inputs" | "outputs">,
+): string[] {
+  if (declaration.parameterMode !== "fixed") return [];
+  return (declaration.requiredParams ?? []).filter(name =>
+    !authoredReadParameterSource(params, name, member) && !runtimeParams.includes(name));
+}
+
+/** Match a declared read to its owner and check its authored parameter bindings. */
 export function validateDirectProjection(projection: DirectProjectionPorts, ctx: z.RefinementCtx): void {
   const issue = (path: string[], message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
   for (const [name, data] of Object.entries(projection.data)) {
@@ -191,9 +217,6 @@ export function validateDirectProjection(projection: DirectProjectionPorts, ctx:
       }
       continue;
     }
-    for (const param of declaration.parameterMode === "fixed" ? declaration.requiredParams ?? [] : []) {
-      if (!Object.hasOwn(params, param)) issue([...path, "params", param], "Required parameter needs a source");
-    }
     for (const [param, value] of Object.entries(params)) {
       const parameter = panelReadParameterId(declaration, param);
       if (!parameter) {
@@ -202,7 +225,7 @@ export function validateDirectProjection(projection: DirectProjectionPorts, ctx:
         if (!panelReadParameterSchemas[parameter].safeParse(value.literal).success)
           issue([...path, "params", param, "literal"], "Value does not match the read parameter type");
       } else {
-        if (!readInputMatches(parameter, projection.inputs[value.input]))
+        if (!panelReadInputMatches(parameter, projection.inputs[value.input]))
           issue([...path, "params", param, "input"], "Input does not match the read parameter type");
       }
     }
