@@ -1,4 +1,5 @@
 import { ONTOLOGY_TYPE } from "@ontomato/contracts/platform-object-types";
+import { appsSdkReleaseManifestSchema } from "@ontomato/contracts/apps-sdk";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -15,7 +16,9 @@ import { backendGet } from "../../../utils/backend-client";
 import { findCurrentProduct, type CurrentProductRow } from "../../../infrastructure/product-current";
 
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://java.test" } } }));
-vi.mock("../../../config/environment", () => ({ environment: { agentRuntime: () => ({ queryServiceToken: "fixture-platform-service" }) } }));
+vi.mock("../../../config/environment", () => ({
+  environment: { agentRuntime: () => ({ queryServiceToken: "fixture-platform-service" }), publicBasePath: () => "" },
+}));
 vi.mock("../../../core/skills", () => ({ registerSkillProvider: vi.fn() }));
 vi.mock("../../../utils/backend-client", () => ({ backendGet: vi.fn() }));
 vi.mock("../../../infrastructure/product-current", () => ({ findCurrentProduct: vi.fn() }));
@@ -89,15 +92,26 @@ beforeEach(async () => {
   panels = new Map(trialPanels);
   extraProjections.clear();
   root = await mkdtemp(path.join(os.tmpdir(), "panel-skill-"));
-  const sdk = path.join(root, "data/apps-sdk");
   const currentVersion = "2.0.0-pilot";
   const build = path.join(root, "dist/apps-sdk");
-  const installed = path.join(sdk, currentVersion);
-  await mkdir(build, { recursive: true });
-  await mkdir(path.join(installed, "catalogue"), { recursive: true });
+  const bundled = path.join(build, currentVersion);
+  const manifest = appsSdkReleaseManifestSchema.parse({
+    version: currentVersion,
+    product: "ontomato",
+    executionContext: 1,
+    hostTransport: 1,
+    messageBridge: 2,
+    entries: { "@ontomato/sdk/panel": "panel.js" },
+    stylesheet: "styles/sdk.css",
+    components: "catalogue/metadata.json",
+    check: "node/panel-check.mjs",
+    libraries: {},
+    docs: "docs/index.md",
+  });
+  await mkdir(path.dirname(path.join(bundled, manifest.components)), { recursive: true });
   await writeFile(path.join(build, "current.json"), JSON.stringify({ version: currentVersion, digest: "a".repeat(64) }));
-  await writeFile(path.join(installed, "sdk.json"), JSON.stringify({ components: "catalogue/metadata.json" }));
-  await writeFile(path.join(installed, "catalogue/metadata.json"), JSON.stringify({
+  await writeFile(path.join(bundled, "sdk.json"), JSON.stringify(manifest));
+  await writeFile(path.join(bundled, manifest.components), JSON.stringify({
     version: currentVersion,
     components: components.map(component => {
       if (component.componentId === "ObjectSummary") return { ...component, meaning: "Summary from the current SDK release." };
