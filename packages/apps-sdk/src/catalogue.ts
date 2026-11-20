@@ -356,42 +356,12 @@ export const components: readonly ComponentMetadata[] = [
       "Arranges a flat list of slash-separated paths into a folder-first, name-sorted, default-expanded tree; clicking a folder only collapses or expands it, while clicking a file emits its key and highlights the active row. It reads nothing and carries no business rules.",
   }),
   defineComponentMeta({
-    componentId: "ObjectTree",
-    module: "@ontomato/sdk/base",
-    exportName: "ObjectTree",
-    role: "control",
-    meaning:
-      "Displays path-bearing objects of the bound type (optionally scoped by a parent object input) as a folder/file tree and writes the selected file's full identity to the slot's output state, honoring an owner-supplied default key when configured.",
-    effects: "Reads the bound type's list or parent-scoped query as the reader; it writes only the panel's own state.",
-    bindsElement: ["PlatformObjectType:*"],
-  }),
-  defineComponentMeta({
     componentId: "SegmentedTextReader",
     module: "@ontomato/sdk/base",
     exportName: "SegmentedTextReader",
     role: "control",
     meaning:
       "Displays offset-paged plain-text segments for a selected source with a close control and a More button when another offset exists, coordinating shared activeAnchor state so multiple placements on one page expand only one reader at a time.",
-  }),
-  defineComponentMeta({
-    componentId: "ObjectTextReader",
-    module: "@ontomato/sdk/base",
-    exportName: "ObjectTextReader",
-    role: "control",
-    meaning:
-      "Reads offset-paged text segments for sources of the bound type through its resource adapter's readSegment port (optionally scoped by a parent object input), showing More while another offset exists and coordinating single-open across placements.",
-    effects: "Reads source metadata and text segments through the bound adapter as the reader; it changes nothing itself.",
-    bindsElement: ["PlatformObjectType:*"],
-  }),
-  defineComponentMeta({
-    componentId: "FileUploadControl",
-    module: "@ontomato/sdk/base",
-    exportName: "FileUploadControl",
-    role: "control",
-    meaning:
-      "Uploads a reader-chosen file through the declared PlatformOperation handler (optionally showing format rules first, checking file extensions and confirming overwrite when the owner reports a conflict). It sends nothing outside the bound operation's declared requests.",
-    effects: "Runs the projection's upload operation with the chosen file as the reader and refreshes panel objects on success.",
-    bindsElement: ["PlatformOperation:*"],
   }),
   defineComponentMeta({
     componentId: "ConversationEntry",
