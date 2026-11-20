@@ -29,9 +29,7 @@ const definitions = fileURLToPath(new URL("definitions.mjs", example));
 const trial = await import(definitions) as {
   applications: { applicationId: string; panelUses: ApplicationPanelUse[] }[];
   panels: { id: string; directory: string; manifest: unknown; name: string; description: string }[];
-  projections: { id: string; input: Record<string, unknown> & {
-    data: Record<string, { source: { type: string } | { operation: string } | { object: { input: string } }; read: string; params: object }>;
-  } }[];
+  projections: { id: string; input: Record<string, unknown> }[];
   panelContent(directory: string): { html: string; module?: string; recipes?: string };
 };
 
@@ -56,15 +54,7 @@ const trialPanels = new Map(trial.panels.map(panel => {
   return [panel.id, { name: panel.name, description: panel.description, manifest, visibility: "domain", content }] as const;
 }));
 let panels = new Map(trialPanels);
-const trialProjections = new Map<string, Record<string, unknown>>(trial.projections.map(({ id, input }) => {
-  const data = Object.fromEntries(Object.entries(input.data).map(([name, datum]) => {
-    const { source } = datum;
-    const binding = "type" in source ? { type: { kind: "PlatformObjectType", id: source.type } }
-      : "operation" in source ? { operation: { kind: "PlatformOperation", id: source.operation } } : source;
-    return [name, { ...datum, source: binding }];
-  }));
-  return [id, { ...input, data }];
-}));
+const trialProjections = new Map(trial.projections.map(({ id, input }) => [id, input]));
 
 const extraProjections = new Map<string, Record<string, unknown>>();
 const runProjection = trialProjections.get("projection-schedules-run")!;

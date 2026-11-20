@@ -325,9 +325,9 @@ it("reuses the original creation artifact as the initiator and saves as the exec
 it("asks by the entry's title and approves the whole entry as the executor", async () => {
   const key = uuid(9);
   const entry = { knowledgeID: key, knowledgeTitle: "Order rule", knowledgeText: "Orders need a customer", knowledgeTags: ["Business"], status: 0, creatorType: 1 };
-  mocks.panel.mockResolvedValue({ id: "P", sdkVersion: "1.0.0", manifest: {
-    state: { task: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
-    slots: { run: { projectionId: "run", inputs: { knowledge: { state: "task" } } } }, operations: [],
+  mocks.panel.mockResolvedValue({ id: "P", manifest: {
+    state: { task: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE } } },
+    members: { run: { target: { projectionId: "run" }, inputs: { knowledge: { state: "task" } } } }, events: {},
   } });
   mocks.projection.mockResolvedValue({ id: "run", name: "Approve", componentId: "@ontomato/sdk:OperationButton",
     binding: { kind: "PlatformOperation", id: APPROVE_KNOWLEDGE }, inputs: { knowledge: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },

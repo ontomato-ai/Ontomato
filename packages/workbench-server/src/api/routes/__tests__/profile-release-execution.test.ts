@@ -58,8 +58,19 @@ beforeEach(()=>{
       const value=snapshot.assets.find(asset=>asset.id===args[1]);
       return {rows:[{...value,createdAt:new Date(0),updatedAt:new Date(0)}]};
     }
-    if(sql.includes("FROM product_panels"))return {rows:[{id:panelId,revision:3,definition:{manifest:{state:{},slots:{summary:{projectionId:"projection-live",inputs:{}}},operations:[]}}}]};
-    if(sql.includes("FROM product_projections"))return {rows:[{id:"projection-live",revision:7}]};
+    const current = { domainId: owner.domainId, ownerId: "author", createdAt: new Date(0), updatedAt: new Date(0) };
+    if (sql.includes("FROM product_panels")) return { rows: [{
+      ...current, id: panelId, revision: 3, definition: {
+        name: "Panel", description: "", visibility: "domain", content: { html: '<panel-member ref="summary"></panel-member>' },
+        manifest: { state: {}, members: { summary: { target: { projectionId: "projection-live" } } }, events: {} },
+      },
+    }] };
+    if (sql.includes("FROM product_projections")) return { rows: [{
+      ...current, id: "projection-live", revision: 7, definition: {
+        name: "Summary", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectSummary",
+        inputs: {}, outputs: {}, config: {}, data: {},
+      },
+    }] };
     if(sql.includes("product_subscriptions"))return {rows:[]};
     throw new Error(`Unexpected SQL: ${sql}`);
   });
@@ -129,6 +140,7 @@ it("reads panel and referenced projection revisions under their use grants witho
   expect(await response.json()).toEqual({
     panel: { id: panelId, revision: 3 },
     projections: [{ id: "projection-live", revision: 7 }],
+    members: [{ status: "ready", memberPath: [{ member: "summary" }], target: { kind: "projection", id: "projection-live" }, revision: 7 }],
   });
   expect(state.post.mock.calls.filter(([name]) => name === "product-grant-check")).toHaveLength(2);
 });
