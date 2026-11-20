@@ -82,6 +82,7 @@ export const panelReadParameterSchemas = {
   relationKinds: platformOntologyNeighborsRequestSchema.shape.relationKinds.unwrap(),
   layers: platformOntologyNeighborsRequestSchema.shape.layers.unwrap(),
   ontologyType: platformOntologyObjectsRequestSchema.shape.type,
+  className: panelObjectRefSchema.shape.className,
   neighborsLimit: positiveInteger.max(100),
   ontologyParameter: runtimeJsonValueSchema,
   filter: runtimeJsonObjectSchema,
@@ -99,6 +100,7 @@ function readInputMatches(parameter: PanelReadParameterId, input: ReadInput | un
     case "changedField":
     case "keyword":
     case "ontologyType":
+    case "className":
     case "cursor":
     case "knowledgeCountField":
       return input?.kind === "scalar" && input.type === "string";
