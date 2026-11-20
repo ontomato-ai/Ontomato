@@ -6,6 +6,7 @@ import type { ShellFeedbackPort } from "../types";
 import { shellContextKey } from "../context";
 import type { ConversationItem } from "../view";
 import ShellComposer from "./ShellComposer.vue";
+import type { ComposerEntry } from "../page-composer-entry";
 import ShellQuestions from "./ShellQuestions.vue";
 import ShellResponse from "./ShellResponse.vue";
 import ShellMarkdown from "./ShellMarkdown.vue";
@@ -24,6 +25,8 @@ const props = defineProps<{
   sendError: string | null;
   pendingInput: string | null;
   busy: boolean;
+  /** A panel's conversation entry for the composer here; see ShellComposer. */
+  entry?: ComposerEntry | null;
   /** A message is on its way: the composer holds the next one until it has arrived. */
   sending: boolean;
   feedback?: ShellFeedbackPort;
@@ -233,7 +236,7 @@ async function send(text: string) {
         <p v-if="agent?.description" class="agent-description">{{ agent.description }}</p>
         <ShellQuestions />
         <div v-if="$slots['composer-context']" class="composer-context"><slot name="composer-context" /></div>
-        <ShellComposer :busy="busy" :sending="sending" :disabled="!agent?.enabled" autofocus :labels="labels" @send="send" @stop="emit('stop')" />
+        <ShellComposer :busy="busy" :sending="sending" :disabled="!agent?.enabled" autofocus :labels="labels" :entry="entry" @send="send" @stop="emit('stop')" />
         <p v-if="sendError" class="send-error" role="alert"><CircleAlert :size="14" />{{ sendError }}</p>
       </div>
     </div>
@@ -292,7 +295,7 @@ async function send(text: string) {
         <p v-if="sendError" class="send-error" role="alert"><CircleAlert :size="14" />{{ sendError }}</p>
         <ShellQuestions />
         <div v-if="$slots['composer-context']" class="composer-context"><slot name="composer-context" /></div>
-        <ShellComposer :busy="busy" :sending="sending" :disabled="!agent?.enabled" :labels="labels" @send="send" @stop="emit('stop')" />
+        <ShellComposer :busy="busy" :sending="sending" :disabled="!agent?.enabled" :labels="labels" :entry="entry" @send="send" @stop="emit('stop')" />
       </div>
     </template>
   </div>

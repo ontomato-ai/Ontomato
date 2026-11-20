@@ -2,7 +2,8 @@ import express from "express";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { platformObjectTypes, platformRelationKinds } from "@ontomato/contracts/platform-object-types";
+import { platformOntologySchemaResponseSchema } from "@ontomato/contracts/platform-ontology";
+import { APPLICATION, platformObjectTypes, platformRelationKinds } from "@ontomato/contracts/platform-object-types";
 import { installWorkbenchIdentity } from "../../../identity/installed";
 import type { WorkbenchIdentity } from "../../../identity/types";
 import { AuthFailedError, backendGet, backendPost } from "../../../utils/backend-client";
@@ -77,10 +78,15 @@ describe("platform-ontology HTTP routes", () => {
   it("serves schema, counts, start, objects, and neighbors", async () => {
     const schemaRes = await fetch(`${base}/api/platform-ontology/schema`);
     expect(schemaRes.status).toBe(200);
-    const schema = (await schemaRes.json()) as { objectTypes: unknown[]; relationKinds: unknown[] };
+    const schema = platformOntologySchemaResponseSchema.parse(await schemaRes.json());
     const expectedTypeCount = Object.values(platformObjectTypes).filter((decl) => Boolean(decl.layer)).length;
     expect(schema.objectTypes).toHaveLength(expectedTypeCount);
     expect(schema.relationKinds).toHaveLength(platformRelationKinds.length);
+    const application = schema.objectTypes.find((item) => item.id === APPLICATION);
+    expect(application?.definition).toBeTruthy();
+    expect(application?.properties?.length).toBeGreaterThan(0);
+    expect(application?.reads?.query?.result).toBe("applicationCatalogue");
+    expect(application?.operations?.some((op) => op.id === `${APPLICATION}.save`)).toBe(true);
 
     const startRes = await fetch(`${base}/api/platform-ontology/start`);
     expect(startRes.status).toBe(200);

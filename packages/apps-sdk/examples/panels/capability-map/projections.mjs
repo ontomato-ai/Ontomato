@@ -7,6 +7,7 @@ const allLayers = ["fact", "capability", "governance", "product"];
 const ONTOLOGY_TYPE = { kind: "PlatformObjectType", id: "platform:OntologyType" };
 const USER = "platform:User";
 const anyLayerObject = { kind: "object-union", layers: allLayers };
+const graphNodeObject = { kind: "object-union", layers: allLayers, objectTypes: ["platform:OntologyType"] };
 const text = { kind: "scalar", type: "string" };
 const json = { kind: "json" };
 
@@ -54,16 +55,16 @@ export default [
     {
       inputs: {
         mode: text,
-        start: anyLayerObject,
-        selected: anyLayerObject,
+        start: graphNodeObject,
+        selected: graphNodeObject,
         selectedType: text,
         query: text,
-        node: anyLayerObject,
+        node: graphNodeObject,
         layers: json,
         relationKinds: json,
       },
       outputs: {
-        selectedNode: anyLayerObject,
+        selectedNode: graphNodeObject,
         selectedType: text,
       },
       data: {
@@ -90,10 +91,10 @@ export default [
     "ObjectRelations",
     {
       inputs: {
-        selected: anyLayerObject,
+        selected: graphNodeObject,
       },
       outputs: {
-        selected: anyLayerObject,
+        selected: graphNodeObject,
       },
       data: {
         neighbors: read("neighbors", {
