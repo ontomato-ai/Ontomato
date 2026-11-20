@@ -39,7 +39,9 @@ import FormFieldControl from "./FormFieldControl.vue";
  * saved it — the object it saved, or the one it created — or the reader discarded what it held.
  */
 const emit = defineEmits<{
+  /** The owner saved the form: the object it saved, or the one it created. */
   saved: [object: { className: string; primaryKey: string }];
+  /** The reader discarded the changes the form held. */
   discarded: [];
 }>();
 const { t } = useI18n();

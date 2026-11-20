@@ -22,13 +22,17 @@ interface ResolvedOption {
  */
 const props = withDefaults(
   defineProps<{
-    /** Static mutually exclusive choices when not supplied by `data.counts`. */
+    /**
+     * The choices, each a `value` and its label (`labelKey`): fixed ones, used when the projection reads no `counts` or
+     * while they are read; with `counts` (an owner's group counts, such as by status), the owner's groups are the choices,
+     * each with its count, read again when the panel's other filters change.
+     */
     options?: readonly SegmentedControlOption<ScalarValue>[];
     /** Declared scalar panel state field name when placed directly in a panel template outside a member. */
     state?: string;
     /** Controlled scalar value when used outside a panel state binding. */
     modelValue?: ScalarValue | null;
-    /** Value treated as active when the bound panel state is currently `null`. */
+    /** The choice shown as chosen while the bound panel state holds nothing (such as `all`). */
     defaultValue?: ScalarValue | null;
     /** Accessible label text for the segmented radio group. */
     ariaLabel?: string;
