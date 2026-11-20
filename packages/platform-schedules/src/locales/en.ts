@@ -1,12 +1,15 @@
+import { scheduledTaskPanelTextEn as schedulePanelText } from "../panel-text";
+
 /**
  * The scheduled tasks page's English, under `platformSchedules`.
  *
  * The public English tree carries it (`@ontomato/workbench-ui/locales/en`), so every host loads it with the rest of the
- * platform's words; an edition translates the remaining languages against these keys. The public repository maintains
- * English only.
+ * platform's words; an edition translates the remaining languages against these keys.
  */
 export default {
   platformSchedules: {
+    panelFields: schedulePanelText.panelFields,
+    panelRunStarted: schedulePanelText.panelRunStarted,
     title: "Scheduled tasks",
     intro: "Schedule application tasks and review their execution history",
     newTask: "New task",
@@ -69,7 +72,7 @@ export default {
       more: "More actions for “{title}”",
     },
     action: {
-      runNow: "Run now",
+      runNow: schedulePanelText.action.runNow,
       edit: "Edit",
       records: "Run records",
       delete: "Delete",
@@ -97,7 +100,7 @@ export default {
       title: "Title",
       titleRequired: "Enter a title.",
       titleTooLong: "A title has at most {max} characters.",
-      app: "Application",
+      app: schedulePanelText.form.app,
       appPlaceholder: "Choose an application",
       appRequired: "Choose an application.",
       appUnknown: "Not installed",
@@ -163,12 +166,7 @@ export default {
       content: "Content when it ran",
       viewResult: "View result",
     },
-    runStatus: {
-      running: "Running",
-      completed: "Completed",
-      failed: "Failed",
-      skipped: "Skipped",
-    },
+    runStatus: schedulePanelText.runStatus,
     trigger: {
       manual: "Manual",
       schedule: "Scheduled",

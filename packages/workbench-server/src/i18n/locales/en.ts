@@ -1,4 +1,7 @@
+import { scheduledTaskPanelMessages, scheduledTaskPanelTextEn } from "@ontomato/platform-schedules/panel-text";
+
 export const en = {
+  ...scheduledTaskPanelMessages(scheduledTaskPanelTextEn),
   "panels.agentForm.name": "Name",
   "panels.agentForm.description": "Description",
   "panels.agentForm.icon": "Avatar",
