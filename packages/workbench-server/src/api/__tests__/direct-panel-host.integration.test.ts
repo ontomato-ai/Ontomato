@@ -45,7 +45,7 @@ if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable Po
 const trial = await import(fileURLToPath(new URL("../../../../apps-sdk/examples/panels/schedules-trial/definitions.mjs", import.meta.url))) as {
   panels: { id: string; directory: string; name: string; description: string; manifest: unknown }[];
   projections: { id: string; input: Record<string, unknown> & {
-    data: Record<string, { source: { type: string } | { operation: string } | { object: { input: string } }; read: string; params: object }>;
+    data: Record<string, { source: { type: { kind: string; id: string } } | { operation: { kind: string; id: string } } | { object: { input: string } }; read: string; params: object }>;
   } }[];
   panelContent(directory: string): unknown;
 };
@@ -175,13 +175,7 @@ function request(method: string, resource: string, body?: object, signal?: Abort
 }
 
 function projectionRequest(input: (typeof trial.projections)[number]["input"], revision: number) {
-  const data = Object.fromEntries(Object.entries(input.data).map(([name, datum]) => {
-    const { source } = datum;
-    const binding = "type" in source ? { type: { kind: "PlatformObjectType", id: source.type } }
-      : "operation" in source ? { operation: { kind: "PlatformOperation", id: source.operation } } : source;
-    return [name, { ...datum, source: binding }];
-  }));
-  return registerProductProjectionRequestSchema.parse({ ...input, data, revision });
+  return registerProductProjectionRequestSchema.parse({ ...input, revision });
 }
 
 it("reads the registered trial and follows its directly placed projections through the host routes", async () => {

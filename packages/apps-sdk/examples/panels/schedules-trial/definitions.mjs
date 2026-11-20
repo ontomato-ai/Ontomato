@@ -43,7 +43,7 @@ export const projections = [
     "Scheduled tasks",
     "The reader's scheduled tasks, to choose one from.",
     "ObjectList",
-    { inputs: { value: task }, outputs: { selected: task }, data: { rows: read({ type: TASK }, "list") } },
+    { inputs: { value: task }, outputs: { selected: task }, data: { rows: read({ type: { kind: "PlatformObjectType", id: TASK } }, "list") } },
   ),
   // P's form: one task, through its own application's form, asked again with the values a changed field depends on.
   projection(
@@ -62,7 +62,7 @@ export const projections = [
     "Run now",
     "Runs the chosen scheduled task now, leaving its schedule as it is.",
     "OperationButton",
-    { inputs: { task }, data: { operation: read({ operation: "schedules.runNow" }, "describe") } },
+    { inputs: { task }, data: { operation: read({ operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, "describe") } },
   ),
 ];
 

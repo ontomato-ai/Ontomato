@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
@@ -23,6 +23,17 @@ const panelPaths = [
 const recordPaths = [...projectionPaths, ...panelPaths];
 const idOf = (path) => path.split("/").at(-1);
 
+/*
+ * The deployment's current SDK, which the script reads before it writes a definition. Its check module is the one the
+ * release is built from, so the trial is checked by the real schemas.
+ */
+const SDK_PATH = "/apps-sdk/current";
+const release = {
+  version: "4.1.9-dev." + "a".repeat(64), digest: "b".repeat(64), publicBasePath: "", sdkBasePath: SDK_PATH,
+  checkPath: SDK_PATH + "/node/panel-check.mjs", componentsPath: SDK_PATH + "/components.json",
+};
+const checkModule = `export * from ${JSON.stringify(pathToFileURL(join(ROOT, "packages/contracts/src/panel-check.ts")).href)};`;
+
 const notFound = (response) => {
   response.writeHead(403, { "Content-Type": "application/json" });
   response.end(JSON.stringify({ error: { code: "PRODUCT_FORBIDDEN", message: "Product use Grant required" } }));
@@ -39,12 +50,19 @@ function platform({ held = new Map(), existingApplications = false } = {}) {
     request.on("data", (chunk) => (body += chunk));
     request.on("end", () => {
       const parsed = body ? JSON.parse(body) : null;
-      requests.push({ method: request.method, url: request.url, body: parsed, credential: request.headers.tk });
+      if (!request.url.startsWith(SDK_PATH) && request.url !== "/api/apps-sdk/current") {
+        requests.push({ method: request.method, url: request.url, body: parsed, credential: request.headers.tk });
+      }
       const answer = (status, value) => {
         response.writeHead(status, { "Content-Type": "application/json" });
         response.end(JSON.stringify(value));
       };
       const path = request.url;
+      if (path === "/api/apps-sdk/current") return answer(200, release);
+      if (path === release.checkPath) {
+        response.writeHead(200, { "Content-Type": "text/javascript" });
+        return response.end(checkModule);
+      }
       if (path.includes("/platform/applications/")) {
         if (request.method === "GET") return existingApplications
           ? answer(200, { success: true, data: { panelUses: [] } }) : answer(404, {});
