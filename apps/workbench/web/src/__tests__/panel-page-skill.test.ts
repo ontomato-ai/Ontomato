@@ -117,7 +117,8 @@ it("passes on a null member as Node answers it, never a public context of its ow
   const { app: page, element, skills } = await openApplication(tasks.path);
   try {
     await vi.waitFor(() => expect(skills).toEqual([{ mode: "member", locator: { permissionCode: "analysis-agent", pageKey: tasks.pageKey }, member: null }]));
-    await vi.waitFor(() => expect(element.querySelector("iframe.panel-host-frame")?.getAttribute("srcdoc")).toBeTruthy());
+    // The page still opens: its panel runs in the platform's document.
+    await vi.waitFor(() => expect(element.querySelector(".panel-host-coded > *")).not.toBeNull());
   } finally {
     page.unmount();
   }
