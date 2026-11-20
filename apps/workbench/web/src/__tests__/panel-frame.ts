@@ -220,8 +220,23 @@ export const currentSdk = () => Response.json(appsSdkCurrentSchema.parse({
 }));
 
 /** A panel's current record; its HTML has the element the SDK mounts into, and the test supplies the component. */
+/**
+ * The module of a panel written with code that places every member of its declaration, as an author's `panel.mjs` does:
+ * the platform runs it in its own document, on its own Vue and SDK.
+ */
+export const PLACE_EVERY_MEMBER = `import { h, resolveComponent } from "vue";
+import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
+
+await mountPanel({
+  setup() {
+    const { manifest } = usePanelContext();
+    return () => h("div", Object.keys(manifest.members).map(slot => h(resolveComponent("Projection"), { slot })));
+  },
+});
+`;
+
 export function panelRecord(id: string, name: string, manifest: PanelManifest): ProductPanel {
-  return { ...current, id, name, description: name, content: { html: '<div id="app"></div>', module: "" }, manifest };
+  return { ...current, id, name, description: name, content: { html: '<div id="app"></div>', module: PLACE_EVERY_MEMBER }, manifest };
 }
 
 /** A use relation of one of the trial's applications, as Java declares it. */
