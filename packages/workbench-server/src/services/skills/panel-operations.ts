@@ -71,11 +71,8 @@ const deleteSkillImpact: PanelImpactInspector = {
 
 function skillRefusalMessage(error: HttpError, locale?: string): string {
   if (error.code === "PUBLIC_SKILL_READ_ONLY") return tForLocale(locale, "panels.skill.readOnlyPublic");
-  if (error.code === "SKILL_PROVIDER_READ_ONLY" && error.details && typeof error.details === "object" && "providerName" in error.details) {
-    return tForLocale(locale, "panels.skill.readOnlyProvider", {
-      provider: String((error.details as { providerName: unknown }).providerName),
-    });
-  }
+  if (error.code === "SKILL_PROVIDER_READ_ONLY")
+    return tForLocale(locale, "panels.skill.readOnlyProvider", { provider: (error.details as { providerName: string }).providerName });
   return error.message;
 }
 

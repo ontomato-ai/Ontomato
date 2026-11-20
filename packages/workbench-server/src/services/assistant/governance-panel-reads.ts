@@ -69,10 +69,10 @@ export function createKnowledgeGovernanceReadAdapter(viewer: AssistantCredential
     return {
       primaryKey: source.id,
       label: source.title,
-      subtitle: source.kind,
+      subtitle: t(`panels.governance.sourceKinds.${source.kind}`),
       fieldLabels,
       fields: {
-        kind: source.kind,
+        kind: t(`panels.governance.sourceKinds.${source.kind}`),
         target: source.target,
         excerpt: source.excerpt,
       },

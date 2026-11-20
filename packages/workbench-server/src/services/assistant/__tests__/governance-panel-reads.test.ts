@@ -125,14 +125,14 @@ it("forwards viewer credentials and projects governance work record, issues, and
     {
       primaryKey: "src-1",
       label: "Cutoff rule",
-      subtitle: "knowledge",
+      subtitle: "Business knowledge",
       fieldLabels: {
         kind: "Kind",
         target: "Target",
         excerpt: "Excerpt",
       },
       fields: {
-        kind: "knowledge",
+        kind: "Business knowledge",
         target: "k-1",
         excerpt: "Orders placed before 18:00 ship same day.",
       },
