@@ -288,12 +288,16 @@ public class FunctionServiceImpl implements FunctionService {
     JSONObject values = request.getJSONObject("values");
     // A stored Function and a refresh carry no verdict; an incoming draft is checked and its errors returned with it.
     List<ObjectNode> errors = List.of();
+    JSONObject current = PanelFormFields.asset(function);
+    // A new definition has no ID yet; its form must not offer one for the create to carry.
+    if (!existing) current.remove("id");
     if (values == null) {
-      values = PanelFormFields.asset(function);
-      // A new definition has no ID yet; its form must not offer one for the create to carry.
-      if (!existing) values.remove("id");
+      values = current;
+    } else {
+      // Submitted values are laid over the current definition: a field a draft leaves out keeps its value.
+      values = PanelFormFields.withDraft(current, values);
+      if (request.get("changedField") == null) errors = FunctionForm.fieldErrors(values);
     }
-    else if (request.get("changedField") == null) errors = FunctionForm.fieldErrors(values);
     String readOnlyReason = null;
     if (Function.ORIGIN_SYSTEM.equals(function.getOrigin()))
       readOnlyReason = langService.get(lang, "Function.cannotModifySystem");
