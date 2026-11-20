@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema, runtimeKeySchema } from "./agent-runtime-values";
-import { panelManifestSchema, panelObjectIdentitySchema, panelObjectRefSchema, panelOperationCallSchema } from "./panel-manifest";
+import { panelObjectIdentitySchema, panelObjectRefSchema, panelOperationCallSchema } from "./panel-manifest";
 import {
   panelFormDescriptionSchema, panelFormValuesSchema, panelGroupCountsSchema, panelOptionListSchema,
   panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema, panelRelationNeighborsSchema,
@@ -8,11 +8,7 @@ import {
 import { actionDefinitionSchema, actionExplanationSchema } from "./action-panel";
 import { chartProjectionTemplateSchema, dashboardMetricOutputSchema } from "./dashboard";
 import { appsSdkComponentCatalogEntrySchema } from "./apps-sdk";
-import {
-  applicationEntryMenuSchema, applicationPanelUsesResponseSchema, currentPanelRecordSchema, currentProjectionRecordSchema,
-  productPanelListResponseSchema, productPanelUsedBySchema, productProjectionListResponseSchema, productProjectionUsedBySchema,
-} from "./product-panels";
-import { applicationCatalogueQueryResultSchema, applicationCatalogueRecordSchema } from "./application-catalogue";
+import { applicationEntryMenuSchema } from "./product-panels";
 import {
   platformOntologyCountsResponseSchema, platformOntologyNeighborsResponseSchema, platformOntologyObjectsResponseSchema,
   platformOntologySchemaResponseSchema, platformOntologyStartResponseSchema,
@@ -86,16 +82,6 @@ export const panelReadResultSchemas = {
   panelRecordQuery: panelRecordQuerySchema,
   panelGroupCounts: panelGroupCountsSchema,
   panelApplicationMenu: applicationEntryMenuSchema,
-  productProjectionList: productProjectionListResponseSchema,
-  productPanelList: productPanelListResponseSchema,
-  productProjectionRecord: currentProjectionRecordSchema,
-  productPanelRecord: currentPanelRecordSchema,
-  productProjectionUsedBy: productProjectionUsedBySchema,
-  productPanelUsedBy: productPanelUsedBySchema,
-  productPanelMembers: panelManifestSchema.innerType().shape.members,
-  applicationCatalogue: applicationCatalogueQueryResultSchema,
-  applicationRecord: applicationCatalogueRecordSchema,
-  applicationEntries: applicationPanelUsesResponseSchema,
   panelFormDescription: panelFormDescriptionSchema,
   panelOperationDescriptor: panelOwnerOperationDescriptorSchema,
   panelOptionList: panelOptionListSchema,
