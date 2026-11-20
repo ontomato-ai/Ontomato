@@ -18,6 +18,7 @@ import type { WorkbenchIdentity } from "../../../identity/types";
 import { listAgentDefinitions } from "../../assistant/definitions";
 import { assistantSkillCatalog } from "../../assistant/skills";
 import { listPublishedDefinitions } from "../../business-definitions/definitions";
+import { readPanelComponentCatalogue } from "../../product-panels/component-catalogue";
 import { createPlatformOntologyReadAdapter } from "../panel-reads";
 
 vi.mock("../../../config/application", () => ({
@@ -33,6 +34,9 @@ vi.mock("../../assistant/skills", () => ({
 }));
 vi.mock("../../business-definitions/definitions", () => ({
   listPublishedDefinitions: vi.fn(),
+}));
+vi.mock("../../product-panels/component-catalogue", () => ({
+  readPanelComponentCatalogue: vi.fn(),
 }));
 
 const assertPermissionMock = vi.fn();
@@ -97,12 +101,19 @@ function stubOwnerHttp(overrides: Partial<Record<string, () => Response>> = {}) 
     if (path === "/workflow/platform-access") {
       return jsonResponse([{ roleId: "role-1", roleCode: "ops", apiPermissions: ["workflow-design"], managementRole: false }]);
     }
+    if (path === "/product-governance/resources") {
+      return new Response(JSON.stringify({ ids: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     if (
       path === "/metricView/queryList"
       || path === "/function/queryList"
       || path === "/workflow/query"
       || path === "/trigger/queryList"
       || path === "/admin/getBussinessKnowledge"
+      || path === "/platform/applications"
     ) {
       return jsonResponse([]);
     }
@@ -122,6 +133,11 @@ beforeEach(() => {
   vi.mocked(listPublishedDefinitions).mockResolvedValue([]);
   vi.mocked(assistantSkillCatalog).mockResolvedValue({ skills: [] });
   vi.mocked(listAgentDefinitions).mockResolvedValue({ agents: [] });
+  vi.mocked(readPanelComponentCatalogue).mockResolvedValue({
+    version: "1.0.0",
+    digest: "sha256:test",
+    components: new Map(),
+  });
 });
 
 afterEach(() => {

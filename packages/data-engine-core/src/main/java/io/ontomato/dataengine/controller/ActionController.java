@@ -29,6 +29,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -536,7 +537,21 @@ public class ActionController {
 		item.put("reviewedByName", names.get(action.getReviewedBy()));
 		item.put("statusLabel", statusLabel(action.getStatus(), lang));
 		item.put("originLabel", originLabel(action.getOrigin(), lang));
+		labelKinds(item.path("codeSegments"), lang);
+		labelKinds(item.path("definition").path("effects"), lang);
 		return item;
+	}
+
+	/** Each explained code segment at every depth, and each derived effect, named by its kind in the reader's language. */
+	private void labelKinds(JsonNode items, String lang) {
+		for (JsonNode node : items) {
+			ObjectNode item = (ObjectNode) node;
+			item.put("kindLabel", langService.get(lang, "ActionSegment.kind." + item.path("kind").asText()));
+			labelKinds(item.path("segs"), lang);
+			labelKinds(item.path("trySegs"), lang);
+			for (JsonNode group : item.path("catchs")) labelKinds(group.path("segs"), lang);
+			for (JsonNode group : item.path("branchArms")) labelKinds(group.path("segs"), lang);
+		}
 	}
 
 	private ArrayNode withDisplay(List<Action> actions, String domainId, String lang) {

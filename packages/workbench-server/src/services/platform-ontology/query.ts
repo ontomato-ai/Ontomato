@@ -1,6 +1,8 @@
 import type {
   PlatformOntologyCountsResponse,
   PlatformOntologyEdge,
+  PlatformOntologyEdgeBinding,
+  PlatformOntologyLayer,
   PlatformOntologyNeighborsRequest,
   PlatformOntologyNeighborsResponse,
   PlatformOntologyNode,
@@ -14,8 +16,13 @@ import type {
   PlatformOntologyType,
   PlatformOntologyTypeCount,
 } from "@ontomato/contracts/platform-ontology";
-import type { PlatformRelationKindDeclaration } from "@ontomato/contracts/platform-object-types";
+import { matchesObjectType, objectUnionTypes, panelPlacementSchema } from "@ontomato/contracts/panel-manifest";
+import {
+  platformObjectTypes,
+  type PlatformRelationKindDeclaration,
+} from "@ontomato/contracts/platform-object-types";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
+import { protectedSkillRef } from "../../core/skills/providers";
 import { createLogger } from "../../logging/logger";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
@@ -23,22 +30,25 @@ import type { ProductOwner } from "../product-governance/grants";
 import {
   PlatformOntologyOwnerReaders,
   type OwnerReadResult,
+  type RawProductPanel,
+  type RawProductProjection,
 } from "./owners";
 import {
   ACTION,
   AGENT_DEFINITION,
   APPLICATION,
-  APPLICATION_PANEL_USE,
   ATTRIBUTE,
   BUSINESS_KNOWLEDGE,
   DEFINITION,
   FUNCTION,
   METRIC_VIEW,
   OBJECT_TYPE,
+  ONTOLOGY_TYPE,
   PLATFORM_ONTOLOGY_LAYERS,
   PLATFORM_ONTOLOGY_RELATION_KINDS,
   PLATFORM_ONTOLOGY_TYPE_MAP,
   PLATFORM_ONTOLOGY_TYPES,
+  PLATFORM_OPERATION_OWNER_MAP,
   PRODUCT_PANEL,
   PRODUCT_PROJECTION,
   RELATIONSHIP,
@@ -49,11 +59,14 @@ import {
   USER,
   WORKFLOW,
   relationTargets,
+  resolveNodeLayer,
 } from "./schema";
 
 const logger = createLogger("platform-ontology");
 
 const WORKFLOW_SAVE_API = "/workflow/save";
+/** Matches `panelSkillProvider.id` in `services/product-panels/skill-provider.ts` without triggering skill registry init. */
+const PANEL_SKILL_PROVIDER_ID = "product-panels";
 
 interface RawEdgeCandidate {
   from: PlatformOntologyNodeRef;
@@ -63,6 +76,7 @@ interface RawEdgeCandidate {
   fromDetail?: string;
   toLabel?: string;
   toDetail?: string;
+  binding?: PlatformOntologyEdgeBinding;
 }
 
 interface RelationEvalResult {
@@ -70,14 +84,6 @@ interface RelationEvalResult {
   reason?: string;
   edges: RawEdgeCandidate[];
 }
-
-const M3B_DEFERRED_TYPES = new Set<string>([
-  SDK_COMPONENT,
-  PRODUCT_PROJECTION,
-  PRODUCT_PANEL,
-  APPLICATION,
-  APPLICATION_PANEL_USE,
-]);
 
 function nodeKey(ref: PlatformOntologyNodeRef): string {
   return `${ref.className}\u0000${ref.primaryKey}`;
@@ -105,14 +111,198 @@ function requireTypeSpec(typeId: string): PlatformOntologyType {
   return spec;
 }
 
+function requireNodeLayer(ref: PlatformOntologyNodeRef): PlatformOntologyLayer {
+  const layer = resolveNodeLayer(ref);
+  if (!layer) {
+    throw new HttpError(
+      400,
+      ref.className === ONTOLOGY_TYPE
+        ? `Unknown or unlayered platform ontology type: ${ref.primaryKey}`
+        : `Unknown platform ontology type: ${ref.className}`,
+      "INVALID_PLATFORM_TYPE",
+    );
+  }
+  return layer;
+}
+
+interface ExtractedTargetBinding {
+  target: PlatformOntologyNodeRef;
+  binding?: PlatformOntologyEdgeBinding;
+}
+
+/**
+ * Extracts merged `projection.binds-target` targets for one projection.
+ *
+ * - Platform type reads and platform operations (whose owner type comes strictly from `platformObjectTypes`)
+ *   merge onto a single edge per `{ className: "platform:OntologyType", primaryKey: <typeId> }`.
+ * - Customer classes/relationships point to `platform:ObjectType` / `platform:Relationship`.
+ * - Customer Actions and `MetricChart.metricId` point to `platform:Action` / `platform:MetricView`.
+ * - Unlayered platform types and operations absent from the type table are skipped without guessing.
+ */
+function extractProjectionTargetBindings(projection: RawProductProjection): ExtractedTargetBinding[] {
+  const entries = new Map<
+    string,
+    {
+      target: PlatformOntologyNodeRef;
+      reads: Set<string>;
+      operations: Set<string>;
+      hasDirect: boolean;
+      hasInput: boolean;
+    }
+  >();
+
+  const record = (
+    target: PlatformOntologyNodeRef,
+    opts: { read?: string; operation?: string; viaInput?: boolean },
+  ) => {
+    if (!resolveNodeLayer(target)) return;
+    const key = nodeKey(target);
+    let entry = entries.get(key);
+    if (!entry) {
+      entry = { target, reads: new Set(), operations: new Set(), hasDirect: false, hasInput: false };
+      entries.set(key, entry);
+    }
+    if (opts.read) entry.reads.add(opts.read);
+    if (opts.operation) entry.operations.add(opts.operation);
+    if (opts.viaInput) entry.hasInput = true;
+    else entry.hasDirect = true;
+  };
+
+  const def = projection.definition;
+
+  for (const { source, read } of Object.values(def.data)) {
+    if ("type" in source) {
+      if (source.type.kind === "PlatformObjectType") {
+        record({ className: ONTOLOGY_TYPE, primaryKey: source.type.id }, { read });
+      } else if (source.type.kind === "ObjectType") {
+        record({ className: OBJECT_TYPE, primaryKey: source.type.id }, { read });
+      } else if (source.type.kind === "Relationship") {
+        record({ className: RELATIONSHIP, primaryKey: source.type.id }, { read });
+      }
+      continue;
+    }
+
+    if ("literal" in source.object) {
+      const { className, primaryKey } = source.object.literal;
+      if (Object.hasOwn(platformObjectTypes, className)) {
+        record({ className, primaryKey }, { read });
+      } else {
+        record({ className: OBJECT_TYPE, primaryKey: className }, { read });
+      }
+      continue;
+    }
+
+    const inputDef = def.inputs[source.object.input];
+    if (inputDef?.kind === "object") {
+      if (Object.hasOwn(platformObjectTypes, inputDef.objectType)) {
+        record({ className: ONTOLOGY_TYPE, primaryKey: inputDef.objectType }, { read, viaInput: true });
+      } else {
+        record({ className: OBJECT_TYPE, primaryKey: inputDef.objectType }, { read, viaInput: true });
+      }
+    } else if (inputDef?.kind === "object-union") {
+      for (const typeId of objectUnionTypes(inputDef)) {
+        record({ className: ONTOLOGY_TYPE, primaryKey: typeId }, { read, viaInput: true });
+      }
+    }
+  }
+
+  for (const { operation, target } of Object.values(def.operations ?? {})) {
+    if (operation.kind === "Action") {
+      record({ className: ACTION, primaryKey: operation.id }, { operation: operation.id });
+    } else if (operation.kind === "PlatformOperation") {
+      const ownerType = PLATFORM_OPERATION_OWNER_MAP.get(operation.id);
+      if (!ownerType) continue;
+      record(
+        { className: ONTOLOGY_TYPE, primaryKey: ownerType },
+        { operation: operation.id, viaInput: Boolean(target && "input" in target) },
+      );
+    }
+  }
+
+  if (projection.metricId) {
+    record({ className: METRIC_VIEW, primaryKey: projection.metricId }, {});
+  }
+
+  return [...entries.values()].map(({ target, reads, operations, hasDirect, hasInput }) => {
+    const sortedReads = [...reads].sort();
+    const sortedOps = [...operations].sort();
+    const nonEmptyReads: [string, ...string[]] | undefined =
+      sortedReads.length > 0 ? [sortedReads[0]!, ...sortedReads.slice(1)] : undefined;
+    const nonEmptyOps: [string, ...string[]] | undefined =
+      sortedOps.length > 0 ? [sortedOps[0]!, ...sortedOps.slice(1)] : undefined;
+    const viaInput = hasInput && !hasDirect;
+    const binding: PlatformOntologyEdgeBinding | undefined =
+      nonEmptyReads || nonEmptyOps || viaInput
+        ? {
+            ...(nonEmptyReads ? { reads: nonEmptyReads } : {}),
+            ...(nonEmptyOps ? { operations: nonEmptyOps } : {}),
+            ...(viaInput ? { viaInput: true } : {}),
+          }
+        : undefined;
+    return { target, ...(binding ? { binding } : {}) };
+  });
+}
+
+function panelUsesObjectDetailRule(panel: RawProductPanel): boolean {
+  return Object.values(panel.definition.manifest.members).some(
+    ({ target }) =>
+      "fromState" in target &&
+      "rule" in target.candidates &&
+      target.candidates.rule === "objectDetail",
+  );
+}
+
+function extractPanelContainedIds(
+  panel: RawProductPanel,
+  objectDetailMappings?: ReadonlyMap<string, string>,
+): { projectionIds: Set<string>; panelIds: Set<string> } {
+  const projectionIds = new Set<string>();
+  const panelIds = new Set<string>();
+  const { state, members } = panel.definition.manifest;
+
+  for (const { target } of Object.values(members)) {
+    if ("projectionId" in target) {
+      projectionIds.add(target.projectionId);
+    } else if ("panelId" in target) {
+      panelIds.add(target.panelId);
+    } else if ("fromState" in target) {
+      if ("panelIds" in target.candidates) {
+        for (const id of target.candidates.panelIds) panelIds.add(id);
+      } else if (objectDetailMappings) {
+        const stateField = state[target.fromState];
+        if (stateField && (stateField.type.kind === "object" || stateField.type.kind === "object-union")) {
+          for (const [className, detailPanelId] of objectDetailMappings) {
+            if (matchesObjectType(stateField.type, className)) {
+              panelIds.add(detailPanelId);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  for (const field of Object.values(state)) {
+    if (field.type.kind !== "placement") continue;
+    if ("panelIds" in field.type.candidates) {
+      for (const id of field.type.candidates.panelIds) panelIds.add(id);
+    }
+    if (field.default != null) {
+      const parsed = panelPlacementSchema.safeParse(field.default);
+      if (parsed.success) {
+        if ("projectionId" in parsed.data.target) projectionIds.add(parsed.data.target.projectionId);
+        else panelIds.add(parsed.data.target.panelId);
+      }
+    }
+  }
+
+  return { projectionIds, panelIds };
+}
+
 /** Lists all objects of a single declared type for counts, object picker, and label lookup. */
 async function readObjectsOfType(
   readers: PlatformOntologyOwnerReaders,
   typeId: string,
 ): Promise<OwnerReadResult<PlatformOntologyObjectItem[]> | { ok: false; status: "unavailable"; reason: string }> {
-  if (M3B_DEFERRED_TYPES.has(typeId)) {
-    return { ok: false, status: "unavailable", reason: "Product layer owner adapter is scheduled for M3b" };
-  }
 
   switch (typeId) {
     case OBJECT_TYPE: {
@@ -280,6 +470,54 @@ async function readObjectsOfType(
           node: { className: AGENT_DEFINITION, primaryKey: agent.id },
           label: agent.name,
           detail: agent.enabled ? "enabled" : "disabled",
+        })),
+      };
+    }
+    case SDK_COMPONENT: {
+      const res = await readers.sdkComponents();
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        data: res.data.map((component) => ({
+          node: { className: SDK_COMPONENT, primaryKey: component.id },
+          label: component.componentId,
+          detail: component.module,
+        })),
+      };
+    }
+    case PRODUCT_PROJECTION: {
+      const res = await readers.productProjections();
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        data: res.data.map((projection) => ({
+          node: { className: PRODUCT_PROJECTION, primaryKey: projection.id },
+          label: projection.name,
+          detail: projection.componentId,
+        })),
+      };
+    }
+    case PRODUCT_PANEL: {
+      const res = await readers.productPanels();
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        data: res.data.map((panel) => ({
+          node: { className: PRODUCT_PANEL, primaryKey: panel.id },
+          label: panel.name,
+          ...(panel.description ? { detail: panel.description } : {}),
+        })),
+      };
+    }
+    case APPLICATION: {
+      const res = await readers.applications();
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        data: res.data.map((app) => ({
+          node: { className: APPLICATION, primaryKey: app.id },
+          label: app.name,
+          detail: app.kind,
         })),
       };
     }
@@ -866,15 +1104,152 @@ async function evaluateRelationKind(
       return { status: "ok", edges };
     }
 
-    case "projection.uses-component":
-    case "projection.binds-target":
-    case "panel.contains-projection":
-    case "application.uses-panel":
-      return {
-        status: "unavailable",
-        reason: "Product layer relation adapter is scheduled for M3b",
-        edges: [],
-      };
+    case "projection.uses-component": {
+      const res = await readers.productProjections();
+      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
+      const edges: RawEdgeCandidate[] = [];
+      for (const projection of res.data) {
+        if (
+          (node.className === PRODUCT_PROJECTION && projection.id === node.primaryKey) ||
+          (node.className === SDK_COMPONENT && projection.componentId === node.primaryKey)
+        ) {
+          edges.push({
+            from: { className: PRODUCT_PROJECTION, primaryKey: projection.id },
+            to: { className: SDK_COMPONENT, primaryKey: projection.componentId },
+            fromLabel: projection.name,
+          });
+        }
+      }
+      return { status: "ok", edges };
+    }
+
+    case "projection.binds-target": {
+      const res = await readers.productProjections();
+      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
+      const edges: RawEdgeCandidate[] = [];
+      for (const projection of res.data) {
+        if (node.className === PRODUCT_PROJECTION && projection.id !== node.primaryKey) continue;
+        const bindings = extractProjectionTargetBindings(projection);
+        for (const { target, binding } of bindings) {
+          if (
+            node.className === PRODUCT_PROJECTION ||
+            (target.className === node.className && target.primaryKey === node.primaryKey)
+          ) {
+            edges.push({
+              from: { className: PRODUCT_PROJECTION, primaryKey: projection.id },
+              to: target,
+              fromLabel: projection.name,
+              ...(binding ? { binding } : {}),
+            });
+          }
+        }
+      }
+      return { status: "ok", edges };
+    }
+
+    case "panel.contains-projection": {
+      const panelsRes = await readers.productPanels();
+      if (!panelsRes.ok) return { status: panelsRes.status, reason: panelsRes.reason, edges: [] };
+      const grantsRes = await readers.grantedUseIds();
+      if (!grantsRes.ok) return { status: grantsRes.status, reason: grantsRes.reason, edges: [] };
+      const edges: RawEdgeCandidate[] = [];
+      for (const panel of panelsRes.data) {
+        const { projectionIds } = extractPanelContainedIds(panel);
+        for (const projectionId of projectionIds) {
+          if (!grantsRes.data.has(projectionId)) continue;
+          if (
+            (node.className === PRODUCT_PANEL && panel.id === node.primaryKey) ||
+            (node.className === PRODUCT_PROJECTION && projectionId === node.primaryKey)
+          ) {
+            edges.push({
+              from: { className: PRODUCT_PANEL, primaryKey: panel.id },
+              to: { className: PRODUCT_PROJECTION, primaryKey: projectionId },
+              fromLabel: panel.name,
+            });
+          }
+        }
+      }
+      return { status: "ok", edges };
+    }
+
+    case "panel.contains-panel": {
+      const panelsRes = await readers.productPanels();
+      if (!panelsRes.ok) return { status: panelsRes.status, reason: panelsRes.reason, edges: [] };
+      const grantsRes = await readers.grantedUseIds();
+      if (!grantsRes.ok) return { status: grantsRes.status, reason: grantsRes.reason, edges: [] };
+      let objectDetailMappings: ReadonlyMap<string, string> | undefined;
+      if (panelsRes.data.some(panelUsesObjectDetailRule)) {
+        const detailRes = await readers.objectDetailPanelMappings();
+        if (!detailRes.ok) return { status: detailRes.status, reason: detailRes.reason, edges: [] };
+        objectDetailMappings = detailRes.data;
+      }
+      const edges: RawEdgeCandidate[] = [];
+      for (const panel of panelsRes.data) {
+        const { panelIds } = extractPanelContainedIds(panel, objectDetailMappings);
+        for (const childPanelId of panelIds) {
+          if (childPanelId === panel.id || !grantsRes.data.has(childPanelId)) continue;
+          if (panel.id === node.primaryKey || childPanelId === node.primaryKey) {
+            edges.push({
+              from: { className: PRODUCT_PANEL, primaryKey: panel.id },
+              to: { className: PRODUCT_PANEL, primaryKey: childPanelId },
+              fromLabel: panel.name,
+            });
+          }
+        }
+      }
+      return { status: "ok", edges };
+    }
+
+    case "panel.provides-skill": {
+      const [panelsRes, skillsRes] = await Promise.all([
+        readers.productPanels(),
+        readers.skills(),
+      ]);
+      if (!panelsRes.ok) return { status: panelsRes.status, reason: panelsRes.reason, edges: [] };
+      if (!skillsRes.ok) return { status: skillsRes.status, reason: skillsRes.reason, edges: [] };
+      const skillByKey = new Map(skillsRes.data.map((skill) => [skill.primaryKey, skill]));
+      const edges: RawEdgeCandidate[] = [];
+      for (const panel of panelsRes.data) {
+        const skillKey = runtimeSkillKey(
+          protectedSkillRef(PANEL_SKILL_PROVIDER_ID, readers.owner.domainId, panel.id),
+        );
+        const skill = skillByKey.get(skillKey);
+        if (!skill) continue;
+        if (
+          (node.className === PRODUCT_PANEL && panel.id === node.primaryKey) ||
+          (node.className === SKILL && skillKey === node.primaryKey)
+        ) {
+          edges.push({
+            from: { className: PRODUCT_PANEL, primaryKey: panel.id },
+            to: { className: SKILL, primaryKey: skillKey },
+            fromLabel: panel.name,
+            toLabel: skill.title,
+          });
+        }
+      }
+      return { status: "ok", edges };
+    }
+
+    case "application.uses-panel": {
+      const appsRes = await readers.applications();
+      if (!appsRes.ok) return { status: appsRes.status, reason: appsRes.reason, edges: [] };
+      const edges: RawEdgeCandidate[] = [];
+      for (const app of appsRes.data) {
+        for (const panelId of app.panelIds) {
+          if (
+            (node.className === APPLICATION && app.id === node.primaryKey) ||
+            (node.className === PRODUCT_PANEL && panelId === node.primaryKey)
+          ) {
+            edges.push({
+              from: { className: APPLICATION, primaryKey: app.id },
+              to: { className: PRODUCT_PANEL, primaryKey: panelId },
+              fromLabel: app.name,
+            });
+          }
+        }
+      }
+      return { status: "ok", edges };
+    }
 
     default:
       return { status: "unavailable", reason: `Unhandled relation kind: ${spec.id}`, edges: [] };
@@ -888,7 +1263,7 @@ export async function readPlatformOntologyNeighbors(
   callerUserName?: string,
 ): Promise<PlatformOntologyNeighborsResponse> {
   const started = performance.now();
-  const centerSpec = requireTypeSpec(input.node.className);
+  const centerLayer = requireNodeLayer(input.node);
   const centerKey = nodeKey(input.node);
 
   const kindFilter = input.relationKinds?.length ? new Set(input.relationKinds) : null;
@@ -905,6 +1280,7 @@ export async function readPlatformOntologyNeighbors(
       if (isOutgoing) oppositeTypes.push(...targets);
       if (isIncoming) oppositeTypes.push(rel.from);
       const anyLayerMatches = oppositeTypes.some((t) => {
+        if (t === ONTOLOGY_TYPE) return true;
         const tSpec = PLATFORM_ONTOLOGY_TYPE_MAP.get(t);
         return tSpec ? layerFilter.has(tSpec.layer) : false;
       });
@@ -935,9 +1311,9 @@ export async function readPlatformOntologyNeighbors(
       const toKey = nodeKey(candidate.to);
       const direction: "outgoing" | "incoming" = fromKey === centerKey ? "outgoing" : "incoming";
       const opposite = direction === "outgoing" ? candidate.to : candidate.from;
-      const oppositeSpec = PLATFORM_ONTOLOGY_TYPE_MAP.get(opposite.className);
-      if (!oppositeSpec) continue;
-      if (layerFilter && !layerFilter.has(oppositeSpec.layer)) continue;
+      const oppositeLayer = resolveNodeLayer(opposite);
+      if (!oppositeLayer) continue;
+      if (layerFilter && !layerFilter.has(oppositeLayer)) continue;
 
       const dedupKey = `${spec.id}|${fromKey}|${toKey}`;
       if (seenEdges.has(dedupKey)) continue;
@@ -951,6 +1327,7 @@ export async function readPlatformOntologyNeighbors(
         to: candidate.to,
         direction,
         derived: spec.derived,
+        ...(candidate.binding ? { binding: candidate.binding } : {}),
       });
 
       if (candidate.fromLabel) hintLabels.set(fromKey, { label: candidate.fromLabel, detail: candidate.fromDetail });
@@ -971,8 +1348,11 @@ export async function readPlatformOntologyNeighbors(
   }
 
   // Resolve canonical labels from each referenced node's owner (reusing per-request cache).
-  const typesToResolve = new Set<string>([input.node.className]);
-  for (const ref of neighborRefs.values()) typesToResolve.add(ref.className);
+  const typesToResolve = new Set<string>();
+  if (input.node.className !== ONTOLOGY_TYPE) typesToResolve.add(input.node.className);
+  for (const ref of neighborRefs.values()) {
+    if (ref.className !== ONTOLOGY_TYPE) typesToResolve.add(ref.className);
+  }
 
   const labelMaps = new Map<string, Map<string, { label: string; detail?: string }>>();
   await Promise.all(
@@ -988,7 +1368,15 @@ export async function readPlatformOntologyNeighbors(
   );
 
   const toNode = (ref: PlatformOntologyNodeRef): PlatformOntologyNode => {
-    const typeSpec = PLATFORM_ONTOLOGY_TYPE_MAP.get(ref.className)!;
+    const layer = resolveNodeLayer(ref)!;
+    if (ref.className === ONTOLOGY_TYPE) {
+      return {
+        className: ONTOLOGY_TYPE,
+        primaryKey: ref.primaryKey,
+        label: ref.primaryKey,
+        layer,
+      };
+    }
     const ownerEntry = labelMaps.get(ref.className)?.get(ref.primaryKey);
     const hintEntry = hintLabels.get(nodeKey(ref));
     const fallbackLabel =
@@ -999,14 +1387,14 @@ export async function readPlatformOntologyNeighbors(
       className: ref.className,
       primaryKey: ref.primaryKey,
       label: ownerEntry?.label ?? hintEntry?.label ?? fallbackLabel,
-      layer: typeSpec.layer,
+      layer,
       ...(ownerEntry?.detail ?? hintEntry?.detail ? { detail: ownerEntry?.detail ?? hintEntry?.detail } : {}),
     };
   };
 
   const centerNode: PlatformOntologyNode = {
     ...toNode(input.node),
-    layer: centerSpec.layer,
+    layer: centerLayer,
   };
   const neighbors = [...neighborRefs.values()].map(toNode);
 

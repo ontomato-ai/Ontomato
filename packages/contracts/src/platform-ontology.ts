@@ -24,6 +24,13 @@ export const platformOntologyNodeSchema = platformOntologyNodeRefSchema.extend({
 });
 export type PlatformOntologyNode = z.infer<typeof platformOntologyNodeSchema>;
 
+export const platformOntologyEdgeBindingSchema = z.object({
+  reads: z.array(z.string().min(1)).nonempty().optional(),
+  operations: z.array(z.string().min(1)).nonempty().optional(),
+  viaInput: z.boolean().optional(),
+}).strict();
+export type PlatformOntologyEdgeBinding = z.infer<typeof platformOntologyEdgeBindingSchema>;
+
 export const platformOntologyEdgeSchema = z.object({
   id: z.string().min(1),
   relationKind,
@@ -31,6 +38,7 @@ export const platformOntologyEdgeSchema = z.object({
   to: platformOntologyNodeRefSchema,
   direction: z.enum(["outgoing", "incoming"]),
   derived: z.boolean(),
+  binding: platformOntologyEdgeBindingSchema.optional(),
 }).strict();
 export type PlatformOntologyEdge = z.infer<typeof platformOntologyEdgeSchema>;
 

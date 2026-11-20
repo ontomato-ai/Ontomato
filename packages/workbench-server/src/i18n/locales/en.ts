@@ -115,6 +115,7 @@ export const en = {
   "panels.action.fields.createdBy": "Created by",
   "panels.action.fields.reviewedBy": "Reviewed by",
   "panels.action.fields.function": "Function",
+  "panels.action.fields.updatedAt": "Updated",
   "panels.action.operations.setStatus": "Change status",
   "panels.action.operations.delete": "Delete",
   "panels.ontologyModel.operations.deleteObjectType": "Delete object type",
