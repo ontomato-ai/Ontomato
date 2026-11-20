@@ -25,7 +25,7 @@ For a management page, start with the [complete example and wiring recipes](refe
 
 When converting a platform page that needs a new owner read, operation or official component, use the [platform development examples](references/platform-development.md).
 
-For instances of customer ontology classes, bind the detail to the owner's `record` read and use a registered Action for changes. For platform resources with owner-declared forms, use the corresponding form and save operation.
+Create short members from the reads listed by `panel type`. For customer ontology views backed by an existing projection, reuse its registered ID. Use the corresponding form and save operation for types that publish those declarations.
 
 | Command | Result |
 | --- | --- |
