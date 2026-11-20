@@ -1,3 +1,4 @@
+import { applicationCatalogueScopeSchema, applicationFormSectionSchema, productCatalogQuerySchema } from "./product-catalog-query";
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema, formValuesSchema, panelFormOptionSchema } from "./form-fields";
@@ -82,6 +83,11 @@ type ProjectionReadFacts = DirectProjectionPorts & { metricId?: string };
 
 const positiveInteger = z.number().int().positive();
 export const panelReadParameterSchemas = {
+  productScope: productCatalogQuerySchema.shape.scope.removeDefault(),
+  productSort: productCatalogQuerySchema.shape.sort.removeDefault(),
+  applicationScope: applicationCatalogueScopeSchema,
+  applicationFormSection: applicationFormSectionSchema,
+  applicationFormTarget: panelFormTargetSchema,
   formValues: formValuesSchema,
   panelFormValues: panelFormValuesSchema,
   changedField: fieldPath.nullable(),
@@ -113,6 +119,10 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "cursor":
     case "knowledgeCountField":
     case "knowledgeStatus":
+    case "productScope":
+    case "productSort":
+    case "applicationScope":
+    case "applicationFormSection":
       return input?.kind === "scalar" && input.type === "string";
     case "size":
     case "neighborsLimit":

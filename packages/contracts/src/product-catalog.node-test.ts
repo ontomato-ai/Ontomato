@@ -76,3 +76,19 @@ test("product governance lists domain grants and changes domain sharing through 
   assert.deepEqual(changeProductDomainGrantRequestSchema.parse({ shared: false }), { shared: false });
   assert.deepEqual(productGrantChangeResponseSchema.parse({ success: true }), { success: true });
 });
+
+test("declares typed catalogue reads that reuse the current product records and list responses", async () => {
+  const { APPLICATION, PRODUCT_PANEL, PRODUCT_PROJECTION, platformObjectTypes } = await import("./platform-object-types");
+  const { panelReadResultSchemas } = await import("./panel-operations");
+  const { panelReadParameterSchemas } = await import("./panel-projection");
+  const { currentPanelRecordSchema, currentProjectionRecordSchema } = await import("./product-panels");
+
+  assert.equal(platformObjectTypes[PRODUCT_PROJECTION].reads?.query.result, "productProjectionList");
+  assert.equal(platformObjectTypes[PRODUCT_PANEL].reads?.usedBy.result, "productPanelUsedBy");
+  assert.equal(platformObjectTypes[APPLICATION].reads?.form.result, "panelFormDescription");
+  assert.equal(panelReadResultSchemas.productProjectionRecord, currentProjectionRecordSchema);
+  assert.equal(panelReadResultSchemas.productPanelRecord, currentPanelRecordSchema);
+  assert.equal(panelReadParameterSchemas.productScope.safeParse("mine").success, true);
+  assert.equal(panelReadParameterSchemas.productScope.safeParse("maintainable").success, false);
+  assert.equal(panelReadParameterSchemas.applicationScope.safeParse("maintainable").success, true);
+});

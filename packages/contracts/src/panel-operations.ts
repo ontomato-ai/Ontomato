@@ -6,7 +6,12 @@ import {
   panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema, panelRelationNeighborsSchema,
 } from "./panel-projection";
 import { chartProjectionTemplateSchema, dashboardMetricOutputSchema } from "./dashboard";
-import { applicationEntryMenuSchema } from "./product-panels";
+import {
+  applicationEntryMenuSchema, applicationPanelUsesResponseSchema, currentPanelRecordSchema, currentProjectionRecordSchema,
+  productPanelListResponseSchema, productPanelUsedBySchema, productProjectionListResponseSchema, productProjectionUsedBySchema,
+} from "./product-panels";
+import { applicationCatalogueQueryResultSchema, applicationCatalogueRecordSchema } from "./application-catalogue";
+import { panelManifestSchema } from "./panel-manifest";
 import {
   platformOntologyCountsResponseSchema, platformOntologyNeighborsResponseSchema, platformOntologyObjectsResponseSchema,
   platformOntologySchemaResponseSchema, platformOntologyStartResponseSchema,
@@ -77,6 +82,16 @@ export const panelReadResultSchemas = {
   panelRecordQuery: panelRecordQuerySchema,
   panelGroupCounts: panelGroupCountsSchema,
   panelApplicationMenu: applicationEntryMenuSchema,
+  productProjectionList: productProjectionListResponseSchema,
+  productPanelList: productPanelListResponseSchema,
+  productProjectionRecord: currentProjectionRecordSchema,
+  productPanelRecord: currentPanelRecordSchema,
+  productProjectionUsedBy: productProjectionUsedBySchema,
+  productPanelUsedBy: productPanelUsedBySchema,
+  productPanelMembers: panelManifestSchema.innerType().shape.members,
+  applicationCatalogue: applicationCatalogueQueryResultSchema,
+  applicationRecord: applicationCatalogueRecordSchema,
+  applicationEntries: applicationPanelUsesResponseSchema,
   panelFormDescription: panelFormDescriptionSchema,
   panelOperationDescriptor: panelOwnerOperationDescriptorSchema,
   panelOptionList: panelOptionListSchema,
