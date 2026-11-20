@@ -12,8 +12,15 @@ Copy the example to a local window configuration. Set the authorized origin,
 deadline, source revisions, identity, actual routes and selectors, and the
 same two distinct task titles. Supply a link measurement JSON with an asset and
 a measured transfer for each group. Each measurement object contains at least
-bytes and bytesPerSecond. An instance attribute must reflect the SDK instance
-lifecycle to verify the switch criterion.
+bytes and bytesPerSecond. The runner only selects tasks whose titles begin with
+`e2e-`. When the panel does not expose an editable task title, supply its
+selection state key and the native card's task ID attribute. The form probe
+checks the registered panel's deep link and a ready editable owner form.
+
+Use the host's exposed SDK instance under `direct.vueRoot` to verify the switch
+criterion. The runner tags the instance in a WeakMap, independently of the DOM
+root. A deployment that exposes a lifecycle attribute can instead use
+`direct.instanceAttribute`.
 
 Start an isolated Chrome instance with a CDP endpoint and authenticate once.
 Then run the following commands from the repository root.

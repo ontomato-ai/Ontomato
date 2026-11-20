@@ -29,10 +29,10 @@ export async function settings(configPath, stage, flag) {
   }
   const selectors = [config.away.leave.selector, config.panel.enter.selector, config.panel.list.row.selector,
     config.panel.form.input, config.panel.form.selected.selector, config.panel.form.ready.selector, config.direct.root];
-  if (config.tasks.length !== 2 || new Set(config.tasks).size !== 2 || !config.tasks.every(title => title.trim()) ||
+  if (config.tasks.length !== 2 || new Set(config.tasks).size !== 2 || !config.tasks.every(title => title.startsWith("e2e-")) ||
       !config.panel.path.startsWith("/applications/") || selectors.some(selector => !selector.trim()) ||
       !config.identity.account || !config.device || !config.linkFile) {
-    throw new Error("Complete the task, direct host, device, and link fields from smoke evidence");
+    throw new Error("Expected two distinct e2e- task titles and the direct host, device, and link settings");
   }
   return config;
 }
@@ -66,7 +66,7 @@ async function reset(page, config, variant) {
     if (Date.now() >= deadline) throw new Error("Start document did not commit at " + config.away.path);
     await wait(50);
   }
-  await call(page, "ready", { kind: "control", path: config.away.path, control: variant.enter });
+  await call(page, "ready", { kind: "control", path: config.away.path, control: variant.enter, scroll: true });
   return openedAt;
 }
 
@@ -99,7 +99,7 @@ async function timed(page, config, action, check, panel, openedAt) {
     throw new Error("CDP Performance metrics unavailable");
   }
   if (panel && check.kind !== "control" && (observation.frameSeen || !root.after || root.after.stamp === "" ||
-      (config.direct.instanceAttribute && root.after.stamp === null))) {
+      ((config.direct.instanceAttribute || config.direct.vueRoot) && root.after.stamp === null))) {
     throw new Error("Registered entry did not prove direct rendering");
   }
   if (proof.titles) {
@@ -122,21 +122,20 @@ function listCheck(config, variant) {
   return { kind: "list", path: variant.path, list: variant.list, titles: config.tasks };
 }
 
-function formCheck(variant, title) {
-  return { kind: "form", form: variant.form, title };
+function formCheck(variant, title, taskKeys) {
+  return { kind: "form", form: variant.form, title, taskKey: taskKeys[title] };
 }
 
 function choose(variant, title) {
   return { ...variant.list.row, text: title };
 }
 
-async function prepareSwitch(page, config, variant, panel) {
+async function prepareSwitch(page, config, variant, panel, taskKeys) {
   const [first, second] = config.tasks;
-  const firstForm = formCheck(variant, first);
+  const firstForm = formCheck(variant, first, taskKeys);
   if (panel) {
     // An existing selection is allowed only if it really is the first task.
-    if (!(await page.evaluate(({ input, first }) => document.querySelector(input)?.value === first,
-      { input: variant.form.input, first }))) {
+    if (!(await call(page, "check", firstForm))) {
       await input(page, choose(variant, first), firstForm, true);
     }
     await call(page, "ready", firstForm);
@@ -186,6 +185,7 @@ export async function benchmark(page, config, { count, save, saveSuppressed }) {
         throw new Error("Session is outside the configured account/domain");
       }
     }
+    let taskKeys = {};
     for (let round = 1; round <= count; round++) {
       const pair = [];
       const order = round % 2 ? ["native", "panel"] : ["panel", "native"];
@@ -197,16 +197,22 @@ export async function benchmark(page, config, { count, save, saveSuppressed }) {
         const capture = async (step, action, check) => {
           const sample = { round, lane, step,
             ...await timed(page, config, action, check, panel, step === "first" ? openedAt : null) };
+          if (sample.proof.taskKeys) {
+            if (config.tasks.some(title => taskKeys[title] && taskKeys[title] !== sample.proof.taskKeys[title])) {
+              throw new Error("A configured task changed ID during measurement");
+            }
+            taskKeys = sample.proof.taskKeys;
+          }
           pair.push(sample);
           await save(sample);
         };
         try {
           const list = listCheck(config, variant);
           await capture("first", variant.enter, list);
-          await capture("away", config.away.leave, { kind: "control", path: config.away.path, control: variant.enter });
+          await capture("away", config.away.leave, { kind: "control", path: config.away.path, control: variant.enter, scroll: true });
           await capture("return", variant.enter, list);
-          const select = await prepareSwitch(page, config, variant, panel);
-          await capture("switch", select, formCheck(variant, config.tasks[1]));
+          const select = await prepareSwitch(page, config, variant, panel, taskKeys);
+          await capture("switch", select, formCheck(variant, config.tasks[1], taskKeys));
         } finally {
           const excluded = await page.evaluate(() => window.m1NavigationWritesSuppressed);
           await saveSuppressed(excluded.map(request => ({ round, lane, ...request })));
@@ -229,6 +235,7 @@ export async function run(page, configPath, stage, outPath, group, flag) {
   const output = { stage, group, build: buildAtStart, viewport, browser, link, asset, device: config.device[group],
     identity: { account: config.identity.account, domainId: config.identity.domainId }, tasks: config.tasks,
     lifecycleSource: config.direct.lifecycleSource, instanceAttribute: config.direct.instanceAttribute,
+    vueRoot: config.direct.vueRoot,
     route: { native: config.native.path, panel: config.panel.path, away: config.away.path },
     requestClassification: config.requests,
     startedAt: new Date().toISOString(), count: stages[stage], samples: [], suppressedRequests: [] };

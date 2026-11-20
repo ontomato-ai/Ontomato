@@ -47,7 +47,7 @@ const first = compare.first.delta[1] <= 500;
 const hot = compare.return.delta[0] <= 200 && compare.return.delta[1] <= 300;
 const switchRows = compare.switch.panel;
 const rebuild = switchRows.filter(sample => sample.instanceRebuilt === true).length;
-const proven = Boolean(run.instanceAttribute && run.lifecycleSource) &&
+const proven = Boolean((run.instanceAttribute || run.vueRoot) && run.lifecycleSource) &&
   switchRows.every(sample => sample.root.before?.stamp && sample.root.after?.stamp && sample.instanceRebuilt !== null);
 const label = value => value ? "通过" : "超线";
 console.log();

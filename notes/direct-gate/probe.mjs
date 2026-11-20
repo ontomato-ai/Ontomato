@@ -36,13 +36,23 @@ export function installProbe({ direct, initMarks, timeoutMs }) {
       if (check.titles.some(title => titles.filter(value => value === title).length !== 1)) return null;
       const first = rows.find(el => label(el, check.list.row.textFrom) === check.titles[0]);
       if (!point(check.list.action ? first.querySelector(check.list.action) : first)) return null;
-      return { route: location.hash, titles };
+      return { route: location.hash, titles,
+        ...(check.list.keyAttribute ? { taskKeys: Object.fromEntries(rows
+          .filter(el => check.titles.includes(label(el, check.list.row.textFrom)))
+          .map(el => [label(el, check.list.row.textFrom), el.getAttribute(check.list.keyAttribute)])) } : {}) };
     }
     const { form, title } = check;
-    const input = document.querySelector(form.input);
-    if (!editable(input) || !point(input) || value(input) !== title) return null;
     if (form.ready && !matching(form.ready).some(available)) return null;
     if (form.selected && !matching({ ...form.selected, text: title }).some(available)) return null;
+    if (form.stateKey) {
+      const query = new URLSearchParams(location.hash.split("?")[1]);
+      const state = JSON.parse(query.get("state") ?? "null")?.[form.stateKey];
+      if (!check.taskKey || state?.primaryKey !== check.taskKey || state.className !== "platform:ScheduledTask") return null;
+      if (![...document.querySelectorAll(form.input)].some(editable)) return null;
+      return { route: location.hash, editableTask: title, taskKey: state.primaryKey };
+    }
+    const input = document.querySelector(form.input);
+    if (!editable(input) || !point(input) || value(input) !== title) return null;
     return { route: location.hash, editableTitle: title };
   }
 
@@ -61,11 +71,35 @@ export function installProbe({ direct, initMarks, timeoutMs }) {
 
   const instanceIds = new WeakMap();
   let nextId = 0;
+  function marker(object) {
+    if (!instanceIds.has(object)) instanceIds.set(object, ++nextId);
+    return instanceIds.get(object);
+  }
+  function exposedInstance(el) {
+    const root = document.querySelector(direct.vueRoot)?._vnode;
+    const host = el.parentElement;
+    const nodes = root ? [root] : [];
+    while (nodes.length) {
+      const vnode = nodes.pop();
+      if (!vnode || typeof vnode !== "object") continue;
+      if (vnode.component) {
+        const { exposed, subTree } = vnode.component;
+        if (subTree?.el === host && exposed?.direct) return exposed.direct.value?.mount.instance ?? null;
+        nodes.push(subTree);
+      } else if (vnode.suspense?.activeBranch) {
+        nodes.push(vnode.suspense.activeBranch);
+      } else if (Array.isArray(vnode.children)) {
+        nodes.push(...vnode.children);
+      }
+    }
+    return null;
+  }
   const instance = () => {
     const el = document.querySelector(direct.root);
     if (!el) return null;
-    if (!instanceIds.has(el)) instanceIds.set(el, ++nextId);
-    return { el, nodeId: instanceIds.get(el), stamp: direct.instanceAttribute ? el.getAttribute(direct.instanceAttribute) : null };
+    const sdk = direct.vueRoot ? exposedInstance(el) : null;
+    return { el, nodeId: marker(el),
+      stamp: sdk ? marker(sdk) : direct.instanceAttribute ? el.getAttribute(direct.instanceAttribute) : null };
   };
   const id = entry => entry && { nodeId: entry.nodeId, stamp: entry.stamp };
   let result;
@@ -151,6 +185,7 @@ export function installProbe({ direct, initMarks, timeoutMs }) {
 
   window.directGate = {
     ready: wait,
+    check: proof,
     root: () => id(instance()),
     point(action) {
       const el = matching(action).find(available);
