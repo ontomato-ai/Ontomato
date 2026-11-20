@@ -39,7 +39,7 @@ For instances of customer ontology classes, bind the detail to the owner's `reco
 ### Write projections inside the panel
 
 In `panel.json`, put a new projection in `manifest.members.<key>.target.projection`. Use the same component,
-named data, input and output declarations, and config as a separately registered projection. Keep state bindings
+named data, input and output declarations, operation bindings and config as a separately registered projection. Keep state bindings
 on the member. For example, a member named `agents` can use this target:
 
 ```json

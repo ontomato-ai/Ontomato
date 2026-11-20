@@ -24,10 +24,10 @@ function expandInlineProjections(manifest, panel) {
     if (Object.keys(otherTargets).length || projection === null || typeof projection !== "object" || Array.isArray(projection)) {
       throw new Error(`Member ${member}: expected target.projection to be the only target`);
     }
-    const { id = randomUUID(), componentId, data, inputs = {}, outputs = {}, config = {}, name, description, ...unknown } = projection;
+    const { id = randomUUID(), componentId, data, inputs = {}, outputs = {}, config = {}, operations, name, description, ...unknown } = projection;
     if (Object.keys(unknown).length) throw new Error(`Member ${member}: unknown projection fields ${Object.keys(unknown).join(", ")}`);
     if (componentId === "@ontomato/sdk:MetricChart") throw new Error(`Member ${member}: register the chart through its source card and reference its ID`);
-    inline.push({ member, id, needsId: projection.id === undefined, input: { componentId, data, inputs, outputs, config, name, description } });
+    inline.push({ member, id, needsId: projection.id === undefined, input: { componentId, data, inputs, outputs, config, operations, name, description } });
     return [member, { ...bindings, target: { projectionId: id } }];
   });
   return { manifest: inline.length ? { ...manifest, members: Object.fromEntries(members) } : manifest, inline };

@@ -326,6 +326,10 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await writeFile(reviewMaterial, JSON.stringify(incorrect));
     await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
       error.stderr.includes(`projection ${batch.id}: operation approve (reviews.approve) has an invalid target input review`));
+    batch.input.operations.approve.operation.id = "reviews.undeclared";
+    await writeFile(reviewMaterial, JSON.stringify(incorrect));
+    await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
+      error.stderr.includes(`projection ${batch.id}: operation approve (reviews.undeclared) is not declared in the type table`));
     requests.length = 0;
     await writeFile(layout, '<panel-member ref="tasks"></panel-member>');
     const reference = async id => {
