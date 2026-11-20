@@ -15,19 +15,19 @@ import { panelOperationStore } from "../../services/product-panels/operation-sto
 import { Router } from "express";
 import { z } from "zod";
 import {
-  chartProjectionLookupResponseSchema, chartProjectionTemplateSchema, productCurrentIdParamsSchema, productPanelReadQuerySchema,
+  applicationPanelReferencesRequestSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema, productCurrentIdParamsSchema, productPanelReadQuerySchema,
   type ProductPanelReadQuery,
   registerChartProjectionRequestSchema, registerChartProjectionResponseSchema,
-  registerDirectPanelRequestSchema, registerDirectProjectionRequestSchema, registerProductPanelRequestSchema,
+  registerProductPanelRequestSchema,
   registerProductProjectionRequestSchema, updateChartProjectionSourceRequestSchema,
 } from "@ontomato/contracts/product-panels";
 import { CHART_PROJECTION_SOURCES_PATH, chartProjectionSourceRead } from "@ontomato/contracts/panel-client-requests";
 import { mountProductCatalog } from "./product-catalog";
+import { mountPanelPersonalState } from "./panel-personal-state";
 import { context, wrap } from "../utils/agent-host";
 import { platformService } from "../middleware/platform-service";
 import {
-  readCurrentPanelRecord, readCurrentProjectionRecord, requireCurrentPanels, saveCurrentDirectPanel,
-  saveCurrentDirectProjection, saveCurrentPanel, saveCurrentProjection,
+  readCurrentPanelRecord, readCurrentProjectionRecord, saveCurrentPanel, saveCurrentProjection, validateApplicationPanelReferences,
 } from "../../services/product-panels/current";
 import { HttpError } from "../../utils/errors";
 import { readProductPanelData } from "../../services/product-panels/data-reads";
@@ -49,9 +49,8 @@ async function withPageSkillContext<T extends { panel: { id: string } }>(
 }
 
 export const productPanelsRouter = Router();
-const panelRegistration = z.union([registerDirectPanelRequestSchema, registerProductPanelRequestSchema]);
-const projectionRegistration = z.union([registerDirectProjectionRequestSchema, registerProductProjectionRequestSchema]);
 mountProductCatalog(productPanelsRouter, "panel");
+mountPanelPersonalState(productPanelsRouter);
 productPanelsRouter.post("/read", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
   const request = productPanelReadRequestSchema.parse(req.body);
@@ -87,12 +86,10 @@ productPanelsRouter.get("/:id", wrap(async (req, res) => {
 }));
 productPanelsRouter.put("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
-  const request = panelRegistration.safeParse(req.body);
+  const request = registerProductPanelRequestSchema.safeParse(req.body);
   if (!request.success) throw new HttpError(400, request.error.issues[0]!.message, "INVALID_REQUEST");
   const { revision, ...input } = request.data;
-  const panel = "sdkVersion" in input
-    ? await saveCurrentPanel(c.owner, c.credentials, id, input, revision)
-    : await saveCurrentDirectPanel(c.owner, c.credentials, id, input, revision);
+  const panel = await saveCurrentPanel(c.owner, c.credentials, id, input, revision);
   res.json({ panel });
 }));
 export const productProjectionsRouter = Router();
@@ -135,17 +132,14 @@ productProjectionsRouter.get("/:id", wrap(async (req, res) => {
 }));
 productProjectionsRouter.put("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
-  const { revision, ...input } = projectionRegistration.parse(req.body);
-  const projection = "data" in input
-    ? await saveCurrentDirectProjection(c.owner, c.credentials, id, input, revision)
-    : await saveCurrentProjection(c.owner, c.credentials, id, input, revision);
+  const request = registerProductProjectionRequestSchema.parse(req.body);
+  const projection = await saveCurrentProjection(c.owner, c.credentials, id, request);
   res.json({ projection });
 }));
 export const productPanelsInternalRouter = Router();
 productPanelsInternalRouter.use(platformService);
 productPanelsInternalRouter.post("/validate-references", wrap(async (req, res) => {
-  const { domainId, ids } = z.object({ domainId: z.string().min(1), ids: z.array(z.string().min(1)) }).strict().parse(req.body);
-  await requireCurrentPanels(domainId, ids);
+  await validateApplicationPanelReferences(applicationPanelReferencesRequestSchema.parse(req.body));
   res.sendStatus(204);
 }));
 

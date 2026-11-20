@@ -1,15 +1,13 @@
-import { isDeepStrictEqual } from "node:util";
-import { z } from "zod";
 import {
-  METRIC_CHART_COMPONENT, chartProjectionSchema, currentProjectionRecordSchema, directPanelSchema, directProjectionSchema,
-  productPanelSchema, productProjectionSchema, type DirectPanel, type DirectPanelInput, type DirectProjectionInput,
+  METRIC_CHART_COMPONENT, chartProjectionSchema, productPanelInputSchema, productPanelSchema, productProjectionSchema,
+  type ApplicationPanelReferencesRequest, type ProductPanel,
   type ProductPanelInput, type ProductProjectionInput, type RegisterProductProjectionRequest,
 } from "@ontomato/contracts/product-panels";
-import { matchesDirectPanelValue } from "@ontomato/contracts/panel-manifest";
+import { matchesDirectPanelValue, panelPortAccepts } from "@ontomato/contracts/panel-manifest";
 import type { PoolClient } from "pg";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { currentProductColumns, currentProductRecord, currentProductTables, findCurrentProduct, type CurrentProductKind, type CurrentProductRow } from "../../infrastructure/product-current";
-import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
+import { qualifiedTable as t } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { lockProducts } from "../../infrastructure/product-write-lock";
 import { HttpError } from "../../utils/errors";
@@ -17,8 +15,7 @@ import type { ProductOwner } from "../product-governance/grants";
 import { grantedProductIds, registerProductResource, requireProductGrant } from "../product-governance/grants";
 import { notifyProductDefinitionChanged } from "./definition-stream";
 
-type CurrentDefinition = ProductPanelInput | ProductProjectionInput | DirectPanelInput | DirectProjectionInput;
-const panelRecordSchema = z.union([directPanelSchema, productPanelSchema]);
+type CurrentDefinition = ProductPanelInput | ProductProjectionInput;
 
 export async function loadCurrentProduct(domainId: string, kind: CurrentProductKind, id: string, client?: PoolClient) {
   const row = await findCurrentProduct(domainId, kind, id, client);
@@ -32,8 +29,8 @@ export async function requireCurrentProduct(owner: ProductOwner, credentials: As
   return loadCurrentProduct(owner.domainId, kind, id, client);
 }
 
-export function requireOrdinaryProjection(input: Pick<ProductProjectionInput, "componentId" | "display">) {
-  if (input.componentId === METRIC_CHART_COMPONENT || Object.hasOwn(input.display, "chartSource"))
+export function requireOrdinaryProjection(input: Pick<ProductProjectionInput, "componentId">) {
+  if (input.componentId === METRIC_CHART_COMPONENT)
     throw new HttpError(400, "Register a chart through its source card", "CHART_SOURCE_REGISTRATION_REQUIRED");
 }
 async function readCurrentRecord(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string) {
@@ -46,52 +43,41 @@ export async function readCurrentProjection(owner: ProductOwner, credentials: As
 export async function readCurrentPanel(owner: ProductOwner, credentials: AssistantCredentials, id: string) {
   return productPanelSchema.parse(await readCurrentRecord(owner, credentials, "panel", id));
 }
-export async function readCurrentProjectionRecord(owner: ProductOwner, credentials: AssistantCredentials, id: string) {
-  return currentProjectionRecordSchema.parse(await readCurrentRecord(owner, credentials, "projection", id));
-}
-export async function readCurrentPanelRecord(owner: ProductOwner, credentials: AssistantCredentials, id: string) {
-  return panelRecordSchema.parse(await readCurrentRecord(owner, credentials, "panel", id));
-}
+export const readCurrentProjectionRecord = readCurrentProjection;
+export const readCurrentPanelRecord = readCurrentPanel;
 
-export async function requireDirectPanelMember(owner: ProductOwner, credentials: AssistantCredentials, panel: DirectPanel, key: string) {
+export async function requireDirectPanelMember(owner: ProductOwner, credentials: AssistantCredentials, panel: ProductPanel, key: string) {
   if (!Object.hasOwn(panel.manifest.members, key))
     throw new HttpError(403, "Panel member is not available", "FORBIDDEN");
   const member = panel.manifest.members[key];
+  if (!("projectionId" in member.target))
+    throw new HttpError(422, "The member does not reference a fixed projection", "PANEL_MEMBER_TARGET_UNSUPPORTED");
   const row = await requireCurrentProduct(owner, credentials, "projection", member.target.projectionId, "use");
-  return { member, projection: directProjectionSchema.parse(currentProductRecord(row, false)) };
+  return { member, projection: productProjectionSchema.parse(currentProductRecord(row, false)) };
 }
 
-async function validatePanelReferences(owner: ProductOwner, credentials: AssistantCredentials, manifest: ProductPanelInput["manifest"], client: PoolClient) {
-  for (const slot of Object.values(manifest.slots)) {
-    const projection = currentProjectionRecordSchema.parse(currentProductRecord(await requireCurrentProduct(owner, credentials, "projection", slot.projectionId, "use", client), false));
-    for (const [name, ref] of Object.entries(slot.inputs)) {
-      const target = projection.inputs[name];
-      if (!target) throw new HttpError(400, `Projection has no input: ${name}`, "PANEL_INPUT_UNKNOWN");
-      const source = manifest.state[ref.state];
-      if (source.kind !== target.kind || (source.kind === "object" && target.kind === "object" ? source.objectType !== target.objectType
-        : source.kind === "scalar" && target.kind === "scalar" && source.type !== target.type))
-        throw new HttpError(400, `Panel state does not match projection input: ${name}`, "PANEL_INPUT_TYPE_MISMATCH");
-    }
-  }
-}
-
-async function validateDirectPanelReferences(
-  owner: ProductOwner, credentials: AssistantCredentials, manifest: DirectPanelInput["manifest"], client: PoolClient,
+async function validatePanelReferences(
+  owner: ProductOwner, credentials: AssistantCredentials, manifest: ProductPanelInput["manifest"], client: PoolClient,
 ) {
   for (const [key, member] of Object.entries(manifest.members)) {
+    if ("panelId" in member.target) {
+      await requireCurrentProduct(owner, credentials, "panel", member.target.panelId, "use", client);
+      continue;
+    }
+    if (!("projectionId" in member.target)) continue;
     const row = await requireCurrentProduct(owner, credentials, "projection", member.target.projectionId, "use", client);
-    const projection = directProjectionSchema.parse(currentProductRecord(row, false));
+    const projection = productProjectionSchema.parse(currentProductRecord(row, false));
     for (const [name, ref] of Object.entries(member.inputs ?? {})) {
       const target = projection.inputs[name];
       if (!target) throw new HttpError(400, `Projection member '${key}' has no input '${name}'`, "PANEL_INPUT_UNKNOWN");
-      const valid = "state" in ref
-        ? isDeepStrictEqual(manifest.state[ref.state].type, target)
-        : target.kind === "json" || matchesDirectPanelValue(target, ref.literal);
-      if (!valid)
-        throw new HttpError(400, `Member '${key}' input '${name}' does not match its projection`, "PANEL_INPUT_TYPE_MISMATCH");
+      const valid = target.kind === "json" || ("state" in ref
+        ? panelPortAccepts(target, manifest.state[ref.state].type)
+        : "literal" in ref && matchesDirectPanelValue(target, ref.literal));
+      if (!valid) throw new HttpError(400, `Member '${key}' input '${name}' does not match its projection`, "PANEL_INPUT_TYPE_MISMATCH");
     }
     for (const [name, ref] of Object.entries(member.outputs ?? {})) {
-      if (!isDeepStrictEqual(projection.outputs[name], manifest.state[ref.state].type))
+      const output = projection.outputs[name];
+      if (!output || !panelPortAccepts(manifest.state[ref.state].type, output))
         throw new HttpError(400, `Member '${key}' output '${name}' does not match its state field`, "PANEL_OUTPUT_TYPE_MISMATCH");
     }
   }
@@ -125,11 +111,7 @@ async function save(owner: ProductOwner, credentials: AssistantCredentials, kind
   input: CurrentDefinition, revision: number) {
   const row = await transaction(async client => {
     await lockProducts(client, owner);
-    if ("manifest" in input) {
-      const { manifest } = input;
-      if ("members" in manifest) await validateDirectPanelReferences(owner, credentials, manifest, client);
-      else await validatePanelReferences(owner, credentials, manifest, client);
-    }
+    if ("manifest" in input) await validatePanelReferences(owner, credentials, input.manifest, client);
     if (revision === 0) return insertCurrentProduct(client, owner, credentials, kind, id, input);
     const result = await client.query(`UPDATE ${t(currentProductTables[kind])} SET definition=$3::jsonb,revision=revision+1,updated_at=now() WHERE domain_id=$1 AND id=$2 AND revision=$4 RETURNING ${currentProductColumns}`, [owner.domainId, id, JSON.stringify(input), revision]);
     if (!result.rows.length) throw new HttpError(409, "Definition changed; reload before saving", "PRODUCT_CONFLICT");
@@ -138,47 +120,65 @@ async function save(owner: ProductOwner, credentials: AssistantCredentials, kind
   await notifyProductDefinitionChanged({ kind: "definition-changed", domainId: owner.domainId, target: { kind, id } });
   return currentProductRecord(row, true);
 }
-export async function saveCurrentProjection(owner: ProductOwner, credentials: AssistantCredentials, id: string,
-  input: Omit<RegisterProductProjectionRequest, "revision">, revision: number) {
-  const existing = await currentForSave(owner, credentials, "projection", id, revision);
-  if (existing?.definition.componentId === METRIC_CHART_COMPONENT) {
+export async function saveCurrentProjection(
+  owner: ProductOwner, credentials: AssistantCredentials, id: string, request: RegisterProductProjectionRequest,
+) {
+  const existing = await currentForSave(owner, credentials, "projection", id, request.revision);
+  if (request.componentId === METRIC_CHART_COMPONENT) {
+    if (existing?.definition.componentId !== METRIC_CHART_COMPONENT)
+      throw new HttpError(400, "Register a chart through its source card", "CHART_SOURCE_REGISTRATION_REQUIRED");
+    const { name, description, visibility, revision } = request;
     const current = chartProjectionSchema.parse(currentProductRecord(existing, true));
-    if (input.componentId !== current.componentId || input.binding.kind !== current.binding.kind ||
-      input.binding.id !== current.binding.id || Object.keys(input.display).length) {
-      throw new HttpError(400, "A registered chart cannot change its component, metric or source", "CHART_SOURCE_IMMUTABLE");
-    }
-    const { name, description, visibility } = input;
-    const definition = { name, description, visibility, componentId: current.componentId, binding: current.binding,
-      inputs: current.inputs, display: current.display };
-    return productProjectionSchema.parse(await save(owner, credentials, "projection", id, definition, revision));
+    const { id: _id, domainId: _domainId, ownerId: _ownerId, revision: _revision, editable: _editable,
+      createdAt: _createdAt, updatedAt: _updatedAt, ...definition } = current;
+    return productProjectionSchema.parse(await save(owner, credentials, "projection", id,
+      { ...definition, name, description, visibility }, revision));
   }
-  requireOrdinaryProjection(input);
+  if (existing?.definition.componentId === METRIC_CHART_COMPONENT)
+    throw new HttpError(400, "A registered chart cannot change its component, metric or source", "CHART_SOURCE_IMMUTABLE");
+  const { revision, ...input } = request;
   return productProjectionSchema.parse(await save(owner, credentials, "projection", id, input, revision));
 }
+
 export async function saveCurrentPanel(owner: ProductOwner, credentials: AssistantCredentials, id: string, input: ProductPanelInput, revision: number) {
   await currentForSave(owner, credentials, "panel", id, revision);
   return productPanelSchema.parse(await save(owner, credentials, "panel", id, input, revision));
 }
 
-export async function saveCurrentDirectProjection(
-  owner: ProductOwner, credentials: AssistantCredentials, id: string, input: DirectProjectionInput, revision: number,
-) {
-  const existing = await currentForSave(owner, credentials, "projection", id, revision);
-  if (existing?.definition.componentId === METRIC_CHART_COMPONENT)
-    throw new HttpError(400, "A registered chart cannot change its component, metric or source", "CHART_SOURCE_IMMUTABLE");
-  return directProjectionSchema.parse(await save(owner, credentials, "projection", id, input, revision));
-}
+/** Java authorizes the registrant. This service call checks the current definitions used by the declaration. */
+export async function validateApplicationPanelReferences(request: ApplicationPanelReferencesRequest) {
+  const { domainId, framePanelId, uses, delivery } = request;
+  const panels = new Map<string, ProductPanelInput>();
+  const projections = new Set<string>();
+  const pending = new Set(uses.map(use => use.panelId));
+  if (framePanelId !== undefined) pending.add(framePanelId);
+  for (const panelId of pending) {
+    const row = await findCurrentProduct(domainId, "panel", panelId);
+    if (!row) throw new HttpError(400, `Panel '${panelId}' is not a current definition`, "INVALID_PANEL_REFERENCE");
+    const panel = productPanelInputSchema.parse(row.definition);
+    panels.set(panelId, panel);
+    for (const { target } of Object.values(panel.manifest.members)) {
+      if ("panelId" in target) pending.add(target.panelId);
+      if ("projectionId" in target) projections.add(target.projectionId);
+    }
+  }
+  await Promise.all([...projections].map(id => loadCurrentProduct(domainId, "projection", id)));
 
-export async function saveCurrentDirectPanel(
-  owner: ProductOwner, credentials: AssistantCredentials, id: string, input: DirectPanelInput, revision: number,
-) {
-  await currentForSave(owner, credentials, "panel", id, revision);
-  return directPanelSchema.parse(await save(owner, credentials, "panel", id, input, revision));
-}
-
-/** Service-only reference validation for Java; Java checks the registrant's product use Grants. */
-export async function requireCurrentPanels(domainId: string, ids: string[]) {
-  const result = await getPostgresPool().query(`SELECT id FROM ${t("product_panels")} WHERE domain_id=$1 AND id=ANY($2::text[])`, [domainId, ids]);
-  const found = new Set(result.rows.map(row => row.id));
-  if (ids.some(id => !found.has(id))) throw new HttpError(400, "Use relations require current panel IDs", "INVALID_PANEL_REFERENCE");
+  const frame = framePanelId === undefined ? undefined : panels.get(framePanelId)!;
+  for (const use of uses) {
+    const { state } = panels.get(use.panelId)!.manifest;
+    for (const [name, ref] of Object.entries(use.inputs ?? {})) {
+      const field = state[name];
+      const source = "frameState" in ref ? frame?.manifest.state[ref.frameState] : undefined;
+      if (!field?.external || !("literal" in ref
+        ? matchesDirectPanelValue(field.type, ref.literal)
+        : source && panelPortAccepts(field.type, source.type))) {
+        throw new HttpError(400, `Entry '${use.id}' has incompatible input '${name}'`, "INVALID_PANEL_ENTRY_INPUT");
+      }
+    }
+  }
+  for (const id of delivery.panels)
+    if (!panels.has(id)) throw new HttpError(400, `Panel '${id}' is not reachable from the application`, "INVALID_PANEL_DELIVERY");
+  for (const id of delivery.projections)
+    if (!projections.has(id)) throw new HttpError(400, `Projection '${id}' is not reachable from the application`, "INVALID_PANEL_DELIVERY");
 }
