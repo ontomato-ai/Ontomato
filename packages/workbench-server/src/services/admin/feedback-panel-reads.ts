@@ -1,12 +1,16 @@
 import { z } from "zod";
+import { panelDownloadReceiptSchema } from "@ontomato/contracts/panel-download";
+import { EXPORT_FEEDBACK } from "@ontomato/contracts/platform-object-types";
 import type { FeedbackRecord } from "@ontomato/contracts/feedback";
 import { panelReadParameterSchemas, type PanelGroupCounts, type PanelRecord, type PanelRecordQuery } from "@ontomato/contracts/panel-projection";
 import { tForLocale } from "../../i18n";
 import { assertPermission } from "../../identity/installed";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
+import type { PanelReadServerOperation } from "../product-panels/server-operations";
 import type { ProductOwner } from "../product-governance/grants";
 import { countFeedback, listFeedback } from "./feedback-store";
+import { exportFeedback, feedbackExportTimeZone } from "./feedback-export";
 
 /*
  * The feedback owner's named reads for direct panels: queried list, ordered filter counts, and single record lookup.
@@ -120,3 +124,31 @@ export function createFeedbackReadAdapter(owner: ProductOwner, viewer: Assistant
     },
   };
 }
+
+const exportInputSchema = queryInputSchema.pick({ search: true, sourceType: true, rating: true })
+  .extend({ timeZone: z.string() });
+
+export const feedbackExportOperation: PanelReadServerOperation = {
+  handlerRef: EXPORT_FEEDBACK,
+  binding: { kind: "PlatformOperation", id: EXPORT_FEEDBACK },
+  kind: "action",
+  effect: "read",
+  batch: false,
+  target: { source: "none" },
+  targetSchema: z.undefined(),
+  inputSchema: exportInputSchema,
+  resultSchema: panelDownloadReceiptSchema,
+  async execute({ executor: { owner, credentials } }, call) {
+    await assertPermission(credentials, ["user-feedback"]);
+    const { search, sourceType, rating, timeZone } = exportInputSchema.parse(call.input);
+    const file = await exportFeedback({
+      domainId: owner.domainId,
+      keyword: search || undefined,
+      sourceType: sourceType === "all" ? undefined : sourceType,
+      rating: rating === "all" ? undefined : rating,
+      locale: credentials.locale,
+      timeZone: feedbackExportTimeZone(timeZone),
+    });
+    return { kind: "file", ...file };
+  },
+};

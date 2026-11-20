@@ -5,10 +5,11 @@ import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import express from "express";
+import AdmZip from "adm-zip";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import {
-  AGENT_DEFINITION, DELETE_SKILL, FEEDBACK_RECORD, KNOWLEDGE_GOVERNANCE_RECORD, SKILL,
+  AGENT_DEFINITION, DELETE_SKILL, EXPORT_FEEDBACK, EXPORT_SKILL, FEEDBACK_RECORD, KNOWLEDGE_GOVERNANCE_RECORD, SKILL,
 } from "@ontomato/contracts/panel-client-requests";
 import { productPanelOperationsReadResponseSchema } from "@ontomato/contracts/panel-host";
 import { productPanelInputSchema, productProjectionInputSchema } from "@ontomato/contracts/product-panels";
@@ -115,6 +116,7 @@ const projections = {
         },
       },
     },
+    operations: { export: { operation: { kind: "PlatformOperation", id: EXPORT_FEEDBACK } } },
   }),
   "proj-feedback-counts": productProjectionInputSchema.parse({
     name: "Feedback counts", description: "", visibility: "domain",
@@ -198,6 +200,7 @@ const projections = {
     },
     operations: {
       delete: { operation: { kind: "PlatformOperation", id: DELETE_SKILL }, target: { input: "skill" } },
+      export: { operation: { kind: "PlatformOperation", id: EXPORT_SKILL }, target: { input: "skill" } },
     },
   }),
 };
@@ -617,6 +620,30 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
   expect(await read("feedbackList", "rows", {})).toEqual({ status: "forbidden" });
   state.permissions.add("user-feedback");
 
+  const csvCall = {
+    applicationId: source.applicationId, useId: source.useId, operationId: "feedbackList.export",
+    call: { input: { search: "chart", sourceType: "qa", rating: "like", timeZone: "UTC" } },
+  };
+  const csv = await request("POST", "panel-operations/read", csvCall);
+  expect(csv.status).toBe(200);
+  expect(csv.headers.get("content-type")).toContain("text/csv");
+  expect(csv.headers.get("content-disposition")).toMatch(/^attachment; filename="feedback_records_.*\.csv"; filename\*=/u);
+  expect(csv.headers.get("cache-control")).toBe("no-store");
+  const csvBytes = Buffer.from(await csv.arrayBuffer());
+  expect([...csvBytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+  expect(csvBytes.toString()).toContain("Great chart");
+  expect(csvBytes.toString()).not.toContain("Slow chart");
+  expect(csvBytes.toString()).not.toContain("Good summary");
+
+  state.permissions.delete("user-feedback");
+  try {
+    const denied = await request("POST", "panel-operations/read", csvCall);
+    expect(denied.status).toBe(403);
+    expect(denied.headers.get("content-disposition")).toBeNull();
+    expect(await denied.json()).toMatchObject({ error: { code: "PERMISSION_DENIED" } });
+  } finally {
+    state.permissions.add("user-feedback");
+  }
   // 2. KnowledgeGovernanceRecord reads forwarded to Java with viewer credentials.
   const govRef = { className: KNOWLEDGE_GOVERNANCE_RECORD, primaryKey: governanceId };
   expect(await read("governanceDetail", "record", { record: govRef })).toEqual({
@@ -743,6 +770,31 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
       },
     },
   });
+
+  const zipCall = {
+    applicationId: source.applicationId, useId: source.useId, operationId: "skillDetail.export",
+    call: { target: { kind: "object", objectType: SKILL, primaryKey: domainSkillRef.primaryKey }, input: {} },
+  };
+  const zip = await request("POST", "panel-operations/read", zipCall);
+  expect(zip.status).toBe(200);
+  expect(zip.headers.get("content-type")).toBe("application/zip");
+  expect(zip.headers.get("content-disposition")).toContain('attachment; filename="custom-domain-skill.zip"');
+  expect(zip.headers.get("cache-control")).toBe("no-store");
+  const archive = new AdmZip(Buffer.from(await zip.arrayBuffer()));
+  expect(archive.readAsText("SKILL.md")).toContain("name: custom-domain-skill");
+  expect(archive.readAsText("scripts/main.mjs")).toBe("export const ok = true;\n");
+  const missingZip = await request("POST", "panel-operations/read", {
+    ...zipCall, call: { ...zipCall.call, target: { ...zipCall.call.target, primaryKey: "missing-skill" } },
+  });
+  expect(missingZip.status).toBe(404);
+  expect(missingZip.headers.get("content-disposition")).toBeNull();
+  expect(await missingZip.json()).toMatchObject({ error: { code: "SKILL_NOT_FOUND" } });
+  const writeAttempt = await request("POST", "panel-operations/intents", zipCall);
+  expect(writeAttempt.status).toBe(422);
+  expect(await writeAttempt.json()).toMatchObject({ error: { code: "OPERATION_WRITE_REQUIRED" } });
+
+  const intents = await state.pool!.query(`SELECT id FROM "${state.schema}".panel_operation_intents`);
+  expect(intents.rows).toEqual([]);
 
   // Refusals: missing permission, public package, provider package.
   state.permissions.delete("skill-management");
