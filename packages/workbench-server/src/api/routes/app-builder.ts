@@ -16,6 +16,12 @@ appBuilderRouter.get("/app-builder/bootstrap", wrap(async (req, res) => {
   await assertAppBuilderAccess(c.credentials);
   res.json(await appBuilderBootstrap(c.owner));
 }));
+appBuilderRouter.get("/app-builder/type-table", wrap(async (req, res) => {
+  const { owner, credentials } = context(req);
+  await assertAppBuilderAccess(credentials);
+  const { readPanelTypeTable } = await import("../../services/product-panels/type-table");
+  res.json(await readPanelTypeTable(owner, credentials));
+}));
 appBuilderRouter.get("/apps-sdk/current", wrap(async (_req, res) => {
   res.json(await currentAppSdk());
 }));

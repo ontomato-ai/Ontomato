@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ACTION } from "@ontomato/contracts/panel-client-requests";
-import { panelOwnerOperationDescriptorSchema } from "@ontomato/contracts/panel-operations";
+import { panelOperationDeclarationSchema, panelOwnerOperationDescriptorSchema } from "@ontomato/contracts/panel-operations";
 import { panelRecordListSchema } from "@ontomato/contracts/panel-projection";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { HttpError } from "../../../utils/errors";
+import { objectActionDeclaration } from "../object-actions";
 import { createActionReadAdapter } from "../panel-reads";
 
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://owner.test/" } } }));
@@ -106,6 +107,28 @@ describe("action catalog reads", () => {
     ownerAnswering({ "/action/queryList": () => Response.json({ success: false, message: "Data engine failed" }) });
     const failed = await createActionReadAdapter(owner, viewer).list().catch((error: unknown) => error);
     expect([(failed as HttpError).status, (failed as HttpError).code]).toEqual([500, "ACTION_READ_FAILED"]);
+  });
+
+  it("declares the published object Actions for an author's type table, by the object type each stored target names", async () => {
+    const objectAction = (id: string, className: string) => ({
+      ...approve, id, codeHash: `hash-${id}`, target: { className, keyParameter: "key" },
+      function: { name: id, parameters: [{ name: "key", type: "TYPE_STRING" }, { name: "note", type: "TYPE_STRING" }] },
+    });
+    const approveOrder = objectAction("approve-order", "Order");
+    const closeInvoice = objectAction("close-invoice", "Invoice");
+    const sent = ownerAnswering({
+      "/action/queryList": ok([approveOrder, { ...objectAction("import-orders", "Order"), target: null }, closeInvoice]),
+    });
+    const adapter = createActionReadAdapter(owner, viewer);
+
+    const all = await adapter.objectActions();
+    expect(all).toEqual([
+      { className: "Order", declaration: objectActionDeclaration(approveOrder) },
+      { className: "Invoice", declaration: objectActionDeclaration(closeInvoice) },
+    ]);
+    for (const { declaration } of all) expect(panelOperationDeclarationSchema.parse(declaration)).toEqual(declaration);
+    expect((await adapter.objectActions("Invoice")).map(entry => entry.declaration.id)).toEqual(["close-invoice"]);
+    expect(sent.map(request => request.body)).toEqual([{ status: "PUBLISHED" }, { status: "PUBLISHED" }]);
   });
 
   it("describes the status change and the delete from the catalog operations", () => {
