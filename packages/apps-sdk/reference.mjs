@@ -249,6 +249,15 @@ export function checkCatalogue(entries, declared, root, tsconfig) {
   }
 }
 
+/** A port's type as the reference names it: `@binding` is the type the projection binds. */
+function portTypeText(type) {
+  if (type.kind === "object") return type.objectType === "@binding" ? "one object of the projection's type" : `one ${type.objectType}`;
+  if (type.kind === "list") return `a list of ${portTypeText(type.items).replace(/^one /, "")}`;
+  if (type.kind === "object-union") return `one object of ${type.objectTypes ? type.objectTypes.join(" or ") : `the ${type.layers.join(", ")} layers`}`;
+  if (type.kind === "scalar") return type.type;
+  return type.kind;
+}
+
 /** The catalogue's document section: each component's meaning, what it binds and what it takes and hands over. */
 export function catalogueMarkdown(version, entries) {
   const lines = ["# Components of this SDK version", "", `The components \`${version}\` exports that a projection can bind. Each one names the module a page imports it from, what it means, the ontology elements it may bind, and its inputs. A projection in the panel product chooses one component, one binding and its display, and names the owners' operations it offers; a panel composes projections in slots.`, ""];
@@ -258,7 +267,8 @@ export function catalogueMarkdown(version, entries) {
     if (metadata.bindsElement?.length) lines.push(`Binds: ${metadata.bindsElement.map((element) => `\`${element}\``).join(", ")}`, "");
     if (metadata.inputs && Object.keys(metadata.inputs).length)
       lines.push("Inputs:", "", ...Object.entries(metadata.inputs).map(([name, type]) => `- \`${name}\`: ${type.kind === "object" ? type.objectType : type.type}`), "");
-    if (metadata.outputs?.length) lines.push(`Hands over: ${metadata.outputs.map((name) => `\`${name}\``).join(", ")}`, "");
+    if (metadata.outputs && Object.keys(metadata.outputs).length)
+      lines.push("Hands over (bindable to the panel's state):", "", ...Object.entries(metadata.outputs).map(([name, type]) => `- \`${name}\`: ${portTypeText(type)}`), "");
   }
   return lines.join("\n");
 }

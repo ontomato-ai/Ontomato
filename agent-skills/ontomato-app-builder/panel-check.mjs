@@ -15,26 +15,29 @@ async function readJson(file) {
   return parseJson(file, await readFile(file, "utf8"));
 }
 
-function expandInlineProjections(manifest, panel) {
+async function expandInlineProjections(manifest, panel, checks, loadAuthoring) {
+  const first = Object.entries(manifest?.members ?? {}).find(([, member]) => member?.component !== undefined);
+  if (!first) return { manifest, inline: [] };
+  if (!panel) throw new Error(`Member ${first[0]}: a new projection needs a panel in the registration material`);
+  if (!loadAuthoring) throw new Error(`Member ${first[0]}: checking a new projection needs the online author type table`);
+
+  const { state, members, ...definition } = checks.panelAuthoringManifestSchema.parse(manifest);
+  const { catalogue, typeTable } = await loadAuthoring();
+  const { components } = checks.appsSdkComponentCatalogSchema.parse(catalogue);
   const inline = [];
-  const members = Object.entries(manifest?.members ?? {}).map(([member, placement]) => {
-    if (placement?.target?.projection === undefined) return [member, placement];
-    if (!panel) throw new Error(`Member ${member}: inline projection needs a panel in the registration material`);
-    const { target: { projection, ...otherTargets }, ...bindings } = placement;
-    if (Object.keys(otherTargets).length || projection === null || typeof projection !== "object" || Array.isArray(projection)) {
-      throw new Error(`Member ${member}: expected target.projection to be the only target`);
-    }
-    const { id = randomUUID(), componentId, data, inputs = {}, outputs = {}, config = {}, operations, name, description, ...unknown } = projection;
-    if (Object.keys(unknown).length) throw new Error(`Member ${member}: unknown projection fields ${Object.keys(unknown).join(", ")}`);
-    if (componentId === "@ontomato/sdk:MetricChart") throw new Error(`Member ${member}: register the chart through its source card and reference its ID`);
-    const input = { componentId, data, inputs, outputs, config, name, description, ...(operations !== undefined && { operations }) };
-    inline.push({ member, id, needsId: projection.id === undefined, input });
-    return [member, { ...bindings, target: { projectionId: id } }];
+  const placements = Object.entries(members).map(([member, declaration]) => {
+    if (!("component" in declaration)) return [member, declaration];
+    const { id = randomUUID(), name, description } = declaration;
+    const { projection, placement } = checks.expandPanelAuthoringMember(member, declaration, {
+      state, components, typeTable,
+    });
+    inline.push({ member, id, needsId: declaration.id === undefined, input: { ...projection, name, description } });
+    return [member, { ...placement, target: { projectionId: id } }];
   });
-  return { manifest: inline.length ? { ...manifest, members: Object.fromEntries(members) } : manifest, inline };
+  return { manifest: { ...definition, state, members: Object.fromEntries(placements) }, inline };
 }
 
-async function workspaceDefinition(directory, files, checks, panel) {
+async function workspaceDefinition(directory, files, checks, panel, loadAuthoring) {
   const descriptorFile = resolve(directory, "panel.json");
   const source = await readFile(descriptorFile, "utf8");
   const document = parseJson(descriptorFile, source);
@@ -42,7 +45,7 @@ async function workspaceDefinition(directory, files, checks, panel) {
     throw new Error(`${descriptorFile}: expected an object with a manifest`);
   }
   const { content = {}, manifest, ...descriptor } = document;
-  const expanded = expandInlineProjections(manifest, panel);
+  const expanded = await expandInlineProjections(manifest, panel, checks, loadAuthoring);
   if (content === null || typeof content !== "object" || Array.isArray(content) ||
       Object.keys(content).some(key => key !== "messages")) {
     throw new Error(`${descriptorFile}: content only accepts messages`);
@@ -114,7 +117,7 @@ function checkProjectionData(id, projection, component, checks) {
   }
 }
 
-async function readPanelWorkspace(directory, checks, materialPath) {
+async function readPanelWorkspace(directory, checks, materialPath, loadAuthoring) {
   const files = await readdir(directory);
   const path = materialPath ?? (files.includes("registration.json") ? resolve(directory, "registration.json") : undefined);
   const material = path === undefined ? {} : await readJson(path);
@@ -122,7 +125,7 @@ async function readPanelWorkspace(directory, checks, materialPath) {
   if (panel && (typeof panel.id !== "string" || panel.id.length === 0)) {
     throw new Error(`${path}: panel ID is required`);
   }
-  return { material, panel, ...await workspaceDefinition(directory, files, checks, panel) };
+  return { material, panel, ...await workspaceDefinition(directory, files, checks, panel, loadAuthoring) };
 }
 
 async function workspaceRegistration({ panel, inline, material, definition }, currentRecord) {
@@ -148,8 +151,8 @@ async function workspaceRegistration({ panel, inline, material, definition }, cu
   return { ...material, projections, panels: [{ ...panel, input: { ...input, ...definition } }] };
 }
 
-export async function registerPanelWorkspace(directory, materialPath, checks, client, onRegistered) {
-  const workspace = await readPanelWorkspace(directory, checks, materialPath);
+export async function registerPanelWorkspace(directory, materialPath, checks, client, onRegistered, loadAuthoring) {
+  const workspace = await readPanelWorkspace(directory, checks, materialPath, loadAuthoring);
   const material = await workspaceRegistration(workspace, client.currentRecord);
   const { document, descriptorFile, source, inline } = workspace;
   const unassigned = new Map(inline.filter(({ needsId }) => needsId).map(({ id, member }) => [id, member]));
@@ -158,7 +161,7 @@ export async function registerPanelWorkspace(directory, materialPath, checks, cl
   return client.register(material, async (kind, id) => {
     const member = kind === "projection" && unassigned.get(id);
     if (member) {
-      document.manifest.members[member].target.projection.id = id;
+      document.manifest.members[member].id = id;
       await writeFile(descriptorFile, JSON.stringify(document, null, indent) + newline);
     }
     return onRegistered(kind, id);
@@ -169,7 +172,8 @@ export async function checkPanelWorkspace(directory, { checks, catalogue, versio
   if (catalogue.version !== version) {
     throw new Error(`Expected SDK catalogue ${version}, found ${catalogue.version}`);
   }
-  const workspace = await readPanelWorkspace(directory, checks, materialPath);
+  const loadAuthoring = typeTable && (() => ({ catalogue, typeTable }));
+  const workspace = await readPanelWorkspace(directory, checks, materialPath, loadAuthoring);
   const { manifest } = workspace.definition;
   const material = workspace.inline.length ? await workspaceRegistration(workspace) : workspace.material;
   const records = new Map(

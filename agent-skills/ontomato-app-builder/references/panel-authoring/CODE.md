@@ -26,14 +26,42 @@ await mountPanel({
 });
 ```
 
-Bind the list's `selected` input and the detail's object input to the same public state. The list updates that
-state when the reader selects a record. The example uses the list's Vue selection event to return to view mode. Use `@click="clearSelection"` on a control that should clear both the detail and the list's selection.
+Bind the list's `state.selected` and the detail's `target` to the same public state. The list updates that state
+when the reader selects a record. The example uses the list's Vue selection event to return to view mode.
+Use `@click="clearSelection"` on a control that should clear both the detail and the list's selection.
 
 ## Read declared data
 
+Run `node "$SKILL/ontomato.mjs" panel type platform:AgentDefinition` to inspect an owner's reads and operations.
+Each named read lists its parameter names, `requiredParams` and the ID of its result schema. Find the matching
+schema under `resultSchemas`. Each operation lists its effect, target, batch support and input schema.
+
+For example, these two members share the public `selected` state:
+
+```json
+{
+  "list": {
+    "component": "ObjectList",
+    "type": "platform:AgentDefinition",
+    "data": {"rows": "list"},
+    "state": {"selected": "selected"}
+  },
+  "detail": {
+    "component": "PanelData",
+    "target": "selected",
+    "data": {"record": "record"}
+  }
+}
+```
+
+Use `type` for a type-wide read and `target` to read the object in a state field. The tool derives port types from
+the component catalogue, the owner type and read signatures. It uses explicit `data.<name>.params` bindings first,
+then state connections with the same parameter name, then allowed runtime parameters. Use
+`{"read":"counts","params":{"by":{"literal":"status"}}}` for a named literal and `{"state":"search"}`
+to bind a parameter explicitly to state.
+
 Use an official component when it fits the view. Place its projection with `<projection slot="list"></projection>`.
-For a custom Vue view, declare a projection with `componentId: "@ontomato/sdk:PanelData"` and `config: {}`. It supplies
-data for your Vue template to render. Name each datum in `data` and call `usePanelData` synchronously inside the
+For a custom Vue view, set the member's `component` to `"PanelData"`. It supplies data for your Vue template to render. Name each datum in `data` and call `usePanelData` synchronously inside the
 component’s `setup()`, before any `await`. The example’s `detail` member declares `data.record`.
 
 ```js
@@ -53,23 +81,33 @@ After a successful write, the platform re-reads affected objects and types repor
 
 ## Invoke declared owner operations
 
-Put owner operation bindings in the projection's `operations` map. An `OperationButton` selects the local name
-with `config.operation`. Its text comes from the owner's `label`. For a custom control, use the same operation
-from `instance.operations.value`. Look it up by its placed ID, `<member key>.<local name>`.
+Set a member's `operation` to the full owner operation ID. For a single-object button, point `target` at the
+selected object. To approve checked objects, point it at the checked list and use an owner operation that
+supports batches.
 
-```js
-import { computed } from "vue";
-import { usePanelContext } from "@ontomato/sdk/panel";
-
-const { instance } = usePanelContext();
-const approve = computed(() => instance.operations.value.find(op => op.id === "approve.approve"));
-const approveSelected = () => instance.invoke("approve.approve");
+```json
+{
+  "component": "OperationButton",
+  "operation": "knowledge.approve",
+  "target": "selected"
+}
 ```
 
-Use the descriptor's `label` and `inputSchema` to display the control and supply its business inputs. Disable it
-while the operation is absent. The platform updates the available operations as the selected object changes.
-The host presents confirmation when required. Display the returned owner result or the reason the invocation throws.
-A member with a checked-object list can invoke a batch when the owner declares support.
+The official button displays the owner's label. For a custom Vue control, call
+`usePanelOperation(member, localName)` inside the component's synchronous `setup()`, before any `await`.
+The local name is the final segment of the owner's operation ID.
+
+```js
+import { usePanelOperation } from "@ontomato/sdk/panel";
+
+// Inside setup(), for the member named "review".
+const { operation: approve, run: approveSelected } = usePanelOperation("review", "approve");
+```
+
+The reactive descriptor is `null` until the operation is available for the current target. Use its `label`
+and `inputSchema` for the control. In the Vue template, disable the button with `:disabled="!approve"`.
+Call `approveSelected(input)` to run the same operation as the page header and assistant. The host presents
+confirmation when required. Show the returned owner result or the reason the call rejects.
 
 ## Save a form or hand off a draft
 
@@ -79,7 +117,9 @@ Fields omitted from `submittedFields` remain unchanged.
 For a custom save control, pass the same current form values:
 
 ```js
-await instance.invoke("form.save", {
+// Declare this in setup(), then call run from the save handler.
+const save = usePanelOperation("form", "save");
+await save.run({
   values: { name: "Review assistant" },
   revision: 4,
   submittedFields: ["/name"],
@@ -126,9 +166,10 @@ Pass the raw artifact path once to `URLSearchParams`. Opening the link fills the
 
 ## Register and open
 
-Write new projection definitions once, in each member's `target.projection`. Run `panel check <directory>` and
-`panel register <directory>` with the same `registration.json` metadata. Registration writes the projection ID back
-to `panel.json`. Keep it when rearranging or renaming the member. Use `target.projectionId` for an existing projection.
+Write each new projection directly in `manifest.members`. Run `panel check <directory>` and
+`panel register <directory>` with the same `registration.json` metadata. Registration writes the projection UUID
+as the member's `id` in `panel.json`. Keep it when rearranging or renaming the member. Use `target.projectionId`
+to reuse an existing projection.
 
 Start new application IDs with `app-`. Give every application use a `pageKey` unique within its domain. Set the use's localized `names` for the display
 title beside conversations. Use `panel.name` as its fallback. For an application delivery list, declare only extra

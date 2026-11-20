@@ -70,6 +70,7 @@ const CHECK_EXPORTS = [
   "panelManifestSchema", "panelDefinitionContentSchema", "productProjectionInputSchema",
   "registerProductPanelRequestSchema", "registerProductProjectionRequestSchema", "directReadDeclaration", "platformObjectTypes",
   "panelReadParameterSchemas", "panelReadResultSchemas", "appsSdkComponentCatalogSchema",
+  "panelAuthoringManifestSchema", "panelAuthoringMemberSchema", "expandPanelAuthoringMember",
 ];
 
 /**

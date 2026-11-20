@@ -317,6 +317,9 @@ async function readPlatformTypeTable(api, checks) {
     const record = objectType === undefined ? id : `${id} (${objectType})`;
     console.error(`Action ${record} is unavailable. ${reason}`);
   }
+  if (table.customerTypesUnavailable) {
+    console.error(`Customer type catalogue is unavailable. ${table.customerTypesUnavailable.reason}`);
+  }
   return table;
 }
 
@@ -338,6 +341,18 @@ async function checkCurrentPanel(api, directory, materialPath) {
 }
 
 async function panelCommand(api, workspaceId, [command, ...args]) {
+  if (command === "type" && args.length === 1) {
+    const [id] = args;
+    const sdk = currentSdkClient({ workbenchUrl: api.envUrl, headers: headers(api) });
+    const checks = await sdk.check(await sdk.current());
+    const { objectTypes, resultSchemas } = await readPlatformTypeTable(api, checks);
+    if (!Object.hasOwn(objectTypes, id)) die(`Type ${id} is not listed in the author's type table`);
+    const entry = objectTypes[id];
+    const results = new Set(Object.values(entry.reads ?? {}).map(read => read.result));
+    return print({ id, ...entry, resultSchemas: Object.fromEntries(
+      [...results].map(result => [result, resultSchemas[result]]),
+    ) });
+  }
   if (command === "scaffold") {
     const id = takeOption(args, "--id") ?? undefined;
     const operations = [];
@@ -378,8 +393,12 @@ async function panelCommand(api, workspaceId, [command, ...args]) {
       return client.register(JSON.parse(readInput(source)), report);
     }
     const sdk = currentSdkClient(connection);
-    const checks = await sdk.check(await sdk.current());
-    return registerPanelWorkspace(source, materialPath, checks, client, report);
+    const release = await sdk.current();
+    const checks = await sdk.check(release);
+    return registerPanelWorkspace(source, materialPath, checks, client, report, async () => {
+      const [catalogue, typeTable] = await Promise.all([sdk.components(release), readPlatformTypeTable(api, checks)]);
+      return { catalogue, typeTable };
+    });
   }
   if (command === "uses" && args.length === 1) {
     return printData(await requestJson(api, "GET", `/platform/applications/${encodeURIComponent(args[0])}/panel-uses`));
@@ -388,7 +407,7 @@ async function panelCommand(api, workspaceId, [command, ...args]) {
     const collection = command === "projection" ? "projections" : "panels";
     return print(await workbench(api, "GET", `/product-${collection}/${encodeURIComponent(args[0])}`));
   }
-  die("panel requires applications, projection <id>, get <id>, uses <applicationId>, preview <working|commit> [--workspace <id>], scaffold <type> <directory>, check <directory>, or register <directory|json|@file>");
+  die("panel requires applications, type <id>, projection <id>, get <id>, uses <applicationId>, preview <working|commit> [--workspace <id>], scaffold <type> <directory>, check <directory>, or register <directory|json|@file>");
 }
 
 async function functionCommand(api, [command, ...args]) {
@@ -483,6 +502,7 @@ function usage() {
   sdk current
   sdk read <relative path, e.g. docs/components.md>
   panel applications
+  panel type <id>
   panel projection <id>
   panel get <id>
   panel uses <applicationId>

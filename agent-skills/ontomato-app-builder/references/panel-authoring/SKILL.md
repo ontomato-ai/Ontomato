@@ -8,11 +8,12 @@ description: Build and register an Ontomato panel from its owner's reads and ope
 Use the original page to list what people can see and do. For each read, form and action, find the owner type and its
 declared read or operation. Keep business rules, confirmation and permissions with that owner.
 
-1. Read the current component catalogue with `node "$SKILL/ontomato.mjs" sdk read components.json`. Use the
-   owner and component declarations for the names of data, inputs and outputs.
-2. Write new projection definitions in `panel.json` and reference existing projections by ID. Use an official
-   display component when it fits. For a custom Vue view, use a `PanelData` projection with `usePanelData`.
-   Declare the public state that the assistant, address or other panels need.
+1. Run `node "$SKILL/ontomato.mjs" panel type <type-id>` for read names, parameters, required parameters, result
+   schemas and operation declarations. Use `node "$SKILL/ontomato.mjs" sdk read components.json` for official components.
+2. Write each new projection as a member in `panel.json`. Specify the component, named reads, configuration,
+   applicable operation and state connections. The tool derives ports from the owner and component declarations.
+   Use `target.projectionId` to reuse an existing projection. Choose an official display component or use
+   `PanelData` with `usePanelData` for a custom Vue view. Declare public state once.
 3. Write the template and interactions in Vue. The platform runs the panel directly from `panel.html` and
    the required `panel.mjs`. The declared member keys connect the layout to the projections.
    Add common page tasks in `recipes.md` when the assistant needs them.

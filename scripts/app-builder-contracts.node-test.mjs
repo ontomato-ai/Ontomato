@@ -121,10 +121,18 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     componentsPath: "/public" + sdkPath + "/components.json",
   };
   const typeTable = {
+    resultSchemas: {
+      panelRecordList: { type: "array" },
+      panelRecord: { type: "object" },
+      panelRecordQuery: { type: "object", required: ["rows"], properties: { rows: { type: "array" } } },
+      panelGroupCounts: { type: "array", items: { type: "object", required: ["key", "label", "count"] } },
+      panelFormDescription: { type: "object", required: ["fields"] },
+    },
     unavailableActions: [
       { id: "legacy-action", reason: "Stored function is missing" },
       { id: "bad-action", objectType: "ReviewQueue", reason: "target: invalid field" },
     ],
+    customerTypesUnavailable: { reason: "Object type catalogue permission required" },
     objectTypes: {
       "platform:AgentDefinition": {
         reads: {
@@ -138,7 +146,10 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       "platform:ReviewQueue": {
         reads: {
           query: { source: "type", parameterMode: "fixed", params: { search: "keyword", status: "reviewStatus" }, result: "panelRecordQuery" },
-          counts: { source: "type", parameterMode: "fixed", params: { by: "countField", search: "keyword" }, result: "panelGroupCounts" },
+          counts: {
+            source: "type", parameterMode: "fixed", params: { by: "countField", search: "keyword" },
+            requiredParams: ["by"], result: "panelGroupCounts",
+          },
           record: { source: "object", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecord" },
         },
         operations: [{ id: "reviews.approve", kind: "action", effect: "write", target: { source: "input", input: "review" }, inputSchema: {}, batch: true }],
@@ -152,7 +163,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     { componentId: "ObjectForm", data: { form: datum("panelFormDescription"), createForm: datum("panelFormDescription") } },
     { componentId: "SegmentedControl", data: { counts: datum("panelGroupCounts") } },
     { componentId: "OperationButton", data: {} },
-    { componentId: "Data", data: { "*": datum("panelRecordList") } },
+    { componentId: "PanelData", data: { "*": datum("panelRecordList") } },
   ] };
   const checkModule = `
     const ok = data => ({ success: true, data });
@@ -173,6 +184,34 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       }]),
     };
     export const platformTypeTableResponseSchema = { parse };
+    export const panelAuthoringManifestSchema = { parse };
+    export const appsSdkComponentCatalogSchema = { parse };
+    export function expandPanelAuthoringMember(key, member, { state, components, typeTable }) {
+      if (!components.some(component => component.componentId === member.component)) throw new Error("member " + key + ": component unavailable");
+      const target = state[member.target]?.type;
+      const type = member.type ?? target?.objectType ?? target?.items?.objectType;
+      const owner = typeTable.objectTypes[type];
+      if (!owner) throw new Error("member " + key + ": invalid target " + member.target);
+      const data = Object.fromEntries(Object.entries(member.data ?? {}).map(([name, datum]) => {
+        const read = typeof datum === "string" ? datum : datum.read;
+        const source = owner.reads[read].source === "type"
+          ? { type: { kind: "PlatformObjectType", id: type } } : { object: { input: "item" } };
+        return [name, { source, read, params: datum.params ?? {} }];
+      }));
+      const projection = { componentId: "@ontomato/sdk:" + member.component, data, inputs: {}, outputs: {}, config: {} };
+      const placement = {};
+      if (member.operation) {
+        const operation = owner.operations.find(operation => operation.id === member.operation);
+        if (!operation) throw new Error("member " + key + ": operation " + member.operation + " is not declared");
+        const name = operation.id.split(".").at(-1);
+        const input = operation.target.input;
+        projection.inputs = { [input]: target };
+        projection.config = { operation: name };
+        projection.operations = { [name]: { operation: { kind: "PlatformOperation", id: operation.id }, target: { input } } };
+        placement.inputs = { [input]: { state: member.target } };
+      }
+      return { projection, placement };
+    }
     export const appsSdkComponentDatum = (data, name) => data[name] ?? data["*"];
     export const directReadDeclaration = (_projection, read) => ({ result: {
       list: "panelRecordList", query: "panelRecordQuery", record: "panelRecord", counts: "panelGroupCounts",
@@ -296,12 +335,25 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     const checked = await run("panel", "check", directory);
     assert.equal(checked.stderr,
       "Action legacy-action is unavailable. Stored function is missing\n" +
-      "Action bad-action (ReviewQueue) is unavailable. target: invalid field\n");
+      "Action bad-action (ReviewQueue) is unavailable. target: invalid field\n" +
+      "Customer type catalogue is unavailable. Object type catalogue permission required\n");
     assert.deepEqual(JSON.parse(checked.stdout), { status: "valid", version: sdkVersion, digest: release.digest, unchecked: [] });
     assert.deepEqual(new Map(requests.splice(0).map(([method, url]) => [url, method])), new Map([
       ["/api/apps-sdk/current", "GET"], [`${sdkPath}/node/panel-check.mjs`, "GET"],
       [`${sdkPath}/components.json`, "GET"], ["/api/app-builder/type-table", "GET"], [projectionPath, "GET"],
     ]));
+    const type = await run("panel", "type", "platform:ReviewQueue");
+    assert.deepEqual(JSON.parse(type.stdout), {
+      id: "platform:ReviewQueue", ...typeTable.objectTypes["platform:ReviewQueue"],
+      resultSchemas: {
+        panelRecordQuery: typeTable.resultSchemas.panelRecordQuery,
+        panelGroupCounts: typeTable.resultSchemas.panelGroupCounts,
+        panelRecord: typeTable.resultSchemas.panelRecord,
+      },
+    });
+    assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), [
+      ["GET", "/api/apps-sdk/current"], ["GET", `${sdkPath}/node/panel-check.mjs`], ["GET", "/api/app-builder/type-table"],
+    ]);
     await rm(moduleFile);
     await assert.rejects(run("panel", "check", directory), error => error.stderr.includes("panel.mjs: required Vue module is missing"));
     await writeFile(moduleFile, panel.content.module);
@@ -320,47 +372,36 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     const review = join(directory, "review");
     await run("panel", "scaffold", "platform:ReviewQueue", review, "--operation", "reviews.approve", "--batch", "reviews.approve");
     const { manifest: reviewManifest } = JSON.parse(await readFile(join(review, "panel.json"), "utf8"));
-    const { projections: reviewProjections } = JSON.parse(await readFile(join(review, "registration.json"), "utf8"));
-    const queries = Object.fromEntries(reviewProjections.flatMap(({ input }) => Object.entries(input.data)));
-    assert.deepEqual(queries.rows.params, {});
-    assert.deepEqual(queries.record.params, {});
-    assert.deepEqual(queries.counts.params, { by: { literal: "status" } });
-    assert.deepEqual(reviewManifest.members.list.inputs, {
-      selected: { state: "selected" }, checked: { state: "checked" }, search: { state: "search" }, status: { state: "status" },
+    const reviewMaterial = join(review, "registration.json");
+    const generatedRegistration = JSON.parse(await readFile(reviewMaterial, "utf8"));
+    assert.equal(generatedRegistration.projections, undefined);
+    assert.equal(generatedRegistration.panels[0].input.content, undefined);
+    assert.deepEqual(reviewManifest.members.list, {
+      component: "ObjectList", type: "platform:ReviewQueue", data: { rows: "query" },
+      state: { selected: "selected", checked: "checked", search: "search", status: "status" },
     });
-    assert.deepEqual(reviewManifest.members.tabs.inputs.value, { state: "status" });
-    assert.deepEqual(reviewManifest.members.detail.inputs.search, { state: "search" });
-    assert.deepEqual(reviewManifest.members.action1.inputs, { review: { state: "selected" } });
-    assert.deepEqual(reviewManifest.members.batch2.inputs, { review: { state: "checked" } });
-    const reviewButton = reviewProjections.find(({ id }) => id.endsWith("-batch2")).input;
-    assert.deepEqual(reviewButton.config, { operation: "approve" });
-    assert.deepEqual(reviewButton.operations, { approve: {
-      operation: { kind: "PlatformOperation", id: "reviews.approve" }, target: { input: "review" },
-    } });
-    assert.deepEqual(reviewButton.data, {});
+    assert.deepEqual(reviewManifest.members.tabs.data.counts, { read: "counts", params: { by: { literal: "status" } } });
+    assert.equal(reviewManifest.members.tabs.state.value, "status");
+    assert.equal(reviewManifest.members.detail.state.search, "search");
+    assert.deepEqual(reviewManifest.members.action1, { component: "OperationButton", operation: "reviews.approve", target: "selected" });
+    assert.deepEqual(reviewManifest.members.batch2, { component: "OperationButton", operation: "reviews.approve", target: "checked" });
     const reviewLayout = await readFile(join(review, "panel.html"), "utf8");
     assert(reviewLayout.indexOf('slot="batch2"') < reviewLayout.indexOf('slot="list"'));
-    const reviewSources = JSON.parse(await readFile(join(review, "registration.json"), "utf8")).panels[0].input.content;
-    assert.deepEqual(reviewSources, { html: reviewLayout, module: await readFile(join(review, "panel.mjs"), "utf8") });
-    const reviewMaterial = join(review, "registration.json");
     await run("panel", "check", review, "--material", reviewMaterial);
     const reviewPanel = join(review, "panel.json");
-    const incorrectPanel = JSON.parse(await readFile(reviewPanel, "utf8"));
-    incorrectPanel.manifest.members.batch2.inputs = { entry: { state: "checked" } };
-    await writeFile(reviewPanel, JSON.stringify(incorrectPanel));
+    const rejected = structuredClone(reviewManifest);
+    rejected.members.batch2.target = "search";
+    await writeFile(reviewPanel, JSON.stringify({ manifest: rejected }));
     await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
-      error.stderr.includes("member batch2 (projection app-review-queue-manager-batch2): bind operation approve (reviews.approve)'s target input review"));
-    await writeFile(reviewPanel, JSON.stringify({ manifest: reviewManifest }));
-    const incorrect = JSON.parse(await readFile(reviewMaterial, "utf8"));
-    const batch = incorrect.projections.find(({ id }) => id.endsWith("-batch2"));
-    delete batch.input.inputs.review;
-    await writeFile(reviewMaterial, JSON.stringify(incorrect));
+      error.stderr.includes("member batch2: invalid target search"));
+    await assert.rejects(run("panel", "register", review), error =>
+      error.stderr.includes("member batch2: invalid target search"));
+    assert.equal(requests.some(([method]) => method !== "GET"), false);
+    rejected.members.batch2.target = "checked";
+    rejected.members.batch2.operation = "reviews.undeclared";
+    await writeFile(reviewPanel, JSON.stringify({ manifest: rejected }));
     await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
-      error.stderr.includes(`projection ${batch.id}: operation approve (reviews.approve) has an invalid target input review`));
-    batch.input.operations.approve.operation.id = "reviews.undeclared";
-    await writeFile(reviewMaterial, JSON.stringify(incorrect));
-    await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
-      error.stderr.includes(`projection ${batch.id}: operation approve (reviews.undeclared) is not declared in the type table`));
+      error.stderr.includes("member batch2: operation reviews.undeclared is not declared"));
     requests.length = 0;
     await writeFile(layout, tasksTemplate);
     const reference = async id => {
@@ -388,10 +429,8 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await assert.rejects(run("panel", "check", directory), error =>
       error.stderr.includes("projection draft-list: data: required field is missing") && !error.stderr.includes("Expected chart"));
 
-    const authorProjection = { componentId: "@ontomato/sdk:Data", data: { agents: {
-      source: { type: { kind: "PlatformObjectType", id: "platform:AgentDefinition" } }, read: "list", params: {},
-    } } };
-    manifest.members.tasks.target = { projection: authorProjection };
+    const authorProjection = { component: "PanelData", type: "platform:AgentDefinition", data: { agents: "list" } };
+    manifest.members.tasks = authorProjection;
     const descriptor = join(directory, "panel.json");
     await writeFile(descriptor, JSON.stringify({ manifest }));
     const item = { id: "inline-panel", mode: "create", input: { name: "Inline", description: "", visibility: "private" } };
@@ -401,24 +440,27 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.equal(requests.splice(0).some(([method, url]) => method !== "GET" || url.includes("/product-")), false);
     assert.equal(await readFile(descriptor, "utf8"), JSON.stringify({ manifest }));
 
-    const originalRead = authorProjection.data.agents;
-    authorProjection.data.agents = {
-      source: { type: { kind: "PlatformObjectType", id: "platform:ReviewQueue" } }, read: "query", params: {},
-    };
+    authorProjection.type = "platform:ReviewQueue";
+    authorProjection.data.agents = "query";
     await writeFile(descriptor, JSON.stringify({ manifest }));
     await assert.rejects(run("panel", "check", directory), error =>
       error.stderr.includes("data.agents returns 'panelRecordQuery'") && error.stderr.includes("accepts panelRecordList"));
-    authorProjection.data.agents = originalRead;
+    authorProjection.type = "platform:AgentDefinition";
+    authorProjection.data.agents = "list";
     await writeFile(descriptor, JSON.stringify({ manifest }));
 
     rejectInlinePanel = true;
     await assert.rejects(run("panel", "register", directory), error => error.stderr.includes("panel inline-panel: PUT"));
     const savedSource = JSON.parse(await readFile(descriptor, "utf8"));
-    const savedTarget = savedSource.manifest.members.tasks.target;
-    assert.match(savedTarget.projection.id, /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u);
-    const inlineProjectionId = savedTarget.projection.id;
+    const savedMember = savedSource.manifest.members.tasks;
+    assert.match(savedMember.id, /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u);
+    const inlineProjectionId = savedMember.id;
     const inlineProjectionPath = `/api/product-projections/${inlineProjectionId}`;
-    assert.deepEqual(savedTarget.projection, { ...authorProjection, id: inlineProjectionId });
+    assert.deepEqual(savedMember, { ...authorProjection, id: inlineProjectionId });
+    const projection = inlineRecords.get(inlineProjectionPath);
+    assert.deepEqual(projection.data, { agents: {
+      source: { type: { kind: "PlatformObjectType", id: "platform:AgentDefinition" } }, read: "list", params: {},
+    } });
     assert.deepEqual(requests.splice(0).filter(([method]) => method === "PUT").map(([, url, body]) => [url, body.revision]), [
       [inlineProjectionPath, 0], [inlinePanelPath, 0],
     ]);

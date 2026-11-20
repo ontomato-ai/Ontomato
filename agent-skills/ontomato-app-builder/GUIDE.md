@@ -18,18 +18,19 @@ A workspace is the application source tree. Business definitions remain in Java;
 
 For a management page, start with the [complete example and wiring recipes](references/management-pages.md) or run `panel scaffold`.
 
-1. Use `sdk read components.json` and `sdk read docs/components.md` to see the current release's official components and their inputs and outputs. Inspect the actual ontology resources, projections and application uses. Reuse existing records and ask the owner for any missing business capability or named read.
+1. Use `panel type <type-id>` for the owner's reads and operations. Use `sdk read components.json` for official components, supported data and configuration. Inspect existing projections and application uses. Reuse existing records and ask the owner for any missing business capability or named read.
 2. Write the Vue panel source. Declare its projections and public typed state in `panel.json` as `{manifest, content?}`. Use `recipes.md` for the assistant's common tasks and optional `content.messages` for translations. Use Vue's own state and events for local interactions.
 3. Run `panel check <workspace directory>` to validate the panel source, declarations and references.
 4. Submit the selected projections, panels and application uses with `panel register`, then open the application's declared entry. Use an application ID and route you control.
 
 When converting a platform page that needs a new owner read, operation or official component, use the [platform development examples](references/platform-development.md).
 
-For instances of customer ontology classes, bind the detail to the owner's `record` read and use a registered Action for changes. For platform resources with owner-declared forms, use the corresponding form and save operation.
+Create short members from the reads listed by `panel type`. For customer ontology views backed by an existing projection, reuse its registered ID. Use the corresponding form and save operation for types that publish those declarations.
 
 | Command | Result |
 | --- | --- |
 | `sdk read components.json` | Official components and ports in the current SDK |
+| `panel type <type-id>` | The type's read parameters, required parameters, result schemas and operation declarations |
 | `panel projection <id>`, `panel get <id>` | Authorized current projection or panel, including its revision |
 | `panel applications`, `panel uses <applicationId>` | Java navigation catalog and visible use relations |
 | `panel scaffold <type> <new directory> [--id <application id>] [--operation <id>] [--batch <id>]` | Draft a Vue management panel from the type table. Select single and batch buttons by owner operation ID. |
@@ -39,18 +40,16 @@ For instances of customer ontology classes, bind the detail to the owner's `reco
 
 ### Write projections inside the panel
 
-In `panel.json`, put a new projection in `manifest.members.<key>.target.projection`. Use the same component,
-named data, input and output declarations, operation bindings and config as a separately registered projection. Keep state bindings
-on the member. For example, a member named `agents` can use this target:
+In `panel.json`, define each new projection directly in `manifest.members`. Give the member a component name,
+the owner type or target state, its named reads, any owner operation, component settings and state connections.
+The tool derives the projection's port types. Declare public state types once in the manifest.
 
 ```json
 {
-  "projection": {
-    "componentId": "@ontomato/sdk:ObjectList",
-    "data": {
-      "rows": {"source": {"type": {"kind": "PlatformObjectType", "id": "platform:AgentDefinition"}}, "read": "list", "params": {}}
-    }
-  }
+  "component": "ObjectList",
+  "type": "platform:AgentDefinition",
+  "data": {"rows": "list"},
+  "state": {"selected": "selected"}
 }
 ```
 
@@ -59,16 +58,15 @@ In `registration.json`, put one item in `panels`, with its `id`, `mode` and `inp
 layout and instructions in the workspace files. Run `panel check <directory>` and `panel register <directory>`
 with the same workspace and registration material.
 
-The first successful projection write saves its ID as `target.projection.id` in `panel.json`. Keep that ID when
-renaming or moving the member. Keep the existing ID in source when editing a projection already registered for this
-panel. On creation, name and description default to the member key and the sharing scope follows the panel.
-Registration uses the existing projection's revision when updating it. Other panels can reference the ID with
-`target.projectionId`, subject to the usual projection permission.
+The first successful projection write saves its UUID as `id` on the member in `panel.json`. Keep it when
+renaming or moving that member. On creation, name and description default to the member key and the sharing
+scope follows the panel. When reusing a previously registered projection, use `target.projectionId`. Every use
+of a shared projection sees its updates.
 
-Registration material has up to three arrays, `projections`, `panels` and `applications`. Each item is `{id,mode,input}` with `mode` set to `create` or `update`.
+In `registration.json`, each panel or application item is `{id,mode,input}` with `mode` set to `create` or `update`.
+For workspace registration, keep the panel definition in `panel.json`, `panel.html`, `panel.mjs` and optional
+`recipes.md`. The tool sends the expanded projection and panel records.
 
-- For projections, `input` describes the official component, its inputs, outputs, named data and configuration. Build the named reads from the actual owner declarations for the target. Use the editable definition metadata `name`, `description` and `visibility`.
-- For panels, `input` contains the workspace manifest and content, together with `name`, `description` and `visibility`. Use `panel.html` as `content.html`, any `recipes.md` as `content.recipes`, and carry any `content.messages` from the descriptor. The deployment supplies the current SDK.
 - Projection and panel updates carry the owner-returned current `revision` on the item alongside `mode`. Creation omits it. Only the chosen records should appear in the material. Updating a shared definition affects every use of that record.
 - Application `input` contains `entry: {path, renderer: "panels"}` and `panelUses`. Create with an ID starting with `app-`, plus `declaration` and `entryAccess`. For a domain-member application, use `entryAccess: ["domain-member"]` and `access: {kind: "domain-member"}` on a use open to the domain. Each use has `id`, `pageKey`, `panelId`, `path` and `access`, with optional localized `names` and `defaultAgent`. Domain app paths start with `/applications/<applicationId>/`. Use the application's real `{permissionCode}` for a restricted use. Omit `defaultAgent` to use the general assistant. To choose a default, use `defaultAgent: {kind: "id", id}` or `{kind: "preset", agentKind}` after that agent has selected the panel’s skill. An update replaces the use set, so preserve the uses required by the app. The platform owns built-in paths and derives skills from use access.
 
@@ -77,9 +75,10 @@ The command submits projections, panels and uses in that order. It prints each c
 ### Fix panel check and registration errors
 
 Run `panel check <directory>` before registering. It reads `registration.json` in that directory by default.
-Use `--material <file>` to select a different file. An online check looks for each referenced projection in
-the material first, then in the current domain. `--sdk-dir` checks local material and reports any references
-that still need an online check in `unchecked`.
+Use `--material <file>` to select a different file. The online check uses the current component catalogue and
+owner type table to expand new projections. It looks for references in the material first, then in the domain.
+With `--sdk-dir`, complete local material can be checked offline. New short members require the online type
+table, and unresolved registered references appear in `unchecked`.
 
 - **404 `PRODUCT_UNAVAILABLE`** names a panel or projection that is missing in the current domain. When a
   projection is also absent from the material, `panel check` reports its ID before registration. Correct the
@@ -87,8 +86,8 @@ that still need an online check in `unchecked`.
   before saving that panel.
 - **403 `PRODUCT_FORBIDDEN`** on an author lookup means an existing record requires a use Grant. Ask the
   record owner to grant access or choose a projection that the current author can use.
-- **A field error** names the record ID and field and explains what to fix. For example, if `data` is missing
-  from a projection, fill in `data` for that projection and run the check again.
+- **A member error** identifies the declaration to fix. Check the component's catalogue entry, the owner's read
+  or operation signature, and the state named in that member.
 
 ## Discover and save business capabilities
 

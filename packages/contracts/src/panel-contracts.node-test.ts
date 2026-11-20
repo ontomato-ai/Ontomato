@@ -96,21 +96,28 @@ test("current SDK describes the browser files and Node check from the same relea
 });
 
 test("the SDK catalogue separates supply, configuration and run inputs", async () => {
-  const { appsSdkComponentCatalogSchema } = await import("./apps-sdk");
+  const { appsSdkComponentCatalogSchema } = await import("./panel-check");
   const component = {
-    componentId: "ObjectSummary", module: "@ontomato/sdk/base", exportName: "ObjectSummary",
-    role: "presentation", meaning: "Show the selected object as its owner describes it.",
-    data: { record: { results: ["panelRecord"], required: true, runtimeParams: ["search"] } },
+    componentId: "ObjectList", module: "@ontomato/sdk/base", exportName: "ObjectList",
+    role: "presentation", meaning: "Show and select the rows supplied by the owner.",
+    data: { rows: { results: ["panelRecordList"], required: true, runtimeParams: ["search"] } },
     config: [{ name: "fields", type: "string[]", description: "Visible fields", required: false }],
-    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
-    outputs: [],
-    ports: { props: [], events: [], slots: [] },
+    inputs: { selected: { kind: "object", objectType: "@binding" } },
+    outputs: {
+      selected: { kind: "object", objectType: "@binding" },
+      checked: { kind: "list", items: { kind: "object", objectType: "@binding" } },
+      search: { kind: "scalar", type: "string" },
+    },
+    ports: { props: [], events: [{ name: "navigate", type: "PanelObjectRef", description: "A navigation event" }], slots: [] },
   };
   const catalogue = { version: "1.1.2", components: [component] };
   assert.deepEqual(appsSdkComponentCatalogSchema.parse(catalogue), catalogue);
+  assert.equal(appsSdkComponentCatalogSchema.safeParse({
+    ...catalogue, components: [{ ...component, outputs: ["selected"] }],
+  }).success, false);
   for (const datum of [{ results: [], required: true }, { results: ["notRegistered"], required: true }, { results: ["panelRecord"] }]) {
     assert.equal(appsSdkComponentCatalogSchema.safeParse({
-      ...catalogue, components: [{ ...component, data: { record: datum } }],
+      ...catalogue, components: [{ ...component, data: { rows: datum } }],
     }).success, false);
   }
   const { data: _data, ...displayOnly } = component;
@@ -138,6 +145,32 @@ test("the SDK catalogue permits a wildcard for author-named data", async () => {
     assert.equal(appsSdkComponentCatalogSchema.safeParse({
       ...catalogue, components: [{ ...component, data }],
     }).success, false);
+  }
+});
+
+test("the checker accepts short data and operation members with reusable projection identities", async () => {
+  const { panelAuthoringManifestSchema } = await import("./panel-check");
+  const list = {
+    id: "9da36511-7755-4b61-b526-3be2694c1f2f",
+    component: "ObjectList", type: BUSINESS_KNOWLEDGE,
+    data: { rows: "query" }, state: { selected: "selected", search: "search" },
+  };
+  const approve = { component: "OperationButton", operation: APPROVE_KNOWLEDGE, target: "selected", config: { type: "primary" } };
+  const state = {
+    selected: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+    search: { type: { kind: "scalar", type: "string" } },
+  };
+  const reused = { target: { projectionId: "registered-summary" } };
+  const manifest = { state, members: { list, approve, reused }, events: {} };
+  const parsed = panelAuthoringManifestSchema.parse(manifest);
+  assert.deepEqual(parsed.members, manifest.members);
+  assert.equal(panelAuthoringManifestSchema.safeParse({
+    ...manifest, members: { list: {
+      ...list, data: { rows: { read: "query", params: { search: { state: "search" }, status: { literal: "pending" } } } },
+    } },
+  }).success, true);
+  for (const member of [{ ...list, inputs: {} }, { ...list, id: "not-a-uuid" }, { component: "ObjectList" }]) {
+    assert.equal(panelAuthoringManifestSchema.safeParse({ ...manifest, members: { list: member } }).success, false);
   }
 });
 
@@ -1318,6 +1351,7 @@ test("the author type table and live descriptions share operation declarations",
   });
   const table = {
     objectTypes: { [SCHEDULED_TASK]: { reads: platformObjectTypes[SCHEDULED_TASK].reads, operations: [run, save] } },
+    resultSchemas: { panelRecordList: { type: "array" }, panelRecord: { type: "object" }, panelFormDescription: { type: "object" } },
   };
   assert.deepEqual(platformTypeTableResponseSchema.parse(table), table);
   assert.equal(panelOperationDeclarationSchema.safeParse({ ...run, label: "Run now" }).success, false);
