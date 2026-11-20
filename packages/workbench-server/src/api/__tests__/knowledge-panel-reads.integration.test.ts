@@ -195,7 +195,7 @@ const projections = {
   "projection-knowledge-approve": productProjectionInputSchema.parse({
     name: "Approve knowledge", description: "", visibility: "domain",
     componentId: "@ontomato/sdk:OperationButton",
-    inputs: {},
+    inputs: { entry: knowledgeType },
     outputs: {},
     config: {},
     data: {
@@ -237,7 +237,7 @@ const panel = productPanelInputSchema.parse({
       detail: { target: { projectionId: "projection-knowledge-detail" }, inputs: { entry: { state: "selectedEntry" } } },
       form: { target: { projectionId: "projection-knowledge-form" }, inputs: { entry: { state: "selectedEntry" } } },
       createForm: { target: { projectionId: "projection-knowledge-create-form" } },
-      approve: { target: { projectionId: "projection-knowledge-approve" } },
+      approve: { target: { projectionId: "projection-knowledge-approve" }, inputs: { entry: { state: "selectedEntry" } } },
       remove: { target: { projectionId: "projection-knowledge-delete" } },
     },
     events: {},
@@ -261,7 +261,7 @@ beforeAll(async () => {
   await writeBundledAppSdkFixture(contentRoot);
   installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
 
-  const { productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
+  const { panelOperationsRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const { ensurePanelOperationsSchema } = await import("../../infrastructure/postgres-migrations/20261118-panel-operations/schema");
   await ensurePanelOperationsSchema(state.pool);
   const app = express();
@@ -307,6 +307,7 @@ beforeAll(async () => {
   });
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
+  app.use("/api", panelOperationsRouter);
   server = await new Promise<Server>(resolve => {
     const started = app.listen(0, "127.0.0.1", () => resolve(started));
   });
@@ -464,4 +465,33 @@ it("serves business knowledge panel reads over real HTTP routes backed by Postgr
       inspectImpact: { handlerRef: `${DELETE_KNOWLEDGE}.inspect-impact` },
     },
   });
+});
+
+it("names the target input when a knowledge button connects the wrong port", async () => {
+  const intent = {
+    applicationId: "app-knowledge", useId: "knowledge", operationId: "approve.approve",
+    call: { target: { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-2" }, input: {} },
+  };
+  const wrongTarget = await request("POST", "panel-operations/intents", intent);
+  expect(wrongTarget.status).toBe(422);
+
+  const projectionId = "projection-knowledge-approve-linked";
+  const savedProjection = await request("PUT", "product-projections/" + projectionId, {
+    ...projections["projection-knowledge-approve"], inputs: { knowledge: knowledgeType }, revision: 0,
+  });
+  expect(savedProjection.status, await savedProjection.text()).toBe(200);
+  const savedPanel = await request("PUT", "product-panels/" + panelId, {
+    ...panel, revision: 1, manifest: { ...panel.manifest, members: {
+      ...panel.manifest.members, approve: { target: { projectionId }, inputs: { knowledge: { state: "selectedEntry" } } },
+    } },
+  });
+  expect(savedPanel.status, await savedPanel.text()).toBe(200);
+  const accepted = await request("POST", "panel-operations/intents", intent);
+  expect(accepted.status).toBe(200);
+  expect(await accepted.json()).toMatchObject({ operationId: "approve.approve", confirmation: { kind: "none" } });
+
+  expect(await wrongTarget.json()).toMatchObject({ error: {
+    code: "PANEL_OPERATION_TARGET_UNBOUND",
+    message: "Operation 'knowledge.approve' expects target input 'knowledge', but member 'approve' does not connect it.",
+  } });
 });
