@@ -50,13 +50,18 @@ export const directProjectionDataSchema = z.object({
 }).strict();
 export type DirectProjectionData = z.infer<typeof directProjectionDataSchema>;
 
+export const directProjectionInputTypeSchema = z.union([
+  directPanelPortTypeSchema,
+  z.object({ kind: z.literal("json") }).strict(),
+]);
+
 export const directProjectionPortsSchema = z.object({
   componentId: z.enum([
     "@ontomato/sdk:ObjectList", "@ontomato/sdk:ObjectSummary", "@ontomato/sdk:ObjectForm", "@ontomato/sdk:OperationButton",
     "@ontomato/sdk:ReferencePicker", "@ontomato/sdk:ObjectGraph", "@ontomato/sdk:OntologyGraph", "@ontomato/sdk:ObjectRelations",
     "@ontomato/sdk:MetricChart", "@ontomato/sdk:ConversationEntry", "@ontomato/sdk:AppMenu",
   ]),
-  inputs: z.record(readKey, z.union([directPanelPortTypeSchema, z.object({ kind: z.literal("json") }).strict()])),
+  inputs: z.record(readKey, directProjectionInputTypeSchema),
   outputs: z.record(readKey, directPanelPortTypeSchema),
   data: z.record(readKey, directProjectionDataSchema),
   config: runtimeJsonObjectSchema,
