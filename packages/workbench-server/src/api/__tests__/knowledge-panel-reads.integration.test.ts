@@ -195,7 +195,7 @@ const projections = {
   "projection-knowledge-approve": productProjectionInputSchema.parse({
     name: "Approve knowledge", description: "", visibility: "domain",
     componentId: "@ontomato/sdk:OperationButton",
-    inputs: { entry: knowledgeType },
+    inputs: { knowledge: knowledgeType },
     outputs: {},
     config: {},
     data: {
@@ -209,7 +209,7 @@ const projections = {
   "projection-knowledge-delete": productProjectionInputSchema.parse({
     name: "Delete knowledge", description: "", visibility: "domain",
     componentId: "@ontomato/sdk:OperationButton",
-    inputs: {},
+    inputs: { knowledge: knowledgeType },
     outputs: {},
     config: {},
     data: {
@@ -237,8 +237,8 @@ const panel = productPanelInputSchema.parse({
       detail: { target: { projectionId: "projection-knowledge-detail" }, inputs: { entry: { state: "selectedEntry" } } },
       form: { target: { projectionId: "projection-knowledge-form" }, inputs: { entry: { state: "selectedEntry" } } },
       createForm: { target: { projectionId: "projection-knowledge-create-form" } },
-      approve: { target: { projectionId: "projection-knowledge-approve" }, inputs: { entry: { state: "selectedEntry" } } },
-      remove: { target: { projectionId: "projection-knowledge-delete" } },
+      approve: { target: { projectionId: "projection-knowledge-approve" }, inputs: { knowledge: { state: "selectedEntry" } } },
+      remove: { target: { projectionId: "projection-knowledge-delete" }, inputs: { knowledge: { state: "selectedEntry" } } },
     },
     events: {},
   },
@@ -467,29 +467,77 @@ it("serves business knowledge panel reads over real HTTP routes backed by Postgr
   });
 });
 
-it("names the target input when a knowledge button connects the wrong port", async () => {
+it("checks the operation target at registration and when preparing a legacy button", async () => {
   const intent = {
     applicationId: "app-knowledge", useId: "knowledge", operationId: "approve.approve",
     call: { target: { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-2" }, input: {} },
   };
-  const wrongTarget = await request("POST", "panel-operations/intents", intent);
-  expect(wrongTarget.status).toBe(422);
-
-  const projectionId = "projection-knowledge-approve-linked";
-  const savedProjection = await request("PUT", "product-projections/" + projectionId, {
-    ...projections["projection-knowledge-approve"], inputs: { knowledge: knowledgeType }, revision: 0,
+  const approve = projections["projection-knowledge-approve"];
+  const legacyProjectionId = "projection-knowledge-approve-entry";
+  const savedProjection = await request("PUT", "product-projections/" + legacyProjectionId, {
+    ...approve, inputs: { entry: knowledgeType }, revision: 0,
   });
   expect(savedProjection.status, await savedProjection.text()).toBe(200);
-  const savedPanel = await request("PUT", "product-panels/" + panelId, {
+  const legacyPanel = { ...panel, manifest: { ...panel.manifest, members: {
+    ...panel.manifest.members,
+    approve: { target: { projectionId: legacyProjectionId }, inputs: { entry: { state: "selectedEntry" } } },
+  } } };
+  const badMember = await request("PUT", "product-panels/" + panelId, { ...legacyPanel, revision: 1 });
+  expect(badMember.status).toBe(400);
+  expect(await badMember.json()).toMatchObject({ error: {
+    code: "PANEL_PORT_MISMATCH",
+    message: expect.stringContaining("operation 'knowledge.approve' expects target input 'knowledge'"),
+  } });
+
+  const wrongProjectionId = "projection-knowledge-approve-task";
+  const wrongProjection = await request("PUT", "product-projections/" + wrongProjectionId, {
+    ...approve, revision: 0, inputs: { knowledge: { kind: "object", objectType: "platform:ScheduledTask" } },
+  });
+  expect(wrongProjection.status, await wrongProjection.text()).toBe(200);
+  const wrongType = await request("PUT", "product-panels/" + panelId, {
     ...panel, revision: 1, manifest: { ...panel.manifest, members: {
-      ...panel.manifest.members, approve: { target: { projectionId }, inputs: { knowledge: { state: "selectedEntry" } } },
+      ...panel.manifest.members,
+      approve: { target: { projectionId: wrongProjectionId }, inputs: { knowledge: { state: "selectedEntry" } } },
     } },
   });
-  expect(savedPanel.status, await savedPanel.text()).toBe(200);
+  expect(wrongType.status).toBe(400);
+  expect(await wrongType.json()).toMatchObject({ error: {
+    code: "PANEL_PORT_MISMATCH",
+    message: expect.stringContaining("input 'knowledge' of type 'platform:BusinessKnowledge'"),
+  } });
+
   const accepted = await request("POST", "panel-operations/intents", intent);
   expect(accepted.status).toBe(200);
   expect(await accepted.json()).toMatchObject({ operationId: "approve.approve", confirmation: { kind: "none" } });
 
+  const targetList = { kind: "list", items: knowledgeType };
+  const batchProjectionId = "projection-knowledge-approve-batch";
+  const savedBatch = await request("PUT", "product-projections/" + batchProjectionId, {
+    ...approve, inputs: { knowledge: targetList }, revision: 0,
+  });
+  expect(savedBatch.status, await savedBatch.text()).toBe(200);
+  const batchPanel = await request("PUT", "product-panels/" + panelId, {
+    ...panel, revision: 1, manifest: {
+      ...panel.manifest, state: { ...panel.manifest.state, checked: { type: targetList, default: [] } },
+      members: { ...panel.manifest.members,
+        approve: { target: { projectionId: batchProjectionId }, inputs: { knowledge: { state: "checked" } } },
+      },
+    },
+  });
+  expect(batchPanel.status, await batchPanel.text()).toBe(200);
+  const wrongInvocation = await request("POST", "panel-operations/intents", intent);
+  expect(wrongInvocation.status).toBe(422);
+  expect(await wrongInvocation.json()).toMatchObject({ error: { code: "OPERATION_BATCH_REQUIRED" } });
+  const { call, ...operation } = intent;
+  const batch = await request("POST", "panel-operations/intents", { ...operation, calls: [call] });
+  expect(batch.status, await batch.text()).toBe(200);
+
+  // A published definition may predate the registration check.
+  await state.pool!.query(`UPDATE "${state.schema}".product_panels SET definition=$1 WHERE id=$2`, [
+    JSON.stringify(legacyPanel), panelId,
+  ]);
+  const wrongTarget = await request("POST", "panel-operations/intents", intent);
+  expect(wrongTarget.status).toBe(422);
   expect(await wrongTarget.json()).toMatchObject({ error: {
     code: "PANEL_OPERATION_TARGET_UNBOUND",
     message: "Operation 'knowledge.approve' expects target input 'knowledge', but member 'approve' does not connect it.",
