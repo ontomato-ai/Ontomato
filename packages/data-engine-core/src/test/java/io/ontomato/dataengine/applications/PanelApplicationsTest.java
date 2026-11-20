@@ -224,7 +224,9 @@ class PanelApplicationsTest {
         var derived = catalog.panelSkillSources("domain").getFirst().skill();
         assertEquals(List.of("dashboard-pages", derived.name()), projection.getJSONArray("registeredSkills").toJavaList(JSONObject.class).stream().map(value -> value.getString("name")).toList());
         assertEquals(derived.name(), projection.getJSONArray("pageSkills").getJSONObject(1).getJSONObject("skill").getString("name"));
-        verify(panels).requireCurrent("domain", List.of("panel-p"));
+        verify(panels).requireCurrent(eq("domain"), isNull(),
+            argThat(usesPassed -> usesPassed.stream().map(ApplicationPanelUse::panelId).toList().equals(List.of("panel-p"))),
+            isNull());
         var write = mockingDetails(db).getInvocations().stream().filter(call -> call.getMethod().getName().equals("update")).findFirst().orElseThrow();
         assertEquals("[]", write.getArgument(18));
         assertEquals("panel-p", com.alibaba.fastjson2.JSON.parseArray(write.<String>getArgument(19)).getJSONObject(0).getString("panelId"));
@@ -241,7 +243,7 @@ class PanelApplicationsTest {
     }
 
     @Test void rejectsReferencesThatAreNotInTheCurrentPanelCollectionBeforeSaving() {
-        doThrow(new ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST)).when(panels).requireCurrent("domain", List.of("panel-p"));
+        doThrow(new ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST)).when(panels).requireCurrent(eq("domain"), isNull(), eq(List.of(use("schedules-a", null))), isNull());
         assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a", body(List.of(use("schedules-a", null)), true), user));
         verifyNoInteractions(db);
     }

@@ -5,19 +5,34 @@ import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import com.alibaba.fastjson2.TypeReference;
 import io.ontomato.dataengine.core.bean.User;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.util.UriUtils;
 import org.springframework.http.HttpStatus;
 
 @Service
 public class ApplicationCatalog {
     public record PanelUseLocation(String applicationId, Map<String, String> names, String useId, String path) {}
     public record EntryMenu(List<Group> groups, List<ApplicationPanelUse> panelUses) {}
+    public record ThemeOverrides(Map<String, String> light, Map<String, String> dark) {}
+    public record Delivery(List<String> panels, List<String> projections, List<String> packages, List<String> agents,
+                           List<PageSkills.Skill> skills) {}
+    private record PanelSettings(String framePanelId, ThemeOverrides theme, Delivery delivery) {
+        JSONObject json() {
+            var result = new JSONObject();
+            if (framePanelId != null) result.put("framePanelId", framePanelId);
+            if (theme != null) result.put("theme", theme);
+            if (delivery != null) result.put("delivery", delivery);
+            return result;
+        }
+    }
     public static final String DOMAIN_MEMBER_ENTRY = "domain-member";
+    private static final String OBJECT_DETAIL_ROOT = "/browser/detail/";
     private record PanelSkillGroup(PageSkills.Mapping mapping, PanelSkills.Source source) {}
     public record Group(String key, Map<String,String> names, int sort) {}
     public record Permission(String code, Map<String,String> names, String groupKey, int sort) {}
@@ -55,7 +70,8 @@ public class ApplicationCatalog {
                 "releaseId", row.getString("release_id"), "pageSkills", JSON.parseArray(row.getString("page_skills"), PageSkills.Mapping.class),
                 "panelUses", JSON.parseArray(row.getString("panel_uses"), ApplicationPanelUse.class),
                 "groups", JSON.parseArray(row.getString("groups"), Group.class),
-                "permissions", JSON.parseArray(row.getString("declaration_permissions"), Permission.class)));
+                "permissions", JSON.parseArray(row.getString("declaration_permissions"), Permission.class),
+                "panelSettings", JSON.parseObject(row.getString("panel_settings"))));
     }
     public PageSkills.Projection pageSkills(User user) {
         var domainId = user.getDomainId();
@@ -124,6 +140,7 @@ public class ApplicationCatalog {
         entry.remove("upstream"); entry.remove("upstreamPrefix");
         result.put("entry",entry);
         result.remove("permissions");
+        result.remove("panelSettings");
         if (panelManaged(app)) result.put("panelUses", visiblePanelUses(app, user));
         return result;
     }
@@ -252,14 +269,19 @@ public class ApplicationCatalog {
 
     private void save(String id, String domain, String service, String owner, String kind, String rail, String category, int sort,
                       JSONObject entry, List<String> entryAccess, String adapter, String releaseId, Declaration d) {
+        save(id, domain, service, owner, kind, rail, category, sort, entry, entryAccess, adapter, releaseId, d, new JSONObject());
+    }
+
+    private void save(String id, String domain, String service, String owner, String kind, String rail, String category, int sort,
+                      JSONObject entry, List<String> entryAccess, String adapter, String releaseId, Declaration d, JSONObject panelSettings) {
         db.update("""
-            INSERT INTO sys_application(id,domain_id,owner_service,owner_user_id,kind,names,descriptions,icon,rail,category,sort,entry,entry_access,schedule_adapter,release_id,groups,entry_path,page_skills,panel_uses,declaration_permissions,updated_at)
-            VALUES(?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?,?::jsonb,?::jsonb,?,?,?::jsonb,?,?::jsonb,?::jsonb,?::jsonb,now()) ON CONFLICT(id) DO UPDATE SET
+            INSERT INTO sys_application(id,domain_id,owner_service,owner_user_id,kind,names,descriptions,icon,rail,category,sort,entry,entry_access,schedule_adapter,release_id,groups,entry_path,page_skills,panel_uses,declaration_permissions,panel_settings,updated_at)
+            VALUES(?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?,?::jsonb,?::jsonb,?,?,?::jsonb,?,?::jsonb,?::jsonb,?::jsonb,?::jsonb,now()) ON CONFLICT(id) DO UPDATE SET
             names=excluded.names,descriptions=excluded.descriptions,icon=excluded.icon,rail=excluded.rail,category=excluded.category,sort=excluded.sort,
             entry=excluded.entry,entry_access=excluded.entry_access,schedule_adapter=excluded.schedule_adapter,
-            release_id=excluded.release_id,groups=excluded.groups,entry_path=excluded.entry_path,page_skills=excluded.page_skills,panel_uses=excluded.panel_uses,declaration_permissions=excluded.declaration_permissions,updated_at=now()
+            release_id=excluded.release_id,groups=excluded.groups,entry_path=excluded.entry_path,page_skills=excluded.page_skills,panel_uses=excluded.panel_uses,declaration_permissions=excluded.declaration_permissions,panel_settings=excluded.panel_settings,updated_at=now()
             """, id,domain,service,owner,kind,JSON.toJSONString(d.names()),JSON.toJSONString(d.descriptions()),d.icon(),rail,category,sort,
-            entry.toJSONString(),JSON.toJSONString(entryAccess),adapter,releaseId,JSON.toJSONString(d.groups()),entry.getString("path"),JSON.toJSONString(d.pageSkills()),JSON.toJSONString(d.panelUses(), JSONWriter.Feature.WriteMapNullValue),JSON.toJSONString(d.permissions()));
+            entry.toJSONString(),JSON.toJSONString(entryAccess),adapter,releaseId,JSON.toJSONString(d.groups()),entry.getString("path"),JSON.toJSONString(d.pageSkills()),JSON.toJSONString(d.panelUses(), JSONWriter.Feature.WriteMapNullValue),JSON.toJSONString(d.permissions()),panelSettings.toJSONString());
     }
     public static void validateId(String id) {
         if (id == null || !id.matches("[a-z][a-z0-9-]{0,63}")) throw bad("Invalid application ID");
@@ -339,6 +361,8 @@ public class ApplicationCatalog {
         for (var app : applications) {
             if (!hasAssignedPanelPaths(app)) continue;
             for (var use : app.getList("panelUses", ApplicationPanelUse.class)) {
+                if (objectDetailClass(use.path()) != null)
+                    throw bad("Panel path belongs to the object detail resolver: " + use.path());
                 if (!paths.add(use.path())) throw bad("Duplicate panel path: " + use.path());
                 for (var root : roots.entrySet())
                     if (!root.getKey().equals(app.getString("id")) && !inAssignedSpace(use.path()) && ApplicationPanelUse.under(use.path(), root.getValue()))
@@ -374,20 +398,53 @@ public class ApplicationCatalog {
 
     public JSONObject resolveEntry(String path, User user) {
         var canonical = ApplicationPanelUse.canonicalPath(path);
+        var detailClass = objectDetailClass(canonical);
+        if (detailClass != null) return resolveObjectDetail(canonical, detailClass, user);
         for (var app : applicationsInDomain(user.getDomainId())) {
-            if (!panelManaged(app) || !hasAssignedPanelPaths(app)) continue;
+            if (!hasAssignedPanelPaths(app)) continue;
             var declared = app.getList("panelUses", ApplicationPanelUse.class);
             if (declared.stream().noneMatch(use -> canonical.equals(use.path()))) continue;
             if (!access.canEnter(app, user)) throw denied();
             var allowed = visiblePanelUses(app, user);
             var use = allowed.stream().filter(entry -> canonical.equals(entry.path())).findFirst().orElseThrow(ApplicationCatalog::denied);
-            var named = allowed.stream().filter(entry -> entry.names() != null).toList();
-            var groupKeys = new HashSet<>(named.stream().map(ApplicationPanelUse::groupKey).toList());
-            var groups = app.getList("groups", Group.class).stream().filter(group -> groupKeys.contains(group.key()))
-                .sorted(Comparator.comparingInt(Group::sort)).toList();
-            return JSONObject.of("applicationId", app.getString("id"), "use", use, "menu", new EntryMenu(groups, named));
+            return entryResolution(app, use, allowed);
         }
-        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Panel entry not found");
+        throw entryNotFound();
+    }
+
+    private static String objectDetailClass(String path) {
+        if (!path.startsWith(OBJECT_DETAIL_ROOT)) return null;
+        var segment = path.substring(OBJECT_DETAIL_ROOT.length());
+        if (segment.isEmpty() || segment.contains("/")) return null;
+        return UriUtils.decode(segment, StandardCharsets.UTF_8);
+    }
+
+    private JSONObject resolveObjectDetail(String path, String className, User user) {
+        var browser = require("browser");
+        if (user.getDomainId() == null || !canEnter(browser, user)) throw denied();
+        var panelId = panels.objectDetailPanel(user.getDomainId(), className);
+        if (panelId == null) throw entryNotFound();
+        if (!grants.allowed(panelId, "use")) throw denied();
+        var key = "browser-detail:" + className;
+        var permission = browser.getList("entryAccess", String.class).getFirst();
+        var use = new ApplicationPanelUse(key, key, panelId, path, new ApplicationPanelUse.Access(permission, null), null, null);
+        return entryResolution(browser, use, visiblePanelUses(browser, user));
+    }
+
+    private static JSONObject entryResolution(JSONObject app, ApplicationPanelUse use, List<ApplicationPanelUse> allowed) {
+        var named = allowed.stream().filter(entry -> entry.names() != null).toList();
+        var groupKeys = new HashSet<>(named.stream().map(ApplicationPanelUse::groupKey).toList());
+        var groups = app.getList("groups", Group.class).stream().filter(group -> groupKeys.contains(group.key()))
+            .sorted(Comparator.comparingInt(Group::sort)).toList();
+        var result = JSONObject.of("applicationId", app.getString("id"), "use", use, "menu", new EntryMenu(groups, named));
+        var settings = app.getJSONObject("panelSettings");
+        if (settings.containsKey("framePanelId")) result.put("framePanelId", settings.getString("framePanelId"));
+        if (settings.containsKey("theme")) result.put("theme", settings.getJSONObject("theme"));
+        return result;
+    }
+
+    private static ResponseStatusException entryNotFound() {
+        return new ResponseStatusException(HttpStatus.NOT_FOUND, "Panel entry not found");
     }
 
     public JSONObject panelUses(String id, User user) {
@@ -396,6 +453,29 @@ public class ApplicationCatalog {
         if (!inDomain(app, user) || !access.canEnter(app, user)) throw denied();
         return JSONObject.of("applicationId", id, "entry", app.getJSONObject("entry"), "panelUses", visiblePanelUses(app, user));
     }
+    public JSONObject managePanelUses(String id, User user) {
+        var app = require(id);
+        if (!inDomain(app, user) || !access.canMaintain(app, user)) throw denied();
+        if (!panelManaged(app)) throw bad("Application is not managed by panels");
+        var declaration = JSONObject.of("names", app.getJSONObject("names"), "descriptions", app.getJSONObject("descriptions"),
+            "icon", app.getString("icon"), "groups", app.getList("groups", Group.class),
+            "permissions", app.getList("permissions", Permission.class));
+        var result = JSONObject.of("applicationId", id, "entry", app.getJSONObject("entry"),
+            "panelUses", app.getList("panelUses", ApplicationPanelUse.class), "declaration", declaration,
+            "entryAccess", app.getList("entryAccess", String.class));
+        result.putAll(app.getJSONObject("panelSettings"));
+        return result;
+    }
+
+    private static void validatePanelSettings(PanelSettings settings) {
+        if (settings.framePanelId() != null && settings.framePanelId().isBlank())
+            throw bad("framePanelId must be nonblank");
+        var delivery = settings.delivery();
+        if (delivery != null && (delivery.panels() == null || delivery.projections() == null || delivery.packages() == null
+            || delivery.agents() == null || delivery.skills() == null))
+            throw bad("Delivery requires panels, projections, packages, agents and skills");
+    }
+
     private List<ApplicationPanelUse> visiblePanelUses(JSONObject app, User user) {
         if (!hasAssignedPanelPaths(app))
             throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -428,9 +508,13 @@ public class ApplicationCatalog {
             if (code != null && !ownsPermissionCode(id, code))
                 throw bad("Panel entry " + use.pageKey() + " requires this application's permission prefix: " + code);
         }
-        var ids = uses.stream().map(ApplicationPanelUse::panelId).distinct().toList();
+        var settings = new PanelSettings(body.framePanelId(), body.theme(), body.delivery());
+        validatePanelSettings(settings);
+        existing.ifPresent(app -> requireDomainMaintainer(app, user));
+        var ids = new HashSet<>(uses.stream().map(ApplicationPanelUse::panelId).toList());
+        if (settings.framePanelId() != null) ids.add(settings.framePanelId());
         for (var panelId : ids) if (!grants.allowed(panelId, "use")) throw denied();
-        panels.requireCurrent(user.getDomainId(), ids);
+        panels.requireCurrent(user.getDomainId(), settings.framePanelId(), uses, settings.delivery());
         return transactions.execute(tx -> {
             lockCatalog();
             var current = all().stream().filter(app -> id.equals(app.getString("id"))).findFirst();
@@ -451,13 +535,14 @@ public class ApplicationCatalog {
             var entry = JSONObject.of("path", entryPath, "renderer", "panels");
             validateMappings(id, user.getDomainId(), entry, List.of(), uses);
             if (old != null && supplied == null) {
-                db.update("UPDATE sys_application SET entry=?::jsonb,entry_path=?,entry_access=?::jsonb,panel_uses=?::jsonb,page_skills='[]'::jsonb,updated_at=now() WHERE id=?",
-                    entry.toJSONString(), entryPath, JSON.toJSONString(entryAccess), JSON.toJSONString(uses, JSONWriter.Feature.WriteMapNullValue), id);
+                db.update("UPDATE sys_application SET entry=?::jsonb,entry_path=?,entry_access=?::jsonb,panel_uses=?::jsonb,panel_settings=?::jsonb,page_skills='[]'::jsonb,updated_at=now() WHERE id=?",
+                    entry.toJSONString(), entryPath, JSON.toJSONString(entryAccess), JSON.toJSONString(uses, JSONWriter.Feature.WriteMapNullValue),
+                    settings.json().toJSONString(), id);
             } else {
                 var declaration = new Declaration(supplied.names(), supplied.descriptions(), supplied.icon(), supplied.groups(), supplied.permissions(), List.of(), uses);
                 save(id, user.getDomainId(), "workbench", old == null ? user.getId() : old.getString("ownerUserId"),
                     "product", old == null ? "apps" : old.getString("rail"), old == null ? "business" : old.getString("category"),
-                    old == null ? 100 : old.getIntValue("sort"), entry, entryAccess, null, null, declaration);
+                    old == null ? 100 : old.getIntValue("sort"), entry, entryAccess, null, null, declaration, settings.json());
                 access.declare(require(id), declaration, old == null);
             }
             return JSONObject.of("applicationId", id, "entry", entry, "panelUses", uses);

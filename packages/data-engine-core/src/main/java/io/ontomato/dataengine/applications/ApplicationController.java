@@ -34,7 +34,13 @@ public class ApplicationController {
     /** Domain applications submit their entry and uses inside their assigned application path. */
     public record PanelEntry(String path, String renderer) {}
     public record PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
-                                    ApplicationCatalog.Declaration declaration, List<String> entryAccess) {}
+                                    ApplicationCatalog.Declaration declaration, List<String> entryAccess,
+                                    String framePanelId, ApplicationCatalog.ThemeOverrides theme, ApplicationCatalog.Delivery delivery) {
+        public PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
+                                 ApplicationCatalog.Declaration declaration, List<String> entryAccess) {
+            this(entry, panelUses, declaration, entryAccess, null, null, null);
+        }
+    }
     @GetMapping("/platform/applications/resolve-entry")
     @io.ontomato.dataengine.controller.BuildTestAccess(io.ontomato.dataengine.controller.BuildTestAccess.Access.NO_BUSINESS_DATA)
     public R<JSONObject> resolveEntry(@RequestParam String path) { return R.of(catalog.resolveEntry(path, current())); }
@@ -42,6 +48,11 @@ public class ApplicationController {
     @GetMapping("/platform/applications/{id}/panel-uses")
     @io.ontomato.dataengine.controller.BuildTestAccess(io.ontomato.dataengine.controller.BuildTestAccess.Access.NO_BUSINESS_DATA)
     public R<JSONObject> panelUses(@PathVariable String id) { return R.of(catalog.panelUses(id, current())); }
+    @GetMapping(value = "/platform/applications/{id}/panel-uses", params = "purpose=management")
+    public R<JSONObject> managePanelUses(@PathVariable String id) {
+        return R.of(catalog.managePanelUses(id, current()));
+    }
+
     @PutMapping("/platform/applications/{id}/panel-uses")
     public R<JSONObject> putPanelUses(@PathVariable String id, @RequestBody PanelRegistration body) {
         return R.of(catalog.putPanelUses(id, body, current()));
