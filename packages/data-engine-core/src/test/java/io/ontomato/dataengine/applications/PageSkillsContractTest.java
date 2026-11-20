@@ -68,8 +68,8 @@ class PageSkillsContractTest {
         when(user.getDomainId()).thenReturn("domain");
         var catalog=spy(new ApplicationCatalog(mock(JdbcTemplate.class),mock(TransactionTemplate.class),access,"{}",mock(PanelResources.class),mock(io.ontomato.dataengine.service.ProductGrantService.class)));
         var allowed=menu("allowed");var denied=menu("denied");
-        doReturn(List.of(JSONObject.of("id","example","entry",JSONObject.of("renderer","native"),"pageSkills",List.of(allowed,denied)),
-            JSONObject.of("id","other-domain","domainId","other","pageSkills",List.of(member())))).when(catalog).all();
+        doReturn(List.of(JSONObject.of("id","example","entry",JSONObject.of("renderer","native"),"pageSkills",List.of(allowed,denied),"panelUses",List.of()),
+            JSONObject.of("id","other-domain","domainId","other","pageSkills",List.of(member()),"panelUses",List.of()))).when(catalog).all();
         when(access.pageSkills(List.of(allowed,denied),user)).thenReturn(List.of(allowed));
         var projection=catalog.pageSkills(user);
         assertEquals(List.of(allowed),projection.pageSkills());
@@ -81,7 +81,7 @@ class PageSkillsContractTest {
         doAnswer(call->{ ((java.util.function.Consumer<org.springframework.transaction.TransactionStatus>)call.getArgument(0)).accept(null);return null; })
             .when(transactions).executeWithoutResult(any());
         var catalog=spy(new ApplicationCatalog(db,transactions,mock(ApplicationAccess.class),"{}",mock(PanelResources.class),mock(io.ontomato.dataengine.service.ProductGrantService.class)));
-        doReturn(List.of(JSONObject.of("id","existing","entry",JSONObject.of("renderer","native"),"pageSkills",List.of(member())))).when(catalog).all();
+        doReturn(List.of(JSONObject.of("id","existing","entry",JSONObject.of("renderer","native"),"pageSkills",List.of(member()),"panelUses",List.of()))).when(catalog).all();
         var declaration=new ApplicationCatalog.Declaration(java.util.Map.of("en","Example"),java.util.Map.of(),"knowledge",List.of(),List.of(),List.of(member()),List.of());
         var builtin=new ApplicationCatalog.Builtin("new-app","native","apps","build",0,JSONObject.of("path","/example"),List.of("domain-member"),null,declaration);
         assertThrows(ResponseStatusException.class,()->catalog.builtins("workbench",List.of(builtin)));
