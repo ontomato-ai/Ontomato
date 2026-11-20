@@ -81,26 +81,37 @@ export function finalizeRuntime({ runtimeRoot, members, index }) {
   runtimeLinks(join(runtime, "node_modules"), runtime);
 }
 
-// The verified installation index owns the shipped package set. Restrict pnpm
-// metadata to that set, and reject missing coverage for any installed package.
+// The verified installation index owns the shipped paths. pnpm reports one
+// representative per name and version, even across multiple peer snapshots.
 export function installedLicenseReport(report, runtimeRoot, index) {
-  const expected = new Set(Object.values(index).map(path => realpathSync(join(runtimeRoot, path))));
+  const artifacts = new Map();
+  for (const [snapshot, path] of Object.entries(index)) {
+    // The package key selects the frozen lockfile artifact. Keep patches
+    // distinct because they may change the files in that artifact.
+    const packageKey = snapshot.split("(")[0];
+    const patch = snapshot.slice(packageKey.length).match(/^\(patch_hash=[^)]+\)/)?.[0] ?? "";
+    const artifact = packageKey + patch;
+    if (!artifacts.has(artifact)) artifacts.set(artifact, []);
+    artifacts.get(artifact).push(realpathSync(join(runtimeRoot, path)));
+  }
+  const expected = new Map(
+    [...artifacts.values()].flatMap(paths => paths.map(path => [path, paths])),
+  );
   const seen = new Set();
   const installed = {};
   for (const [license, packages] of Object.entries(report)) {
     const entries = [];
     for (const pkg of packages) {
-      const paths = pkg.paths.flatMap(path => {
+      const paths = [...new Set(pkg.paths.flatMap(path => {
         const real = existsSync(path) ? realpathSync(path) : resolve(path);
-        if (!expected.has(real)) return [];
-        seen.add(real);
-        return [real];
-      });
+        return expected.get(real) ?? [];
+      }))];
+      for (const path of paths) seen.add(path);
       if (paths.length) entries.push({ ...pkg, paths });
     }
     if (entries.length) installed[license] = entries;
   }
-  const missing = [...expected].filter(path => !seen.has(path));
+  const missing = [...expected.keys()].filter(path => !seen.has(path));
   if (missing.length) throw new Error(`license report is missing installed packages: ${missing.join(", ")}`);
   return installed;
 }
