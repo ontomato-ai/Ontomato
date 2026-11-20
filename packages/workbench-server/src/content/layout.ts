@@ -54,6 +54,10 @@ export function installedAppsSdkDir(): string {
   return runtimeDataDir("apps-sdk");
 }
 
+export function bundledAppsSdkDir(...segments: string[]): string {
+  return path.join(runtimeRoot(), "dist", "apps-sdk", ...segments);
+}
+
 export function webDistDir(): string {
   return path.join(installedLayout().runtimeRoot, "dist", "web");
 }
