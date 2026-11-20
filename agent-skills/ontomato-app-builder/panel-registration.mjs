@@ -68,15 +68,21 @@ export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workben
     redirect: "error",
   });
   const call = async (base, method, path, body) => readAnswer(await send(base, method, path, body), method, path);
+  async function currentRecord(kind, id) {
+    const path = productPath(kind, id);
+    const response = await send(workbenchUrl, "GET", path);
+    return response.status === 404 ? null : (await readAnswer(response, "GET", path))[kind];
+  }
 
   return {
+    currentRecord,
     async currentRevision(kind, id) {
       const answer = await call(workbenchUrl, "GET", productPath(kind, id));
       const revision = answer[kind].revision;
       if (!Number.isSafeInteger(revision) || revision <= 0) throw new Error(`${kind} ${id}: owner response has no current revision`);
       return revision;
     },
-    async register(material, onRegistered) {
+    async register(material, onRegistered, checks) {
       const { projections = [], panels = [], applications = [], ...unknown } = material;
       if (Object.keys(unknown).length) throw new Error(`Unknown registration fields: ${Object.keys(unknown).join(", ")}`);
 
@@ -92,8 +98,7 @@ export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workben
       }
 
       if (projections.length || panels.length) {
-        const release = await sdk.current();
-        const checks = await sdk.check(release);
+        checks ??= await sdk.check(await sdk.current());
         const writes = panelRegistrationRecords({ projections, panels }, checks);
         for (const [kind, items] of writes) {
           await apply(kind, items, async ({ id, body }) => {
