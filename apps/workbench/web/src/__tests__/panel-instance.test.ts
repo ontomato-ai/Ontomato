@@ -222,7 +222,7 @@ describe("a panel's module", () => {
       t: (key: string) => key,
       resources: async () => {},
       expandPageComposer: async () => {},
-      readPanelData: async () => { throw new Error("This test reads no member data through the platform"); },
+      readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); },
     });
     app.mount(element);
     await nextTick();

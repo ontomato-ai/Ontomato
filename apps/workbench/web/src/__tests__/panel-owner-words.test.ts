@@ -59,7 +59,7 @@ it("draws the owner's field names, button name and run message in a directly ren
       ...noOperations.operations,
       prepare: async (operationId) => ({ intentId: ownerAnswered.runNowReceipt.intentId, operationId, label: operationId, confirmation: { kind: "none" } }),
     },
-    expandPageComposer: noOperations.expandPageComposer,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate,
     confirmOperation: async () => ({ decision: "confirm", response: ownerAnswered.runNowReceipt as never }),
     recordDraftCreated: async () => {},
     readProjection: async (id) => (id === summary.id ? summary : run),
