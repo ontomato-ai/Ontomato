@@ -11,6 +11,7 @@ import { config } from "../../../config/application";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { ensureCoreSchemaBaseline } from "../../../infrastructure/postgres-migrations/20260827-core-schema-baseline/schema";
+import { requireProductGrant } from "../../product-governance/grants";
 import { createDashboardCardReadAdapter } from "../chart-sources";
 
 const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "" }));
@@ -24,6 +25,9 @@ if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable Po
 
 const owner = { domainId: "domain", userId: "owner" };
 const viewer = { token: "viewer-session" };
+const sharedViewer = { token: "shared-viewer-session" };
+const projectionId = "chart-projection";
+const registration = { dashboardOwnerId: owner.userId, metricId: "metric" };
 const source = { dashboardId: "board/north", cardId: "chart/%" };
 const key = dashboardCardPrimaryKey(source);
 const parameters = { year: 2025, team: "north" };
@@ -60,6 +64,10 @@ beforeAll(async () => {
     metricRequests.push({ path: req.path, token: req.header("tk"), domain: req.header("X-Domain-Id"), body: req.body });
     next();
   });
+  java.post("/product-governance/check", (req, res) => {
+    res.json({ allowed: req.body.id === projectionId && req.body.verb === "use" &&
+      [viewer.token, sharedViewer.token].includes(req.header("tk") ?? "") });
+  });
   java.post("/ontology/query/metrics/describe", (req, res) => {
     res.json({ id: req.body.id, revision: "current-revision", status: "PUBLISHED", name: "Metric",
       parameterDefs: [], outputColumns: metricOutput.columns });
@@ -77,13 +85,13 @@ afterAll(async () => {
   await state.pool?.end();
 });
 
-async function saveSource(metricId: string) {
+async function saveSource(metricId: string, dashboardOwnerId = owner.userId, includeCard = true) {
   const card = { id: source.cardId, name: "Source", chartFile, query: { kind: "metric", metricId, parameters } };
-  const groups = [{ id: "group", title: "Group", charts: [card], metrics: [] }];
+  const groups = [{ id: "group", title: "Group", charts: includeCard ? [card] : [], metrics: [] }];
   await state.pool!.query(`INSERT INTO "${state.schema}".dashboards
     (id, owner_id, domain_id, name, groups, created_at, updated_at)
-    VALUES ($1,$2,$3,'Board',$4,1,1) ON CONFLICT (id) DO UPDATE SET groups=EXCLUDED.groups`,
-  [source.dashboardId, owner.userId, owner.domainId, JSON.stringify(groups)]);
+    VALUES ($1,$2,$3,'Board',$4,1,1) ON CONFLICT (id) DO UPDATE SET owner_id=EXCLUDED.owner_id, groups=EXCLUDED.groups`,
+  [source.dashboardId, dashboardOwnerId, owner.domainId, JSON.stringify(groups)]);
 }
 
 beforeEach(async () => {
@@ -91,29 +99,44 @@ beforeEach(async () => {
   await saveSource("metric");
 });
 
-it("denies both reads when the viewer has no access to the source card", async () => {
-  const reader = createDashboardCardReadAdapter({ ...owner, userId: "outsider" }, { token: "outsider-session" });
-  await expect(reader.chartTemplate(key, "metric")).rejects.toMatchObject({ status: 404 });
-  await expect(reader.result(key, "metric", {})).rejects.toMatchObject({ status: 404 });
+it.each([
+  { change: "the dashboard changes owners", dashboardOwnerId: "new-owner", includeCard: true },
+  { change: "the source card is deleted", dashboardOwnerId: owner.userId, includeCard: false },
+])("rejects both reads when $change", async ({ dashboardOwnerId, includeCard }) => {
+  await saveSource("metric", dashboardOwnerId, includeCard);
+  const reader = createDashboardCardReadAdapter({ ...owner, userId: "shared-reader" }, sharedViewer);
+  await expect(reader.chartTemplate(key, registration)).rejects.toMatchObject({ status: 404, code: "CHART_SOURCE_UNAVAILABLE" });
+  await expect(reader.result(key, registration, {})).rejects.toMatchObject({ status: 404, code: "CHART_SOURCE_UNAVAILABLE" });
   expect(metricRequests).toEqual([]);
 });
 
 it("reads the saved template and executes the current metric as the reader with merged parameters", async () => {
   const reader = createDashboardCardReadAdapter(owner, viewer);
-  expect(panelReadResultSchemas.chartTemplate.parse(await reader.chartTemplate(key, "metric"))).toEqual({ chartFile, parameters });
-  const output = await reader.result(key, "metric", { year: 2026, quarter: 1 });
+  expect(panelReadResultSchemas.chartTemplate.parse(await reader.chartTemplate(key, registration))).toEqual({ chartFile, parameters });
+  const output = await reader.result(key, registration, { year: 2026, quarter: 1 });
   expect(panelReadResultSchemas.metricOutput.parse(output)).toEqual(metricOutput);
   expect(metricRequests).toContainEqual({
     path: "/ontology/query/metrics/execute", token: viewer.token, domain: owner.domainId,
     body: { id: "metric", revision: "current-revision", parameters: { year: 2026, team: "north", quarter: 1 } },
   });
-  expect((await reader.chartTemplate(key, "metric")).parameters).toEqual(parameters);
+  expect((await reader.chartTemplate(key, registration)).parameters).toEqual(parameters);
+});
+
+it("lets a non-owner with projection use read the registered owner's source as the viewer", async () => {
+  await requireProductGrant(projectionId, "use", sharedViewer);
+  const reader = createDashboardCardReadAdapter({ ...owner, userId: "shared-reader" }, sharedViewer);
+  expect(panelReadResultSchemas.chartTemplate.parse(await reader.chartTemplate(key, registration))).toEqual({ chartFile, parameters });
+  expect(panelReadResultSchemas.metricOutput.parse(await reader.result(key, registration, {}))).toEqual(metricOutput);
+  expect(metricRequests).toContainEqual({
+    path: "/ontology/query/metrics/execute", token: sharedViewer.token, domain: owner.domainId,
+    body: { id: "metric", revision: "current-revision", parameters },
+  });
 });
 
 it("rejects an earlier registration when the source card switches to a different metric", async () => {
   const reader = createDashboardCardReadAdapter(owner, viewer);
   await saveSource("different-metric");
-  await expect(reader.chartTemplate(key, "metric")).rejects.toMatchObject({ status: 409, code: "CHART_SOURCE_MISMATCH" });
-  await expect(reader.result(key, "metric", {})).rejects.toMatchObject({ status: 409, code: "CHART_SOURCE_MISMATCH" });
+  await expect(reader.chartTemplate(key, registration)).rejects.toMatchObject({ status: 409, code: "CHART_SOURCE_MISMATCH" });
+  await expect(reader.result(key, registration, {})).rejects.toMatchObject({ status: 409, code: "CHART_SOURCE_MISMATCH" });
   expect(metricRequests).toEqual([]);
 });

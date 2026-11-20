@@ -65,21 +65,22 @@ export const dashboardChartSources = {
   },
 };
 
-export function createDashboardCardReadAdapter(owner: DashboardOwner, viewer: AssistantCredentials) {
-  const association = (primaryKey: string, metricId: string): RegisteredSource => ({
+type ChartRegistration = Pick<RegisteredSource, "dashboardOwnerId" | "metricId">;
+
+export function createDashboardCardReadAdapter({ domainId }: DashboardOwner, viewer: AssistantCredentials) {
+  const association = (primaryKey: string, registration: ChartRegistration): RegisteredSource => ({
+    ...registration,
     source: parseDashboardCardPrimaryKey(primaryKey),
-    dashboardOwnerId: owner.userId,
-    metricId,
   });
 
   return {
-    chartTemplate(primaryKey: string, metricId: string) {
-      return dashboardChartSources.read(owner.domainId, association(primaryKey, metricId));
+    chartTemplate(primaryKey: string, registration: ChartRegistration) {
+      return dashboardChartSources.read(domainId, association(primaryKey, registration));
     },
-    async result(primaryKey: string, metricId: string, parameters: DashboardMetricReference["parameters"]) {
-      const { card } = await registeredChart(owner.domainId, association(primaryKey, metricId));
-      const metric = new DashboardMetricClient(owner.domainId, viewer);
-      const { revision } = await metric.describe(metricId);
+    async result(primaryKey: string, registration: ChartRegistration, parameters: DashboardMetricReference["parameters"]) {
+      const { card } = await registeredChart(domainId, association(primaryKey, registration));
+      const metric = new DashboardMetricClient(domainId, viewer);
+      const { revision } = await metric.describe(registration.metricId);
       return metric.execute({ ...card.query, parameters: { ...card.query.parameters, ...parameters } }, revision);
     },
   };
