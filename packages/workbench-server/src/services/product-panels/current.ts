@@ -14,6 +14,7 @@ import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
 import { grantedProductIds, registerProductResource, requireProductGrant } from "../product-governance/grants";
 import { notifyProductDefinitionChanged } from "./definition-stream";
+import { validateCurrentProductReferences } from "./references";
 
 type CurrentDefinition = ProductPanelInput | ProductProjectionInput;
 
@@ -56,33 +57,6 @@ export async function requireDirectPanelMember(owner: ProductOwner, credentials:
   return { member, projection: productProjectionSchema.parse(currentProductRecord(row, false)) };
 }
 
-async function validatePanelReferences(
-  owner: ProductOwner, credentials: AssistantCredentials, manifest: ProductPanelInput["manifest"], client: PoolClient,
-) {
-  for (const [key, member] of Object.entries(manifest.members)) {
-    if ("panelId" in member.target) {
-      await requireCurrentProduct(owner, credentials, "panel", member.target.panelId, "use", client);
-      continue;
-    }
-    if (!("projectionId" in member.target)) continue;
-    const row = await requireCurrentProduct(owner, credentials, "projection", member.target.projectionId, "use", client);
-    const projection = productProjectionSchema.parse(currentProductRecord(row, false));
-    for (const [name, ref] of Object.entries(member.inputs ?? {})) {
-      const target = projection.inputs[name];
-      if (!target) throw new HttpError(400, `Projection member '${key}' has no input '${name}'`, "PANEL_INPUT_UNKNOWN");
-      const valid = target.kind === "json" || ("state" in ref
-        ? panelPortAccepts(target, manifest.state[ref.state].type)
-        : "literal" in ref && matchesDirectPanelValue(target, ref.literal));
-      if (!valid) throw new HttpError(400, `Member '${key}' input '${name}' does not match its projection`, "PANEL_INPUT_TYPE_MISMATCH");
-    }
-    for (const [name, ref] of Object.entries(member.outputs ?? {})) {
-      const output = projection.outputs[name];
-      if (!output || !panelPortAccepts(manifest.state[ref.state].type, output))
-        throw new HttpError(400, `Member '${key}' output '${name}' does not match its state field`, "PANEL_OUTPUT_TYPE_MISMATCH");
-    }
-  }
-}
-
 async function currentForSave(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string, revision: number) {
   const existing = await findCurrentProduct(owner.domainId, kind, id);
   if (existing) await requireProductGrant(id, "edit", credentials);
@@ -111,7 +85,7 @@ async function save(owner: ProductOwner, credentials: AssistantCredentials, kind
   input: CurrentDefinition, revision: number) {
   const row = await transaction(async client => {
     await lockProducts(client, owner);
-    if ("manifest" in input) await validatePanelReferences(owner, credentials, input.manifest, client);
+    await validateCurrentProductReferences(owner, credentials, kind, id, input, client);
     if (revision === 0) return insertCurrentProduct(client, owner, credentials, kind, id, input);
     const result = await client.query(`UPDATE ${t(currentProductTables[kind])} SET definition=$3::jsonb,revision=revision+1,updated_at=now() WHERE domain_id=$1 AND id=$2 AND revision=$4 RETURNING ${currentProductColumns}`, [owner.domainId, id, JSON.stringify(input), revision]);
     if (!result.rows.length) throw new HttpError(409, "Definition changed; reload before saving", "PRODUCT_CONFLICT");

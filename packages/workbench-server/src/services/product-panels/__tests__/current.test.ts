@@ -29,6 +29,9 @@ beforeEach(() => {
   mocks.query.mockImplementation(async (sql: string, args: unknown[] = []) => {
     const kind = sql.includes("product_panels") ? "panel" : "projection";
     const key = `${kind}:${args[1]}`;
+    if (sql.startsWith("SELECT id,definition")) return { rows: [...rows.entries()]
+      .filter(([key]) => key.startsWith("panel:"))
+      .map(([, row]) => ({ id: row.id, definition: row.definition })) };
     if (sql.startsWith("SELECT id,domain_id")) return { rows: rows.has(key) ? [rows.get(key)] : [] };
     if (sql.startsWith("SELECT id FROM") && sql.includes("ANY")) return { rows: (args[1] as string[]).filter(id => rows.has(`panel:${id}`)).map(id => ({ id })) };
     if (sql.startsWith("SELECT id FROM")) return { rows: [] };
@@ -79,8 +82,8 @@ it("rejects missing projection IDs, unknown slot inputs and mismatched ontology 
   const { revision, ...input } = panel();
   for (const [members, state, code] of [
     [{ summary: { target: { projectionId: "missing" }, inputs: {} } }, input.manifest.state, "PRODUCT_UNAVAILABLE"],
-    [{ summary: { target: { projectionId: "x" }, inputs: { unknown: { state: "selectedTask" } } } }, input.manifest.state, "PANEL_INPUT_UNKNOWN"],
-    [input.manifest.members, { selectedTask: { type: { kind: "scalar", type: "string" }, deepLink: false } }, "PANEL_INPUT_TYPE_MISMATCH"],
+    [{ summary: { target: { projectionId: "x" }, inputs: { unknown: { state: "selectedTask" } } } }, input.manifest.state, "PANEL_PORT_MISMATCH"],
+    [input.manifest.members, { selectedTask: { type: { kind: "scalar", type: "string" }, deepLink: false } }, "PANEL_PORT_MISMATCH"],
   ] as const) {
     const request = registerProductPanelRequestSchema.parse({ ...input, revision, manifest: { ...input.manifest, members, state } });
     await expect(saveCurrentPanel(owner, credentials, "invalid", request, revision)).rejects.toMatchObject({ code });

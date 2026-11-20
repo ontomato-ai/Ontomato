@@ -176,7 +176,7 @@ it("reads back stable member keys and named data, and leaves the record intact a
   const listWrite = await request("PUT", "product-projections/projection-pilot-list", {
     name: "Tasks", description: "", visibility: "domain", revision: 0, componentId: "@ontomato/sdk:ObjectList",
     inputs: {}, outputs: {}, config: {},
-    data: { rows: { source: { type: taskType.objectType }, read: "list", params: {} } },
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: taskType.objectType } }, read: "list", params: {} } },
   });
   expect(listWrite.status, await listWrite.text()).toBe(200);
   const formWrite = await request("PUT", "product-projections/projection-pilot-form", {
@@ -186,7 +186,7 @@ it("reads back stable member keys and named data, and leaves the record intact a
   expect(formWrite.status, await formWrite.text()).toBe(200);
   const runWrite = await request("PUT", "product-projections/projection-pilot-run", {
     ...projection, componentId: "@ontomato/sdk:OperationButton", revision: 0,
-    data: { operation: { source: { operation: "schedules.runNow" }, read: "describe", params: {} } },
+    data: { operation: { source: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, read: "describe", params: {} } },
   });
   expect(runWrite.status, await runWrite.text()).toBe(200);
   const panelWrite = await request("PUT", panelPath, { ...panel, revision: 0 });

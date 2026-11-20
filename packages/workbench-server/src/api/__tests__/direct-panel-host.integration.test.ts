@@ -204,7 +204,7 @@ it("reads the registered trial and follows its directly placed projections throu
   }
 });
 
-it("re-registers a stored code panel at its current revision and describes its member operation", async () => {
+it("preserves a code panel's ID and revision rules and describes its member operation", async () => {
   const summaryId = "mixed-summary", runId = "mixed-run";
   for (const [id, source] of [[summaryId, "projection-schedules-summary"], [runId, "projection-schedules-run"]] as const) {
     const { input } = trial.projections.find(projection => projection.id === source)!;
@@ -213,34 +213,29 @@ it("re-registers a stored code panel at its current revision and describes its m
   }
   const trialPanel = trial.panels.find(panel => panel.id === "panel-schedules-summary")!;
   const content = trial.panelContent(trialPanel.directory);
-  const definition = {
-    name: trialPanel.name, description: trialPanel.description, visibility: "domain", content,
-    sdkVersion: "1.0.0-fixture", manifest: trialPanel.manifest,
-  };
-  // This row was authored before the unified member contract.
-  await state.pool!.query(
-    `INSERT INTO "${state.schema}".product_panels (domain_id,id,owner_id,definition) VALUES ($1,$2,$3,$4)`,
-    ["pilot", codePanelId, "reader", definition],
-  );
-  grants.add(codePanelId);
-
   const directTrial = trial.panels.find(panel => panel.id === "panel-schedules-trial")!;
   const { state: panelState, members } = panelManifestSchema.parse(directTrial.manifest);
   const replacement = {
-    name: definition.name, description: definition.description, visibility: definition.visibility, content,
+    name: trialPanel.name, description: trialPanel.description, visibility: "domain", content,
     manifest: { state: panelState, events: {}, members: {
       summary: { ...members.summary, target: { projectionId: summaryId } },
       run: { ...members.run, target: { projectionId: runId } },
     } },
   };
   const panelPath = "product-panels/" + codePanelId;
+  const initial = await request("PUT", panelPath, { ...replacement, revision: 0 });
+  expect(initial.status, await initial.text()).toBe(200);
+  const legacy = await request("PUT", panelPath, {
+    ...replacement, revision: 1, sdkVersion: "1.0.0-fixture", manifest: trialPanel.manifest,
+  });
+  expect(legacy.status).toBe(400);
   const stale = await request("PUT", panelPath, { ...replacement, revision: 2 });
   expect(stale.status, await stale.text()).toBe(409);
   const stored = await state.pool!.query(
     `SELECT revision,definition FROM "${state.schema}".product_panels WHERE domain_id=$1 AND id=$2`,
     ["pilot", codePanelId],
   );
-  expect(stored.rows).toEqual([{ definition, revision: 1 }]);
+  expect(stored.rows).toEqual([{ definition: replacement, revision: 1 }]);
 
   const saved = await request("PUT", panelPath, { ...replacement, revision: 1 });
   expect(saved.status, await saved.text()).toBe(200);
@@ -281,6 +276,17 @@ it("re-registers a stored code panel at its current revision and describes its m
   const allowed = await validate(application);
   expect(allowed.status, await allowed.text()).toBe(204);
   expect((await validate({ ...application, delivery: { panels: [], projections: [] } })).status).toBe(204);
+  const framePanelId = "panel-app-frame";
+  const frameSaved = await request("PUT", "product-panels/" + framePanelId, {
+    name: "Application frame", description: "", visibility: "domain", revision: 0, content: { html: "<div></div>" },
+    manifest: { state: { choice: panelState.selectedTask }, members: {}, events: {} },
+  });
+  expect(frameSaved.status, await frameSaved.text()).toBe(200);
+  const framed = { ...application, framePanelId, uses: [{
+    ...application.uses[0], inputs: { selectedTask: { frameState: "choice" } },
+  }] };
+  expect((await validate(framed)).status).toBe(204);
+  expect((await validate({ ...framed, framePanelId: undefined })).status).toBe(400);
   const invalidInput = await validate({ ...application, uses: [{
     ...application.uses[0], inputs: { selectedTask: { literal: "not an object" } },
   }] });

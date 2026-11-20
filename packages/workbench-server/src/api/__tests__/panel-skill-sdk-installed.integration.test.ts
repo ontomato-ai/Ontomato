@@ -18,6 +18,7 @@ const fixture = vi.hoisted(() => ({
   pool: undefined as pg.Pool | undefined, schema: "", runtimeUrl: "",
   domainId: "sdk-history", panelId: "settings",
   grants: ["settings", "records"],
+  native: false,
   uses: [
     { applicationId: "settings", useId: "settings-panel", panelId: "settings", path: "/applications/settings/settings",
       entrance: { permissionCode: "analysis-agent", pageKey: "settings" } },
@@ -25,6 +26,8 @@ const fixture = vi.hoisted(() => ({
       entrance: { permissionCode: "business-knowledge", pageKey: "other-settings" } },
   ],
 }));
+const governance = { namespace: { kind: "provider" as const, provider: "ontology" }, name: "knowledge-governance" };
+const governanceDefault = { kind: "preset" as const, agentKind: "governance-report" };
 vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => fixture.pool,
   qualifiedTable: (name: string) => `"${fixture.schema}"."${name}"`,
@@ -48,8 +51,15 @@ vi.mock("../../utils/backend-client", async original => ({
       expect(headers.tk).toBe("editor");
       if (endpoint === "page-skills") {
         data = {
-          pageSkills: fixture.uses.map(({ entrance }) => ({ permissionCode: entrance.permissionCode })),
-          registeredSkills: [], admittedEntrances: fixture.uses.map(({ entrance }) => entrance),
+          pageSkills: fixture.uses.map(({ entrance }) => ({
+            permissionCode: entrance.permissionCode,
+            ...(fixture.native && entrance.permissionCode === "business-knowledge" && {
+              skill: governance,
+              defaults: [{ pageKey: entrance.pageKey, defaultAgent: governanceDefault }],
+            }),
+          })),
+          registeredSkills: fixture.native ? [governance] : [],
+          admittedEntrances: fixture.uses.map(({ entrance }) => entrance),
         };
       } else {
         expect(endpoint).toBe("panel-use");
@@ -207,4 +217,18 @@ it("prepares the same exact panel version from both current uses and omits it wh
     skills: [], pageDrafts: false, currentPage: null,
   });
   expect(published).not.toHaveBeenCalled();
+});
+
+it("keeps the native governance skill and preset alongside the protected panel in the same group", async () => {
+  const { effectiveAssistantSkills, readAssistantSkillView } = await import("../../services/assistant/skills");
+  fixture.grants = [fixture.panelId, "records"];
+  fixture.native = true;
+  const view = await readAssistantSkillView(fixture.domainId, { token: "editor", locale: "en" });
+  const groups = view.pageSkills.filter(group =>
+    "permissionCode" in group.locator && group.locator.permissionCode === "business-knowledge");
+  expect(groups).toEqual([{
+    locator: { permissionCode: "business-knowledge" }, skills: [governance, skill],
+    defaults: [{ pageKey: "other-settings", defaultAgent: governanceDefault }],
+  }]);
+  expect(effectiveAssistantSkills({ kind: "regular", skills: [] }, view)).toHaveLength(2);
 });
