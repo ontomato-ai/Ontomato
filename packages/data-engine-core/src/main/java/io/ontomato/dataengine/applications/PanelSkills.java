@@ -1,45 +1,36 @@
 package io.ontomato.dataengine.applications;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 
 public final class PanelSkills {
     private PanelSkills() {}
 
-    /** The path is the complete canonical route from the application catalog. */
-    public record Use(String applicationId, String useId, String pageKey, String panelId, String path) {}
-    public record Source(PageSkills.Skill skill, List<Use> uses) {}
+    /** A registered application use with its complete canonical route. */
+    public record Use(String applicationId, String useId, String panelId, String path, PageSkills.Entrance entrance) {}
 
-    record LocatedUse(String applicationId, ApplicationPanelUse use) {
-        Use source() { return new Use(applicationId, use.id(), use.pageKey(), use.panelId(), use.path()); }
-        PageSkills.Default pageDefault() { return new PageSkills.Default(use.pageKey(), use.defaultAgent()); }
+    static Use source(String applicationId, ApplicationPanelUse use) {
+        return new Use(applicationId, use.id(), use.panelId(), use.path(), entrance(use));
     }
 
-    /**
-     * Names use panel-page or panel-menu, up to 27 characters of the ASCII slug of the page key or menu code,
-     * and the first 24 hex digits of SHA-256 over the exact UTF-8 locator. The digest distinguishes case,
-     * punctuation, and keys with the same shortened slug. Node consumes this ref from the service catalog.
-     */
-    static PageSkills.Skill identity(String domainId, ApplicationPanelUse use) {
-        var menu = use.access().permissionCode();
-        var prefix = menu == null ? "panel-page-" : "panel-menu-";
-        var key = menu == null ? use.pageKey() : menu;
-        var slug = key.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "-").replaceFirst("^-", "");
-        slug = slug.substring(0, Math.min(27, slug.length())).replaceFirst("-$", "");
-        var name = prefix + (slug.isEmpty() ? "" : slug + "-") + digest(use.locator());
-        return new PageSkills.Skill(new PageSkills.Namespace("domain", null, domainId), name);
+    static PageSkills.Entrance entrance(ApplicationPanelUse use) {
+        return new PageSkills.Entrance(use.access().permissionCode(), use.access().kind(), use.pageKey());
     }
 
-    private static String digest(String locator) {
-        try {
-            var bytes = MessageDigest.getInstance("SHA-256").digest(locator.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(bytes, 0, 12);
-        } catch (NoSuchAlgorithmException error) {
-            throw new IllegalStateException(error);
-        }
+    /** Preserve locator groups and per-page defaults for admitted entries. */
+    static List<PageSkills.Mapping> groups(List<ApplicationPanelUse> admittedUses) {
+        var byLocator = new LinkedHashMap<String, List<ApplicationPanelUse>>();
+        for (var use : admittedUses)
+            byLocator.computeIfAbsent(use.locator(), ignored -> new ArrayList<>()).add(use);
+
+        return byLocator.values().stream().map(uses -> {
+            var first = uses.getFirst();
+            var defaults = uses.stream().filter(use -> use.defaultAgent() != null)
+                .map(use -> new PageSkills.Default(use.pageKey(), use.defaultAgent())).toList();
+            var pageKey = first.access().permissionCode() == null ? first.pageKey() : null;
+            return new PageSkills.Mapping(first.access().permissionCode(), first.access().kind(), pageKey,
+                null, defaults.isEmpty() ? null : defaults);
+        }).toList();
     }
 }
