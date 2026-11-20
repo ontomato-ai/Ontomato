@@ -1,4 +1,4 @@
-import { appsSdkComponentCatalogSchema } from "@ontomato/contracts/apps-sdk";
+import { appsSdkComponentCatalogSchema, appsSdkComponentDatum } from "@ontomato/contracts/apps-sdk";
 import { directReadDeclaration } from "@ontomato/contracts/panel-projection";
 import type { ProductProjectionInput } from "@ontomato/contracts/product-panels";
 import { HttpError } from "../../utils/errors";
@@ -30,10 +30,11 @@ export async function validateProjectionComponent(id: string, projection: Produc
   }
   const reads = Object.entries(projection.data);
   for (const [name, read] of reads) {
-    if (!Object.hasOwn(data, name))
+    const declaration = appsSdkComponentDatum(data, name);
+    if (!declaration)
       throw new HttpError(400, `Projection '${id}', field 'data.${name}' is not declared by component '${projection.componentId}'`, "PANEL_COMPONENT_DATA_UNKNOWN");
     const result = directReadDeclaration(projection, read)!.result;
-    const { results } = data[name];
+    const { results } = declaration;
     if (!results.includes(result))
       throw new HttpError(400, `Projection '${id}', field 'data.${name}' returns '${result}'; component '${projection.componentId}' accepts ${results.join(", ")}`, "PANEL_COMPONENT_DATA_RESULT_MISMATCH");
   }
