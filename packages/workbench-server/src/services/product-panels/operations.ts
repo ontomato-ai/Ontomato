@@ -81,7 +81,7 @@ async function declaredOperation(owner: AssistantOwner, credentials: AssistantCr
       if (handler.effect === "read") {
         if (!Object.hasOwn(panel.manifest.slots, handler.target.slot))
           throw new HttpError(422, "The operation's draft slot is unavailable", "OPERATION_UNAVAILABLE");
-        return { effect: "read" as const, handler };
+        return { effect: "read" as const, handler, label: operation.label };
       }
       let targetMatches = operation.target?.source === "draft" && operation.target.slot === slot;
       if (handler.kind === "action") {
@@ -110,8 +110,8 @@ function writeOperation(current: Awaited<ReturnType<typeof declaredOperation>>) 
 
 export async function readPanelOperationDescriptor(owner: AssistantOwner, credentials: AssistantCredentials, ref: PanelOperationRef) {
   const current = await operationForUse(owner, credentials, ref);
-  if (current.effect === "read") return describePanelRead(current.handler);
-  const { id: _id, label: _label, kind: _kind, slot: _slot, ...descriptor } = current.operation;
+  if (current.effect === "read") return describePanelRead(current.handler, current.label);
+  const { id: _id, kind: _kind, slot: _slot, ...descriptor } = current.operation;
   return descriptor;
 }
 

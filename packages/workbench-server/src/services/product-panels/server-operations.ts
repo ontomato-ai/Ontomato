@@ -101,9 +101,9 @@ export function snapshotPanelWrite(handler: PanelWriteServerOperation, operation
   });
 }
 
-export function describePanelRead(handler: PanelReadServerOperation) {
+export function describePanelRead(handler: PanelReadServerOperation, label: string) {
   return panelReadOperationDescriptorSchema.parse({
-    handlerRef: handler.handlerRef, effect: handler.effect, batch: handler.batch, target: handler.target,
+    handlerRef: handler.handlerRef, label, effect: handler.effect, batch: handler.batch, target: handler.target,
     inputSchema: jsonSchema(handler.inputSchema), resultSchema: jsonSchema(handler.resultSchema),
   });
 }

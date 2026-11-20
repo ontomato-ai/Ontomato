@@ -436,7 +436,7 @@ it("reads the registered owner descriptor for an admitted human panel use", asyn
   const { request } = installBatchOwner();
   const input = { applicationId: request.applicationId, useId: request.useId, operationId: request.operationId };
   expect(await readPanelOperationDescriptor(owner, credentials, input)).toMatchObject({
-    handlerRef: "test.batch", effect: "write", target: { source: "input", input: "task" },
+    handlerRef: "test.batch", label: "Set status", effect: "write", target: { source: "input", input: "task" },
     inputSchema: { properties: { status: { type: "number" } } },
     resultSchema: { properties: { done: { type: "boolean" } } },
     batch: true, inspectImpact: { handlerRef: "test.batch.impact" },
@@ -596,6 +596,10 @@ it("runs a registered read using the reader and preview context without creating
   mocks.projection.mockResolvedValue({
     id: "run", name: "Trial", componentId: "run", binding, inputs: {},
   });
+  const label = "Preview the metric results";
+  mocks.catalogue.mockResolvedValue(new Map([["run", {
+    operations: [{ client: "metricViews", name: "testExecute", label, kind: "action", inputSchema: {} }],
+  }]]));
   const ownerRead = vi.fn(async (url, init) => {
     expect(url).toBe("http://owner.test/metricView/testExecute");
     expect(new Headers(init.headers).get("tk")).toBe("U-token");
@@ -605,7 +609,7 @@ it("runs a registered read using the reader and preview context without creating
   });
   vi.stubGlobal("fetch", ownerRead);
   expect(await readPanelOperationDescriptor(owner, credentials, input)).toMatchObject({
-    effect: "read", batch: false, target: { source: "draft", slot: "form" },
+    label, effect: "read", batch: false, target: { source: "draft", slot: "form" },
   });
   expect(await readPanelOperation(owner, preview, input)).toEqual({ kind: "json", value: [{ amount: 3 }] });
   await expect(prepareHumanPanelOperation(owner, credentials, input)).rejects.toMatchObject({ code: "OPERATION_WRITE_REQUIRED" });
