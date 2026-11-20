@@ -12,7 +12,8 @@ vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({url:
 vi.mock("../../../config/data-query-api",()=>({getApiConfig:()=>({baseUrl:state.identityUrl})}));
 vi.mock("../../../config/application",()=>({config:{dataQuery:{get baseUrl(){return state.identityUrl;}}}}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:state.query}),qualifiedTable:(name:string)=>name}));
-vi.mock("../../../services/assistant/skills",()=>({readPageSkills:vi.fn()}));
+vi.mock("../../../services/assistant/skills",()=>({loadedPageSkillVersion:vi.fn(),readAssistantSkillView:vi.fn()}));
+vi.mock("../../../services/skills/view",()=>({pageSkillMemberContext:vi.fn(),readSkillView:vi.fn()}));
 vi.mock("../../../services/product-panels/skill-package",()=>({readComponentCatalogue:vi.fn()}));
 vi.mock("../../../services/product-panels/current",()=>({readCurrentPanelRecord:vi.fn(),readCurrentProjectionRecord:vi.fn(),requireCurrentPanels:vi.fn(),saveCurrentPanel:vi.fn(),saveCurrentProjection:vi.fn()}));
 vi.mock("../../../utils/request-identity",async original=>({...await original<typeof import("../../../utils/request-identity")>(),requireDomainId:(req:{domainId:string})=>req.domainId}));
