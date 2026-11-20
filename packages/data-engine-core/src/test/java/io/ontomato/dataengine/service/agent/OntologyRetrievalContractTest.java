@@ -11,6 +11,7 @@ import com.sun.net.httpserver.HttpServer;
 import io.ontomato.dataengine.controller.*;
 import io.ontomato.dataengine.schedules.ScheduleIdentity;
 import io.ontomato.dataengine.service.*;
+import io.ontomato.dataengine.service.agent.AgentHttpException;
 import io.ontomato.dataengine.service.sys.bean.permission.FieldPermission;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import java.net.*;
@@ -38,6 +39,8 @@ class OntologyRetrievalContractTest {
   QueryJobService jobs;
   QueryQualityService quality;
   QueryGrantService grants;
+  OntologyQueryService ontology;
+  QueryOutputService outputs;
   UserDataPermission permission, executorPermission;
   IdentityService identity;
   MockMvc http;
@@ -175,7 +178,7 @@ class OntologyRetrievalContractTest {
     when(lookup.getDataPermission(executor.getId(), owner.domainId())).thenAnswer(call -> executorPermission);
     var queries = new QueryAccessService(identity, lookup, grants);
     authorization = new OntologyAgentAccess(queries, identity, grants, store);
-    var ontology = mock(OntologyQueryService.class);
+    ontology = mock(OntologyQueryService.class);
     when(ontology.overview(any())).thenReturn(Map.of("description", "", "classes", List.of()));
     when(ontology.metrics(any(), any())).thenReturn(Map.of("items", List.of()));
     when(ontology.knowledge(any(), any())).thenReturn(Map.of("items", List.of()));
@@ -185,6 +188,7 @@ class OntologyRetrievalContractTest {
     var bindings = mock(OntologyBindingRetrieval.class);
     when(bindings.snapshot(any(),any(),any())).thenReturn(JSONObject.of("status","completed","error",null,"datasets",new JSONArray()));
     results = new RetrievalResults(store,mock(AgentChannelChanges.class));
+    outputs = mock(QueryOutputService.class);
     tasks = new RetrievalTasks(store, jobs, results);
     retrieval =
         new OntologyRetrievalService(
@@ -193,7 +197,7 @@ class OntologyRetrievalContractTest {
             definitions,
             ontology,
             grants,
-            mock(QueryOutputService.class),
+            outputs,
             jobs,
             quality,
             authorization, bindings, results, tasks,mock(AgentChannelRuns.class),mock(AgentChannelChanges.class));
@@ -454,9 +458,8 @@ class OntologyRetrievalContractTest {
     String output = id();
     var preparation = JSONObject.of("title", "Organizations", "recipe", JSONObject.of("kind", "package",
         "package", QueryPackage.fromDsl("{\"answer\":{\"steps\":[{}]}}"), "parameters", new JSONObject(),
-        "columnLabels", JSONObject.of("value", "Value")), "assumptions", List.of(), "metricUses", List.of(),
-        "selfCheck", JSONObject.of("scope", "", "filters", "", "grain", "", "denominator", "", "nullGroups", "",
-            "comparisons", List.of()));
+        "columnLabels", JSONObject.of("value", "Value")), "assumptions", List.of(),
+        "selfCheck", JSONObject.of("scope", "", "filters", "", "grain", "", "denominator", "", "nullGroups", ""));
     var response = http.perform(post("/ontology/retrievals/" + session + "/runs/" + run + "/outputs")
         .header("tk", grant).header("X-Ontomato-Run-Id", run).header("X-Ontomato-Session-Id", session)
         .header("Idempotency-Key", output).contentType("application/json").content(AgentJson.json(preparation)))
@@ -712,6 +715,109 @@ class OntologyRetrievalContractTest {
     verifyNoInteractions(jobs);
   }
 
+  private io.ontomato.dataengine.bean.metricView.MetricView publishedMetric(String status) {
+    var function = new io.ontomato.dataengine.bean.function.Function();
+    function.setId(id());
+    function.setDomainId(owner.domainId());
+    function.setOperation(io.ontomato.dataengine.bean.function.Function.OPERATION_READ);
+    function.setLogic("count objects");
+    var threshold = new io.ontomato.dataengine.bean.function.Parameter();
+    threshold.setName("threshold");
+    threshold.setType(io.ontomato.dataengine.bean.function.Parameter.TYPE_NUMBER);
+    threshold.setValue(35);
+    function.setParameters(List.of(threshold));
+    var metric = new io.ontomato.dataengine.bean.metricView.MetricView();
+    metric.setId(id());
+    metric.setName("Sales total");
+    metric.setDomainId(owner.domainId());
+    metric.setStatus(status);
+    metric.setFunction(function);
+    metric.setBindings(new ArrayList<>());
+    var preset = new io.ontomato.dataengine.bean.metricView.MetricViewBinding();
+    preset.setId(id());
+    preset.setName("FY24");
+    preset.setParameters(JSONObject.of("threshold", 50));
+    metric.getBindings().add(preset);
+    return metric;
+  }
+
+  @Test
+  void aMetricDeliveryTakesItsSelectorAndOnlyAPublishedDefinition() throws Exception {
+    var metric = publishedMetric(io.ontomato.dataengine.bean.metricView.MetricView.STATUS_PUBLISHED);
+    when(ontology.metric(anyString(), anyString(), any())).thenReturn(metric);
+    var gate = postJson("/ontology/retrievals/skill-runs", id(), Map.of("question", "How many sales?"), null);
+    String retrievalId = gate.getString("id"), run = gate.getString("runId");
+    String route = "/ontology/retrievals/" + retrievalId + "/runs/" + run + "/submit-metric";
+
+    String overridden = id();
+    http.perform(post(route).header("tk", "fixture-user").header("X-Ontomato-Run-Id", run)
+            .header("Idempotency-Key", overridden).contentType("application/json")
+            .content(AgentJson.json(JSONObject.of("id", metric.getId(), "revision", "revision",
+                "parameters", JSONObject.of("threshold", 50)))))
+        .andExpect(status().isAccepted());
+    var accepted = store.one("SELECT request FROM ontology_retrieval_outputs WHERE id=?::uuid", overridden)
+        .getJSONObject("request");
+    assertEquals("workbench.dataset.v2", accepted.getString("schema"));
+    assertEquals("Sales total", accepted.getString("title"));
+    assertEquals("How many sales?", accepted.getString("question"));
+    assertNull(accepted.get("selfCheck"));
+    assertFalse(accepted.containsKey("metricUses"));
+    assertEquals(JSONObject.of("threshold", 50), accepted.getJSONObject("recipe").getJSONObject("parameters"));
+    var job = org.mockito.ArgumentCaptor.forClass(JSONObject.class);
+    verify(jobs).start(eq(overridden), any(io.ontomato.dataengine.core.bean.User.class), eq("output"), job.capture(), any());
+    assertEquals("metric", job.getValue().getJSONObject("recipe").getString("kind"));
+
+    String presetRun = id();
+    http.perform(post(route).header("tk", "fixture-user").header("X-Ontomato-Run-Id", run)
+            .header("Idempotency-Key", presetRun).contentType("application/json")
+            .content(AgentJson.json(JSONObject.of("id", metric.getId(), "revision", "revision",
+                "bindingId", metric.getBindings().getFirst().getId()))))
+        .andExpect(status().isAccepted());
+    var preset = store.one("SELECT request FROM ontology_retrieval_outputs WHERE id=?::uuid", presetRun)
+        .getJSONObject("request");
+    assertEquals("Sales total · FY24", preset.getString("title"));
+    assertEquals(metric.getBindings().getFirst().getId(), preset.getJSONObject("recipe").getString("bindingId"));
+    assertEquals(new JSONObject(), preset.getJSONObject("recipe").getJSONObject("parameters"));
+
+    var mixed = http.perform(post(route).header("tk", "fixture-user").header("X-Ontomato-Run-Id", run)
+            .header("Idempotency-Key", id()).contentType("application/json")
+            .content(AgentJson.json(JSONObject.of("id", metric.getId(), "revision", "revision",
+                "bindingId", metric.getBindings().getFirst().getId(), "parameters", JSONObject.of("threshold", 50)))))
+        .andExpect(status().isBadRequest()).andReturn();
+    assertTrue(JSON.parseObject(mixed.getResponse().getContentAsString()).getJSONObject("error").getString("message")
+        .contains("bindingId or parameters"));
+
+    when(ontology.metric(anyString(), anyString(), any()))
+        .thenReturn(publishedMetric(io.ontomato.dataengine.bean.metricView.MetricView.STATUS_PENDING_REVIEW));
+    http.perform(post(route).header("tk", "fixture-user").header("X-Ontomato-Run-Id", run)
+            .header("Idempotency-Key", id()).contentType("application/json")
+            .content(AgentJson.json(JSONObject.of("id", metric.getId(), "revision", "revision"))))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void aWorkspaceFileBecomesASourceOnlyThroughItsReceiptAndBytes() throws Exception {
+    var gate = postJson("/ontology/retrievals/skill-runs", id(), Map.of("question", "Sales?"), null);
+    String retrievalId = gate.getString("id"), run = gate.getString("runId"), output = id();
+    var dataset = JSONObject.of("schema", "workbench.dataset.v2", "title", "Sales total",
+        "rows", JSONArray.of(JSONObject.of("value", 9)), "execution",
+        JSONObject.of("receiptId", output, "executedAt", Instant.now().toString()));
+    store.update("INSERT INTO ontology_retrieval_outputs(id,run_id,input_hash,request,receipt_id,dataset_digest)"
+            + " VALUES(?,?,'fixture','{}',?,?)",
+        OntologyAgentStore.uuid(output), OntologyAgentStore.uuid(run), OntologyAgentStore.uuid(output),
+        AgentJson.hash(dataset));
+    var found = retrieval.datasetSource(retrievalId,
+        JSONObject.of("receiptId", output, "dataset", AgentJson.json(dataset)), owner);
+    assertEquals(run, found.getString("runId"));
+    assertEquals(output, found.getString("outputId"));
+
+    var edited = AgentJson.copy(dataset);
+    edited.getJSONArray("rows").getJSONObject(0).put("value", 10);
+    var missing = assertThrows(AgentHttpException.class, () -> retrieval.datasetSource(retrievalId,
+        JSONObject.of("receiptId", output, "dataset", AgentJson.json(edited)), owner));
+    assertEquals(404, missing.status());
+  }
+
   @Test
   void datasetExecutionKeepsTheAdmittedClassRangeWithAUserCredential() throws Exception {
     var payroll = new io.ontomato.dataengine.service.sys.bean.permission.FieldPermission("/payroll");
@@ -739,8 +845,8 @@ class OntologyRetrievalContractTest {
     org.springframework.test.util.ReflectionTestUtils.setField(retrieval, "outputs", new QueryOutputService(null, null, ontology, null, new io.ontomato.dataengine.service.SubjectValueResolver(org.mockito.Mockito.mock(io.ontomato.dataengine.service.SubjectAttributeLookup.class))));
     var preparation = JSONObject.of("title", "Sales", "question", "Sales?", "recipe", JSONObject.of("kind", "package",
         "package", QueryPackage.fromDsl(query.toJSONString()), "parameters", new JSONObject(), "columnLabels", JSONObject.of("value", "Value")),
-        "assumptions", new JSONArray(), "decisionIds", new JSONArray(), "metricUses", new JSONArray(),
-        "selfCheck", JSONObject.of("scope", "", "filters", "", "grain", "", "denominator", "", "nullGroups", "", "comparisons", new JSONArray()));
+        "assumptions", new JSONArray(), "decisionIds", new JSONArray(),
+        "selfCheck", JSONObject.of("scope", "", "filters", "", "grain", "", "denominator", "", "nullGroups", ""));
     String output = id();
     http.perform(post("/ontology/retrievals/" + run.getString("id") + "/runs/" + run.getString("runId") + "/outputs")
             .header("tk", "fixture-user").header("X-Ontomato-Run-Id", run.getString("runId"))
@@ -841,7 +947,7 @@ class OntologyRetrievalContractTest {
     var preparation = JSONObject.of("title", "Sales", "question", "V private question", "decisionIds", JSONArray.of(vDecision),
         "recipe", JSONObject.of("kind", "package", "package", QueryPackage.fromDsl(query.toJSONString()),
             "parameters", new JSONObject(), "columnLabels", JSONObject.of("value", "Value")),
-        "assumptions", new JSONArray(), "metricUses", new JSONArray(), "selfCheck", JSONObject.of("scope", "", "filters", "", "grain", "", "denominator", "", "nullGroups", "", "comparisons", new JSONArray()));
+        "assumptions", new JSONArray(), "selfCheck", JSONObject.of("scope", "", "filters", "", "grain", "", "denominator", "", "nullGroups", ""));
     http.perform(post(route).header("tk", grant).header("X-Ontomato-Run-Id", run).header("X-Ontomato-Session-Id", session)
         .header("Idempotency-Key", output).contentType("application/json").content(AgentJson.json(preparation)))
         .andExpect(status().isAccepted());
@@ -877,7 +983,7 @@ class OntologyRetrievalContractTest {
     var dataset =
         JSON.parseObject(
             """
-{"schema":"workbench.dataset.v1","title":"Sales","question":"Sales?","recipe":{"kind":"python","code":"print(0)","sha256":"source"},"columns":[{"key":"value","label":"Value","type":null}],"rows":[{"value":null},{"value":0},{"value":false}],"outKeyRefs":[{"key":"value","className":"/sales","attrName":"value","asGroupBy":false,"statCal":false}],"truncation":null,"assumptions":[],"decisionIds":[],"metricUses":[],"selfCheck":{"scope":"","filters":"","grain":"","denominator":"","nullGroups":"","comparisons":[]}}
+{"schema":"workbench.dataset.v1","title":"Sales","question":"Sales?","recipe":{"kind":"python","code":"print(0)","sha256":"source"},"columns":[{"key":"value","label":"Value","type":null}],"rows":[{"value":null},{"value":0},{"value":false}],"outKeyRefs":[{"key":"value","className":"/sales","attrName":"value","asGroupBy":false,"statCal":false}],"truncation":null,"assumptions":[],"decisionIds":[],"selfCheck":{"scope":"","filters":"","grain":"","denominator":"","nullGroups":""}}
 """);
     dataset.put(
         "execution", JSONObject.of("receiptId", output, "executedAt", Instant.now().toString()));

@@ -2,12 +2,13 @@ import type {AssistantRetrievalOperation,AssistantRetrievalCallerInput} from "@o
 import { agentQualityProjectionSchema } from "@ontomato/contracts/agent-task-results";
 import { z } from "zod";
 import { agentHostRunSnapshotSchema } from "@ontomato/contracts/agent-host";
-import { datasetPayloadSchema, retrievalEvidenceSchema, retrievalCallerSchema, retrievalCallerAdmissionSchema, retrievalCallerUserQuotesSchema } from "@ontomato/contracts/data-retrieval";
+import { storedDataset, retrievalEvidenceSchema, retrievalCallerSchema, retrievalCallerAdmissionSchema, retrievalCallerUserQuotesSchema } from "@ontomato/contracts/data-retrieval";
 import { runtimeArtifactSchema } from "@ontomato/contracts/agent-runtime-artifacts";
 import { backendGet, backendPost, backendDelete, backendPut, buildBackendHeaders } from "../../utils/backend-client";
 import { getApiConfig } from "../../config/data-query-api";
 import { environment } from "../../config/environment";
 import type { AssistantOwner } from "./store";
+import { HttpError } from "../../utils/errors";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 
 function serviceHeaders(owner: AssistantOwner, credentials?: AssistantCredentials) {
@@ -39,6 +40,8 @@ export class OntologyRetrievalClient {
     const output=`${path}/runs/${operation.retrievalRunId}/outputs`;
     const headers={...this.headers(this.operationCredentials,operation.key),"X-Ontomato-Run-Id":operation.retrievalRunId};
     if(operation.operation==="submit")return ontologyRequest(output,headers,"POST",operation.input);
+    if(operation.operation==="submit-metric")
+      return ontologyRequest(`${path}/runs/${operation.retrievalRunId}/submit-metric`,headers,"POST",operation.input);
     return ontologyRequest(`${output}/${operation.key}${operation.operation==="content"?"/content":""}`,headers);
   }
 
@@ -81,8 +84,20 @@ export class OntologyRetrievalClient {
       retries: 1, timeoutMs: 30000, signal, errorDetailLimit: 1000,
     });
   }
+  /** The formal output a stored file reproduces; a file from another round is simply not this round's source. */
+  async datasetSource(retrievalId: string, receiptId: string, dataset: string) {
+    try {
+      const value = await this.request(`/ontology/retrievals/${retrievalId}/dataset-source`, "POST", { receiptId, dataset });
+      if (value === null) return null;
+      return z.object({ runId: z.string().uuid(), outputId: z.string().uuid() }).strict().parse(value);
+    } catch (error: unknown) {
+      if (error instanceof HttpError && error.status === 404) return null;
+      throw error;
+    }
+  }
   async dataset(retrievalId: string, artifactId: string) {
-    return z.object({ id: z.string().uuid(), payload: datasetPayloadSchema, source: z.literal("binding").optional(), sha256: z.string().optional() }).parse(await this.request(`/ontology/retrievals/${retrievalId}/datasets/${artifactId}`));
+    const value = z.object({ id: z.string().uuid(), payload: z.unknown(), source: z.literal("binding").optional(), sha256: z.string().optional() }).parse(await this.request(`/ontology/retrievals/${retrievalId}/datasets/${artifactId}`));
+    return { ...value, payload: storedDataset(value.payload) };
   }
   async artifact(sessionId: string, artifactId: string) {
     return runtimeArtifactSchema.parse(await this.request(`/ontology/ai/sessions/${sessionId}/artifacts/${artifactId}`));

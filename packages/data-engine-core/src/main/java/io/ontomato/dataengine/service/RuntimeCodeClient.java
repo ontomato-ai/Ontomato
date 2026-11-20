@@ -106,7 +106,13 @@ public class RuntimeCodeClient {
             "SKILL.md",
             "content",
             skillResource("ontology-skills/ontomato-analyst-assistant/SKILL.md")));
-    for (String file : List.of("ontomato.mjs", "client.mjs", "application.yml"))
+    files.add(
+        Map.of(
+            "path",
+            "ontomato.mjs",
+            "content",
+            skillResource("ontology-skills/ontomato-analyst/assistant.mjs")));
+    for (String file : List.of("client.mjs", "application.yml"))
       files.add(
           Map.of("path", file, "content", skillResource("ontology-skills/ontomato-analyst/" + file)));
     return runtime.publishSkill("ontology-assistant-skill-registration", ASSISTANT_SKILL, files);

@@ -28,7 +28,7 @@ import {
   type RuntimeArtifact,
 } from "@ontomato/contracts/agent-runtime-artifacts";
 import {
-  datasetPayloadSchema,
+  storedDataset,
 } from "@ontomato/contracts/data-retrieval";
 import { pageDraftSchema, type PageDraft } from "@ontomato/contracts/page-draft";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
@@ -520,12 +520,23 @@ export const assistantService = {
     if (!recorded.rowCount)
       throw new HttpError(409, "This draft already created another object", "PAGE_DRAFT_CREATED_CONFLICT");
   },
+  /**
+   * Which formal output a workspace file is. A metric delivery leaves no child run, so the file's receipt and bytes
+   * decide it; the ontology owns that match, never a path or a file name. A retriever file keeps its accepted
+   * artifact as the source of the same round.
+   */
   async datasetSource(sessionId: string, id: string, owner: AssistantOwner) {
     const a = await this.artifact(sessionId, id, owner);
+    const bytes = (await this.content(sessionId, id, owner)).toString();
+    const file = JSON.parse(bytes) as { execution?: { receiptId?: string } };
+    const receiptId = file.execution?.receiptId;
     for (const turn of await assistantStore.turns(sessionId)) {
       if (!turn.retrieval_scope_id) continue;
       const ontology = new OntologyRetrievalClient(owner, turn.retrieval_scope_id);
       for (const link of await ontology.links()) {
+        const formal = receiptId
+          ? await ontology.datasetSource(link.retrievalId, receiptId, bytes) : null;
+        if (formal) return { retrievalId: link.retrievalId, sourceOutputId: formal.outputId };
         const evidence = await ontology.evidence(link.retrievalId, link.runId);
         for (const output of evidence.snapshot.bindings?.datasets ?? []) {
           if (output.sha256 !== a.sha256) continue;
@@ -548,7 +559,7 @@ export const assistantService = {
     const source = await this.datasetSource(sessionId, id, owner);
     return {
       source,
-      payload: datasetPayloadSchema.parse(
+      payload: storedDataset(
         JSON.parse((await this.content(sessionId, id, owner)).toString()),
       ),
     };

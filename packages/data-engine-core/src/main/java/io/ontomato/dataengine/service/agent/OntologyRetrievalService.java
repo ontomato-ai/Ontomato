@@ -323,19 +323,6 @@ public class OntologyRetrievalService {
                 "assumptions",
                 data.get("assumptions")));
       }
-      var metrics =
-          JSONObject.from(
-              ontology.metrics(
-                  JSONObject.of(
-                      "query",
-                      input.getString("question"),
-                      "limit",
-                      10,
-                      "cursor",
-                      null,
-                      "classNames",
-                      input.getOrDefault("classNames", new JSONArray())),
-                  context.access()));
       var knowledge =
           JSONObject.from(
               ontology.knowledge(
@@ -353,10 +340,6 @@ public class OntologyRetrievalService {
               scopedOverview(context.access(), input.getList("classNames", String.class)),
               "knowledge",
               knowledge.get("items"),
-              "metrics",
-              metrics.get("items"),
-              "moreMetrics",
-              metrics.get("nextCursor"),
               "previousDatasets",
               prior,
               "decisions",
@@ -626,8 +609,7 @@ public class OntologyRetrievalService {
       String id, String runId, String key, JSONObject body, OntologyAgentAccess.Context context) {
     var acceptedInput = store.retrieval(id, context.owner());
     body.put("question", acceptedInput.getJSONObject("input").getString("question"));
-    body.put("decisionIds", acceptedInput.getJSONArray("decisions").stream()
-        .map(JSONObject::from).map(d -> d.getString("id")).toList());
+    body.put("decisionIds", decisionIds(acceptedInput));
     DatasetFileContract.preparation(body);
     body.put("schema", "workbench.dataset.v2");
     var recipe = body.getJSONObject("recipe");
@@ -637,11 +619,8 @@ public class OntologyRetrievalService {
           var accepted = store.retrieval(id, context.owner());
           // Reauthorize all admitted classes against current permissions before accepting output.
           var classes = scopedInput(accepted.getJSONObject("input"), context).getList("classNames", String.class);
-          var decisions = accepted.getJSONArray("decisions");
           for (String decision : body.getList("decisionIds", String.class))
-            if (decisions.stream()
-                .map(JSONObject::from)
-                .noneMatch(d -> decision.equals(d.getString("id"))))
+            if (!decisionIds(accepted).contains(decision))
               throw AgentHttpException.invalid("Unknown decision");
           store.update(
               "INSERT INTO ontology_retrieval_outputs(id,run_id,input_hash,request)"
@@ -673,6 +652,86 @@ public class OntologyRetrievalService {
                     executionAccess,
                     context.language())));
     return JSONObject.of("id", key);
+  }
+
+  private static List<String> decisionIds(JSONObject accepted) {
+    return accepted.getJSONArray("decisions").stream()
+        .map(JSONObject::from)
+        .map(decision -> decision.getString("id"))
+        .toList();
+  }
+
+  /**
+   * One metric delivery: the selector is the whole input. The published definition, the frozen source and the receipt
+   * are the server's, so a recalled metric and a metric run from its raw id differ only in the question and values.
+   */
+  public JSONObject prepareMetricOutput(
+      String id, String runId, String key, JSONObject body, OntologyAgentAccess.Context context) {
+    AgentJson.fields(body, "id", "revision", "bindingId", "parameters");
+    String metricId = AgentJson.id(AgentJson.text(body, "id")), revision = AgentJson.text(body, "revision");
+    String bindingId = body.getString("bindingId");
+    JSONObject supplied = body.getJSONObject("parameters");
+    if (bindingId != null && supplied != null)
+      throw AgentHttpException.invalid("A preset already carries its values; pass either bindingId or parameters");
+    var executionAccess = store.transaction(
+        () -> {
+          store.gate(id, runId, context.owner());
+          var accepted = store.retrieval(id, context.owner());
+          var classes = scopedInput(accepted.getJSONObject("input"), context).getList("classNames", String.class);
+          return withClasses(context.access(), classes);
+        });
+    // The recall path only offers published metrics; a direct id must not reach the creator's own candidate.
+    var metric = ontology.metric(metricId, revision, executionAccess);
+    if (!io.ontomato.dataengine.bean.metricView.MetricView.STATUS_PUBLISHED.equals(metric.getStatus()))
+      throw AgentHttpException.missing();
+    JSONObject values = bindingId != null
+        ? new JSONObject() : MetricViewBindings.values(metric.getFunction());
+    if (supplied != null) values.putAll(supplied);
+    var recipe = JSONObject.of("kind", "metric", "metricId", metric.getId(),
+        "revision", revision, "parameters", values);
+    if (bindingId != null) recipe.put("bindingId", bindingId);
+    var request = JSONObject.of("schema", "workbench.dataset.v2",
+        "title", title(metric, bindingId),
+        "question", store.retrieval(id, context.owner()).getJSONObject("input").getString("question"),
+        "assumptions", assumptions(store.retrieval(id, context.owner()).getJSONArray("decisions")),
+        "decisionIds", decisionIds(store.retrieval(id, context.owner())),
+        "selfCheck", null, "recipe", recipe);
+    store.transaction(
+        () -> {
+          store.gate(id, runId, context.owner());
+          store.update(
+              "INSERT INTO ontology_retrieval_outputs(id,run_id,input_hash,request)"
+                  + " VALUES(?,?,?,?::jsonb) ON CONFLICT DO NOTHING",
+              uuid(key),
+              uuid(runId),
+              AgentJson.hash(request),
+              AgentJson.json(request));
+          var previous = store.one("SELECT * FROM ontology_retrieval_outputs WHERE id=?", uuid(key));
+          if (!runId.equals(previous.getString("run_id"))
+              || !AgentJson.hash(request).equals(previous.getString("input_hash")))
+            throw conflict("Output input changed");
+          return null;
+        });
+    jobs.start(
+        key,
+        subject(context.owner()),
+        "output",
+        JSONObject.of("submissionId", key, "recipe", recipe),
+        session ->
+            OntologyGenerationService.asOwner(executionAccess, () ->
+                outputs.execute(session, AgentJson.copy(recipe), null, executionAccess, context.language(),
+                    executionAccess.classNames())));
+    return JSONObject.of("id", key);
+  }
+
+  private static String title(io.ontomato.dataengine.bean.metricView.MetricView metric, String bindingId) {
+    return bindingId == null ? metric.getName()
+        : metric.getName() + " · " + MetricViewBindings.binding(metric, bindingId).getName();
+  }
+
+  /** Confirmed answers are the conditions this delivery stands on, in the order they were recorded. */
+  private static List<String> assumptions(JSONArray decisions) {
+    return confirmedDecisions(decisions);
   }
 
   public JSONObject output(String id, String runId, String key, Owner owner) {
@@ -741,6 +800,25 @@ public class OntologyRetrievalService {
   public byte[] datasetContent(String id,String dataset,Owner owner) throws Exception {
     if(bindings.ownsDataset(id,dataset,owner)) return bindings.content(id,dataset,owner).getBytes(StandardCharsets.UTF_8);
     return runtimeDatasetBytes(id,dataset,owner);
+  }
+
+  /**
+   * Which formal output a workspace file is. The receipt names a candidate; its bytes must reproduce the digest the
+   * output was admitted with, so an edited copy of a file is not a source. A path or a file name proves nothing.
+   */
+  public JSONObject datasetSource(String id, JSONObject body, Owner owner) {
+    AgentJson.fields(body, "receiptId", "dataset");
+    store.retrieval(id, owner);
+    String receipt = AgentJson.id(AgentJson.text(body, "receiptId"));
+    String digest = AgentJson.hash(JSON.parseObject(AgentJson.text(body, "dataset")));
+    var row =
+        store.one(
+            "SELECT o.id,o.run_id FROM ontology_retrieval_outputs o JOIN ontology_agent_runs r ON"
+                + " r.id=o.run_id WHERE r.session_id=? AND o.receipt_id=? AND o.dataset_digest=?",
+            uuid(id),
+            uuid(receipt),
+            digest);
+    return JSONObject.of("runId", row.getString("run_id"), "outputId", row.getString("id"));
   }
 
   private JSONObject datasetForOwner(String artifact, Owner owner) throws Exception {

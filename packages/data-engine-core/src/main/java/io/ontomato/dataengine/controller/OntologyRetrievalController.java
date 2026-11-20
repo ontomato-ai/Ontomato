@@ -65,6 +65,12 @@ public class OntologyRetrievalController {
     return retrieval.evidence(AgentJson.id(id), AgentJson.id(run), access.reader(req, id, run));
   }
 
+  @PostMapping("/ontology/retrievals/{id}/dataset-source")
+  public Object datasetSource(
+      @PathVariable String id, @RequestBody JSONObject body, HttpServletRequest req) {
+    return retrieval.datasetSource(AgentJson.id(id), body, access.reader(req, id, null));
+  }
+
   @PostMapping("/ontology/retrievals/skill-runs")
   @ResponseStatus(HttpStatus.CREATED)
   public Object begin(
@@ -96,6 +102,22 @@ public class OntologyRetrievalController {
       throw AgentHttpException.invalid("Run identity mismatch");
     if(req.getHeader("X-Ontomato-Query-Service-Token")!=null) {access.service(req);store.requireCallerResource(AgentJson.id(req.getHeader("X-Ontomato-Retrieval-Caller-Id")),AgentJson.id(id),AgentJson.id(run));}
     return retrieval.prepareOutput(
+        AgentJson.id(id), AgentJson.id(run), AgentJson.id(key), body, access.executionContext(req));
+  }
+
+  /** The assistant's metric delivery: the selector names a published metric, everything else is the server's. */
+  @PostMapping("/ontology/retrievals/{id}/runs/{run}/submit-metric")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  public Object metricOutput(
+      @PathVariable String id,
+      @PathVariable String run,
+      @RequestHeader("Idempotency-Key") String key,
+      @RequestBody JSONObject body,
+      HttpServletRequest req) {
+    if (!run.equals(req.getHeader("X-Ontomato-Run-Id")))
+      throw AgentHttpException.invalid("Run identity mismatch");
+    if(req.getHeader("X-Ontomato-Query-Service-Token")!=null) {access.service(req);store.requireCallerResource(AgentJson.id(req.getHeader("X-Ontomato-Retrieval-Caller-Id")),AgentJson.id(id),AgentJson.id(run));}
+    return retrieval.prepareMetricOutput(
         AgentJson.id(id), AgentJson.id(run), AgentJson.id(key), body, access.executionContext(req));
   }
 

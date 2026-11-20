@@ -482,6 +482,83 @@ public class OntologyQueryService {
         : QuerySourceAnalysis.fromStoredSources(returns.getOutKeyRefs());
   }
 
+  /**
+   * The metric's readable source, or null when this caller cannot read everything it touches. Definition-driven
+   * catalogues share one answer to "may this caller run it" so a listing never offers what execution refuses.
+   */
+  private JSONObject readableSource(MetricView metric, QueryAccessService.Access access,
+      List<Map<String, Object>> available, Set<String> availableNames) {
+    JSONObject sourceAnalysis;
+    try {
+      sourceAnalysis = metricAnalysis(metric);
+      QueryPermissions.authorizeInputs(sourceAnalysis, access.permission(), available);
+    } catch (ResponseStatusException unavailable) {
+      return null;
+    } catch (IllegalArgumentException | DslContractViolationException invalid) {
+      log.warn("Skipping metric {} with invalid source declaration: {}", metric.getId(), invalid.getMessage());
+      return null;
+    }
+    return availableNames.containsAll(involvedClasses(metric, sourceAnalysis)) ? sourceAnalysis : null;
+  }
+
+  /** Every class one execution of the metric reads: outputs, parameter inputs and declared source nodes. */
+  static Set<String> involvedClasses(MetricView metric, JSONObject sourceAnalysis) {
+    Set<String> involved = new LinkedHashSet<>();
+    var function = metric.getFunction();
+    if (function.getReturnDef() != null && function.getReturnDef().getClassNames() != null)
+      involved.addAll(function.getReturnDef().getClassNames());
+    if (function.getReturnDef() != null && function.getReturnDef().getOutKeyRefs() != null)
+      for (var ref : function.getReturnDef().getOutKeyRefs()) involved.add(ref.getClassName());
+    if (function.getParameters() != null)
+      for (var parameter : function.getParameters())
+        if (parameter.getClassNames() != null) involved.addAll(parameter.getClassNames());
+    sourceAnalysis.getJSONArray("nodes").stream().map(JSONObject::from)
+        .filter(node -> "class".equals(node.getString("kind")))
+        .forEach(node -> involved.add(node.getString("className")));
+    return involved;
+  }
+
+  /**
+   * Metric recall for a question: the nearest published metrics and, where one is nearer, its preset. Cutoff and cap are
+   * absolute, so the assistant gets an answer it can act on instead of a guess about how many results are relevant.
+   */
+  static final double RECALL_MAX_DISTANCE = 0.80;
+  static final int RECALL_MAX_METRICS = 5;
+
+  public Object recall(JSONObject body, QueryAccessService.Access access) {
+    if (body == null || !body.keySet().equals(Set.of("question"))
+        || !(body.get("question") instanceof String text) || text.isBlank())
+      throw new IllegalArgumentException("question is required");
+    String question = text.trim();
+    var available = classes(access);
+    Set<String> availableNames =
+        available.stream().map(c -> (String) c.get("className")).collect(java.util.stream.Collectors.toSet());
+    List<JSONObject> items = new ArrayList<>();
+    Set<String> taken = new HashSet<>();
+    for (var hit : metrics.recall(question, access.user().getDomainId(), RECALL_MAX_DISTANCE)) {
+      if (items.size() == RECALL_MAX_METRICS) break;
+      if (!taken.add(hit.metricId())) continue;
+      MetricView metric = metrics.queryById(hit.metricId(), access.user().getDomainId());
+      if (metric == null || !MetricView.STATUS_PUBLISHED.equals(metric.getStatus())) continue;
+      if (readableSource(metric, access, available, availableNames) == null) continue;
+      Set<String> involved = involvedClasses(metric, metricAnalysis(metric));
+      if (!access.classNames().isEmpty() && !access.classNames().containsAll(involved)) continue;
+      JSONObject item = JSONObject.of("id", metric.getId(), "revision", revision(metric),
+          "name", metric.getName(), "description", metric.getDescription(),
+          "logic", metric.getFunction().getLogic(),
+          "parameterDefs", metric.getFunction().getParameters());
+      item.put("preset", hit.bindingId() == null ? null : preset(metric, hit.bindingId()));
+      items.add(item);
+    }
+    return Map.of("items", items);
+  }
+
+  private static JSONObject preset(MetricView metric, String bindingId) {
+    MetricViewBinding binding = MetricViewBindings.binding(metric, bindingId);
+    return JSONObject.of("id", binding.getId(), "name", binding.getName(),
+        "description", binding.getDescription(), "parameters", binding.getParameters());
+  }
+
   public Object metrics(JSONObject body, QueryAccessService.Access access) {
     int limit = limit(body);
     String text = Objects.toString(body.getString("query"), "").toLowerCase(Locale.ROOT);
@@ -504,25 +581,14 @@ public class OntologyQueryService {
               JSON.toJSONString(
                   metric, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue));
       spec.put("revision", revision(metric));
-      Set<String> involved = new LinkedHashSet<>();
+      JSONObject sourceAnalysis = readableSource(metric, access, available, availableNames);
+      if (sourceAnalysis == null) continue;
       List<Object> fields = new ArrayList<>(), parameterFields = new ArrayList<>();
       var function = metric.getFunction();
-      JSONObject sourceAnalysis;
-      try {
-        sourceAnalysis = metricAnalysis(metric);
-        QueryPermissions.authorizeInputs(sourceAnalysis, access.permission(), available);
-      } catch (ResponseStatusException unavailable) { continue; }
-      catch (IllegalArgumentException | DslContractViolationException invalid) {
-        log.warn("Skipping metric {} in domain {} with invalid source declaration: {}",
-            metric.getId(), access.user().getDomainId(), invalid.getMessage());
-        continue;
-      }
       spec.put("sourceAnalysis", sourceAnalysis);
-      if (function.getReturnDef() != null && function.getReturnDef().getClassNames() != null)
-        involved.addAll(function.getReturnDef().getClassNames());
+      Set<String> involved = involvedClasses(metric, sourceAnalysis);
       if (function.getReturnDef() != null && function.getReturnDef().getOutKeyRefs() != null)
-        for (var ref : function.getReturnDef().getOutKeyRefs()) {
-          involved.add(ref.getClassName());
+        for (var ref : function.getReturnDef().getOutKeyRefs())
           fields.add(
               JSONObject.of(
                   "className",
@@ -531,18 +597,13 @@ public class OntologyQueryService {
                   ref.getAttrName(),
                   "outputKey",
                   ref.getKey()));
-        }
       if (function.getParameters() != null)
         for (var parameter : function.getParameters()) {
-          if (parameter.getClassNames() != null) involved.addAll(parameter.getClassNames());
           JSONObject field = JSONObject.of("parameter", parameter.getName());
           field.put("classes", parameter.getClassNames());
           field.put("attribute", null);
           parameterFields.add(field);
         }
-      sourceAnalysis.getJSONArray("nodes").stream().map(JSONObject::from)
-          .filter(n -> "class".equals(n.getString("kind"))).forEach(n -> involved.add(n.getString("className")));
-      if (!availableNames.containsAll(involved)) continue;
       spec.put(
           "context",
           Map.of(

@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -21,6 +22,7 @@ import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.bean.metricView.MetricView;
 import io.ontomato.dataengine.bean.metricView.MetricViewBinding;
 import io.ontomato.dataengine.bean.metricView.OriginCheckResult;
+import io.ontomato.dataengine.service.MetricRecall;
 import io.ontomato.dataengine.service.ai.EmbeddingService;
 import io.ontomato.dataengine.service.vector.VectorRetrievalGate;
 import io.ontomato.dataengine.util.AutoKMeansClusteringUtil;
@@ -303,6 +305,7 @@ public class MetricViewDao extends BaseDao {
 
 	public List<Object[]> find(String question, String className, int maxResult, double minScore, String domainId) {
 		return retrievalGate.read(domainId, () -> search(question, className, maxResult, minScore, domainId));
+
 	}
 
 	/** Runs inside the read boundary: the query vector and the rows belong to one generation. */
@@ -416,6 +419,31 @@ public class MetricViewDao extends BaseDao {
         }
         for (String id : jdbcTemplate.queryForList("SELECT id FROM metric_view_binding WHERE metric_view_id=?", String.class, metric.getId()))
             if (!retained.contains(id)) jdbcTemplate.update("DELETE FROM metric_view_binding WHERE id=? AND metric_view_id=?", id, metric.getId());
+    }
+
+    public record RecallHit(String metricId, String bindingId, double distance) {}
+    /**
+     * One embedding of the question against both published briefs. Raw L2 distance is the whole ranking: a preset hit
+     * and a metric hit compete on the same scale, so the nearest one names the preset a recall item carries.
+     */
+    public List<MetricRecall> recall(String question, String domainId, double maxDistance) {
+        return retrievalGate.read(domainId, () -> {
+            PGvector vector = new PGvector(embeddingService.embedding(question, domainId));
+            return jdbcTemplate.query(
+                "SELECT m.id,NULL::varchar AS binding_id,m.brief_vector <-> ?::vector AS distance FROM metric_view m"
+                    + " JOIN function f ON f.id=m.function_id AND f.domain_id=m.domain_id WHERE m.type='GENERAL' AND m.status=?"
+                    + " AND f.operation=? AND m.domain_id=? AND m.brief_vector IS NOT NULL"
+                    + " UNION ALL SELECT b.metric_view_id,b.id,b.brief_vector <-> ?::vector FROM metric_view_binding b"
+                    + " JOIN metric_view m ON m.id=b.metric_view_id JOIN function f ON f.id=m.function_id AND f.domain_id=m.domain_id"
+                    + " WHERE m.type='GENERAL' AND m.status=? AND f.operation=? AND m.domain_id=? AND b.brief_vector IS NOT NULL",
+                (rs, n) -> new MetricRecall(rs.getString(1), rs.getString(2), rs.getDouble(3)),
+                vector, MetricView.STATUS_PUBLISHED, Function.OPERATION_READ, domainId,
+                vector, MetricView.STATUS_PUBLISHED, Function.OPERATION_READ, domainId).stream()
+                .filter(hit -> hit.distance() <= maxDistance)
+                .sorted(java.util.Comparator.comparingDouble(MetricRecall::distance)
+                    .thenComparing(MetricRecall::metricId)
+                    .thenComparing(hit -> Objects.toString(hit.bindingId(), ""))).toList();
+        });
     }
 
     public record BindingMatch(String metricId, MetricViewBinding binding) {}

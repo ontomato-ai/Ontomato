@@ -54,6 +54,9 @@ beforeEach(() => {
   vi.spyOn(assistantService, "artifact").mockResolvedValue(
     artifact("a".repeat(64), "outputs/result.dataset.json") as RuntimeArtifact,
   );
+  vi.spyOn(assistantService, "content").mockResolvedValue(Buffer.from(JSON.stringify({
+    execution: { receiptId: "77777777-7777-4777-8777-777777777777" },
+  })) as never);
   vi.spyOn(assistantStore, "turns").mockResolvedValue([
     { retrieval_scope_id: "caller" } as TurnRow,
   ]);
@@ -95,7 +98,6 @@ describe("assistant ontology provenance", () => {
         truncation: null,
         assumptions: [],
         decisionIds: [],
-        metricUses: [],
         selfCheck: null,
         execution: { receiptId: "77777777-7777-4777-8777-777777777777", executedAt: "2026-10-30T00:00:00.000Z" },
       },
@@ -107,6 +109,16 @@ describe("assistant ontology provenance", () => {
     expect(calls.requests.map((r) => r.path)).toContain(
       `/ontology/retrievals/${retrieval}/datasets/66666666-6666-4666-8666-666666666666`,
     );
+  });
+
+  it("resolves a metric file through the formal output its receipt and bytes name", async () => {
+    const output = "99999999-9999-4999-8999-999999999999";
+    route.set(`/ontology/retrievals/${retrieval}/dataset-source`, { runId: run, outputId: output });
+    expect(await assistantService.datasetSource("session", "copy", owner)).toEqual({
+      retrievalId: retrieval, sourceOutputId: output,
+    });
+    expect(calls.requests.some((r) => r.path === `/ontology/retrievals/${retrieval}/dataset-source`)).toBe(true);
+    expect(calls.requests.some((r) => r.path.includes("/evidence"))).toBe(false);
   });
 
   it("rejects changed bytes even when the path has a dataset extension", async () => {

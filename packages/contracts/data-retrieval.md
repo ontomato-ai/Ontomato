@@ -78,9 +78,10 @@ and their asynchronous QC.
 Binding outputs have their own write gate and formal execution receipt, not a
 synthetic runtime run/artifact. Runtime stops never close that gate. History and
 parent-file verification distinguish host output IDs from runtime artifact IDs.
-Only host-produced dataset reads allow selfCheck null; agent/external preparation
-contracts, metricUses and comparison instructions stay unchanged. Existing QC
-runs on accepted binding recipes through the same quality service.
+Only host-produced dataset reads allow selfCheck null. Retriever deliveries carry
+a self-check over their own logic; a metric delivery carries none, because the
+definition is published and already checked. Existing QC runs on accepted
+binding recipes through the same quality service.
 
 ## Formal files and external skills
 
@@ -104,10 +105,24 @@ and truncation; exploration rows are not formal results. Unknown effects reconci
 the original ID. Closed/old runs return 409 `RETRIEVAL_RUN_CLOSED`; committed
 receipts stay readable. Cancellation closes pending outputs before stopping work.
 
-Metric recipes optionally select an owned `bindingId` on the dynamic `metricId`.
-Execution resolves the stored binding values, rejects overrides and freezes the
-actual values in the returned recipe. Metric revisions include the current
-aggregate; a changed definition or binding requires retrieving it again.
+## Metric delivery
+
+The assistant recalls published metrics and runs one itself, in its own
+retrieval run: `POST /ontology/retrievals/skill-runs` with the question,
+`POST .../runs/:runId/submit-metric` with `{id,revision,bindingId?,parameters?}`
+and a UUID Idempotency-Key, the same status/content reads, then `close`. The
+selector is the whole input: Java reads the published definition, the declared
+defaults or the preset values, freezes the executed source and the receipt, and
+generates the title from the definition and the question from the accepted
+request. `bindingId` and `parameters` are exclusive; missing parameter values
+come from the definition, and subject-bound values are resolved at execution.
+A revision that changed is refused, and only a published metric is delivered.
+`workbench.dataset.v2` metric files carry `recipe.kind="metric"` with exactly one
+frozen source and `selfCheck:null`; they never carry metric uses.
+
+Files written before the cutover may carry `metricUses` and a `selfCheck.comparisons`
+list. A reader of an already stored file drops those two fields before applying
+the current view; new submissions must not send them.
 
 `DatasetPayload` remains the sole dataset schema. New outputs use
 `workbench.dataset.v2` and freeze the complete package and actual parameter values;
