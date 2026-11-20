@@ -28,6 +28,25 @@ const projection = (id, name, description, component, ports) => ({
 
 export default [
   projection(
+    "capability-map-mode",
+    "Graph mode switcher",
+    "Switches the capability map between type overview and instance exploration modes.",
+    "SegmentedControl",
+    {
+      outputs: {
+        value: text,
+      },
+      data: {},
+      config: {
+        options: [
+          { value: "type", labelKey: "capMap.modeType" },
+          { value: "instance", labelKey: "capMap.modeInstance" },
+        ],
+        ariaLabelKey: "capMap.modeLabel",
+      },
+    },
+  ),
+  projection(
     "capability-map-graph",
     "Four-layer capability graph",
     "Interactive platform ontology graph across fact, capability, governance and product layers in type or instance mode.",
@@ -94,8 +113,6 @@ export default [
     {
       inputs: {
         type: text,
-        keyword: text,
-        page: json,
       },
       outputs: {
         selected: anyLayerObject,
@@ -103,17 +120,9 @@ export default [
       data: {
         objects: read("objects", {
           type: { input: "type" },
-          keyword: { input: "keyword" },
-          page: { input: "page" },
         }),
       },
-      config: {
-        searchable: true,
-        showCount: true,
-        pageSize: 20,
-        toggleable: false,
-        emptyTypeText: "capMap.typePickerEmpty",
-      },
+      config: {},
     },
   ),
   projection(
@@ -123,26 +132,17 @@ export default [
     "ObjectList",
     {
       inputs: {
-        keyword: text,
-        page: json,
+        type: text,
       },
       outputs: {
         selected: { kind: "object", objectType: USER },
       },
       data: {
         objects: read("objects", {
-          type: { literal: USER },
-          keyword: { input: "keyword" },
-          page: { input: "page" },
+          type: { input: "type" },
         }),
       },
-      config: {
-        type: USER,
-        searchable: true,
-        showCount: true,
-        pageSize: 20,
-        toggleable: false,
-      },
+      config: {},
     },
   ),
 ];
