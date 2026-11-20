@@ -4,9 +4,7 @@ import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "@ontomato/contr
 import {
   DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, METRIC_VIEW, SET_METRIC_VIEW_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW,
 } from "@ontomato/contracts/panel-client-requests";
-import {
-  panelReadOperationCallSchema, panelReadOperationInputSchema,
-} from "@ontomato/contracts/panel-operations";
+import { panelReadOperationCallSchema, panelReadOperationInputSchema } from "@ontomato/contracts/panel-operations";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import { tForLocale } from "../../i18n";
@@ -152,10 +150,10 @@ function withParameterValues(draft: Record<string, unknown>, parameters: Record<
   return copy;
 }
 
-/**
- * A read call carries its input as a JSON object; a metric trial reads its draft, parameter values and binding from it
- * by the trial call's own schema. A trial whose call names no target has none.
- */
+/** A read call carries its input as a JSON object; a metric trial reads its draft, parameter values and binding from it. */
+function trialInput(call: z.infer<typeof panelReadOperationCallSchema>) {
+  return panelReadOperationInputSchema.parse(call.input);
+}
 
 /** The owner's answer to a trial; a refusal keeps the owner's reason and code. */
 async function trial(host: Host, path: string, body: unknown, refusalCode: string) {
@@ -309,8 +307,7 @@ export const m5ServerOperations = [
     inputSchema: panelReadOperationInputSchema,
     resultSchema: markdownResultSchema,
     async execute(host: Host, call: z.infer<typeof panelReadOperationCallSchema>) {
-      // The coordinator passes the call's input as JSON; the trial's own input is this owner's to read.
-      const { draft, parameters } = panelReadOperationInputSchema.parse(call.input);
+      const { draft, parameters } = trialInput(call);
       const envelope = await trial(host, "/metricView/test", withParameterValues(draft, parameters), "METRIC_VIEW_TEST_REFUSED");
       return { kind: "markdown" as const, markdown: testedContentSchema.parse(envelope.data).md };
     },
@@ -326,7 +323,7 @@ export const m5ServerOperations = [
     inputSchema: panelReadOperationInputSchema,
     resultSchema: jsonResultSchema,
     async execute(host: Host, call: z.infer<typeof panelReadOperationCallSchema>) {
-      const { draft, parameters, bindingId } = panelReadOperationInputSchema.parse(call.input);
+      const { draft, parameters, bindingId } = trialInput(call);
       const envelope = await trial(host, "/metricView/testExecute",
         { metricView: draft, param: parameters, ...(bindingId ? { bindingId } : {}) }, "METRIC_VIEW_TEST_EXECUTE_REFUSED");
       // A truncated run is a partial result: the reader sees that it is, and why, beside the rows.
