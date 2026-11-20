@@ -225,7 +225,7 @@ beforeEach(() => {
   mocks.agents.mockResolvedValue([
     agentRow(agentIds.regular, "regular", [], { sortOrder: 0 }),
     agentRow(agentIds.publicOnly, "custom-public", [publicDataBrowserSkill], { sortOrder: 1 }),
-    agentRow(agentIds.orderCustom, "custom-order", [panelOrderRef], { sortOrder: 2 }),
+    agentRow(agentIds.orderCustom, agentIds.orderCustom, [panelOrderRef], { sortOrder: 2 }),
     agentRow(agentIds.legacyOrderCustom, "custom-legacy", [legacyOrderRef], { sortOrder: 3 }),
     agentRow(agentIds.invoiceCustom, "custom-invoice", [panelInvoiceRef], { sortOrder: 4 }),
     agentRow(agentIds.disabledOrder, "custom-disabled", [panelOrderRef], { enabled: false, sortOrder: 5 }),
@@ -309,7 +309,7 @@ it("resolves application-use member queries through one view, filters by effecti
     agentIds.orderCustom,
   ]);
   expect(result.defaultAgentId).toBe(agentIds.orderCustom);
-  expect(result.presetAgentIds).toEqual({ regular: agentIds.regular, "custom-order": agentIds.orderCustom });
+  expect(result.presetAgentIds).toEqual({ regular: agentIds.regular });
   expect(mocks.agents).toHaveBeenCalledTimes(1);
 
   // Without a matching pageKey default in the group, default falls back to regular.
