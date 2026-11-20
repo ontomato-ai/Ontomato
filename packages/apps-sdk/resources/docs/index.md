@@ -101,6 +101,17 @@ saved or created, and `discarded` when the reader throws away what it held — f
 <projection slot="form" @saved="mode = 'view'" @discarded="mode = 'view'"></projection>
 ```
 
+A form the page opens under a parent — a new attribute in the class it shows, a relationship from its two ends — fixes
+the fields that parent decides. The owner's form does not know which page it is in and may offer them as choices, so
+the page names them in the `ObjectForm` projection's `config.fixedFields`, by the owner's JSON Pointer path, each from a
+field of the panel's state as it holds it (`{"state": "className"}`) or a value written there (`{"literal": "Device"}`).
+The form shows them read-only, follows the state they come from, and submits them with every save; the owner checks
+them as any other value:
+
+```json
+{ "config": { "fixedFields": { "/className": { "state": "className" } } } }
+```
+
 ### Draw a part yourself
 
 When no official component draws a part the way the page needs, the panel draws it itself. Declare a member whose
