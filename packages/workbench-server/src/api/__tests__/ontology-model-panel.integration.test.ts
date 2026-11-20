@@ -242,7 +242,7 @@ beforeAll(async () => {
   }
   const html = Object.keys(members).map(key => `<panel-member ref="${key}"></panel-member>`).join("");
   const saved = await request("PUT", `product-panels/${panelId}`, {
-    name: "Ontology model", description: "", visibility: "domain", revision: 0, content: { html: `<section flow="column">${html}</section>` },
+    name: "Ontology model", description: "", visibility: "domain", revision: 0, content: { html: `<section>${html}</section>` },
     manifest: { state: {}, events: {}, members: Object.fromEntries(Object.entries(members).map(([key, member]) =>
       [key, { target: { projectionId: `ontology-model-${key}` }, ...member }])) },
   });
