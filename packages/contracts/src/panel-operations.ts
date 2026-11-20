@@ -1,12 +1,18 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema, runtimeKeySchema } from "./agent-runtime-values";
-import { panelObjectIdentitySchema, panelObjectRefSchema, panelOperationCallSchema } from "./panel-manifest";
+import { panelManifestSchema, panelObjectIdentitySchema, panelObjectRefSchema, panelOperationCallSchema } from "./panel-manifest";
 import {
   panelFormDescriptionSchema, panelFormValuesSchema, panelGroupCountsSchema, panelOptionListSchema,
   panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema, panelRelationNeighborsSchema,
 } from "./panel-projection";
+import { actionDefinitionSchema, actionExplanationSchema } from "./action-panel";
 import { chartProjectionTemplateSchema, dashboardMetricOutputSchema } from "./dashboard";
-import { applicationEntryMenuSchema } from "./product-panels";
+import { appsSdkComponentCatalogEntrySchema } from "./apps-sdk";
+import {
+  applicationEntryMenuSchema, applicationPanelUsesResponseSchema, currentPanelRecordSchema, currentProjectionRecordSchema,
+  productPanelListResponseSchema, productPanelUsedBySchema, productProjectionListResponseSchema, productProjectionUsedBySchema,
+} from "./product-panels";
+import { applicationCatalogueQueryResultSchema, applicationCatalogueRecordSchema } from "./application-catalogue";
 import {
   platformOntologyCountsResponseSchema, platformOntologyNeighborsResponseSchema, platformOntologyObjectsResponseSchema,
   platformOntologySchemaResponseSchema, platformOntologyStartResponseSchema,
@@ -70,6 +76,9 @@ export const panelReadOperationDescriptorSchema = panelOwnerOperationDescriptorS
   batch: z.literal(false),
 });
 
+const sdkComponentDefinitionSchema: z.ZodType<z.infer<typeof runtimeJsonObjectSchema>> =
+  z.lazy(() => appsSdkComponentCatalogEntrySchema);
+
 /** Result schema identifiers used by the registered read declarations. */
 export const panelReadResultSchemas = {
   panelRecordList: panelRecordListSchema,
@@ -77,6 +86,16 @@ export const panelReadResultSchemas = {
   panelRecordQuery: panelRecordQuerySchema,
   panelGroupCounts: panelGroupCountsSchema,
   panelApplicationMenu: applicationEntryMenuSchema,
+  productProjectionList: productProjectionListResponseSchema,
+  productPanelList: productPanelListResponseSchema,
+  productProjectionRecord: currentProjectionRecordSchema,
+  productPanelRecord: currentPanelRecordSchema,
+  productProjectionUsedBy: productProjectionUsedBySchema,
+  productPanelUsedBy: productPanelUsedBySchema,
+  productPanelMembers: panelManifestSchema.innerType().shape.members,
+  applicationCatalogue: applicationCatalogueQueryResultSchema,
+  applicationRecord: applicationCatalogueRecordSchema,
+  applicationEntries: applicationPanelUsesResponseSchema,
   panelFormDescription: panelFormDescriptionSchema,
   panelOperationDescriptor: panelOwnerOperationDescriptorSchema,
   panelOptionList: panelOptionListSchema,
@@ -88,6 +107,9 @@ export const panelReadResultSchemas = {
   panelRelationNeighbors: panelRelationNeighborsSchema,
   chartTemplate: chartProjectionTemplateSchema,
   metricOutput: dashboardMetricOutputSchema,
+  sdkComponentDefinition: sdkComponentDefinitionSchema,
+  actionDefinition: actionDefinitionSchema,
+  actionExplanation: actionExplanationSchema,
 };
 
 export const panelReadResultIdSchema = z.custom<PanelReadResultId>(

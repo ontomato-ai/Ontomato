@@ -433,7 +433,11 @@ export const components: readonly ComponentMetadata[] = [
         results: [
           "panelRecordList", "panelRecord", "panelRecordQuery", "panelGroupCounts", "panelApplicationMenu", "panelFormDescription",
           "panelOperationDescriptor", "panelOptionList", "panelGraphSchema", "panelGraphCounts", "panelGraphStart",
-          "panelGraphNeighbors", "panelOntologyObjects", "panelRelationNeighbors", "chartTemplate", "metricOutput",
+          "panelGraphNeighbors", "panelOntologyObjects", "panelRelationNeighbors", "chartTemplate", "metricOutput", "sdkComponentDefinition",
+          "actionDefinition", "actionExplanation",
+          "productProjectionList", "productPanelList", "productProjectionRecord", "productPanelRecord",
+          "productProjectionUsedBy", "productPanelUsedBy", "productPanelMembers",
+          "applicationCatalogue", "applicationRecord", "applicationEntries",
         ],
         required: false,
         runtimeParams: ["changedField", "cursor", "keyword", "layers", "node", "page", "relationKinds", "search", "size", "values"],

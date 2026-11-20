@@ -61,10 +61,20 @@ const describeType = (name: string, layer?: PlatformObjectTypeDeclaration["layer
 });
 
 export const RUN_NOW = "schedules.runNow";
+export const DELETE_AGENT = "agents.delete";
 export const SET_ACTION_STATUS = "actions.setStatus";
 export const DELETE_ACTION = "actions.delete";
+export const DELETE_METRIC_VIEW = "metricViews.delete";
+export const SET_METRIC_VIEW_STATUS = "metricViews.setStatus";
+export const TEST_METRIC_VIEW = "metricViews.test";
+export const TEST_EXECUTE_METRIC_VIEW = "metricViews.testExecute";
+export const DELETE_FUNCTION = "functions.delete";
 export const APPROVE_KNOWLEDGE = "knowledge.approve";
 export const DELETE_KNOWLEDGE = "knowledge.delete";
+export const DELETE_SKILL = "skills.delete";
+export const IMPORT_SKILL = "skills.import";
+export const EXPORT_SKILL = "skills.export";
+export const EXPORT_FEEDBACK = "feedback.export";
 export const DELETE_OBJECT_TYPE = "objectTypes.delete";
 export const DELETE_ATTRIBUTE = "attributes.delete";
 export const DELETE_RELATIONSHIP = "relationships.delete";
@@ -75,12 +85,25 @@ const referenceReads = {
 } as const satisfies NonNullable<PlatformObjectTypeDeclaration["reads"]>;
 
 const metadataList = { list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" } } as const;
+/** A catalogue searched and paged like the business knowledge list, for definitions with no further filter. */
+const definitionQuery = {
+  query: { source: "type", parameterMode: "fixed", params: { search: "keyword", cursor: "cursor", size: "size" }, result: "panelRecordQuery" },
+} as const;
 const definitionFormParams = { values: "panelFormValues", changedField: "changedField" } as const;
 const modelReads = {
   record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
   form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
   createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
 } as const;
+const catalogueQuery = {
+  source: "type", parameterMode: "fixed",
+  params: { search: "keyword", scope: "productScope", sort: "productSort", cursor: "cursor", size: "size" },
+} as const;
+const catalogueRecord = { source: "object", parameterMode: "fixed", params: {} } as const;
+const productCatalogueFormReads = { form: modelReads.form, createForm: modelReads.createForm };
+const productCatalogueOperations = (type: string, collection: string) => [
+  `${type}.save`, `${collection}.copy`, `${collection}.delete`, `${collection}.grant`, `${collection}.revoke`, `${collection}.share`,
+];
 const modelListByClass = { source: "type", parameterMode: "fixed", params: { className: "className" }, result: "panelRecordList" } as const;
 
 /** Type-level metadata shared by projection bindings and ontology catalogues. */
@@ -95,7 +118,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     operations: [`${SCHEDULED_TASK}.save`, RUN_NOW],
   },
   [MODEL_OPTION]: { ...describeType("modelOption"), reads: referenceReads },
-  [MCP_SERVICE_OPTION]: describeType("mcpServiceOption"),
+  [MCP_SERVICE_OPTION]: { ...describeType("mcpServiceOption"), reads: referenceReads },
   [OBJECT_TYPE]: {
     ...describeType("objectType", "fact"),
     reads: { ...modelReads, ...metadataList },
@@ -115,7 +138,12 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   },
   [METRIC_VIEW]: {
     ...describeType("metricView", "capability"),
-    reads: { result: { source: "object", parameterMode: "owner", parameter: "ontologyParameter", result: "metricOutput" } },
+    reads: {
+      ...definitionQuery,
+      ...modelReads,
+      result: { source: "object", parameterMode: "owner", parameter: "ontologyParameter", result: "metricOutput" },
+    },
+    operations: [`${METRIC_VIEW}.save`, SET_METRIC_VIEW_STATUS, DELETE_METRIC_VIEW, TEST_METRIC_VIEW, TEST_EXECUTE_METRIC_VIEW],
   },
   [DASHBOARD_CARD]: {
     ...describeType("dashboardCard"),
@@ -124,19 +152,40 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       result: { source: "object", parameterMode: "owner", parameter: "ontologyParameter", result: "metricOutput" },
     },
   },
-  [FUNCTION]: describeType("function", "capability"),
+  [FUNCTION]: {
+    ...describeType("function", "capability"),
+    reads: { ...definitionQuery, ...modelReads },
+    operations: [`${FUNCTION}.save`, DELETE_FUNCTION],
+  },
   [ACTION]: {
     ...describeType("action", "capability"),
     reads: {
       ...metadataList,
       record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
+      createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
+      definition: { source: "object", parameterMode: "fixed", params: {}, result: "actionDefinition" },
+      explanation: { source: "object", parameterMode: "fixed", params: {}, result: "actionExplanation" },
     },
     operations: [`${ACTION}.save`, SET_ACTION_STATUS, DELETE_ACTION],
   },
   [WORKFLOW]: describeType("workflow", "capability"),
   [TRIGGER]: describeType("trigger", "capability"),
-  [SKILL]: { ...describeType("skill", "capability"), childCollections: ["files"], reads: referenceReads },
+  [SKILL]: {
+    ...describeType("skill", "capability"),
+    childCollections: ["files"],
+    reads: {
+      // `options` and `resolve` pick skills for an agent; `query` is the library catalogue, read-only provider packages included.
+      ...referenceReads,
+      query: { source: "type", parameterMode: "fixed", params: { search: "keyword", cursor: "cursor", size: "size" }, result: "panelRecordQuery" },
+      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+      files: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      file: {
+        source: "object", parameterMode: "fixed", params: { path: "skillFilePath" }, requiredParams: ["path"], result: "panelRecord",
+      },
+    },
+    operations: [DELETE_SKILL],
+  },
   [BUSINESS_KNOWLEDGE]: {
     ...describeType("businessKnowledge", "capability"),
     reads: {
@@ -164,10 +213,55 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
   },
   [ROLE]: describeType("role", "governance"),
-  [SDK_COMPONENT]: describeType("sdkComponent", "product"),
-  [PRODUCT_PROJECTION]: describeType("productProjection", "product"),
-  [PRODUCT_PANEL]: describeType("productPanel", "product"),
-  [APPLICATION]: describeType("application", "product"),
+  [SDK_COMPONENT]: {
+    ...describeType("sdkComponent", "product"),
+    reads: {
+      catalogue: { source: "type", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecordList" },
+      definition: { source: "object", parameterMode: "fixed", params: {}, result: "sdkComponentDefinition" },
+    },
+  },
+  [PRODUCT_PROJECTION]: {
+    ...describeType("productProjection", "product"),
+    reads: {
+      ...productCatalogueFormReads,
+      query: { ...catalogueQuery, result: "productProjectionList" },
+      record: { ...catalogueRecord, result: "productProjectionRecord" },
+      usedBy: { ...catalogueRecord, result: "productProjectionUsedBy" },
+    },
+    operations: productCatalogueOperations(PRODUCT_PROJECTION, "productProjections"),
+  },
+  [PRODUCT_PANEL]: {
+    ...describeType("productPanel", "product"),
+    reads: {
+      ...productCatalogueFormReads,
+      query: { ...catalogueQuery, result: "productPanelList" },
+      record: { ...catalogueRecord, result: "productPanelRecord" },
+      usedBy: { ...catalogueRecord, result: "productPanelUsedBy" },
+      members: { ...catalogueRecord, result: "productPanelMembers" },
+    },
+    operations: productCatalogueOperations(PRODUCT_PANEL, "productPanels"),
+  },
+  [APPLICATION]: {
+    ...describeType("application", "product"),
+    reads: {
+      query: {
+        source: "type", parameterMode: "fixed",
+        params: { search: "keyword", scope: "applicationScope", cursor: "cursor", size: "size" },
+        result: "applicationCatalogue",
+      },
+      record: { ...catalogueRecord, result: "applicationRecord" },
+      entries: { ...catalogueRecord, result: "applicationEntries" },
+      form: {
+        source: "type", parameterMode: "fixed",
+        params: { ...definitionFormParams, section: "applicationFormSection", target: "applicationFormTarget" },
+        requiredParams: ["section", "target"], result: "panelFormDescription",
+      },
+    },
+    operations: [
+      `${APPLICATION}.save`, "applications.delete", "applications.addEntry", "applications.updateEntry",
+      "applications.deleteEntry", "applications.grant",
+    ],
+  },
   [APPLICATION_PANEL_USE]: {
     ...describeType("applicationPanelUse", "product"),
     reads: { visible: { source: "type", parameterMode: "fixed", params: {}, result: "panelApplicationMenu" } },
@@ -180,7 +274,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
       createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
     },
-    operations: [`${AGENT_DEFINITION}.save`],
+    operations: [`${AGENT_DEFINITION}.save`, DELETE_AGENT],
   },
   [ONTOLOGY_TYPE]: {
     ...describeType("ontologyType"),
@@ -199,8 +293,37 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
   },
   [ONTOLOGY_RELATION_KIND]: describeType("ontologyRelationKind"),
-  [KNOWLEDGE_GOVERNANCE_RECORD]: { ...describeType("knowledgeGovernanceRecord"), childCollections: ["issues", "sources"] },
-  [FEEDBACK_RECORD]: describeType("feedbackRecord"),
+  [KNOWLEDGE_GOVERNANCE_RECORD]: {
+    ...describeType("knowledgeGovernanceRecord"),
+    childCollections: ["issues", "sources"],
+    reads: {
+      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+      issues: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      sources: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      // One registered source, read in segments: each row is a passage and the owner encodes its position in the cursor.
+      sourcePage: {
+        source: "object", parameterMode: "fixed", params: { source: "governanceSource", cursor: "cursor" },
+        requiredParams: ["source"], result: "panelRecordQuery",
+      },
+    },
+  },
+  [FEEDBACK_RECORD]: {
+    ...describeType("feedbackRecord"),
+    reads: {
+      query: {
+        source: "type", parameterMode: "fixed",
+        params: { search: "keyword", sourceType: "feedbackSourceType", rating: "feedbackRating", cursor: "cursor", size: "size" },
+        result: "panelRecordQuery",
+      },
+      // Counts by one filter apply the search and the other filter, so each choice shows what selecting it would list.
+      counts: {
+        source: "type", parameterMode: "fixed",
+        params: { by: "feedbackCountField", search: "keyword", sourceType: "feedbackSourceType", rating: "feedbackRating" },
+        requiredParams: ["by"], result: "panelGroupCounts",
+      },
+      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+    },
+  },
 };
 
 /** These families apply to the class or relationship identified by the current domain catalogue. */

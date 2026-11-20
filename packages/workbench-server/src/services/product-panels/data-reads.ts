@@ -8,7 +8,8 @@ import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contrac
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import {
-  ACTION, ATTRIBUTE, DASHBOARD_CARD, METRIC_VIEW, OBJECT_TYPE, ONTOLOGY_TYPE, RELATIONSHIP, type PlatformReadDeclaration,
+  ACTION, ATTRIBUTE, DASHBOARD_CARD, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE, ONTOLOGY_TYPE,
+  RELATIONSHIP, SDK_COMPONENT, type PlatformReadDeclaration,
 } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { assertPermission } from "../../identity/installed";
@@ -25,7 +26,7 @@ import { createOntologyModelReadAdapter } from "../ontology-model/model-reads";
 import { createScheduledTaskReadAdapter } from "../scheduling/panel-reads";
 import type { SkillResolveRequest } from "../skills/panel-reads";
 import { requireChartReadRegistration } from "./chart-sources";
-import { readPanelComponentCatalogue } from "./component-catalogue";
+import { listSdkComponents, readPanelComponentCatalogue, readSdkComponent } from "./component-catalogue";
 import { requireRegisteredPanelRoot, resolvePanelMemberPath } from "./member-path";
 
 type ReadInputs = ProductPanelReadRequest["inputs"];
@@ -115,6 +116,20 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [MODEL_OPTION]: {
       options: async () => (await options()).models.options(),
       resolve: async (_selection, params) => (await options()).models.resolve(params.values as readonly unknown[]),
+    },
+    [MCP_SERVICE_OPTION]: {
+      async options() {
+        const { createMcpServiceOptionReadAdapter } = await import("../assistant/panel-reads");
+        return createMcpServiceOptionReadAdapter(owner, viewer).options();
+      },
+      async resolve(_selection, params) {
+        const { createMcpServiceOptionReadAdapter } = await import("../assistant/panel-reads");
+        return createMcpServiceOptionReadAdapter(owner, viewer).resolve(panelReadParameterSchemas.optionValues.parse(params.values));
+      },
+    },
+    [SDK_COMPONENT]: {
+      catalogue: (_selection, params) => listSdkComponents(viewer.locale, panelReadParameterSchemas.keyword.optional().parse(params.search)),
+      definition: selection => readSdkComponent(selection.primaryKey!, viewer.locale),
     },
     [USER]: {
       options: async (_selection, params) => (await options()).users.options({
