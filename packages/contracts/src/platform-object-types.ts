@@ -66,6 +66,10 @@ export const SET_ACTION_STATUS = "actions.setStatus";
 export const DELETE_ACTION = "actions.delete";
 export const APPROVE_KNOWLEDGE = "knowledge.approve";
 export const DELETE_KNOWLEDGE = "knowledge.delete";
+export const DELETE_SKILL = "skills.delete";
+export const IMPORT_SKILL = "skills.import";
+export const EXPORT_SKILL = "skills.export";
+export const EXPORT_FEEDBACK = "feedback.export";
 export const DELETE_OBJECT_TYPE = "objectTypes.delete";
 export const DELETE_ATTRIBUTE = "attributes.delete";
 export const DELETE_RELATIONSHIP = "relationships.delete";
@@ -137,7 +141,21 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   },
   [WORKFLOW]: describeType("workflow", "capability"),
   [TRIGGER]: describeType("trigger", "capability"),
-  [SKILL]: { ...describeType("skill", "capability"), childCollections: ["files"], reads: referenceReads },
+  [SKILL]: {
+    ...describeType("skill", "capability"),
+    childCollections: ["files"],
+    reads: {
+      // `options` and `resolve` pick skills for an agent; `query` is the library catalogue, read-only provider packages included.
+      ...referenceReads,
+      query: { source: "type", parameterMode: "fixed", params: { search: "keyword", cursor: "cursor", size: "size" }, result: "panelRecordQuery" },
+      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+      files: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      file: {
+        source: "object", parameterMode: "fixed", params: { path: "skillFilePath" }, requiredParams: ["path"], result: "panelRecord",
+      },
+    },
+    operations: [DELETE_SKILL],
+  },
   [BUSINESS_KNOWLEDGE]: {
     ...describeType("businessKnowledge", "capability"),
     reads: {
@@ -206,8 +224,37 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
   },
   [ONTOLOGY_RELATION_KIND]: describeType("ontologyRelationKind"),
-  [KNOWLEDGE_GOVERNANCE_RECORD]: { ...describeType("knowledgeGovernanceRecord"), childCollections: ["issues", "sources"] },
-  [FEEDBACK_RECORD]: describeType("feedbackRecord"),
+  [KNOWLEDGE_GOVERNANCE_RECORD]: {
+    ...describeType("knowledgeGovernanceRecord"),
+    childCollections: ["issues", "sources"],
+    reads: {
+      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+      issues: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      sources: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      // One registered source, read in segments: each row is a passage and the owner encodes its position in the cursor.
+      sourcePage: {
+        source: "object", parameterMode: "fixed", params: { source: "governanceSource", cursor: "cursor" },
+        requiredParams: ["source"], result: "panelRecordQuery",
+      },
+    },
+  },
+  [FEEDBACK_RECORD]: {
+    ...describeType("feedbackRecord"),
+    reads: {
+      query: {
+        source: "type", parameterMode: "fixed",
+        params: { search: "keyword", sourceType: "feedbackSourceType", rating: "feedbackRating", cursor: "cursor", size: "size" },
+        result: "panelRecordQuery",
+      },
+      // Counts by one filter apply the search and the other filter, so each choice shows what selecting it would list.
+      counts: {
+        source: "type", parameterMode: "fixed",
+        params: { by: "feedbackCountField", search: "keyword", sourceType: "feedbackSourceType", rating: "feedbackRating" },
+        requiredParams: ["by"], result: "panelGroupCounts",
+      },
+      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+    },
+  },
 };
 
 /** These families apply to the class or relationship identified by the current domain catalogue. */
