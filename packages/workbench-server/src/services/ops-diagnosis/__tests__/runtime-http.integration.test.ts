@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { DIAGNOSIS_AGENT_ID } from "@ontomato/contracts/ops-diagnosis";
 import { agentHostSessionRunFrameSchema, agentHostRunSnapshotSchema } from "@ontomato/contracts/agent-host";
+import { agentCallerAdmissionSchema, agentCallerIdentitySchema, agentCallerResolveSchema } from "@ontomato/contracts/agent-channel";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
@@ -24,6 +25,8 @@ if (!database)
 describe("diagnosis through real host/runtime/PG/skill processes", () => {
   let model: Server, host: ChildProcess, runtime: ChildProcess, root: string, hostUrl = "", runtimeUrl = "", modelUrl = "";
   const schema = `ops_${randomUUID().replaceAll("-", "")}`, children: ChildProcess[] = [];
+  const queryServiceToken = "ops-query-fixture";
+  const callers = new Map<string, ReturnType<typeof agentCallerIdentitySchema.parse>>();
   const pool = new pg.Pool({ connectionString: database });
   let logs = "", modelCalls = 0;
   async function freePort() { const s = createServer(); await new Promise<void>((r) => s.listen(0, "127.0.0.1", r)); const port = (s.address() as { port: number }).port; await new Promise<void>((r) => s.close(() => r())); return port; }
@@ -38,6 +41,8 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
         // model library and assigns every role, which is what this fixture needs.
         LLM_BASE_URL: modelUrl + "/v1", LLM_API_KEY: "fixture-key", LLM_MODEL: "deepseek-chat",
         AGENT_RUNTIME_HOSTS: JSON.stringify([{ id: "workbench", token: "ops-runtime-fixture", providers: ["workbench"], publishProviders: ["workbench"] }]),
+        AGENT_CHANNEL_PROVIDERS: JSON.stringify(["workbench", "observe"].map((id) => ({ id, hostId: "workbench", url: `${hostUrl}/internal/agent-channel`, token: queryServiceToken }))),
+        ONTOMATO_QUERY_SERVICE_TOKEN: queryServiceToken,
         AGENT_RUNTIME_URL: runtimeUrl, AGENT_RUNTIME_SERVICE_TOKEN: "ops-runtime-fixture", AGENT_RUNTIME_CALLBACK_URL: hostUrl,
       }, stdio: ["ignore", "pipe", "pipe"],
     });
@@ -106,6 +111,45 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
     root = await mkdtemp(path.join(os.tmpdir(), "ops-diagnosis-test-"));
     model = createServer(async (req, res) => {
       let raw = ""; for await (const c of req) raw += c;
+      const json = (status: number, body: unknown) => {
+        res.writeHead(status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(body));
+      };
+      if (req.method === "POST" && req.url === "/platform/agent-channel/callers") {
+        const { id, deadlineAt } = agentCallerAdmissionSchema.parse(JSON.parse(raw));
+        const [userId, domainId] = String(req.headers.tk ?? "").split(":");
+        if (!["alice", "bob", "denied"].includes(userId) || !["a", "b"].includes(domainId)) {
+          json(401, { error: { code: "UNAUTHENTICATED", message: "A current domain member is required" } });
+          return;
+        }
+        callers.set(id, agentCallerIdentitySchema.parse({ userId, domainId, expiresAt: Date.parse(deadlineAt) }));
+        json(200, { id, domainId });
+        return;
+      }
+      if (req.method === "POST" && req.url === "/platform/agent-channel/restore") {
+        const { actor, readOnly } = agentCallerResolveSchema.parse(JSON.parse(raw));
+        const identity = callers.get(actor.id);
+        if (req.headers["x-ontomato-query-service-token"] !== queryServiceToken ||
+            req.headers["x-domain-id"] !== actor.domainId || identity?.domainId !== actor.domainId) {
+          json(403, { error: { code: "FORBIDDEN", message: "Caller and service must belong to this scope" } });
+          return;
+        }
+        if (!readOnly && (req.headers.tk !== `${identity.userId}:${identity.domainId}` || identity.expiresAt <= Date.now())) {
+          json(401, { error: { code: "CALLER_CREDENTIAL_INVALID", message: "The initiating credential is invalid or expired" } });
+          return;
+        }
+        json(200, identity);
+        return;
+      }
+      if (req.method === "GET" && req.url === "/platform/page-skills") {
+        json(200, { success: true, data: { pageSkills: [], registeredSkills: [] } });
+        return;
+      }
+      if (req.method === "POST" && req.url === "/product-governance/service-resources" &&
+          req.headers["x-ontomato-query-service-token"] === queryServiceToken) {
+        json(200, { ids: [] });
+        return;
+      }
       if (req.url === "/v1/chat/completions") {
         modelCalls++; const input = JSON.parse(raw), last = input.messages.at(-1);
         res.writeHead(200, { "Content-Type": "text/event-stream" });
@@ -118,7 +162,7 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
         }
         res.end("data: [DONE]\n\n"); return;
       }
-      res.writeHead(404, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: { code: "NOT_FOUND", message: "Fixture evidence unavailable" } }));
+      json(404, { error: { code: "NOT_FOUND", message: "Fixture evidence unavailable" } });
     });
     await new Promise<void>((r) => model.listen(0, "127.0.0.1", r)); modelUrl = `http://127.0.0.1:${(model.address() as { port: number }).port}`;
     runtimeUrl = `http://127.0.0.1:${await freePort()}`; hostUrl = `http://127.0.0.1:${await freePort()}`;

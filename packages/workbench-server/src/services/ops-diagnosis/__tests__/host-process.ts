@@ -26,6 +26,7 @@ installWorkbenchIdentity({ ...ossIdentity,
 const { initializeConnection, closeConnection } = await import("../../../infrastructure/connection");
 const { syncDefaultPrompts } = await import("../../../core/prompts/loader");
 const { createWorkbenchApp } = await import("../../../http/create-app");
+const { registerAssistantSkills } = await import("../../assistant/skills");
 syncDefaultPrompts(); await initializeConnection();
 const { initializeWorkbenchLogging, getWorkbenchLogStore, closeWorkbenchLogging } = await import("../../../infrastructure/service-logs");
 initializeWorkbenchLogging();
@@ -33,5 +34,6 @@ const logStore = getWorkbenchLogStore();
 for (let attempt = 0; ; attempt++) {
   try { await logStore.query({}); break; } catch (error) { if (attempt >= 50) throw error; await new Promise((r) => setTimeout(r, 20)); }
 }
+await registerAssistantSkills();
 const server = createWorkbenchApp().listen(Number(process.env.PORT), "127.0.0.1", () => process.stdout.write("OPS_TEST_READY\n"));
 process.once("SIGTERM", () => { server.closeAllConnections(); server.close(); void Promise.all([closeConnection(), closeWorkbenchLogging()]); });
