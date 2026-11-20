@@ -33,8 +33,8 @@ const ontology = (data: DirectProjection["data"], inputs: DirectProjection["inpu
   ...record, id: "ontology", name: "Ontology", componentId: "@ontomato/sdk:ObjectList", inputs, outputs: {}, config: {}, data,
 });
 const typeObjects = ontology(
-  { objects: { source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } }, read: "objects", params: { type: { input: "type" }, keyword: { input: "keyword" }, page: { input: "page" } } } },
-  { type: { kind: "scalar", type: "string" }, keyword: { kind: "scalar", type: "string" }, page: { kind: "json" } },
+  { objects: { source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } }, read: "objects", params: { type: { input: "type" } } } },
+  { type: { kind: "scalar", type: "string" } },
 );
 const graph = ontology(
   {
@@ -148,7 +148,7 @@ it("answers the ontology's reads in a code panel's frame as the platform's reads
 
   const objectData = frameMemberData(typeObjects, "objects", instance, () => ({ type: null }), noPlatformRead);
   expect(await objectData.read("objects", {})).toEqual({ status: "awaiting" });
-  expect(await objectData.read("objects", { type: ACTION, keyword: "ref", page: { number: 2, size: 10 } }))
+  expect(await objectData.read("objects", { type: ACTION, search: "ref", page: { number: 2, size: 10 } }))
     .toEqual({ status: "ready", value: objectsAnswer(ACTION, 2, 10) });
   expect(sent.map(({ path, body }) => [path, body])).toEqual([
     ["/platform-ontology/counts", undefined],

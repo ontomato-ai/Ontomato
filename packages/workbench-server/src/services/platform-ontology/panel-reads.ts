@@ -21,13 +21,13 @@ import {
 
 const platformOntologyObjectsReadParamsSchema = z.object({
   type: panelReadParameterSchemas.ontologyType,
-  keyword: panelReadParameterSchemas.keyword.optional(),
+  search: panelReadParameterSchemas.keyword.optional(),
   page: panelReadParameterSchemas.page.optional(),
 }).strict();
 
 export interface PlatformOntologyObjectsReadParams {
   type: string;
-  keyword?: string;
+  search?: string;
   page?: { number: number; size: number };
 }
 
@@ -73,10 +73,10 @@ export function createPlatformOntologyReadAdapter(
     objects(
       params: PlatformOntologyObjectsReadParams | Record<string, unknown>,
     ): Promise<PlatformOntologyObjectsResponse> {
-      const { type, keyword, page } = platformOntologyObjectsReadParamsSchema.parse(params);
+      const { type, search, page } = platformOntologyObjectsReadParamsSchema.parse(params);
       return readPlatformOntologyObjects(owner, viewer, {
         type,
-        ...(keyword !== undefined ? { keyword } : {}),
+        ...(search !== undefined ? { keyword: search } : {}),
         ...(page !== undefined ? { page: page.number, pageSize: page.size } : {}),
       });
     },

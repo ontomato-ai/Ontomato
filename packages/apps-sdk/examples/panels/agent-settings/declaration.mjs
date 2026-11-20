@@ -18,11 +18,7 @@ export default {
     mode: { type: { kind: "scalar", type: "string" }, deepLink: true },
   },
   members: {
-    agents: {
-      target: { projectionId: "agent-list" },
-      inputs: { value: { state: "selectedAgent" } },
-      outputs: { selected: { state: "selectedAgent" } },
-    },
+    agents: { target: { projectionId: "agent-list" }, outputs: { selected: { state: "selectedAgent" } } },
     summary: { target: { projectionId: "agent-summary" }, inputs: shown },
     definition: { target: { projectionId: "agent-definition-form" }, inputs: shown },
     model: { target: { projectionId: "agent-model-choice" }, formField: field("/modelSelection/modelId") },

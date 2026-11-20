@@ -173,6 +173,8 @@ export default {
     "panelFileUnavailable": "The panel could not load {file}",
     "panelScriptThrew": "The panel's script failed while it ran",
     "panelScriptRejected": "The panel's script failed",
+    "panelHtmlRemoved": "Part of this panel's HTML was removed: a panel's HTML cannot carry scripts. Use members and events for interaction.",
+    "panelStyleOutside": "This panel's CSS reaches outside the panel, so none of it applies. A panel's CSS styles only its own panel.",
     "panelDraftUnclaimed": "This draft belongs to no form of this panel",
     "panelDraftChanged": "Changed: {fields}",
     "graphIncludeAdjacent": "Include adjacent ({count})",
@@ -229,6 +231,7 @@ export default {
     "operationDone": "Done",
     "operationUnknown": "Whether it was done is not known. {message}",
     "operationBatchDone": "{done} of {total} done",
+    "operationChecked": "{label} ({count} checked)",
     "dataEmpty": "Nothing to show",
     "dataForbidden": "You do not have access to this",
     "dataAwaiting": "Select an item first"

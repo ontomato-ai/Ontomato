@@ -9,10 +9,7 @@ const AGENT_DEFINITION = "platform:AgentDefinition";
 const type = (id) => ({ type: { kind: "PlatformObjectType", id } });
 const shownAgent = { object: { input: "agent" } };
 const agent = { kind: "object", objectType: AGENT_DEFINITION };
-const json = { kind: "json" };
-const text = { kind: "scalar", type: "string" };
-const read = (source, name, params = {}) => ({ source, read: name, params });
-const formParams = { values: { input: "values" }, changedField: { input: "changedField" } };
+const read = (source, name) => ({ source, read: name, params: {} });
 
 const projection = (id, name, description, component, ports) => ({
   id,
@@ -22,18 +19,19 @@ const projection = (id, name, description, component, ports) => ({
   },
 });
 
-/** A catalogue to choose a form field's value from, and the values the form holds, listed as choices. */
-const picker = (objectType, search = false) => ({
-  inputs: { values: json, ...(search ? { keyword: text, page: json } : {}) },
+/**
+ * A catalogue to choose a form field's value from, and the values the form holds, listed as choices. The picker gives
+ * the reader's words, the page and the held values itself.
+ */
+const picker = (objectType) => ({
   data: {
-    options: read(type(objectType), "options", search ? { keyword: { input: "keyword" }, page: { input: "page" } } : {}),
-    selected: read(type(objectType), "resolve", { values: { input: "values" } }),
+    options: read(type(objectType), "options"),
+    selected: read(type(objectType), "resolve"),
   },
 });
 
 export default [
   projection("agent-list", "Agents", "The agents of the domain, to choose one from.", "ObjectList", {
-    inputs: { value: agent },
     outputs: { selected: agent },
     data: { rows: read(type(AGENT_DEFINITION), "list") },
   }),
@@ -43,11 +41,11 @@ export default [
     data: { record: read(shownAgent, "record") },
   }),
   projection("agent-definition-form", "Agent definition", "One agent's definition, as the definitions service describes and saves it; a new agent when none is chosen.", "ObjectForm", {
-    inputs: { agent, values: json, changedField: text },
-    config: { creates: true },
+    // With no agent chosen the form is the owner's create form; the form gives its values and changed field itself.
+    inputs: { agent },
     data: {
-      form: read(shownAgent, "form", formParams),
-      createForm: read(type(AGENT_DEFINITION), "createForm", formParams),
+      form: read(shownAgent, "form"),
+      createForm: read(type(AGENT_DEFINITION), "createForm"),
     },
   }),
   projection("agent-model-choice", "Agent model", "The model an agent runs on, from the domain's model options; none keeps the domain default.",
@@ -55,7 +53,7 @@ export default [
   projection("agent-skill-choice", "Agent skills", "The skills an agent may use, from the skill catalogue the reader may choose from.",
     "ReferencePicker", picker("platform:Skill")),
   projection("agent-executor-choice", "Agent runs as", "The user an agent's work runs as; the identity service decides who may change it.",
-    "ReferencePicker", picker("platform:User", true)),
+    "ReferencePicker", picker("platform:User")),
   projection("agent-data-scope", "Agent data scope", "The ontology classes an agent works on, chosen on the class and relationship graph; none keeps the default scope.", "ObjectGraph", {
     config: { edgeEnds: { source: "/fromclass", target: "/toclass" } },
     data: {

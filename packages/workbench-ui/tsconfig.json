@@ -10,5 +10,5 @@
     "jsx": "preserve",
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
-  "include": ["src/**/*.ts", "src/**/*.vue", "vitest.config.ts"]
+  "include": ["src/**/*.ts", "src/**/*.vue", "vitest.config.ts", "../apps-sdk/src/env.d.ts"]
 }

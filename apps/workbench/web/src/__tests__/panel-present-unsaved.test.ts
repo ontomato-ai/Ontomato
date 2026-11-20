@@ -8,13 +8,12 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { workbenchI18n } from "@ontomato/workbench-ui/i18n";
 import { BusinessWorkbench } from "@ontomato/workbench-ui/features/workbench";
 import { pilotPageResolver } from "../../../../../packages/platform-web/src/pilot-pages";
-import { mountPanel } from "../../../../../packages/apps-sdk/src/panel/mount";
 import { SESSION, noticeStreamDouble } from "../../../../../packages/workbench-ui/src/features/workbench/__tests__/host-double";
-import { draftScenario, hostMessageOf, inside, installPlatform, leaveFrame, panelHostFrame, panelOf, writeFrameDocument } from "./panel-frame";
+import { draftScenario, installPlatform, leaveFrame } from "./panel-frame";
 
 /*
  * An agent asks to show another page while the panel beside the conversation holds the reader's unsaved form. The real
- * panel, its frame and the agent platform's display: the request is answered at once that it was not opened because of
+ * panel, running in the platform's document, and the agent platform's display: the request is answered at once that it was not opened because of
  * the unsaved changes, and the panel, its form and the address stay as they are. Nobody is asked.
  */
 const agent = { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Assistant", description: "", icon: null, enabled: true };
@@ -56,13 +55,9 @@ describe("an agent's presentation over a panel's unsaved form", () => {
     document.body.append(root);
     app.mount(root);
 
-    // The panel's frame runs and takes the draft: its form is unsaved, which the frame reports to the platform.
-    const element = await panelHostFrame();
-    writeFrameDocument(hostMessageOf(element.getAttribute("srcdoc")!));
-    inside(element.contentWindow!);
-    const { context } = await mountPanel(panelOf("form"));
-    // Wait for the page to report dirty to the display, after the frame message crosses the bridge.
+    // The panel runs and takes the draft: its form is unsaved, which the page reports to the display.
     await vi.waitFor(() => expect(onDisplayDirty).toHaveBeenLastCalledWith(true), { timeout: 5000 });
+    const panel = document.querySelector(".panel-host-coded > *");
 
     // The page view's stream is ready, and a run of this conversation asks.
     await host.stream.current().frame({ type: "ready", connectionId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd1" });
@@ -81,8 +76,9 @@ describe("an agent's presentation over a panel's unsaved form", () => {
       current: { known: true, target: { kind: "page" } },
     });
     // The panel is the one still drawn, its form still unsaved, and the address still carries it.
-    expect(document.querySelector("iframe.panel-host-frame")).toBe(element);
-    expect(context.instance.dirty()).toBe(true);
+    expect(document.querySelector(".panel-host-coded > *")).toBe(panel);
+    expect(document.querySelector(".sdk-owner-form-changed")).not.toBeNull();
+    expect(onDisplayDirty).toHaveBeenLastCalledWith(true);
     expect(router.currentRoute.value.fullPath).toBe(address);
     app.unmount();
   });

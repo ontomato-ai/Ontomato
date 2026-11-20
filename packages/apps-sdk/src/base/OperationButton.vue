@@ -5,7 +5,7 @@ import { ElButton } from "element-plus/es/components/button/index";
 import { panelOperationId, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
 import type { PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
-import { slotState, usePanelContext, useProjectionSlot } from "../panel/context";
+import { slotInputState, usePanelContext, useProjectionSlot } from "../panel/context";
 import type { PanelOperationDescriptor } from "../panel/human-operations";
 import { readOperationInput } from "../panel/read-operation-input";
 import OperationResult from "./OperationResult.vue";
@@ -27,18 +27,12 @@ import { stateObject, stateObjects } from "../panel/state";
  * A declared (direct) projection's button is named by the owner's description, in the reader's language; a code
  * projection's by the operation its component publishes.
  */
-const props = withDefaults(
+withDefaults(
   defineProps<{
-    /** The operation of this projection to run; the projection's first, by default. */
-    operation?: string;
-    /** The button's style: the page's main action, or a danger one. */
+    /** The button's style: the page's main action, or a danger one. Display only. */
     type?: "primary" | "danger" | "default";
-    /** The slot input whose panel state names the object to act on; the slot's first input by default. */
-    input?: string;
-    /** The slot input whose panel state holds the checked objects: the button then runs one batch over all of them. */
-    checked?: string;
   }>(),
-  { operation: "", type: "default", input: undefined, checked: undefined },
+  { type: "default" },
 );
 
 const { t } = useI18n();
@@ -53,32 +47,42 @@ const descriptor = computed(() =>
 const read = shallowRef<PanelReadOperationResult | null>(null);
 const receipt = shallowRef<PanelHumanOperationDispatchResponse | null>(null);
 
-/** The operation this button runs: the one named, or the first the projection publishes. */
+/** The one operation this button's projection publishes: the operation its `operation` datum describes. */
 const published = computed(() => {
   const registration = panel.instance.projections.value.find((item) => item.slot === slot.slot);
   if (!registration) throw new Error(`The projection in slot '${slot.slot}' is not registered yet`);
-  const found = props.operation
-    ? registration.ports.operations.find((item) => item.name === props.operation)
-    : registration.ports.operations[0];
-  if (!found) throw new Error(`The projection in slot '${slot.slot}' publishes no operation '${props.operation}'`);
+  const [found] = registration.ports.operations;
+  if (!found) throw new Error(`The projection in slot '${slot.slot}' publishes no operation`);
   return found;
 });
 const operationId = computed(() => panelOperationId(slot.slot, published.value.name));
-/** The button shows only once its description is read, so the owner's name, in the reader's language, is there. */
-const label = computed(() => descriptor.value!.label);
+/**
+ * The button shows only once its description is read, so the owner's name, in the reader's language, is there. A batch
+ * button also says how many objects it acts on, so it never reads as the single one beside it.
+ */
+const label = computed(() => (batch.value
+  ? t("platform.operationChecked", { label: descriptor.value!.label, count: checkedObjects.value.length })
+  : descriptor.value!.label));
 
 const fail = (reason: unknown) => {
   failure.value = reason instanceof Error ? reason : new Error(String(reason));
 };
 
 const values = computed(() => panel.instance.state.values.value);
-/** The object it acts on: what the panel has selected in the state this slot's input is filled from. */
+/** The panel state of the input the owner's description names as the target: one object, or a list (a batch). */
+const targetState = computed(() => {
+  const described = descriptor.value?.target;
+  return described?.source === "input" ? slotInputState(panel.manifest, slot.slot, described.input) : null;
+});
+/** Whether the target is the panel's checked list: the button then runs one batch over every object in it. */
+const batch = computed(() => targetState.value !== null && panel.manifest.state[targetState.value]!.type.kind === "list");
+/** The one object it acts on, when the target is a single object. */
 const target = computed<PanelOperationCall["target"]>(() => {
-  const selected = stateObject(values.value[slotState(panel.manifest, slot.slot, props.input)]);
+  const selected = targetState.value === null || batch.value ? null : stateObject(values.value[targetState.value]);
   return selected && { kind: "object", objectType: selected.className, primaryKey: selected.primaryKey };
 });
-const checkedState = computed(() => (props.checked ? slotState(panel.manifest, slot.slot, props.checked) : null));
-/** The checked objects: the collection the panel's state holds for the slot's `checked` input. */
+const checkedState = computed(() => (batch.value ? targetState.value : null));
+/** The checked objects: the list the target's panel state holds. */
 const checkedObjects = computed(() => (checkedState.value === null ? [] : stateObjects(values.value[checkedState.value])));
 const checkedTargets = computed(() =>
   checkedObjects.value.map(({ className, primaryKey }) => ({ kind: "object" as const, objectType: className, primaryKey })));

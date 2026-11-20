@@ -63,12 +63,14 @@ vi.mock("../../utils/backend-client", async original => ({
           admittedEntrances: fixture.uses.map(({ entrance }) => entrance),
         };
       } else {
-        expect(endpoint).toBe("panel-use");
-        const use = fixture.uses.find(({ applicationId }) => url.endsWith(`/applications/${applicationId}/panel-uses`))!;
+        expect(endpoint).toBe("resolve-panel-entry");
+        const query = new URL(url, "http://owner.test").searchParams;
+        const use = fixture.uses.find(({ applicationId, useId }) =>
+          query.get("applicationId") === applicationId && query.get("useId") === useId)!;
         data = {
-          applicationId: use.applicationId, entry: { path: `/applications/${use.applicationId}`, renderer: "panels" },
-          panelUses: [{ id: use.useId, panelId: use.panelId, path: use.path, pageKey: use.entrance.pageKey,
-            access: { permissionCode: use.entrance.permissionCode } }],
+          applicationId: use.applicationId, menu: { groups: [], panelUses: [] },
+          use: { id: use.useId, panelId: use.panelId, path: use.path, pageKey: use.entrance.pageKey,
+            access: { permissionCode: use.entrance.permissionCode } },
         };
       }
     }

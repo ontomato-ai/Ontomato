@@ -46,6 +46,7 @@ export {
   usePanelHostPort,
   usePanelInstance,
   type DefinitionChanged,
+  type CodedPanelTarget,
   type DirectPanelMount,
   type DirectPanelRun,
   type HostedPanelSource,

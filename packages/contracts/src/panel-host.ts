@@ -179,43 +179,6 @@ export interface PanelRefreshPort {
   refresh(target: PanelObjectIdentity | null): void;
 }
 
-const panelCapacityPageSchema = z.object({
-  /** Stable identity from the display host, scoped to its application, user and conversation or candidate source. */
-  instance: z.string().min(1),
-  /** Query/state may change while the instance identity stays the same. */
-  address: z.string().max(4000),
-}).strict();
-
-/** The existing leave guard has finished before the display requests a capacity plan. */
-export const panelCapacityRequestSchema = z.object({
-  current: panelCapacityPageSchema.nullable(),
-  next: panelCapacityPageSchema.nullable(),
-  departure: z.enum(["retain-clean", "discarded"]),
-}).strict();
-export type PanelCapacityRequest = z.infer<typeof panelCapacityRequestSchema>;
-
-export const panelCapacityPlanSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("admitted"),
-    next: z.enum(["reuse", "mount", "none"]),
-    reclaim: z.array(panelCapacityPageSchema.shape.instance),
-  }).strict(),
-  z.object({ kind: z.literal("refused") }).strict(),
-]);
-export type PanelCapacityPlan = z.infer<typeof panelCapacityPlanSchema>;
-
-export type PanelCapacityAdmission =
-  | Extract<PanelCapacityPlan, { kind: "refused" }>
-  | (Extract<PanelCapacityPlan, { kind: "admitted" }> & {
-    /** Apply the plan once the switch is confirmed. A refused write discards the plan without calling this. */
-    commit(): void;
-  });
-
-/** The display remains authoritative. Admission plans reuse or reclamation without changing the shown page. */
-export interface PanelCapacityPort {
-  admit(request: PanelCapacityRequest): PanelCapacityAdmission | Promise<PanelCapacityAdmission>;
-}
-
 /** One message on the panel channel as it arrives: the channel's own key, and the message it carries. */
 export function panelMessageOf<T>(schema: { safeParse(value: unknown): { success: true; data: T } | { success: false } }, event: { data?: unknown }): T | null {
   const data = event.data as { channel?: unknown } | null;

@@ -121,12 +121,13 @@ beforeAll(async () => {
     expect(req.body).toEqual({ status: "PUBLISHED" });
     res.json({ success: true, data: [stored()] });
   });
-  app.get(`/platform/applications/${use.applicationId}/panel-uses`, (req, res) => {
+  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+    if (req.query.applicationId !== use.applicationId) { next(); return; }
     if (req.header("tk") !== "alice") { res.sendStatus(403); return; }
     res.json({ success: true, data: {
-      applicationId: use.applicationId, entry: { path: `/applications/${use.applicationId}`, renderer: "panels" },
-      panelUses: [{ id: use.useId, pageKey: "orders", path: `/applications/${use.applicationId}/orders`,
-        panelId: "panel-orders", access: { kind: "domain-member" } }],
+      applicationId: use.applicationId, menu: { groups: [], panelUses: [] },
+      use: { id: use.useId, pageKey: "orders", path: `/applications/${use.applicationId}/orders`,
+        panelId: "panel-orders", access: { kind: "domain-member" } },
     } });
   });
   app.post("/action/queryById", (req, res) => {

@@ -23,21 +23,21 @@ import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text
 import { noOperations } from "./panel-frame";
 
 /*
- * ObjectList, ObjectSummary and SegmentedControl under the unified member-data contract:
- * - M7 BusinessKnowledge pattern: SegmentedControl reading `counts` (`panelGroupCounts`), ObjectList reading
- *   `rows` (`panelRecordQuery`) with escaped UTF-16 highlights, fallback-to-first selection and non-toggleable
- *   selection, plus ObjectSummary reading `record` with highlights and pre-wrap body text.
- * - Multi-column table labelKey/emptyKey resolution via `panel.t`, fallback to owner `fieldLabels`, and
- *   event-based state operations.
- * - Server-side cursor pagination (`panelRecordQuery`), submit-mode search resetting to page 1, refresh,
- *   and per-row detail action.
- * - Two-way search binding with scalar deepLink panel state (restore, submit, clear to null, external update).
- * - Instance-local checked list (`{ kind: "list", items: { kind: "object", objectType } }`) separate from
- *   single selection, visible-only select-all across pages, excluded from deepLink & pageContext, atomic
- *   `clears`, partial retention, and type rejection.
- * - M3 dynamic type catalog (`data.objects`: `panelOntologyObjects`): awaiting prompt with zero reads,
- *   offset/page pagination, local keyword search, full `(className, primaryKey)` identity matching, owner
- *   labels under the real object type, and distinct refused/failed/unavailable statuses.
+ * ObjectList, ObjectSummary and SegmentedControl under the Step 2 zero-config member-parameter contract:
+ * - M7 BusinessKnowledge pattern: SegmentedControl reading ordered `counts` (`panelGroupCounts`: `[{ key, label, count }]`)
+ *   with zero static options; ObjectList inferring search, cursor paging and checkboxes from read signatures and member
+ *   bindings, with flattened `status` input, escaped UTF-16 highlights, fallback-to-first (never re-selecting once cleared
+ *   to null), and ObjectSummary reading `record` with highlights and pre-wrap body text.
+ * - Multi-column table labelKey/emptyKey resolution via `panel.t`, fallback to owner `fieldLabels`, and state events.
+ * - Server-side cursor pagination (`runtimeParams: { cursor, size }`), unbound runtime search (`runtimeParams.search`),
+ *   and automatic reset to page 1 on search or filter change without double reads.
+ * - Single-binding two-way search via `outputs.search` on scalar deepLink panel state (restore, type, clear to null,
+ *   external update) sent in `inputs.search` (authored, never `runtimeParams`).
+ * - Instance-local checked list (`outputs.checked`) separate from single selection, visible-only select-all across pages,
+ *   excluded from deepLink & pageContext, panel event clearing on selection change, partial retention, and type rejection.
+ * - M3 dynamic type catalog (`data.objects`: `panelOntologyObjects`): awaiting state with zero reads, runtime `page` and
+ *   `search` params, type-switch search & page reset, full `(className, primaryKey)` identity matching, owner labels under
+ *   the real object type, and distinct refused/failed/unavailable statuses.
  */
 
 const meta = {
@@ -104,7 +104,7 @@ afterEach(() => {
   vi.resetModules();
 });
 
-it("pairs SegmentedControl panelGroupCounts with ObjectList panelRecordQuery highlights, fallback-to-first, and ObjectSummary", async () => {
+it("pairs zero-config SegmentedControl ordered counts with ObjectList flat status filter, highlights, fallback-to-first, and ObjectSummary", async () => {
   const projections: Record<string, DirectProjection> = {
     "knowledge-tabs": {
       ...meta,
@@ -113,19 +113,12 @@ it("pairs SegmentedControl panelGroupCounts with ObjectList panelRecordQuery hig
       componentId: "@ontomato/sdk:SegmentedControl",
       inputs: { search: { kind: "scalar", type: "string" } },
       outputs: { value: { kind: "scalar", type: "string" } },
-      config: {
-        ariaLabel: "Knowledge status",
-        options: [
-          { value: "all", labelKey: "knowledge.filterAll" },
-          { value: "pending", labelKey: "knowledge.filterPending" },
-          { value: "approved", labelKey: "knowledge.filterApproved" },
-        ],
-      },
+      config: { ariaLabel: "Knowledge status" },
       data: {
         counts: {
           source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } },
           read: "counts",
-          params: { by: { literal: "status" }, search: { input: "search" } },
+          params: { by: { literal: "status" } },
         },
       },
     },
@@ -137,23 +130,20 @@ it("pairs SegmentedControl panelGroupCounts with ObjectList panelRecordQuery hig
       inputs: {
         search: { kind: "scalar", type: "string" },
         status: { kind: "scalar", type: "string" },
-        filter: { kind: "json" },
       },
       outputs: {
         selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE },
         search: { kind: "scalar", type: "string" },
       },
       config: {
-        searchable: true,
         statusField: "status",
         fallbackToFirst: true,
-        toggleable: false,
       },
       data: {
         rows: {
           source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } },
           read: "query",
-          params: { search: { input: "search" }, filter: { input: "filter" } },
+          params: {},
         },
       },
     },
@@ -172,7 +162,7 @@ it("pairs SegmentedControl panelGroupCounts with ObjectList panelRecordQuery hig
         record: {
           source: { object: { input: "item" } },
           read: "record",
-          params: { search: { input: "search" } },
+          params: {},
         },
       },
     },
@@ -192,7 +182,7 @@ it("pairs SegmentedControl panelGroupCounts with ObjectList panelRecordQuery hig
       },
       list: {
         target: { projectionId: "knowledge-list" },
-        inputs: { search: { state: "keyword" }, status: { state: "status" } },
+        inputs: { status: { state: "status" } },
         outputs: { selected: { state: "selectedKnowledge" }, search: { state: "keyword" } },
       },
       detail: {
@@ -232,15 +222,15 @@ it("pairs SegmentedControl panelGroupCounts with ObjectList panelRecordQuery hig
         return index >= 0 ? [{ start: index, end: index + search.length }] : [];
       };
       if (request.dataName === "counts") {
-        return ready({
-          all: matched.length,
-          pending: matched.filter((entry) => entry.statusValue === "pending").length,
-          approved: matched.filter((entry) => entry.statusValue === "approved").length,
-        });
+        return ready([
+          { key: "all", label: "All", count: matched.length },
+          { key: "pending", label: "Pending", count: matched.filter((entry) => entry.statusValue === "pending").length },
+          { key: "approved", label: "Approved", count: matched.filter((entry) => entry.statusValue === "approved").length },
+        ]);
       }
       if (request.dataName === "rows") {
-        const filter = (request.inputs.filter as { status?: string } | undefined)?.status ?? "all";
-        const visible = filter === "all" ? matched : matched.filter((entry) => entry.statusValue === filter);
+        const status = typeof request.inputs.status === "string" ? request.inputs.status : "all";
+        const visible = status === "all" ? matched : matched.filter((entry) => entry.statusValue === status);
         return ready({
           rows: visible.map(({ statusValue: _s, ...item }) => {
             const labelHits = rangeOf(item.label);
@@ -267,29 +257,21 @@ it("pairs SegmentedControl panelGroupCounts with ObjectList panelRecordQuery hig
         ...(bodyHits.length ? { highlights: { body: bodyHits } } : {}),
       });
     },
-    {
-      messages: {
-        en: {
-          "knowledge.filterAll": "All",
-          "knowledge.filterPending": "Pending",
-          "knowledge.filterApproved": "Approved",
-        },
-      },
-    },
   );
 
   // Fallback-to-first selects k-1 automatically on initial load.
   await vi.waitFor(() => expect(instance.state.values.value.selectedKnowledge).toEqual(knowledge("k-1")));
 
-  // SegmentedControl shows panelGroupCounts beside each option label.
+  // SegmentedControl derives options directly from ordered panelGroupCounts without static config.options.
   await vi.waitFor(() => {
     const counts = [...element.querySelectorAll(".sdk-segmented-count")].map((node) => node.textContent?.trim());
     expect(counts).toEqual(["2", "1", "1"]);
   });
   const radios = [...element.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
+  expect(radios.map((radio) => radio.getAttribute("data-value"))).toEqual(["all", "pending", "approved"]);
   expect(radios[0]!.getAttribute("aria-checked")).toBe("true");
 
-  // Re-clicking selected row does not toggle off when toggleable: false.
+  // Re-clicking selected row does not toggle off (toggleable defaults to false).
   element.querySelector<HTMLButtonElement>(".sdk-object-list-item-btn")!.click();
   await nextTick();
   expect(instance.state.values.value.selectedKnowledge).toEqual(knowledge("k-1"));
@@ -305,18 +287,26 @@ it("pairs SegmentedControl panelGroupCounts with ObjectList panelRecordQuery hig
   const summaryTexts = [...element.querySelectorAll(".sdk-object-summary-text")].map((node) => node.textContent);
   expect(summaryTexts[1]).toContain("Line 2");
 
-  // Switching status tab via SegmentedControl updates filter and falls back selection to k-2.
+  // Switching status tab via SegmentedControl updates flat `status` input and falls back selection to k-2.
   radios[1]!.click();
   await vi.waitFor(() => expect(instance.state.values.value.status).toBe("pending"));
   await vi.waitFor(() => expect(instance.state.values.value.selectedKnowledge).toEqual(knowledge("k-2")));
   expect(radios[1]!.getAttribute("aria-checked")).toBe("true");
 
-  // Keyboard ArrowLeft switches back to "all".
-  radios[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+  // Once selection is cleared to null (e.g. clicking New), ObjectList does NOT auto-reselect on subsequent reads.
+  instance.state.set("selectedKnowledge", null);
+  await nextTick();
+  radios[0]!.click();
   await vi.waitFor(() => expect(instance.state.values.value.status).toBe("all"));
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(2));
+  expect(instance.state.values.value.selectedKnowledge).toBeNull();
+
+  // Keyboard ArrowRight moves to "pending".
+  radios[0]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+  await vi.waitFor(() => expect(instance.state.values.value.status).toBe("pending"));
 });
 
-it("keeps SegmentedControl interactive when its counts datum fails or is loading", async () => {
+it("keeps SegmentedControl interactive with static fallback options when its counts datum fails or is loading", async () => {
   const projections: Record<string, DirectProjection> = {
     "status-tabs": {
       ...meta,
@@ -326,6 +316,7 @@ it("keeps SegmentedControl interactive when its counts datum fails or is loading
       inputs: {},
       outputs: { value: { kind: "scalar", type: "string" } },
       config: {
+        ariaLabelKey: "tabs.aria",
         options: [
           { value: "all", label: "All" },
           { value: "pending", label: "Pending" },
@@ -356,8 +347,14 @@ it("keeps SegmentedControl interactive when its counts datum fails or is loading
     },
   });
 
-  const { instance, element } = mountDirect(manifest, projections, () => ({ status: "error", message: "Counts failed" }));
+  const { instance, element } = mountDirect(
+    manifest,
+    projections,
+    () => ({ status: "error", message: "Counts failed" }),
+    { messages: { en: { "tabs.aria": "Filter by status" } } },
+  );
   await vi.waitFor(() => expect(element.querySelectorAll('[role="radio"]')).toHaveLength(2));
+  expect(element.querySelector('[role="radiogroup"]')?.getAttribute("aria-label")).toBe("Filter by status");
   expect(element.querySelectorAll(".sdk-segmented-count")).toHaveLength(0);
 
   element.querySelectorAll<HTMLButtonElement>('[role="radio"]')[1]!.click();
@@ -446,37 +443,27 @@ it("resolves column labelKey/emptyKey via panel.t, falls back to owner fieldLabe
   expect(instance.state.values.value.selectedTask).toBeNull();
 });
 
-it("supports cursor pagination, submit-mode search resetting to page 1, refresh, and row detail action", async () => {
+it("infers cursor pagination and runtime search from query signature, resetting to page 1 in a single read", async () => {
   const projections: Record<string, DirectProjection> = {
     "knowledge-table": {
       ...meta,
       id: "knowledge-table",
       name: "Knowledge",
       componentId: "@ontomato/sdk:ObjectList",
-      inputs: {
-        search: { kind: "scalar", type: "string" },
-        cursor: { kind: "scalar", type: "string" },
-        size: { kind: "scalar", type: "number" },
-      },
+      inputs: {},
       outputs: { selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
       config: {
         columns: [
           { key: "label", labelKey: "cols.title" },
           { key: "status", labelKey: "cols.status" },
         ],
-        searchable: true,
-        searchMode: "submit",
-        refreshable: true,
-        showCount: true,
         pageSize: 2,
-        toggleable: false,
-        rowActionLabel: "cols.details",
       },
       data: {
         rows: {
           source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } },
           read: "query",
-          params: { search: { input: "search" }, cursor: { input: "cursor" }, size: { input: "size" } },
+          params: {},
         },
       },
     },
@@ -501,10 +488,10 @@ it("supports cursor pagination, submit-mode search resetting to page 1, refresh,
     manifest,
     projections,
     (request) => {
-      const search = typeof request.inputs.search === "string" ? request.inputs.search.toLowerCase() : "";
+      const search = typeof request.runtimeParams?.search === "string" ? request.runtimeParams.search.toLowerCase() : "";
       const filtered = search ? allItems.filter((item) => item.label.toLowerCase().includes(search)) : allItems;
-      const size = typeof request.inputs.size === "number" ? request.inputs.size : 2;
-      const offset = request.inputs.cursor === "page-2" ? size : 0;
+      const size = typeof request.runtimeParams?.size === "number" ? request.runtimeParams.size : 2;
+      const offset = request.runtimeParams?.cursor === "page-2" ? size : 0;
       const pageRows = filtered.slice(offset, offset + size);
       const nextCursor = offset + size < filtered.length ? "page-2" : undefined;
       return ready({
@@ -513,74 +500,58 @@ it("supports cursor pagination, submit-mode search resetting to page 1, refresh,
         ...(nextCursor ? { nextCursor } : {}),
       });
     },
-    { messages: { en: { "cols.title": "Title", "cols.status": "Status", "cols.details": "Details" } } },
+    { messages: { en: { "cols.title": "Title", "cols.status": "Status" } } },
   );
 
   await vi.waitFor(() => expect(element.querySelectorAll("tbody tr")).toHaveLength(2));
-  expect(reads[0]!.inputs).toEqual({ size: 2 });
+  expect(reads).toHaveLength(1);
+  expect(reads[0]!.inputs).toEqual({});
+  expect(reads[0]!.runtimeParams).toEqual({ size: 2 });
   expect(element.querySelector(".sdk-object-list-count")?.textContent).toContain("3");
 
-  // Next page sends cursor="page-2" and size=2.
+  // Next page sends runtimeParams { cursor: "page-2", size: 2 }.
   element.querySelector<HTMLButtonElement>(".sdk-object-list-next")!.click();
   await vi.waitFor(() => expect(element.querySelectorAll("tbody tr")).toHaveLength(1));
-  expect(reads[1]!.inputs).toEqual({ cursor: "page-2", size: 2 });
+  expect(reads).toHaveLength(2);
+  expect(reads[1]!.runtimeParams).toEqual({ cursor: "page-2", size: 2 });
 
-  // Typing in submit mode does NOT query until clicking Query button, which resets to page 1 (no cursor).
+  // Typing search resets cursor to page 1 and triggers ONE read carrying runtimeParams { search: "beta", size: 2 }.
   const searchInput = element.querySelector<HTMLInputElement>(".sdk-object-list-search")!;
   searchInput.value = "beta";
   searchInput.dispatchEvent(new Event("input", { bubbles: true }));
-  await nextTick();
-  expect(reads).toHaveLength(2);
-
-  element.querySelector<HTMLButtonElement>(".sdk-object-list-query")!.click();
   await vi.waitFor(() => expect(reads).toHaveLength(3));
-  expect(reads[2]!.inputs).toEqual({ search: "beta", size: 2 });
+  await nextTick();
+  expect(reads).toHaveLength(3);
+  expect(reads[2]!.runtimeParams).toEqual({ search: "beta", size: 2 });
   await vi.waitFor(() => expect(element.querySelector("tbody tr td")?.textContent?.trim()).toBe("Beta rule"));
 
-  // Refresh re-runs the same query.
-  element.querySelector<HTMLButtonElement>(".sdk-object-list-refresh")!.click();
-  await vi.waitFor(() => expect(reads).toHaveLength(4));
-  expect(reads[3]!.inputs).toEqual({ search: "beta", size: 2 });
-
-  // Row detail action selects k-2 without toggling off on repeated click.
-  const detailButton = await vi.waitFor(() => {
-    const found = element.querySelector<HTMLButtonElement>(".sdk-object-list-row-action");
-    if (!found) throw new Error("Row action button not rendered yet");
-    return found;
-  });
-  detailButton.click();
+  // Clicking the row selects k-2 and does not toggle off on repeated click.
+  element.querySelector<HTMLTableRowElement>("tbody tr")!.click();
   await nextTick();
   expect(instance.state.values.value.selectedKnowledge).toEqual(knowledge("k-2"));
-  detailButton.click();
+  element.querySelector<HTMLTableRowElement>("tbody tr")!.click();
   await nextTick();
   expect(instance.state.values.value.selectedKnowledge).toEqual(knowledge("k-2"));
 });
 
-it("two-way binds ObjectList search keyword with scalar deepLink panel state without double reads", async () => {
+it("single-binds ObjectList search via outputs.search to deepLink panel state without double reads", async () => {
   const projections: Record<string, DirectProjection> = {
     "knowledge-search": {
       ...meta,
       id: "knowledge-search",
       name: "Knowledge search",
       componentId: "@ontomato/sdk:ObjectList",
-      inputs: {
-        search: { kind: "scalar", type: "string" },
-        size: { kind: "scalar", type: "number" },
-      },
+      inputs: {},
       outputs: {
         selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE },
         search: { kind: "scalar", type: "string" },
       },
-      config: {
-        searchable: true,
-        searchMode: "submit",
-        pageSize: 10,
-      },
+      config: { pageSize: 10 },
       data: {
         rows: {
           source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } },
           read: "query",
-          params: { search: { input: "search" }, size: { input: "size" } },
+          params: {},
         },
       },
     },
@@ -593,7 +564,6 @@ it("two-way binds ObjectList search keyword with scalar deepLink panel state wit
     members: {
       list: {
         target: { projectionId: "knowledge-search" },
-        inputs: { search: { state: "keyword" } },
         outputs: { selected: { state: "selectedKnowledge" }, search: { state: "keyword" } },
       },
     },
@@ -610,26 +580,26 @@ it("two-way binds ObjectList search keyword with scalar deepLink panel state wit
     { initial: { keyword: "timeout" } },
   );
 
-  // 1. Initial read carries restored deepLink keyword; search input reflects it.
+  // 1. Initial read carries restored deepLink keyword as authored input and pageSize as runtimeParam.
   await vi.waitFor(() => expect(reads).toHaveLength(1));
-  expect(reads[0]!.inputs).toEqual({ search: "timeout", size: 10 });
+  expect(reads[0]!.inputs).toEqual({ search: "timeout" });
+  expect(reads[0]!.runtimeParams).toEqual({ size: 10 });
   const searchInput = element.querySelector<HTMLInputElement>(".sdk-object-list-search")!;
   expect(searchInput.value).toBe("timeout");
 
-  // 2. Submitting a new search writes back to panel state & deepLink with exactly ONE new read.
+  // 2. Typing a new search writes back to panel state & deepLink with ONE new read.
   searchInput.value = "chart";
   searchInput.dispatchEvent(new Event("input"));
-  element.querySelector<HTMLButtonElement>(".sdk-object-list-query")!.click();
   await vi.waitFor(() => expect(reads).toHaveLength(2));
   await nextTick();
   expect(reads).toHaveLength(2);
-  expect(reads[1]!.inputs).toEqual({ search: "chart", size: 10 });
+  expect(reads[1]!.inputs).toEqual({ search: "chart" });
+  expect(reads[1]!.runtimeParams).toEqual({ size: 10 });
   expect(instance.deepLink()).toEqual({ keyword: "chart" });
 
   // 3. Clearing search writes null so deepLink drops the cleared key.
   searchInput.value = "";
   searchInput.dispatchEvent(new Event("input"));
-  element.querySelector<HTMLButtonElement>(".sdk-object-list-query")!.click();
   await vi.waitFor(() => expect(reads).toHaveLength(3));
   expect(instance.state.values.value.keyword).toBeNull();
   expect(instance.deepLink()).toEqual({});
@@ -637,32 +607,31 @@ it("two-way binds ObjectList search keyword with scalar deepLink panel state wit
   // 4. External state update syncs search input and triggers a single re-read.
   instance.state.set("keyword", "external");
   await vi.waitFor(() => expect(reads).toHaveLength(4));
-  expect(reads[3]!.inputs).toEqual({ search: "external", size: 10 });
+  expect(reads[3]!.inputs).toEqual({ search: "external" });
   expect(searchInput.value).toBe("external");
 });
 
-it("keeps checked list separate from selected, freezes visible rows on select-all, supports clears and excludes checked from deepLink", async () => {
+it("infers checkboxes from outputs.checked, freezes visible rows on select-all, and excludes checked from deepLink", async () => {
   const projections: Record<string, DirectProjection> = {
     "knowledge-checked": {
       ...meta,
       id: "knowledge-checked",
       name: "Knowledge",
       componentId: "@ontomato/sdk:ObjectList",
-      inputs: { cursor: { kind: "scalar", type: "string" }, size: { kind: "scalar", type: "number" } },
+      inputs: {},
       outputs: {
         selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE },
         checked: { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
       },
       config: {
         columns: [{ key: "label", labelKey: "cols.name" }],
-        selectable: true,
         pageSize: 2,
       },
       data: {
         rows: {
           source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } },
           read: "query",
-          params: { cursor: { input: "cursor" }, size: { input: "size" } },
+          params: {},
         },
       },
     },
@@ -697,7 +666,7 @@ it("keeps checked list separate from selected, freezes visible rows on select-al
     manifest,
     projections,
     (request) => {
-      const offset = request.inputs.cursor === "p2" ? 2 : 0;
+      const offset = request.runtimeParams?.cursor === "p2" ? 2 : 0;
       return ready({
         rows: allItems.slice(offset, offset + 2),
         total: allItems.length,
@@ -751,7 +720,7 @@ it("keeps checked list separate from selected, freezes visible rows on select-al
   expect(() => instance.state.set("checkedKnowledge", [{ className: SCHEDULED_TASK, primaryKey: "t-1" }])).toThrow(TypeError);
 });
 
-it("clears declared list state atomically when ObjectList changes selection with clears", async () => {
+it("clears declared list state via panel event when ObjectList emits selected, and supports explicit toggleable: true", async () => {
   const projections: Record<string, DirectProjection> = {
     "clearing-list": {
       ...meta,
@@ -763,7 +732,7 @@ it("clears declared list state atomically when ObjectList changes selection with
         selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE },
         checked: { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
       },
-      config: { selectable: true, clears: ["checkedKnowledge"] },
+      config: { toggleable: true },
       data: {
         rows: {
           source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } },
@@ -784,7 +753,12 @@ it("clears declared list state atomically when ObjectList changes selection with
         outputs: { selected: { state: "selectedKnowledge" }, checked: { state: "checkedKnowledge" } },
       },
     },
-    events: {},
+    events: {
+      clearOnSelect: {
+        on: { member: "list", output: "selected" },
+        do: { set: { fields: { checkedKnowledge: { literal: [] } } } },
+      },
+    },
   });
 
   const { instance, element } = mountDirect(
@@ -802,11 +776,15 @@ it("clears declared list state atomically when ObjectList changes selection with
 
   await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(2));
   element.querySelectorAll<HTMLButtonElement>(".sdk-object-list-item-btn")[1]!.click();
-  await nextTick();
-  expect(instance.state.values.value).toEqual({
+  await vi.waitFor(() => expect(instance.state.values.value).toEqual({
     selectedKnowledge: knowledge("k-2"),
     checkedKnowledge: [],
-  });
+  }));
+
+  // With toggleable: true, clicking the already-selected row clears selection to null.
+  element.querySelectorAll<HTMLButtonElement>(".sdk-object-list-item-btn")[1]!.click();
+  await nextTick();
+  expect(instance.state.values.value.selectedKnowledge).toBeNull();
 });
 
 it("supports dynamic type queries via data.objects (panelOntologyObjects) with status separation and identity matching", async () => {
@@ -815,18 +793,14 @@ it("supports dynamic type queries via data.objects (panelOntologyObjects) with s
     id: "type-object-picker",
     name: "Type Object Picker",
     componentId: "@ontomato/sdk:ObjectList",
-    inputs: {
-      type: { kind: "scalar", type: "string" },
-      keyword: { kind: "scalar", type: "string" },
-      page: { kind: "json" },
-    },
+    inputs: { type: { kind: "scalar", type: "string" } },
     outputs: { selected: { kind: "object-union", layers: [...platformOntologyLayers] } },
-    config: { searchable: true, showCount: true, pageSize: 2, emptyTypeText: "picker.selectType" },
+    config: { pageSize: 2 },
     data: {
       objects: {
         source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } },
         read: "objects",
-        params: { type: { input: "type" }, keyword: { input: "keyword" }, page: { input: "page" } },
+        params: { type: { input: "type" } },
       },
     },
   };
@@ -850,8 +824,8 @@ it("supports dynamic type queries via data.objects (panelOntologyObjects) with s
     { [pickerProj.id]: pickerProj },
     (request) => {
       const type = String(request.inputs.type);
-      const keyword = typeof request.inputs.keyword === "string" ? request.inputs.keyword.toLowerCase() : "";
-      const page = (request.inputs.page as { number: number; size: number } | undefined) ?? { number: 1, size: 20 };
+      const search = typeof request.runtimeParams?.search === "string" ? request.runtimeParams.search.toLowerCase() : "";
+      const page = (request.runtimeParams?.page as { number: number; size: number } | undefined) ?? { number: 1, size: 20 };
       const offset = (page.number - 1) * page.size;
       if (type === ROLE) {
         return ready({ type: ROLE, layer: "governance", status: "refused", reason: "No role permission", items: [], total: 0, page: page.number, pageSize: page.size });
@@ -877,7 +851,7 @@ it("supports dynamic type queries via data.objects (panelOntologyObjects) with s
         { node: { className: ACTION, primaryKey: "shared-1" }, label: "Deploy Action" },
         { node: { className: ACTION, primaryKey: "act-2" }, label: "Rollback Action" },
         { node: { className: ACTION, primaryKey: "act-3" }, label: "Audit Action" },
-      ].filter((item) => !keyword || item.label.toLowerCase().includes(keyword));
+      ].filter((item) => !search || item.label.toLowerCase().includes(search));
       return ready({
         type,
         layer: "capability",
@@ -888,38 +862,38 @@ it("supports dynamic type queries via data.objects (panelOntologyObjects) with s
         pageSize: page.size,
       });
     },
-    { messages: { en: { "picker.selectType": "Choose a type from the graph" } } },
   );
 
-  // 1) No type selected yet -> prompt shown via panel.t, zero reads, no count/pagination.
+  // 1) No type selected yet -> DataState awaiting, zero reads, no count/pagination.
   await vi.waitFor(() => {
-    expect(element.querySelector('[data-status="no-type"]')?.textContent).toContain("Choose a type from the graph");
+    expect(element.querySelector('[data-state="awaiting"]')?.textContent).toContain("Select an item first");
   });
   expect(reads).toHaveLength(0);
   expect(element.querySelector(".sdk-object-list-count")).toBeNull();
   expect(element.querySelector(".sdk-object-list-pagination")).toBeNull();
 
-  // 2) Select ACTION -> reads page 1 with pageSize 2, renders 2 items + count 3 + pagination.
+  // 2) Select ACTION -> reads page 1 with runtimeParams { page: { number: 1, size: 2 } }, shows count + pagination.
   instance.state.set("selectedType", ACTION);
   await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(2));
-  expect(reads[0]!.inputs).toEqual({ type: ACTION, page: { number: 1, size: 2 } });
+  expect(reads[0]!.inputs).toEqual({ type: ACTION });
+  expect(reads[0]!.runtimeParams).toEqual({ page: { number: 1, size: 2 } });
   expect(element.querySelector(".sdk-object-list-count")?.textContent).toContain("3");
   expect(element.querySelector(".sdk-object-list-pagination")).not.toBeNull();
 
-  // 3) Next page -> page 2.
+  // 3) Advance to page 2.
   element.querySelector<HTMLButtonElement>(".sdk-object-list-next")!.click();
   await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(1));
-  expect(reads[1]!.inputs).toEqual({ type: ACTION, page: { number: 2, size: 2 } });
+  expect(reads[1]!.runtimeParams).toEqual({ page: { number: 2, size: 2 } });
 
-  // 4) Search resets to page 1 and filters by keyword.
+  // 4) Typing search resets to page 1 in a single read with runtimeParams.search.
   const searchInput = element.querySelector<HTMLInputElement>(".sdk-object-list-search")!;
   searchInput.value = "deploy";
   searchInput.dispatchEvent(new Event("input"));
   await vi.waitFor(() => expect(reads).toHaveLength(3));
-  expect(reads[2]!.inputs).toEqual({ type: ACTION, keyword: "deploy", page: { number: 1, size: 2 } });
+  expect(reads[2]!.runtimeParams).toEqual({ search: "deploy", page: { number: 1, size: 2 } });
   await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-item-btn")?.textContent).toContain("Deploy Action"));
 
-  // 5) Clicking item writes complete { className: ACTION, primaryKey: shared-1 } and registers label under ACTION.
+  // 5) Selecting item writes full { className: ACTION, primaryKey: "shared-1" } and registers label under ACTION.
   element.querySelector<HTMLButtonElement>(".sdk-object-list-item-btn")!.click();
   await nextTick();
   expect(instance.state.values.value.start).toEqual({ className: ACTION, primaryKey: "shared-1" });
@@ -927,10 +901,11 @@ it("supports dynamic type queries via data.objects (panelOntologyObjects) with s
     { kind: ACTION, id: "shared-1", label: expect.stringContaining(`Deploy Action (${ACTION} shared-1)`) },
   ]);
 
-  // 6) Switch to WORKFLOW (same primaryKey "shared-1"): resets search & paging, does not mis-highlight WORKFLOW/shared-1.
+  // 6) Switch to WORKFLOW (same primaryKey "shared-1"): resets search & paging in ONE read, does NOT mis-highlight.
   instance.state.set("selectedType", WORKFLOW);
   await vi.waitFor(() => expect(reads).toHaveLength(4));
-  expect(reads[3]!.inputs).toEqual({ type: WORKFLOW, page: { number: 1, size: 2 } });
+  expect(reads[3]!.inputs).toEqual({ type: WORKFLOW });
+  expect(reads[3]!.runtimeParams).toEqual({ page: { number: 1, size: 2 } });
   expect(searchInput.value).toBe("");
   await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-item-btn")?.textContent).toContain("Nightly Flow"));
   expect(element.querySelector(".sdk-object-list-item-btn")?.getAttribute("aria-selected")).toBe("false");
@@ -978,14 +953,14 @@ it("draws a declared ObjectList with data.objects in a frame via <Projection> an
     id: "frame-type-picker",
     name: "Picker",
     componentId: "@ontomato/sdk:ObjectList",
-    inputs: { type: { kind: "scalar", type: "string" }, page: { kind: "json" } },
+    inputs: { type: { kind: "scalar", type: "string" } },
     outputs: { selected: { kind: "object-union", layers: [...platformOntologyLayers] } },
-    config: { pageSize: 10, showCount: true },
+    config: { pageSize: 10 },
     data: {
       objects: {
         source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } },
         read: "objects",
-        params: { type: { input: "type" }, page: { input: "page" } },
+        params: { type: { input: "type" } },
       },
     },
   };

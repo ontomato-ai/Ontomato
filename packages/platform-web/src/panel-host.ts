@@ -17,10 +17,13 @@ import { buildExecutionContext } from "@ontomato/contracts/build-tests";
 import { pageSkillContextSchema, type PageSkillContext } from "@ontomato/contracts/page-skills";
 import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
-import { confirmPanelIntent, registerCandidateFrame, registerPanelFrame } from "./app-host";
-import type { DirectPanelRun, PanelHostPort, PanelSdkRelease } from "@ontomato/platform-shell";
-import { mountDirectPanel, type PlatformRequests } from "@ontomato/apps-sdk/direct";
-import { workbenchI18n } from "@ontomato/workbench-ui/i18n";
+import { confirmPanelIntent, expandDeclaredComposer, registerCandidateFrame, registerPanelFrame } from "./app-host";
+import type { CodedPanelTarget, DirectPanelMount, DirectPanelRun, PanelHostPort, PanelSdkRelease } from "@ontomato/platform-shell";
+import { mountDirectPanel, panelModuleFor, type DirectPanelMountOptions, type PlatformRequests } from "@ontomato/apps-sdk/direct";
+import { workbenchI18n, workbenchLanguage } from "@ontomato/workbench-ui/i18n";
+import * as Vue from "vue";
+import { provideGlobalConfig } from "element-plus";
+import { runPanelModule, useTemplateCompiler } from "./panel-module";
 import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
 import type { DisplayObjectChange } from "@ontomato/agent-shell-ui";
 
@@ -138,7 +141,9 @@ export function platformPanelHost(
     frame: (frame, source, open) => registerPanelFrame(frame, shown, { pageKey: use.pageKey, manifest: source.panel.manifest }, open, changed),
     // A panel without code is drawn in this document, as the same application's page: its members read through the
     // platform as the reader, within this use, and a person's write is confirmed and dispatched here as a frame's is.
-    direct: (source, run) => mountDirect(source, run, shown, changed),
+    direct: (source, run) => mountDirectPanel(directOptions(source, run, shown, changed)),
+    // A panel written with code runs in this document too, on the same instance, reading within the same use.
+    coded: (source, run, target) => mountCoded(directOptions(source, run, shown, changed), target, source.panel.content.module!),
     // The relation this page opens is still the application's, bound to the same panel: a kept page shown again is
     // checked against Java's current relations before its frame may ask for anything.
     async current() {
@@ -179,6 +184,24 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
     direct: () => {
       throw new Error("A workspace candidate without code cannot be previewed yet");
     },
+    // A candidate written with code runs in this document as a registered one does. It runs as no application use, so it
+    // runs no operation, and its members read as the candidate's workspace.
+    coded: (source, run, target) => {
+      const { global } = workbenchI18n();
+      return mountCoded({
+        manifest: source.panel.manifest,
+        run,
+        requests: platformRequests,
+        use: null,
+        read: request => readPanelData({ source: { kind: "candidate", workspace: source.workspace }, ...request }),
+        confirmOperation: () => Promise.reject(new Error("A panel preview runs no operations; they run in the panel's application")),
+        expandPageComposer: expandDeclaredComposer,
+        messages: source.panel.content.messages ?? {},
+        locale: global.locale,
+        defaultLocale: String(global.fallbackLocale.value),
+        translate: key => global.t(key),
+      }, target, source.panel.content.module!);
+    },
     snapshot,
     mode: { kind: "author", definitions: panelAuthorDefinitions() },
   };
@@ -192,21 +215,49 @@ const platformRequests: PlatformRequests = {
   request: (path, init, service) => nodeApiRequest(`/api${service}${path}`, init),
 };
 
-/** Starts a direct panel of an application use: the SDK's instance with this platform's reads, requests and words. */
-function mountDirect(source: DirectPanelHostSource, run: DirectPanelRun, use: PanelUseRef, changed: (change: PanelObjectChange) => void) {
+/** What a panel of an application use runs on in this document: the SDK's instance with this platform's reads, requests and words. */
+function directOptions(source: DirectPanelHostSource, run: DirectPanelRun, use: PanelUseRef, changed: (change: PanelObjectChange) => void): DirectPanelMountOptions {
   const { global } = workbenchI18n();
-  return mountDirectPanel({
+  return {
     manifest: source.panel.manifest,
     run,
     requests: platformRequests,
     use,
     read: request => readPanelData({ source: { kind: "registered", ...use }, ...request }),
     confirmOperation: preparation => confirmPanelIntent(use, preparation.intentId, changed),
+    expandPageComposer: expandDeclaredComposer,
     messages: source.panel.content.messages ?? {},
     locale: global.locale,
     defaultLocale: String(global.fallbackLocale.value),
     translate: key => global.t(key),
+  };
+}
+
+/**
+ * Runs a panel written with code in this document: its module, once for this instance, with `vue` naming the platform's
+ * Vue and `@ontomato/sdk/panel` an SDK of this instance's own, whose `mountPanel` mounts the panel's component into the
+ * host's element on `options`' instance, with the platform's words and Element Plus's in the reader's language.
+ */
+async function mountCoded(options: DirectPanelMountOptions, target: CodedPanelTarget, module: string): Promise<DirectPanelMount> {
+  const { global } = workbenchI18n();
+  const language = workbenchLanguage();
+  await useTemplateCompiler();
+  let mounted: DirectPanelMount | undefined;
+  await runPanelModule(module, {
+    vue: Vue as unknown as Record<string, unknown>,
+    "@ontomato/sdk/panel": panelModuleFor({
+      ...options,
+      element: target.element,
+      template: target.template,
+      install(app) {
+        app.use(workbenchI18n());
+        provideGlobalConfig(Vue.computed(() => ({ locale: language.elementLocale(global.locale.value) })), app, true);
+      },
+      mounted: mount => (mounted = mount),
+    }),
   });
+  if (!mounted) throw new Error("The panel's module did not mount its component");
+  return mounted;
 }
 
 /** One application's use relations, as Java declares them; the app's entry and its page skills belong to them. */

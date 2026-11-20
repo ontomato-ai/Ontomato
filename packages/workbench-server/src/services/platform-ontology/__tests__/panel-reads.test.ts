@@ -182,16 +182,16 @@ describe("createPlatformOntologyReadAdapter", () => {
     });
   });
 
-  it("serves OntologyType.objects with keyword, page.{number,size} translation and per-type refusal status", async () => {
+  it("serves OntologyType.objects with search, page.{number,size} translation and per-type refusal status", async () => {
     stubOwnerHttp();
     const reads = createPlatformOntologyReadAdapter(owner, viewer);
 
     const typeParam = panelReadParameterSchemas.ontologyType.parse(ACTION);
-    const keywordParam = panelReadParameterSchemas.keyword.parse("order");
+    const searchParam = panelReadParameterSchemas.keyword.parse("order");
     const pageParam = panelReadParameterSchemas.page.parse({ number: 2, size: 1 });
 
     const paged = panelReadResultSchemas.panelOntologyObjects.parse(
-      await reads.objects({ type: typeParam, keyword: keywordParam, page: pageParam }),
+      await reads.objects({ type: typeParam, search: searchParam, page: pageParam }),
     );
     expect(paged).toMatchObject({
       type: ACTION,
@@ -208,6 +208,7 @@ describe("createPlatformOntologyReadAdapter", () => {
         detail: "DRAFT",
       },
     ]);
+    expect(() => reads.objects({ type: typeParam, keyword: "order" })).toThrow();
 
     const users = panelReadResultSchemas.panelOntologyObjects.parse(
       await reads.objects({ type: USER }),
@@ -290,23 +291,22 @@ describe("createPlatformOntologyReadAdapter", () => {
         componentId: "@ontomato/sdk:ObjectList",
         inputs: {
           type: { kind: "scalar", type: "string" },
-          keyword: { kind: "scalar", type: "string" },
-          page: { kind: "json" },
         },
         outputs: { selected: anyLayerObject },
         data: {
           objects: {
             source: { type: platformType(ONTOLOGY_TYPE) },
             read: "objects",
-            params: { type: { input: "type" }, keyword: { input: "keyword" }, page: { input: "page" } },
+            params: { type: { input: "type" } },
           },
         },
-        config: { searchable: true, showCount: true, pageSize: 20, toggleable: false, emptyTypeText: "capMap.typePickerEmpty" },
+        config: {},
       },
       {
         componentId: "@ontomato/sdk:ObjectList",
         inputs: {
-          keyword: { kind: "scalar", type: "string" },
+          type: { kind: "scalar", type: "string" },
+          search: { kind: "scalar", type: "string" },
           page: { kind: "json" },
         },
         outputs: { selected: { kind: "object", objectType: USER } },
@@ -314,10 +314,10 @@ describe("createPlatformOntologyReadAdapter", () => {
           objects: {
             source: { type: platformType(ONTOLOGY_TYPE) },
             read: "objects",
-            params: { type: { literal: USER }, keyword: { input: "keyword" }, page: { input: "page" } },
+            params: { type: { input: "type" }, search: { input: "search" }, page: { input: "page" } },
           },
         },
-        config: { searchable: true, showCount: true, pageSize: 20, toggleable: false },
+        config: {},
       },
     ];
 

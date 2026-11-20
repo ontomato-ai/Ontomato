@@ -17,6 +17,7 @@
     "check:platform-schedules": "node --import tsx --test scripts/platform-schedules.node-test.mjs"
   },
   "dependencies": {
+    "parse5": "8.0.1",
     "zod": "3.25.76"
   },
   "devDependencies": {

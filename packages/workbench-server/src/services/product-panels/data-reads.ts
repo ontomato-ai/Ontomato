@@ -11,8 +11,7 @@ import {
   METRIC_VIEW, OBJECT_TYPE, ONTOLOGY_TYPE, RELATIONSHIP, SET_ACTION_STATUS, SET_PRIMARY_KEY,
   platformObjectTypes, type PlatformReadDeclaration,
 } from "@ontomato/contracts/platform-object-types";
-import { productPanelSchema, type ProductPanel, type ProductProjection } from "@ontomato/contracts/product-panels";
-import { currentProductRecord } from "../../infrastructure/product-current";
+import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { assertPermission } from "../../identity/installed";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendUnavailableError } from "../../utils/backend-client";
@@ -27,10 +26,9 @@ import { createBusinessKnowledgeReadAdapter } from "../business-knowledge/panel-
 import { createOntologyModelReadAdapter } from "../ontology-model/model-reads";
 import { createScheduledTaskReadAdapter } from "../scheduling/panel-reads";
 import type { SkillResolveRequest } from "../skills/panel-reads";
-import { requirePanelUse } from "./application-use";
 import { requireChartReadRegistration } from "./chart-sources";
 import { readPanelComponentCatalogue } from "./component-catalogue";
-import { requireCurrentProduct, requireDirectPanelMember } from "./current";
+import { requireRegisteredPanelRoot, resolvePanelMemberPath } from "./member-path";
 import { resolvePlacedObjectAction } from "./object-action-placement";
 
 type ReadInputs = ProductPanelReadRequest["inputs"];
@@ -181,13 +179,11 @@ async function resolveReadMember(owner: ProductOwner, viewer: AssistantCredentia
     return { member, projection, panel, viewer: { ...viewer, headers } };
   }
 
-  const { panelId } = await requirePanelUse(viewer, source);
-  const row = await requireCurrentProduct(owner, viewer, "panel", panelId, "use");
-  const panel = productPanelSchema.parse(currentProductRecord(row, false));
-  if (memberPath.length !== 1)
-    throw new HttpError(422, "Only a fixed projection at the panel root can be read here", "PANEL_MEMBER_TARGET_UNSUPPORTED");
-  const placement = await requireDirectPanelMember(owner, viewer, panel, memberPath[0].member);
-  return { ...placement, panel, viewer };
+  const { panel, entry } = await requireRegisteredPanelRoot(owner, viewer, source);
+  const placement = await resolvePanelMemberPath(owner, viewer, panel, memberPath, entry);
+  if (placement.kind !== "projection")
+    throw new HttpError(403, "The member path does not select a projection", "PANEL_MEMBER_FORBIDDEN");
+  return { ...placement, viewer };
 }
 
 function effectiveInputs(
@@ -272,7 +268,7 @@ export async function readProductPanelData(
     }
     if ("operation" in data.source && data.source.operation.kind === "Action") {
       const resolved = await resolvePlacedObjectAction(
-        { owner, credentials: readViewer }, { panel, projection, member, memberName: request.memberPath[0].member, data }, data.source.operation.id,
+        { owner, credentials: readViewer }, { panel, projection, member, memberName: request.memberPath.at(-1)!.member, data }, data.source.operation.id,
         name => {
           const value = name === undefined ? undefined : inputs[name];
           if (value == null) return undefined;

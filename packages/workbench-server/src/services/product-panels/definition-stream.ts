@@ -7,7 +7,6 @@ import {currentProductRecord,findCurrentProduct,type CurrentProductKind} from '.
 import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres';
 import {requireProductGrant} from '../product-governance/grants';
 import {resolvePanelMemberPath} from './member-path';
-import {repeatItemTypes} from './references';
 import {checkpoint,subscriptions} from './subscription-state';
 
 type AuthorStream = {
@@ -42,9 +41,8 @@ export async function authorizeDefinitionStream(
 export async function requirePanelDefinitions(owner:ProductOwner,credentials:AssistantCredentials,panelId:string):Promise<PanelDefinitionSnapshot>{
   const row = await requireDefinition(owner, credentials, 'panel', panelId);
   const panel = productPanelSchema.parse(currentProductRecord(row, false));
-  const repeated = repeatItemTypes(panel);
-  const fixedMembers = Object.entries(panel.manifest.members).filter(([key, { target }]) =>
-    !repeated.has(key) && ('projectionId' in target || 'panelId' in target));
+  const fixedMembers = Object.entries(panel.manifest.members).filter(([, { target }]) =>
+    'projectionId' in target || 'panelId' in target);
   const members = await Promise.all(fixedMembers.map(async ([member]): Promise<PanelMemberSnapshot> => {
     const memberPath = [{ member }] as [{ member: string }];
     try {

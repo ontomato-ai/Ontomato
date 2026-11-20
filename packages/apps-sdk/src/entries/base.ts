@@ -5,8 +5,6 @@
 export { default as ObjectList } from "../base/ObjectList.vue";
 export type {
   ObjectListColumn,
-  ObjectListFilter,
-  ObjectListFilterOption,
   ObjectListRef,
 } from "../base/object-list-types";
 export { default as ObjectRelations } from "../base/ObjectRelations.vue";

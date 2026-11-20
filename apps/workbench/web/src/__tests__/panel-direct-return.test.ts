@@ -1,3 +1,4 @@
+import { noOperations } from "./panel-frame";
 import { afterEach, expect, it, vi } from "vitest";
 import { createApp, h, nextTick, ref } from "vue";
 import { createI18n } from "vue-i18n";
@@ -61,6 +62,7 @@ it("keeps what the reader types into a clean form as the page comes back, its de
       },
     },
     use: { applicationId: "app-tasks", useId: "tasks" }, messages: {}, locale: ref("en"), defaultLocale: "en",
+    expandPageComposer: noOperations.expandPageComposer,
     confirmOperation: async () => { throw new Error("Nothing is saved here"); },
     read: async (): Promise<ProductPanelReadResponse> => {
       formReads += 1;

@@ -21,7 +21,7 @@ const read = (source, name, params = {}) => ({ source, read: name, params });
 
 const projection = (id, name, description, component, ports) => ({
   id,
-  input: { name, description, visibility: "domain", componentId: `@ontomato/sdk:${component}`, outputs: {}, config: {}, ...ports },
+  input: { name, description, visibility: "domain", componentId: `@ontomato/sdk:${component}`, inputs: {}, outputs: {}, config: {}, ...ports },
 });
 
 export const projections = [
@@ -43,17 +43,17 @@ export const projections = [
     "Scheduled tasks",
     "The reader's scheduled tasks, to choose one from.",
     "ObjectList",
-    { inputs: { value: task }, outputs: { selected: task }, data: { rows: read({ type: { kind: "PlatformObjectType", id: TASK } }, "list") } },
+    { outputs: { selected: task }, data: { rows: read({ type: { kind: "PlatformObjectType", id: TASK } }, "list") } },
   ),
-  // P's form: one task, through its own application's form, asked again with the values a changed field depends on.
+  // P's form: one task, through its own application's form; the form asks again with the values a changed field depends on.
   projection(
     "projection-schedules-form",
     "Task form",
     "One scheduled task's form, as the application it belongs to declares it.",
     "ObjectForm",
     {
-      inputs: { task, values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
-      data: { form: read({ object: { input: "task" } }, "form", { values: { input: "values" }, changedField: { input: "changedField" } }) },
+      inputs: { task },
+      data: { form: read({ object: { input: "task" } }, "form") },
     },
   ),
   // P's button: the platform's own operation to run a task now.

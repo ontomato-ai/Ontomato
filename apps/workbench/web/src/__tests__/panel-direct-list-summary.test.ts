@@ -139,11 +139,17 @@ it("lists tasks from the host read port without adapters, awaits selection in su
   ]);
   expect(element.querySelector(".sdk-object-summary")?.textContent).not.toContain("lastRun");
 
-  // Clicking the selected task again toggles selection off and returns summary to awaiting without another read.
+  // Re-clicking the selected task keeps it selected by default (toggleable defaults to false).
   const recordReadsBefore = reads.filter((r) => r.dataName === "record").length;
   element.querySelectorAll<HTMLButtonElement>(".sdk-object-list [role='option']")[0]!.click();
-  await vi.waitFor(() => expect(element.querySelector(".sdk-object-summary [data-state='awaiting']")).not.toBeNull());
+  await nextTick();
+  expect(instance.state.values.value.selectedTask).toEqual(task("t-1"));
   expect(reads.filter((r) => r.dataName === "record").length).toBe(recordReadsBefore);
+
+  // Clicking the second task switches selection and updates summary.
+  element.querySelectorAll<HTMLButtonElement>(".sdk-object-list [role='option']")[1]!.click();
+  await vi.waitFor(() => expect(element.querySelector(".sdk-object-summary-title")?.textContent).toBe("Weekly backup"));
+  expect(instance.state.values.value.selectedTask).toEqual(task("t-2"));
 });
 
 it("draws loading, empty, forbidden and error states through DataState for both ObjectList and ObjectSummary", async () => {
@@ -177,7 +183,7 @@ it("shows DataState empty when list returns empty status or an empty array, resp
     ...baseProjections,
     "schedules-tasks": {
       ...baseProjections["schedules-tasks"]!,
-      config: { emptyText: "tasks.none", showCount: true },
+      config: { emptyText: "tasks.none" },
     },
   };
   const { element } = mountDirect(
@@ -191,7 +197,6 @@ it("shows DataState empty when list returns empty status or an empty array, resp
 
   await vi.waitFor(() => {
     expect(element.querySelector(".sdk-object-list [data-state='empty']")?.textContent).toBe("No scheduled tasks yet");
-    expect(element.querySelector(".sdk-object-list-count")?.textContent).toContain("0");
     expect(element.querySelector(".sdk-object-summary [data-state='empty']")?.textContent).toContain("Nothing to show");
   });
 });
@@ -261,18 +266,20 @@ it("renders a direct ObjectSummary bound to a literal object source without any 
   expect([...element.querySelectorAll(".sdk-object-summary dt")].map((dt) => dt.textContent)).toEqual(["application", "state"]);
 });
 
-it("supports table columns, count, explicit multi-select and fallbackToFirst in direct ObjectList", async () => {
+it("supports table columns, inferred checkboxes from outputs.checked and fallbackToFirst in direct ObjectList", async () => {
   const tableProjections: Record<string, DirectProjection> = {
     "table-tasks": {
       ...meta, id: "table-tasks", name: "Tasks table", componentId: "@ontomato/sdk:ObjectList",
-      inputs: {}, outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK } },
+      inputs: {},
+      outputs: {
+        selected: { kind: "object", objectType: SCHEDULED_TASK },
+        checked: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } },
+      },
       config: {
         columns: [
-          { key: "label", label: "Task" },
-          { key: "state", label: "State", kind: "tag" },
+          { key: "label", labelKey: "cols.task" },
+          { key: "state", labelKey: "cols.state", kind: "tag" },
         ],
-        showCount: true,
-        selectable: true,
         fallbackToFirst: true,
       },
       data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
@@ -281,20 +288,24 @@ it("supports table columns, count, explicit multi-select and fallbackToFirst in 
   const tableManifest: DirectPanelManifest = {
     state: {
       selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false },
+      checkedTasks: { type: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } }, personal: false, deepLink: false, external: false },
     },
     members: {
-      tasks: { target: { projectionId: "table-tasks" }, outputs: { selected: { state: "selectedTask" } } },
+      tasks: {
+        target: { projectionId: "table-tasks" },
+        outputs: { selected: { state: "selectedTask" }, checked: { state: "checkedTasks" } },
+      },
     },
     events: {},
   };
   const { instance, element } = mountDirect(() => ready(taskRows), {
     manifest: tableManifest,
     projections: tableProjections,
+    messages: { en: { "cols.task": "Task", "cols.state": "State" } },
   });
 
   await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list tbody tr")).toHaveLength(2));
   expect(instance.state.values.value.selectedTask).toEqual(task("t-1"));
-  expect(element.querySelector(".sdk-object-list-count")?.textContent).toContain("2");
 
   // Checking the second row does not disturb single selection.
   const rowChecks = element.querySelectorAll<HTMLInputElement>(".sdk-object-list tbody input[type='checkbox']");
@@ -302,5 +313,6 @@ it("supports table columns, count, explicit multi-select and fallbackToFirst in 
   rowChecks[1]!.dispatchEvent(new Event("change"));
   await nextTick();
   expect(instance.state.values.value.selectedTask).toEqual(task("t-1"));
+  expect(instance.state.values.value.checkedTasks).toEqual([task("t-2")]);
   expect(element.querySelector(".sdk-object-list-selected-count")?.textContent).toContain("1");
 });

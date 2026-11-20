@@ -8,11 +8,11 @@ import test from "node:test";
 /*
  * Contract validation for the M3 four-layer capability map registration material under the unified single-release
  * panel/projection contracts:
- * - All four projections validate against `productProjectionInputSchema` and `registerProductProjectionRequestSchema`
- *   using `{ kind: "PlatformObjectType", id: "platform:OntologyType" }` data reads, with `params.type` remaining a
- *   string class ID or string input.
+ * - All five projections (mode switcher, four-layer graph, relations, type objects and user picker) validate against
+ *   `productProjectionInputSchema` and `registerProductProjectionRequestSchema`, using
+ *   `{ kind: "PlatformObjectType", id: "platform:OntologyType" }` data reads and runtime-supplied list search/page.
  * - The panel manifest validates against `panelManifestSchema` (`members` + `events`), carries no `sdkVersion`,
- *   keeps its frame module (`panelNeedsFrame === true`), and matches `candidatePanelSourceSchema`.
+ *   keeps its rendering module (`content.module`), and matches `candidatePanelSourceSchema`.
  * - Every `en` / `zh-CN` message key matches across locales and covers all event and projection config label keys.
  */
 
@@ -34,7 +34,7 @@ async function runWithContracts(check) {
   return JSON.parse(stdout);
 }
 
-test("all four capability-map projections validate against the unified projection registration contract", async () => {
+test("all five capability-map projections validate against the unified projection registration contract", async () => {
   const result = await runWithContracts(String(({
     productProjectionInputSchema,
     registerProductProjectionRequestSchema,
@@ -55,6 +55,12 @@ test("all four capability-map projections validate against the unified projectio
   }));
 
   assert.deepEqual(result, {
+    "capability-map-mode": {
+      componentId: "@ontomato/sdk:SegmentedControl",
+      data: [],
+      bindings: [],
+      outputs: ["value"],
+    },
     "capability-map-graph": {
       componentId: "@ontomato/sdk:OntologyGraph",
       data: ["schema", "counts", "start", "neighbors"],
@@ -87,7 +93,6 @@ test("capability-map panel input, candidate files, and locale messages validate 
     productPanelInputSchema,
     registerProductPanelRequestSchema,
     candidatePanelSourceSchema,
-    panelNeedsFrame,
   }, { PANEL_ID, panelInput, candidateFiles, messages, projections }) => {
     const input = panelInput();
     const parsedPanel = productPanelInputSchema.parse(input);
@@ -122,13 +127,17 @@ test("capability-map panel input, candidate files, and locale messages validate 
     const enKeys = Object.keys(messages.en).sort();
     const zhKeys = Object.keys(messages["zh-CN"]).sort();
     const eventLabelKeys = Object.values(parsedPanel.manifest.events).map((event) => event.labelKey);
-    const configLabelKeys = projections.flatMap(({ input: p }) =>
-      [p.config.emptyText, p.config.emptyTypeText].filter((v) => typeof v === "string"),
-    );
+    const configLabelKeys = projections.flatMap(({ input: p }) => {
+      const optionKeys = Array.isArray(p.config.options)
+        ? p.config.options.map((opt) => opt?.labelKey)
+        : [];
+      return [p.config.emptyText, p.config.ariaLabelKey, ...optionKeys].filter((v) => typeof v === "string");
+    });
 
     return {
       panelId: PANEL_ID,
-      needsFrame: panelNeedsFrame(parsedPanel.content),
+      hasModule: typeof parsedPanel.content.module === "string" && parsedPanel.content.module.trim().length > 0,
+      candidateHasModule: typeof candidate.panel.content.module === "string" && candidate.panel.content.module.trim().length > 0,
       rejectsSdkPin,
       candidateHasSdkVersion: Object.hasOwn(descriptor, "sdkVersion"),
       candidateMembers: Object.keys(candidate.panel.manifest.members).sort(),
@@ -142,10 +151,11 @@ test("capability-map panel input, candidate files, and locale messages validate 
 
   assert.deepEqual(result, {
     panelId: "capability-map",
-    needsFrame: true,
+    hasModule: true,
+    candidateHasModule: true,
     rejectsSdkPin: true,
     candidateHasSdkVersion: false,
-    candidateMembers: ["graph", "relations", "typeObjects", "userPicker"],
+    candidateMembers: ["graph", "mode", "relations", "typeObjects", "userPicker"],
     allMembersReferenceDeclaredProjections: true,
     localesMatch: true,
     allLabelKeysTranslated: true,

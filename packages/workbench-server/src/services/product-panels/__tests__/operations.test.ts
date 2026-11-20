@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { HttpError } from "../../../utils/errors";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import * as serverOperations from "../server-operations";
@@ -82,7 +83,9 @@ beforeEach(()=>{
      const id=new URL(url).searchParams.get("selected");
      return {text:JSON.stringify({canSetExecutionUser:false,users:[],selected:{id,name:id==="U"?"Alice":"Victor",available:true}})};
    }
-   return {text:JSON.stringify({success:true,data:{applicationId:"A",entry:{path:"/panels/A",renderer:"panels"},panelUses:[use]}})};
+   if (new URL(url).searchParams.get("useId") !== use.id)
+     throw new HttpError(404, "Unknown use", "NOT_FOUND");
+   return {text:JSON.stringify({success:true,data:{applicationId:"A",use,menu:{groups:[],panelUses:[]}}})};
  });
  mocks.pages.mockResolvedValue({ resolveSource: mocks.resolveMember });
  mocks.assertPermission.mockResolvedValue(undefined);

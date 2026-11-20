@@ -28,7 +28,7 @@ import {
   RUN_NOW, SCHEDULED_TASK, bindingKey, chartProjectionLookupRead, chartProjectionSourcePath, chartProjectionSourceSends, clientSends, panelClientReads,
 } from "./panel-client-requests";
 import {
-  candidatePanelSourceSchema, panelCapacityPlanSchema, panelCapacityRequestSchema, panelFrameMessageSchema,
+  candidatePanelSourceSchema, panelFrameMessageSchema,
   panelHostFrameMessageSchema, panelHostMessageSchema, panelUsePath,
 } from "./panel-host";
 import {
@@ -239,6 +239,46 @@ test("knowledge detail can share list search and customer instances have no form
   }).success, false);
 });
 
+test("knowledge lists accept scalar status and counts preserve the owner's order and labels", async () => {
+  const { panelGroupCountsSchema, panelReadInputMatches } = await import("./panel-projection");
+  const projection = {
+    name: "Knowledge", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectList",
+    inputs: {}, outputs: {}, config: {},
+  };
+  const query = { source: { type: platformType(BUSINESS_KNOWLEDGE) }, read: "query", params: { status: { literal: "pending" } } };
+  assert.equal(productProjectionInputSchema.safeParse({ ...projection, data: { rows: query } }).success, true);
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...projection, data: { rows: { ...query, params: { filter: { literal: { status: "pending" } } } } },
+  }).success, false);
+  assert.equal(panelReadInputMatches("knowledgeStatus", { kind: "scalar", type: "string" }), true);
+
+  const counts = [
+    { key: "all", label: "全部", count: 3 },
+    { key: "pending", label: "待审核", count: 1 },
+    { key: "approved", label: "已通过", count: 2 },
+  ];
+  assert.deepEqual(panelGroupCountsSchema.parse(counts), counts);
+  assert.equal(panelGroupCountsSchema.safeParse({ all: 3, pending: 1, approved: 2 }).success, false);
+});
+
+test("ontology object lists use search while reference options keep keyword", () => {
+  const projection = {
+    name: "Find an ontology object", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectList",
+    inputs: {}, outputs: {}, config: {},
+  };
+  const objects = { source: { type: platformType(ONTOLOGY_TYPE) }, read: "objects" };
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...projection, data: { objects: { ...objects, params: { type: { literal: USER }, search: { literal: "Lee" } } } },
+  }).success, true);
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...projection, data: { objects: { ...objects, params: { type: { literal: USER }, keyword: { literal: "Lee" } } } },
+  }).success, false);
+  const options = { source: { type: platformType(USER) }, read: "options" };
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...projection, componentId: "@ontomato/sdk:ReferencePicker", data: { options: { ...options, params: { keyword: { literal: "Lee" } } } },
+  }).success, true);
+});
+
 test("model reads and operations use their owner's fixed signatures", async () => {
   const { directReadDeclaration } = await import("./panel-projection");
   const base = {
@@ -273,7 +313,7 @@ test("a no-code task panel registers and parses the same members and layout", as
   const { parsePanelLayout } = await import("./panel-layout");
   const input = {
     name: "Scheduled tasks", description: "", visibility: "domain", revision: 0,
-    content: { html: '<div flow="row">\n  <panel-member ref="tasks"></panel-member>\n</div>' },
+    content: { html: '<style>.tasks { display: grid; }</style>\n<main class="tasks">\n  <h2>Tasks &amp; runs</h2>\n  <hr>\n  <panel-member ref="tasks" class="list" style="min-width: 0"></panel-member>\n</main>' },
     manifest: {
       state: { selectedTask: { type: { kind: "object", objectType: "platform:ScheduledTask" }, deepLink: true, external: true, default: null } },
       members: { tasks: { target: { projectionId: "projection-schedules-tasks" }, outputs: { selected: { state: "selectedTask" } } } },
@@ -281,29 +321,58 @@ test("a no-code task panel registers and parses the same members and layout", as
     },
   };
   const panel = registerProductPanelRequestSchema.parse(input);
-  assert.deepEqual(parsePanelLayout(panel.content.html, panel.manifest), [{
-    kind: "container", tag: "div", flow: "row", gap: "medium", position: { offset: 0, line: 1, column: 1 },
-    children: [{ kind: "member", ref: "tasks", position: { offset: 19, line: 2, column: 3 } }],
-  }]);
-  const wrong = '<div>\n  <panel-member ref="tasks" onclick="run()"></panel-member>\n</div>';
-  assert.throws(() => parsePanelLayout(wrong, panel.manifest), /2:29.*onclick/u);
-  assert.equal(registerProductPanelRequestSchema.safeParse({ ...input, content: { html: wrong } }).success, false);
+  const layout = parsePanelLayout(panel.content.html, panel.manifest);
+  assert.equal(layout.css, ".tasks { display: grid; }");
+  const main = layout.nodes.find(node => node.kind === "element");
+  assert.equal(main?.tag, "main");
+  assert.deepEqual(main?.attrs, { class: "tasks" });
+  const elements = main?.children.filter(node => node.kind === "element");
+  assert.deepEqual(elements?.map(node => node.tag), ["h2", "hr"]);
+  const heading = elements?.[0]?.children[0];
+  assert.equal(heading?.kind === "text" && heading.value, "Tasks & runs");
+  const member = main?.children.find(node => node.kind === "member");
+  assert.equal(member?.ref, "tasks");
+  assert.deepEqual(member?.attrs, { class: "list", style: "min-width: 0" });
+
+  for (const [html, diagnostic] of [
+    ['<div>\n  <panel-member ref="tasks" onclick="run()"></panel-member>\n</div>', /2:29.*onclick/u],
+    ['<div>\n  <SCRIPT></SCRIPT>\n</div>', /2:3.*script/u],
+    ['<div>\n  <a HREF="&#106;avascript:void(0)">link</a>\n</div>', /2:6.*javascript:/u],
+    ...["iframe", "object", "embed"].map(tag => [`<div>\n  <${tag}></${tag}>\n</div>`, new RegExp(`2:3.*${tag}`, "u")] as const),
+  ] as const) {
+    assert.throws(() => parsePanelLayout(html, panel.manifest), diagnostic);
+    const result = registerProductPanelRequestSchema.safeParse({ ...input, content: { html } });
+    assert.equal(result.success, false);
+    assert.match(result.error!.issues[0]!.message, /Use members and events for interactions/u);
+  }
+  assert.throws(() => parsePanelLayout("<style></style>\n<style></style>", panel.manifest), /2:1.*one <style>/u);
+  assert.throws(() => parsePanelLayout('<div flow="column"></div>', panel.manifest), /1:6.*Use CSS.*flow/u);
+  assert.throws(() => parsePanelLayout('<div gap="small"></div>', panel.manifest), /1:6.*Use CSS.*gap/u);
+  assert.equal(registerProductPanelRequestSchema.safeParse({
+    ...input,
+    manifest: {
+      ...input.manifest,
+      members: { tasks: { ...input.manifest.members.tasks, params: { width: "half" } } },
+    },
+  }).success, false);
   assert.throws(() => parsePanelLayout('<section when="selectedTask" eq="1"></section>', panel.manifest), /Comparison/u);
-  assert.throws(() => parsePanelLayout('<div><panel-member ref="tasks"></div>', panel.manifest), /Unexpected closing tag/u);
-  assert.throws(() => parsePanelLayout('<div flow="row" flow="column"></div>', panel.manifest), /Duplicate attribute 'flow'/u);
+  assert.throws(() => parsePanelLayout('<div><panel-member ref="tasks"><span></span></panel-member></div>', panel.manifest), /has no children/u);
   assert.throws(() => parsePanelLayout('<panel-member ref="missing"></panel-member>', panel.manifest), /Undeclared member 'missing'/u);
 });
 
 test("the current registration accepts the shipped no-code layout and rejects an SDK pin", async () => {
-  const { registerProductPanelRequestSchema, panelNeedsFrame } = await import("./product-panels");
+  const { registerProductPanelRequestSchema } = await import("./product-panels");
   const material = await import(new URL("../../apps-sdk/examples/panels/schedules-trial/definitions.mjs", import.meta.url).href);
   const [{ directory, manifest, name, description }] = material.panels;
   const body = { content: material.panelContent(directory), manifest, name, description, visibility: "domain", revision: 0 };
-  assert.equal(panelNeedsFrame(registerProductPanelRequestSchema.parse(body).content), false);
+  assert.deepEqual(registerProductPanelRequestSchema.parse(body).content, body.content);
   assert.equal(registerProductPanelRequestSchema.safeParse({ ...body, sdkVersion: "1.1.2" }).success, false);
-  assert.equal(panelNeedsFrame(registerProductPanelRequestSchema.parse({
-    ...body, content: { html: "<main id='app'></main>", module: "export {}" },
-  }).content), true);
+  const moduleContent = { html: "<main id='app'></main>", module: "export {}" };
+  assert.deepEqual(registerProductPanelRequestSchema.parse({ ...body, content: moduleContent }).content, moduleContent);
+  const html = '<panel-member ref="not-declared"></panel-member>';
+  const invalidLayout = registerProductPanelRequestSchema.safeParse({ ...body, content: { html, style: "main {}" } });
+  assert.equal(invalidLayout.success, false);
+  assert.match(invalidLayout.error!.issues[0].message, /Undeclared member/u);
 });
 
 test("nested layout and explicit events share typed state and placement", async () => {
@@ -327,8 +396,8 @@ test("nested layout and explicit events share typed state and placement", async 
   const manifest = panelManifestSchema.parse(input);
   assert.deepEqual(manifest.events.create, input.events.create);
   const html = '<div each="agents"><panel-member ref="row"></panel-member></div><panel-member ref="$state.preview"></panel-member>';
-  const tree = parsePanelLayout(html, manifest);
-  assert.equal(tree[0]?.kind === "container" && tree[0].each, "agents");
+  const { nodes } = parsePanelLayout(html, manifest);
+  assert.equal(nodes[0]?.kind === "element" && nodes[0].each, "agents");
   assert.throws(() => parsePanelLayout('<panel-member ref="row"></panel-member>', manifest), /repeat/u);
   assert.throws(() => parsePanelLayout('<div each="agent"></div>', manifest), /list state/u);
   assert.equal(panelManifestSchema.safeParse({
@@ -1556,16 +1625,7 @@ test("conversation entries declare the exact composer target and can prefill wit
   assert.deepEqual(projection.conversationEntry, conversationEntry);
 });
 
-test("capacity admission separates a confirmed departure from activity in the frame", () => {
-  const current = { instance: "knowledge", address: "/ontology/knowledge?state=old" };
-  const next = { instance: "knowledge", address: "/ontology/knowledge?state=new" };
-  const request = { current, next, departure: "retain-clean" };
-  assert.deepEqual(panelCapacityRequestSchema.parse(request), request);
-  assert.equal(panelCapacityRequestSchema.safeParse({ ...request, departure: "dirty" }).success, false);
-
-  const plan = { kind: "admitted", next: "reuse", reclaim: [] };
-  assert.deepEqual(panelCapacityPlanSchema.parse(plan), plan);
-  assert.equal(panelCapacityPlanSchema.safeParse({ kind: "refused", reclaim: [current.instance] }).success, false);
+test("only the host can send frame activity messages", () => {
   assert.deepEqual(panelHostFrameMessageSchema.parse({ kind: "activity", active: false }), { kind: "activity", active: false });
   assert.equal(panelFrameMessageSchema.safeParse({ kind: "activity", active: true }).success, false);
 });

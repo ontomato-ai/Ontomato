@@ -1,10 +1,7 @@
 import { effectScope, h, ref, watch, type DeepReadonly, type Ref, type VNode } from "vue";
-import type { PageContext } from "@ontomato/contracts/page-context";
-import type { PageDraftLink } from "@ontomato/contracts/page-draft";
-import type { PanelManifest, PanelObjectIdentity, PanelOperation } from "@ontomato/contracts/panel-manifest";
-import type { PanelHostMessage } from "@ontomato/contracts/panel-host";
-import type { DefinitionRevision } from "@ontomato/contracts/product-subscriptions";
-import { createDirectPanelInstance, type DirectPanelInstance, type DirectPanelInstanceOptions, type PanelOperationAffected } from "./direct";
+import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
+import type { DirectPanelMount as HostDirectPanelMount, DirectPanelRun } from "@ontomato/platform-shell";
+import { createDirectPanelInstance, type DirectPanelInstance, type DirectPanelInstanceOptions } from "./direct";
 import { runPanel } from "./lifecycle";
 import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
 import { directProjectionSchema, type PanelMessages } from "@ontomato/contracts/product-panels";
@@ -23,24 +20,7 @@ import PanelMember from "./PanelMember.vue";
  * member's data through the host's one read port.
  */
 
-/** What the host gives the instance to run with, and how it hears what the instance reports. */
-export interface DirectPanelRun {
-  pageKey: string;
-  /** The instance's address when it opens. */
-  url(): string;
-  label(): string;
-  /** The deep-linkable state the address requested. */
-  initial: PanelHostMessage["state"];
-  state(state: PanelHostMessage["state"], fromAddress: string): void;
-  context(context: PageContext): void;
-  operations(operations: PanelOperation[]): void;
-  dirty(dirty: boolean): void;
-  draftSettled(link: PageDraftLink): void;
-  /** The panel cannot run, and why. */
-  failed(reason: unknown): void;
-}
-
-export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions, "read" | "confirmOperation" | "translate" | "reportDraftError"> {
+export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions, "read" | "confirmOperation" | "translate" | "expandPageComposer"> {
   manifest: PanelManifest;
   run: DirectPanelRun;
   /** The platform's request path, as the reader: drafts, projection records and the coordinator's operations. */
@@ -53,23 +33,16 @@ export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions
   defaultLocale: string;
 }
 
-/** What the host draws and drives the instance with. */
-export interface DirectPanelMount {
+/**
+ * What the host draws and drives the instance with: the host's own view of a direct instance (the shell owns it, as the
+ * one that uses it), with the instance itself and its members as the SDK draws them.
+ */
+export interface DirectPanelMount extends HostDirectPanelMount {
   readonly instance: DirectPanelInstance;
   /** The member the layout places under this key. */
   member(ref: string): VNode;
   /** The instance's state now, which the layout's conditions read. */
   readonly values: DeepReadonly<Ref<Record<string, PanelFieldValue>>>;
-  /** The address changed from outside (back, a link): the instance follows it. */
-  address(url: string): void;
-  /** What an operation changed (or, with neither, everything shown) is read again. */
-  refresh(target: PanelObjectIdentity | null, affected?: PanelOperationAffected): void;
-  projectionsChanged(revisions: readonly DefinitionRevision[]): void;
-  /** Whether the reader sees the instance; unseen, it reads nothing. */
-  activate(active: boolean): void;
-  /** A person's click on an operation in the platform's header. */
-  invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
-  dispose(): void;
 }
 
 export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelMount {
@@ -81,8 +54,10 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
     const instance = createDirectPanelInstance(options.manifest, {
       read: options.read,
       confirmOperation: options.confirmOperation,
+      expandPageComposer: options.expandPageComposer,
       translate: options.translate,
-      reportDraftError: options.reportDraftError,
+      // A draft the panel cannot take fails it where it would have been, as in a frame.
+      reportDraftError: run.failed,
       text: createPanelText(options.messages, options.locale, options.defaultLocale),
       operations: panelHumanOperations(options.use, requests),
       recordDraftCreated: (link, id) => recordDraftCreated(requests, link, id),
