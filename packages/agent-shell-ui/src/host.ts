@@ -96,6 +96,12 @@ export interface ShellTaskPort {
   ): () => void;
 }
 
+/**
+ * The agents that may take a message on a page: the candidates, the page's registered default among them, and which of
+ * them is which preset in this domain (what a panel's conversation entry may name).
+ */
+export type PageAgents = { agents: AgentHostAgent[]; defaultAgentId?: string; presetAgentIds?: Record<string, string> };
+
 export interface AgentHostClient {
   listAgents(): Promise<AgentHostAgent[]>;
   /**
@@ -104,7 +110,7 @@ export interface AgentHostClient {
    * shows the configuration error rather than choosing another agent. A member context with `member: null` returns no
    * candidates without sending a request.
    */
-  listPageAgents(page: PageSkillContext): Promise<{ agents: AgentHostAgent[]; defaultAgentId?: string }>;
+  listPageAgents(page: PageSkillContext): Promise<PageAgents>;
   /** The agent's conversations, or those of the client's workspace when it has one. */
   listSessions(agentId: string, cursor: string | null): Promise<AgentHostSessionPage>;
   /** A new conversation with the agent, inside the client's workspace when it has one. */

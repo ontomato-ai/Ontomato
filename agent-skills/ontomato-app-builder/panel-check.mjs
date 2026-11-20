@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { panelRegistrationRecords } from "./panel-registration.mjs";
+import { panelRegistrationRecords, requireApplicationId } from "./panel-registration.mjs";
 
 function parseJson(file, source) {
   try {
@@ -17,7 +17,7 @@ async function readJson(file) {
 
 async function expandInlineProjections(manifest, panel, checks, loadAuthoring) {
   const first = Object.entries(manifest?.members ?? {}).find(([, member]) => member?.component !== undefined);
-  if (!first) return { manifest, inline: [] };
+  if (!first) return { manifest, inline: [], charts: new Map() };
   if (!panel) throw new Error(`Member ${first[0]}: a new projection needs a panel in the registration material`);
   if (!loadAuthoring) throw new Error(`Member ${first[0]}: checking a new projection needs the online author type table`);
 
@@ -25,8 +25,14 @@ async function expandInlineProjections(manifest, panel, checks, loadAuthoring) {
   const { catalogue, typeTable } = await loadAuthoring();
   const { components } = checks.appsSdkComponentCatalogSchema.parse(catalogue);
   const inline = [];
+  const charts = new Map();
   const placements = Object.entries(members).map(([member, declaration]) => {
     if (!("component" in declaration)) return [member, declaration];
+    if (declaration.sourceCard) {
+      charts.set(member, declaration);
+      // Keep the member present for local validation. The owner supplies the ID before it can be read or saved.
+      return [member, { target: { projectionId: member } }];
+    }
     const { id = randomUUID(), name, description } = declaration;
     const { projection, placement } = checks.expandPanelAuthoringMember(member, declaration, {
       state, components, typeTable,
@@ -34,7 +40,7 @@ async function expandInlineProjections(manifest, panel, checks, loadAuthoring) {
     inline.push({ member, id, needsId: declaration.id === undefined, input: { ...projection, name, description } });
     return [member, { ...placement, target: { projectionId: id } }];
   });
-  return { manifest: { ...definition, state, members: Object.fromEntries(placements) }, inline };
+  return { manifest: { ...definition, state, members: Object.fromEntries(placements) }, inline, charts };
 }
 
 async function workspaceDefinition(directory, files, checks, panel, loadAuthoring) {
@@ -62,7 +68,7 @@ async function workspaceDefinition(directory, files, checks, panel, loadAuthorin
   const result = checks.panelDefinitionContentSchema.safeParse({
     ...descriptor, manifest: expanded.manifest, content: { ...content, ...Object.fromEntries(contents) },
   });
-  if (result.success) return { definition: result.data, inline: expanded.inline, descriptorFile, document, source };
+  if (result.success) return { definition: result.data, inline: expanded.inline, charts: expanded.charts, descriptorFile, document, source };
 
   const diagnostics = result.error.issues.map(issue => {
     const source = issue.path[0] === "content" && sources.find(([key]) => key === issue.path[1]);
@@ -154,7 +160,19 @@ async function workspaceRegistration({ panel, inline, material, definition }, cu
 export async function registerPanelWorkspace(directory, materialPath, checks, client, onRegistered, loadAuthoring) {
   const workspace = await readPanelWorkspace(directory, checks, materialPath, loadAuthoring);
   const material = await workspaceRegistration(workspace, client.currentRecord);
-  const { document, descriptorFile, source, inline } = workspace;
+  const { document, descriptorFile, source, inline, charts } = workspace;
+  if (charts.size) {
+    for (const { id, mode } of material.applications ?? []) {
+      if (mode === "create") requireApplicationId(id);
+    }
+    panelRegistrationRecords(material, checks);
+    const { members, state } = material.panels[0].input.manifest;
+    for (const [member, declaration] of charts) {
+      const projection = await client.registerChartSource(declaration.sourceCard, checks);
+      members[member] = checks.bindPanelAuthoringChart(member, declaration, { state, projection });
+      await onRegistered("projection", projection.id);
+    }
+  }
   const unassigned = new Map(inline.filter(({ needsId }) => needsId).map(({ id, member }) => [id, member]));
   const indent = /^([ \t]+)"/mu.exec(source)?.[1];
   const newline = source.endsWith("\n") ? "\n" : "";
@@ -168,23 +186,39 @@ export async function registerPanelWorkspace(directory, materialPath, checks, cl
   }, checks);
 }
 
-export async function checkPanelWorkspace(directory, { checks, catalogue, version, digest, typeTable, lookup, materialPath }) {
+export async function checkPanelWorkspace(directory, { checks, catalogue, version, digest, typeTable, lookup, findChartSource, materialPath }) {
   if (catalogue.version !== version) {
     throw new Error(`Expected SDK catalogue ${version}, found ${catalogue.version}`);
   }
   const loadAuthoring = typeTable && (() => ({ catalogue, typeTable }));
   const workspace = await readPanelWorkspace(directory, checks, materialPath, loadAuthoring);
   const { manifest } = workspace.definition;
-  const material = workspace.inline.length ? await workspaceRegistration(workspace) : workspace.material;
+  const material = workspace.inline.length || workspace.charts.size ? await workspaceRegistration(workspace) : workspace.material;
   const records = new Map(
     panelRegistrationRecords(material, checks).map(([kind, items]) => [
       kind, new Map(items.map(({ id, body }) => [id, body])),
     ]),
   );
+  const unchecked = [];
+  const unregisteredCharts = new Set();
+  for (const [member, declaration] of workspace.charts) {
+    const projection = await findChartSource(declaration.sourceCard);
+    if (projection === null) {
+      unchecked.push({
+        kind: "chart-source", member, ...declaration.sourceCard,
+        reason: "Chart input types can be checked after the owner registers this source card",
+      });
+      unregisteredCharts.add(member);
+      continue;
+    }
+    manifest.members[member] = checks.bindPanelAuthoringChart(member, declaration, { state: manifest.state, projection });
+    records.get("projection").set(projection.id, projection);
+  }
   const components = new Map(catalogue.components.map(component => [`@ontomato/sdk:${component.componentId}`, component]));
   const references = new Map();
   const placements = new Map();
   for (const [key, member] of Object.entries(manifest.members)) {
+    if (unregisteredCharts.has(key)) continue;
     const { target } = member;
     if (target.projectionId !== undefined) {
       references.set(`projection:${target.projectionId}`, ["projection", target.projectionId]);
@@ -196,7 +230,6 @@ export async function checkPanelWorkspace(directory, { checks, catalogue, versio
     for (const id of target.candidates?.panelIds ?? []) references.set(`panel:${id}`, ["panel", id]);
   }
 
-  const unchecked = [];
   for (const [kind, id] of references.values()) {
     const record = records.get(kind)?.get(id) ?? (lookup && await lookup(kind, id));
     if (record === null) {

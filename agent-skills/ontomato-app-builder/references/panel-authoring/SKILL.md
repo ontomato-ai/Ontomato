@@ -10,7 +10,8 @@ declared read or operation. Keep business rules, confirmation and permissions wi
 
 1. Run `node "$SKILL/ontomato.mjs" panel type <type-id>` for read names, parameters, required parameters, result
    schemas and operation declarations. Use `node "$SKILL/ontomato.mjs" sdk read components.json` for official components.
-2. Write each new projection as a member in `panel.json`. Specify the component, named reads, configuration,
+2. Use the [member field reference](FIELDS.md) to write each new projection in `panel.json`. Specify the
+   component, named reads, configuration,
    applicable operation and state connections. The tool derives ports from the owner and component declarations.
    Use `target.projectionId` to reuse an existing projection. Choose an official display component or use
    `PanelData` with `usePanelData` for a custom Vue view. Declare public state once.

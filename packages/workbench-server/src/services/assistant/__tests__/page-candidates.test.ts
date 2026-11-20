@@ -263,6 +263,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("omits preset IDs from the unfiltered directory", async () => {
+  const result = await listAssistantAgents(owner, credentials);
+
+  expect(result.agents).toContainEqual(expect.objectContaining({ id: agentIds.regular, enabled: true }));
+  expect(result).not.toHaveProperty("presetAgentIds");
+});
+
 it("resolves public queries through view.publicPageSkill even when a group also holds protected members", async () => {
   const result = await listAssistantAgents(
     owner,
@@ -302,6 +309,8 @@ it("resolves application-use member queries through one view, filters by effecti
     agentIds.orderCustom,
   ]);
   expect(result.defaultAgentId).toBe(agentIds.orderCustom);
+  expect(result.presetAgentIds).toEqual({ regular: agentIds.regular, "custom-order": agentIds.orderCustom });
+  expect(mocks.agents).toHaveBeenCalledTimes(1);
 
   // Without a matching pageKey default in the group, default falls back to regular.
   projection.pageSkills[1] = { permissionCode: "orders-menu", defaults: [{ pageKey: "other-page", defaultAgent: { kind: "id", id: agentIds.orderCustom } }] };
