@@ -70,7 +70,7 @@ public class ApplicationController {
         return R.of(Map.of("serviceId", service, "applicationIds", batch.applications().stream().map(ApplicationCatalog.Builtin::id).toList()));
     }
     @GetMapping(PANEL_SKILL_SOURCES)
-    public R<List<PanelSkills.Source>> panelSkillSources(HttpServletRequest request, @RequestParam String domainId) {
+    public R<List<PanelSkills.Use>> panelSkillSources(HttpServletRequest request, @RequestParam String domainId) {
         authentication.authenticate(request);
         if (domainId.isBlank()) throw ApplicationCatalog.bad("A domain is required");
         return R.of(catalog.panelSkillSources(domainId));

@@ -1,6 +1,6 @@
 import { inject, type InjectionKey, type Ref } from "vue";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
-import type { AgentPageQuery } from "./host";
+import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 
 /**
  * The page's way back to the one counter (DESIGN.md "Applications and shells"): a page at its own address puts the same
@@ -19,7 +19,7 @@ export interface PageCounter {
    * A refusal (the reader holds no mapping for the page, or the page's registered default is gone) is the page's
    * configuration error and is not replaced by another agent.
    */
-  pageAgents(page: AgentPageQuery): Promise<{ agents: readonly AgentHostAgent[]; defaultAgentId?: string }>;
+  pageAgents(page: PageSkillContext): Promise<{ agents: readonly AgentHostAgent[]; defaultAgentId?: string }>;
   /** The agent the counter last used, when the reader may still use it. */
   preferredAgentId: Readonly<Ref<string | null>>;
   /**

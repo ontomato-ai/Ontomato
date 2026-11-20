@@ -20,6 +20,8 @@ const props = withDefaults(defineProps<{
   title: string;
   agents: AgentHostAgent[];
   agentId: string | null;
+  /** The current agent when the open page's candidates do not contain it. */
+  currentAgent?: AgentHostAgent | null;
   sessions: AgentHostSession[];
   sessionsState: "loading" | "ready" | "error";
   hasMore: boolean;
@@ -49,6 +51,7 @@ const props = withDefaults(defineProps<{
   sessionsState: "loading",
   hasMore: false,
   agentId: null,
+  currentAgent: null,
   sessionId: null,
   featureId: null,
   bottom: null,
@@ -196,7 +199,14 @@ onBeforeUnmount(() => {
       The head: the agent the conversation runs on, chosen here — the one place in the application that changes it — or,
       for an application that runs on a single agent, its name.
     -->
-    <AgentPicker v-if="hasPicker" :agents="agents" :agent-id="agentId" :label="labels.agent" @select="emit('selectAgent', $event)" />
+    <AgentPicker
+      v-if="hasPicker"
+      :agents="agents"
+      :agent-id="agentId"
+      :current-agent="currentAgent"
+      :label="labels.agent"
+      @select="emit('selectAgent', $event)"
+    />
     <div v-else class="column-head">{{ title }}</div>
 
     <button

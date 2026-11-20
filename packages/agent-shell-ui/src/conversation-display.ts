@@ -7,6 +7,7 @@ import type {
   PresentationReceipt,
 } from "@ontomato/contracts/agent-presentation";
 import type { PageContext } from "@ontomato/contracts/page-context";
+import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import type { PanelOperationAffected } from "@ontomato/contracts/panel-operations";
@@ -103,6 +104,8 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
   });
   /** What the shown page instance reported about itself; another instance starts without. */
   const reported = shallowRef<PageContext | null>(null);
+  /** The page skill context reported by the shown page instance; cleared on instance change, close, or redirect. */
+  const reportedSkill = shallowRef<PageSkillContext | null>(null);
   const load = shallowRef<DisplayLoad>(READY);
   const objectRefresh = shallowRef<DisplayObjectRefresh | null>(null);
   function refreshObjects(change: DisplayObjectChange) {
@@ -129,6 +132,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
   const page = computed<DisplayPage | null>(() => (shown.value.target?.kind === "page" ? shown.value.target : null));
   const feature = computed(() => host.features().find((entry) => entry.id === page.value?.featureId) ?? null);
   const pageContext = computed(() => (page.value ? host.context(page.value, reported.value) : null));
+  const pageSkill = computed(() => (page.value ? reportedSkill.value : null));
 
   function commit(next: Shown) {
     const current = shown.value.target;
@@ -136,6 +140,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
       current?.kind === "page" && next.target?.kind === "page" && current.instance === next.target.instance;
     if (!sameInstance) {
       reported.value = null;
+      reportedSkill.value = null;
       load.value = READY;
       unsaved = false;
     }
@@ -242,6 +247,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     view: computed(() => shown.value.view),
     restorable: computed(() => shown.value.restorable),
     pageContext,
+    pageSkill,
     load: computed(() => load.value),
     /** What the shown page reads its objects again by; it keeps counting across pages. */
     objectRefresh: computed(() => objectRefresh.value),
@@ -320,6 +326,9 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     },
     context(context: PageContext) {
       reported.value = context;
+    },
+    skill(next: PageSkillContext | null) {
+      reportedSkill.value = page.value ? next : null;
     },
     loaded(next: DisplayLoad) {
       load.value = next;
