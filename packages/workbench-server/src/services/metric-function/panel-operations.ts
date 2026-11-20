@@ -121,7 +121,7 @@ const deleteFunctionImpact: PanelImpactInspector = {
  * draft, and an optional saved binding, and its owner checks that the metric may run.
  */
 const METRIC_FORM_SLOT = "definition";
-const metricTrialTarget = metricSaveTarget.nullable();
+const metricTrialTarget = metricSaveTarget.optional();
 const parameterDefinitionsSchema = z.array(z.object({ name: z.string() }).passthrough());
 const trialDraftSchema = z.object({
   function: z.object({
@@ -148,6 +148,11 @@ function withParameterValues(draft: Record<string, unknown>, parameters: Record<
   for (const definition of definitions)
     if (Object.hasOwn(parameters, definition.name)) definition.value = parameters[definition.name];
   return copy;
+}
+
+/** A read call carries its input as a JSON object; a metric trial reads its draft, parameter values and binding from it. */
+function trialInput(call: z.infer<typeof panelReadOperationCallSchema>) {
+  return panelReadOperationInputSchema.parse(call.input);
 }
 
 /** The owner's answer to a trial; a refusal keeps the owner's reason and code. */
@@ -309,7 +314,7 @@ export const m5ServerOperations = [
     inputSchema: panelReadOperationInputSchema,
     resultSchema: markdownResultSchema,
     async execute(host: Host, call: z.infer<typeof panelReadOperationCallSchema>) {
-      const { draft, parameters } = call.input;
+      const { draft, parameters } = trialInput(call);
       const envelope = await trial(host, "/metricView/test", withParameterValues(draft, parameters), "METRIC_VIEW_TEST_REFUSED");
       return { kind: "markdown" as const, markdown: testedContentSchema.parse(envelope.data).md };
     },
@@ -325,7 +330,7 @@ export const m5ServerOperations = [
     inputSchema: panelReadOperationInputSchema,
     resultSchema: jsonResultSchema,
     async execute(host: Host, call: z.infer<typeof panelReadOperationCallSchema>) {
-      const { draft, parameters, bindingId } = call.input;
+      const { draft, parameters, bindingId } = trialInput(call);
       const envelope = await trial(host, "/metricView/testExecute",
         { metricView: draft, param: parameters, ...(bindingId ? { bindingId } : {}) }, "METRIC_VIEW_TEST_EXECUTE_REFUSED");
       // A truncated run is a partial result: the reader sees that it is, and why, beside the rows.

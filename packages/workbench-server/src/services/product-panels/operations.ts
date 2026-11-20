@@ -82,10 +82,13 @@ export async function readPanelOperationDescriptor(owner: AssistantOwner, creden
 }
 
 export async function readPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials, request: ReadPanelOperationRequest) {
-  const current = await operationForUse(owner, credentials, request);
+  const current = await operationForUse(owner, credentials, request, request.call.target);
   if (current.effect !== "read") throw new HttpError(422, "This operation requires a write intent", "OPERATION_READ_REQUIRED");
-  const { handler } = current;
-  const call = { target: handler.targetSchema.parse(request.call.target), input: handler.inputSchema.parse(request.call.input) };
+  const { handler, fixedTarget } = current;
+  const target = handler.targetSchema.parse(request.call.target);
+  if (fixedTarget !== undefined && !isDeepStrictEqual(target, fixedTarget))
+    throw new HttpError(400, "Operation target does not match this panel member", "TARGET_ID_MISMATCH");
+  const call = { target, input: handler.inputSchema.parse(request.call.input) };
   return handler.execute(operationHost({ owner, credentials }), call);
 }
 

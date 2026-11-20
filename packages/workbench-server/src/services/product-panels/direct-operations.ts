@@ -94,8 +94,12 @@ async function admitBoundOperation(actor: PanelOperationActor, placement: Placem
   const label = handler.effect === "write" && handler.labelKey
     ? tForLocale(actor.credentials.locale, handler.labelKey) : projection.name;
   if (handler.effect === "read") {
-    if (!Object.hasOwn(placement.panel.manifest.members, handler.target.slot)) return unavailable(id);
-    return { effect: "read" as const, handler, descriptor: describeServerOperation(handler, label, handler.target.slot) };
+    if (handler.target.source === "draft") {
+      if (!Object.hasOwn(placement.panel.manifest.members, handler.target.slot)) return unavailable(id);
+      return { effect: "read" as const, handler, descriptor: describeServerOperation(handler, label, handler.target.slot), fixedTarget: undefined };
+    }
+    if (handler.target.source === "input" && selected?.kind !== "object") return undefined;
+    return { effect: "read" as const, handler, descriptor: describeServerOperation(handler, label, slot, descriptor), fixedTarget: fixed };
   }
   const draft = handler.kind === "form.save" && selected?.kind !== "object";
   if (draft && !allowsOperationDraft(projection, handler)) return undefined;

@@ -56,7 +56,7 @@ const definition = (id: string, name: string) => ({
   skills: [], classNames: [], enabledMcpServiceIds: [], systemPrompt: "", sortOrder: 0,
 });
 
-async function open(state: Record<string, unknown>) {
+async function open(state: Record<string, unknown>, held?: Promise<void>) {
   const agents = [definition(FIRST, "Revenue"), definition(SECOND, "Churn")];
   const intents = humanIntents((_, { input }) => {
     agents.push(definition(CREATED, String((input as PanelFormSaveInput).values.name)));
@@ -77,6 +77,9 @@ async function open(state: Record<string, unknown>) {
         : { method: "PUT", path: "/assistant/agent-definitions/:id", bodySchema: {}, draftOperation: "agent.update" };
       return Response.json({ fields, values: { name }, revision, errors: [], save });
     }
+    // The owner's description of what the form can do may still be on its way.
+    if (held && request.path === "/api/product-panels/read" && (request.body as { operations?: true }).operations)
+      return held.then(() => intents(request) ?? nothingAt(request));
     return intents(request) ?? nothingAt(request);
   });
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
@@ -113,6 +116,25 @@ it("creates with nothing selected, and holds the object the owner created once i
   // The panel holds what the owner created, and the form goes on editing it.
   await vi.waitFor(() => expect(context.instance.state.values.value.selected).toEqual({ className: AGENT_DEFINITION, primaryKey: CREATED }));
   await vi.waitFor(() => expect(formReads(sent).at(-1)).toEqual({ kind: "object", objectType: AGENT_DEFINITION, primaryKey: CREATED }));
+});
+
+it("shows a new object's form at once with nothing selected, before the owner's description of its save arrives", async () => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const { context, sent } = await open({}, held);
+  // The projection reads the owner's create form: the form is a new object's, known without waiting.
+  await vi.waitFor(() => expect(name()?.value).toBe(""), { timeout: 5000 });
+  expect(formReads(sent)).toEqual([{ kind: "draft" }]);
+
+  release();
+  name()!.value = "Margin";
+  name()!.dispatchEvent(new Event("input"));
+  await vi.waitFor(() => expect(context.instance.operations.value.map(({ id }) => id)).toContain("form.save"));
+  await context.instance.invoke("form.save");
+  expect(formSaveCalls(sent)).toEqual([{
+    target: { kind: "draft" },
+    input: { values: { name: "Margin" }, revision, submittedFields: ["/name"] },
+  }]);
 });
 
 it("turns an edit into a new object when the panel empties the object it edits", async () => {

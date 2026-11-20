@@ -4,6 +4,7 @@ import {
   panelOperationDescriptorResponseSchema, panelOperationRefSchema, panelUseRefSchema,
   readPanelOperationRequestSchema, readPanelOperationResponseSchema, updatePanelOperationSettingsRequestSchema,
 } from "@ontomato/contracts/panel-agent";
+import { panelDownloadFileSchema } from "@ontomato/contracts/panel-download";
 import { agentSessionRefSchema } from "@ontomato/contracts/agent-channel";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { productPanelReadRequestSchema } from "@ontomato/contracts/panel-host";
@@ -26,6 +27,7 @@ import { CHART_PROJECTION_SOURCES_PATH, chartProjectionSourceRead } from "@ontom
 import { mountProductCatalog } from "./product-catalog";
 import { mountPanelPersonalState } from "./panel-personal-state";
 import { context, wrap } from "../utils/agent-host";
+import { buildAttachmentContentDisposition } from "../utils/http";
 import { platformService } from "../middleware/platform-service";
 import {
   readCurrentPanelRecord, readCurrentProjectionRecord, saveCurrentPanel, saveCurrentProjection, validateApplicationPanelReferences,
@@ -181,7 +183,23 @@ panelOperationsRouter.post("/panel-operations/read", wrap(async (req, res) => {
   const preview = req.header(BUILD_TEST_HEADER);
   const reader = preview === undefined
     ? credentials : { ...credentials, headers: { ...credentials.headers, [BUILD_TEST_HEADER]: preview } };
-  res.json(readPanelOperationResponseSchema.parse(await readPanelOperation(owner, reader, input)));
+  const result = await readPanelOperation(owner, reader, input);
+  if (result.kind !== "file") {
+    res.json(readPanelOperationResponseSchema.parse(result));
+    return;
+  }
+  const { kind: _kind, ...data } = result;
+  const file = panelDownloadFileSchema.safeParse(data);
+  if (!file.success)
+    throw new HttpError(502, `The operation returned an invalid file: ${file.error.issues[0]!.message}`, "PANEL_OPERATION_FILE_INVALID");
+  const { bytes, mime, suggestedName } = file.data;
+  const body = bytes instanceof Uint8Array ? Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    : Buffer.from(bytes instanceof Blob ? await bytes.arrayBuffer() : bytes);
+  res.set({
+    "Content-Type": mime,
+    "Content-Disposition": buildAttachmentContentDisposition(suggestedName),
+    "Cache-Control": "no-store",
+  }).send(body);
 }));
 
 panelOperationsRouter.post("/panel-operations/inspect-impact", wrap(async (req, res) => {
