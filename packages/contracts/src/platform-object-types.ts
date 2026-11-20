@@ -64,6 +64,11 @@ export const RUN_NOW = "schedules.runNow";
 export const DELETE_AGENT = "agents.delete";
 export const SET_ACTION_STATUS = "actions.setStatus";
 export const DELETE_ACTION = "actions.delete";
+export const DELETE_METRIC_VIEW = "metricViews.delete";
+export const SET_METRIC_VIEW_STATUS = "metricViews.setStatus";
+export const TEST_METRIC_VIEW = "metricViews.test";
+export const TEST_EXECUTE_METRIC_VIEW = "metricViews.testExecute";
+export const DELETE_FUNCTION = "functions.delete";
 export const APPROVE_KNOWLEDGE = "knowledge.approve";
 export const DELETE_KNOWLEDGE = "knowledge.delete";
 export const DELETE_SKILL = "skills.delete";
@@ -80,6 +85,10 @@ const referenceReads = {
 } as const satisfies NonNullable<PlatformObjectTypeDeclaration["reads"]>;
 
 const metadataList = { list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" } } as const;
+/** A catalogue searched and paged like the business knowledge list, for definitions with no further filter. */
+const definitionQuery = {
+  query: { source: "type", parameterMode: "fixed", params: { search: "keyword", cursor: "cursor", size: "size" }, result: "panelRecordQuery" },
+} as const;
 const definitionFormParams = { values: "panelFormValues", changedField: "changedField" } as const;
 const modelReads = {
   record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
@@ -120,7 +129,12 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   },
   [METRIC_VIEW]: {
     ...describeType("metricView", "capability"),
-    reads: { result: { source: "object", parameterMode: "owner", parameter: "ontologyParameter", result: "metricOutput" } },
+    reads: {
+      ...definitionQuery,
+      ...modelReads,
+      result: { source: "object", parameterMode: "owner", parameter: "ontologyParameter", result: "metricOutput" },
+    },
+    operations: [`${METRIC_VIEW}.save`, SET_METRIC_VIEW_STATUS, DELETE_METRIC_VIEW, TEST_METRIC_VIEW, TEST_EXECUTE_METRIC_VIEW],
   },
   [DASHBOARD_CARD]: {
     ...describeType("dashboardCard"),
@@ -129,7 +143,11 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       result: { source: "object", parameterMode: "owner", parameter: "ontologyParameter", result: "metricOutput" },
     },
   },
-  [FUNCTION]: describeType("function", "capability"),
+  [FUNCTION]: {
+    ...describeType("function", "capability"),
+    reads: { ...definitionQuery, ...modelReads },
+    operations: [`${FUNCTION}.save`, DELETE_FUNCTION],
+  },
   [ACTION]: {
     ...describeType("action", "capability"),
     reads: {
