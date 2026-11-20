@@ -46,12 +46,14 @@ beforeAll(async()=>{
    gateway.once("exit",code=>reject(new Error(`Gateway fixture exited ${code}: ${errors}`)));
  });
  const identity=express();identity.use(express.json());
- identity.get("/platform/applications/app-tasks/panel-uses", (req, res) => {
+ identity.get("/platform/applications/resolve-entry", (req, res, next) => {
+   if (req.query.applicationId !== "app-tasks") { next(); return; }
    if (req.header("tk") !== "owner") { res.sendStatus(403); return; }
+   if (req.query.useId !== "tasks") { res.sendStatus(404); return; }
    res.json({ success: true, data: {
-     applicationId: "app-tasks", entry: { path: "/applications/app-tasks", renderer: "panels" },
-     panelUses: [{ id: "tasks", pageKey: "tasks", path: "/applications/app-tasks/tasks", panelId: "panel-tasks",
-       access: { kind: "domain-member" } }],
+     applicationId: "app-tasks", menu: { groups: [], panelUses: [] },
+     use: { id: "tasks", pageKey: "tasks", path: "/applications/app-tasks/tasks", panelId: "panel-tasks",
+       access: { kind: "domain-member" } },
    } });
  });
  identity.use((req,res,next)=>{

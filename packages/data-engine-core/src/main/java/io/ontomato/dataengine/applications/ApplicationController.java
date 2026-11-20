@@ -43,7 +43,14 @@ public class ApplicationController {
     }
     @GetMapping("/platform/applications/resolve-entry")
     @io.ontomato.dataengine.controller.BuildTestAccess(io.ontomato.dataengine.controller.BuildTestAccess.Access.NO_BUSINESS_DATA)
-    public R<JSONObject> resolveEntry(@RequestParam String path) { return R.of(catalog.resolveEntry(path, current())); }
+    public R<JSONObject> resolveEntry(@RequestParam(required = false) String path,
+            @RequestParam(required = false) String applicationId, @RequestParam(required = false) String useId) {
+        if (path != null && applicationId == null && useId == null)
+            return R.of(catalog.resolveEntry(path, current()));
+        if (path == null && applicationId != null && !applicationId.isBlank() && useId != null && !useId.isBlank())
+            return R.of(catalog.resolveEntry(applicationId, useId, current()));
+        throw ApplicationCatalog.bad("Supply either path or both applicationId and useId");
+    }
 
     @GetMapping("/platform/applications/{id}/panel-uses")
     @io.ontomato.dataengine.controller.BuildTestAccess(io.ontomato.dataengine.controller.BuildTestAccess.Access.NO_BUSINESS_DATA)

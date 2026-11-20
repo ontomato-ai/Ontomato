@@ -47,7 +47,7 @@ const projectionDefinition = {
 const chartSource = { dashboardId: "board", cardId: "chart" };
 const chartObject = { object: { literal: { className: DASHBOARD_CARD, primaryKey: dashboardCardPrimaryKey(chartSource) } } };
 const chartDefinition = {
-  ...projectionDefinition, componentId: METRIC_CHART_COMPONENT, chartSource, metricId: "metric",
+  ...projectionDefinition, componentId: METRIC_CHART_COMPONENT, metricId: "metric",
   data: {
     template: { source: chartObject, read: "chartTemplate", params: {} },
     result: { source: chartObject, read: "result", params: {} },

@@ -279,17 +279,18 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("knowledge-reader");
     res.json({ ids: [...resourceIds] });
   });
-  app.get("/platform/applications/app-knowledge/panel-uses", (req, res) => {
+  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+    if (req.query.applicationId !== "app-knowledge") { next(); return; }
     expect(req.header("tk")).toBe("knowledge-reader");
     res.json({
       success: true,
       data: {
         applicationId: "app-knowledge",
-        entry: { path: "/ontology/knowledge", renderer: "panels" },
-        panelUses: [{
+        menu: { groups: [], panelUses: [] },
+      use: {
           id: "knowledge", pageKey: "knowledge", path: "/ontology/knowledge", panelId,
           access: { kind: "domain-member" },
-        }],
+        },
       },
     });
   });
