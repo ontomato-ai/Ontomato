@@ -667,6 +667,20 @@ test("write refusals carry typed field errors directly in the operation outcome"
   assert.deepEqual(panelOperationOutcomeSchema.parse(batch), batch);
 });
 
+test("model form reads and save refusals preserve format and duplicate name errors", () => {
+  const errors = [
+    { field: "/className", code: "invalid_format", message: "Use a valid class name" },
+    { field: "/primaryKeyName", code: "already_exists", message: "This attribute name already exists" },
+  ];
+  const fields = errors.map(({ field }) => ({
+    ...editableField, path: field, label: field, control: { kind: "text" }, valueSchema: { type: "string" },
+  }));
+  const form = { fields, values: { className: "bad class", primaryKeyName: "existing" }, errors, save: ownerSave };
+  assert.deepEqual(panelFormDescriptionSchema.parse(form), form);
+  const outcome = { kind: "refusal", code: "FIELD_VALIDATION_FAILED", message: "Invalid model fields", errors };
+  assert.deepEqual(panelOperationOutcomeSchema.parse(outcome), outcome);
+});
+
 test("code, number, time and line array controls retain the owner's JSON values and schema", () => {
   const fields = [
     { ...editableField, path: "/definition", label: "Definition", control: { kind: "code", language: "json" },
