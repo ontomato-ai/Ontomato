@@ -104,7 +104,7 @@ jobs:
       - name: Test the Java contract and boundary group
         run: |
           maven_repo_url=$(cat .github/maven-wrapper-repo-url)
-          MVNW_REPOURL="$maven_repo_url" ./mvnw -B -ntp -Pcontract test
+          MVNW_REPOURL="$maven_repo_url" ./mvnw -B -ntp -s .github/maven-settings.xml -Pcontract test
 
       # Match docker/workbench/Dockerfile and the public branch image build facts.
       - name: Build the apps SDK

@@ -79,6 +79,8 @@ function exportArgs(app, version) {
       "EXPORT_STAGE=build-central",
       "--build-arg",
       "MVNW_REPOURL",
+      "--build-arg",
+      "CI_MAVEN_SETTINGS",
       ...reactorArgs(app),
     ];
   const secret = app.secretExport;
