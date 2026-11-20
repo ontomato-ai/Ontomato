@@ -1177,6 +1177,29 @@ test("a read-only trial carries the current draft and parameters without a write
   }
 });
 
+test("the author type table and live descriptions share operation declarations", async () => {
+  const { panelOperationDeclarationSchema, describePanelOperationFromDeclaration } = await import("./panel-operations");
+  const { platformTypeTableResponseSchema } = await import("./platform-type-table");
+  const run = panelOperationDeclarationSchema.parse({
+    id: RUN_NOW, effect: "write", batch: false, target: { source: "input", input: "task" }, inputSchema: { type: "object" },
+  });
+  const save = panelOperationDeclarationSchema.parse({
+    id: `${SCHEDULED_TASK}.save`, effect: "write", batch: false, target: { source: "draft" }, inputSchema: { type: "object" },
+  });
+  const table = {
+    objectTypes: { [SCHEDULED_TASK]: { reads: platformObjectTypes[SCHEDULED_TASK].reads, operations: [run, save] } },
+  };
+  assert.deepEqual(platformTypeTableResponseSchema.parse(table), table);
+  assert.equal(panelOperationDeclarationSchema.safeParse({ ...run, label: "Run now" }).success, false);
+
+  const { id, ...staticFields } = run;
+  assert.deepEqual(describePanelOperationFromDeclaration(run, { label: "Run now", resultSchema: {} }), {
+    handlerRef: id, ...staticFields, label: "Run now", resultSchema: {},
+  });
+  assert.deepEqual(describePanelOperationFromDeclaration(save, { label: "Save", resultSchema: {}, slot: "form" }).target,
+    { source: "draft", slot: "form" });
+});
+
 
 test("owner select options preserve integer status and customizable string tags", () => {
   const option = { description: null, disabled: false, disabledReason: null };
