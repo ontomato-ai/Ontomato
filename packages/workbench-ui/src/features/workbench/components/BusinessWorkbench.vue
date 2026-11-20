@@ -427,6 +427,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
         @display-address="display.address"
         @display-loaded="display.loaded"
         @display-dirty="display.dirty"
+        @display-skill="display.skill"
       />
       <slot v-else name="feature" :feature-id="page" />
     </template>

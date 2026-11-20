@@ -213,7 +213,7 @@ export class CodeExecutor {
         const installed = await this.registry.resolve(
           host,
           scope.domainId,
-          lib.skill,
+          { skill: lib.skill, digest: lib.digest },
         );
         const dest = path.join(executionAssets, String(libraries.length));
         await workerAssets(

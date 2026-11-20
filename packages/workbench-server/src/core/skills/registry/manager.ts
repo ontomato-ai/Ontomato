@@ -100,7 +100,7 @@ export class SkillRegistryManager {
       const source = { kind: "provider" as const, providerId: provider.id, providerName: provider.name };
       for (const offering of await this.listProvider(provider)) {
         if ("kind" in offering) {
-          const skill = protectedSkillRef(provider.id, this.domainId, offering.sourceKey, offering.scopeKey);
+          const skill = protectedSkillRef(provider.id, this.domainId, offering.sourceKey);
           reserveName(skill, source, true);
           protectedOfferings.push({ provider, offering, skill });
         } else {
@@ -114,8 +114,8 @@ export class SkillRegistryManager {
       }
     }
     const visibility = await admit?.(protectedOfferings.map(({ provider, offering, skill }) => ({
-      providerId: provider.id, sourceKey: offering.sourceKey, scopeKey: offering.scopeKey, skill,
-      resourceIds: offering.resourceIds, entrances: offering.entrances, legacyAggregateRefs: offering.legacyAggregateRefs,
+      providerId: provider.id, sourceKey: offering.sourceKey, skill,
+      resourceIds: offering.resourceIds, entrances: offering.entrances,
     })));
     this.names = new Set(byName.keys());
     this.skills = entries.filter(entry => visibility?.public(entry.skill) ?? true);
@@ -140,7 +140,7 @@ export class SkillRegistryManager {
   }
 }
 
-export type ListedProtectedSkill = Pick<ProtectedSkillOffering, "sourceKey" | "scopeKey" | "resourceIds" | "entrances" | "legacyAggregateRefs"> & {
+export type ListedProtectedSkill = Pick<ProtectedSkillOffering, "sourceKey" | "resourceIds" | "entrances"> & {
   providerId: string;
   skill: RuntimeSkillRef;
 };
