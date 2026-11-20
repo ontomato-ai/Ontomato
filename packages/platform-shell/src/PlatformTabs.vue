@@ -4,6 +4,7 @@ defineProps<{
   tabs: readonly { id: string; label: string; icon?:Component }[];
   activeId?: string;
   label: string;
+  variant?: 'segmented';
 }>();
 const emit = defineEmits<{ select: [id: string] }>();
 
@@ -25,7 +26,7 @@ function move(event: KeyboardEvent) {
 </script>
 
 <template>
-  <div class="page-tabs-bar" role="tablist" :aria-label="label" @keydown="move">
+  <div class="page-tabs-bar" :class="{ 'is-segmented': variant === 'segmented' }" role="tablist" :aria-label="label" @keydown="move">
     <button
       v-for="tab in tabs"
       :key="tab.id"
@@ -73,5 +74,34 @@ function move(event: KeyboardEvent) {
 .page-tab:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: -2px;
+}
+.page-tabs-bar.is-segmented {
+  box-sizing: border-box;
+  inline-size: max-content;
+  max-inline-size: 100%;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--el-fill-color-light);
+  scrollbar-width: thin;
+}
+.page-tabs-bar.is-segmented .page-tab {
+  height: var(--control-height-sm);
+  padding-inline: var(--spacing-sm);
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+}
+.page-tabs-bar.is-segmented .page-tab:not(.active):hover {
+  background: var(--ui-fill-tertiary, var(--el-fill-color));
+  color: var(--el-text-color-primary);
+}
+.page-tabs-bar.is-segmented .page-tab.active {
+  background: var(--el-bg-color-overlay);
+  color: var(--el-text-color-primary);
+  box-shadow: var(--elevation-panel);
+  font-weight: var(--font-semibold);
 }
 </style>

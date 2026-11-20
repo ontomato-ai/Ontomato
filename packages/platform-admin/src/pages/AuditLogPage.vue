@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from "vue";
+import { computed, ref, reactive, onMounted } from "vue";
 import { FileText, RefreshCw, Search } from "lucide-vue-next";
 import { usePlatformHost } from "../context";
 import { useI18n } from "vue-i18n";
@@ -18,9 +18,19 @@ interface AuditLog {
   operateTime: number;
 }
 
-const loading = ref(false);
+interface AuditQuery {
+  pageNum: number;
+  pageSize: number;
+  bussiness?: string;
+  operation?: string;
+}
+
+const initialQuery: AuditQuery = { pageNum: 1, pageSize: 20 };
+const loading = ref(true);
 const logList = ref<AuditLog[]>([]);
-const loadError = ref(false);
+const displayedQuery = ref<AuditQuery>();
+const failedQuery = ref<AuditQuery>();
+const requestedQuery = ref(initialQuery);
 const detailOpen = ref(false);
 const selectedLog = ref<AuditLog>();
 let detailTrigger: HTMLElement | undefined;
@@ -36,8 +46,6 @@ function restoreDetailFocus() {
   detailTrigger = undefined;
 }
 
-const pageNum = ref(1);
-const pageSize = ref(20);
 const total = ref(0);
 
 const filterForm = reactive({
@@ -45,42 +53,50 @@ const filterForm = reactive({
   operation: "",
 });
 
-const businessTypes = [
+const businessTypes = computed(() => [
   { label: t("admin.knowledgeBase"), value: "BKNOWLEDGE" },
   { label: t("admin.glossary"), value: "BTERM" },
   { label: t("admin.exampleBase"), value: "BEXAMPLE" },
   { label: "Schema", value: "SCHEMA" },
   { label: t("admin.analysisMgmt"), value: "ANALYSIS" },
-];
+]);
 
-const operationTypes = [
+const operationTypes = computed(() => [
   { label: t("common.add"), value: "ADD" },
   { label: t("common.modify"), value: "UPD" },
   { label: t("common.delete"), value: "DEL" },
-];
+]);
 
-async function loadLogs() {
-  if (loading.value) return;
+function scopeLabel(query: AuditQuery) {
+  return t("audit.resultScope", {
+    page: query.pageNum,
+    business: businessTypes.value.find(type => type.value === query.bussiness)?.label ?? t("audit.all"),
+    operation: operationTypes.value.find(type => type.value === query.operation)?.label ?? t("audit.all"),
+  });
+}
+
+const changingScope = computed(() => !!displayedQuery.value &&
+  (displayedQuery.value.pageNum !== requestedQuery.value.pageNum ||
+    displayedQuery.value.bussiness !== requestedQuery.value.bussiness ||
+    displayedQuery.value.operation !== requestedQuery.value.operation));
+
+async function loadLogs(query: AuditQuery) {
+  requestedQuery.value = query;
   loading.value = true;
-  loadError.value = false;
+  failedQuery.value = undefined;
   try {
-    const params: Record<string, any> = {
-      pageNum: pageNum.value,
-      pageSize: pageSize.value,
-    };
-    if (filterForm.bussiness) {
-      params.bussiness = filterForm.bussiness;
+    const res = await api.queryAuditLogs(query);
+    if (!Array.isArray(res.data) || !Number.isFinite(res.totalRows) || res.success === false) throw new Error("Invalid audit log page");
+    const lastPage = Math.max(1, Math.ceil(res.totalRows / query.pageSize));
+    if (query.pageNum > lastPage) {
+      await loadLogs({ ...query, pageNum: lastPage });
+      return;
     }
-    if (filterForm.operation) {
-      params.operation = filterForm.operation;
-    }
-    const res = await api.queryAuditLogs(params);
-    logList.value = res.data || [];
-    total.value = res.totalRows || 0;
+    logList.value = res.data;
+    total.value = res.totalRows;
+    displayedQuery.value = query;
   } catch {
-    loadError.value = true;
-    logList.value = [];
-    total.value = 0;
+    failedQuery.value = query;
   } finally {
     loading.value = false;
   }
@@ -88,19 +104,19 @@ async function loadLogs() {
 
 function handleSearch() {
   if (loading.value) return;
-  pageNum.value = 1;
-  loadLogs();
+  void loadLogs({ ...initialQuery, bussiness: filterForm.bussiness || undefined, operation: filterForm.operation || undefined });
 }
 
 function handlePageChange(page: number) {
-  if (loading.value) return;
-  pageNum.value = page;
-  loadLogs();
+  if (loading.value || !displayedQuery.value || displayedQuery.value.pageNum === page) return;
+  void loadLogs({ ...displayedQuery.value, pageNum: page });
 }
 
-onMounted(() => {
-  loadLogs();
-});
+function refreshLogs() {
+  if (!loading.value) void loadLogs(failedQuery.value ?? displayedQuery.value ?? initialQuery);
+}
+
+onMounted(() => void loadLogs(initialQuery));
 </script>
 
 <template>
@@ -141,22 +157,25 @@ onMounted(() => {
       <el-button type="primary" :icon="Search" :loading="loading" @click="handleSearch">
         {{ t("common.query") }}
       </el-button>
-      <el-button :icon="RefreshCw" :disabled="loading" @click="loadLogs">{{ t("common.refresh") }}</el-button>
+      <el-button :icon="RefreshCw" :disabled="loading" @click="refreshLogs">{{ t("common.refresh") }}</el-button>
     </div>
 
-    <div v-if="loadError" class="audit-load-error" role="alert">
-      {{ t('audit.loadFailed') }}
-      <el-button @click="loadLogs">{{ t('common.retry') }}</el-button>
+    <div v-if="displayedQuery" class="audit-result-scope" role="status">{{ scopeLabel(displayedQuery) }}</div>
+    <div v-if="failedQuery" class="audit-load-error" role="alert">
+      <span>{{ t('audit.loadFailed') }}. {{ scopeLabel(failedQuery) }}{{ displayedQuery ? ` · ${t('audit.previousResults')}` : '' }}</span>
+      <el-button text :icon="RefreshCw" @click="refreshLogs">{{ t('common.retry') }}</el-button>
     </div>
     <el-table
-      v-else
-      v-loading="loading"
+      v-if="displayedQuery || loading"
+      v-loading="loading && (!displayedQuery || changingScope)"
+      :aria-busy="loading"
       :data="logList"
       border
       stripe
       class="admin-table"
       style="width: 100%"
     >
+      <template #empty><span v-if="!loading && displayedQuery">{{ t('audit.empty') }}</span></template>
       <el-table-column :label="t('common.time')" width="180">
         <template #default="{ row }">
           {{ new Date(row.operateTime).toLocaleString() }}
@@ -198,16 +217,16 @@ onMounted(() => {
       </el-table-column>
     </el-table>
 
-    <div v-if="!loadError" class="pagination">
+    <div v-if="displayedQuery" class="pagination">
       <el-pagination
         background
         layout="total, prev, pager, next"
         :pager-count="5"
         :total="total"
-        :page-size="pageSize"
-        :current-page="pageNum"
+        :page-size="displayedQuery.pageSize"
+        :current-page="displayedQuery.pageNum"
         :disabled="loading"
-        @current-change="handlePageChange"
+        @update:current-page="handlePageChange"
       />
     </div>
     <el-dialog
@@ -264,6 +283,8 @@ onMounted(() => {
   font: inherit;
   line-height: var(--leading-relaxed);
 }
+.audit-result-scope, .audit-load-error { margin-block-end: var(--spacing-sm); overflow-wrap: anywhere; }
+.audit-result-scope { color: var(--el-text-color-secondary); font-size: var(--text-sm); }
 .audit-load-error { color: var(--el-color-danger-text); display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
 
 .pagination {

@@ -13,18 +13,42 @@ import AppPage from './AppPage.vue';
 const {t}=useI18n(),router=useRouter(),catalog=useApplicationCatalog();
 const applications=inject(platformApplicationsKey)!,openApplication=inject(openApplicationKey)!;
 const agents=ref<AgentHostAgent[]>([]),favorites=ref<HomeItemRef[]>([]),query=ref(''),category=ref<HomeCategory>('all');
-const loading=ref(true),pendingFavorite=ref<string|null>(null),error=ref(''),favoriteError=ref('');
+const sources = ['apps', 'agents', 'favorites'] as const;
+type GallerySource = typeof sources[number];
+const pending = ref(new Set<GallerySource>(sources));
+const failures = ref<Partial<Record<GallerySource, string>>>({});
+const pendingFavorite=ref<string|null>(null),favoriteError=ref('');
+const catalogLoading = computed(() => pending.value.has('apps') || pending.value.has('agents'));
+const catalogFailed = computed(() => !!(failures.value.apps || failures.value.agents));
+const failedSources = computed(() => sources.filter(source => failures.value[source]));
 const items=computed(()=>homeItems(applications.value,agents.value));
 const shown=computed(()=>items.value.filter(item=>(category.value==='all'||item.category===category.value)&&matches(item,query.value)));
 const filtered=computed(()=>category.value!=='all'||!!query.value.trim());
 function clearFilters(){query.value='';category.value='all';}
 const favoriteKeys=computed(()=>new Set(favorites.value.map(itemKey)));
 const labels=computed(()=>({title:t('ontology.productGalleryTitle'),description:t('ontology.productGalleryDescription'),empty:t('ontology.productGalleryEmpty'),search:t('ontology.productGallerySearch'),retry:t('ontology.productRetry')}));
-async function load(){loading.value=true;error.value='';try{const [list,state]=await Promise.all([createAssistantClient().listAgents(),readHomeState(),catalog.refresh()]);agents.value=list;favorites.value=state.favorites;if(catalog.error.value)throw new Error(catalog.error.value);}catch(e){error.value=e instanceof Error?e.message:String(e);}finally{loading.value=false;}}
-onMounted(()=>void load());
+async function loadSource(source: GallerySource) {
+  pending.value.add(source);
+  delete failures.value[source];
+  try {
+    if (source === 'apps') {
+      await catalog.refresh();
+      if (catalog.error.value) throw new Error(catalog.error.value);
+    } else if (source === 'agents') {
+      agents.value = await createAssistantClient().listAgents();
+    } else {
+      favorites.value = (await readHomeState()).favorites;
+    }
+  } catch (error) {
+    failures.value[source] = (error instanceof Error ? error.message : String(error)) || t('common.error');
+  } finally {
+    pending.value.delete(source);
+  }
+}
+onMounted(() => { for (const source of sources) void loadSource(source); });
 function open(item:HomeItem){if(item.kind==='application')openApplication(item.id);else void router.push({path:'/agents/chat',query:{agentId:item.id}});}
 async function toggle(item: HomeItem) {
-  if (pendingFavorite.value) return;
+  if (pendingFavorite.value || pending.value.has('favorites') || failures.value.favorites) return;
   const key = itemKey(item);
   pendingFavorite.value = key;
   favoriteError.value = '';
@@ -44,18 +68,20 @@ async function toggle(item: HomeItem) {
 <template>
   <AppPage class="application-gallery" :title="labels.title" :description="labels.description" :labels="{save:'',discard:'',unsavedChanges:''}">
     <div class="gallery-content">
-    <el-alert v-if="error" :title="error" type="error" :closable="false"><el-button text @click="load">{{labels.retry}}</el-button></el-alert>
+    <el-alert v-for="source in failedSources" :key="source" :title="failures[source]" type="error" :closable="false">
+      <el-button text @click="loadSource(source)">{{ labels.retry }}</el-button>
+    </el-alert>
     <el-alert v-if="favoriteError" :title="favoriteError" type="error" @close="favoriteError = ''" />
     <div class="gallery-toolbar"><nav :aria-label="t('ontology.productGalleryCategories')"><button v-for="value in homeCategories" :key="value" :class="{active:category===value}" :aria-pressed="category===value" @click="category=value">{{t(`home.categories.${value}`)}}</button></nav><el-input v-model="query" clearable :placeholder="labels.search" :aria-label="labels.search"><template #prefix><Search :size="16"/></template></el-input></div>
-    <div v-if="loading" class="gallery-grid" aria-busy="true">
-      <el-skeleton v-for="item in 6" :key="item" class="gallery-skeleton" :rows="2" animated />
-    </div>
-    <div v-else-if="shown.length" class="gallery-grid">
+    <div v-if="shown.length" class="gallery-grid" :aria-busy="catalogLoading || undefined">
       <HomeTile v-for="item in shown" :key="itemKey(item)" :item="item" variant="preview"
         :favorite="favoriteKeys.has(itemKey(item))" :favorite-busy="pendingFavorite === itemKey(item)"
-        :favorite-disabled="pendingFavorite !== null" @open="open(item)" @toggle-favorite="toggle(item)" />
+        :favorite-disabled="pendingFavorite !== null || pending.has('favorites') || !!failures.favorites" @open="open(item)" @toggle-favorite="toggle(item)" />
     </div>
-    <div v-else-if="!error" class="gallery-empty">
+    <div v-else-if="catalogLoading" class="gallery-grid" aria-busy="true">
+      <el-skeleton v-for="item in 6" :key="item" class="gallery-skeleton" :rows="2" animated />
+    </div>
+    <div v-else-if="!catalogFailed" class="gallery-empty">
       <component :is="filtered ? Search : AppWindow" :size="24" aria-hidden="true" />
       <p role="status">{{ labels.empty }}</p>
       <el-button v-if="filtered" text :aria-label="`${t('common.clear')} · ${t('ontology.productGalleryCategories')}`" @click="clearFilters">{{ t('common.clear') }}</el-button>
@@ -86,4 +112,7 @@ async function toggle(item: HomeItem) {
 .gallery-skeleton { box-sizing: border-box; padding: var(--spacing-lg); }
 .gallery-empty { display: grid; justify-items: center; gap: var(--spacing-sm); padding: var(--spacing-3xl) var(--spacing-lg); text-align: center; color: var(--el-text-color-secondary); }
 .gallery-empty p { margin: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .gallery-skeleton :deep(.el-skeleton__item) { animation: none; }
+}
 </style>

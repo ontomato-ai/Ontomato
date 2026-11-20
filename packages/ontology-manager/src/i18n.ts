@@ -679,8 +679,7 @@ const ontologyEn = {
   knowledgeDraftTargetMismatch: "This draft names another entry in its form ({form}) than the one it changes.",
 
   workflowTitle: "Workflows",
-  workflowDesc:
-    "Once a workflow is active, each step’s role determines who can perform its action, and its scope determines which records they can work on. Action preconditions check only the record’s state, such as whether it is awaiting approval.",
+  workflowDesc: "Define workflow steps, roles and record access",
   workflowRefresh: "Refresh",
   workflowCreate: "New Process",
   workflowEmpty: "No business process in this domain yet",
@@ -758,9 +757,7 @@ const ontologyEn = {
   workflowGrantsUnavailable: "Authority could not be read",
   workflowGrantsRefresh: "Refresh authority",
 
-  mapTitle: "Governance & Capability Map",
-  mapDesc:
-    "Every object the governance and capability layers involve, drawn as one graph: a subject holds a role, the role may run actions and author processes, a process names actions, and a trigger starts an execution. Colours name the kind; select a node to read its relations. Metric views, functions and skills are drawn beside the process objects because nothing in the model ties them to one yet.",
+  mapDesc: "Explore how roles, processes, and capabilities relate",
   mapFilter: "Filter by name",
   mapRefresh: "Refresh",
   mapEmpty: "Nothing to draw in this domain yet",
@@ -803,8 +800,7 @@ const ontologyEn = {
   mapUnlinked: "not linked yet",
 
   triggerTitle: "Triggers",
-  triggerDesc:
-    "When an execution starts. A trigger decides the moment; the process it starts decides the order.",
+  triggerDesc: "Define when workflows start",
   triggerFilter: "Filter by name",
   triggerRefresh: "Refresh",
   triggerNote:

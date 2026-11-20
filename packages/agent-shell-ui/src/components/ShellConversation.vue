@@ -239,8 +239,9 @@ async function send(text: string) {
     </div>
     <template v-else>
       <div
-        ref="scroller"
-        class="scroller"
+         ref="scroller"
+         class="scroller"
+        :class="{ 'initial-load-error': loadError && !loading && !items.length && pendingInput === null }"
         @scroll.passive="onScroll"
         @wheel.passive="release"
         @touchstart.passive="release"
@@ -254,11 +255,11 @@ async function send(text: string) {
               {{ loadingOlder ? labels.loading : olderError ? labels.retry : labels.more }}
             </button>
           </div>
-          <div v-if="loading" class="thread-loading" aria-busy="true">
+          <div v-if="loading && !items.length" class="thread-loading" aria-busy="true">
             <span class="line w60" /><span class="line w90" /><span class="line w75" />
           </div>
-          <div v-else-if="loadError" class="load-error" role="alert">
-            <CircleAlert :size="16" />
+          <div v-else-if="!loading && loadError" class="load-error" role="alert">
+            <CircleAlert :size="16" aria-hidden="true" />
             <span>{{ labels.loadFailed }}</span>
             <button type="button" @click="emit('retry')">{{ labels.retry }}</button>
           </div>
@@ -386,7 +387,7 @@ async function send(text: string) {
   max-width: min(85%, 620px);
   padding: 8px 14px;
   border-radius: var(--radius-lg);
-  background: var(--el-fill-color);
+  background: var(--chat-user-bubble, var(--el-fill-color));
   color: var(--el-text-color-primary);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -434,10 +435,17 @@ async function send(text: string) {
 .load-error {
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: var(--el-color-danger);
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  color: var(--el-color-danger-text, var(--el-color-danger));
   font-size: var(--text-sm);
 }
+.initial-load-error .thread {
+  box-sizing: border-box;
+  min-block-size: 100%;
+  justify-content: center;
+}
+.initial-load-error .load-error { justify-content: center; text-align: center; }
 .load-error button {
   border: 0;
   background: none;

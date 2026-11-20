@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {computed,onBeforeUnmount,ref,watch,nextTick,inject} from 'vue';
 import {ElDialog} from 'element-plus';
+import {ListChecks, Network, Plus, RefreshCw} from 'lucide-vue-next';
 import {managerOverlayKey} from '../overlay';
 import {useIdentityNames} from './identity-names';
 import {PlatformPageHeader,PlatformTabs} from '@ontomato/platform-shell';
@@ -88,12 +89,12 @@ onBeforeUnmount(()=>{clearTimeout(timer);generation++;});
 </script>
 <template>
   <section class="product-directory">
-    <PlatformPageHeader :title="ot('productDirectoryTitle')" :description="ot('productDirectoryDescription')"><template #actions><el-dropdown placement="bottom-end" :popper-options="dropdownBoundaryOptions" @command="(kind:string)=>emit('create',kind)"><el-button type="primary">{{ot('productCreateAsset')}}</el-button><template #dropdown><el-dropdown-menu><template v-for="(group,index) in creationGroups" :key="group.id"><el-dropdown-item disabled :divided="index>0">{{group.name}}</el-dropdown-item><el-dropdown-item v-for="type in group.types" :key="type.kind" :command="type.kind"><component :is="productIcons[type.kind]" :size="16" class="type-icon"/>{{type.name}}</el-dropdown-item></template></el-dropdown-menu></template></el-dropdown></template></PlatformPageHeader>
+    <PlatformPageHeader :title="ot('productDirectoryTitle')" :description="ot('productDirectoryDescription')"><template #actions><el-dropdown placement="bottom-end" :popper-options="dropdownBoundaryOptions" @command="(kind:string)=>emit('create',kind)"><el-button type="primary" :icon="Plus">{{ot('productCreateAsset')}}</el-button><template #dropdown><el-dropdown-menu><template v-for="(group,index) in creationGroups" :key="group.id"><el-dropdown-item disabled :divided="index>0">{{group.name}}</el-dropdown-item><el-dropdown-item v-for="type in group.types" :key="type.kind" :command="type.kind"><component :is="productIcons[type.kind]" :size="16" class="type-icon" aria-hidden="true"/>{{type.name}}</el-dropdown-item></template></el-dropdown-menu></template></el-dropdown></template></PlatformPageHeader>
     <div class="directory-types">
       <PlatformTabs class="directory-layer-tabs" :tabs="categoryTabs" :active-id="activeCategory" :label="ot('productAssetLayers')" @select="changeCategory" />
       <PlatformTabs class="directory-kind-tabs" :tabs="categoryTypeTabs" :active-id="activeKind" :label="ot('productAssetTypes')" @select="changeKind" />
     </div>
-    <div class="directory-overview"><div class="type-description" :title="categoryDescription"><strong>{{activeType.name}}</strong><span>{{activeType.description}}</span></div><div class="directory-tools"><el-button :loading="synchronizing" @click="synchronize">{{ot('productSyncPlatformAssets')}}</el-button><el-button :loading="graphLoading" @click="showGraph">{{ot('productAssetGraph')}}</el-button><el-button :loading="warningsLoading" :title="ot('productCheckDefaultsHint')" @click="checkDefaults">{{ot('productCheckDefaults')}}</el-button></div></div>
+    <div class="directory-overview"><div class="type-description" :title="categoryDescription"><strong>{{activeType.name}}</strong><span>{{activeType.description}}</span></div><div class="directory-tools"><el-button text :icon="RefreshCw" :loading="synchronizing" @click="synchronize">{{ot('productSyncPlatformAssets')}}</el-button><el-button text :icon="Network" :loading="graphLoading" @click="showGraph">{{ot('productAssetGraph')}}</el-button><el-button text :icon="ListChecks" :loading="warningsLoading" :title="ot('productCheckDefaultsHint')" @click="checkDefaults">{{ot('productCheckDefaults')}}</el-button></div></div>
     <ProductGraphDialog v-if="graph" v-model="graphOpen" :graph="graph" @open="open"/>
     <div v-if="graphError" class="directory-graph"><el-alert :title="graphError" type="error" closable @close="graphError=''"/></div>
     <ElDialog v-model="warningsOpen" :title="ot('productDefaultsCheckTitle')" :append-to="overlay" width="800px" destroy-on-close>

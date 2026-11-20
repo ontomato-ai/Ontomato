@@ -128,7 +128,7 @@ const tooltip = computed(() => (props.item.description ? `${props.item.label}\n$
 .home-tile-preview .home-tile-open { align-self: stretch; align-items: flex-start; height: auto; padding: var(--spacing-lg); }
 .home-tile-preview .home-tile-name { font-weight: var(--font-semibold); }
 .home-tile-preview .home-tile-icon { margin-top: 3px; }
-.home-tile-preview .home-tile-star { margin: var(--spacing-sm) var(--spacing-sm) 0 0; }
+.home-tile-preview .home-tile-star { margin-block-start: var(--spacing-sm); margin-inline-end: var(--spacing-sm); }
 .home-tile-star[aria-disabled="true"] { cursor: wait; }
 .home-tile-star[aria-busy="true"] { opacity: 0.55; }
 .home-tile-description {
@@ -164,29 +164,31 @@ const tooltip = computed(() => (props.item.description ? `${props.item.label}\n$
   cursor: default;
 }
 .home-tile-star {
-  margin-right: var(--spacing-xs);
+  margin-inline-end: var(--spacing-xs);
 }
 .home-tile-star.favorite {
   color: var(--el-color-warning);
 }
 /*
- * Out of the layout, just left of the star (its 28px and its margin, then a 2px gap), shown only while the tile is pointed
+ * Out of the layout, just before the star with one spacing step between them, shown only while the tile is pointed
  * at or one of its controls has focus.
  */
 .home-tile-move {
   position: absolute;
   top: 50%;
-  right: calc(var(--spacing-xs) + 30px);
+  inset-inline-end: calc(28px + 2 * var(--spacing-xs));
   display: flex;
-  gap: 2px;
+  gap: var(--spacing-xs);
   border-radius: var(--radius-sm);
   background: var(--el-fill-color-light);
   opacity: 0;
+  pointer-events: none;
   transform: translateY(-50%);
   transition: opacity var(--transition-fast);
 }
 .home-tile:hover .home-tile-move,
 .home-tile:focus-within .home-tile-move {
   opacity: 1;
+  pointer-events: auto;
 }
 </style>

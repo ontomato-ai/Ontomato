@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ArrowDown, ArrowLeft, ArrowUp, Plus, Save, Trash2, Upload } from "lucide-vue-next";
+import ManagerIconButton from "../components/ManagerIconButton.vue";
 import { ElAlert, ElButton, ElInput, ElInputNumber, ElOption, ElSelect, ElSwitch } from "element-plus";
 import { createObjectView, createViewWidget, objectViewDocumentSchema, objectViewProductIssues, objectProjectionIssues, type NonChartViewWidget, type ObjectReference, type ObjectViewDocument, type ObjectViewState, type ViewWidget } from "@ontomato/contracts/object-views";
 import { randomId } from "@ontomato/contracts/random-id";
@@ -262,7 +263,7 @@ onBeforeUnmount(() => { generation++; sampleRequest++; objectSearchRequest++; wi
       <div class="builder-heading"><el-button text :icon="ArrowLeft" @click="back">{{ ot('ovBack') }}</el-button><span class="builder-title-divider" /><div class="builder-title"><strong :title="objectType?.showName || className">{{ objectType?.showName || className }} · {{ ot('ovTitle') }}</strong></div>
       </div>
       <div class="builder-actions"><span class="version-status">v{{ state.revision }} · {{ ot('ovPublished') }} {{ state.publishedRevision ?? '—' }} {{ dirty ? '· ' + ot('ovUnsaved') : '' }}</span>
-        <el-switch v-model="preview" :active-text="ot('ovPreview')" /><el-button type="primary" plain :icon="Save" :disabled="!loaded" :loading="busy" @click="save()">{{ ot('ovSaveDraft') }}</el-button><el-button type="primary" :icon="Upload" :disabled="!loaded" :loading="busy" @click="save(true)">{{ ot('ovSavePublish') }}</el-button>
+        <el-switch v-model="preview" :active-text="ot('ovPreview')" /><el-button :icon="Save" :disabled="!loaded" :loading="busy" @click="save()">{{ ot('ovSaveDraft') }}</el-button><el-button type="primary" :icon="Upload" :disabled="!loaded" :loading="busy" @click="save(true)">{{ ot('ovSavePublish') }}</el-button>
       </div>
     </header>
     <el-alert v-if="error" type="error" :title="error" :closable="false" />
@@ -279,7 +280,7 @@ onBeforeUnmount(() => { generation++; sampleRequest++; objectSearchRequest++; wi
         <div v-for="(value, name) in document.variables" :key="name" class="variable-item">
           <div class="variable-heading">
             <span class="variable-name" :title="name">{{ name }}</span>
-            <el-button class="variable-remove" link :icon="Trash2" :title="ot('ovRemove')" :aria-label="`${ot('ovRemove')} ${name}`" @click="delete document.variables[name]" />
+            <ManagerIconButton class="variable-remove" :icon="Trash2" :label="`${ot('ovRemove')} ${name}`" danger @click="delete document.variables[name]" />
           </div>
           <el-input :model-value="String(value ?? '')" :aria-label="name" @update:model-value="document.variables[name] = $event" />
         </div>
@@ -297,7 +298,7 @@ onBeforeUnmount(() => { generation++; sampleRequest++; objectSearchRequest++; wi
             <div class="layout-controls"><el-input v-model="item.title" :placeholder="ot('ovSectionTitle')" @focus="selectedSection = item.id" /><el-button :disabled="tab.sections.length === 1" @click="tab.sections.splice(tab.sections.indexOf(item), 1)">{{ ot('ovDeleteSection') }}</el-button></div>
             <div class="canvas-grid">
               <article v-for="(itemWidget, index) in item.widgets" :key="itemWidget.id" :class="['canvas-widget', { selected: widget?.id === itemWidget.id }]" :style="{ gridColumn: 'span ' + itemWidget.span }" draggable="true" @dragstart="dragging = itemWidget.id" @dragover.prevent @drop.stop.prevent="drop(item.id, index)" @click="selectedWidget = itemWidget.id; selectedSection = item.id">
-                <div class="widget-tools"><span>{{ ot(itemWidget.kind === 'chart' ? 'ovBringChart' : widgetMessageKeys[itemWidget.kind]) }}</span><el-button text size="small" :icon="ArrowUp" :title="ot('ovMoveUp')" :aria-label="ot('ovMoveUp')" :disabled="index === 0" @click.stop="moveWidget(itemWidget.id, item.id, index - 1)" /><el-button text size="small" :icon="ArrowDown" :title="ot('ovMoveDown')" :aria-label="ot('ovMoveDown')" :disabled="index === item.widgets.length - 1" @click.stop="moveWidget(itemWidget.id, item.id, index + 1)" /><el-button class="configure-widget" text size="small" @click.stop="selectedWidget = itemWidget.id; selectedSection = item.id; mobilePane = 'settings'">{{ ot('ovEdit') }}</el-button></div>
+                 <div class="widget-tools"><span>{{ ot(itemWidget.kind === 'chart' ? 'ovBringChart' : widgetMessageKeys[itemWidget.kind]) }}</span><ManagerIconButton :icon="ArrowUp" :label="ot('ovMoveUp')" :disabled="index === 0" @click.stop="moveWidget(itemWidget.id, item.id, index - 1)" /><ManagerIconButton :icon="ArrowDown" :label="ot('ovMoveDown')" :disabled="index === item.widgets.length - 1" @click.stop="moveWidget(itemWidget.id, item.id, index + 1)" /><el-button class="configure-widget" text size="small" @click.stop="selectedWidget = itemWidget.id; selectedSection = item.id; mobilePane = 'settings'">{{ ot('ovEdit') }}</el-button></div>
                 <strong>{{ itemWidget.title }}</strong><p>{{ widgetSummary(itemWidget) }}</p>
               </article>
             </div><p v-if="!item.widgets.length" @click="selectedSection = item.id">{{ ot('ovEmptySection') }}</p>
@@ -317,7 +318,7 @@ onBeforeUnmount(() => { generation++; sampleRequest++; objectSearchRequest++; wi
           <section v-if="detail.resourceId" class="parameter-settings">
             <h4>{{ ot('ovParameterBindings') }}</h4>
             <div v-for="(_, name) in detail.parameters" :key="name" class="parameter">
-              <div class="parameter-heading"><span>{{ name }}</span><el-button class="parameter-remove" link :icon="Trash2" :title="ot('ovRemove')" :aria-label="`${ot('ovRemove')} ${name}`" @click="delete detail.parameters[name]" /></div>
+              <div class="parameter-heading"><span>{{ name }}</span><ManagerIconButton class="parameter-remove" :icon="Trash2" :label="`${ot('ovRemove')} ${name}`" danger @click="delete detail.parameters[name]" /></div>
               <ViewBindingEditor v-model="detail.parameters[name]" v-bind="bindingContext" />
             </div>
             <div class="parameter-add"><el-input v-model="parameterName" :placeholder="ot('ovParameterName')" :aria-label="ot('ovParameterName')" @keyup.enter="addParameter" /><el-button :icon="Plus" @click="addParameter">{{ ot('ovAddParameter') }}</el-button></div>
@@ -379,7 +380,6 @@ onBeforeUnmount(() => { generation++; sampleRequest++; objectSearchRequest++; wi
 .variable-item { display: grid; gap: var(--manager-label-gap); min-width: 0; margin-bottom: var(--manager-module-gap); }
 .variable-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .variable-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-xs); line-height: 20px; }
-.variable-remove.el-button { flex-shrink: 0; width: 28px; height: 28px; padding: 6px; color: var(--el-text-color-secondary); }
 .canvas { min-width: 0; overflow: auto; padding: var(--manager-module-padding); background: var(--el-bg-color-page); scrollbar-gutter: stable; }
 .tab-bar { display: flex; align-items: center; gap: 8px; overflow-x: auto; padding: 2px 2px 12px; margin-bottom: 12px; }
 .tab-bar > .el-button { flex-shrink: 0; max-width: 240px; overflow: hidden; }
@@ -414,7 +414,6 @@ onBeforeUnmount(() => { generation++; sampleRequest++; objectSearchRequest++; wi
 .parameter { display: grid; gap: var(--manager-content-gap); padding: var(--manager-content-gap); margin-bottom: var(--manager-content-gap); border: 1px solid var(--el-border-color-light); border-radius: var(--radius-sm); background: var(--el-fill-color-extra-light); }
 .parameter-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .parameter-heading > span { min-width: 0; font-size: var(--text-sm); font-weight: var(--font-semibold); line-height: 20px; overflow-wrap: anywhere; }
-.parameter-remove.el-button { flex-shrink: 0; width: 28px; min-height: 28px; height: 28px; padding: 6px; color: var(--el-text-color-secondary); }
 .inspector h4 { margin: 0 0 12px; font-size: var(--text-sm); font-weight: var(--font-semibold); line-height: 20px; }
 .binding-settings { display: grid; gap: var(--manager-content-gap); min-width: 0; padding: var(--manager-content-gap) 0; margin-bottom: var(--manager-content-gap); border-top: 1px solid var(--el-border-color-lighter); }
 .settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

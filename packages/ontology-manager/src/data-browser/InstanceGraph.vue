@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ManagerIconButton from "../components/ManagerIconButton.vue";
 import { Graph } from "@antv/g6";
 import type { ObjectReference } from "@ontomato/contracts/object-views";
 import {
@@ -166,7 +167,7 @@ function nodeOptions(colors: ReturnType<typeof graphColors>) {
       lineWidth: 4,
       shadowColor: colors.shadow,
       shadowBlur: largeGraph.value ? 0 : 10,
-      label: !overview.value,
+      label: (datum: any) => !datum.data?.anchor,
       labelText: (datum: any) => datum.data?.anchor ? "" : instanceGraphNodeLabel(datum.data.node.name, datum.id),
       labelFill: colors.text,
       labelFontSize: 12,
@@ -176,7 +177,7 @@ function nodeOptions(colors: ReturnType<typeof graphColors>) {
       cursor: "pointer" as const,
     },
     state: {
-      selected: { stroke: colors.primary, lineWidth: 5, label: true },
+      selected: { stroke: colors.primary, lineWidth: 5 },
     },
   };
 }
@@ -489,10 +490,9 @@ function updateClassGroups() {
     if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])) continue;
     const points = groups.get(node.class) || [];
     points.push({ x: point[0], y: point[1] }); groups.set(node.class, points);
-    const named = node.id === selectedNode.value?.id;
-    const halfWidth = (named ? Math.max(18, textWidth(instanceGraphNodeLabel(node.name, node.id), 12) / 2) : 18) * zoom;
+    const halfWidth = Math.max(18, textWidth(instanceGraphNodeLabel(node.name, node.id), 12) / 2) * zoom;
     instances.push({ x: point[0] - halfWidth, y: point[1] - 18 * zoom,
-      width: halfWidth * 2, height: (named ? 58 : 36) * zoom });
+      width: halfWidth * 2, height: 58 * zoom });
   }
   const toolbar = graphRef.value.closest('.instance-graph')?.querySelector('.graph-toolbar')?.getBoundingClientRect();
   if (toolbar?.width && toolbar.height) {
@@ -880,11 +880,10 @@ onBeforeUnmount(() => {
     <div v-if="selectedNode && nodeActionPosition" class="node-actions"
       :style="{ left: `${nodeActionPosition.x}px`, top: `${nodeActionPosition.y}px` }"
       role="toolbar" :aria-label="selectedNode.name || selectedNode.id">
-      <button :title="ot(currentPage ? 'instanceGraphMore' : 'instanceGraphExpand')"
-        :aria-label="ot(currentPage ? 'instanceGraphMore' : 'instanceGraphExpand')"
-        :disabled="expanding || rendering || filtersDirty || versionChanged || currentPage?.nextOffset === null" @click="expandNeighbors"><GitFork :size="17" /></button>
-      <button :title="ot('instanceGraphCollapse')" :aria-label="ot('instanceGraphCollapse')"
-        :disabled="expanding || rendering || versionChanged" @click="showDirectNeighborhood"><Waypoints :size="17" /></button>
+      <ManagerIconButton :icon="GitFork" :label="ot(currentPage ? 'instanceGraphMore' : 'instanceGraphExpand')"
+        :loading="expanding" :disabled="rendering || filtersDirty || versionChanged || currentPage?.nextOffset === null" @click="expandNeighbors" />
+      <ManagerIconButton :icon="Waypoints" :label="ot('instanceGraphCollapse')"
+        :disabled="expanding || rendering || versionChanged" @click="showDirectNeighborhood" />
     </div>
     <div v-if="error" class="graph-empty" role="alert"><strong>{{ error }}</strong></div>
 
@@ -904,13 +903,13 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="graph-toolbar" role="toolbar" :aria-label="ot('instanceGraphTitle')">
-      <button :title="ot('zoomIn')" :aria-label="ot('zoomIn')" @click="zoomIn"><Plus :size="18" /></button>
-      <button :title="ot('zoomOut')" :aria-label="ot('zoomOut')" @click="zoomOut"><Minus :size="18" /></button>
-      <button :title="ot('fitCanvas')" :aria-label="ot('fitCanvas')" @click="fitGraphView"><Maximize :size="18" /></button>
+      <ManagerIconButton :icon="Plus" :label="ot('zoomIn')" @click="zoomIn" />
+      <ManagerIconButton :icon="Minus" :label="ot('zoomOut')" @click="zoomOut" />
+      <ManagerIconButton :icon="Maximize" :label="ot('fitCanvas')" @click="fitGraphView" />
       <span class="toolbar-separator" aria-hidden="true" />
       <el-popover trigger="click" :width="260" placement="top-start" :teleported="false">
         <template #reference>
-          <button :title="ot('instanceGraphDisplaySettings')" :aria-label="ot('instanceGraphDisplaySettings')"><Settings2 :size="18" /></button>
+          <button type="button" class="manager-icon-button" :title="ot('instanceGraphDisplaySettings')" :aria-label="ot('instanceGraphDisplaySettings')"><Settings2 :size="16" aria-hidden="true" /></button>
         </template>
         <div class="graph-display-settings">
           <strong>{{ ot('instanceGraphDisplaySettings') }}</strong>
@@ -924,12 +923,10 @@ onBeforeUnmount(() => {
           </label>
         </div>
       </el-popover>
-      <button :title="ot('relayout')" :aria-label="ot('relayout')" :disabled="loading || rendering || layouting || expanding" @click="relayoutGraph">
-        <Network :size="18" />
-      </button>
+      <ManagerIconButton :icon="Network" :label="ot('relayout')" :loading="layouting" :disabled="loading || rendering || expanding" @click="relayoutGraph" />
       <span class="toolbar-separator" aria-hidden="true" />
-      <button :title="ot('downloadPng')" :aria-label="ot('downloadPng')" @click="downloadGraph"><Download :size="18" /></button>
-      <button :title="t('common.refresh')" :aria-label="t('common.refresh')" :disabled="expanding" @click="refresh"><RefreshCw :size="18" /></button>
+      <ManagerIconButton :icon="Download" :label="ot('downloadPng')" @click="downloadGraph" />
+      <ManagerIconButton :icon="RefreshCw" :label="t('common.refresh')" :loading="loading" :disabled="expanding" @click="refresh" />
     </div>
 
     <div class="graph-hint">
@@ -1173,29 +1170,6 @@ onBeforeUnmount(() => {
   box-shadow: var(--elevation-overlay);
 }
 .toolbar-separator { flex: 0 0 1px; height: 18px; margin: 0 3px; background: var(--el-border-color-light); }
-.graph-toolbar button[aria-expanded="true"] { color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
-.graph-toolbar button[aria-pressed="true"] { color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
-.graph-toolbar button,
-.node-actions button {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
-  padding: 0;
-  place-items: center;
-  border: 0;
-  border-radius: 6px;
-  color: var(--el-text-color-secondary);
-  background: transparent;
-  cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease;
-}
-.graph-toolbar button:hover:not(:disabled),
-.node-actions button:hover:not(:disabled) {
-  color: var(--el-color-primary);
-  background: var(--el-fill-color-light);
-}
-.graph-toolbar button[aria-pressed="true"]:hover:not(:disabled) { background: var(--el-color-primary-light-8); }
 .graph-hint {
   position: absolute;
   right: calc(var(--inspector-width) + 18px);

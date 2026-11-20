@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {computed,useId,ref,onMounted,onBeforeUnmount} from 'vue';
-import {ElButton} from 'element-plus';
+import {Maximize,Minus,Plus,Scan,Expand} from 'lucide-vue-next';
+import ManagerIconButton from '../components/ManagerIconButton.vue';
 import ProductGraphDialog from './ProductGraphDialog.vue';
 import {type ProductGraph} from '@ontomato/contracts/product-graph';
 import {productTypes} from '@ontomato/contracts/product-assets';
@@ -45,7 +46,7 @@ function edgePath(edge:ProductGraph['edges'][number]){
 }
 </script>
 <template>
-   <div class="asset-graph"><div class="graph-controls"><span>{{ot('productGraphCounts',{nodes:graph.nodes.length,edges:graph.edges.length})}}</span><ElButton v-if="!expanded" @click="fullscreen=true">{{ot('productExpandView')}}</ElButton><ElButton :disabled="scale<=.08" @click="scale=Math.max(.08,scale/1.25)">{{ot('productZoomOut')}}</ElButton><span>{{Math.round(scale*100)}}%</span><ElButton :disabled="scale>=2" @click="scale=Math.min(2,scale*1.25)">{{ot('productZoomIn')}}</ElButton><ElButton @click="fit">{{ot('productFitCanvas')}}</ElButton><ElButton @click="scale=1">{{ot('productActualSize')}}</ElButton></div><p class="graph-caption">{{ot('productGraphCaption')}}</p><div ref="canvas" class="graph-canvas"><svg :viewBox="`0 0 ${width} ${height}`" :style="{width:`${width*scale}px`,height:`${height*scale}px`}" role="img" :aria-label="ot('productGraphAria')">
+    <div class="asset-graph"><div class="graph-controls"><span>{{ot('productGraphCounts',{nodes:graph.nodes.length,edges:graph.edges.length})}}</span><ManagerIconButton :icon="Minus" :label="ot('productZoomOut')" :disabled="scale<=.08" @click="scale=Math.max(.08,scale/1.25)"/><span>{{Math.round(scale*100)}}%</span><ManagerIconButton :icon="Plus" :label="ot('productZoomIn')" :disabled="scale>=2" @click="scale=Math.min(2,scale*1.25)"/><ManagerIconButton :icon="Maximize" :label="ot('productFitCanvas')" @click="fit"/><ManagerIconButton :icon="Scan" :label="ot('productActualSize')" @click="scale=1"/><ManagerIconButton v-if="!expanded" :icon="Expand" :label="ot('productExpandView')" @click="fullscreen=true"/></div><p class="graph-caption">{{ot('productGraphCaption')}}</p><div ref="canvas" class="graph-canvas"><svg :viewBox="`0 0 ${width} ${height}`" :style="{width:`${width*scale}px`,height:`${height*scale}px`}" role="img" :aria-label="ot('productGraphAria')">
      <defs><marker :id="`${graphId}-arrow`" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M 2 1 L 8 5 L 2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
     <text v-for="(column,index) in visibleColumns" :key="column.id" :x="index*300+10" y="22" class="column-label">{{column.name}}</text>
     <g v-for="(edge,index) in graph.edges" :key="`${edge.source}:${edge.target}:${edge.relation}`" :class="{'related-edge':related(edge),'muted-edge':focusedNode&&!related(edge)}"><title>{{labels[edge.relation]}}</title><path :id="`${graphId}-edge-${index}`" :d="edgePath(edge)" class="edge" :marker-end="`url(#${graphId}-arrow)`"/><text v-if="related(edge)" class="edge-label"><textPath :href="`#${graphId}-edge-${index}`" startOffset="45%">{{labels[edge.relation]}}</textPath></text></g>

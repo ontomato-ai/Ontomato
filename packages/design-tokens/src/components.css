@@ -112,6 +112,9 @@ html.dark .el-loading-mask {
 .el-drawer__footer .el-button,
 .el-message-box__btns .el-button {
   margin: 0 !important;
+  max-inline-size: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
   border-radius: var(--radius-sm) !important;
   min-height: var(--control-height);
   height: auto;
@@ -179,6 +182,7 @@ html:root :is(.el-dialog__headerbtn, .el-message-box__headerbtn, .el-drawer__clo
 
 .el-message-box__btns {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--component-gap);
   padding-top: var(--spacing-lg);
@@ -304,7 +308,25 @@ html:root :is(.el-dialog__headerbtn, .el-message-box__headerbtn, .el-drawer__clo
   --el-pagination-border-radius: var(--radius-sm);
   --el-pagination-button-width-small: var(--control-height-sm);
   --el-pagination-button-height-small: var(--control-height-sm);
+  --el-pagination-item-gap: 0px;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm) var(--spacing-xs);
 }
+.el-pagination .el-pagination__rightwrapper {
+  min-inline-size: 0;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm) var(--spacing-xs);
+}
+.el-pagination .el-pagination__rightwrapper:empty { display: none; }
+.el-pagination .el-pager {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+.el-pagination.is-background :is(.btn-prev, .btn-next, .el-pager li) { margin-inline: 0; }
 .el-pagination button,
 .el-pagination .el-pager li,
 .el-pager li {

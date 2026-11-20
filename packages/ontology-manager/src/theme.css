@@ -138,14 +138,6 @@
   font-weight: var(--font-medium);
 }
 
-:where(.ontology-manager) .el-button--primary {
-  box-shadow: var(--shadow-primary);
-}
-
-:where(.ontology-manager) .el-button--primary:hover {
-  box-shadow: var(--shadow-primary-hover);
-}
-
 :where(.ontology-manager) .el-button + .el-button {
   margin-left: var(--spacing-sm);
 }

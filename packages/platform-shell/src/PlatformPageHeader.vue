@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { PlatformPageAction, PlatformPageDraft } from "./page-actions";
 import { ElTooltip } from "element-plus";
+import { LoaderCircle } from "lucide-vue-next";
 import { actionTooltipProps } from "@ontomato/foundation-ui/overlay";
 
 /**
@@ -59,7 +60,8 @@ const emit = defineEmits<{ discard: []; save: [] }>();
           >
             <button type="button" class="action secondary icon-action" :aria-label="action.label"
               :disabled="action.disabled || action.loading" :aria-busy="action.loading || undefined" @click="action.onClick()">
-              <component :is="action.icon" :size="16" aria-hidden="true" />
+              <LoaderCircle v-if="action.loading" class="action-spinner" :size="16" aria-hidden="true" />
+              <component v-else :is="action.icon" :size="16" aria-hidden="true" />
             </button>
           </ElTooltip>
           <button
@@ -71,7 +73,8 @@ const emit = defineEmits<{ discard: []; save: [] }>();
             :aria-busy="action.loading || undefined"
             @click="action.onClick()"
           >
-            <component :is="action.icon" v-if="action.icon" :size="16" aria-hidden="true" />
+            <LoaderCircle v-if="action.loading" class="action-spinner" :size="16" aria-hidden="true" />
+            <component v-else-if="action.icon" :is="action.icon" :size="16" aria-hidden="true" />
             <span>{{ action.label }}</span>
           </button>
         </template>
@@ -92,6 +95,7 @@ const emit = defineEmits<{ discard: []; save: [] }>();
           :aria-busy="draft.saving || undefined"
           @click="emit('save')"
         >
+          <LoaderCircle v-if="draft.saving" class="action-spinner" :size="16" aria-hidden="true" />
           {{ labels.save }}
         </button>
       </div>
@@ -148,8 +152,9 @@ const emit = defineEmits<{ discard: []; save: [] }>();
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--component-gap);
   min-width: 0;
+  max-width: 100%;
   padding-top: 2px;
 }
 .unsaved {
@@ -161,8 +166,9 @@ const emit = defineEmits<{ discard: []; save: [] }>();
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: var(--control-height);
-  padding: 0 12px;
+  min-height: var(--control-height);
+  max-width: 100%;
+  padding: var(--spacing-xs) var(--spacing-md);
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
@@ -171,6 +177,8 @@ const emit = defineEmits<{ discard: []; save: [] }>();
   cursor: pointer;
   transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
+.action > svg { flex: none; }
+.action > span { min-width: 0; overflow-wrap: anywhere; }
 .action.secondary {
   border: 1px solid var(--el-border-color-dark);
   background: var(--el-bg-color);
@@ -215,9 +223,13 @@ const emit = defineEmits<{ discard: []; save: [] }>();
   border-color: var(--el-border-color-light);
 }
 .action:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: -2px;
+  outline: 2px solid var(--brand-link, var(--el-color-primary));
+  outline-offset: 2px;
 }
+.action[aria-busy="true"] { color: var(--el-text-color-secondary); }
+.action-spinner { flex: none; animation: page-action-spin 800ms linear infinite; }
+@keyframes page-action-spin { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) { .action-spinner { animation: none; } }
 /* The compact row is denser only vertically: its sides are the page gutter, like every header's and the content's. */
 .platform-page-header.compact {
   padding-block: var(--spacing-md);
@@ -241,7 +253,7 @@ const emit = defineEmits<{ discard: []; save: [] }>();
   font-size: var(--text-lg);
   line-height: var(--leading-lg);
   text-wrap: wrap;
-  flex-shrink: 0;
+  overflow-wrap: anywhere;
 }
 .compact .page-description {
   flex: 1 1 180px;
@@ -253,7 +265,7 @@ const emit = defineEmits<{ discard: []; save: [] }>();
   padding-top: 0;
   gap: var(--component-gap);
 }
-.compact .page-actions :deep(.el-button + .el-button) {
-  margin-left: 0;
+.page-actions :deep(.el-button + .el-button) {
+  margin-inline-start: 0;
 }
 </style>

@@ -465,7 +465,7 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-md);
   transition: background-color var(--transition-fast);
 }
-.session-more { flex: 0 0 28px; height: 28px; border: 0; border-radius: var(--radius-sm); color: var(--el-text-color-secondary); background: transparent; cursor: pointer; display: grid; place-items: center; }
+.session-more { flex: 0 0 28px; height: 28px; margin-inline-end: var(--spacing-xs, 4px); border: 0; border-radius: var(--radius-sm); color: var(--el-text-color-secondary); background: transparent; cursor: pointer; display: grid; place-items: center; }
 .session-more:hover { background: var(--el-fill-color-light); }
 .session-more { opacity: 0; pointer-events: none; transition: opacity var(--transition-fast); }
 .session-item:hover .session-more,
