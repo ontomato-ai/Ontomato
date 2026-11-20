@@ -1,13 +1,27 @@
 import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import { applicationCatalogSchema } from "@ontomato/contracts/platform-identity";
+import {
+  productPanelInputSchema,
+  productProjectionInputSchema,
+  type ProductPanelInput,
+  type ProductProjectionInput,
+} from "@ontomato/contracts/product-panels";
 import { config } from "../../config/application";
 import { assertPermission } from "../../identity/installed";
+import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
+import { currentProductTables } from "../../infrastructure/product-current";
+import { createLogger } from "../../logging/logger";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { AuthFailedError, BackendResponseError, backendPost, buildBackendHeaders } from "../../utils/backend-client";
+import { AuthFailedError, BackendResponseError, backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import { listAgentDefinitions } from "../assistant/definitions";
 import { assistantSkillCatalog } from "../assistant/skills";
 import { listPublishedDefinitions } from "../business-definitions/definitions";
-import type { ProductOwner } from "../product-governance/grants";
+import { grantedProductIds, type ProductOwner } from "../product-governance/grants";
+import { readPanelComponentCatalogue } from "../product-panels/component-catalogue";
+import { listObjectDetailPanelMappings } from "../product-panels/object-detail";
+
+const logger = createLogger("platform-ontology-owners");
 
 export type OwnerFailureStatus = "refused" | "failed";
 
@@ -128,6 +142,36 @@ export interface RawAgentDefinition {
   executionUserId: string | null;
 }
 
+export interface RawSdkComponent {
+  id: string;
+  componentId: string;
+  module: string;
+  role: string;
+}
+
+export interface RawProductProjection {
+  id: string;
+  name: string;
+  description: string;
+  componentId: string;
+  metricId?: string;
+  definition: ProductProjectionInput;
+}
+
+export interface RawProductPanel {
+  id: string;
+  name: string;
+  description: string;
+  definition: ProductPanelInput;
+}
+
+export interface RawApplication {
+  id: string;
+  name: string;
+  kind: string;
+  panelIds: string[];
+}
+
 export interface ResolvedRole {
   code: string;
   id?: string;
@@ -216,16 +260,10 @@ export class PlatformOntologyOwnerReaders {
     return promise;
   }
 
-  private async postDataEngine(endpoint: string, body: Record<string, unknown> = {}): Promise<unknown> {
-    const response = await backendPost(
-      `platform-ontology:${endpoint}`,
-      `${config.dataQuery.baseUrl}${endpoint}`,
-      body,
-      { headers: this.headers, retries: 1, timeoutMs: 30_000 },
-    );
+  private parseDataEngineResponse(endpoint: string, text: string): unknown {
     let parsed: unknown;
     try {
-      parsed = JSON.parse(response.text);
+      parsed = JSON.parse(text);
     } catch {
       throw new HttpError(502, `Owner returned invalid JSON for ${endpoint}`, "OWNER_INVALID_JSON");
     }
@@ -238,6 +276,25 @@ export class PlatformOntologyOwnerReaders {
       throw new HttpError(502, message, "OWNER_READ_FAILED");
     }
     return envelope && "data" in envelope ? envelope.data : parsed;
+  }
+
+  private async postDataEngine(endpoint: string, body: Record<string, unknown> = {}): Promise<unknown> {
+    const response = await backendPost(
+      `platform-ontology:${endpoint}`,
+      `${config.dataQuery.baseUrl}${endpoint}`,
+      body,
+      { headers: this.headers, retries: 1, timeoutMs: 30_000 },
+    );
+    return this.parseDataEngineResponse(endpoint, response.text);
+  }
+
+  private async getDataEngine(endpoint: string): Promise<unknown> {
+    const response = await backendGet(
+      `platform-ontology:${endpoint}`,
+      `${config.dataQuery.baseUrl}${endpoint}`,
+      { headers: this.headers, retries: 1, timeoutMs: 30_000 },
+    );
+    return this.parseDataEngineResponse(endpoint, response.text);
   }
 
   private analysisAgentPermission(): Promise<OwnerReadResult<true>> {
@@ -557,6 +614,117 @@ export class PlatformOntologyOwnerReaders {
 
     const roles = [...byCode.values()].sort((a, b) => a.code.localeCompare(b.code));
     return { ok: true, data: { roles, byCode, codeById } };
+  }
+
+  sdkComponents(): Promise<OwnerReadResult<RawSdkComponent[]>> {
+    return this.memo("node:sdk-components", async () => {
+      const { components } = await readPanelComponentCatalogue();
+      return [...components.entries()].map(([id, component]) => ({
+        id,
+        componentId: component.componentId,
+        module: component.module,
+        role: component.role,
+      }));
+    });
+  }
+
+  grantedUseIds(): Promise<OwnerReadResult<ReadonlySet<string>>> {
+    return this.memo("java:/product-governance/resources:use", async () => {
+      const ids = await grantedProductIds("use", this.credentials);
+      return new Set(ids);
+    });
+  }
+
+  async productProjections(): Promise<OwnerReadResult<RawProductProjection[]>> {
+    const grantRes = await this.grantedUseIds();
+    if (!grantRes.ok) return grantRes;
+    return this.memo("node:product-projections", async () => {
+      const ids = [...grantRes.data];
+      if (ids.length === 0) return [];
+      const { rows } = await getPostgresPool().query<{ id: string; definition: unknown }>(
+        `SELECT id, definition FROM ${t(currentProductTables.projection)} WHERE domain_id = $1 AND id = ANY($2::text[]) ORDER BY id`,
+        [this.owner.domainId, ids],
+      );
+      const projections: RawProductProjection[] = [];
+      for (const row of rows) {
+        const parsed = productProjectionInputSchema.safeParse(row.definition);
+        if (!parsed.success) {
+          logger.warn("skipping invalid product projection definition in platform ontology query", {
+            domainId: this.owner.domainId,
+            projectionId: row.id,
+          });
+          continue;
+        }
+        const def = parsed.data;
+        projections.push({
+          id: row.id,
+          name: def.name || row.id,
+          description: def.description,
+          componentId: def.componentId,
+          metricId: "metricId" in def ? def.metricId : undefined,
+          definition: def,
+        });
+      }
+      return projections;
+    });
+  }
+
+  async productPanels(): Promise<OwnerReadResult<RawProductPanel[]>> {
+    const grantRes = await this.grantedUseIds();
+    if (!grantRes.ok) return grantRes;
+    return this.memo("node:product-panels", async () => {
+      const ids = [...grantRes.data];
+      if (ids.length === 0) return [];
+      const { rows } = await getPostgresPool().query<{ id: string; definition: unknown }>(
+        `SELECT id, definition FROM ${t(currentProductTables.panel)} WHERE domain_id = $1 AND id = ANY($2::text[]) ORDER BY id`,
+        [this.owner.domainId, ids],
+      );
+      const panels: RawProductPanel[] = [];
+      for (const row of rows) {
+        const parsed = productPanelInputSchema.safeParse(row.definition);
+        if (!parsed.success) {
+          logger.warn("skipping invalid product panel definition in platform ontology query", {
+            domainId: this.owner.domainId,
+            panelId: row.id,
+          });
+          continue;
+        }
+        panels.push({
+          id: row.id,
+          name: parsed.data.name || row.id,
+          description: parsed.data.description,
+          definition: parsed.data,
+        });
+      }
+      return panels;
+    });
+  }
+
+  objectDetailPanelMappings(): Promise<OwnerReadResult<ReadonlyMap<string, string>>> {
+    return this.memo("node:object-detail-panels", async () => {
+      const mappings = await listObjectDetailPanelMappings(this.owner.domainId, getPostgresPool());
+      return new Map(mappings.map(({ className, panelId }) => [className, panelId]));
+    });
+  }
+
+  applications(): Promise<OwnerReadResult<RawApplication[]>> {
+    return this.memo("java:/platform/applications", async () => {
+      const raw = await this.getDataEngine("/platform/applications?purpose=navigation");
+      const apps = applicationCatalogSchema.parse(raw);
+      const locale = this.credentials.locale ?? "en";
+      const baseLocale = locale.includes("-") ? locale.split("-")[0] : undefined;
+      return apps.map((app) => ({
+        id: app.id,
+        name:
+          app.names[locale] ??
+          (baseLocale ? app.names[baseLocale] : undefined) ??
+          app.names.en ??
+          Object.values(app.names)[0] ??
+          app.id,
+        kind: app.kind,
+        panelIds: [...new Set((app.panelUses ?? []).map((use) => use.panelId))],
+      }));
+    });
   }
 
   /**
