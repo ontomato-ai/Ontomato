@@ -10,7 +10,8 @@ Use `recipes.md` for tasks the assistant needs to know how to do.
 
 In the required `panel.mjs`, import the SDK, read panel state from the current context and call `mountPanel`.
 The platform runs all panels directly. The repository's `packages/apps-sdk/src/panel/mount.ts` implements the
-legacy iframe runtime. This guide and the public SDK imports cover the direct runtime for panel authors.
+legacy iframe runtime. Use this skill and the current SDK guide as the only authoring references. Read the SDK
+guide with `node "$SKILL/ontomato.mjs" sdk read docs/index.md`.
 
 ```js
 import { computed } from "vue";
