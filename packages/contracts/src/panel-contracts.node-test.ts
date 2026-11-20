@@ -34,7 +34,7 @@ import {
 import {
   matchesObjectType, objectUnionTypes, ontologyObjectUnionTypeSchema, ontologyParameterTypeSchema,
   panelChildCollectionQuerySchema, panelChildObjectIdentitySchema, panelManifestSchema, panelOpenRequestSchema, panelStateFieldSchema,
-  panelStateOperationSchema, panelStateValueSchema, singleOntologyParameterTypeSchema,
+  panelOperationSchema, panelStateOperationSchema, panelStateValueSchema, singleOntologyParameterTypeSchema,
 } from "./panel-manifest";
 import { pageSelectionSchema } from "./page-context";
 import { pageDraftSchema } from "./page-draft";
@@ -93,6 +93,41 @@ test("current SDK describes the browser files and Node check from the same relea
   };
   assert.deepEqual(appsSdkReleaseManifestSchema.parse(manifest), manifest);
   assert.equal(appsSdkReleaseManifestSchema.safeParse({ ...manifest, check: "/node/panel-check.mjs" }).success, false);
+});
+
+test("the SDK catalogue separates supply, configuration and run inputs", async () => {
+  const { appsSdkComponentCatalogSchema } = await import("./apps-sdk");
+  const component = {
+    componentId: "ObjectSummary", module: "@ontomato/sdk/base", exportName: "ObjectSummary",
+    role: "presentation", meaning: "Show the selected object as its owner describes it.",
+    data: { record: { results: ["panelRecord"], required: true } },
+    config: [{ name: "fields", type: "string[]", description: "Visible fields", required: false }],
+    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+    outputs: [],
+    ports: { props: [], events: [], slots: [] },
+  };
+  const catalogue = { version: "1.1.2", components: [component] };
+  assert.deepEqual(appsSdkComponentCatalogSchema.parse(catalogue), catalogue);
+  for (const datum of [{ results: [], required: true }, { results: ["notRegistered"], required: true }, { results: ["panelRecord"] }]) {
+    assert.equal(appsSdkComponentCatalogSchema.safeParse({
+      ...catalogue, components: [{ ...component, data: { record: datum } }],
+    }).success, false);
+  }
+  const { data: _data, ...displayOnly } = component;
+  assert.equal(appsSdkComponentCatalogSchema.safeParse({ ...catalogue, components: [displayOnly] }).success, true);
+});
+
+test("projection registration accepts package-qualified components and leaves data keys to the catalogue", () => {
+  const input = {
+    name: "Task list", description: "", visibility: "domain", revision: 0, inputs: {}, outputs: {}, config: {},
+    data: { items: { source: { type: platformType(SCHEDULED_TASK) }, read: "list", params: {} } },
+  };
+  for (const componentId of ["@school/panels:InventoryList", "local-kit:list-view"]) {
+    assert.deepEqual(registerProductProjectionRequestSchema.parse({ ...input, componentId }), { ...input, componentId });
+  }
+  for (const componentId of ["InventoryList", "@school:InventoryList", "local-kit:", "local-kit:list:view", "local-kit:two words"]) {
+    assert.equal(registerProductProjectionRequestSchema.safeParse({ ...input, componentId }).success, false);
+  }
 });
 
 test("ontology object lists and reference pickers declare the named reads they use", async () => {
@@ -168,6 +203,57 @@ test("owner query rows carry only actual highlight ranges on their display text"
   assert.deepEqual(panelRecordQuerySchema.parse({ rows: [row], total: 1 }), { rows: [row], total: 1 });
   assert.equal(panelRecordSchema.safeParse({ ...row, highlights: {} }).success, false);
   assert.equal(panelRecordSchema.safeParse({ ...row, highlights: { label: [{ start: 4, end: 2 }] } }).success, false);
+});
+
+test("knowledge detail can share list search and customer instances have no form read", () => {
+  const base = {
+    name: "Detail", description: "", visibility: "domain", inputs: {}, outputs: {}, config: {},
+    componentId: "@ontomato/sdk:ObjectSummary",
+  };
+  const record = {
+    source: { object: { literal: { className: BUSINESS_KNOWLEDGE, primaryKey: "knowledge-1" } } },
+    read: "record", params: { search: { literal: "policy" } },
+  };
+  assert.equal(productProjectionInputSchema.safeParse({ ...base, data: { record } }).success, true);
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...base, data: { record: { ...record, params: { search: { literal: 1 } } } },
+  }).success, false);
+  const customer = { source: { object: { literal: { className: "Customer", primaryKey: "customer-1" } } }, params: {} };
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...base, data: { record: { ...customer, read: "record" } },
+  }).success, true);
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...base, componentId: "@ontomato/sdk:ObjectForm", data: { form: { ...customer, read: "form" } },
+  }).success, false);
+});
+
+test("model reads and operations use their owner's fixed signatures", async () => {
+  const { directReadDeclaration } = await import("./panel-projection");
+  const base = {
+    name: "Model", description: "", visibility: "domain", inputs: {}, outputs: {}, config: {},
+    componentId: "@ontomato/sdk:ObjectList",
+  };
+  for (const type of [OBJECT_TYPE, ATTRIBUTE, RELATIONSHIP]) {
+    const options = type === OBJECT_TYPE ? {} : { className: { literal: "Customer" } };
+    const projection = productProjectionInputSchema.parse({
+      ...base, data: {
+        rows: { source: { type: platformType(type) }, read: "list", params: options },
+        record: { source: { object: { literal: { className: type, primaryKey: "item" } } }, read: "record", params: {} },
+        form: { source: { object: { literal: { className: type, primaryKey: "item" } } }, read: "form", params: {} },
+        createForm: { source: { type: platformType(type) }, read: "createForm", params: {} },
+      },
+    });
+    assert.equal(directReadDeclaration(projection, projection.data.rows)?.result, "panelRecordList");
+    assert.equal(directReadDeclaration(projection, projection.data.form)?.result, "panelFormDescription");
+    assert.ok(platformObjectTypes[type].operations?.includes(`${type}.save`));
+  }
+  for (const operation of ["objectTypes.delete", "attributes.delete", "relationships.delete", "attributes.setPrimaryKey"]) {
+    const projection = productProjectionInputSchema.parse({
+      ...base, componentId: "@ontomato/sdk:OperationButton",
+      data: { operation: { source: { operation: platformOperation(operation) }, read: "describe", params: {} } },
+    });
+    assert.equal(directReadDeclaration(projection, projection.data.operation)?.result, "panelOperationDescriptor");
+  }
 });
 
 test("a no-code task panel registers and parses the same members and layout", async () => {
@@ -425,20 +511,84 @@ test("time controls and schedule frequencies accept local times at minute precis
 
 test("form saves address the draft target even when the slot receives a selected object", () => {
   const agent = { kind: "object", objectType: AGENT_DEFINITION } as const;
+  const projection = productProjectionInputSchema.parse({
+    name: "Agent definition", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectForm",
+    inputs: { record: agent }, outputs: {}, config: {},
+    data: {
+      form: { source: { object: { input: "record" } }, read: "form", params: {} },
+      createForm: { source: { type: platformType(AGENT_DEFINITION) }, read: "createForm", params: {} },
+    },
+  });
   const manifest = panelManifestSchema.parse({
     state: { selectedAgent: { type: agent } },
     members: { definition: { target: { projectionId: "definition-form" }, inputs: { record: { state: "selectedAgent" } } } },
     events: {},
   });
-  const [save] = projectionOperations(manifest, {
-    slot: "definition",
-    ports: {
-      binding: binding(AGENT_DEFINITION),
-      inputs: { record: agent },
-      operations: [{ name: "save", label: "Save", kind: "form.save", handlerRef: "platform:AgentDefinition.save", inputSchema: {} }],
-    },
+  const ports = projectionPorts(projection, {
+    operations: [{ client: "@binding", name: "save", label: "Save", kind: "form.save", inputSchema: {} }],
   });
+  const [save] = projectionOperations(manifest, { slot: "definition", ports });
+  assert.equal(save?.handlerRef, `${AGENT_DEFINITION}.save`);
   assert.deepEqual(save?.target, { source: "draft", slot: "definition" });
+});
+
+test("named operation reads publish buttons and form metadata binds to its real owner", () => {
+  const task = { kind: "object", objectType: SCHEDULED_TASK };
+  const projection = productProjectionInputSchema.parse({
+    name: "Run now", description: "", visibility: "domain", componentId: "@ontomato/sdk:OperationButton",
+    inputs: { task }, outputs: {}, config: {},
+    data: { operation: { source: { operation: platformOperation(RUN_NOW) }, read: "describe", params: {} } },
+  });
+  const manifest = panelManifestSchema.parse({
+    state: { selected: { type: task } },
+    members: { run: { target: { projectionId: "run-now" }, inputs: { task: { state: "selected" } } } },
+    events: {},
+  });
+  const [run] = projectionOperations(manifest, { slot: "run", ports: projectionPorts(projection, {}) });
+  assert.equal(run?.id, "run.runNow");
+  assert.equal(run?.handlerRef, RUN_NOW);
+  assert.deepEqual(run?.target, { source: "state", state: "selected" });
+  const twoSelections = panelManifestSchema.parse({
+    ...manifest, state: { ...manifest.state, other: { type: task } },
+    members: { run: { ...manifest.members.run, inputs: { other: { state: "other" }, task: { state: "selected" } } } },
+  });
+  const action = productProjectionInputSchema.parse({
+    ...projection, inputs: { other: task, task },
+    data: { operation: {
+      source: { operation: { kind: "Action", id: "approve" } }, read: "describe",
+      params: { target: { input: "task" } },
+    } },
+  });
+  const [execute] = projectionOperations(twoSelections, { slot: "run", ports: projectionPorts(action, {}) });
+  assert.equal(execute?.handlerRef, "actions.execute");
+  assert.deepEqual(execute?.target, { source: "state", state: "selected" });
+
+  const form = productProjectionInputSchema.parse({
+    ...projection, name: "Task form", componentId: "@ontomato/sdk:ObjectForm",
+    data: { form: { source: { object: { input: "task" } }, read: "form", params: {} } },
+  });
+  const formPorts = projectionPorts(form, { operations: [
+    { client: "@binding", name: "save", label: "Save", kind: "form.save", inputSchema: {} },
+    { client: "@binding", name: "delete", label: "Delete", kind: "action", inputSchema: {} },
+  ] });
+  assert.deepEqual(formPorts.operations.map(op => op.handlerRef), [`${SCHEDULED_TASK}.save`]);
+});
+
+test("a batch operation can target the checked object list", () => {
+  const selection = { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } };
+  const projection = productProjectionInputSchema.parse({
+    name: "Delete checked", description: "", visibility: "domain", componentId: "@ontomato/sdk:OperationButton",
+    inputs: { selection }, outputs: {}, config: { checked: "selection" },
+    data: { operation: { source: { operation: platformOperation(DELETE_KNOWLEDGE) }, read: "describe", params: {} } },
+  });
+  const manifest = panelManifestSchema.parse({
+    state: { checked: { type: selection, default: [] } },
+    members: { removeAll: { target: { projectionId: "delete-checked" }, inputs: { selection: { state: "checked" } } } },
+    events: {},
+  });
+  const ports = projectionPorts(projection, {});
+  const [remove] = projectionOperations(manifest, { slot: "removeAll", ports });
+  assert.deepEqual(panelOperationSchema.parse(remove).target, { source: "state", state: "checked" });
 });
 
 test("read operation inputs can take parameter values and a binding from this panel instance", () => {
@@ -550,6 +700,20 @@ test("write refusals carry typed field errors directly in the operation outcome"
   assert.equal(panelOperationOutcomeSchema.safeParse({ ...outcome, errors: [{ ...errors[0], field: "start" }] }).success, false);
   const batch = { kind: "batch", items: [{ target: { objectType: "platform:Workflow", primaryKey: "example" }, outcome }] };
   assert.deepEqual(panelOperationOutcomeSchema.parse(batch), batch);
+});
+
+test("model form reads and save refusals preserve format and duplicate name errors", () => {
+  const errors = [
+    { field: "/className", code: "invalid_format", message: "Use a valid class name" },
+    { field: "/primaryKeyName", code: "already_exists", message: "This attribute name already exists" },
+  ];
+  const fields = errors.map(({ field }) => ({
+    ...editableField, path: field, label: field, control: { kind: "text" }, valueSchema: { type: "string" },
+  }));
+  const form = { fields, values: { className: "bad class", primaryKeyName: "existing" }, errors, save: ownerSave };
+  assert.deepEqual(panelFormDescriptionSchema.parse(form), form);
+  const outcome = { kind: "refusal", code: "FIELD_VALIDATION_FAILED", message: "Invalid model fields", errors };
+  assert.deepEqual(panelOperationOutcomeSchema.parse(outcome), outcome);
 });
 
 test("code, number, time and line array controls retain the owner's JSON values and schema", () => {
@@ -871,6 +1035,14 @@ test("the chart reads its registered source card with per-metric overrides", () 
     revision: 1, createdAt: "2026-11-19T00:00:00Z", updatedAt: "2026-11-19T00:00:00Z", editable: true,
   };
   assert.deepEqual(registerChartProjectionResponseSchema.parse({ projection }).projection.chartSource, chartSource);
+  const renamed = { ...projection, data: { drawing: projection.data.template, points: projection.data.result } };
+  assert.deepEqual(registerChartProjectionResponseSchema.parse({ projection: renamed }).projection.data, renamed.data);
+  const wrongCard = { object: { literal: {
+    className: DASHBOARD_CARD, primaryKey: dashboardCardPrimaryKey({ ...chartSource, cardId: "different-card" }),
+  } } };
+  assert.equal(registerChartProjectionResponseSchema.safeParse({ projection: {
+    ...projection, data: { ...projection.data, extra: { source: wrongCard, read: "chartTemplate", params: {} } },
+  } }).success, false);
   assert.equal(productProjectionInputSchema.safeParse({
     ...chartProjection, chartSource: { ...chartSource, cardId: "different-card" },
   }).success, false);

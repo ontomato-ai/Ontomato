@@ -65,7 +65,7 @@ export const formTimeValueSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/,
 
 export const formFieldErrorCodeSchema = z.enum([
   "required", "invalid_option", "invalid_number", "invalid_time", "invalid_array", "invalid_object", "value_too_long",
-  "target_unavailable",
+  "target_unavailable", "invalid_format", "already_exists",
 ]);
 export const formFieldErrorSchema = z.object({
   /** JSON Pointer to the value: /values/<escaped-key> in a form, /content/<escaped-key> in a saved scheduled task. */

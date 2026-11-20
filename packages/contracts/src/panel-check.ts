@@ -1,4 +1,5 @@
 /** Node release entry for checking the same panel sources accepted by the platform. */
+export { appsSdkComponentCatalogSchema } from "./apps-sdk";
 export { PanelLayoutError, parsePanelLayout } from "./panel-layout";
 export { panelManifestSchema } from "./panel-manifest";
 export {
