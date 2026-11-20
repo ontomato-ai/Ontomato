@@ -22,7 +22,6 @@ const LEGACY_AGGREGATE_NAME = /^panel-(?:menu|page)-(?:[a-z0-9]+(?:-[a-z0-9]+)*-
 export interface SkillSourceIdentity {
   providerId: string;
   sourceKey: string;
-  scopeKey: string;
 }
 
 interface PageSkillViewCaller {
@@ -85,12 +84,13 @@ async function currentApplicationPanel(caller: PageSkillViewCaller, entrance: Pa
     if (error instanceof BackendResponseError && [400, 403, 404].includes(error.status)) return null;
     throw error;
   }
-  const { panelUses } = javaPanelUses.parse(JSON.parse(response.text)).data;
+  const { applicationId, panelUses } = javaPanelUses.parse(JSON.parse(response.text)).data;
+  if (applicationId !== source.applicationId) return null;
   const use = panelUses.find(use => use.id === source.useId && use.pageKey === entrance.pageKey);
   if (!use) return null;
   const actual = "permissionCode" in use.access ? { permissionCode: use.access.permissionCode, pageKey: use.pageKey }
     : { access: "domain-member" as const, pageKey: use.pageKey };
-  return entranceKey(actual) === entranceKey(entrance) ? use.panelId : null;
+  return entranceKey(actual) === entranceKey(entrance) ? { use, applicationId, entrance: actual } : null;
 }
 
 export function isStoredProtectedSkillRef(ref: RuntimeSkillRef) {
@@ -118,10 +118,9 @@ function pageAuthorization(domainId: string, java: Awaited<ReturnType<typeof jav
   const admittedEntrances = new Set(java.admittedEntrances?.map(entranceKey));
   const current = new Set<string>();
   const byEntrance = new Map<string, ListedProtectedSkill[]>();
-  const legacy = new Map<string, { old: RuntimeSkillRef; members: RuntimeSkillRef[] }>();
   const ownedEntrances = new Map<string, PageSkillEntrance[]>();
-  for (const { entrance, identity: { providerId, sourceKey, scopeKey } } of associations) {
-    const key = runtimeSkillKey(protectedSkillRef(providerId, domainId, sourceKey, scopeKey));
+  for (const { entrance, identity: { providerId, sourceKey } } of associations) {
+    const key = runtimeSkillKey(protectedSkillRef(providerId, domainId, sourceKey));
     const entrances = ownedEntrances.get(key) ?? [];
     entrances.push(entrance);
     ownedEntrances.set(key, entrances);
@@ -129,12 +128,6 @@ function pageAuthorization(domainId: string, java: Awaited<ReturnType<typeof jav
   for (const source of sources) {
     const key = runtimeSkillKey(source.skill);
     current.add(key);
-    for (const old of source.legacyAggregateRefs ?? []) {
-      const oldKey = runtimeSkillKey(old);
-      const mapping = legacy.get(oldKey) ?? { old, members: [] };
-      mapping.members.push(source.skill);
-      legacy.set(oldKey, mapping);
-    }
     if (!source.resourceIds.every(id => grants.has(id))) continue;
     const staticEntrances = source.entrances.filter(entrance => admittedEntrances.has(entranceKey(entrance)));
     for (const entrance of [...staticEntrances, ...(ownedEntrances.get(key) ?? [])]) {
@@ -149,7 +142,7 @@ function pageAuthorization(domainId: string, java: Awaited<ReturnType<typeof jav
       byEntrance.set(actualKey, members);
     }
   }
-  return { groups, publicSkills, registered, allowedPageKeys, admitted, current, byEntrance, legacy };
+  return { groups, publicSkills, registered, allowedPageKeys, admitted, current, byEntrance };
 }
 
 /** Resolve one current view. All supply closures and existence facts refer to this source enumeration. */
@@ -177,10 +170,6 @@ export async function readSkillView(domainId: string, initiatorCredentials: Assi
     pageSkillIsAvailable(ref: RuntimeSkillRef) {
       return pages.allowedPageKeys.has(runtimeSkillKey(ref));
     },
-    expandStoredRefs(refs: readonly RuntimeSkillRef[]) {
-      const expanded = refs.flatMap(ref => pages.legacy.get(runtimeSkillKey(ref))?.members ?? [ref]);
-      return [...new Map(expanded.map(ref => [runtimeSkillKey(ref), ref])).values()];
-    },
     unavailableStoredPageSkill(ref: RuntimeSkillRef) {
       const key = runtimeSkillKey(ref);
       return (pages.registered.has(key) || isStoredProtectedSkillRef(ref)) && !pages.allowedPageKeys.has(key)
@@ -190,25 +179,24 @@ export async function readSkillView(domainId: string, initiatorCredentials: Assi
       const key = runtimeSkillKey(ref);
       return (pages.registered.has(key) || pages.current.has(key)) && !pages.allowedPageKeys.has(key);
     },
-    storedRefsTo(skill: RuntimeSkillRef) {
-      const key = runtimeSkillKey(skill);
-      const old = [...pages.legacy.values()].filter(({ members }) => members.some(ref => runtimeSkillKey(ref) === key));
-      return [skill, ...old.map(({ old }) => old)];
-    },
-    async resolveSource(entrance: PageSkillEntrance, source: PageSkillSource, loadedPanel?: { id: string }): Promise<RuntimeSkillRef | null> {
-      const members = pages.byEntrance.get(entranceKey(entrance)) ?? [];
-      if (!members.length) return null;
+    async resolvePlacement(entrance: PageSkillEntrance, source: PageSkillSource, memberPath: PageSkillMember["memberPath"],
+      loadedPanel?: { id: string },
+    ): Promise<AuthorizedPageSkillMember | null> {
+      // Only root placements have a source owner in this release.
+      const members = pages.byEntrance.get(entranceKey(entrance));
+      if (memberPath.length || !members) return null;
       if (source.kind === "application-use") {
-        const panelId = await currentApplicationPanel(caller, entrance, source);
-        if (loadedPanel && loadedPanel.id !== panelId) return null;
-        const matches = members.filter(member => member.providerId === "product-panels" && member.sourceKey === panelId);
-        return matches.length === 1 ? matches[0]!.skill : null;
+        const actual = await currentApplicationPanel(caller, entrance, source);
+        if (!actual || (loadedPanel && loadedPanel.id !== actual.use.panelId)) return null;
+        const offered = members.find(member => member.providerId === "product-panels" && member.sourceKey === actual.use.panelId);
+        if (!offered) return null;
+        const currentSource = { kind: source.kind, applicationId: actual.applicationId, useId: actual.use.id };
+        return { entrance: actual.entrance, member: { source: currentSource, memberPath: [], ref: offered.skill }, path: actual.use.path };
       }
       const identity = await sourceOwners.get(source.kind)?.resolve({ ...caller, entrance, source });
       if (!identity) return null;
-      const { providerId, sourceKey, scopeKey } = identity;
-      const member = members.find(member => member.providerId === providerId && member.sourceKey === sourceKey && member.scopeKey === scopeKey);
-      return member?.skill ?? null;
+      const offered = members.find(member => member.providerId === identity.providerId && member.sourceKey === identity.sourceKey);
+      return offered ? { entrance, member: { source, memberPath: [], ref: offered.skill } } : null;
     },
   };
   return view;
@@ -216,21 +204,31 @@ export async function readSkillView(domainId: string, initiatorCredentials: Assi
 
 export type SkillView = Awaited<ReturnType<typeof readSkillView>>;
 
-export async function resolvePageSkillSource(view: SkillView, entrance: PageSkillEntrance, source: PageSkillSource) {
-  return view.resolveSource(entrance, source);
+export interface AuthorizedPageSkillMember {
+  entrance: PageSkillEntrance;
+  member: PageSkillMember;
+  path?: string;
 }
 
-export async function resolvePageSkillMember(view: SkillView, entrance: PageSkillEntrance, member: PageSkillMember | null) {
+export async function resolvePageSkillSource(view: SkillView, entrance: PageSkillEntrance, source: PageSkillSource,
+  memberPath: PageSkillMember["memberPath"], loadedPanel?: { id: string },
+): Promise<RuntimeSkillRef | null> {
+  return (await view.resolvePlacement(entrance, source, memberPath, loadedPanel))?.member.ref ?? null;
+}
+
+export async function resolveCurrentPageSkillMember(view: SkillView, entrance: PageSkillEntrance,
+  member: PageSkillMember | null,
+): Promise<AuthorizedPageSkillMember | null> {
   if (!member) return null;
-  const ref = await resolvePageSkillSource(view, entrance, member.source);
-  return ref?.name === member.memberKey ? ref : null;
+  const actual = await view.resolvePlacement(entrance, member.source, member.memberPath);
+  return actual && runtimeSkillKey(actual.member.ref) === runtimeSkillKey(member.ref) ? actual : null;
 }
 
-/** An application snapshot can require that its already loaded panel still matches the Java use. */
-export async function pageSkillMemberContext(view: SkillView, locator: PageSkillEntrance,
+/** Bind the response to the Java use and to the panel returned in this snapshot. */
+export async function pageSkillMemberContext(view: SkillView, entrance: PageSkillEntrance,
   ...input: [source: PageSkillSource] | [source: ApplicationUseSkillSource, loadedPanel: { id: string }]
 ): Promise<PageSkillContext> {
   const [source, loadedPanel] = input;
-  const ref = await view.resolveSource(locator, source, loadedPanel);
-  return { mode: "member", locator, member: ref ? { source, memberKey: ref.name } : null };
+  const actual = await view.resolvePlacement(entrance, source, [], loadedPanel);
+  return { mode: "member", locator: entrance, member: actual?.member ?? null };
 }

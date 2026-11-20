@@ -24,7 +24,7 @@ configureI18n({ defaultLocale: "en", packs: { en: { messages: en, ...enLocaleMet
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "domain-skills-contract-"));
 installContentLayout({ runtimeRoot: root, prompts: [], runtimeResources: [], publicSkillsRoot: path.resolve("skills") });
 const { skillManager } = await import("../skill-manager");
-const { assistantSkillCatalog, hasHiddenAssistantSkillRefs, pageSkillMemberContext, prepareAssistantSkills, readAssistantSkillView, validateAssistantSkills, visibleAssistantSkillRefs } = await import("../../assistant/skills");
+const { assistantSkillCatalog, hasHiddenAssistantSkillRefs, loadedPageSkillVersion, resolveCurrentPageSkillMember, pageSkillMemberContext, prepareAssistantSkills, readAssistantSkillView, validateAssistantSkills, visibleAssistantSkillRefs } = await import("../../assistant/skills");
 const { skillRegistryManager } = await import("../../../core/skills/registry/manager");
 const { registerSkillProvider, protectedSkillRef } = await import("../../../core/skills/providers");
 const domain = "contract-domain";
@@ -153,19 +153,23 @@ it("publishes the selected provider's current package and never provides an unse
     .rejects.toThrow(/panel-test.*cannot supply the selected package/);
 });
 
+it("derives the same standard domain ref as the three-field identity contract", () => {
+  expect(protectedSkillRef("product-panels", domain, "panel-a")).toEqual(panelReference("pvt-bc772a7e3a43e526b266e5b4d409af7f1856edadb2fd6995"));
+});
+
 it("admits protected packages only through the initiator's exact entrance and every dependency", async () => {
   vi.stubEnv("AGENT_RUNTIME_SERVICE_TOKEN", "synthetic-host");
   const entrance = { permissionCode: "panel-menu", pageKey: "real-use" };
   const source = { kind: "application-use", applicationId: "app-test", useId: "primary" } as const;
   const old = panelReference("panel-menu-panel-menu-123456789012345678901234");
-  const protectedRef = protectedSkillRef("product-panels", domain, "panel-a", "main");
+  const protectedRef = protectedSkillRef("product-panels", domain, "panel-a");
   const readManifest = vi.fn(async (ref: RuntimeSkillRef) => ({ name: ref.name, description: "Protected member" }));
   const provide = vi.fn(async (ref: RuntimeSkillRef) => ({
     skill: ref, files: [{ path: "SKILL.md", content: skillMarkdown(ref.name) }],
   }));
   protectedPanelOfferings = [{
-    kind: "protected", sourceKey: "panel-a", scopeKey: "main", entrances: [entrance],
-    resourceIds: ["panel-a", "projection-a"], legacyAggregateRefs: [old], readManifest, provide,
+    kind: "protected", sourceKey: "panel-a", entrances: [entrance],
+    resourceIds: ["panel-a", "projection-a"], readManifest, provide,
   }];
   let admittedEntrance = { ...entrance, pageKey: "sibling-use" };
   let ids = ["panel-a", "projection-a"];
@@ -191,22 +195,32 @@ it("admits protected packages only through the initiator's exact entrance and ev
 
   let view = await readAssistantSkillView(domain, credentials);
   expect(view.pageSkills[0].skills).toEqual([]);
-  expect(hasHiddenAssistantSkillRefs([old], view)).toBe(true);
+  expect(hasHiddenAssistantSkillRefs([protectedRef], view)).toBe(true);
+  expect(hasHiddenAssistantSkillRefs([old], view)).toBe(false);
   expect(readManifest).not.toHaveBeenCalled();
 
   admittedEntrance = entrance;
   view = await readAssistantSkillView(domain, credentials);
-  expect(visibleAssistantSkillRefs([old], view)).toEqual([protectedRef]);
+  expect(visibleAssistantSkillRefs([old, protectedRef], view)).toEqual([protectedRef]);
   expect(hasHiddenAssistantSkillRefs([old], view)).toBe(false);
-  await expect(pageSkillMemberContext(view, entrance, source, { id: "panel-a" })).resolves.toEqual({
-    mode: "member", locator: entrance, member: { source, memberKey: protectedRef.name },
-  });
+  const member = { source, memberPath: [], ref: protectedRef };
+  const context = { mode: "member" as const, locator: entrance, member };
+  const actualPage = { entrance, member, path: "/applications/app-test/panel" };
+  await expect(pageSkillMemberContext(view, entrance, source, { id: "panel-a" })).resolves.toEqual(context);
+  await expect(resolveCurrentPageSkillMember(view, entrance, { ...member, ref: { ...protectedRef,
+    namespace: { kind: "domain", domainId: "unrelated-domain" } } })).resolves.toBeNull();
+  await expect(resolveCurrentPageSkillMember(view, entrance, { ...member, memberPath: [{ member: "sibling" }] })).resolves.toBeNull();
+  await expect(resolveCurrentPageSkillMember(view, entrance, { ...member, source: { ...source, useId: "missing" } })).resolves.toBeNull();
   await expect(pageSkillMemberContext(view, entrance, source, { id: "old-panel" })).resolves.toEqual({
     mode: "member", locator: entrance, member: null,
   });
   expect(provide).not.toHaveBeenCalled();
-  await expect(prepareAssistantSkills(domain, { kind: "custom", skills: [old] }, credentials))
-    .resolves.toEqual({ skills: [{ skill: protectedRef, digest: "b".repeat(64) }], pageDrafts: true });
+  await expect(prepareAssistantSkills(domain, { kind: "custom", skills: [old] }, credentials, context))
+    .resolves.toEqual({ skills: [], pageDrafts: false, currentPage: null });
+  const prepared = await prepareAssistantSkills(domain, { kind: "regular", skills: [old] }, credentials, context);
+  expect(prepared).toEqual({ skills: [{ skill: protectedRef, digest: "b".repeat(64) }], pageDrafts: true, currentPage: actualPage });
+  expect(loadedPageSkillVersion(protectedRef, prepared.skills)).toEqual(prepared.skills[0]);
+  expect(loadedPageSkillVersion(protectedSkillRef("product-panels", domain, "panel-b"), prepared.skills)).toBeNull();
 
   referenceQuery.mockResolvedValueOnce({ rows: [
     { id: "readable", name: "Readable agent" },
@@ -217,6 +231,8 @@ it("admits protected packages only through the initiator's exact entrance and ev
     .resolves.toEqual([{ id: "readable", name: "Readable agent", usesAnalysis: true, usesVisualization: false }]);
   expect(readableAgentIds).toHaveBeenCalledWith(["readable", "hidden"]);
 
+  ids = ["projection-a"];
+  expect((await readAssistantSkillView(domain, credentials)).hasSkill(protectedRef)).toBe(false);
   ids = ["panel-a"];
   readManifest.mockClear(); provide.mockClear();
   await expect(skillManager.exportSkill(domain, protectedRef.name, credentials))
@@ -228,7 +244,7 @@ it("admits protected packages only through the initiator's exact entrance and ev
   await expect(validateAssistantSkills(domain, [protectedRef], credentials))
     .rejects.toMatchObject({ code: "SKILL_NOT_FOUND", message: "Skill is not in this domain's catalogue" });
   await expect(prepareAssistantSkills(domain, { kind: "regular", skills: [old] }, credentials))
-    .resolves.toEqual({ skills: [], pageDrafts: false });
+    .resolves.toEqual({ skills: [], pageDrafts: false, currentPage: null });
   expect(readManifest).not.toHaveBeenCalled();
   expect(provide).not.toHaveBeenCalled();
 
@@ -242,6 +258,58 @@ it("admits protected packages only through the initiator's exact entrance and ev
   await expect(skillManager.importSkill(domain, imported.toBuffer(), credentials, true))
     .rejects.toMatchObject({ code: "INVALID_SKILL_PACKAGE" });
   expect(upstream).not.toHaveBeenCalled();
+});
+
+it("publishes one member across admitted entrances alongside the native permission-group skill", async () => {
+  vi.stubEnv("AGENT_RUNTIME_SERVICE_TOKEN", "synthetic-host");
+  const native = { namespace: { kind: "provider", provider: "ontology" }, name: "knowledge-governance" } as const;
+  const entrances = ["knowledge", "alternate"].map(pageKey => ({ permissionCode: "business-knowledge", pageKey }));
+  const ref = protectedSkillRef("product-panels", domain, "knowledge-panel");
+  const sourceFor = (pageKey: string) => ({ kind: "application-use" as const, applicationId: "ontology", useId: pageKey });
+  const offer = offering(ref.name);
+  protectedPanelOfferings = [{ kind: "protected", sourceKey: "knowledge-panel", entrances, resourceIds: ["knowledge-panel"],
+    readManifest: async () => offer.manifest, provide: offer.provide }];
+  const published: RuntimeSkillRef[] = [];
+  const grants = vi.fn(() => Response.json({ ids: ["knowledge-panel"] }));
+  const uses = vi.fn(() => Response.json({ success: true, data: {
+    applicationId: "ontology", entry: { path: "/ontology", renderer: "ontology" },
+    panelUses: entrances.map(({ permissionCode, pageKey }) => ({ id: pageKey, pageKey, path: `/ontology/${pageKey}`,
+      access: { permissionCode }, panelId: "knowledge-panel" })),
+  } }));
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+    if (url.endsWith("/platform/page-skills")) return Response.json({ success: true, data: {
+      admittedEntrances: entrances, registeredSkills: [native], pageSkills: [{ permissionCode: "business-knowledge", skill: native,
+        defaults: [{ pageKey: "governance-report", defaultAgent: { kind: "preset", agentKind: "knowledge-governance" } }] }],
+    } });
+    if (url.endsWith("/product-governance/resources")) return grants();
+    if (url.endsWith("/ontology/panel-uses")) {
+      expect(new Headers(init.headers).get("tk")).toBe(credentials.token);
+      return uses();
+    }
+    if (url.endsWith("/ontology/ai/knowledge-governance/skill-package")) {
+      published.push(native);
+      return Response.json({ skill: native, digest: "a".repeat(64) });
+    }
+    const { skill } = JSON.parse(String(init.body));
+    published.push(skill);
+    return Response.json({ skill, digest: "c".repeat(64), description: "Published" });
+  }));
+  const [first, second] = entrances;
+  const member = { source: sourceFor(second.pageKey), ref, memberPath: [] };
+  const view = await readAssistantSkillView(domain, credentials);
+  expect(view.pageSkills[0]).toMatchObject({ skills: [native, ref],
+    defaults: [{ pageKey: "governance-report", defaultAgent: { kind: "preset", agentKind: "knowledge-governance" } }] });
+  await expect(resolveCurrentPageSkillMember(view, first, member)).resolves.toBeNull();
+  await expect(resolveCurrentPageSkillMember(view, first, { ...member, source: sourceFor(first.pageKey) }))
+    .resolves.toMatchObject({ member: { ref }, path: "/ontology/knowledge" });
+  const prepared = await prepareAssistantSkills(domain, { kind: "regular", skills: [] }, credentials,
+    { mode: "member", locator: second, member });
+  expect(prepared.currentPage).toEqual({ entrance: second, member, path: "/ontology/alternate" });
+  expect(published).toEqual([native, ref]);
+  grants.mockReturnValueOnce(Response.json({ unexpected: "source failure" }));
+  await expect(readAssistantSkillView(domain, credentials)).rejects.toMatchObject({ code: "PRODUCT_GOVERNANCE_UNAVAILABLE" });
+  uses.mockReturnValueOnce(Response.json({ success: false }));
+  await expect(resolveCurrentPageSkillMember(view, second, member)).rejects.toThrow();
 });
 
 it("fails the whole catalogue when a provider cannot list, and all preparation with it", async () => {
