@@ -10,7 +10,6 @@
   "members": {
     "tasks": {
       "target": { "projectionId": "projection-schedules-tasks" },
-      "inputs": { "value": { "state": "selectedTask" } },
       "outputs": { "selected": { "state": "selectedTask" } },
       "params": { "width": "third" }
     },
