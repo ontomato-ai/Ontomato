@@ -273,6 +273,10 @@ export const panelTextHighlightRangeSchema = z.object({
 });
 export type PanelTextHighlightRange = z.infer<typeof panelTextHighlightRangeSchema>;
 
+/** How a field shown as a status tag reads at a glance. */
+export const panelFieldToneSchema = z.enum(["default", "info", "success", "warning", "danger"]);
+export type PanelFieldTone = z.infer<typeof panelFieldToneSchema>;
+
 export const panelRecordSchema = z.object({
   primaryKey: panelObjectRefSchema.shape.primaryKey,
   label: z.string(),
@@ -280,6 +284,10 @@ export const panelRecordSchema = z.object({
   fields: z.record(z.string()),
   /** Field names supplied by the owner in the reader's locale, keyed by the names in fields. */
   fieldLabels: z.record(z.string()).optional(),
+  /** The tone of a field that shows as a status tag, by field name. */
+  tones: z.record(panelFieldToneSchema).optional(),
+  /** A field's values as separate tags, by field name. */
+  tags: z.record(z.array(z.string())).optional(),
   /** Display field keys (including label and subtitle). Omit this property when nothing matched. */
   highlights: z.record(z.array(panelTextHighlightRangeSchema).min(1))
     .refine(fields => Object.keys(fields).length > 0, "Omit highlights when there are no matches").optional(),

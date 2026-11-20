@@ -68,11 +68,15 @@ const entryForm = (entry: OwnerEntry) => ownerForm(
   "/admin/editBussinessKnowledge", "knowledge.update",
 );
 
+// Short contents show whole under the title, so a content hit is highlighted at the same place in the subtitle.
 const row = (entry: OwnerEntry, status: string) => ({
   primaryKey: entry.knowledgeID,
   label: entry.knowledgeTitle,
+  subtitle: entry.knowledgeText,
   fieldLabels: { knowledgeText: "Knowledge content", knowledgeTags: "Tags", status: "Status" },
   fields: { knowledgeText: entry.knowledgeText, knowledgeTags: entry.knowledgeTags.join(", "), status },
+  tones: { status: entry.status === 1 ? "success" : "warning" },
+  tags: { knowledgeTags: entry.knowledgeTags },
 });
 
 /** The owner answering with the whole domain's list and its forms; every sent request is kept for the assertions. */
@@ -122,11 +126,11 @@ it("searches as the page did, ranks by title hits, filters and pages by cursor",
     rows: [
       {
         ...row(entries["k-4"], "Approved"),
-        highlights: { label: [{ start: 0, end: 4 }, { start: 8, end: 14 }], knowledgeText: [{ start: 5, end: 9 }] },
+        highlights: { label: [{ start: 0, end: 4 }, { start: 8, end: 14 }], knowledgeText: [{ start: 5, end: 9 }], subtitle: [{ start: 5, end: 9 }] },
       },
       {
         ...row(entries["k-1"], "Approved"),
-        highlights: { label: [{ start: 6, end: 10 }], knowledgeText: [{ start: 0, end: 6 }] },
+        highlights: { label: [{ start: 6, end: 10 }], knowledgeText: [{ start: 0, end: 6 }], subtitle: [{ start: 0, end: 6 }] },
       },
     ],
     total: 2,
@@ -135,7 +139,7 @@ it("searches as the page did, ranks by title hits, filters and pages by cursor",
     rows: [
       {
         ...row(entries["k-2"], "Pending review"),
-        highlights: { label: [{ start: 7, end: 11 }], knowledgeText: [{ start: 17, end: 24 }] },
+        highlights: { label: [{ start: 7, end: 11 }], knowledgeText: [{ start: 17, end: 24 }], subtitle: [{ start: 17, end: 24 }] },
       },
     ],
     total: 1,
@@ -161,7 +165,7 @@ it("searches as the page did, ranks by title hits, filters and pages by cursor",
   expect(await reads.query({ search: "rule", status: "approved" })).toEqual({
     rows: [
       { ...row(entries["k-1"], "Approved"), highlights: { label: [{ start: 6, end: 10 }] } },
-      { ...row(entries["k-4"], "Approved"), highlights: { label: [{ start: 0, end: 4 }], knowledgeText: [{ start: 5, end: 9 }] } },
+      { ...row(entries["k-4"], "Approved"), highlights: { label: [{ start: 0, end: 4 }], knowledgeText: [{ start: 5, end: 9 }], subtitle: [{ start: 5, end: 9 }] } },
     ],
     total: 2,
   });
@@ -201,7 +205,7 @@ it("reads one entry from the whole-domain list the owner keeps, with highlights 
   expect(panelReadResultSchemas.panelRecord.parse(await reads.record("k-3"))).toEqual(row(entries["k-3"], "Pending review"));
   expect(panelReadResultSchemas.panelRecord.parse(await reads.record("k-3", { search: "evening" }))).toEqual({
     ...row(entries["k-3"], "Pending review"),
-    highlights: { knowledgeText: [{ start: 23, end: 30 }] },
+    highlights: { knowledgeText: [{ start: 23, end: 30 }], subtitle: [{ start: 23, end: 30 }] },
   });
   expect(panelReadResultSchemas.panelRecord.parse(await reads.record("k-3", { search: "evening missing" }))).toEqual(
     row(entries["k-3"], "Pending review"),
@@ -209,6 +213,26 @@ it("reads one entry from the whole-domain list the owner keeps, with highlights 
   await expect(reads.record("k-none")).rejects.toMatchObject({
     status: 404, message: "Business knowledge k-none is not in this domain", code: "KNOWLEDGE_UNAVAILABLE",
   });
+});
+
+it("shows a long content from shortly before its first hit under the title, as the page did", async () => {
+  const long = {
+    knowledgeID: "k-long", knowledgeTitle: "Cutoff", knowledgeTags: [], status: 1,
+    knowledgeText: `${"Orders placed on weekdays are packed in the morning. ".repeat(2)}The evening cutoff is 18:00. ${"x".repeat(300)}`,
+  };
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+    if (new URL(url).pathname.endsWith("/admin/getBussinessKnowledge")) return Response.json({ success: true, data: { "k-long": long } });
+    expect(JSON.parse(String(init.body)).target.kind).toBe("draft");
+    return Response.json({ success: true, data: draftForm });
+  }));
+  const reads = createBusinessKnowledgeReadAdapter(viewer);
+
+  const { rows: [plain] } = await reads.query({});
+  expect(plain!.subtitle).toBe(long.knowledgeText.slice(0, 200));
+  const { rows: [hit] } = await reads.query({ search: "evening" });
+  const first = long.knowledgeText.indexOf("evening");
+  expect(hit!.subtitle).toBe(`…${long.knowledgeText.slice(first - 12)}`.slice(0, 200));
+  expect(hit!.highlights?.subtitle).toEqual([{ start: 13, end: 20 }]);
 });
 
 it("forwards the owner's form for a draft and for one entry's target", async () => {
