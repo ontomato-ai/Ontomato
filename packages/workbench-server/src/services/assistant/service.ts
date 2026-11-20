@@ -45,8 +45,7 @@ import {
 } from "../../platform/agent-runtime/runtime";
 import { OntologyRetrievalClient } from "./ontology-retrieval";
 import { agentTasksSnapshotSchema, type AgentTasksSnapshot } from "@ontomato/contracts/agent-tasks";
-import { artifactPath } from "@ontomato/contracts/agent-artifact-markdown";
-import { parseProductMarkdown, type ImageNode, type LinkNode, type ParsedNode } from "@ontomato/markdown";
+import { citedDatasetPaths } from "./cited-datasets";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
 import { createLogger } from "../../logging/logger";
@@ -245,14 +244,7 @@ export const assistantService = {
     if (!turn.retrieval_scope_id) return;
     const run = await new RuntimeClient(owner.domainId, undefined, owner.userId).run(id);
     if (run.run.stopReason !== "stop" || !run.run.answerMessageId) return;
-    const paths = new Set<string>();
-    const visit = (nodes: readonly ParsedNode[]) => { for (const node of nodes) {
-      const target = node.type === "link" ? (node as LinkNode).href : node.type === "image" ? (node as ImageNode).src : undefined;
-      const path = target === undefined ? null : artifactPath(target);
-      if (path?.endsWith(".dataset.json")) paths.add(path);
-      if ("children" in node && Array.isArray(node.children)) visit(node.children as ParsedNode[]);
-    } };
-    visit(parseProductMarkdown(answerText(run)));
+    const paths = citedDatasetPaths(answerText(run));
     const rounds = new Map<string, { scopeId: string; retrievalId: string; runId: string; outputIds: Set<string> }>();
     for (const path of paths) {
       const { artifact } = await this.resolve(sessionId, id, path, owner);
