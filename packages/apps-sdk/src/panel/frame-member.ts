@@ -3,7 +3,7 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import { panelOperationId, type PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { directReadDeclaration, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
-import { METRIC_CHART_COMPONENT, type DirectProjection } from "@ontomato/contracts/product-panels";
+import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import { awaitsInputs, paramValues, readKey, type MemberData, type MemberDataState, type MemberInputs } from "./direct";
 import type { PanelInstance } from "./instance";
 import { adapterPart, type PlatformGraphNeighborsQuery, type PlatformObjectRecord } from "./platform-objects";
@@ -111,7 +111,7 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
       case "chartTemplate":
       case "metricOutput": {
         // A frame reaches a chart's source only through the registered chart projection it read.
-        if (projection.componentId !== METRIC_CHART_COMPONENT)
+        if (!("metricId" in projection))
           throw new Error(`Only a registered chart reads '${data.read}' in a panel's frame`);
         const metric = adapterPart(object!.className, "metric");
         value = declaration.result === "chartTemplate"
