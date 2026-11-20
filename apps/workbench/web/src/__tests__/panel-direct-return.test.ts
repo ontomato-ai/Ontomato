@@ -8,7 +8,7 @@ import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
-import { mountDirectPanel } from "../../../../../packages/apps-sdk/src/direct";
+import { mountDirectPanel } from "../../../../../packages/apps-sdk/src/panel/direct-mount";
 
 /*
  * A directly rendered page coming back to the foreground while the reader is about to type into its clean form: the

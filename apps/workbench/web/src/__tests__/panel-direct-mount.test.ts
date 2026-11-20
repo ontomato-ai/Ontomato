@@ -8,7 +8,7 @@ import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import { panelAddress } from "@ontomato/contracts/panel-host";
-import { mountDirectPanel, type DirectPanelMount } from "../../../../../packages/apps-sdk/src/direct";
+import { mountDirectPanel, type DirectPanelMount } from "../../../../../packages/apps-sdk/src/panel/direct-mount";
 import { noOperations } from "./panel-frame";
 
 /*
@@ -86,11 +86,11 @@ it("follows the host's address and reports its state, reading only while the rea
   mount.address(panelAddress("/tasks", { selectedTask: task("t-2") }));
   await nextTick();
   // Unseen: the address is held and nothing is read.
-  expect(mount.values.value.selectedTask).toBeNull();
+  expect(mount.instance.state.values.value.selectedTask).toBeNull();
   expect(reads.length).toBe(first);
 
   mount.activate(true);
-  await vi.waitFor(() => expect(mount.values.value.selectedTask).toEqual(task("t-2")));
+  await vi.waitFor(() => expect(mount.instance.state.values.value.selectedTask).toEqual(task("t-2")));
   expect(reports.state.at(-1)).toEqual({ selectedTask: task("t-2") });
 });
 
