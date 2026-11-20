@@ -9,7 +9,8 @@ current owner declarations and SDK catalogue. Extend the owner or SDK where a re
 
 Scheduled tasks show the full path. The owner separates `list`, `record`, `form` and
 `schedules.runNow.describe`. The corresponding projections bind the list, selected task, owner form and operation
-button. A panel member supplies the current selection as a typed input.
+button. Use `packages/apps-sdk/examples/panels/schedules-trial/definitions.mjs` and `p/panel.json` in that
+directory for the registered definitions and wiring.
 
 1. Find the existing business interface. For scheduled tasks, Workbench calls it in
    `packages/workbench-server/src/services/scheduling/panel-reads.ts`. The result adapter in
@@ -21,7 +22,9 @@ button. A panel member supplies the current selection as a typed input.
    projection declaration using `data.<name> = { source, read, params }`. Bind each parameter to a declared input
    or literal. The named read adapter is mounted in
    `packages/workbench-server/src/services/product-panels/data-reads.ts`. This dispatcher resolves the actual
-   placement and source and returns the result to the component under the reader's identity.
+   placement and source and returns the result to the component under the reader's identity. The read request carries
+   `source`, `memberPath`, `dataName` and `inputs`. A ready result carries `value`; loading belongs to the
+   member while its read runs.
 3. Give a write its own registered server operation. In
    `packages/platform-schedules/src/panel-server-operations.ts`, `platform:ScheduledTask.save` receives a form
    submission. `schedules.runNow` has a read-only description and a separate write handler.
@@ -36,6 +39,15 @@ button. A panel member supplies the current selection as a typed input.
    `pnpm --filter @ontomato/workbench-server exec vitest run src/api/__tests__/panel-pilot-current.integration.test.ts`
    with `RUNTIME_TEST_DATABASE_URL` set to a disposable PostgreSQL database.
 
+The task-list projection uses `data.rows = { source: { type: "platform:ScheduledTask" }, read: "list", params: {} }`.
+The summary uses `data.record = { source: { object: { input: "task" } }, read: "record", params: {} }`. The form
+binds `params.values` to `{ input: "values" }` and `params.changedField` to `{ input: "changedField" }`.
+The list's `selected` output and the summary, form and button inputs share a panel state of type
+`{ kind: "object", objectType: "platform:ScheduledTask" }`. The member wiring maps the values through `{ state: "selectedTask" }`.
+The button reads `data.operation = { source: { operation: "schedules.runNow" }, read: "describe", params: {} }`.
+Its owner description names the write effect and targets the `task` input. In that placement the operation is
+`run.runNow`, with writes going through the operation dispatcher.
+
 ## Add an official SDK component
 
 Use an existing component if its ports already express the interaction. For a new component, record these five
@@ -49,14 +61,24 @@ parts beside its implementation so authors can compose it from the released cata
 | Inputs | The typed values a placement supplies, such as the currently selected object. |
 | Outputs and operations | Events that update panel state, and the owner operations the component can trigger. |
 
-Use `packages/apps-sdk/src/base/ObjectForm.vue` as a component example. It renders the owner's form descriptor and
-uses the host to request field recalculation and saving. Its public export is in
-`packages/apps-sdk/src/entries/base.ts`. The `ObjectForm` declaration in `packages/apps-sdk/src/catalogue.ts`
-uses `defineComponentMeta` for its meaning, binding, and the form save operation. Declare props and events in the
-component source. The build reads those ports and generates both `components.json` and the reference alongside
-the code. Put new shared data, port or operation shapes in the public contract with its owner.
+Use `packages/apps-sdk/src/base/ObjectSummary.vue` as a component example. In a directly rendered panel it consumes
+`useMemberData("record")`. A projection's `config.fields` controls which fields appear and in what order.
+The component declares the optional `fields` and `input` props and the `navigate` event. Its public export is in
+`packages/apps-sdk/src/entries/base.ts`, with the template binding in `packages/apps-sdk/src/base-components.ts`.
+The `ObjectSummary` entry in `packages/apps-sdk/src/catalogue.ts` declares its meaning, binding and output through
+`defineComponentMeta`. Controls add operations. For example, `ObjectForm` declares the owner form save
+with `client: "@binding"` and `kind: "form.save"`.
+
+A direct projection uses `@ontomato/sdk:ObjectSummary` from the supported component IDs in
+`packages/contracts/src/panel-projection.ts`. Register any new shared data or port shapes with the public contract
+owner. Write JSDoc for the props and events in the component source. The SDK build checks the public export
+against the catalogue, then emits the generated ports in `components.json`, `docs/components.md` and
+`docs/reference.md`.
 
 Verify the component in a projection with the real owner result. Check that its input and emitted values match the
 catalogue and that writes go through the declared operation. Reuse the host's loading, error, empty and forbidden
 states. A component may render or collect a value and request a declared action, while the owner decides what data
 and actions are available.
+
+Use `apps/workbench/web/src/__tests__/panel-direct-list-summary.test.ts` for a direct-rendering example.
+Run the Workbench web tests and `pnpm --filter @ontomato/apps-sdk test` for the catalogue and release.
