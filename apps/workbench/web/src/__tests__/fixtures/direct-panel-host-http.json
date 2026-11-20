@@ -49,11 +49,6 @@
             "target": {
               "projectionId": "projection-schedules-tasks"
             },
-            "inputs": {
-              "value": {
-                "state": "selectedTask"
-              }
-            },
             "outputs": {
               "selected": {
                 "state": "selectedTask"
@@ -86,8 +81,8 @@
       "domainId": "pilot",
       "ownerId": "reader",
       "revision": 1,
-      "createdAt": "2026-11-20T06:03:59.547Z",
-      "updatedAt": "2026-11-20T06:03:59.547Z",
+      "createdAt": "2026-11-20T09:21:27.184Z",
+      "updatedAt": "2026-11-20T09:21:27.184Z",
       "editable": true
     }
   },
@@ -200,8 +195,8 @@
         "domainId": "pilot",
         "ownerId": "reader",
         "revision": 1,
-        "createdAt": "2026-11-20T06:03:59.524Z",
-        "updatedAt": "2026-11-20T06:03:59.524Z",
+        "createdAt": "2026-11-20T09:21:27.170Z",
+        "updatedAt": "2026-11-20T09:21:27.170Z",
         "editable": true
       }
     },
@@ -212,13 +207,6 @@
           "task": {
             "kind": "object",
             "objectType": "platform:ScheduledTask"
-          },
-          "values": {
-            "kind": "json"
-          },
-          "changedField": {
-            "kind": "scalar",
-            "type": "string"
           }
         },
         "outputs": {},
@@ -230,14 +218,7 @@
               }
             },
             "read": "form",
-            "params": {
-              "values": {
-                "input": "values"
-              },
-              "changedField": {
-                "input": "changedField"
-              }
-            }
+            "params": {}
           }
         },
         "config": {},
@@ -248,20 +229,15 @@
         "domainId": "pilot",
         "ownerId": "reader",
         "revision": 1,
-        "createdAt": "2026-11-20T06:03:59.503Z",
-        "updatedAt": "2026-11-20T06:03:59.503Z",
+        "createdAt": "2026-11-20T09:21:27.157Z",
+        "updatedAt": "2026-11-20T09:21:27.157Z",
         "editable": true
       }
     },
     "projection-schedules-tasks": {
       "projection": {
         "componentId": "@ontomato/sdk:ObjectList",
-        "inputs": {
-          "value": {
-            "kind": "object",
-            "objectType": "platform:ScheduledTask"
-          }
-        },
+        "inputs": {},
         "outputs": {
           "selected": {
             "kind": "object",
@@ -288,8 +264,8 @@
         "domainId": "pilot",
         "ownerId": "reader",
         "revision": 1,
-        "createdAt": "2026-11-20T06:03:59.478Z",
-        "updatedAt": "2026-11-20T06:03:59.478Z",
+        "createdAt": "2026-11-20T09:21:27.144Z",
+        "updatedAt": "2026-11-20T09:21:27.144Z",
         "editable": true
       }
     },
@@ -329,8 +305,8 @@
         "domainId": "pilot",
         "ownerId": "reader",
         "revision": 1,
-        "createdAt": "2026-11-20T06:03:59.444Z",
-        "updatedAt": "2026-11-20T06:03:59.444Z",
+        "createdAt": "2026-11-20T09:21:27.129Z",
+        "updatedAt": "2026-11-20T09:21:27.129Z",
         "editable": true
       }
     }
