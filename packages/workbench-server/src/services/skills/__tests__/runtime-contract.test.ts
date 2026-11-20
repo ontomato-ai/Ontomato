@@ -279,7 +279,7 @@ it("publishes one member across admitted entrances alongside the native permissi
     panelUses: entrances.map(({ permissionCode, pageKey }) => ({ id: pageKey, pageKey, path: `/ontology/${pageKey}`,
       access: { permissionCode }, panelId: "knowledge-panel" })),
   } }));
-  vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     if (url.endsWith("/platform/page-skills")) return Response.json({ success: true, data: {
       admittedEntrances: entrances, registeredSkills: [native], pageSkills: [{ permissionCode: "business-knowledge", skill: native,
         defaults: [{ pageKey: "governance-report", defaultAgent: { kind: "preset", agentKind: "knowledge-governance" } }] }],
