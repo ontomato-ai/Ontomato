@@ -31,7 +31,7 @@ components use the projection's range and fields. Keep the selected reference co
 ## Read declared data
 
 Use an official component when it fits the view. Place its projection with `<projection slot="list"></projection>`.
-For a custom Vue view, declare a projection with `componentId: "@ontomato/sdk:Data"` and `config: {}`. It supplies
+For a custom Vue view, declare a projection with `componentId: "@ontomato/sdk:PanelData"` and `config: {}`. It supplies
 data for your Vue template to render. Name each datum in `data` and use `usePanelData` in `setup()`.
 The example's `detail` member declares `data.record`.
 
@@ -41,8 +41,8 @@ import { usePanelData } from "@ontomato/sdk/panel";
 const detail = usePanelData("detail", "record");
 ```
 
-Use one call per datum. An optional third argument is a reactive object with runtime parameter values, such as
-pagination. Use parameter names accepted by the declared read. The SDK applies the projection's inputs and reads
+Use one call per datum. Pass runtime parameter values, such as pagination, in an optional reactive object, ref or
+getter. Use parameter names accepted by the declared read. The SDK applies the projection's inputs and reads
 under the reader's identity. State or runtime parameter changes trigger a new read. An `awaiting` result means a
 required value is missing and the SDK waits to send the request.
 

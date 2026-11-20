@@ -11,7 +11,7 @@ declared read or operation. Keep business rules, confirmation and permissions wi
 1. Read the current component catalogue with `node "$SKILL/ontomato.mjs" sdk read components.json`. Use the
    owner and component declarations for the names of data, inputs and outputs.
 2. Write new projection definitions in `panel.json` and reference existing projections by ID. Use an official
-   display component when it fits. For a custom Vue view, use a `Data` projection with `usePanelData`.
+   display component when it fits. For a custom Vue view, use a `PanelData` projection with `usePanelData`.
    Declare the public state that the assistant, address or other panels need.
 3. Write the template and interactions in Vue. The declared member keys connect the layout to the projections.
    Add common page tasks in `recipes.md` when the assistant needs them.
