@@ -125,11 +125,10 @@ ARG EXCLUDE_ARTIFACT_IDS
 ARG KEEP_NATIVE=
 ARG LICENSE_PROFILE=
 ARG MVNW_REPOURL
+ARG CI_MAVEN_SETTINGS="<settings></settings>"
 RUN --mount=type=cache,target=/root/.m2 <<'EOF'
 set -eu
-cat > /tmp/maven-settings.xml <<'SETTINGS'
-<settings></settings>
-SETTINGS
+printf '%s\n' "$CI_MAVEN_SETTINGS" > /tmp/maven-settings.xml
 MAVEN_SETTINGS=/tmp/maven-settings.xml /usr/local/bin/export-java.sh
 rm -f /tmp/maven-settings.xml
 EOF
