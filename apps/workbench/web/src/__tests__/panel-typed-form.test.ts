@@ -2,11 +2,11 @@ import { afterEach, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/panel-projection";
+import type { PanelFormDescription, PanelFormSaveInput, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import { AGENT_DEFINITION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SKILL } from "@ontomato/contracts/panel-client-requests";
 import { PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { ignoreChanges,
+import { formSaveCalls, humanIntents, ignoreChanges,
   inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
@@ -49,6 +49,7 @@ const fields: PanelFormDescription["fields"] = [
 ];
 const AGENT = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a01";
 const CREATED = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a09";
+const revision = 7;
 const save = (operation: string) => ({ method: "PUT" as const, path: "/assistant/agent-definitions/:id", bodySchema: {}, draftOperation: operation });
 
 const current = {
@@ -116,26 +117,26 @@ const use = panelUse("use-agent-settings", "agent-settings", panel.id, "/ontolog
 const definition = (id: string, values: PanelFormValues) => ({ id, sortOrder: 0, ...values });
 
 /** The owner, as the definitions service, the skill catalogue and the metadata read answer. */
-function owner(request: Sent): Response | undefined {
+function owner(request: Sent, valuesById: ReadonlyMap<string, PanelFormValues>): Response | undefined {
   const projected = /^\/api\/product-projections\/(.+)$/.exec(request.path);
   if (projected) return Response.json({ projection: projections[projected[1]!] });
   if (request.path === "/api/assistant/agent-definitions/form") {
-    const { target, values, changedField } = request.body as { target: { kind: string }; values?: PanelFormValues; changedField: string | null };
+    const { target, values, changedField } = request.body as {
+      target: { kind: "draft" } | { kind: "object"; primaryKey: string };
+      values?: PanelFormValues;
+      changedField: string | null;
+    };
     const create = target.kind === "draft";
-    const base = create ? defaults : stored;
+    const base = create ? defaults : valuesById.get(target.primaryKey)!;
     if (values && changedField === null && values.executionUserId !== base.executionUserId)
       return Response.json({ error: { message: "You may not change who the agent runs as" }, details: { fields: [
         { field: "/executionUserId", code: "target_unavailable", message: "Only a domain governance administrator changes it" },
       ] } }, { status: 422 });
     const shown = values ? { ...values, name: String(values.name).trim() } : base;
-    return Response.json({ fields, values: shown, errors: [], save: save(create ? "agent.create" : "agent.update") });
+    return Response.json({ fields, values: shown, revision, errors: [], save: save(create ? "agent.create" : "agent.update") });
   }
-  if (request.path === `/api/assistant/agent-definitions/${AGENT}` && request.method === "GET") return Response.json(definition(AGENT, stored));
-  // The service keeps what an update omits (skills the reader did not submit), and answers with the whole definition.
-  if (request.path === `/api/assistant/agent-definitions/${AGENT}` && request.method === "PUT")
-    return Response.json(definition(AGENT, { ...stored, ...(request.body as PanelFormValues) }));
-  if (request.path === "/api/assistant/agent-definitions" && request.method === "POST")
-    return Response.json(definition(CREATED, request.body as PanelFormValues));
+  const agent = /^\/api\/assistant\/agent-definitions\/([^/]+)$/.exec(request.path);
+  if (agent && request.method === "GET") return Response.json(definition(agent[1]!, valuesById.get(agent[1]!)!));
   if (request.path === "/api/assistant/agent-skills")
     return Response.json({ skills: [{ skill: sql, title: "SQL", description: "" }, { skill: chart, title: "Charts", description: "" }] });
   if (request.path === "/api/data-query/model-options")
@@ -151,8 +152,28 @@ function owner(request: Sent): Response | undefined {
   return undefined;
 }
 
-async function open(address: string, state: Record<string, unknown>, override?: (request: Sent) => Response | undefined) {
-  const sent = installPlatform((request) => override?.(request) ?? owner(request) ?? nothingAt(request));
+function ownerForInstance() {
+  const valuesById = new Map([[AGENT, stored]]);
+  const intents = humanIntents((_, { target, input }) => {
+    const primaryKey = target?.kind === "object" ? target.primaryKey : CREATED;
+    valuesById.set(primaryKey, (input as PanelFormSaveInput).values);
+    return {
+      kind: "success", data: {},
+      affected: { objects: [{ objectType: AGENT_DEFINITION, primaryKey }], objectTypes: [AGENT_DEFINITION] },
+    };
+  });
+  return (request: Sent) => intents(request) ?? owner(request, valuesById);
+}
+
+const formMembers = ["definition", "skills", "model"];
+
+async function open(
+  address: string,
+  state: Record<string, unknown>,
+  { showScope = false, override }: { showScope?: boolean; override?: (request: Sent) => Response | undefined } = {},
+) {
+  const answer = ownerForInstance();
+  const sent = installPlatform((request) => override?.(request) ?? answer(request) ?? nothingAt(request));
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
   platformPanelHost("ontology", use, ignoreChanges).frame(frame, registered("ontology", use, panel), true);
@@ -162,7 +183,7 @@ async function open(address: string, state: Record<string, unknown>, override?: 
   window.addEventListener("message", (event) => {
     if (event.data?.channel === PANEL_HOST_CHANNEL && event.data.kind === "failed") failed.push(event.data.message);
   });
-  const mounted = await mountPanel(panelOf("definition", "skills", "model", "scope"));
+  const mounted = await mountPanel(panelOf(...formMembers, ...(showScope ? ["scope"] : [])));
   return { ...mounted, sent, failed };
 }
 
@@ -175,7 +196,9 @@ afterEach(() => {
 });
 
 it("edits the owner's JSON through one form, with the skill picker and the data scope as its fields", async () => {
-  const { context, sent } = await open("/ontology/agents", { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } });
+  const { context, sent } = await open("/ontology/agents", {
+    selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT },
+  }, { showScope: true });
   await vi.waitFor(() => {
     expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst");
     expect(node("Customer")).toBeTruthy();
@@ -203,12 +226,10 @@ it("edits the owner's JSON through one form, with the skill picker and the data 
   expect(fieldItem("/classNames")?.classList.contains("sdk-object-graph-changed")).toBe(false);
 
   await context.instance.invoke("definition.save");
-  const put = sent.find((request) => request.method === "PUT")!;
-  expect(put.path).toBe(`/api/assistant/agent-definitions/${AGENT}`);
-  // The owner's own value shape: the nested model, false and null, nothing as text. The skills were not submitted, so
-  // whether they travel is the owner adapter's choice (the service keeps what an update omits).
-  const { skills: _skills, ...unsubmittedSkills } = stored;
-  expect(put.body).toMatchObject({ ...unsubmittedSkills, classNames: ["Order", "Invoice", "Customer"] });
+  expect(formSaveCalls(sent)).toEqual([{
+    target: { kind: "object", objectType: AGENT_DEFINITION, primaryKey: AGENT },
+    input: { values: { ...stored, classNames: ["Order", "Invoice", "Customer"] }, revision, submittedFields: ["/classNames"] },
+  }]);
   await vi.waitFor(() => expect(context.instance.dirty()).toBe(false));
   // Every request went through the frame's admission as the reader's own.
   expect(sent.every((request) => request.credential !== null)).toBe(true);
@@ -225,8 +246,10 @@ it("creates with the owner's defaults, and moves the panel onto the agent the ow
   input.dispatchEvent(new Event("input"));
   await nextTick();
   await context.instance.invoke("definition.save");
-  expect(sent.find((request) => request.method === "POST" && request.path === "/api/assistant/agent-definitions")?.body)
-    .toEqual({ ...defaults, name: "Planner" });
+  expect(formSaveCalls(sent)).toEqual([{
+    target: { kind: "draft" },
+    input: { values: { ...defaults, name: "Planner" }, revision, submittedFields: ["/name"] },
+  }]);
   await vi.waitFor(() => expect(context.instance.state.values.value.selectedAgent).toEqual({ className: AGENT_DEFINITION, primaryKey: CREATED }));
 });
 
@@ -238,10 +261,11 @@ const draftAt = `/api/assistant/sessions/${link.sessionId}/runs/${link.runId}/pa
 async function openWithDraft(form: PanelFormValues, envelope: { operation: string; target: { id?: string }; created?: { id: string } } = { operation: "agent.update", target: { id: AGENT } }) {
   const query = new URLSearchParams({ draftSessionId: link.sessionId, draftRunId: link.runId, draftPath: link.path });
   const draft = { pageKey: use.pageKey, ...envelope, form };
+  const answer = ownerForInstance();
   const sent = installPlatform((request) => {
     if (request.path === draftAt) return Response.json(draft);
     if (request.path === `${draftAt}/created`) return new Response(null, { status: 204 });
-    return owner(request) ?? nothingAt(request);
+    return answer(request) ?? nothingAt(request);
   });
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
@@ -255,7 +279,7 @@ async function openWithDraft(form: PanelFormValues, envelope: { operation: strin
     if (event.data.kind === "failed") failed.push(event.data.message);
     if (event.data.kind === "draft-settled") settled.push(event.data.draft);
   });
-  return { ...(await mountPanel(panelOf("definition", "skills", "model", "scope"))), failed, settled, sent, draft };
+  return { ...(await mountPanel(panelOf(...formMembers))), failed, settled, sent, draft };
 }
 
 it("refuses a draft the owner refuses, whole, naming the field and the reason, and marks nothing", async () => {
@@ -266,7 +290,7 @@ it("refuses a draft the owner refuses, whole, naming the field and the reason, a
     .toEqual({ target: { kind: "object", objectType: AGENT_DEFINITION, primaryKey: AGENT }, values: draft.form, changedField: null });
   expect(context.draft.value).toBeNull();
   expect(context.instance.dirty()).toBe(false);
-  expect(sent.some((request) => request.method === "PUT")).toBe(false);
+  expect(formSaveCalls(sent)).toEqual([]);
 });
 
 it("shows a draft the owner accepts in the form and its field projections, marked and unsaved", async () => {
@@ -280,7 +304,7 @@ it("shows a draft the owner accepts in the form and its field projections, marke
   // The changed fields are named in words too, by the owner's labels, not by colour alone.
   expect(document.querySelector("#app .sdk-owner-form-changed")?.textContent?.trim()).toBe("Changed: Name, Skills");
   expect(context.instance.dirty()).toBe(true);
-  expect(sent.some((request) => request.method === "PUT")).toBe(false);
+  expect(formSaveCalls(sent)).toEqual([]);
 });
 
 it("opens a draft that changes nothing as the agent is, with nothing unsaved", async () => {
@@ -305,12 +329,12 @@ it("reopens a saved create draft on the agent it created, and creates nothing ag
     .toEqual([{ target: { kind: "object", objectType: AGENT_DEFINITION, primaryKey: AGENT }, values: stored, changedField: null }]);
   expect(context.draft.value).toBeNull();
   expect(context.instance.dirty()).toBe(false);
-  expect(sent.some((request) => request.method === "POST" && request.path === "/api/assistant/agent-definitions")).toBe(false);
+  expect(formSaveCalls(sent)).toEqual([]);
 });
 
 it("shows a localized reason for a stored skill no longer in the catalogue", async () => {
   const { context } = await open("/ontology/agents", { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } },
-    request => request.path === "/api/assistant/agent-skills" ? Response.json({ skills: [] }) : undefined);
+    { override: (request) => request.path === "/api/assistant/agent-skills" ? Response.json({ skills: [] }) : undefined });
   await vi.waitFor(() => expect(fieldItem("/skills")?.textContent).toContain("sql"), { timeout: 5000 });
   fieldItem("/skills")!.querySelector(".el-select__wrapper")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   await vi.waitFor(() => {
@@ -328,7 +352,7 @@ it("tells the host the draft is settled once the reader saved it, naming the dra
   expect(settled).toEqual([]);
   await context.instance.invoke("definition.save");
   await vi.waitFor(() => expect(settled).toEqual([link]));
-  expect(sent.filter((request) => request.method === "PUT")).toHaveLength(1);
+  expect(formSaveCalls(sent)).toHaveLength(1);
   // An update draft has nothing to record: its object already existed.
   expect(sent.some((request) => request.path === `${draftAt}/created`)).toBe(false);
   expect(context.draft.value).toBeNull();
@@ -341,7 +365,8 @@ it("tells the host the draft is settled once the reader discarded it, and writes
   await vi.waitFor(() => expect(settled).toEqual([link]));
   expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst");
   expect(context.instance.dirty()).toBe(false);
-  expect(sent.some((request) => request.method === "PUT" || request.method === "POST" && request.path.endsWith("/created"))).toBe(false);
+  expect(formSaveCalls(sent)).toEqual([]);
+  expect(sent.some((request) => request.path === `${draftAt}/created`)).toBe(false);
 });
 
 it("records what a saved create draft created before it tells the host the draft is settled", async () => {
@@ -352,7 +377,9 @@ it("records what a saved create draft created before it tells the host the draft
   await vi.waitFor(() => expect(settled).toEqual([link]));
   const created = sent.findIndex((request) => request.path === `${draftAt}/created`);
   expect(sent[created]?.body).toEqual({ path: link.path, id: CREATED });
-  expect(created).toBeGreaterThan(sent.findIndex((request) => request.method === "POST" && request.path === "/api/assistant/agent-definitions"));
+  const dispatched = sent.findIndex((request) => request.method === "POST" && request.path.endsWith("/dispatch"));
+  expect(dispatched).toBeGreaterThanOrEqual(0);
+  expect(created).toBeGreaterThan(dispatched);
 });
 
 /** Clears a picker as a reader does: hover it, then its clear icon. */
@@ -379,8 +406,14 @@ it("clears a single reference to the owner's null and a multiple one to an empty
   await vi.waitFor(() => expect(context.instance.dirty()).toBe(true));
 
   await context.instance.invoke("definition.save");
-  const put = sent.find((request) => request.method === "PUT")!;
-  expect(put.body).toEqual({ ...stored, modelSelection: { modelId: null }, skills: [] });
+  expect(formSaveCalls(sent)).toEqual([{
+    target: { kind: "object", objectType: AGENT_DEFINITION, primaryKey: AGENT },
+    input: {
+      values: { ...stored, modelSelection: { modelId: null }, skills: [] },
+      revision,
+      submittedFields: ["/modelSelection/modelId", "/skills"],
+    },
+  }]);
   // A frame's report reaches the host a task later; none came, and the frame is still there.
   await new Promise((resolve) => setTimeout(resolve));
   expect(failed).toEqual([]);

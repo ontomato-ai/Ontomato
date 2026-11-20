@@ -474,7 +474,8 @@ export function projectionOperations(
   if (!slot) throw new Error(`The panel declares no slot '${registration.slot}'`);
   const targets = new Map(Object.entries(slot.inputs ?? {}).flatMap(([name, value]) => {
     const kind = registration.ports.inputs[name]?.kind;
-    return "state" in value && (kind === "object" || kind === "object-union") ? [[name, value.state] as const] : [];
+    return "state" in value && (kind === "object" || kind === "object-union" || kind === "list")
+      ? [[name, value.state] as const] : [];
   }));
   function targetFor(operation: ProjectionOperation): PanelOperation["target"] {
     if (operation.kind === "form.save") return { source: "draft", slot: registration.slot };

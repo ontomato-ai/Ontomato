@@ -4,7 +4,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createApp, defineComponent, h, ref, resolveComponent } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
-import { definePanel, type PanelManifest } from "@ontomato/contracts/panel-manifest";
+import { definePanel, type PanelManifest, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
+import type { PanelFormSaveInput } from "@ontomato/contracts/panel-projection";
 import type { PanelHostMessage } from "@ontomato/contracts/panel-host";
 import { appsSdkCurrentSchema } from "@ontomato/contracts/apps-sdk";
 import type { PanelMemberSnapshot } from "@ontomato/contracts/product-subscriptions";
@@ -17,7 +19,7 @@ import {
   type PlatformTask,
   type PlatformTaskRun,
 } from "@ontomato/contracts/platform-schedules";
-import type { ApplicationPanelUse, DirectPanel, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
+import type { ApplicationPanelUse, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
@@ -235,7 +237,7 @@ export function pageSkillContextFor(panel: Pick<ProductPanel, "id">, request: Se
 }
 
 /** Node's answer for a panel read: the panel, and the page skill context when the read names the page it is shown for. */
-export function panelAnswer(panel: ProductPanel | DirectPanel, request: Sent) {
+export function panelAnswer(panel: ProductPanel, request: Sent) {
   const pageSkillContext = pageSkillContextFor(panel, request);
   return Response.json({ panel, ...(pageSkillContext ? { pageSkillContext } : {}) });
 }
@@ -487,29 +489,35 @@ export const noOperations: { operations: PanelHumanOperations; confirmOperation:
   operations: { describe: unused, read: unused, prepare: unused }, confirmOperation: unused,
 };
 
+/** The form save calls that reached the coordinator. */
+export function formSaveCalls(sent: readonly Sent[]) {
+  return sent.filter((request) => request.method === "POST" && request.path === "/api/panel-operations/intents")
+    .map(({ body }) => (body as { call: { target: PanelOperationCall["target"]; input: PanelFormSaveInput } }).call);
+}
+
 /**
  * Node's coordinator for a person's writes, as the frame and its host reach it: the frame prepares one intent, the host
  * reads it back and dispatches it once, and `outcome` is what the owner's registered operation returned for it. Nothing
  * here needs confirming; the host's dialog is the host's own test.
  */
-export function humanIntents(outcome: (operationId: string) => unknown, target: { source: "input"; input: string } = { source: "input", input: "task" }) {
-  const prepared = new Map<string, { intentId: string; operationId: string; label: string; confirmation: { kind: "none" } }>();
+export function humanIntents(outcome: (operationId: string, call: PanelOperationCall) => unknown, target: { source: "input"; input: string } = { source: "input", input: "task" }) {
+  const prepared = new Map<string, { preparation: PanelHumanOperationPreparation; call: PanelOperationCall }>();
   return (request: Sent): Response | undefined => {
     // The owner's write: one object it acts on, with nothing to confirm.
     if (request.method === "GET" && request.path === "/api/panel-operations/descriptor")
       return Response.json({ handlerRef: "owner.write", label: "Write", effect: "write", target, inputSchema: {}, resultSchema: {}, batch: false });
     if (request.method === "POST" && request.path === "/api/panel-operations/intents") {
-      const { operationId } = request.body as { operationId: string };
+      const { operationId, call } = request.body as { operationId: string; call: PanelOperationCall };
       const preparation = { intentId: randomId(), operationId, label: operationId, confirmation: { kind: "none" as const } };
-      prepared.set(preparation.intentId, preparation);
+      prepared.set(preparation.intentId, { preparation, call });
       return Response.json(preparation);
     }
     const read = /^\/api\/panel-operation-intents\/([^/?]+)$/.exec(request.path);
-    if (read && request.method === "GET") return Response.json(prepared.get(read[1]!));
+    if (read && request.method === "GET") return Response.json(prepared.get(read[1]!)?.preparation);
     const dispatch = /^\/api\/panel-operations\/intents\/([^/]+)\/dispatch$/.exec(request.path);
     if (dispatch && request.method === "POST") {
-      const { intentId, operationId } = prepared.get(dispatch[1]!)!;
-      return Response.json({ kind: "dispatched", intentId, outcome: outcome(operationId) });
+      const { preparation: { intentId, operationId }, call } = prepared.get(dispatch[1]!)!;
+      return Response.json({ kind: "dispatched", intentId, outcome: outcome(operationId, call) });
     }
     return undefined;
   };

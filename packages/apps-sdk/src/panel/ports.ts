@@ -1,6 +1,7 @@
 import { type PanelManifest, type PanelOperation, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { ProjectionPorts } from "@ontomato/contracts/panel-projection";
-import { stateObject, type PanelFieldValue } from "./state";
+import { stateObject, stateObjects, type PanelFieldValue } from "./state";
+import type { PanelWriteInvocation } from "./human-operations";
 
 export type { ProjectionOperation, ProjectionPorts } from "@ontomato/contracts/panel-projection";
 
@@ -31,6 +32,24 @@ export function operationCall(
   input: Readonly<Record<string, unknown>> = {},
 ): PanelOperationCall {
   return { target: operationTarget(operation, state), input };
+}
+
+/**
+ * What one write of a projection sends now: one call on the object its target names, or, when the target is a list the
+ * panel holds (the checked objects), one batch with a call per object, in the list's order. A batch of nothing is no
+ * write, and is refused here.
+ */
+export function operationInvocation(
+  operation: PanelOperation,
+  state: Readonly<Record<string, PanelFieldValue>>,
+  input: Readonly<Record<string, unknown>> = {},
+): PanelWriteInvocation {
+  const held = operation.target?.source === "state" ? state[operation.target.state] : undefined;
+  if (!Array.isArray(held)) return { call: operationCall(operation, state, input) };
+  const [first, ...rest] = stateObjects(held).map(({ className, primaryKey }) =>
+    ({ target: { kind: "object" as const, objectType: className, primaryKey }, input: { ...input } }));
+  if (!first) throw new Error(`Operation '${operation.id}' acts on the checked objects, and none is checked`);
+  return { calls: [first, ...rest] };
 }
 
 function operationTarget(
