@@ -8,9 +8,15 @@ import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import {
-  directPanelSchema, productPanelInUseErrorSchema, productProjectionInUseErrorSchema, productProjectionResponseSchema,
-  productProjectionUsedBySchema, registerDirectPanelRequestSchema, registerDirectProjectionRequestSchema,
+  productPanelInUseErrorSchema, productPanelResponseSchema, productPanelUsedBySchema,
+  productProjectionInUseErrorSchema, productProjectionResponseSchema,
+  productProjectionUsedBySchema, registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
 } from "@ontomato/contracts/product-panels";
+import {
+  panelPersonalStateReadRequestSchema, panelPersonalStateResponseSchema, panelPersonalStateWriteRequestSchema,
+} from "@ontomato/contracts/panel-host";
+import { panelDefinitionSnapshotSchema } from "@ontomato/contracts/product-subscriptions";
+import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { installContentLayout } from "../../content/layout";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
@@ -33,6 +39,9 @@ if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable Po
 
 const projectionId = "projection-referenced";
 const panelId = "panel-referencing";
+const personalPanelId = "panel-personal";
+const personalChildId = "panel-personal-child";
+const snapshotPanelId = "panel-snapshot-test";
 const grants = new Set<string>();
 let server: Server | undefined;
 let contentRoot: string;
@@ -48,6 +57,7 @@ beforeAll(async () => {
   state.schema = `product_panel_references_${randomUUID().replaceAll("-", "")}`;
   state.pool = new pg.Pool({ connectionString: database });
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
+  await ensureAssistantSchema(state.pool);
   await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
 
@@ -57,7 +67,7 @@ beforeAll(async () => {
   const app = express();
   app.use(express.json());
   const granted = (token: string | undefined, id: string) =>
-    grants.has(id) && (token === "author" || (token === "projection-owner" && id === projectionId));
+    grants.has(id) && (token === "author" || (token === "projection-owner" && (id === projectionId || id.startsWith("ports-"))) || (id === personalPanelId || id === personalChildId) || id === snapshotPanelId || id === "visible-projection");
   app.post("/product-governance/register", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     grants.add(req.body.id);
@@ -76,8 +86,23 @@ beforeAll(async () => {
   });
   app.get("/platform/applications/panel-uses/by-panel", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
-    expect(req.query).toEqual({ domainId: "test-domain", panelId });
+    expect(req.query.domainId).toBe("test-domain");
     res.json({ success: true, data: [] });
+  });
+  app.get("/platform/applications/app-personal/panel-uses", (_req, res) => {
+    res.json({ success: true, data: {
+      applicationId: "app-personal", entry: { path: "/applications/app-personal", renderer: "panels" },
+      panelUses: [{ id: "main", pageKey: "main", path: "/applications/app-personal/main",
+        panelId: personalPanelId, access: { kind: "domain-member" } }],
+    } });
+  });
+  app.get("/platform/applications/resolve-entry", (req, res) => {
+    expect(req.query.path).toBe("/applications/app-personal/main");
+    res.json({ success: true, data: {
+      applicationId: "app-personal", menu: { groups: [], panelUses: [] },
+      use: { id: "main", pageKey: "main", path: "/applications/app-personal/main",
+        panelId: personalPanelId, access: { kind: "domain-member" } },
+    } });
   });
   app.use("/api", (req, _res, next) => {
     const userId = req.header("X-Test-User") ?? "author";
@@ -92,14 +117,14 @@ beforeAll(async () => {
   });
   state.base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
-  const projection = registerDirectProjectionRequestSchema.parse({
+  const projection = registerProductProjectionRequestSchema.parse({
     ...projectionInput, revision: 0,
   });
   const createdProjection = await request("PUT", `product-projections/${projectionId}`, "projection-owner", projection);
   const payload = await createdProjection.json();
   expect(createdProjection.status, JSON.stringify(payload)).toBe(200);
   revision = productProjectionResponseSchema.parse(payload).projection.revision;
-  const panel = registerDirectPanelRequestSchema.parse({
+  const panel = registerProductPanelRequestSchema.parse({
     name: "Referencing panel", description: "", visibility: "private", revision: 0,
     content: { html: '<panel-member ref="summary"></panel-member>' },
     manifest: {
@@ -112,7 +137,7 @@ beforeAll(async () => {
   const createdPanel = await request("PUT", `product-panels/${panelId}`, "author", panel);
   const panelPayload = await createdPanel.json();
   expect(createdPanel.status, JSON.stringify(panelPayload)).toBe(200);
-  expect(directPanelSchema.parse(panelPayload.panel).id).toBe(panelId);
+  expect(productPanelResponseSchema.parse(panelPayload).panel.id).toBe(panelId);
 });
 
 afterAll(async () => {
@@ -158,12 +183,117 @@ it("rejects deleting a panel that is the current detail for a class", async () =
   );
   const resource = `product-panels/${panelId}`;
   const current = await request("GET", resource, "author");
-  const panel = directPanelSchema.parse((await current.json()).panel);
+  const panel = productPanelResponseSchema.parse(await current.json()).panel;
+  const usedBy = await request("GET", `${resource}/used-by`, "author");
+  expect(usedBy.status).toBe(200);
+  const usage = productPanelUsedBySchema.parse(await usedBy.json());
+  expect(usage.classNames).toEqual(["Teacher"]);
   const deletion = await request("DELETE", `${resource}?revision=${panel.revision}`, "author");
   const payload = await deletion.json();
   expect(deletion.status, JSON.stringify(payload)).toBe(409);
-  expect(productPanelInUseErrorSchema.parse(payload).code).toBe("PRODUCT_IN_USE");
+  expect(productPanelInUseErrorSchema.parse(payload).details).toEqual(usage);
   const retained = await request("GET", resource, "author");
   expect(retained.status).toBe(200);
-  expect(directPanelSchema.parse((await retained.json()).panel)).toEqual(panel);
+  expect(productPanelResponseSchema.parse(await retained.json()).panel).toEqual(panel);
+});
+
+async function savePanel(id: string, manifest: object, revision: number = 0) {
+  return request("PUT", `product-panels/${id}`, "author", registerProductPanelRequestSchema.parse({
+    name: id, description: "", visibility: "domain", revision, content: { html: "<div></div>" }, manifest,
+  }));
+}
+
+it("rejects a reverse cycle and protects a nested panel referenced by its parent", async () => {
+  const leafId = "panel-cycle-leaf", parentId = "panel-cycle-parent";
+  const manifest = { state: {}, members: {}, events: {} };
+  const leafResponse = await savePanel(leafId, manifest);
+  expect(leafResponse.status).toBe(200);
+  const leaf = productPanelResponseSchema.parse(await leafResponse.json()).panel;
+  const parentResponse = await savePanel(parentId, { ...manifest, members: { leaf: { target: { panelId: leafId } } } });
+  expect(parentResponse.status).toBe(200);
+  const update = await savePanel(leafId, { ...manifest, members: { parent: { target: { panelId: parentId } } } }, leaf.revision);
+  const error = await update.text();
+  expect(update.status, error).toBe(409);
+  expect(error).toContain("PANEL_REFERENCE_CYCLE");
+  expect(error).toContain("parent");
+  expect(error).toContain("leaf");
+  const deleted = await request("DELETE", `product-panels/${leafId}?revision=${leaf.revision}`, "author");
+  expect(deleted.status).toBe(409);
+  expect(productPanelInUseErrorSchema.parse(await deleted.json()).details.panels).toEqual([{ id: parentId, name: parentId }]);
+});
+
+it("writes declared personal state under the authenticated viewer and isolates it from another viewer", async () => {
+  const child = await savePanel(personalChildId, {
+    state: { chosen: { type: portType, personal: true }, transient: { type: portType } }, members: {}, events: {},
+  });
+  expect(child.status, await child.text()).toBe(200);
+  const target = { panelId: personalChildId };
+  const root = await savePanel(personalPanelId, { state: {}, members: { left: { target }, right: { target } }, events: {} });
+  expect(root.status, await root.text()).toBe(200);
+  const source = { kind: "registered", applicationId: "app-personal", useId: "main" };
+  const write = (user: string, member: string, values: object) => request("PUT", "product-panels/personal-state", user,
+    panelPersonalStateWriteRequestSchema.parse({ source, memberPath: [{ member }], values }));
+  const read = (user: string, member: string) => request("POST", "product-panels/personal-state/read", user,
+    panelPersonalStateReadRequestSchema.parse({ source, memberPath: [{ member }], fields: ["chosen"] }));
+  expect((await write("author", "left", { chosen: "left choice" })).status).toBe(200);
+  expect((await write("author", "right", { chosen: "right choice" })).status).toBe(200);
+  expect((await write("author", "left", { chosen: "changed", transient: "invalid" })).status).toBe(400);
+
+  for (const [user, member, values] of [
+    ["author", "left", { chosen: "left choice" }],
+    ["author", "right", { chosen: "right choice" }],
+    ["another-viewer", "left", {}],
+  ] as const) {
+    const response = await read(user, member);
+    expect(response.status).toBe(200);
+    expect(panelPersonalStateResponseSchema.parse(await response.json())).toEqual({ values });
+  }
+  expect((await read("author", "undeclared")).status).toBe(403);
+});
+
+it.each([
+  ["input", { inputs: { caption: { kind: "scalar", type: "number" } } }, "caption"],
+  ["output", { outputs: {} }, "selected"],
+] as const)("rejects breaking a private parent's connected %s", async (suffix, change, port) => {
+  const id = `ports-${suffix}`, resource = `product-projections/${id}`;
+  const beforeSave = await request("PUT", resource, "projection-owner",
+    registerProductProjectionRequestSchema.parse({ ...projectionInput, revision: 0 }));
+  expect(beforeSave.status).toBe(200);
+  const before = productProjectionResponseSchema.parse(await beforeSave.json()).projection;
+  const parent = `panel-ports-${suffix}`;
+  const attached = await savePanel(parent, {
+    state: { caption: { type: portType }, selected: { type: portType } },
+    members: { summary: { target: { projectionId: id }, inputs: { caption: { state: "caption" } },
+      outputs: { selected: { state: "selected" } } } },
+    events: {},
+  });
+  expect(attached.status).toBe(200);
+  const update = await request("PUT", resource, "projection-owner",
+    registerProductProjectionRequestSchema.parse({ ...projectionInput, ...change, revision: before.revision }));
+  const payload = await update.text();
+  expect(update.status, payload).toBe(409);
+  expect(payload).toContain("PRODUCT_PORT_IN_USE");
+  expect(payload).toContain(port);
+  expect(payload).not.toContain(parent);
+  const after = await request("GET", resource, "projection-owner");
+  expect(productProjectionResponseSchema.parse(await after.json()).projection).toEqual(before);
+});
+
+it("returns a forbidden member in the snapshot alongside the authorized sibling", async () => {
+  const id = "visible-projection";
+  const visible = await request("PUT", `product-projections/${id}`, "author",
+    registerProductProjectionRequestSchema.parse({ ...projectionInput, revision: 0 }));
+  expect(visible.status).toBe(200);
+  const saved = await savePanel(snapshotPanelId, { state: {}, events: {}, members: {
+    shown: { target: { projectionId: id } }, hidden: { target: { projectionId } },
+  } });
+  expect(saved.status).toBe(200);
+  const response = await request("GET", `product-panels/${snapshotPanelId}/snapshot`, "another-viewer");
+  expect(response.status).toBe(200);
+  const snapshot = panelDefinitionSnapshotSchema.parse(await response.json());
+  expect(snapshot.members).toEqual(expect.arrayContaining([
+    { status: "forbidden", memberPath: [{ member: "hidden" }] },
+    { status: "ready", memberPath: [{ member: "shown" }], target: { kind: "projection", id }, revision: 1 },
+  ]));
+  expect(snapshot.projections).toEqual([{ id, revision: 1 }]);
 });

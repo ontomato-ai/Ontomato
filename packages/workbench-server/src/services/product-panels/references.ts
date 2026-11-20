@@ -13,10 +13,12 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { HttpError } from "../../utils/errors";
 import { requireProductGrant, type ProductOwner } from "../product-governance/grants";
 import { listObjectDetailPanelMappings } from "./object-detail";
+import { panelStateDomainPrefix, panelStateKeyNamespace } from "./personal-state-key";
 
 type QueryClient = Pick<PoolClient, "query">;
 type Target = { kind: CurrentProductKind; id: string };
 type Wiring = Pick<PanelPlacement, "inputs" | "outputs">;
+type SavedPlacement = { field: string; placement: PanelPlacement };
 type Reference = {
   key: string;
   target: Target;
@@ -47,7 +49,9 @@ export function repeatItemTypes(panel: ProductPanelInput): Map<string, DirectPan
   return items;
 }
 
-function collectReferences(panel: ProductPanelInput, details: ReadonlyMap<string, string>): Reference[] {
+function collectReferences(
+  panel: ProductPanelInput, details: ReadonlyMap<string, string>, saved: readonly SavedPlacement[] = [],
+): Reference[] {
   const { state, members, events } = panel.manifest;
   const usesItem = Object.values(members).some(member => Object.values(member.inputs ?? {}).some(input => "item" in input));
   const repeatTypes = usesItem ? repeatItemTypes(panel) : new Map<string, DirectPanelPortType>();
@@ -73,9 +77,19 @@ function collectReferences(panel: ProductPanelInput, details: ReadonlyMap<string
     }
   }
   for (const [name, { type, default: value }] of Object.entries(state)) {
-    if (type.kind === "placement" && value != null) {
+    if (type.kind !== "placement") continue;
+    if ("panelIds" in type.candidates) {
+      for (const id of type.candidates.panelIds)
+        references.push({ key: `$state.${name}`, target: { kind: "panel", id }, wiring: {} });
+    }
+    if (value != null) {
       const placement = panelPlacementSchema.parse(value);
       references.push({ key: `$state.${name}`, target: fixedTarget(placement.target), wiring: placement });
+    }
+  }
+  for (const { field, placement } of saved) {
+    if (state[field]?.personal && state[field].type.kind === "placement") {
+      references.push({ key: `$state.${field}`, target: fixedTarget(placement.target), wiring: placement });
     }
   }
   return references;
@@ -93,17 +107,40 @@ async function loadDetails(domainId: string, client: QueryClient) {
   return new Map(mappings.map(({ className, panelId }) => [className, panelId]));
 }
 
+async function loadSavedPlacements(domainId: string, panels: ReadonlyMap<string, ProductPanelInput>, client: QueryClient) {
+  const placements = new Map<string, SavedPlacement[]>();
+  const hasPersonalPlacements = Array.from(panels.values()).some(({ manifest }) =>
+    Object.values(manifest.state).some(field => field.personal && field.type.kind === "placement"));
+  if (!hasPersonalPlacements) return placements;
+  const { rows } = await client.query<{ scope: [string, string, unknown, string, string]; value: unknown }>(
+    `SELECT substring(key FROM char_length($2::text)+1)::jsonb AS scope,value
+     FROM ${table("user_preferences")} WHERE starts_with(key,$1) AND jsonb_typeof(value)='object' AND value ? 'target'`,
+    [panelStateDomainPrefix(domainId), panelStateKeyNamespace],
+  );
+  for (const { scope: [, , , panelId, field], value } of rows) {
+    const placement = panelPlacementSchema.parse(value);
+    const existing = placements.get(panelId) ?? [];
+    existing.push({ field, placement });
+    placements.set(panelId, existing);
+  }
+  return placements;
+}
+
 export async function findPanelUsers(domainId: string, kind: CurrentProductKind, id: string, client: QueryClient = getPostgresPool()) {
   const [panels, details] = await Promise.all([loadPanels(domainId, client), loadDetails(domainId, client)]);
+  const saved = await loadSavedPlacements(domainId, panels, client);
   return Array.from(panels, ([parentId, panel]) => ({ id: parentId, panel }))
-    .filter(({ panel }) => collectReferences(panel, details).some(({ target }) => target.kind === kind && target.id === id))
+    .filter(parent => collectReferences(parent.panel, details, saved.get(parent.id)).some(({ target }) => target.kind === kind && target.id === id))
     .map(({ id, panel }) => ({ id, name: panel.name }))
     .sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id));
 }
 
-function rejectCycles(panels: ReadonlyMap<string, ProductPanelInput>, details: ReadonlyMap<string, string>, roots: Iterable<string>) {
+function rejectCycles(
+  panels: ReadonlyMap<string, ProductPanelInput>, details: ReadonlyMap<string, string>,
+  roots: Iterable<string>, ancestors: Iterable<string> = [],
+) {
   const checked = new Set<string>();
-  const active = new Set<string>();
+  const active = new Set(ancestors);
   const memberPath: string[] = [];
   function visit(id: string) {
     if (active.has(id)) {
@@ -140,15 +177,17 @@ function incompatiblePort(
   for (const [name, value] of Object.entries(wiring.inputs ?? {})) {
     const type = target.inputs[name];
     if (!type) return `input '${name}' was removed or is not exposed`;
+    const offered = "state" in value ? source.state[value.state]?.type : itemType;
+    if (!("literal" in value) && offered === undefined) return `input '${name}' has no declared value source`;
     if (type.kind === "json") continue;
     const accepts = "literal" in value ? matchesDirectPanelValue(type, value.literal)
-      : "state" in value ? panelPortAccepts(type, source.state[value.state].type)
-      : itemType !== undefined && panelPortAccepts(type, itemType);
+      : offered !== undefined && panelPortAccepts(type, offered);
     if (!accepts) return `input '${name}' does not accept its connected value`;
   }
   for (const [name, value] of Object.entries(wiring.outputs ?? {})) {
     const type = target.outputs[name];
-    if (!type || !panelPortAccepts(source.state[value.state].type, type))
+    const field = source.state[value.state];
+    if (!type || !field || !panelPortAccepts(field.type, type))
       return `output '${name}' does not match its connected field`;
   }
   for (const name of triggerOutputs ?? []) {
@@ -167,8 +206,9 @@ export async function validateCurrentProductReferences(
   input: ProductPanelInput | ProductProjectionInput, client: PoolClient,
 ) {
   const [panels, details] = await Promise.all([loadPanels(owner.domainId, client), loadDetails(owner.domainId, client)]);
+  if ("manifest" in input) panels.set(id, input);
+  const saved = await loadSavedPlacements(owner.domainId, panels, client);
   if ("manifest" in input) {
-    panels.set(id, input);
     rejectCycles(panels, details, [id]);
 
     const approved = new Map<string, ProductPanelInput | ProductProjectionInput>();
@@ -186,8 +226,8 @@ export async function validateCurrentProductReferences(
     }
   }
 
-  for (const panel of panels.values()) {
-    for (const reference of collectReferences(panel, details)) {
+  for (const [parentId, panel] of panels) {
+    for (const reference of collectReferences(panel, details, saved.get(parentId))) {
       if (reference.target.kind !== kind || reference.target.id !== id) continue;
       const issue = incompatiblePort(panel.manifest, reference, input);
       if (issue) throw new HttpError(409, `Connected ${issue}`, "PRODUCT_PORT_IN_USE");
@@ -201,13 +241,30 @@ export async function validateObjectDetailPanelMapping(domainId: string, classNa
   if (!target) throw new HttpError(404, "Current detail panel definition not found", "PRODUCT_UNAVAILABLE");
 
   details.set(className, panelId);
+  const saved = await loadSavedPlacements(domainId, panels, client);
   rejectCycles(panels, details, panels.keys());
 
-  for (const panel of panels.values()) {
-    for (const reference of collectReferences(panel, details)) {
+  for (const [parentId, panel] of panels) {
+    for (const reference of collectReferences(panel, details, saved.get(parentId))) {
       if (reference.target.kind !== "panel" || reference.target.id !== panelId) continue;
       const issue = incompatiblePort(panel.manifest, reference, target);
       if (issue) throw new HttpError(409, `Connected ${issue}`, "PRODUCT_PORT_IN_USE");
     }
   }
+}
+
+export async function validatePersonalPlacement(
+  owner: ProductOwner, viewer: AssistantCredentials, panel: ProductPanelInput, ancestors: ReadonlySet<string>,
+  field: string, placement: PanelPlacement, client: PoolClient,
+) {
+  const target = fixedTarget(placement.target);
+  const [panels, details] = await Promise.all([loadPanels(owner.domainId, client), loadDetails(owner.domainId, client)]);
+  await requireProductGrant(target.id, "use", viewer);
+  const definition = target.kind === "panel" ? panels.get(target.id) : await requireProjection(owner.domainId, target.id, client);
+  if (!definition) throw new HttpError(404, "Selected member does not exist", "PRODUCT_UNAVAILABLE");
+
+  const issue = incompatiblePort(panel.manifest, { key: field, target, wiring: placement }, definition);
+  if (issue) throw new HttpError(400, `Personal placement '${field}': ${issue}`, "PANEL_PORT_MISMATCH");
+
+  if (target.kind === "panel") rejectCycles(panels, details, [target.id], ancestors);
 }

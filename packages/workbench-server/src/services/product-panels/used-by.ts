@@ -4,27 +4,38 @@ import { productPanelUsedBySchema } from "@ontomato/contracts/product-panels";
 import type { PoolClient } from "pg";
 import { config } from "../../config/application";
 import { environment } from "../../config/environment";
-import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
+import type { CurrentProductKind } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendGet } from "../../utils/backend-client";
 import { grantedProductIds } from "../product-governance/grants";
+import { classesUsingDetailPanel } from "./object-detail";
+import { findPanelUsers } from "./references";
 
-export async function panelsUsingProjection(domainId: string, id: string, credentials: AssistantCredentials,
-  client: Pick<PoolClient, "query"> = getPostgresPool()) {
-  const { rows } = await client.query<{ id: string; name: string }>(
-    `SELECT id, definition->>'name' AS name FROM ${t("product_panels")}
-     WHERE domain_id=$1 AND EXISTS (
-       SELECT FROM jsonb_each(definition#>'{manifest,slots}') AS slot
-       WHERE slot.value->>'projectionId'=$2
-       UNION ALL
-       SELECT FROM jsonb_each(definition#>'{manifest,members}') AS member
-       WHERE member.value#>>'{target,projectionId}'=$2
-     ) ORDER BY name,id`, [domainId, id],
-  );
+async function panelsUsingTarget(
+  domainId: string, kind: CurrentProductKind, id: string, credentials: AssistantCredentials, client?: Pick<PoolClient, "query">,
+) {
+  const rows = await findPanelUsers(domainId, kind, id, client);
   if (!rows.length) return { panels: [], hiddenCount: 0 };
   const visible = new Set(await grantedProductIds("use", credentials));
   const panels = rows.filter(panel => visible.has(panel.id));
   return { panels, hiddenCount: rows.length - panels.length };
+}
+
+export function panelsUsingProjection(
+  domainId: string, id: string, credentials: AssistantCredentials, client?: Pick<PoolClient, "query">,
+) {
+  return panelsUsingTarget(domainId, "projection", id, credentials, client);
+}
+
+export async function panelUsers(
+  domainId: string, id: string, credentials: AssistantCredentials, client?: Pick<PoolClient, "query">,
+) {
+  const [panels, entries, classNames] = await Promise.all([
+    panelsUsingTarget(domainId, "panel", id, credentials, client),
+    applicationEntriesUsingPanel(domainId, id, credentials.locale),
+    classesUsingDetailPanel(domainId, id, client),
+  ]);
+  return { ...panels, ...entries, classNames };
 }
 
 const entrySchema = productPanelUsedBySchema.shape.applicationEntries.element;
@@ -36,7 +47,7 @@ const entryResponseSchema = z.object({
   })),
 });
 
-export async function applicationEntriesUsingPanel(domainId: string, id: string, locale: string = "en") {
+async function applicationEntriesUsingPanel(domainId: string, id: string, locale: string = "en") {
   const query = new URLSearchParams({ domainId, panelId: id });
   const response = await backendGet("application-entries-using-panel",
     `${config.dataQuery.baseUrl}/platform/applications/panel-uses/by-panel?${query}`,
