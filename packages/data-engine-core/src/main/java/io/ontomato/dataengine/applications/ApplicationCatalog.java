@@ -20,7 +20,7 @@ public class ApplicationCatalog {
     public record PanelUseLocation(String applicationId, Map<String, String> names, String useId, String path) {}
     public record EntryMenu(List<Group> groups, List<ApplicationPanelUse> panelUses) {}
     public record ThemeOverrides(Map<String, String> light, Map<String, String> dark) {}
-    public record Delivery(List<String> panels, List<String> projections, List<String> packages, List<String> agents,
+    public record Delivery(List<String> packages, List<String> agents,
                            List<PageSkills.Skill> skills) {}
     private record PanelSettings(String framePanelId, ThemeOverrides theme, Delivery delivery) {
         JSONObject json() {
@@ -491,9 +491,8 @@ public class ApplicationCatalog {
         if (settings.framePanelId() != null && settings.framePanelId().isBlank())
             throw bad("framePanelId must be nonblank");
         var delivery = settings.delivery();
-        if (delivery != null && (delivery.panels() == null || delivery.projections() == null || delivery.packages() == null
-            || delivery.agents() == null || delivery.skills() == null))
-            throw bad("Delivery requires panels, projections, packages, agents and skills");
+        if (delivery != null && (delivery.packages() == null || delivery.agents() == null || delivery.skills() == null))
+            throw bad("Delivery requires packages, agents and skills");
     }
 
     private List<ApplicationPanelUse> visiblePanelUses(JSONObject app, User user) {
@@ -539,7 +538,7 @@ public class ApplicationCatalog {
         var ids = new HashSet<>(uses.stream().map(ApplicationPanelUse::panelId).toList());
         if (settings.framePanelId() != null) ids.add(settings.framePanelId());
         for (var panelId : ids) if (!grants.allowed(panelId, "use")) throw denied();
-        panels.requireCurrent(user.getDomainId(), settings.framePanelId(), uses, settings.delivery());
+        panels.requireCurrent(user.getDomainId(), settings.framePanelId(), uses);
         return transactions.execute(tx -> {
             lockCatalog();
             var current = all().stream().filter(app -> id.equals(app.getString("id"))).findFirst();

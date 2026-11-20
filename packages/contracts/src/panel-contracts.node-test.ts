@@ -351,7 +351,7 @@ test("nested layout and explicit events share typed state and placement", async 
 });
 
 test("entry resolution and personal-state scope use the actual use and nested path", async () => {
-  const { applicationEntryResolutionSchema, applicationPanelReferencesRequestSchema } = await import("./product-panels");
+  const { applicationDeliverySchema, applicationEntryResolutionSchema, applicationPanelReferencesRequestSchema } = await import("./product-panels");
   const { panelPersonalStateWriteRequestSchema } = await import("./panel-host");
   const { panelDefinitionSnapshotSchema } = await import("./product-subscriptions");
   const use = {
@@ -364,10 +364,13 @@ test("entry resolution and personal-state scope use the actual use and nested pa
     menu: { groups: [{ key: "plan", names: { en: "Plan" }, sort: 0 }], panelUses: [use] },
   };
   assert.deepEqual(applicationEntryResolutionSchema.parse(response), response);
-  assert.equal(applicationPanelReferencesRequestSchema.safeParse({
+  const references = {
     domainId: "domain", framePanelId: "site-frame", uses: [{ id: use.id, panelId: use.panelId, inputs: use.inputs }],
-    delivery: { panels: [use.panelId], projections: ["projection-tasks"] },
-  }).success, true);
+  };
+  assert.deepEqual(applicationPanelReferencesRequestSchema.parse(references), references);
+  const extras = { packages: ["sdk"], agents: [], skills: [] };
+  assert.deepEqual(applicationDeliverySchema.parse(extras), extras);
+  assert.equal(applicationDeliverySchema.safeParse({ ...extras, panels: [use.panelId], projections: [] }).success, false);
   const memberPath = [{ member: "frame" }, {
     member: "preview", selection: { placement: { id: "current", target: { panelId: use.panelId } } },
   }];

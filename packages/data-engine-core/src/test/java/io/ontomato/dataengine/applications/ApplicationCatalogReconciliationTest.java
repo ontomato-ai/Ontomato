@@ -165,7 +165,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
                "groups":[{"key":"school","names":{"en":"School"},"sort":1}],
                "permissions":[{"code":"app:app-school:private","names":{"en":"Private"},"groupKey":"school","sort":1}]},
              "framePanelId":"panel-frame","theme":{"light":{"--el-color-primary":"#123456"}},
-             "delivery":{"panels":["panel-frame","panel-school"],"projections":["projection-school"],"packages":[],"agents":[],"skills":[]},
+             "delivery":{"packages":["package-school"],"agents":[],"skills":[]},
              "panelUses":[
                {"id":"school","pageKey":"school","panelId":"panel-school","path":"/applications/app-school/main","access":{"kind":"domain-member"},
                 "names":{"en":"School"},"groupKey":"school","inputs":{"term":{"literal":null}}},
@@ -173,11 +173,19 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
                 "access":{"permissionCode":"app:app-school:private"}}]}
             """)).andExpect(status().isOk());
 
+        jdbc.update("""
+            UPDATE sys_application SET panel_settings = jsonb_set(panel_settings, '{delivery}',
+                panel_settings->'delivery' || '{"panels":["panel-school"],"projections":["projection-school"]}'::jsonb)
+            WHERE id='app-school'
+            """);
+        new ApplicationCatalogUpgrade(jdbc).afterPropertiesSet();
         http.perform(get(path).param("purpose", "management")).andExpect(status().isOk())
             .andExpect(jsonPath("$.data.panelUses.length()").value(2))
             .andExpect(jsonPath("$.data.declaration.permissions[0].code").value("app:app-school:private"))
             .andExpect(jsonPath("$.data.framePanelId").value("panel-frame"))
-            .andExpect(jsonPath("$.data.delivery.projections[0]").value("projection-school"));
+            .andExpect(jsonPath("$.data.delivery.packages[0]").value("package-school"))
+            .andExpect(jsonPath("$.data.delivery.panels").doesNotHaveJsonPath())
+            .andExpect(jsonPath("$.data.delivery.projections").doesNotHaveJsonPath());
         when(identity.getCurrentUser()).thenReturn(viewer);
         http.perform(get(path).param("purpose", "management")).andExpect(status().isForbidden());
         http.perform(get(path)).andExpect(status().isOk()).andExpect(jsonPath("$.data.panelUses.length()").value(1));

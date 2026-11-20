@@ -230,8 +230,7 @@ class PanelApplicationsTest {
         assertEquals(1, projection.getJSONArray("admittedEntrances").size());
         assertEquals("schedules-a", projection.getJSONArray("admittedEntrances").getJSONObject(0).getString("pageKey"));
         verify(panels).requireCurrent(eq("domain"), isNull(),
-            argThat(usesPassed -> usesPassed.stream().map(ApplicationPanelUse::panelId).toList().equals(List.of("panel-p"))),
-            isNull());
+            argThat(usesPassed -> usesPassed.stream().map(ApplicationPanelUse::panelId).toList().equals(List.of("panel-p"))));
         var write = mockingDetails(db).getInvocations().stream().filter(call -> call.getMethod().getName().equals("update")).findFirst().orElseThrow();
         assertEquals("[]", write.getArgument(18));
         assertEquals("panel-p", com.alibaba.fastjson2.JSON.parseArray(write.<String>getArgument(19)).getJSONObject(0).getString("panelId"));
@@ -248,7 +247,7 @@ class PanelApplicationsTest {
     }
 
     @Test void rejectsReferencesThatAreNotInTheCurrentPanelCollectionBeforeSaving() {
-        doThrow(new ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST)).when(panels).requireCurrent(eq("domain"), isNull(), eq(List.of(use("schedules-a", null))), isNull());
+        doThrow(new ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST)).when(panels).requireCurrent(eq("domain"), isNull(), eq(List.of(use("schedules-a", null))));
         assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a", body(List.of(use("schedules-a", null)), true), user));
         verifyNoInteractions(db);
     }
