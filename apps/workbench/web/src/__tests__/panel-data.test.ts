@@ -65,7 +65,7 @@ it("reads a member's datum for the panel's own code, as its projection declares,
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({ projection: taskData }) },
     use: { applicationId: "app-tasks", useId: "tasks" },
-    expandPageComposer: noOperations.expandPageComposer,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate,
     confirmOperation: noOperations.confirmOperation,
     read: async (request): Promise<ProductPanelReadResponse> => {
       reads.push(request);
@@ -120,7 +120,7 @@ it("says so when the projection declares no such datum", async () => {
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({ projection: taskData }) },
     use: { applicationId: "app-tasks", useId: "tasks" },
-    expandPageComposer: noOperations.expandPageComposer,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate,
     confirmOperation: noOperations.confirmOperation,
     read: async (request): Promise<ProductPanelReadResponse> =>
       ({ status: "ready", value: (request.operations ? {} : record("t-1")) as never }),
@@ -161,7 +161,7 @@ it("keeps a member whose projection cannot be read to itself: the rest of the pa
       ? Response.json({ error: { message: "Product use Grant required" } }, { status: 403 })
       : Response.json({ projection: taskData })) },
     use: { applicationId: "app-tasks", useId: "tasks" },
-    expandPageComposer: noOperations.expandPageComposer,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate,
     confirmOperation: noOperations.confirmOperation,
     read: async (request): Promise<ProductPanelReadResponse> =>
       ({ status: "ready", value: (request.operations ? { runNow } : record("t-1")) as never }),
@@ -194,7 +194,7 @@ it("says where to call it when it is called outside a component's setup", async 
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({ projection: taskData }) },
     use: { applicationId: "app-tasks", useId: "tasks" },
-    expandPageComposer: noOperations.expandPageComposer,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate,
     confirmOperation: noOperations.confirmOperation,
     read: async (): Promise<ProductPanelReadResponse> => ({ status: "ready", value: {} as never }),
   });
@@ -229,7 +229,7 @@ it("reads a list and its counts again when an operation reports their type chang
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({ projection: counted }) },
     use: { applicationId: "app-board", useId: "board" },
-    expandPageComposer: noOperations.expandPageComposer,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate,
     confirmOperation: noOperations.confirmOperation,
     read: async (request): Promise<ProductPanelReadResponse> => {
       reads.push(request);
@@ -263,4 +263,96 @@ it("reads a list and its counts again when an operation reports their type chang
   await nextTick();
   expect(reads.filter((read) => read.dataName).length).toBe(before);
   run.dispose();
+});
+
+it("runs a member's operation from the panel's own code, found by the member and its name, once its owner admits it", async () => {
+  const element = document.createElement("div");
+  document.body.append(element);
+  const intents: unknown[] = [];
+  const confirmed: string[] = [];
+  let mounted!: (mount: DirectPanelMount) => void;
+  const mount = new Promise<DirectPanelMount>((resolve) => { mounted = resolve; });
+  const module = panelModuleFor({
+    mounted, element, template: `<button class="run" :disabled="!runNow.operation.value">{{ runNow.operation.value?.label ?? "none" }}</button>`,
+    install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
+    manifest,
+    run: {
+      pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
+      failed: (reason) => { throw reason; },
+    },
+    messages: {}, locale: ref("en"), defaultLocale: "en",
+    requests: { request: async (path: string, init?: { body?: unknown }) => {
+      if (path === "/panel-operations/intents") {
+        intents.push(JSON.parse(String(init!.body)));
+        return Response.json({ intentId: "5f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d05", operationId: "task.runNow", label: "Run now", confirmation: { kind: "none" } });
+      }
+      return Response.json({ projection: taskData });
+    } },
+    use: { applicationId: "app-tasks", useId: "tasks" },
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate,
+    confirmOperation: async ({ intentId }) => {
+      confirmed.push(intentId);
+      return { decision: "confirm", response: { kind: "dispatched", intentId, outcome: { kind: "success", data: {} } } };
+    },
+    read: async (request): Promise<ProductPanelReadResponse> => {
+      const task = request.inputs.task as { primaryKey: string } | null;
+      if (request.operations) return { status: "ready", value: (task ? { runNow } : {}) as never };
+      return { status: "ready", value: record(task!.primaryKey) as never };
+    },
+  });
+  let handle!: ReturnType<typeof module.usePanelOperation>;
+  const { context } = await module.mountPanel({
+    setup() {
+      handle = module.usePanelOperation("task", "runNow");
+      return { runNow: handle };
+    },
+  });
+  // Nothing chosen: the owner admits nothing, and the page shows it cannot run.
+  await vi.waitFor(() => expect(element.querySelector(".run")?.textContent).toBe("none"));
+  expect(handle.operation.value).toBeNull();
+
+  context.instance.state.set("selectedTask", chosen("t-1"));
+  await vi.waitFor(() => expect(element.querySelector(".run")?.textContent).toBe("Run now"));
+  await handle.run();
+  // It ran as the header's does: one intent for the chosen task, confirmed by the host.
+  expect(intents).toEqual([{ applicationId: "app-tasks", useId: "tasks", operationId: "task.runNow", call: {
+    target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "t-1" }, input: {},
+  } }]);
+  expect(confirmed).toEqual(["5f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d05"]);
+  (await mount).dispose();
+  expect(() => module.usePanelOperation("task", "runNow")).toThrow("Call usePanelOperation in a component's setup");
+});
+
+it("opens a platform address from the panel's own code through the host, and hears why it could not", async () => {
+  const element = document.createElement("div");
+  document.body.append(element);
+  const opened: string[] = [];
+  let mounted!: (mount: DirectPanelMount) => void;
+  const mount = new Promise<DirectPanelMount>((resolve) => { mounted = resolve; });
+  const module = panelModuleFor({
+    mounted, element, template: "<p></p>",
+    install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
+    manifest,
+    run: {
+      pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
+      failed: (reason) => { throw reason; },
+    },
+    messages: {}, locale: ref("en"), defaultLocale: "en",
+    requests: { request: async () => Response.json({ projection: taskData }) },
+    use: { applicationId: "app-tasks", useId: "tasks" },
+    expandPageComposer: noOperations.expandPageComposer, confirmOperation: noOperations.confirmOperation,
+    // The host opens what it can, and says why it cannot otherwise.
+    navigate: async (address) => {
+      opened.push(address);
+      if (address.startsWith("/missing")) throw new Error(`This address is not a page you can open: ${address}`);
+    },
+    read: async (): Promise<ProductPanelReadResponse> => ({ status: "ready", value: {} as never }),
+  });
+  const { context } = await module.mountPanel({ setup: () => ({}) });
+  await context.navigate("/agents/chat?agentId=agent-knowledge-governance");
+  await expect(context.navigate("/missing")).rejects.toThrow("This address is not a page you can open: /missing");
+  expect(opened).toEqual(["/agents/chat?agentId=agent-knowledge-governance", "/missing"]);
+  (await mount).dispose();
 });
