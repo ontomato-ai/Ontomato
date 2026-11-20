@@ -9,6 +9,16 @@ CSS styles this panel's layout and member containers. Use design variables to ad
 Keep scripts and inline handlers out of the HTML. Use `<panel-member ref="detail"></panel-member>` to place members,
 `when` for conditions, `each` for repetitions and declared member outputs or panel events for interactions.
 
+Use ordinary links to navigate. Copy the destination's hash route, or append `?state=` followed by URL-encoded
+JSON when the destination has deep-link state. For example:
+
+```html
+<a href="#/applications/inventory/records">Inventory records</a>
+<a href="https://example.com/help" target="_blank">Help</a>
+```
+
+Use a member output or panel event to change state on the current page.
+
 In `panel.json`, write `{manifest, content?}`. The manifest holds `state`, `members` and `events`. Bind a list's
 `outputs.selected` to an object-reference state, then use it as the detail or form input. Bind `outputs.search`
 when other members or the address need the same search. A matching parameter name uses this state binding.
