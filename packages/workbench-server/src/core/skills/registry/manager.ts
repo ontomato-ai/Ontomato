@@ -58,16 +58,23 @@ export class SkillRegistryManager {
     let supplied: StandardSkillFrontmatter;
     try { supplied = await readManifest(); }
     catch (error) {
-      if (protectedOffering && error instanceof SkillSourceRecordError) throw error;
-      throw providerFailure(provider, `read the manifest for ${refLabel(skill)}`, error, !protectedOffering);
+      if (protectedOffering) {
+        if (error instanceof SkillSourceRecordError) throw error;
+        throw providerFailure(provider, `read the manifest for ${refLabel(skill)}`, error, false);
+      }
+      throw new InvalidSkillPackageError(`Skill provider "${provider.name}" (${provider.id}) returned an invalid `
+        + `manifest for ${refLabel(skill)}: ${String(error)}`);
     }
     const parsed = standardSkillFrontmatterSchema.safeParse(supplied);
     if (!parsed.success || parsed.data.name !== skill.name) {
       if (protectedOffering && protectedOffering.resourceIds.includes(protectedOffering.sourceKey))
         throw new SkillSourceRecordError({ resourceId: protectedOffering.sourceKey,
           field: parsed.success ? "name" : "manifest", reason: "invalid_definition" });
+      if (parsed.success) throw new InvalidSkillPackageError(`Skill provider "${provider.name}" (${provider.id}) returned a mismatched manifest `
+        + `for ${refLabel(skill)}`);
+      if (protectedOffering) throw providerFailure(provider, `read the manifest for ${refLabel(skill)}`, parsed.error, false);
       throw new InvalidSkillPackageError(`Skill provider "${provider.name}" (${provider.id}) returned an invalid `
-        + `manifest for ${refLabel(skill)}`);
+        + `manifest for ${refLabel(skill)}: ${String(parsed.error)}`);
     }
     const manifest = parsed.data;
     const key = runtimeSkillKey(skill);
