@@ -22,12 +22,14 @@ const fixture = {
 const agentId = randomUUID();
 let server: Awaited<ReturnType<typeof startPanelSkillEntryServer>>;
 let base: string;
+let staticEntrances: PanelSkillSource["entrance"][] | undefined;
 let skill: RuntimeSkillRef;
 const published = vi.fn();
 
 beforeAll(async () => {
   server = await startPanelSkillEntryServer({
     entries: fixture.uses, grants: fixture.grants, onPublish: published,
+    admittedEntrances: () => staticEntrances,
     nativeMapping: () => fixture.native ? { permissionCode: "business-knowledge", skill: governance,
       defaults: [{ pageKey: "other-settings", defaultAgent: governanceDefault }] } : undefined,
   });
@@ -157,3 +159,123 @@ it("opens registered panel entries, selects the regular assistant and installs t
     fixture.grants.add("records");
   }
 }, 30000);
+
+function sourceFor(panelId: string): PanelSkillSource {
+  return { applicationId: "catalogue", useId: panelId, panelId, path: "/catalogue/" + panelId,
+    entrance: { access: "domain-member", pageKey: panelId } };
+}
+function currentMember(use: PanelSkillSource) {
+  return { source: { kind: "application-use" as const, applicationId: use.applicationId, useId: use.useId },
+    memberPath: [], ref: protectedSkillRef("product-panels", fixture.domainId, use.panelId) };
+}
+function submitSkills(skills: RuntimeSkillRef[], id = agentId) {
+  return fetch(`${base}/agent-definitions/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Edited", description: "", icon: null, enabled: true, systemPrompt: "", skills }) });
+}
+
+it("catalogue diagnostics isolate an admitted broken projection across list, point read, candidates and prepare", async () => {
+  const good = server.entries[0]!;
+  const broken = sourceFor("catalogue-broken-panel");
+  const projection = "catalogue-broken-projection";
+  const privateText = "private contents of the invalid projection";
+  const pool = getPostgresPool();
+  await pool.query(`INSERT INTO ${table("product_projections")} (id,domain_id,owner_id,definition)
+    SELECT $1, domain_id, owner_id, (definition - 'componentId') || jsonb_build_object('description',$2::text)
+    FROM ${table("product_projections")} WHERE id='records' AND domain_id=$3`, [projection, privateText, fixture.domainId]);
+  await pool.query(`INSERT INTO ${table("product_panels")} (id,domain_id,owner_id,definition)
+    SELECT $1,domain_id,owner_id,jsonb_set(definition,'{manifest,members,records,target,projectionId}',to_jsonb($2::text))
+    FROM ${table("product_panels")} WHERE id=$3 AND domain_id=$4`, [broken.panelId, projection, good.panelId, fixture.domainId]);
+  fixture.uses.splice(0, fixture.uses.length, good, broken);
+  for (const id of [good.panelId, broken.panelId, projection, "records"]) fixture.grants.add(id);
+
+  const goodRef = currentMember(good).ref;
+  const member = currentMember(broken);
+  for (const url of [server.origin + "/api/skills", base + "/agent-skills"]) {
+    const response = await fetch(url);
+    expect(response.status).toBe(200);
+    const catalogue = await response.json();
+    const refs = catalogue.skills.map((option: { skill: RuntimeSkillRef }) => option.skill);
+    expect(refs).toContainEqual(goodRef);
+    expect(refs).not.toContainEqual(member.ref);
+    expect(catalogue.diagnostics).toEqual({ sourceUnavailable: false, items: [
+      { skill: member.ref, resourceId: projection, field: "componentId", reason: "invalid_definition" },
+    ] });
+    expect(JSON.stringify(catalogue)).not.toContain(privateText);
+  }
+
+  const files = await fetch(`${server.origin}/api/skills/${member.ref.name}/files`);
+  expect(files.status).toBe(502);
+  expect(await files.json()).toMatchObject({ code: "SKILL_SOURCE_UNAVAILABLE", details: { resourceId: projection } });
+  const candidates = await (await fetch(base + "/agents")).json();
+  const regular = candidates.agents.find((agent: { id: string }) => agent.id === server.regularAgentId);
+  expect(regular.effectiveSkills).toContainEqual(goodRef);
+  expect(regular.effectiveSkills).not.toContainEqual(member.ref);
+  const query = new URLSearchParams({ ...broken.entrance, member: JSON.stringify(member) });
+  expect((await fetch(base + "/agents?" + query)).status).toBe(502);
+  query.set("member", JSON.stringify({ ...member, ref: goodRef }));
+  expect((await fetch(base + "/agents?" + query)).status).toBe(403);
+  const { prepareAssistantSkills } = await import("../../services/assistant/skills");
+  const creds = { token: "editor" };
+  await expect(prepareAssistantSkills(fixture.domainId, { kind: "regular", skills: [] }, creds))
+    .rejects.toMatchObject({ status: 502, details: { skill: member.ref } });
+  await expect(prepareAssistantSkills(fixture.domainId, { kind: "custom", skills: [member.ref] }, creds))
+    .rejects.toMatchObject({ status: 502 });
+  const prepared = await prepareAssistantSkills(fixture.domainId, { kind: "custom", skills: [goodRef] }, creds);
+  expect(prepared.skills).toEqual([{ skill: goodRef, digest: expect.stringMatching(/^[a-f0-9]{64}$/) }]);
+  fixture.grants.delete(projection);
+  const revoked = await (await fetch(server.origin + "/api/skills")).json();
+  expect(revoked.diagnostics).toBeUndefined();
+  expect(JSON.stringify(revoked)).not.toContain(member.ref.name);
+});
+
+it("catalogue diagnostics distinguish hidden and uncertain through an owned entrance without disclosing unresolved names", async () => {
+  const { registerPageSkillSourceOwner } = await import("../../services/skills/view");
+  const hidden = sourceFor("catalogue-hidden"), uncertain = sourceFor("catalogue-uncertain");
+  const dynamic = hidden.entrance;
+  const identity = { providerId: "product-panels", sourceKey: uncertain.panelId };
+  registerPageSkillSourceOwner({
+    kinds: ["home"],
+    listAssociations: async () => [{ entrance: dynamic, identity }],
+    resolve: async () => identity,
+  });
+  // Both registered panels lack their rows. Only the dynamic association and the required root grant remain.
+  fixture.uses.splice(0, fixture.uses.length, hidden, uncertain);
+  staticEntrances = [hidden.entrance];
+  fixture.grants.add(uncertain.panelId);
+  const hiddenRef = currentMember(hidden).ref, uncertainRef = currentMember(uncertain).ref;
+  const guess = protectedSkillRef("product-panels", fixture.domainId, "not-registered");
+  const refs = [hiddenRef, uncertainRef, guess];
+  const { prepareAssistantSkills } = await import("../../services/assistant/skills");
+  const updateStored = (roots: RuntimeSkillRef[]) => getPostgresPool().query(
+    `UPDATE ${table("assistant_agents")} SET skills=$2 WHERE id=$1`, [agentId, JSON.stringify(roots)]);
+  await updateStored([]);
+  const catalogue = await (await fetch(server.origin + "/api/skills")).json();
+  expect(catalogue.diagnostics).toEqual({ items: [], sourceUnavailable: true });
+  for (const ref of refs) expect(JSON.stringify(catalogue)).not.toContain(ref.name);
+  const probe = async (read: (ref: RuntimeSkillRef) => Promise<Response>, status: number) => {
+    const answers = await Promise.all(refs.map(async ref => {
+      const res = await read(ref);
+      expect(res.status).toBe(status);
+      return res.json();
+    }));
+    expect(answers[1]).toEqual(answers[0]);
+    expect(answers[2]).toEqual(answers[0]);
+    for (const ref of refs) expect(JSON.stringify(answers[0])).not.toContain(ref.name);
+  };
+  const files = (ref: RuntimeSkillRef) => fetch(`${server.origin}/api/skills/${ref.name}/files`);
+  await probe(files, 502);
+  await probe(ref => submitSkills([ref]), 502);
+  const member = { source: { kind: "home" }, memberPath: [], ref: uncertainRef };
+  expect((await fetch(base + "/agents?" + new URLSearchParams({ ...dynamic, member: JSON.stringify(member) }))).status).toBe(502);
+  await expect(prepareAssistantSkills(fixture.domainId, { kind: "regular", skills: [] }, { token: "editor" }))
+    .rejects.toMatchObject({ code: "SKILL_SOURCE_UNAVAILABLE" });
+
+  fixture.grants.delete(uncertain.panelId);
+  expect((await (await fetch(server.origin + "/api/skills")).json()).diagnostics).toBeUndefined();
+  await probe(files, 404);
+  await probe(ref => submitSkills([ref]), 400);
+  expect((await prepareAssistantSkills(fixture.domainId, { kind: "regular", skills: [] }, { token: "editor" })).skills).toEqual([]);
+  fixture.grants.add(uncertain.panelId);
+  fixture.uses.splice(0, 1); // The owned entrance no longer has a matching Java group.
+  expect((await (await fetch(server.origin + "/api/skills")).json()).diagnostics).toBeUndefined();
+});
