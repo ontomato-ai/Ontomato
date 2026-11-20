@@ -4,6 +4,9 @@ import {
 } from "@ontomato/contracts/panel-manifest";
 import { parsePanelLayout, type PanelLayoutNode } from "@ontomato/contracts/panel-layout";
 import {
+  authoredReadParameterSource, directReadDeclaration, missingRequiredReadParameters, panelReadInputMatches, panelReadParameterId,
+} from "@ontomato/contracts/panel-projection";
+import {
   panelNeedsFrame, productPanelInputSchema, productProjectionInputSchema, type ProductPanelInput, type ProductProjectionInput,
 } from "@ontomato/contracts/product-panels";
 import type { PoolClient } from "pg";
@@ -11,7 +14,9 @@ import { getPostgresPool, qualifiedTable as table } from "../../infrastructure/p
 import { findCurrentProduct, type CurrentProductKind } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
+import { assertAppBuilderAccess } from "../app-builder/access";
 import { requireProductGrant, type ProductOwner } from "../product-governance/grants";
+import { readPanelComponentCatalogue } from "./component-catalogue";
 import { listObjectDetailPanelMappings } from "./object-detail";
 import { panelStateDomainPrefix, panelStateKeyNamespace } from "./personal-state-key";
 
@@ -170,12 +175,28 @@ function ports(definition: ProductPanelInput | ProductProjectionInput) {
   return { inputs: external, outputs: external };
 }
 
-function incompatiblePort(
+async function incompatiblePort(
   source: PanelManifest, { key, wiring, itemType }: Reference, definition: ProductPanelInput | ProductProjectionInput,
+  readCatalogue = readPanelComponentCatalogue,
 ) {
   const target = ports(definition);
+  const implicit = new Set<string>();
+  const reads = "data" in definition ? Object.entries(definition.data).map(([name, datum]) => ({
+    name, datum, declaration: directReadDeclaration(definition, datum)!,
+  })) : [];
+  for (const name of new Set([...Object.keys(wiring.inputs ?? {}), ...Object.keys(wiring.outputs ?? {})])) {
+    for (const { datum, declaration } of reads) {
+      const binding = authoredReadParameterSource(datum.params, name, wiring);
+      const parameter = panelReadParameterId(declaration, name);
+      if (!binding || !("state" in binding) || !parameter) continue;
+      if (!panelReadInputMatches(parameter, source.state[binding.state]?.type))
+        return `read parameter '${name}' does not accept its connected state field`;
+      implicit.add(name);
+    }
+  }
   for (const [name, value] of Object.entries(wiring.inputs ?? {})) {
     const type = target.inputs[name];
+    if (!type && "state" in value && implicit.has(name)) continue;
     if (!type) return `input '${name}' was removed or is not exposed`;
     const offered = "state" in value ? source.state[value.state]?.type : itemType;
     if (!("literal" in value) && offered === undefined) return `input '${name}' has no declared value source`;
@@ -187,6 +208,7 @@ function incompatiblePort(
   for (const [name, value] of Object.entries(wiring.outputs ?? {})) {
     const type = target.outputs[name];
     const field = source.state[value.state];
+    if (!type && implicit.has(name)) continue;
     if (!type || !field || !panelPortAccepts(field.type, type))
       return `output '${name}' does not match its connected field`;
   }
@@ -197,6 +219,15 @@ function incompatiblePort(
     if ("set" in action && Object.entries(action.set.fields)
       .some(([field, value]) => "event" in value && !panelPortAccepts(source.state[field].type, type)))
       return `output '${on.output}' does not match its event's state fields`;
+  }
+  if ("data" in definition) {
+    for (const { name, datum, declaration } of reads) {
+      if (!missingRequiredReadParameters(declaration, datum.params, undefined, wiring).length) continue;
+      const { components } = await readCatalogue();
+      const runtimeParams = components.get(definition.componentId)?.data?.[name]?.runtimeParams;
+      const [missing] = missingRequiredReadParameters(declaration, datum.params, runtimeParams, wiring);
+      if (missing !== undefined) return `data '${name}' requires parameter '${missing}'`;
+    }
   }
 }
 
@@ -211,6 +242,8 @@ export async function validateCurrentProductReferences(
   input: ProductPanelInput | ProductProjectionInput, client: PoolClient,
 ) {
   const [panels, details] = await Promise.all([loadPanels(owner.domainId, client), loadDetails(owner.domainId, client)]);
+  let catalogue: ReturnType<typeof readPanelComponentCatalogue> | undefined;
+  const readCatalogue = () => catalogue ??= readPanelComponentCatalogue();
   if ("manifest" in input) panels.set(id, input);
   const saved = await loadSavedPlacements(owner.domainId, panels, client);
   if ("manifest" in input) {
@@ -220,25 +253,29 @@ export async function validateCurrentProductReferences(
     const authorized = new Set<string>();
     for (const reference of collectReferences(input, details)) {
       const { target, key } = reference;
+      const known = inspected.get(target.id);
+      const stored = known ?? (target.kind === "panel" ? panels.get(target.id)
+        : (await findCurrentProduct(owner.domainId, "projection", target.id, client))?.definition);
+      if (!stored) {
+        await assertAppBuilderAccess(credentials);
+        const kind = target.kind === "panel" ? "Panel" : "Projection";
+        throw new HttpError(404, `Panel '${id}', member '${key}' – ${kind} '${target.id}' does not exist`, "PRODUCT_UNAVAILABLE");
+      }
       if (!reference.fromObjectDetail && !authorized.has(target.id)) {
         await requireProductGrant(target.id, "use", credentials);
         authorized.add(target.id);
       }
-      let definition = inspected.get(target.id);
-      if (!definition) {
-        definition = target.kind === "panel" ? panels.get(target.id) : await requireProjection(owner.domainId, target.id, client);
-        if (!definition) throw new HttpError(404, "Current member definition not found", "PRODUCT_UNAVAILABLE");
-        inspected.set(target.id, definition);
-      }
-      const issue = incompatiblePort(input.manifest, reference, definition);
-      if (issue) throw new HttpError(400, `Member '${key}': ${issue}`, "PANEL_PORT_MISMATCH");
+      const definition = known ?? (target.kind === "panel" ? panels.get(target.id)! : productProjectionInputSchema.parse(stored));
+      inspected.set(target.id, definition);
+      const issue = await incompatiblePort(input.manifest, reference, definition, readCatalogue);
+      if (issue) throw new HttpError(400, `Panel '${id}', member '${key}' – ${issue}`, "PANEL_PORT_MISMATCH");
     }
   }
 
   for (const [parentId, panel] of panels) {
     for (const reference of collectReferences(panel, details, saved.get(parentId))) {
       if (reference.target.kind !== kind || reference.target.id !== id) continue;
-      const issue = incompatiblePort(panel.manifest, reference, input);
+      const issue = await incompatiblePort(panel.manifest, reference, input, readCatalogue);
       if (issue) throw new HttpError(409, `Connected ${issue}`, "PRODUCT_PORT_IN_USE");
     }
   }
@@ -256,7 +293,7 @@ export async function validateObjectDetailPanelMapping(domainId: string, classNa
   for (const [parentId, panel] of panels) {
     for (const reference of collectReferences(panel, details, saved.get(parentId))) {
       if (reference.target.kind !== "panel" || reference.target.id !== panelId) continue;
-      const issue = incompatiblePort(panel.manifest, reference, target);
+      const issue = await incompatiblePort(panel.manifest, reference, target);
       if (issue) throw new HttpError(409, `Connected ${issue}`, "PRODUCT_PORT_IN_USE");
     }
   }
@@ -272,7 +309,7 @@ export async function validatePersonalPlacement(
   const definition = target.kind === "panel" ? panels.get(target.id) : await requireProjection(owner.domainId, target.id, client);
   if (!definition) throw new HttpError(404, "Selected member does not exist", "PRODUCT_UNAVAILABLE");
 
-  const issue = incompatiblePort(panel.manifest, { key: field, target, wiring: placement }, definition);
+  const issue = await incompatiblePort(panel.manifest, { key: field, target, wiring: placement }, definition);
   if (issue) throw new HttpError(400, `Personal placement '${field}': ${issue}`, "PANEL_PORT_MISMATCH");
 
   if (target.kind === "panel") rejectCycles(panels, details, [target.id], ancestors);

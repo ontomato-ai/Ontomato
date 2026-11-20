@@ -32,7 +32,10 @@ vi.mock("../../infrastructure/postgres", () => ({
 }));
 vi.mock("../../config/application", () => ({ config: { dataQuery: { get baseUrl() { return state.base; } } } }));
 vi.mock("../../config/environment", () => ({
-  environment: { agentRuntime: () => ({ queryServiceToken: "fixture-service" }), publicBasePath: () => "" },
+  environment: {
+    agentRuntime: () => ({ queryServiceToken: "fixture-service" }), publicBasePath: () => "",
+    queryBase: () => state.base, queryTimeout: () => 30000,
+  },
 }));
 vi.mock("../../utils/request-identity", async original => ({
   ...await original<typeof import("../../utils/request-identity")>(),
@@ -74,12 +77,19 @@ beforeAll(async () => {
     res.json({ success: true });
   });
   app.post("/product-governance/check", (req, res) => {
-    expect(req.header("tk")).toBe("host-reader");
-    res.json({ allowed: grants.has(req.body.id) });
+    res.json({ allowed: req.header("tk") === "host-reader" && grants.has(req.body.id) });
   });
   app.post("/product-governance/resources", (req, res) => {
     expect(req.header("tk")).toBe("host-reader");
     res.json({ ids: [...grants] });
+  });
+  app.get("/platform/applications", (req, res) => {
+    expect(req.query.purpose).toBe("navigation");
+    res.json({ success: true, data: req.header("tk") !== "host-reader" ? [] : [{
+      id: "app-builder", kind: "native", names: { en: "App Builder" }, descriptions: {}, icon: "Hammer",
+      rail: "apps", category: "build", sort: 1, entry: { path: "/app-builder" },
+      entryAccess: ["app-builder"], scheduleAdapter: null, releaseId: null,
+    }] });
   });
   app.get("/platform/applications/app-mixed/panel-uses", (req, res) => {
     expect(req.header("tk")).toBe("host-reader");
@@ -90,7 +100,7 @@ beforeAll(async () => {
     } });
   });
   app.use("/api", (req, _res, next) => {
-    Object.assign(req, { domainId: "pilot", userId: "reader", token: "host-reader", locale: "en" });
+    Object.assign(req, { domainId: "pilot", userId: "reader", token: req.header("X-Test-Token") ?? "host-reader", locale: "en" });
     next();
   });
   app.use("/api/product-panels", productPanelsRouter);
@@ -101,6 +111,52 @@ beforeAll(async () => {
     const started = app.listen(0, "127.0.0.1", () => resolve(started));
   });
   state.base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+});
+
+it("identifies malformed registrations and missing author references without bypassing use grants", async () => {
+  const summary = trial.projections.find(projection => projection.id === "projection-schedules-summary")!;
+  const { data: _data, ...input } = projectionRequest(summary.input, 0) as { data: unknown };
+  const invalidProjection = await request("PUT", "product-projections/author-invalid", input);
+  expect(invalidProjection.status).toBe(400);
+  expect(await invalidProjection.json()).toMatchObject({ error: {
+    code: "INVALID_REQUEST", message: "Projection 'author-invalid', field 'data' is required",
+  } });
+
+  const panel = {
+    name: "Author panel", description: "", visibility: "private", revision: 0,
+    content: { html: '<section><panel-member ref="summary"></panel-member></section>' },
+    manifest: { state: {}, members: { summary: { target: { projectionId: "author-missing" } } }, events: {} },
+  };
+  const extraField = await request("PUT", "product-panels/author-panel", { ...panel, typo: true });
+  expect(extraField.status).toBe(400);
+  expect(await extraField.json()).toMatchObject({ error: {
+    code: "INVALID_REQUEST", message: "Panel 'author-panel', field 'typo' is not allowed",
+  } });
+  const invalidReference = await request("PUT", "product-panels/author-panel", panel);
+  expect(invalidReference.status).toBe(404);
+  expect(await invalidReference.json()).toMatchObject({ error: {
+    code: "PRODUCT_UNAVAILABLE", message: expect.stringContaining("Projection 'author-missing' does not exist"),
+  } });
+  expect(grants.has("author-panel")).toBe(false);
+
+  for (const [collection, kind] of [["product-projections", "Projection"], ["product-panels", "Panel"]]) {
+    const lookup = await request("GET", collection + "/author-missing");
+    expect(lookup.status).toBe(404);
+    expect(await lookup.json()).toMatchObject({ error: {
+      code: "PRODUCT_UNAVAILABLE", message: `${kind} 'author-missing' does not exist`,
+    } });
+  }
+  const readerLookup = await fetch(state.base + "/api/product-projections/author-missing", {
+    headers: { "X-Test-Token": "ordinary-reader" },
+  });
+  expect(readerLookup.status).toBe(403);
+
+  const saved = await request("PUT", "product-projections/author-protected", projectionRequest(summary.input, 0));
+  expect(saved.status).toBe(200);
+  grants.delete("author-protected");
+  const forbidden = await request("GET", "product-projections/author-protected");
+  expect(forbidden.status).toBe(403);
+  expect(await forbidden.json()).toMatchObject({ error: { code: "PRODUCT_FORBIDDEN" } });
 });
 
 it("checks projection data against the current release before registering or changing a record", async () => {
@@ -118,8 +174,13 @@ it("checks projection data against the current release before registering or cha
   await rejects("catalogue-wrong-result", { ...summary, data: { record: rows } }, "PANEL_COMPONENT_DATA_RESULT_MISMATCH");
   await rejects("catalogue-unknown-data", { ...summary, data: { ...summary.data, extra: rows } }, "PANEL_COMPONENT_DATA_UNKNOWN");
   await rejects("catalogue-missing-record", { ...summary, data: {} }, "PANEL_COMPONENT_DATA_REQUIRED");
-  await rejects("catalogue-missing-alternative", { ...summary, componentId: "@ontomato/sdk:ObjectList", data: {} }, "PANEL_COMPONENT_DATA_REQUIRED");
   expect([...grants].some(id => id.startsWith("catalogue-"))).toBe(false);
+
+  const optional = await request("PUT", "product-projections/catalogue-optional-data", {
+    ...summary, componentId: "@ontomato/sdk:SegmentedControl", data: {}, inputs: {},
+    config: { options: [{ value: "all", label: "All" }] },
+  });
+  expect(optional.status, await optional.text()).toBe(200);
 
   const id = "catalogue-existing";
   const saved = await request("PUT", "product-projections/" + id, summary);
