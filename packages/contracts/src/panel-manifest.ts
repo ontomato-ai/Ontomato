@@ -57,7 +57,8 @@ export type OntologyChildObjectType = z.infer<typeof ontologyChildObjectTypeSche
 
 const explicitObjectUnionTypeSchema = z.object({
   kind: z.literal("object-union"),
-  objectTypes: z.array(ontologyTypeId.refine((id) => Object.hasOwn(platformObjectTypes, id), "Undeclared platform object type")).nonempty(),
+  objectTypes: z.array(ontologyTypeId.refine((id) => Object.hasOwn(platformObjectTypes, id), "Undeclared platform object type"))
+    .nonempty(),
 }).strict();
 
 const layeredObjectUnionTypeSchema = z.object({
@@ -65,16 +66,21 @@ const layeredObjectUnionTypeSchema = z.object({
   layers: z.array(z.enum(platformOntologyLayers)).nonempty(),
 }).strict();
 
-/** One selected object whose type is declared explicitly or belongs to one of the selected layers. */
-export const ontologyObjectUnionTypeSchema = z.union([explicitObjectUnionTypeSchema, layeredObjectUnionTypeSchema]);
+/** One selected object drawn from the declared layers, explicit types, or both. */
+export const ontologyObjectUnionTypeSchema = z.union([
+  explicitObjectUnionTypeSchema,
+  layeredObjectUnionTypeSchema,
+  layeredObjectUnionTypeSchema.merge(explicitObjectUnionTypeSchema),
+]);
 export type OntologyObjectUnionType = z.infer<typeof ontologyObjectUnionTypeSchema>;
 
 /** Resolve layer selectors against the current type declarations, keeping the selector in the stored manifest. */
 export function objectUnionTypes(field: OntologyObjectUnionType): readonly string[] {
-  if ("objectTypes" in field) return field.objectTypes;
-  return Object.entries(platformObjectTypes)
-    .filter(([, { layer }]) => layer !== undefined && field.layers.includes(layer))
+  const layers = "layers" in field ? field.layers : undefined;
+  const layeredTypes = layers === undefined ? [] : Object.entries(platformObjectTypes)
+    .filter(([, { layer }]) => layer !== undefined && layers.includes(layer))
     .map(([id]) => id);
+  return [...new Set([...layeredTypes, ...("objectTypes" in field ? field.objectTypes : [])])];
 }
 
 /** The vocabulary for consumers that bind only a single known object type or a scalar. */
