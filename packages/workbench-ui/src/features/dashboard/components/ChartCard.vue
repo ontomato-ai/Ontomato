@@ -4,13 +4,15 @@
     class="chart-container"
     :class="{ 'chart-container--draft': draft, 'chart-container--selected': selected }"
     tabindex="0"
+    role="group"
+    :aria-labelledby="titleId"
     @click="selectUnlessControl"
     @focusin="select"
-    @keydown.enter.prevent="select"
+    @keydown.enter.self.prevent="select"
   >
     <div class="chart-header">
       <div class="chart-heading">
-        <h3 :title="shownTitle">{{ shownTitle }}</h3>
+        <h3 :id="titleId" :title="shownTitle">{{ shownTitle }}</h3>
         <span
           v-if="partialNotice && state !== 'empty'"
           class="chart-partial"
@@ -87,7 +89,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, useId } from "vue";
 import interact from "interactjs";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { TriangleAlert } from "lucide-vue-next";
@@ -134,6 +136,7 @@ const emit = defineEmits([
 ]);
 
 const rootRef = ref(null);
+const titleId = useId();
 let interactable = null;
 const loading = computed(() => props.chart.state === "loading");
 const title = computed(() => String(props.chart?.title || props.chart?.name || ""));
@@ -308,6 +311,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .chart-container {
+  container-type: inline-size;
   grid-column: span var(--col-span, 1);
   grid-row: span var(--row-span, 1);
   height: 100%;
@@ -470,7 +474,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 2px;
+  gap: var(--spacing-xs);
   max-width: 0;
   overflow: hidden;
   opacity: 0;
@@ -483,7 +487,7 @@ onBeforeUnmount(() => {
 .chart-container:focus-within :deep(.ai-chart-toolbar),
 :deep(.ai-chart-toolbar[data-open="1"]) {
   max-width: none;
-  margin-left: var(--spacing-sm);
+  margin-inline-start: var(--spacing-sm);
   overflow: visible;
   opacity: 1;
   pointer-events: auto;
@@ -492,10 +496,21 @@ onBeforeUnmount(() => {
 @media (hover: none) {
   :deep(.ai-chart-toolbar) {
     max-width: none;
-    margin-left: var(--spacing-sm);
+    margin-inline-start: var(--spacing-sm);
     overflow: visible;
     opacity: 1;
     pointer-events: auto;
+  }
+}
+
+@container (max-width: 200px) {
+  .chart-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--spacing-xs); }
+  .chart-container :deep(.ai-chart-toolbar) {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+    max-width: 100%;
+    margin-inline-start: 0;
+    flex-wrap: wrap;
   }
 }
 

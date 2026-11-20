@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ManagerIconButton from "../components/ManagerIconButton.vue";
 import { inject, onBeforeUnmount, ref, watch } from "vue";
 import { workspaceObjectHostKey, type WorkspaceObjectHost } from "@ontomato/contracts/workspace-objects";
 import { ElAlert, ElButton, ElSkeleton, vLoading } from "element-plus";
@@ -93,7 +94,7 @@ watch(() => JSON.stringify([props.reference.className, props.reference.primaryKe
       <div class="object-heading"><el-button text :icon="ArrowLeft" @click="emit('back')">{{ ot('ovBack') }}</el-button><span class="title-divider" /><div class="object-title"><h2>{{ displayName }}</h2></div>
         <el-button v-if="workspaceHost" class="object-favorite" :class="{ 'is-favorited': pinned }" text :loading="pinBusy" :disabled="loading || !!error" :aria-label="pinLabel" :aria-pressed="pinned" :title="pinLabel" @click="togglePin"><Star v-if="!pinBusy" :size="16" :fill="pinned ? 'currentColor' : 'none'" aria-hidden="true" /></el-button>
       </div>
-      <div class="object-actions"><el-button text :icon="RefreshCw" :disabled="loading" @click="load">{{ ot('ovRefresh') }}</el-button><el-button type="primary" plain :icon="Settings2" :title="ot('ovConfigureObject')" :aria-label="ot('ovConfigureObject')" @click="emit('edit')">{{ ot('ovConfigure') }}</el-button></div>
+      <div class="object-actions"><ManagerIconButton :icon="RefreshCw" :label="ot('ovRefresh')" :loading="loading" @click="load" /><el-button :icon="Settings2" :aria-label="ot('ovConfigureObject')" @click="emit('edit')">{{ ot('ovConfigure') }}</el-button></div>
     </header>
     <div v-if="pinError" class="object-page-error" role="alert"><el-alert type="error" :title="pinError" :closable="false" /></div>
     <div v-if="error" class="object-page-error" role="alert">

@@ -395,6 +395,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
 <template>
   <AgentShell
     ref="shell"
+    class="business-conversation-shell"
     v-model:agent-id="agentId"
     v-model:session-id="conversationId"
     :display="display"

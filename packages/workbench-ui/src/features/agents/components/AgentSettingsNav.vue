@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
-import { ArrowLeft, Cpu, Plus } from "lucide-vue-next";
+import { ArrowLeft, Check, Cpu, Plus } from "lucide-vue-next";
 import { ElButton } from "element-plus";
+import { AgentAvatar } from "@ontomato/agent-shell-ui";
 import { useAgentModelLabels, usePageAccess } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useAgentDefinitions } from "../definitions";
@@ -48,7 +49,7 @@ const { agents, loading, loadFailed, ensureLoaded } = useAgentDefinitions();
 const editsAgents = computed(() => canOpen(platformRoutes.agents.path));
 const currentAgentId = computed(() => props.creating || props.models
   ? null
-  : props.agentId ?? (props.standalone ? agents.value[0]?.id : null));
+  : props.agentId ?? agents.value[0]?.id ?? null);
 
 // The column and the editor share one read: whichever is mounted first starts it and the other reads the same list.
 onMounted(() => {
@@ -94,12 +95,16 @@ const pageTitle = computed(() => t("agents.title"));
             :aria-current="agent.id === currentAgentId ? 'page' : undefined"
             @click="emit('selectAgent', agent.id)"
           >
-            <span class="row-name">{{ agent.name }}</span>
-            <span v-if="agent.description" class="row-note">{{ agent.description }}</span>
+            <AgentAvatar :icon="agent.icon" :size="28" />
+            <span class="row-copy">
+              <span class="row-name" :title="agent.name">{{ agent.name }}</span>
+              <span v-if="agent.description" class="row-note" :title="agent.description">{{ agent.description }}</span>
+            </span>
+            <Check class="row-check" :class="{ 'is-hidden': agent.id !== currentAgentId }" :size="16" aria-hidden="true" />
           </button>
         </li>
       </ul>
-      <button v-if="!standalone" type="button" class="new-agent" :class="{ active: props.creating }" @click="emit('createAgent')">
+      <button v-if="!standalone" type="button" class="new-agent" :class="{ active: props.creating }" :aria-current="creating ? 'page' : undefined" @click="emit('createAgent')">
         <Plus :size="16" aria-hidden="true" />
         <span>{{ t("agents.newAgent") }}</span>
       </button>
@@ -132,11 +137,8 @@ const pageTitle = computed(() => t("agents.title"));
   min-height: 0;
   min-width: 0;
   gap: 2px;
-  overflow-y: auto;
 }
 .is-standalone {
-  --shell-nav-hover: var(--shell-panel-hover, var(--el-fill-color-light));
-  --shell-nav-selected: var(--shell-panel-selected, var(--el-color-primary-light-9));
   gap: var(--spacing-sm);
 }
 .list-header {
@@ -160,19 +162,10 @@ const pageTitle = computed(() => t("agents.title"));
   overflow-wrap: anywhere;
 }
 .list-header .el-button.is-active {
-  background: var(--shell-nav-selected);
+  background: var(--shell-panel-selected, var(--el-fill-color));
   color: var(--brand-link);
 }
-.is-standalone .agent-row {
-  padding-inline-end: var(--spacing-sm);
-}
-.is-standalone .row-name {
-  font-size: var(--text-sm);
-  font-weight: var(--font-medium);
-}
-.is-standalone .agent-row.active .row-name {
-  color: var(--brand-link);
-}
+.settings-nav > :not(.agent-rows) { flex-shrink: 0; }
 .back {
   display: flex;
   align-items: center;
@@ -209,53 +202,70 @@ const pageTitle = computed(() => t("agents.title"));
   color: var(--el-text-color-secondary);
 }
 .agent-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  min-height: 0;
   margin: 0;
   padding: 0;
   list-style: none;
+  overflow-y: auto;
+}
+.agent-rows li + li {
+  margin-block-start: 2px;
 }
 .agent-row {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--spacing-sm);
   width: 100%;
-  padding-block: var(--spacing-sm);
-  padding-inline: var(--spacing-md) 10px;
+  min-height: var(--control-height-lg);
+  padding: var(--spacing-xs) var(--spacing-sm);
   box-sizing: border-box;
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--el-text-color-regular);
   font: inherit;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
+.row-copy {
+  display: grid;
+  min-width: 0;
+}
 .row-name {
-  font-weight: var(--font-semibold);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  font-weight: var(--font-medium);
   color: var(--el-text-color-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
 }
 .row-note {
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
   color: var(--el-text-color-secondary);
+}
+.row-name,
+.row-note {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 100%;
 }
-.agent-row:hover,
-.new-agent:hover,
-.back:hover {
+.row-check { color: var(--brand-link); }
+.row-check.is-hidden { visibility: hidden; }
+.agent-row:hover {
+  background: var(--shell-panel-hover, var(--el-fill-color-light));
+}
+.agent-row.active {
+  background: var(--shell-panel-selected, var(--el-fill-color));
+}
+.agent-row.active:hover {
+  background: var(--shell-panel-selected-hover, var(--el-fill-color-dark));
+}
+.agent-row.active .row-name {
+  font-weight: var(--font-semibold);
+}
+.new-agent:hover {
   background: var(--shell-nav-hover, var(--el-fill-color-light));
 }
-.agent-row.active,
 .new-agent.active {
   background: var(--shell-nav-selected, var(--el-color-primary-light-9));
 }

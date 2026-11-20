@@ -138,14 +138,6 @@
   font-weight: var(--font-medium);
 }
 
-:where(.ontology-manager) .el-button--primary {
-  box-shadow: var(--shadow-primary);
-}
-
-:where(.ontology-manager) .el-button--primary:hover {
-  box-shadow: var(--shadow-primary-hover);
-}
-
 :where(.ontology-manager) .el-button + .el-button {
   margin-left: var(--spacing-sm);
 }
@@ -298,8 +290,9 @@
   overflow: hidden;
 }
 
-:where(.ontology-manager) .el-table.admin-table::before {
-  height: 0;
+:where(.ontology-manager) .el-table.admin-table::before,
+:where(.ontology-manager) .el-table.admin-table:not(.el-table--border) > .el-table__inner-wrapper::before {
+  display: none;
 }
 
 :where(.ontology-manager) .el-table.admin-table th.el-table__cell {

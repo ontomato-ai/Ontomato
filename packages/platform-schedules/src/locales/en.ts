@@ -68,6 +68,7 @@ export default {
       noNext: "No upcoming run",
       neverRun: "Not run yet",
       viewResult: "View result",
+      viewEarlierResult: "View earlier result",
       noResult: "No result yet",
       more: "More actions for “{title}”",
     },

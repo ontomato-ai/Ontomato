@@ -98,7 +98,9 @@ describe("the scheduled tasks page", () => {
     expect(text(card(wrapper, ontology))).toContain("离职状态校正");
     expect(text(card(wrapper, ontology))).toContain("销售部、市场部");
     expect(text(card(wrapper, ontology))).toContain("Failed");
-    expect(text(card(wrapper, ontology))).toContain("You can no longer execute this action");
+    expect(text(card(wrapper, ontology))).toContain("View earlier result");
+    expect(text(card(wrapper, ontology))).toContain("Run records");
+    expect(text(card(wrapper, ontology))).not.toContain("You can no longer execute this action");
     expect(text(card(wrapper, governance))).toContain("The function it runs was changed");
     expect(text(card(wrapper, governance))).toContain("Every Monday at 09:00");
     expect(text(card(wrapper, agents))).toContain("Running");
@@ -200,7 +202,8 @@ describe("the scheduled tasks page", () => {
 
     await card(wrapper, ontology).find("button.result").trigger("click");
     expect(opened).toEqual([completedOntologyRun.resultLink]);
-    expect(card(wrapper, operations).find("button.result").attributes("disabled")).toBeDefined();
+    expect(card(wrapper, operations).find("button.result").exists()).toBe(false);
+    expect(text(card(wrapper, operations))).toContain("No result yet");
   });
 
   it("resends a manual run with its key after no answer came, and takes a new key once one did", async () => {

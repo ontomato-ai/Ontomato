@@ -76,6 +76,37 @@ async function page(stubs: Record<string, boolean> = {}, platformRoutes = false)
   return { wrapper, router, open };
 }
 describe("personal workspace", () => {
+  it("uses the application icon and theme color for common applications", async () => {
+    const { wrapper } = await page();
+    const icon = wrapper.find(".application-resource .application-resource-icon");
+    expect(icon.exists()).toBe(true);
+    expect(icon.classes()).toContain("application-resource-icon");
+    wrapper.unmount();
+  });
+  it("distinguishes pending, failed and missing composition resources", async () => {
+    const previous = api.request.getMockImplementation()!;
+    let fail!: (error: Error) => void;
+    const pending = new Promise<Response>((_, reject) => { fail = reject; });
+    api.request.mockImplementation((path, init) => path === "/api/product-assets" ? pending : previous(path, init));
+    const { wrapper } = await page();
+    const missing = englishMessages.ontology.productHomeResourceUnavailable;
+    expect(wrapper.find(".product-placement [role='status']").exists()).toBe(true);
+    expect(wrapper.text()).not.toContain(missing);
+
+    fail(new Error("Could not load assets"));
+    await flushPromises();
+    expect(wrapper.get(".workspace-error").text()).toContain("Could not load assets");
+    expect(wrapper.text()).not.toContain(missing);
+
+    api.request.mockImplementation((path, init) => path === "/api/product-assets"
+      ? Promise.resolve(Response.json({ assets: blocks().filter(asset => asset.id !== "apps") })) : previous(path, init));
+    await wrapper.get(".workspace-error button").trigger("click");
+    await flushPromises();
+    expect(wrapper.find(".workspace-error").exists()).toBe(false);
+    expect(wrapper.text()).toContain(missing);
+    expect(wrapper.find(".metric-preview-stub").exists()).toBe(true);
+    wrapper.unmount();
+  });
   it("links a panel application card to the routed application entry instead of its registration path", async () => {
     const panelApp = { ...application, id: "app-panels-trial-a", kind: "product",
       entry: { path: "/panels-trial-a", renderer: "panels" } };
@@ -129,13 +160,24 @@ describe("personal workspace", () => {
     expect(wrapper.find('[data-section]').exists()).toBe(false);
     wrapper.unmount();
   });
+  it('offers one question entry for a populated home without an assistant block',async()=>{
+    const previous=api.request.getMockImplementation()!;
+    const asset = home();
+    if (asset.document.kind !== 'page') throw new Error('Expected a home page');
+    const document = { ...asset.document, children: asset.document.children.filter(child => child.assetId !== 'assistant') };
+    api.request.mockImplementation((path:string,init?:RequestInit)=>path==='/api/product-assets/home'&&!init?.method?Promise.resolve(Response.json({asset:{...asset,document}})):previous(path,init));
+    const {wrapper}=await page();
+    expect(wrapper.find('.home-composer').exists()).toBe(true);
+    expect(wrapper.findAllComponents({name:'ShellComposer'})).toHaveLength(1);
+    wrapper.unmount();
+  });
   it('allows configuration while unrelated task loading is still pending',async()=>{
     const previous=api.request.getMockImplementation()!;
     let finish!:(value:Response)=>void;
     api.request.mockImplementation((path:string,init?:RequestInit)=>path.includes('scheduled-tasks')?new Promise<Response>(resolve=>{finish=resolve;}):previous(path,init));
     // Select popup rendering is outside this contract (the dialog opening while tasks load) and exceeds CI's timeout.
     const {wrapper}=await page({ElSelect:true});
-    const configure=wrapper.findAll('button').find(button=>button.text()==='Configure workspace')!;
+    const configure=wrapper.get('button[aria-label="Configure workspace"]');
     expect(configure.attributes('disabled')).toBeUndefined();
     await configure.trigger('click');await flushPromises();
     expect(wrapper.findComponent({name:'ElDialog'}).props('modelValue')).toBe(true);
@@ -187,7 +229,7 @@ describe("personal workspace", () => {
     expect(wrapper.text()).not.toContain("Removed app");
     const preview = wrapper.findComponent({ name: "DashboardMetricPreview" });
     const revision = preview.props("revision");
-    await wrapper.findAll("button").find(button => button.text() === "Refresh")!.trigger("click");
+    await wrapper.get('button[aria-label="Refresh"]').trigger("click");
     await flushPromises();
     expect(wrapper.findComponent({ name: "DashboardMetricPreview" }).props("revision")).toBe(revision + 1);
     wrapper.unmount();
@@ -230,7 +272,7 @@ describe("personal workspace", () => {
   it("keeps the settings open on failed saves and persists the draft on retry", async () => {
     // Select popup rendering is outside the save/retry contract.
     const { wrapper } = await page({ ElSelect: true });
-    await wrapper.findAll("button").find(button => button.text() === "Configure workspace")!.trigger("click");
+    await wrapper.get('button[aria-label="Configure workspace"]').trigger("click");
     await flushPromises();
     const dialog = wrapper.findComponent({ name: "ElDialog" });
     const layout = dialog.findComponent({ name: "ElSelect" });

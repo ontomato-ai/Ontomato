@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, defineAsyncComponent, inject, onMounted, watch } from "vue";
 import { managerOverlayKey } from "../overlay";
+import ManagerIconButton from "../components/ManagerIconButton.vue";
 import {
   ElButton,
   ElCheckbox,
@@ -21,7 +22,7 @@ import {
   vLoading,
 } from "element-plus";
 import { useManagerFeedback } from "../feedback";
-import { Filter, Download, Plus, Trash2, Search, Settings2 } from "lucide-vue-next";
+import { Filter, Download, Plus, Trash2, Search, Settings2, RefreshCw } from "lucide-vue-next";
 import type { ObjectReference } from "@ontomato/contracts/object-views";
 import { businessNameAttribute, instanceName } from "../object-views/instance-name";
 import { useManagerClient, useOntologyText, useSharedText } from "../context";
@@ -72,11 +73,21 @@ const classList = ref<ClassDef[]>([]);
 const selectedClass = ref("");
 const dataList = ref<DataItem[]>([]);
 const searchQuery = ref("");
-const pageNum = ref(1);
-const pageSize = ref(20);
+interface TableQuery { page: number; size: number; search: string }
+const initialQuery: TableQuery = { page: 1, size: 20, search: "" };
+const requestedQuery = ref(initialQuery);
+const displayedQuery = ref<TableQuery>();
+const failedQuery = ref<TableQuery>();
 const total = ref(0);
 const loading = ref(false);
+const changingScope = computed(() => !!displayedQuery.value &&
+  (displayedQuery.value.page !== requestedQuery.value.page || displayedQuery.value.size !== requestedQuery.value.size ||
+    displayedQuery.value.search !== requestedQuery.value.search));
 const viewMode = ref<"table" | "graph">("graph");
+
+function scopeLabel(query: TableQuery) {
+  return t("dataBrowser.resultScope", { page: query.page, size: query.size, search: query.search || t("common.all") });
+}
 
 const viewModeOptions = computed(() => [
   { label: ot("instanceGraphTitle"), value: "graph" },
@@ -259,68 +270,82 @@ async function loadClassList() {
       selectedClass.value =
         classList.value.find((item) => item.className === props.initialClass)?.className ||
         classList.value[0].className;
-      if (viewMode.value === "table") void loadData();
     }
   } catch (e: any) {
     message.error(e.message || t("dataBrowser.loadClassFailed"));
   }
 }
 
-async function loadData() {
+let tableRequest = 0;
+async function loadData(query = requestedQuery.value) {
   if (!selectedClass.value) return;
+  const request = ++tableRequest;
+  requestedQuery.value = query;
   loading.value = true;
+  failedQuery.value = undefined;
   try {
     const { rows, total: totalCount } = await loadObjectData(
       selectedClass.value,
-      pageNum.value,
-      pageSize.value,
-      searchQuery.value.trim() || undefined
+      query.page,
+      query.size,
+      query.search || undefined
     );
+    if (request !== tableRequest) return;
+    const lastPage = Math.max(1, Math.ceil(totalCount / query.size));
+    if (query.page > lastPage) {
+      await loadData({ ...query, page: lastPage });
+      return;
+    }
     dataList.value = rows;
     total.value = totalCount;
-    columnVisibility.value = {};
-    pendingColumnVisibility.value = {};
-    filterConditions.value = [];
-    appliedFilterConditions.value = [];
-    sortField.value = "";
-    sortOrder.value = "";
-    appliedSortField.value = "";
-    appliedSortOrder.value = "";
-  } catch (e: any) {
-    message.error(e.message || t("dataBrowser.loadDataFailed"));
-    dataList.value = [];
-    total.value = 0;
+    displayedQuery.value = query;
+  } catch {
+    if (request !== tableRequest) return;
+    failedQuery.value = query;
   } finally {
-    loading.value = false;
+    if (request === tableRequest) loading.value = false;
   }
 }
 
-function handleClassChange() {
-  pageNum.value = 1;
+function resetClassState() {
+  ++tableRequest;
+  loading.value = false;
+  failedQuery.value = undefined;
+  displayedQuery.value = undefined;
+  requestedQuery.value = { ...initialQuery, size: requestedQuery.value.size };
+  dataList.value = [];
+  total.value = 0;
   searchQuery.value = "";
-  loadData();
+  columnVisibility.value = {};
+  pendingColumnVisibility.value = {};
+  clearAllFilters();
+  filterDrawerVisible.value = false;
 }
 
 function handleSearch() {
-  pageNum.value = 1;
-  loadData();
+  void loadData({ page: 1, size: displayedQuery.value?.size ?? requestedQuery.value.size, search: searchQuery.value.trim() });
 }
 
 function handleSearchClear() {
   searchQuery.value = "";
-  pageNum.value = 1;
-  loadData();
+  handleSearch();
+}
+
+function resetTableQuery() {
+  clearAllFilters();
+  handleSearchClear();
 }
 
 function handlePageChange(p: number) {
-  pageNum.value = p;
-  loadData();
+  if (!loading.value && displayedQuery.value && displayedQuery.value.page !== p) {
+    void loadData({ ...displayedQuery.value, page: p });
+  }
 }
 
 function handleSizeChange(size: number) {
-  pageSize.value = size;
-  pageNum.value = 1;
-  loadData();
+  if (!loading.value && displayedQuery.value && displayedQuery.value.size !== size) {
+    void loadData({ ...displayedQuery.value, size, page: 1 });
+  }
 }
 
 function exportData() {
@@ -353,11 +378,14 @@ onMounted(() => {
 });
 
 watch(selectedClass, (className) => {
+  resetClassState();
   if (className) emit("classChange", className);
-});
+  if (viewMode.value === "table") void loadData();
+}, { flush: "sync" });
 
 watch(viewMode, (mode) => {
   if (mode === "table") void loadData();
+  else filterDrawerVisible.value = false;
 });
 
 watch(
@@ -365,8 +393,6 @@ watch(
   (className) => {
     if (!className || !classList.value.some((item) => item.className === className)) return;
     selectedClass.value = className;
-    pageNum.value = 1;
-    if (viewMode.value === "table") void loadData();
   }
 );
 </script>
@@ -380,7 +406,7 @@ watch(
         <div class="data-browser-filters">
           <el-select
             v-model="selectedClass" :placeholder="t('common.selectObjectClass')"
-            :aria-label="t('common.selectObjectClass')" class="class-selector" filterable @change="handleClassChange">
+            :aria-label="t('common.selectObjectClass')" class="class-selector" filterable>
             <el-option v-for="cls in classList" :key="cls.className" :label="cls.showName" :value="cls.className" />
           </el-select>
           <el-input
@@ -392,14 +418,14 @@ watch(
           {{ t("dataBrowser.filterCount", { n: appliedFilterConditions.length }) }}
         </el-tag>
         <div class="data-browser-actions">
-          <el-button :icon="Settings2" :disabled="!selectedClass" :aria-label="ot('ovConfigure')" @click="emit('configureView', selectedClass)">{{ ot('ovConfigure') }}</el-button>
+          <el-button text :icon="Settings2" :disabled="!selectedClass" :aria-label="ot('ovConfigure')" :title="ot('ovConfigure')" @click="emit('configureView', selectedClass)">{{ ot('ovConfigure') }}</el-button>
           <el-button
-            :icon="Filter" :title="t('dataBrowser.advancedFilter')"
+            text :icon="Filter" :title="t('dataBrowser.advancedFilter')"
             :aria-label="t('dataBrowser.advancedFilter')" @click="openFilterDrawer">
             <span class="action-label">{{ t('dataBrowser.advancedFilter') }}</span>
           </el-button>
           <el-dropdown>
-            <el-button :icon="Download" :title="t('common.export')" :aria-label="t('common.export')">
+            <el-button text :icon="Download" :disabled="!displayedQuery || changingScope" :title="t('common.export')" :aria-label="t('common.export')">
               <span class="action-label">{{ t('common.export') }}</span>
             </el-button>
             <template #dropdown>
@@ -416,15 +442,29 @@ watch(
       </div>
     </div>
     <template v-if="viewMode === 'table'">
+    <div v-if="displayedQuery || failedQuery" class="table-scope platform-page-gutter">
+      <div v-if="displayedQuery" role="status">{{ scopeLabel(displayedQuery) }}</div>
+      <div v-if="failedQuery" class="table-read-error" role="alert">
+        <span>{{ t('dataBrowser.loadDataFailed') }}. {{ scopeLabel(failedQuery) }}{{ displayedQuery ? ` · ${t('dataBrowser.previousResults')}` : '' }}</span>
+        <el-button text :icon="RefreshCw" @click="loadData()">{{ t('common.refresh') }}</el-button>
+      </div>
+    </div>
     <div class="data-browser-table platform-page-gutter">
     <el-table
-      v-loading="loading"
+      v-loading="loading && (!displayedQuery || changingScope)"
+      :aria-busy="loading"
       :data="filteredData"
-      border
+      highlight-current-row
       class="admin-table"
       height="100%"
       @row-dblclick="openObject"
     >
+      <template #empty>
+        <div v-if="!loading && !failedQuery" class="table-feedback">
+            <span role="status">{{ selectedClass ? ot('productNoRecordsInScope') : t('common.selectObjectClass') }}</span>
+            <el-button v-if="searchQuery.trim() || appliedFilterConditions.length" text @click="resetTableQuery">{{ t('dataBrowser.clearAll') }}</el-button>
+        </div>
+      </template>
       <el-table-column type="index" width="50" />
       <el-table-column :label="currentClassAttrs.find(attr => attr.name === titleAttribute?.name)?.showName || ot('ovTitle')" min-width="180" fixed="left">
         <template #default="scope"><el-button type="primary" link @click="openObject(scope.row)">{{ instanceName(currentClassAttrs, scope.row) }}</el-button></template>
@@ -440,16 +480,17 @@ watch(
     </el-table>
     </div>
 
-    <div class="pagination platform-page-gutter">
+    <div v-if="displayedQuery" class="pagination platform-page-gutter">
       <el-pagination
         background
         layout="prev, pager, next, jumper, ->, total, sizes"
-        :current-page="pageNum"
-        :page-size="pageSize"
+        :current-page="displayedQuery.page"
+        :page-size="displayedQuery.size"
+        :disabled="loading"
         :page-sizes="[20, 50, 100]"
         :total="total"
-        @current-change="handlePageChange"
-        @size-change="handleSizeChange"
+        @update:current-page="handlePageChange"
+        @update:page-size="handleSizeChange"
       />
     </div>
 
@@ -473,7 +514,7 @@ watch(
 
       <div class="filter-section">
         <div class="filter-title">{{ t("dataBrowser.filterConditions") }}</div>
-        <el-button type="primary" size="small" :icon="Plus" @click="addFilterCondition">
+        <el-button text size="small" :icon="Plus" @click="addFilterCondition">
           {{ t("dataBrowser.addCondition") }}
         </el-button>
 
@@ -499,7 +540,7 @@ watch(
             :placeholder="t('common.value')"
             :disabled="cond.operator === 'null' || cond.operator === 'notnull'"
           />
-          <el-button type="danger" :icon="Trash2" link @click="removeFilterCondition(idx)" />
+           <ManagerIconButton :icon="Trash2" :label="`${t('common.delete')} · ${t('dataBrowser.filterConditions')} ${idx + 1}`" danger @click="removeFilterCondition(idx)" />
         </div>
       </div>
 
@@ -525,7 +566,7 @@ watch(
       </template>
       </el-drawer>
     </template>
-    <InstanceGraph v-else :summary-target="graphSummaryTarget" @open-object="emit('openObject', $event)" />
+    <InstanceGraph v-show="viewMode === 'graph'" :summary-target="graphSummaryTarget" @open-object="emit('openObject', $event)" />
   </div>
 </template>
 
@@ -583,6 +624,9 @@ watch(
   min-width: 0;
   margin-top: var(--manager-content-gap);
 }
+.table-feedback { display: grid; justify-items: center; gap: var(--spacing-sm); padding: var(--spacing-xl) var(--spacing-md); line-height: var(--leading-base); }
+.table-scope { flex: none; margin-block-start: var(--spacing-sm); color: var(--el-text-color-secondary); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.table-read-error { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); color: var(--el-color-danger-text, var(--el-color-danger)); }
 
 .data-browser-filters {
   display: flex;
@@ -617,17 +661,6 @@ watch(
 
 .data-browser-actions :deep(.el-button) {
   margin: 0;
-}
-
-.data-browser-table > :deep(.el-table) {
-  width: 100%;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-md);
-}
-
-.data-browser-table > :deep(.el-table)::before,
-.data-browser-table > :deep(.el-table .el-table__inner-wrapper)::before {
-  display: none;
 }
 
 .pagination {
@@ -673,7 +706,7 @@ watch(
     grid-column: 1 / -1;
   }
 
-  .filter-condition .el-button {
+  .filter-condition .manager-icon-button {
     grid-column: 2;
     grid-row: 1;
   }
@@ -714,7 +747,7 @@ watch(
 }
 .filter-condition .el-select:nth-child(2),
 .filter-condition .el-input { grid-column: 1 / -1; }
-.filter-condition .el-button { grid-column: 2; grid-row: 1; }
+.filter-condition .manager-icon-button { grid-column: 2; grid-row: 1; }
 
 .filter-condition .el-select,
 .filter-condition .el-input {
