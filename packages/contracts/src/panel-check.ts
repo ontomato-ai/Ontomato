@@ -6,7 +6,10 @@ export {
   panelDefinitionContentSchema, productProjectionInputSchema,
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
 } from "./product-panels";
-export { directReadDeclaration, missingRequiredReadParameters, panelReadParameterSchemas } from "./panel-projection";
+export {
+  directReadDeclaration, missingRequiredReadParameters, panelOperationTargetPort, panelReadParameterSchemas,
+  projectionOperationTargetMatches,
+} from "./panel-projection";
 export { panelReadResultSchemas } from "./panel-operations";
 export { platformObjectTypes } from "./platform-object-types";
 export { platformTypeTableResponseSchema } from "./platform-type-table";
