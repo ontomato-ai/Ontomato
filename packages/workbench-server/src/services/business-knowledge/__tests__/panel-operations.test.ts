@@ -77,6 +77,20 @@ describe("business knowledge panel server operations", () => {
     expect(JSON.parse(String(sent[0]?.init.body))).toEqual(values);
   });
 
+  it("sends only the submitted fields, so a field left alone is not overwritten with what the form still shows", async () => {
+    const operation = m7ServerOperations.find(item => item.handlerRef === `${BUSINESS_KNOWLEDGE}.save`)!;
+    const { host, sent } = hostWith(answers("/admin/editBussinessKnowledge", { success: true }));
+
+    await operation.execute(host, target, {
+      values: { ...values, knowledgeID: "k-1", knowledgeText: "Orders need a verified customer", status: 0 },
+      submittedFields: ["/knowledgeText", "/knowledgeTags/0"],
+    });
+
+    expect(JSON.parse(String(sent[0]?.init.body))).toEqual({
+      knowledgeID: "k-1", knowledgeText: "Orders need a verified customer", knowledgeTags: ["Business"],
+    });
+  });
+
   it("updates the selected entry and answers no data beyond it", async () => {
     const operation = m7ServerOperations.find(item => item.handlerRef === `${BUSINESS_KNOWLEDGE}.save`)!;
     const { host, sent } = hostWith(answers("/admin/editBussinessKnowledge", { success: true }));
