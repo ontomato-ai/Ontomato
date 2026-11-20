@@ -35,7 +35,7 @@ test("the product catalog accepts HTTP queries and returns cursor pages of summa
   };
   const panels = { items: [summary], nextCursor: null };
   const projections = {
-    items: [{ ...summary, componentId: "ObjectList", binding: { kind: "PlatformObjectType", id: "sales" } }],
+    items: [{ ...summary, componentId: "@ontomato/sdk:ObjectList" }],
     nextCursor: "owner:cursor==",
   };
   assert.deepEqual(productPanelListResponseSchema.parse(panels), panels);
@@ -55,7 +55,7 @@ test("copy and deletion reuse current ID rules and require a valid revision for 
 
 test("a blocked deletion returns exactly the corresponding used-by details", () => {
   const projection = { panels: [{ id: "p", name: "Panel" }], hiddenCount: 2 };
-  const panel = { applicationEntries: [{ applicationId: "app", applicationName: "App", entryId: "entry", path: "/sales" }] };
+  const panel = { ...projection, classNames: ["Account"], applicationEntries: [{ applicationId: "app", applicationName: "App", entryId: "entry", path: "/sales" }] };
   const error = { success: false, error: "In use", code: "PRODUCT_IN_USE" };
   assert.equal(productProjectionInUseErrorSchema.shape.details, productProjectionUsedBySchema);
   assert.equal(productPanelInUseErrorSchema.shape.details, productPanelUsedBySchema);
@@ -63,7 +63,7 @@ test("a blocked deletion returns exactly the corresponding used-by details", () 
   assert.deepEqual(productPanelInUseErrorSchema.parse({ ...error, details: panel }).details, panel);
   assert.equal(productPanelInUseErrorSchema.safeParse({ ...error, details: projection }).success, false);
   assert.equal(productProjectionUsedBySchema.safeParse({ ...projection, hiddenCount: -1 }).success, false);
-  assert.equal(productPanelUsedBySchema.safeParse({ ...panel, panels: [] }).success, false);
+  assert.equal(productPanelUsedBySchema.safeParse({ ...panel, classNames: [42] }).success, false);
 });
 
 test("product governance lists domain grants and changes domain sharing through its own request", () => {
