@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, provide, ref, shallowRef, watch, type Component } from "vue";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import { memberComponentId, memberProjectionId, type MemberInputs } from "./direct";
+import { type MemberInputs } from "./direct";
+import { memberComponentId, memberProjectionId } from "./projection-element";
 import { frameMemberData } from "./frame-member";
 import { panelMemberKey, type PanelMemberContext } from "./member";
 import { portsOf } from "./ports-of";

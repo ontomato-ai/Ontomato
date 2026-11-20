@@ -1,9 +1,9 @@
 import { computed, onScopeDispose, shallowReactive, shallowRef, watch, type ComputedRef } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
-import type { OntologyElementRef } from "@ontomato/contracts/ontology-element-ref";
 import { panelOperationAffectedSchema, panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
-import { directReadDeclaration, projectionReadReferences, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
+import { directReadDeclaration, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
+import { memberProjectionId } from "./projection-element";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { PanelDataState, ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { createPanelInstance, type PanelInstance, type PanelInstanceOptions } from "./instance";
@@ -218,26 +218,4 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     resources: () => Promise.resolve(),
     expandPageComposer: frameOnly("Expanding the page's composer over the frame bridge"),
   };
-}
-
-/** A direct projection's component, as this version's catalogue names it. */
-export const memberComponentId = (projection: DirectProjection) => projection.componentId.replace(/^@ontomato\/sdk:/, "");
-
-/** The ontology element a projection is about: what its first datum reads (a type, an operation, an object's type). */
-export function projectionElement(projection: DirectProjection): OntologyElementRef {
-  const [element] = projectionReadReferences(projection);
-  if (!element) throw new Error(`Projection ${projection.id} reads nothing a component can be about`);
-  return element;
-}
-
-/**
- * The projection a member places. A member placed from the panel's state or the current entry is a later stage's; this
- * release places fixed projections only.
- */
-export function memberProjectionId(manifest: PanelManifest, member: string): string {
-  const declaration = manifest.members[member];
-  if (!declaration) throw new Error(`The panel declares no member '${member}'`);
-  if (!("projectionId" in declaration.target))
-    throw new Error(`Member '${member}' is not placed as one projection, which is all this SDK release draws`);
-  return declaration.target.projectionId;
 }

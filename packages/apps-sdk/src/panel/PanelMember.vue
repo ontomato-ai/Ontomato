@@ -5,7 +5,8 @@ import { DataState } from "@ontomato/foundation-ui/data-state";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { componentFor } from "../catalogue-components";
 import { panelContextKey, projectionKey, type ProjectionSlot } from "./context";
-import { directPanelContext, memberComponentId, type DirectPanelInstance, type MemberInputs } from "./direct";
+import { directPanelContext, type DirectPanelInstance, type MemberInputs } from "./direct";
+import { memberComponentId } from "./projection-element";
 import { panelMemberKey, type PanelMemberContext } from "./member";
 import { portsOf } from "./ports-of";
 

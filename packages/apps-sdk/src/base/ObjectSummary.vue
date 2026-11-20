@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { projectionElement } from "../panel/direct";
+import { projectionElement } from "../panel/projection-element";
 import { computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
