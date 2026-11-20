@@ -1,10 +1,10 @@
-import { ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE } from "@ontomato/contracts/platform-object-types";
+import { ONTOLOGY_TYPE } from "@ontomato/contracts/platform-object-types";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { panelManifestSchema, type PanelManifest } from "@ontomato/contracts/panel-manifest";
+import { panelManifestSchema } from "@ontomato/contracts/panel-manifest";
 import type { ApplicationPanelUse, PanelSkillSource } from "@ontomato/contracts/product-panels";
 import { components } from "../../../../../apps-sdk/src/catalogue";
 import { installContentLayout } from "../../../content/layout";
@@ -13,7 +13,7 @@ import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { parseSkillMarkdown } from "../../../core/skills/manifest";
 import { backendGet } from "../../../utils/backend-client";
 import { findCurrentProduct, type CurrentProductRow } from "../../../infrastructure/product-current";
-import { panelSkillProvider } from "../skill-provider";
+let panelSkillProvider: typeof import("../skill-provider").panelSkillProvider;
 
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://java.test" } } }));
 vi.mock("../../../config/environment", () => ({ environment: { agentRuntime: () => ({ queryServiceToken: "fixture-platform-service" }) } }));
@@ -22,55 +22,62 @@ vi.mock("../../../utils/backend-client", () => ({ backendGet: vi.fn() }));
 vi.mock("../../../infrastructure/product-current", () => ({ findCurrentProduct: vi.fn() }));
 
 const domainId = "trial-domain";
-const version = "1.1.2-dev.trial";
 const example = new URL("../../../../../apps-sdk/examples/panels/schedules-trial/", import.meta.url);
 const definitions = fileURLToPath(new URL("definitions.mjs", example));
 const trial = await import(definitions) as {
   applications: { applicationId: string; panelUses: ApplicationPanelUse[] }[];
   panels: { id: string; directory: string; manifest: unknown; name: string; description: string }[];
-  projections: { id: string; input: Record<string, unknown> }[];
+  projections: { id: string; input: Record<string, unknown> & {
+    data: Record<string, { source: { type: string } | { operation: string } | { object: { input: string } }; read: string; params: object }>;
+  } }[];
   panelContent(directory: string): { html: string; module?: string; recipes?: string };
 };
 
-// Exact refs returned by Java for the same locator keys in PanelApplicationsTest.
-const pageNames = [
-  "panel-page-panels-trial-a-tasks-5b8e580bfe498f76fd5b2f47",
-  "panel-page-panels-trial-b-tasks-078cb1db044a707c17788b14",
-  "panel-page-panels-trial-b-summary-bbb7128431ec0bc491e589e0",
-];
-const menuName = "panel-menu-menu-c661d73dba966285774f9f15";
-// Deliberately consume the full addresses emitted by the application directory.
-const paths = ["/applications/app-panels-trial-a/tasks", "/applications/app-panels-trial-b/tasks", "/applications/app-panels-trial-b/summary"];
-const uses = trial.applications.flatMap(application => application.panelUses.map(use => ({
-  applicationId: application.applicationId, useId: use.id, pageKey: use.pageKey, panelId: use.panelId,
-}))).map((use, index) => ({ ...use, path: paths[index]! }));
+const uses: PanelSkillSource[] = trial.applications.flatMap(application => application.panelUses.map(use => ({
+  applicationId: application.applicationId, useId: use.id, panelId: use.panelId, path: use.path,
+  entrance: "permissionCode" in use.access
+    ? { pageKey: use.pageKey, permissionCode: use.access.permissionCode }
+    : { pageKey: use.pageKey, access: use.access.kind },
+})));
 const skill = (name: string) => ({ namespace: { kind: "domain" as const, domainId }, name });
-const memberSources: PanelSkillSource[] = uses.map((use, index) => ({ skill: skill(pageNames[index]!), uses: [use] }));
+const taskRef = skill("captured-task-skill");
+const taskInput = { kind: "object", objectType: "platform:ScheduledTask" } as const;
+const selectedTask = { type: taskInput, external: true, deepLink: true, default: null };
+const taskInputBinding = { task: { state: "selectedTask" } };
 const trialPanels = new Map(trial.panels.map(panel => {
   const content = trial.panelContent(panel.directory);
-  return [panel.id, {
-    name: panel.name, description: panel.description, manifest: panel.manifest, visibility: "domain",
-    ...(content.module === undefined ? {} : { sdkVersion: version }),
-    content,
-  }] as const;
+  const manifest = content.module === undefined ? panel.manifest : {
+    state: { selectedTask },
+    members: { summary: { target: { projectionId: "projection-schedules-summary" }, inputs: taskInputBinding } },
+    events: {},
+  };
+  return [panel.id, { name: panel.name, description: panel.description, manifest, visibility: "domain", content }] as const;
 }));
 let panels = new Map(trialPanels);
+const trialProjections = new Map<string, Record<string, unknown>>(trial.projections.map(({ id, input }) => {
+  const data = Object.fromEntries(Object.entries(input.data).map(([name, datum]) => {
+    const { source } = datum;
+    const binding = "type" in source ? { type: { kind: "PlatformObjectType", id: source.type } }
+      : "operation" in source ? { operation: { kind: "PlatformOperation", id: source.operation } } : source;
+    return [name, { ...datum, source: binding }];
+  }));
+  return [id, { ...input, data }];
+}));
 
 const extraProjections = new Map<string, Record<string, unknown>>();
-const taskInput = { kind: "object", objectType: "platform:ScheduledTask" } as const;
-const legacyRun = {
-  name: "Run now", description: "", visibility: "domain", componentId: "OperationButton",
-  binding: { kind: "PlatformOperation", id: "schedules.runNow" }, inputs: { task: taskInput }, display: {},
-};
-const taskInputBinding = { task: { state: "selectedTask" } };
-function codeTasksPanel(slots: PanelManifest["slots"]) {
+const runProjection = trialProjections.get("projection-schedules-run")!;
+function codeTasksPanel(projections: Record<string, { projectionId: string; inputs: object }>) {
   const id = uses[0]!.panelId;
   const row = trialPanels.get(id)!;
   const panel = {
     ...row,
-    sdkVersion: version,
     content: { ...row.content, module: "export default {};" },
-    manifest: { state: { selectedTask: { ...taskInput, deepLink: true } }, slots, operations: [] },
+    manifest: {
+      state: { selectedTask },
+      members: Object.fromEntries(Object.entries(projections).map(([key, { projectionId, inputs }]) =>
+        [key, { target: { projectionId }, inputs }])),
+      events: {},
+    },
   };
   panels.set(id, panel);
   return panel;
@@ -83,10 +90,6 @@ beforeEach(async () => {
   extraProjections.clear();
   root = await mkdtemp(path.join(os.tmpdir(), "panel-skill-"));
   const sdk = path.join(root, "data/apps-sdk");
-  await mkdir(path.join(sdk, version), { recursive: true });
-  const pinned = components.map(component => component.componentId === "ObjectList"
-    ? { ...component, meaning: "List from the pinned SDK release." } : component);
-  await writeFile(path.join(sdk, version, "components.json"), JSON.stringify({ version, components: pinned }));
   const currentVersion = "2.0.0-pilot";
   const build = path.join(root, "dist/apps-sdk");
   const installed = path.join(sdk, currentVersion);
@@ -103,8 +106,9 @@ beforeEach(async () => {
     }),
   }));
   installContentLayout({ runtimeRoot: root, prompts: [], publicSkillsRoot: root, runtimeResources: [] });
+  ({ panelSkillProvider } = await import("../skill-provider"));
   vi.mocked(findCurrentProduct).mockImplementation(async (requestedDomain, kind, id) => {
-    const definition = kind === "panel" ? panels.get(id) : extraProjections.get(id) ?? trial.projections.find(projection => projection.id === id)?.input;
+    const definition = kind === "panel" ? panels.get(id) : extraProjections.get(id) ?? trialProjections.get(id);
     return requestedDomain === domainId && definition
       ? { id, definition, domainId, ownerId: "fixture-owner", revision: 1 } as CurrentProductRow
       : undefined;
@@ -119,22 +123,31 @@ function javaSources(sources: PanelSkillSource[]) {
   }));
 }
 
-it("uses the three Java member refs and reads only the verified domain and service identity", async () => {
-  javaSources(memberSources);
+it("provides a single protected source for all uses of the same panel and lists its full dependencies", async () => {
+  javaSources([...uses, uses[0]!]);
   const offerings = await panelSkillProvider.list({ domainId });
-  expect(offerings.map(offering => offering.skill)).toEqual(pageNames.map(skill));
-  expect(offerings.map(offering => offering.manifest.description)).toEqual([
-    `Open the panel for ${trial.panels[0]!.name}.`,
-    `Open the panel for ${trial.panels[0]!.name}.`,
-    `Open the panel for ${trial.panels[1]!.name}.`,
-  ]);
+  const [tasks, summary] = offerings;
+  expect(offerings).toHaveLength(2);
+  expect(tasks).toMatchObject({
+    kind: "protected", sourceKey: uses[0]!.panelId, entrances: [uses[0]!.entrance, uses[1]!.entrance],
+  });
+  expect([...tasks!.resourceIds].sort()).toEqual([uses[0]!.panelId, ...trial.projections.map(projection => projection.id)].sort());
+  expect(summary).toMatchObject({
+    kind: "protected", sourceKey: uses[2]!.panelId, entrances: [uses[2]!.entrance],
+    resourceIds: [uses[2]!.panelId, "projection-schedules-summary"],
+  });
+  expect(vi.mocked(findCurrentProduct).mock.calls).toEqual(trial.panels.map(panel => [domainId, "panel", panel.id]));
   expect(await panelSkillProvider.list({ domainId: "another-domain" })).toEqual([]);
+  const manifest = await tasks!.readManifest(taskRef);
+  const pkg = await tasks!.provide(taskRef);
+  await summary!.readManifest(skill("captured-summary-skill"));
+  expect(manifest.name).toBe(taskRef.name);
+  expect(pkg.skill).toEqual(taskRef);
+  expect(parseSkillMarkdown(pkg.files[0]!.content)?.manifest).toEqual(manifest);
+  expect(pkg.files[0]!.content).not.toContain(uses[1]!.path);
+  expect(pkg.files[0]!.content).toContain("run.runNow");
   const reads = vi.mocked(findCurrentProduct).mock.calls;
   expect(reads).toHaveLength(trial.panels.length + trial.projections.length);
-  expect(reads).toEqual(expect.arrayContaining([
-    ...trial.panels.map(panel => [domainId, "panel", panel.id]),
-    ...trial.projections.map(projection => [domainId, "projection", projection.id]),
-  ]));
   expect(backendGet).toHaveBeenNthCalledWith(1, "panel-skill-sources",
     "http://java.test/platform/applications/panel-skill-sources?domainId=trial-domain",
     { headers: { "X-Ontomato-Query-Service-Token": "fixture-platform-service" }, retries: 1 });
@@ -145,8 +158,8 @@ it("uses the panel's default-locale text for declared state operation labels", a
     defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
     packs: { en: { messages: en, ...enLocaleMeta } },
   });
-  const source = memberSources[2]!;
-  const id = source.uses[0]!.panelId;
+  const source = uses[2]!;
+  const id = source.panelId;
   const panel = panels.get(id)!;
   javaSources([source]);
   vi.mocked(findCurrentProduct).mockResolvedValueOnce({
@@ -156,46 +169,45 @@ it("uses the panel's default-locale text for declared state operation labels", a
       ...panel,
       manifest: {
         ...panelManifestSchema.parse(panel.manifest),
-        operations: [
-          { kind: "state", id: "review", labelKey: "actions.review", sets: {} },
-          { kind: "state", id: "reset", labelKey: "actions.reset", sets: {} },
-        ],
+        events: {
+          review: { labelKey: "actions.review", do: { set: { fields: { selectedTask: { literal: null } } } } },
+          reset: { labelKey: "actions.reset", do: { set: { fields: { selectedTask: { literal: null } } } } },
+        },
       },
       content: { ...panel.content, messages: { en: { "actions.review": "Review scheduled tasks" } } },
     },
   });
 
   const [offering] = await panelSkillProvider.list({ domainId });
-  const { files } = await offering!.provide();
-  expect(files[0]!.content).toContain("Review scheduled tasks (review), kind state");
-  expect(files[0]!.content).toContain("actions.reset (reset), kind state");
+  const { files } = await offering!.provide(taskRef);
+  expect(files[0]!.content).toContain("Review scheduled tasks (review)");
+  expect(files[0]!.content).toContain("actions.reset (reset)");
 });
 
 it("reads the direct trial panel from the current SDK catalogue", async () => {
-  javaSources([memberSources[0]!]);
+  javaSources([uses[0]!]);
   const [offering] = await panelSkillProvider.list({ domainId });
-  const markdown = (await offering!.provide()).files[0]!.content;
+  const markdown = (await offering!.provide(taskRef)).files[0]!.content;
   expect(markdown).toContain(trial.panels[0]!.name);
   expect(markdown).toContain("Summary from the current SDK release.");
   expect(markdown).toContain('Named data: {"record":');
 });
 
-it("describes both projection styles in a code panel using the same current SDK", async () => {
-  const source = memberSources[2]!;
-  const id = source.uses[0]!.panelId;
+it("describes a code panel's fixed projections using the current SDK", async () => {
+  const source = uses[2]!;
+  const id = source.panelId;
   const panel = panels.get(id)!;
   const manifest = panelManifestSchema.parse(panel.manifest);
   extraProjections.set("legacy-list", {
-    ...legacyRun, componentId: "ObjectList", inputs: {},
-    binding: { kind: "PlatformObjectType", id: "platform:ScheduledTask" },
+    ...trialProjections.get("projection-schedules-tasks")!, inputs: {},
   });
   panels.set(id, { ...panel, manifest: {
-    ...manifest, slots: { ...manifest.slots, list: { projectionId: "legacy-list", inputs: {} } },
+    ...manifest, members: { ...manifest.members, list: { target: { projectionId: "legacy-list" } } },
   } });
   javaSources([source]);
 
   const [offering] = await panelSkillProvider.list({ domainId });
-  const markdown = (await offering!.provide()).files[0]!.content;
+  const markdown = (await offering!.provide(taskRef)).files[0]!.content;
   expect(markdown).toContain("Summary from the current SDK release.");
   expect(markdown).toContain("List from the current SDK release.");
   expect(markdown).toContain('Named data: {"record":');
@@ -203,49 +215,48 @@ it("describes both projection styles in a code panel using the same current SDK"
 });
 
 it("binds the current SDK digest to the supplied panel bytes for the lifetime of the offering", async () => {
-  javaSources([memberSources[0]!]);
+  javaSources([uses[0]!]);
   const [first] = await panelSkillProvider.list({ domainId });
-  const original = await first!.provide();
+  const original = await first!.provide(taskRef);
   const filename = path.join(root, "dist/apps-sdk/current.json");
   const current = JSON.parse(await readFile(filename, "utf8"));
   await writeFile(filename, JSON.stringify({ ...current, digest: "b".repeat(64) }));
 
   const [second] = await panelSkillProvider.list({ domainId });
-  expect(await first!.provide()).toEqual(original);
-  const updated = await second!.provide();
+  expect(await first!.provide(taskRef)).toEqual(original);
+  const updated = await second!.provide(taskRef);
   expect(updated.skill).toEqual(original.skill);
   expect(updated.files[0]!.content).not.toBe(original.files[0]!.content);
 });
 
-it("assembles one current package for a shared menu with a section per use and the original recipes", async () => {
-  extraProjections.set("legacy-form", {
-    ...legacyRun, componentId: "ObjectForm", binding: { kind: "PlatformObjectType", id: "platform:ScheduledTask" },
-  });
-  extraProjections.set("legacy-run", legacyRun);
+it("keeps the package and recipes for a panel independent of its entrance", async () => {
+  extraProjections.set("legacy-form", trialProjections.get("projection-schedules-form")!);
+  extraProjections.set("legacy-run", runProjection);
   const panel = codeTasksPanel({
     form: { projectionId: "legacy-form", inputs: taskInputBinding },
     run: { projectionId: "legacy-run", inputs: taskInputBinding },
   });
-  const ref = skill(menuName);
-  javaSources([{ skill: ref, uses: [uses[0]!, uses[2]!] }]);
-  const offerings = await panelSkillProvider.list({ domainId });
-  expect(offerings.map(offering => offering.skill)).toEqual([ref]);
-  const [offering] = offerings;
-  expect(offering!.manifest.description).toBe(
-    `Read current data, open the panels, draft changes, and review declared operations for ${trial.panels[0]!.name}, ${trial.panels[1]!.name}.`,
+  const ref = taskRef;
+  javaSources([uses[0]!, uses[1]!]);
+  const [offering] = await panelSkillProvider.list({ domainId });
+  const manifest = await offering!.readManifest(ref);
+  expect(manifest.description).toBe(
+    "Read current data, open the panel, draft changes, and review declared operations for " + panel.name + ".",
   );
+  javaSources([uses[1]!]);
+  const [otherEntrance] = await panelSkillProvider.list({ domainId });
+  expect(await otherEntrance!.provide(ref)).toEqual(await offering!.provide(ref));
   const originalName = panel.name;
   panel.name = "Renamed independently of the locator";
   try {
-    const pkg = await offering!.provide();
+    const pkg = await offering!.provide(taskRef);
     expect(pkg.skill).toEqual(ref);
     const markdown = pkg.files[0]!.content;
-    expect(parseSkillMarkdown(markdown)?.manifest).toEqual(offering!.manifest);
+    expect(parseSkillMarkdown(markdown)?.manifest).toEqual(await offering!.readManifest(taskRef));
     expect(markdown).toContain(originalName);
-    expect(markdown).toContain(trial.panels[1]!.name);
     expect(markdown).toContain(await readFile(new URL("p/recipes.md", example), "utf8"));
-    expect(markdown).toContain("/applications/app-panels-trial-a/tasks");
-    expect(markdown).toContain("/applications/app-panels-trial-b/summary");
+    expect(markdown).not.toContain("/applications/app-panels-trial-a/tasks");
+    expect(markdown).not.toContain("/applications/app-panels-trial-b/tasks");
     expect(markdown).toContain("PlatformObjectType:platform:ScheduledTask");
     expect(markdown).toContain("platform:ScheduledTask.save");
     expect(markdown).toContain("handlerRef schedules.runNow");
@@ -259,7 +270,7 @@ it("assembles one current package for a shared menu with a section per use and t
     expect(readSection).toContain("/api/assistant/executions/<runId>/ontology");
     expect(readSection).toContain("Never send callback headers to a direct Java URL");
     expect(readSection).toContain("An anonymous direct Java URL needs no authentication header");
-    expect(markdown).toContain('"pageKey": "panels-trial-a-tasks"');
+    expect(markdown).toContain('"pageKey": "<current page context pageKey>"');
     expect(markdown).toContain('"form": {}');
     const draftSection = markdown.split("### Draft a change")[1]!.split("### Declared operations")[0]!;
     expect(draftSection).toContain("Use the owner-described values in `form`.");
@@ -272,11 +283,11 @@ it("assembles one current package for a shared menu with a section per use and t
     expect(markdown).not.toContain("fixture-owner");
     expect(markdown).not.toContain(panel.content.html);
     const [renamed] = await panelSkillProvider.list({ domainId });
-    expect(renamed!.skill).toEqual(ref);
-    expect(renamed!.manifest.description).toContain(panel.name);
-    const updatedMarkdown = (await renamed!.provide()).files[0]!.content;
+    const renamedManifest = await renamed!.readManifest(ref);
+    expect(renamedManifest.description).toContain(panel.name);
+    const updatedMarkdown = (await renamed!.provide(taskRef)).files[0]!.content;
     expect(updatedMarkdown).toContain(`## ${panel.name}`);
-    expect(parseSkillMarkdown(updatedMarkdown)?.manifest).toEqual(renamed!.manifest);
+    expect(parseSkillMarkdown(updatedMarkdown)?.manifest).toEqual(renamedManifest);
     expect(findCurrentProduct).toHaveBeenCalledWith(domainId, "panel", uses[0]!.panelId);
   } finally {
     panel.name = originalName;
@@ -284,12 +295,12 @@ it("assembles one current package for a shared menu with a section per use and t
 });
 
 it("describes B's direct summary data without adding agent operations", async () => {
-  javaSources([memberSources[2]!]);
+  javaSources([uses[2]!]);
   const [offering] = await panelSkillProvider.list({ domainId });
-  expect(offering!.manifest.description).toBe(`Open the panel for ${trial.panels[1]!.name}.`);
-  const { files } = await offering!.provide();
+  expect((await offering!.readManifest(taskRef)).description).toBe(`Read current data and open the panel for ${trial.panels[1]!.name}.`);
+  const { files } = await offering!.provide(taskRef);
   const markdown = files[0]!.content;
-  expect(parseSkillMarkdown(markdown)?.manifest).toEqual(offering!.manifest);
+  expect(parseSkillMarkdown(markdown)?.manifest).toEqual(await offering!.readManifest(taskRef));
   expect(markdown).toContain('Named data: {"record":');
   expect(markdown).toContain("### Open the panel");
   expect(markdown).toContain("No operations.");
@@ -298,46 +309,50 @@ it("describes B's direct summary data without adding agent operations", async ()
 });
 
 it("advertises a declared operation without promising a draft when there is no form", async () => {
-  javaSources([memberSources[0]!]);
-  extraProjections.set("legacy-run", legacyRun);
+  javaSources([uses[0]!]);
+  extraProjections.set("legacy-run", runProjection);
   const panel = codeTasksPanel({ run: { projectionId: "legacy-run", inputs: taskInputBinding } });
   const [offering] = await panelSkillProvider.list({ domainId });
-  expect(offering!.manifest.description).toBe(`Open the panel and review declared operations for ${panel.name}.`);
-  const markdown = (await offering!.provide()).files[0]!.content;
+  expect((await offering!.readManifest(taskRef)).description).toBe(`Open the panel and review declared operations for ${panel.name}.`);
+  const markdown = (await offering!.provide(taskRef)).files[0]!.content;
   expect(markdown).toContain("handlerRef schedules.runNow");
   expect(markdown).not.toContain("### Draft a change");
   expect(markdown).not.toContain("### Read current data");
 });
 
 it("describes both graph bindings and their single metadata read", async () => {
-  javaSources([memberSources[0]!]);
+  javaSources([uses[0]!]);
   extraProjections.set("graph-fixture", {
-    ...legacyRun, componentId: "ObjectList", name: "Data scope", inputs: {},
-    binding: { kind: "PlatformObjectType", id: "platform:ObjectType" },
-    graph: { edges: { binding: { kind: "PlatformObjectType", id: "platform:Relationship" },
-      sourcePath: "/fromclass", targetPath: "/toclass" } },
+    name: "Data scope", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectGraph",
+    inputs: {}, outputs: {}, config: { edgeEnds: { source: "/fromclass", target: "/toclass" } },
+    data: {
+      nodes: { source: { type: { kind: "PlatformObjectType", id: "platform:ObjectType" } }, read: "list", params: {} },
+      edges: { source: { type: { kind: "PlatformObjectType", id: "platform:Relationship" } }, read: "list", params: {} },
+    },
   });
   codeTasksPanel({ graph: { projectionId: "graph-fixture", inputs: {} } });
   const [offering] = await panelSkillProvider.list({ domainId });
-  const markdown = (await offering!.provide()).files[0]!.content;
-  expect(markdown).toContain("Graph nodes use PlatformObjectType:platform:ObjectType");
-  expect(markdown).toContain("Edges use PlatformObjectType:platform:Relationship with endpoint fields at /fromclass and /toclass.");
+  const markdown = (await offering!.provide(taskRef)).files[0]!.content;
+  expect(markdown).toContain('"id":"platform:ObjectType"');
+  expect(markdown).toContain('"edgeEnds":{"source":"/fromclass","target":"/toclass"}');
   expect(markdown.match(/POST \/admin\/getMetas/gu)).toHaveLength(1);
 });
 
 it("describes the platform ontology's five workbench reads once across both graph bindings", async () => {
-  javaSources([memberSources[0]!]);
+  javaSources([uses[0]!]);
+  const source = { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } };
   extraProjections.set("ontology-graph", {
-    ...legacyRun, componentId: "ObjectList", name: "Platform ontology", inputs: {},
-    binding: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE },
-    graph: {
-      edges: { binding: { kind: "PlatformObjectType", id: ONTOLOGY_RELATION_KIND },
-        sourcePath: "/from", targetPath: "/to" },
+    name: "Platform ontology", description: "", visibility: "domain", componentId: "@ontomato/sdk:OntologyGraph",
+    inputs: { node: { kind: "json" }, type: { kind: "scalar", type: "string" } }, outputs: {}, config: {},
+    data: {
+      schema: { source, read: "schema", params: {} },
+      neighbors: { source, read: "neighbors", params: { node: { input: "node" } } },
+      objects: { source, read: "objects", params: { type: { input: "type" } } },
     },
   });
   codeTasksPanel({ graph: { projectionId: "ontology-graph", inputs: {} } });
   const [offering] = await panelSkillProvider.list({ domainId });
-  const markdown = (await offering!.provide()).files[0]!.content;
+  const markdown = (await offering!.provide(taskRef)).files[0]!.content;
   const reads = markdown.split("### Read current data")[1]!.split("### Open the panel")[0]!;
   for (const [method, name] of [
     ["GET", "schema"], ["GET", "counts"], ["GET", "start"], ["POST", "neighbors"], ["POST", "objects"],
