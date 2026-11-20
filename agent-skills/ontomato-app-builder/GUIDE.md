@@ -20,6 +20,8 @@ A workspace is the application source tree. Business definitions remain in Java;
 3. Run `panel check <workspace directory>`. When a panel references projections still in the proposed registration material, pass that file with `--material`.
 4. Submit the selected projections, panels and application uses with `panel register`, then open the application's declared entry. Use an application ID and route you control.
 
+When converting a platform page that needs a new owner read, operation or official component, use the [platform development examples](references/platform-development.md).
+
 | Command | Result |
 | --- | --- |
 | `sdk read components.json` | Official components and ports in the current SDK |
