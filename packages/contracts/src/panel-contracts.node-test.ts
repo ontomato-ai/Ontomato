@@ -361,16 +361,18 @@ test("a no-code task panel registers and parses the same members and layout", as
 });
 
 test("the current registration accepts the shipped no-code layout and rejects an SDK pin", async () => {
-  const { registerProductPanelRequestSchema, panelNeedsFrame } = await import("./product-panels");
+  const { registerProductPanelRequestSchema } = await import("./product-panels");
   const material = await import(new URL("../../apps-sdk/examples/panels/schedules-trial/definitions.mjs", import.meta.url).href);
   const [{ directory, manifest, name, description }] = material.panels;
   const body = { content: material.panelContent(directory), manifest, name, description, visibility: "domain", revision: 0 };
-  assert.equal(panelNeedsFrame(registerProductPanelRequestSchema.parse(body).content), false);
-  assert.equal(panelNeedsFrame({ html: "<main></main>", style: "main {}" }), false);
+  assert.deepEqual(registerProductPanelRequestSchema.parse(body).content, body.content);
   assert.equal(registerProductPanelRequestSchema.safeParse({ ...body, sdkVersion: "1.1.2" }).success, false);
-  assert.equal(panelNeedsFrame(registerProductPanelRequestSchema.parse({
-    ...body, content: { html: "<main id='app'></main>", module: "export {}" },
-  }).content), true);
+  const moduleContent = { html: "<main id='app'></main>", module: "export {}" };
+  assert.deepEqual(registerProductPanelRequestSchema.parse({ ...body, content: moduleContent }).content, moduleContent);
+  const html = '<panel-member ref="not-declared"></panel-member>';
+  const invalidLayout = registerProductPanelRequestSchema.safeParse({ ...body, content: { html, style: "main {}" } });
+  assert.equal(invalidLayout.success, false);
+  assert.match(invalidLayout.error!.issues[0].message, /Undeclared member/u);
 });
 
 test("nested layout and explicit events share typed state and placement", async () => {

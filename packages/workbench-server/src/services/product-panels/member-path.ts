@@ -2,7 +2,7 @@ import {
   matchesDirectPanelValue, panelObjectRefSchema, panelPlacementSchema, type PanelMemberPath, type PanelMemberTarget, type PanelPlacement,
 } from "@ontomato/contracts/panel-manifest";
 import {
-  applicationEntryResolutionSchema, panelNeedsFrame, productPanelSchema, productProjectionSchema,
+  applicationEntryResolutionSchema, productPanelSchema, productProjectionSchema,
   type ApplicationPanelUse, type ProductPanel,
 } from "@ontomato/contracts/product-panels";
 import { parsePanelLayout, type PanelLayoutNode } from "@ontomato/contracts/panel-layout";
@@ -87,7 +87,8 @@ async function selectedPlacement(
     return nodes.some(node => node.kind === "member" ? node.ref === segment.member :
       node.kind === "element" && hasRef(node.children));
   }
-  if (panelNeedsFrame(panel.content) || !hasRef(parsePanelLayout(panel.content.html, panel.manifest).nodes)) unavailable();
+  // A panel written with code draws its own members: the platform's layout names none of them.
+  if (panel.content.module !== undefined || !hasRef(parsePanelLayout(panel.content.html, panel.manifest).nodes)) unavailable();
 
   let value = field.default;
   if (field.personal) {

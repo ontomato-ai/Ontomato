@@ -21,7 +21,7 @@ import type { PanelOperationAffected } from "@ontomato/contracts/panel-operation
 import { parsePanelLayout, type PanelLayoutNode } from "@ontomato/contracts/panel-layout";
 import { adoptPanelStyle, cleanPanelHtml, PanelStyleOutsideError, scopedPanelStyle, splitCodedPanelHtml } from "./panel-content";
 import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
-import { panelNeedsFrame, type PanelDefinitionContent, type ProductPanel } from "@ontomato/contracts/product-panels";
+import type { PanelDefinitionContent, ProductPanel } from "@ontomato/contracts/product-panels";
 
 /** An instance's deep-linkable state as the host carries it: what the host message hands the frame. */
 export type PanelHostState = PanelHostMessage["state"];
@@ -111,7 +111,7 @@ function projectionIdsOf(shown: HostedPanelSource): string[] {
 
 /** Whether the platform draws this source itself: its content has no code or style of its own to isolate in a frame. */
 export function runsDirect(source: HostedPanelSource): boolean {
-  return !panelNeedsFrame(source.panel.content);
+  return source.panel.content.module === undefined;
 }
 
 /** What the host hands a direct instance: where it is, what its address asks for, and where it reports. */
