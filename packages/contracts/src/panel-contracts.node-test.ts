@@ -463,6 +463,48 @@ test("form saves address the draft target even when the slot receives a selected
   assert.deepEqual(save?.target, { source: "draft", slot: "definition" });
 });
 
+test("named operation reads publish buttons and form metadata binds to its real owner", () => {
+  const task = { kind: "object", objectType: SCHEDULED_TASK };
+  const projection = productProjectionInputSchema.parse({
+    name: "Run now", description: "", visibility: "domain", componentId: "@ontomato/sdk:OperationButton",
+    inputs: { task }, outputs: {}, config: {},
+    data: { operation: { source: { operation: platformOperation(RUN_NOW) }, read: "describe", params: {} } },
+  });
+  const manifest = panelManifestSchema.parse({
+    state: { selected: { type: task } },
+    members: { run: { target: { projectionId: "run-now" }, inputs: { task: { state: "selected" } } } },
+    events: {},
+  });
+  const [run] = projectionOperations(manifest, { slot: "run", ports: projectionPorts(projection, {}) });
+  assert.equal(run?.id, "run.runNow");
+  assert.equal(run?.handlerRef, RUN_NOW);
+  assert.deepEqual(run?.target, { source: "state", state: "selected" });
+  const twoSelections = panelManifestSchema.parse({
+    ...manifest, state: { ...manifest.state, other: { type: task } },
+    members: { run: { ...manifest.members.run, inputs: { other: { state: "other" }, task: { state: "selected" } } } },
+  });
+  const action = productProjectionInputSchema.parse({
+    ...projection, inputs: { other: task, task },
+    data: { operation: {
+      source: { operation: { kind: "Action", id: "approve" } }, read: "describe",
+      params: { target: { input: "task" } },
+    } },
+  });
+  const [execute] = projectionOperations(twoSelections, { slot: "run", ports: projectionPorts(action, {}) });
+  assert.equal(execute?.handlerRef, "actions.execute");
+  assert.deepEqual(execute?.target, { source: "state", state: "selected" });
+
+  const form = productProjectionInputSchema.parse({
+    ...projection, name: "Task form", componentId: "@ontomato/sdk:ObjectForm",
+    data: { form: { source: { object: { input: "task" } }, read: "form", params: {} } },
+  });
+  const formPorts = projectionPorts(form, { operations: [
+    { client: "@binding", name: "save", label: "Save", kind: "form.save", inputSchema: {} },
+    { client: "@binding", name: "delete", label: "Delete", kind: "action", inputSchema: {} },
+  ] });
+  assert.deepEqual(formPorts.operations.map(op => op.handlerRef), [`${SCHEDULED_TASK}.save`]);
+});
+
 test("read operation inputs can take parameter values and a binding from this panel instance", () => {
   const bindingId = { state: "bindingId" };
   const parameters = { formField: { slot: "execution", path: "/parameters" } };
