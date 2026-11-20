@@ -128,6 +128,40 @@ class MetricViewPanelEndpointTest {
   }
 
   @Test
+  void aSaveThatNamesItsSubmittedFieldsKeepsEveryOtherSavedValue() throws Exception {
+    MetricView stored = displayMetric();
+    stored.setDescription("Monthly revenue");
+    stored.setMatchQuestions(new java.util.HashSet<>(Set.of("revenue")));
+    io.ontomato.dataengine.bean.function.Function function = new io.ontomato.dataengine.bean.function.Function();
+    function.setId("f1");
+    function.setName("revenue_query");
+    function.setOperation(io.ontomato.dataengine.bean.function.Function.OPERATION_READ);
+    function.setLogic("Sum the amounts");
+    stored.setFunction(function);
+    when(metricViewService.queryById("m1", "domain")).thenReturn(stored);
+    when(metricViewService.save(any(), eq("en"))).thenReturn(displayMetric());
+    stubSubjects();
+
+    JSONObject body = perform("/metricView/save", """
+        {"id":"m1","description":"Weekly revenue","submittedFields":["/description"]}""");
+
+    assertTrue(body.getBooleanValue("success"), body.toJSONString());
+    org.mockito.ArgumentCaptor<MetricView> saved = org.mockito.ArgumentCaptor.forClass(MetricView.class);
+    verify(metricViewService).save(saved.capture(), eq("en"));
+    assertEquals("m1", saved.getValue().getId());
+    assertEquals("Revenue", saved.getValue().getName());
+    assertEquals("Weekly revenue", saved.getValue().getDescription());
+    assertEquals(Set.of("revenue"), saved.getValue().getMatchQuestions());
+    assertEquals("revenue_query", saved.getValue().getFunction().getName());
+    assertEquals("Sum the amounts", saved.getValue().getFunction().getLogic());
+
+    when(metricViewService.queryById("gone", "domain")).thenReturn(null);
+    JSONObject missing = perform("/metricView/save", """
+        {"id":"gone","name":"x","submittedFields":["/name"]}""");
+    assertEquals("METRIC_VIEW_NOT_FOUND", missing.getString("code"));
+  }
+
+  @Test
   void setStatusReportsEachItemAndRejectsAnEmptyListBeforeTheOwner() throws Exception {
     MetricView saved = new MetricView();
     saved.setId("m1");

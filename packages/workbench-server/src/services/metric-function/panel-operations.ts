@@ -157,6 +157,15 @@ async function trial(host: Host, path: string, body: unknown, refusalCode: strin
   return envelope;
 }
 
+/**
+ * The owner's save body for the chosen target. Submitted fields go with it, so the owner changes only those and keeps
+ * every other saved value; without them the values are the whole definition.
+ */
+function ownerSaveBody(target: PanelOperationTarget, input: Record<string, unknown>) {
+  const { values, submittedFields } = saveInputSchema.parse(input);
+  return { ...valuesForTarget(target, values), ...(submittedFields && { submittedFields }) };
+}
+
 const formInstructions = "Read the form for the intended target. Use its fields, values and save.bodySchema for the values, and save.draftOperation for the draft. Carry the complete form values in call.input.";
 
 export const m5ServerOperations = [
@@ -182,8 +191,7 @@ export const m5ServerOperations = [
       },
     },
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
-      return save(host, "/metricView/save", valuesForTarget(target, saveInputSchema.parse(input).values),
-        "METRIC_VIEW_SAVE_FAILED", METRIC_VIEW, [METRIC_VIEW, FUNCTION]);
+      return save(host, "/metricView/save", ownerSaveBody(target, input), "METRIC_VIEW_SAVE_FAILED", METRIC_VIEW, [METRIC_VIEW, FUNCTION]);
     },
   },
   {
@@ -269,8 +277,7 @@ export const m5ServerOperations = [
       },
     },
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
-      return save(host, "/function/save", valuesForTarget(target, saveInputSchema.parse(input).values),
-        "FUNCTION_SAVE_FAILED", FUNCTION, [FUNCTION]);
+      return save(host, "/function/save", ownerSaveBody(target, input), "FUNCTION_SAVE_FAILED", FUNCTION, [FUNCTION]);
     },
   },
   {
