@@ -1,0 +1,28 @@
+<style>
+  .agent-directory { display: flex; flex-direction: column; gap: 1rem; }
+  .agent-directory-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 1rem; }
+  .agent-directory-detail { display: flex; flex-direction: column; gap: 1rem; }
+  @media (max-width: 42rem) {
+    .agent-directory-body { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>
+<div id="app">
+  <section class="agent-directory">
+    <div><button type="button" @click="newAgent">New agent</button></div>
+    <div class="agent-directory-body">
+      <projection slot="list" @update:selected="stopCreating"></projection>
+      <div class="agent-directory-detail">
+        <section v-if="detail.status === 'ready'">
+          <h2>{{ detail.value.label }}</h2>
+          <p>{{ detail.value.fields.description }}</p>
+        </section>
+        <p v-else-if="detail.status === 'loading'" role="status">Loading agent details…</p>
+        <p v-else-if="detail.status === 'empty'">This agent is no longer available.</p>
+        <p v-else-if="detail.status === 'forbidden'">You cannot read this agent.</p>
+        <p v-else-if="detail.status === 'error'" role="alert">{{ detail.message }}</p>
+        <projection v-if="selected || creating" slot="form"></projection>
+        <p v-else>Select an agent or create one.</p>
+      </div>
+    </div>
+  </section>
+</div>
