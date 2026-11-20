@@ -7,6 +7,7 @@ import { shellContextKey } from "../context";
 import type { ConversationItem } from "../view";
 import ShellComposer from "./ShellComposer.vue";
 import type { ComposerEntry } from "../page-composer-entry";
+import { writtenText } from "../page-context";
 import ShellQuestions from "./ShellQuestions.vue";
 import ShellResponse from "./ShellResponse.vue";
 import ShellMarkdown from "./ShellMarkdown.vue";
@@ -34,6 +35,14 @@ const props = defineProps<{
 const emit = defineEmits<{ send: [text: string]; stop: []; retry: []; loadOlder: [] }>();
 const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value);
+/** The reader's message as written: the page or file line it carries is the agent's, not shown in the bubble. */
+const written = (text: string) => writtenText(text, {
+  page: labels.value.pageContext,
+  pageAddress: labels.value.pageContextAddress,
+  selection: labels.value.selectionContext,
+  file: labels.value.fileContext,
+  closed: labels.value.pageContextClosed,
+});
 
 const scroller = ref<HTMLElement | null>(null);
 const content = ref<HTMLElement | null>(null);
@@ -268,13 +277,13 @@ async function send(text: string) {
           </div>
           <template v-for="item in items" :key="item.key">
             <div v-if="item.kind === 'user'" class="user-turn" :data-pin="item.key === pinTarget || undefined">
-              <div class="user-bubble">{{ item.answer ? labels.answered(item.text) : item.text }}</div>
+              <div class="user-bubble">{{ item.answer ? labels.answered(written(item.text)) : written(item.text) }}</div>
             </div>
             <div v-else-if="item.kind === 'notification'" class="agent-notification" :class="{ failed: item.error }" :role="item.error ? 'alert' : 'note'"><CircleAlert :size="14" /><ShellMarkdown v-if="item.markdownRunId" class="notification-markdown" :content="item.text" final :run-id="item.markdownRunId" /><span v-else>{{ item.text }}</span></div>
             <ShellResponse v-else :item="item" :session-id="sessionId" :feedback="feedback" />
           </template>
           <div v-if="pendingInput !== null" class="user-turn" :data-pin="pinTarget === PENDING || undefined">
-            <div class="user-bubble pending">{{ pendingInput }}</div>
+            <div class="user-bubble pending">{{ written(pendingInput) }}</div>
           </div>
           <div v-if="waiting" class="waiting" aria-live="polite" :aria-label="labels.working">
             <span class="dot" /><span class="dot" /><span class="dot" />

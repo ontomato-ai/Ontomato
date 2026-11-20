@@ -84,10 +84,24 @@ function textHighlights(text: string, terms: readonly string[]): PanelTextHighli
   return merged;
 }
 
-function rowHighlights(label: string, fields: Record<string, string>, terms: readonly string[]): PanelRecord["highlights"] {
+/**
+ * The content as a list row shows it under the title, as the page it replaces did: from shortly before the first hit,
+ * so the hit is inside the two lines a row shows, and no longer than those lines can hold.
+ */
+function contentSummary(text: string, terms: readonly string[]): string {
+  const lower = text.toLowerCase();
+  const first = Math.min(...terms.map(term => lower.indexOf(term)).filter(index => index >= 0));
+  const from = Number.isFinite(first) && first > 24 ? `…${text.slice(first - 12)}` : text;
+  return from.slice(0, 200);
+}
+
+function rowHighlights(
+  label: string, subtitle: string, fields: Record<string, string>, terms: readonly string[],
+): PanelRecord["highlights"] {
   if (!terms.length) return undefined;
   const matched = [
     ["label", textHighlights(label, terms)],
+    ["subtitle", textHighlights(subtitle, terms)],
     ["knowledgeText", textHighlights(fields.knowledgeText, terms)],
     ["knowledgeTags", textHighlights(fields.knowledgeTags, terms)],
   ].filter((entry): entry is [string, PanelTextHighlightRange[]] => entry[1] !== undefined);
@@ -116,21 +130,26 @@ function entryTextOf(description: PanelFormDescription): EntryText {
 /** One entry as the list and the detail read it, named and labelled in the reader's language. */
 function entryRow(entry: KnowledgeEntry, text: EntryText, terms: readonly string[] = []): PanelRecord {
   const label = entry.knowledgeTitle;
+  const subtitle = contentSummary(entry.knowledgeText, terms);
+  const tags = entry.knowledgeTags ?? [];
   const fields = {
     knowledgeText: entry.knowledgeText,
-    knowledgeTags: (entry.knowledgeTags ?? []).join(", "),
+    knowledgeTags: tags.join(", "),
     status: entry.status === 1 ? text.approvedName : text.pendingName,
   };
-  const highlights = terms.length && entryMatches(entry, terms) ? rowHighlights(label, fields, terms) : undefined;
+  const highlights = terms.length && entryMatches(entry, terms) ? rowHighlights(label, subtitle, fields, terms) : undefined;
   return {
     primaryKey: entry.knowledgeID,
     label,
+    subtitle,
     fieldLabels: {
       knowledgeText: text.fieldLabels.knowledgeText,
       knowledgeTags: text.fieldLabels.knowledgeTags,
       status: text.fieldLabels.status,
     },
     fields,
+    tones: { status: entry.status === 1 ? "success" : "warning" },
+    tags: { knowledgeTags: tags },
     ...(highlights ? { highlights } : {}),
   };
 }

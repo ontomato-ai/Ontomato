@@ -8,6 +8,7 @@ import {
   pageLineAddress,
   pageMoved,
   samePageAddress,
+  writtenText,
   type PageContext,
 } from "../page-context";
 
@@ -113,4 +114,18 @@ it("reads back whichever target a reopened conversation told last, or that it sa
   expect(carriedTargetIn([onFile, onPage], prompts)).toBe(samePageAddress(page.url));
   expect(carriedTargetIn([onFile, "after\n\nCurrent page: closed"], prompts)).toBe(CLOSED_TARGET);
   expect(carriedTargetIn(["nothing beside"], prompts)).toBeNull();
+});
+
+it("shows the reader's message without the line it carries for the agent", () => {
+  const prompts = { ...lines, file: (file: { label: string; path: string }) => `Current file: ${file.label} (${file.path})`, closed: "The page was closed." };
+  const asked = "Approve the selected one.\n\nThen tell me what changed.";
+  const url = "/applications/app-business-knowledge/review?state=%7B%22selected%22%3A%7B%22primaryKey%22%3A%22k-1%22%7D%7D";
+  // The page and its selection, the selection alone, a file, a closed page: each is the agent's, not the reader's.
+  expect(writtenText(`${asked}\n\n${pageContextLine({ ...page, url }, lines, true)}`, prompts)).toBe(asked);
+  expect(writtenText(`${asked}\n\n${pageContextLine({ ...page, url, label: "" }, lines, true)}`, prompts)).toBe(asked);
+  expect(writtenText(`${asked}\n\n${pageContextLine(page, lines, false)}`, prompts)).toBe(asked);
+  expect(writtenText(`${asked}\n\n${fileContextLine({ label: "Report", path: "outputs/report.md" }, prompts.file)}`, prompts)).toBe(asked);
+  expect(writtenText(`${asked}\n\n${prompts.closed}`, prompts)).toBe(asked);
+  // A message that carries nothing is shown whole, its own last paragraph included.
+  expect(writtenText(asked, prompts)).toBe(asked);
 });

@@ -244,6 +244,27 @@ export function fileLinePath(text: string, prompt: FileLinePrompt): string | nul
  * What a reopened conversation already carries, read from its messages' last lines: the last page or file they named, or
  * `""` when the last such line said it was closed. A conversation whose messages say none of these carries nothing.
  */
+/**
+ * What the reader wrote in a message sent from beside a page or a file: the message without the line the shell ended it
+ * with — the page and what is selected in it, the file, or that the target was closed. The agent reads that line; the
+ * reader's own message is shown without it. A message whose last paragraph is no such line is the reader's as it is.
+ */
+export function writtenText(text: string, prompts: PageLinePrompts & { file: FileLinePrompt; closed: string }): string {
+  const at = text.lastIndexOf("\n\n");
+  if (at < 0) return text;
+  const line = text.slice(at + 2);
+  const told = line === prompts.closed || fileLinePath(line, prompts.file) !== null || pageLineAddress(line, prompts) !== null
+    || selectionLine(line, prompts.selection);
+  return told ? text.slice(0, at) : text;
+}
+
+/** A line holding only what is selected, for a page the conversation was already told about. */
+function selectionLine(line: string, selection: PageLinePrompts["selection"]): boolean {
+  const template = selection(NAME);
+  const before = template.slice(0, template.indexOf(NAME));
+  return before !== "" && line.startsWith(before);
+}
+
 export function carriedTargetIn(
   texts: readonly string[],
   prompts: PageLinePrompts & { file: FileLinePrompt; closed: string },
