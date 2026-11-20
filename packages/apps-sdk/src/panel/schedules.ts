@@ -1,10 +1,11 @@
 import { scheduledTaskPanelOperations, scheduledTaskPanelSaveSchema, scheduledTaskSaveDescription } from "@ontomato/platform-schedules/panel-operations";
 import { createSchedulesApi, scheduleFailure, type PlatformSchedulesHost } from "@ontomato/platform-schedules";
+import { scheduledTaskFieldLabels } from "@ontomato/platform-schedules/panel-text";
 import type { PlatformTask } from "@ontomato/contracts/platform-schedules";
 import { formFieldKey, formFieldPointer, formValuesSchema, type FormField, type FormFieldError } from "@ontomato/contracts/form-fields";
 import type { PanelFormDescription, PanelFormField, PanelFormRequest, PanelFormSaveInput, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
-import { PlatformObjectRefusal, type PlatformObjectAdapterFactory, type PlatformObjectRecord, type PlatformRequests } from "./platform-objects";
+import { PlatformObjectRefusal, type PlatformObjectRecord, type PlatformWordedAdapterFactory, type PlatformRequests } from "./platform-objects";
 import { DATA_QUERY_GATEWAY, SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 
 /*
@@ -26,13 +27,14 @@ import { DATA_QUERY_GATEWAY, SCHEDULED_TASK } from "@ontomato/contracts/panel-cl
 
 
 /**
- * The task as a summary shows it: the service's own summary lines, its schedule, and whether it is on, paused or off.
- * All of it is the service's, read as it is.
+ * The task as a summary shows it: the service's own summary lines, its schedule, and whether it is on, paused or off,
+ * under the names the task service gives its fields in the reader's language. All of it is the service's, read as it is.
  */
-function record(task: PlatformTask): PlatformObjectRecord {
+function record(task: PlatformTask, translate: (key: string) => string): PlatformObjectRecord {
   return {
     primaryKey: task.id,
     label: task.title,
+    fieldLabels: scheduledTaskFieldLabels(translate),
     fields: {
       application: task.appId,
       settings: task.summary.map((item) => `${item.label}: ${item.value}`).join("; "),
@@ -60,15 +62,15 @@ function refused(error: unknown, fieldPath: (key: string) => string): unknown {
 }
 
 /** The scheduled tasks' owner requests, as the typed adapter sends them. */
-function schedulesResource(host: PlatformSchedulesHost, fieldPath: (key: string) => string) {
+function schedulesResource(host: PlatformSchedulesHost, fieldPath: (key: string) => string, translate: (key: string) => string) {
   const api = createSchedulesApi(host);
   const operations = scheduledTaskPanelOperations(host);
   return {
     async list() {
-      return (await api.list(null)).tasks.map(record);
+      return (await api.list(null)).tasks.map((task) => record(task, translate));
     },
     async read(primaryKey: string) {
-      return record(await api.task(primaryKey));
+      return record(await api.task(primaryKey), translate);
     },
     async form(primaryKey: string, values: Record<string, string> | undefined, changedField: string | null) {
       const task = await api.task(primaryKey);
@@ -79,7 +81,7 @@ function schedulesResource(host: PlatformSchedulesHost, fieldPath: (key: string)
     },
     async save(primaryKey: string, values: Record<string, string>, revision: number) {
       try {
-        return record(await operations.save(primaryKey, values, revision));
+        return record(await operations.save(primaryKey, values, revision), translate);
       } catch (error) {
         throw refused(error, fieldPath);
       }
@@ -115,8 +117,8 @@ function dataQueryHost(requests: PlatformRequests): PlatformSchedulesHost {
   };
 }
 
-export const scheduledTaskAdapters: PlatformObjectAdapterFactory = requests => {
-  const resource = schedulesResource(dataQueryHost(requests), taskFieldPath);
+export const scheduledTaskAdapters: PlatformWordedAdapterFactory = (requests, translate) => {
+  const resource = schedulesResource(dataQueryHost(requests), taskFieldPath, translate);
   /**
    * A complete draft, checked by the task's application. The application's form changes its fields only when it is asked
    * about the field that changed, so a draft that changes such a field (the operation) is checked against the form that

@@ -361,6 +361,11 @@ export interface PlatformObjectAdapter {
  * returns both adapters over that one read.
  */
 export type PlatformObjectAdapterFactory = (requests: PlatformRequests) => readonly PlatformObjectAdapter[];
+/**
+ * A module whose owner names things in the platform's words (the fields of a scheduled task's record) is also given the
+ * frame's words in the reader's language now; the frame passes them to every module.
+ */
+export type PlatformWordedAdapterFactory = (requests: PlatformRequests, translate: (key: string) => string) => readonly PlatformObjectAdapter[];
 
 /** How a resource module provides one platform operation's handler (`schedules.runNow`), given the frame's request path. */
 export type PlatformOperationFactory = (requests: PlatformRequests) => RegisteredHandler;
@@ -371,7 +376,7 @@ export type PlatformOperationFactory = (requests: PlatformRequests) => Registere
  * the clients — and the owner schemas they parse with — of the resources it shows and no others.
  */
 export interface PlatformResources {
-  objects: Readonly<Record<string, () => Promise<PlatformObjectAdapterFactory>>>;
+  objects: Readonly<Record<string, () => Promise<PlatformWordedAdapterFactory>>>;
   operations: Readonly<Record<string, () => Promise<PlatformOperationFactory>>>;
   /**
    * The clients a component reads its own resource through, by the component a projection draws (`MetricChart`'s chart
@@ -383,10 +388,10 @@ export interface PlatformResources {
 /**
  * What a frame calls before a projection registers its ports: every resource its record binds — its binding and, for a
  * graph, its edges' — and the client its component reads through, fetched and registered with the frame's request
- * path, once per module. A binding this version has
+ * path and words, once per module. A binding this version has
  * no module for is left to fail where it is used.
  */
-export function platformResourceLoader(requests: PlatformRequests, resources: PlatformResources) {
+export function platformResourceLoader(requests: PlatformRequests, resources: PlatformResources, translate: (key: string) => string) {
   const loaded = new Map<() => Promise<unknown>, Promise<void>>();
   const once = <Factory>(load: (() => Promise<Factory>) | undefined, register: (factory: Factory) => void) => {
     if (!load) return Promise.resolve();
@@ -402,7 +407,7 @@ export function platformResourceLoader(requests: PlatformRequests, resources: Pl
     await Promise.all([
       ...bindings.map((binding) => binding.kind === "PlatformOperation"
         ? once(resources.operations[binding.id], (factory) => registerHandler(factory(requests)))
-        : once(resources.objects[binding.id], (factory) => factory(requests).forEach(registerPlatformObjectAdapter))),
+        : once(resources.objects[binding.id], (factory) => factory(requests, translate).forEach(registerPlatformObjectAdapter))),
       once(resources.components[projection.componentId], (register) => register(requests)),
     ]);
   };

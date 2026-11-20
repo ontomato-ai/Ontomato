@@ -1,0 +1,400 @@
+{
+  "rows": {
+    "status": "ready",
+    "value": [
+      {
+        "primaryKey": "10000000-0000-4000-8000-000000000004",
+        "label": "每周知识核对",
+        "fields": {
+          "application": "governance",
+          "settings": "指令: 核对库存口径的相互冲突，给出建议和来源",
+          "state": "on",
+          "nextRun": "2026-11-09T01:00:00Z",
+          "lastRun": ""
+        },
+        "fieldLabels": {
+          "application": "应用",
+          "settings": "配置",
+          "state": "状态",
+          "nextRun": "下次运行",
+          "lastRun": "上次运行"
+        }
+      }
+    ]
+  },
+  "record": {
+    "status": "ready",
+    "value": {
+      "primaryKey": "10000000-0000-4000-8000-000000000004",
+      "label": "每周知识核对",
+      "fields": {
+        "application": "governance",
+        "settings": "指令: 核对库存口径的相互冲突，给出建议和来源",
+        "state": "on",
+        "nextRun": "2026-11-09T01:00:00Z",
+        "lastRun": ""
+      },
+      "fieldLabels": {
+        "application": "应用",
+        "settings": "配置",
+        "state": "状态",
+        "nextRun": "下次运行",
+        "lastRun": "上次运行"
+      }
+    }
+  },
+  "operation": {
+    "status": "ready",
+    "value": {
+      "handlerRef": "schedules.runNow",
+      "label": "立即运行",
+      "effect": "write",
+      "target": {
+        "source": "input",
+        "input": "task"
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "resultSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "taskId": {
+            "$ref": "#/properties/id"
+          },
+          "trigger": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "schedule",
+              "unknown"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "completed",
+              "failed",
+              "skipped"
+            ]
+          },
+          "scheduledAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "startedAt": {
+            "$ref": "#/properties/scheduledAt/anyOf/0"
+          },
+          "finishedAt": {
+            "anyOf": [
+              {
+                "$ref": "#/properties/scheduledAt/anyOf/0"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "credential_invalid",
+                      "creator_unavailable",
+                      "permission_denied",
+                      "target_unavailable",
+                      "definition_changed",
+                      "application_unavailable",
+                      "dependency_unavailable",
+                      "start_failed",
+                      "run_failed",
+                      "cancelled",
+                      "interrupted",
+                      "autotest_busy",
+                      "prior_run_active",
+                      "legacy_failure"
+                    ]
+                  },
+                  "message": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resultSummary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resultLink": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "appId": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "appId",
+                  "path"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "spendTime": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "snapshot": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "appId": {
+                "$ref": "#/properties/resultLink/anyOf/0/properties/appId"
+              },
+              "content": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "propertyNames": {
+                  "minLength": 1
+                }
+              },
+              "formRevision": {
+                "$ref": "#/properties/resultLink/anyOf/0/properties/path"
+              },
+              "timeZone": {
+                "$ref": "#/properties/resultLink/anyOf/0/properties/path"
+              },
+              "creatorId": {
+                "$ref": "#/properties/resultLink/anyOf/0/properties/path"
+              },
+              "summary": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "label": {
+                      "$ref": "#/properties/resultLink/anyOf/0/properties/path"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "label",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 100
+              },
+              "locale": {
+                "$ref": "#/properties/resultLink/anyOf/0/properties/path"
+              },
+              "taskRevision": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "title",
+              "appId",
+              "content",
+              "formRevision",
+              "timeZone",
+              "creatorId",
+              "summary",
+              "locale",
+              "taskRevision"
+            ],
+            "additionalProperties": false
+          },
+          "result": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "executionDetails": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/properties/executionDetails/anyOf/0/additionalProperties"
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/properties/executionDetails/anyOf/0/additionalProperties"
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "taskId",
+          "trigger",
+          "status",
+          "scheduledAt",
+          "startedAt",
+          "finishedAt",
+          "error",
+          "resultSummary",
+          "resultLink",
+          "spendTime",
+          "snapshot",
+          "result",
+          "executionDetails"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "batch": false
+    }
+  },
+  "runNowReceipt": {
+    "kind": "dispatched",
+    "intentId": "6731a985-a7f5-4ea5-a058-7f7e03b4d4b5",
+    "outcome": {
+      "kind": "success",
+      "message": "已开始运行。",
+      "data": {
+        "id": "30000000-0000-4000-8000-000000000002",
+        "taskId": "10000000-0000-4000-8000-000000000004",
+        "trigger": "manual",
+        "status": "running",
+        "scheduledAt": null,
+        "startedAt": "2026-11-06T02:01:00Z",
+        "finishedAt": null,
+        "error": null,
+        "resultSummary": null,
+        "resultLink": {
+          "appId": "agents",
+          "path": "/agents/chat?sessionId=40000000-0000-4000-8000-000000000002"
+        },
+        "spendTime": null,
+        "snapshot": {
+          "title": "每日库存摘要",
+          "appId": "agents",
+          "content": {
+            "agentId": "20000000-0000-4000-8000-000000000001",
+            "instruction": "生成库存变化摘要"
+          },
+          "formRevision": "agents-v1",
+          "timeZone": "Asia/Shanghai",
+          "creatorId": "member-a",
+          "summary": [
+            {
+              "key": "instruction",
+              "label": "指令",
+              "value": "生成库存变化摘要"
+            }
+          ],
+          "locale": "zh-CN",
+          "taskRevision": 1
+        },
+        "result": null,
+        "executionDetails": null
+      },
+      "affected": {
+        "objects": [
+          {
+            "objectType": "platform:ScheduledTask",
+            "primaryKey": "10000000-0000-4000-8000-000000000004"
+          }
+        ],
+        "objectTypes": [
+          "platform:ScheduledTask"
+        ]
+      }
+    }
+  }
+}

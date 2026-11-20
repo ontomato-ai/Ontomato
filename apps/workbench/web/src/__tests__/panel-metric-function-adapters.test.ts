@@ -189,8 +189,8 @@ describe("metric and function resource adapters", () => {
 
   it("registers both adapters in the SDK's resource map", async () => {
     const { requests } = fake(() => ({ success: true, data: [] }));
-    const metric = (await platformResources.objects[METRIC_VIEW]!())(requests)[0]!;
-    const fn = (await platformResources.objects[FUNCTION]!())(requests)[0]!;
+    const metric = (await platformResources.objects[METRIC_VIEW]!())(requests, (key: string) => key)[0]!;
+    const fn = (await platformResources.objects[FUNCTION]!())(requests, (key: string) => key)[0]!;
     expect(metric.objectType).toBe(METRIC_VIEW);
     expect(fn.objectType).toBe(FUNCTION);
   });
