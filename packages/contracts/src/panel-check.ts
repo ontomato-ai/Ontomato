@@ -1,7 +1,7 @@
 /** Node release entry for checking the same panel sources accepted by the platform. */
 export { appsSdkComponentCatalogSchema, appsSdkComponentDatum } from "./apps-sdk";
 export { panelAuthoringManifestSchema, panelAuthoringMemberSchema } from "./panel-authoring";
-export { panelManifestSchema } from "./panel-manifest";
+export { panelManifestSchema, panelPortAccepts } from "./panel-manifest";
 export {
   panelDefinitionContentSchema, productProjectionInputSchema,
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,

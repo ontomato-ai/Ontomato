@@ -96,21 +96,28 @@ test("current SDK describes the browser files and Node check from the same relea
 });
 
 test("the SDK catalogue separates supply, configuration and run inputs", async () => {
-  const { appsSdkComponentCatalogSchema } = await import("./apps-sdk");
+  const { appsSdkComponentCatalogSchema } = await import("./panel-check");
   const component = {
-    componentId: "ObjectSummary", module: "@ontomato/sdk/base", exportName: "ObjectSummary",
-    role: "presentation", meaning: "Show the selected object as its owner describes it.",
-    data: { record: { results: ["panelRecord"], required: true, runtimeParams: ["search"] } },
+    componentId: "ObjectList", module: "@ontomato/sdk/base", exportName: "ObjectList",
+    role: "presentation", meaning: "Show and select the rows supplied by the owner.",
+    data: { rows: { results: ["panelRecordList"], required: true, runtimeParams: ["search"] } },
     config: [{ name: "fields", type: "string[]", description: "Visible fields", required: false }],
-    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
-    outputs: [],
-    ports: { props: [], events: [], slots: [] },
+    inputs: { selected: { kind: "object", objectType: "@binding" } },
+    outputs: {
+      selected: { kind: "object", objectType: "@binding" },
+      checked: { kind: "list", items: { kind: "object", objectType: "@binding" } },
+      search: { kind: "scalar", type: "string" },
+    },
+    ports: { props: [], events: [{ name: "navigate", type: "PanelObjectRef", description: "A navigation event" }], slots: [] },
   };
   const catalogue = { version: "1.1.2", components: [component] };
   assert.deepEqual(appsSdkComponentCatalogSchema.parse(catalogue), catalogue);
+  assert.equal(appsSdkComponentCatalogSchema.safeParse({
+    ...catalogue, components: [{ ...component, outputs: ["selected"] }],
+  }).success, false);
   for (const datum of [{ results: [], required: true }, { results: ["notRegistered"], required: true }, { results: ["panelRecord"] }]) {
     assert.equal(appsSdkComponentCatalogSchema.safeParse({
-      ...catalogue, components: [{ ...component, data: { record: datum } }],
+      ...catalogue, components: [{ ...component, data: { rows: datum } }],
     }).success, false);
   }
   const { data: _data, ...displayOnly } = component;
