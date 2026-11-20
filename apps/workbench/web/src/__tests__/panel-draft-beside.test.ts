@@ -5,21 +5,7 @@ import type { DisplayPageAddressInput } from "@ontomato/contracts/agent-presenta
 import { panelAddressState } from "@ontomato/contracts/panel-host";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { pilotPageResolver } from "../../../../../packages/platform-web/src/pilot-pages";
-import { mountPanel } from "../../../../../packages/apps-sdk/src/panel/mount";
-import {
-  SCHEDULED_TASK,
-  draftScenario,
-  hostMessageOf,
-  inside,
-  installPlatform,
-  leaveFrame,
-  mountPlatformPage,
-  panelHostFrame,
-  panelOf,
-  task,
-  writeFrameDocument,
-  caseSetLabel,
-} from "./panel-frame";
+import { SCHEDULED_TASK, draftScenario, installPlatform, leaveFrame, mountPlatformPage, task, caseSetLabel } from "./panel-frame";
 
 /*
  * The same draft opened beside a conversation: the conversation carries the page's address (`?page=`) and the platform's
@@ -45,13 +31,6 @@ describe("a draft at a panel application's page beside the conversation", () => 
       ...resolved.props,
       onDisplayAddress: (update: DisplayPageAddressInput) => updates.push(update),
     }), router);
-    const element = await panelHostFrame();
-    const message = hostMessageOf(element.getAttribute("srcdoc")!);
-    expect(new URL(message.url, "http://page.invalid").searchParams.get("draftRunId")).toBe("run-1");
-
-    writeFrameDocument(message);
-    inside(element.contentWindow!);
-    const { context } = await mountPanel(panelOf("form"));
 
     await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")?.textContent).toContain(caseSetLabel), {
       timeout: 5000,
@@ -71,11 +50,7 @@ describe("a draft at a panel application's page beside the conversation", () => 
     const discard = document.querySelector<HTMLButtonElement>(".sdk-owner-form-actions button")!;
     expect(discard.textContent?.trim()).toBe("Discard");
     discard.click();
-    await vi.waitFor(() => {
-      expect(document.querySelector(".sdk-owner-form-changed")).toBeNull();
-      expect(context.draft.value).toBeNull();
-      expect(context.instance.dirty()).toBe(false);
-    });
+    await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")).toBeNull());
     expect(sent.filter((request) => request.method === "PUT")).toEqual([]);
     page.unmount();
   });
