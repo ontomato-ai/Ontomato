@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { projectionElement } from "../panel/direct";
+import { projectionElement } from "../panel/projection-element";
 import { computed, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { panelChildCollectionQuerySchema, type PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";

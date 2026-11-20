@@ -16,7 +16,7 @@ import {
   type PlatformObjectQueryResult,
 } from "./platform-objects";
 import { fieldAt, valueAt } from "./form-values";
-import { projectionElement } from "./direct";
+import { projectionElement } from "./projection-element";
 import type { PanelText } from "./text";
 
 /*

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { projectionElement } from "../panel/direct";
+import { projectionElement } from "../panel/projection-element";
 import { computed, onMounted, provide, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
