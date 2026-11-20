@@ -28,6 +28,7 @@ import { createOntologyModelReadAdapter } from "../ontology-model/model-reads";
 import { createScheduledTaskReadAdapter } from "../scheduling/panel-reads";
 import type { SkillResolveRequest } from "../skills/panel-reads";
 import { requirePanelUse } from "./application-use";
+import { requireChartReadRegistration } from "./chart-sources";
 import { readPanelComponentCatalogue } from "./component-catalogue";
 import { requireCurrentProduct, requireDirectPanelMember } from "./current";
 import { resolvePlacedObjectAction } from "./object-action-placement";
@@ -36,12 +37,6 @@ type ReadInputs = ProductPanelReadRequest["inputs"];
 type ReadMember = ProductPanel["manifest"]["members"][string];
 type ReadSelection = { kind: "platform" | "customer"; typeId: string; method: string; primaryKey?: string };
 type ReadAdapter = (selection: ReadSelection, params: Record<string, unknown>, projection: ProductProjection) => Promise<unknown> | unknown;
-
-function registeredChart(projection: ProductProjection) {
-  if (!("chartSource" in projection))
-    throw new HttpError(400, "Dashboard card reads require a registered source-card projection", "CHART_SOURCE_REGISTRATION_REQUIRED");
-  return { dashboardOwnerId: projection.ownerId, metricId: projection.metricId };
-}
 
 function customerReads(owner: ProductOwner, viewer: AssistantCredentials, callerUserName?: string): Record<string, ReadAdapter> {
   const customer = createCustomerOntologyReadAdapter(owner, viewer, callerUserName);
@@ -108,9 +103,11 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       result: (selection, params) => metrics.result(selection.primaryKey!, runtimeJsonObjectSchema.parse(params)),
     },
     [DASHBOARD_CARD]: {
-      chartTemplate: (selection, _params, projection) => cards.chartTemplate(selection.primaryKey!, registeredChart(projection)),
-      result: (selection, params, projection) => cards.result(
-        selection.primaryKey!, registeredChart(projection), runtimeJsonObjectSchema.parse(params),
+      chartTemplate: ({ primaryKey }, _params, projection) => cards.chartTemplate(
+        primaryKey!, requireChartReadRegistration(projection, primaryKey!),
+      ),
+      result: ({ primaryKey }, params, projection) => cards.result(
+        primaryKey!, requireChartReadRegistration(projection, primaryKey!), runtimeJsonObjectSchema.parse(params),
       ),
     },
     [AGENT_DEFINITION]: {
