@@ -3,7 +3,6 @@ import { agentChannelRouter } from "../api/routes/agent-channel";
 import { createHealthRouter } from "../api/routes/health";
 import { appBuilderRouter } from "../api/routes/app-builder";
 import { workspacePreviewRouter, workspaceRouter, mountHostedStatic } from "../api/routes/workspaces";
-import { installAppSdk } from "../services/workspaces/hosted-apps";
 import { startModelMigration, stopModelMigration } from "../platform/agent-runtime/model-migration";
 import assistantRouter from "../api/routes/assistant";
 import { scheduleApplicationsRouter, scheduleExecutionStatus } from "../api/routes/schedule-applications";
@@ -276,7 +275,6 @@ export async function startWorkbench(
   syncDefaultPrompts();
   await initializeConnection();
   // Production images carry the apps SDK next to the web pages; development serves neither from a build.
-  if (!isDev) await installAppSdk();
   startModelMigration();
   getWorkbenchLogStore();
   const stopApplication = await initializeApplication?.();

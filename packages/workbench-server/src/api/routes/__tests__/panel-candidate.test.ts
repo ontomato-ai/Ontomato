@@ -1,5 +1,5 @@
 import express from "express";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,12 +25,11 @@ vi.mock("../../../infrastructure/postgres", async (original) => ({
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const scope = { hostId: "workbench", domainId: "domain-a" };
-const sdkVersion = "4.1.9-dev." + "a".repeat(64);
 const projectionId = "agent-form";
 const manifest = {
   state: {},
-  slots: { form: { projectionId, inputs: {} } },
-  operations: [],
+  members: { form: { target: { projectionId } } },
+  events: {},
 };
 const messages = {
   en: { "settings.title": "Settings for {name}" },
@@ -53,20 +52,19 @@ beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), "panel-candidate-"));
   installContentLayout({ runtimeRoot: root, publicSkillsRoot: root, prompts: [], runtimeResources: [] });
   installWorkbenchIdentity({ requireDomainId: () => scope.domainId } as unknown as WorkbenchIdentity);
-  const sdk = join(root, "data/apps-sdk", sdkVersion);
-  await mkdir(sdk, { recursive: true });
   const git = new WorkspaceGit(join(root, "author-workspace"));
   await git.initialize();
   await git.replace(Object.entries({
     "panel.html": '<projection slot="form" />',
     "panel.mjs": 'throw new Error("The server must not execute the module");',
-    "panel.json": JSON.stringify({ manifest, sdkVersion, content: { messages } }),
+    "panel.json": JSON.stringify({ manifest, content: { messages } }),
     "recipes.md": "Committed recipes",
   }).map(([path, content]) => ({ path, content, encoding: "utf8" })));
   commit = await git.commit("Panel candidate");
   await rm(join(git.tree, "recipes.md"));
-  await writeFile(join(git.tree, "panel.json"), JSON.stringify({ manifest, sdkVersion }));
-  await writeFile(join(git.tree, "panel.html"), '<projection slot="form" class="working" />');
+  await rm(join(git.tree, "panel.mjs"));
+  await writeFile(join(git.tree, "panel.json"), JSON.stringify({ manifest }));
+  await writeFile(join(git.tree, "panel.html"), '<section flow="column"><panel-member ref="form"></panel-member></section>');
 
   const { workspaceRouter } = await import("../workspaces");
   const { productPanelsRouter, productProjectionsRouter } = await import("../product-panels");
@@ -132,8 +130,8 @@ beforeEach(() => {
   productQuery.mockReset().mockResolvedValue({ rows: [{
     id: projectionId, domainId: scope.domainId, ownerId: "settings-owner", revision: 1,
     definition: {
-      name: "Agent form", description: "", visibility: "domain", componentId: "ObjectForm",
-      binding: { kind: "PlatformObjectType", id: "platform:AgentDefinition" }, inputs: {}, display: {},
+      name: "Agent form", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectForm",
+      inputs: {}, outputs: {}, data: {}, config: {},
     },
     createdAt: new Date(), updatedAt: new Date(),
   }] });
@@ -160,7 +158,7 @@ it("loads a commit under the author, uses the workspace's current test context a
     kind: "candidate", workspace: { id: workspaceId, ref: commit },
     panel: {
       content: { html: '<projection slot="form" />', module: 'throw new Error("The server must not execute the module");', recipes: "Committed recipes", messages },
-      manifest, sdkVersion,
+      manifest,
     },
     previewContext: { kind: "build-test", test: currentTest },
   });
@@ -168,13 +166,14 @@ it("loads a commit under the author, uses the workspace's current test context a
   expect(productQuery.mock.calls).toEqual([[expect.stringMatching(/^SELECT .*product_projections/), [scope.domainId, projectionId]]]);
 });
 
-it("reads the working tree and preserves NONE as build-test", async () => {
+it("reads a code-free working tree and preserves NONE as build-test", async () => {
   issuedTest = null;
   const response = await preview("working");
   expect(response.status).toBe(200);
   const source = candidatePanelSourceSchema.parse(await response.json());
   expect(source.workspace.ref).toBe("working");
-  expect(source.panel.content.html).toContain('class="working"');
+  expect(source.panel.content.html).toContain('<panel-member ref="form">');
+  expect(source.panel.content).not.toHaveProperty("module");
   expect(source.panel.content).not.toHaveProperty("recipes");
   expect(source.panel.content).not.toHaveProperty("messages");
   expect(source.previewContext).toEqual({ kind: "build-test", test: null });
