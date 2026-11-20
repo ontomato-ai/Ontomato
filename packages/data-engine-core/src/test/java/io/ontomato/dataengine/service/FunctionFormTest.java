@@ -182,6 +182,7 @@ class FunctionFormTest {
     assertEquals("OPERATION_READ", values.getString("operation"));
     assertEquals("USER", values.getString("origin"));
     assertEquals("function.create", form.getJSONObject("save").getString("draftOperation"));
+    assertFalse(form.getJSONObject("values").containsKey("id"));
     assertFalse(field(form, "/operation").getBooleanValue("readOnly"));
     assertEquals("code", field(form, "/queryPackage").getJSONObject("control").getString("kind"));
   }
