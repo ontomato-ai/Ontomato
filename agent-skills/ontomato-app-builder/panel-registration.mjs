@@ -80,6 +80,17 @@ export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workben
 
   return {
     currentRecord,
+    async findChartSource(sourceCard, checks) {
+      const endpoint = `/api${checks.CHART_PROJECTION_SOURCES_PATH}?${new URLSearchParams(sourceCard)}`;
+      const { projectionId } = checks.chartProjectionLookupResponseSchema.parse(await call(workbenchUrl, "GET", endpoint));
+      if (projectionId === null) return null;
+      const result = await call(workbenchUrl, "GET", productPath("projection", projectionId));
+      return checks.productProjectionResponseSchema.parse(result).projection;
+    },
+    async registerChartSource(sourceCard, checks) {
+      const result = await call(workbenchUrl, "POST", `/api${checks.CHART_PROJECTION_SOURCES_PATH}`, sourceCard);
+      return checks.registerChartProjectionResponseSchema.parse(result).projection;
+    },
     async currentRevision(kind, id) {
       const answer = await call(workbenchUrl, "GET", productPath(kind, id));
       const revision = answer[kind].revision;

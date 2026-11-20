@@ -164,6 +164,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     { componentId: "SegmentedControl", data: { counts: datum("panelGroupCounts") } },
     { componentId: "OperationButton", data: {} },
     { componentId: "PanelData", data: { "*": datum("panelRecordList") } },
+    { componentId: "MetricChart", data: {} },
   ] };
   const checkModule = `
     const ok = data => ({ success: true, data });
@@ -186,6 +187,16 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     export const platformTypeTableResponseSchema = { parse };
     export const panelAuthoringManifestSchema = { parse };
     export const appsSdkComponentCatalogSchema = { parse };
+    export const CHART_PROJECTION_SOURCES_PATH = "/product-projections/chart-sources";
+    export const chartProjectionLookupResponseSchema = { parse };
+    export const registerChartProjectionResponseSchema = { parse };
+    export const productProjectionResponseSchema = { parse };
+    export function bindPanelAuthoringChart(key, member, { state, projection }) {
+      if (projection.componentId !== "@ontomato/sdk:MetricChart" || !state[member.state.range]) {
+        throw new Error("member " + key + ": cannot connect chart range");
+      }
+      return { target: { projectionId: projection.id }, inputs: { range: { state: member.state.range } } };
+    }
     export function expandPanelAuthoringMember(key, member, { state, components, typeTable }) {
       if (!components.some(component => component.componentId === member.component)) throw new Error("member " + key + ": component unavailable");
       const target = state[member.target]?.type;
@@ -239,6 +250,12 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
   const projectionPath = "/api/product-projections/tasks";
   const usesPath = "/owner/platform/applications/app-acceptance/panel-uses";
   const inlinePanelPath = "/api/product-panels/inline-panel";
+  const chartPath = "/api/product-projections/chart-sources";
+  const chartProjection = { id: "source-owned-chart", componentId: "@ontomato/sdk:MetricChart", data: {} };
+  const storedChartPath = "/api/product-projections/" + chartProjection.id;
+  const chartSource = { dashboardId: "dashboard-a", cardId: "card-b" };
+  const chartQuery = chartPath + "?" + new URLSearchParams(chartSource);
+  let registeredChart = false;
   const inlineRecords = new Map();
   let rejectInlinePanel = false;
   const server = createServer(async (request, response) => {
@@ -251,7 +268,14 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     else if (request.url === "/api/app-builder/type-table") response.end(JSON.stringify(typeTable));
     else if (request.url === `${sdkPath}/components.json`) response.end(JSON.stringify(catalogue));
     else if (request.url === `${sdkPath}/node/panel-check.mjs`) response.end(checkModule);
-    else if (request.url === projectionPath) response.end(JSON.stringify({ projection: { componentId: "@ontomato/sdk:ObjectList" } }));
+    else if (request.url === chartQuery && request.method === "GET") {
+      response.end(JSON.stringify({ projectionId: registeredChart ? chartProjection.id : null }));
+    } else if (request.url === chartPath && request.method === "POST") {
+      registeredChart = true;
+      response.end(JSON.stringify({ projection: chartProjection }));
+    } else if (request.url === storedChartPath && request.method === "GET" && registeredChart) {
+      response.end(JSON.stringify({ projection: chartProjection }));
+    } else if (request.url === projectionPath) response.end(JSON.stringify({ projection: { componentId: "@ontomato/sdk:ObjectList" } }));
     else if (request.url === "/api/product-projections/unwritten") {
       response.statusCode = 404;
       response.end(JSON.stringify({ error: { code: "PRODUCT_UNAVAILABLE" } }));
@@ -486,6 +510,37 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.equal(inlineRecords.get(inlineProjectionPath).name, "Renamed");
     assert.deepEqual(inlineRecords.get(inlinePanelPath).manifest.members.renamedTasks.target, { projectionId: inlineProjectionId });
     assert.equal(inlineRecords.size, 2);
+
+    const chartPanel = JSON.stringify({ manifest: {
+      state: { window: { type: { kind: "scalar", type: "string" } } },
+      members: { chart: { component: "MetricChart", sourceCard: chartSource, state: { range: "window" } } },
+      events: {},
+    } });
+    await writeFile(descriptor, chartPanel);
+    await writeFile(layout, '<div id="app"><projection slot="chart"></projection></div>');
+    await writeFile(registration, JSON.stringify({
+      panels: [{ ...item, mode: "update", revision: inlineRecords.get(inlinePanelPath).revision }],
+    }));
+    const unregistered = JSON.parse((await run("panel", "check", directory)).stdout);
+    assert.deepEqual(unregistered.unchecked.map(({ reason, ...source }) => source), [
+      { kind: "chart-source", member: "chart", ...chartSource },
+    ]);
+    assert.equal(unregistered.unchecked[0].reason, "Chart input types can be checked after the owner registers this source card");
+    assert.deepEqual(requests.splice(0).filter(([method, url]) => method !== "GET" || url.includes("/product-"))
+      .map(([method, url]) => [method, url]), [["GET", chartQuery]]);
+
+    await run("panel", "register", directory);
+    assert.deepEqual(requests.splice(0).filter(([method]) => method !== "GET").map(([method, url, body]) =>
+      [method, url, method === "POST" ? body : body.manifest.members.chart]), [
+      ["POST", chartPath, chartSource],
+      ["PUT", inlinePanelPath, { target: { projectionId: chartProjection.id }, inputs: { range: { state: "window" } } }],
+    ]);
+    assert.equal(await readFile(descriptor, "utf8"), chartPanel);
+
+    const registered = JSON.parse((await run("panel", "check", directory)).stdout);
+    assert.deepEqual(registered.unchecked, []);
+    assert.deepEqual(requests.splice(0).filter(([method, url]) => method !== "GET" || url.includes("/product-"))
+      .map(([method, url]) => [method, url]), [["GET", chartQuery], ["GET", storedChartPath]]);
   } finally {
     await rm(directory, { recursive: true });
     await new Promise(resolve => server.close(resolve));

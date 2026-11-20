@@ -337,7 +337,11 @@ async function checkCurrentPanel(api, directory, materialPath) {
         throw new Error(`${kind} ${id}: ${error.message}`, { cause: error });
       }
     });
-  return print(await checkPanelWorkspace(directory, { checks, catalogue, version: release.version, digest: release.digest, typeTable, lookup, materialPath }));
+  const registration = panelRegistrationClient({ workbenchUrl: api.envUrl, headers: headers(api) });
+  const findChartSource = source => registration.findChartSource(source, checks);
+  return print(await checkPanelWorkspace(directory, {
+    checks, catalogue, version: release.version, digest: release.digest, typeTable, lookup, findChartSource, materialPath,
+  }));
 }
 
 async function panelCommand(api, workspaceId, [command, ...args]) {

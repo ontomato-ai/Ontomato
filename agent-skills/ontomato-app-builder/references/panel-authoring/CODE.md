@@ -175,6 +175,10 @@ const draftRoute = `#${usePath}?${query}`;
 
 Pass the raw artifact path once to `URLSearchParams`. Opening the link fills the owner form for the reader to save.
 
+For a chart from a dashboard card, declare `component: "MetricChart"` and `sourceCard: {dashboardId, cardId}`.
+Connect the chart inputs in `state`. If the owner has not registered that card, `panel check` lists its inputs as
+unchecked. `panel register` asks the card owner to register the chart and uses the returned projection ID.
+
 ## Open the page composer
 
 Add a `ConversationEntry` member in `manifest.members` when a named assistant or opening line belongs on the page.
