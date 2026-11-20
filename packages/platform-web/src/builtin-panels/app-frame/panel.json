@@ -1,0 +1,19 @@
+{
+  "state": {},
+  "members": {
+    "menu": {
+      "target": { "projectionId": "builtin-app-menu" },
+      "params": { "width": "full" }
+    },
+    "content": {
+      "target": { "fromPlatform": "currentEntry", "candidates": { "rule": "applicationEntry" } },
+      "params": { "width": "full" }
+    }
+  },
+  "events": {
+    "go": {
+      "on": { "member": "menu", "output": "activated" },
+      "do": { "open": { "mode": "entry", "entry": { "event": true } } }
+    }
+  }
+}

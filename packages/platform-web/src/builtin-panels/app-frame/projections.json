@@ -1,0 +1,15 @@
+{
+  "menu": {
+    "componentId": "@ontomato/sdk:AppMenu",
+    "inputs": {},
+    "outputs": { "activated": { "kind": "object", "objectType": "platform:ApplicationPanelUse" } },
+    "config": {},
+    "data": {
+      "menu": {
+        "source": { "type": { "kind": "PlatformObjectType", "id": "platform:ApplicationPanelUse" } },
+        "read": "visible",
+        "params": {}
+      }
+    }
+  }
+}
