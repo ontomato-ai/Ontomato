@@ -3,6 +3,7 @@ import { agentDefinitionTypeDetail } from "./platform-type-details/agent-definit
 import { applicationTypeDetail } from "./platform-type-details/application";
 import { productPanelTypeDetail } from "./platform-type-details/product-panel";
 import { productProjectionTypeDetail } from "./platform-type-details/product-projection";
+import { sdkComponentTypeDetail } from "./platform-type-details/sdk-component";
 
 /** One documented field of a type's public record. */
 export const platformTypePropertySchema = z.object({
@@ -27,4 +28,5 @@ export const platformTypeDetails: Readonly<Partial<Record<string, PlatformTypeDe
   [applicationTypeDetail.id]: applicationTypeDetail,
   [productPanelTypeDetail.id]: productPanelTypeDetail,
   [productProjectionTypeDetail.id]: productProjectionTypeDetail,
+  [sdkComponentTypeDetail.id]: sdkComponentTypeDetail,
 };
