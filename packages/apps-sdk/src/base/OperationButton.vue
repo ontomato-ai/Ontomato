@@ -56,8 +56,13 @@ const published = computed(() => {
   return found;
 });
 const operationId = computed(() => panelOperationId(slot.slot, published.value.name));
-/** The button shows only once its description is read, so the owner's name, in the reader's language, is there. */
-const label = computed(() => descriptor.value!.label);
+/**
+ * The button shows only once its description is read, so the owner's name, in the reader's language, is there. A batch
+ * button also says how many objects it acts on, so it never reads as the single one beside it.
+ */
+const label = computed(() => (batch.value
+  ? t("platform.operationChecked", { label: descriptor.value!.label, count: checkedObjects.value.length })
+  : descriptor.value!.label));
 
 const fail = (reason: unknown) => {
   failure.value = reason instanceof Error ? reason : new Error(String(reason));
