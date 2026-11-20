@@ -20,7 +20,7 @@ class AgentChannelBoundaryTest {
   private final AgentDirectory directory=mock(AgentDirectory.class);
   private final OntologyAgentStore store=mock(OntologyAgentStore.class);
   private org.springframework.test.web.servlet.MockMvc mvc() {
-    return MockMvcBuilders.standaloneSetup(new AgentChannelController(callers,directory,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class),mock(OntologyRetrievalService.class),mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),mock(io.ontomato.dataengine.service.LangService.class)))
+    return MockMvcBuilders.standaloneSetup(new AgentChannelController(callers,directory,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class),mock(OntologyRetrievalService.class),mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),mock(io.ontomato.dataengine.service.LangService.class),mock(io.ontomato.dataengine.service.RuntimeCodeClient.class)))
       .addInterceptors(new BuildTestAccessInterceptor()).setControllerAdvice(new OntologyAgentErrors()).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
   }
   private String input(String mode,String role) {
@@ -33,7 +33,7 @@ class AgentChannelBoundaryTest {
     var runtime=mock(AgentRuntimeClient.class);
     var actor=JSONObject.of("id",RUN,"domainId","a");
     when(runtime.json(eq("a"),eq(SESSION),eq("/v1/channel/providers/workbench/sessions/"+SESSION+"/actor"),eq("GET"),isNull(),isNull())).thenReturn(JSONObject.of("actor",actor));
-    var controller=new AgentChannelController(callers,directory,store,runtime,new WorkbenchServiceAuthentication("service-secret"),mock(OntologyRetrievalService.class),mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),mock(io.ontomato.dataengine.service.LangService.class));
+    var controller=new AgentChannelController(callers,directory,store,runtime,new WorkbenchServiceAuthentication("service-secret"),mock(OntologyRetrievalService.class),mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),mock(io.ontomato.dataengine.service.LangService.class),mock(io.ontomato.dataengine.service.RuntimeCodeClient.class));
     var http=MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new OntologyAgentErrors()).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
     String request=JSONObject.of("providerId","workbench","sessionId",SESSION).toJSONString();
     http.perform(post("/platform/agent-channel/session-actor").header("X-Domain-Id","a").contentType(MediaType.APPLICATION_JSON).content(request)).andExpect(status().isForbidden());
@@ -108,7 +108,7 @@ class AgentChannelBoundaryTest {
   @Test void retrievalReadSummarizesBothBranchesAndExportsOriginalDatasetBytes() throws Exception {
     var retrieval=mock(OntologyRetrievalService.class);var tasks=mock(RetrievalTasks.class);
     var labels=mock(io.ontomato.dataengine.service.LangService.class);
-    var controller=new AgentChannelController(callers,directory,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class),retrieval,tasks,mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),labels);
+    var controller=new AgentChannelController(callers,directory,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class),retrieval,tasks,mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),labels,mock(io.ontomato.dataengine.service.RuntimeCodeClient.class));
     var actor=JSONObject.of("id",RUN,"domainId","a");
     var owner=new OntologyAgentStore.Owner("user","a");
     when(callers.restore(actor,"a",false)).thenReturn(new AgentCaller.Actor(RUN,new io.ontomato.dataengine.service.QueryAccessService.GrantUser("user","a"),1000L));
@@ -161,7 +161,7 @@ class AgentChannelBoundaryTest {
     when(callers.retrieval(any(),eq("a"),eq("en"),any(),isNull(),any(),eq(executorRef))).thenReturn(admitted);
     var retrieval=mock(OntologyRetrievalService.class);
     when(retrieval.prepareRun(eq(SESSION),eq(RUN),any(),eq(RUN),isNull(),eq(RUN),eq(admitted))).thenReturn(JSONObject.of("input",JSONObject.of("role","user","content","Question")));
-    var controller=new AgentChannelController(callers,directory,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class),retrieval,mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),mock(io.ontomato.dataengine.service.LangService.class));
+    var controller=new AgentChannelController(callers,directory,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class),retrieval,mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),mock(io.ontomato.dataengine.service.LangService.class),mock(io.ontomato.dataengine.service.RuntimeCodeClient.class));
     var mvc=MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new OntologyAgentErrors()).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
     var body=JSONObject.parseObject(input("run","user"));body.getJSONObject("agent").put("agentId",OntologyAgentStore.RETRIEVER);body.put("executionActor",executorRef);
     var response=mvc.perform(post("/platform/agent-channel/prepare").header("X-Domain-Id","a").contentType(MediaType.APPLICATION_JSON).content(body.toJSONString())).andExpect(status().isOk()).andReturn().getResponse();

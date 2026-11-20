@@ -18,6 +18,7 @@ export interface PanelLayoutContainer {
   flow: "row" | "column" | "grid";
   gap: "none" | "small" | "medium" | "large";
   when?: PanelLayoutCondition;
+  each?: string;
   children: PanelLayoutNode[];
   position: PanelLayoutPosition;
 }
@@ -43,9 +44,9 @@ interface Attribute {
 }
 
 const memberAttributes = new Set(["ref"]);
-const containerAttributes = new Set(["flow", "gap", "when", "eq", "ne"]);
+const containerAttributes = new Set(["flow", "gap", "when", "eq", "ne", "each"]);
 
-/** Parse the direct layout subset without browser HTML repair or interpretation. */
+/** Parse the declared layout without browser HTML repair or interpretation. */
 export function parsePanelLayout(html: string, manifest: DirectPanelManifest): PanelLayoutNode[] {
   const lineStarts = [0];
   for (const match of html.matchAll(/\r\n?|\n/gu)) lineStarts.push(match.index + match[0].length);
@@ -118,7 +119,7 @@ export function parsePanelLayout(html: string, manifest: DirectPanelManifest): P
   }
 
   const roots: PanelLayoutNode[] = [];
-  const parents: { tag: string; node: PanelLayoutNode }[] = [];
+  const parents: { tag: string; node: PanelLayoutNode; repeat?: string }[] = [];
   const placed = new Set<string>();
   while (offset < html.length) {
     take(/[ \t\r\n\f]+/y);
@@ -133,28 +134,41 @@ export function parsePanelLayout(html: string, manifest: DirectPanelManifest): P
     const tag = take(/<([a-z][a-z0-9-]*)/y)?.[1];
     if (tag !== "div" && tag !== "section" && tag !== "panel-member")
       fail(start, tag ? `Unknown tag '${tag}'` : "Expected a layout container or member");
-    const parent = parents.at(-1)?.node;
+    const scope = parents.at(-1);
+    const parent = scope?.node;
+    const repeat = scope?.repeat;
     if (parent?.kind === "member") fail(start, "A panel member has no children");
     const attrs = attributes(tag === "panel-member" ? memberAttributes : containerAttributes);
     let node: PanelLayoutNode;
     if (tag === "panel-member") {
       const ref = attrs.get("ref");
       if (!ref) fail(start, "A panel member needs a 'ref'");
-      if (!Object.hasOwn(manifest.members, ref.value)) fail(ref.offset, `Undeclared member '${ref.value}'`);
-      if (placed.has(ref.value)) fail(ref.offset, `Member '${ref.value}' already has a layout position`);
-      placed.add(ref.value);
+      if (ref.value.startsWith("$state.")) {
+        const field = ref.value.slice("$state.".length);
+        if (!Object.hasOwn(manifest.state, field) || manifest.state[field].type.kind !== "placement")
+          fail(ref.offset, `Expected a placement state field: '${field}'`);
+      } else {
+        if (!Object.hasOwn(manifest.members, ref.value)) fail(ref.offset, `Undeclared member '${ref.value}'`);
+        if (placed.has(ref.value)) fail(ref.offset, `Member '${ref.value}' already has a layout position`);
+        if (!repeat && Object.values(manifest.members[ref.value].inputs ?? {}).some(input => "item" in input))
+          fail(ref.offset, "A member that reads the repeat item must be inside a repeat");
+        placed.add(ref.value);
+      }
       node = { kind: "member", ref: ref.value, position: positionAt(start) };
     } else {
       const when = condition(attrs, start);
+      const each = attrs.get("each");
+      if (each && (!Object.hasOwn(manifest.state, each.value) || manifest.state[each.value].type.kind !== "list"))
+        fail(each.offset, `Expected a list state field: '${each.value}'`);
       node = {
         kind: "container", tag,
         flow: choice(attrs, "flow", ["row", "column", "grid"], "column"),
         gap: choice(attrs, "gap", ["none", "small", "medium", "large"], "medium"),
-        ...(when && { when }), children: [], position: positionAt(start),
+        ...(when && { when }), ...(each && { each: each.value }), children: [], position: positionAt(start),
       };
     }
     (parent ? parent.children : roots).push(node);
-    parents.push({ tag, node });
+    parents.push({ tag, node, repeat: node.kind === "container" ? node.each ?? repeat : repeat });
   }
   const unclosed = parents.at(-1);
   if (unclosed) fail(unclosed.node.position.offset, `Unclosed tag '${unclosed.tag}'`);

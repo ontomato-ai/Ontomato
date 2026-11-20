@@ -1,8 +1,16 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema, runtimeKeySchema } from "./agent-runtime-values";
 import { panelObjectIdentitySchema, panelOperationCallSchema } from "./panel-manifest";
-import { panelFormDescriptionSchema, panelFormValuesSchema, panelRecordListSchema, panelRecordSchema } from "./panel-projection";
-import type { PlatformReadDeclaration } from "./platform-object-types";
+import {
+  panelFormDescriptionSchema, panelFormValuesSchema, panelGroupCountsSchema, panelOptionListSchema,
+  panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema, panelRelationNeighborsSchema,
+} from "./panel-projection";
+import { chartProjectionTemplateSchema, dashboardMetricOutputSchema } from "./dashboard";
+import { applicationEntryMenuSchema } from "./product-panels";
+import {
+  platformOntologyCountsResponseSchema, platformOntologyNeighborsResponseSchema, platformOntologyObjectsResponseSchema,
+  platformOntologySchemaResponseSchema, platformOntologyStartResponseSchema,
+} from "./platform-ontology";
 
 /** The owner selects a named input or form slot to resolve before invoking the operation. */
 export const panelOwnerOperationTargetSchema = z.discriminatedUnion("source", [
@@ -34,9 +42,21 @@ export const panelReadOperationDescriptorSchema = panelOwnerOperationDescriptorS
 export const panelReadResultSchemas = {
   panelRecordList: panelRecordListSchema,
   panelRecord: panelRecordSchema,
+  panelRecordQuery: panelRecordQuerySchema,
+  panelGroupCounts: panelGroupCountsSchema,
+  panelApplicationMenu: applicationEntryMenuSchema,
   panelFormDescription: panelFormDescriptionSchema,
   panelOperationDescriptor: panelOwnerOperationDescriptorSchema,
-} satisfies Record<PlatformReadDeclaration["result"], z.ZodTypeAny>;
+  panelOptionList: panelOptionListSchema,
+  panelGraphSchema: platformOntologySchemaResponseSchema,
+  panelGraphCounts: platformOntologyCountsResponseSchema,
+  panelGraphStart: platformOntologyStartResponseSchema,
+  panelGraphNeighbors: platformOntologyNeighborsResponseSchema,
+  panelOntologyObjects: platformOntologyObjectsResponseSchema,
+  panelRelationNeighbors: panelRelationNeighborsSchema,
+  chartTemplate: chartProjectionTemplateSchema,
+  metricOutput: dashboardMetricOutputSchema,
+};
 
 /** A read-only trial takes the current form values plus the execution parameter values. */
 export const panelReadOperationInputSchema = z.object({

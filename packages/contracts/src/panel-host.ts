@@ -4,8 +4,8 @@ import { buildTestContextSchema } from "./build-tests";
 import { pageContextSchema } from "./page-context";
 import { pageDraftLinkSchema } from "./page-draft";
 import { panelUseRefSchema } from "./panel-agent";
-import { panelDeepLinkStateValueSchema, panelObjectIdentitySchema, panelOpenRequestSchema, panelOperationSchema, type PanelDeepLinkStateValue, type PanelObjectIdentity } from "./panel-manifest";
-import { applicationPanelUseSchema, directPanelDefinitionContentSchema, directPanelSchema, panelDefinitionContentSchema, productPanelSchema } from "./product-panels";
+import { panelMemberPathSchema, panelObjectIdentitySchema, panelOpenRequestSchema, panelOperationSchema, type PanelDeepLinkStateValue, type PanelObjectIdentity } from "./panel-manifest";
+import { applicationPanelUseSchema, panelDefinitionContentSchema, productPanelSchema } from "./product-panels";
 import { definitionRevisionSchema, type ProductDefinitionRevision, type ProductDefinitionTarget } from "./product-subscriptions";
 import { workspaceDiffSchema, workspaceIdSchema } from "./workspaces";
 
@@ -42,11 +42,8 @@ export const panelHostSourceSchema = z.discriminatedUnion("kind", [registeredPan
 export type PanelHostSource = z.infer<typeof panelHostSourceSchema>;
 export type CandidatePanelSource = z.infer<typeof candidatePanelSourceSchema>;
 
-export const directPanelHostSourceSchema = z.discriminatedUnion("kind", [
-  registeredPanelSourceSchema.extend({ panel: directPanelSchema }),
-  candidatePanelSourceSchema.extend({ panel: directPanelDefinitionContentSchema }),
-]);
-export type DirectPanelHostSource = z.infer<typeof directPanelHostSourceSchema>;
+export const directPanelHostSourceSchema = panelHostSourceSchema;
+export type DirectPanelHostSource = PanelHostSource;
 
 export const productPanelReadSourceSchema = z.discriminatedUnion("kind", [
   panelUseRefSchema.extend({ kind: z.literal("registered") }),
@@ -54,8 +51,8 @@ export const productPanelReadSourceSchema = z.discriminatedUnion("kind", [
 ]);
 export type ProductPanelReadSource = z.infer<typeof productPanelReadSourceSchema>;
 
-/** The first direct instance reads one named item of a fixed member. */
-export const directPanelMemberPathSchema = z.tuple([z.object({ member: z.string().min(1).max(200) }).strict()]);
+/** Resolve each segment against its parent before reading the named datum at the last member. */
+export const directPanelMemberPathSchema = panelMemberPathSchema.nonempty();
 export type DirectPanelMemberPath = z.infer<typeof directPanelMemberPathSchema>;
 
 export const productPanelReadRequestSchema = z.object({
@@ -65,6 +62,22 @@ export const productPanelReadRequestSchema = z.object({
   inputs: runtimeJsonObjectSchema,
 }).strict();
 export type ProductPanelReadRequest = z.infer<typeof productPanelReadRequestSchema>;
+
+const panelPersonalStateScopeSchema = z.object({
+  source: productPanelReadSourceSchema.options[0],
+  memberPath: panelMemberPathSchema,
+}).strict();
+export const PANEL_PERSONAL_STATE_PATH = "/product-panels/personal-state";
+export const PANEL_PERSONAL_STATE_READ_PATH = `${PANEL_PERSONAL_STATE_PATH}/read`;
+export const panelPersonalStateReadRequestSchema = panelPersonalStateScopeSchema.extend({
+  fields: z.array(z.string().min(1)).nonempty(),
+});
+export const panelPersonalStateResponseSchema = z.object({ values: runtimeJsonObjectSchema }).strict();
+/** A missing key leaves the stored field alone; an explicit null clears its value. */
+export const panelPersonalStateWriteRequestSchema = panelPersonalStateScopeSchema.extend(panelPersonalStateResponseSchema.shape);
+export type PanelPersonalStateReadRequest = z.infer<typeof panelPersonalStateReadRequestSchema>;
+export type PanelPersonalStateWriteRequest = z.infer<typeof panelPersonalStateWriteRequestSchema>;
+export type PanelPersonalStateResponse = z.infer<typeof panelPersonalStateResponseSchema>;
 
 const panelReadResults = [
   z.object({ status: z.literal("ready"), value: runtimeJsonValueSchema }).strict(),
@@ -93,7 +106,7 @@ export const panelHostMessageSchema = z
     url: z.string().min(1).max(4000),
     label: z.string().min(1).max(500),
     /** The declared deep-linkable state to restore, as the host read it from the address. */
-    state: z.record(z.string(), panelDeepLinkStateValueSchema),
+    state: runtimeJsonObjectSchema,
   })
   .strict();
 export type PanelHostMessage = z.infer<typeof panelHostMessageSchema>;
@@ -103,7 +116,7 @@ export const panelFrameMessageSchema = z.discriminatedUnion("kind", [
   /** What a message from this instance carries now: the one page context line. */
   z.object({ kind: z.literal("context"), context: pageContextSchema }).strict(),
   /** The instance's deep-linkable state, which the host keeps in the address. */
-  z.object({ kind: z.literal("state"), fromAddress: z.string().min(1).max(4000), state: z.record(z.string(), panelDeepLinkStateValueSchema) }).strict(),
+  z.object({ kind: z.literal("state"), fromAddress: z.string().min(1).max(4000), state: runtimeJsonObjectSchema }).strict(),
   /**
    * The reader saved or discarded this linked draft. The host removes only its draft parameters if its current
    * address still names that artifact; it reflects the resulting address through the normal address message.

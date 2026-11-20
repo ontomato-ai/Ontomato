@@ -7,14 +7,15 @@ import {
   panelBatchInvocationSchema, panelOperationAffectedSchema, panelOperationImpactSchema, panelOwnerOperationDescriptorSchema,
   panelReadOperationCallSchema, panelSingleInvocationSchema,
 } from "./panel-operations";
-import { ontologyElementRefSchema } from "./product-panels";
+import { ontologyElementRefSchema } from "./ontology-element-ref";
+import { EXECUTE_OBJECT_ACTION } from "./platform-object-types";
+import { panelUseRefSchema } from "./product-panels";
 import { pageDraftSchema } from "./page-draft";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeKeySchema } from "./agent-runtime-values";
 
 const key = z.string().min(1).max(200);
 
-export const panelUseRefSchema = z.object({ applicationId: key, useId: key }).strict();
-export type PanelUseRef = z.infer<typeof panelUseRefSchema>;
+export { panelUseRefSchema, type PanelUseRef } from "./product-panels";
 
 /** Node-owned user identity. Unlike a channel actor, userId is the restored initiator's actual host owner ID. */
 const initiatorSchema = z.object({ domainId: runtimeKeySchema, userId: runtimeKeySchema }).strict();
@@ -129,11 +130,22 @@ export const panelOperationOutcomeSchema = z.discriminatedUnion("kind", [
 export type PanelOperationOutcome = z.infer<typeof panelOperationOutcomeSchema>;
 
 /** The server resolves and freezes the owner description before confirmation. */
+export const panelObjectActionSnapshotSchema = z.object({
+  actionId: key,
+  codeHash: z.string().regex(/^[a-f0-9]{64}$/u),
+  object: panelObjectIdentitySchema,
+}).strict();
+export type PanelObjectActionSnapshot = z.infer<typeof panelObjectActionSnapshotSchema>;
+
 export const panelWriteOperationSnapshotSchema = panelOwnerOperationDescriptorSchema.extend({
   id: key,
   kind: z.enum(["form.save", "action"]),
   slot: key,
   effect: z.literal("write"),
+  action: panelObjectActionSnapshotSchema.optional(),
+}).superRefine((operation, ctx) => {
+  if ((operation.handlerRef === EXECUTE_OBJECT_ACTION) !== (operation.action !== undefined))
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["action"], message: "Only an object action carries its frozen owner facts" });
 });
 
 const commonIntentFactsSchema = z.object({

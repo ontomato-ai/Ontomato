@@ -77,6 +77,21 @@ export const dashboardParameterResultSchema = z.object({
   revision: text, parameters: runtimeJsonObjectSchema, errors: z.array(formFieldErrorSchema),
 });
 export type DashboardCardRequest = z.infer<typeof dashboardCardRequestSchema>;
+
+/** The card is a child of its dashboard and keeps both parts of its owner's identity. */
+export function dashboardCardPrimaryKey({ dashboardId, cardId }: DashboardCardRequest): string {
+  return `${encodeURIComponent(dashboardId)}/${encodeURIComponent(cardId)}`;
+}
+
+export function parseDashboardCardPrimaryKey(primaryKey: string): DashboardCardRequest {
+  const parts = z.tuple([text, text]).parse(primaryKey.split("/"));
+  return dashboardCardRequestSchema.parse({ dashboardId: decodeURIComponent(parts[0]), cardId: decodeURIComponent(parts[1]) });
+}
+
+export const chartProjectionTemplateSchema = z.object({
+  chartFile: dashboardChartFileSchema,
+  parameters: dashboardMetricReferenceSchema.shape.parameters,
+}).strict();
 export type DashboardSaveParameters = z.infer<typeof dashboardSaveParametersSchema>;
 export type DashboardMetricDescription = z.infer<typeof dashboardMetricDescriptionSchema>;
 export type DashboardMetricOutput = z.infer<typeof dashboardMetricOutputSchema>;
