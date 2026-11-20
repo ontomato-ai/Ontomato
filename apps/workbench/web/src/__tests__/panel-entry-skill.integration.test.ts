@@ -3,6 +3,7 @@ import ElementPlus from "element-plus";
 import { createApp, defineComponent, h, ref, type App } from "vue";
 import { createPinia } from "pinia";
 import { createMemoryHistory, createRouter, RouterView, useRouter, type Router } from "vue-router";
+import { agentHostSendResultSchema } from "@ontomato/contracts/agent-host";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { pilotPageKey, platformPageAccessKey } from "@ontomato/platform-shell";
@@ -148,6 +149,15 @@ async function firstRun() {
   }, { timeout: 30000 });
 }
 
+/** The conversation the run went to, as the host's answer names it: the one the run was posted to. */
+function sessionOf(run: Seen) {
+  const answer = agentHostSendResultSchema.parse(run.answer);
+  const posted = run.url.pathname.split("/").at(-2);
+  expect(answer.delivery.sessionRef.sessionId).toBe(posted);
+  if (answer.snapshot) expect(answer.snapshot.run.sessionId).toBe(posted);
+  return answer.delivery.sessionRef.sessionId;
+}
+
 /** Writes in a composer and sends, as the reader's Enter does. */
 function write(box: HTMLTextAreaElement, text: string) {
   box.value = text;
@@ -184,7 +194,7 @@ describe("a panel entrance beside the conversation", () => {
       expect((run.body as { pageSkillContext?: PageSkillContext }).pageSkillContext).toEqual(context);
 
       // That run installed the member's own skill: the fixture checks the prompt's current page and the sandbox copy.
-      const sessionId = run.url.pathname.split("/").at(-2)!;
+      const sessionId = sessionOf(run);
       const installed = await server.installedSkill(sessionId, member!.ref);
       expect(installed.skill).toEqual(member!.ref);
       expect(installed.digest).toMatch(/^[0-9a-f]{64}$/);
@@ -220,7 +230,7 @@ describe("a panel entrance at its own address", () => {
       // That first message runs with the entrance's own member, as Node answered it at the page's address.
       const run = await firstRun();
       expect((run.body as { pageSkillContext?: PageSkillContext }).pageSkillContext).toEqual(context);
-      const sessionId = run.url.pathname.split("/").at(-2)!;
+      const sessionId = sessionOf(run);
       const installed = await server.installedSkill(sessionId, member!.ref);
       expect(installed.skill).toEqual(member!.ref);
       expect(installed.digest).toMatch(/^[0-9a-f]{64}$/);

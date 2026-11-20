@@ -311,17 +311,24 @@ let pendingLink: string | null = null;
  * have been read. Until then the agent list is the one before the page, or empty while the page's own is read.
  */
 const knowsPage = () =>
-  display.load.value.status !== "loading" && !nav.agentsLoading.value
+  display.load.value.status !== "loading" && nav.agentsState.value === "ready"
   && (display.pageSkill.value === null || nav.pageAgents.value !== null);
-function until(ready: () => boolean): Promise<void> {
-  if (ready()) return Promise.resolve();
-  return new Promise((resolve) => {
-    const stop = watch(ready, (now) => {
-      if (!now) return;
-      stop();
-      resolve();
+/**
+ * Waits for the conversation to know the page beside it. False when the agents could not be read: the read's own error
+ * was shown where it failed, and there is nothing to check a link's agent against or to send it with.
+ */
+async function pageKnown(): Promise<boolean> {
+  const settled = () => knowsPage() || nav.agentsState.value === "error";
+  if (!settled()) {
+    await new Promise<void>((resolve) => {
+      const stop = watch(settled, (now) => {
+        if (!now) return;
+        stop();
+        resolve();
+      });
     });
-  });
+  }
+  return nav.agentsState.value !== "error";
 }
 const linkAddress = () =>
   JSON.stringify([requestedAgent(), queryText(route.query.sessionId), queryText(route.query.prompt), queryText(route.query.page)]);
@@ -348,8 +355,12 @@ async function openRequestedAgent() {
   const { agentId: _agent, sessionId: _session, prompt: _prompt, ...query } = route.query;
   await router.replace({ query: page ? { ...query, page } : query });
   // The page the message was written on is beside the conversation from the start: the agent is one of those offered on
-  // it, and the message carries its skill, once the conversation knows it.
-  if (page) await until(knowsPage);
+  // it, and the message carries its skill, once the conversation knows it. Its agents not read, the message ends here,
+  // unsent; the same address arriving again is the reader trying again.
+  if (page && !(await pageKnown())) {
+    pendingLink = null;
+    return;
+  }
   if (!nav.agents.value.some((agent) => agent.id === id && agent.enabled)) {
     ElMessage.error(t("assistant.agentUnavailable"));
     return;
@@ -376,7 +387,10 @@ async function openRequestedAgent() {
     // Opened again, it is another instance of the page: once drawn it says again which skill it reaches, and the message
     // carries that.
     await nextTick();
-    await until(knowsPage);
+    if (!(await pageKnown())) {
+      pendingLink = null;
+      return;
+    }
   }
   if (prompt) {
     await nextTick();

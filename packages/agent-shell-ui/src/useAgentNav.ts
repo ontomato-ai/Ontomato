@@ -43,14 +43,14 @@ export function useAgentNav(options: AgentNavOptions) {
   const nextCursor = ref<string | null>(null);
   let agentsLoad = 0;
   /**
-   * Whether the agents are being read: all of them, or a page's candidates, which empty the list until they arrive. What
-   * `agents` lists, and the agent chosen from it, are settled only once this is down.
+   * Where the latest read of the agents is: all of them, or a page's candidates, which empty the list until they arrive.
+   * What `agents` lists, and the agent chosen from it, are settled once it is ready; a read that failed was reported to
+   * its caller, and the list is not the one asked for.
    */
-  const agentsLoading = ref(false);
-  /** The latest read of the agents failed: there is nothing more to wait for. */
+  const agentsState = ref<"loading" | "ready" | "error">("loading");
   function readFailed(load: number) {
     return (error: unknown): never => {
-      if (load === agentsLoad) agentsLoading.value = false;
+      if (load === agentsLoad) agentsState.value = "error";
       throw error;
     };
   }
@@ -72,7 +72,7 @@ export function useAgentNav(options: AgentNavOptions) {
   async function loadAgents() {
     if (page.value) return loadPageAgents();
     const load = ++agentsLoad;
-    agentsLoading.value = true;
+    agentsState.value = "loading";
     const list = await options.client().listAgents().catch(readFailed(load));
     if (load !== agentsLoad) return;
     agents.value = list;
@@ -84,7 +84,7 @@ export function useAgentNav(options: AgentNavOptions) {
     // Let the selection watcher run once with the flag still down, then treat later changes as the reader's.
     await nextTick();
     initialAgentLoaded = true;
-    if (load === agentsLoad) agentsLoading.value = false;
+    if (load === agentsLoad) agentsState.value = "ready";
   }
 
   /**
@@ -100,7 +100,7 @@ export function useAgentNav(options: AgentNavOptions) {
     retainedAgent.value = active;
     pageAgents.value = null;
     agents.value = [];
-    agentsLoading.value = true;
+    agentsState.value = "loading";
     const result = await options.client().listPageAgents(target).catch(readFailed(load));
     if (load !== agentsLoad) return;
     pageAgents.value = result;
@@ -118,7 +118,7 @@ export function useAgentNav(options: AgentNavOptions) {
     await nextTick();
     adoptingAgent = false;
     initialAgentLoaded = true;
-    if (load === agentsLoad) agentsLoading.value = false;
+    if (load === agentsLoad) agentsState.value = "ready";
   }
 
   /** A page with its own skill opens or closes: the composer chooses among that page's agents, or among all of them. */
@@ -218,7 +218,7 @@ export function useAgentNav(options: AgentNavOptions) {
 
   return {
     agents,
-    agentsLoading: computed(() => agentsLoading.value),
+    agentsState: computed(() => agentsState.value),
     pageAgents,
     sessions,
     sessionsState,
