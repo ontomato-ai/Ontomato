@@ -19,6 +19,12 @@ export default {
     query: { type: text, deepLink: false },
   },
   members: {
+    mode: {
+      target: { projectionId: "capability-map-mode" },
+      outputs: {
+        value: { state: "mode" },
+      },
+    },
     graph: {
       target: { projectionId: "capability-map-graph" },
       inputs: {
@@ -53,7 +59,9 @@ export default {
     },
     userPicker: {
       target: { projectionId: "capability-map-user-picker" },
-      inputs: {},
+      inputs: {
+        type: { literal: "platform:User" },
+      },
       outputs: {
         selected: { state: "start" },
       },
