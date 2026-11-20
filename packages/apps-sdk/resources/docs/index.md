@@ -11,10 +11,11 @@ keeps the behaviour of the version it names.
 
 | Path | Content |
 | --- | --- |
-| `sdk.json` | The version, the product, the module files and the versions of the libraries |
+| `sdk.json` | The version, the product, the module files, the check module and the versions of the libraries |
 | `docs/index.md` | This guide |
 | `docs/reference.md` | The API of every `@ontomato/sdk` module, generated from their sources |
 | `components.json`, `docs/components.md` | Base components and their ports for this exact SDK |
+| `node/panel-check.mjs` | The platform's own parsers and schemas of no-code panel sources, as one Node module: a check of a panel's layout, declaration and projections before they are registered runs these |
 | `docs/element-plus.web-types.json` | Element Plus's own metadata for every component of the bundled version: attributes, events, slots |
 | `examples/basic.html` | Platform context, Element Plus, a chart in the platform's theme, a Markdown text, a CSV text in the code editor previewed as a table, and an HTML document in a sandboxed frame |
 | `examples/metric-action.html` | A published MetricView in a table and a chart, or its result as read-only JSON, the selected row as page context, then an Action through its form and a fresh read through the template ref of `<metric-view-data>` |
