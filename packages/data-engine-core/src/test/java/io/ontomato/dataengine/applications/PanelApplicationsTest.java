@@ -95,6 +95,11 @@ class PanelApplicationsTest {
             assertEquals(400, assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a", request, user))
                 .getStatusCode().value());
         }
+        for (var code : List.of("data-browser", "app:app-panel-b:entry", "app:app-panel-a:undeclared")) {
+            var request = body(List.of(use("tasks", code)), true);
+            assertEquals(400, assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a", request, user))
+                .getStatusCode().value());
+        }
         verify(db, never()).update(anyString(), any(Object[].class));
         verify(access, never()).declare(any(), any(), anyBoolean());
     }
@@ -224,7 +229,9 @@ class PanelApplicationsTest {
         assertFalse(projection.getJSONArray("pageSkills").getJSONObject(1).containsKey("skill"));
         assertEquals(1, projection.getJSONArray("admittedEntrances").size());
         assertEquals("schedules-a", projection.getJSONArray("admittedEntrances").getJSONObject(0).getString("pageKey"));
-        verify(panels).requireCurrent("domain", List.of("panel-p"));
+        verify(panels).requireCurrent(eq("domain"), isNull(),
+            argThat(usesPassed -> usesPassed.stream().map(ApplicationPanelUse::panelId).toList().equals(List.of("panel-p"))),
+            isNull());
         var write = mockingDetails(db).getInvocations().stream().filter(call -> call.getMethod().getName().equals("update")).findFirst().orElseThrow();
         assertEquals("[]", write.getArgument(18));
         assertEquals("panel-p", com.alibaba.fastjson2.JSON.parseArray(write.<String>getArgument(19)).getJSONObject(0).getString("panelId"));
@@ -241,7 +248,7 @@ class PanelApplicationsTest {
     }
 
     @Test void rejectsReferencesThatAreNotInTheCurrentPanelCollectionBeforeSaving() {
-        doThrow(new ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST)).when(panels).requireCurrent("domain", List.of("panel-p"));
+        doThrow(new ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST)).when(panels).requireCurrent(eq("domain"), isNull(), eq(List.of(use("schedules-a", null))), isNull());
         assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a", body(List.of(use("schedules-a", null)), true), user));
         verifyNoInteractions(db);
     }
@@ -332,9 +339,16 @@ class PanelApplicationsTest {
 
     @Test void refusesMixedLegacyAndPanelsRegistrationForTheSameMenuCode() {
         var legacy = app("app-existing", "native", List.of());
-        legacy.put("pageSkills", List.of(new PageSkills.Mapping("menu", null, null, LEGACY_SKILL, null)));
+        var code = "app:app-panel-a:menu";
+        legacy.put("pageSkills", List.of(new PageSkills.Mapping(code, null, null, LEGACY_SKILL, null)));
         doReturn(List.of(legacy)).when(catalog).all();
-        assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a", body(List.of(use("schedules-a", "menu")), true), user));
+        var uses = List.of(use("schedules-a", code));
+        var group = new ApplicationCatalog.Group("entry", Map.of("en", "Entry"), 0);
+        var permission = new ApplicationCatalog.Permission(code, Map.of("en", "Enter"), "entry", 0);
+        var declaration = new ApplicationCatalog.Declaration(Map.of("en", "A"), Map.of(), "calendar",
+            List.of(group), List.of(permission), List.of(), List.of());
+        assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a",
+            new ApplicationController.PanelRegistration(body(uses, true).entry(), uses, declaration, List.of("domain-member")), user));
         verify(db, never()).update(anyString(), any(Object[].class));
     }
 
