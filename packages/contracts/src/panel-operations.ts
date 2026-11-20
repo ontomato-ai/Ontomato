@@ -5,6 +5,7 @@ import {
   panelFormDescriptionSchema, panelFormValuesSchema, panelGroupCountsSchema, panelOptionListSchema,
   panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema, panelRelationNeighborsSchema,
 } from "./panel-projection";
+import { actionDefinitionSchema, actionExplanationSchema } from "./action-panel";
 import { chartProjectionTemplateSchema, dashboardMetricOutputSchema } from "./dashboard";
 import { appsSdkComponentCatalogEntrySchema } from "./apps-sdk";
 import { applicationEntryMenuSchema } from "./product-panels";
@@ -93,6 +94,8 @@ export const panelReadResultSchemas = {
   chartTemplate: chartProjectionTemplateSchema,
   metricOutput: dashboardMetricOutputSchema,
   sdkComponentDefinition: sdkComponentDefinitionSchema,
+  actionDefinition: actionDefinitionSchema,
+  actionExplanation: actionExplanationSchema,
 };
 
 export const panelReadResultIdSchema = z.custom<PanelReadResultId>(
