@@ -19,8 +19,8 @@ directory for the registered definitions and wiring.
    errors or per-relation result the component needs to render.
 2. Register the read with the public contract owner. Give the stable type or operation ID, read name,
    `type`, `object` or `operation` source, parameter schemas and required parameters, and the result schema. Give a
-   projection declaration using `data.<name> = { source, read, params }`. Bind each parameter to a declared input
-   or literal. The named read adapter is mounted in
+   projection declaration using `data.<name> = { source, read, params }`. A same-named member state binding supplies
+   the parameter. Use `params` for literals or to name a different input. The named read adapter is mounted in
    `packages/workbench-server/src/services/product-panels/data-reads.ts`. This dispatcher resolves the actual
    placement and source and returns the result to the component under the reader's identity. The read request carries
    `source`, `memberPath`, `dataName` and `inputs`. A ready result carries `value`; loading belongs to the
@@ -98,8 +98,8 @@ For Business Knowledge at `/ontology/knowledge`, the owner supplies these rules.
    `knowledge-governance` agent for extracting or organizing knowledge from conversations and documents.
 
 For Business Knowledge search, give the list, status counts and detail the same panel state as their `search` input.
-In `query`, `counts` and `record`, map `params.search` to `{ input: "search" }`. The counts read also takes
-`params.by: { literal: "status" }`. Bind the status state directly to `query.params.status`.
+The same-named parameter uses that binding in `query`, `counts` and `record`. The counts read also takes
+`params.by: { literal: "status" }`. Bind the list member's `inputs.status` to the status state.
 The detail receives the selected knowledge record. Use `ObjectSummary` to show
 the full body as text with its original line breaks. The owner returns highlight ranges in the record for the current search.
 

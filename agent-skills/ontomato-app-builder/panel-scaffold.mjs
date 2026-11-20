@@ -47,42 +47,40 @@ export function managementPanel(type, checks, { id = `${slug(type.split(":").at(
   const search = Object.hasOwn(list.params, "search");
   const counts = reads.counts;
   const tabs = Object.hasOwn(list.params, "status") && counts?.result === "panelGroupCounts" &&
-    counts.parameterMode === "fixed" && Object.hasOwn(counts.params, "by");
+    counts.parameterMode === "fixed" && Object.hasOwn(counts.params, "by") &&
+    checks.panelReadParameterSchemas[counts.params.by].safeParse("status").success;
   const listInputs = {};
   const listOutputs = { selected: object };
   const outputs = { selected: stateRef("selected") };
-  const params = {};
   if (search) {
     state.search = { type: text, deepLink: true };
     listInputs.search = text;
     listOutputs.search = text;
     outputs.search = stateRef("search");
-    params.search = inputRef("search");
   }
   if (tabs) {
     const status = checks.panelReadParameterSchemas[list.params.status];
     state.status = { type: text, deepLink: true, ...(status.safeParse("all").success && { default: "all" }) };
     listInputs.status = text;
-    params.status = inputRef("status");
     const shareSearch = search && Object.hasOwn(counts.params, "search");
     place("tabs", "SegmentedControl", {
       inputs: shareSearch ? { search: text } : {},
       outputs: { value: text },
-      data: { counts: namedRead(typeSource, "counts", { by: literal("status"), ...(shareSearch && { search: inputRef("search") }) }) },
+      data: { counts: namedRead(typeSource, "counts", { by: literal("status") }) },
     }, {
       outputs: { value: stateRef("status") },
       ...(shareSearch && { inputs: { search: stateRef("search") } }),
     });
   }
   place("list", "ObjectList", {
-    inputs: listInputs, outputs: listOutputs, data: { rows: namedRead(typeSource, listRead, params) },
+    inputs: listInputs, outputs: listOutputs, data: { rows: namedRead(typeSource, listRead) },
   }, { outputs, ...(tabs && { inputs: { status: stateRef("status") } }) });
 
   if (reads.record?.result === "panelRecord") {
     const shareSearch = search && reads.record.parameterMode === "fixed" && Object.hasOwn(reads.record.params, "search");
     place("detail", "ObjectSummary", {
       inputs: { item: object, ...(shareSearch && { search: text }) },
-      data: { record: namedRead(selectedSource, "record", shareSearch ? { search: inputRef("search") } : {}) },
+      data: { record: namedRead(selectedSource, "record") },
     }, { inputs: { item: stateRef("selected"), ...(shareSearch && { search: stateRef("search") }) } });
   }
   const edit = registered.includes(save) && reads.form?.result === "panelFormDescription";

@@ -137,6 +137,17 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
         },
         operations: ["platform:AgentDefinition.save"],
       },
+      "platform:ReviewQueue": {
+        reads: {
+          query: { source: "type", parameterMode: "fixed", params: { search: "keyword", status: "reviewStatus" }, result: "panelRecordQuery" },
+          counts: { source: "type", parameterMode: "fixed", params: { by: "countField", search: "keyword" }, result: "panelGroupCounts" },
+          record: { source: "object", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecord" },
+        },
+      },
+    };
+    export const panelReadParameterSchemas = {
+      reviewStatus: { safeParse: value => ({ success: value === "all" }) },
+      countField: { safeParse: value => ({ success: value === "status" }) },
     };
     export const panelDefinitionContentSchema = {
       parse,
@@ -233,6 +244,18 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       assert.equal(await readFile(join(draft, name), "utf8"), sample);
     }
     assert.deepEqual(requests.map(([method]) => method), ["GET", "GET"]);
+    const review = join(directory, "review");
+    await run("panel", "scaffold", "platform:ReviewQueue", review);
+    const { manifest: reviewManifest } = JSON.parse(await readFile(join(review, "panel.json"), "utf8"));
+    const { projections: reviewProjections } = JSON.parse(await readFile(join(review, "registration.json"), "utf8"));
+    const queries = Object.fromEntries(reviewProjections.flatMap(({ input }) => Object.entries(input.data)));
+    assert.deepEqual(queries.rows.params, {});
+    assert.deepEqual(queries.record.params, {});
+    assert.deepEqual(queries.counts.params, { by: { literal: "status" } });
+    assert.deepEqual(reviewManifest.members.list.outputs.search, { state: "search" });
+    assert.deepEqual(reviewManifest.members.list.inputs, { status: { state: "status" } });
+    assert.deepEqual(reviewManifest.members.tabs.outputs.value, { state: "status" });
+    assert.deepEqual(reviewManifest.members.detail.inputs.search, { state: "search" });
   } finally {
     await rm(directory, { recursive: true });
     await new Promise(resolve => server.close(resolve));

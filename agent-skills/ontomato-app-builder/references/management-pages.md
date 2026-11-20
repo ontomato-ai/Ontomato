@@ -30,18 +30,18 @@ buttons require their owner descriptions, including the target input name and ba
 | Effect | What to write |
 | --- | --- |
 | Search this list | Declare `data.rows` using an owner read with a `search` parameter. The list shows the search field and supplies the value at runtime. |
-| Share the search keyword or put it in the address | Declare a scalar `search` input and output on the list projection, map `data.rows.params.search` to `{input: "search"}`, and bind the list member's `outputs.search` to panel state. That binding supplies its matching input. Give other members that need the keyword an input bound to the same state. |
-| Status tabs with counts | Use `SegmentedControl` with `data.counts` and bind its `outputs.value` to a scalar status state. The owner supplies the ordered `[{key, label, count}]` options. Bind the list member's status input to that state and map `data.rows.params.status` to `{input: "status"}`. Use the same search state for counts and rows. |
+| Share the search keyword or put it in the address | Bind the list member's `outputs.search` to scalar panel state. This single binding supplies the same-named input and read parameter. Bind other members' `search` inputs to the same state when their reads need it. |
+| Status tabs with counts | Use `SegmentedControl` with `data.counts` and bind its `outputs.value` to scalar status state. The owner supplies the ordered `[{key, label, count}]` options. Bind the list member's `inputs.status` to that state. Its same-named read parameter uses the binding, and counts and rows share the search state. |
 | Pagination | Use an owner read that declares its pagination parameters. The list supplies page or cursor values at runtime. The default page size is 20. Set `config.pageSize` when the page needs a different size. |
 | Select a row and show details | Bind `outputs.selected` to object-reference state. Pass that state to the summary's object input. Its `data.record.source` is `{object: {input: "<object input name>"}}`. |
 | New and edit in one form | Put `data.form` and `data.createForm` on one `ObjectForm` projection and bind the object input named by `form.source.object.input` to the selected state. A null selection shows the create form. A New event sets the selected state to `{literal: null}`. |
 | Single operation | Read `data.operation = {source: {operation: {kind: "PlatformOperation", id: "<owner operation ID>"}}, read: "describe", params: {}}` in an `OperationButton` projection. Bind the member input named by the description's `target.input` to the selected object. The operation ID is `<member key>.<last segment of owner operation ID>`. |
 | Batch operation | Bind `ObjectList.outputs.checked` to a list of object references. Bind the button's owner-named target input to that list. A list target invokes a batch for an owner operation that declares batch support. |
-| Highlight search hits | Share the list's search state with the detail's `data.record.params.search` when the owner declares it. The owner returns highlight ranges in its records, and ObjectList and ObjectSummary render them. |
+| Highlight search hits | Bind the detail's `inputs.search` to the list's search state when the owner record read declares `search`. The owner returns highlight ranges, and ObjectList and ObjectSummary render them. |
 | Carry state in the address | Mark the state fields to restore with `deepLink: true` in the manifest. Keep transient multi-selection in panel state. |
 
-Bind a member's same-named input and output through `outputs` once. Components declare the parameters they supply at
-runtime. Author `params` entries for values bound to panel state or supplied as literals. For example, ObjectForm
+Bind a member's same-named input and output through `outputs` once. Same-named state bindings supply read parameters.
+Use `params` for literals or to name a different input. Components declare the parameters they supply at runtime. ObjectForm
 supplies `values` and `changedField`, so the projection names the edited object and the owner form read.
 
 Write layout with `div`, `section` and `panel-member`. A member uses `ref`; its containers arrange members with
