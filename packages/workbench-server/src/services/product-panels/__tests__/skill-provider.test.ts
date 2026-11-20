@@ -13,7 +13,6 @@ import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { parseSkillMarkdown } from "../../../core/skills/manifest";
 import { backendGet } from "../../../utils/backend-client";
 import { findCurrentProduct, type CurrentProductRow } from "../../../infrastructure/product-current";
-let panelSkillProvider: typeof import("../skill-provider").panelSkillProvider;
 
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://java.test" } } }));
 vi.mock("../../../config/environment", () => ({ environment: { agentRuntime: () => ({ queryServiceToken: "fixture-platform-service" }) } }));
@@ -84,6 +83,7 @@ function codeTasksPanel(projections: Record<string, { projectionId: string; inpu
 }
 
 let root: string;
+let panelSkillProvider: typeof import("../skill-provider").panelSkillProvider;
 beforeEach(async () => {
   vi.clearAllMocks();
   panels = new Map(trialPanels);
