@@ -2,7 +2,7 @@
   "panel": {
     "panel": {
       "content": {
-        "html": "<div flow=\"row\" gap=\"small\">\n  <panel-member ref=\"tasks\"></panel-member>\n  <section>\n    <panel-member ref=\"summary\"></panel-member>\n    <section when=\"selectedTask\" ne=\"null\">\n      <panel-member ref=\"form\"></panel-member>\n      <panel-member ref=\"run\"></panel-member>\n    </section>\n  </section>\n</div>\n",
+        "html": "<style>\n  /* The list beside the chosen task; on a narrow panel the task goes under the list. */\n  .trial { display: flex; flex-wrap: wrap; gap: var(--spacing-sm, 8px); }\n  .tasks { flex: 1 1 18rem; min-width: 0; }\n  .task { flex: 2 1 24rem; min-width: 0; display: flex; flex-direction: column; gap: var(--spacing-sm, 8px); }\n</style>\n<div class=\"trial\">\n  <panel-member ref=\"tasks\" class=\"tasks\"></panel-member>\n  <section class=\"task\">\n    <panel-member ref=\"summary\"></panel-member>\n    <section when=\"selectedTask\" ne=\"null\" class=\"task\">\n      <panel-member ref=\"form\"></panel-member>\n      <panel-member ref=\"run\"></panel-member>\n    </section>\n  </section>\n</div>\n",
         "recipes": "# Scheduled tasks panel: how this scenario works\n\nWhat this panel is for, and the few things about it a reader of the platform cannot work out from the panel itself. The\npanel's declaration (its state and the projections it composes) and its projections say the rest, and the platform\ndescribes those from their current definitions.\n\n## What it covers\n\nOne of the reader's scheduled tasks, from the task's own application: pick it, see it, change it through the form its\napplication declares, save it, and run it now. It does not create, delete, enable, disable or list runs.\n\n## How a task is chosen\n\nThe list is the platform's own `platform:ScheduledTask` objects — the reader's tasks in the service's order. Choosing a\nrow writes that task into the panel's `selectedTask`, and the summary, the form and the button take it from there. A\nsecond click on the chosen row lets go of it.\n\nThe choice belongs to the panel instance, not to the panel: two readers, or two pages of the same reader, keep their own.\n\n## How the form changes\n\nThe form is the task's application's own: which fields it has, which of them a change makes the others depend on, and\nwhat a save accepts are all the application's answers. Changing such a field asks the application again, and its whole\nanswer replaces the fields and their values — a field the new answer removed disappears with its value.\n\nOnly one application's form changes with a field today: the operations application, whose first field chooses between\nrunning automated tests and running an inspection, each with its own fields.\n\n## How a change gets here from an agent\n\nA run may write a draft for this page and hand the reader a link. Opening it fills the form, marks the fields the draft\nchanged, and leaves them unsaved; the reader saves. Nothing is written until they do.\n\n## What a save and a run act on\n\nBoth act on the task currently selected in the panel instance. Saving writes it through its application's own interface\nwith the task's own revision, so a task somebody else changed meanwhile is refused rather than overwritten. Running it\nnow starts one execution and leaves the schedule as it is.\n"
       },
       "manifest": {
@@ -27,9 +27,6 @@
               "task": {
                 "state": "selectedTask"
               }
-            },
-            "params": {
-              "width": "auto"
             }
           },
           "form": {
@@ -40,9 +37,6 @@
               "task": {
                 "state": "selectedTask"
               }
-            },
-            "params": {
-              "width": "full"
             }
           },
           "tasks": {
@@ -58,9 +52,6 @@
               "selected": {
                 "state": "selectedTask"
               }
-            },
-            "params": {
-              "width": "third"
             }
           },
           "summary": {
@@ -71,9 +62,6 @@
               "task": {
                 "state": "selectedTask"
               }
-            },
-            "params": {
-              "width": "full"
             }
           }
         },
@@ -86,8 +74,8 @@
       "domainId": "pilot",
       "ownerId": "reader",
       "revision": 1,
-      "createdAt": "2026-11-20T06:03:59.547Z",
-      "updatedAt": "2026-11-20T06:03:59.547Z",
+      "createdAt": "2026-11-20T09:48:57.601Z",
+      "updatedAt": "2026-11-20T09:48:57.601Z",
       "editable": true
     }
   },
@@ -200,8 +188,8 @@
         "domainId": "pilot",
         "ownerId": "reader",
         "revision": 1,
-        "createdAt": "2026-11-20T06:03:59.524Z",
-        "updatedAt": "2026-11-20T06:03:59.524Z",
+        "createdAt": "2026-11-20T09:48:56.291Z",
+        "updatedAt": "2026-11-20T09:48:56.291Z",
         "editable": true
       }
     },
@@ -248,8 +236,8 @@
         "domainId": "pilot",
         "ownerId": "reader",
         "revision": 1,
-        "createdAt": "2026-11-20T06:03:59.503Z",
-        "updatedAt": "2026-11-20T06:03:59.503Z",
+        "createdAt": "2026-11-20T09:48:55.493Z",
+        "updatedAt": "2026-11-20T09:48:55.493Z",
         "editable": true
       }
     },
@@ -288,8 +276,8 @@
         "domainId": "pilot",
         "ownerId": "reader",
         "revision": 1,
-        "createdAt": "2026-11-20T06:03:59.478Z",
-        "updatedAt": "2026-11-20T06:03:59.478Z",
+        "createdAt": "2026-11-20T09:48:54.884Z",
+        "updatedAt": "2026-11-20T09:48:54.884Z",
         "editable": true
       }
     },
@@ -329,8 +317,8 @@
         "domainId": "pilot",
         "ownerId": "reader",
         "revision": 1,
-        "createdAt": "2026-11-20T06:03:59.444Z",
-        "updatedAt": "2026-11-20T06:03:59.444Z",
+        "createdAt": "2026-11-20T09:48:54.109Z",
+        "updatedAt": "2026-11-20T09:48:54.109Z",
         "editable": true
       }
     }

@@ -1,8 +1,14 @@
-<div flow="row" gap="small">
-  <panel-member ref="tasks"></panel-member>
-  <section>
+<style>
+  /* The list beside the chosen task; on a narrow panel the task goes under the list. */
+  .trial { display: flex; flex-wrap: wrap; gap: var(--spacing-sm, 8px); }
+  .tasks { flex: 1 1 18rem; min-width: 0; }
+  .task { flex: 2 1 24rem; min-width: 0; display: flex; flex-direction: column; gap: var(--spacing-sm, 8px); }
+</style>
+<div class="trial">
+  <panel-member ref="tasks" class="tasks"></panel-member>
+  <section class="task">
     <panel-member ref="summary"></panel-member>
-    <section when="selectedTask" ne="null">
+    <section when="selectedTask" ne="null" class="task">
       <panel-member ref="form"></panel-member>
       <panel-member ref="run"></panel-member>
     </section>
