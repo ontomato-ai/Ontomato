@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import ElementPlus from "element-plus";
@@ -100,6 +102,48 @@ describe("agent data scope on the ontology graph", () => {
     const invoice = wrapper.findAll(".graph-node").find((item) => item.attributes("aria-label") === "Invoices (Invoice)")!;
     expect(invoice.classes()).toContain("chosen");
     expect(invoice.classes()).not.toContain("adjacent");
+  });
+
+  it("keeps natural node dimensions and allows horizontal scrolling when wider than the container", async () => {
+    const sixteenClasses = Array.from({ length: 16 }, (_, index) => ({
+      className: `Class${index + 1}`,
+      showName: index === 3 ? "岗位等级变动记录" : index === 15 ? "Praxis 上下文装配" : `Object ${index + 1}`,
+    }));
+    const wrapper = mount(DataScopeGraph, {
+      props: { modelValue: [], classes: sixteenClasses, relations: [], loading: false },
+      global,
+      attachTo: document.body,
+    });
+    wrappers.push(wrapper);
+    await flushPromises();
+
+    const canvas = wrapper.find(".graph-canvas");
+    const svg = canvas.find("svg");
+    const fourthColNodes = wrapper.findAll(".graph-node").filter((_, index) => index % 4 === 3);
+
+    // 4 columns at natural size: margin(16) + 4*node(152) + 3*gap(24) + margin(16) = 712, without viewBox scaling.
+    expect(svg.attributes("width")).toBe("712");
+    expect(svg.attributes("height")).toBe("268");
+    expect(svg.attributes("viewBox")).toBeUndefined();
+    expect(fourthColNodes).toHaveLength(4);
+    expect(fourthColNodes[0]!.find("rect").attributes("x")).toBe("544");
+    expect(fourthColNodes[0]!.find("rect").attributes("width")).toBe("152");
+    expect(fourthColNodes[0]!.find("text").text()).toBe("岗位等级变动记录");
+    expect(fourthColNodes[3]!.find("text").text()).toBe("Praxis 上下文装配");
+
+    // The scroll area is not clamped inline to the SVG height (which would spawn a vertical scrollbar beside the horizontal one).
+    expect(canvas.attributes("style")).toBeUndefined();
+
+    const source = readFileSync(resolve(process.cwd(), "src/features/agents/components/DataScopeGraph.vue"), "utf8");
+    const css = source.match(/<style scoped>([\s\S]*?)<\/style>/)?.[1] ?? "";
+    expect(css).toContain(".data-scope {");
+    expect(css).toContain(".scope-graph {");
+    expect(css).toContain("min-width: 0;");
+    expect(css).toContain("max-height: 420px;");
+    expect(css).toContain("overflow: auto;");
+    expect(css).toContain("scrollbar-width: auto;");
+    expect(css).toContain(".graph-canvas::-webkit-scrollbar");
+    expect(css).toContain("max-width: none;");
   });
 });
 
