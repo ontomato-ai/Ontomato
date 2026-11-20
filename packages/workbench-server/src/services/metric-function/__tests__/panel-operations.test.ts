@@ -33,9 +33,13 @@ const read = (handlerRef: string) =>
   m5ServerOperations.find((item): item is Extract<M5Operation, { effect: "read" }> =>
     item.effect === "read" && item.handlerRef === handlerRef)!;
 
+const actor = { owner: { domainId: "d", userId: "U" }, credentials: { token: "U-token", locale: "en" } };
+
 function hostWith(answer: (path: string, init: NonNullable<Parameters<typeof fetch>[1]>) => Response) {
   const sent: { path: string; init: NonNullable<Parameters<typeof fetch>[1]> }[] = [];
   const host: PanelOperationHost = {
+    initiator: actor,
+    executor: actor,
     async request(path, init) {
       sent.push({ path, init });
       return answer(path, init);

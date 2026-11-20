@@ -22,7 +22,6 @@ import { workbenchServerResourceRoot } from "../../content/resources";
 import { renderPrompt } from "../../core/prompts/loader";
 import { environment } from "../../config/environment";
 import { publishSkill } from "../agent-runtime/skills";
-import { skillRegistryManager } from "../../core/skills/registry/manager";
 import { callbackCredential } from "../agent-runtime/callback-credential";
 import { HttpError } from "../../utils/errors";
 import type { AgentHostOwner, AgentHostService } from "../agent-host/types";
@@ -187,6 +186,7 @@ export async function prepareDiagnosis(session: string, run: string, input: Agen
       ...(reader ? [agentVisibilityPrompt(reader)] : []),
       ...(row.target ? [`Diagnosis target (resolve before drawing conclusions): ${JSON.stringify(row.target)}`] : []),
     ].join("\n\n");
+    const { skillRegistryManager } = await import("../../core/skills/registry/manager");
     const publicSkills = await skillRegistryManager.publicSkills();
     const chartSources = ARTIFACT_CHART_SKILLS.map((ref) => {
       const source = publicSkills.find(({ id }) => id === ref.name);
