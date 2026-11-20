@@ -10,14 +10,14 @@ node "$SKILL/ontomato.mjs" panel check "$example" --material "$example/registrat
 node "$SKILL/ontomato.mjs" panel register "@$example/registration.json"
 ```
 
-Open the example's application entry at `/applications/example-agent-management/manage`. Select an agent to edit it.
+Open the example's application entry at `/applications/app-example-agent-management/manage`. Select an agent to edit it.
 The New control clears that selection and the owner supplies the create form. After a successful create, the host
 uses the object returned by the owner as the form's selection.
 
 Start your own page by choosing the registered platform type and your intended application ID.
 
 ```sh
-node "$SKILL/ontomato.mjs" panel scaffold platform:AgentDefinition ./agents-panel --id my-agent-management
+node "$SKILL/ontomato.mjs" panel scaffold platform:AgentDefinition ./agents-panel --id app-my-agent-management
 ```
 
 The starter writes `panel.html`, `panel.mjs`, `panel.json` and `registration.json` into a new directory. It reads owner declarations

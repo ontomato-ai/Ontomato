@@ -96,6 +96,41 @@ class BussinessKnowledgeFormBoundaryTest {
 		verify(knowledge).getBussinessKnowledge("domain-a");
 	}
 
+	/**
+	 * An agent's draft reaches the save with only the fields it changed. Over the real JSON binding, the edit keeps the
+	 * entry's other values and the create takes a new entry's defaults, instead of failing on the missing tags and status.
+	 */
+	@Test
+	void savesOverHttpWithOnlyTheChangedFieldsKeepTheRest() throws Exception {
+		var entity = new KnowledgeEntity();
+		entity.setKnowledgeID("k1");
+		entity.setKnowledgeTitle("Refund rule");
+		entity.setKnowledgeText("Within 7 days");
+		entity.setKnowledgeTags(List.of("Business"));
+		entity.setStatus(0);
+		when(knowledge.getBussinessKnowledge("domain-a")).thenReturn(Map.of("k1", entity));
+		when(knowledge.addBussinessKnowledge("", "Cutoff", "Before 18:00", 1, List.of(), user)).thenReturn("knowledge_1");
+		var mvc = MockMvcBuilders.standaloneSetup(controller)
+				.setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+
+		var edit = mvc.perform(post("/admin/editBussinessKnowledge")
+				.header("Accept-Language", "en")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"knowledgeID\":\"k1\",\"knowledgeText\":\"Within 14 days\"}"))
+				.andExpect(status().isOk()).andReturn().getResponse();
+		assertTrue(JSON.parseObject(edit.getContentAsString()).getBooleanValue("success"), edit.getContentAsString());
+		verify(knowledge).editBussinessKnowledge("k1", "Refund rule", "Within 14 days", 0, List.of("Business"), user);
+
+		var create = mvc.perform(post("/admin/addBussinessKnowledge")
+				.header("Accept-Language", "en")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"knowledgeTitle\":\"Cutoff\",\"knowledgeText\":\"Before 18:00\"}"))
+				.andExpect(status().isOk()).andReturn().getResponse();
+		JSONObject created = JSON.parseObject(create.getContentAsString());
+		assertTrue(created.getBooleanValue("success"), create.getContentAsString());
+		assertEquals("knowledge_1", created.getJSONObject("data").getString("id"));
+	}
+
 	@Test
 	void anUnknownTargetKeepsTheControllersRefusalEnvelope() throws Exception {
 		when(knowledge.getBussinessKnowledge("domain-a")).thenReturn(Map.of());

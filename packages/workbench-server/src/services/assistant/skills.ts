@@ -1,3 +1,4 @@
+import { configuredAssistantSkills } from "./skill-selection";
 import { publishGovernanceSkill } from "./governance";
 import { GOVERNANCE_SKILL } from "./governance-definition";
 import { APP_BUILDER_SKILL } from "../app-builder/definition";
@@ -110,10 +111,10 @@ export function effectiveAssistantSkills(
   productProfile = false,
 ): RuntimeSkillRef[] {
   if (productProfile) return [];
-  const selected = visibleAssistantSkillRefs(agent.skills, view);
-  if (agent.kind !== "regular") return selected;
-  const effective = [...selected, ...view.pageSkills.flatMap(group => group.skills)];
-  return [...new Map(effective.map(skill => [runtimeSkillKey(skill), skill])).values()];
+  return configuredAssistantSkills(
+    { kind: agent.kind, skills: agent.skills.filter(view.hasSkill) },
+    view.pageSkills.flatMap(group => group.skills),
+  );
 }
 
 export async function assistantSkillCatalog(domainId: string, credentials: AssistantCredentials, view?: AssistantSkillView) {

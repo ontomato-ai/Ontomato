@@ -156,6 +156,24 @@ class BussinessKnowledgeFormTest {
 	}
 
 	@Test
+	void aDraftWithOnlyTheChangedFieldsIsShownOverTheStoredValues() {
+		when(knowledge.getBussinessKnowledge("domain-a"))
+				.thenReturn(Map.of("k1", entry("k1", "Refund rule", "Within 7 days", List.of("Business"), 0)));
+
+		JSONObject form = BussinessKnowledgeForm.describe("en", "domain-a",
+				request(Map.of("kind", "object", "objectType", "platform:BusinessKnowledge", "primaryKey", "k1"),
+						Map.of("knowledgeText", "Within 14 days")),
+				knowledge, lang, tags);
+
+		JSONObject values = form.getJSONObject("values");
+		assertEquals("k1", values.getString("knowledgeID"));
+		assertEquals("Refund rule", values.getString("knowledgeTitle"));
+		assertEquals("Within 14 days", values.getString("knowledgeText"));
+		assertEquals(List.of("Business"), values.getJSONArray("knowledgeTags").toJavaList(String.class));
+		assertEquals(0, values.getIntValue("status"));
+	}
+
+	@Test
 	void anUnknownTargetIsRefusedWithTheExistingMessage() {
 		when(knowledge.getBussinessKnowledge("domain-a")).thenReturn(Map.of());
 		var error = assertThrows(IllegalArgumentException.class, () -> BussinessKnowledgeForm.describe("en", "domain-a",
