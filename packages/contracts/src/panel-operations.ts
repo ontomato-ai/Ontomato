@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema, runtimeKeySchema } from "./agent-runtime-values";
 import { panelObjectIdentitySchema, panelOperationCallSchema } from "./panel-manifest";
-import { panelFormDescriptionSchema, panelFormValuesSchema, panelOptionListSchema, panelRecordListSchema, panelRecordSchema } from "./panel-projection";
+import {
+  panelFormDescriptionSchema, panelFormValuesSchema, panelGroupCountsSchema, panelOptionListSchema,
+  panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema, panelRelationNeighborsSchema,
+} from "./panel-projection";
+import { chartProjectionTemplateSchema, dashboardMetricOutputSchema } from "./dashboard";
 import {
   platformOntologyCountsResponseSchema, platformOntologyNeighborsResponseSchema, platformOntologyObjectsResponseSchema,
   platformOntologySchemaResponseSchema, platformOntologyStartResponseSchema,
@@ -37,6 +41,8 @@ export const panelReadOperationDescriptorSchema = panelOwnerOperationDescriptorS
 export const panelReadResultSchemas = {
   panelRecordList: panelRecordListSchema,
   panelRecord: panelRecordSchema,
+  panelRecordQuery: panelRecordQuerySchema,
+  panelGroupCounts: panelGroupCountsSchema,
   panelFormDescription: panelFormDescriptionSchema,
   panelOperationDescriptor: panelOwnerOperationDescriptorSchema,
   panelOptionList: panelOptionListSchema,
@@ -45,6 +51,9 @@ export const panelReadResultSchemas = {
   panelGraphStart: platformOntologyStartResponseSchema,
   panelGraphNeighbors: platformOntologyNeighborsResponseSchema,
   panelOntologyObjects: platformOntologyObjectsResponseSchema,
+  panelRelationNeighbors: panelRelationNeighborsSchema,
+  chartTemplate: chartProjectionTemplateSchema,
+  metricOutput: dashboardMetricOutputSchema,
 };
 
 /** A read-only trial takes the current form values plus the execution parameter values. */

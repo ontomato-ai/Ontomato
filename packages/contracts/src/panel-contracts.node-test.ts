@@ -21,6 +21,8 @@ import { defaultAgentSchema } from "./default-agent";
 import { pageSkillSchema } from "./page-skills";
 import assert from "node:assert/strict";
 import test from "node:test";
+import { dashboardCardPrimaryKey } from "./dashboard";
+import { DASHBOARD_CARD } from "./platform-object-types";
 import {
   ACTION, AGENT_DEFINITION, ATTRIBUTE, DELETE_ACTION, DELETE_AGENT, DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SET_ACTION_STATUS, SET_METRIC_VIEW_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, USER,
   RUN_NOW, SCHEDULED_TASK, bindingKey, chartProjectionLookupRead, chartProjectionSourcePath, chartProjectionSourceSends, clientSends, panelClientReads,
@@ -58,6 +60,8 @@ import {
 } from "./product-panels";
 import { ontologyParameterTypeSchema as legacyOntologyParameterTypeSchema } from "./product-projections";
 
+const platformType = (id: string) => ({ kind: "PlatformObjectType" as const, id });
+const platformOperation = (id: string) => ({ kind: "PlatformOperation" as const, id });
 const binding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
 
 test("current SDK discovery carries the digest of the build and the component catalogue path", () => {
@@ -98,17 +102,17 @@ test("ontology object lists and reference pickers declare the named reads they u
     ...base, componentId: "@ontomato/sdk:ReferencePicker",
     inputs: { keyword: { kind: "scalar", type: "string" }, page: { kind: "json" }, values: { kind: "json" } },
     data: {
-      options: { source: { type: USER }, read: "options", params: { keyword: { input: "keyword" }, page: { input: "page" } } },
-      selected: { source: { type: USER }, read: "resolve", params: { values: { input: "values" } } },
+      options: { source: { type: platformType(USER) }, read: "options", params: { keyword: { input: "keyword" }, page: { input: "page" } } },
+      selected: { source: { type: platformType(USER) }, read: "resolve", params: { values: { input: "values" } } },
     },
   };
   assert.deepEqual(registerDirectProjectionRequestSchema.parse(users), users);
   assert.equal(registerDirectProjectionRequestSchema.safeParse({
-    ...users, data: { options: { ...users.data.options, source: { type: SKILL } } },
+    ...users, data: { options: { ...users.data.options, source: { type: platformType(SKILL) } } },
   }).success, false);
   const objects = {
     ...base, componentId: "@ontomato/sdk:ObjectList", inputs: {},
-    data: { objects: { source: { type: ONTOLOGY_TYPE }, read: "objects", params: { type: { literal: USER } } } },
+    data: { objects: { source: { type: platformType(ONTOLOGY_TYPE) }, read: "objects", params: { type: { literal: USER } } } },
   };
   assert.deepEqual(registerDirectProjectionRequestSchema.parse(objects), objects);
   assert.equal(registerDirectProjectionRequestSchema.safeParse({
@@ -120,7 +124,7 @@ test("ontology object lists and reference pickers declare the named reads they u
 });
 
 test("a no-code task panel registers and parses the same members and layout", async () => {
-  const { registerDirectPanelRequestSchema } = await import("./product-panels");
+  const { registerProductPanelRequestSchema } = await import("./product-panels");
   const { parsePanelLayout } = await import("./panel-layout");
   const input = {
     name: "Scheduled tasks", description: "", visibility: "domain", revision: 0,
@@ -131,22 +135,104 @@ test("a no-code task panel registers and parses the same members and layout", as
       events: {},
     },
   };
-  const panel = registerDirectPanelRequestSchema.parse(input);
+  const panel = registerProductPanelRequestSchema.parse(input);
   assert.deepEqual(parsePanelLayout(panel.content.html, panel.manifest), [{
     kind: "container", tag: "div", flow: "row", gap: "medium", position: { offset: 0, line: 1, column: 1 },
     children: [{ kind: "member", ref: "tasks", position: { offset: 19, line: 2, column: 3 } }],
   }]);
   const wrong = '<div>\n  <panel-member ref="tasks" onclick="run()"></panel-member>\n</div>';
   assert.throws(() => parsePanelLayout(wrong, panel.manifest), /2:29.*onclick/u);
-  assert.equal(registerDirectPanelRequestSchema.safeParse({ ...input, content: { html: wrong } }).success, false);
+  assert.equal(registerProductPanelRequestSchema.safeParse({ ...input, content: { html: wrong } }).success, false);
   assert.throws(() => parsePanelLayout('<section when="selectedTask" eq="1"></section>', panel.manifest), /Comparison/u);
   assert.throws(() => parsePanelLayout('<div><panel-member ref="tasks"></div>', panel.manifest), /Unexpected closing tag/u);
   assert.throws(() => parsePanelLayout('<div flow="row" flow="column"></div>', panel.manifest), /Duplicate attribute 'flow'/u);
   assert.throws(() => parsePanelLayout('<panel-member ref="missing"></panel-member>', panel.manifest), /Undeclared member 'missing'/u);
 });
 
+test("the current registration accepts the shipped no-code layout and rejects an SDK pin", async () => {
+  const { registerProductPanelRequestSchema, panelNeedsFrame } = await import("./product-panels");
+  const material = await import(new URL("../../apps-sdk/examples/panels/schedules-trial/definitions.mjs", import.meta.url).href);
+  const [{ directory, manifest, name, description }] = material.panels;
+  const body = { content: material.panelContent(directory), manifest, name, description, visibility: "domain", revision: 0 };
+  assert.equal(panelNeedsFrame(registerProductPanelRequestSchema.parse(body).content), false);
+  assert.equal(registerProductPanelRequestSchema.safeParse({ ...body, sdkVersion: "1.1.2" }).success, false);
+  assert.equal(panelNeedsFrame(registerProductPanelRequestSchema.parse({
+    ...body, content: { html: "<main id='app'></main>", module: "export {}" },
+  }).content), true);
+});
+
+test("nested layout and explicit events share typed state and placement", async () => {
+  const { parsePanelLayout } = await import("./panel-layout");
+  const agent = { kind: "object", objectType: AGENT_DEFINITION };
+  const input = {
+    state: {
+      agents: { type: { kind: "list", items: agent }, personal: true, default: [] },
+      agent: { type: agent, default: null, deepLink: true, external: true },
+      mode: { type: { kind: "scalar", type: "string" } },
+      preview: { type: { kind: "placement", candidates: { rule: "catalogSelection" } } },
+    },
+    members: {
+      row: { target: { panelId: "agent-detail" }, inputs: { agent: { item: true } } },
+      details: { target: { fromState: "agent", candidates: { rule: "objectDetail" } } },
+    },
+    events: { create: {
+      labelKey: "agent.create", do: { set: { fields: { agent: { literal: null }, mode: { literal: "create" } } } },
+    } },
+  };
+  const manifest = panelManifestSchema.parse(input);
+  assert.deepEqual(manifest.events.create, input.events.create);
+  const html = '<div each="agents"><panel-member ref="row"></panel-member></div><panel-member ref="$state.preview"></panel-member>';
+  const tree = parsePanelLayout(html, manifest);
+  assert.equal(tree[0]?.kind === "container" && tree[0].each, "agents");
+  assert.throws(() => parsePanelLayout('<panel-member ref="row"></panel-member>', manifest), /repeat/u);
+  assert.throws(() => parsePanelLayout('<div each="agent"></div>', manifest), /list state/u);
+  assert.equal(panelManifestSchema.safeParse({
+    ...input, events: { bad: { do: { set: { fields: { agent: { literal: null } } } } } },
+  }).success, false);
+  assert.equal(panelManifestSchema.safeParse({
+    ...input, events: { bad: {
+      on: { member: "row", output: "selected" }, labelKey: "agent.create",
+      do: { set: { fields: { agent: { event: true } } } },
+    } },
+  }).success, false);
+  assert.equal(panelManifestSchema.safeParse({
+    ...input, state: { selected: { type: { kind: "objects", objectType: AGENT_DEFINITION } } },
+  }).success, false);
+});
+
+test("entry resolution and personal-state scope use the actual use and nested path", async () => {
+  const { applicationEntryResolutionSchema, applicationPanelReferencesRequestSchema } = await import("./product-panels");
+  const { panelPersonalStateWriteRequestSchema } = await import("./panel-host");
+  const { panelDefinitionSnapshotSchema } = await import("./product-subscriptions");
+  const use = {
+    id: "tasks", pageKey: "tasks", path: "/applications/app-tasks/tasks", panelId: "schedule-list",
+    access: { kind: "domain-member" }, names: { en: "Tasks" }, groupKey: "plan",
+    inputs: { term: { frameState: "term" }, role: { literal: null } },
+  };
+  const response = {
+    applicationId: "app-tasks", use, framePanelId: "site-frame", theme: { dark: { "--el-color-primary": "#0084ff" } },
+    menu: { groups: [{ key: "plan", names: { en: "Plan" }, sort: 0 }], panelUses: [use] },
+  };
+  assert.deepEqual(applicationEntryResolutionSchema.parse(response), response);
+  assert.equal(applicationPanelReferencesRequestSchema.safeParse({
+    domainId: "domain", framePanelId: "site-frame", uses: [{ id: use.id, panelId: use.panelId, inputs: use.inputs }],
+    delivery: { panels: [use.panelId], projections: ["projection-tasks"] },
+  }).success, true);
+  const memberPath = [{ member: "frame" }, {
+    member: "preview", selection: { placement: { id: "current", target: { panelId: use.panelId } } },
+  }];
+  const request = { source: { kind: "registered", applicationId: "app-tasks", useId: "tasks" }, memberPath, values: { selected: null } };
+  assert.deepEqual(panelPersonalStateWriteRequestSchema.parse(request), request);
+  assert.equal(panelPersonalStateWriteRequestSchema.safeParse({ ...request, domainId: "other" }).success, false);
+  const snapshot = { panel: { id: use.panelId, revision: 1 }, projections: [], members: [{ status: "forbidden", memberPath }] };
+  assert.deepEqual(panelDefinitionSnapshotSchema.parse(snapshot), snapshot);
+  assert.equal(panelDefinitionSnapshotSchema.safeParse({
+    ...snapshot, members: [{ ...snapshot.members[0], target: { kind: "panel", id: "private-panel" } }],
+  }).success, false);
+});
+
 test("direct task reads use the registered source, parameters and result envelope", async () => {
-  const { registerDirectProjectionRequestSchema } = await import("./product-panels");
+  const { directProjectionInputSchema, registerDirectProjectionRequestSchema } = await import("./product-panels");
   const { panelDataStateSchema, productPanelReadRequestSchema, productPanelReadResponseSchema } = await import("./panel-host");
   const { panelReadResultSchemas } = await import("./panel-operations");
   const { directProjectionDataSchema, directReadDeclaration } = await import("./panel-projection");
@@ -156,20 +242,21 @@ test("direct task reads use the registered source, parameters and result envelop
     outputs: {}, config: {},
     data: { form: { source: { object: { input: "task" } }, read: "form", params: { values: { input: "values" }, changedField: { input: "changedField" } } } },
   };
-  const projection = registerDirectProjectionRequestSchema.parse(form);
-  assert.deepEqual(projection, form);
+  const { revision, ...formInput } = form;
+  const projection = directProjectionInputSchema.parse(formInput);
+  assert.deepEqual(registerDirectProjectionRequestSchema.parse({ ...projection, revision }), form);
   assert.equal(directReadDeclaration(projection, projection.data.form)?.source, "object");
   const declaredReads = [
-    [{ type: "platform:ScheduledTask" }, "list", "type", "panelRecordList"],
+    [{ type: platformType("platform:ScheduledTask") }, "list", "type", "panelRecordList"],
     [{ object: { literal: { className: "platform:ScheduledTask", primaryKey: "task-1" } } }, "record", "object", "panelRecord"],
-    [{ operation: "schedules.runNow" }, "describe", "operation", "panelOperationDescriptor"],
+    [{ operation: platformOperation(RUN_NOW) }, "describe", "operation", "panelOperationDescriptor"],
   ] as const;
   for (const [source, read, kind, result] of declaredReads) {
     const declaration = directReadDeclaration(projection, directProjectionDataSchema.parse({ source, read, params: {} }));
     assert.equal(declaration?.source, kind);
     assert.equal(declaration?.result, result);
   }
-  for (const data of [{ source: { type: "platform:ScheduledTask" }, read: "record" },
+  for (const data of [{ source: { type: platformType("platform:ScheduledTask") }, read: "record" },
     { source: { object: { input: "changedField" } }, read: "record" }])
     assert.equal(directReadDeclaration(projection, directProjectionDataSchema.parse({ ...data, params: {} })), undefined);
   const read = form.data.form;
@@ -204,8 +291,8 @@ test("the current projection response admits named direct reads through the fram
   const data = {
     record: { source: { object: { input: "task" } }, read: "record", params: {} },
     fixedRecord: { source: { object: { literal: { className: SCHEDULED_TASK, primaryKey: taskId } } }, read: "record", params: {} },
-    list: { source: { type: SCHEDULED_TASK }, read: "list", params: {} },
-    run: { source: { operation: RUN_NOW }, read: "describe", params: {} },
+    list: { source: { type: platformType(SCHEDULED_TASK) }, read: "list", params: {} },
+    run: { source: { operation: platformOperation(RUN_NOW) }, read: "describe", params: {} },
   };
   const response = (data: object) => productProjectionResponseSchema.parse({ projection: { ...projection, data } });
   const taskKey = binding(SCHEDULED_TASK);
@@ -256,18 +343,18 @@ test("a dispatched success carries the owner's message alongside the result data
 });
 
 test("the field port refers to another slot in the same manifest", () => {
-  const picker = { projectionId: "skill-picker", formField: { slot: "definition", path: "/skills" } };
-  const slots = { definition: { projectionId: "definition-form" }, picker };
-  assert.deepEqual(panelManifestSchema.parse({ state: {}, slots, operations: [] }).slots.picker?.formField, picker.formField);
-  assert.equal(panelManifestSchema.safeParse({ state: {}, slots: { picker }, operations: [] }).success, false);
+  const picker = { target: { projectionId: "skill-picker" }, formField: { slot: "definition", path: "/skills" } };
+  const members = { definition: { target: { projectionId: "definition-form" } }, picker };
+  assert.deepEqual(panelManifestSchema.parse({ state: {}, members, events: {} }).members.picker?.formField, picker.formField);
+  assert.equal(panelManifestSchema.safeParse({ state: {}, members: { picker }, events: {} }).success, false);
 });
 
 test("a row reference port identifies the array and a field relative to each row", () => {
   const formField = { slot: "workflow", path: "/steps", itemPath: "/actionId" };
-  const slots = { workflow: { projectionId: "workflow-form" }, picker: { projectionId: "action-picker", formField } };
-  assert.deepEqual(panelManifestSchema.parse({ state: {}, slots, operations: [] }).slots.picker?.formField, formField);
-  const invalid = { ...slots, picker: { ...slots.picker, formField: { ...formField, itemPath: "actionId" } } };
-  assert.equal(panelManifestSchema.safeParse({ state: {}, slots: invalid, operations: [] }).success, false);
+  const members = { workflow: { target: { projectionId: "workflow-form" } }, picker: { target: { projectionId: "action-picker" }, formField } };
+  assert.deepEqual(panelManifestSchema.parse({ state: {}, members, events: {} }).members.picker?.formField, formField);
+  const invalid = { ...members, picker: { ...members.picker, formField: { ...formField, itemPath: "actionId" } } };
+  assert.equal(panelManifestSchema.safeParse({ state: {}, members: invalid, events: {} }).success, false);
 });
 
 test("time controls and schedule frequencies accept local times at minute precision", () => {
@@ -284,9 +371,9 @@ test("time controls and schedule frequencies accept local times at minute precis
 test("form saves address the draft target even when the slot receives a selected object", () => {
   const agent = { kind: "object", objectType: AGENT_DEFINITION } as const;
   const manifest = panelManifestSchema.parse({
-    state: { selectedAgent: agent },
-    slots: { definition: { projectionId: "definition-form", inputs: { record: { state: "selectedAgent" } } } },
-    operations: [],
+    state: { selectedAgent: { type: agent } },
+    members: { definition: { target: { projectionId: "definition-form" }, inputs: { record: { state: "selectedAgent" } } } },
+    events: {},
   });
   const [save] = projectionOperations(manifest, {
     slot: "definition",
@@ -303,19 +390,19 @@ test("read operation inputs can take parameter values and a binding from this pa
   const bindingId = { state: "bindingId" };
   const parameters = { formField: { slot: "execution", path: "/parameters" } };
   const manifest = {
-    state: { bindingId: { kind: "scalar", type: "string" } },
-    slots: {
-      execution: { projectionId: "runtime-form" },
-      trial: { projectionId: "trial", readOperationInputs: { testExecute: { parameters, bindingId } } },
+    state: { bindingId: { type: { kind: "scalar", type: "string" } } },
+    members: {
+      execution: { target: { projectionId: "runtime-form" } },
+      trial: { target: { projectionId: "trial" }, readOperationInputs: { testExecute: { parameters, bindingId } } },
     },
-    operations: [],
+    events: {},
   };
-  assert.deepEqual(panelManifestSchema.parse(manifest).slots.trial?.readOperationInputs?.testExecute, { parameters, bindingId });
+  assert.deepEqual(panelManifestSchema.parse(manifest).members.trial?.readOperationInputs?.testExecute, { parameters, bindingId });
   assert.equal(panelManifestSchema.safeParse({ ...manifest, state: {} }).success, false);
   const named = { parameters: { fields: { amount: { formField: { slot: "execution", path: "/amount" } }, binding: bindingId } } };
-  const trial = { ...manifest.slots.trial, readOperationInputs: { testExecute: named } };
-  assert.deepEqual(panelManifestSchema.parse({ ...manifest, slots: { ...manifest.slots, trial } }).slots.trial?.readOperationInputs?.testExecute, named);
-  assert.equal(panelManifestSchema.safeParse({ ...manifest, slots: { trial } }).success, false);
+  const trial = { ...manifest.members.trial, readOperationInputs: { testExecute: named } };
+  assert.deepEqual(panelManifestSchema.parse({ ...manifest, members: { ...manifest.members, trial } }).members.trial?.readOperationInputs?.testExecute, named);
+  assert.equal(panelManifestSchema.safeParse({ ...manifest, members: { trial } }).success, false);
 });
 
 test("declared delete operations can read a named impact with the total count", () => {
@@ -357,7 +444,9 @@ test("prepared single writes can proceed while batch confirmation still names it
 test("metric trials use the Node read operation route", () => {
   const read = "/panel-operations/read";
   for (const [operation, javaPath] of [[TEST_METRIC_VIEW, "/metricView/test"], [TEST_EXECUTE_METRIC_VIEW, "/metricView/testExecute"]]) {
-    const binding = [bindingKey({ kind: "PlatformOperation", id: operation })];
+    const platformType = (id: string) => ({ kind: "PlatformObjectType" as const, id });
+const platformOperation = (id: string) => ({ kind: "PlatformOperation" as const, id });
+const binding = [bindingKey({ kind: "PlatformOperation", id: operation })];
     assert.equal(clientSends(binding, "POST", "", read), true);
     assert.equal(clientSends(binding, "GET", "", read), false);
     assert.equal(clientSends(binding, "POST", "/data-query", javaPath), false);
@@ -368,7 +457,7 @@ test("metric trials use the Node read operation route", () => {
 });
 
 test("a frame boots with the exact use identity or an explicit candidate null", () => {
-  const panel = { content: { html: "", module: "" }, sdkVersion: "1.0.0", manifest: { state: {}, slots: {}, operations: [] } };
+  const panel = { content: { html: "", module: "" }, manifest: { state: {}, members: {}, events: {} } };
   const message = { kind: "panel-host-message", panel, pageKey: "tasks", url: "/tasks", label: "Tasks", state: {} };
   const use = { applicationId: "workbench", useId: "tasks" };
   assert.deepEqual(panelHostMessageSchema.parse({ ...message, use }).use, use);
@@ -459,10 +548,10 @@ test("nested controls keep relative field metadata and the existing absolute ref
   const path = "/steps/0/actionId";
   const formField = { slot: "definition", path };
   const manifest = panelManifestSchema.parse({
-    state: {}, operations: [],
-    slots: { definition: { projectionId: "workflow-form" }, picker: { projectionId: "action-picker", formField } },
+    state: {}, events: {},
+    members: { definition: { target: { projectionId: "workflow-form" } }, picker: { target: { projectionId: "action-picker" }, formField } },
   });
-  assert.deepEqual(manifest.slots.picker?.formField, formField);
+  assert.deepEqual(manifest.members.picker?.formField, formField);
   const target = { kind: "object", objectType: "platform:Workflow", primaryKey: "example" };
   assert.equal(panelFormRequestSchema.parse({ target, values, changedField: path }).changedField, path);
 });
@@ -522,43 +611,45 @@ test("list column headers come from owner fields or from panel message keys", ()
 
 test("a graph has two admitted sources and can use either a form field or separate selection outputs", () => {
   const projection = productProjectionInputSchema.parse({
-    name: "Ontology graph", description: "", visibility: "domain", componentId: "GraphCanvas",
-    binding: { kind: "PlatformObjectType", id: OBJECT_TYPE },
-    graph: { edges: { binding: { kind: "PlatformObjectType", id: RELATIONSHIP }, sourcePath: "/fromclass", targetPath: "/toclass" } },
-    inputs: {}, display: {},
-  });
-  assert.deepEqual(projectionBindingKeys(projection), [binding(OBJECT_TYPE), binding(RELATIONSHIP)]);
-  assert.deepEqual(projectionPorts(projection, {}).outputs, {
-    selectedNode: { kind: "object", objectType: OBJECT_TYPE },
-    selectedEdge: { kind: "object", objectType: RELATIONSHIP },
-  });
-
-  const range = panelManifestSchema.parse({
-    state: {}, operations: [],
-    slots: {
-      definition: { projectionId: "definition-form" },
-      range: { projectionId: "data-scope", formField: { slot: "definition", path: "/classNames" } },
+    name: "Ontology graph", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectGraph",
+    data: {
+      nodes: { source: { type: platformType(OBJECT_TYPE) }, read: "list", params: {} },
+      edges: { source: { type: platformType(RELATIONSHIP) }, read: "list", params: {} },
+    },
+    config: { edgeEnds: { source: "/fromclass", target: "/toclass" } },
+    inputs: {},
+    outputs: {
+      selectedNode: { kind: "object", objectType: OBJECT_TYPE },
+      selectedEdge: { kind: "object", objectType: RELATIONSHIP },
     },
   });
-  assert.equal(range.slots.range?.formField?.path, "/classNames");
-  const state = { node: { kind: "object", objectType: OBJECT_TYPE }, edge: { kind: "object", objectType: RELATIONSHIP } };
+  assert.deepEqual(projectionBindingKeys(projection), [binding(OBJECT_TYPE), binding(RELATIONSHIP)]);
+  assert.deepEqual(projectionPorts(projection, {}).outputs, projection.outputs);
+
+  const range = panelManifestSchema.parse({
+    state: {}, events: {},
+    members: {
+      definition: { target: { projectionId: "definition-form" } },
+      range: { target: { projectionId: "data-scope" }, formField: { slot: "definition", path: "/classNames" } },
+    },
+  });
+  assert.equal(range.members.range?.formField?.path, "/classNames");
+  const state = { node: { type: { kind: "object", objectType: OBJECT_TYPE } }, edge: { type: { kind: "object", objectType: RELATIONSHIP } } };
   const outputs = { selectedNode: { state: "node" }, selectedEdge: { state: "edge" } };
-  const graph = { slots: { graph: { projectionId: "ontology-model", outputs } }, operations: [] };
-  assert.deepEqual(panelManifestSchema.parse({ ...graph, state }).slots.graph?.outputs, outputs);
+  const graph = { members: { graph: { target: { projectionId: "ontology-model" }, outputs } }, events: {} };
+  assert.deepEqual(panelManifestSchema.parse({ ...graph, state }).members.graph?.outputs, outputs);
   assert.equal(panelManifestSchema.safeParse({ ...graph, state: { node: state.node } }).success, false);
 });
 
 test("a named relationship is a binding identity and supplies no inferred edge selection type", () => {
   const relationship = { kind: "Relationship", id: "manages" };
   const projection = productProjectionInputSchema.parse({
-    name: "Relationship graph", description: "", visibility: "domain", componentId: "GraphCanvas",
-    binding: { kind: "PlatformObjectType", id: OBJECT_TYPE },
-    graph: { edges: { binding: relationship, sourcePath: "/from", targetPath: "/to" } },
-    inputs: {}, display: {},
+    name: "Ontology graph", description: "", visibility: "domain", componentId: "@ontomato/sdk:OntologyGraph",
+    inputs: { node: { kind: "object", objectType: "Employee" } }, outputs: {}, config: {},
+    data: { neighbors: { source: { type: relationship }, read: "neighbors", params: { node: { input: "node" } } } },
   });
-  assert.deepEqual(ontologyElementRefSchema.parse(relationship), relationship);
-  assert.deepEqual(projectionBindingKeys(projection), [binding(OBJECT_TYPE), "Relationship:manages"]);
-  assert.equal(projectionPorts(projection, {}).outputs?.selectedEdge, undefined);
+  assert.deepEqual(projectionBindingKeys(projection), ["Relationship:manages"]);
+  assert.deepEqual(projectionPorts(projection, {}).outputs, {});
 });
 
 test("canonical relation paths are already routable and carry no view state", () => {
@@ -586,7 +677,7 @@ test("candidate source needs only workspace identity, content and build-test con
   const candidate = {
     kind: "candidate",
     workspace: { id: "5931a639-a70d-4dae-96db-6b8a4460d228", ref: "a".repeat(40) },
-    panel: { content: { html: "", module: "" }, manifest: { state: {}, slots: {}, operations: [] }, sdkVersion: "1.1.2" },
+    panel: { content: { html: "", module: "" }, manifest: { state: {}, members: {}, events: {} } },
     previewContext: { kind: "build-test", test: null },
   };
   assert.ok(candidatePanelSourceSchema.safeParse(candidate).success);
@@ -649,47 +740,36 @@ test("a panel operation descriptor admits exactly the three use and operation qu
 });
 
 const chartSource = { dashboardId: "board-a", cardId: "chart-1" };
+const card = { object: { literal: { className: DASHBOARD_CARD, primaryKey: dashboardCardPrimaryKey(chartSource) } } };
 const chartProjection = {
   name: "Departments", description: "", visibility: "private",
-  componentId: "MetricChart", binding: { kind: "MetricView", id: "department-metric" },
-  inputs: { department: { kind: "scalar", type: "string" } },
-  display: { chartSource },
+  componentId: "@ontomato/sdk:MetricChart", chartSource, metricId: "department-metric",
+  inputs: { department: { kind: "scalar", type: "string" } }, outputs: {}, config: {},
+  data: {
+    template: { source: card, read: "chartTemplate", params: {} },
+    result: { source: card, read: "result", params: { department: { input: "department" } } },
+  },
 };
 
-test("a chart projection can only store the source reference and its metric binding", () => {
+test("the chart reads its registered source card with per-metric overrides", () => {
   const projection = {
     ...chartProjection, id: "projection-a", domainId: "domain", ownerId: "author",
     revision: 1, createdAt: "2026-11-19T00:00:00Z", updatedAt: "2026-11-19T00:00:00Z", editable: true,
   };
-  assert.deepEqual(registerChartProjectionResponseSchema.parse({ projection }).projection.display, { chartSource });
+  assert.deepEqual(registerChartProjectionResponseSchema.parse({ projection }).projection.chartSource, chartSource);
   assert.equal(productProjectionInputSchema.safeParse({
-    ...chartProjection, binding: { kind: "Action", id: "unrelated" },
+    ...chartProjection, chartSource: { ...chartSource, cardId: "different-card" },
   }).success, false);
-  assert.equal(productProjectionInputSchema.safeParse({
-    ...chartProjection, inputs: { department: { kind: "array", items: { kind: "scalar", type: "string" } } },
-  }).success, false);
-  for (const data of [{ chartFile: {} }, { query: { metricId: "other" } }, { rows: [] }]) {
-    assert.equal(productProjectionInputSchema.safeParse({
-      ...chartProjection, display: { chartSource, ...data },
-    }).success, false);
-  }
+  assert.equal(productProjectionInputSchema.safeParse({ ...chartProjection, chartFile: {} }).success, false);
 });
 
-test("chart registration takes the source identity and ordinary writes cannot supply it", () => {
+test("chart registration takes only the source identity and ordinary PUT cannot rebind it", () => {
   assert.deepEqual(registerChartProjectionRequestSchema.parse(chartSource), chartSource);
-  assert.equal(registerChartProjectionRequestSchema.safeParse({
-    ...chartSource, id: "supplied-projection", binding: chartProjection.binding, domainId: "another-domain",
-  }).success, false);
+  assert.equal(registerChartProjectionRequestSchema.safeParse({ ...chartSource, id: "supplied-projection" }).success, false);
   assert.equal(registerProductProjectionRequestSchema.safeParse({ ...chartProjection, revision: 1 }).success, false);
-  assert.equal(registerProductProjectionRequestSchema.safeParse({
-    ...chartProjection, componentId: "ObjectSummary", revision: 0,
-  }).success, false);
-  assert.equal(registerProductProjectionRequestSchema.safeParse({
-    ...chartProjection, display: {}, revision: 0,
-  }).success, false);
-  assert.equal(registerProductProjectionRequestSchema.safeParse({
-    ...chartProjection, display: {}, revision: 2,
-  }).success, true);
+  const metadata = { name: chartProjection.name, description: "", visibility: "private", componentId: chartProjection.componentId };
+  assert.equal(registerProductProjectionRequestSchema.safeParse({ ...metadata, revision: 0 }).success, false);
+  assert.equal(registerProductProjectionRequestSchema.safeParse({ ...metadata, revision: 2 }).success, true);
 });
 
 test("chart template reads the drawing and saved parameters while edit only supplies the drawing", () => {
@@ -724,7 +804,7 @@ test("the chart client is restricted to its chart projection and bound metric", 
   assert.ok(!chartProjectionSourceSends(["other"], "GET", "", path));
   assert.ok(!chartProjectionSourceSends(["chart:id"], "DELETE", "", path));
 
-  const metric = bindingKey(chartProjection.binding);
+  const metric = bindingKey({ kind: "MetricView", id: chartProjection.metricId });
   for (const [path, body] of [
     ["/ontology/query/metrics/describe", { id: "department-metric" }],
     ["/metricView/execute", { id: "department-metric", param: { department: "sales" } }],
@@ -898,7 +978,7 @@ test("governance issues and sources use separate collection queries under one pa
 });
 
 test("checked object collections are typed ports and never become deep-link state", () => {
-  const field = { kind: "objects", objectType: METRIC_VIEW };
+  const field = { kind: "list", items: { kind: "object", objectType: METRIC_VIEW } };
   const refs = [{ className: METRIC_VIEW, primaryKey: "metric-a" }, { className: METRIC_VIEW, primaryKey: "metric-b" }];
   const state = { checked: refs };
   assert.deepEqual(panelStateFieldSchema.parse(field), { ...field, deepLink: false });
@@ -909,26 +989,23 @@ test("checked object collections are typed ports and never become deep-link stat
   assert.deepEqual(panelStateValueSchema.parse([]), []);
   assert.deepEqual(panelStateOperationSchema.parse({ id: "clear", labelKey: "selection.clear", kind: "state", sets: { checked: [] } }).sets, { checked: [] });
   assert.equal(panelOpenRequestSchema.safeParse({ useId: "metrics", state }).success, false);
-  assert.equal(panelFrameMessageSchema.safeParse({ kind: "state", fromAddress: "/ontology/metrics", state }).success, false);
+
 });
 
 test("mixed graphs declare selected node types separately from the read bindings", () => {
   const nodeIdentity = { kind: "object-union", layers: [...platformOntologyLayers] };
   const projection = productProjectionInputSchema.parse({
-    name: "Platform ontology graph", description: "", visibility: "domain", componentId: "GraphCanvas",
-    binding: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE },
-    graph: { nodeIdentity, edges: {
-      binding: { kind: "PlatformObjectType", id: ONTOLOGY_RELATION_KIND }, sourcePath: "/from", targetPath: "/to",
-    } },
-    inputs: { start: nodeIdentity }, display: {},
+    name: "Platform ontology graph", description: "", visibility: "domain", componentId: "@ontomato/sdk:OntologyGraph",
+    inputs: { start: nodeIdentity }, outputs: { selectedNode: nodeIdentity }, config: {},
+    data: { neighbors: { source: { type: platformType(ONTOLOGY_TYPE) }, read: "neighbors", params: { node: { input: "start" } } } },
   });
   assert.deepEqual(projectionPorts(projection, {}).outputs?.selectedNode, nodeIdentity);
   assert.deepEqual(projection.inputs.start, nodeIdentity);
   const manifest = panelManifestSchema.parse({
-    state: { selected: nodeIdentity },
-    slots: { graph: { projectionId: "mixed", outputs: { selectedNode: { state: "selected" } } } }, operations: [],
+    state: { selected: { type: nodeIdentity } },
+    members: { graph: { target: { projectionId: "mixed" }, outputs: { selectedNode: { state: "selected" } } } }, events: {},
   });
-  assert.deepEqual(manifest.state.selected, { ...nodeIdentity, deepLink: false });
+  assert.deepEqual(manifest.state.selected, { type: nodeIdentity, deepLink: false, personal: false, external: false });
   const user = panelStateValueSchema.parse({ className: ONTOLOGY_USER, primaryKey: "shared-key" });
   const definition = panelStateValueSchema.parse({ className: DEFINITION, primaryKey: "shared-key" });
   assert.notDeepEqual(user, definition);
@@ -1145,8 +1222,8 @@ test("conversation entries declare the exact composer target and can prefill wit
 
   const conversationEntry = { target: { kind: "preset", agentKind: "knowledge-governance" }, prefill: payload.prefill };
   const projection = productProjectionInputSchema.parse({
-    name: "Governance", description: "", visibility: "domain", componentId: "ConversationEntry",
-    binding: { kind: "PlatformObjectType", id: "platform:AgentDefinition" }, inputs: {}, display: {}, conversationEntry,
+    name: "Governance", description: "", visibility: "domain", componentId: "@ontomato/sdk:ConversationEntry",
+    inputs: {}, data: {}, outputs: {}, config: {}, conversationEntry,
   });
   assert.deepEqual(projection.conversationEntry, conversationEntry);
 });

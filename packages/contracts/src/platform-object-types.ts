@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const DASHBOARD_CARD = "platform:DashboardCard";
+export const EXECUTE_OBJECT_ACTION = "actions.execute";
 export const SCHEDULED_TASK = "platform:ScheduledTask";
 export const AGENT_DEFINITION = "platform:AgentDefinition";
 export const SKILL = "platform:Skill";
@@ -30,12 +32,17 @@ export const ONTOLOGY_RELATION_KIND = "platform:OntologyRelationKind";
 
 export const platformOntologyLayers = ["fact", "capability", "governance", "product"] as const;
 
-export interface PlatformReadDeclaration {
+export type PanelReadParameterId = keyof typeof import("./panel-projection").panelReadParameterSchemas;
+export type PanelReadResultId = keyof typeof import("./panel-operations").panelReadResultSchemas;
+
+type PanelReadSignature =
+  | { parameterMode: "fixed"; params: Readonly<Record<string, PanelReadParameterId>>; requiredParams?: readonly string[] }
+  | { parameterMode: "owner"; parameter: PanelReadParameterId };
+
+export type PlatformReadDeclaration = PanelReadSignature & {
   source: "type" | "object" | "operation";
-  params: Readonly<Record<string, keyof typeof import("./panel-projection").panelReadParameterSchemas>>;
-  requiredParams?: readonly string[];
-  result: keyof typeof import("./panel-operations").panelReadResultSchemas;
-}
+  result: PanelReadResultId;
+};
 
 export interface PlatformObjectTypeDeclaration {
   labelKey?: string;
@@ -52,14 +59,22 @@ const describeType = (name: string, layer?: PlatformObjectTypeDeclaration["layer
   ...(layer && { layer }),
 });
 
-const runNow: typeof import("./panel-client-requests").RUN_NOW = "schedules.runNow";
+export const RUN_NOW = "schedules.runNow";
+export const SET_ACTION_STATUS = "actions.setStatus";
+export const DELETE_ACTION = "actions.delete";
+export const APPROVE_KNOWLEDGE = "knowledge.approve";
+export const DELETE_KNOWLEDGE = "knowledge.delete";
+const operationDescription = {
+  source: "operation", parameterMode: "fixed", params: {}, result: "panelOperationDescriptor",
+} as const;
+
 
 const referenceReads = {
-  options: { source: "type", params: {}, result: "panelOptionList" },
-  resolve: { source: "type", params: { values: "optionValues" }, requiredParams: ["values"], result: "panelOptionList" },
+  options: { source: "type", parameterMode: "fixed", params: {}, result: "panelOptionList" },
+  resolve: { source: "type", parameterMode: "fixed", params: { values: "optionValues" }, requiredParams: ["values"], result: "panelOptionList" },
 } as const satisfies NonNullable<PlatformObjectTypeDeclaration["reads"]>;
 
-const metadataList = { list: { source: "type", params: {}, result: "panelRecordList" } } as const;
+const metadataList = { list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" } } as const;
 const definitionFormParams = { values: "panelFormValues", changedField: "changedField" } as const;
 
 /** Type-level metadata shared by projection bindings and ontology catalogues. */
@@ -67,31 +82,70 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [SCHEDULED_TASK]: {
     ...describeType("scheduledTask"),
     reads: {
-      list: { source: "type", params: {}, result: "panelRecordList" },
-      record: { source: "object", params: {}, result: "panelRecord" },
-      form: { source: "object", params: { values: "formValues", changedField: "changedField" }, result: "panelFormDescription" },
-      [`${runNow}.describe`]: { source: "operation", params: {}, result: "panelOperationDescriptor" },
+      list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+      form: { source: "object", parameterMode: "fixed", params: { values: "formValues", changedField: "changedField" }, result: "panelFormDescription" },
+      [`${RUN_NOW}.describe`]: operationDescription,
     },
-    operations: [`${SCHEDULED_TASK}.save`, runNow],
+    operations: [`${SCHEDULED_TASK}.save`, RUN_NOW],
   },
   [MODEL_OPTION]: { ...describeType("modelOption"), reads: referenceReads },
   [MCP_SERVICE_OPTION]: describeType("mcpServiceOption"),
   [OBJECT_TYPE]: { ...describeType("objectType", "fact"), reads: metadataList },
   [ATTRIBUTE]: describeType("attribute", "fact"),
   [RELATIONSHIP]: { ...describeType("relationship", "fact"), reads: metadataList },
-  [METRIC_VIEW]: describeType("metricView", "capability"),
+  [METRIC_VIEW]: {
+    ...describeType("metricView", "capability"),
+    reads: { result: { source: "object", parameterMode: "owner", parameter: "ontologyParameter", result: "metricOutput" } },
+  },
+  [DASHBOARD_CARD]: {
+    ...describeType("dashboardCard"),
+    reads: {
+      chartTemplate: { source: "object", parameterMode: "fixed", params: {}, result: "chartTemplate" },
+      result: { source: "object", parameterMode: "owner", parameter: "ontologyParameter", result: "metricOutput" },
+    },
+  },
   [FUNCTION]: describeType("function", "capability"),
-  [ACTION]: describeType("action", "capability"),
+  [ACTION]: {
+    ...describeType("action", "capability"),
+    reads: {
+      ...metadataList,
+      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+      form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
+      [`${SET_ACTION_STATUS}.describe`]: operationDescription,
+      [`${DELETE_ACTION}.describe`]: operationDescription,
+    },
+    operations: [`${ACTION}.save`, SET_ACTION_STATUS, DELETE_ACTION],
+  },
   [WORKFLOW]: describeType("workflow", "capability"),
   [TRIGGER]: describeType("trigger", "capability"),
   [SKILL]: { ...describeType("skill", "capability"), childCollections: ["files"], reads: referenceReads },
-  [BUSINESS_KNOWLEDGE]: describeType("businessKnowledge", "capability"),
+  [BUSINESS_KNOWLEDGE]: {
+    ...describeType("businessKnowledge", "capability"),
+    reads: {
+      query: {
+        source: "type", parameterMode: "fixed",
+        params: { search: "keyword", filter: "knowledgeFilter", cursor: "cursor", size: "size" },
+        result: "panelRecordQuery",
+      },
+      counts: {
+        source: "type", parameterMode: "fixed", params: { by: "knowledgeCountField", search: "keyword" },
+        requiredParams: ["by"], result: "panelGroupCounts",
+      },
+      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+      form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
+      createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
+      [`${APPROVE_KNOWLEDGE}.describe`]: operationDescription,
+      [`${DELETE_KNOWLEDGE}.describe`]: operationDescription,
+    },
+    operations: [`${BUSINESS_KNOWLEDGE}.save`, APPROVE_KNOWLEDGE, DELETE_KNOWLEDGE],
+  },
   [DEFINITION]: describeType("definition", "capability"),
   [USER]: {
     ...describeType("user", "governance"),
     reads: {
       ...referenceReads,
-      options: { source: "type", params: { keyword: "keyword", page: "page" }, result: "panelOptionList" },
+      options: { source: "type", parameterMode: "fixed", params: { keyword: "keyword", page: "page" }, result: "panelOptionList" },
     },
   },
   [ROLE]: describeType("role", "governance"),
@@ -103,23 +157,23 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("agentDefinition", "product"),
     reads: {
       ...metadataList,
-      record: { source: "object", params: {}, result: "panelRecord" },
-      form: { source: "object", params: definitionFormParams, result: "panelFormDescription" },
-      createForm: { source: "type", params: definitionFormParams, result: "panelFormDescription" },
+      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+      form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
+      createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
     },
   },
   [ONTOLOGY_TYPE]: {
     ...describeType("ontologyType"),
     reads: {
-      schema: { source: "type", params: {}, result: "panelGraphSchema" },
-      counts: { source: "type", params: {}, result: "panelGraphCounts" },
-      start: { source: "type", params: {}, result: "panelGraphStart" },
+      schema: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphSchema" },
+      counts: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphCounts" },
+      start: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphStart" },
       neighbors: {
-        source: "type", params: { node: "graphNode", relationKinds: "relationKinds", layers: "layers" },
+        source: "type", parameterMode: "fixed", params: { node: "graphNode", relationKinds: "relationKinds", layers: "layers" },
         requiredParams: ["node"], result: "panelGraphNeighbors",
       },
       objects: {
-        source: "type", params: { type: "ontologyType", keyword: "keyword", page: "page" },
+        source: "type", parameterMode: "fixed", params: { type: "ontologyType", keyword: "keyword", page: "page" },
         requiredParams: ["type"], result: "panelOntologyObjects",
       },
     },
@@ -127,6 +181,22 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [ONTOLOGY_RELATION_KIND]: describeType("ontologyRelationKind"),
   [KNOWLEDGE_GOVERNANCE_RECORD]: { ...describeType("knowledgeGovernanceRecord"), childCollections: ["issues", "sources"] },
   [FEEDBACK_RECORD]: describeType("feedbackRecord"),
+};
+
+/** These families apply to the class or relationship identified by the current domain catalogue. */
+export const customerOntologyReads: Readonly<Record<string, PlatformReadDeclaration>> = {
+  query: { source: "type", parameterMode: "fixed", params: { filter: "filter", page: "page" }, result: "panelRecordQuery" },
+  record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+  form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
+};
+export const customerRelationReads: Readonly<Record<string, PlatformReadDeclaration>> = {
+  neighbors: {
+    source: "type", parameterMode: "fixed", params: { node: "graphNode", relationKinds: "relationKinds" },
+    requiredParams: ["node"], result: "panelRelationNeighbors",
+  },
+};
+export const objectActionReads: Readonly<Record<string, PlatformReadDeclaration>> = {
+  describe: { source: "operation", parameterMode: "owner", parameter: "ontologyParameter", result: "panelOperationDescriptor" },
 };
 
 export function platformHasChildCollection(parentType: string, collection: string): boolean {

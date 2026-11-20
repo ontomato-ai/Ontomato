@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { panelObjectRefSchema } from "./panel-manifest";
-import { productCurrentIdParamsSchema } from "./product-panels";
+import { productCurrentIdParamsSchema } from "./product-record-id";
 
 const className = panelObjectRefSchema.shape.className;
 const panelId = productCurrentIdParamsSchema.shape.id;
