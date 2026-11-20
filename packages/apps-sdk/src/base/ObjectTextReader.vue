@@ -1,48 +1,41 @@
 <script setup lang="ts">
-import { projectionElement } from "../panel/projection-element";
-import { computed, onMounted, ref, shallowRef, watch } from "vue";
+import { computed, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
-import { panelChildCollectionQuerySchema, type PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
-import {
-  SegmentedTextReader,
-  type SegmentedTextPage,
-  type SegmentedTextSource,
-} from "@ontomato/foundation-ui/reader";
-import { slotInputState, usePanelContext, useProjectionObjects, useProjectionSlot } from "../panel/context";
-import { adapterPart } from "../panel/platform-objects";
-import { stateObject } from "../panel/state";
+import { SegmentedTextReader, type SegmentedTextPage, type SegmentedTextSource } from "@ontomato/foundation-ui/reader";
+import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
+import type { PanelRecordQuery } from "@ontomato/contracts/panel-projection";
+import { usePanelContext } from "../panel/context";
+import { useMember, useMemberData } from "../panel/member";
+import type { PlatformObjectRecord } from "../panel/platform-objects";
 
 /**
- * Projection-bound offset-paged text reader. Reads sources (unless passed explicitly) and offset slices through the
- * bound type's resource adapter (`readSegment`), optionally scoped to a declared child collection of a parent object,
- * and supports sharing `activeAnchor` / `activeSourceId` across multiple placements on one page so only one reader is
- * expanded at a time.
+ * An object's text, read only, through its owner's reads (the platform's one read entry). Two shapes, by the data its
+ * projection reads:
+ * - sources read page by page: `sources` lists them as chips (an owner's records, one per source), and `page` reads the
+ *   chosen source's text one page at a time (an owner's query, its rows the text's segments, `nextCursor` the next
+ *   page); "more" reads the next page;
+ * - one object's whole text: `record` reads it, and the field `textField` names is shown, its line breaks kept.
+ * Several readers on one page can share `activeAnchor` / `activeSourceId`, so only one of them is open at a time.
  */
 const props = withDefaults(
   defineProps<{
-    /** Optional slot input holding the parent object that scopes source listing and segment reads. */
-    parentInput?: string;
-    /** Declared child collection name owned by the parent type (e.g. `"sources"`). */
-    collection?: string;
-    /** Explicit list of source chips; when omitted, lists sources through the bound adapter's `query`/`list`. */
-    sources?: readonly SegmentedTextSource[];
-    /** Placement key on the page; when paired with `activeAnchor`, only the matching placement expands. */
+    /** The field of the `record` datum that holds the text (`content` by default). */
+    textField?: string;
+    /** This reader's key on the page; with a shared `activeAnchor`, only the reader it names is open. */
     anchor?: string;
-    /** Currently expanded anchor across placements on the same page (`v-model:activeAnchor`). */
+    /** The reader open on the page, shared between readers (`v-model:activeAnchor`). */
     activeAnchor?: string | null;
-    /** Currently opened source ID (`v-model:activeSourceId`). */
+    /** The source open now (`v-model:activeSourceId`). */
     activeSourceId?: string | null;
-    /** Optional custom label for the "More" button (resolved via `panel.t`). */
+    /** The panel's message key for the "More" button, in place of the platform's own words. */
     moreLabel?: string;
-    /** Optional accessible label for the Close button (resolved via `panel.t`). */
+    /** The panel's message key for the Close button's accessible label. */
     closeLabel?: string;
-    /** Optional empty-state text (resolved via `panel.t`). */
+    /** The panel's message key for what an empty reader says. */
     emptyText?: string;
   }>(),
   {
-    parentInput: undefined,
-    collection: undefined,
-    sources: undefined,
+    textField: "content",
     anchor: undefined,
     activeAnchor: undefined,
     activeSourceId: undefined,
@@ -53,97 +46,60 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
+  /** The reader open on the page changed. */
   "update:activeAnchor": [anchor: string | null];
+  /** The source open now changed. */
   "update:activeSourceId": [sourceId: string | null];
+  /** The reader was closed. */
   close: [anchor?: string];
 }>();
 
 const { t } = useI18n();
-const slot = useProjectionSlot();
 const panel = usePanelContext();
-const objects = useProjectionObjects();
-const objectType = projectionElement(slot.projection).id;
+const member = useMember();
+const declared = member.projection.data;
+const sourcesData = Object.hasOwn(declared, "sources") ? useMemberData("sources") : null;
+const recordData = Object.hasOwn(declared, "record") ? useMemberData("record") : null;
 
-const childMode = computed(() => Boolean(props.parentInput || props.collection));
-const parentState = computed(
-  () => (props.parentInput ? slotInputState(panel.manifest, slot.slot, props.parentInput) : null),
-);
-const parentRef = computed<PanelObjectIdentity | null>(() => {
-  if (!parentState.value) return null;
-  const value = stateObject(panel.instance.state.values.value[parentState.value]);
-  return value && { objectType: value.className, primaryKey: value.primaryKey };
-});
-const parentIdentity = computed(() => (parentRef.value ? `${parentRef.value.objectType}\u0000${parentRef.value.primaryKey}` : ""));
-
-const listedSources = shallowRef<readonly SegmentedTextSource[]>([]);
 const localAnchor = ref<string | null>(null);
 const localSourceId = ref<string | null>(null);
 const page = shallowRef<SegmentedTextPage | null>(null);
 const loading = ref(false);
 const failure = shallowRef<Error | null>(null);
-
 const currentAnchor = computed(() => (props.activeAnchor !== undefined ? props.activeAnchor : localAnchor.value));
 const currentSourceId = computed(() => (props.activeSourceId !== undefined ? props.activeSourceId : localSourceId.value));
-const shownSources = computed(() => props.sources ?? listedSources.value);
 
-let listSeq = 0;
-let segmentSeq = 0;
+/** The chips: the owner's sources, by their ID and label. */
+const sources = computed<readonly SegmentedTextSource[]>(() => {
+  if (sourcesData?.value.status !== "ready") return [];
+  return (sourcesData.value.value as unknown as PlatformObjectRecord[]).map((row) => ({ id: row.primaryKey, title: row.label }));
+});
+const sourcesFailure = computed(() =>
+  sourcesData && sourcesData.value.status !== "ready" && sourcesData.value.status !== "loading" && sourcesData.value.status !== "awaiting"
+    ? sourcesData.value.status === "error" ? sourcesData.value.message : t(`platform.data${sourcesData.value.status === "forbidden" ? "Forbidden" : "Empty"}`)
+    : null);
 
-function loadSources() {
-  if (props.sources !== undefined) return;
-  const seq = ++listSeq;
-  if (childMode.value && !parentRef.value) {
-    listedSources.value = [];
-    return;
-  }
-  void objects.query(
-    childMode.value
-      ? { ...(parentRef.value ? { parent: parentRef.value } : {}), ...(props.collection ? { collection: props.collection } : {}) }
-      : {},
-  ).then(
-    (result) => {
-      if (seq !== listSeq) return;
-      listedSources.value = result.items.map((item) => ({ id: item.primaryKey, title: item.label }));
-    },
-    (reason: unknown) => {
-      if (seq !== listSeq) return;
-      failure.value = reason instanceof Error ? reason : new Error(String(reason));
-    },
-  );
-}
-
-function readAt(sourceId: string, offset: number) {
-  const seq = ++segmentSeq;
+let reading = 0;
+/** One page of a source's text: the owner's query for that source from `cursor` on. */
+function readPage(sourceId: string, cursor: string | null) {
+  const asked = ++reading;
   loading.value = true;
   failure.value = null;
-  let readSegment: ReturnType<typeof adapterPart<"readSegment">>;
-  let childScope: { parent: PanelObjectIdentity; collection: string } | null = null;
-  try {
-    readSegment = adapterPart(objectType, "readSegment");
-    if (childMode.value) {
-      childScope = panelChildCollectionQuerySchema.parse({ parent: parentRef.value, collection: props.collection });
-    }
-  } catch (reason: unknown) {
-    failure.value = reason instanceof Error ? reason : new Error(String(reason));
+  void member.data.read("page", { source: sourceId, ...(cursor === null ? {} : { cursor }) }).then((answer) => {
+    if (asked !== reading) return;
     loading.value = false;
-    return;
-  }
-  void readSegment({
-    ...(childScope ?? {}),
-    sourceId,
-    offset,
-  }).then(
-    (result) => {
-      if (seq !== segmentSeq) return;
-      page.value = result;
-      loading.value = false;
-    },
-    (reason: unknown) => {
-      if (seq !== segmentSeq) return;
-      failure.value = reason instanceof Error ? reason : new Error(String(reason));
-      loading.value = false;
-    },
-  );
+    if (answer.status !== "ready") {
+      failure.value = new Error(answer.status === "error" ? answer.message : t(`platform.data${answer.status === "forbidden" ? "Forbidden" : "Empty"}`));
+      return;
+    }
+    const { rows, nextCursor } = answer.value as unknown as PanelRecordQuery;
+    page.value = {
+      sourceId,
+      title: sources.value.find((source) => source.id === sourceId)?.title ?? sourceId,
+      items: rows.map((row) => ({ id: row.primaryKey, text: row.fields.text ?? "" })),
+      nextOffset: nextCursor === undefined ? null : Number(nextCursor),
+    };
+  });
 }
 
 function setActive(anchor: string | null, sourceId: string | null) {
@@ -152,48 +108,62 @@ function setActive(anchor: string | null, sourceId: string | null) {
   emit("update:activeAnchor", anchor);
   emit("update:activeSourceId", sourceId);
 }
-
-function onOpen(sourceId: string, offset: number) {
+function onOpen(sourceId: string) {
   setActive(props.anchor ?? null, sourceId);
-  readAt(sourceId, offset);
+  readPage(sourceId, null);
 }
-
 function onMore(sourceId: string, nextOffset: number) {
-  readAt(sourceId, nextOffset);
+  readPage(sourceId, String(nextOffset));
 }
-
 function onClose() {
-  segmentSeq++;
+  reading++;
   page.value = null;
-  failure.value = null;
   loading.value = false;
+  failure.value = null;
   setActive(null, null);
   emit("close", props.anchor);
 }
 
-onMounted(loadSources);
-watch(parentIdentity, () => {
-  if (!props.parentInput) return;
-  onClose();
-  loadSources();
-});
+/** One object's whole text, as the `record` datum holds it. */
+const wholeText = computed(() =>
+  recordData?.value.status === "ready" ? (recordData.value.value as unknown as PlatformObjectRecord).fields[props.textField] ?? "" : null);
+const labels = computed(() => ({ empty: t("platform.dataEmpty"), forbidden: t("platform.dataForbidden"), awaiting: t("platform.dataAwaiting") }));
 </script>
 
 <template>
-  <SegmentedTextReader
-    :sources="shownSources"
-    :anchor="anchor"
-    :active-anchor="currentAnchor"
-    :active-source-id="currentSourceId"
-    :page="page"
-    :loading="loading"
-    :error="failure?.message ?? null"
-    :more-label="moreLabel ? panel.t(moreLabel) : t('platform.readerMore')"
-    :close-label="closeLabel ? panel.t(closeLabel) : t('platform.readerClose')"
-    :empty-text="emptyText ? panel.t(emptyText) : t('platform.readerEmpty')"
-    :loading-text="t('platform.readerLoading')"
-    @open="onOpen"
-    @more="onMore"
-    @close="onClose"
-  />
+  <div class="sdk-object-text-reader">
+    <template v-if="recordData">
+      <data-state :result="recordData as DataStateResult" :labels="labels">
+        <pre class="sdk-object-text-reader-whole">{{ wholeText }}</pre>
+      </data-state>
+    </template>
+    <SegmentedTextReader
+      v-else
+      :sources="sources"
+      :anchor="anchor"
+      :active-anchor="currentAnchor"
+      :active-source-id="currentSourceId"
+      :page="page"
+      :loading="loading"
+      :error="failure?.message ?? sourcesFailure"
+      :more-label="moreLabel ? panel.t(moreLabel) : t('platform.readerMore')"
+      :close-label="closeLabel ? panel.t(closeLabel) : t('platform.readerClose')"
+      :empty-text="emptyText ? panel.t(emptyText) : t('platform.readerEmpty')"
+      :loading-text="t('platform.readerLoading')"
+      @open="onOpen"
+      @more="onMore"
+      @close="onClose"
+    />
+  </div>
 </template>
+
+<style scoped>
+.sdk-object-text-reader-whole {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--el-font-family);
+  font-size: var(--el-font-size-base);
+  line-height: 1.6;
+}
+</style>
