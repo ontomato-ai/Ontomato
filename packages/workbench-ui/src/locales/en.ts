@@ -157,6 +157,8 @@ export default {
     "save": "Save",
     "discard": "Discard",
     "unsavedChanges": "Unsaved changes",
+    "formLeaveUnsaved": "This form has changes you have not saved. Discard them and open the other item?",
+    "keepEditing": "Keep editing",
     "openInNewTab": "Opens in a new tab",
     "pages": "Pages",
     "agentPlatform": "Agent platform",

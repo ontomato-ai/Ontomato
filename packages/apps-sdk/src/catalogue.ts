@@ -169,7 +169,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectList",
     role: "control",
     meaning:
-      "Lists or tabulates platform objects of the bound type from its member's `rows` or `objects` datum, inferring search, pagination and explicit multi-selection from the owner's read signature and the member's bindings, with safe highlight rendering, single viewing selection and clickable reference navigation.",
+      "Lists the owner's records of the projection's type, compact or as a table (`columns`), from its `rows` datum (an owner's list or query read) or `objects` (ontology objects of a chosen type). What it offers follows the read and the placement: a search box when the read takes `search`, paging when it pages, checkboxes when the placement binds `checked`, and the status filter when it binds `status`; each is the list's own value unless the placement binds it to the panel's state. Clicking an item selects it (`selected`); search matches are highlighted, and a reference field is a link the page hears as `navigate`.",
     effects: "Reads the bound type's list, query or ontology objects datum as the reader; it writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*"],
     // Either list shape draws the table, and an ontology type lists its declared objects instead: no single one of these
@@ -202,7 +202,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectForm",
     role: "control",
     meaning:
-      "Draws one platform object's form exactly as its owner declares it, asks the owner again when a field the form depends on changes, and keeps the reader's draft until it is saved.",
+      "Draws one object's form exactly as its owner declares it (fields, values, read-only rules, defaults), from its `form` datum for the object its edited input holds, or, with nothing chosen and a `createForm` datum, a new object's. It asks the owner again when a field the form depends on changes, saves through the owner's form save its projection names (only the fields the reader set), marks the fields the owner refuses, and takes an agent's draft for its object. It tells the page `saved` (with the object) and `discarded`, and asks the reader before the panel moves it off unsaved changes.",
     effects: "Reads the owner's form and saves through the owner's own interface; it saves through the owner's form save its projection names.",
     bindsElement: ["PlatformObjectType:*", "Action:*"],
     // A form edits an existing record or creates a new one; which of the two a placement shows is its own choice.
@@ -356,42 +356,12 @@ export const components: readonly ComponentMetadata[] = [
       "Arranges a flat list of slash-separated paths into a folder-first, name-sorted, default-expanded tree; clicking a folder only collapses or expands it, while clicking a file emits its key and highlights the active row. It reads nothing and carries no business rules.",
   }),
   defineComponentMeta({
-    componentId: "ObjectTree",
-    module: "@ontomato/sdk/base",
-    exportName: "ObjectTree",
-    role: "control",
-    meaning:
-      "Displays path-bearing objects of the bound type (optionally scoped by a parent object input) as a folder/file tree and writes the selected file's full identity to the slot's output state, honoring an owner-supplied default key when configured.",
-    effects: "Reads the bound type's list or parent-scoped query as the reader; it writes only the panel's own state.",
-    bindsElement: ["PlatformObjectType:*"],
-  }),
-  defineComponentMeta({
     componentId: "SegmentedTextReader",
     module: "@ontomato/sdk/base",
     exportName: "SegmentedTextReader",
     role: "control",
     meaning:
       "Displays offset-paged plain-text segments for a selected source with a close control and a More button when another offset exists, coordinating shared activeAnchor state so multiple placements on one page expand only one reader at a time.",
-  }),
-  defineComponentMeta({
-    componentId: "ObjectTextReader",
-    module: "@ontomato/sdk/base",
-    exportName: "ObjectTextReader",
-    role: "control",
-    meaning:
-      "Reads offset-paged text segments for sources of the bound type through its resource adapter's readSegment port (optionally scoped by a parent object input), showing More while another offset exists and coordinating single-open across placements.",
-    effects: "Reads source metadata and text segments through the bound adapter as the reader; it changes nothing itself.",
-    bindsElement: ["PlatformObjectType:*"],
-  }),
-  defineComponentMeta({
-    componentId: "FileUploadControl",
-    module: "@ontomato/sdk/base",
-    exportName: "FileUploadControl",
-    role: "control",
-    meaning:
-      "Uploads a reader-chosen file through the declared PlatformOperation handler (optionally showing format rules first, checking file extensions and confirming overwrite when the owner reports a conflict). It sends nothing outside the bound operation's declared requests.",
-    effects: "Runs the projection's upload operation with the chosen file as the reader and refreshes panel objects on success.",
-    bindsElement: ["PlatformOperation:*"],
   }),
   defineComponentMeta({
     componentId: "ConversationEntry",
