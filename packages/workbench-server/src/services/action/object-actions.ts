@@ -8,6 +8,7 @@ import {
   describePanelOperationFromDeclaration, type PanelOperationDeclaration,
 } from "@ontomato/contracts/panel-operations";
 import { HttpError } from "../../utils/errors";
+import { createCustomerOntologyReadAdapter } from "../ontology-model/customer-reads";
 import {
   affected, ownerEnvelopeSchema, ownerPost, ownerWriteFailure, type DataQueryOperationHost as Host,
 } from "../product-panels/data-query-operations";
@@ -199,8 +200,9 @@ export function objectActionOperation(resolved: ResolvedObjectAction) {
     }).strict(),
     inputSchema: objectActionInputSchema,
     resultSchema: objectActionResultSchema,
-    // Provisional until M4's customer-object record read gives the object's label; not the confirmation name to ship.
-    targetLabel: async () => primaryKey,
+    // The object's name as the confirming person reads it; the customer ontology owner answers a refusal or a missing one.
+    targetLabel: async host =>
+      (await createCustomerOntologyReadAdapter(host.initiator.owner, host.initiator.credentials).record(objectType, primaryKey)).label,
     execute: (host, _target, input) => execute(host, resolved, objectActionInputSchema.parse(input).values),
   } satisfies PanelWriteServerOperation;
 }

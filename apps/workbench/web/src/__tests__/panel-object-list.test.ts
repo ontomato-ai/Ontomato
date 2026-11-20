@@ -1030,6 +1030,7 @@ it("draws a declared ObjectList with data.objects in a frame via <Projection> an
         t: (key: string) => key,
         resources: async () => {},
         expandPageComposer: async () => {},
+        readPanelData: async () => { throw new Error("This test reads no member data through the platform"); },
       });
       return () => h(Projection, { slot: "picker" });
     },
