@@ -109,7 +109,7 @@ const modelListByClass = { source: "type", parameterMode: "fixed", params: { cla
 /** Type-level metadata shared by projection bindings and ontology catalogues. */
 export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDeclaration>> = {
   [SCHEDULED_TASK]: {
-    ...describeType("scheduledTask"),
+    ...describeType("scheduledTask", "capability"),
     reads: {
       list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
