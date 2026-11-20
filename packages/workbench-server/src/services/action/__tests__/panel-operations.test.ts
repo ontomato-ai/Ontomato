@@ -30,7 +30,10 @@ const batchAction = (handlerRef: string) =>
 
 function hostWith(answer: (path: string, init: NonNullable<Parameters<typeof fetch>[1]>) => Response) {
   const sent: { path: string; init: NonNullable<Parameters<typeof fetch>[1]> }[] = [];
+  const actor = { owner: { domainId: "d", userId: "U" }, credentials: { token: "U-token", locale: "en" } };
   const host: PanelOperationHost = {
+    initiator: actor,
+    executor: actor,
     async request(path, init) {
       sent.push({ path, init });
       return answer(path, init);
