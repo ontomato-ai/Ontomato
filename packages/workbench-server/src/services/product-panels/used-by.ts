@@ -16,6 +16,9 @@ export async function panelsUsingProjection(domainId: string, id: string, creden
      WHERE domain_id=$1 AND EXISTS (
        SELECT FROM jsonb_each(definition#>'{manifest,slots}') AS slot
        WHERE slot.value->>'projectionId'=$2
+       UNION ALL
+       SELECT FROM jsonb_each(definition#>'{manifest,members}') AS member
+       WHERE member.value#>>'{target,projectionId}'=$2
      ) ORDER BY name,id`, [domainId, id],
   );
   if (!rows.length) return { panels: [], hiddenCount: 0 };
