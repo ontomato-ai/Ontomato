@@ -11,6 +11,7 @@ import { getPostgresPool, qualifiedTable as table } from "../../infrastructure/p
 import { findCurrentProduct, type CurrentProductKind } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
+import { assertAppBuilderAccess } from "../app-builder/access";
 import { requireProductGrant, type ProductOwner } from "../product-governance/grants";
 import { listObjectDetailPanelMappings } from "./object-detail";
 import { panelStateDomainPrefix, panelStateKeyNamespace } from "./personal-state-key";
@@ -220,18 +221,22 @@ export async function validateCurrentProductReferences(
     const authorized = new Set<string>();
     for (const reference of collectReferences(input, details)) {
       const { target, key } = reference;
+      const known = inspected.get(target.id);
+      const stored = known ?? (target.kind === "panel" ? panels.get(target.id)
+        : (await findCurrentProduct(owner.domainId, "projection", target.id, client))?.definition);
+      if (!stored) {
+        await assertAppBuilderAccess(credentials);
+        const kind = target.kind === "panel" ? "Panel" : "Projection";
+        throw new HttpError(404, `Panel '${id}', member '${key}' – ${kind} '${target.id}' does not exist`, "PRODUCT_UNAVAILABLE");
+      }
       if (!reference.fromObjectDetail && !authorized.has(target.id)) {
         await requireProductGrant(target.id, "use", credentials);
         authorized.add(target.id);
       }
-      let definition = inspected.get(target.id);
-      if (!definition) {
-        definition = target.kind === "panel" ? panels.get(target.id) : await requireProjection(owner.domainId, target.id, client);
-        if (!definition) throw new HttpError(404, "Current member definition not found", "PRODUCT_UNAVAILABLE");
-        inspected.set(target.id, definition);
-      }
+      const definition = known ?? (target.kind === "panel" ? panels.get(target.id)! : productProjectionInputSchema.parse(stored));
+      inspected.set(target.id, definition);
       const issue = incompatiblePort(input.manifest, reference, definition);
-      if (issue) throw new HttpError(400, `Member '${key}': ${issue}`, "PANEL_PORT_MISMATCH");
+      if (issue) throw new HttpError(400, `Panel '${id}', member '${key}' – ${issue}`, "PANEL_PORT_MISMATCH");
     }
   }
 
