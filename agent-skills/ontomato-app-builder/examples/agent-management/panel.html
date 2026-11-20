@@ -1,6 +1,26 @@
-<section flow="column" gap="medium">
-  <panel-member ref="newRecord"></panel-member>
-  <panel-member ref="list"></panel-member>
-  <panel-member ref="detail"></panel-member>
-  <panel-member ref="form"></panel-member>
+<style>
+  .management { display: flex; flex-direction: column; gap: 1rem; height: 100%; min-height: 0; }
+  .management-toolbar { display: flex; flex-wrap: wrap; gap: .75rem; }
+  .management-content { display: grid; gap: 1rem; flex: 1; min-height: 0; }
+  .management-columns { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
+  .management-pane { min-width: 0; overflow: auto; }
+  @media (max-width: 36rem) {
+    .management { height: auto; }
+    .management-columns { grid-template-columns: minmax(0, 1fr); }
+    .management-pane { overflow: visible; }
+  }
+</style>
+<section class="management">
+  <div class="management-toolbar">
+    <panel-member ref="newRecord"></panel-member>
+  </div>
+  <div class="management-content management-columns">
+    <div class="management-pane">
+      <panel-member ref="list"></panel-member>
+    </div>
+    <div class="management-pane">
+      <panel-member ref="detail"></panel-member>
+      <panel-member ref="form"></panel-member>
+    </div>
+  </div>
 </section>

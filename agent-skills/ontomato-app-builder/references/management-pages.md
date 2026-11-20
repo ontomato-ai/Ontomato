@@ -50,7 +50,11 @@ Bind a member's same-named input and output through `outputs` once. Same-named s
 Use `params` for literals or to name a different input. Components declare the parameters they supply at runtime. ObjectForm
 supplies `values` and `changedField`, so the projection names the edited object and the owner form read.
 
-Write layout with `div`, `section` and `panel-member`. A member uses `ref`; its containers arrange members with
-`flow` and `gap` and can display conditionally using `when`, `eq` or `ne`. The SDK layout checker reports invalid
-tags and attributes. Put page instructions in `recipes.md`. The platform derives the page skill from the registered
-application use and its panel material.
+Write layout in ordinary HTML and CSS. The example puts controls above the list and detail panes, which scroll
+independently on wide screens and stack on narrow screens. Place a declared member with `<panel-member ref="detail">`.
+Use `when` to show content conditionally and `each` for repetitions. CSS applies to this panel's layout and member
+containers. Use design variables to adjust component appearance. Use declared member outputs and panel events for
+interaction. The checker reports script-bearing HTML with its location.
+
+Put page instructions in `recipes.md`. The platform derives the page skill from the registered application use and
+its panel material.

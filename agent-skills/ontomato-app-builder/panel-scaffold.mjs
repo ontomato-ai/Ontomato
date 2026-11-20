@@ -132,9 +132,41 @@ export function managementPanel(type, checks, typeTable, {
     }, { inputs: { [input]: stateRef(batch ? "checked" : "selected") } });
     return key;
   });
-  const member = ref => `  <panel-member ref="${ref}"></panel-member>`;
-  const keys = ["newRecord", "tabs", ...buttonKeys, "list", "detail", "form"];
-  const html = ['<section flow="column" gap="medium">', ...keys.filter(key => key in members).map(member), "</section>", ""].join("\n");
+  const member = ref => `<panel-member ref="${ref}"></panel-member>`;
+  const toolbar = ["newRecord", "tabs", ...buttonKeys].filter(key => key in members);
+  const details = ["detail", "form"].filter(key => key in members);
+  const html = [
+    "<style>",
+    "  .management { display: flex; flex-direction: column; gap: 1rem; height: 100%; min-height: 0; }",
+    "  .management-toolbar { display: flex; flex-wrap: wrap; gap: .75rem; }",
+    "  .management-content { display: grid; gap: 1rem; flex: 1; min-height: 0; }",
+    "  .management-columns { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }",
+    "  .management-pane { min-width: 0; overflow: auto; }",
+    "  @media (max-width: 36rem) {",
+    "    .management { height: auto; }",
+    "    .management-columns { grid-template-columns: minmax(0, 1fr); }",
+    "    .management-pane { overflow: visible; }",
+    "  }",
+    "</style>",
+    '<section class="management">',
+    ...(toolbar.length ? [
+      '  <div class="management-toolbar">',
+      ...toolbar.map(key => `    ${member(key)}`),
+      "  </div>",
+    ] : []),
+    `  <div class="management-content${details.length ? " management-columns" : ""}">`,
+    '    <div class="management-pane">',
+    `      ${member("list")}`,
+    "    </div>",
+    ...(details.length ? [
+      '    <div class="management-pane">',
+      ...details.map(key => `      ${member(key)}`),
+      "    </div>",
+    ] : []),
+    "  </div>",
+    "</section>",
+    "",
+  ].join("\n");
   const manifest = { state, members, events };
   const definition = { manifest, content: { html } };
   checks.panelDefinitionContentSchema.parse(definition);
