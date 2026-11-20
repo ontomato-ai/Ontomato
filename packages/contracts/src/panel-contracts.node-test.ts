@@ -95,6 +95,28 @@ test("current SDK describes the browser files and Node check from the same relea
   assert.equal(appsSdkReleaseManifestSchema.safeParse({ ...manifest, check: "/node/panel-check.mjs" }).success, false);
 });
 
+test("the SDK catalogue separates supply, configuration and run inputs", async () => {
+  const { appsSdkComponentCatalogSchema } = await import("./apps-sdk");
+  const component = {
+    componentId: "ObjectSummary", module: "@ontomato/sdk/base", exportName: "ObjectSummary",
+    role: "presentation", meaning: "Show the selected object as its owner describes it.",
+    data: { record: { results: ["panelRecord"], required: true } },
+    config: [{ name: "fields", type: "string[]", description: "Visible fields", required: false }],
+    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+    outputs: [],
+    ports: { props: [], events: [], slots: [] },
+  };
+  const catalogue = { version: "1.1.2", components: [component] };
+  assert.deepEqual(appsSdkComponentCatalogSchema.parse(catalogue), catalogue);
+  for (const datum of [{ results: [], required: true }, { results: ["notRegistered"], required: true }, { results: ["panelRecord"] }]) {
+    assert.equal(appsSdkComponentCatalogSchema.safeParse({
+      ...catalogue, components: [{ ...component, data: { record: datum } }],
+    }).success, false);
+  }
+  const { data: _data, ...displayOnly } = component;
+  assert.equal(appsSdkComponentCatalogSchema.safeParse({ ...catalogue, components: [displayOnly] }).success, true);
+});
+
 test("ontology object lists and reference pickers declare the named reads they use", async () => {
   const { registerDirectProjectionRequestSchema } = await import("./product-panels");
   const { panelReadResultSchemas } = await import("./panel-operations");
