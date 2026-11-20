@@ -8,6 +8,8 @@ import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { appsSdkComponentCatalogSchema } from "@ontomato/contracts/apps-sdk";
+import { fileURLToPath } from "node:url";
+import { panelFormDescriptionSchema, panelOptionListSchema } from "@ontomato/contracts/panel-projection";
 import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
 import { platformScheduleFormSchema, platformTaskRunSchema, platformTaskSchema } from "@ontomato/contracts/platform-schedules";
 import { scheduledTaskPanelMessages, scheduledTaskPanelTextZhCn } from "@ontomato/platform-schedules/panel-text";
@@ -18,8 +20,12 @@ import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
+import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
+import { ensureAgentExecutionSchema } from "../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
+import { HttpError } from "../../utils/errors";
+import { ensureAssistantDefaultPromptSchema } from "../../infrastructure/postgres-migrations/20261105-assistant-default-prompts/schema";
 
-const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "" }));
+const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "", allowAgentReads: true }));
 vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
@@ -29,6 +35,14 @@ vi.mock("../../config/environment", () => ({ environment: { agentRuntime: () => 
 vi.mock("../../utils/request-identity", async original => ({
   ...await original<typeof import("../../utils/request-identity")>(),
   requireDomainId: (req: { domainId: string }) => req.domainId,
+}));
+vi.mock("../../identity/installed", async original => ({
+  ...await original<typeof import("../../identity/installed")>(),
+  assertPermission: async ({ token }: { token: string }, keys: readonly string[]) => {
+    expect(token).toBe("pilot-reader");
+    expect(keys).toEqual(["analysis-agent"]);
+    if (!state.allowAgentReads) throw new HttpError(403, "Forbidden", "FORBIDDEN");
+  },
 }));
 
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
@@ -41,6 +55,8 @@ const resourceIds = new Set<string>();
 const projectionId = "projection-pilot-summary";
 const panelId = "panel-schedules-pilot";
 const graphPanelId = "panel-ontology-pilot";
+const agentPanelId = "panel-agent-settings-pilot";
+const agentId = randomUUID();
 const task = platformTaskSchema.parse(examples.creates.find(item => item.name === "governance-instruction")!.response);
 const taskForm = platformScheduleFormSchema.parse(examples.forms.find(item => item.name === "governance-ready")!.response);
 const taskRun = platformTaskRunSchema.parse({
@@ -77,7 +93,12 @@ beforeAll(async () => {
     defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: true,
     packs: {
       en: { ...enLocaleMeta, messages: en },
-      "zh-CN": { ...enLocaleMeta, messages: scheduledTaskPanelMessages(scheduledTaskPanelTextZhCn) },
+      "zh-CN": { ...enLocaleMeta, messages: {
+        ...scheduledTaskPanelMessages(scheduledTaskPanelTextZhCn),
+        "assistant.default.knowledge-governance.name": "知识治理",
+        "assistant.skills.unavailable.name": "技能不可用",
+        "assistant.skills.unavailable.reason": "你无法使用此技能。",
+      } },
     },
   });
   state.schema = `panel_pilot_${randomUUID().replaceAll("-", "")}`;
@@ -85,9 +106,19 @@ beforeAll(async () => {
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
   await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
+  await ensureAssistantSchema(state.pool);
+  await ensureAssistantDefaultPromptSchema(state.pool);
+  await ensureAgentExecutionSchema(state.pool);
+  await state.pool.query(
+    `INSERT INTO "${state.schema}".assistant_agents (id,domain_id,kind,name,description,system_prompt,enabled)
+     VALUES ($1,'pilot','custom','Inventory analyst','Inventory summary','Read inventory',false)`, [agentId],
+  );
   contentRoot = await mkdtemp(path.join(os.tmpdir(), "panel-pilot-"));
   cataloguePath = await writeBundledAppSdkFixture(contentRoot);
-  installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
+  installContentLayout({
+    runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, runtimeResources: [],
+    prompts: [{ from: fileURLToPath(new URL("../../../prompts", import.meta.url)), to: "." }],
+  });
 
   const { panelOperationsRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const { ensurePanelOperationsSchema } = await import("../../infrastructure/postgres-migrations/20261118-panel-operations/schema");
@@ -147,13 +178,123 @@ beforeAll(async () => {
   app.get("/ontology/model/relationships", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     const relationship = { relationship: "contains", fromclass: "warehouse", toclass: "item", desc: "Contains", fromField: "id", toField: "store" };
-    res.json(req.query.className === "item" ? [{ ...relationship, relationship: "filtered-contains" }] : [relationship]);
+    if (req.query.className === "person") {
+      res.json([{ ...relationship, relationship: "person_to_org", fromclass: "person", toclass: "org" }]);
+    } else {
+      res.json(req.query.className === "item" ? [{ ...relationship, relationship: "filtered-contains" }] : [relationship]);
+    }
   });
   app.get("/ontology/model/attributes", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
-    expect(req.query.className).toBe("warehouse");
-    res.json([{ className: "warehouse", name: "id", showName: "Identifier", type: "string", attrDesc: "",
-      enable: true, businessKey: false, primaryKey: true }]);
+    const className = req.query.className;
+    expect(["warehouse", "person", "org"]).toContain(className);
+    const primary = { className, name: "id", showName: "Identifier", type: "string", attrDesc: "",
+      enable: true, businessKey: false, primaryKey: true };
+    res.json(className === "warehouse" ? [primary] : [
+      primary, { ...primary, name: "name", showName: "Name", primaryKey: false, businessKey: true },
+    ]);
+  });
+  app.get("/platform/applications/agent-settings/panel-uses", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    res.json({ success: true, data: {
+      applicationId: "agent-settings", entry: { path: "/applications/agent-settings", renderer: "panels" },
+      panelUses: [{
+        id: "settings", pageKey: "settings", path: "/applications/agent-settings/settings", panelId: agentPanelId,
+        access: { kind: "domain-member" },
+      }],
+    } });
+  });
+  app.get("/platform/page-skills", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.header("Accept-Language")).toBe("zh-CN");
+    res.json({ success: true, data: { pageSkills: [], registeredSkills: [], admittedEntrances: [] } });
+  });
+  app.get("/model-options", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.header("Accept-Language")).toBe("zh-CN");
+    res.json({ success: true, data: {
+      models: [
+        { type: "chat", ref: "demo/chat", name: "Demo Chat" },
+        { type: "embedding", ref: "demo/embed", name: "Demo Embedding", dimensions: 3 },
+      ],
+      defaultModelId: "demo/chat", embeddingModelId: "demo/embed",
+    } });
+  });
+  app.get("/platform/agent-execution/options", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.header("Accept-Language")).toBe("zh-CN");
+    if (req.query.selected) {
+      res.json({ canSetExecutionUser: false, users: [],
+        selected: { id: req.query.selected, name: "Former reader", available: false, reason: "disabled" } });
+      return;
+    }
+    if (req.query.keyword) {
+      expect(req.query).toEqual({ keyword: "Ada", pageNum: "2", pageSize: "5" });
+      res.json({ canSetExecutionUser: true, users: [{ id: "ada", name: "Ada" }] });
+      return;
+    }
+    res.json({ canSetExecutionUser: false, users: [] });
+  });
+  app.get("/platform/applications/:family/panel-uses", (req, res) => {
+    const family = req.params.family;
+    expect(req.header("tk")).toBe("pilot-reader");
+    res.json({ success: true, data: {
+      applicationId: family, entry: { path: `/applications/${family}`, renderer: "panels" },
+      panelUses: [{ id: "data", pageKey: "data", path: `/applications/${family}/data`,
+        panelId: `panel-${family}`, access: { kind: "domain-member" } }],
+    } });
+  });
+  for (const endpoint of ["queryList", "queryById", "definitionForm"]) {
+    app.post("/action/" + endpoint, (req, res) => {
+      expect(req.header("tk")).toBe("pilot-reader");
+      expect(req.header("Accept-Language")).toBe("zh-CN");
+      const action = { id: "review", name: "Review", statusLabel: "Published" };
+      if (endpoint === "queryList") {
+        expect(req.body).toEqual({});
+        res.json({ success: true, data: [action] });
+      } else if (endpoint === "queryById") {
+        expect(req.body).toEqual({ id: action.id });
+        res.json({ success: true, data: action });
+      } else {
+        expect(req.body).toMatchObject({
+          target: { kind: "object", objectType: "platform:Action", primaryKey: action.id },
+          values: { name: "Draft review" }, changedField: "/name",
+        });
+        res.json({ success: true, data: {
+          fields: [], values: req.body.values, errors: [],
+          save: { method: "POST", path: "/action/save", bodySchema: {}, draftOperation: "action.update" },
+        } });
+      }
+    });
+  }
+  const columns = [{ key: "value", label: null, type: null }];
+  app.post("/ontology/query/metrics/describe", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.header("Accept-Language")).toBe("zh-CN");
+    expect(req.body).toEqual({ id: "metric-pilot" });
+    res.json({ id: "metric-pilot", revision: "metric-r2", status: "PUBLISHED", name: "Example metric",
+      parameterDefs: [], outputColumns: columns, sourceObjectTypes: [] });
+  });
+  app.post("/ontology/query/metrics/execute", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.body).toMatchObject({ id: "metric-pilot", revision: "metric-r2", parameters: { customer: "p1" } });
+    res.json({ columns, rows: req.body.parameters.year === 2023 ? [] : [{ value: 15 }], truncation: null });
+  });
+  app.post("/data/getWholeClassDataByPage", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.header("Accept-Language")).toBe("zh-CN");
+    expect(req.body).toEqual({ classname: "person", pagenum: 2, pagecount: 3, search: "Ali" });
+    res.json({ success: true, data: [{ id: "p1", name: "Alice" }], total_count: 12 });
+  });
+  app.post("/data/queryInfoByNode", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.body).toEqual({ class: "person", id: "person:p1" });
+    res.json({ success: true, data: { data: { name: "Alice" } } });
+  });
+  app.post("/dsl/executeV1", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.body.answer.steps[0].graph.patterns[0].relationship).toEqual([{ from: 0, to: 1, type: ["person_to_org"] }]);
+    res.json({ data: [{ answer: [{ id: "org1", name: "Example Org" }] }] });
   });
   app.get("/platform/scheduled-tasks", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
@@ -435,4 +576,200 @@ it("reads the seven named ontology data items with the panel viewer", async () =
   const update = await request("PUT", "product-projections/" + runtimeProjectionId, { ...runtimeProjection, revision: 1 });
   expect(update.status).toBe(409);
   expect(await update.json()).toMatchObject({ error: { message: expect.stringContaining("node") } });
+});
+
+it("reads agent settings and reference options with the panel viewer", async () => {
+  const type = (id: string, read: string, params = {}) => ({
+    source: { type: { kind: "PlatformObjectType", id } }, read, params,
+  });
+  const object = (read: string) => ({ source: { object: { input: "agent" } }, read, params: {} });
+  const picker = (id: string, inputs = {}, params = {}) => ({
+    componentId: "@ontomato/sdk:ReferencePicker",
+    inputs: { values: { kind: "json" }, ...inputs },
+    data: { options: type(id, "options", params), selected: type(id, "resolve", { values: { input: "values" } }) },
+  });
+  const agentType = { agent: { kind: "object", objectType: "platform:AgentDefinition" } };
+  const written: Record<string, { componentId: string; inputs?: object; data: object }> = {
+    agents: { componentId: "@ontomato/sdk:ObjectList", data: { rows: type("platform:AgentDefinition", "list") } },
+    summary: { componentId: "@ontomato/sdk:ObjectSummary", inputs: agentType, data: { record: object("record") } },
+    definition: { componentId: "@ontomato/sdk:ObjectForm", inputs: agentType,
+      data: { form: object("form"), createForm: type("platform:AgentDefinition", "createForm") } },
+    models: picker("platform:ModelOption"),
+    users: picker("platform:User", { keyword: { kind: "scalar", type: "string" }, page: { kind: "json" } },
+      { keyword: { input: "keyword" }, page: { input: "page" } }),
+    skills: picker("platform:Skill"),
+
+  };
+  const members: Record<string, { target: { projectionId: string } }> = {};
+  for (const [key, projection] of Object.entries(written)) {
+    const projectionId = "agent-settings-" + key;
+    const saved = await request("PUT", "product-projections/" + projectionId, {
+      name: key, description: "", visibility: "domain", revision: 0, inputs: {}, outputs: {}, config: {}, ...projection,
+    });
+    expect(saved.status, await saved.text()).toBe(200);
+    members[key] = { target: { projectionId } };
+  }
+  const saved = await request("PUT", "product-panels/" + agentPanelId, {
+    name: "Agent settings", description: "", visibility: "domain", revision: 0,
+    content: { html: "<section>" + Object.keys(members).map(key => `<panel-member ref="${key}"></panel-member>`).join("") + "</section>" },
+    manifest: { state: {}, members, events: {} },
+  });
+  expect(saved.status, await saved.text()).toBe(200);
+  const read = async (member: string, dataName: string, inputs: object = {}) => {
+    const response = await request("POST", "product-panels/read", {
+      source: { kind: "registered", applicationId: "agent-settings", useId: "settings" },
+      memberPath: [{ member }], dataName, inputs,
+    });
+    expect(response.status).toBe(200);
+    return productPanelReadResponseSchema.parse(await response.json());
+  };
+  const ready = async (...args: Parameters<typeof read>) => {
+    const reply = await read(...args);
+    expect(reply, args.join("/")).toMatchObject({ status: "ready" });
+    if (reply.status !== "ready") throw new Error(reply.status);
+    return reply.value;
+  };
+  const agent = { className: "platform:AgentDefinition", primaryKey: agentId };
+  expect(await ready("agents", "rows")).toContainEqual(expect.objectContaining({ primaryKey: agentId, label: "Inventory analyst" }));
+  expect(await ready("summary", "record", { agent })).toMatchObject({
+    primaryKey: agentId, fields: { description: "Inventory summary", enabled: "false" },
+    fieldLabels: { description: "Description", enabled: "Enabled" },
+  });
+  const form = panelFormDescriptionSchema.parse(await ready("definition", "form", { agent }));
+  expect(form.values).toMatchObject({ name: "Inventory analyst", enabled: false, skills: [] });
+  expect(form.fields.find(field => field.path === "/executionUserId")?.readOnly).toBe(true);
+  expect(panelFormDescriptionSchema.parse(await ready("definition", "createForm")).values).toMatchObject({
+    name: "", enabled: true, modelSelection: { modelId: null }, skills: [],
+  });
+  expect(panelOptionListSchema.parse(await ready("models", "options")).options.map(option => option.value)).toEqual(["demo/chat"]);
+  const models = panelOptionListSchema.parse(await ready("models", "selected", { values: ["demo/missing", "demo/chat", null] }));
+  expect(models.options.map(option => option.value)).toEqual(["demo/missing", "demo/chat", null]);
+  expect(models.options[0]?.unavailable?.reason).toEqual(expect.any(String));
+  const users = panelOptionListSchema.parse(await ready("users", "options", { keyword: "Ada", page: { number: 2, size: 5 } }));
+  expect(users).toEqual({ options: [{ primaryKey: "ada", value: "ada", label: "Ada" }] });
+  expect(panelOptionListSchema.parse(await ready("users", "selected", { values: ["former", null] })).options).toMatchObject([
+    { value: "former", label: "Former reader", unavailable: { reason: expect.any(String) } }, { value: null },
+  ]);
+  const governance = { namespace: { kind: "provider", provider: "ontology" }, name: "knowledge-governance" };
+  const missing = { namespace: { kind: "domain", domainId: "elsewhere" }, name: "private-skill" };
+  expect(panelOptionListSchema.parse(await ready("skills", "options")).options).toContainEqual(expect.objectContaining({
+    value: governance, label: "知识治理",
+  }));
+  const skills = panelOptionListSchema.parse(await ready("skills", "selected", { values: [missing, governance, missing] })).options;
+  expect(skills.map(option => option.value)).toEqual([missing, governance, missing]);
+  expect(skills[0]).toMatchObject({ label: "技能不可用", unavailable: { reason: "你无法使用此技能。" } });
+  expect(skills[0]).toEqual(skills[2]);
+
+  state.allowAgentReads = false;
+  expect(await read("definition", "createForm")).toEqual({ status: "forbidden" });
+  expect(await read("skills", "selected", { values: [missing] })).toEqual({ status: "forbidden" });
+});
+
+async function ownerReadPanel(
+  family: string, projections: Record<string, object>, state = {},
+  wiring: Record<string, object> = {},
+) {
+  const members: Record<string, object> = {};
+  for (const [name, projection] of Object.entries(projections)) {
+    const projectionId = `${family}-${name}`;
+    const response = await request("PUT", "product-projections/" + projectionId, {
+      name, description: "", visibility: "domain", revision: 0, inputs: {}, outputs: {}, config: {}, ...projection,
+    });
+    expect(response.status, await response.text()).toBe(200);
+    members[name] = { target: { projectionId }, ...wiring[name] };
+  }
+  const response = await request("PUT", "product-panels/panel-" + family, {
+    name: family, description: "", visibility: "domain", revision: 0,
+    content: { html: "<section>" + Object.keys(members).map(name => `<panel-member ref="${name}"></panel-member>`).join("") + "</section>" },
+    manifest: { state, members, events: {} },
+  });
+  expect(response.status, await response.text()).toBe(200);
+  return async (member: string, dataName: string, inputs: object = {}) => {
+    const read = await request("POST", "product-panels/read", {
+      source: { kind: "registered", applicationId: family, useId: "data" },
+      memberPath: [{ member }], dataName, inputs,
+    });
+    expect(read.status).toBe(200);
+    return productPanelReadResponseSchema.parse(await read.json());
+  };
+}
+
+it("dispatches the action catalog's three reads and both operation descriptions", async () => {
+  const action = { className: "platform:Action", primaryKey: "review" };
+  const actionType = { kind: "object", objectType: action.className };
+  const selected = { object: { literal: action } };
+  const operation = (id: string) => ({
+    componentId: "@ontomato/sdk:OperationButton", inputs: { action: actionType },
+    data: { operation: { source: { operation: { kind: "PlatformOperation", id } }, read: "describe", params: {} } },
+  });
+  const read = await ownerReadPanel("owner-actions", {
+    list: { componentId: "@ontomato/sdk:ObjectList", data: {
+      rows: { source: { type: { kind: "PlatformObjectType", id: action.className } }, read: "list", params: {} },
+    } },
+    summary: { componentId: "@ontomato/sdk:ObjectSummary", data: { record: { source: selected, read: "record", params: {} } } },
+    definition: { componentId: "@ontomato/sdk:ObjectForm", data: {
+      form: { source: selected, read: "form", params: {
+        values: { literal: { name: "Draft review" } }, changedField: { literal: "/name" },
+      } },
+    } },
+    status: operation("actions.setStatus"),
+    remove: operation("actions.delete"),
+  }, { selected: { type: actionType, default: null } }, {
+    status: { inputs: { action: { state: "selected" } } },
+    remove: { inputs: { action: { state: "selected" } } },
+  });
+  expect(await read("list", "rows")).toMatchObject({ status: "ready", value: [{ primaryKey: "review", label: "Review" }] });
+  expect(await read("summary", "record")).toMatchObject({ status: "ready", value: { fields: { status: "Published" } } });
+  expect(await read("definition", "form")).toMatchObject({ status: "ready", value: { values: { name: "Draft review" }, errors: [] } });
+  expect(await read("status", "operation")).toMatchObject({ status: "ready", value: { handlerRef: "actions.setStatus", batch: true } });
+  expect(await read("remove", "operation")).toMatchObject({
+    status: "ready", value: { handlerRef: "actions.delete", inspectImpact: { handlerRef: "actions.delete.inspect-impact" } },
+  });
+});
+
+it("passes named metric parameters to the owner and reports untruncated zero rows as empty", async () => {
+  const installed = await readFile(cataloguePath, "utf8");
+  const catalogue = appsSdkComponentCatalogSchema.parse(JSON.parse(installed));
+  // This Node fixture declares a projection consumer for the owner's result.
+  await writeFile(cataloguePath, JSON.stringify({
+    ...catalogue, components: catalogue.components.map(component => component.componentId === "MetricViewData"
+      ? { ...component, data: { result: { results: ["metricOutput"], required: true } } } : component),
+  }));
+  try {
+    const read = await ownerReadPanel("owner-metric", {
+      metric: {
+        componentId: "@ontomato/sdk:MetricViewData", inputs: { year: { kind: "scalar", type: "number" } },
+        data: { result: {
+          source: { object: { literal: { className: "platform:MetricView", primaryKey: "metric-pilot" } } },
+          read: "result", params: { customer: { literal: { className: "person", primaryKey: "p1" } }, year: { input: "year" } },
+        } },
+      },
+    });
+    expect(await read("metric", "result", { year: 2026 })).toMatchObject({ status: "ready", value: { rows: [{ value: 15 }] } });
+    expect(await read("metric", "result", { year: 2023 })).toEqual({ status: "empty" });
+  } finally {
+    await writeFile(cataloguePath, installed);
+  }
+});
+
+it("reads a customer type and a relationship by the registered source identity", async () => {
+  const person = { className: "person", primaryKey: "p1" };
+  const read = await ownerReadPanel("owner-customer", {
+    rows: { componentId: "@ontomato/sdk:ObjectList", data: { rows: {
+      source: { type: { kind: "ObjectType", id: "person" } }, read: "query",
+      params: { search: { literal: "Ali" }, page: { literal: { number: 2, size: 3 } } },
+    } } },
+    detail: { componentId: "@ontomato/sdk:ObjectSummary", data: { record: {
+      source: { object: { literal: person } }, read: "record", params: {},
+    } } },
+    relations: { componentId: "@ontomato/sdk:ObjectRelations", data: { neighbors: {
+      source: { type: { kind: "Relationship", id: "person_to_org" } }, read: "neighbors",
+      params: { node: { literal: person }, limit: { literal: 10 } },
+    } } },
+  });
+  expect(await read("rows", "rows")).toMatchObject({ status: "ready", value: { rows: [{ label: "Alice" }], total: 12 } });
+  expect(await read("detail", "record")).toMatchObject({ status: "ready", value: { primaryKey: "p1", label: "Alice" } });
+  expect(await read("relations", "neighbors")).toMatchObject({
+    status: "ready", value: { neighbors: [{ primaryKey: "org1", label: "Example Org" }] },
+  });
 });

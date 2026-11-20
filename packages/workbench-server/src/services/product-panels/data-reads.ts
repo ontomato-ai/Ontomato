@@ -1,30 +1,60 @@
 import { z } from "zod";
-import { BUSINESS_KNOWLEDGE, SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
+import { AGENT_DEFINITION, BUSINESS_KNOWLEDGE, MODEL_OPTION, SCHEDULED_TASK, SKILL, USER } from "@ontomato/contracts/panel-client-requests";
 import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import {
-  ATTRIBUTE, DELETE_ATTRIBUTE, DELETE_OBJECT_TYPE, DELETE_RELATIONSHIP, OBJECT_TYPE, ONTOLOGY_TYPE, RELATIONSHIP,
-  SET_PRIMARY_KEY, platformObjectTypes, type PlatformReadDeclaration,
+  ACTION, ATTRIBUTE, DASHBOARD_CARD, DELETE_ACTION, DELETE_ATTRIBUTE, DELETE_OBJECT_TYPE, DELETE_RELATIONSHIP,
+  METRIC_VIEW, OBJECT_TYPE, ONTOLOGY_TYPE, RELATIONSHIP, SET_ACTION_STATUS, SET_PRIMARY_KEY,
+  platformObjectTypes, type PlatformReadDeclaration,
 } from "@ontomato/contracts/platform-object-types";
 import { productPanelSchema, type ProductPanel, type ProductProjection } from "@ontomato/contracts/product-panels";
 import { currentProductRecord } from "../../infrastructure/product-current";
+import { assertPermission } from "../../identity/installed";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
+import { createActionReadAdapter } from "../action/panel-reads";
+import { createDashboardCardReadAdapter } from "../dashboard/chart-sources";
+import { createMetricReadAdapter } from "../metric-function/panel-reads";
+import { createCustomerOntologyReadAdapter } from "../ontology-model/customer-reads";
 import { createBusinessKnowledgeReadAdapter } from "../business-knowledge/panel-reads";
 import { createOntologyModelReadAdapter } from "../ontology-model/model-reads";
 import { createScheduledTaskReadAdapter } from "../scheduling/panel-reads";
+import type { SkillResolveRequest } from "../skills/panel-reads";
 import { requirePanelUse } from "./application-use";
 import { readPanelComponentCatalogue } from "./component-catalogue";
 import { requireCurrentProduct, requireDirectPanelMember } from "./current";
 
 type ReadInputs = ProductPanelReadRequest["inputs"];
 type ReadMember = ProductPanel["manifest"]["members"][string];
-type ReadSelection = { typeId: string; method: string; primaryKey?: string };
-type ReadAdapter = (selection: ReadSelection, params: Record<string, unknown>) => Promise<unknown> | unknown;
+type ReadSelection = { kind: "platform" | "customer"; typeId: string; method: string; primaryKey?: string };
+type ReadAdapter = (selection: ReadSelection, params: Record<string, unknown>, projection: ProductProjection) => Promise<unknown> | unknown;
+
+function registeredChart(projection: ProductProjection) {
+  if (!("chartSource" in projection))
+    throw new HttpError(400, "Dashboard card reads require a registered source-card projection", "CHART_SOURCE_REGISTRATION_REQUIRED");
+  return { dashboardOwnerId: projection.ownerId, metricId: projection.metricId };
+}
+
+function customerReads(owner: ProductOwner, viewer: AssistantCredentials, callerUserName?: string): Record<string, ReadAdapter> {
+  const customer = createCustomerOntologyReadAdapter(owner, viewer, callerUserName);
+  return {
+    query: (selection, params) => customer.query(selection.typeId, {
+      search: panelReadParameterSchemas.keyword.optional().parse(params.search),
+      page: panelReadParameterSchemas.page.optional().parse(params.page),
+    }),
+    record: selection => customer.record(selection.typeId, selection.primaryKey!),
+    neighbors: (selection, params) => customer.neighbors(selection.typeId, {
+      node: panelReadParameterSchemas.graphNode.parse(params.node),
+      relationKinds: panelReadParameterSchemas.relationKinds.optional().parse(params.relationKinds),
+      limit: panelReadParameterSchemas.neighborsLimit.optional().parse(params.limit),
+    }),
+  };
+}
 
 function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerUserName?: string): Record<string, Record<string, ReadAdapter>> {
   const schedules = createScheduledTaskReadAdapter(viewer);
@@ -34,9 +64,12 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   };
   const knowledge = createBusinessKnowledgeReadAdapter(viewer);
   const model = createOntologyModelReadAdapter(owner, viewer, callerUserName);
+  const actions = createActionReadAdapter(owner, viewer, callerUserName);
+  const metrics = createMetricReadAdapter(owner, viewer, callerUserName);
+  const cards = createDashboardCardReadAdapter(owner, viewer);
   const formParams = (params: Record<string, unknown>) => ({
     values: panelReadParameterSchemas.panelFormValues.optional().parse(params.values),
-    changedField: panelReadParameterSchemas.changedField.optional().parse(params.changedField),
+    changedField: panelReadParameterSchemas.changedField.optional().parse(params.changedField) ?? null,
   });
   const modelReads: Record<string, ReadAdapter> = {
     list: (selection, params) => model.list(selection.typeId, {
@@ -46,7 +79,62 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     form: (selection, params) => model.form(selection.typeId, selection.primaryKey!, formParams(params)),
     createForm: (selection, params) => model.createForm(selection.typeId, formParams(params)),
   };
+  const definitions = async () => {
+    const { createAgentDefinitionReadAdapter } = await import("../assistant/panel-reads");
+    return createAgentDefinitionReadAdapter(owner, viewer);
+  };
+  const options = async () => {
+    const { createAgentOptionReadAdapters } = await import("../assistant/panel-reads");
+    return createAgentOptionReadAdapters(viewer);
+  };
+  const skills = async () => {
+    const { agentDefinitionPermissions } = await import("../assistant/definitions");
+    await assertPermission(viewer, agentDefinitionPermissions);
+    const { createSkillReadAdapter } = await import("../skills/panel-reads");
+    return createSkillReadAdapter(owner, viewer, callerUserName);
+  };
   return {
+    [ACTION]: {
+      list: () => actions.list(),
+      record: selection => actions.record(selection.primaryKey!),
+      form: (selection, params) => actions.form(selection.primaryKey!, formParams(params)),
+      [`${SET_ACTION_STATUS}.describe`]: () => actions[`${SET_ACTION_STATUS}.describe`](),
+      [`${DELETE_ACTION}.describe`]: () => actions[`${DELETE_ACTION}.describe`](),
+    },
+    [METRIC_VIEW]: {
+      result: (selection, params) => metrics.result(selection.primaryKey!, runtimeJsonObjectSchema.parse(params)),
+    },
+    [DASHBOARD_CARD]: {
+      chartTemplate: (selection, _params, projection) => cards.chartTemplate(selection.primaryKey!, registeredChart(projection)),
+      result: (selection, params, projection) => cards.result(
+        selection.primaryKey!, registeredChart(projection), runtimeJsonObjectSchema.parse(params),
+      ),
+    },
+    [AGENT_DEFINITION]: {
+      list: async () => (await definitions()).list(),
+      record: async selection => (await definitions()).record(selection.primaryKey!),
+      form: async (selection, params) => (await definitions()).form(selection.primaryKey!, formParams(params)),
+      createForm: async (_selection, params) => (await definitions()).createForm(formParams(params)),
+    },
+    [MODEL_OPTION]: {
+      options: async () => (await options()).models.options(),
+      resolve: async (_selection, params) => (await options()).models.resolve(params.values as readonly unknown[]),
+    },
+    [USER]: {
+      options: async (_selection, params) => (await options()).users.options({
+        keyword: panelReadParameterSchemas.keyword.optional().parse(params.keyword),
+        page: panelReadParameterSchemas.page.optional().parse(params.page),
+      }),
+      resolve: async (_selection, params) => (await options()).users.resolve(params.values as readonly unknown[]),
+    },
+    [SKILL]: {
+      async options() {
+        return (await skills()).options();
+      },
+      async resolve(_selection, params) {
+        return (await skills()).resolve({ values: params.values as SkillResolveRequest["values"] });
+      },
+    },
     [OBJECT_TYPE]: { ...modelReads, [`${DELETE_OBJECT_TYPE}.describe`]: () => model.describe(DELETE_OBJECT_TYPE) },
     [ATTRIBUTE]: {
       ...modelReads,
@@ -143,17 +231,19 @@ async function readParameters(
 }
 
 function readSelection({ source, read }: DirectProjectionData, inputs: ReadInputs): ReadSelection {
-  if ("type" in source) return { typeId: source.type.id, method: read };
+  if ("type" in source) return {
+    kind: source.type.kind === "PlatformObjectType" ? "platform" : "customer", typeId: source.type.id, method: read,
+  };
   if ("object" in source) {
     const value = "literal" in source.object ? source.object.literal : inputs[source.object.input];
     if (value == null) throw new HttpError(400, "Select an object before reading its data", "PANEL_SELECTION_REQUIRED");
     const { className, primaryKey } = panelObjectRefSchema.parse(value);
-    return { typeId: className, method: read, primaryKey };
+    return { kind: className.startsWith("platform:") ? "platform" : "customer", typeId: className, method: read, primaryKey };
   }
   if (source.operation.kind === "Action")
     throw new HttpError(422, "Object action reads require an owner adapter", "PANEL_READ_UNAVAILABLE");
   const [typeId] = Object.entries(platformObjectTypes).find(([, entry]) => entry.operations?.includes(source.operation.id))!;
-  return { typeId, method: `${source.operation.id}.${read}` };
+  return { kind: "platform", typeId, method: `${source.operation.id}.${read}` };
 }
 
 export async function readProductPanelData(
@@ -175,9 +265,11 @@ export async function readProductPanelData(
       for (const name of declaration.requiredParams ?? [])
         if (!Object.hasOwn(params, name)) throw new HttpError(400, `Missing read parameter: ${name}`, "PANEL_INPUT_REQUIRED");
     }
-    const read = readAdapters(owner, viewer, callerUserName)[selection.typeId]?.[selection.method];
+    const read = selection.kind === "customer"
+      ? customerReads(owner, viewer, callerUserName)[selection.method]
+      : readAdapters(owner, viewer, callerUserName)[selection.typeId]?.[selection.method];
     if (!read) throw new HttpError(422, "The owner read is unavailable", "PANEL_READ_UNAVAILABLE");
-    const result = await read(selection, params);
+    const result = await read(selection, params, projection);
     if (declaration.result === "panelRecordList") {
       const value = panelReadResultSchemas.panelRecordList.parse(result);
       return value.length ? { status: "ready", value } : { status: "empty" };
