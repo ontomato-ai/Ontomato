@@ -27,8 +27,7 @@ await mountPanel({
 ```
 
 Bind the list's `selected` input and the detail's object input to the same public state. The list updates that
-state when the reader selects a record. Vue events can update page-local state, as the example does to leave
-creation mode. Use `@click="clearSelection"` on a control that should clear both the detail and the list's selection.
+state when the reader selects a record. The example uses the list's Vue selection event to return to view mode. Use `@click="clearSelection"` on a control that should clear both the detail and the list's selection.
 
 ## Read declared data
 
@@ -89,6 +88,15 @@ await instance.invoke("form.save", {
 
 A populated object input edits that record. An empty input opens creation when the owner supports it and the
 projection has the same type's `createForm` read. The successful create selects the returned object.
+
+Keep the form mounted with `v-show` so it can receive drafts while the detail is open. The example watches
+`instance.draft` to open the editor once its form has accepted a draft. Switch back to view mode on `saved` or
+`discarded`. The save event carries the saved object as `{className, primaryKey}`. A failed save keeps the editor open.
+
+```html
+<projection slot="form" v-show="mode === 'edit'"
+  @saved="mode = 'view'" @discarded="mode = 'view'"></projection>
+```
 
 For an assistant draft, first read the owner form and copy `save.draftOperation` into the artifact's `operation`.
 Use the application's `pageKey`, the owner's object ID and only the changed field values in `form`:
