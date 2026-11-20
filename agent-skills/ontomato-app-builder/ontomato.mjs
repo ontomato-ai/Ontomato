@@ -338,6 +338,14 @@ async function checkCurrentPanel(api, directory, materialPath) {
 }
 
 async function panelCommand(api, workspaceId, [command, ...args]) {
+  if (command === "type" && args.length === 1) {
+    const [id] = args;
+    const sdk = currentSdkClient({ workbenchUrl: api.envUrl, headers: headers(api) });
+    const checks = await sdk.check(await sdk.current());
+    const { objectTypes } = await readPlatformTypeTable(api, checks);
+    if (!Object.hasOwn(objectTypes, id)) die(`Type ${id} is not listed in the author's type table`);
+    return print({ id, ...objectTypes[id] });
+  }
   if (command === "scaffold") {
     const id = takeOption(args, "--id") ?? undefined;
     const operations = [];
@@ -388,7 +396,7 @@ async function panelCommand(api, workspaceId, [command, ...args]) {
     const collection = command === "projection" ? "projections" : "panels";
     return print(await workbench(api, "GET", `/product-${collection}/${encodeURIComponent(args[0])}`));
   }
-  die("panel requires applications, projection <id>, get <id>, uses <applicationId>, preview <working|commit> [--workspace <id>], scaffold <type> <directory>, check <directory>, or register <directory|json|@file>");
+  die("panel requires applications, type <id>, projection <id>, get <id>, uses <applicationId>, preview <working|commit> [--workspace <id>], scaffold <type> <directory>, check <directory>, or register <directory|json|@file>");
 }
 
 async function functionCommand(api, [command, ...args]) {
@@ -483,6 +491,7 @@ function usage() {
   sdk current
   sdk read <relative path, e.g. docs/components.md>
   panel applications
+  panel type <id>
   panel projection <id>
   panel get <id>
   panel uses <applicationId>

@@ -302,6 +302,11 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       ["/api/apps-sdk/current", "GET"], [`${sdkPath}/node/panel-check.mjs`, "GET"],
       [`${sdkPath}/components.json`, "GET"], ["/api/app-builder/type-table", "GET"], [projectionPath, "GET"],
     ]));
+    const type = await run("panel", "type", "platform:ReviewQueue");
+    assert.deepEqual(JSON.parse(type.stdout), { id: "platform:ReviewQueue", ...typeTable.objectTypes["platform:ReviewQueue"] });
+    assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), [
+      ["GET", "/api/apps-sdk/current"], ["GET", `${sdkPath}/node/panel-check.mjs`], ["GET", "/api/app-builder/type-table"],
+    ]);
     await rm(moduleFile);
     await assert.rejects(run("panel", "check", directory), error => error.stderr.includes("panel.mjs: required Vue module is missing"));
     await writeFile(moduleFile, panel.content.module);
