@@ -152,7 +152,7 @@ it("reports the owner's data-permission refusal on a class page as forbidden", a
     const route = catalogRoute(request);
     if (route) return route;
     if (request.url.pathname === "/data/getWholeClassDataByPage")
-      return Response.json({ success: false, message: "You do not have data permission" });
+      return Response.json({ success: false, code: "DATA_PERMISSION_DENIED", message: "您没有数据权限" });
     return undefined;
   });
 
@@ -180,20 +180,25 @@ it("reads one object and restores the primary-key value the owner omits", async 
   });
 });
 
-it("tells the owner's missing object from its permission refusal", async () => {
+it("tells the owner's missing object, permission refusal and query failure apart by code, whatever the language", async () => {
   stubOwner(request => {
     const route = catalogRoute(request);
     if (route) return route;
-    if (request.url.pathname === "/data/queryInfoByNode")
-      return Response.json(request.body?.id === "person:p9"
-        ? { success: false, message: "Object not found" }
-        : { success: false, message: "You do not have data permission" });
+    if (request.url.pathname === "/data/queryInfoByNode") {
+      const answers: Record<string, unknown> = {
+        "person:p9": { success: false, code: "OBJECT_NOT_FOUND", message: "对象不存在" },
+        "person:p1": { success: false, code: "DATA_PERMISSION_DENIED", message: "您没有数据权限" },
+        "person:p5": { success: false, code: "QUERY_FAILED", message: "查询出错" },
+      };
+      return Response.json(answers[request.body?.id as string]);
+    }
     return undefined;
   });
 
   const reads = createCustomerOntologyReadAdapter(owner, viewer);
-  await expect(reads.record("person", "p9")).rejects.toMatchObject({ status: 404, code: "OBJECT_NOT_FOUND" });
+  await expect(reads.record("person", "p9")).rejects.toMatchObject({ status: 404, code: "OBJECT_NOT_FOUND", message: "对象不存在" });
   await expect(reads.record("person", "p1")).rejects.toMatchObject({ status: 403, code: "CUSTOMER_DATA_PERMISSION" });
+  await expect(reads.record("person", "p5")).rejects.toMatchObject({ status: 502, code: "CUSTOMER_OBJECT_READ_FAILED" });
 });
 
 it("reads both directions of the anchor's relations, including a self-loop, and dedups the neighbors", async () => {
@@ -384,7 +389,7 @@ it("fails the whole neighbors read by the record's rule when the anchor is unrea
     const route = catalogRoute(request);
     if (route) return route;
     if (request.url.pathname === "/data/queryInfoByNode")
-      return Response.json({ success: false, message: "Object not found" });
+      return Response.json({ success: false, code: "OBJECT_NOT_FOUND", message: "Object not found" });
     return undefined;
   });
 
