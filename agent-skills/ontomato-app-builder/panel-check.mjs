@@ -46,7 +46,24 @@ async function workspaceDefinition(directory, checks) {
   throw new Error(diagnostics.join("\n"));
 }
 
-export async function checkPanelWorkspace(directory, { checks, catalogue, version, digest, lookup, materialPath }) {
+function checkOperation(id, projection, typeTable) {
+  const name = projection.data.operation?.source.operation?.id;
+  const declarations = Object.entries(typeTable.objectTypes).flatMap(([type, owner]) =>
+    (owner.operations ?? []).filter(operation => operation.id === name).map(operation => [type, operation]));
+  if (declarations.length === 0) throw new Error(`projection ${id}: operation ${name ?? "(missing)"} is not declared in the type table`);
+  const matches = declarations.some(([type, operation]) => {
+    if (operation.target.source !== "input") return true;
+    const port = projection.inputs[operation.target.input];
+    if (port?.kind === "list") return operation.batch && port.items.objectType === type;
+    if (port?.kind === "object-union") {
+      return "objectTypes" in port ? port.objectTypes.includes(type) : port.layers.includes(typeTable.objectTypes[type].layer);
+    }
+    return port?.kind === "object" && port.objectType === type;
+  });
+  if (!matches) throw new Error(`projection ${id}: the target input for operation ${name} does not match its owner declaration`);
+}
+
+export async function checkPanelWorkspace(directory, { checks, catalogue, version, digest, typeTable, lookup, materialPath }) {
   if (catalogue.version !== version) {
     throw new Error(`Expected SDK catalogue ${version}, found ${catalogue.version}`);
   }
@@ -69,8 +86,11 @@ export async function checkPanelWorkspace(directory, { checks, catalogue, versio
     const record = records.get(kind)?.get(id) ?? (lookup && await lookup(kind, id));
     if (record === undefined) {
       unchecked.push({ kind, id });
-    } else if (kind === "projection" && !components.has(record.componentId)) {
-      throw new Error(`${resolve(directory, "panel.json")}: projection ${id} uses unavailable SDK component ${record.componentId}`);
+    } else if (kind === "projection") {
+      if (!components.has(record.componentId)) {
+        throw new Error(`${resolve(directory, "panel.json")}: projection ${id} uses unavailable SDK component ${record.componentId}`);
+      }
+      if (typeTable && record.componentId === "@ontomato/sdk:OperationButton") checkOperation(id, record, typeTable);
     }
   }
   return { status: "valid", version, ...(digest && { digest }), unchecked };

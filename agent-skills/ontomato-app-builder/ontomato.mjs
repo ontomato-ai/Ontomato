@@ -311,30 +311,40 @@ async function sdkCommand(api, args) {
   console.log(await (await sdk.read(await sdk.current(), args[1])).text());
 }
 
+async function readPlatformTypeTable(api, checks) {
+  return checks.platformTypeTableResponseSchema.parse(await workbench(api, "GET", "/app-builder/type-table"));
+}
+
 async function checkCurrentPanel(api, directory, materialPath) {
   const sdk = currentSdkClient({ workbenchUrl: api.envUrl, headers: headers(api) });
   const release = await sdk.current();
   const [checks, catalogue] = await Promise.all([sdk.check(release), sdk.components(release)]);
+  const typeTable = await readPlatformTypeTable(api, checks);
   const lookup = async (kind, id) => {
     const answer = await workbench(api, "GET", `/product-${kind}s/${encodeURIComponent(id)}`);
     return answer[kind];
   };
-  return print(await checkPanelWorkspace(directory, { checks, catalogue, version: release.version, digest: release.digest, lookup, materialPath }));
+  return print(await checkPanelWorkspace(directory, { checks, catalogue, version: release.version, digest: release.digest, typeTable, lookup, materialPath }));
 }
 
 async function panelCommand(api, workspaceId, [command, ...args]) {
   if (command === "scaffold") {
     const id = takeOption(args, "--id") ?? undefined;
     const operations = [];
-    let operation = takeOption(args, "--operation");
-    while (operation !== null) {
-      operations.push(operation);
-      operation = takeOption(args, "--operation");
+    const batches = [];
+    for (const [flag, values] of [["--operation", operations], ["--batch", batches]]) {
+      let operation = takeOption(args, flag);
+      while (operation !== null) {
+        values.push(operation);
+        operation = takeOption(args, flag);
+      }
     }
-    if (args.length !== 2) die("panel scaffold <type> <new directory> [--id <application id>] [--operation <id>]");
+    if (args.length !== 2) die("panel scaffold <type> <new directory> [--id <application id>] [--operation <id>] [--batch <id>]");
     const [type, directory] = args;
     const sdk = currentSdkClient({ workbenchUrl: api.envUrl, headers: headers(api) });
-    const panel = managementPanel(type, await sdk.check(await sdk.current()), { id, operations });
+    const checks = await sdk.check(await sdk.current());
+    const typeTable = await readPlatformTypeTable(api, checks);
+    const panel = managementPanel(type, checks, typeTable, { id, operations, batches });
     await writeManagementPanel(directory, panel);
     return print({ directory, entry: panel.material.applications[0].input.panelUses[0].path });
   }
@@ -456,7 +466,7 @@ function usage() {
   panel get <id>
   panel uses <applicationId>
   panel preview <working|commit> [--workspace <id>]
-  panel scaffold <type> <new directory> [--id <application id>] [--operation <id>]
+  panel scaffold <type> <new directory> [--id <application id>] [--operation <id>] [--batch <id>]
   panel check <directory> [--material <registration file>] [--sdk-dir <installed SDK release directory>]
   panel register <json|@file>
   function list [<filter json|@file>]

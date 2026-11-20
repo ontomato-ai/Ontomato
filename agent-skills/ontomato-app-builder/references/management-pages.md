@@ -20,10 +20,13 @@ node "$SKILL/ontomato.mjs" panel scaffold platform:AgentDefinition ./agents-pane
 ```
 
 The starter writes `panel.html`, `panel.json` and `registration.json` into a new directory. It reads owner declarations
-from the current SDK. The generated material includes an application entry. Review its access before registration.
+from the platform's type table. The generated material includes an application entry. Review its access before registration.
 When editing the generated layout or manifest, carry the updated `html` and `manifest` into the panel's registration
-input. The starter includes the owner save when the type declares a form and save operation. Additional operation
-buttons require their owner descriptions, including the target input name and batch support.
+input. The starter includes the owner save when the type declares a form and save operation.
+Use `--operation <owner operation ID>` for a button targeting the selected record and `--batch <owner operation ID>`
+for a button targeting checked records. Repeat either flag to add more buttons. The starter takes the target input
+name and batch support from the type table. For operations with extra required inputs, wire the owner form or
+operation inputs. Online `panel check` uses the same type table to check button targets before registration.
 
 ## Effect and wiring
 
