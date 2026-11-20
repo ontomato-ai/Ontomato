@@ -1036,7 +1036,7 @@ const chartSource = { dashboardId: "board-a", cardId: "chart-1" };
 const card = { object: { literal: { className: DASHBOARD_CARD, primaryKey: dashboardCardPrimaryKey(chartSource) } } };
 const chartProjection = {
   name: "Departments", description: "", visibility: "private",
-  componentId: "@ontomato/sdk:MetricChart", chartSource, metricId: "department-metric",
+  componentId: "@ontomato/sdk:MetricChart", metricId: "department-metric",
   inputs: { department: { kind: "scalar", type: "string" } }, outputs: {}, config: {},
   data: {
     template: { source: card, read: "chartTemplate", params: {} },
@@ -1049,18 +1049,13 @@ test("the chart reads its registered source card with per-metric overrides", () 
     ...chartProjection, id: "projection-a", domainId: "domain", ownerId: "author",
     revision: 1, createdAt: "2026-11-19T00:00:00Z", updatedAt: "2026-11-19T00:00:00Z", editable: true,
   };
-  assert.deepEqual(registerChartProjectionResponseSchema.parse({ projection }).projection.chartSource, chartSource);
+  const parsed = registerChartProjectionResponseSchema.parse({ projection }).projection;
+  assert.deepEqual(parsed.data.template.source, card);
+  assert.deepEqual(parsed.data.result.source, card);
+  assert.equal(parsed.metricId, "department-metric");
   const renamed = { ...projection, data: { drawing: projection.data.template, points: projection.data.result } };
   assert.deepEqual(registerChartProjectionResponseSchema.parse({ projection: renamed }).projection.data, renamed.data);
-  const wrongCard = { object: { literal: {
-    className: DASHBOARD_CARD, primaryKey: dashboardCardPrimaryKey({ ...chartSource, cardId: "different-card" }),
-  } } };
-  assert.equal(registerChartProjectionResponseSchema.safeParse({ projection: {
-    ...projection, data: { ...projection.data, extra: { source: wrongCard, read: "chartTemplate", params: {} } },
-  } }).success, false);
-  assert.equal(productProjectionInputSchema.safeParse({
-    ...chartProjection, chartSource: { ...chartSource, cardId: "different-card" },
-  }).success, false);
+  assert.equal(productProjectionInputSchema.safeParse({ ...chartProjection, chartSource }).success, false);
   assert.equal(productProjectionInputSchema.safeParse({ ...chartProjection, chartFile: {} }).success, false);
 });
 
