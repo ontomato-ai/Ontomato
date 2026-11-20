@@ -5,3 +5,5 @@ export const dropdownBoundaryOptions = {
     { name: 'flip', options: { padding: 12, rootBoundary: 'viewport' } },
   ],
 };
+export { actionTooltipProps } from "./action-tooltip";
+export { default as ActionTooltip } from "./ActionTooltip.vue";

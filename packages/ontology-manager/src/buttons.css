@@ -3,7 +3,7 @@
   --el-button-size: var(--control-height-sm);
   min-height: var(--control-height-sm);
   height: auto;
-  padding: 3px 10px;
+  padding: var(--spacing-xs) var(--spacing-sm);
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
   line-height: var(--leading-sm);
@@ -59,7 +59,7 @@
   height: 16px;
   flex-shrink: 0;
 }
-.ontology-manager .manager-icon-button,
+.ontology-manager button.manager-icon-button,
 .ontology-manager .zoom-controls .el-button,
 .ontology-manager .graph-toolbar button,
 .ontology-manager .node-actions button {
@@ -71,6 +71,32 @@
   border-radius: var(--radius-sm);
   transition: background-color var(--transition-fast), color var(--transition-fast);
 }
+.ontology-manager button.manager-icon-button {
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+}
+.ontology-manager button.manager-icon-button:not(:disabled):hover {
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
+}
+.ontology-manager button.manager-icon-button:not(:disabled):active { background: var(--el-fill-color); }
+.ontology-manager button.manager-icon-button:is([aria-expanded="true"], [aria-pressed="true"]):not(:disabled) {
+  background: var(--el-fill-color);
+  color: var(--el-text-color-primary);
+}
+.ontology-manager button.manager-icon-button.is-danger:not(:disabled):is(:hover, :focus-visible) {
+  color: var(--el-color-danger-text);
+  background: var(--el-color-danger-light-9);
+}
+.ontology-manager button.manager-icon-button:disabled { color: var(--el-disabled-text-color); cursor: not-allowed; }
+.ontology-manager button.manager-icon-button[aria-busy="true"] { cursor: progress; }
+.ontology-manager button.manager-icon-button:focus-visible { outline: 2px solid var(--brand-link); outline-offset: -2px; }
+.ontology-manager .manager-icon-spinner { animation: manager-icon-spin 800ms linear infinite; }
+@keyframes manager-icon-spin { to { transform: rotate(1turn); } }
 .ontology-manager .graph-toolbar button > svg,
 .ontology-manager .node-actions button > svg {
   width: 16px;
@@ -98,6 +124,8 @@
   outline-offset: -2px;
 }
 @media (prefers-reduced-motion: reduce) {
+  .ontology-manager .manager-icon-spinner { animation: none; }
+  .ontology-manager button.manager-icon-button,
   .ontology-manager .el-button,
   .ontology-manager .graph-toolbar button,
   .ontology-manager .node-actions button { transition: none; }

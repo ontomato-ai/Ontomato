@@ -441,7 +441,7 @@ describe("Manager pages in the service router", () => {
     expect(paths()).toContain("/data/instanceGraph/nodes");
     expect(root().querySelector(".node-search input")?.hasAttribute("disabled")).toBe(false);
 
-    (root().querySelector(".graph-toolbar button[title='Relayout']") as HTMLButtonElement).click();
+    (root().querySelector(".graph-toolbar button[aria-label='Relayout']") as HTMLButtonElement).click();
     await settle();
     await settle();
     expect(graphRecord.layouts.length).toBe(0);
@@ -504,7 +504,7 @@ describe("Manager pages in the service router", () => {
     expect(graphEdges()[0].id).not.toMatch(/^overview-relation:/);
     graphHandlers["node:click"]({ target: { id: "Order:1" } });
     await settle();
-    const neighborhoodButton = root().querySelector(".node-actions button[title='View instance and direct neighbors']") as HTMLButtonElement;
+    const neighborhoodButton = root().querySelector(".node-actions button[aria-label='View instance and direct neighbors']") as HTMLButtonElement;
     expect(neighborhoodButton).not.toBeNull();
     neighborhoodButton.click();
     await settle();
@@ -794,6 +794,10 @@ describe("Manager pages in the service router", () => {
     const page = requests.find((request) => request.url.endsWith("/data/getWholeClassDataByPage"));
     expect(page?.body).toEqual({ classname: "Item", pagenum: 1, pagecount: 20 });
     expect(page?.headers["x-api-key"]).toBe("key-a");
+    const row = root().querySelector<HTMLElement>(".data-browser-table .el-table__body tr")!;
+    row.click();
+    await settle();
+    expect(row.classList.contains("current-row")).toBe(true);
 
     host.view = "/ontology/objects/Order";
     await settle();
@@ -811,6 +815,55 @@ describe("Manager pages in the service router", () => {
     host.view = "/unknown";
     await settle();
     expect(views.at(-1)).toBe("/ontology/playground");
+  });
+
+  it("retries a failed table read in place for the same object type", async () => {
+    const { root } = mountHost({ ...base, view: "/browser/data/Item" });
+    await settle();
+    const tablePath = "/data/getWholeClassDataByPage";
+    statusFor = (path) => path === tablePath ? 500 : 200;
+    (root().querySelectorAll<HTMLElement>(".data-browser-toolbar .el-segmented__item")[1]!).click();
+    await settle();
+    const feedback = () => root().querySelector<HTMLElement>(".table-read-error");
+    expect(feedback()?.textContent).toContain("Load Data Failed");
+    expect(root().querySelector(".table-feedback")).toBeNull();
+
+    statusFor = () => 200;
+    feedback()!.querySelector("button")!.click();
+    await settle();
+    expect(feedback()).toBeNull();
+    expect(requests.filter(request => request.url.endsWith(tablePath)).map(request => request.body)).toEqual([
+      { classname: "Item", pagenum: 1, pagecount: 20 },
+      { classname: "Item", pagenum: 1, pagecount: 20 },
+    ]);
+    expect(root().querySelector(".el-table__body-wrapper")?.textContent).toContain("row-1");
+  });
+
+  it("keeps the last object rows and retries the submitted search, not the draft", async () => {
+    const { root } = mountHost({ ...base, view: "/browser/data/Item" });
+    await settle();
+    const path = "/data/getWholeClassDataByPage";
+    root().querySelectorAll<HTMLElement>(".data-browser-toolbar .el-segmented__item")[1]!.click();
+    await settle();
+    const input = root().querySelector<HTMLInputElement>(".data-search input")!;
+    function type(value: string) {
+      input.value = value;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    statusFor = (url) => url === path ? 500 : 200;
+    type("submitted term");
+    input.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", bubbles: true }));
+    await settle();
+    expect(root().querySelector(".el-table__body-wrapper")?.textContent).toContain("row-1");
+    expect(root().querySelector(".table-scope [role=status]")?.textContent).toContain("Search: All");
+    expect(root().querySelector(".table-read-error")?.textContent).toContain("submitted term");
+    type("unsubmitted edit");
+    statusFor = () => 200;
+    root().querySelector<HTMLButtonElement>(".table-read-error button")!.click();
+    await settle();
+    expect(requests.filter(request => request.url.endsWith(path)).at(-1)?.body).toMatchObject({ search: "submitted term", pagenum: 1 });
+    expect(root().querySelector(".table-scope [role=status]")?.textContent).toContain("Search: submitted term");
+    expect(root().querySelector(".table-read-error")).toBeNull();
   });
 
   it("the frame follows the page theme and neither reads nor changes html.dark", async () => {

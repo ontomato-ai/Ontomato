@@ -121,12 +121,22 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     componentsPath: "/public" + sdkPath + "/components.json",
   };
   const checkModule = `
-    const parse = value => {
-      if ("sdkVersion" in value) throw new Error("The current SDK refuses sdkVersion");
-      return value;
+    const ok = data => ({ success: true, data });
+    const invalid = issues => ({ success: false, error: { issues } });
+    export const registerProductPanelRequestSchema = {
+      safeParse: value => "sdkVersion" in value
+        ? invalid([{ path: ["sdkVersion"], message: "The current SDK refuses sdkVersion" }])
+        : ok(value),
     };
-    export const registerProductPanelRequestSchema = { parse };
-    export const registerProductProjectionRequestSchema = { parse };
+    export const registerProductProjectionRequestSchema = {
+      safeParse: value => "data" in value ? ok(value) : invalid([{
+        code: "invalid_union",
+        unionErrors: [
+          { issues: [{ code: "invalid_type", received: "undefined", path: ["data"], message: "Required" }] },
+          { issues: [{ code: "invalid_literal", path: ["componentId"], message: "Expected chart" }] },
+        ],
+      }]),
+    };
     export const panelDefinitionContentSchema = {
       safeParse(value) {
         return value.content.html === "<bad>"
@@ -149,6 +159,13 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     else if (request.url === `${sdkPath}/components.json`) response.end(JSON.stringify({ version: sdkVersion, components: [{ componentId: "ObjectList" }] }));
     else if (request.url === `${sdkPath}/node/panel-check.mjs`) response.end(checkModule);
     else if (request.url === projectionPath) response.end(JSON.stringify({ projection: { componentId: "@ontomato/sdk:ObjectList" } }));
+    else if (request.url === "/api/product-projections/unwritten") {
+      response.statusCode = 404;
+      response.end(JSON.stringify({ error: { code: "PRODUCT_UNAVAILABLE" } }));
+    } else if (request.url === "/api/product-projections/hidden") {
+      response.statusCode = 403;
+      response.end(JSON.stringify({ error: { message: "Product use Grant required" } }));
+    }
     else if (request.url === candidatePath) response.end(JSON.stringify(source));
     else if (request.url === panelPath && body?.revision === 6) {
       response.statusCode = 409;
@@ -212,6 +229,32 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await writeFile(layout, "<bad>");
     await assert.rejects(run("panel", "check", directory), error => error.stderr.includes(`${layout}:1:2: Rejected by the release parser`));
     assert.equal(requests.some(([method, url]) => method !== "GET" || url === projectionPath), false);
+    requests.length = 0;
+    await writeFile(layout, '<panel-member ref="tasks"></panel-member>');
+    const reference = async id => {
+      manifest.members.tasks.target.projectionId = id;
+      await writeFile(join(directory, "panel.json"), JSON.stringify({ manifest }));
+    };
+    const registration = join(directory, "registration.json");
+    const localMaterial = { projections: [{
+      id: "draft-list", mode: "create", input: { componentId: "@ontomato/sdk:ObjectList", data: {} },
+    }] };
+    await writeFile(registration, JSON.stringify(localMaterial));
+    await reference("draft-list");
+    await run("panel", "check", directory);
+    assert.equal(requests.splice(0).some(([method, url]) => method !== "GET" || url.includes("/product-")), false);
+
+    await reference("unwritten");
+    await assert.rejects(run("panel", "check", directory), error =>
+      error.stderr.includes("projection unwritten was not found in the material or on the platform"));
+    await reference("hidden");
+    await assert.rejects(run("panel", "check", directory), error =>
+      error.stderr.includes("projection hidden: 403") && error.stderr.includes("Product use Grant required"));
+
+    delete localMaterial.projections[0].input.data;
+    await writeFile(registration, JSON.stringify(localMaterial));
+    await assert.rejects(run("panel", "check", directory), error =>
+      error.stderr.includes("projection draft-list: data: required field is missing") && !error.stderr.includes("Expected chart"));
   } finally {
     await rm(directory, { recursive: true });
     await new Promise(resolve => server.close(resolve));

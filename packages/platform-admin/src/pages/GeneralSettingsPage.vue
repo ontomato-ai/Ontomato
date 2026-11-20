@@ -44,12 +44,12 @@ onMounted(load);
   <div class="settings-page">
     <div v-if="loadError" class="config-load-error" role="alert">
       <span>{{ t("admin.loadConfigFailed") }}{{ separators.detail }}{{ loadError }}</span>
-      <el-button size="small" @click="load">{{ t("common.retry") }}</el-button>
+      <el-button text size="small" :loading="loading" @click="load">{{ t("common.retry") }}</el-button>
     </div>
 
     <el-skeleton v-if="loading && !loaded" :rows="4" animated />
 
-    <section v-else class="setting-rows" :aria-label="t('admin.generalParamConfig')">
+    <section v-else-if="loaded" class="setting-rows" :aria-label="t('admin.generalParamConfig')">
       <div class="setting-row">
         <div class="setting-text">
           <span class="setting-label">{{ t("admin.knowledgeMaxResults") }}</span>
@@ -105,11 +105,14 @@ onMounted(load);
 <style scoped>
 @import "../styles/settings-rows.css";
 .settings-page {
+  box-sizing: border-box;
+  width: min(100%, 800px);
+  margin-inline: auto;
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: var(--spacing-lg);
-  padding-block: var(--spacing-lg);
+  padding-block: var(--spacing-md) var(--spacing-xl);
 }
 
 .config-load-error {
@@ -137,6 +140,7 @@ onMounted(load);
   grid-template-columns: minmax(0, 1fr) minmax(0, 240px);
   padding-block: var(--spacing-lg);
 }
+.setting-control.narrow .el-select { width: min(240px, 100%); }
 
 .setting-row:first-child {
   padding-top: 0;

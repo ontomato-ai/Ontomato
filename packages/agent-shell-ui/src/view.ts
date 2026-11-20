@@ -148,9 +148,15 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
       continue;
     }
     if (message.role === "notification") {
-      // A delegated agent's result is addressed to the model that started it; the reader sees the task card and the answer instead.
-      if (message.kind !== "agent-result") items.push({ kind: "notification", key: entry.id, text: message.content,
-        ...(message.kind === "agent-question" && "session" in message.source ? { markdownRunId: entry.runId ?? message.source.runId } : {}) });
+      // A delegated agent's result or model-directed question is input to the requesting model, not a message in the main conversation.
+      const userQuestion =
+        message.kind === "agent-question" &&
+        (message.recipient === "user" ||
+          ("session" in message.source && message.source.session.sessionId === state.sessionId));
+      if (message.kind !== "agent-result" && (message.kind !== "agent-question" || userQuestion)) {
+        items.push({ kind: "notification", key: entry.id, text: message.content,
+          ...(userQuestion && "session" in message.source ? { markdownRunId: entry.runId ?? message.source.runId } : {}) });
+      }
       for (const failure of tasks?.preparationFailures ?? []) if (failure.inputId === entry.id) items.push({ kind: "notification",key: `preparation:${failure.runId}`,text: failure.error,error: true });
       continue;
     }

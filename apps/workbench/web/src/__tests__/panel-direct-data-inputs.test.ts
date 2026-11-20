@@ -1,10 +1,10 @@
-import { expect, it } from "vitest";
-import { effectScope, nextTick } from "vue";
+import { expect, it, vi } from "vitest";
+import { effectScope, nextTick, type ComputedRef } from "vue";
 import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
-import { createDirectPanelInstance } from "../../../../../packages/apps-sdk/src/panel/direct";
+import { createDirectPanelInstance, type MemberDataState } from "../../../../../packages/apps-sdk/src/panel/direct";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 import { noOperations } from "./panel-frame";
 
@@ -71,5 +71,33 @@ it("reads a list's rows once while the selection changes, and the selected recor
   await nextTick();
   expect(count("rows")).toBe(1);
   expect(count("record")).toBe(2);
+  scope.stop();
+});
+
+it("keeps a shown datum on screen while it is read again, and shows its new answer once it arrives", async () => {
+  // The second read of the summary is held, as a slow owner holds it; the first answer stays until it comes.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let reads = 0;
+  const instance = createDirectPanelInstance(manifest, {
+    pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
+    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
+    readProjection: async (id) => projections[id]!,
+    read: async (request) => {
+      if (++reads === 2) await held;
+      return { status: "ready", value: row(String((request.inputs.task as { primaryKey: string }).primaryKey)) as never };
+    },
+  });
+  const inputs = () => ({ task: instance.state.values.value.selectedTask ?? null }) as never;
+  const scope = effectScope();
+  let summary!: ComputedRef<MemberDataState>;
+  scope.run(() => { summary = instance.memberData("summary", projections["task-summary"]!, inputs).use("record"); });
+  await vi.waitFor(() => expect(summary.value).toMatchObject({ status: "ready", value: { primaryKey: "t-1" } }));
+
+  instance.state.set("selectedTask", { className: SCHEDULED_TASK, primaryKey: "t-2" });
+  await nextTick();
+  expect(summary.value).toMatchObject({ status: "ready", value: { primaryKey: "t-1" } });
+  release();
+  await vi.waitFor(() => expect(summary.value).toMatchObject({ status: "ready", value: { primaryKey: "t-2" } }));
   scope.stop();
 });

@@ -100,7 +100,7 @@ test("the SDK catalogue separates supply, configuration and run inputs", async (
   const component = {
     componentId: "ObjectSummary", module: "@ontomato/sdk/base", exportName: "ObjectSummary",
     role: "presentation", meaning: "Show the selected object as its owner describes it.",
-    data: { record: { results: ["panelRecord"], required: true } },
+    data: { record: { results: ["panelRecord"], required: true, runtimeParams: ["search"] } },
     config: [{ name: "fields", type: "string[]", description: "Visible fields", required: false }],
     inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
     outputs: [],
@@ -132,6 +132,7 @@ test("projection registration accepts package-qualified components and leaves da
 
 test("ontology object lists and reference pickers declare the named reads they use", async () => {
   const { registerDirectProjectionRequestSchema } = await import("./product-panels");
+  const { authoredReadParameterSource, directReadDeclaration, missingRequiredReadParameters } = await import("./panel-projection");
   const { panelReadResultSchemas } = await import("./panel-operations");
   const { platformOntologyObjectsResponseSchema } = await import("./platform-ontology");
   const base = { name: "Choices", description: "", visibility: "domain", revision: 0, outputs: {}, config: {} };
@@ -152,9 +153,20 @@ test("ontology object lists and reference pickers declare the named reads they u
     data: { objects: { source: { type: platformType(ONTOLOGY_TYPE) }, read: "objects", params: { type: { literal: USER } } } },
   };
   assert.deepEqual(registerDirectProjectionRequestSchema.parse(objects), objects);
-  assert.equal(registerDirectProjectionRequestSchema.safeParse({
+  const runtimeObjects = registerDirectProjectionRequestSchema.parse({
     ...objects, data: { objects: { ...objects.data.objects, params: {} } },
-  }).success, false);
+  });
+  assert.ok("data" in runtimeObjects);
+  const declaration = directReadDeclaration(runtimeObjects, runtimeObjects.data.objects);
+  assert.ok(declaration);
+  assert.deepEqual(missingRequiredReadParameters(declaration, runtimeObjects.data.objects.params), ["type"]);
+  assert.deepEqual(missingRequiredReadParameters(declaration, runtimeObjects.data.objects.params, ["keyword"]), ["type"]);
+  assert.deepEqual(missingRequiredReadParameters(declaration, runtimeObjects.data.objects.params, ["type"]), []);
+  assert.deepEqual(missingRequiredReadParameters(declaration, objects.data.objects.params), []);
+  const placement = { outputs: { type: { state: "selectedType" } } };
+  assert.deepEqual(missingRequiredReadParameters(declaration, runtimeObjects.data.objects.params, [], placement), []);
+  assert.deepEqual(authoredReadParameterSource({}, "type", placement), { state: "selectedType" });
+  assert.deepEqual(authoredReadParameterSource(objects.data.objects.params, "type", placement), { literal: USER });
   assert.equal(panelReadResultSchemas.panelOntologyObjects, platformOntologyObjectsResponseSchema);
   const option = { primaryKey: "m1", value: { providerId: "models", id: "m1" }, label: "Model 1", unavailable: { reason: "Unavailable" } };
   assert.deepEqual(panelReadResultSchemas.panelOptionList.parse({ options: [option] }), { options: [option] });
@@ -410,6 +422,9 @@ test("direct task reads use the registered source, parameters and result envelop
     dataName: "form", inputs: { task: { className: "platform:ScheduledTask", primaryKey: "task-1" } },
   };
   assert.deepEqual(productPanelReadRequestSchema.parse(request), request);
+  const runtimeRequest = { ...request, runtimeParams: { values: { start: "09:00" }, changedField: "/start" } };
+  assert.deepEqual(productPanelReadRequestSchema.parse(runtimeRequest), runtimeRequest);
+  assert.equal(productPanelReadRequestSchema.safeParse({ ...request, runtimeParams: [] }).success, false);
   assert.equal(productPanelReadRequestSchema.safeParse({ source: request.source, items: [request] }).success, false);
   assert.equal(productPanelReadRequestSchema.safeParse({ ...request, memberPath: [{ member: "form", selection: "untrusted" }] }).success, false);
   assert.equal(productPanelReadResponseSchema.safeParse({ status: "forbidden", value: [] }).success, false);
@@ -1175,6 +1190,29 @@ test("a read-only trial carries the current draft and parameters without a write
     assert.deepEqual(panelReadOperationResultSchema.parse(result), result);
     assert.equal(panelReadOperationResultSchema.safeParse({ ...result, affected: { objects: [] } }).success, false);
   }
+});
+
+test("the author type table and live descriptions share operation declarations", async () => {
+  const { panelOperationDeclarationSchema, describePanelOperationFromDeclaration } = await import("./panel-operations");
+  const { platformTypeTableResponseSchema } = await import("./platform-type-table");
+  const run = panelOperationDeclarationSchema.parse({
+    id: RUN_NOW, effect: "write", batch: false, target: { source: "input", input: "task" }, inputSchema: { type: "object" },
+  });
+  const save = panelOperationDeclarationSchema.parse({
+    id: `${SCHEDULED_TASK}.save`, effect: "write", batch: false, target: { source: "draft" }, inputSchema: { type: "object" },
+  });
+  const table = {
+    objectTypes: { [SCHEDULED_TASK]: { reads: platformObjectTypes[SCHEDULED_TASK].reads, operations: [run, save] } },
+  };
+  assert.deepEqual(platformTypeTableResponseSchema.parse(table), table);
+  assert.equal(panelOperationDeclarationSchema.safeParse({ ...run, label: "Run now" }).success, false);
+
+  const { id, ...staticFields } = run;
+  assert.deepEqual(describePanelOperationFromDeclaration(run, { label: "Run now", resultSchema: {} }), {
+    handlerRef: id, ...staticFields, label: "Run now", resultSchema: {},
+  });
+  assert.deepEqual(describePanelOperationFromDeclaration(save, { label: "Save", resultSchema: {}, slot: "form" }).target,
+    { source: "draft", slot: "form" });
 });
 
 

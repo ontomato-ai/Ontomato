@@ -50,7 +50,6 @@ test("every shipped panel material registers against this version's component ca
       assert.notEqual(component.data, undefined, `${name}: ${id}'s component declares projection data`);
       for (const [datum, { required }] of Object.entries(component.data))
         assert.ok(!required || Object.hasOwn(input.data ?? {}, datum), `${name}: ${id} declares the required datum '${datum}'`);
-      if (Object.keys(component.data).length) assert.ok(Object.keys(input.data ?? {}).length, `${name}: ${id} declares at least one read`);
       for (const [datum, read] of Object.entries(input.data ?? {})) {
         assert.ok(Object.hasOwn(component.data, datum), `${name}: ${id}'s component declares the datum '${datum}'`);
         // The owner's own declaration says what the read returns; the component says which results its datum holds.

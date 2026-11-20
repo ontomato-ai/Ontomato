@@ -1,5 +1,5 @@
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
-import { computed, readonly, shallowReactive, shallowRef, type DeepReadonly, type Ref } from "vue";
+import { computed, readonly, shallowReactive, shallowRef, type ComputedRef, type DeepReadonly, type Ref } from "vue";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import { panelOpenRequestSchema, panelOperationId, type PanelDeepLinkStateValue, type PanelManifest, type PanelOperationCall, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
@@ -60,6 +60,13 @@ export interface PanelInstance {
    * event the declaration runs on that output runs.
    */
   output(member: string, output: string, value: RuntimeJsonValue, item?: RuntimeJsonValue): Promise<void>;
+  /**
+   * One parameter of a member, as its component reads and sets it: the panel state the member binds it to (its input of
+   * that name, else its output of that name), or, unbound, the member's own value, which lives in this member alone.
+   */
+  memberParam(member: string, name: string): { readonly value: ComputedRef<RuntimeJsonValue | null>; set(value: RuntimeJsonValue | null): void };
+  /** The values a member's component set for parameters bound to no state, by name. */
+  ownParams(member: string): Readonly<Record<string, RuntimeJsonValue>>;
   readonly projections: DeepReadonly<Ref<readonly PanelProjectionRegistration[]>>;
   /** The form adapters its projections registered, for the draft its address names. */
   readonly forms: PanelFormAdapters;
@@ -126,6 +133,8 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     for (const listener of objectListeners) listener(object);
   };
   const registrations = shallowRef<readonly PanelProjectionRegistration[]>([]);
+  /** Each member's own parameter values: those its component set and no panel state holds. */
+  const own = shallowRef<Readonly<Record<string, Readonly<Record<string, RuntimeJsonValue>>>>>({});
   async function writeOperation(operationId: string, invocation: PanelWriteInvocation) {
     // What the owner reports the write changed reaches the instance through the host's one refresh port, as an agent's
     // write does, and is read again from there; the receipt itself rereads nothing.
@@ -139,6 +148,14 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     text: options.text,
   });
   const operations = computed(() => panelOperations(manifest, registrations.value, state, forms, events, writeOperation));
+  /** A member's output: the state it binds takes the value, then the events on it run. */
+  async function output(member: string, name: string, value: RuntimeJsonValue, item?: RuntimeJsonValue) {
+    const declaration = manifest.members[member];
+    if (!declaration) throw new Error(`The panel declares no member '${member}'`);
+    const bound = declaration.outputs?.[name];
+    if (bound) state.set(bound.state, value as never);
+    await events.emitted(member, name, value, item);
+  }
   async function invoke(id: string, input?: Readonly<Record<string, unknown>>) {
     const found = operations.value.find((operation) => operation.id === id);
     if (!found) throw new Error(`The panel offers no operation '${id}'`);
@@ -194,13 +211,35 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       };
     },
     invoke,
-    async output(member, output, value, item) {
+    memberParam(member, name) {
       const declaration = manifest.members[member];
       if (!declaration) throw new Error(`The panel declares no member '${member}'`);
-      const bound = declaration.outputs?.[output];
-      if (bound) state.set(bound.state, value as never);
-      await events.emitted(member, output, value, item);
+      const input = declaration.inputs?.[name];
+      const outputBinding = declaration.outputs?.[name];
+      if (input && !("state" in input)) {
+        const fixed = "literal" in input ? input.literal : null;
+        return { value: computed(() => fixed), set: () => { throw new Error(`Member '${member}' fixes '${name}'; it cannot be set`); } };
+      }
+      const bound = input?.state ?? outputBinding?.state;
+      if (bound !== undefined) {
+        return {
+          value: computed(() => (state.values.value[bound] ?? null) as RuntimeJsonValue | null),
+          // A value set through an output also runs the events on that output.
+          set: (value) => (outputBinding && !input ? void output(member, name, value as RuntimeJsonValue) : state.set(bound, value as never)),
+        };
+      }
+      return {
+        value: computed(() => own.value[member]?.[name] ?? null),
+        set(value) {
+          const kept = { ...own.value[member] };
+          if (value === null) delete kept[name];
+          else kept[name] = value;
+          own.value = { ...own.value, [member]: kept };
+        },
+      };
     },
+    ownParams: (member) => own.value[member] ?? {},
+    output,
     async runHandler(handlerRef, call) {
       const result = await handlerFor(handlerRef).invoke(call);
       if (call.target?.kind === "object") objectChanged(call.target);

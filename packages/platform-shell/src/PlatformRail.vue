@@ -5,6 +5,8 @@ import type { PlatformAccount, PlatformApp, PlatformBrand, PlatformPreferences, 
 import { appIcon, ExternalLink } from "./icons";
 import PlatformAccountMenu from "./PlatformAccountMenu.vue";
 import PlatformBrandMark from "./PlatformBrandMark.vue";
+import { ElTooltip } from "element-plus";
+import { actionTooltipProps } from "@ontomato/foundation-ui/overlay";
 
 /**
  * The platform's own rail: the ground layer of the shell, with the expand control, every application in three sections
@@ -35,6 +37,9 @@ const emit = defineEmits<{
 
 const brandName = computed(() => props.brand?.name || props.labels.brand);
 const markBrand = computed(() => ({ ...props.brand, name: brandName.value }));
+const builtLabel = computed(() => props.labels.builtApplication || "App Builder");
+const appLabel = (app: PlatformApp) => app.built ? `${app.label} · ${builtLabel.value}` : app.label;
+const newTabLabel = (app: PlatformApp) => [appLabel(app), props.labels.opensInNewTab].filter(Boolean).join(" · ");
 
 /** The rail's applications, in order: the ontology applications, then the business ones (the external one last). */
 const scrolling = computed(() => {
@@ -91,30 +96,32 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   <nav class="platform-rail" :class="{ collapsed }" :aria-label="labels.applications">
     <!-- Collapsed: the expand control alone. Expanded: the brand mark, the product name and the collapse control. -->
     <div v-if="collapsed" class="rail-brand">
+      <ElTooltip v-bind="actionTooltipProps" :content="labels.expandRail">
       <button
         type="button"
         class="rail-toggle"
         :aria-label="labels.expandRail"
-        :title="labels.expandRail"
         :aria-expanded="false"
         @click="toggle"
       >
         <PanelLeftOpen :size="16" aria-hidden="true" />
       </button>
+      </ElTooltip>
     </div>
     <div v-else class="rail-brand">
       <PlatformBrandMark :brand="markBrand" />
       <span class="brand-name">{{ brandName }}</span>
+      <ElTooltip v-bind="actionTooltipProps" :content="labels.collapseRail">
       <button
         type="button"
         class="rail-toggle"
         :aria-label="labels.collapseRail"
-        :title="labels.collapseRail"
         :aria-expanded="true"
         @click="toggle"
       >
         <PanelLeftClose :size="16" aria-hidden="true" />
       </button>
+      </ElTooltip>
     </div>
 
     <div class="rail-scroll">
@@ -128,16 +135,19 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
             <a
               v-if="app.href"
               class="rail-row external"
+              :class="{ active: app.built && app.id === activeAppId }"
+              :aria-current="app.built && app.id === activeAppId ? 'page' : undefined"
               :href="app.href"
               target="_blank"
               rel="noopener noreferrer"
-              :title="collapsed ? app.label : undefined"
-              :aria-label="collapsed ? app.label : undefined"
+              :title="app.built ? newTabLabel(app) : collapsed ? app.label : undefined"
+              :aria-label="app.built ? newTabLabel(app) : collapsed ? app.label : undefined"
             >
               <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
               <span v-if="!collapsed" class="rail-label">{{ app.label }}</span>
+              <ExternalLink v-if="app.built && !collapsed" :size="12" class="rail-built-icon" aria-hidden="true" />
               <ExternalLink
-                v-if="!collapsed"
+                v-else-if="!collapsed"
                 class="rail-external"
                 :size="10"
                 :role="labels.opensInNewTab ? 'img' : undefined"
@@ -181,8 +191,8 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
               class="rail-row"
               :class="{ active: app.id === activeAppId }"
               :aria-current="app.id === activeAppId ? 'page' : undefined"
-              :title="collapsed ? app.label : undefined"
-              :aria-label="collapsed ? app.label : undefined"
+              :title="collapsed || app.built ? appLabel(app) : undefined"
+              :aria-label="collapsed || app.built ? appLabel(app) : undefined"
               @click="selectApp(app)"
             >
               <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
@@ -415,6 +425,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   margin: 8px auto;
 }
 .rail-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -479,6 +490,11 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
 }
 .rail-external {
   flex-shrink: 0;
+}
+.rail-built-icon {
+  flex: none;
+  color: var(--el-text-color-secondary);
+  opacity: 0.8;
 }
 .collapsed .rail-row {
   justify-content: center;

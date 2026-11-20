@@ -11,6 +11,7 @@ vi.mock("../../../infrastructure/postgres", () => ({ getPostgresPool: () => ({ q
 vi.mock("../../../infrastructure/postgres-transaction", () => ({ transaction: (action: (client: { query: typeof mocks.query }) => unknown) => action({ query: mocks.query }) }));
 vi.mock("../../product-governance/grants", () => ({ requireProductGrant: mocks.grant, registerProductResource: mocks.register,
   shareProductResource: mocks.share, grantedProductIds: async () => mocks.edits }));
+vi.mock("../../app-builder/access", () => ({ assertAppBuilderAccess: async () => undefined }));
 vi.mock("../definition-stream", () => ({ notifyProductDefinitionChanged: mocks.notify }));
 import { readCurrentPanel, readCurrentProjection, saveCurrentPanel, saveCurrentProjection, validateApplicationPanelReferences } from "../current";
 import type { CurrentProductRow } from "../../../infrastructure/product-current";

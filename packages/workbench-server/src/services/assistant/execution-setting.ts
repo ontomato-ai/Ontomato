@@ -38,6 +38,10 @@ export async function resolveAgentExecution(agent: Pick<AgentRow, "id" | "execut
 export async function readExecutionOptions(credentials: AssistantCredentials, selected: string | null) {
   const query = new URLSearchParams({ pageSize: "1" });
   if (selected !== null) query.set("selected", selected);
+  return queryExecutionOptions(credentials, query);
+}
+
+export async function queryExecutionOptions(credentials: AssistantCredentials, query: URLSearchParams) {
   const response = await backendGet("agent-execution-options", `${config.dataQuery.baseUrl}/platform/agent-execution/options?${query}`, {
     headers: buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey, credentials.headers),
     retries: 1,

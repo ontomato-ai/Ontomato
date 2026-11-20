@@ -60,6 +60,8 @@ export const productPanelReadRequestSchema = z.object({
   memberPath: directPanelMemberPathSchema,
   dataName: z.string().min(1).max(200),
   inputs: runtimeJsonObjectSchema,
+  /** Component-supplied parameter values for this datum, separate from the projection's bound inputs. */
+  runtimeParams: runtimeJsonObjectSchema.optional(),
 }).strict();
 export type ProductPanelReadRequest = z.infer<typeof productPanelReadRequestSchema>;
 
