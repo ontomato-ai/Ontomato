@@ -185,9 +185,9 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     export const panelDefinitionContentSchema = {
       parse,
       safeParse(value) {
-        return value.content.html === "<bad>"
-          ? { success: false, error: { issues: [{ path: ["content", "html"], params: { line: 1, column: 2 }, message: "Rejected by the release parser" }] } }
-          : { success: true, data: value };
+        return typeof value.content.module === "string"
+          ? ok(value)
+          : invalid([{ path: ["content", "module"], message: "Required" }]);
       }
     };
   `;
@@ -280,21 +280,25 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     const manifest = { members: { tasks: { target: { projectionId: "tasks" } } }, state: {}, events: {} };
     await writeFile(join(directory, "panel.json"), JSON.stringify({ manifest }));
     const layout = join(directory, "panel.html");
-    await writeFile(layout, '<panel-member ref="tasks"></panel-member>');
+    const tasksTemplate = '<div id="app"><projection slot="tasks"></projection></div>';
+    await writeFile(layout, tasksTemplate);
+    const moduleFile = join(directory, "panel.mjs");
+    await writeFile(moduleFile, panel.content.module);
     const checked = await run("panel", "check", directory);
     assert.deepEqual(JSON.parse(checked.stdout), { status: "valid", version: sdkVersion, digest: release.digest, unchecked: [] });
     assert.deepEqual(new Map(requests.splice(0).map(([method, url]) => [url, method])), new Map([
       ["/api/apps-sdk/current", "GET"], [`${sdkPath}/node/panel-check.mjs`, "GET"],
       [`${sdkPath}/components.json`, "GET"], ["/api/app-builder/type-table", "GET"], [projectionPath, "GET"],
     ]));
-    await writeFile(layout, "<bad>");
-    await assert.rejects(run("panel", "check", directory), error => error.stderr.includes(`${layout}:1:2: Rejected by the release parser`));
+    await rm(moduleFile);
+    await assert.rejects(run("panel", "check", directory), error => error.stderr.includes("panel.json:content.module: Required"));
+    await writeFile(moduleFile, panel.content.module);
     assert.equal(requests.some(([method, url]) => method !== "GET" || url === projectionPath), false);
     requests.length = 0;
     const draft = join(directory, "manager");
     const scaffold = await run("panel", "scaffold", "platform:AgentDefinition", draft, "--id", "example-agent-management", "--operation", "platform:AgentDefinition.save");
     assert.equal(JSON.parse(scaffold.stdout).entry, "/applications/example-agent-management/manage");
-    for (const name of ["panel.html", "panel.json", "registration.json"]) {
+    for (const name of ["panel.html", "panel.mjs", "panel.json", "registration.json"]) {
       const sample = await readFile(join("agent-skills/ontomato-app-builder/examples/agent-management", name), "utf8");
       assert.equal(await readFile(join(draft, name), "utf8"), sample);
     }
@@ -309,11 +313,11 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.deepEqual(queries.rows.params, {});
     assert.deepEqual(queries.record.params, {});
     assert.deepEqual(queries.counts.params, { by: { literal: "status" } });
-    assert.deepEqual(reviewManifest.members.list.outputs.search, { state: "search" });
-    assert.deepEqual(reviewManifest.members.list.inputs, { status: { state: "status" } });
-    assert.deepEqual(reviewManifest.members.tabs.outputs.value, { state: "status" });
+    assert.deepEqual(reviewManifest.members.list.inputs, {
+      selected: { state: "selected" }, checked: { state: "checked" }, search: { state: "search" }, status: { state: "status" },
+    });
+    assert.deepEqual(reviewManifest.members.tabs.inputs.value, { state: "status" });
     assert.deepEqual(reviewManifest.members.detail.inputs.search, { state: "search" });
-    assert.deepEqual(reviewManifest.members.list.outputs.checked, { state: "checked" });
     assert.deepEqual(reviewManifest.members.action1.inputs, { review: { state: "selected" } });
     assert.deepEqual(reviewManifest.members.batch2.inputs, { review: { state: "checked" } });
     const reviewButton = reviewProjections.find(({ id }) => id.endsWith("-batch2")).input;
@@ -323,7 +327,9 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     } });
     assert.deepEqual(reviewButton.data, {});
     const reviewLayout = await readFile(join(review, "panel.html"), "utf8");
-    assert(reviewLayout.indexOf('ref="batch2"') < reviewLayout.indexOf('ref="list"'));
+    assert(reviewLayout.indexOf('slot="batch2"') < reviewLayout.indexOf('slot="list"'));
+    const reviewSources = JSON.parse(await readFile(join(review, "registration.json"), "utf8")).panels[0].input.content;
+    assert.deepEqual(reviewSources, { html: reviewLayout, module: await readFile(join(review, "panel.mjs"), "utf8") });
     const reviewMaterial = join(review, "registration.json");
     await run("panel", "check", review, "--material", reviewMaterial);
     const reviewPanel = join(review, "panel.json");
@@ -344,7 +350,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
       error.stderr.includes(`projection ${batch.id}: operation approve (reviews.undeclared) is not declared in the type table`));
     requests.length = 0;
-    await writeFile(layout, '<panel-member ref="tasks"></panel-member>');
+    await writeFile(layout, tasksTemplate);
     const reference = async id => {
       manifest.members.tasks.target.projectionId = id;
       await writeFile(join(directory, "panel.json"), JSON.stringify({ manifest }));
@@ -417,7 +423,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     inlineRecords.set(inlineProjectionPath, { ...inlineRecords.get(inlineProjectionPath), name: "Renamed", revision: 4 });
     savedSource.manifest.members = { renamedTasks: savedSource.manifest.members.tasks };
     await writeFile(descriptor, JSON.stringify(savedSource));
-    await writeFile(layout, '<panel-member ref="renamedTasks"></panel-member>');
+    await writeFile(layout, '<div id="app"><projection slot="renamedTasks"></projection></div>');
     await writeFile(registration, JSON.stringify({ panels: [{ ...item, mode: "update", revision: 1 }] }));
     await run("panel", "register", directory);
     assert.deepEqual(requests.splice(0).filter(([method]) => method === "PUT").map(([, url, body]) => [url, body.revision]), [

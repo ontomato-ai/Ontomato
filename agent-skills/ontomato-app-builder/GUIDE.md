@@ -31,7 +31,7 @@ For instances of customer ontology classes, bind the detail to the owner's `reco
 | `sdk read components.json` | Official components and ports in the current SDK |
 | `panel projection <id>`, `panel get <id>` | Authorized current projection or panel, including its revision |
 | `panel applications`, `panel uses <applicationId>` | Java navigation catalog and visible use relations |
-| `panel scaffold <type> <new directory> [--id <application id>] [--operation <id>] [--batch <id>]` | Draft a management page from the type table. Select single and batch buttons by owner operation ID. |
+| `panel scaffold <type> <new directory> [--id <application id>] [--operation <id>] [--batch <id>]` | Draft a Vue management panel from the type table. Select single and batch buttons by owner operation ID. |
 | `panel check <directory> [--material <file>] [--sdk-dir <release directory>]` | Check the layout and declaration with the SDK parser, and resolve registered references using the current viewer's access. With an installed release directory, check offline and list unresolved references. |
 | `panel register <directory> [--material <file>]` | Register a panel from its workspace sources, including its inline projections |
 | `panel register <JSON or @file>` | Register selected current definitions and application uses under the author's permissions |
