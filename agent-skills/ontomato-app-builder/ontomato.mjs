@@ -3,6 +3,8 @@ import fs from "node:fs";
 import { analystCommand } from "./client.mjs";
 import { authenticate } from "./identity.mjs";
 import { panelRegistrationClient } from "./panel-registration.mjs";
+import { currentSdkClient, installedPanelSdk } from "./current-sdk.mjs";
+import { checkPanelWorkspace } from "./panel-check.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -312,6 +314,17 @@ async function sdkCommand(api, args) {
   console.log(text);
 }
 
+async function checkCurrentPanel(api, directory, materialPath) {
+  const sdk = currentSdkClient({ workbenchUrl: api.envUrl, headers: headers(api) });
+  const release = await sdk.current();
+  const [checks, catalogue] = await Promise.all([sdk.check(release), sdk.components(release)]);
+  const lookup = async (kind, id) => {
+    const answer = await workbench(api, "GET", `/product-${kind}s/${encodeURIComponent(id)}`);
+    return answer[kind];
+  };
+  return print(await checkPanelWorkspace(directory, { checks, catalogue, version: release.version, digest: release.digest, lookup, materialPath }));
+}
+
 async function panelCommand(api, workspaceId, [command, ...args]) {
   if (command === "applications" && args.length === 0) {
     return printData(await requestJson(api, "GET", "/platform/applications?purpose=navigation"));
@@ -332,7 +345,7 @@ async function panelCommand(api, workspaceId, [command, ...args]) {
     const collection = command === "projection" ? "projections" : "panels";
     return print(await workbench(api, "GET", `/product-${collection}/${encodeURIComponent(args[0])}`));
   }
-  die("panel requires applications, projection <id>, get <id>, uses <applicationId>, preview <working|commit> [--workspace <id>], or register <json|@file>");
+  die("panel requires applications, projection <id>, get <id>, uses <applicationId>, preview <working|commit> [--workspace <id>], check <directory>, or register <json|@file>");
 }
 
 async function functionCommand(api, [command, ...args]) {
@@ -425,12 +438,13 @@ function usage() {
   die(`usage: ontomato.mjs [--lang <tag>] <command>
   test start|status|stop [--workspace <id>] [--sample test-data/sample.json]
   sdk current
-  sdk read [<exact version>] <relative path, e.g. docs/index.md>
+  sdk read <relative path, e.g. docs/index.md>
   panel applications
   panel projection <id>
   panel get <id>
   panel uses <applicationId>
   panel preview <working|commit> [--workspace <id>]
+  panel check <directory> [--material <registration file>] [--sdk-dir <installed SDK release directory>]
   panel register <json|@file>
   function list [<filter json|@file>]
   function get <id>
@@ -482,6 +496,14 @@ async function main() {
   const workspaceId=takeOption(argv,"--workspace") ?? process.env.ONTOMATO_WORKSPACE_ID;
   const cmd = argv[0];
   if (!cmd || cmd === "--help") return usage();
+  const checkingPanel = cmd === "panel" && argv[1] === "check";
+  const sdkDirectory = checkingPanel ? takeOption(argv, "--sdk-dir") : null;
+  const materialPath = checkingPanel ? takeOption(argv, "--material") ?? undefined : undefined;
+  if (checkingPanel && argv.length !== 3) die("panel check requires one workspace directory");
+  if (sdkDirectory !== null) {
+    const sdk = await installedPanelSdk(sdkDirectory);
+    return print(await checkPanelWorkspace(argv[2], { ...sdk, materialPath }));
+  }
   const platformAuthoring = ["action", "metric-view"].includes(cmd) && ["context", "generate"].includes(argv[1])
     && isPlatformAuthoring();
   const cfg = loadConfig();
@@ -501,6 +523,7 @@ async function main() {
     await bindTestTarget(api,workspaceId);
   }
   if (cmd === "sdk") return sdkCommand(api, argv.slice(1));
+  if (checkingPanel) return checkCurrentPanel(api, argv[2], materialPath);
   if (cmd === "panel") return panelCommand(api, workspaceId, argv.slice(1));
   if (cmd === "workspace") return workspaceCommand(api, argv.slice(1));
   if (cmd === "product") return productCommand(api, argv.slice(1));
