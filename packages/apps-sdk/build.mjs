@@ -69,7 +69,7 @@ const libraryVersion = (name) => JSON.parse(readFileSync(require.resolve(`${name
 const CHECK_EXPORTS = [
   "parsePanelLayout", "PanelLayoutError", "panelManifestSchema", "panelDefinitionContentSchema", "productProjectionInputSchema",
   "registerProductPanelRequestSchema", "registerProductProjectionRequestSchema", "directReadDeclaration", "platformObjectTypes",
-  "panelReadParameterSchemas", "panelReadResultSchemas",
+  "panelReadParameterSchemas", "panelReadResultSchemas", "appsSdkComponentCatalogSchema",
 ];
 
 /**
@@ -95,6 +95,7 @@ async function buildCheck(outDir) {
   const check = await import(pathToFileURL(join(outDir, CHECK)).href);
   const missing = CHECK_EXPORTS.filter((name) => !(name in check));
   if (missing.length) throw new Error(`${CHECK} does not export ${missing.join(", ")}`);
+  return check;
 }
 
 async function main() {
@@ -148,18 +149,26 @@ async function main() {
     },
   });
 
-  await buildCheck(outDir);
+  const check = await buildCheck(outDir);
   mkdirSync(join(outDir, "docs"), { recursive: true });
   writeFileSync(join(outDir, "docs/index.md"), render(readFileSync(join(HERE, "resources/docs/index.md"), "utf8"), version));
   const components = componentMetadata({ tsconfig: join(HERE, "tsconfig.json"), source: join(HERE, "src/catalogue.ts") });
   const publicEntries = ENTRIES.filter((entry) => entry.specifier.startsWith("@ontomato/"));
   checkCatalogue(publicEntries, components, HERE, join(HERE, "tsconfig.json"));
-  // Each component's meaning is its declaration's; its ports are read from its source, as the reference reads them.
+  // Each component's meaning, configuration and data are its declaration's; its ports are read from its source, as the
+  // reference reads them. The configuration a projection sets is the component's props, kept apart from the inputs a
+  // placement supplies at run time. The contract's own schema accepts the catalogue before it ships, so a component this
+  // version cannot describe, or a datum naming a read result no owner registers, fails the build rather than the reader.
   const ports = componentPorts({ root: HERE, tsconfig: join(HERE, "tsconfig.json"), entries: publicEntries });
-  writeFileSync(join(outDir, "components.json"), `${JSON.stringify({
+  const catalogue = check.appsSdkComponentCatalogSchema.parse({
     version,
-    components: components.map(({ metadata }) => ({ ...metadata, ports: ports.get(`${metadata.module}#${metadata.exportName}`) })),
-  }, null, 2)}\n`);
+    components: components.map(({ metadata }) => {
+      const declared = ports.get(`${metadata.module}#${metadata.exportName}`);
+      // A component with no props sets nothing: it declares no configuration rather than an empty one.
+      return { ...metadata, ...(declared.props.length ? { config: declared.props } : {}), ports: declared };
+    }),
+  });
+  writeFileSync(join(outDir, "components.json"), `${JSON.stringify(catalogue, null, 2)}\n`);
   writeFileSync(join(outDir, "docs/components.md"), render(catalogueMarkdown(version, components), version));
   writeFileSync(join(outDir, "docs/reference.md"), [
     `# @ontomato/sdk ${version}: reference`,
