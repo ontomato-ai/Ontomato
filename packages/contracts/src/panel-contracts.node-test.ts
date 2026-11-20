@@ -323,6 +323,15 @@ test("model reads and operations use their owner's fixed signatures", async () =
     assert.equal(directReadDeclaration(projection, projection.data.form)?.result, "panelFormDescription");
     assert.ok(platformObjectTypes[type].operations?.includes(`${type}.save`));
   }
+  const classPicker = productProjectionInputSchema.parse({
+    ...base, componentId: "@ontomato/sdk:ReferencePicker", inputs: { values: { kind: "json" } },
+    data: {
+      options: { source: { type: platformType(OBJECT_TYPE) }, read: "options", params: {} },
+      selected: { source: { type: platformType(OBJECT_TYPE) }, read: "resolve", params: { values: { input: "values" } } },
+    },
+  });
+  assert.equal(directReadDeclaration(classPicker, classPicker.data.options)?.result, "panelOptionList");
+  assert.equal(directReadDeclaration(classPicker, classPicker.data.selected)?.result, "panelOptionList");
   for (const operation of ["objectTypes.delete", "attributes.delete", "relationships.delete", "attributes.setPrimaryKey"]) {
     const projection = productProjectionInputSchema.parse({
       ...base, componentId: "@ontomato/sdk:OperationButton",

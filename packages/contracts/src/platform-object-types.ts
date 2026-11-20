@@ -98,7 +98,8 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [MCP_SERVICE_OPTION]: describeType("mcpServiceOption"),
   [OBJECT_TYPE]: {
     ...describeType("objectType", "fact"),
-    reads: { ...modelReads, ...metadataList },
+    // Pickers choose a class by its name: the attribute catalog's owner filter and the graph's path ends.
+    reads: { ...modelReads, ...metadataList, ...referenceReads },
     operations: [`${OBJECT_TYPE}.save`, DELETE_OBJECT_TYPE],
   },
   [ATTRIBUTE]: {
