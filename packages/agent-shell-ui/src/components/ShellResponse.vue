@@ -34,11 +34,16 @@ const target = computed(() =>
     : null,
 );
 const hasProcess = computed(() => props.item.process.length > 0);
-/** The work this reply delegated: its retrievals and their quality checks; its entry opens the task list here. */
+/** The work this reply delegated and the checks of the data it cited; its entry opens the task list here. */
 const taskCount = computed(() =>
   props.item.process.filter((block) => block.kind === "task").length + props.item.reviews.length);
-/** The process stays open while the run works and folds to one line once it stops; a stopped run mounts folded. */
-const { open, toggle, reveal } = useAutoFold(() => props.item.running);
+/**
+ * The process stays open while the run works, or while a retrieval it delegated still works after the run stopped to
+ * wait for it, and folds to one line once both ended; a finished reply mounts folded.
+ */
+const delegating = computed(() => props.item.process.some((block) =>
+  block.kind === "task" && (block.task.status === "running" || block.task.status === "starting")));
+const { open, toggle, reveal } = useAutoFold(() => props.item.running || delegating.value);
 
 /** A task the reader picked from the task list: its card is in the process, which opens; the conversation scrolls to it. */
 watch(() => shell.taskFocus?.value, (focus) => {
@@ -220,8 +225,8 @@ async function submit(value: ShellFeedbackValue) {
         <button type="submit" class="primary" :disabled="!reason.trim() || feedbackBusy">{{ labels.submit }}</button>
       </div>
     </form>
-    <!-- Reviews by other parties come after the answer and its actions, never inside them. -->
-    <div v-if="item.reviews.length" class="reviews">
+    <!-- Reviews by other parties come after the finished answer and its actions, never inside them or before them. -->
+    <div v-if="!item.running && item.answerMessageId && item.reviews.length" class="reviews">
       <QualityReview
         v-for="review in item.reviews"
         :key="review.task.id"

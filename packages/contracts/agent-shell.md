@@ -156,12 +156,13 @@ Lookup is always host override → shell default → generic file card or step.
   thinking stays in the process. A run stopped without an answer (length, error,
   aborted) keeps all its text in the process, with the stop shown beside it.
   Copy, feedback and the `message-actions` slot target that answer message. After the
-  answer and its actions come the quality reviews of the reply's data, one per checked
-  branch, signed as another party's and folded to one line (score and first sentence);
-  they update as checks settle, whether or not the run or its process is open.
+  answer and its actions come the quality reviews of the data the answer cited, one per
+  retrieval, signed as another party's and folded to one line (score and first sentence);
+  they appear once the reply has its answer and update as checks settle. The process stays
+  open while a retrieval it delegated still runs after the run stopped to wait for it.
 - **Tasks**: a host that serves the [task routes](agent-tasks.md) sets `tasks` on its client
-  and supplies `labels.tasks`. A retrieval card names its executor, each branch's outcome
-  and, while the retriever runs, its live thinking, notes and steps, followed in their own
+  and supplies `labels.tasks`. A retrieval card names its executor, its outcome with the
+  datasets it delivered and, while the retriever runs, its live thinking, notes and steps, followed in their own
   state with the same reducer; its files show as names only. The conversation's corner opens
   the reply's task list, which leads to a card or a review.
 - **Artifacts**: `outputs/` image syntax renders inline, link syntax renders a

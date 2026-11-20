@@ -9,7 +9,7 @@ import { shellContextKey, type ShellContext } from "../context";
 import type { ResponseItem } from "../view";
 
 const task: ChannelAgentTask = {
-  kind: "agent",title:"Sales?",agentRef:{providerId:"ontology",agentId:"retrieval"},sessionRef:{providerId:"ontology",sessionId:"66666666-6666-4666-8666-666666666666"},runId:"88888888-8888-4888-8888-888888888888",requestedBy:{session:{providerId:"workbench",sessionId:"11111111-1111-4111-8111-111111111111"},runId:"22222222-2222-4222-8222-222222222222"},results:[], id: "77777777-7777-4777-8777-777777777777", retrieval:{question:"Sales?",decisionRevision:0,branches:[]}, parentTaskId: null,
+  kind: "agent",title:"Sales?",agentRef:{providerId:"ontology",agentId:"retrieval"},sessionRef:{providerId:"ontology",sessionId:"66666666-6666-4666-8666-666666666666"},runId:"88888888-8888-4888-8888-888888888888",requestedBy:{session:{providerId:"workbench",sessionId:"11111111-1111-4111-8111-111111111111"},runId:"22222222-2222-4222-8222-222222222222"},results:[], id: "77777777-7777-4777-8777-777777777777", retrieval:{question:"Sales?",decisionRevision:0,datasets:[]}, parentTaskId: null,
   root: { sessionId: "22222222-2222-4222-8222-222222222222", runId: "run" }, status: "completed", error: null,
   createdAt: null, process: { mode: "none" },
 };

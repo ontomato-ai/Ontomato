@@ -105,7 +105,7 @@ class AgentChannelBoundaryTest {
     verifyNoInteractions(identities);
   }
 
-  @Test void retrievalReadSummarizesBothBranchesAndExportsOriginalDatasetBytes() throws Exception {
+  @Test void retrievalReadSummarizesTheDeliveryAndExportsOriginalDatasetBytes() throws Exception {
     var retrieval=mock(OntologyRetrievalService.class);var tasks=mock(RetrievalTasks.class);
     var labels=mock(io.ontomato.dataengine.service.LangService.class);
     var controller=new AgentChannelController(callers,directory,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class),retrieval,tasks,mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),labels,mock(io.ontomato.dataengine.service.RuntimeCodeClient.class));
@@ -114,10 +114,9 @@ class AgentChannelBoundaryTest {
     when(callers.restore(actor,"a",false)).thenReturn(new AgentCaller.Actor(RUN,new io.ontomato.dataengine.service.QueryAccessService.GrantUser("user","a"),1000L));
     when(store.session(SESSION,owner)).thenReturn(JSONObject.of("agent_id",OntologyAgentStore.RETRIEVER));
     when(store.run(SESSION,RUN,owner)).thenReturn(JSONObject.of("language","zh-CN","runtime_admitted",false));
-    when(tasks.read(SESSION,RUN,owner)).thenReturn(JSONObject.of("status","completed","settled",true,"quality",java.util.List.of()));
+    when(tasks.read(SESSION,RUN,owner)).thenReturn(JSONObject.of("status","completed","settled",true));
     when(retrieval.deliveries(SESSION,RUN,owner)).thenReturn(java.util.List.of(
-      JSONObject.of("source","binding","data",JSONObject.of("answer","","datasets",java.util.List.of(JSONObject.of("id",SESSION,"rowCount",5)))),
-      JSONObject.of("source","retriever","data",JSONObject.of("answer","## Full answer\n|学院|人数|","datasets",java.util.List.of(JSONObject.of("id",RUN,"rowCount",5))))));
+      JSONObject.of("data",JSONObject.of("answer","## Full answer\n|学院|人数|","datasets",java.util.List.of(JSONObject.of("id",SESSION,"rowCount",5),JSONObject.of("id",RUN,"rowCount",5))))));
     when(labels.get("zh-CN","AgentChannel.retrieval.completed")).thenReturn("取数已完成：{0} 个数据集、{1} 行。此通知表示结果已交付，不表示文件已在用户界面展示。");
     var input=JSONObject.of("actor",actor,"execution",JSONObject.of("session",JSONObject.of("providerId","ontology","sessionId",SESSION),"runId",RUN));
     var request=new org.springframework.mock.web.MockHttpServletRequest();request.addHeader("X-Domain-Id","a");
@@ -125,7 +124,7 @@ class AgentChannelBoundaryTest {
     // The requester reads counts, never bare file names it could mistake for something already shown; the files stay in files[].
     assertEquals("取数已完成：2 个数据集、10 行。此通知表示结果已交付，不表示文件已在用户界面展示。",result.getString("summary"));
     var files=result.getJSONArray("files");assertEquals(SESSION+".dataset.json",files.getJSONObject(0).getString("name"));
-    byte[] original="{\"execution\":{\"receiptId\":\"binding-receipt\"},\"rows\":[[0,false,null]]}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    byte[] original="{\"execution\":{\"receiptId\":\"retriever-receipt\"},\"rows\":[[0,false,null]]}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
     when(retrieval.datasetContent(SESSION,SESSION,owner)).thenReturn(original);
     input.put("fileId",SESSION);
     assertArrayEquals(original,(byte[])((org.springframework.http.ResponseEntity<?>)controller.read(input,request)).getBody());

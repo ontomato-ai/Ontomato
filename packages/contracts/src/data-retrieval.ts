@@ -51,14 +51,6 @@ const historicalRecipeSchema = z.union([
     executedCode: z.string().optional(), sha256: z.string().optional() }).strict(),
 ]);
 export const recipeSchema = z.union([packageRecipeSchema, metricRecipeSchema, historicalRecipeSchema]);
-export const metricUseSchema = z
-  .object({
-    id: z.string(),
-    revision: z.string(),
-    use: z.enum(["direct", "derived", "not_used"]),
-    reason: z.string().min(1),
-  })
-  .strict();
 export const selfCheckSchema = z
   .object({
     scope: z.string(),
@@ -66,16 +58,6 @@ export const selfCheckSchema = z
     grain: z.string(),
     denominator: z.string(),
     nullGroups: z.string(),
-    comparisons: z.array(
-      z
-        .object({
-          metricId: z.string(),
-          comparable: z.boolean(),
-          explanation: z.string(),
-          executionRef: z.string().nullable(),
-        })
-        .strict(),
-    ),
   })
   .strict();
 export const datasetPayloadSchema = z
@@ -100,7 +82,6 @@ export const datasetPayloadSchema = z
     truncation: truncationSchema.nullable(),
     assumptions: z.array(z.string()),
     decisionIds: z.array(id),
-    metricUses: z.array(metricUseSchema),
     selfCheck: selfCheckSchema.nullable(),
     execution: z.object({ receiptId: id, executedAt: z.string() }).strict(),
   })
@@ -148,41 +129,24 @@ export const retrievalInputSchema = z
     interaction: z.enum(["resumable", "non_interactive"]).default("resumable"),
   })
   .strict();
-export const bindingRetrievalSchema = z.object({
-  status: z.enum(["running", "completed", "cancelled", "interrupted"]),
-  error: z.string().nullable(),
-  datasets: z.array(z.object({ id, sha256: z.string(), title: z.string() })),
-});
-/** A branch's quality check named by its task; its status and conclusion are read from the session's tasks. */
-export const qualityTaskReferenceSchema = z.object({ taskId: id, source: z.enum(["binding", "retriever"]) }).strict();
 const retrievalRunStateSchema = z.object({
   status: z.enum(["running", "stopped"]), stopReason: runtimeStopReasonSchema.nullable(), errorMessage: z.string().nullable(),
 });
 export const retrievalDeliverySchema = z.object({
-  cursor: z.number().int().positive(), runId: id, source: z.enum(["binding", "retriever"]),
+  cursor: z.number().int().positive(), runId: id,
   data: z.object({
     answer: z.string(), run: retrievalRunStateSchema.nullable(), error: z.string().optional(),
     runtimeSessionId: id.optional(), runtimeRunId: id.optional(),
     datasets: z.array(z.object({ id, sha256: z.string(), title: z.string(), rowCount: z.number().int().nonnegative(),
-      truncation: truncationSchema.nullable(), binding: runtimeJsonObjectSchema.optional() })),
+      truncation: truncationSchema.nullable() })),
   }),
 });
-export const retrievalPollSchema = z.object({
-  bindings: bindingRetrievalSchema,
-  qualityTasks: z.array(qualityTaskReferenceSchema),
-  id, roundId: id, cursor: z.number().int().nonnegative(), decisionRevision: z.number().int(),
-  runtimeSessionId: id.nullable(), runtimeRunId: id.nullable(), run: retrievalRunStateSchema.nullable(),
-  pending: z.object({ retriever: z.boolean(), bindings: z.boolean() }), deliveries: z.array(retrievalDeliverySchema),
-});
-export type RetrievalPoll = z.infer<typeof retrievalPollSchema>;
-
 export const retrievalSnapshotSchema = z.object({
-  bindings: bindingRetrievalSchema.optional(),
   retrieverPending: z.boolean().optional(),
-  bindingPending: z.boolean().optional(),
   admissionError: z.string().nullable().optional(),
   createdAt: z.string().optional(),
-  qualityTasks: z.array(qualityTaskReferenceSchema),
+  /** Delivered formal outputs; a metric run's only datasets, since it has no runtime files. */
+  outputIds: z.array(id),
   id,
   revision: z.number().int(),
   runtimeSessionId: id.nullable(),
@@ -208,11 +172,8 @@ export const retrievalAnswersSchema = z
     message: z.string().trim().min(1),
   })
   .strict();
-export const submissionRecipeSchema = z.union([
-  packageRecipeSchema.omit({ packageSha256: true, executionInputSha256: true }),
-  z.object({ kind: z.literal("metric"), metricId: z.string(), revision: z.string(),
-    parameters: runtimeJsonObjectSchema, bindingId: z.string().optional() }).strict(),
-]);
+/** The retriever submits its own query logic; a metric delivery is a separate host entrance. */
+export const submissionRecipeSchema = packageRecipeSchema.omit({ packageSha256: true, executionInputSha256: true });
 export const prepareDatasetSchema = z
   .object({
     recipe: submissionRecipeSchema,
@@ -220,7 +181,6 @@ export const prepareDatasetSchema = z
     title: z.string().min(1),
     question: z.string().min(1).optional(),
     assumptions: z.array(z.string()),
-    metricUses: z.array(metricUseSchema),
     selfCheck: selfCheckSchema,
     decisionIds: z.array(id).optional(),
   })
@@ -228,6 +188,20 @@ export const prepareDatasetSchema = z
     if (data.sourceAnalysis) context.addIssue({ code: z.ZodIssueCode.custom, message: "Sources are derived from the query package" });
   });
 export type DatasetPayload = z.infer<typeof datasetPayloadSchema>;
+/**
+ * Decode a dataset file that is already on disk. Two historical fields are dropped before the current read-only view
+ * applies: files written before the cutover carry metric uses and comparison lists that nothing reads today.
+ */
+export function storedDataset(value: unknown): DatasetPayload {
+  const current: Record<string, unknown> = { ...(value as Record<string, unknown>) };
+  delete current.metricUses;
+  const check = current.selfCheck;
+  if (check && typeof check === "object" && "comparisons" in check) {
+    const { comparisons: _comparisons, ...rest } = check as Record<string, unknown>;
+    current.selfCheck = rest;
+  }
+  return datasetPayloadSchema.parse(current);
+}
 export type RetrievalInput = z.infer<typeof retrievalInputSchema>;
 export type RetrievalSnapshot = z.infer<typeof retrievalSnapshotSchema>;
 

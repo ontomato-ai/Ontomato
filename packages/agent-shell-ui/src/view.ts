@@ -16,11 +16,11 @@ export type ProcessBlock =
   | { kind: "input"; key: string; messageId: string; text: string; source: "user"; replyTo?: string; runId: string; final: true }
   | { kind: "task"; key: string; task: ChannelAgentTask };
 
-/** Another party's review of the reply's data: one quality check of one retrieval branch. */
+/** Another party's review of the reply's data: one quality check of the datasets the reply cited from one retrieval. */
 export interface ResponseReview {
   task: QualityTask;
   result: QualityResult | null;
-  /** The checked datasets, as the parent retrieval delivered them. */
+  /** The checked datasets, by the titles their delivery gave them. */
   datasets: { id: string; title: string }[];
 }
 
@@ -45,7 +45,7 @@ export interface ResponseItem {
   /** The message the runtime named as the run's answer: the body, and the copy, feedback and action target. */
   answerMessageId: string | null;
   answerText: string;
-  /** Quality reviews of the data this reply delegated for; shown after the answer, never part of it. */
+  /** Quality reviews of the data this reply's answer cited; shown after the answer, never part of it. */
   reviews: ResponseReview[];
   /** The run's start and stop times in ms, for the elapsed-time line. */
   startedAt: number | null;
@@ -74,8 +74,8 @@ function userText(content: string | { type: string; text?: string }[]): string {
 
 /**
  * Projects runtime messages into user turns and assistant responses in chronological order, with the tasks each reply
- * delegated: a retrieval joins its reply's process before the first message that began after it, a quality check is
- * a review of that reply.
+ * delegated: a retrieval joins its reply's process before the first message that began after it. A quality check is a
+ * review of the reply that cited the checked data, which may be a later reply than the one that delegated it.
  */
 export function conversationItems(state: ConversationState, tasks: AgentTasksSnapshot | null = null): ConversationItem[] {
   const items: ConversationItem[] = [];
@@ -87,12 +87,10 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
       retrievals.set(task.root.runId, [...(retrievals.get(task.root.runId) ?? []), task]);
       continue;
     }
-    const parent = tasks!.tasks.find((candidate) => candidate.id === task.parentTaskId);
-    const delivered = parent?.kind === "agent" && parent.retrieval ? parent.retrieval.branches.flatMap((branch) => branch.datasets) : [];
     reviews.set(task.root.runId, [...(reviews.get(task.root.runId) ?? []), {
       task,
       result: tasks!.qualityResults.find((result) => result.taskId === task.id) ?? null,
-      datasets: task.checks.datasetIds.map((id) => ({ id, title: delivered.find((dataset) => dataset.id === id)?.title ?? id })),
+      datasets: task.checks.datasets.map((dataset) => ({ id: dataset.id, title: dataset.title ?? dataset.id })),
     }]);
   }
   /** Places the reply's retrievals that started before `until` (all remaining ones without it). */

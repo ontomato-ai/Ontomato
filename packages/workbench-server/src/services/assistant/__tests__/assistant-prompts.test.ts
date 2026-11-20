@@ -47,12 +47,19 @@ describe("default assistant prompts", () => {
     expect(effectiveSystemPrompt({kind,system_prompt:customized})).toBe(customized);
   });
 
-  it("the product analyst skill preserves metadata commands and uses native delegation", () => {
+  it("the product analyst skill delegates natively, reuses a fitting metric and rests while the retriever works", () => {
     const skill=readFileSync(path.resolve("../../agent-skills/ontomato-analyst-assistant/SKILL.md"),"utf8");
     expect(skill).toContain('op: "list"');expect(skill).toContain('op: "start"');expect(skill).toContain('op: "read"');
     expect(skill).toContain("notification");
-    for(const command of ["dataset-desc","classes","schema <class>...","relationships <class>...","metrics <question>","knowledge <question>"])
+    for(const command of ["dataset-desc","classes","schema <class>...","relationships <class>...","knowledge <question>",
+      "recall-metrics \"<complete question>\"","run-metric <id> --revision"])
       expect(skill).toContain(command);
+    // The old substring lookup is gone; the retriever and the metric recall start in the same step.
+    expect(skill).not.toMatch(/`metrics <question>/);
+    expect(skill).toMatch(/In the same step, start the retriever[\s\S]*then run `recall-metrics/);
+    expect(skill).toMatch(/end this turn\. Do not read, poll or sleep/);
+    expect(skill).not.toMatch(/progress check|binding result|Both branches/i);
+    expect(skill).toMatch(/Cite every dataset the conclusion relies\s+on/);
     expect(skill).toContain("The host supplies ONTOMATO_ONTOLOGY_URL");
     expect(skill).toContain('op: "cancel"');
     expect(skill).not.toMatch(/node[^\r\n`]*\bagent\b|--follow|--files|--reply-to|retriever-cancel/);

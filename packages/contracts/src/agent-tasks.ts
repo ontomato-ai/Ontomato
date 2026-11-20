@@ -1,16 +1,16 @@
 import { z } from "zod";
 import { runtimeMessageRecordSchema } from "./agent-runtime";
 import { agentRefSchema, agentSessionRefSchema, agentExecutionRefSchema, agentNotificationSchema, agentPendingQuestionSchema } from "./agent-channel";
-import { agentTaskStatusSchema,agentTaskErrorSchema,retrievalBranchSchema,retrievalBranchSourceSchema,qualityResultSchema,retrievalExtensionSchema } from "./agent-task-results";
-export { agentTaskStatusSchema,agentTaskErrorSchema,retrievalBranchSchema,retrievalBranchSourceSchema,qualityResultSchema } from "./agent-task-results";
+import { agentTaskStatusSchema,agentTaskErrorSchema,qualityChecksSchema,qualityResultSchema,retrievalExtensionSchema } from "./agent-task-results";
+export { agentTaskStatusSchema,agentTaskErrorSchema,qualityResultSchema } from "./agent-task-results";
 import { runtimeIdSchema, runtimeTimestampSchema } from "./agent-runtime-values";
 
 /**
- * Work a reply delegated: agent executions and the quality jobs their business branches scheduled.
- * Each projection is read from its existing owner; nothing here is stored as a task.
+ * Work in a conversation: agent executions under the reply that delegated them, and quality checks under the reply that
+ * cited the checked outputs. Each projection is read from its existing owner; nothing here is stored as a task.
  */
 const id = runtimeIdSchema;
-/** The reply that delegated the task: the host's conversation and the run that is its reply. */
+/** The reply a task belongs to: the host's conversation and the run that is its reply. */
 export const agentTaskRootSchema = z.object({ sessionId: id, runId: id }).strict();
 /** A task's own agent run, readable while and after it runs; none before the run was admitted, or for a job. */
 export const agentTaskProcessSchema = z.discriminatedUnion("mode", [
@@ -29,11 +29,11 @@ const taskFields = {
 export const qualityTaskSchema = z.object({
   ...taskFields,
   kind: z.literal("quality"),
-  /** The retrieval task whose branch was checked. */
-  parentTaskId: id,
+  /** The retriever task that delivered the checked outputs; null for a metric the assistant ran itself. */
+  parentTaskId: id.nullable(),
   process: z.object({ mode: z.literal("none") }).strict(),
-  /** What was checked: one branch of the parent round and the datasets it delivered. */
-  checks: z.object({ source: retrievalBranchSourceSchema, datasetIds: z.array(id) }).strict(),
+  /** The formal outputs the reply cited from one retrieval; uncited outputs of that retrieval are not checked. */
+  checks: qualityChecksSchema,
 }).strict();
 export const channelAgentTaskSchema = z.object({
   ...taskFields, kind: z.literal("agent"), title: z.string(),
@@ -65,7 +65,6 @@ export const agentTasksFrameSchema = agentTasksSnapshotSchema.extend({
 
 export type AgentTaskStatus = z.infer<typeof agentTaskStatusSchema>;
 export type AgentTaskError = z.infer<typeof agentTaskErrorSchema>;
-export type RetrievalBranch = z.infer<typeof retrievalBranchSchema>;
 export type QualityTask = z.infer<typeof qualityTaskSchema>;
 export type AgentTask = z.infer<typeof agentTaskSchema>;
 export type QualityResult = z.infer<typeof qualityResultSchema>;

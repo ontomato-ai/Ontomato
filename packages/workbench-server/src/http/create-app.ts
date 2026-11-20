@@ -4,7 +4,7 @@ import { createHealthRouter } from "../api/routes/health";
 import { appBuilderRouter } from "../api/routes/app-builder";
 import { workspacePreviewRouter, workspaceRouter, mountHostedStatic } from "../api/routes/workspaces";
 import { startModelMigration, stopModelMigration } from "../platform/agent-runtime/model-migration";
-import assistantRouter from "../api/routes/assistant";
+import assistantRouter, { assistantQualityRouter } from "../api/routes/assistant";
 import { scheduleApplicationsRouter, scheduleExecutionStatus } from "../api/routes/schedule-applications";
 import { startAssistantReconciliation } from "../services/assistant/service";
 import { registerAssistantSkills } from "../services/assistant/skills";
@@ -187,6 +187,7 @@ export function createWorkbenchApp(): Express {
   app.use(unwrapCallbackCredential);
   app.use(["/api/observe/logs", "/api/observe/runtime-logs"], serviceLogAuthResponse);
   app.use("/internal/assistant", assistantInternalRouter);
+  app.use("/internal/assistant", assistantQualityRouter);
   app.use("/internal/product-panels", productPanelsInternalRouter);
   app.use(objectDetailsInternalRouter);
   app.use("/internal/agent-channel", agentChannelRouter);

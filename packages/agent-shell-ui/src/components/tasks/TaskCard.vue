@@ -7,8 +7,8 @@ import { useAutoFold } from "../../useAutoFold";
 import TaskProcess from "./TaskProcess.vue";
 
 /**
- * A retrieval the reply delegated, in the reply's process: who does it, how each branch ended and, while the retriever
- * works, its own live process. It shows the work only; the data reaches the reader through the reply.
+ * A retrieval the reply delegated, in the reply's process: who does it, how it ended with the datasets it delivered and,
+ * while the retriever works, its own live process. It shows the work only; the data reaches the reader through the reply.
  */
 const props = defineProps<{ task: ChannelAgentTask; sessionId: string }>();
 const shell = inject(shellContextKey)!;
@@ -33,21 +33,13 @@ function reason(error: AgentTaskError) {
       <ChevronRight :size="14" class="chevron" />
     </component>
     <div v-if="open && task.process.mode !== 'page'" class="task-body">
-      <ul v-if="task.retrieval" class="branches">
-        <li v-for="branch in task.retrieval!.branches" :key="branch.source" class="branch">
-          <div class="branch-line">
-            <span class="branch-name">{{ labels.branch[branch.source] }}</span>
-            <span class="branch-status" :class="branch.status">{{ labels.status[branch.status] }}</span>
-            <span v-if="branch.error" class="branch-error">{{ reason(branch.error) }}</span>
-          </div>
-          <ul v-if="branch.datasets.length" class="datasets">
-            <li v-for="dataset in branch.datasets" :key="dataset.id">
-              <Database :size="12" />
-              <span class="dataset-title">{{ dataset.title }}</span>
-              <span class="dataset-meta">{{ labels.rows(dataset.rowCount) }}</span>
-              <span v-if="dataset.truncation" class="dataset-meta warning">{{ shell.labels.value.truncatedRows(dataset.truncation.rowLimit) }}</span>
-            </li>
-          </ul>
+      <p v-if="task.error" class="task-error">{{ reason(task.error) }}</p>
+      <ul v-if="task.retrieval?.datasets.length" class="datasets">
+        <li v-for="dataset in task.retrieval.datasets" :key="dataset.id">
+          <Database :size="12" />
+          <span class="dataset-title">{{ dataset.title }}</span>
+          <span class="dataset-meta">{{ labels.rows(dataset.rowCount) }}</span>
+          <span v-if="dataset.truncation" class="dataset-meta warning">{{ shell.labels.value.truncatedRows(dataset.truncation.rowLimit) }}</span>
         </li>
       </ul>
       <TaskProcess
@@ -121,7 +113,6 @@ function reason(error: AgentTaskError) {
   padding: 0 0 0 14px;
   border-left: 1px solid var(--el-border-color);
 }
-.branches,
 .datasets {
   list-style: none;
   margin: 0;
@@ -130,21 +121,9 @@ function reason(error: AgentTaskError) {
   flex-direction: column;
   gap: var(--spacing-xs);
 }
-.branch-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
+.task-error {
+  margin: 0;
   padding: 2px 8px;
-}
-.branch-name {
-  color: var(--el-text-color-regular);
-}
-.branch-status {
-  color: var(--el-text-color-secondary);
-}
-.branch-status.failed,
-.branch-error {
   color: var(--el-color-danger);
 }
 .datasets li {
