@@ -81,9 +81,13 @@ public class FunctionController {
 		JSONObject ret = new JSONObject();
 		try {
 			String id = param.getString("id");
+			User user = SystemUtils.getCurUser();
 			Function function = functionService.queryById(id);
+			// A Function is read in its own domain, as the list and the form read it; elsewhere it does not exist.
+			if (function == null || !user.getDomainId().equals(function.getDomainId()))
+				throw new OwnerRefusal("FUNCTION_NOT_FOUND", langService.get(lang, "Function.notFound"));
 			ret.put("success", true);
-			ret.put("data", function == null ? null : withDisplay(function, lang));
+			ret.put("data", withDisplay(function, lang));
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
 		} catch (Exception e) {
