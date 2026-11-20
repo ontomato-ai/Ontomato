@@ -134,11 +134,13 @@ export async function saveDashboard(ownerId: string, domainId: string, detail: D
 
 export async function deleteUserDashboards(userId: string): Promise<void> {
   await transaction(async client => {
-    const { rows } = await client.query<{ domainId: string; dashboardId: string }>(
+    const { rows } = await client.query<{ domainId: string; dashboardId: string; groups: unknown }>(
       `DELETE FROM ${qualifiedTable("dashboards")} WHERE owner_id = $1 AND domain_id <> ''
-       RETURNING domain_id AS "domainId", id AS "dashboardId"`, [userId],
+       RETURNING domain_id AS "domainId", id AS "dashboardId", groups`, [userId],
     );
-    await deleteChartProjectionsForDashboards(client, rows);
+    await deleteChartProjectionsForDashboards(client, rows.map(({ domainId, dashboardId, groups }) => ({
+      domainId, dashboardId, cardIds: readGroups(groups).flatMap(group => group.charts.map(card => card.id)),
+    })));
   });
 }
 
