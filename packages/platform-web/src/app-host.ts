@@ -61,8 +61,11 @@ interface PanelFrame {
    * this use, and what its owner reports changed goes to this port.
    */
   registered?: { use: PanelUseRef; changed: (change: PanelObjectChange) => void };
-  /** The panel's slots, as its declaration names them: a conversation entry is asked for by its slot. */
-  slots: PanelManifest["slots"];
+  /**
+   * The projection each member of the panel's declaration places, by member key; a member placing a panel, or one chosen
+   * from state, has none. A conversation entry and an operation (`<member>.<operation>`) are asked for by member key.
+   */
+  memberProjections: ReadonlyMap<string,string>;
   /**
    * Every projection the panel's declaration names, with the binding of its current record once the frame has read it
    * through this host. The record is Node's, read with the reader's credential, so the binding is the owner's, not the
@@ -172,7 +175,8 @@ export function registerLiveFrame(source: object,applicationId?:string) {
 type PanelDeclaration = { pageKey: string; manifest: PanelManifest };
 
 function registerDeclaredFrame(source: object, bridgeIdentity: string, panel: PanelDeclaration, context: AppExecutionContext, open: boolean, registered?: PanelFrame["registered"]) {
-  const frame:PanelFrame={bridgeIdentity,open,pageKey:panel.pageKey,registered,slots:panel.manifest.slots,conversationEntries:new Map(),bindings:new Map(Object.values(panel.manifest.slots).map(slot=>[slot.projectionId,null])),createDrafts:new Set(),charts:new Set()};
+  const memberProjections=new Map(Object.entries(panel.manifest.members).flatMap(([member,{target}])=>'projectionId' in target?[[member,target.projectionId] as const]:[]));
+  const frame:PanelFrame={bridgeIdentity,open,pageKey:panel.pageKey,registered,memberProjections,conversationEntries:new Map(),bindings:new Map([...memberProjections.values()].map(id=>[id,null])),createDrafts:new Set(),charts:new Set()};
   panelFrames.set(source,frame);
   const binding=registerFrame(source,context);
   return {
@@ -229,12 +233,12 @@ async function relayToPanel(panel:PanelFrame,method:string,path:string,service:s
   const projection=PROJECTION_READ.exec(path);
   if(projection){
     const id=decodeURIComponent(projection[1]!);
-    // A direct, code or chart record: a direct one's bindings are what its read sources reach.
+    // Its bindings are what its declared reads reach.
     const record=productProjectionResponseSchema.parse(await response.clone().json()).projection;
     panel.bindings.set(id,projectionBindingKeys(record));
     if(record.componentId===METRIC_CHART_COMPONENT)panel.charts.add(id);
     else panel.charts.delete(id);
-    if(!('data' in record)&&record.conversationEntry)panel.conversationEntries.set(id,record.conversationEntry);
+    if(record.conversationEntry)panel.conversationEntries.set(id,record.conversationEntry);
     else panel.conversationEntries.delete(id);
     return response;
   }
@@ -257,13 +261,13 @@ export const servePageComposer:ServePageComposer=expand=>{
   return ()=>{const index=composers.lastIndexOf(expand);if(index>=0)composers.splice(index,1);};
 };
 /**
- * A panel frame asks to expand its page's composer for one of its slots. It gets exactly the agent target and sentence
- * the slot's projection declares in the owner's record, as this host read it; a frame naming anything else is refused
- * before the composer hears of it.
+ * A panel frame asks to expand its page's composer for one of its members (the message's `slot` is the member key). It
+ * gets exactly the agent target and sentence the member's projection declares in the owner's record, as this host read
+ * it; a frame naming anything else is refused before the composer hears of it.
  */
 function expandPageComposer(source:object,{slot,...asked}:AppBridgeExpandPageComposer){
   const panel=panelFrames.get(source);
-  const projectionId=panel&&Object.hasOwn(panel.slots,slot)?panel.slots[slot]!.projectionId:undefined;
+  const projectionId=panel?.memberProjections.get(slot);
   const declared=projectionId===undefined?undefined:panel!.conversationEntries.get(projectionId);
   // Both sides are parsed by the same schema, so their keys come in the same order.
   if(!declared||JSON.stringify(declared)!==JSON.stringify(asked))throw new Error('This conversation entry is not declared by the panel');
@@ -274,8 +278,8 @@ function expandPageComposer(source:object,{slot,...asked}:AppBridgeExpandPageCom
 /**
  * A panel frame asks the platform to carry out a human intent it prepared at Node. Only its ID is the frame's, and the
  * frame is not trusted with more: the intent is read within the frame's own application use, and its operation must be
- * one the frame's declaration holds — a slot of the panel, `<slot>.<name>`, whose projection the frame read through this
- * host. A candidate preview has no application use and carries out nothing.
+ * one the frame's declaration holds — a member of the panel, `<member>.<name>`, whose projection the frame read
+ * through this host. A candidate preview has no application use and carries out nothing.
  */
 async function confirmPanelOperation(source:object,{intentId}:AppBridgeConfirmPanelOperation):Promise<AppBridgeConfirmPanelOperationResult>{
   const panel=panelFrames.get(source);
@@ -283,8 +287,8 @@ async function confirmPanelOperation(source:object,{intentId}:AppBridgeConfirmPa
   const {registered}=panel;
   if(!registered)throw Object.assign(new Error('This operation is not available for test-data preview'),{code:BUILD_TEST_UNSUPPORTED});
   return confirmPanelIntent(registered.use,intentId,registered.changed,operationId=>{
-    const declared=Object.keys(panel.slots).some(slot=>operationId.startsWith(`${slot}.`)&&operationId.length>slot.length+1
-      &&panel.bindings.get(panel.slots[slot]!.projectionId)!=null);
+    const declared=[...panel.memberProjections].some(([member,projectionId])=>operationId.startsWith(`${member}.`)
+      &&operationId.length>member.length+1&&panel.bindings.get(projectionId)!=null);
     if(!declared)throw new Error('This operation is not declared by the panel');
   });
 }
