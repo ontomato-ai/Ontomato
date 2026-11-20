@@ -165,7 +165,7 @@ function javaOwner(app: express.Express) {
 }
 
 const type = (id: string, read: string, params = {}) => ({ source: { type: { kind: "PlatformObjectType", id } }, read, params });
-const describe = (id: string) => ({ source: { operation: { kind: "PlatformOperation", id } }, read: "describe", params: {} });
+const bind = (id: string, target?: object) => ({ operation: { kind: "PlatformOperation", id }, ...(target && { target }) });
 const projections: Record<string, object> = {
   types: { componentId: "@ontomato/sdk:ObjectList", data: { rows: type(OBJECT_TYPE, "list") } },
   attributes: { componentId: "@ontomato/sdk:ObjectList", data: { rows: type(ATTRIBUTE, "list", { className: { literal: "warehouse" } }) } },
@@ -174,14 +174,18 @@ const projections: Record<string, object> = {
     componentId: "@ontomato/sdk:ObjectSummary", inputs: { objectType: { kind: "object", objectType: OBJECT_TYPE } },
     data: { record: { source: { object: { input: "objectType" } }, read: "record", params: {} } },
   },
-  create: { componentId: "@ontomato/sdk:ObjectForm", data: { form: type(OBJECT_TYPE, "createForm") } },
+  // With no target the save is a creation draft, which the projection's createForm read admits.
+  create: {
+    componentId: "@ontomato/sdk:ObjectForm", data: { form: type(OBJECT_TYPE, "createForm") },
+    operations: { save: bind(`${OBJECT_TYPE}.save`) },
+  },
   removeType: {
     componentId: "@ontomato/sdk:OperationButton", inputs: { objectType: { kind: "object", objectType: OBJECT_TYPE } },
-    data: { operation: describe(DELETE_OBJECT_TYPE) },
+    data: {}, operations: { delete: bind(DELETE_OBJECT_TYPE, { input: "objectType" }) },
   },
   removeAttribute: {
     componentId: "@ontomato/sdk:OperationButton", inputs: { attribute: { kind: "object", objectType: ATTRIBUTE } },
-    data: { operation: describe(DELETE_ATTRIBUTE) },
+    data: {}, operations: { delete: bind(DELETE_ATTRIBUTE, { input: "attribute" }) },
   },
 };
 const warehouse = { className: OBJECT_TYPE, primaryKey: "warehouse" };
@@ -242,7 +246,7 @@ beforeAll(async () => {
   }
   const html = Object.keys(members).map(key => `<panel-member ref="${key}"></panel-member>`).join("");
   const saved = await request("PUT", `product-panels/${panelId}`, {
-    name: "Ontology model", description: "", visibility: "domain", revision: 0, content: { html: `<section flow="column">${html}</section>` },
+    name: "Ontology model", description: "", visibility: "domain", revision: 0, content: { html: `<section>${html}</section>` },
     manifest: { state: {}, events: {}, members: Object.fromEntries(Object.entries(members).map(([key, member]) =>
       [key, { target: { projectionId: `ontology-model-${key}` }, ...member }])) },
   });
@@ -269,6 +273,13 @@ async function read(member: string, dataName: string) {
   const reply = productPanelReadResponseSchema.parse(await response.json());
   if (reply.status !== "ready") throw new Error(`${member}/${dataName}: ${JSON.stringify(reply)}`);
   return reply.value;
+}
+
+/** The member's bound operations, described from its projection's explicit `operations`. */
+async function operations(member: string) {
+  const response = await request("POST", "product-panels/read", { source: use, memberPath: [{ member }], operations: true, inputs: {} });
+  expect(response.status, member).toBe(200);
+  return response.json();
 }
 
 async function operate(operationId: string, call: object) {
@@ -308,10 +319,13 @@ it("serves the ontology model's catalog reads to a panel viewer through the owne
   expect(await read("create", "form")).toMatchObject({
     values: { className: "" }, errors: [], save: { draftOperation: "objectType.create" },
   });
-  expect(await read("removeType", "operation")).toMatchObject({
-    handlerRef: DELETE_OBJECT_TYPE, label: "Delete object type", effect: "write", batch: false,
+  expect(await operations("removeType")).toEqual({ status: "ready", value: { delete: expect.objectContaining({
+    handlerRef: DELETE_OBJECT_TYPE, kind: "action", label: "Delete object type", effect: "write", batch: false,
     target: { source: "input", input: "objectType" }, inspectImpact: { handlerRef: `${DELETE_OBJECT_TYPE}.inspect-impact` },
-  });
+  }) } });
+  expect(await operations("create")).toMatchObject({ status: "ready", value: {
+    save: { handlerRef: `${OBJECT_TYPE}.save`, kind: "form.save", target: { source: "draft", slot: "create" } },
+  } });
   // Lists and records read under the readers' GET permission; className filters reach the owner.
   expect(ownerCalls).toEqual(expect.arrayContaining([
     "GET /ontology/model/attributes?className=warehouse", "GET /ontology/model/relationships?className=item",
