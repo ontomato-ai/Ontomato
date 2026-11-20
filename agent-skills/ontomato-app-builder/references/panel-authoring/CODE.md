@@ -141,6 +141,16 @@ await save.run({
 A populated object input edits that record. An empty input opens creation when the owner supports it and the
 projection has the same type's `createForm` read. The successful create selects the returned object.
 
+When creating a child object, add `config.fixedFields` to the `ObjectForm` member to supply its parent or
+relationship endpoints. Key each field by the owner's JSON Pointer and use `{state: fieldName}` or `{literal: value}`.
+
+```json
+{ "config": { "fixedFields": { "/className": { "state": "className" } } } }
+```
+
+These fields are read-only. State bindings follow the current value, and every save submits the fields for
+the owner's validation.
+
 Keep the form mounted with `v-show` so it can receive drafts while the detail is open. The example watches
 `instance.draft` to open the editor once its form has accepted a draft. Switch back to view mode on `saved` or
 `discarded`. The save event carries the saved object as `{className, primaryKey}`. A failed save keeps the editor open.

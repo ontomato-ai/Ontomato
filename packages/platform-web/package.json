@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./entry-recovery": "./src/entry-recovery.ts",
     "./style.css": "./src/style.css"
   },
   "scripts": {

@@ -34,9 +34,9 @@ afterAll(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-function get(pathname: string, headers?: Record<string, string>) {
+function requestDist(method: "GET" | "HEAD", pathname: string, headers?: Record<string, string>) {
   return new Promise<{ status: number; headers: IncomingHttpHeaders; body: Buffer }>((resolve, reject) => {
-    const request_ = request({ host: "127.0.0.1", port, path: pathname, headers }, (response) => {
+    const request_ = request({ host: "127.0.0.1", port, method, path: pathname, headers }, (response) => {
       const chunks: Buffer[] = [];
       response.on("data", (chunk: Buffer) => chunks.push(chunk));
       response.on("end", () => resolve({ status: response.statusCode ?? 0, headers: response.headers, body: Buffer.concat(chunks) }));
@@ -44,6 +44,10 @@ function get(pathname: string, headers?: Record<string, string>) {
     request_.on("error", reject);
     request_.end();
   });
+}
+
+function get(pathname: string, headers?: Record<string, string>) {
+  return requestDist("GET", pathname, headers);
 }
 
 describe("the production web mount", () => {
@@ -54,6 +58,24 @@ describe("the production web mount", () => {
     const asset = await get("/assets/app.js");
     expect(asset.status).toBe(200);
     expect(asset.body.equals(ASSET)).toBe(true);
+  });
+
+  it("disables caching on index.html and shell redirects while keeping long cache on hashed assets", async () => {
+    for (const pathname of ["/", "/index.html"]) {
+      for (const method of ["GET", "HEAD"] as const) {
+        const res = await requestDist(method, pathname);
+        expect(res.status, `${method} ${pathname}`).toBe(200);
+        expect(res.headers["cache-control"], `${method} ${pathname}`).toBe("no-cache, no-store");
+      }
+    }
+
+    const shellRedirect = await get("/applications/app-panels-trial-a");
+    expect(shellRedirect.status).toBe(302);
+    expect(shellRedirect.headers["cache-control"]).toBe("no-cache, no-store");
+
+    const asset = await get("/assets/app.js");
+    expect(asset.status).toBe(200);
+    expect(asset.headers["cache-control"]).toBe("public, max-age=31536000, immutable");
   });
 
   it("redirects a deep page address to the same path and query behind the fragment", async () => {
