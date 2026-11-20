@@ -1,20 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
+import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import {
   platformOntologyCountsResponseSchema,
   platformOntologyNeighborsResponseSchema,
+  platformOntologySchemaResponseSchema,
 } from "@ontomato/contracts/platform-ontology";
 import {
+  AGENT_DEFINITION,
+  APPLICATION,
   APPROVE_KNOWLEDGE,
   BUSINESS_KNOWLEDGE,
   DASHBOARD_CARD,
+  DELETE_AGENT,
   DELETE_KNOWLEDGE,
   ONTOLOGY_TYPE,
   PRODUCT_PANEL,
+  PRODUCT_PROJECTION,
+  ROLE,
   SCHEDULED_TASK,
+  SDK_COMPONENT,
   platformObjectTypes,
   platformRelationKinds,
 } from "@ontomato/contracts/platform-object-types";
+import { platformTypeDetails } from "@ontomato/contracts/platform-type-details";
 import { METRIC_CHART_COMPONENT } from "@ontomato/contracts/product-panels";
 import { protectedSkillRef } from "../../../core/skills/providers";
 import { installWorkbenchIdentity } from "../../../identity/installed";
@@ -264,8 +273,8 @@ beforeEach(() => {
 });
 
 describe("platform-ontology composite query", () => {
-  it("exposes all four layers, declared layered object types, and 29 relation kinds directly from contracts", () => {
-    const schema = readPlatformOntologySchema();
+  it("exposes all four layers, declared layered object types, and 29 relation kinds directly from contracts", async () => {
+    const schema = await readPlatformOntologySchema();
     const expectedTypes = Object.entries(platformObjectTypes).filter(([, decl]) => Boolean(decl.layer));
     expect(schema.layers).toEqual(["fact", "capability", "governance", "product"]);
     expect(schema.objectTypes).toHaveLength(expectedTypes.length);
@@ -282,6 +291,46 @@ describe("platform-ontology composite query", () => {
 
     const derivedIds = schema.relationKinds.filter((r) => r.derived).map((r) => r.id);
     expect(derivedIds).toEqual(["role.can-author-workflow", "role.owns-workflow-step", "panel.provides-skill"]);
+
+    expect(platformOntologySchemaResponseSchema.parse(schema)).toEqual(schema);
+    expect(panelReadResultSchemas.panelGraphSchema.parse(schema)).toEqual(schema);
+
+    const byId = new Map(schema.objectTypes.map((t) => [t.id, t]));
+    for (const [id, detail] of Object.entries(platformTypeDetails)) {
+      const entry = byId.get(id);
+      expect(entry, id).toBeDefined();
+      expect(entry?.definition).toBe(detail?.definition);
+      expect(entry?.properties).toEqual(detail?.properties);
+      expect(entry?.rules).toBe(detail?.rules);
+    }
+
+    const agent = byId.get(AGENT_DEFINITION);
+    expect(agent?.definition).toBe(platformTypeDetails[AGENT_DEFINITION]?.definition);
+    expect(Object.keys(agent?.reads ?? {}).sort()).toEqual(["createForm", "form", "list", "record"]);
+    expect(agent?.operations?.map((op) => op.id)).toEqual([`${AGENT_DEFINITION}.save`, DELETE_AGENT]);
+
+    const application = byId.get(APPLICATION);
+    expect(application?.definition).toBe(platformTypeDetails[APPLICATION]?.definition);
+    expect(Object.keys(application?.reads ?? {}).sort()).toEqual(["entries", "form", "query", "record"]);
+    expect(application?.operations?.map((op) => op.id)).toContain(`${APPLICATION}.save`);
+
+    const projection = byId.get(PRODUCT_PROJECTION);
+    expect(projection?.definition).toBe(platformTypeDetails[PRODUCT_PROJECTION]?.definition);
+    expect(Object.keys(projection?.reads ?? {}).sort()).toEqual(["createForm", "form", "query", "record", "usedBy"]);
+    expect(projection?.operations?.map((op) => op.id)).toContain(`${PRODUCT_PROJECTION}.save`);
+
+    const panel = byId.get(PRODUCT_PANEL);
+    expect(panel?.definition).toBe(platformTypeDetails[PRODUCT_PANEL]?.definition);
+    expect(Object.keys(panel?.reads ?? {}).sort()).toEqual(["createForm", "form", "members", "query", "record", "usedBy"]);
+    expect(panel?.operations?.map((op) => op.id)).toContain(`${PRODUCT_PANEL}.save`);
+
+    const sdkComponent = byId.get(SDK_COMPONENT);
+    expect(Object.keys(sdkComponent?.reads ?? {}).sort()).toEqual(["catalogue", "definition"]);
+    expect(sdkComponent?.operations).toBeUndefined();
+
+    const role = byId.get(ROLE);
+    expect(role?.reads).toBeUndefined();
+    expect(role?.operations).toBeUndefined();
   });
 
   it("coalesces shared owners in counts and separates ok, refused, and failed statuses across all four layers", async () => {

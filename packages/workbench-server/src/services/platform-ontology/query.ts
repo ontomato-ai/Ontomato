@@ -58,6 +58,7 @@ import {
   TRIGGER,
   USER,
   WORKFLOW,
+  assemblePlatformOntologySchemaTypes,
   relationTargets,
   resolveNodeLayer,
 } from "./schema";
@@ -526,10 +527,10 @@ async function readObjectsOfType(
   }
 }
 
-export function readPlatformOntologySchema(): PlatformOntologySchemaResponse {
+export async function readPlatformOntologySchema(): Promise<PlatformOntologySchemaResponse> {
   return {
     layers: PLATFORM_ONTOLOGY_LAYERS,
-    objectTypes: PLATFORM_ONTOLOGY_TYPES,
+    objectTypes: await assemblePlatformOntologySchemaTypes(),
     relationKinds: PLATFORM_ONTOLOGY_RELATION_KINDS,
   };
 }

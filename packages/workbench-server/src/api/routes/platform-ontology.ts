@@ -19,7 +19,7 @@ export const platformOntologyRouter = Router();
 platformOntologyRouter.get(
   "/schema",
   wrap(async (_req, res) => {
-    res.json(readPlatformOntologySchema());
+    res.json(await readPlatformOntologySchema());
   }),
 );
 
