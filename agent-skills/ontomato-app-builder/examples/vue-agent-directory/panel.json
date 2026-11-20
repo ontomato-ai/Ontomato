@@ -44,7 +44,7 @@
           "projection": {
             "name": "Agent Definition detail",
             "description": "",
-            "componentId": "@ontomato/sdk:ObjectSummary",
+            "componentId": "@ontomato/sdk:Data",
             "inputs": {
               "item": {
                 "kind": "object",

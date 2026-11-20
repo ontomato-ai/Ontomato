@@ -28,37 +28,62 @@ await mountPanel({
 Use `@update:selected="selectRecord"` on the list and `v-if="selected"` on the detail. The standard form and list
 components use the projection's range and fields. Keep the selected reference connected to the detail's declared input.
 
-## Read and invoke owner operations
+## Read declared data
 
-Official projection components use their declared reads and forms. For a custom Vue view, read a declared datum
-through the panel context. This example runs in `setup()`. The `records` member targets a projection with
-`data.rows` and a `search` input used by its owner query.
+Use an official component when it fits the view. Place its projection with `<projection slot="list"></projection>`.
+For a custom Vue view, declare a projection with `componentId: "@ontomato/sdk:Data"` and `config: {}`. It supplies
+data for your Vue template to render. Name each datum in `data` and use `usePanelData` in `setup()`.
+The example's `detail` member declares `data.record`.
 
 ```js
-const { readPanelData } = usePanelContext();
-const loadRows = search => readPanelData({
-  memberPath: [{ member: "records" }],
-  dataName: "rows",
-  inputs: { search },
-});
+import { usePanelData } from "@ontomato/sdk/panel";
+
+const detail = usePanelData("detail", "record");
 ```
 
-The host supplies the panel source and calls the platform's read entry under the reader's identity.
-Render `ready` with its `value`, `empty` with an empty state, `forbidden` with an access message and `error`
-with the returned `message`. Keep loading in the Vue view while the promise is pending. Use the owner's
-registered operations for writes.
+Use one call per datum. An optional third argument is a reactive object with runtime parameter values, such as
+pagination. Use parameter names accepted by the declared read. The SDK applies the projection's inputs and reads
+under the reader's identity. State or runtime parameter changes trigger a new read. An `awaiting` result means a
+required value is missing and the SDK waits to send the request.
+
+Render `loading` while the read runs, `awaiting` as a prompt for the required input, `ready` with its `value`,
+`empty` with an empty state, `forbidden` with an access message and `error` with the returned `message`.
+After a successful write, the platform re-reads affected objects and types reported by the owner.
+
+## Invoke declared owner operations
 
 Put owner operation bindings in the projection's `operations` map. An `OperationButton` selects the local name
-explicitly with `config.operation`. Its text comes from the owner description's `label`. For a custom control,
-call `readPanelData` with `operations: true`, the same `memberPath` and its `inputs`. Use the returned
-`ready.value[localName]` for the label and input description. The placed operation ID used for invocation is
-`<member key>.<local name>`. A member with a checked-object list can invoke a batch when the owner declares support.
+with `config.operation`. Its text comes from the owner's `label`. For a custom control, use the same operation
+from `instance.operations.value`. Look it up by its placed ID, `<member key>.<local name>`.
+
+```js
+import { computed } from "vue";
+import { usePanelContext } from "@ontomato/sdk/panel";
+
+const { instance } = usePanelContext();
+const approve = computed(() => instance.operations.value.find(op => op.id === "approve.approve"));
+const approveSelected = () => instance.invoke("approve.approve");
+```
+
+Use the descriptor's `label` and `inputSchema` to display the control and supply its business inputs. Disable it
+while the operation is absent. The platform updates the available operations as the selected object changes.
+The host presents confirmation when required. Display the returned owner result or the reason the invocation throws.
+A member with a checked-object list can invoke a batch when the owner declares support.
 
 ## Save a form or hand off a draft
 
 An `ObjectForm` projection binds one owner operation whose kind is `form.save`. The component sends `call.input`
 with `values`, the `revision` from the owner form when present, and `submittedFields` as JSON Pointer strings.
-For example, editing an agent's name can send `{"values":{"name":"Review assistant"},"revision":4,"submittedFields":["/name"]}`.
+For a custom save control, pass the same current form values:
+
+```js
+await instance.invoke("form.save", {
+  values: { name: "Review assistant" },
+  revision: 4,
+  submittedFields: ["/name"],
+});
+```
+
 A populated object input edits that record. An empty input opens creation when the owner supports it and the
 projection has the same type's `createForm` read. The successful create selects the returned object.
 

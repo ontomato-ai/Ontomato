@@ -12,7 +12,14 @@
     <div class="agent-directory-body">
       <projection slot="list" @update:selected="selectAgent"></projection>
       <div class="agent-directory-detail">
-        <projection v-if="selected" slot="detail"></projection>
+        <section v-if="detail.status === 'ready'">
+          <h2>{{ detail.value.label }}</h2>
+          <p>{{ detail.value.fields.description }}</p>
+        </section>
+        <p v-else-if="detail.status === 'loading'" role="status">Loading agent details…</p>
+        <p v-else-if="detail.status === 'empty'">This agent is no longer available.</p>
+        <p v-else-if="detail.status === 'forbidden'">You cannot read this agent.</p>
+        <p v-else-if="detail.status === 'error'" role="alert">{{ detail.message }}</p>
         <projection v-if="selected || creating" slot="form"></projection>
         <p v-else>Select an agent or create one.</p>
       </div>
