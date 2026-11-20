@@ -431,9 +431,11 @@ export const components: readonly ComponentMetadata[] = [
     data: {
       "*": {
         results: [
-          "panelRecordList", "panelRecord", "panelRecordQuery", "panelGroupCounts", "panelApplicationMenu", "panelFormDescription",
-          "panelOperationDescriptor", "panelOptionList", "panelGraphSchema", "panelGraphCounts", "panelGraphStart",
-          "panelGraphNeighbors", "panelOntologyObjects", "panelRelationNeighbors", "chartTemplate", "metricOutput",
+          "panelRecordList", "panelRecord", "panelRecordQuery", "panelGroupCounts", "panelApplicationMenu",
+          "productProjectionList", "productPanelList", "productProjectionRecord", "productPanelRecord", "productProjectionUsedBy",
+          "productPanelUsedBy", "productPanelMembers", "applicationCatalogue", "applicationRecord", "applicationEntries",
+          "panelFormDescription", "panelOperationDescriptor", "panelOptionList", "panelGraphSchema", "panelGraphCounts",
+          "panelGraphStart", "panelGraphNeighbors", "panelOntologyObjects", "panelRelationNeighbors", "chartTemplate", "metricOutput",
         ],
         required: false,
         runtimeParams: ["changedField", "cursor", "keyword", "layers", "node", "page", "relationKinds", "search", "size", "values"],
