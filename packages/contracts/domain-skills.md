@@ -28,9 +28,9 @@ Provider references must be selectable/removable, not silently preserved outside
 that list. Definition writes retain the domain-completion rule in assistant-chat.
 Catalogue read failure prevents saving a replacement selection.
 
-For each **new run**, the host reads the current definition. Exactly the selected
-skills enter `definition.skills`; there is no domain-wide enablement (removed
-2026-11-12), and deletion removes domain references. Missing or invalid selected packages fail preparation rather than
+For each **new run**, the host reads the current definition. The exact versions of
+the selected skills enter the runtime's `definition.skills`. There is no
+domain-wide enablement, and deletion removes domain references. Missing or invalid selected packages fail preparation rather than
 using an old publication. Unselected packages never enter the installed tree or
 PI catalogue. Existing duplicate-name admission rules still apply.
 
@@ -63,12 +63,12 @@ preparation publishes it before admission. Publication failure prevents the run,
 with no stale-package fallback. This reuses UTF-8 package transport; import and
 publication reject non-UTF-8 files, without replacement decoding or dropping files.
 
-Admission resolves each name to its current digest and stores `resolvedSkills`.
-Active runs keep those files; the next run, including the next message in an old
-session, resolves again. Idempotent retries return their original run without
-republishing or resolving a new version. Source changes and publication/admission
-are serialized per domain so a delayed preparation cannot republish older bytes
-after a newer import. No stored-data conversion or session-level version pin is added.
+Preparation carries the publication response's ref and digest into admission.
+The runtime resolves that pair and stores `resolvedSkills`. Active runs keep
+those files and new runs prepare their own versions. Runtime admission retries
+return the original run. The workbench serializes domain skill changes with
+host preparation. Runtime admission uses the selected digest even when another
+publication finishes between preparation and admission.
 
 ## Credentials and history
 

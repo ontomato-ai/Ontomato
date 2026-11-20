@@ -1,5 +1,6 @@
 import { historyCursor, historyPosition, type SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { runtimeRunViewSchema, type RuntimeRunView } from "@ontomato/contracts/agent-runtime";
+import { runtimeSkillRefSchema, type RuntimeRegisteredSkill } from "@ontomato/contracts/agent-runtime-skills";
 import { runtimeHistoryRecordSchema, type RuntimeHistoryQuery } from "@ontomato/contracts/agent-runtime-history";
 import { getServiceLogContext, updateServiceLogContext } from "@ontomato/service-logging";
 import { runtimeLogger } from "./logging";
@@ -137,7 +138,6 @@ export class RuntimeStore {
             FOREIGN KEY(host_id,domain_id,session_id) REFERENCES ${this.table("sessions")}(host_id,domain_id,id) ON DELETE CASCADE);
           CREATE TABLE ${this.table("skills")} (
             identity text NOT NULL, digest text NOT NULL, metadata jsonb NOT NULL, PRIMARY KEY(identity,digest));
-          CREATE TABLE ${this.table("skill_names")} (identity text PRIMARY KEY, digest text NOT NULL);
           CREATE TABLE ${this.table("model_calls")} (
             id uuid PRIMARY KEY, host_id text NOT NULL, domain_id text NOT NULL, run_id uuid NOT NULL,
             record jsonb NOT NULL,
@@ -255,22 +255,22 @@ export class RuntimeStore {
     }
     await this.pool.end();
   }
-  async readOpenAdmission(scope: Scope, key: string, c?: PoolClient) {
-    if (c) {
-      // A writer serializes this key even across different sessions.
-      await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
-        canonical([...values(scope), key]),
-      ]);
-    }
-    const old = (
-      await (c ?? this.pool).query(
-        `SELECT * FROM ${this.table("admissions")} WHERE host_id=$1 AND domain_id=$2 AND key=$3`,
-        [...values(scope), key],
-      )
-    ).rows[0];
-    if (old?.deleted)
+  async readOpenAdmission(scope: Scope, key: string, client: Pick<PoolClient, "query"> = this.pool) {
+    const { rows } = await client.query(
+      `SELECT * FROM ${this.table("admissions")} WHERE host_id=$1 AND domain_id=$2 AND key=$3`,
+      [...values(scope), key],
+    );
+    const admission = rows[0];
+    if (admission?.deleted)
       throw new RuntimeError(410, "RESOURCE_DELETED", "Resource was deleted");
-    return old;
+    return admission;
+  }
+  async lockOpenAdmission(c: PoolClient, scope: Scope, key: string) {
+    // Serialize writes to the same key even across different sessions.
+    await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+      canonical([...values(scope), key]),
+    ]);
+    return this.readOpenAdmission(scope, key, c);
   }
   async admission(
     c: PoolClient,
@@ -280,7 +280,7 @@ export class RuntimeStore {
     fingerprint: string,
     sessionId: string,
   ) {
-    const old = await this.readOpenAdmission(scope, key, c);
+    const old = await this.lockOpenAdmission(c, scope, key);
     if (old) {
       if (
         old.operation !== operation ||
@@ -516,8 +516,16 @@ export class RuntimeStore {
       )
     ).rows[0];
     if (!row) missing();
-    updateServiceLogContext({ runId: row.run.id, sessionId: row.run.sessionId, domainId: scope.domainId });
-    return { run: row.run, seq: Number(row.seq), streamId: row.stream_id };
+    const run: RuntimeRun = row.run;
+    const legacySkills = runtimeSkillRefSchema.array().safeParse(run.definition.skills);
+    if (legacySkills.success && legacySkills.data.length) {
+      const versions = run.resolvedSkills.map(({ skill, digest }: RuntimeRegisteredSkill) => ({ skill, digest }));
+      if (canonical(legacySkills.data) !== canonical(versions.map(({ skill }) => skill)))
+        throw new Error("Stored run has no matching resolved skill versions");
+      run.definition.skills = versions;
+    }
+    updateServiceLogContext({ runId: run.id, sessionId: run.sessionId, domainId: scope.domainId });
+    return { run, seq: Number(row.seq), streamId: row.stream_id };
   }
   /** The run's answer message, null while it runs and when it stopped without one. */
   async finalReply(scope: Scope, id: string): Promise<RuntimeMessage | null> {

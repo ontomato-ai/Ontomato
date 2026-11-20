@@ -7,9 +7,9 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { APP_BUILDER_SKILL } from "../app-builder/definition";
 import { restoreAgentCaller } from "../agent-host/caller";
 import { WorkspaceBuildTests } from "../app-builder/build-tests";
-import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
+import type { PageSkillEntrance, PageSkillSource } from "@ontomato/contracts/page-skills";
 import { authoringAdoptionResponseSchema, type AuthoringKind, type AuthoringHostRun, type AuthoringHistoricalRun, type authoringOperations } from "@ontomato/contracts/authoring";
-import { readPageSkills } from "./skills";
+import { loadedPageSkillVersion, readAssistantSkillView, resolvePageSkillSource } from "./skills";
 import { agentExecutionCredentials, ownedRun } from "./execution";
 import { assistantStore, type AssistantOwner } from "./store";
 
@@ -39,10 +39,17 @@ function java(path: string, domainId: string, body: unknown, credentials: Assist
   });
 }
 
-const pagePermission: Record<AuthoringKind, string> = {
-  action: "action-management",
-  "metric-view": "ontology-modeling",
-};
+// Authoring follows these product-owned uses, including when a locator has several members.
+const authoringSources = {
+  action: {
+    entrance: { permissionCode: "action-management", pageKey: "actions" },
+    source: { kind: "application-use", applicationId: "ontology", useId: "ontology-actions" },
+  },
+  "metric-view": {
+    entrance: { permissionCode: "ontology-modeling", pageKey: "metric-views" },
+    source: { kind: "application-use", applicationId: "ontology", useId: "ontology-metric-views" },
+  },
+} satisfies Record<AuthoringKind, { entrance: PageSkillEntrance; source: PageSkillSource }>;
 
 async function authoringRun(
   owner: AssistantOwner,
@@ -58,12 +65,12 @@ async function authoringRun(
       (sessionId && run.sessionId !== sessionId) || !turn.admitted) {
     throw new HttpError(404, "Authoring run not found", "NOT_FOUND");
   }
-  const loaded = new Set(run.resolvedSkills.map(({ skill }) => runtimeSkillKey(skill)));
-  if (!loaded.has(runtimeSkillKey(APP_BUILDER_SKILL))) {
+  if (!loadedPageSkillVersion(APP_BUILDER_SKILL, run.resolvedSkills)) {
     if (appBuilderOnly) throw new HttpError(403, "The App Builder skill is required", "FORBIDDEN");
-    const { pageSkills } = await readPageSkills(credentials);
-    const mapping = pageSkills.find(entry => "permissionCode" in entry && entry.permissionCode === pagePermission[kind]);
-    if (!mapping || !loaded.has(runtimeSkillKey(mapping.skill))) {
+    const { entrance, source } = authoringSources[kind];
+    const view = await readAssistantSkillView(owner.domainId, credentials);
+    const member = await resolvePageSkillSource(view, entrance, source);
+    if (!member || !loadedPageSkillVersion(member, run.resolvedSkills)) {
       throw new HttpError(403, "The required authoring skill is not loaded in this run", "FORBIDDEN");
     }
   }

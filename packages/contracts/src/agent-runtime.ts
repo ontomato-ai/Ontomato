@@ -20,7 +20,7 @@ import {
 import {
   runtimeEnvironmentSchema,
   runtimeRegisteredSkillSchema,
-  runtimeSkillRefSchema,
+  runtimeSkillVersionSchema,
 } from "./agent-runtime-skills";
 import {
   runtimeIdSchema,
@@ -53,7 +53,7 @@ export const runtimeAgentDefinitionSchema = z
     systemPrompt: z.string(),
     context: z.string().optional(),
     modelId: modelSelectionSchema.shape.modelId,
-    skills: z.array(runtimeSkillRefSchema),
+    skills: z.array(runtimeSkillVersionSchema),
     sandbox: z.object({ limits: codeLimitsSchema }).strict(),
     // Optional loop protection, counted per run: the run stops as aborted with the reason once the
     // total exceeds maxCalls, or once maxSameShape calls share a tool name and digit-free arguments.

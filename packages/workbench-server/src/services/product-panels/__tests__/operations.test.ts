@@ -9,7 +9,7 @@ import { isPanelHumanOperationIntent, type PanelOperationIntent } from "@ontomat
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { panelReadOperationInputSchema, panelReadOperationResultSchema } from "@ontomato/contracts/panel-operations";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
-const mocks = vi.hoisted(() => ({draft:vi.fn(),recordCreated:vi.fn(),query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),catalogue:vi.fn(),pages:vi.fn(),restore:vi.fn(),sessionActor:vi.fn(),notify:vi.fn()}));
+const mocks = vi.hoisted(() => ({draft:vi.fn(), createDefinition:vi.fn(), projectDefinition:vi.fn(), assertPermission:vi.fn(),recordCreated:vi.fn(),query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),catalogue:vi.fn(),pages:vi.fn(),resolveMember:vi.fn(),loadedMember:vi.fn(),restore:vi.fn(),sessionActor:vi.fn(),notify:vi.fn()}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
 vi.mock("../../assistant/service",()=>({assistantService:{pageDraft:mocks.draft,recordPageDraftCreated:mocks.recordCreated}}));
 vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({callbackUrl:"http://workbench.test"})}}));
@@ -17,7 +17,17 @@ vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://o
 vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class{run=mocks.run;session=mocks.session;request=mocks.request;}}));
 vi.mock("../../assistant/store",()=>({assistantStore:{turn:async()=>({})}}));
 vi.mock("../../assistant/execution-setting",()=>({resolveAgentExecution:mocks.resolve}));
-vi.mock("../../assistant/skills",()=>({readPageSkills:mocks.pages}));
+vi.mock("../../../identity/installed", () => ({ assertPermission: mocks.assertPermission }));
+vi.mock("../../assistant/definitions", () => ({
+  agentDefinitionPermissions: ["analysis-agent"],
+  createAgentDefinitionSnapshot: mocks.createDefinition,
+  projectAgentDefinitionSkills: mocks.projectDefinition,
+}));
+
+vi.mock("../../assistant/skills",()=>({
+  readAssistantSkillView: mocks.pages,
+  loadedPageSkillVersion: mocks.loadedMember,
+}));
 vi.mock("../../../utils/backend-client",()=>({backendGet:mocks.backend,buildBackendHeaders:(token:string,_x:unknown,_l:unknown,key:string,headers:object)=>({...headers,...(token?{tk:token}:{}),...(key?{"X-API-Key":key}:{})})}));
 vi.mock("../../agent-host/caller",()=>({restoreAgentCaller:mocks.restore,readAgentSessionActor:mocks.sessionActor}));
 vi.mock("../../agent-host/presentation",()=>({publishObjectChanged:mocks.notify}));
@@ -45,7 +55,7 @@ function agentQuestionId() {
 }
 beforeEach(()=>{
  vi.resetAllMocks();intents=new Map();automatic=false;human=null;
- current={id:uuid(3),sessionId:session.sessionId,status:"running",executionUserId:"V",channel:{agent:{providerId:"workbench",agentId:"agent"},actor:{id:uuid(4),domainId:"d"},authority:{classNames:[],executionKind:"live"},root:{session:root,runId:uuid(10)},requestedBy:null,userRecipient:{session:root,actor:{id:uuid(4),domainId:"d"}}},resolvedSkills:[{skill}]} as unknown as RuntimeRun;
+ current={id:uuid(3),sessionId:session.sessionId,status:"running",executionUserId:"V",channel:{agent:{providerId:"workbench",agentId:"agent"},actor:{id:uuid(4),domainId:"d"},authority:{classNames:[],executionKind:"live"},root:{session:root,runId:uuid(10)},requestedBy:null,userRecipient:{session:root,actor:{id:uuid(4),domainId:"d"}}},resolvedSkills:[{skill,digest:"sha256:" + "a".repeat(64)}]} as unknown as RuntimeRun;
  mocks.run.mockImplementation(async()=>({run:current}));
  mocks.resolve.mockImplementation(async()=>({credentials:{apiKey:"V-key"}}));
  mocks.backend.mockImplementation(async(_name:string,url:string,options:{headers:object})=>{
@@ -56,7 +66,12 @@ beforeEach(()=>{
    }
    return {text:JSON.stringify({success:true,data:{applicationId:"A",entry:{path:"/panels/A",renderer:"panels"},panelUses:[use]}})};
  });
- mocks.pages.mockResolvedValue({pageSkills:[{access:"domain-member",pageKey:"tasks",skill}]});
+ mocks.pages.mockResolvedValue({ resolveSource: mocks.resolveMember });
+ mocks.assertPermission.mockResolvedValue(undefined);
+ mocks.projectDefinition.mockImplementation(definition => definition);
+ mocks.resolveMember.mockResolvedValue(skill);
+ mocks.loadedMember.mockImplementation((ref, loaded: RuntimeRun["resolvedSkills"]) =>
+   loaded.find(entry => JSON.stringify(entry.skill) === JSON.stringify(ref)) ?? null);
  mocks.panel.mockResolvedValue({id:"P",sdkVersion:"1.0.0",manifest:{state:{task:{kind:"object",objectType:"platform:ScheduledTask"}},slots:{run:{projectionId:"run",inputs:{task:{state:"task"}}},form:{projectionId:"form",inputs:{task:{state:"task"}}}},operations:[]}});
  mocks.projection.mockImplementation(async(_o:unknown,c:unknown,id:string)=>{expect(c).toBe(credentials);return {id,name:"Run now",componentId:id,binding:id==="run"?{kind:"PlatformOperation",id:"schedules.runNow"}:{kind:"PlatformObjectType",id:"platform:ScheduledTask"},inputs:{task:{kind:"object",objectType:"platform:ScheduledTask"}}};});
  mocks.catalogue.mockResolvedValue(new Map([["run",{}],["form",{operations:[{client:"@binding",name:"save",label:"Save",kind:"form.save",inputSchema:{}}]}]]));
@@ -253,18 +268,14 @@ it("reuses the original creation artifact as the initiator and saves as the exec
   mocks.draft.mockResolvedValue(form);
   const input = { ...save(), call: { target: { kind: "draft" as const }, input: { values }, draft: link } };
   const createdId = uuid(21);
-  const write = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-    expect(url).toBe("http://workbench.test/api/assistant/agent-definitions");
-    expect(init.method).toBe("POST");
-    const headers = new Headers(init.headers);
-    expect(headers.get("X-API-Key")).toBe("V-key");
-    expect(headers.get("tk")).toBeNull();
-    expect(headers.get("Idempotency-Key")).toBe(input.intentId);
-    expect(JSON.parse(String(init.body))).toEqual(values);
-    return Response.json({ ...values, id: createdId, executionUserId: null, sortOrder: 0 }, { status: 201 });
+  mocks.createDefinition.mockResolvedValue({
+    definition: { ...values, id: createdId, executionUserId: null, sortOrder: 0 },
   });
-  vi.stubGlobal("fetch", write);
   expect(await operatePanel(owner, credentials, current.id, input)).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
+  expect(mocks.assertPermission).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "V-key" }), ["analysis-agent"]);
+  expect(mocks.createDefinition).toHaveBeenCalledWith(input.intentId, values, { domainId: owner.domainId, userId: "V" },
+    expect.objectContaining({ apiKey: "V-key" }), { credentials, view: { resolveSource: mocks.resolveMember } });
+  expect(fetch).not.toHaveBeenCalled();
   expect(mocks.draft).toHaveBeenCalledWith(link.sessionId, link.runId, link.path, owner);
   expect(mocks.recordCreated).toHaveBeenCalledWith(link.sessionId, link.runId, link.path, createdId, owner);
   const target = { objectType, primaryKey: createdId };
@@ -274,7 +285,16 @@ it("reuses the original creation artifact as the initiator and saves as the exec
   mocks.draft.mockResolvedValue({ ...form, created: { id: createdId } });
   await expect(operatePanel(owner, credentials, current.id, { ...input, intentId: uuid(22) }))
     .rejects.toMatchObject({ code: "PAGE_DRAFT_MISMATCH" });
-  expect(write).toHaveBeenCalledTimes(1);
+  expect(mocks.createDefinition).toHaveBeenCalledTimes(1);
+
+  const currentView = { resolveSource: mocks.resolveMember, revoked: true };
+  mocks.pages.mockResolvedValueOnce(currentView);
+  mocks.projectDefinition.mockImplementationOnce(definition => ({ ...definition, skills: [] }));
+  expect(await dispatchPanel(owner, credentials, current.id, input.intentId)).toMatchObject({
+    kind: "dispatched", outcome: { kind: "success", data: { id: createdId, skills: [] } },
+  });
+  expect(mocks.projectDefinition).toHaveBeenLastCalledWith(expect.objectContaining({ skills: values.skills }), currentView);
+  expect(mocks.createDefinition).toHaveBeenCalledTimes(1);
 });
 
 it("freezes the owner write description with a named target and a result schema", async () => {
@@ -541,8 +561,8 @@ it("freezes a human batch and its impact, then claims once with the reader's cre
     source: { kind: "human" }, initiator: owner, calls: input.calls, confirmation: preparation.confirmation, dispatched: false,
   });
   const useRef = { applicationId: input.applicationId, useId: input.useId };
-  expect(await projectPanelOperationIntent(owner, id, useRef)).toEqual(preparation);
-  await expect(projectPanelOperationIntent(owner, id, { ...useRef, useId: "other" })).rejects.toMatchObject({ status: 404 });
+  expect(await projectPanelOperationIntent(owner, id, useRef, credentials)).toEqual(preparation);
+  await expect(projectPanelOperationIntent(owner, id, { ...useRef, useId: "other" }, credentials)).rejects.toMatchObject({ status: 404 });
   expect(ownerWrite).not.toHaveBeenCalled();
   await expect(dispatchPanel(owner, credentials, current.id, id)).rejects.toMatchObject({ code: "FORBIDDEN" });
   const results = await Promise.all([dispatchHumanPanelOperation(owner, credentials, id), dispatchHumanPanelOperation(owner, credentials, id)]);
@@ -616,4 +636,18 @@ it("runs a registered read using the reader and preview context without creating
   expect(ownerRead).toHaveBeenCalledOnce();
   expect(intents.size).toBe(0);
   expect(mocks.notify).not.toHaveBeenCalled();
+});
+
+it("resolves the actual panel-use member and refuses a run that only loaded a sibling", async () => {
+  mocks.resolveMember.mockResolvedValue({ ...skill, name: "other-panel-in-the-same-group" });
+  await expect(operatePanel(owner, credentials, current.id, action())).rejects.toMatchObject({ code: "FORBIDDEN" });
+  expect(mocks.pages).toHaveBeenCalledWith(owner.domainId, credentials);
+  expect(mocks.resolveMember).toHaveBeenCalledWith(
+    { access: "domain-member", pageKey: "tasks" },
+    { kind: "application-use", applicationId: "A", useId: "tasks" }, { id: use.panelId },
+  );
+  expect(mocks.loadedMember).toHaveBeenCalledWith(
+    { ...skill, name: "other-panel-in-the-same-group" }, current.resolvedSkills,
+  );
+  expect(ownerWrites()).toHaveLength(0);
 });
