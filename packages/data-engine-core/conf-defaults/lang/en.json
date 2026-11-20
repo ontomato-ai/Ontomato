@@ -894,5 +894,9 @@
   {
     "key": "ActionSegment.kind.CUSTOM",
     "value": "Other"
+  },
+  {
+    "key": "Action.functionMissing",
+    "value": "This action's function no longer exists, so it cannot run"
   }
 ]
