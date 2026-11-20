@@ -1,3 +1,4 @@
+import { appsSdkComponentDatum } from "@ontomato/contracts/apps-sdk";
 import {
   matchesDirectPanelValue, matchesObjectType, panelPlacementSchema, panelPortAccepts, type DirectPanelPortType, type PanelManifest,
   type PanelPlacement,
@@ -205,7 +206,7 @@ async function incompatiblePort(
     for (const { name, datum, declaration } of reads) {
       if (!missingRequiredReadParameters(declaration, datum.params, undefined, wiring).length) continue;
       const { components } = await readCatalogue();
-      const runtimeParams = components.get(definition.componentId)?.data?.[name]?.runtimeParams;
+      const runtimeParams = appsSdkComponentDatum(components.get(definition.componentId)?.data, name)?.runtimeParams;
       const [missing] = missingRequiredReadParameters(declaration, datum.params, runtimeParams, wiring);
       if (missing !== undefined) return `data '${name}' requires parameter '${missing}'`;
     }

@@ -55,6 +55,7 @@ const resourceIds = new Set<string>();
 const projectionId = "projection-pilot-summary";
 const panelId = "panel-schedules-pilot";
 const graphPanelId = "panel-ontology-pilot";
+const dataPanelId = "panel-data-port-pilot";
 const agentPanelId = "panel-agent-settings-pilot";
 const agentId = randomUUID();
 const task = platformTaskSchema.parse(examples.creates.find(item => item.name === "governance-instruction")!.response);
@@ -165,7 +166,10 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ success: true, data: {
       applicationId: "ontology-pilot", menu: { groups: [], panelUses: [] },
-      use: {
+      use: req.query.useId === "data" ? {
+        id: "data", pageKey: "data", path: "/applications/ontology-pilot/data", panelId: dataPanelId,
+        access: { kind: "domain-member" },
+      } : {
         id: "graph", pageKey: "graph", path: "/applications/ontology-pilot/graph", panelId: graphPanelId,
         access: { kind: "domain-member" },
       },
@@ -600,6 +604,65 @@ it("reads the seven named ontology data items with the panel viewer", async () =
   const update = await request("PUT", "product-projections/" + runtimeProjectionId, { ...runtimeProjection, revision: 1 });
   expect(update.status).toBe(409);
   expect(await update.json()).toMatchObject({ error: { message: expect.stringContaining("node") } });
+});
+
+it("registers and reads an author-named datum through the SDK catalogue wildcard", async () => {
+  const original = await readFile(cataloguePath, "utf8");
+  const catalogue = appsSdkComponentCatalogSchema.parse(JSON.parse(original));
+  await writeFile(cataloguePath, JSON.stringify({
+    ...catalogue,
+    components: [...catalogue.components, {
+      componentId: "Data", module: "@ontomato/sdk/base", exportName: "Data", role: "presentation",
+      meaning: "Supplies author-named data to the panel.", ports: { props: [], events: [], slots: [] },
+      data: { "*": { results: ["panelGraphNeighbors"], required: false, runtimeParams: ["node", "page"] } },
+    }],
+  }));
+
+  try {
+    const source = { type: { kind: "PlatformObjectType", id: "platform:OntologyType" } };
+    const datumName = "nearbyWarehouses";
+    const projection = {
+      name: "Warehouse neighbors", description: "", visibility: "domain", componentId: "@ontomato/sdk:Data",
+      revision: 0, inputs: {}, outputs: {}, config: {},
+      data: { [datumName]: { source, read: "neighbors", params: {} } },
+    };
+    const projectionPath = "product-projections/data-port-pilot";
+    const wrongResult = await request("PUT", projectionPath, {
+      ...projection, data: { [datumName]: { source, read: "counts", params: {} } },
+    });
+    expect(wrongResult.status).toBe(400);
+    expect(await wrongResult.json()).toMatchObject({
+      error: { code: "PANEL_COMPONENT_DATA_RESULT_MISMATCH", message: expect.stringContaining(datumName) },
+    });
+
+    const savedProjection = await request("PUT", projectionPath, projection);
+    expect(savedProjection.status, await savedProjection.text()).toBe(200);
+    const savedPanel = await request("PUT", "product-panels/" + dataPanelId, {
+      name: "Warehouse data", description: "", visibility: "domain", revision: 0,
+      content: { html: '<section><panel-member ref="data"></panel-member></section>' },
+      manifest: { state: {}, members: { data: { target: { projectionId: "data-port-pilot" } } }, events: {} },
+    });
+    expect(savedPanel.status, await savedPanel.text()).toBe(200);
+
+    const read = async (runtimeParams: object) => {
+      const response = await request("POST", "product-panels/read", {
+        source: { kind: "registered", applicationId: "ontology-pilot", useId: "data" },
+        memberPath: [{ member: "data" }], dataName: datumName, inputs: {}, runtimeParams,
+      });
+      expect(response.status).toBe(200);
+      return productPanelReadResponseSchema.parse(await response.json());
+    };
+    const node = { className: "platform:ObjectType", primaryKey: "warehouse" };
+    expect(await read({ node })).toMatchObject({ status: "ready", value: { node: { primaryKey: "warehouse" } } });
+    expect(await read({ node, page: { number: 1, size: 10 } })).toMatchObject({
+      status: "error", message: expect.stringContaining("parameter 'page'"),
+    });
+    expect(await read({ node, relationKinds: [] })).toMatchObject({
+      status: "error", message: expect.stringContaining("parameter 'relationKinds'"),
+    });
+  } finally {
+    await writeFile(cataloguePath, original);
+  }
 });
 
 it("reads agent settings and reference options with the panel viewer", async () => {
