@@ -22,6 +22,9 @@ import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.OwnerFieldRefusal;
 import io.ontomato.dataengine.service.OwnerRefusal;
+import io.ontomato.dataengine.service.SubjectDirectory;
+import io.ontomato.dataengine.bean.action.Action;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.ontomato.dataengine.service.agent.AgentExecutionScope;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.SpringBeanUtil;
@@ -67,6 +70,10 @@ class ActionPanelEndpointTest {
     ReflectionTestUtils.setField(controller, "caseExecutionGuard", caseExecutionGuard);
     ReflectionTestUtils.setField(controller, "businessConfigService", businessConfigService);
     ReflectionTestUtils.setField(controller, "buildTests", buildTests);
+    SubjectDirectory subjects = mock(SubjectDirectory.class);
+    when(subjects.subjectsInDomain("domain")).thenReturn(List.of());
+    ReflectionTestUtils.setField(controller, "subjectDirectory", subjects);
+    ReflectionTestUtils.setField(controller, "objectMapper", new ObjectMapper());
     when(langService.get(anyString(), anyString())).thenAnswer(call -> call.getArgument(1));
   }
 
@@ -105,6 +112,35 @@ class ActionPanelEndpointTest {
     assertEquals("/function/operation", errors.getJSONObject(0).getString("field"));
     assertEquals("invalid_option", errors.getJSONObject(0).getString("code"));
     assertEquals("expected OPERATION_WRITE", errors.getJSONObject(0).getString("message"));
+  }
+
+  @Test
+  void aReadActionNamesEachExplainedSegmentAndDerivedEffectByItsKind() throws Exception {
+    Action action = new Action();
+    action.setId("a1");
+    action.setName("Approve");
+    action.setCodeSegments(JSONArray.parseArray("""
+        [{"kind":"TRY_CATCH","trySegs":[{"kind":"UPDATE_OBJECT"}],
+          "catchs":[{"error":"any","segs":[{"kind":"ERROR_HANDLING"}]}]},
+         {"kind":"BRANCH","branchArms":[{"condition":"open","segs":[{"kind":"LOOP","segs":[{"kind":"QUERY"}]}]}]}]"""));
+    action.setDefinition(JSONObject.parseObject("""
+        {"effects":[{"kind":"UPDATE_OBJECT","className":"Order"}]}"""));
+    when(actionService.queryById("a1")).thenReturn(action);
+
+    JSONObject data = perform("/action/queryById", """
+        {"id":"a1"}""").getJSONObject("data");
+
+    JSONArray segments = data.getJSONArray("codeSegments");
+    assertEquals("ActionSegment.kind.TRY_CATCH", segments.getJSONObject(0).getString("kindLabel"));
+    assertEquals("ActionSegment.kind.UPDATE_OBJECT",
+        segments.getJSONObject(0).getJSONArray("trySegs").getJSONObject(0).getString("kindLabel"));
+    assertEquals("ActionSegment.kind.ERROR_HANDLING", segments.getJSONObject(0).getJSONArray("catchs").getJSONObject(0)
+        .getJSONArray("segs").getJSONObject(0).getString("kindLabel"));
+    JSONObject loop = segments.getJSONObject(1).getJSONArray("branchArms").getJSONObject(0).getJSONArray("segs").getJSONObject(0);
+    assertEquals("ActionSegment.kind.LOOP", loop.getString("kindLabel"));
+    assertEquals("ActionSegment.kind.QUERY", loop.getJSONArray("segs").getJSONObject(0).getString("kindLabel"));
+    assertEquals("ActionSegment.kind.UPDATE_OBJECT",
+        data.getJSONObject("definition").getJSONArray("effects").getJSONObject(0).getString("kindLabel"));
   }
 
   @Test
