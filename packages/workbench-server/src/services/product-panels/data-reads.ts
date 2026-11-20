@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BUSINESS_KNOWLEDGE, SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { AGENT_DEFINITION, BUSINESS_KNOWLEDGE, MODEL_OPTION, SCHEDULED_TASK, SKILL, USER } from "@ontomato/contracts/panel-client-requests";
 import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
@@ -10,6 +10,7 @@ import {
 } from "@ontomato/contracts/platform-object-types";
 import { productPanelSchema, type ProductPanel, type ProductProjection } from "@ontomato/contracts/product-panels";
 import { currentProductRecord } from "../../infrastructure/product-current";
+import { assertPermission } from "../../identity/installed";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
@@ -17,6 +18,7 @@ import type { ProductOwner } from "../product-governance/grants";
 import { createBusinessKnowledgeReadAdapter } from "../business-knowledge/panel-reads";
 import { createOntologyModelReadAdapter } from "../ontology-model/model-reads";
 import { createScheduledTaskReadAdapter } from "../scheduling/panel-reads";
+import type { SkillResolveRequest } from "../skills/panel-reads";
 import { requirePanelUse } from "./application-use";
 import { readPanelComponentCatalogue } from "./component-catalogue";
 import { requireCurrentProduct, requireDirectPanelMember } from "./current";
@@ -36,7 +38,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   const model = createOntologyModelReadAdapter(owner, viewer, callerUserName);
   const formParams = (params: Record<string, unknown>) => ({
     values: panelReadParameterSchemas.panelFormValues.optional().parse(params.values),
-    changedField: panelReadParameterSchemas.changedField.optional().parse(params.changedField),
+    changedField: panelReadParameterSchemas.changedField.optional().parse(params.changedField) ?? null,
   });
   const modelReads: Record<string, ReadAdapter> = {
     list: (selection, params) => model.list(selection.typeId, {
@@ -46,7 +48,46 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     form: (selection, params) => model.form(selection.typeId, selection.primaryKey!, formParams(params)),
     createForm: (selection, params) => model.createForm(selection.typeId, formParams(params)),
   };
+  const definitions = async () => {
+    const { createAgentDefinitionReadAdapter } = await import("../assistant/panel-reads");
+    return createAgentDefinitionReadAdapter(owner, viewer);
+  };
+  const options = async () => {
+    const { createAgentOptionReadAdapters } = await import("../assistant/panel-reads");
+    return createAgentOptionReadAdapters(viewer);
+  };
+  const skills = async () => {
+    const { agentDefinitionPermissions } = await import("../assistant/definitions");
+    await assertPermission(viewer, agentDefinitionPermissions);
+    const { createSkillReadAdapter } = await import("../skills/panel-reads");
+    return createSkillReadAdapter(owner, viewer, callerUserName);
+  };
   return {
+    [AGENT_DEFINITION]: {
+      list: async () => (await definitions()).list(),
+      record: async selection => (await definitions()).record(selection.primaryKey!),
+      form: async (selection, params) => (await definitions()).form(selection.primaryKey!, formParams(params)),
+      createForm: async (_selection, params) => (await definitions()).createForm(formParams(params)),
+    },
+    [MODEL_OPTION]: {
+      options: async () => (await options()).models.options(),
+      resolve: async (_selection, params) => (await options()).models.resolve(params.values as readonly unknown[]),
+    },
+    [USER]: {
+      options: async (_selection, params) => (await options()).users.options({
+        keyword: panelReadParameterSchemas.keyword.optional().parse(params.keyword),
+        page: panelReadParameterSchemas.page.optional().parse(params.page),
+      }),
+      resolve: async (_selection, params) => (await options()).users.resolve(params.values as readonly unknown[]),
+    },
+    [SKILL]: {
+      async options() {
+        return (await skills()).options();
+      },
+      async resolve(_selection, params) {
+        return (await skills()).resolve({ values: params.values as SkillResolveRequest["values"] });
+      },
+    },
     [OBJECT_TYPE]: { ...modelReads, [`${DELETE_OBJECT_TYPE}.describe`]: () => model.describe(DELETE_OBJECT_TYPE) },
     [ATTRIBUTE]: {
       ...modelReads,

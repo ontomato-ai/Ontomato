@@ -8,6 +8,8 @@ import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { appsSdkComponentCatalogSchema } from "@ontomato/contracts/apps-sdk";
+import { fileURLToPath } from "node:url";
+import { panelFormDescriptionSchema, panelOptionListSchema } from "@ontomato/contracts/panel-projection";
 import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
 import { platformScheduleFormSchema, platformTaskRunSchema, platformTaskSchema } from "@ontomato/contracts/platform-schedules";
 import { scheduledTaskPanelMessages, scheduledTaskPanelTextZhCn } from "@ontomato/platform-schedules/panel-text";
@@ -18,8 +20,12 @@ import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
+import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
+import { ensureAgentExecutionSchema } from "../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
+import { HttpError } from "../../utils/errors";
+import { ensureAssistantDefaultPromptSchema } from "../../infrastructure/postgres-migrations/20261105-assistant-default-prompts/schema";
 
-const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "" }));
+const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "", allowAgentReads: true }));
 vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
@@ -29,6 +35,14 @@ vi.mock("../../config/environment", () => ({ environment: { agentRuntime: () => 
 vi.mock("../../utils/request-identity", async original => ({
   ...await original<typeof import("../../utils/request-identity")>(),
   requireDomainId: (req: { domainId: string }) => req.domainId,
+}));
+vi.mock("../../identity/installed", async original => ({
+  ...await original<typeof import("../../identity/installed")>(),
+  assertPermission: async ({ token }: { token: string }, keys: readonly string[]) => {
+    expect(token).toBe("pilot-reader");
+    expect(keys).toEqual(["analysis-agent"]);
+    if (!state.allowAgentReads) throw new HttpError(403, "Forbidden", "FORBIDDEN");
+  },
 }));
 
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
@@ -41,6 +55,8 @@ const resourceIds = new Set<string>();
 const projectionId = "projection-pilot-summary";
 const panelId = "panel-schedules-pilot";
 const graphPanelId = "panel-ontology-pilot";
+const agentPanelId = "panel-agent-settings-pilot";
+const agentId = randomUUID();
 const task = platformTaskSchema.parse(examples.creates.find(item => item.name === "governance-instruction")!.response);
 const taskForm = platformScheduleFormSchema.parse(examples.forms.find(item => item.name === "governance-ready")!.response);
 const taskRun = platformTaskRunSchema.parse({
@@ -77,7 +93,12 @@ beforeAll(async () => {
     defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: true,
     packs: {
       en: { ...enLocaleMeta, messages: en },
-      "zh-CN": { ...enLocaleMeta, messages: scheduledTaskPanelMessages(scheduledTaskPanelTextZhCn) },
+      "zh-CN": { ...enLocaleMeta, messages: {
+        ...scheduledTaskPanelMessages(scheduledTaskPanelTextZhCn),
+        "assistant.default.knowledge-governance.name": "知识治理",
+        "assistant.skills.unavailable.name": "技能不可用",
+        "assistant.skills.unavailable.reason": "你无法使用此技能。",
+      } },
     },
   });
   state.schema = `panel_pilot_${randomUUID().replaceAll("-", "")}`;
@@ -85,9 +106,19 @@ beforeAll(async () => {
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
   await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
+  await ensureAssistantSchema(state.pool);
+  await ensureAssistantDefaultPromptSchema(state.pool);
+  await ensureAgentExecutionSchema(state.pool);
+  await state.pool.query(
+    `INSERT INTO "${state.schema}".assistant_agents (id,domain_id,kind,name,description,system_prompt,enabled)
+     VALUES ($1,'pilot','custom','Inventory analyst','Inventory summary','Read inventory',false)`, [agentId],
+  );
   contentRoot = await mkdtemp(path.join(os.tmpdir(), "panel-pilot-"));
   cataloguePath = await writeBundledAppSdkFixture(contentRoot);
-  installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
+  installContentLayout({
+    runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, runtimeResources: [],
+    prompts: [{ from: fileURLToPath(new URL("../../../prompts", import.meta.url)), to: "." }],
+  });
 
   const { panelOperationsRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const { ensurePanelOperationsSchema } = await import("../../infrastructure/postgres-migrations/20261118-panel-operations/schema");
@@ -154,6 +185,47 @@ beforeAll(async () => {
     expect(req.query.className).toBe("warehouse");
     res.json([{ className: "warehouse", name: "id", showName: "Identifier", type: "string", attrDesc: "",
       enable: true, businessKey: false, primaryKey: true }]);
+  });
+  app.get("/platform/applications/agent-settings/panel-uses", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    res.json({ success: true, data: {
+      applicationId: "agent-settings", entry: { path: "/applications/agent-settings", renderer: "panels" },
+      panelUses: [{
+        id: "settings", pageKey: "settings", path: "/applications/agent-settings/settings", panelId: agentPanelId,
+        access: { kind: "domain-member" },
+      }],
+    } });
+  });
+  app.get("/platform/page-skills", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.header("Accept-Language")).toBe("zh-CN");
+    res.json({ success: true, data: { pageSkills: [], registeredSkills: [], admittedEntrances: [] } });
+  });
+  app.get("/model-options", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.header("Accept-Language")).toBe("zh-CN");
+    res.json({ success: true, data: {
+      models: [
+        { type: "chat", ref: "demo/chat", name: "Demo Chat" },
+        { type: "embedding", ref: "demo/embed", name: "Demo Embedding", dimensions: 3 },
+      ],
+      defaultModelId: "demo/chat", embeddingModelId: "demo/embed",
+    } });
+  });
+  app.get("/platform/agent-execution/options", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.header("Accept-Language")).toBe("zh-CN");
+    if (req.query.selected) {
+      res.json({ canSetExecutionUser: false, users: [],
+        selected: { id: req.query.selected, name: "Former reader", available: false, reason: "disabled" } });
+      return;
+    }
+    if (req.query.keyword) {
+      expect(req.query).toEqual({ keyword: "Ada", pageNum: "2", pageSize: "5" });
+      res.json({ canSetExecutionUser: true, users: [{ id: "ada", name: "Ada" }] });
+      return;
+    }
+    res.json({ canSetExecutionUser: false, users: [] });
   });
   app.get("/platform/scheduled-tasks", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
@@ -435,4 +507,91 @@ it("reads the seven named ontology data items with the panel viewer", async () =
   const update = await request("PUT", "product-projections/" + runtimeProjectionId, { ...runtimeProjection, revision: 1 });
   expect(update.status).toBe(409);
   expect(await update.json()).toMatchObject({ error: { message: expect.stringContaining("node") } });
+});
+
+it("reads agent settings and reference options with the panel viewer", async () => {
+  const type = (id: string, read: string, params = {}) => ({
+    source: { type: { kind: "PlatformObjectType", id } }, read, params,
+  });
+  const object = (read: string) => ({ source: { object: { input: "agent" } }, read, params: {} });
+  const picker = (id: string, inputs = {}, params = {}) => ({
+    componentId: "@ontomato/sdk:ReferencePicker",
+    inputs: { values: { kind: "json" }, ...inputs },
+    data: { options: type(id, "options", params), selected: type(id, "resolve", { values: { input: "values" } }) },
+  });
+  const agentType = { agent: { kind: "object", objectType: "platform:AgentDefinition" } };
+  const written: Record<string, { componentId: string; inputs?: object; data: object }> = {
+    agents: { componentId: "@ontomato/sdk:ObjectList", data: { rows: type("platform:AgentDefinition", "list") } },
+    summary: { componentId: "@ontomato/sdk:ObjectSummary", inputs: agentType, data: { record: object("record") } },
+    definition: { componentId: "@ontomato/sdk:ObjectForm", inputs: agentType,
+      data: { form: object("form"), createForm: type("platform:AgentDefinition", "createForm") } },
+    models: picker("platform:ModelOption"),
+    users: picker("platform:User", { keyword: { kind: "scalar", type: "string" }, page: { kind: "json" } },
+      { keyword: { input: "keyword" }, page: { input: "page" } }),
+    skills: picker("platform:Skill"),
+
+  };
+  const members: Record<string, { target: { projectionId: string } }> = {};
+  for (const [key, projection] of Object.entries(written)) {
+    const projectionId = "agent-settings-" + key;
+    const saved = await request("PUT", "product-projections/" + projectionId, {
+      name: key, description: "", visibility: "domain", revision: 0, inputs: {}, outputs: {}, config: {}, ...projection,
+    });
+    expect(saved.status, await saved.text()).toBe(200);
+    members[key] = { target: { projectionId } };
+  }
+  const saved = await request("PUT", "product-panels/" + agentPanelId, {
+    name: "Agent settings", description: "", visibility: "domain", revision: 0,
+    content: { html: "<section>" + Object.keys(members).map(key => `<panel-member ref="${key}"></panel-member>`).join("") + "</section>" },
+    manifest: { state: {}, members, events: {} },
+  });
+  expect(saved.status, await saved.text()).toBe(200);
+  const read = async (member: string, dataName: string, inputs: object = {}) => {
+    const response = await request("POST", "product-panels/read", {
+      source: { kind: "registered", applicationId: "agent-settings", useId: "settings" },
+      memberPath: [{ member }], dataName, inputs,
+    });
+    expect(response.status).toBe(200);
+    return productPanelReadResponseSchema.parse(await response.json());
+  };
+  const ready = async (...args: Parameters<typeof read>) => {
+    const reply = await read(...args);
+    expect(reply, args.join("/")).toMatchObject({ status: "ready" });
+    if (reply.status !== "ready") throw new Error(reply.status);
+    return reply.value;
+  };
+  const agent = { className: "platform:AgentDefinition", primaryKey: agentId };
+  expect(await ready("agents", "rows")).toContainEqual(expect.objectContaining({ primaryKey: agentId, label: "Inventory analyst" }));
+  expect(await ready("summary", "record", { agent })).toMatchObject({
+    primaryKey: agentId, fields: { description: "Inventory summary", enabled: "false" },
+    fieldLabels: { description: "Description", enabled: "Enabled" },
+  });
+  const form = panelFormDescriptionSchema.parse(await ready("definition", "form", { agent }));
+  expect(form.values).toMatchObject({ name: "Inventory analyst", enabled: false, skills: [] });
+  expect(form.fields.find(field => field.path === "/executionUserId")?.readOnly).toBe(true);
+  expect(panelFormDescriptionSchema.parse(await ready("definition", "createForm")).values).toMatchObject({
+    name: "", enabled: true, modelSelection: { modelId: null }, skills: [],
+  });
+  expect(panelOptionListSchema.parse(await ready("models", "options")).options.map(option => option.value)).toEqual(["demo/chat"]);
+  const models = panelOptionListSchema.parse(await ready("models", "selected", { values: ["demo/missing", "demo/chat", null] }));
+  expect(models.options.map(option => option.value)).toEqual(["demo/missing", "demo/chat", null]);
+  expect(models.options[0]?.unavailable?.reason).toEqual(expect.any(String));
+  const users = panelOptionListSchema.parse(await ready("users", "options", { keyword: "Ada", page: { number: 2, size: 5 } }));
+  expect(users).toEqual({ options: [{ primaryKey: "ada", value: "ada", label: "Ada" }] });
+  expect(panelOptionListSchema.parse(await ready("users", "selected", { values: ["former", null] })).options).toMatchObject([
+    { value: "former", label: "Former reader", unavailable: { reason: expect.any(String) } }, { value: null },
+  ]);
+  const governance = { namespace: { kind: "provider", provider: "ontology" }, name: "knowledge-governance" };
+  const missing = { namespace: { kind: "domain", domainId: "elsewhere" }, name: "private-skill" };
+  expect(panelOptionListSchema.parse(await ready("skills", "options")).options).toContainEqual(expect.objectContaining({
+    value: governance, label: "知识治理",
+  }));
+  const skills = panelOptionListSchema.parse(await ready("skills", "selected", { values: [missing, governance, missing] })).options;
+  expect(skills.map(option => option.value)).toEqual([missing, governance, missing]);
+  expect(skills[0]).toMatchObject({ label: "技能不可用", unavailable: { reason: "你无法使用此技能。" } });
+  expect(skills[0]).toEqual(skills[2]);
+
+  state.allowAgentReads = false;
+  expect(await read("definition", "createForm")).toEqual({ status: "forbidden" });
+  expect(await read("skills", "selected", { values: [missing] })).toEqual({ status: "forbidden" });
 });
