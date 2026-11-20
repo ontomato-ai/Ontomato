@@ -4,14 +4,12 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import { directProjectionPortsSchema, type PanelFormDescription, type PanelFormField } from "@ontomato/contracts/panel-projection";
 import {
-  METRIC_CHART_COMPONENT, applicationPanelUsesResponseSchema, productCatalogQuerySchema,
+  METRIC_CHART_COMPONENT, productCatalogQuerySchema,
   productCurrentIdParamsSchema, productPanelInputSchema, registerProductPanelRequestSchema,
   registerProductProjectionRequestSchema,
 } from "@ontomato/contracts/product-panels";
-import { config } from "../../config/application";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { backendGet, buildBackendHeaders } from "../../utils/backend-client";
 import type { ProductOwner } from "../product-governance/grants";
 import { currentProductUsedBy, listCurrentProducts } from "./catalog";
 import { readPanelComponentCatalogue } from "./component-catalogue";
@@ -176,19 +174,6 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
         name: "", description: "", visibility: "private", componentId: "",
         inputs: {}, outputs: {}, config: {}, data: {}, ...params.values, id,
       }, true);
-    },
-  };
-}
-
-const entriesEnvelope = z.object({ success: z.literal(true), data: applicationPanelUsesResponseSchema });
-
-export function createApplicationReadAdapter(_owner: ProductOwner, viewer: AssistantCredentials) {
-  return {
-    async entries(primaryKey: string) {
-      const response = await backendGet("application-catalogue-entries",
-        `${config.dataQuery.baseUrl}/platform/applications/${encodeURIComponent(primaryKey)}/panel-uses`,
-        { headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers), retries: 1 });
-      return entriesEnvelope.parse(JSON.parse(response.text)).data;
     },
   };
 }

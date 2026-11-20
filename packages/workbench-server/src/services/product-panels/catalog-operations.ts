@@ -1,15 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import {
+  applicationCatalogueCreateSchema, applicationEntriesUpdateSchema, applicationIdentityUpdateSchema,
+} from "@ontomato/contracts/application-catalogue";
 import { type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { panelFormTargetSchema, panelObjectIdentitySchema } from "@ontomato/contracts/panel-manifest";
 import { panelFormSaveInputSchema, panelFormValuesSchema } from "@ontomato/contracts/panel-projection";
 import { changeProductDomainGrantRequestSchema, changeProductGrantRequestSchema } from "@ontomato/contracts/product-governance";
 import {
-  copyProductCurrentRequestSchema, deleteProductCurrentQuerySchema, productCurrentIdParamsSchema,
+  applicationPanelUseSchema, copyProductCurrentRequestSchema, deleteProductCurrentQuerySchema, productCurrentIdParamsSchema,
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
 } from "@ontomato/contracts/product-panels";
-import { PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
+import { APPLICATION, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import { HttpError } from "../../utils/errors";
+import { changeProductGrant } from "../product-governance/grants";
+import { applicationCatalogueClient } from "./application-catalogue";
 import {
   changeCurrentProductDomainGrant, changeCurrentProductGrant, copyCurrentProduct, deleteCurrentProduct,
 } from "./catalog";
@@ -21,6 +26,12 @@ const noData = z.object({}).strict();
 const grantInput = changeProductGrantRequestSchema.omit({ remove: true });
 type OutcomeData = Record<string, RuntimeJsonValue>;
 
+function writeInput<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, input: unknown): T {
+  const result = schema.safeParse(input);
+  if (!result.success) throw new HttpError(400, result.error.message, "INVALID_REQUEST");
+  return result.data;
+}
+
 async function write(type: string, run: () => Promise<{ primaryKey: string; data: OutcomeData }>): Promise<SinglePanelOperationOutcome> {
   try {
     const { primaryKey, data } = await run();
@@ -28,8 +39,6 @@ async function write(type: string, run: () => Promise<{ primaryKey: string; data
   } catch (error) {
     if (error instanceof HttpError && error.status >= 400 && error.status < 500)
       return { kind: "refusal", code: error.code ?? "PRODUCT_WRITE_REFUSED", message: error.message };
-    if (error instanceof z.ZodError)
-      return { kind: "refusal", code: "INVALID_REQUEST", message: error.message };
     throw error;
   }
 }
@@ -57,14 +66,14 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
     },
     async execute({ executor: { owner, credentials } }, target, input) {
       return write(type, async () => {
-        const { values: { id, ...values }, revision } = panelFormSaveInputSchema.parse(input);
-        const primaryKey = target.kind === "object" ? target.primaryKey : savedId.shape.id.parse(target.id ?? id ?? randomUUID());
-        const expectedRevision = target.kind === "draft" ? 0 : updateRevision.parse(revision);
+        const { values: { id, ...values }, revision } = writeInput(panelFormSaveInputSchema, input);
+        const primaryKey = target.kind === "object" ? target.primaryKey : writeInput(savedId.shape.id, target.id ?? id ?? randomUUID());
+        const expectedRevision = target.kind === "draft" ? 0 : writeInput(updateRevision, revision);
         if (kind === "projection") {
           await saveCurrentProjection(owner, credentials, primaryKey,
-            registerProductProjectionRequestSchema.parse({ ...values, revision: expectedRevision }));
+            writeInput(registerProductProjectionRequestSchema, { ...values, revision: expectedRevision }));
         } else {
-          const { revision: parsedRevision, ...definition } = registerProductPanelRequestSchema.parse({
+          const { revision: parsedRevision, ...definition } = writeInput(registerProductPanelRequestSchema, {
             ...values, revision: expectedRevision,
           });
           await saveCurrentPanel(owner, credentials, primaryKey, definition, parsedRevision);
@@ -97,7 +106,7 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
         return (await read(owner, credentials, target.primaryKey)).name;
       },
       async execute({ executor }, target, input) {
-        return write(type, () => run(executor, objectTarget.parse(target).primaryKey, inputSchema.parse(input)));
+        return write(type, () => run(executor, writeInput(objectTarget, target).primaryKey, writeInput(inputSchema, input)));
       },
     };
   }
@@ -124,7 +133,108 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
   ];
 }
 
+const applicationTarget = panelObjectIdentitySchema.extend({ kind: z.literal("object"), objectType: z.literal(APPLICATION) });
+const applicationDraftPath = z.string().regex(/^\/applications\/app-[a-z0-9-]+$/);
+const applicationSave: PanelWriteServerOperation = {
+  handlerRef: `${APPLICATION}.save`,
+  binding: { kind: "PlatformObjectType", id: APPLICATION },
+  kind: "form.save",
+  effect: "write",
+  batch: false,
+  targetType: APPLICATION,
+  targetSchema: z.discriminatedUnion("kind", [applicationTarget, panelFormTargetSchema.options[1]]),
+  inputSchema: panelFormSaveInputSchema,
+  resultSchema: savedId,
+  draftOperation: target => target.kind === "draft" ? "create" : "saveIdentity",
+  draftInput: input => panelFormSaveInputSchema.parse(input).values,
+  formInstructions: "Read the application owner's form for the required section and submit its full values.",
+  create: {
+    draftValues: values => panelFormValuesSchema.parse(values),
+    createdObject: data => ({ objectType: APPLICATION, primaryKey: savedId.parse(data).id }),
+  },
+  async execute({ executor: { credentials } }, target, input) {
+    return write(APPLICATION, async () => {
+      const { values } = writeInput(panelFormSaveInputSchema, input);
+      const java = applicationCatalogueClient(credentials);
+      if (target.kind === "draft") {
+        const body = writeInput(applicationCatalogueCreateSchema, values);
+        const id = target.id ?? writeInput(applicationDraftPath, body.entry.path).slice("/applications/".length);
+        await java.create(id, body);
+        return { primaryKey: id, data: { id } };
+      }
+
+      const id = target.primaryKey;
+      if ("panelUses" in values) await java.saveEntries(id, writeInput(applicationEntriesUpdateSchema, values));
+      else await java.saveIdentity(id, writeInput(applicationIdentityUpdateSchema, values));
+      return { primaryKey: id, data: { id } };
+    });
+  },
+};
+
+function applicationAction<Input extends Record<string, unknown>>(
+  name: "delete" | "grant" | "addEntry" | "updateEntry" | "deleteEntry",
+  inputSchema: z.ZodType<Input>,
+  run: (actor: PanelOperationHost["executor"], id: string, input: Input) => Promise<void>,
+): PanelWriteServerOperation {
+  const handlerRef = `applications.${name}`;
+  return {
+    handlerRef,
+    binding: { kind: "PlatformOperation", id: handlerRef },
+    labelKey: `panels.productCatalog.${name}`,
+    kind: "action",
+    effect: "write",
+    batch: false,
+    targetType: APPLICATION,
+    targetInput: "application",
+    targetSchema: applicationTarget,
+    inputSchema,
+    resultSchema: noData,
+    async targetLabel(host, { primaryKey }) {
+      const record = await applicationCatalogueClient(host.initiator.credentials).record(primaryKey);
+      return record.names[host.locale ?? "en"] ?? record.names.en;
+    },
+    async execute({ executor }, target, input) {
+      return write(APPLICATION, async () => {
+        const { primaryKey } = writeInput(applicationTarget, target);
+        await run(executor, primaryKey, writeInput(inputSchema, input));
+        return { primaryKey, data: {} };
+      });
+    },
+  };
+}
+
+const entryInput = z.object({ entryId: applicationPanelUseSchema.shape.id }).strict();
+type ApplicationEntries = z.infer<typeof applicationEntriesUpdateSchema>["panelUses"];
+function entryIndex(entries: ApplicationEntries, entryId: string) {
+  const index = entries.findIndex(entry => entry.id === entryId);
+  if (index < 0) throw new HttpError(404, "Application entry is unavailable", "APPLICATION_ENTRY_UNAVAILABLE");
+  return index;
+}
+
+async function editEntries(
+  credentials: PanelOperationHost["executor"]["credentials"], id: string, edit: (entries: ApplicationEntries) => void,
+) {
+  const java = applicationCatalogueClient(credentials);
+  const form = await java.form({ section: "entries", target: { kind: "object", objectType: APPLICATION, primaryKey: id }, changedField: null });
+  const values = applicationEntriesUpdateSchema.parse(form.values);
+  edit(values.panelUses);
+  await java.saveEntries(id, values);
+}
+
+const applicationOperations: readonly PanelWriteServerOperation[] = [
+  applicationSave,
+  applicationAction("delete", noData, async ({ credentials }, id) => applicationCatalogueClient(credentials).remove(id)),
+  applicationAction("grant", changeProductGrantRequestSchema, async ({ credentials }, id, input) => changeProductGrant(id, input, credentials)),
+  applicationAction("addEntry", z.object({ entry: applicationPanelUseSchema }).strict(),
+    async ({ credentials }, id, { entry }) => editEntries(credentials, id, entries => { entries.push(entry); })),
+  applicationAction("updateEntry", entryInput.extend({ entry: applicationPanelUseSchema }),
+    async ({ credentials }, id, { entryId, entry }) => editEntries(credentials, id, entries => { entries[entryIndex(entries, entryId)] = entry; })),
+  applicationAction("deleteEntry", entryInput,
+    async ({ credentials }, id, { entryId }) => editEntries(credentials, id, entries => { entries.splice(entryIndex(entries, entryId), 1); })),
+];
+
 export const productCatalogServerOperations: readonly PanelWriteServerOperation[] = [
   ...productOperations("projection", PRODUCT_PROJECTION, "productProjections"),
   ...productOperations("panel", PRODUCT_PANEL, "productPanels"),
+  ...applicationOperations,
 ];
