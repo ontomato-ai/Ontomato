@@ -31,6 +31,7 @@ const ontologyPosts = [
   "/ontology/query/distinct-values",
   "/ontology/query/execute-dsl",
   "/ontology/query/metrics/search",
+  "/ontology/query/metrics/recall",
   "/ontology/query/metrics/parameter-form",
   "/ontology/query/metrics/parse-parameters",
   "/ontology/query/metrics/execute",
@@ -103,7 +104,7 @@ assistantExecutionRouter.post("/:runId/retrieval",wrap(async(req,res)=>{
   const operation=assistantRetrievalOperationSchema.parse(req.body);
   const {owner,credentials:initiator}=context(req);
   let credentials:AssistantCredentials=initiator;
-  if(operation.operation==="begin" || operation.operation==="submit")credentials=(await credentialsForRun(owner,runId,initiator)).credentials;
+  if(operation.operation==="begin" || operation.operation==="submit" || operation.operation==="submit-metric")credentials=(await credentialsForRun(owner,runId,initiator)).credentials;
   else {
     const run=await runForOwner(owner,runId);
     if(run.status!=="running")throw new HttpError(409,"Execution is closed","RUN_CLOSED");

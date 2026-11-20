@@ -27,7 +27,8 @@ The skills cover different tasks on this same platform: `ontomato-ontomap-builde
 ## This skill’s role
 
 If you are already the product retriever, use the direct query commands and data-retrieval
-for delivery; do not delegate the same question to another retriever.
+for delivery; do not delegate the same question to another retriever. Metric lookup, metric
+execution and `pending` are not part of that work: the assistant reuses published metrics itself.
 
 Answer business questions using the current ontology and its permitted data. This package reads definitions and queries data; it does not change the data source, ontomap, permissions or business records. It needs no product checkout. Use the accessible retriever from `agent list` for a natural-language question, `execute-dsl` when you need to control the query, or the separately configured analysis MCP service for a report.
 
@@ -76,12 +77,11 @@ In an Ontomato conversation, delegation follows the native `agent` tool and
 | Command | API and result |
 | --- | --- |
 | `agent list [query]` | List accessible agents and their provider/id references |
-| `agent start --agent <providerId>/<agentId> --message @question.txt [--context @context.json]` | Admit binding and retrieval together; return taskId and sessionRef immediately |
+| `agent start --agent <providerId>/<agentId> --message @question.txt [--context @context.json]` | Admit the retriever's task; return taskId and sessionRef immediately |
 | `agent read <taskId> [--follow] [--files]` | Read a snapshot or follow its SSE updates; download delivered files without changing their bytes |
 | `agent send --session <providerId>/<sessionId> --message @answer.txt --reply-to <questionId>` | Answer in the same conversation; steer while running, otherwise start its next round |
 | `agent send --session <providerId>/<sessionId> --message @question.txt [--steer]` | Continue that conversation; ordinary messages fail while busy unless explicitly steered |
 | `agent cancel <taskId>` | Cancel this execution and its delegated descendants; keep accepted results |
-| `retriever-cancel <sessionId> --run <runId>` | Ontology business command: stop only the retriever, preserving binding results and QC |
 
 
 ## Standalone delegation and results
@@ -97,11 +97,9 @@ its stable question ID. The recipient may still be running; the channel chooses 
 new round. Silence confirms nothing. Without a product parent, questions appear in reads/events;
 `read --follow` returns on an unanswered question or a terminal snapshot, so a question is not completion.
 
-Binding and retriever branches run independently. A successful binding, including zero rows,
-is available before the retriever finishes. Check its meaning, conditions and parameters before
-using it as the answer; otherwise keep the retriever's task. Lookup failure is not empty data.
-Preserve partial-result limits. Both branches settle before the final result notification;
-quality checks continue separately. Formal binding files have null selfCheck.
+The retriever's task ends with its delivered files or its answer; zero rows can be a formal result.
+Check each file's scope, assumptions and self-check before using it. Preserve partial-result limits.
+Lookup failure is not empty data.
 
 
 ## Acting on your own work
@@ -124,8 +122,8 @@ credential problem, and retrying with different parameters will not change it.
 
 ## Query workflow and result meaning
 
-Read overview, schema/relationships and knowledge. Retrieve metric specifications
-before inventing a calculation. Inspect exact stored values when needed. For DSL,
+Read overview, schema/relationships and knowledge. Outside the product retriever, retrieve
+metric specifications before inventing a calculation. Inspect exact stored values when needed. For DSL,
 follow [the reference entry guide](references/dsl.md) and fetch the rules for the
 actual classes; the Java service owns the grammar. The retriever does this orchestration
 for natural-language questions. It can take several minutes.

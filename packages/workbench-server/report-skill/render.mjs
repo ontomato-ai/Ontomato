@@ -7,7 +7,7 @@ import { z } from "zod";
 import { chartAxisBounds, chartBrandColors } from "@ontomato/contracts/chart-presentation";
 import { chartMapGeojson } from "@ontomato/contracts/chart-maps";
 import { chartMapNames, reportChartOption } from "./chart-option.mjs";
-import { datasetPayloadSchema } from "@ontomato/contracts/data-retrieval";
+import { storedDataset } from "@ontomato/contracts/data-retrieval";
 import { parseProductMarkdown } from "@ontomato/markdown";
 
 const FONT_ROOT = "/usr/share/fonts/truetype";
@@ -113,7 +113,7 @@ async function main() {
       image.free();
       sourceNote(slide, source);
     } else {
-      const data = datasetPayloadSchema.parse(JSON.parse(fs.readFileSync(source, "utf8")));
+      const data = storedDataset(JSON.parse(fs.readFileSync(source, "utf8")));
       const [start, end] = entry.range ?? [0, data.rows.length];
       if (start > end || end > data.rows.length) throw new Error(`Invalid table range: ${start}–${end}/${data.rows.length}`);
       if ((start !== 0 || end !== data.rows.length) && !entry.summary) throw new Error("A table subset must have an explicit summary label");

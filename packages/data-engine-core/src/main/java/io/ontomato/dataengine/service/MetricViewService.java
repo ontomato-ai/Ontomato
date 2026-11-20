@@ -16,6 +16,9 @@ public interface MetricViewService {
     Object[] testExecute(MetricView metric, String bindingId, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes, ExecutionTarget target) throws Exception;
 
     List<MetricView> queryForRetrieval(String domainId,String query,String cursor,List<String> classes,int limit);
+
+    /** Vector recall of published read metrics and their presets, with an absolute distance ceiling. */
+    List<MetricRecall> recall(String question, String domainId, double maxDistance, int maxRows);
 	
 	public MetricView generateFromNatureLanguage(String question, String lang, String domainId, boolean persistence) throws Exception;
 

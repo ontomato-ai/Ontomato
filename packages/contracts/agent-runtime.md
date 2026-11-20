@@ -394,22 +394,21 @@ automatic wakeup from that cancellation. No platform task table or delegation bu
 
 ### Admission and external commands
 
-Retrieval admission, binding startup, caller quotes, continuation scope and decision revisions
+Retrieval admission, caller quotes, continuation scope and decision revisions
 remain in Java provider prepare. An agent-answer with replyTo records the existing confirmed
 decision in both run and steer modes. Delivery does not store an immutable decisionRevision;
-the retrieval extension reports the execution's current revision. Both branches finish before
-result notification; quality jobs continue as branch-owned attachments and publish changes.
-Quality and candidate model calls inherit the source execution's credential chain by run reference;
-its in-memory credentials remain until these attachments finish without delaying result notification.
-The ontology-only retriever cancellation command preserves binding; generic cancel covers the
-execution and its delegated descendants. Natural parent completion does not cancel children.
+the retrieval extension reports the execution's current revision. The retriever's delivery is the
+result notification. A check of the data a reply cited runs under that reply's run: quality and
+candidate model calls inherit the reply's credential chain by run reference, and the reply's
+provider read stays unsettled until they finish. Generic cancel covers the execution and its
+delegated descendants. Natural parent completion does not cancel children.
 Action creation and generation prepare retain their existing write and sandbox admission.
 
 Provider prepare also receives inputId, the stable receipt ID used to bound host user quotes.
 A genuine user answer retains source.kind=user; agent and external answers are confirmed
 decisions, not user quotes. Retrieval callers update their current quotes through the host-only
 user-quotes endpoint; each retrieval round freezes its quotes in its existing run request for
-both branches and their quality checks.
+the round and the check of its cited outputs.
 
 A replyTo send automatically steers an active recipient or prepares its next run when idle.
 An ordinary busy send fails with SESSION_BUSY before recording an input unless steer is explicit.
@@ -451,8 +450,8 @@ The initiating tk/API Key is kept only in runtime memory under the delegation ro
 sent to provider prepare/list as private authentication headers. No credential is persisted in
 an intent, binding, message or snapshot. All executions in the chain, including business
 settlement and notification wakeups, retain that root until they finish; the last completion
-drops the credential. Provider read.settled includes outstanding business attachments, so quality
-does not prolong the execution status but does retain credentials until its work ends. A runtime restart loses it, and later preparation fails explicitly with
+drops the credential. Provider read.settled includes outstanding business attachments, so a reply's
+checks do not prolong its status but do retain credentials until their work ends. A runtime restart loses it, and later preparation fails explicitly with
 CALLER_CREDENTIAL_INVALID and a request to start again. There is no refresh, recovery or
 internal-Key acquisition for delegation. Read-only history resolves its recorded owner.
 

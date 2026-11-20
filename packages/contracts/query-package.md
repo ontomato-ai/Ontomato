@@ -74,10 +74,10 @@ source, binding target or computation declaration invalidates a generation test;
 pure parameter descriptions do not. Test acceptance reads all files from the
 same generation run, not inherited artifacts or a model's success claim.
 
-New retrieval output is workbench.dataset.v2. Submission recipes are package or
-metric references; old dsl/python writing is rejected. A metric receipt includes
-its frozen package but keeps kind:metric so candidate binding behavior stays
-unchanged. v1 immutable datasets are accepted only on historical reads. Stored
+New retrieval output is workbench.dataset.v2. The retriever submits packages; the assistant's
+metric delivery submits a published metric reference; old dsl/python writing is rejected. A metric
+receipt includes its frozen package but keeps kind:metric, so its check never settles it into a
+new candidate or preset. v1 immutable datasets are accepted only on historical reads. Stored
 protocol-2 read Functions without a package retain their original execution and
 source declarations at the read boundary; saving changes requires a package.
 Old protocols still require explicit migration. No bulk conversion or guessed
