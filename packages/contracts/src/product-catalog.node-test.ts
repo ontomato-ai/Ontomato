@@ -98,3 +98,19 @@ test("declares typed catalogue reads that reuse the current product records and 
   assert.equal(panelReadParameterSchemas.productScope.safeParse("maintainable").success, false);
   assert.equal(panelReadParameterSchemas.applicationScope.safeParse("maintainable").success, true);
 });
+
+test("accepts a legacy hosted application entry without widening the panel registration response", async () => {
+  const { applicationCatalogueEntriesSchema, applicationCatalogueRecordSchema } = await import("./application-catalogue");
+  const { applicationPanelUsesResponseSchema } = await import("./product-panels");
+  const entry = { path: "/applications/hosted-example" };
+  const record = {
+    id: "hosted-example", names: { en: "Existing hosted application" }, descriptions: {}, icon: "pages",
+    source: "domain", canMaintain: true, canEditEntries: false, canGrant: true, entryCount: 0,
+    entry, panelUses: [], groups: [],
+  };
+  assert.deepEqual(applicationCatalogueRecordSchema.parse(record).entry, entry);
+  assert.equal(applicationCatalogueRecordSchema.safeParse({ ...record, entry: { ...entry, upstream: "private" } }).success, false);
+  const entries = { applicationId: record.id, entry, panelUses: [] };
+  assert.deepEqual(applicationCatalogueEntriesSchema.parse(entries), entries);
+  assert.equal(applicationPanelUsesResponseSchema.safeParse(entries).success, false);
+});

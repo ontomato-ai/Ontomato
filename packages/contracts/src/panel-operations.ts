@@ -7,10 +7,10 @@ import {
 } from "./panel-projection";
 import { chartProjectionTemplateSchema, dashboardMetricOutputSchema } from "./dashboard";
 import {
-  applicationEntryMenuSchema, applicationPanelUsesResponseSchema, currentPanelRecordSchema, currentProjectionRecordSchema,
+  applicationEntryMenuSchema, currentPanelRecordSchema, currentProjectionRecordSchema,
   productPanelListResponseSchema, productPanelUsedBySchema, productProjectionListResponseSchema, productProjectionUsedBySchema,
 } from "./product-panels";
-import { applicationCatalogueQueryResultSchema, applicationCatalogueRecordSchema } from "./application-catalogue";
+import { applicationCatalogueEntriesSchema, applicationCatalogueQueryResultSchema, applicationCatalogueRecordSchema } from "./application-catalogue";
 import { panelManifestSchema } from "./panel-manifest";
 import {
   platformOntologyCountsResponseSchema, platformOntologyNeighborsResponseSchema, platformOntologyObjectsResponseSchema,
@@ -91,7 +91,7 @@ export const panelReadResultSchemas = {
   productPanelMembers: panelManifestSchema.innerType().shape.members,
   applicationCatalogue: applicationCatalogueQueryResultSchema,
   applicationRecord: applicationCatalogueRecordSchema,
-  applicationEntries: applicationPanelUsesResponseSchema,
+  applicationEntries: applicationCatalogueEntriesSchema,
   panelFormDescription: panelFormDescriptionSchema,
   panelOperationDescriptor: panelOwnerOperationDescriptorSchema,
   panelOptionList: panelOptionListSchema,

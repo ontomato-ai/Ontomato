@@ -21,8 +21,19 @@ export const applicationCatalogueQueryResultSchema = z.object({
   nextCursor: z.string().optional(),
 }).strict();
 
+const panelUseEntry = applicationPanelUsesResponseSchema.shape.entry.shape;
+const applicationCatalogueEntrySchema = z.object({
+  path: panelUseEntry.path,
+  renderer: panelUseEntry.renderer.optional(),
+  home: panelUseEntry.home,
+}).strict();
+
+export const applicationCatalogueEntriesSchema = applicationPanelUsesResponseSchema.extend({
+  entry: applicationCatalogueEntrySchema,
+});
+
 export const applicationCatalogueRecordSchema = summary
-  .merge(applicationPanelUsesResponseSchema.pick({ entry: true, panelUses: true }))
+  .merge(applicationCatalogueEntriesSchema.pick({ entry: true, panelUses: true }))
   .merge(applicationPanelUsesManagementSchema.pick({
     entryAccess: true, framePanelId: true, theme: true, delivery: true,
   }).partial())
