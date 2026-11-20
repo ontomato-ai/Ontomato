@@ -263,6 +263,54 @@ test("knowledge detail can share list search and customer instances have no form
   }).success, false);
 });
 
+test("saved action details and draft forms have named owner reads", async () => {
+  const { panelReadResultSchemas } = await import("./panel-operations");
+  const { directReadDeclaration } = await import("./panel-projection");
+  const action = { object: { literal: { className: ACTION, primaryKey: "approve" } } };
+  const projection = productProjectionInputSchema.parse({
+    name: "Action details", description: "", visibility: "domain", componentId: "@ontomato/sdk:Data",
+    inputs: {}, outputs: {}, config: {},
+    data: {
+      definition: { source: action, read: "definition", params: {} },
+      explanation: { source: action, read: "explanation", params: {} },
+      draft: { source: { type: platformType(ACTION) }, read: "createForm", params: { values: { literal: {} } } },
+    },
+  });
+  assert.equal(directReadDeclaration(projection, projection.data.definition)?.result, "actionDefinition");
+  assert.equal(directReadDeclaration(projection, projection.data.explanation)?.result, "actionExplanation");
+  assert.equal(directReadDeclaration(projection, projection.data.draft)?.result, "panelFormDescription");
+
+  const update = { kind: "UPDATE_OBJECT", kindLabel: "Update object" };
+  const assignment = { field: "status", valueFrom: "approved" };
+  const condition = { objectParameter: "order_id", className: "Order", field: "status", operator: "IS", value: "pending" };
+  const header = { version: 1, source: "DERIVED", verified: false, name: "Approve" };
+  const definition = {
+    ...header, execution: { kind: "FUNCTION", operation: "OPERATION_WRITE" },
+    effects: [{ ...update, className: "Order", assignments: [assignment] }],
+    submissionCriteria: { operator: "AND", conditions: [condition] },
+  };
+  assert.deepEqual(panelReadResultSchemas.actionDefinition.parse(header), header);
+  assert.deepEqual(panelReadResultSchemas.actionDefinition.parse(definition), definition);
+  assert.equal(panelReadResultSchemas.actionDefinition.safeParse({
+    ...definition, effects: [{ kind: "UPDATE_OBJECT" }],
+  }).success, false);
+
+  const range = { start: 1, end: 2 };
+  const explanation = {
+    code: "approve(order_id)", codeHash: "saved-hash", explanationVersion: 1,
+    codeSegments: [{
+      id: "decision", kind: "BRANCH", kindLabel: "Decision", title: "When pending", codeRange: range,
+      branchArms: [{ condition: "pending", segs: [{ ...update, id: "update", title: "Approve", codeRange: range, assignments: [assignment] }] }],
+    }],
+    businessMeaning: { operations: ["Approve the order"], negativeEffect: "" },
+  };
+  assert.deepEqual(panelReadResultSchemas.actionExplanation.parse(explanation), explanation);
+  assert.deepEqual(panelReadResultSchemas.actionExplanation.parse({ code: "", codeSegments: null }), { code: "", codeSegments: null });
+  assert.equal(panelReadResultSchemas.actionExplanation.safeParse({
+    ...explanation, codeSegments: [{ ...explanation.codeSegments[0], kindLabel: "" }],
+  }).success, false);
+});
+
 test("knowledge lists accept scalar status and counts preserve the owner's order and labels", async () => {
   const { panelGroupCountsSchema, panelReadInputMatches } = await import("./panel-projection");
   const projection = {

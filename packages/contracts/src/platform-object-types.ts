@@ -129,8 +129,9 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("action", "capability"),
     reads: {
       ...metadataList,
-      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
-      form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
+      ...modelReads,
+      definition: { source: "object", parameterMode: "fixed", params: {}, result: "actionDefinition" },
+      explanation: { source: "object", parameterMode: "fixed", params: {}, result: "actionExplanation" },
     },
     operations: [`${ACTION}.save`, SET_ACTION_STATUS, DELETE_ACTION],
   },

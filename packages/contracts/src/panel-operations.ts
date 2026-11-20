@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { actionDefinitionSchema, actionExplanationSchema } from "./action-details";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema, runtimeKeySchema } from "./agent-runtime-values";
 import { panelObjectIdentitySchema, panelObjectRefSchema, panelOperationCallSchema } from "./panel-manifest";
 import {
@@ -72,6 +73,8 @@ export const panelReadOperationDescriptorSchema = panelOwnerOperationDescriptorS
 
 /** Result schema identifiers used by the registered read declarations. */
 export const panelReadResultSchemas = {
+  actionDefinition: actionDefinitionSchema,
+  actionExplanation: actionExplanationSchema,
   panelRecordList: panelRecordListSchema,
   panelRecord: panelRecordSchema,
   panelRecordQuery: panelRecordQuerySchema,
