@@ -5,6 +5,8 @@ import { pageContextSchema } from "./page-context";
 import { pageDraftLinkSchema } from "./page-draft";
 import { panelUseRefSchema } from "./panel-agent";
 import { panelMemberPathSchema, panelObjectIdentitySchema, panelOpenRequestSchema, panelOperationSchema, type PanelDeepLinkStateValue, type PanelObjectIdentity } from "./panel-manifest";
+import { panelOwnerOperationDescriptorSchema } from "./panel-operations";
+import { panelLocalOperationNameSchema } from "./panel-projection";
 import { applicationPanelUseSchema, panelDefinitionContentSchema, productPanelSchema } from "./product-panels";
 import { definitionRevisionSchema, type ProductDefinitionRevision, type ProductDefinitionTarget } from "./product-subscriptions";
 import { workspaceDiffSchema, workspaceIdSchema } from "./workspaces";
@@ -55,14 +57,17 @@ export type ProductPanelReadSource = z.infer<typeof productPanelReadSourceSchema
 export const directPanelMemberPathSchema = panelMemberPathSchema.nonempty();
 export type DirectPanelMemberPath = z.infer<typeof directPanelMemberPathSchema>;
 
-export const productPanelReadRequestSchema = z.object({
+const panelMemberReadRequestSchema = z.object({
   source: productPanelReadSourceSchema,
   memberPath: directPanelMemberPathSchema,
-  dataName: z.string().min(1).max(200),
   inputs: runtimeJsonObjectSchema,
   /** Component-supplied parameter values for this datum, separate from the projection's bound inputs. */
   runtimeParams: runtimeJsonObjectSchema.optional(),
 }).strict();
+export const productPanelReadRequestSchema = z.union([
+  panelMemberReadRequestSchema.extend({ dataName: z.string().min(1).max(200) }),
+  panelMemberReadRequestSchema.extend({ operations: z.literal(true) }),
+]);
 export type ProductPanelReadRequest = z.infer<typeof productPanelReadRequestSchema>;
 
 const panelPersonalStateScopeSchema = z.object({
@@ -89,6 +94,11 @@ const panelReadResults = [
 ] as const;
 export const productPanelReadResponseSchema = z.discriminatedUnion("status", panelReadResults);
 export type ProductPanelReadResponse = z.infer<typeof productPanelReadResponseSchema>;
+export const productPanelOperationsReadResponseSchema = z.discriminatedUnion("status", [
+  panelReadResults[0].extend({ value: z.record(panelLocalOperationNameSchema, panelOwnerOperationDescriptorSchema) }),
+  panelReadResults[1], panelReadResults[2], panelReadResults[3],
+]);
+export type ProductPanelOperationsReadResponse = z.infer<typeof productPanelOperationsReadResponseSchema>;
 export const panelDataStateSchema = z.discriminatedUnion("status", [
   ...panelReadResults, z.object({ status: z.literal("loading") }).strict(),
 ]);

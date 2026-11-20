@@ -4,10 +4,11 @@ import { createI18n } from "vue-i18n";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
-import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
+import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import { panelModuleFor, type DirectPanelMount, type DirectPanelModuleExports } from "../../../../../packages/apps-sdk/src/direct";
 import { noOperations } from "./panel-frame";
+import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 
 /*
  * A panel written with code, run in the platform's own document (big main's ruling, 2026-11-20): its module mounts its
@@ -22,10 +23,10 @@ import { noOperations } from "./panel-frame";
 const base = { domainId: "d", ownerId: "o", createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "", revision: 1 };
 const runNow: DirectProjection = {
   ...base, id: "task-run", name: "Run now", componentId: "@ontomato/sdk:OperationButton",
-  inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: {},
-  data: { operation: { source: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, read: "describe", params: {} } },
+  inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: { operation: "runNow" },
+  data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
 };
-const describedRunNow = { handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
+const describedRunNow = { kind: "action", handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
 const manifest: DirectPanelManifest = {
   state: {
     mode: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: true, external: false },
@@ -47,7 +48,7 @@ async function evaluate(entry: DirectPanelModuleExports, words: string) {
 }
 
 function run(template: string) {
-  const reads: Omit<ProductPanelReadRequest, "source">[] = [];
+  const reads: PanelMemberReadRequest[] = [];
   const element = document.createElement("div");
   document.body.append(element);
   const requests = {
@@ -76,7 +77,7 @@ function run(template: string) {
     confirmOperation: noOperations.confirmOperation,
     read: async (request): Promise<ProductPanelReadResponse> => {
       reads.push(request);
-      return { status: "ready", value: describedRunNow as never };
+      return { status: "ready", value: (request.operations ? { runNow: describedRunNow } : null) as never };
     },
   });
   return { module, mount, element, reads };
@@ -99,7 +100,7 @@ it("runs the same panel twice on a page, each with its own state, reads and unmo
   const [one, two] = await Promise.all([evaluate(first.module, "one"), evaluate(second.module, "two")]);
   const [mountOne, mountTwo] = await Promise.all([first.mount, second.mount]);
   await Promise.all([drawn(first.element), drawn(second.element)]);
-  expect(first.reads).toEqual([{ memberPath: [{ member: "run" }], dataName: "operation", inputs: { task: null } }]);
+  expect(first.reads).toEqual([{ memberPath: [{ member: "run" }], operations: true, inputs: { task: null } }]);
   expect(second.reads).toEqual(first.reads);
 
   one.context.instance.state.set("mode", "edit");
@@ -126,7 +127,8 @@ it("runs two different panels at once, each drawn from its own template", async 
   await drawn(list.element);
   expect(list.element.querySelector("h2.title")?.textContent).toBe("Tasks");
   expect(settings.element.querySelector("aside.title")?.textContent).toBe("Settings list");
-  expect(settings.reads).toEqual([]);
+  // The settings panel draws no member: it reads no datum, though its members' operations are known from the start.
+  expect(settings.reads.filter((read) => read.dataName)).toEqual([]);
 
   settingsMount.dispose();
   expect(settings.element.innerHTML).toBe("");

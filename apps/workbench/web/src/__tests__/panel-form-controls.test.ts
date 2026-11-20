@@ -80,6 +80,7 @@ const projection: ProductProjection = {
       params: { values: { input: "values" }, changedField: { input: "changedField" } },
     },
   },
+  operations: { save: { operation: { kind: "PlatformOperation", id: `${AGENT_DEFINITION}.save` }, target: { input: "agent" } } },
 };
 const manifest = definePanel({
   state: { selected: { type: { kind: "object", objectType: AGENT_DEFINITION }, deepLink: true } },

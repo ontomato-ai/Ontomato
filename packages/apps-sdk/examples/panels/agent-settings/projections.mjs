@@ -47,6 +47,8 @@ export default [
       form: read(shownAgent, "form"),
       createForm: read(type(AGENT_DEFINITION), "createForm"),
     },
+    // The definitions service's own save: the chosen agent's, or a new one's while none is chosen.
+    operations: { save: { operation: { kind: "PlatformOperation", id: `${AGENT_DEFINITION}.save` }, target: { input: "agent" } } },
   }),
   projection("agent-model-choice", "Agent model", "The model an agent runs on, from the domain's model options; none keeps the domain default.",
     "ReferencePicker", picker("platform:ModelOption")),

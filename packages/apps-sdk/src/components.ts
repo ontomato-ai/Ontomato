@@ -1,24 +1,19 @@
 import type { Component } from "vue";
-import type { ComponentOperation } from "@ontomato/contracts/panel-projection";
 import type { OntologyParameterType } from "@ontomato/contracts/panel-manifest";
 import type { PanelReadResultId } from "@ontomato/contracts/platform-object-types";
 
 /*
  * What a component of this SDK version offers a projection (overall design 3.1, 3.2): its identity, whether it presents
- * or controls, the ontology elements it may bind, the parameters it takes, the state it hands its host, and the
- * operations it publishes with the SDK client operation behind each.
+ * or controls, the ontology elements it may bind, the parameters it takes and the state it hands its host. What a
+ * projection can do is not the component's: the projection names its owners' operations, whatever draws it.
  *
  * Type tools read a component's props and events; they cannot read what the component *means* — that a table bound to a
  * scheduled task reads it, that a button bound to `schedules.runNow` runs it. So the meaning is declared here, once,
- * beside the component it describes, and the generated catalogue and its document are read from these declarations. A
- * panel's projections take their ports from the catalogue: the operation a projection publishes and its `handlerRef` are
- * the ones declared here, never a name guessed from a label.
+ * beside the component it describes, and the generated catalogue and its document are read from these declarations.
  */
 
 /** What a component is for: something drawn, or something the reader operates. */
 export type ComponentRole = "presentation" | "control";
-
-export type ComponentClient = ComponentOperation;
 
 export interface ComponentMetadata {
   /** The identity the catalogue and the graph use, e.g. `ScheduledTaskTable`. */
@@ -42,6 +37,8 @@ export interface ComponentMetadata {
   readonly data?: Readonly<Record<string, {
     readonly results: readonly PanelReadResultId[];
     readonly required: boolean;
+    /** The read parameters it gives itself at run time, beside what the projection maps. */
+    readonly runtimeParams?: readonly string[];
   }>>;
   /** The ontology elements it may bind, as `Kind:id` or `Kind:*` when any of that kind does. */
   readonly bindsElement?: readonly string[];
@@ -49,8 +46,6 @@ export interface ComponentMetadata {
   readonly inputs?: Readonly<Record<string, OntologyParameterType>>;
   /** The state it hands its host, by name: what the host's own template reads from it. */
   readonly outputs?: readonly string[];
-  /** The operations it publishes: what a projection containing it offers, and what an agent may call. */
-  readonly operations?: readonly ComponentClient[];
 }
 
 /**

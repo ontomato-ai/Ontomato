@@ -5,13 +5,14 @@ import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
-import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
+import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import { createDirectPanelInstance } from "../../../../../packages/apps-sdk/src/panel/direct";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 import { noOperations } from "./panel-frame";
+import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 
 /*
  * Members of a directly rendered panel (design 4.2): the instance reads each member's named data through the host's one
@@ -32,11 +33,12 @@ const projections: Record<string, DirectProjection> = {
     inputs: { task: { kind: "object", objectType: SCHEDULED_TASK }, values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
     outputs: {}, config: {},
     data: { form: { source: { object: { input: "task" } }, read: "form", params: { values: { input: "values" }, changedField: { input: "changedField" } } } },
+    operations: { save: { operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.save` }, target: { input: "task" } } },
   },
   "task-run": {
     ...record, id: "task-run", name: "Run now", componentId: "@ontomato/sdk:OperationButton",
-    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: {},
-    data: { operation: { source: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, read: "describe", params: {} } },
+    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: { operation: "runNow" },
+    data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
   },
 };
 const manifest: DirectPanelManifest = {
@@ -53,11 +55,15 @@ const form = (name: string, revision = 3) => ({
   save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
 });
 const runNow = {
-  handlerRef: "schedules.runNow", label: "立即运行", effect: "write", target: { source: "input", input: "task" },
+  kind: "action", handlerRef: "schedules.runNow", label: "立即运行", effect: "write", target: { source: "input", input: "task" },
+  inputSchema: {}, resultSchema: {}, batch: false,
+};
+const save = {
+  kind: "form.save", handlerRef: `${SCHEDULED_TASK}.save`, label: "Save", effect: "write", target: { source: "input", input: "task" },
   inputSchema: {}, resultSchema: {}, batch: false,
 };
 
-type Read = Omit<ProductPanelReadRequest, "source">;
+type Read = PanelMemberReadRequest;
 function open(answer: (request: Read) => ProductPanelReadResponse | Promise<ProductPanelReadResponse>, initial = {}) {
   const reads: Read[] = [];
   const draftErrors: unknown[] = [];
@@ -89,7 +95,11 @@ function open(answer: (request: Read) => ProductPanelReadResponse | Promise<Prod
 }
 
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
-const owner = (request: Read) => ready(request.dataName === "operation" ? runNow : form(String((request.inputs.task as { primaryKey: string }).primaryKey)));
+/** What the owners admit each member now: for a chosen task, the run and the save; nothing while none is chosen. */
+const admitted = (request: Read) =>
+  ready(request.inputs.task ? (request.memberPath[0]!.member === "run" ? { runNow } : { save }) : {});
+const owner = (request: Read) => (request.operations ? admitted(request)
+  : ready(form(String((request.inputs.task as { primaryKey: string }).primaryKey))));
 const input = (element: HTMLElement, path: string) => element.querySelector<HTMLInputElement>(`[data-field="${path}"] input`)!;
 
 afterEach(() => {
@@ -108,7 +118,9 @@ it("asks for a selection without reading, then reads the owner's form and run-no
   expect(reads.find((read) => read.dataName === "form")).toEqual({
     memberPath: [{ member: "form" }], dataName: "form", inputs: { task: task("t-1"), changedField: null },
   });
-  expect(reads.find((read) => read.dataName === "operation")).toMatchObject({ memberPath: [{ member: "run" }], dataName: "operation" });
+  // The run's operations are asked for again with the chosen task, which its owner admits run-now for.
+  expect(reads.filter((read) => read.operations && read.memberPath[0]!.member === "run").at(-1))
+    .toEqual({ memberPath: [{ member: "run" }], operations: true, inputs: { task: task("t-1") } });
   // The button is named as the owner names the operation in the reader's language, not by the projection's own name.
   await vi.waitFor(() => expect(element.querySelector(".sdk-operation-button button")?.textContent?.trim()).toBe("立即运行"));
 });
@@ -179,7 +191,7 @@ it("shows no permission and the owner's reason in the product's one presentation
 it("never draws an answer for an earlier selection over the later one", async () => {
   const pending = new Map<string, (answer: ProductPanelReadResponse) => void>();
   const { instance, element } = open((request) => {
-    if (request.dataName === "operation") return ready(runNow);
+    if (request.operations) return admitted(request);
     const key = (request.inputs.task as { primaryKey: string }).primaryKey;
     return new Promise((resolve) => pending.set(key, resolve));
   }, { selectedTask: task("t-1") });
@@ -196,7 +208,7 @@ it("never draws an answer for an earlier selection over the later one", async ()
 
 it("shows the fields the owner does not accept in the form it read, keeping the values it returned", async () => {
   const errors = [{ field: "/note", code: "value_too_long", message: "A note is a sentence" }];
-  const { element } = open((request) => (request.dataName === "operation" ? ready(runNow)
+  const { element } = open((request) => (request.operations ? admitted(request)
     : ready({ ...form("t-1"), values: { name: "t-1", note: "x" }, errors })), { selectedTask: task("t-1") });
   await vi.waitFor(() => expect(element.querySelector('[data-field="/note"] .el-form-item__error')?.textContent).toBe("A note is a sentence"));
   expect(input(element, "/note").value).toBe("x");
@@ -206,7 +218,7 @@ it("refuses a draft whole when the owner's check of it names fields it does not 
   const { receivePanelDraft } = await import("../../../../../packages/apps-sdk/src/panel/draft");
   const errors = [{ field: "/note", code: "value_too_long", message: "A note is a sentence" }];
   const { instance, element, reads, draftErrors } = open((request) => {
-    if (request.dataName === "operation") return ready(runNow);
+    if (request.operations) return admitted(request);
     // The owner checks the draft's values and answers its form with what it does not accept.
     return ready(request.inputs.values ? { ...form("t-1"), values: request.inputs.values, errors } : form("t-1"));
   }, { selectedTask: task("t-1") });

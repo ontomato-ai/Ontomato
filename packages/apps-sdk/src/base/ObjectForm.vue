@@ -12,7 +12,7 @@ import { PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
 import { changedPaths, fieldAt, movedPath, valueAt, withValueAt } from "../panel/form-values";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMember } from "../panel/member";
-import { editedInput, memberFormSource, MemberDataUnavailable, type FormSource } from "../panel/member-forms";
+import { editedInput, formSave, memberFormSource, MemberDataUnavailable, type FormSource } from "../panel/member-forms";
 import { formControlsKey, rowControlKey, rowControlsOf } from "./form-controls";
 import FormFieldControl from "./FormFieldControl.vue";
 
@@ -23,8 +23,9 @@ import FormFieldControl from "./FormFieldControl.vue";
  * replaces the fields and the values.
  *
  * The form edits the object the panel's state holds for it — the input its `form` datum reads its object from — or, when
- * that state is empty and the projection declares a `createForm`, a new one, saved through the owner's own create; the
- * panel then holds the object the owner created. A header "new" is an event that empties that state.
+ * that state is empty and its owner admits the save as a create (the owner creates, and the projection reads its
+ * `createForm`), a new one; the panel then holds the object the owner created. The save is the one operation of its
+ * projection the owner describes as a form's save, whatever the projection calls it. A header "new" is an event that empties that state.
  * A field another projection draws (a reference chosen from its own catalogue, a data scope on a graph) is edited there,
  * through this form's field port, and is this form's value, dirty state and draft all the same.
  *
@@ -42,14 +43,16 @@ const member = useMember();
 const forms: FormSource = memberFormSource(member, panel.instance);
 
 const editInput = editedInput(member.projection);
-/** Whether the form creates: the projection declares the owner's create form. */
-const creates = Object.hasOwn(member.projection.data, "createForm");
+/** Whether the projection reads the owner's create form, which a create draft is read in. */
+const creates = Object.values(member.projection.data).some((data) => data.read === "createForm");
 /** The panel state the edited object is held in; a form that only creates holds none. */
 const state = computed(() => (editInput === undefined ? null : slotState(panel.manifest, slot.slot, editInput)));
 const key = computed(() => (state.value === null ? null : selectedKey(panel.instance.state.values.value[state.value])));
+/** The form's save as its owner admits it now: whether, with nothing chosen, it creates is the owner's to say. */
+const save = computed(() => formSave(member.operations.value));
 const target = computed<PanelFormTarget | null>(() => {
   if (key.value) return { kind: "object", objectType, primaryKey: key.value };
-  return creates ? { kind: "draft" } : null;
+  return save.value?.descriptor.target.source === "draft" ? { kind: "draft" } : null;
 });
 const targetKey = (value: PanelFormTarget | null) => (value === null ? "" : value.kind === "object" ? value.primaryKey : "draft");
 

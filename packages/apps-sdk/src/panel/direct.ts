@@ -1,4 +1,4 @@
-import { computed, onScopeDispose, shallowReactive, shallowRef, watch, type ComputedRef } from "vue";
+import { computed, effectScope, onScopeDispose, shallowReactive, shallowRef, watch, type ComputedRef, type EffectScope } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
@@ -11,6 +11,10 @@ import { createPanelInstance, type PanelInstance, type PanelInstanceOptions } fr
 import { stateObject, type PanelFieldValue } from "./state";
 import type { PanelText } from "./text";
 import type { PanelContext } from "./context";
+import { admittedOperations, watchMemberOperations, type MemberOperationsState } from "./member-operations";
+import type { PanelMemberContext } from "./member";
+import { portsOf, readsOwnerForm } from "./ports-of";
+import { slotInputValues } from "./ports";
 
 /*
  * A panel drawn directly in the platform's own document (design 4.2): the instance holds its state and its members'
@@ -36,7 +40,7 @@ export type MemberPlacement = Pick<PanelManifest["members"][string], "inputs" | 
 
 export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "readProjection"> {
   /** Reads one named datum of one member, as the platform's read entry answers it for this panel's source. */
-  read(request: Omit<ProductPanelReadRequest, "source">): Promise<ProductPanelReadResponse>;
+  read: PanelReadPort;
   /** Reads a member's current projection by ID, as the reader. */
   readProjection(id: string): Promise<DirectProjection>;
   /**
@@ -70,8 +74,16 @@ export interface DirectPanelInstance extends PanelInstance {
   expandPageComposer(entry: PanelConversationEntry): void;
   /** The member's projection, read once for this instance. */
   projectionOf(member: string): Promise<DirectProjection>;
+  /**
+   * The member as the instance holds it, drawn or not: its projection, the inputs its placement fills now, its data and
+   * the operations its owners admit, registered with the instance once its projection is read. A member is held once per
+   * reading of its projection; one its definition changed is held anew.
+   */
+  memberContext(member: string): Promise<PanelMemberContext>;
   /** The data of one member, whose inputs are `inputs` as the member's placement fills them now. */
   memberData(member: string, projection: DirectProjection, inputs: () => MemberInputs): MemberData;
+  /** The operations one member can do now, as the owner admits them for its inputs; kept current while it is drawn. */
+  memberOperations(member: string, projection: DirectProjection, inputs: () => MemberInputs): ComputedRef<MemberOperationsState>;
   /** An operation's reported changes: the shown data they concern are read again. */
   refresh(affected: PanelOperationAffected): void;
   /** Every shown datum is read again, and every component that reads its own data is told to. */
@@ -155,8 +167,13 @@ export function awaitsInputs(projection: DirectProjection, data: DirectProjectio
   return required.some((param) => values[param] === null || values[param] === undefined);
 }
 
-/** The platform's read entry for a panel's member data, as the reader: the host fills in which panel it is. */
-export type PanelReadPort = (request: Omit<ProductPanelReadRequest, "source">) => Promise<ProductPanelReadResponse>;
+/** One read of a member's — a named datum, or the operations it can do — without the panel, which the host fills in. */
+export type PanelMemberReadRequest =
+  | (Omit<Extract<ProductPanelReadRequest, { dataName: string }>, "source"> & { operations?: never })
+  | (Omit<Extract<ProductPanelReadRequest, { operations: true }>, "source"> & { dataName?: never });
+
+/** The platform's read entry for a panel's members, as the reader: the host fills in which panel it is. */
+export type PanelReadPort = (request: PanelMemberReadRequest) => Promise<ProductPanelReadResponse>;
 
 /**
  * One named datum of a member, read through the platform's read entry: unread while it waits for its object or a
@@ -203,6 +220,11 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   });
   /** Every datum shown now, with how to read it again when an operation reports its source changed. */
   const shown = new Set<{ data: DirectProjectionData; inputs: () => MemberInputs; reread(): void }>();
+  /** Every member's operations read now, read again with everything shown. */
+  const operationReads = new Set<() => void>();
+  /** Where the members the instance holds live, each in its own scope, so a member held anew ends the old one. */
+  const membersScope = effectScope();
+  const members = new Map<string, { scope: EffectScope; context: Promise<PanelMemberContext> }>();
 
   const directInstance: DirectPanelInstance = Object.assign(instance, {
     direct,
@@ -218,6 +240,24 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
         projections.set(member, found);
       }
       return found;
+    },
+    memberContext(member: string) {
+      const held = members.get(member);
+      if (held) return held.context;
+      if (!Object.hasOwn(direct.members, member)) throw new Error(`The panel declares no member '${member}'`);
+      const scope = membersScope.run(() => effectScope())!;
+      const context = directInstance.projectionOf(member).then((projection) => scope.run(() => {
+        const inputs = computed(() => slotInputValues(direct, member, instance.state.values.value) as MemberInputs);
+        const operations = directInstance.memberOperations(member, projection, () => inputs.value);
+        onScopeDispose(instance.register({
+          slot: member, projectionId: projection.id, ports: portsOf(projection),
+          get operations() { return admittedOperations(operations.value); },
+          takesDrafts: readsOwnerForm(projection),
+        }));
+        return { key: member, projection, inputs, operations, data: directInstance.memberData(member, projection, () => inputs.value) };
+      })!);
+      members.set(member, { scope, context });
+      return context;
     },
     memberData(member: string, projection: DirectProjection, inputs: () => MemberInputs): MemberData {
       const own = () => instance.ownParams(member);
@@ -251,6 +291,12 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
         },
       };
     },
+    memberOperations(member: string, projection: DirectProjection, inputs: () => MemberInputs) {
+      const { state, reread } = watchMemberOperations(options.read, projection, member, inputs, () => active);
+      operationReads.add(reread);
+      onScopeDispose(() => operationReads.delete(reread));
+      return state;
+    },
     refresh(affected: PanelOperationAffected) {
       for (const { data, inputs, reread } of shown) {
         const object = stateObject(sourceObject(data, inputs()));
@@ -262,6 +308,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     },
     refreshAll() {
       for (const { reread } of shown) reread();
+      for (const reread of operationReads) reread();
       instance.refreshObjects();
     },
     setActive(next: boolean) {
@@ -273,6 +320,12 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
         if (revision !== undefined && revision <= (readRevisions.get(member) ?? 0)) continue;
         projections.delete(member);
         versions.set(member, (versions.get(member) ?? 0) + 1);
+        // A member the instance held is held anew from the newer definition, drawn or not.
+        const held = members.get(member);
+        if (!held) continue;
+        held.scope.stop();
+        members.delete(member);
+        void directInstance.memberContext(member);
       }
     },
     projectionVersion: (member: string) => versions.get(member) ?? 0,

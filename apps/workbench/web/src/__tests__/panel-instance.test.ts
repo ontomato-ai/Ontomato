@@ -88,14 +88,15 @@ describe("a panel's instance", () => {
     expect(third.pageContext.value.selection).toEqual([]);
   });
 
-  it("takes a projection's ports from its record alone, with no panel-written port", async () => {
+  it("takes a projection's ports and operations from its record alone, with no panel-written port", async () => {
     const panelInstance = instance({ selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" } });
-    const summary = portsOf(await panelInstance.projection("projection-x"));
-    expect(summary.inputs).toEqual({ task: { kind: "object", objectType: SCHEDULED_TASK } });
-    expect(summary.operations).toEqual([]);
+    const summary = await panelInstance.projection("projection-x");
+    expect(portsOf(summary).inputs).toEqual({ task: { kind: "object", objectType: SCHEDULED_TASK } });
+    expect(summary.operations).toBeUndefined();
 
-    const form = portsOf(await panelInstance.projection("projection-task-form"));
-    expect(form.operations.map((operation) => operation.handlerRef)).toEqual([`${SCHEDULED_TASK}.save`]);
+    // What the form can do is the owner's operation its record names, whatever component draws it.
+    const form = await panelInstance.projection("projection-task-form");
+    expect(Object.values(form.operations ?? {}).map(({ operation }) => operation.id)).toEqual([`${SCHEDULED_TASK}.save`]);
   });
 
   it("draws the component the catalogue names, and refuses one this version has not got", async () => {
@@ -121,11 +122,16 @@ describe("a panel's instance", () => {
     });
     const changed: unknown[] = [];
     panelInstance.onObjectChanged((object) => changed.push(object));
-    panelInstance.register({ slot: "runTask", projectionId: "projection-run-task", ports: {
-      binding: "PlatformOperation:schedules.runNow", inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, operations: [
-        { name: "runNow", label: "Run now", kind: "action" as const, inputSchema: {}, handlerRef: "schedules.runNow" },
-      ],
-    } });
+    panelInstance.register({
+      slot: "runTask", projectionId: "projection-run-task",
+      ports: { binding: "PlatformOperation:schedules.runNow", inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } } },
+      // Run-now as its owner admits it for the chosen task.
+      operations: { runNow: {
+        kind: "action", handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" },
+        inputSchema: {}, resultSchema: {}, batch: false,
+      } },
+      takesDrafts: false,
+    });
     const [operation] = panelInstance.operations.value.filter((candidate) => candidate.slot === "runTask");
     await panelInstance.invoke(operation!.id);
     // One intent for the selected task, which the host dispatches; nothing runs in the frame.
@@ -146,17 +152,16 @@ describe("a panel's instance", () => {
       dirty: () => false,
       discard: () => {},
     };
-    const saves = { binding: `PlatformObjectType:${SCHEDULED_TASK}`, inputs: {}, operations: [
-      { name: "save", label: "Save", kind: "form.save" as const, inputSchema: {}, handlerRef: `${SCHEDULED_TASK}.save` },
-    ] };
+    const ports = { binding: `PlatformObjectType:${SCHEDULED_TASK}`, inputs: {} };
     panelInstance.forms.hold({ pageKey: "schedules", operation: "agent.update", target: { id: "a-1" }, form: {} }, { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/drafts/a.page-draft.json" }, () => {});
     panelInstance.forms.register("taskForm", declining);
     await vi.waitFor(() => expect(panelInstance.forms.unclaimed(["taskForm"])).toBe(true));
     // A declared slot still to register may be the form that takes it.
-    panelInstance.register({ slot: "taskForm", projectionId: "projection-task-form", ports: saves });
-    panelInstance.register({ slot: "tasks", projectionId: "projection-x", ports: { ...saves, operations: [] } });
+    // The form's member reads the owner's form, so a draft is offered to it; the others read none.
+    panelInstance.register({ slot: "taskForm", projectionId: "projection-task-form", ports, operations: {}, takesDrafts: true });
+    panelInstance.register({ slot: "tasks", projectionId: "projection-x", ports, operations: {}, takesDrafts: false });
     expect(panelInstance.unclaimedDraft.value).toBe(false);
-    panelInstance.register({ slot: "runTask", projectionId: "projection-run-task", ports: { ...saves, operations: [] } });
+    panelInstance.register({ slot: "runTask", projectionId: "projection-run-task", ports, operations: {}, takesDrafts: false });
     expect(panelInstance.unclaimedDraft.value).toBe(true);
   });
 

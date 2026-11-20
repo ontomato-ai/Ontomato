@@ -26,8 +26,8 @@ const projections = Object.fromEntries([
     data: { record: { source: { object: { input: "task" } }, read: "record", params: {} } },
   }),
   projectionRecord({
-    id: "direct-run", componentId: "@ontomato/sdk:OperationButton", inputs: { task: taskInput },
-    data: { describe: { source: { operation: { kind: "PlatformOperation", id: RUN_NOW } }, read: "describe", params: {} } },
+    id: "direct-run", componentId: "@ontomato/sdk:OperationButton", inputs: { task: taskInput }, config: { operation: "runNow" },
+    data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: RUN_NOW }, target: { input: "task" } } },
   }),
 ].map((projection) => [projection.id, projection]));
 const panel = codePanelRecord("panel-q", { tasks: "direct-tasks", summary: "direct-summary", run: "direct-run" });
@@ -61,10 +61,10 @@ describe("a code panel's frame reading direct projections", () => {
     // A type source: its list.
     await expect(request("/product-projections/direct-tasks", "GET", "")).resolves.toMatchObject({ status: 200 });
     await expect(request(tasks)).resolves.toMatchObject({ status: 200 });
-    // An operation source the frame has not read yet: refused.
+    // An operation the frame has not read the projection naming yet: refused.
     await expect(request(`${tasks}/${task.id}/runs`, "POST")).rejects.toThrow("Outside what this panel's projections declare");
 
-    // An object source (by an object input) and an operation source.
+    // An object source (by an object input), and an operation the projection names.
     await request("/product-projections/direct-summary", "GET", "");
     await expect(request(`${tasks}/${task.id}`)).resolves.toMatchObject({ status: 200 });
     await request("/product-projections/direct-run", "GET", "");

@@ -194,9 +194,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     unclaimedDraft: computed(() => {
       const registered = registrations.value;
       if (!Object.keys(manifest.members).every((member) => registered.some((registration) => registration.slot === member))) return false;
-      const formSlots = registered
-        .filter((registration) => registration.ports.operations.some((operation) => operation.kind === "form.save"))
-        .map((registration) => registration.slot);
+      const formSlots = registered.filter((registration) => registration.takesDrafts).map((registration) => registration.slot);
       return forms.unclaimed(formSlots);
     }),
     projections: readonly(registrations),

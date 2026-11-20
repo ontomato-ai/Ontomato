@@ -249,9 +249,9 @@ export function checkCatalogue(entries, declared, root, tsconfig) {
   }
 }
 
-/** The catalogue's document section: each component's meaning, what it binds and the operations it publishes. */
+/** The catalogue's document section: each component's meaning, what it binds and what it takes and hands over. */
 export function catalogueMarkdown(version, entries) {
-  const lines = ["# Components of this SDK version", "", `The components \`${version}\` exports that a projection can bind. Each one names the module a page imports it from, what it means, the ontology elements it may bind, its inputs and the operations it publishes. A projection in the panel product chooses one component, one binding and its display; a panel composes projections in slots.`, ""];
+  const lines = ["# Components of this SDK version", "", `The components \`${version}\` exports that a projection can bind. Each one names the module a page imports it from, what it means, the ontology elements it may bind, and its inputs. A projection in the panel product chooses one component, one binding and its display, and names the owners' operations it offers; a panel composes projections in slots.`, ""];
   for (const { metadata } of entries) {
     lines.push(`## ${metadata.componentId}`, "", `${metadata.role === "control" ? "Control" : "Presentation"}: \`${metadata.exportName}\` from \`${metadata.module}\`.`, "", metadata.meaning, "");
     if (metadata.effects) lines.push(`Effects: ${metadata.effects}`, "");
@@ -259,8 +259,6 @@ export function catalogueMarkdown(version, entries) {
     if (metadata.inputs && Object.keys(metadata.inputs).length)
       lines.push("Inputs:", "", ...Object.entries(metadata.inputs).map(([name, type]) => `- \`${name}\`: ${type.kind === "object" ? type.objectType : type.type}`), "");
     if (metadata.outputs?.length) lines.push(`Hands over: ${metadata.outputs.map((name) => `\`${name}\``).join(", ")}`, "");
-    for (const operation of metadata.operations ?? [])
-      lines.push(`- \`${operation.client}.${operation.name}\` — ${operation.label} (${operation.kind})`, "");
   }
   return lines.join("\n");
 }

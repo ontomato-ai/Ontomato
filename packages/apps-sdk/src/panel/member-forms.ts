@@ -6,6 +6,8 @@ import type { PanelInstance } from "./instance";
 import type { PanelMemberContext } from "./member";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { PlatformObjectRefusal } from "./platform-objects";
+import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
+import type { MemberOperationsState } from "./member-operations";
 
 /*
  * Where an owner form reads its description and saves: in a panel's frame, the resource module of the bound type; in a
@@ -23,6 +25,19 @@ export interface FormSource {
 export function editedInput(projection: ProductProjection): string | undefined {
   const data = projection.data.form;
   return data && "object" in data.source && "input" in data.source.object ? data.source.object.input : undefined;
+}
+
+/**
+ * The member's form save as its owner admits it now: the one of its projection's operations the owner describes as a
+ * form's save, under the projection's name for it, with the target the owner admits — the edited object, or a new one.
+ * None while the operations are read, or while the owner admits no save (nothing chosen, and nothing to create).
+ */
+export function formSave(state: MemberOperationsState): { name: string; descriptor: PanelOwnerOperationDescriptor } | null {
+  if (state.status !== "ready") return null;
+  const saves = Object.entries(state.value).filter(([, descriptor]) => descriptor.kind === "form.save");
+  if (saves.length > 1) throw new Error(`A form saves through one operation; its projection names ${saves.map(([name]) => name).join(", ")}`);
+  const [found] = saves;
+  return found ? { name: found[0], descriptor: found[1] } : null;
 }
 
 /** A datum the owner did not answer with a value: no permission, or the reason it could not be read. */
@@ -62,7 +77,9 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
       return result.value as PanelFormDescription;
     },
     async save(target, input) {
-      const answer = await instance.writeOperation(panelOperationId(member.key, "save"), { call: { target, input } });
+      const save = formSave(member.operations.value);
+      if (!save) throw new Error(`The owner admits no save for the form in member '${member.key}' now`);
+      const answer = await instance.writeOperation(panelOperationId(member.key, save.name), { call: { target, input } });
       if (answer.decision === "cancel") throw new Error("The save was cancelled");
       const { response } = answer;
       if (response.kind === "not-dispatched") throw new Error(response.message);

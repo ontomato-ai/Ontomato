@@ -49,11 +49,12 @@ const projections: Record<string, DirectProjection> = {
     inputs: { task: { kind: "object", objectType: SCHEDULED_TASK }, values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
     outputs: {}, config: {},
     data: { form: { source: { object: { input: "task" } }, read: "form", params: { values: { input: "values" }, changedField: { input: "changedField" } } } },
+    operations: { save: { operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.save` }, target: { input: "task" } } },
   },
   "task-run": {
     ...base, id: "task-run", name: "Run now", componentId: "@ontomato/sdk:OperationButton",
-    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: {},
-    data: { operation: { source: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, read: "describe", params: {} } },
+    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: { operation: "runNow" },
+    data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
   },
 };
 const field = (path: string, label: string) => ({ path, label, control: { kind: "text" as const }, valueSchema: {}, required: false, readOnly: false });
@@ -61,7 +62,8 @@ const form = (name: string) => ({
   fields: [field("/name", "Name")], values: { name }, errors: [], revision: 3,
   save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
 });
-const runNow = { handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
+const runNow = { kind: "action", handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
+const save = { kind: "form.save", handlerRef: `${SCHEDULED_TASK}.save`, label: "Save", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
 const INTENT = "5f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d05";
 const task = (primaryKey: string) => ({ className: SCHEDULED_TASK, primaryKey });
 
@@ -75,9 +77,12 @@ function answer(request: Sent) {
   if (projection) return Response.json({ projection: projections[decodeURIComponent(projection[1]!)] });
   if (request.path === "/api/product-panels/read") {
     // The owner answers its form with the values it was asked with, when there are any (a draft's, an edit's).
-    const { dataName, inputs } = request.body as { dataName: string; inputs: { task: { primaryKey: string }; values?: { name: string } } };
-    if (dataName === "operation") return Response.json({ status: "ready", value: runNow });
-    return Response.json({ status: "ready", value: form(inputs.values?.name ?? `Task ${inputs.task.primaryKey}`) });
+    const { operations, memberPath, inputs } = request.body as {
+      operations?: true; memberPath: [{ member: string }]; inputs: { task: { primaryKey: string } | null; values?: { name: string } };
+    };
+    // What the owners admit each member for a chosen task: the run, and the form's save; nothing while none is chosen.
+    if (operations) return Response.json({ status: "ready", value: !inputs.task ? {} : memberPath[0].member === "run" ? { runNow } : { save } });
+    return Response.json({ status: "ready", value: form(inputs.values?.name ?? `Task ${inputs.task!.primaryKey}`) });
   }
   if (request.path === "/api/assistant/sessions/session-1/runs/run-1/page-draft")
     return Response.json({ pageKey: use.pageKey, operation: `${SCHEDULED_TASK}.save`, target: { id: "t-1" }, form: { name: "Drafted by an agent" } });
@@ -102,9 +107,10 @@ async function open(address: string) {
   return { app, element, router, sent };
 }
 
-const reads = (sent: Sent[]) => sent.filter(request => request.path === "/api/product-panels/read").map(request => request.body as {
-  source: unknown; memberPath: unknown; dataName: string; inputs: { task?: { primaryKey: string } };
-});
+/** The data the page read: its members' operations, read for every member from the start, are not data. */
+const reads = (sent: Sent[]) => sent.filter(request => request.path === "/api/product-panels/read")
+  .map(request => request.body as { source: unknown; memberPath: unknown; dataName?: string; inputs: { task?: { primaryKey: string } } })
+  .filter(read => read.dataName !== undefined);
 
 afterEach(() => {
   document.body.innerHTML = "";

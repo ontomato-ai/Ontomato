@@ -1,5 +1,5 @@
 import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
-import { projectionOperations } from "@ontomato/contracts/panel-projection";
+import { projectionOperation } from "@ontomato/contracts/panel-projection";
 import { operationInvocation, type PanelProjectionRegistration } from "./ports";
 import type { PanelOperationBinding } from "./types";
 import type { PanelStateStore } from "./state";
@@ -8,8 +8,8 @@ import type { PanelEvents } from "./events";
 import type { PanelWriteInvocation } from "./human-operations";
 
 /*
- * The operations a panel instance offers (overall design 3.4, 5.1, "list and execute operations"): the ones its slots'
- * projections publish, derived from the registered ports rather than written again, and the events its declaration
+ * The operations a panel instance offers (overall design 3.4, 5.1, "list and execute operations"): the ones its members'
+ * projections name, as their owners admit them now, under the member's key and the projection's name, and the events its declaration
  * offers for explicit invocation (a header button, an agent's call). Each is the description an agent reads and the handler a header button and an agent's call both
  * reach, so one operation has one implementation and there is no second "similar command".
  *
@@ -29,7 +29,8 @@ export function panelOperations(
 ): PanelOperationBinding[] {
   return [
     ...registrations.flatMap((registration) =>
-      projectionOperations(manifest, registration).map((operation) => ({
+      Object.entries(registration.operations).map(([name, descriptor]) => projectionOperation(manifest, registration.slot, name, descriptor))
+        .map((operation) => ({
         ...operation,
         // The target is read here, from the instance's state at the moment of the call: the object the reader has
         // selected, or the draft's own. A caller outside the panel sends what this produces, never a state reference.

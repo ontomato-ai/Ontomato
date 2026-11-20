@@ -52,6 +52,8 @@ function mounted() {
     key: "chart",
     projection,
     inputs: computed(() => ({})),
+    // A chart offers no operation.
+    operations: computed(() => ({ status: "ready" as const, value: {} })),
     data: {
       use(name) {
         used.push(name);
