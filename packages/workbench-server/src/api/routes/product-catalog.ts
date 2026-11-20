@@ -1,12 +1,13 @@
 import type { Router } from "express";
 import {
   copyProductCurrentRequestSchema, deleteProductCurrentQuerySchema, deleteProductCurrentResponseSchema,
+  deleteProductPanelResponseSchema,
   productCatalogQuerySchema, productCurrentIdParamsSchema,
   productPanelListResponseSchema, productPanelResponseSchema, productPanelUsedBySchema,
   productProjectionListResponseSchema, productProjectionResponseSchema, productProjectionUsedBySchema,
 } from "@ontomato/contracts/product-panels";
 import {
-  changeProductDomainGrantRequestSchema, changeProductGrantRequestSchema,
+  changeProductDomainGrantRequestSchema, changeProductGrantRequestSchema, changeProductPanelDomainGrantResponseSchema,
   productGrantChangeResponseSchema, productGrantsResponseSchema,
 } from "@ontomato/contracts/product-governance";
 import type { CurrentProductKind } from "../../infrastructure/product-current";
@@ -39,8 +40,9 @@ export function mountProductCatalog(router: Router, kind: CurrentProductKind) {
     const query = deleteProductCurrentQuerySchema.safeParse(req.query);
     if (!query.success)
       throw new HttpError(400, "A current revision is required", "INVALID_REQUEST", { issues: query.error.issues });
-    await deleteCurrentProduct(owner, credentials, kind, req.params.id, query.data.revision);
-    res.json(deleteProductCurrentResponseSchema.parse({ success: true }));
+    const result = await deleteCurrentProduct(owner, credentials, kind, req.params.id, query.data.revision);
+    const schema = kind === "panel" ? deleteProductPanelResponseSchema : deleteProductCurrentResponseSchema;
+    res.json(schema.parse(result));
   }));
   router.post("/:id/copy", wrap(async (req, res) => {
     const { owner, credentials } = context(req);
@@ -67,7 +69,8 @@ export function mountProductCatalog(router: Router, kind: CurrentProductKind) {
     const { owner, credentials } = context(req);
     const { id } = productCurrentIdParamsSchema.parse(req.params);
     const { shared } = changeProductDomainGrantRequestSchema.parse(req.body);
-    await changeCurrentProductDomainGrant(owner, credentials, kind, id, shared);
-    res.json(productGrantChangeResponseSchema.parse({ success: true }));
+    const result = await changeCurrentProductDomainGrant(owner, credentials, kind, id, shared);
+    const schema = kind === "panel" ? changeProductPanelDomainGrantResponseSchema : productGrantChangeResponseSchema;
+    res.json(schema.parse(result));
   }));
 }

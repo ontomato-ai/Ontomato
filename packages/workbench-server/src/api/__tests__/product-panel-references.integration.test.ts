@@ -23,6 +23,7 @@ import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/
 import { installContentLayout } from "../../content/layout";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
+import { panelStateKey } from "../../services/product-panels/personal-state-key";
 import { errorHandler } from "../middleware/error-handler";
 
 const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "" }));
@@ -48,7 +49,8 @@ const panelId = "panel-referencing";
 const personalPanelId = "panel-personal";
 const personalChildId = "panel-personal-child";
 const snapshotPanelId = "panel-snapshot-test";
-const grants = new Set<string>();
+const grants = new Map<string, string>();
+const shared = new Set<string>();
 let server: Server | undefined;
 let contentRoot: string;
 let revision: number;
@@ -79,22 +81,39 @@ beforeAll(async () => {
   const { productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const app = express();
   app.use(express.json());
-  const granted = (token: string | undefined, id: string) =>
-    grants.has(id) && (token === "author" || (token === "projection-owner" && (id === projectionId || id.startsWith("ports-"))) || (id === personalPanelId || id === personalChildId) || id === snapshotPanelId || id === "visible-projection");
+  const granted = (token: string | undefined, id: string, verb: "use" | "edit") => {
+    const owner = grants.get(id);
+    return owner !== undefined && (owner === token || (verb === "use" && (
+      token === "author" || shared.has(id) || id === personalPanelId || id === personalChildId ||
+      id === snapshotPanelId || id === "visible-projection" ||
+      (token === "hidden-panel-owner" && id === "cascade-in-use")
+    )));
+  };
   app.post("/product-governance/register", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
-    grants.add(req.body.id);
+    grants.set(req.body.id, req.body.ownerId);
     res.json({ success: true });
   });
   app.post("/product-governance/check", (req, res) => {
-    res.json({ allowed: granted(req.header("tk"), req.body.id) });
+    res.json({ allowed: granted(req.header("tk"), req.body.id, req.body.verb) });
   });
   app.post("/product-governance/resources", (req, res) => {
-    res.json({ ids: [...grants].filter(id => granted(req.header("tk"), id)) });
+    res.json({ ids: [...grants.keys()].filter(id => granted(req.header("tk"), id, req.body.verb)) });
   });
   app.post("/product-governance/unregister", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     grants.delete(req.body.id);
+    shared.delete(req.body.id);
+    res.json({ success: true });
+  });
+  app.post("/product-governance/share", (req, res) => {
+    const { id, shared: enabled } = req.body;
+    if (!granted(req.header("tk"), id, "edit")) {
+      res.status(403).json({ code: "PRODUCT_FORBIDDEN" });
+      return;
+    }
+    if (enabled) shared.add(id);
+    else shared.delete(id);
     res.json({ success: true });
   });
   app.get("/platform/applications/panel-uses/by-panel", (req, res) => {
@@ -208,6 +227,113 @@ async function savePanel(id: string, manifest: object, revision: number = 0) {
     name: id, description: "", visibility: "domain", revision, content: vuePanelContent(), manifest,
   }));
 }
+
+it("includes the recorded template flag in panel catalog summaries", async () => {
+  const id = "catalog-template";
+  const saved = await request("PUT", `product-panels/${id}`, "author", {
+    name: id, template: true, description: "", visibility: "private", revision: 0,
+    content: vuePanelContent(), manifest: { state: {}, members: {}, events: {} },
+  });
+  expect(saved.status, await saved.text()).toBe(200);
+  const listed = await request("GET", `product-panels?q=${id}`, "author");
+  expect(listed.status).toBe(200);
+  expect(await listed.json()).toMatchObject({ items: [{ id, template: true }] });
+});
+
+async function saveProjection(id: string, user = "author") {
+  const saved = await request("PUT", `product-projections/${id}`, user, {
+    ...projectionInput, visibility: "private", revision: 0,
+  });
+  expect(saved.status, await saved.text()).toBe(200);
+}
+
+function projectionMembers(...ids: string[]) {
+  return Object.fromEntries(ids.map((projectionId, index) => [`member${index}`, { target: { projectionId } }]));
+}
+
+it("shares editable member projections, reports skipped members once and does not revoke their sharing", async () => {
+  const editable = "share-editable", restricted = "share-restricted", id = "share-panel";
+  await saveProjection(editable);
+  await saveProjection(restricted, "projection-owner");
+  const saved = await savePanel(id, { state: {}, members: projectionMembers(editable, restricted, restricted), events: {} });
+  expect(saved.status, await saved.text()).toBe(200);
+  const path = `product-panels/${id}/domain-grant`;
+  const enabled = await request("POST", path, "author", { shared: true });
+  expect(enabled.status).toBe(200);
+  expect(await enabled.json()).toEqual({ success: true, skippedProjectionIds: [restricted] });
+  const read = (kind: string, productId: string) => request("GET", `product-${kind}s/${productId}`, "reader");
+  expect((await read("panel", id)).status).toBe(200);
+  expect((await read("projection", editable)).status).toBe(200);
+  expect((await read("projection", restricted)).status).toBe(403);
+
+  const disabled = await request("POST", path, "author", { shared: false });
+  expect(disabled.status).toBe(200);
+  expect(await disabled.json()).toEqual({ success: true, skippedProjectionIds: [] });
+  expect((await read("panel", id)).status).toBe(403);
+  expect((await read("projection", editable)).status).toBe(200);
+});
+
+it("deletes only editable orphan projections and honors hidden panel references", async () => {
+  const orphan = "cascade-orphan", restricted = "cascade-restricted", inUse = "cascade-in-use", id = "cascade-panel";
+  await saveProjection(orphan);
+  await saveProjection(restricted, "projection-owner");
+  await saveProjection(inUse);
+  const hidden = await request("PUT", "product-panels/cascade-hidden-panel", "hidden-panel-owner", {
+    name: "Hidden", description: "", visibility: "private", revision: 0, content: vuePanelContent(),
+    manifest: { state: {}, members: projectionMembers(inUse), events: {} },
+  });
+  expect(hidden.status, await hidden.text()).toBe(200);
+  const saved = await savePanel(id, { state: {}, members: projectionMembers(orphan, restricted, inUse), events: {} });
+  expect(saved.status, await saved.text()).toBe(200);
+  const deletion = await request("DELETE", `product-panels/${id}?revision=1`, "author");
+  expect(deletion.status).toBe(200);
+  expect(await deletion.json()).toEqual({
+    success: true, deletedProjectionIds: [orphan], retainedProjectionIdsWithoutEdit: [restricted],
+  });
+  const { rows } = await state.pool!.query(
+    `SELECT id FROM "${state.schema}".product_projections WHERE id=ANY($1::text[]) ORDER BY id`, [[orphan, restricted, inUse]],
+  );
+  expect(rows.map(row => row.id)).toEqual([inUse, restricted]);
+  expect(grants.has(orphan)).toBe(false);
+  expect(grants.has(id)).toBe(false);
+  expect(grants.has(restricted)).toBe(true);
+  expect(grants.has(inUse)).toBe(true);
+});
+
+it("cleans up a panel's default placement and preserves projections used by other placements", async () => {
+  const defaultId = "cleanup-default", personalId = "cleanup-personal";
+  const usedByDefault = "cleanup-used-by-default", usedPersonally = "cleanup-used-personally";
+  const id = "cleanup-placement-panel", otherId = "cleanup-other-panel";
+  for (const projectionId of [defaultId, personalId, usedByDefault, usedPersonally]) await saveProjection(projectionId);
+  const type = { kind: "placement", candidates: { rule: "catalogSelection" } };
+  const placement = (projectionId: string) => ({ id: "placed", target: { projectionId } });
+  const saved = await savePanel(id, {
+    state: { defaultSlot: { type, default: placement(defaultId) }, personalSlot: { type, personal: true } },
+    members: projectionMembers(usedByDefault, usedPersonally), events: {},
+  });
+  expect(saved.status, await saved.text()).toBe(200);
+  const other = await savePanel(otherId, {
+    state: { defaultSlot: { type, default: placement(usedByDefault) }, personalSlot: { type, personal: true } },
+    members: {}, events: {},
+  });
+  expect(other.status, await other.text()).toBe(200);
+  await state.pool!.query(
+    `INSERT INTO "${state.schema}".user_preferences (user_id, key, value) VALUES ('reader',$1,$2), ('reader',$3,$4)`,
+    [panelStateKey("test-domain", id, [], id, "personalSlot"), placement(personalId),
+      panelStateKey("test-domain", otherId, [], otherId, "personalSlot"), placement(usedPersonally)],
+  );
+
+  const removal = await request("DELETE", `product-panels/${id}?revision=1`, "author");
+  expect(removal.status).toBe(200);
+  expect(await removal.json()).toEqual({
+    success: true, deletedProjectionIds: [defaultId], retainedProjectionIdsWithoutEdit: [],
+  });
+  const { rows } = await state.pool!.query(
+    `SELECT id FROM "${state.schema}".product_projections WHERE id=ANY($1::text[]) ORDER BY id`,
+    [[defaultId, personalId, usedByDefault, usedPersonally]],
+  );
+  expect(rows.map(row => row.id)).toEqual([personalId, usedByDefault, usedPersonally]);
+});
 
 it("rejects a reverse cycle and protects a nested panel referenced by its parent", async () => {
   const leafId = "panel-cycle-leaf", parentId = "panel-cycle-parent";

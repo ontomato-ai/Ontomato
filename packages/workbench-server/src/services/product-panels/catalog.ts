@@ -1,6 +1,9 @@
 import { z } from "zod";
+import type { PoolClient } from "pg";
+import { panelPlacementSchema } from "@ontomato/contracts/panel-manifest";
 import {
   PRODUCT_IN_USE, productCurrentIdParamsSchema, productPanelInputSchema, productProjectionInputSchema, type ProductCatalogQuery,
+  type ProductPanelInput,
 } from "@ontomato/contracts/product-panels";
 import {
   currentProductRecord, currentProductTables, findCurrentProduct, type CurrentProductKind,
@@ -16,6 +19,7 @@ import {
 } from "../product-governance/grants";
 import { insertCurrentProduct, loadCurrentProduct, requireCurrentProduct, requireOrdinaryProjection } from "./current";
 import { closeDeletedDefinitionStreams, notifyProductDefinitionChanged } from "./definition-stream";
+import { findPanelUsers } from "./references";
 import { panelsUsingProjection, panelUsers } from "./used-by";
 
 const cursorSchema = z.discriminatedUnion("sort", [
@@ -43,10 +47,8 @@ interface SummaryRow {
   revision: number;
   updatedAt: Date;
   sortKey: string;
-}
-
-interface ProjectionSummaryRow extends SummaryRow {
-  componentId: string;
+  componentId?: string;
+  template?: boolean | null;
 }
 
 export async function listCurrentProducts(owner: ProductOwner, credentials: AssistantCredentials,
@@ -59,10 +61,10 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
   const keyType = updated ? "timestamptz" : "text";
   // PostgreSQL provides the exact timestamp key, including sub-millisecond precision.
   const cursorKey = updated ? "to_jsonb(updated_at)#>>'{}'" : order;
-  const projectionColumns = kind === "projection" ? `,definition->>'componentId' AS "componentId"` : "";
-  const { rows } = await getPostgresPool().query<SummaryRow | ProjectionSummaryRow>(
+  const kindColumn = kind === "projection" ? `,definition->>'componentId' AS "componentId"` : `,definition->'template' AS template`;
+  const { rows } = await getPostgresPool().query<SummaryRow>(
     `SELECT id,owner_id AS "ownerId",definition->>'name' AS name,definition->>'description' AS description,
-       definition->>'visibility' AS visibility,revision,updated_at AS "updatedAt",${cursorKey} AS "sortKey"${projectionColumns}
+       definition->>'visibility' AS visibility,revision,updated_at AS "updatedAt",${cursorKey} AS "sortKey"${kindColumn}
      FROM ${t(currentProductTables[kind])}
      WHERE domain_id=$1 AND id=ANY($2::text[])
        AND ($3='all' OR (owner_id=$4)=($3='mine'))
@@ -72,8 +74,8 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
     [owner.domainId, usable, input.scope, owner.userId, input.q, cursor?.key ?? null, cursor?.id ?? null, input.limit + 1],
   );
   const edited = new Set(editable);
-  const items = rows.slice(0, input.limit).map(({ sortKey: _sortKey, updatedAt, ...row }) => ({
-    ...row, updatedAt: updatedAt.toISOString(), editable: edited.has(row.id),
+  const items = rows.slice(0, input.limit).map(({ sortKey: _sortKey, updatedAt, template, ...row }) => ({
+    ...row, ...(template == null ? {} : { template }), updatedAt: updatedAt.toISOString(), editable: edited.has(row.id),
   }));
   const last = rows[input.limit - 1];
   const nextCursor = rows.length > input.limit
@@ -88,25 +90,69 @@ export async function currentProductUsedBy(owner: ProductOwner, credentials: Ass
     : panelUsers(owner.domainId, id, credentials);
 }
 
+function memberProjectionIds({ manifest }: ProductPanelInput) {
+  return new Set(Object.values(manifest.members).flatMap(({ target }) =>
+    "projectionId" in target ? [target.projectionId] : []));
+}
+
+function projectionCleanupCandidates(definition: unknown) {
+  const panel = productPanelInputSchema.parse(definition);
+  const ids = memberProjectionIds(panel);
+  for (const { type, default: value } of Object.values(panel.manifest.state)) {
+    if (type.kind !== "placement" || value == null) continue;
+    const { target } = panelPlacementSchema.parse(value);
+    if ("projectionId" in target) ids.add(target.projectionId);
+  }
+  return [...ids];
+}
+
+async function removeCurrentProduct(client: PoolClient, domainId: string, kind: CurrentProductKind, id: string) {
+  await client.query(`DELETE FROM ${t(currentProductTables[kind])} WHERE domain_id=$1 AND id=$2`, [domainId, id]);
+  await unregisterProductResource(domainId, id);
+}
+
 export async function deleteCurrentProduct(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string, revision: number) {
-  await transaction(async client => {
+  const cleanup = await transaction(async client => {
     await lockProducts(client, owner);
+    const { domainId } = owner;
     const current = await requireCurrentProduct(owner, credentials, kind, id, "edit", client);
     if (current.revision !== revision)
       throw new HttpError(409, "Definition changed; reload before deleting", "PRODUCT_CONFLICT");
     if (kind === "projection") {
-      const usage = await panelsUsingProjection(owner.domainId, id, credentials, client);
+      const usage = await panelsUsingProjection(domainId, id, credentials, client);
       if (usage.panels.length || usage.hiddenCount)
         throw new HttpError(409, "Projection is in use", PRODUCT_IN_USE, usage);
-    } else {
-      const usage = await panelUsers(owner.domainId, id, credentials, client);
-      if (usage.applicationEntries.length || usage.panels.length || usage.hiddenCount || usage.classNames.length)
-        throw new HttpError(409, "Panel is in use", PRODUCT_IN_USE, usage);
+      await removeCurrentProduct(client, domainId, kind, id);
+      return;
     }
-    await client.query(`DELETE FROM ${t(currentProductTables[kind])} WHERE domain_id=$1 AND id=$2`, [owner.domainId, id]);
-    await unregisterProductResource(owner.domainId, id);
+    const usage = await panelUsers(domainId, id, credentials, client);
+    if (usage.applicationEntries.length || usage.panels.length || usage.hiddenCount || usage.classNames.length)
+      throw new HttpError(409, "Panel is in use", PRODUCT_IN_USE, usage);
+
+    const { rows: candidates } = await client.query<{ id: string }>(
+      `SELECT id FROM ${t(currentProductTables.projection)} WHERE domain_id=$1 AND id=ANY($2::text[]) ORDER BY id`,
+      [domainId, projectionCleanupCandidates(current.definition)],
+    );
+    const deletedProjectionIds: string[] = [];
+    const retainedProjectionIdsWithoutEdit: string[] = [];
+    if (candidates.length) {
+      const editable = new Set(await grantedProductIds("edit", credentials));
+      for (const { id: projectionId } of candidates) {
+        const users = await findPanelUsers(domainId, "projection", projectionId, client);
+        if (users.some(panel => panel.id !== id)) continue;
+        if (editable.has(projectionId)) deletedProjectionIds.push(projectionId);
+        else retainedProjectionIdsWithoutEdit.push(projectionId);
+      }
+    }
+    await removeCurrentProduct(client, domainId, kind, id);
+    for (const projectionId of deletedProjectionIds) await removeCurrentProduct(client, domainId, "projection", projectionId);
+    return { deletedProjectionIds, retainedProjectionIdsWithoutEdit };
   });
   closeDeletedDefinitionStreams(owner.domainId, { kind, id });
+  if (!cleanup) return { success: true as const };
+  for (const projectionId of cleanup.deletedProjectionIds)
+    closeDeletedDefinitionStreams(owner.domainId, { kind: "projection", id: projectionId });
+  return { success: true as const, ...cleanup };
 }
 
 export async function copyCurrentProduct(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, sourceId: string,
@@ -137,6 +183,18 @@ export async function changeCurrentProductGrant(owner: ProductOwner, credentials
 }
 
 export async function changeCurrentProductDomainGrant(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string, shared: boolean) {
-  await loadCurrentProduct(owner.domainId, kind, id);
-  return changeProductDomainGrant(id, shared, credentials);
+  const current = await loadCurrentProduct(owner.domainId, kind, id);
+  if (kind === "projection") {
+    await changeProductDomainGrant(id, shared, credentials);
+    return { success: true as const };
+  }
+  const projectionIds = shared ? [...memberProjectionIds(productPanelInputSchema.parse(current.definition))] : [];
+  const editable = new Set(projectionIds.length ? await grantedProductIds("edit", credentials) : []);
+  await changeProductDomainGrant(id, shared, credentials);
+  const skippedProjectionIds: string[] = [];
+  for (const projectionId of projectionIds) {
+    if (editable.has(projectionId)) await changeProductDomainGrant(projectionId, true, credentials);
+    else skippedProjectionIds.push(projectionId);
+  }
+  return { success: true as const, skippedProjectionIds };
 }
