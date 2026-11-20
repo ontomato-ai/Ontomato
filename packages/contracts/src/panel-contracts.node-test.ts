@@ -117,6 +117,30 @@ test("the SDK catalogue separates supply, configuration and run inputs", async (
   assert.equal(appsSdkComponentCatalogSchema.safeParse({ ...catalogue, components: [displayOnly] }).success, true);
 });
 
+test("the SDK catalogue permits a wildcard for author-named data", async () => {
+  const { appsSdkComponentCatalogSchema, appsSdkComponentDatum } = await import("./panel-check");
+  const datum = {
+    results: ["panelRecordList", "panelGroupCounts"], required: false, runtimeParams: ["search"],
+  } satisfies import("./apps-sdk").AppsSdkComponentData[string];
+  const component = {
+    componentId: "Data", module: "@ontomato/sdk/base", exportName: "Data", role: "presentation",
+    meaning: "Supply declared data to the panel's own code.", data: { "*": datum },
+    ports: { props: [], events: [], slots: [] },
+  };
+  const catalogue = { version: "1.1.2", components: [component] };
+  const parsed = appsSdkComponentCatalogSchema.parse(catalogue);
+  assert.deepEqual(parsed, catalogue);
+  assert.deepEqual(appsSdkComponentDatum(parsed.components[0]!.data, "rows"), datum);
+  assert.deepEqual(appsSdkComponentDatum(parsed.components[0]!.data, "totals"), datum);
+  assert.deepEqual(appsSdkComponentDatum({ record: datum }, "record"), datum);
+  assert.equal(appsSdkComponentDatum({ record: datum }, "totals"), undefined);
+  for (const data of [{ ...component.data, rows: datum }, { "*": { ...datum, required: true } }]) {
+    assert.equal(appsSdkComponentCatalogSchema.safeParse({
+      ...catalogue, components: [{ ...component, data }],
+    }).success, false);
+  }
+});
+
 test("projection registration accepts package-qualified components and leaves data keys to the catalogue", () => {
   const input = {
     name: "Task list", description: "", visibility: "domain", revision: 0, inputs: {}, outputs: {}, config: {},
