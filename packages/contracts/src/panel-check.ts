@@ -1,8 +1,11 @@
 /** Node release entry for checking the same panel sources accepted by the platform. */
+export { applicationCatalogueRecordSchema, applicationIdentityUpdateSchema } from "./application-catalogue";
+export { applicationIconKeys } from "./application-icons";
 export { appsSdkComponentCatalogSchema, appsSdkComponentDatum } from "./apps-sdk";
 export { panelAuthoringManifestSchema, panelAuthoringMemberSchema } from "./panel-authoring";
 export { bindPanelAuthoringChart, expandPanelAuthoringMember } from "./panel-authoring-expansion";
 export { panelManifestSchema, panelPortAccepts } from "./panel-manifest";
+export { panelModuleImports } from "./panel-module";
 export {
   chartProjectionLookupResponseSchema, panelDefinitionContentSchema, productProjectionInputSchema,
   productProjectionResponseSchema, registerChartProjectionResponseSchema,
