@@ -15,6 +15,7 @@ import {
 import { registerHandler, type RegisteredHandler } from "./handlers";
 import { stateChildObject, stateObject, type PanelFieldValue } from "./state";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
+import type { PlatformOntologyObjectsRequest, PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
 
 /*
  * How the SDK reads and writes one platform object type (overall design 3.2): a projection binds
@@ -336,6 +337,8 @@ export interface PlatformObjectGraph {
   start?(): Promise<PlatformGraphNode | null>;
   /** One-hop neighbors, edges and per-relation-kind outcome statuses for one node. */
   neighbors(query: PlatformGraphNeighborsQuery): Promise<PlatformGraphNeighborsResult>;
+  /** One page of the objects of one type the reader may see, as the owner answers it (the ontology's objects read). */
+  objects?(query: PlatformOntologyObjectsRequest): Promise<PlatformOntologyObjectsResponse>;
 }
 
 /**

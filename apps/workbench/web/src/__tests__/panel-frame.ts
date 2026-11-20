@@ -181,6 +181,7 @@ export const SDK_VERSION = `1.1.1-dev.${"0123456789abcdef".repeat(4)}`;
 export const currentSdk = () => Response.json({
   version: "1.2.0", digest: "a".repeat(64), publicBasePath: "", sdkBasePath: "/apps-sdk/1.2.0",
   manifestPath: "/apps-sdk/1.2.0/sdk.json", componentsPath: "/apps-sdk/1.2.0/components.json",
+  checkPath: "/apps-sdk/1.2.0/node/panel-check.mjs",
   docsPath: "/apps-sdk/1.2.0/docs/index.md", referencePath: "/apps-sdk/1.2.0/docs/reference.md",
 });
 

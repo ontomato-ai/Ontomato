@@ -5,7 +5,10 @@ import { ElFormItem } from "element-plus/es/components/form/index";
 import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { formFieldAt, usePanelContext, useProjectionSlot } from "../panel/context";
-import { adapterPart, type PlatformObjectOption } from "../panel/platform-objects";
+import { adapterPart, type PlatformObjectOption, type PlatformObjectOptions } from "../panel/platform-objects";
+import type { PanelOptionList } from "@ontomato/contracts/panel-projection";
+import { MemberDataUnavailable } from "../panel/member-forms";
+import { useMember, useMemberRead } from "../panel/member";
 
 /**
  * One reference field of a form in this panel at an absolute pointer, chosen from the catalogue of the type the
@@ -13,11 +16,28 @@ import { adapterPart, type PlatformObjectOption } from "../panel/platform-object
  * reference, a model's key), into that form, so the choice is the form's edit — saved, discarded and drafted with it. A
  * value the form already holds that the catalogue no longer offers stays listed, unavailable, with the owner's reason.
  * A row's field follows the row: `path` is its current absolute pointer.
+ *
+ * A member's choices are its `options` datum (searched and paged with the reader's words) and its `selected` datum (the
+ * held values, as choices), read by the instance; a code projection's are the bound type's resource module's.
  */
 const props = defineProps<{ formSlot: string; path: string }>();
 const slot = useProjectionSlot();
 const field = formFieldAt(usePanelContext().instance, props.formSlot, () => props.path);
-const options = adapterPart(slot.projection.binding.id, "options");
+const options: PlatformObjectOptions = useMember() ? memberOptions() : adapterPart(slot.projection.binding.id, "options");
+
+function memberOptions(): PlatformObjectOptions {
+  const readOptions = useMemberRead("options");
+  const readSelected = useMemberRead("selected");
+  const answered = async (reading: ReturnType<typeof readOptions>) => {
+    const result = await reading;
+    if (result.status !== "ready") throw new MemberDataUnavailable(result);
+    return result.value as PanelOptionList;
+  };
+  return {
+    list: ({ keyword, page }) => answered(readOptions({ ...(keyword ? { keyword } : {}), ...(page ? { page } : {}) })),
+    resolve: async (values) => (await answered(readSelected({ values: [...values] }))).options,
+  };
+}
 const { t, te } = useI18n();
 const localized = (text: string) => te(text) ? t(text) : text;
 

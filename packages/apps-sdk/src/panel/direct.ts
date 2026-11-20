@@ -81,6 +81,7 @@ function sharedManifest(direct: DirectPanelManifest): PanelManifest {
       inputs: Object.fromEntries(Object.entries(declaration.inputs ?? {}).flatMap(([input, source]) =>
         "state" in source ? [[input, source]] : [])),
       ...(declaration.outputs ? { outputs: declaration.outputs } : {}),
+      ...(declaration.formField ? { formField: declaration.formField } : {}),
     }])),
     operations: [],
   };
@@ -95,6 +96,22 @@ export function inputsRead(data: DirectProjectionData): string[] {
 /** The values of the inputs a datum reads, as one comparable text: it is read again only when this changes. */
 export const readKey = (data: DirectProjectionData, inputs: MemberInputs) =>
   JSON.stringify(inputsRead(data).map((name) => inputs[name] ?? null));
+
+/** The value each of a datum's read parameters takes now: its literal, or the input that holds it. */
+export function paramValues(data: DirectProjectionData, inputs: MemberInputs): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(data.params).map(([param, source]) =>
+    [param, "literal" in source ? source.literal : inputs[source.input] ?? null]));
+}
+
+/**
+ * Whether a datum waits for what its read cannot go without: the object it is read from, or a parameter its owner
+ * requires (a type to list objects of, a node to expand). A waiting datum is read nowhere; a literal is always there.
+ */
+export function awaitsInputs(projection: DirectProjection, data: DirectProjectionData, inputs: MemberInputs): boolean {
+  if ("object" in data.source && stateObject(sourceObject(data, inputs)) === null) return true;
+  const values = paramValues(data, inputs);
+  return (directReadDeclaration(projection, data)?.requiredParams ?? []).some((param) => values[param] === null);
+}
 
 /** The object a datum is read from now, when its source is one: the literal, or the input that holds it. */
 function sourceObject(data: DirectProjectionData, inputs: MemberInputs): PanelFieldValue | undefined {
@@ -140,14 +157,14 @@ export function createDirectPanelInstance(direct: DirectPanelManifest, options: 
       async function answer(name: string, values: MemberInputs): Promise<MemberDataState> {
         const data = projection.data[name];
         if (!data) throw new Error(`Member '${member}' declares no datum '${name}'`);
-        // A datum read from an object waits for that object; no read is made for nothing.
-        if ("object" in data.source && stateObject(sourceObject(data, values)) === null) return { status: "awaiting" };
+        // A datum waits for its object or a required parameter; no read is made for nothing.
+        if (awaitsInputs(projection, data, values)) return { status: "awaiting" };
         const result = await options.read({ memberPath: [{ member }], dataName: name, inputs: values });
         if (result.status !== "ready") return result;
         // The host's answer is checked against the result the owner registered for this read.
         const declaration = directReadDeclaration(projection, data);
         if (!declaration) throw new Error(`No owner registers the read '${data.read}' that datum '${name}' names`);
-        return { status: "ready", value: panelReadResultSchemas[declaration.result].parse(result.value) };
+        return { status: "ready", value: panelReadResultSchemas[declaration.result].parse(result.value) as RuntimeJsonValue };
       }
 
       return {
