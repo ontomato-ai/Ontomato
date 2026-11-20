@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema } from "./agent-runtime-values";
+import { dashboardMetricDescriptionSchema } from "./dashboard";
 import { platformSchedulesPath } from "./platform-schedules";
 import { ACTION, AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, KNOWLEDGE_GOVERNANCE_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, RUN_NOW, SET_ACTION_STATUS, DELETE_ACTION, APPROVE_KNOWLEDGE, DELETE_KNOWLEDGE } from "./platform-object-types";
 
@@ -97,12 +98,12 @@ const metricViewReads = [
     instructions: "Use the bound MetricView id in the JSON body and read defaults from parameterDefs.",
   },
   {
-    method: "POST", service: "/data-query", path: /^\/metricView\/execute$/,
-    template: "/metricView/execute", bodySchema: metricIdBodySchema.extend({
-      param: runtimeJsonObjectSchema,
-      parameterTexts: z.record(z.string()).optional(),
+    method: "POST", service: "/data-query", path: /^\/ontology\/query\/metrics\/execute$/,
+    template: "/ontology/query/metrics/execute", bodySchema: metricIdBodySchema.extend({
+      revision: dashboardMetricDescriptionSchema.shape.revision,
+      parameters: runtimeJsonObjectSchema,
     }),
-    instructions: "Use the bound MetricView id. Start `param` with the source card parameters returned with the chart template and override them with this panel instance's bound inputs.",
+    instructions: "Use the bound MetricView id and the revision returned by describe. Start `parameters` with the source card parameters returned with the chart template and override them with this panel instance's bound inputs.",
   },
 ] as const satisfies readonly (PanelClientRead & { bodySchema: z.ZodTypeAny })[];
 

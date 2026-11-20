@@ -1090,16 +1090,25 @@ test("the chart client is restricted to its chart projection and bound metric", 
   assert.ok(!chartProjectionSourceSends(["other"], "GET", "", path));
   assert.ok(!chartProjectionSourceSends(["chart:id"], "DELETE", "", path));
 
+  const projection = productProjectionInputSchema.parse(chartProjection);
+  const bindings = projectionBindingKeys(projection);
   const metric = bindingKey({ kind: "MetricView", id: chartProjection.metricId });
+  assert.deepEqual(bindings, [binding(DASHBOARD_CARD), metric]);
   for (const [path, body] of [
     ["/ontology/query/metrics/describe", { id: "department-metric" }],
-    ["/metricView/execute", { id: "department-metric", param: { department: "sales" } }],
+    ["/ontology/query/metrics/execute", { id: "department-metric", revision: "r7", parameters: { department: "sales" } }],
   ] as const) {
     assert.ok(panelClientReads(metric).some(read => read.method === "POST" && read.path.test(path)));
-    assert.ok(clientSends([metric], "POST", "/data-query", path, body));
-    assert.ok(!clientSends([metric], "POST", "/data-query", path, { ...body, id: "other" }));
-    assert.ok(!clientSends([metric], "POST", "/data-query", path));
+    assert.ok(clientSends(bindings, "POST", "/data-query", path, body));
+    assert.ok(!clientSends(bindings, "POST", "/data-query", path, { ...body, id: "other" }));
+    assert.ok(!clientSends(bindings, "POST", "/data-query", path));
   }
+  assert.ok(!clientSends(bindings, "POST", "/data-query", "/ontology/query/metrics/execute", {
+    id: chartProjection.metricId, parameters: {},
+  }));
+  assert.ok(!clientSends(bindings, "POST", "/data-query", "/metricView/execute", {
+    id: chartProjection.metricId, param: { department: "sales" },
+  }));
   const rawDefinitionPath = "/metricView/queryById";
   assert.ok(!panelClientReads(metric).some(read => read.path.test(rawDefinitionPath)));
   assert.ok(!clientSends([metric], "POST", "/data-query", rawDefinitionPath, { id: "department-metric" }));
