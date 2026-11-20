@@ -7,9 +7,10 @@ name: Images
 # the stripped version plus latest. Branch images require the source Checks
 # workflow to pass for the same commit. Release tags keep their existing flow.
 #
-# Keep each ref's build, publication and verification together. A newer push to
-# the same branch cancels the superseded run, so only the current head publishes;
-# the head check still rejects stale reruns because cancellation can lose the race.
+# Keep each ref's build, publication and verification together. On develop, let
+# the running workflow finish and keep only the latest pending run. An ancestor
+# of the current head can publish if it advances the current edge tags. Other
+# branches still cancel superseded runs and require the current head to publish.
 
 on:
   workflow_dispatch:
@@ -19,8 +20,8 @@ on:
 
 concurrency:
   group: images-${{ github.ref }}
-  # Tags run to completion; branches let the newest commit take over.
-  cancel-in-progress: ${{ github.ref_type == 'branch' }}
+  # Develop and tags run to completion. Other branches let new runs take over.
+  cancel-in-progress: ${{ github.ref_type == 'branch' && github.ref != 'refs/heads/develop' }}
 
 permissions:
   contents: read
@@ -93,17 +94,8 @@ jobs:
           GHCR_RETRY: bash scripts/ci-retry-ghcr.sh
         run: *build-images
 
-      # Branch guard: an outdated branch run must not publish after the branch
-      # has advanced. Release-tag builds do not track a branch.
-      - name: Refuse a stale branch publish
-        run: |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then exit 0; fi
-          head=$(git rev-parse HEAD)
-          remote=$(git ls-remote "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "refs/heads/$GITHUB_REF_NAME" | cut -f1)
-          [ "$head" = "$remote" ] || {
-            echo "$GITHUB_REF_NAME has advanced to $remote; not publishing from stale $head" >&2
-            exit 1
-          }
+      - name: Check branch image publication order
+        run: bash scripts/ci-check-image-publish.sh
 
       - name: Publish the images of this architecture
         id: publish
@@ -131,14 +123,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Refuse a stale branch publish
-        run: |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then exit 0; fi
-          remote=$(git ls-remote "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "refs/heads/$GITHUB_REF_NAME" | cut -f1)
-          [ "${{ github.sha }}" = "$remote" ] || {
-            echo "$GITHUB_REF_NAME has advanced to $remote; not indexing from stale ${{ github.sha }}" >&2
-            exit 1
-          }
+      - name: Check branch image publication order
+        run: bash scripts/ci-check-image-publish.sh
 
       - name: Publish the multi-architecture images
         run: |
