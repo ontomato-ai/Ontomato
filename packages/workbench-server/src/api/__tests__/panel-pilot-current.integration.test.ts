@@ -222,7 +222,7 @@ it("reads back stable member keys and named data, and leaves the record intact a
   const malformed = { ...panel, content: { html: '<section invented="true"></section>' }, revision: current.revision };
   const rejected = await request("PUT", panelPath, malformed);
   expect(rejected.status).toBe(400);
-  expect(await rejected.json()).toMatchObject({ error: { message: expect.stringMatching(/^1:\d+ .*invented/u) } });
+  expect(await rejected.json()).toMatchObject({ error: { message: expect.stringMatching(/^Panel 'panel-schedules-pilot', field 'content.html' – 1:\d+ .*invented/u) } });
   expect((await (await request("GET", panelPath)).json()).panel).toEqual(current);
 
   const source = { kind: "registered", applicationId: "app-schedules", useId: "pilot" };
