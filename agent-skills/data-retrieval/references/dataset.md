@@ -8,14 +8,11 @@
   "title": "Active employees",
   "columnLabels": {"headcount": "Active employees"},
   "assumptions": [],
-  "metricUses": [],
-  "selfCheck": {"scope": "", "filters": "", "grain": "", "denominator": "", "nullGroups": "", "comparisons": []}
+  "selfCheck": {"scope": "", "filters": "", "grain": "", "denominator": "", "nullGroups": ""}
 }
 ```
 
-   Every selfCheck value is text. columnLabels gives every output key a label in the user's language. Each metricUses item is `{id, revision, use: "direct"|"derived"|"not_used", reason}`. A comparison is `{metricId, comparable, explanation, executionRef}`, where executionRef is a real execution reference or null.
+   Every selfCheck value is text. columnLabels gives every output key a label in the user's language.
 3. Run `deliver`. The host fills in the question, decisions, source graph, hashes and receipt.
 
-Several tables: one input file and one delivery per table, each with its own `--out`.
-
-To use a published metric directly, the input file is `{"kind":"metric","metricId":"...","revision":"...","parameters":{}}`; add `bindingId` to reuse a binding's saved values unchanged.
+Several tables: one input file and one delivery per table, each with its own `--out`. A delivery is your own query logic; do not look for a metric to reuse or compare against.

@@ -64,6 +64,12 @@ public class OntologyQueryController {
         body.getList("classNames", String.class), access(request));
   }
 
+  @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+  @PostMapping("/ontology/query/metrics/recall")
+  public Object recall(@RequestBody JSONObject body, HttpServletRequest request) {
+    return ontology.recall(body, access(request));
+  }
+
   @BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
   @PostMapping("/ontology/query/distinct-values")
   public Object distinct(@RequestBody JSONObject body, HttpServletRequest request) {

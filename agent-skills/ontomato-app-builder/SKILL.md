@@ -1,6 +1,6 @@
 ---
 name: ontomato-app-builder
-description: "Compose, check and register panel applications with the Ontomato SDK. Maintain existing hosted applications."
+description: "Compose, check and register panel applications with the Ontomato SDK. Use when building a panel or adapting a page into a panel."
 ---
 
 # Ontomato app builder

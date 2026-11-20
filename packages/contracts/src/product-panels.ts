@@ -4,12 +4,11 @@ import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
 import { panelManifestSchema, panelMessageKeySchema, panelThemeOverridesSchema } from "./panel-manifest";
 import { PanelLayoutError, parsePanelLayout } from "./panel-layout";
-import { directObjectSourceType, directProjectionPortsSchema, validateDirectProjection } from "./panel-projection";
+import { directProjectionPortsSchema, validateDirectProjection } from "./panel-projection";
 import { applicationMetadataSchema } from "./application-metadata";
 import { pageSkillContextSchema, pageSkillEntranceSchema } from "./page-skills";
 import { runtimeJsonValueSchema } from "./agent-runtime-values";
-import { dashboardCardPrimaryKey, dashboardCardRequestSchema, dashboardChartFileSchema } from "./dashboard";
-import { DASHBOARD_CARD } from "./platform-object-types";
+import { dashboardCardRequestSchema, dashboardChartFileSchema } from "./dashboard";
 export { chartProjectionTemplateSchema } from "./dashboard";
 export { ontologyElementRefSchema, type OntologyElementRef } from "./ontology-element-ref";
 import { objectDetailUsedByResponseSchema } from "./object-detail";
@@ -56,28 +55,16 @@ const ordinaryProjectionDefinition = projectionDefinition.extend({
 });
 const chartProjectionDefinition = projectionDefinition.extend({
   componentId: z.literal(METRIC_CHART_COMPONENT),
-  chartSource: chartProjectionSourceSchema,
   metricId: id,
 });
 
-function validateChartProjection(projection: z.infer<typeof chartProjectionDefinition>, ctx: z.RefinementCtx): void {
-  validateDirectProjection(projection, ctx);
-  const key = dashboardCardPrimaryKey(projection.chartSource);
-  for (const [name, { source }] of Object.entries(projection.data)) {
-    if (!("object" in source) || directObjectSourceType(projection, source.object) !== DASHBOARD_CARD) continue;
-    if (!("literal" in source.object) || source.object.literal.primaryKey !== key) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["data", name], message: "The chart must read its registered source card" });
-    }
-  }
-}
-
 export const productProjectionInputSchema = z.union([
   ordinaryProjectionDefinition.superRefine(validateDirectProjection),
-  chartProjectionDefinition.superRefine(validateChartProjection),
+  chartProjectionDefinition.superRefine(validateDirectProjection),
 ]);
 export type ProductProjectionInput = z.infer<typeof productProjectionInputSchema>;
 
-export const chartProjectionSchema = chartProjectionDefinition.extend(currentRecordFields).superRefine(validateChartProjection);
+export const chartProjectionSchema = chartProjectionDefinition.extend(currentRecordFields).superRefine(validateDirectProjection);
 export const productProjectionSchema = z.union([
   chartProjectionSchema,
   ordinaryProjectionDefinition.extend(currentRecordFields).superRefine(validateDirectProjection),
@@ -116,12 +103,9 @@ const panelDefinitionContent = z.object({
   template: z.boolean().optional(),
 }).strict();
 
-export function panelNeedsFrame(content: ProductPanelContent): boolean {
-  return content.module !== undefined;
-}
-
 function validatePanelLayout(definition: z.infer<typeof panelDefinitionContent>, ctx: z.RefinementCtx): void {
-  if (panelNeedsFrame(definition.content)) return;
+  // A module supplies its own rendering. The platform interprets layout markup for module-free panels.
+  if (definition.content.module !== undefined) return;
   try {
     parsePanelLayout(definition.content.html, definition.manifest);
   } catch (error) {

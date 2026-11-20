@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import { AGENT_DEFINITION, BUSINESS_KNOWLEDGE, MODEL_OPTION, SCHEDULED_TASK, SKILL, USER } from "@ontomato/contracts/panel-client-requests";
 import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
@@ -10,8 +11,7 @@ import {
   METRIC_VIEW, OBJECT_TYPE, ONTOLOGY_TYPE, RELATIONSHIP, SET_ACTION_STATUS, SET_PRIMARY_KEY,
   platformObjectTypes, type PlatformReadDeclaration,
 } from "@ontomato/contracts/platform-object-types";
-import { productPanelSchema, type ProductPanel, type ProductProjection } from "@ontomato/contracts/product-panels";
-import { currentProductRecord } from "../../infrastructure/product-current";
+import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { assertPermission } from "../../identity/installed";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendUnavailableError } from "../../utils/backend-client";
@@ -26,21 +26,15 @@ import { createBusinessKnowledgeReadAdapter } from "../business-knowledge/panel-
 import { createOntologyModelReadAdapter } from "../ontology-model/model-reads";
 import { createScheduledTaskReadAdapter } from "../scheduling/panel-reads";
 import type { SkillResolveRequest } from "../skills/panel-reads";
-import { requirePanelUse } from "./application-use";
+import { requireChartReadRegistration } from "./chart-sources";
 import { readPanelComponentCatalogue } from "./component-catalogue";
-import { requireCurrentProduct, requireDirectPanelMember } from "./current";
+import { requireRegisteredPanelRoot, resolvePanelMemberPath } from "./member-path";
 import { resolvePlacedObjectAction } from "./object-action-placement";
 
 type ReadInputs = ProductPanelReadRequest["inputs"];
 type ReadMember = ProductPanel["manifest"]["members"][string];
 type ReadSelection = { kind: "platform" | "customer"; typeId: string; method: string; primaryKey?: string };
 type ReadAdapter = (selection: ReadSelection, params: Record<string, unknown>, projection: ProductProjection) => Promise<unknown> | unknown;
-
-function registeredChart(projection: ProductProjection) {
-  if (!("chartSource" in projection))
-    throw new HttpError(400, "Dashboard card reads require a registered source-card projection", "CHART_SOURCE_REGISTRATION_REQUIRED");
-  return { dashboardOwnerId: projection.ownerId, metricId: projection.metricId };
-}
 
 function customerReads(owner: ProductOwner, viewer: AssistantCredentials, callerUserName?: string): Record<string, ReadAdapter> {
   const customer = createCustomerOntologyReadAdapter(owner, viewer, callerUserName);
@@ -107,9 +101,11 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       result: (selection, params) => metrics.result(selection.primaryKey!, runtimeJsonObjectSchema.parse(params)),
     },
     [DASHBOARD_CARD]: {
-      chartTemplate: (selection, _params, projection) => cards.chartTemplate(selection.primaryKey!, registeredChart(projection)),
-      result: (selection, params, projection) => cards.result(
-        selection.primaryKey!, registeredChart(projection), runtimeJsonObjectSchema.parse(params),
+      chartTemplate: ({ primaryKey }, _params, projection) => cards.chartTemplate(
+        primaryKey!, requireChartReadRegistration(projection, primaryKey!),
+      ),
+      result: ({ primaryKey }, params, projection) => cards.result(
+        primaryKey!, requireChartReadRegistration(projection, primaryKey!), runtimeJsonObjectSchema.parse(params),
       ),
     },
     [AGENT_DEFINITION]: {
@@ -172,12 +168,22 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   };
 }
 
-async function readRoot(owner: ProductOwner, viewer: AssistantCredentials, source: ProductPanelReadRequest["source"]) {
-  if (source.kind === "candidate")
-    throw new HttpError(422, "Direct workspace panel reads are not available", "DIRECT_CANDIDATE_UNAVAILABLE");
-  const { panelId } = await requirePanelUse(viewer, source);
-  const row = await requireCurrentProduct(owner, viewer, "panel", panelId, "use");
-  return productPanelSchema.parse(currentProductRecord(row, false));
+async function resolveReadMember(owner: ProductOwner, viewer: AssistantCredentials, request: ProductPanelReadRequest) {
+  const { source, memberPath } = request;
+  if (source.kind === "candidate") {
+    const { resolvePanelCandidateMember } = await import("../workspaces/panel-candidate");
+    const { panel, member, projection, previewContext } = await resolvePanelCandidateMember(owner, viewer, source.workspace, memberPath);
+    const headers = { ...viewer.headers, [BUILD_TEST_HEADER]: JSON.stringify({
+      kind: "build-test", contextId: previewContext.test?.contextId ?? null,
+    }) };
+    return { member, projection, panel, viewer: { ...viewer, headers } };
+  }
+
+  const { panel, entry } = await requireRegisteredPanelRoot(owner, viewer, source);
+  const placement = await resolvePanelMemberPath(owner, viewer, panel, memberPath, entry);
+  if (placement.kind !== "projection")
+    throw new HttpError(403, "The member path does not select a projection", "PANEL_MEMBER_FORBIDDEN");
+  return { ...placement, viewer };
 }
 
 function effectiveInputs(
@@ -250,11 +256,7 @@ export async function readProductPanelData(
   owner: ProductOwner, viewer: AssistantCredentials, request: ProductPanelReadRequest, callerUserName?: string,
 ): Promise<ProductPanelReadResponse> {
   try {
-    const panel = await readRoot(owner, viewer, request.source);
-    if (request.memberPath.length !== 1)
-      throw new HttpError(422, "Only a fixed projection at the panel root can be read here", "PANEL_MEMBER_TARGET_UNSUPPORTED");
-    const { member: key } = request.memberPath[0];
-    const { member, projection } = await requireDirectPanelMember(owner, viewer, panel, key);
+    const { member, projection, panel, viewer: readViewer } = await resolveReadMember(owner, viewer, request);
     if (!Object.hasOwn(projection.data, request.dataName)) return { status: "forbidden" };
     const data = projection.data[request.dataName];
     const inputs = effectiveInputs(projection, member, request.inputs);
@@ -266,7 +268,7 @@ export async function readProductPanelData(
     }
     if ("operation" in data.source && data.source.operation.kind === "Action") {
       const resolved = await resolvePlacedObjectAction(
-        { owner, credentials: viewer }, { panel, projection, member, memberName: key, data }, data.source.operation.id,
+        { owner, credentials: readViewer }, { panel, projection, member, memberName: request.memberPath.at(-1)!.member, data }, data.source.operation.id,
         name => {
           const value = name === undefined ? undefined : inputs[name];
           if (value == null) return undefined;
@@ -278,8 +280,8 @@ export async function readProductPanelData(
     }
     const selection = readSelection(data, inputs);
     const read = selection.kind === "customer"
-      ? customerReads(owner, viewer, callerUserName)[selection.method]
-      : readAdapters(owner, viewer, callerUserName)[selection.typeId]?.[selection.method];
+      ? customerReads(owner, readViewer, callerUserName)[selection.method]
+      : readAdapters(owner, readViewer, callerUserName)[selection.typeId]?.[selection.method];
     if (!read) throw new HttpError(422, "The owner read is unavailable", "PANEL_READ_UNAVAILABLE");
     const result = await read(selection, params, projection);
     if (declaration.result === "panelRecordList") {

@@ -305,8 +305,6 @@ export interface ShellTaskLabels {
   /** The retrieval task's executor, the retriever agent. */
   retriever: string;
   status: Record<"starting" | "running" | "completed" | "failed" | "cancelled", string>;
-  /** A retrieval round's branches: the metric binding results and the retriever's own. */
-  branch: Record<"binding" | "retriever", string>;
   rows: (count: number) => string;
   /** The quality review's own name, beside the reply. */
   review: string;
@@ -317,9 +315,8 @@ export interface ShellTaskLabels {
   scoreLabel: string;
   conclusion: string;
   fittedQuestion: string;
-  /** What the check examined: one branch's results. */
+  /** What the check examined: the datasets the reply cited. */
   checked: string;
-  checkedBranch: Record<"binding" | "retriever", string>;
   /** A reply's entry to its delegated work, beside its process line; and the task list's own title. */
   count: (count: number) => string;
   listTitle: string;

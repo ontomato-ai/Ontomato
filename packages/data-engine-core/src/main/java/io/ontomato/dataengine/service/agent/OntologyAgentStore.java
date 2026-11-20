@@ -50,12 +50,6 @@ CREATE TABLE IF NOT EXISTS ontology_agent_runs (
   dataset_ids jsonb NOT NULL DEFAULT '[]', observed_state jsonb, decision_revision integer NOT NULL,
   qc_id uuid, qc_admitted boolean NOT NULL DEFAULT false, cancel_requested boolean NOT NULL DEFAULT false, cancel_confirmed boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now(),
   runtime_admitted boolean NOT NULL DEFAULT true, admission_error text, result_after bigint NOT NULL DEFAULT 0, language text);
-CREATE TABLE IF NOT EXISTS ontology_binding_runs (
-  run_id uuid PRIMARY KEY REFERENCES ontology_agent_runs(id), status text NOT NULL,
-  open boolean NOT NULL, deadline timestamptz, owner_node text NOT NULL, error text, qc_id uuid NOT NULL, qc_admitted boolean NOT NULL DEFAULT false);
-CREATE TABLE IF NOT EXISTS ontology_binding_outputs (
-  id uuid PRIMARY KEY, run_id uuid NOT NULL REFERENCES ontology_binding_runs(run_id),
-  request jsonb NOT NULL, dataset text, sha256 text);
 CREATE TABLE IF NOT EXISTS ontology_retrieval_deliveries (
   seq bigserial PRIMARY KEY, run_id uuid NOT NULL REFERENCES ontology_agent_runs(id),
   source text NOT NULL, source_id uuid NOT NULL, data jsonb NOT NULL,
@@ -87,7 +81,12 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
     jdbc.execute("ALTER TABLE ontology_generation_tests ADD COLUMN IF NOT EXISTS kind text, ADD COLUMN IF NOT EXISTS evidence_scope text, ADD COLUMN IF NOT EXISTS target_context text");
     jdbc.execute("ALTER TABLE ontology_generations ADD COLUMN IF NOT EXISTS explanation jsonb");
     jdbc.execute("CREATE INDEX IF NOT EXISTS ontology_agent_runs_quality ON ontology_agent_runs(qc_id)");
-    jdbc.execute("CREATE INDEX IF NOT EXISTS ontology_binding_runs_quality ON ontology_binding_runs(qc_id)");
+    // The parallel binding branch is retired; only development databases ever held its rows.
+    jdbc.execute("DROP TABLE IF EXISTS ontology_binding_outputs, ontology_binding_runs");
+    jdbc.execute("DELETE FROM ontology_retrieval_deliveries WHERE source='binding'");
+    // The reply that adopted this round's outputs and which ones: the quality check's subject.
+    jdbc.execute("ALTER TABLE ontology_agent_runs ADD COLUMN IF NOT EXISTS quality_adoption jsonb");
+    jdbc.execute("CREATE INDEX IF NOT EXISTS ontology_agent_runs_quality_reply ON ontology_agent_runs((quality_adoption->>'replyRunId')) WHERE quality_adoption IS NOT NULL");
     jdbc.execute("CREATE INDEX IF NOT EXISTS ontology_agent_runs_caller ON ontology_agent_runs(caller_id) WHERE input_hash<>''");
     jdbc.execute("CREATE INDEX IF NOT EXISTS ontology_agent_runs_channel_root ON ontology_agent_runs((request->>'rootRunId')) WHERE input_hash<>''");
   }
@@ -414,6 +413,11 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
               uuid(id));
           return null;
         });
+  }
+
+  public void endWrites(String sessionId, String id, Owner owner) {
+    run(sessionId, id, owner);
+    update("UPDATE ontology_agent_runs SET open=false WHERE id=?", uuid(id));
   }
 
   public static AgentHttpException closed() {

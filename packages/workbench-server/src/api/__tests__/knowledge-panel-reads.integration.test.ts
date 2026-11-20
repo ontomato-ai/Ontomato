@@ -225,7 +225,7 @@ const projections = {
 const panel = productPanelInputSchema.parse({
   name: "Business knowledge", description: "", visibility: "domain",
   content: {
-    html: '<section flow="column"><panel-member ref="counts"></panel-member><panel-member ref="list"></panel-member><panel-member ref="detail"></panel-member><panel-member ref="form"></panel-member><panel-member ref="createForm"></panel-member><panel-member ref="approve"></panel-member><panel-member ref="remove"></panel-member></section>',
+    html: '<style>.knowledge { display: flex; flex-direction: column; }</style><section class="knowledge"><panel-member ref="counts"></panel-member><panel-member ref="list"></panel-member><panel-member ref="detail"></panel-member><panel-member ref="form"></panel-member><panel-member ref="createForm"></panel-member><panel-member ref="approve"></panel-member><panel-member ref="remove"></panel-member></section>',
   },
   manifest: {
     state: {
@@ -280,17 +280,18 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("knowledge-reader");
     res.json({ ids: [...resourceIds] });
   });
-  app.get("/platform/applications/app-knowledge/panel-uses", (req, res) => {
+  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+    if (req.query.applicationId !== "app-knowledge") { next(); return; }
     expect(req.header("tk")).toBe("knowledge-reader");
     res.json({
       success: true,
       data: {
         applicationId: "app-knowledge",
-        entry: { path: "/ontology/knowledge", renderer: "panels" },
-        panelUses: [{
+        menu: { groups: [], panelUses: [] },
+      use: {
           id: "knowledge", pageKey: "knowledge", path: "/ontology/knowledge", panelId,
           access: { kind: "domain-member" },
-        }],
+        },
       },
     });
   });

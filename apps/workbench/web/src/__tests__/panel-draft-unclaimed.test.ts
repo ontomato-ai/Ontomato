@@ -2,24 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
-import { mountPanel } from "../../../../../packages/apps-sdk/src/panel/mount";
-import {
-  draftScenario,
-  hostMessageOf,
-  inside,
-  installPlatform,
-  leaveFrame,
-  mountPlatformPage,
-  panelHostFrame,
-  panelOf,
-  writeFrameDocument,
-} from "./panel-frame";
+import { draftScenario, installPlatform, leaveFrame, mountPlatformPage } from "./panel-frame";
 
 /*
  * A draft no form of the panel performs (the address of one panel, the draft written for another form): once every slot
  * the panel declares has registered, none will take it, and the panel says so where it would have been, in the reader's
  * language — at once, not after a wait. The form's projection is held back until the test lets it through, so the draft
- * is held first: it is not refused while a slot that might take it is still to register.
+ * is held first: it is not refused while a slot that might take it is still to register. The panel runs in the
+ * platform's document.
  */
 
 afterEach(leaveFrame);
@@ -47,10 +37,6 @@ describe("a draft no form of the panel performs", () => {
     await router.push(scenario.address);
     await router.isReady();
     const { app: page, element: host } = mountPlatformPage(() => h(RouterView), router);
-    const element = await panelHostFrame();
-    writeFrameDocument(hostMessageOf(element.getAttribute("srcdoc")!));
-    inside(element.contentWindow!);
-    await mountPanel(panelOf("form"));
 
     // The draft is held, and the form's slot has not registered: nothing is refused yet.
     await new Promise((resolve) => setTimeout(resolve, 50));

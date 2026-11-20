@@ -202,6 +202,45 @@ it("rejects a referenced projection when the author has no use Grant", async () 
   expect(productQuery).not.toHaveBeenCalled();
 });
 
+async function candidateMember(ref: string, member = "form", userId = "alice") {
+  const { resolvePanelCandidateMember } = await import("../../../services/workspaces/panel-candidate");
+  return resolvePanelCandidateMember({ domainId: scope.domainId, userId }, { token: userId },
+    { id: workspaceId, ref }, [{ member }]);
+}
+
+it("resolves a coded candidate's member from its commit and scopes the projection read to the author", async () => {
+  const result = await candidateMember(commit);
+  expect(result.panel.content.module).toBe('throw new Error("The server must not execute the module");');
+  expect(result.member).toEqual(manifest.members.form);
+  expect(result.projection).toMatchObject({ id: projectionId, ownerId: "settings-owner" });
+  expect(result.previewContext).toEqual({ kind: "build-test", test: currentTest });
+  expect(calls).toEqual([`grant:alice:use:${projectionId}`, `test:alice:${workspaceId}`]);
+  expect(productQuery.mock.calls).toEqual([[expect.stringMatching(/^SELECT .*product_projections/), [scope.domainId, projectionId]]]);
+});
+
+it("resolves a working candidate without a test as build-test NONE", async () => {
+  issuedTest = null;
+  const result = await candidateMember("working");
+  expect(result.panel.content.module).toBeUndefined();
+  expect(result.previewContext).toEqual({ kind: "build-test", test: null });
+});
+
+it.each([
+  ["an undeclared member", "missing", "alice", "FORBIDDEN"],
+  ["another user's workspace", "form", "bob", "NOT_FOUND"],
+] as const)("refuses %s before checking the projection or test context", async (_name, member, user, code) => {
+  await expect(candidateMember(commit, member, user)).rejects.toMatchObject({ code });
+  expect(calls).toEqual([]);
+  expect(productQuery).not.toHaveBeenCalled();
+});
+
+it("requires the author's use Grant before loading a candidate member's projection", async () => {
+  allowProjection = false;
+  await expect(candidateMember(commit)).rejects.toMatchObject({ code: "PRODUCT_FORBIDDEN" });
+  expect(calls).toEqual([`grant:alice:use:${projectionId}`]);
+  expect(productQuery).not.toHaveBeenCalled();
+});
+
 it.each(["product-panels", "product-projections"])("refuses a build-test management write at %s before changing product records", async (collection) => {
   const response = await fetch(`${base}/api/${collection}/${projectionId}`, {
     method: "PUT", headers: { tk: "alice", [BUILD_TEST_HEADER]: JSON.stringify({ kind: "build-test", contextId: null }) },

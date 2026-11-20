@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { candidatePanelSourceSchema, type CandidatePanelSource } from "@ontomato/contracts/panel-host";
+import { candidatePanelSourceSchema, type CandidatePanelSource, type DirectPanelMemberPath } from "@ontomato/contracts/panel-host";
 import { panelManifestSchema } from "@ontomato/contracts/panel-manifest";
 import { panelDefinitionContentSchema, productPanelContentSchema } from "@ontomato/contracts/product-panels";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -7,7 +7,7 @@ import { HttpError } from "../../utils/errors";
 import { assertAppBuilderAccess } from "../app-builder/access";
 import { WorkspaceBuildTests } from "../app-builder/build-tests";
 import type { AssistantOwner } from "../assistant/store";
-import { readCurrentPanelRecord, readCurrentProjectionRecord } from "../product-panels/current";
+import { readCurrentPanelRecord, readCurrentProjectionRecord, requireDirectPanelMember } from "../product-panels/current";
 
 const descriptorSchema = z.object({
   manifest: panelManifestSchema,
@@ -15,9 +15,9 @@ const descriptorSchema = z.object({
 }).strict();
 const treeSchema = z.object({ files: z.array(z.object({ path: z.string() })) });
 
-export async function readPanelCandidate(
+async function loadWorkspacePanel(
   owner: AssistantOwner, credentials: AssistantCredentials, { id, ref }: CandidatePanelSource["workspace"],
-): Promise<CandidatePanelSource> {
+) {
   await assertAppBuilderAccess(credentials);
   const tests = new WorkspaceBuildTests(owner, credentials, id);
   const workspace = `/v1/workspaces/${id}`;
@@ -39,6 +39,13 @@ export async function readPanelCandidate(
   }
   const { manifest, content } = descriptorSchema.parse(descriptor);
   const panel = panelDefinitionContentSchema.parse({ manifest, content: { html, module, recipes, ...content } });
+  return { panel, tests };
+}
+
+export async function readPanelCandidate(
+  owner: AssistantOwner, credentials: AssistantCredentials, workspace: CandidatePanelSource["workspace"],
+): Promise<CandidatePanelSource> {
+  const { panel, tests } = await loadWorkspacePanel(owner, credentials, workspace);
   const projectionIds = new Set<string>();
   const panelIds = new Set<string>();
   for (const { target } of Object.values(panel.manifest.members)) {
@@ -50,7 +57,20 @@ export async function readPanelCandidate(
     ...[...panelIds].map(id => readCurrentPanelRecord(owner, credentials, id)),
   ]);
   const test = await tests.current();
-  return { kind: "candidate", workspace: { id, ref }, panel, previewContext: { kind: "build-test", test } };
+  return { kind: "candidate", workspace, panel, previewContext: { kind: "build-test", test } };
+}
+
+export async function resolvePanelCandidateMember(
+  owner: AssistantOwner, credentials: AssistantCredentials, workspace: CandidatePanelSource["workspace"],
+  memberPath: DirectPanelMemberPath,
+) {
+  const { member: key, selection, itemKey } = memberPath[0];
+  if (memberPath.length !== 1 || selection !== undefined || itemKey !== undefined)
+    throw new HttpError(422, "Only a fixed projection at the panel root can be read here", "PANEL_MEMBER_TARGET_UNSUPPORTED");
+  const { panel, tests } = await loadWorkspacePanel(owner, credentials, workspace);
+  const { member, projection } = await requireDirectPanelMember(owner, credentials, panel, key);
+  const previewContext: CandidatePanelSource["previewContext"] = { kind: "build-test", test: await tests.current() };
+  return { panel, member, projection, previewContext };
 }
 
 export const panelCandidateQuerySchema = candidatePanelSourceSchema.shape.workspace.pick({ ref: true });

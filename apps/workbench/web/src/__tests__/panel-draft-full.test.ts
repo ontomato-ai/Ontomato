@@ -2,29 +2,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
-import { mountPanel } from "../../../../../packages/apps-sdk/src/panel/mount";
 import {
-  draftScenario,
-  formSaveCalls,
-  humanIntents,
-  hostMessageOf,
-  inside,
-  installPlatform,
-  leaveFrame,
-  mountPlatformPage,
-  panelHostFrame,
-  READER,
-  SCHEDULED_TASK,
-  task,
-  writeFrameDocument,
+  draftScenario, formSaveCalls, humanIntents, installPlatform, leaveFrame, mountPlatformPage, READER, SCHEDULED_TASK, task,
   caseSetLabel,
 } from "./panel-frame";
 
 /*
  * A draft an agent wrote for a panel application's page, opened at that page's own address (design 10.3, the draft
  * check): the platform's page hands the draft's link to the panel, the panel reads it as the reader, and the form shows
- * it — its values, the field it changed marked, nothing saved. Everything is the real thing but the browser: the page and
- * the panel host are the platform's, the frame's document is the one the host wrote, and the frame's side is the SDK's.
+ * it — its values, the field it changed marked, nothing saved. Everything is the real thing but the network: the page,
+ * the panel host and the panel's module running in the platform's document on its SDK.
  *
  * The mistakes this rules out: the page dropping the draft's link from the address it gives the panel, and the panel
  * reading the draft before the form that takes it exists.
@@ -58,16 +45,7 @@ describe("a draft at a panel application's own address", () => {
     });
     await router.push(scenario.address);
     await router.isReady();
-    const { app: page, element: host } = mountPlatformPage(() => h(RouterView), router);
-
-    // The platform's page draws the panel's frame, registered, with the document the panel host wrote for it.
-    const element = await panelHostFrame();
-    const message = hostMessageOf(element.getAttribute("srcdoc")!);
-    expect(new URL(message.url, "http://page.invalid").searchParams.get("draftRunId")).toBe("run-1");
-
-    writeFrameDocument(message);
-    inside(element.contentWindow!);
-    const { context } = await mountPanel({ setup: () => ({}) });
+    const { app: page } = mountPlatformPage(() => h(RouterView), router);
 
     await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain(caseSetLabel), {
       timeout: 5000,
@@ -76,7 +54,7 @@ describe("a draft at a panel application's own address", () => {
     expect(formSaveCalls(sent)).toEqual([]);
     expect(sent.filter(request => request.path.startsWith("/api/product-assets/"))).toEqual([]);
     const form = document.querySelector<HTMLFormElement>(".sdk-owner-form form")!;
-    // The frame is sandboxed without allow-forms, so the save is the button's own click, not a form submission.
+    // The save is the button's own click, not a form submission.
     const save = [...form.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Save")!;
     expect(save.type).toBe("button");
     expect(save.disabled).toBe(false);
@@ -88,13 +66,16 @@ describe("a draft at a panel application's own address", () => {
         input: {
           revision: task.revision,
           values: { ...task.content, caseSetId: "set-smoke" },
-          submittedFields: ["/operation", "/caseSetId"],
+          // The field the draft changed among the fields the owner's form describes.
+          submittedFields: ["/caseSetId"],
         },
       }]);
       expect(sent.find(request => request.path === "/api/panel-operations/intents")?.credential).toBe(READER);
-      expect(context.draft.value).toBeNull();
-      expect(context.instance.dirty()).toBe(false);
+      // Saved: the draft is settled and the form holds nothing unsaved.
+      expect(document.querySelector(".sdk-owner-form-changed")).toBeNull();
     });
+    // The panel read the draft its address links, as the reader.
+    expect(sent.find(request => request.path.endsWith("/page-draft"))?.credential).toBe(READER);
     page.unmount();
   });
 });

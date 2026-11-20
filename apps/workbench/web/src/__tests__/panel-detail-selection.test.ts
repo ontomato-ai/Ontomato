@@ -1,11 +1,11 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { detailSelectionGuard, type DetailSelection } from "../../../../../packages/platform-web/src/detail-selection";
 import { pilotPageResolver } from "../../../../../packages/platform-web/src/pilot-pages";
 import { panelAnswer,
-  currentSdk, hostMessageOf, installPlatform, leaveFrame, manifestP, mountPlatformPage, nothingAt, panelHostFrame,
+  installPlatform, leaveFrame, manifestP, mountPlatformPage, nothingAt, projections,
   panelRecord, panelSnapshot, panelUse, SCHEDULED_TASK, task, type Sent,
 } from "./panel-frame";
 
@@ -35,7 +35,10 @@ function answer(request: Sent) {
   } });
   if (request.path === `/api/product-panels/${panel.id}`) return panelAnswer(panel, request);
   if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel, undefined, request);
-  if (request.path === "/api/apps-sdk/current") return currentSdk();
+  const projection = Object.values(projections).find(one => request.path === `/api/product-projections/${one.id}`);
+  if (projection) return Response.json({ projection });
+  // What the panel's members show does not matter here, only which object they are read for.
+  if (request.path === "/api/product-panels/read") return Response.json({ status: "empty" });
   return nothingAt(request);
 }
 
@@ -46,7 +49,7 @@ const selections: DetailSelection[] = [
 ];
 
 async function open(address: { path: string; query: Record<string, string> }) {
-  installPlatform(answer);
+  const sent = installPlatform(answer);
   const deeper = { render: () => h("p", "view editor") };
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: `${use.path}/:taskId/view`, component: deeper },
@@ -57,14 +60,15 @@ async function open(address: { path: string; query: Record<string, string> }) {
   await router.push("/home");
   await router.push(address);
   const { app } = mountPlatformPage(() => h(RouterView), router);
-  return { app, router };
+  return { app, router, sent };
 }
 
-async function expectPanelSelected(router: Awaited<ReturnType<typeof open>>["router"]) {
+async function expectPanelSelected({ router, sent }: Awaited<ReturnType<typeof open>>) {
   const { path, query } = router.currentRoute.value;
   expect({ path, query }).toEqual({ path: use.path, query: { ...draft, state: JSON.stringify(selected) } });
   // The panel opens on the selection as on any address of its own.
-  expect(hostMessageOf((await panelHostFrame()).srcdoc)).toMatchObject({ pageKey: use.pageKey, state: selected });
+  await vi.waitFor(() => expect(sent.some(request => request.path === "/api/product-panels/read"
+    && JSON.stringify((request.body as { inputs: unknown }).inputs).includes(task.id))).toBe(true));
   // The detail address is not a page of its own in the reader's history: going back leaves the panel.
   router.back();
   await new Promise(resolve => setTimeout(resolve));
@@ -74,20 +78,20 @@ async function expectPanelSelected(router: Awaited<ReturnType<typeof open>>["rou
 afterEach(leaveFrame);
 
 it("opens a detail address of its own as the panel's address with its object selected, a draft's query kept", async () => {
-  const { app, router } = await open({ path: `/applications/${application}/tasks/${task.id}`, query: { ...draft, from: "graph" } });
+  const opened = await open({ path: `/applications/${application}/tasks/${task.id}`, query: { ...draft, from: "graph" } });
   try {
-    await expectPanelSelected(router);
+    await expectPanelSelected(opened);
   } finally {
-    app.unmount();
+    opened.app.unmount();
   }
 });
 
 it("opens the panel's own path naming a selection in its query with that object selected", async () => {
-  const { app, router } = await open({ path: use.path, query: { focus: "task", id: task.id, back: "playground", ...draft } });
+  const opened = await open({ path: use.path, query: { focus: "task", id: task.id, back: "playground", ...draft } });
   try {
-    await expectPanelSelected(router);
+    await expectPanelSelected(opened);
   } finally {
-    app.unmount();
+    opened.app.unmount();
   }
 });
 

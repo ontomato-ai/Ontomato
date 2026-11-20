@@ -607,6 +607,9 @@ importers:
       lucide-vue-next:
         specifier: 1.0.0
         version: 1.0.0(vue@3.5.30(typescript@5.9.3))
+      parse5:
+        specifier: 8.0.1
+        version: 8.0.1
     devDependencies:
       '@ontomato/design-tokens':
         specifier: workspace:*

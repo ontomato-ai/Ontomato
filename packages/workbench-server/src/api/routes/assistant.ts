@@ -21,6 +21,7 @@ import {
   validateAgentDefinition,
 } from "../../services/assistant/definitions";
 import { Router, type Request, type RequestHandler, type Response } from "express";
+import { platformService } from "../middleware/platform-service";
 import { agentHostCreateSessionSchema } from "@ontomato/contracts/agent-host";
 import { z } from "zod";
 import {
@@ -112,7 +113,13 @@ router.get("/agent-skills", agentAdmin, wrap(async (req, res) => {
   const c = context(req);
   res.json(await assistantSkillCatalog(c.owner.domainId, c.credentials));
 }));
-/** The conversation's delegated work, read whole: rounds and their quality checks under the reply that asked for them. */
+/** The ontology service names a reply whose checks changed; the reply's own host signals its run. */
+export const assistantQualityRouter = Router();
+assistantQualityRouter.post("/runs/:runId/quality-changed", platformService, wrap(async (req, res) => {
+  await assistantService.qualityChanged(id(req, "runId"), z.string().min(1).parse(req.header("X-Domain-Id")));
+  res.sendStatus(204);
+}));
+/** The conversation's work, read whole: delegated rounds under the reply that delegated them, checks under the reply that cited the checked outputs. */
 router.get("/sessions/:sessionId/tasks", wrap(async (req, res) => {
   res.json((await assistantService.tasks(id(req, "sessionId"), context(req).owner)).snapshot);
 }));

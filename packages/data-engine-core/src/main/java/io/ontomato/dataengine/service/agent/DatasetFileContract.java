@@ -16,31 +16,19 @@ final class DatasetFileContract {
         "question",
         "assumptions",
         "decisionIds",
-        "metricUses",
         "selfCheck");
     nonempty(body, "title");
     nonempty(body, "question");
     if (body.containsKey("sourceAnalysis")) throw AgentHttpException.invalid("sourceAnalysis is derived from the query package");
     JSONObject recipe = object(body, "recipe");
     at("recipe", () -> {
-    switch (nonempty(recipe, "kind")) {
-      case "package" -> {
-        AgentJson.fields(recipe, "kind", "package", "parameters", "columnLabels");
-        recipe.put("package", io.ontomato.dataengine.service.QueryPackage.accept(object(recipe, "package")));
-        object(recipe, "parameters");
-        var labels = object(recipe, "columnLabels");
-        for (String key : labels.keySet()) nonempty(labels, key);
-      }
-      case "metric" -> {
-        AgentJson.fields(
-            recipe, "kind", "metricId", "revision", "parameters", "bindingId");
-        string(recipe, "metricId", false);
-        optionalText(recipe, "bindingId");
-        string(recipe, "revision", false);
-        object(recipe, "parameters");
-      }
-      default -> throw AgentHttpException.invalid("kind must be package or metric");
-    }
+      AgentJson.fields(recipe, "kind", "package", "parameters", "columnLabels");
+      if (!"package".equals(nonempty(recipe, "kind")))
+        throw AgentHttpException.invalid("The retriever submits query packages; metric deliveries take their own entrance");
+      recipe.put("package", io.ontomato.dataengine.service.QueryPackage.accept(object(recipe, "package")));
+      object(recipe, "parameters");
+      var labels = object(recipe, "columnLabels");
+      for (String key : labels.keySet()) nonempty(labels, key);
     });
     var assumptions = array(body, "assumptions");
     for (int i = 0; i < assumptions.size(); i++)
@@ -53,37 +41,11 @@ final class DatasetFileContract {
         else AgentJson.id(id);
       });
     }
-    var uses = array(body, "metricUses");
-    for (int i = 0; i < uses.size(); i++) {
-      Object value = uses.get(i);
-      at("metricUses[" + i + "]", () -> {
-      var use = element(value);
-      AgentJson.fields(use, "id", "revision", "use", "reason");
-      string(use, "id", false);
-      string(use, "revision", false);
-      nonempty(use, "reason");
-      if (!List.of("direct", "derived", "not_used").contains(use.getString("use")))
-        throw AgentHttpException.invalid("use must be direct, derived or not_used");
-      });
-    }
     var check = object(body, "selfCheck");
     at("selfCheck", () -> {
-    AgentJson.fields(
-        check, "scope", "filters", "grain", "denominator", "nullGroups", "comparisons");
+    AgentJson.fields(check, "scope", "filters", "grain", "denominator", "nullGroups");
     for (String key : List.of("scope", "filters", "grain", "denominator", "nullGroups"))
       string(check, key, false);
-    var comparisons = array(check, "comparisons");
-    for (int i = 0; i < comparisons.size(); i++) {
-      Object value = comparisons.get(i);
-      at("comparisons[" + i + "]", () -> {
-      var comparison = element(value);
-      AgentJson.fields(comparison, "metricId", "comparable", "explanation", "executionRef");
-      string(comparison, "metricId", false);
-      bool(comparison, "comparable");
-      string(comparison, "explanation", false);
-      string(comparison, "executionRef", true);
-      });
-    }
     });
   }
 
@@ -104,11 +66,6 @@ final class DatasetFileContract {
     return value;
   }
 
-  private static JSONObject element(Object value) {
-    if (!(value instanceof Map<?, ?>)) throw AgentHttpException.invalid("Expected an object");
-    return JSONObject.from(value);
-  }
-
   private static JSONObject object(JSONObject body, String key) {
     if (!(body.get(key) instanceof Map<?, ?>))
       throw AgentHttpException.invalid(key + " must be an object");
@@ -127,12 +84,4 @@ final class DatasetFileContract {
       throw AgentHttpException.invalid(key + " must be text");
   }
 
-  private static void optionalText(JSONObject body, String key) {
-    if (body.containsKey(key)) string(body, key, false);
-  }
-
-  private static void bool(JSONObject body, String key) {
-    if (!(body.get(key) instanceof Boolean))
-      throw AgentHttpException.invalid(key + " must be a boolean");
-  }
 }

@@ -1,4 +1,5 @@
 import DOMPurify, { type RemovedAttribute, type RemovedElement } from "dompurify";
+import { parseFragment, type DefaultTreeAdapterTypes } from "parse5";
 
 /*
  * What the platform guarantees about a panel drawn in its own document (standard part two, layout): its HTML carries no
@@ -70,15 +71,25 @@ export interface CodedPanelHtml {
   css: string;
 }
 
-/** Splits a panel's HTML in an inert document: nothing in it loads or runs while it is read. */
+/**
+ * Splits a panel's HTML as written. The template is the source text between `#app`'s own tags, never the HTML parser's
+ * reserialization of it: a Vue template keeps what HTML does not, such as `#slot` shorthands and camelCase attributes.
+ */
 export function splitCodedPanelHtml(html: string): CodedPanelHtml {
-  const inert = document.implementation.createHTMLDocument("");
-  inert.body.innerHTML = html;
-  const root = inert.getElementById("app");
+  let root: DefaultTreeAdapterTypes.Element | undefined;
+  const styles: string[] = [];
+  const visit = (node: DefaultTreeAdapterTypes.ChildNode) => {
+    if (!("tagName" in node)) return;
+    if (node.tagName === "style") styles.push(node.childNodes.map(child => "value" in child ? child.value : "").join(""));
+    if (!root && node.attrs.some(({ name, value }) => name === "id" && value === "app")) root = node;
+    for (const child of node.tagName === "template" ? (node as DefaultTreeAdapterTypes.Template).content.childNodes : node.childNodes) visit(child);
+  };
+  parseFragment(html, { sourceCodeLocationInfo: true }).childNodes.forEach(visit);
   if (!root) throw new Error("A panel's HTML designates the element its component mounts into as #app");
+  const { startTag, endTag } = root.sourceCodeLocation!;
   return {
-    template: root.innerHTML,
-    rootAttributes: Object.fromEntries([...root.attributes].filter(({ name }) => name !== "id").map(({ name, value }) => [name, value])),
-    css: [...inert.querySelectorAll("style")].map(style => style.textContent ?? "").join("\n"),
+    template: html.slice(startTag!.endOffset, endTag!.startOffset),
+    rootAttributes: Object.fromEntries(root.attrs.filter(({ name }) => name !== "id").map(({ name, value }) => [name, value])),
+    css: styles.join("\n"),
   };
 }

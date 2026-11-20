@@ -58,7 +58,7 @@ export async function readCurrentPanel(owner: ProductOwner, credentials: Assista
 export const readCurrentProjectionRecord = readCurrentProjection;
 export const readCurrentPanelRecord = readCurrentPanel;
 
-export async function requireDirectPanelMember(owner: ProductOwner, credentials: AssistantCredentials, panel: ProductPanel, key: string) {
+export async function requireDirectPanelMember(owner: ProductOwner, credentials: AssistantCredentials, panel: Pick<ProductPanel, "manifest">, key: string) {
   if (!Object.hasOwn(panel.manifest.members, key))
     throw new HttpError(403, "Panel member is not available", "FORBIDDEN");
   const member = panel.manifest.members[key];
@@ -112,7 +112,7 @@ export async function saveCurrentProjection(
 ) {
   const existing = await currentForSave(owner, credentials, "projection", id, request.revision);
   if (!("data" in request)) {
-    if (!existing || !("chartSource" in existing.definition))
+    if (existing?.definition.componentId !== METRIC_CHART_COMPONENT)
       throw new HttpError(400, "Register a chart through its source card", "CHART_SOURCE_REGISTRATION_REQUIRED");
     const { name, description, visibility, revision } = request;
     const current = chartProjectionSchema.parse(currentProductRecord(existing, true));
@@ -121,7 +121,7 @@ export async function saveCurrentProjection(
     return productProjectionSchema.parse(await save(owner, credentials, "projection", id,
       { ...definition, name, description, visibility }, revision));
   }
-  if (existing && "chartSource" in existing.definition)
+  if (existing?.definition.componentId === METRIC_CHART_COMPONENT)
     throw new HttpError(400, "A registered chart cannot change its component, metric or source", "CHART_SOURCE_IMMUTABLE");
   const { revision, ...input } = request;
   requireOrdinaryProjection(input);
