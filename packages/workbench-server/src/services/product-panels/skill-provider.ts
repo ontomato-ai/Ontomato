@@ -2,9 +2,8 @@ import { z } from "zod";
 import { panelSkillSourcesQuerySchema, panelSkillSourcesResponseSchema, type PanelUseRef } from "@ontomato/contracts/product-panels";
 import { environment } from "../../config/environment";
 import { config } from "../../config/application";
-import { registerSkillProvider, SkillSourceRecordError, type ProtectedSkillOffering, type SkillProvider } from "../../core/skills/providers";
+import { registerSkillProvider, type ProtectedSkillOffering, type SkillProvider, type SkillSourceFailure } from "../../core/skills/providers";
 import { backendGet } from "../../utils/backend-client";
-import { HttpError } from "../../utils/errors";
 
 const sourceResponse = z.object({ success: z.literal(true), data: panelSkillSourcesResponseSchema });
 
@@ -21,32 +20,25 @@ async function readSources(domainId: string) {
 }
 
 export const panelSkillProvider: SkillProvider<ProtectedSkillOffering> & {
-  findByUse(domainId: string, use: PanelUseRef): Promise<ProtectedSkillOffering | null>;
+  findByUse(domainId: string, use: PanelUseRef): Promise<ProtectedSkillOffering | SkillSourceFailure | null>;
 } = {
   id: "product-panels",
   name: "Panels",
   async list({ domainId, reportSourceFailure }) {
-    const { panelSkillOfferings } = await import("./skill-package");
-    return panelSkillOfferings(domainId, await readSources(domainId), reportSourceFailure);
+    const { panelSkillSources } = await import("./skill-package");
+    const offerings: ProtectedSkillOffering[] = [];
+    for (const source of await panelSkillSources(domainId, await readSources(domainId))) {
+      if ("kind" in source) offerings.push(source);
+      else reportSourceFailure(source);
+    }
+    return offerings;
   },
   async findByUse(domainId, { applicationId, useId }) {
     const source = (await readSources(domainId)).find(entry => entry.applicationId === applicationId && entry.useId === useId);
     if (!source) return null;
-    const { panelSkillOfferings } = await import("./skill-package");
-    const panelId = source.panelId;
-    function rethrow(error: unknown): never {
-      if (!(error instanceof SkillSourceRecordError)) throw error;
-      const { resourceId, field, reason } = error.detail;
-      const resource = resourceId === panelId ? "panel" : "projection";
-      const location = `${resource} '${resourceId}'${field ? `, field '${field}'` : ""}`;
-      throw new HttpError(502, `Panel '${panelId}' skill is unavailable: ${location}: ${reason.replaceAll("_", " ")}`, "SKILL_SOURCE_UNAVAILABLE");
-    }
-    const [offering] = await panelSkillOfferings(domainId, [source]).catch(rethrow);
-    return {
-      ...offering!,
-      readManifest: ref => offering!.readManifest(ref).catch(rethrow),
-      provide: ref => offering!.provide(ref).catch(rethrow),
-    };
+    const { panelSkillSources } = await import("./skill-package");
+    const [result] = await panelSkillSources(domainId, [source]);
+    return result!;
   },
 };
 

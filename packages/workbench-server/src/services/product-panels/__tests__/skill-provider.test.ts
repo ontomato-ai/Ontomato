@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { vuePanelContent } from "../../../__tests__/fixtures/vue-panel";
 import { ONTOLOGY_TYPE } from "@ontomato/contracts/platform-object-types";
 import { appsSdkReleaseManifestSchema } from "@ontomato/contracts/apps-sdk";
@@ -13,7 +14,7 @@ import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { parseSkillMarkdown } from "../../../core/skills/manifest";
-import type { SkillSourceFailure } from "../../../core/skills/providers";
+import { SkillSourceRecordError, type SkillSourceFailure } from "../../../core/skills/providers";
 import { backendGet } from "../../../utils/backend-client";
 import { findCurrentProduct, type CurrentProductRow } from "../../../infrastructure/product-current";
 
@@ -174,8 +175,10 @@ it.each(["record_missing", "invalid_definition"] as const)("reports %s without o
     ...(reason === "invalid_definition" ? { field: expect.stringMatching(/^manifest\.members\.list\.target/) } : {}),
   });
   expect(JSON.stringify(reportSourceFailure.mock.calls)).not.toContain("private-stored-value");
-  await expect(panelSkillProvider.findByUse(domainId, uses[0]!)).rejects.toMatchObject({
-    status: 502, code: "SKILL_SOURCE_UNAVAILABLE",
+  await expect(panelSkillProvider.findByUse(domainId, uses[0]!)).resolves.toEqual({
+    sourceKey: panelId, entrances: [uses[0]!.entrance],
+    knownRequiredResourceIds: [panelId], reason,
+    ...(reason === "invalid_definition" ? { field: expect.stringMatching(/^manifest\.members\.list\.target/) } : {}),
   });
 });
 
@@ -184,6 +187,8 @@ it("keeps a catalogue dependency query failure distinct from a bad panel row", a
   const outage = new Error("Panel storage unavailable");
   vi.mocked(findCurrentProduct).mockRejectedValueOnce(outage);
   await expect(panelSkillProvider.list({ domainId, reportSourceFailure })).rejects.toBe(outage);
+  vi.mocked(findCurrentProduct).mockRejectedValueOnce(outage);
+  await expect(panelSkillProvider.findByUse(domainId, uses[0]!)).rejects.toBe(outage);
   expect(reportSourceFailure).not.toHaveBeenCalled();
 });
 
@@ -195,7 +200,8 @@ it("loads only the requested panel skill and pinpoints an invalid dependent proj
     data: { operation: { source: { operation: "schedules.runNow" }, read: "describe", params: {} } },
   });
   const summary = await panelSkillProvider.findByUse(domainId, uses[2]!);
-  await expect(summary!.readManifest(taskRef)).resolves.toMatchObject({ name: taskRef.name });
+  assert(summary && "kind" in summary);
+  await expect(summary.readManifest(taskRef)).resolves.toMatchObject({ name: taskRef.name });
   expect(vi.mocked(findCurrentProduct).mock.calls).toEqual([
     [domainId, "panel", uses[2]!.panelId],
     [domainId, "projection", "projection-schedules-summary"],
@@ -208,13 +214,13 @@ it("loads only the requested panel skill and pinpoints an invalid dependent proj
   expect(reportSourceFailure).not.toHaveBeenCalled();
 
   const broken = await panelSkillProvider.findByUse(domainId, uses[0]!);
-  expect(broken?.resourceIds).toContain(brokenId);
-  const failure = {
-    code: "SKILL_SOURCE_UNAVAILABLE",
-    message: expect.stringContaining(`Panel '${uses[0]!.panelId}' skill is unavailable: projection '${brokenId}', field 'data.operation.source'`),
-  };
-  await expect(broken!.readManifest(taskRef)).rejects.toMatchObject(failure);
-  await expect(broken!.provide(taskRef)).rejects.toMatchObject(failure);
+  assert(broken && "kind" in broken);
+  expect(broken.resourceIds).toContain(brokenId);
+  const detail = { resourceId: brokenId, field: "data.operation.source", reason: "invalid_definition" };
+  const manifest = broken.readManifest(taskRef);
+  await expect(manifest).rejects.toBeInstanceOf(SkillSourceRecordError);
+  await expect(manifest).rejects.toMatchObject({ detail });
+  await expect(broken.provide(taskRef)).rejects.toMatchObject({ detail });
 });
 
 it.each([
