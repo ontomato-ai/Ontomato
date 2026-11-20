@@ -172,7 +172,7 @@ vi.mock("../pages/AgentSettingsRoute.vue", () => ({
 const settingsFeature = (wrapper: VueWrapper) =>
   (wrapper.findComponent(AgentShell).props("workbench") as { features: { id: string; address?: string; pageSkill?: unknown }[] })
     .features.find((feature) => feature.id === "agents")!;
-const PAGE_SKILL = { pageKey: "agent-settings", permissionCode: "analysis-agent" };
+const PAGE_SKILL = { mode: "public", locator: { pageKey: "agent-settings", permissionCode: "analysis-agent" } };
 
 describe("the agents' settings beside the conversation", () => {
   it("shows the page at the address the conversation carries, draft handoff included", async () => {

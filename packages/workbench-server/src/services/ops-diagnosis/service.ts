@@ -11,7 +11,8 @@ import { z } from "zod";
 import { DIAGNOSIS_AGENT_ID, diagnosisTargetSchema, type DiagnosisTarget } from "@ontomato/contracts/ops-diagnosis";
 import { ARTIFACT_CHART_SKILLS, ARTIFACT_MARKDOWN_PROMPT } from "@ontomato/contracts/agent-artifact-markdown";
 import { runtimeArtifactSchema } from "@ontomato/contracts/agent-runtime-artifacts";
-import type { RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
+import { runtimeAgentDefinitionSchema, type RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
+import type { RuntimeSkillVersion } from "@ontomato/contracts/agent-runtime-skills";
 import { getPostgresPool, qualifiedTable as table } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
@@ -21,6 +22,7 @@ import { workbenchServerResourceRoot } from "../../content/resources";
 import { renderPrompt } from "../../core/prompts/loader";
 import { environment } from "../../config/environment";
 import { publishSkill } from "../agent-runtime/skills";
+import { skillRegistryManager } from "../../core/skills/registry/manager";
 import { callbackCredential } from "../agent-runtime/callback-credential";
 import { HttpError } from "../../utils/errors";
 import type { AgentHostOwner, AgentHostService } from "../agent-host/types";
@@ -172,37 +174,54 @@ export const diagnosisService: AgentHostService & { agents(owner: AgentHostOwner
 
 export async function prepareDiagnosis(session: string, run: string, input: AgentInput, owner: AgentHostOwner, credentials: AssistantCredentials, reader?: AgentVisibilityReader): Promise<RuntimeStartRunRequest> {
   const message = input.content;
-    const row = await diagnosisSession(session, owner);
-    const language = credentials.locale ?? "en";
-    const fingerprint = createHash("sha256").update(canonical({ session, message, language })).digest("hex");
-    const intent = await transaction(async (tx) => {
-      await tx.query(`SELECT id FROM ${table("ops_sessions")} WHERE id=$1 FOR UPDATE`, [session]);
-      const previous = (await tx.query(`SELECT * FROM ${table("ops_run_intents")} WHERE id=$1`, [run])).rows[0];
-      if (previous) {
-        if (previous.session_id !== session || previous.fingerprint !== fingerprint) throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
-        return { ...previous, replayed: true };
-      }
-      const instructions = [
-        renderPrompt("diagnosis-agent.main.system", {}, language),
-        ARTIFACT_MARKDOWN_PROMPT,
-        ...(reader ? [agentVisibilityPrompt(reader)] : []),
-        ...(row.target ? [`Diagnosis target (resolve before drawing conclusions): ${JSON.stringify(row.target)}`] : []),
-      ].join("\n\n");
-      const definition = runDefinition(instructions, (await readDiagnosisModel(owner.domainId)).modelSelection.modelId, [skill, ...ARTIFACT_CHART_SKILLS], language);
-      definition.agentId = DIAGNOSIS_AGENT_ID;
-      return { ...(await tx.query(`INSERT INTO ${table("ops_run_intents")} (id,session_id,fingerprint,definition,language) VALUES($1,$2,$3,$4,$5) RETURNING *`, [run, session, fingerprint, JSON.stringify(definition), language])).rows[0], replayed: false };
+  const row = await diagnosisSession(session, owner);
+  const language = credentials.locale ?? "en";
+  const fingerprint = (skills: RuntimeSkillVersion[]) =>
+    createHash("sha256").update(canonical({ session, message, language, skills })).digest("hex");
+  const readIntent = async () => (await db().query(`SELECT * FROM ${table("ops_run_intents")} WHERE id=$1`, [run])).rows[0];
+  let intent = await readIntent();
+  if (!intent) {
+    const instructions = [
+      renderPrompt("diagnosis-agent.main.system", {}, language),
+      ARTIFACT_MARKDOWN_PROMPT,
+      ...(reader ? [agentVisibilityPrompt(reader)] : []),
+      ...(row.target ? [`Diagnosis target (resolve before drawing conclusions): ${JSON.stringify(row.target)}`] : []),
+    ].join("\n\n");
+    const publicSkills = await skillRegistryManager.publicSkills();
+    const chartSources = ARTIFACT_CHART_SKILLS.map((ref) => {
+      const source = publicSkills.find(({ id }) => id === ref.name);
+      if (!source) throw new HttpError(422, "A diagnosis chart skill is unavailable", "SKILL_NOT_FOUND");
+      return { root: source.path, ref };
     });
-    await publishSkill(path.join(workbenchServerResourceRoot, "resources/runtime-skills/ops-diagnosis"), skill);
-    const definition = intent.definition as RuntimeStartRunRequest["definition"];
-    await db().query(`UPDATE ${table("ops_sessions")} SET title=CASE WHEN title='' THEN $2 ELSE title END,updated_at=now() WHERE id=$1`, [session, message]);
-    return {
-      language: intent.language,
-      input,
-      definition,
-      environment: {
-        values: { ONTOMATO_WORKBENCH_URL: environment.agentRuntime().callbackUrl.replace(/\/$/, "") },
-        secrets: { ONTOMATO_TK: callbackCredential({ pathPrefix: "/api/observe/evidence/", runId: run, expiresAt: Date.now() + definition.sandbox.limits.wallTimeMs, token: credentials.token ?? "", apiKey: credentials.apiKey ?? "" }).value },
-      },
-    };
+    const published = await Promise.all([
+      publishSkill(path.join(workbenchServerResourceRoot, "resources/runtime-skills/ops-diagnosis"), skill),
+      ...chartSources.map(({ root, ref }) => publishSkill(root, ref)),
+    ]);
+    const skills = published.map(({ skill, digest }) => ({ skill, digest }));
+    const definition = runDefinition(instructions, (await readDiagnosisModel(owner.domainId)).modelSelection.modelId, skills, language);
+    definition.agentId = DIAGNOSIS_AGENT_ID;
+    const inserted = await db().query(
+      `INSERT INTO ${table("ops_run_intents")} (id,session_id,fingerprint,definition,language) VALUES($1,$2,$3,$4,$5)
+      ON CONFLICT (id) DO NOTHING RETURNING *`,
+      [run, session, fingerprint(skills), JSON.stringify(definition), language],
+    );
+    intent = inserted.rows[0] ?? await readIntent();
+  }
+  if (intent.session_id !== session) throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
+  const definition = runtimeAgentDefinitionSchema.safeParse(intent.definition);
+  if (!definition.success)
+    throw new HttpError(422, "Stored diagnosis intent has no usable skill versions", "SKILL_NOT_FOUND");
+  if (intent.fingerprint !== fingerprint(definition.data.skills))
+    throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
+  await db().query(`UPDATE ${table("ops_sessions")} SET title=CASE WHEN title='' THEN $2 ELSE title END,updated_at=now() WHERE id=$1`, [session, message]);
+  return {
+    language: intent.language,
+    input,
+    definition: definition.data,
+    environment: {
+      values: { ONTOMATO_WORKBENCH_URL: environment.agentRuntime().callbackUrl.replace(/\/$/, "") },
+      secrets: { ONTOMATO_TK: callbackCredential({ pathPrefix: "/api/observe/evidence/", runId: run, expiresAt: Date.now() + definition.data.sandbox.limits.wallTimeMs, token: credentials.token ?? "", apiKey: credentials.apiKey ?? "" }).value },
+    },
+  };
 }
 
