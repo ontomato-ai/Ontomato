@@ -522,10 +522,10 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       panels: [{ ...item, mode: "update", revision: inlineRecords.get(inlinePanelPath).revision }],
     }));
     const unregistered = JSON.parse((await run("panel", "check", directory)).stdout);
-    assert.deepEqual(unregistered.unchecked.map(({ reason, ...source }) => source), [
-      { kind: "chart-source", member: "chart", ...chartSource },
-    ]);
-    assert.equal(unregistered.unchecked[0].reason, "Chart input types can be checked after the owner registers this source card");
+    assert.deepEqual(unregistered.unchecked, [{
+      kind: "chart-source", member: "chart", ...chartSource,
+      reason: "Chart input types can be checked after the owner registers this source card",
+    }]);
     assert.deepEqual(requests.splice(0).filter(([method, url]) => method !== "GET" || url.includes("/product-"))
       .map(([method, url]) => [method, url]), [["GET", chartQuery]]);
 
