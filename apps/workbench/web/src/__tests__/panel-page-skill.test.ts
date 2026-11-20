@@ -5,7 +5,7 @@ import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import {
-  currentSdk, installPlatform, leaveFrame, manifestP, manifestQ, memberKeyOf, mountPlatformPage, nothingAt, panelAnswer, panelRecord,
+  currentSdk, installPlatform, leaveFrame, manifestP, manifestQ, skillRefOf, mountPlatformPage, nothingAt, panelAnswer, panelRecord,
   panelSnapshot, projections, type Sent,
 } from "./panel-frame";
 
@@ -65,7 +65,7 @@ async function openApplication(address: string) {
 
 const member = (use: ApplicationPanelUse, locator: PageSkillContext["locator"]): PageSkillContext => ({
   mode: "member", locator,
-  member: { source: { kind: "application-use", applicationId: app, useId: use.id }, memberKey: memberKeyOf(use.panelId) },
+  member: { source: { kind: "application-use", applicationId: app, useId: use.id }, memberPath: [], ref: skillRefOf(use.panelId) },
 });
 const panelReads = (sent: Sent[], panelId: string) => sent.filter(request => request.path === `/api/product-panels/${panelId}`);
 
