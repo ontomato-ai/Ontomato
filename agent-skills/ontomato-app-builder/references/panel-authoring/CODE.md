@@ -9,7 +9,8 @@ such as `selected` stores `{className, primaryKey}`. Enable `deepLink` when the 
 Use `recipes.md` for tasks the assistant needs to know how to do.
 
 In the required `panel.mjs`, import the SDK, read panel state from the current context and call `mountPanel`.
-The platform runs all panels directly.
+The platform runs all panels directly. The repository's `packages/apps-sdk/src/panel/mount.ts` implements the
+legacy iframe runtime. This guide and the public SDK imports cover the direct runtime for panel authors.
 
 ```js
 import { computed } from "vue";
@@ -29,6 +30,10 @@ await mountPanel({
 Bind the list's `state.selected` and the detail's `target` to the same public state. The list updates that state
 when the reader selects a record. The example uses the list's Vue selection event to return to view mode.
 Use `@click="clearSelection"` on a control that should clear both the detail and the list's selection.
+
+To open another platform page, get `navigate` from `usePanelContext()` in synchronous `setup()` and call
+`navigate(address)` from a Vue event. Use a platform route such as `/agents/chat?agentId=…`. If navigation fails,
+the host shows the reason and the Promise rejects with the same reason.
 
 ## Read declared data
 
