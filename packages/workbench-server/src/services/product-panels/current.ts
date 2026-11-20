@@ -15,6 +15,7 @@ import type { ProductOwner } from "../product-governance/grants";
 import { grantedProductIds, registerProductResource, requireProductGrant } from "../product-governance/grants";
 import { notifyProductDefinitionChanged } from "./definition-stream";
 import { validateCurrentProductReferences } from "./references";
+import { validateProjectionComponent } from "./component-catalogue";
 
 type CurrentDefinition = ProductPanelInput | ProductProjectionInput;
 
@@ -74,6 +75,7 @@ export async function insertCurrentProduct(client: PoolClient, owner: ProductOwn
     [owner.domainId, id],
   );
   if (collision.rows.length) throw new HttpError(409, "Product identity already belongs to another collection", "PRODUCT_ID_CONFLICT");
+  if ("componentId" in input) await validateProjectionComponent(input);
   await registerProductResource(owner, id, input.visibility === "domain");
   await requireProductGrant(id, "edit", credentials);
   const result = await client.query(`INSERT INTO ${t(currentProductTables[kind])} (domain_id,id,owner_id,definition) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT DO NOTHING RETURNING ${currentProductColumns}`, [owner.domainId, id, owner.userId, JSON.stringify(input)]);
@@ -83,6 +85,7 @@ export async function insertCurrentProduct(client: PoolClient, owner: ProductOwn
 
 async function save(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string,
   input: CurrentDefinition, revision: number) {
+  if (revision !== 0 && "componentId" in input) await validateProjectionComponent(input);
   const row = await transaction(async client => {
     await lockProducts(client, owner);
     await validateCurrentProductReferences(owner, credentials, kind, id, input, client);
@@ -98,8 +101,8 @@ export async function saveCurrentProjection(
   owner: ProductOwner, credentials: AssistantCredentials, id: string, request: RegisterProductProjectionRequest,
 ) {
   const existing = await currentForSave(owner, credentials, "projection", id, request.revision);
-  if (request.componentId === METRIC_CHART_COMPONENT) {
-    if (existing?.definition.componentId !== METRIC_CHART_COMPONENT)
+  if (!("data" in request)) {
+    if (!existing || !("chartSource" in existing.definition))
       throw new HttpError(400, "Register a chart through its source card", "CHART_SOURCE_REGISTRATION_REQUIRED");
     const { name, description, visibility, revision } = request;
     const current = chartProjectionSchema.parse(currentProductRecord(existing, true));
@@ -108,9 +111,10 @@ export async function saveCurrentProjection(
     return productProjectionSchema.parse(await save(owner, credentials, "projection", id,
       { ...definition, name, description, visibility }, revision));
   }
-  if (existing?.definition.componentId === METRIC_CHART_COMPONENT)
+  if (existing && "chartSource" in existing.definition)
     throw new HttpError(400, "A registered chart cannot change its component, metric or source", "CHART_SOURCE_IMMUTABLE");
   const { revision, ...input } = request;
+  requireOrdinaryProjection(input);
   return productProjectionSchema.parse(await save(owner, credentials, "projection", id, input, revision));
 }
 
