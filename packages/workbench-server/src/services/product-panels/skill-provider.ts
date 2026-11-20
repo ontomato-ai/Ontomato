@@ -2,7 +2,7 @@ import { z } from "zod";
 import { panelSkillSourcesQuerySchema, panelSkillSourcesResponseSchema, type PanelUseRef } from "@ontomato/contracts/product-panels";
 import { environment } from "../../config/environment";
 import { config } from "../../config/application";
-import { registerSkillProvider, type ProtectedSkillOffering, type SkillProvider } from "../../core/skills/providers";
+import { registerSkillProvider, type ProtectedSkillOffering, type SkillProvider, type SkillSourceFailure } from "../../core/skills/providers";
 import { backendGet } from "../../utils/backend-client";
 
 const sourceResponse = z.object({ success: z.literal(true), data: panelSkillSourcesResponseSchema });
@@ -12,24 +12,33 @@ async function readSources(domainId: string) {
   const response = await backendGet("panel-skill-sources",
     `${config.dataQuery.baseUrl}/platform/applications/panel-skill-sources?${query}`,
     { headers: { "X-Ontomato-Query-Service-Token": environment.agentRuntime().queryServiceToken }, retries: 1 });
-  return sourceResponse.parse(JSON.parse(response.text)).data;
+  try {
+    return sourceResponse.parse(JSON.parse(response.text)).data;
+  } catch (cause) {
+    throw new Error("Invalid panel skill source catalogue", { cause });
+  }
 }
 
 export const panelSkillProvider: SkillProvider<ProtectedSkillOffering> & {
-  findByUse(domainId: string, use: PanelUseRef): Promise<ProtectedSkillOffering | null>;
+  findByUse(domainId: string, use: PanelUseRef): Promise<ProtectedSkillOffering | SkillSourceFailure | null>;
 } = {
   id: "product-panels",
   name: "Panels",
-  async list({ domainId }) {
-    const { panelSkillOfferings } = await import("./skill-package");
-    return panelSkillOfferings(domainId, await readSources(domainId));
+  async list({ domainId, reportSourceFailure }) {
+    const { panelSkillSources } = await import("./skill-package");
+    const offerings: ProtectedSkillOffering[] = [];
+    for (const source of await panelSkillSources(domainId, await readSources(domainId))) {
+      if ("kind" in source) offerings.push(source);
+      else reportSourceFailure(source);
+    }
+    return offerings;
   },
   async findByUse(domainId, { applicationId, useId }) {
     const source = (await readSources(domainId)).find(entry => entry.applicationId === applicationId && entry.useId === useId);
     if (!source) return null;
-    const { panelSkillOfferings } = await import("./skill-package");
-    const [offering] = await panelSkillOfferings(domainId, [source]);
-    return offering!;
+    const { panelSkillSources } = await import("./skill-package");
+    const [result] = await panelSkillSources(domainId, [source]);
+    return result!;
   },
 };
 

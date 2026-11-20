@@ -66,6 +66,7 @@ export async function startPanelSkillEntryServer(options: {
   entries?: PanelSkillSource[];
   grants?: Set<string>;
   nativeMapping?: () => PageSkill | undefined;
+  admittedEntrances?: () => PanelSkillSource["entrance"][] | undefined;
   onPublish?: (pkg: unknown) => void;
 } = {}) {
   const database = process.env.RUNTIME_TEST_DATABASE_URL;
@@ -116,6 +117,7 @@ export async function startPanelSkillEntryServer(options: {
 
   const { registerPanelSkillProvider } = await import("../../services/product-panels/skill-provider");
   const { productPanelsRouter, productProjectionsRouter } = await import("../../api/routes/product-panels");
+  const { default: skillsRouter } = await import("../../api/routes/skills");
   const { default: assistantRouter } = await import("../../api/routes/assistant");
   const { agentChannelRouter } = await import("../../api/routes/agent-channel");
   const { appBuilderRouter } = await import("../../api/routes/app-builder");
@@ -145,7 +147,7 @@ export async function startPanelSkillEntryServer(options: {
       pageSkills: entries.map(({ entrance }) => "permissionCode" in entrance
         ? (native && "permissionCode" in native && native.permissionCode === entrance.permissionCode ? native : { permissionCode: entrance.permissionCode })
         : { ...entrance, defaults: [{ pageKey: entrance.pageKey, defaultAgent: { kind: "preset", agentKind: "regular" } }] }),
-      registeredSkills: native ? [native.skill] : [], admittedEntrances: entries.map(use => use.entrance),
+      registeredSkills: native ? [native.skill] : [], admittedEntrances: options.admittedEntrances?.() ?? entries.map(use => use.entrance),
     } });
   });
   app.get("/platform/applications/resolve-entry", (req, res) => {
@@ -215,6 +217,7 @@ export async function startPanelSkillEntryServer(options: {
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
   app.use("/api/assistant", assistantRouter);
+  app.use("/api/skills", skillsRouter);
   app.use("/api", appBuilderRouter);
   mountAppsSdkStatic(app);
   app.use("/internal/agent-channel", agentChannelRouter);

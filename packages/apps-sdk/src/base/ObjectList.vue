@@ -30,6 +30,8 @@ interface ParsedListData {
   readonly total: number;
   readonly hasTotal: boolean;
   readonly nextCursor?: string;
+  /** What the owner says of a partial answer, in the reader's language, shown beside the rows. */
+  readonly diagnostics: readonly string[];
   readonly status: PlatformGraphStatus;
   readonly reason?: string;
 }
@@ -207,7 +209,7 @@ const datumState = useMemberData(datumName);
 
 const parsedData = computed<ParsedListData>(() => {
   if (datumState.value.status !== "ready") {
-    return { rows: [], total: 0, hasTotal: false, status: "ok" };
+    return { rows: [], total: 0, hasTotal: false, diagnostics: [], status: "ok" };
   }
   const value = datumState.value.value;
   if (datumName === "objects") {
@@ -217,6 +219,7 @@ const parsedData = computed<ParsedListData>(() => {
         rows: [],
         total: 0,
         hasTotal: false,
+        diagnostics: [],
         status: response.status,
         reason: response.reason,
       };
@@ -231,11 +234,11 @@ const parsedData = computed<ParsedListData>(() => {
         fields,
       };
     });
-    return { rows: items, total: response.total, hasTotal: true, status: "ok" };
+    return { rows: items, total: response.total, hasTotal: true, diagnostics: [], status: "ok" };
   }
   if (Array.isArray(value)) {
     const items = value as unknown as readonly PlatformObjectRecord[];
-    return { rows: items, total: items.length, hasTotal: true, status: "ok" };
+    return { rows: items, total: items.length, hasTotal: true, diagnostics: [], status: "ok" };
   }
   const queryResult = value as unknown as PanelRecordQuery;
   const items = queryResult.rows as unknown as readonly PlatformObjectRecord[];
@@ -245,6 +248,7 @@ const parsedData = computed<ParsedListData>(() => {
     total: queryResult.total ?? items.length,
     hasTotal,
     nextCursor: queryResult.nextCursor,
+    diagnostics: queryResult.diagnostics ?? [],
     status: "ok",
   };
 });
@@ -253,6 +257,7 @@ const rows = computed<readonly PlatformObjectRecord[]>(() => parsedData.value.ro
 const total = computed(() => parsedData.value.total);
 const nextCursor = computed(() => parsedData.value.nextCursor);
 const queryStatus = computed(() => parsedData.value.status);
+const diagnostics = computed(() => parsedData.value.diagnostics);
 const queryReason = computed(() => parsedData.value.reason);
 
 function rowClassName(row: PlatformObjectRecord): string {
@@ -550,6 +555,9 @@ watch(someVisibleChecked, () => {
       </div>
     </div>
 
+    <ul v-if="diagnostics.length" class="sdk-object-list-diagnostics" role="status">
+      <li v-for="note in diagnostics" :key="note">{{ note }}</li>
+    </ul>
     <p
       v-if="datumState.status === 'ready' && queryStatus !== 'ok'"
       class="sdk-object-list-status"
@@ -925,6 +933,14 @@ watch(someVisibleChecked, () => {
   gap: 8px;
   justify-content: flex-end;
   padding-top: 4px;
+}
+.sdk-object-list-diagnostics {
+  color: var(--el-color-warning);
+  font-size: var(--el-font-size-small, 12px);
+  line-height: 1.5;
+  list-style: none;
+  margin: 0;
+  padding: 0 4px;
 }
 .sdk-object-list-status {
   align-items: center;

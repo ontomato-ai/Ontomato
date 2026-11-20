@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { vuePanelContent } from "../../../__tests__/fixtures/vue-panel";
 import { ONTOLOGY_TYPE } from "@ontomato/contracts/platform-object-types";
 import { appsSdkReleaseManifestSchema } from "@ontomato/contracts/apps-sdk";
@@ -13,6 +14,7 @@ import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { parseSkillMarkdown } from "../../../core/skills/manifest";
+import { SkillSourceRecordError, type SkillSourceFailure } from "../../../core/skills/providers";
 import { backendGet } from "../../../utils/backend-client";
 import { findCurrentProduct, type CurrentProductRow } from "../../../infrastructure/product-current";
 
@@ -73,6 +75,7 @@ function codeTasksPanel(projections: Record<string, { projectionId: string; inpu
 
 let root: string;
 let panelSkillProvider: typeof import("../skill-provider").panelSkillProvider;
+const reportSourceFailure = vi.fn<[SkillSourceFailure], void>();
 beforeEach(async () => {
   vi.clearAllMocks();
   panels = new Map(trialPanels);
@@ -126,7 +129,7 @@ function javaSources(sources: PanelSkillSource[]) {
 
 it("provides a single protected source for all uses of the same panel and lists its full dependencies", async () => {
   javaSources([...uses, uses[0]!]);
-  const offerings = await panelSkillProvider.list({ domainId });
+  const offerings = await panelSkillProvider.list({ domainId, reportSourceFailure });
   const [tasks, summary] = offerings;
   expect(offerings).toHaveLength(2);
   expect(tasks).toMatchObject({
@@ -138,7 +141,7 @@ it("provides a single protected source for all uses of the same panel and lists 
     resourceIds: [uses[2]!.panelId, "projection-schedules-summary"],
   });
   expect(vi.mocked(findCurrentProduct).mock.calls).toEqual(trial.panels.map(panel => [domainId, "panel", panel.id]));
-  expect(await panelSkillProvider.list({ domainId: "another-domain" })).toEqual([]);
+  expect(await panelSkillProvider.list({ domainId: "another-domain", reportSourceFailure })).toEqual([]);
   const manifest = await tasks!.readManifest(taskRef);
   const pkg = await tasks!.provide(taskRef);
   await summary!.readManifest(skill("captured-summary-skill"));
@@ -154,6 +157,41 @@ it("provides a single protected source for all uses of the same panel and lists 
     { headers: { "X-Ontomato-Query-Service-Token": "fixture-platform-service" }, retries: 1 });
 });
 
+it.each(["record_missing", "invalid_definition"] as const)("reports %s without offering the affected panel", async reason => {
+  const { panelId } = uses[0]!;
+  if (reason === "record_missing") panels.delete(panelId);
+  else {
+    const panel = panels.get(panelId)!;
+    panels.set(panelId, { ...panel, manifest: { members: { list: { target: { private: "private-stored-value" } } } } });
+  }
+  javaSources(uses);
+
+  const offerings = await panelSkillProvider.list({ domainId, reportSourceFailure });
+  expect(offerings.map(offering => offering.sourceKey)).toEqual([uses[2]!.panelId]);
+  expect(reportSourceFailure).toHaveBeenCalledTimes(1);
+  expect(reportSourceFailure).toHaveBeenCalledWith({
+    sourceKey: panelId, entrances: [uses[0]!.entrance, uses[1]!.entrance],
+    knownRequiredResourceIds: [panelId], reason,
+    ...(reason === "invalid_definition" ? { field: expect.stringMatching(/^manifest\.members\.list\.target/) } : {}),
+  });
+  expect(JSON.stringify(reportSourceFailure.mock.calls)).not.toContain("private-stored-value");
+  await expect(panelSkillProvider.findByUse(domainId, uses[0]!)).resolves.toEqual({
+    sourceKey: panelId, entrances: [uses[0]!.entrance],
+    knownRequiredResourceIds: [panelId], reason,
+    ...(reason === "invalid_definition" ? { field: expect.stringMatching(/^manifest\.members\.list\.target/) } : {}),
+  });
+});
+
+it("keeps a catalogue dependency query failure distinct from a bad panel row", async () => {
+  javaSources(uses);
+  const outage = new Error("Panel storage unavailable");
+  vi.mocked(findCurrentProduct).mockRejectedValueOnce(outage);
+  await expect(panelSkillProvider.list({ domainId, reportSourceFailure })).rejects.toBe(outage);
+  vi.mocked(findCurrentProduct).mockRejectedValueOnce(outage);
+  await expect(panelSkillProvider.findByUse(domainId, uses[0]!)).rejects.toBe(outage);
+  expect(reportSourceFailure).not.toHaveBeenCalled();
+});
+
 it("loads only the requested panel skill and pinpoints an invalid dependent projection", async () => {
   javaSources(uses);
   const brokenId = "projection-schedules-run";
@@ -162,20 +200,50 @@ it("loads only the requested panel skill and pinpoints an invalid dependent proj
     data: { operation: { source: { operation: "schedules.runNow" }, read: "describe", params: {} } },
   });
   const summary = await panelSkillProvider.findByUse(domainId, uses[2]!);
-  await expect(summary!.readManifest(taskRef)).resolves.toMatchObject({ name: taskRef.name });
+  assert(summary && "kind" in summary);
+  await expect(summary.readManifest(taskRef)).resolves.toMatchObject({ name: taskRef.name });
   expect(vi.mocked(findCurrentProduct).mock.calls).toEqual([
     [domainId, "panel", uses[2]!.panelId],
     [domainId, "projection", "projection-schedules-summary"],
   ]);
 
+  const [listed] = await panelSkillProvider.list({ domainId, reportSourceFailure });
+  await expect(listed!.readManifest(taskRef)).rejects.toMatchObject({
+    detail: { resourceId: brokenId, field: "data.operation.source", reason: "invalid_definition" },
+  });
+  expect(reportSourceFailure).not.toHaveBeenCalled();
+
   const broken = await panelSkillProvider.findByUse(domainId, uses[0]!);
-  expect(broken?.resourceIds).toContain(brokenId);
-  const failure = {
-    code: "SKILL_SOURCE_UNAVAILABLE",
-    message: expect.stringContaining(`Panel '${uses[0]!.panelId}' skill is unavailable: projection '${brokenId}', field 'data.operation.source'`),
-  };
-  await expect(broken!.readManifest(taskRef)).rejects.toMatchObject(failure);
-  await expect(broken!.provide(taskRef)).rejects.toMatchObject(failure);
+  assert(broken && "kind" in broken);
+  expect(broken.resourceIds).toContain(brokenId);
+  const detail = { resourceId: brokenId, field: "data.operation.source", reason: "invalid_definition" };
+  const manifest = broken.readManifest(taskRef);
+  await expect(manifest).rejects.toBeInstanceOf(SkillSourceRecordError);
+  await expect(manifest).rejects.toMatchObject({ detail });
+  await expect(broken.provide(taskRef)).rejects.toMatchObject({ detail });
+});
+
+it.each([
+  { reason: "component_missing", field: "componentId", invalid: { componentId: "@ontomato/sdk:MissingComponent" } },
+  { reason: "operation_unregistered", field: "operations.runNow", invalid: {
+    operations: { runNow: { operation: { kind: "PlatformOperation", id: "private.operation" }, target: { input: "task" } } },
+  } },
+])("reports $reason only after loading the projection and the current release", async ({ reason, field, invalid }) => {
+  const projectionId = "projection-schedules-run";
+  javaSources([uses[0]!]);
+  extraProjections.set(projectionId, { ...runProjection, ...invalid });
+  const [offering] = await panelSkillProvider.list({ domainId, reportSourceFailure });
+  expect(offering!.resourceIds).toContain(projectionId);
+  await expect(offering!.readManifest(taskRef)).rejects.toMatchObject({ detail: { resourceId: projectionId, field, reason } });
+  expect(reportSourceFailure).not.toHaveBeenCalled();
+});
+
+it("propagates a broken SDK release as an overall failure rather than an unavailable component", async () => {
+  javaSources([uses[0]!]);
+  await writeFile(path.join(root, "dist/apps-sdk/current.json"), "{ invalid");
+  const [offering] = await panelSkillProvider.list({ domainId, reportSourceFailure });
+  await expect(offering!.readManifest(taskRef)).rejects.toThrow("Unable to read the current SDK component catalogue");
+  expect(reportSourceFailure).not.toHaveBeenCalled();
 });
 
 it("uses the panel's default-locale text for declared state operation labels", async () => {
@@ -203,7 +271,7 @@ it("uses the panel's default-locale text for declared state operation labels", a
     },
   });
 
-  const [offering] = await panelSkillProvider.list({ domainId });
+  const [offering] = await panelSkillProvider.list({ domainId, reportSourceFailure });
   const { files } = await offering!.provide(taskRef);
   expect(files[0]!.content).toContain("Review scheduled tasks (review)");
   expect(files[0]!.content).toContain("actions.reset (reset)");
@@ -211,7 +279,7 @@ it("uses the panel's default-locale text for declared state operation labels", a
 
 it("reads the direct trial panel from the current SDK catalogue", async () => {
   javaSources([uses[0]!]);
-  const [offering] = await panelSkillProvider.list({ domainId });
+  const [offering] = await panelSkillProvider.list({ domainId, reportSourceFailure });
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
   expect(markdown).toContain(trial.panels[0]!.name);
   expect(markdown).toContain("Summary from the current SDK release.");
@@ -231,7 +299,7 @@ it("describes a code panel's fixed projections using the current SDK", async () 
   } });
   javaSources([source]);
 
-  const [offering] = await panelSkillProvider.list({ domainId });
+  const [offering] = await panelSkillProvider.list({ domainId, reportSourceFailure });
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
   expect(markdown).toContain("Summary from the current SDK release.");
   expect(markdown).toContain("List from the current SDK release.");
@@ -241,13 +309,13 @@ it("describes a code panel's fixed projections using the current SDK", async () 
 
 it("binds the current SDK digest to the supplied panel bytes for the lifetime of the offering", async () => {
   javaSources([uses[0]!]);
-  const [first] = await panelSkillProvider.list({ domainId });
+  const [first] = await panelSkillProvider.list({ domainId, reportSourceFailure });
   const original = await first!.provide(taskRef);
   const filename = path.join(root, "dist/apps-sdk/current.json");
   const current = JSON.parse(await readFile(filename, "utf8"));
   await writeFile(filename, JSON.stringify({ ...current, digest: "b".repeat(64) }));
 
-  const [second] = await panelSkillProvider.list({ domainId });
+  const [second] = await panelSkillProvider.list({ domainId, reportSourceFailure });
   expect(await first!.provide(taskRef)).toEqual(original);
   const updated = await second!.provide(taskRef);
   expect(updated.skill).toEqual(original.skill);
@@ -263,13 +331,13 @@ it("keeps the package and recipes for a panel independent of its entrance", asyn
   });
   const ref = taskRef;
   javaSources([uses[0]!, uses[1]!]);
-  const [offering] = await panelSkillProvider.list({ domainId });
+  const [offering] = await panelSkillProvider.list({ domainId, reportSourceFailure });
   const manifest = await offering!.readManifest(ref);
   expect(manifest.description).toBe(
     "Read current data, open the panel, draft changes, and review declared operations for " + panel.name + ".",
   );
   javaSources([uses[1]!]);
-  const [otherEntrance] = await panelSkillProvider.list({ domainId });
+  const [otherEntrance] = await panelSkillProvider.list({ domainId, reportSourceFailure });
   expect(await otherEntrance!.provide(ref)).toEqual(await offering!.provide(ref));
   const originalName = panel.name;
   panel.name = "Renamed independently of the locator";
@@ -307,7 +375,7 @@ it("keeps the package and recipes for a panel independent of its entrance", asyn
     expect(markdown).not.toContain("fixture-platform-service");
     expect(markdown).not.toContain("fixture-owner");
     expect(markdown).not.toContain(panel.content.html);
-    const [renamed] = await panelSkillProvider.list({ domainId });
+    const [renamed] = await panelSkillProvider.list({ domainId, reportSourceFailure });
     const renamedManifest = await renamed!.readManifest(ref);
     expect(renamedManifest.description).toContain(panel.name);
     const updatedMarkdown = (await renamed!.provide(taskRef)).files[0]!.content;
@@ -321,7 +389,7 @@ it("keeps the package and recipes for a panel independent of its entrance", asyn
 
 it("describes B's direct summary data without adding agent operations", async () => {
   javaSources([uses[2]!]);
-  const [offering] = await panelSkillProvider.list({ domainId });
+  const [offering] = await panelSkillProvider.list({ domainId, reportSourceFailure });
   expect((await offering!.readManifest(taskRef)).description).toBe(`Read current data and open the panel for ${trial.panels[1]!.name}.`);
   const { files } = await offering!.provide(taskRef);
   const markdown = files[0]!.content;
@@ -337,7 +405,7 @@ it("advertises a declared operation without promising a draft when there is no f
   javaSources([uses[0]!]);
   extraProjections.set("legacy-run", runProjection);
   const panel = codeTasksPanel({ run: { projectionId: "legacy-run", inputs: taskInputBinding } });
-  const [offering] = await panelSkillProvider.list({ domainId });
+  const [offering] = await panelSkillProvider.list({ domainId, reportSourceFailure });
   expect((await offering!.readManifest(taskRef)).description).toBe(`Open the panel and review declared operations for ${panel.name}.`);
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
   expect(markdown).toContain("handlerRef schedules.runNow");
@@ -356,7 +424,7 @@ it("describes both graph bindings and their single metadata read", async () => {
     },
   });
   codeTasksPanel({ graph: { projectionId: "graph-fixture", inputs: {} } });
-  const [offering] = await panelSkillProvider.list({ domainId });
+  const [offering] = await panelSkillProvider.list({ domainId, reportSourceFailure });
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
   expect(markdown).toContain('"id":"platform:ObjectType"');
   expect(markdown).toContain('"edgeEnds":{"source":"/fromclass","target":"/toclass"}');
@@ -376,7 +444,7 @@ it("describes the platform ontology's five workbench reads once across both grap
     },
   });
   codeTasksPanel({ graph: { projectionId: "ontology-graph", inputs: {} } });
-  const [offering] = await panelSkillProvider.list({ domainId });
+  const [offering] = await panelSkillProvider.list({ domainId, reportSourceFailure });
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
   const reads = markdown.split("### Read current data")[1]!.split("### Open the panel")[0]!;
   for (const [method, name] of [

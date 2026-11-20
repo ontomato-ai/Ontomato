@@ -10,7 +10,7 @@ import { assistantSkillCatalogSchema, type AssistantSkillOption } from "@ontomat
 import { skillRegistryManager } from "../../core/skills/registry/manager";
 import { HttpError } from "../../utils/errors";
 import { skillManager } from "../skills/skill-manager";
-import { readSkillView, resolveCurrentPageSkillMember } from "../skills/view";
+import { isStoredProtectedSkillRef, readSkillView, resolveCurrentPageSkillMember } from "../skills/view";
 import {
   publishOntologyAssistantSkill, publishSkill, publishSkillPackage, workbenchBuiltinSkillRoot,
 } from "../agent-runtime/skills";
@@ -85,7 +85,7 @@ export async function readAssistantSkillView(domainId: string, initiatorCredenti
   // Legacy public mappings can supply the catalogue label independently of their publisher.
   for (const { locator } of view.pageSkills) {
     const skill = view.publicPageSkill(locator);
-    if (skill && !options.has(runtimeSkillKey(skill)))
+    if (skill && !isStoredProtectedSkillRef(skill) && !options.has(runtimeSkillKey(skill)))
       options.set(runtimeSkillKey(skill), { skill, title: skill.name, description: "" });
   }
   return {
@@ -98,7 +98,8 @@ export async function readAssistantSkillView(domainId: string, initiatorCredenti
 export type AssistantSkillView = Awaited<ReturnType<typeof readAssistantSkillView>>;
 
 export function visibleAssistantSkillRefs(refs: readonly RuntimeSkillRef[], view: AssistantSkillView): RuntimeSkillRef[] {
-  return [...new Map(refs.filter(view.hasSkill).map(ref => [runtimeSkillKey(ref), ref])).values()];
+  return [...new Map(refs.filter(ref => view.hasSkill(ref) || view.registry.failedManifests.has(runtimeSkillKey(ref)))
+    .map(ref => [runtimeSkillKey(ref), ref])).values()];
 }
 
 export function hasHiddenAssistantSkillRefs(refs: readonly RuntimeSkillRef[], view: AssistantSkillView): boolean {
@@ -119,7 +120,7 @@ export function effectiveAssistantSkills(
 
 export async function assistantSkillCatalog(domainId: string, credentials: AssistantCredentials, view?: AssistantSkillView) {
   const resolved = view ?? await readAssistantSkillView(domainId, credentials);
-  return assistantSkillCatalogSchema.parse({ skills: resolved.options });
+  return assistantSkillCatalogSchema.parse({ skills: resolved.options, ...(resolved.diagnostics && { diagnostics: resolved.diagnostics }) });
 }
 
 function skillNotFound() {
@@ -129,7 +130,10 @@ function skillNotFound() {
 function checkSkillSelection(refs: readonly RuntimeSkillRef[], view: AssistantSkillView) {
   const names = new Set<string>();
   for (const ref of refs) {
-    if (!view.hasSkill(ref)) throw skillNotFound();
+    if (!view.hasSkill(ref)) {
+      view.checkUnresolvedInput(ref);
+      throw skillNotFound();
+    }
     if (names.has(ref.name)) throw new HttpError(400, "Selected skill names must be unique", "INVALID_REQUEST");
     names.add(ref.name);
   }
@@ -177,6 +181,8 @@ export async function prepareAssistantSkills(domainId: string, agent: { kind: st
 ) {
   const view = await readAssistantSkillView(domainId, initiatorCredentials);
   for (const ref of agent.skills) {
+    view.requireCertainStoredSkill(ref);
+    view.requireReadableManifest(ref);
     if (!view.hasSkill(ref) && !view.unavailableStoredPageSkill(ref)) throw unavailableRunSkill();
   }
   let currentPage = null;
@@ -186,6 +192,7 @@ export async function prepareAssistantSkills(domainId: string, agent: { kind: st
   }
   const selected = effectiveAssistantSkills(agent, view);
   checkSkillSelection(selected, view);
+  if (agent.kind === "regular") view.requireCompletePageSelection();
   const skills: RuntimeSkillVersion[] = [];
   for (const ref of selected) skills.push(await publishSelectedSkill(domainId, ref, view));
   return { skills, pageDrafts: selected.some(view.pageSkillIsAvailable),

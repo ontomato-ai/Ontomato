@@ -51,7 +51,9 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
       const profile = native ? null : await profileIdForAgent(owner, agent.id);
       agents.push({
         id: agent.id, name: assistantName(agent, credentials.locale), description: assistantDescription(agent, credentials.locale),
-        icon: agent.icon, enabled: agent.enabled, effectiveSkills: effectiveAssistantSkills(agent, view, profile !== null),
+        icon: agent.icon, enabled: agent.enabled,
+        // Only what this initiator's view holds: a page skill whose source could not be read is no agent's skill here.
+        effectiveSkills: effectiveAssistantSkills(agent, view, profile !== null).filter(view.hasSkill),
       });
     }
     if (!pageFilter) return assistantAgentListSchema.parse({ agents });

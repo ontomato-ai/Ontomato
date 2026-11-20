@@ -114,7 +114,7 @@ it("reads only files inside the package", async () => {
 it("lists and reads a provider package on demand, with no source path and one write restriction", async () => {
   await skillManager.importSkill(domain, zip(), credentials, true);
   panelOfferings = [panelSkill()];
-  const infos = await skillManager.getAllSkills(domain, credentials);
+  const { skills: infos } = await skillManager.getAllSkills(domain, credentials);
   const info = infos.find((entry) => entry.id === "panel-skill")!;
   expect(info).toMatchObject({ isPublic: false, writeRestriction: { kind: "provider", providerId: "panel-test", providerName: "Test panels" } });
   expect(info.path).toBeUndefined();
@@ -379,7 +379,7 @@ it("refuses to overwrite or delete provider content before touching a domain sou
     .rejects.toThrow();
   await expect(skillManager.deleteSkill(domain, "panel-skill", referenceAccess))
     .rejects.toMatchObject({ status: 403, code: "SKILL_PROVIDER_READ_ONLY" });
-  expect((await skillManager.getAllSkills(domain, credentials)).find((entry) => entry.id === "panel-skill")?.writeRestriction)
+  expect((await skillManager.getAllSkills(domain, credentials)).skills.find((entry) => entry.id === "panel-skill")?.writeRestriction)
     .toMatchObject({ kind: "provider", providerName: "Test panels" });
 });
 

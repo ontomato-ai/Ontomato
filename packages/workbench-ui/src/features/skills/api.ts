@@ -1,10 +1,10 @@
-import type { SkillFile } from "@ontomato/contracts/skills";
+import type { SkillCatalog, SkillFile } from "@ontomato/contracts/skills";
 import { api } from "../../api";
 import { apiUrl } from "../../utils/api-base";
 
 export function createSkillsApi(request: Pick<typeof api, "get" | "delete" | "postFormData"> = api) {
   return {
-    fetchSkills: () => request.get("/skills"),
+    fetchSkills: (): Promise<SkillCatalog & { success: true }> => request.get("/skills"),
     getReferences: (skillId: string) => request.get(`/skills/${skillId}/references`),
     deleteSkill: (skillId: string) => request.delete(`/skills/${skillId}`),
     listFiles: async (skillId: string): Promise<SkillFile[]> =>

@@ -7,10 +7,9 @@ import {
   type PanelRecord,
   type PanelRecordQuery,
 } from "@ontomato/contracts/panel-projection";
-import type { SkillInfo, SkillWriteRestriction } from "@ontomato/contracts/skills";
+import type { SkillCatalogDiagnostics, SkillInfo, SkillWriteRestriction } from "@ontomato/contracts/skills";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { HttpError } from "../../utils/errors";
 import { assistantSkillCatalog } from "../assistant/skills";
 import type { ProductOwner } from "../product-governance/grants";
 import { skillManager } from "./skill-manager";
@@ -51,9 +50,14 @@ export function createSkillReadAdapter(
 ): SkillReads {
   const t = (key: string, params?: Record<string, unknown>) => tForLocale(viewer.locale, key, params);
 
-  async function visibleCatalogue() {
-    const { skills } = await assistantSkillCatalog(owner.domainId, viewer);
-    return new Map(skills.map(({ skill, title, description }) => [runtimeSkillKey(skill), { skill, title, description }]));
+  function diagnosticText(diagnostics?: SkillCatalogDiagnostics): string[] | undefined {
+    if (!diagnostics) return;
+    const messages = diagnostics.items.map(({ skill, resourceId, field, reason }) =>
+      t(field === undefined ? "skills.diagnostics.item" : "skills.diagnostics.itemField", {
+        skill: runtimeSkillKey(skill), resource: resourceId, field, reason: t(`skills.diagnostics.${reason}`),
+      }));
+    if (diagnostics.sourceUnavailable) messages.push(t("skills.diagnostics.sourceUnavailable"));
+    return messages.length ? messages : undefined;
   }
   const unavailable = () => ({
     label: t("assistant.skills.unavailable.name"),
@@ -96,18 +100,21 @@ export function createSkillReadAdapter(
 
   return {
     async options() {
-      const catalogue = [...(await visibleCatalogue()).values()];
+      const { skills, diagnostics } = await assistantSkillCatalog(owner.domainId, viewer);
+      const messages = diagnosticText(diagnostics);
       return {
-        options: catalogue.map(({ skill, title, description }): PanelOption => ({
+        options: skills.map(({ skill, title, description }): PanelOption => ({
           primaryKey: runtimeSkillKey(skill),
           value: skill,
           label: title,
           description,
         })),
+        ...(messages ? { diagnostics: messages } : {}),
       };
     },
     async resolve({ values }: SkillResolveRequest) {
-      const catalogue = await visibleCatalogue();
+      const { skills } = await assistantSkillCatalog(owner.domainId, viewer);
+      const catalogue = new Map(skills.map(option => [runtimeSkillKey(option.skill), option]));
       const { label, reason } = unavailable();
       return {
         options: values.map((held): PanelOption => {
@@ -122,21 +129,21 @@ export function createSkillReadAdapter(
     async query(params: Record<string, unknown>) {
       const { search, cursor, size } = queryInputSchema.parse(params);
       const needle = search?.trim() ?? "";
-      const skills = needle
+      const { skills, diagnostics } = needle
         ? await skillManager.searchSkills(owner.domainId, needle, viewer)
         : await skillManager.getAllSkills(owner.domainId, viewer);
+      const messages = diagnosticText(diagnostics);
       const offset = cursor === undefined ? 0 : Number(cursor);
       const labels = skillFieldLabels();
       return {
         rows: skills.slice(offset, size === undefined ? undefined : offset + size).map(skill => skillRow(skill, labels)),
         ...(size !== undefined && offset + size < skills.length ? { nextCursor: String(offset + size) } : {}),
         total: skills.length,
+        ...(messages ? { diagnostics: messages } : {}),
       };
     },
     async record(primaryKey: string) {
-      const found = (await skillManager.getAllSkills(owner.domainId, viewer)).find(skill => skill.id === primaryKey);
-      if (!found) throw new HttpError(404, "Skill not found", "SKILL_NOT_FOUND");
-      return skillRow(found, skillFieldLabels());
+      return skillRow(await skillManager.getSkillInfo(owner.domainId, primaryKey, viewer), skillFieldLabels());
     },
     async files(primaryKey: string) {
       const files = await skillManager.listSkillFiles(owner.domainId, primaryKey, viewer);

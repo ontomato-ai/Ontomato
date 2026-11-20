@@ -27,7 +27,7 @@ const base = "/assistant/agent-definitions";
 /** Agent definition management of the workbench (assistant-chat); requires the analysis-agent permission. */
 export const agentDefinitionsApi = {
   async skills() {
-    return assistantSkillCatalogSchema.parse(await nodeApiGet("/assistant/agent-skills")).skills;
+    return assistantSkillCatalogSchema.parse(await nodeApiGet("/assistant/agent-skills"));
   },
   async list(): Promise<AssistantAgentDefinition[]> {
     return assistantAgentDefinitionListSchema.parse(await nodeApiGet(base)).agents;

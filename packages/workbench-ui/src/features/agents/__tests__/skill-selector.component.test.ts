@@ -14,7 +14,7 @@ afterEach(() => { vi.restoreAllMocks(); });
 describe("complete skill references in agent configuration", () => {
   it("shows missing saved skills so their references can be removed without losing available selections", async () => {
     const missing: RuntimeSkillRef = { ...provider, name: "action-invocation" };
-    vi.spyOn(agentDefinitionsApi, "skills").mockResolvedValue([option(provider)]);
+    vi.spyOn(agentDefinitionsApi, "skills").mockResolvedValue({ skills: [option(provider)] });
     const wrapper = mount(SkillSelector, {
       props: { modelValue: [provider, missing] },
       global: { plugins: [workbenchI18n(), ElementPlus] },
@@ -28,6 +28,23 @@ describe("complete skill references in agent configuration", () => {
       await card.trigger("click");
       expect(wrapper.emitted("update:modelValue")?.at(-1)).toEqual([[provider]]);
       expect(wrapper.text()).not.toContain(missing.name);
+    } finally { wrapper.unmount(); }
+  });
+
+  it("shows a partial catalogue with no options without clearing the held value", async () => {
+    vi.spyOn(agentDefinitionsApi, "skills").mockResolvedValue({ skills: [], diagnostics: {
+      sourceUnavailable: true, items: [{ skill: domain, resourceId: "broken-panel", field: "members", reason: "invalid_definition" }],
+    } });
+    const wrapper = mount(SkillSelector, {
+      props: { modelValue: [domain] }, global: { plugins: [workbenchI18n(), ElementPlus] },
+    });
+    try {
+      await flushPromises();
+      expect(wrapper.text()).toContain("broken-panel");
+      expect(wrapper.text()).toContain("members");
+      expect(wrapper.text()).toContain(workbenchI18n().global.t("skills.diagnostics.sourceUnavailable"));
+      expect(wrapper.get(".skill-card").text()).toContain(domain.name);
+      expect(wrapper.emitted("update:modelValue")).toBeUndefined();
     } finally { wrapper.unmount(); }
   });
 
@@ -46,7 +63,7 @@ describe("complete skill references in agent configuration", () => {
 
   it("makes provider skills removable and retains namespace identity when names coincide", async () => {
     const sameName = { ...domain, name: provider.name };
-    vi.spyOn(agentDefinitionsApi, "skills").mockResolvedValue([option(provider), option(sameName)]);
+    vi.spyOn(agentDefinitionsApi, "skills").mockResolvedValue({ skills: [option(provider), option(sameName)] });
     const wrapper = mount(SkillSelector, {
       props: { modelValue: [provider] },
       global: { plugins: [workbenchI18n(), ElementPlus] },

@@ -16,7 +16,7 @@ import {
 import { registerHandler, type RegisteredHandler } from "./handlers";
 import { stateChildObject, stateObject, type PanelFieldValue } from "./state";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import { projectionReadReferences, type PanelFieldTone } from "@ontomato/contracts/panel-projection";
+import { projectionReadReferences, type PanelFieldTone, type PanelOptionList } from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyObjectsRequest, PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
 
 /*
@@ -219,6 +219,8 @@ export interface PlatformObjectOptions {
     options: readonly PlatformObjectOption[];
     /** The number of choices the owner has for this query, where it pages. */
     total?: number;
+    /** What the owner says of a partial answer, already in the reader's language: shown beside the choices. */
+    diagnostics?: PanelOptionList["diagnostics"];
   }>;
   /**
    * The values a field holds now, as choices — one per value, in the same order: each with its label, and those no

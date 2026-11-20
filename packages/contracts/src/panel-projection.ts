@@ -294,10 +294,14 @@ export const panelRecordSchema = z.object({
 }).strict();
 export type PanelRecord = z.infer<typeof panelRecordSchema>;
 export const panelRecordListSchema = z.array(panelRecordSchema);
+
+/** Plain-text notices localized by the read owner and displayed alongside the available results. */
+const panelReadDiagnostics = z.array(z.string()).optional();
 export const panelRecordQuerySchema = z.object({
   rows: panelRecordListSchema,
   nextCursor: z.string().optional(),
   total: z.number().int().nonnegative().optional(),
+  diagnostics: panelReadDiagnostics,
 }).strict();
 export type PanelRecordQuery = z.infer<typeof panelRecordQuerySchema>;
 /** Group order and display labels come from the owner. */
@@ -324,6 +328,7 @@ export type PanelOption = z.infer<typeof panelOptionSchema>;
 export const panelOptionListSchema = z.object({
   options: z.array(panelOptionSchema),
   total: z.number().int().nonnegative().optional(),
+  diagnostics: panelReadDiagnostics,
 }).strict();
 export type PanelOptionList = z.infer<typeof panelOptionListSchema>;
 

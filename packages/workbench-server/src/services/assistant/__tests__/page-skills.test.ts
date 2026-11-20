@@ -3,7 +3,10 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import type { PageSkillsProjection } from "@ontomato/contracts/page-skills";
 import { assistantAgentsQuerySchema } from "@ontomato/contracts/page-skills";
+import type { DomainSkillRegistryManager, SkillRegistryManager } from "../../../core/skills/registry/manager";
 import type { AgentRow } from "../store";
+
+type PageSkillRegistry = Pick<SkillRegistryManager, "getSkillByRef" | "failedManifests">;
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(), post: vi.fn(), agents: vi.fn(), native: vi.fn(), profile: vi.fn(),
@@ -19,9 +22,9 @@ vi.mock("../../../core/skills/manifest", () => ({
   InvalidSkillPackageError: class InvalidSkillPackageError extends Error {},
 }));
 vi.mock("../../../core/skills/registry/manager", () => ({ skillRegistryManager: {
-  forDomain: async (_domain: string, admit: (sources: []) => Promise<unknown>) => {
-    await admit([]);
-    return { getSkillByRef: () => null };
+  forDomain: async (...[, admit]: Parameters<DomainSkillRegistryManager["forDomain"]>): Promise<PageSkillRegistry> => {
+    await admit?.([], []);
+    return { getSkillByRef: () => null, failedManifests: new Map() };
   },
 } }));
 vi.mock("../../skills/skill-manager", () => ({ skillManager: { skillsInRegistry: () => mocks.managed } }));

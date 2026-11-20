@@ -34,8 +34,8 @@ router.get(
   "/",
   asyncHandler(async (req: Request, res: Response) => {
     const domainId = (req as AuthenticatedRequest).domainId;
-    const skills = domainId ? await skillManager.getAllSkills(domainId, credentialsFromRequest(req as AuthenticatedRequest)) : [];
-    res.json({ success: true, skills });
+    const catalogue = domainId ? await skillManager.getAllSkills(domainId, credentialsFromRequest(req as AuthenticatedRequest)) : { skills: [] };
+    res.json({ success: true, ...catalogue });
   })
 );
 
@@ -44,8 +44,8 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const domainId = (req as AuthenticatedRequest).domainId;
     const query = String(req.query.q || "").trim();
-    const skills = domainId ? await skillManager.searchSkills(domainId, query, credentialsFromRequest(req as AuthenticatedRequest)) : [];
-    res.json({ success: true, skills });
+    const catalogue = domainId ? await skillManager.searchSkills(domainId, query, credentialsFromRequest(req as AuthenticatedRequest)) : { skills: [] };
+    res.json({ success: true, ...catalogue });
   })
 );
 
