@@ -31,7 +31,7 @@ Bind the list's `state.selected` and the detail's `target` to the same public st
 when the reader selects a record. The example uses the list's Vue selection event to return to view mode.
 Use `@click="clearSelection"` on a control that should clear both the detail and the list's selection.
 
-To open another platform page, get `navigate` from `usePanelContext()` in synchronous `setup()` and call
+To open another platform page, get `usePanelContext().navigate` in synchronous `setup()` and call
 `navigate(address)` from a Vue event. Use a platform route such as `/agents/chat?agentId=…`. If navigation fails,
 the host shows the reason and the Promise rejects with the same reason.
 
