@@ -2,7 +2,8 @@
 
 Follow the [Product Layer and Application Composition Standard](https://infohub.eloyzh.de/o/standard-66842053) and the current SDK guide. Use current product records. Keep business logic and permission checks with the resource owners. Use the deployment, domain and authorized business scope already established with the user. Obtain technical names, IDs, parameters and relationships from the platform through its discovery commands and owner interfaces.
 
-When planning how to bring an existing application onto the platform, start with the [application decomposition skill](references/app-standard/SKILL.md).
+Start with the [Vue panel skill and complete example](references/panel-authoring/SKILL.md). When planning how to
+bring an existing application onto the platform, use the [application decomposition skill](references/app-standard/SKILL.md).
 
 ## Connection and workspace
 

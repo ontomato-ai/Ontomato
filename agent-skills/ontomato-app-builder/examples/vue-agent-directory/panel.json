@@ -1,0 +1,132 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:AgentDefinition"
+        },
+        "deepLink": true
+      }
+    },
+    "members": {
+      "list": {
+        "target": {
+          "projection": {
+            "name": "Agent Definition list",
+            "description": "",
+            "componentId": "@ontomato/sdk:ObjectList",
+            "inputs": {},
+            "outputs": {
+              "selected": {
+                "kind": "object",
+                "objectType": "platform:AgentDefinition"
+              }
+            },
+            "config": {},
+            "data": {
+              "rows": {
+                "source": {
+                  "type": {
+                    "kind": "PlatformObjectType",
+                    "id": "platform:AgentDefinition"
+                  }
+                },
+                "read": "list",
+                "params": {}
+              }
+            }
+          }
+        }
+      },
+      "detail": {
+        "target": {
+          "projection": {
+            "name": "Agent Definition detail",
+            "description": "",
+            "componentId": "@ontomato/sdk:ObjectSummary",
+            "inputs": {
+              "item": {
+                "kind": "object",
+                "objectType": "platform:AgentDefinition"
+              }
+            },
+            "outputs": {},
+            "config": {},
+            "data": {
+              "record": {
+                "source": {
+                  "object": {
+                    "input": "item"
+                  }
+                },
+                "read": "record",
+                "params": {}
+              }
+            }
+          }
+        },
+        "inputs": {
+          "item": {
+            "state": "selected"
+          }
+        }
+      },
+      "form": {
+        "target": {
+          "projection": {
+            "name": "Agent Definition form",
+            "description": "",
+            "componentId": "@ontomato/sdk:ObjectForm",
+            "inputs": {
+              "item": {
+                "kind": "object",
+                "objectType": "platform:AgentDefinition"
+              }
+            },
+            "outputs": {},
+            "config": {},
+            "data": {
+              "form": {
+                "source": {
+                  "object": {
+                    "input": "item"
+                  }
+                },
+                "read": "form",
+                "params": {}
+              },
+              "createForm": {
+                "source": {
+                  "type": {
+                    "kind": "PlatformObjectType",
+                    "id": "platform:AgentDefinition"
+                  }
+                },
+                "read": "createForm",
+                "params": {}
+              }
+            },
+            "operations": {
+              "save": {
+                "operation": {
+                  "kind": "PlatformOperation",
+                  "id": "platform:AgentDefinition.save"
+                },
+                "target": {
+                  "input": "item"
+                }
+              }
+            }
+          }
+        },
+        "inputs": {
+          "item": {
+            "state": "selected"
+          }
+        }
+      }
+    },
+    "events": {}
+  }
+}
