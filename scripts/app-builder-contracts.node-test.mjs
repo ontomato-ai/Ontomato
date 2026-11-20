@@ -132,6 +132,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       { id: "legacy-action", reason: "Stored function is missing" },
       { id: "bad-action", objectType: "ReviewQueue", reason: "target: invalid field" },
     ],
+    customerTypesUnavailable: { reason: "Object type catalogue permission required" },
     objectTypes: {
       "platform:AgentDefinition": {
         reads: {
@@ -334,7 +335,8 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     const checked = await run("panel", "check", directory);
     assert.equal(checked.stderr,
       "Action legacy-action is unavailable. Stored function is missing\n" +
-      "Action bad-action (ReviewQueue) is unavailable. target: invalid field\n");
+      "Action bad-action (ReviewQueue) is unavailable. target: invalid field\n" +
+      "Customer type catalogue is unavailable. Object type catalogue permission required\n");
     assert.deepEqual(JSON.parse(checked.stdout), { status: "valid", version: sdkVersion, digest: release.digest, unchecked: [] });
     assert.deepEqual(new Map(requests.splice(0).map(([method, url]) => [url, method])), new Map([
       ["/api/apps-sdk/current", "GET"], [`${sdkPath}/node/panel-check.mjs`, "GET"],

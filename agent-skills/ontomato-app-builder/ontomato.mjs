@@ -317,6 +317,9 @@ async function readPlatformTypeTable(api, checks) {
     const record = objectType === undefined ? id : `${id} (${objectType})`;
     console.error(`Action ${record} is unavailable. ${reason}`);
   }
+  if (table.customerTypesUnavailable) {
+    console.error(`Customer type catalogue is unavailable. ${table.customerTypesUnavailable.reason}`);
+  }
   return table;
 }
 
