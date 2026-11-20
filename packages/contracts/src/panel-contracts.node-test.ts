@@ -324,6 +324,15 @@ test("fixed owner signatures and per-definition read parameters are distinct", a
   }).success, false);
 });
 
+test("owner rows may give a status tone and a field's values as tags", async () => {
+  const { panelRecordSchema } = await import("./panel-projection");
+  const row = { primaryKey: "k-1", label: "Order rule", fields: { status: "Approved", knowledgeTags: "Business, Tech" } };
+  const toned = { ...row, tones: { status: "success" }, tags: { knowledgeTags: ["Business", "Tech"] } };
+  assert.deepEqual(panelRecordSchema.parse(toned), toned);
+  assert.equal(panelRecordSchema.safeParse({ ...row, tones: { status: "green" } }).success, false);
+  assert.equal(panelRecordSchema.safeParse({ ...row, tags: { knowledgeTags: "Business" } }).success, false);
+});
+
 test("owner query rows carry only actual highlight ranges on their display text", async () => {
   const { panelRecordQuerySchema, panelRecordSchema } = await import("./panel-projection");
   const row = {

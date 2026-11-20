@@ -414,15 +414,21 @@ it("serves business knowledge panel reads over real HTTP routes backed by Postgr
           primaryKey: "k-4",
           label: "Rule of orders",
           fieldLabels: { knowledgeText: "Knowledge content", knowledgeTags: "Tags", status: "Status" },
+          subtitle: "Both rules apply",
           fields: { knowledgeText: "Both rules apply", knowledgeTags: "Tech", status: "Approved" },
-          highlights: { label: [{ start: 0, end: 4 }, { start: 8, end: 14 }], knowledgeText: [{ start: 5, end: 9 }] },
+          tones: { status: "success" },
+          tags: { knowledgeTags: ["Tech"] },
+          highlights: { label: [{ start: 0, end: 4 }, { start: 8, end: 14 }], knowledgeText: [{ start: 5, end: 9 }], subtitle: [{ start: 5, end: 9 }] },
         },
         {
           primaryKey: "k-1",
           label: "Order rule",
           fieldLabels: { knowledgeText: "Knowledge content", knowledgeTags: "Tags", status: "Status" },
+          subtitle: "Orders need a customer",
           fields: { knowledgeText: "Orders need a customer", knowledgeTags: "Business", status: "Approved" },
-          highlights: { label: [{ start: 6, end: 10 }], knowledgeText: [{ start: 0, end: 6 }] },
+          tones: { status: "success" },
+          tags: { knowledgeTags: ["Business"] },
+          highlights: { label: [{ start: 6, end: 10 }], knowledgeText: [{ start: 0, end: 6 }], subtitle: [{ start: 0, end: 6 }] },
         },
       ],
       total: 2,
@@ -494,7 +500,10 @@ it("serves business knowledge panel reads over real HTTP routes backed by Postgr
       primaryKey: "k-3",
       label: "Night cutoff",
       fieldLabels: { knowledgeText: "Knowledge content", knowledgeTags: "Tags", status: "Status" },
+      subtitle: "Cutoff moves on Friday evening",
       fields: { knowledgeText: "Cutoff moves on Friday evening", knowledgeTags: "Business, Ops", status: "Pending review" },
+      tones: { status: "warning" },
+      tags: { knowledgeTags: ["Business", "Ops"] },
     },
   });
 
@@ -503,7 +512,7 @@ it("serves business knowledge panel reads over real HTTP routes backed by Postgr
     status: "ready",
     value: {
       ...recordPlain.value,
-      highlights: { knowledgeText: [{ start: 23, end: 30 }] },
+      highlights: { knowledgeText: [{ start: 23, end: 30 }], subtitle: [{ start: 23, end: 30 }] },
     },
   });
 

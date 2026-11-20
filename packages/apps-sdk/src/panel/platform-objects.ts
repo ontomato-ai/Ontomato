@@ -16,7 +16,7 @@ import {
 import { registerHandler, type RegisteredHandler } from "./handlers";
 import { stateChildObject, stateObject, type PanelFieldValue } from "./state";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import { projectionReadReferences } from "@ontomato/contracts/panel-projection";
+import { projectionReadReferences, type PanelFieldTone } from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyObjectsRequest, PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
 
 /*
@@ -36,7 +36,7 @@ export interface TextHighlightRange {
 }
 
 /** Semantic tone for a status tag rendered by a list or summary. */
-export type PlatformFieldTone = "default" | "info" | "success" | "warning" | "danger";
+export type PlatformFieldTone = PanelFieldTone;
 
 /** Clickable reference to another ontology object carried by a field, never constructed from label text. */
 export interface PlatformFieldReference {
