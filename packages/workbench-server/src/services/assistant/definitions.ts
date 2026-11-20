@@ -126,6 +126,7 @@ export async function checkedDefinition(
       { field: "/skills", code: "target_unavailable", message },
     ]);
   }
+  oldSkills.forEach(ref => access.view.requireCertainStoredSkill(ref));
   try {
     const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
     await validateAssistantSkills(owner.domainId, skills, access.credentials, access.view);

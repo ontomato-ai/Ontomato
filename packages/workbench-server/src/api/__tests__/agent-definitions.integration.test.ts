@@ -9,6 +9,7 @@ import { AGENT_DEFINITION } from "@ontomato/contracts/panel-client-requests";
 import { panelFormDescriptionSchema } from "@ontomato/contracts/panel-projection";
 
 const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", assertPermission: vi.fn(), skillView: vi.fn(), hiddenSkills: vi.fn(), visibleSkills: vi.fn(), validateSkills: vi.fn().mockResolvedValue([]), setting: vi.fn(), prepare: vi.fn() }));
+const certainSkillView = { requireCertainStoredSkill: () => undefined };
 vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
@@ -77,7 +78,7 @@ describe("agent definitions on PostgreSQL", () => {
         BEGIN INSERT INTO "${state.schema}".skill_writes VALUES (NEW.id); RETURN NEW; END $$;
       CREATE TRIGGER record_skill_write AFTER UPDATE OF skills ON "${state.schema}".assistant_agents
         FOR EACH ROW EXECUTE FUNCTION "${state.schema}".record_skill_write()`);
-    state.skillView.mockResolvedValue({});
+    state.skillView.mockResolvedValue(certainSkillView);
     state.hiddenSkills.mockImplementation((_refs, skillView: { hidden?: boolean }) => skillView.hidden === true);
     state.visibleSkills.mockImplementation((refs, skillView: { hidden?: boolean }) => skillView.hidden ? [] : refs);
     configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { messages: en, ...enLocaleMeta } } });
@@ -208,7 +209,6 @@ describe("agent definitions on PostgreSQL", () => {
   it("clears an explicitly submitted empty skill array through the existing validator", async () => {
     const id = randomUUID();
     expect((await write("POST", id, { ...form, skills: [savedSkill] })).status).toBe(201);
-    state.skillView.mockResolvedValueOnce({ hidden: false });
     expect((await write("PUT", id, { ...form, skills: [] })).status).toBe(200);
     expect(state.validateSkills).toHaveBeenLastCalledWith(owner.domainId, [], expect.objectContaining({ token: "editor" }), expect.anything());
     expect((await stored(id)).skills).toEqual([]);
@@ -283,7 +283,7 @@ describe("agent definitions on PostgreSQL", () => {
     expect(state.prepare).not.toHaveBeenCalled();
     expect(await stored(id)).toEqual(before);
 
-    const visible = { ...selection, view: { hidden: false } as unknown as AgentDefinitionSkillSelection["view"] };
+    const visible = { ...selection, view: certainSkillView as unknown as AgentDefinitionSkillSelection["view"] };
     await saveAgentDefinitionSnapshot(id, update, executor, executorCredentials, visible);
     expect(state.validateSkills).toHaveBeenLastCalledWith(owner.domainId, [], initiatorCredentials, visible.view);
     expect(state.prepare).toHaveBeenLastCalledWith(executor, null, "other", executorCredentials);
