@@ -18,7 +18,7 @@ import {
 import { panelContextKey } from "../../../../../packages/apps-sdk/src/panel/context";
 import Projection from "../../../../../packages/apps-sdk/src/panel/Projection.vue";
 
-import { noOperations } from "./panel-frame";
+import { noOperations, projections } from "./panel-frame";
 /*
  * The trial's panel, as the SDK sees it: a declaration and projections, and nothing written per panel. These are the
  * mistakes the trial exists to rule out — a panel that has to wire its own reads, drafts or buttons; one instance's
@@ -31,48 +31,28 @@ const task = (primaryKey: string) => ({ className: SCHEDULED_TASK, primaryKey })
 
 /** Panel P, as its declaration file has it. */
 const panel = definePanel({
-  state: { selectedTask: { kind: "object", objectType: SCHEDULED_TASK, deepLink: true } },
-  slots: {
-    tasks: { projectionId: "projection-schedules-tasks", inputs: { value: { state: "selectedTask" } } },
-    summary: { projectionId: "projection-schedules-summary", inputs: { task: { state: "selectedTask" } } },
-    form: { projectionId: "projection-schedules-form", inputs: { task: { state: "selectedTask" } } },
-    run: { projectionId: "projection-schedules-run", inputs: { task: { state: "selectedTask" } } },
+  state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
+  members: {
+    tasks: { target: { projectionId: "projection-schedules-tasks" }, inputs: { value: { state: "selectedTask" } } },
+    summary: { target: { projectionId: "projection-schedules-summary" }, inputs: { task: { state: "selectedTask" } } },
+    form: { target: { projectionId: "projection-schedules-form" }, inputs: { task: { state: "selectedTask" } } },
+    run: { target: { projectionId: "projection-schedules-run" }, inputs: { task: { state: "selectedTask" } } },
   },
-  operations: [],
+  events: {},
 });
 
 /** Panel Q, as its declaration file has it: the same summary projection and nothing of P. */
 const summaryPanel = definePanel({
-  state: { selectedTask: { kind: "object", objectType: SCHEDULED_TASK, deepLink: true } },
-  slots: { summary: { projectionId: "projection-schedules-summary", inputs: { task: { state: "selectedTask" } } } },
-  operations: [],
+  state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
+  members: { summary: { target: { projectionId: "projection-schedules-summary" }, inputs: { task: { state: "selectedTask" } } } },
+  events: {},
 });
 
-function projection(id: string, componentId: string, binding: ProductProjection["binding"], display: Record<string, unknown> = {}): ProductProjection {
-  return {
-    id,
-    domainId: "domain-1",
-    ownerId: "owner-1",
-    revision: 1,
-    createdAt: "2026-11-18T00:00:00.000Z",
-    updatedAt: "2026-11-18T00:00:00.000Z",
-    editable: false,
-    name: id === "projection-schedules-run" ? "Run now" : id,
-    description: "",
-    visibility: "domain",
-    componentId,
-    binding,
-    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
-    display,
-  };
-}
-
-const records = new Map<string, ProductProjection>([
-  ["projection-schedules-tasks", projection("projection-schedules-tasks", "ObjectList", { kind: "PlatformObjectType", id: SCHEDULED_TASK })],
-  ["projection-schedules-summary", projection("projection-schedules-summary", "ObjectSummary", { kind: "PlatformObjectType", id: SCHEDULED_TASK }, { fields: ["application", "state"] })],
-  ["projection-schedules-form", projection("projection-schedules-form", "ObjectForm", { kind: "PlatformObjectType", id: SCHEDULED_TASK })],
-  ["projection-schedules-run", projection("projection-schedules-run", "OperationButton", { kind: "PlatformOperation", id: "schedules.runNow" })],
-]);
+const records = new Map<string, ProductProjection>(Object.entries(projections));
+records.set("projection-schedules-summary", {
+  ...projections["projection-schedules-summary"]!,
+  config: { fields: ["application", "state"] },
+});
 
 function instance(initial?: Record<string, unknown>) {
   return createPanelInstance(panel, {
@@ -247,7 +227,7 @@ describe("a panel's module", () => {
     const app = createApp({ setup: () => () => h(Panel) })
       .use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus);
     app.provide(panelContextKey, {
-      panel: { content: { html: '<div id="app"></div>', module: "" }, manifest: panel, sdkVersion: "1.1.1" },
+      panel: { content: { html: '<div id="app"></div>', module: "" }, manifest: panel },
       manifest: panel,
       instance: panelInstance,
       projection: (id: string) => panelInstance.projection(id),

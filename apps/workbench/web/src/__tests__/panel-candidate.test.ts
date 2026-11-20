@@ -37,10 +37,13 @@ const agentForm: ProductProjection = {
   visibility: "domain",
   name: "Agent definition",
   description: "Agent definition",
-  componentId: "ObjectForm",
-  binding: { kind: "PlatformObjectType", id: "platform:AgentDefinition" },
-  inputs: {},
-  display: {},
+  componentId: "@ontomato/sdk:ObjectForm",
+  inputs: { values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
+  outputs: {},
+  config: {},
+  data: {
+    createForm: { source: { type: { kind: "PlatformObjectType", id: "platform:AgentDefinition" } }, read: "createForm", params: { values: { input: "values" }, changedField: { input: "changedField" } } },
+  },
 };
 const summary = projections["projection-schedules-summary"]!;
 
@@ -51,10 +54,9 @@ const candidateOf = (html: string, test: BuildTestContext | null): CandidatePane
     content: { html, module: "" },
     manifest: definePanel({
       state: {},
-      slots: { definition: { projectionId: agentForm.id, inputs: {} }, summary: { projectionId: summary.id, inputs: {} } },
-      operations: [],
+      members: { definition: { target: { projectionId: agentForm.id }, inputs: {} }, summary: { target: { projectionId: summary.id }, inputs: {} } },
+      events: {},
     }),
-    sdkVersion: SDK_VERSION,
   },
   previewContext: { kind: "build-test", test },
 });

@@ -22,7 +22,7 @@ const projections: Record<string, DirectProjection> = {
   "task-list": {
     ...record, id: "task-list", name: "Tasks", componentId: "@ontomato/sdk:ObjectList",
     inputs: { value: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK } }, config: {},
-    data: { rows: { source: { type: SCHEDULED_TASK }, read: "list", params: {} } },
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
   },
   "task-summary": {
     ...record, id: "task-summary", name: "Task", componentId: "@ontomato/sdk:ObjectSummary",
@@ -52,9 +52,8 @@ it("reads a list's rows once while the selection changes, and the selected recor
     },
   });
   const inputsOf = (member: string) => () => {
-    const declared = manifest.members[member]!.inputs ?? {};
-    return Object.fromEntries(Object.entries(declared).map(([name, source]) =>
-      [name, "state" in source ? instance.state.values.value[source.state] ?? null : source.literal])) as never;
+    const selected = instance.state.values.value.selectedTask as { className: string; primaryKey: string } | null;
+    return { [member === "tasks" ? "value" : "task"]: selected ?? null };
   };
   const scope = effectScope();
   scope.run(() => {

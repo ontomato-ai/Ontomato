@@ -29,7 +29,7 @@ const baseProjections: Record<string, DirectProjection> = {
   "schedules-tasks": {
     ...meta, id: "schedules-tasks", name: "Scheduled tasks", componentId: "@ontomato/sdk:ObjectList",
     inputs: {}, outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK } }, config: {},
-    data: { rows: { source: { type: SCHEDULED_TASK }, read: "list", params: {} } },
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
   },
   "schedules-summary": {
     ...meta, id: "schedules-summary", name: "Task summary", componentId: "@ontomato/sdk:ObjectSummary",
@@ -275,7 +275,7 @@ it("supports table columns, count, explicit multi-select and fallbackToFirst in 
         selectable: true,
         fallbackToFirst: true,
       },
-      data: { rows: { source: { type: SCHEDULED_TASK }, read: "list", params: {} } },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
     },
   };
   const tableManifest: DirectPanelManifest = {
