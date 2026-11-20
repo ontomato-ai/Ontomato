@@ -29,8 +29,10 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
     }
 
     static String canonicalPath(String path) {
-        if (path == null || !path.startsWith("/") || path.contains("//") || path.matches("(?is).*%(2f|5c|25).*"))
+        if (path == null || !path.startsWith("/") || path.contains("//") || path.matches("(?is).*%(2f|5c).*"))
             throw ApplicationCatalog.bad("Panel paths must be complete local paths: " + path);
+        if (path.contains("%25"))
+            throw ApplicationCatalog.bad("Panel paths cannot contain an encoded percent sign (%25): " + path);
         try {
             var uri = new URI(path);
             var decoded = uri.getPath();

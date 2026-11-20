@@ -33,6 +33,8 @@ public class ApplicationCatalog {
     }
     public static final String DOMAIN_MEMBER_ENTRY = "domain-member";
     private static final String OBJECT_DETAIL_ROOT = "/browser/detail/";
+    private static final String OBJECT_DETAIL_KEY_PREFIX = "browser-detail:";
+    private static final int OBJECT_DETAIL_CLASS_MAX_LENGTH = 200 - OBJECT_DETAIL_KEY_PREFIX.length();
     private record PanelSkillGroup(PageSkills.Mapping mapping, PanelSkills.Source source) {}
     public record Group(String key, Map<String,String> names, int sort) {}
     public record Permission(String code, Map<String,String> names, String groupKey, int sort) {}
@@ -420,12 +422,14 @@ public class ApplicationCatalog {
     }
 
     private JSONObject resolveObjectDetail(String path, String className, User user) {
+        if (className.length() > OBJECT_DETAIL_CLASS_MAX_LENGTH)
+            throw bad("Object detail class names must be at most " + OBJECT_DETAIL_CLASS_MAX_LENGTH + " UTF-16 code units");
         var browser = require("browser");
         if (user.getDomainId() == null || !canEnter(browser, user)) throw denied();
         var panelId = panels.objectDetailPanel(user.getDomainId(), className);
         if (panelId == null) throw entryNotFound();
         if (!grants.allowed(panelId, "use")) throw denied();
-        var key = "browser-detail:" + className;
+        var key = OBJECT_DETAIL_KEY_PREFIX + className;
         var permission = browser.getList("entryAccess", String.class).getFirst();
         var use = new ApplicationPanelUse(key, key, panelId, path, new ApplicationPanelUse.Access(permission, null), null, null);
         return entryResolution(browser, use, visiblePanelUses(browser, user));

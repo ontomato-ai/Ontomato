@@ -44,6 +44,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             new TransactionTemplate(new DataSourceTransactionManager(dataSource)), access, "{}", panels, grants);
         http = MockMvcBuilders.standaloneSetup(new ApplicationController(catalog, identity,
             new WorkbenchServiceAuthentication("test-service")))
+            .setControllerAdvice(new ApplicationErrors())
             .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
     }
     private ApplicationCatalog.Builtin builtin(String id, String kind) {
@@ -176,6 +177,30 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.use.names").doesNotHaveJsonPath());
         http.perform(get("/platform/applications/resolve-entry").param("path", "/browser/detail/Unconfigured"))
             .andExpect(status().isNotFound());
+    }
+
+    @Test void browserDetailDerivesOnlyIdsThatFitTheContractAndRejectsPercentInTheClass() throws Exception {
+        new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
+        var reader = new QueryAccessService.GrantUser("viewer", "domain");
+        when(identity.getCurrentUser()).thenReturn(reader);
+        when(access.canEnter(any(), eq(reader))).thenReturn(true);
+        var root = "/browser/detail/";
+        var resolve = "/platform/applications/resolve-entry";
+        var limit = "x".repeat(185);
+        var overLimit = limit + "x";
+        when(panels.objectDetailPanel("domain", limit)).thenReturn("panel-customer");
+        when(grants.allowed("panel-customer", "use")).thenReturn(true);
+
+        http.perform(get(resolve).param("path", root + limit)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.use.id").value("browser-detail:" + limit))
+            .andExpect(jsonPath("$.data.use.pageKey").value("browser-detail:" + limit));
+        assertAll(
+            () -> http.perform(get(resolve).param("path", root + overLimit)).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("185"))),
+            () -> http.perform(get(resolve).param("path", root + "Discount%25")).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("percent sign"))));
+        verify(panels).objectDetailPanel("domain", limit);
+        verifyNoMoreInteractions(panels);
     }
 
     @Test void upgradesStoredDefaultAgentTargetsWithoutChangingTheirMeaning() {
