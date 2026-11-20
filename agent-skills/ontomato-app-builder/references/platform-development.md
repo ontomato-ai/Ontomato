@@ -19,8 +19,9 @@ directory for the registered definitions and wiring.
    errors or per-relation result the component needs to render.
 2. Register the read with the public contract owner. Give the stable type or operation ID, read name,
    `type`, `object` or `operation` source, parameter schemas and required parameters, and the result schema. Give a
-   projection declaration using `data.<name> = { source, read, params }`. A same-named member state binding supplies
-   the parameter. Use `params` for literals or to name a different input. The named read adapter is mounted in
+   projection declaration using `data.<name> = { source, read, params }`. A matching member binding supplies a
+   same-named parameter. Use `params` for literals or different input names. A component supplies the runtime
+   parameters named in its SDK declaration. The named read adapter is mounted in
    `packages/workbench-server/src/services/product-panels/data-reads.ts`. This dispatcher resolves the actual
    placement and source and returns the result to the component under the reader's identity. The read request carries
    `source`, `memberPath`, `dataName` and `inputs`. A ready result carries `value`; loading belongs to the
@@ -41,8 +42,8 @@ directory for the registered definitions and wiring.
    `packages/workbench-server/src/services/product-panels/__tests__/operations.test.ts`.
 
 The task-list projection uses `data.rows = { source: { type: { kind: "PlatformObjectType", id: "platform:ScheduledTask" } }, read: "list", params: {} }`.
-The summary uses `data.record = { source: { object: { input: "task" } }, read: "record", params: {} }`. The form
-supplies `values` and `changedField` at runtime through its component declaration.
+The summary uses `data.record = { source: { object: { input: "task" } }, read: "record", params: {} }`.
+ObjectForm supplies `values` and `changedField` at runtime.
 The list's `selected` output and the summary, form and button inputs share a panel state of type
 `{ kind: "object", objectType: "platform:ScheduledTask" }`. The member wiring maps the values through `{ state: "selectedTask" }`.
 The button reads `data.operation = { source: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, read: "describe", params: {} }`.
@@ -84,12 +85,15 @@ the result and affected task. A repeated dispatch reports the existing result.
 In `recipes.md`, describe how to use the declared reads, forms and operations for common tasks. Use the business
 owner's rules and actual operation descriptions for the page.
 
+Page selection identifies the object. When a page task needs current attributes, make the owner's named `record`
+read available through the selected reference. Use recipes for rules specific to that owner.
+
 For Business Knowledge at `/ontology/knowledge`, the owner supplies these rules.
 
 1. A record has a required title and body, tags, and a status. The body is the retrievable text. Use the owner's
    tag choices or create a new tag. Status `0` means pending review and `1` means approved, the default for manual creation.
 2. Split a search on whitespace. A match contains every term somewhere in its title, body or tags.
-3. Read the current record before editing. The owner uses last-write-wins updates.
+3. Use the selected object's ID to read `record` before reporting its status or editing it. The owner uses last-write-wins updates.
 4. In the default mode, hand a draft to the user for form saves. Execute declared writes after the user's confirmation
    or when the application allows automatic execution.
 5. Approval sets the status to `1`. A delete confirmation names the titles and number of entries because deletion is
@@ -97,11 +101,26 @@ For Business Knowledge at `/ontology/knowledge`, the owner supplies these rules.
 6. Use the Business Knowledge page for creating, editing, reviewing and deleting records. Use the existing
    `knowledge-governance` agent for extracting or organizing knowledge from conversations and documents.
 
-For Business Knowledge search, give the list, status counts and detail the same panel state as their `search` input.
-The same-named parameter uses that binding in `query`, `counts` and `record`. The counts read also takes
-`params.by: { literal: "status" }`. Bind the list member's `inputs.status` to the status state.
-The detail receives the selected knowledge record. Use `ObjectSummary` to show
+For Business Knowledge search, bind the list's `outputs.search` to the `search` state. Bind the status counts and
+detail members' `inputs.search` to that same state. The `query`, `counts` and `record` reads receive it by name.
+The counts read also takes `params.by: { literal: "status" }`. Bind the selected tab's `status` state to the
+list's `inputs.status`. The detail receives the selected knowledge record. Use `ObjectSummary` to show
 the full body as text with its original line breaks. The owner returns highlight ranges in the record for the current search.
+
+## Switch a built-in page to its panel
+
+1. Find the built-in presets that selected the old page skill. At cutover, update their bundled declarations
+   to select the new built-in panel by its fixed ID. Keep the entry's current default agent.
+2. Check which panels are installed in the domain. At installation or an explicit definition update, use the
+   skill core's `protectedSkillRef("product-panels", domainId, panelId)` to store an ordinary root skill reference.
+   Add a missing panel's skill with an explicit update after installation. For existing domains, the bundled
+   material or agent definition owner determines the cutover update and how existing user choices are kept.
+   Prefer the normal definition update entry point. Candidate discovery, effective skills and preparation
+   use the same persisted selection.
+3. Verify an existing domain as part of cutover. For Business Knowledge, start with a previously installed
+   `knowledge-governance` preset and user-edited skill choices. Install the panel and run the explicit update.
+   Confirm the edited choices remain and the preset is a candidate on the page. The main entry still defaults
+   to the general assistant.
 
 ## Add an official SDK component
 
