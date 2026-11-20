@@ -275,6 +275,29 @@ public class WorkflowDao {
 		return versions;
 	}
 
+	/**
+	 * Whether an active workflow currently exposes this Action only through a Case-scoped step.
+	 *
+	 * <p>Case-scoped steps deliberately publish no role grant. The execution fallback for an Action
+	 * with no grant record must therefore not turn that absence into a domain-wide direct-call
+	 * permission. Read the frozen active revision, not the editable workflow row.</p>
+	 */
+	public boolean caseScopedActionInForce(String domainId, String actionId) {
+		List<String> revisions = jdbcTemplate.query(
+				"SELECT v.steps FROM " + VERSION_TABLE + " v "
+						+ "JOIN " + TABLE + " w ON w.id = v.workflow_id AND w.domain_id = v.domain_id "
+						+ "AND w.version = v.version "
+						+ "WHERE v.domain_id = ? AND w.status = ?",
+				(rs, rowNum) -> rs.getString("steps"), domainId, Workflow.STATUS_ACTIVE);
+		for (String revision : revisions) {
+			for (WorkflowStep step : parseSteps(revision)) {
+				if (Boolean.TRUE.equals(step.getCaseScoped()) && actionId.equals(step.getActionId()))
+					return true;
+			}
+		}
+		return false;
+	}
+
 	/** The principal of the most recent row for this workflow and event, or null when there is none. */
 	public String queryLastEventPrincipal(String workflowId, String event) {
 		List<String> found = jdbcTemplate.query(

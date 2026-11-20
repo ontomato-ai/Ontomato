@@ -637,7 +637,11 @@ public class ActionServiceImpl implements ActionService {
     Object[] o = run(queryById(id), param, lang, user, permission, timeoutMinutes, target, null);
     PythonExecuteResult result = (PythonExecuteResult)o[1];
     if (result.getError() != null && !result.getError().isBlank()) { result.setResult(null); }
-    else result.setResult(o[0] == null ? "{\"completed\":true}" : JSON.toJSONString(JSONObject.of("answer", o[0]), Feature.WriteMapNullValue));
+    else if (o[0] != null) {
+      result.setResult(JSON.toJSONString(JSONObject.of("answer", o[0]), Feature.WriteMapNullValue));
+    } else if (result.getResult() == null || result.getResult().isBlank()) {
+      result.setResult("{\"completed\":true}");
+    }
     return result;
   }
 
