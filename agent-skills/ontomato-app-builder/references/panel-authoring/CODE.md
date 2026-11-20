@@ -36,6 +36,10 @@ To open another platform page, get `usePanelContext().navigate` in synchronous `
 `navigate(address)` from a Vue event. Use a platform route such as `/agents/chat?agentId=…`. If navigation fails,
 the host shows the reason and the Promise rejects with the same reason.
 
+For translations, put flat message keys under locale tags in `panel.json`'s `content.messages`. For example,
+`{"en":{"panel.greeting":"Hello, {name}"}}` is a message table. Use `t("panel.greeting", { name })` in the
+template and `usePanelContext().t` in `setup()`. The direct runtime supplies the template function.
+
 ## Read declared data
 
 Run `node "$SKILL/ontomato.mjs" panel type platform:AgentDefinition` to inspect an owner's reads and operations.
@@ -177,10 +181,23 @@ Write each new projection directly in `manifest.members`. Run `panel check <dire
 as the member's `id` in `panel.json`. Keep it when rearranging or renaming the member. Use `target.projectionId`
 to reuse an existing projection.
 
-Start new application IDs with `app-`. Give every application use a `pageKey` unique within its domain. Set the use's localized `names` for the display
-title beside conversations. Use `panel.name` as its fallback. For an application delivery list, declare only extra
-`packages`, `agents` and `skills`. The platform derives panel and projection dependencies from registered uses.
+Start new application IDs with `app-`. Give every application use a `pageKey` unique within its domain.
+Set the use's localized `names` for the title beside conversations. The panel name supplies the fallback title.
+Choose a built-in icon ID for `declaration.icon`, such as `knowledge`, `book`, `settings`, `schedule`, `calendar`,
+`dashboards`, `chart`, `database`, `users`, `folder`, `clipboard-list` or `app-window`.
+
+Omit the use's `defaultAgent` for the general assistant. Set `{kind: "id", id}` or `{kind: "preset", agentKind}`
+only when that agent already selects this panel's skill. When replacing a built-in page, retain its existing
+default-agent behavior.
+
+Put page-specific instructions in `recipes.md` next to the panel files. Registration includes it as
+`content.recipes`. The generated panel skill combines those recipes with the panel's declared reads,
+state, forms and operations. The platform admits the skill through the registered use. The page composer sends
+that use when the reader opens the entry and sends a message.
+
+For an application delivery list, declare only extra `packages`, `agents` and `skills`. The platform derives the
+panel and projection dependencies from registered uses.
 
 Use the [agent directory example](../../examples/vue-agent-directory/panel.html) for the complete layout and owner
 form wiring. Give your own panel and use their own IDs. The example opens at `/applications/app-example-vue-agent-directory/manage`.
-Exercise a read, an owner save and a draft from the registered use.
+Exercise the page and run the [assistant check](SKILL.md#check-the-assistant-from-the-page).
