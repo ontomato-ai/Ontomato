@@ -450,7 +450,7 @@ function usage() {
   die(`usage: ontomato.mjs [--lang <tag>] <command>
   test start|status|stop [--workspace <id>] [--sample test-data/sample.json]
   sdk current
-  sdk read <relative path, e.g. docs/index.md>
+  sdk read <relative path, e.g. docs/components.md>
   panel applications
   panel projection <id>
   panel get <id>
@@ -465,15 +465,13 @@ function usage() {
   function delete <id>
   workspace list [<page json|@file>]
   workspace create <name>
-  workspace get|tree|commits|sessions|releases <id> [<query json|@file>]
+  workspace get|tree|commits|sessions <id> [<query json|@file>]
   workspace content <id> <path> [<commit>]
   workspace diff <id> <from> <to|working>
   workspace rename <id> <name>
   workspace delete <id>
   workspace import <id> <directory> --message <text>
   workspace restore <id> <commit>
-  workspace publish <id> <commit> <declaration json|@file>
-  workspace rollback <id> <releaseId> <declaration json|@file>
   dataset-desc
   classes
   schema <class> [<class> ...]

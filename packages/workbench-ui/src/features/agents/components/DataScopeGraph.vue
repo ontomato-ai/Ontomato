@@ -145,7 +145,7 @@ const summary = computed(() =>
       <el-skeleton v-if="loading" :rows="4" animated />
       <el-empty v-else-if="!nodes.length" :image-size="60" :description="t('agents.dataScopeNoClasses')" />
       <template v-else>
-        <div class="graph-canvas" :style="{ maxHeight: `${Math.min(height, 420)}px` }">
+        <div class="graph-canvas">
           <svg :width="width" :height="height" role="group" :aria-label="t('agents.dataScopeGraph')">
             <line
               v-for="edge in edges"
@@ -218,6 +218,7 @@ const summary = computed(() =>
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-width: 0;
 }
 .scope-graph {
   display: flex;
@@ -227,6 +228,7 @@ const summary = computed(() =>
   border: 1px solid var(--el-border-color-light);
   border-radius: var(--radius-md);
   background: var(--el-fill-color-blank);
+  min-width: 0;
 }
 .scope-disclosure {
   cursor: pointer;
@@ -247,11 +249,38 @@ const summary = computed(() =>
   color: var(--el-text-color-secondary);
 }
 .graph-canvas {
+  min-width: 0;
+  max-height: 420px;
   overflow: auto;
   border-radius: var(--radius-sm);
+  /*
+   * Keep custom ::-webkit-scrollbar rendering active instead of letting the global `scrollbar-width: thin` fall back
+   * to macOS overlay scrollbars, which stay hidden at rest and make horizontal overflow look clipped.
+   */
+  scrollbar-width: auto;
+}
+.graph-canvas::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.graph-canvas::-webkit-scrollbar-track {
+  background: var(--el-fill-color-light);
+  border-radius: var(--radius-full);
+}
+.graph-canvas::-webkit-scrollbar-thumb {
+  background: var(--el-border-color-dark);
+  border-radius: var(--radius-full);
+}
+.graph-canvas::-webkit-scrollbar-thumb:hover {
+  background: var(--el-text-color-secondary);
+}
+.graph-canvas::-webkit-scrollbar-corner {
+  background: transparent;
 }
 .graph-canvas svg {
   display: block;
+  flex-shrink: 0;
+  max-width: none;
 }
 .graph-edge {
   stroke: var(--el-border-color);

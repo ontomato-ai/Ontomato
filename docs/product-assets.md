@@ -1,5 +1,7 @@
 # Product assets
 
+For changes to an existing hosted application, use the [hosted application maintenance guide](legacy-hosted-app-maintenance.md).
+
 The current design is [产品层设计与整合说明](产品层设计与整合说明.md). Implementation progress and acceptance limits are recorded in [product-layer-v2-migration.md](product-layer-v2-migration.md).
 
 Product assets have three categories:

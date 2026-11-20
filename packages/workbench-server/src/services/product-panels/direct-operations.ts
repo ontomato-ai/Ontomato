@@ -1,11 +1,14 @@
+import { panelWriteOperationSnapshotSchema } from "@ontomato/contracts/panel-agent";
 import { panelObjectRefSchema, panelOperationId, panelPortAccepts, type PanelState } from "@ontomato/contracts/panel-manifest";
 import type { ApplicationPanelUse, DirectProjection, ProductPanel, ProductProjectionInput } from "@ontomato/contracts/product-panels";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
+import { describeObjectAction, objectActionOperation } from "../action/object-actions";
+import { resolvePlacedObjectAction } from "./object-action-placement";
 import { requireDirectPanelMember } from "./current";
-import { panelOperationTargetPort, panelServerOperation, snapshotPanelWrite, type PanelOperationTarget, type PanelRecordTarget } from "./server-operations";
+import { panelOperationTargetPort, panelServerOperation, snapshotPanelWrite, type PanelOperationTarget, type PanelRecordTarget, type PanelWriteServerOperation } from "./server-operations";
 
 function unavailable(): never {
   throw new HttpError(422, "No supported declared operation has that ID", "OPERATION_UNAVAILABLE");
@@ -104,11 +107,27 @@ function declaredDirectProjectionOperation(
 
 export async function declaredDirectOperation(
   owner: ProductOwner, credentials: AssistantCredentials, use: ApplicationPanelUse, panel: ProductPanel, id: string,
+  target?: PanelRecordTarget,
 ) {
   const separator = id.lastIndexOf(".");
   if (separator < 1) return unavailable();
   const slot = id.slice(0, separator);
   const { member, projection } = await requireDirectPanelMember(owner, credentials, panel, slot);
+  const data = id === panelOperationId(slot, "execute") ? projection.data.operation : undefined;
+  if (data?.read === "describe" && "operation" in data.source && data.source.operation.kind === "Action") {
+    const resolved = await resolvePlacedObjectAction(
+      { owner, credentials }, { panel, projection, member, memberName: slot, data }, data.source.operation.id, () => target,
+    );
+    const handler: PanelWriteServerOperation = objectActionOperation(resolved);
+    const operation = panelWriteOperationSnapshotSchema.parse({
+      ...describeObjectAction(resolved), id, kind: handler.kind, slot,
+      action: { actionId: resolved.actionId, codeHash: resolved.codeHash, object: resolved.object },
+    });
+    return {
+      effect: "write" as const, use, projection: { id: projection.id, binding: handler.binding }, operation, handler,
+      fixedTarget: { kind: "object" as const, ...resolved.object },
+    };
+  }
   const current = declaredDirectProjectionOperation(use, projection, member.inputs, panel.manifest.state, slot, id, credentials.locale) ?? unavailable();
   if (current.effect === "read" && !Object.hasOwn(panel.manifest.members, current.handler.target.slot)) return unavailable();
   return current;
