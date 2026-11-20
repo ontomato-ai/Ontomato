@@ -120,6 +120,116 @@ public class ApplicationCatalog {
     public List<JSONObject> visible(User user) {
         return all().stream().filter(app -> canEnter(app, user) && hasAssignedPanelPaths(app)).map(app -> view(app, user)).toList();
     }
+    public JSONObject catalogue(User user, String search, String scope, String cursor, int size) {
+        if (!"visible".equals(scope) && !"maintainable".equals(scope))
+            throw bad("Catalogue scope must be visible or maintainable");
+        if (size < 1 || size > 100) throw bad("Catalogue size must be between 1 and 100");
+        if (cursor != null) validateId(cursor);
+        var keyword = search.strip().toLowerCase(Locale.ROOT);
+        var rows = new ArrayList<JSONObject>();
+        var apps = applicationsInDomain(user.getDomainId()).stream()
+            .sorted(Comparator.comparing(app -> app.getString("id"))).toList();
+        for (var app : apps) {
+            var id = app.getString("id");
+            if ((cursor != null && id.compareTo(cursor) <= 0) || !matchesCatalogue(app, keyword)) continue;
+            boolean maintain = canMaintainCatalogue(app, user);
+            if (!maintain && ("maintainable".equals(scope) || !canEnter(app, user))) continue;
+            if (rows.size() == size)
+                return JSONObject.of("rows", rows, "nextCursor", rows.getLast().getString("id"));
+            rows.add(catalogueSummary(app, user, maintain, catalogueEntries(app, user, maintain).size()));
+        }
+        return JSONObject.of("rows", rows);
+    }
+
+    public JSONObject catalogueRecord(String id, User user) {
+        var app = require(id);
+        boolean maintain = canMaintainCatalogue(app, user);
+        if (!maintain && !canEnter(app, user))
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Application not found");
+        var uses = catalogueEntries(app, user, maintain);
+        var result = catalogueSummary(app, user, maintain, uses.size());
+        result.put("entry", publicEntry(app));
+        result.put("panelUses", uses);
+        var groups = app.getList("groups", Group.class);
+        if (maintain) {
+            result.put("groups", groups);
+            result.put("entryAccess", app.getList("entryAccess", String.class));
+            result.putAll(app.getJSONObject("panelSettings"));
+        } else {
+            var usedGroups = new HashSet<>(uses.stream().map(ApplicationPanelUse::groupKey).toList());
+            result.put("groups", groups.stream().filter(group -> usedGroups.contains(group.key())).toList());
+        }
+        return result;
+    }
+
+    private boolean canMaintainCatalogue(JSONObject app, User user) {
+        return app.getString("domainId") != null && inDomain(app, user) && access.canMaintain(app, user);
+    }
+
+    private List<ApplicationPanelUse> catalogueEntries(JSONObject app, User user, boolean maintain) {
+        if (maintain) return app.getList("panelUses", ApplicationPanelUse.class);
+        return isPanelSkillApplication(app) ? visiblePanelUses(app, user) : List.of();
+    }
+
+    private JSONObject catalogueSummary(JSONObject app, User user, boolean maintain, int entryCount) {
+        var id = app.getString("id");
+        boolean builtin = app.getString("domainId") == null;
+        return JSONObject.of("id", id, "names", app.getJSONObject("names"), "descriptions", app.getJSONObject("descriptions"),
+            "icon", app.getString("icon"), "source", builtin ? "builtin" : "domain", "canMaintain", maintain,
+            "canGrant", !builtin && grants.allowedFor(user.getDomainId(), user.getId(), id, "edit"),
+            "canEditEntries", maintain && panelManaged(app), "entryCount", entryCount);
+    }
+
+    private static boolean matchesCatalogue(JSONObject app, String keyword) {
+        return keyword.isEmpty() || app.getString("id").contains(keyword)
+            || containsCatalogueText(app.getJSONObject("names"), keyword)
+            || containsCatalogueText(app.getJSONObject("descriptions"), keyword);
+    }
+
+    private static boolean containsCatalogueText(JSONObject translations, String keyword) {
+        return translations.values().stream()
+            .anyMatch(value -> value instanceof String text && text.toLowerCase(Locale.ROOT).contains(keyword));
+    }
+
+    public JSONObject catalogueForm(ApplicationController.CatalogueFormRequest request, User user) {
+        var target = request.target();
+        if (target == null || request.section() == null) throw bad("A catalogue form section and target are required");
+        if ("create".equals(request.section())) {
+            if (!"draft".equals(target.kind()) || user.getDomainId() == null) throw bad("A domain application draft is required");
+            var id = target.id() == null ? "app-" + UUID.randomUUID() : target.id();
+            validateId(id);
+            if (!id.startsWith("app-")) throw bad("A domain application requires an app- ID");
+            return ApplicationCatalogueForm.create(id, request.values());
+        }
+
+        if (!"object".equals(target.kind()) || !"platform:Application".equals(target.objectType()))
+            throw bad("An application object target is required");
+        validateId(target.primaryKey());
+        var app = require(target.primaryKey());
+        requireDomainMaintainer(app, user);
+        return switch (request.section()) {
+            case "identity" -> ApplicationCatalogueForm.identity(app, request.values());
+            case "entries" -> {
+                if (!panelManaged(app)) throw bad("Only panel applications can edit their entry table");
+                yield ApplicationCatalogueForm.entries(app, request.values());
+            }
+            default -> throw bad("Unknown application catalogue form section");
+        };
+    }
+
+    public ApplicationController.IdentityUpdate updateIdentity(String id, ApplicationController.IdentityUpdate update, User user) {
+        return transactions.execute(tx -> {
+            lockCatalog();
+            requireDomainMaintainer(require(id), user);
+            var errors = ApplicationCatalogueForm.identityErrors(JSONObject.of(
+                "names", update.names(), "descriptions", update.descriptions(), "icon", update.icon()));
+            if (!errors.isEmpty()) throw bad(errors.getFirst().get("message").asText());
+            db.update("UPDATE sys_application SET names=?::jsonb,descriptions=?::jsonb,icon=?,updated_at=now() WHERE id=? AND domain_id=?",
+                JSON.toJSONString(update.names()), JSON.toJSONString(update.descriptions()), update.icon(), id, user.getDomainId());
+            return update;
+        });
+    }
+
     public boolean canEnter(String id, User user) {
         return canEnter(require(id), user);
     }
@@ -130,14 +240,12 @@ public class ApplicationCatalog {
     public void updateIcon(String id,String icon,User user){
         var app=require(id);
         if(app.getString("domainId")==null||!inDomain(app,user)||!access.canMaintain(app,user))throw denied();
-        if(icon==null||!icon.matches("[a-z][a-z0-9-]{0,63}"))throw bad("Invalid application icon");
+        if (!validIcon(icon)) throw bad("Invalid application icon");
         db.update("UPDATE sys_application SET icon=?,updated_at=now() WHERE id=?",icon,id);
     }
     public JSONObject view(JSONObject app, User user) {
         var result = new JSONObject(app);
-        var entry = new JSONObject(app.getJSONObject("entry"));
-        entry.remove("upstream"); entry.remove("upstreamPrefix");
-        result.put("entry",entry);
+        result.put("entry", publicEntry(app));
         result.remove("permissions");
         result.remove("panelSettings");
         if (panelManaged(app)) result.put("panelUses", visiblePanelUses(app, user));
@@ -145,6 +253,13 @@ public class ApplicationCatalog {
             result.put("panelUses", canEnter(app, user) ? visiblePanelUses(app, user) : List.of());
         return result;
     }
+    private static JSONObject publicEntry(JSONObject app) {
+        var entry = new JSONObject(app.getJSONObject("entry"));
+        entry.remove("upstream");
+        entry.remove("upstreamPrefix");
+        return entry;
+    }
+
     /** Reconcile a service's complete builtin collection; per-file Java declarations remain incremental. */
     public void reconcileBuiltins(String service, List<Builtin> declarations) {
         transactions.executeWithoutResult(tx -> {
@@ -258,7 +373,7 @@ public class ApplicationCatalog {
         }
     }
 
-    private static void validateUsePermissions(List<ApplicationPanelUse> uses, Set<String> codes) {
+    static void validateUsePermissions(List<ApplicationPanelUse> uses, Set<String> codes) {
         for (var use : uses) {
             var code = use.access().permissionCode();
             if (code != null && !codes.contains(code))
@@ -266,7 +381,7 @@ public class ApplicationCatalog {
         }
     }
 
-    private static void validateUseGroups(List<ApplicationPanelUse> uses, List<Group> groups) {
+    static void validateUseGroups(List<ApplicationPanelUse> uses, List<Group> groups) {
         var keys = new HashSet<>(groups.stream().map(Group::key).toList());
         for (var use : uses) {
             if (use.groupKey() != null && !keys.contains(use.groupKey()))
@@ -293,7 +408,7 @@ public class ApplicationCatalog {
     public static void validateId(String id) {
         if (id == null || !id.matches("[a-z][a-z0-9-]{0,63}")) throw bad("Invalid application ID");
     }
-    private static void validate(Declaration d) {
+    static void validate(Declaration d) {
         if (d == null || d.names() == null || d.names().get("en") == null || d.names().get("en").isBlank()
             || d.descriptions() == null || d.icon() == null || d.groups() == null || d.permissions() == null) throw bad("Invalid application declaration");
         Set<String> groups = new HashSet<>(), codes = new HashSet<>();
@@ -527,11 +642,16 @@ public class ApplicationCatalog {
     }
 
     public JSONObject putPanelUses(String id, ApplicationController.PanelRegistration body, User user) {
+        return putPanelUses(id, body, user, false);
+    }
+
+    public JSONObject putPanelUses(String id, ApplicationController.PanelRegistration body, User user, boolean createOnly) {
         validateId(id);
         if (user.getDomainId() == null || !id.startsWith("app-")) throw bad("A panel application requires an app- ID and domain");
         if (body.entry() == null || body.panelUses() == null || !"panels".equals(body.entry().renderer()))
             throw bad("A panels entry and local path are required");
         var existing = all().stream().filter(app -> id.equals(app.getString("id"))).findFirst();
+        if (createOnly && existing.isPresent()) throw applicationAlreadyExists(id);
         if (existing.isPresent() && existing.get().getString("domainId") == null) throw denied();
         if (existing.isPresent() && !panelManaged(existing.get())) throw bad("Use registration cannot take over an existing application");
         var root = assignedPanelRoot(id);
@@ -561,6 +681,7 @@ public class ApplicationCatalog {
         return transactions.execute(tx -> {
             lockCatalog();
             var current = all().stream().filter(app -> id.equals(app.getString("id"))).findFirst();
+            if (createOnly && current.isPresent()) throw applicationAlreadyExists(id);
             if (current.isPresent() && current.get().getString("domainId") == null) throw denied();
             if (current.isPresent() && !panelManaged(current.get())) throw bad("Use registration cannot take over an existing application");
             current.ifPresent(app -> requireDomainMaintainer(app, user));
@@ -598,7 +719,15 @@ public class ApplicationCatalog {
         return code != null && code.length() > prefix.length() && code.startsWith(prefix);
     }
 
-    private static String assignedPanelRoot(String id) { return "/applications/" + id; }
+    private static ResponseStatusException applicationAlreadyExists(String id) {
+        return new ResponseStatusException(HttpStatus.CONFLICT, "Application " + id + " already exists");
+    }
+
+    static boolean validIcon(String icon) {
+        return icon != null && icon.matches("[a-z][a-z0-9-]{0,63}");
+    }
+
+    static String assignedPanelRoot(String id) { return "/applications/" + id; }
     /** Below /applications/ only domain applications live; the bare /applications stays the built-in gallery's entry. */
     private static boolean inAssignedSpace(String path) { return path.startsWith("/applications/"); }
 
