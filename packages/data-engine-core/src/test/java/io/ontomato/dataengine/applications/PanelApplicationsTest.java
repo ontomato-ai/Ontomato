@@ -95,6 +95,11 @@ class PanelApplicationsTest {
             assertEquals(400, assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a", request, user))
                 .getStatusCode().value());
         }
+        for (var code : List.of("data-browser", "app:app-panel-b:entry", "app:app-panel-a:undeclared")) {
+            var request = body(List.of(use("tasks", code)), true);
+            assertEquals(400, assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a", request, user))
+                .getStatusCode().value());
+        }
         verify(db, never()).update(anyString(), any(Object[].class));
         verify(access, never()).declare(any(), any(), anyBoolean());
     }
@@ -219,7 +224,9 @@ class PanelApplicationsTest {
         var derived = catalog.panelSkillSources("domain").getFirst().skill();
         assertEquals(List.of("dashboard-pages", derived.name()), projection.getJSONArray("registeredSkills").toJavaList(JSONObject.class).stream().map(value -> value.getString("name")).toList());
         assertEquals(derived.name(), projection.getJSONArray("pageSkills").getJSONObject(1).getJSONObject("skill").getString("name"));
-        verify(panels).requireCurrent("domain", List.of("panel-p"));
+        verify(panels).requireCurrent(eq("domain"), isNull(),
+            argThat(usesPassed -> usesPassed.stream().map(ApplicationPanelUse::panelId).toList().equals(List.of("panel-p"))),
+            isNull());
         var write = mockingDetails(db).getInvocations().stream().filter(call -> call.getMethod().getName().equals("update")).findFirst().orElseThrow();
         assertEquals("[]", write.getArgument(18));
         assertEquals("panel-p", com.alibaba.fastjson2.JSON.parseArray(write.<String>getArgument(19)).getJSONObject(0).getString("panelId"));
@@ -236,7 +243,7 @@ class PanelApplicationsTest {
     }
 
     @Test void rejectsReferencesThatAreNotInTheCurrentPanelCollectionBeforeSaving() {
-        doThrow(new ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST)).when(panels).requireCurrent("domain", List.of("panel-p"));
+        doThrow(new ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST)).when(panels).requireCurrent(eq("domain"), isNull(), eq(List.of(use("schedules-a", null))), isNull());
         assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a", body(List.of(use("schedules-a", null)), true), user));
         verifyNoInteractions(db);
     }
@@ -265,16 +272,24 @@ class PanelApplicationsTest {
         verify(db, never()).update(anyString(), any(Object[].class));
     }
 
-    @Test void sharesOneDerivedSkillAcrossPanelsWithTheSameMenu() {
-        var first = app("app-panel-a", "panels", List.of(use("schedules-a", "menu")));
-        var second = app("app-panel-b", "panels", List.of(new ApplicationPanelUse("use-b", "schedules-b", "panel-q", "/applications/app-panel-b/tasks", new ApplicationPanelUse.Access("menu", null), new DefaultAgentTarget("id", "summary-agent", null), null)));
-        doReturn(List.of(first)).when(catalog).all(); doReturn(second).when(catalog).require("app-panel-b");
-        catalog.putPanelUses("app-panel-b", body("app-panel-b", second.getList("panelUses", ApplicationPanelUse.class), true), user);
-        doReturn(List.of(first, second)).when(catalog).all();
+    @Test void sharesOneDerivedSkillAcrossPanelsWithTheSameOwnedMenu() {
+        var code = "app:app-panel-a:menu";
+        var uses = List.of(use("schedules-a", code), new ApplicationPanelUse("use-b", "schedules-b", "panel-q",
+            "/applications/app-panel-a/summary", new ApplicationPanelUse.Access(code, null),
+            new DefaultAgentTarget("id", "summary-agent", null), null));
+        var application = app("app-panel-a", "panels", uses);
+        doReturn(application).when(catalog).require("app-panel-a");
+        var group = new ApplicationCatalog.Group("entry", Map.of("en", "Entry"), 0);
+        var permission = new ApplicationCatalog.Permission(code, Map.of("en", "Enter"), "entry", 0);
+        var declaration = new ApplicationCatalog.Declaration(Map.of("en", "A"), Map.of(), "calendar",
+            List.of(group), List.of(permission), List.of(), List.of());
+        catalog.putPanelUses("app-panel-a", new ApplicationController.PanelRegistration(
+            body(uses, true).entry(), uses, declaration, List.of("domain-member")), user);
+        doReturn(List.of(application)).when(catalog).all();
         var source = catalog.panelSkillSources("domain").getFirst();
         assertEquals(List.of("panel-p", "panel-q"), source.uses().stream().map(PanelSkills.Use::panelId).toList());
-        assertEquals("panel-menu-menu-c661d73dba966285774f9f15", source.skill().name());
-        var mapping = new PageSkills.Mapping("menu", null, null, source.skill(),
+        assertEquals(PanelSkills.identity("domain", uses.getFirst()), source.skill());
+        var mapping = new PageSkills.Mapping(code, null, null, source.skill(),
             List.of(new PageSkills.Default("schedules-b", new DefaultAgentTarget("id", "summary-agent", null))));
         when(access.pageSkills(List.of(mapping), user)).thenReturn(List.of());
         assertEquals(new PageSkills.Projection(List.of(), List.of(source.skill())), catalog.pageSkills(user));
@@ -330,9 +345,16 @@ class PanelApplicationsTest {
 
     @Test void refusesMixedLegacyAndPanelsRegistrationForTheSameMenuCode() {
         var legacy = app("app-existing", "native", List.of());
-        legacy.put("pageSkills", List.of(new PageSkills.Mapping("menu", null, null, LEGACY_SKILL, null)));
+        var code = "app:app-panel-a:menu";
+        legacy.put("pageSkills", List.of(new PageSkills.Mapping(code, null, null, LEGACY_SKILL, null)));
         doReturn(List.of(legacy)).when(catalog).all();
-        assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a", body(List.of(use("schedules-a", "menu")), true), user));
+        var uses = List.of(use("schedules-a", code));
+        var group = new ApplicationCatalog.Group("entry", Map.of("en", "Entry"), 0);
+        var permission = new ApplicationCatalog.Permission(code, Map.of("en", "Enter"), "entry", 0);
+        var declaration = new ApplicationCatalog.Declaration(Map.of("en", "A"), Map.of(), "calendar",
+            List.of(group), List.of(permission), List.of(), List.of());
+        assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a",
+            new ApplicationController.PanelRegistration(body(uses, true).entry(), uses, declaration, List.of("domain-member")), user));
         verify(db, never()).update(anyString(), any(Object[].class));
     }
 
