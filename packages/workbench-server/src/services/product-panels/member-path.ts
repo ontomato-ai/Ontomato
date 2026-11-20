@@ -76,10 +76,11 @@ async function declaredTarget(
 
 async function selectedPlacement(
   owner: ProductOwner, root: ProductPanel, panel: ProductPanel, keys: PanelStatePathKey[],
-  segment: PanelMemberPath[number], client: QueryClient = getPostgresPool(),
+  segment: PanelMemberPath[number], controlled: string[], client: QueryClient = getPostgresPool(),
 ): Promise<PanelPlacement> {
   const name = segment.member.slice("$state.".length);
   const field = panel.manifest.state[name];
+  if (controlled.includes(name)) unavailable();
   const selection = segment.selection;
   if (!field || field.type.kind !== "placement" || !selection || !("placement" in selection)) unavailable();
   function hasRef(nodes: PanelLayoutNode[]): boolean {
@@ -130,7 +131,7 @@ export async function resolvePanelMemberPath(
   for (const [index, segment] of memberPath.entries()) {
     const declared = panel.manifest.members[segment.member];
     const placement = segment.member.startsWith("$state.")
-      ? await selectedPlacement(owner, root, panel, keys, segment, client) : undefined;
+      ? await selectedPlacement(owner, root, panel, keys, segment, controlled, client) : undefined;
     if (!declared && !placement) unavailable();
     const member = declared ?? placement!;
     const key = pathKey(panel, segment);

@@ -24,7 +24,7 @@ type Reference = {
   target: Target;
   wiring: Wiring;
   itemType?: DirectPanelPortType;
-  triggerOutputs?: string[];
+  fromObjectDetail?: true;
 };
 
 function fixedTarget(target: PanelPlacement["target"]): Target {
@@ -52,14 +52,14 @@ export function repeatItemTypes(panel: ProductPanelInput): Map<string, DirectPan
 function collectReferences(
   panel: ProductPanelInput, details: ReadonlyMap<string, string>, saved: readonly SavedPlacement[] = [],
 ): Reference[] {
-  const { state, members, events } = panel.manifest;
+  const { state, members } = panel.manifest;
   const usesItem = Object.values(members).some(member => Object.values(member.inputs ?? {}).some(input => "item" in input));
   const repeatTypes = usesItem ? repeatItemTypes(panel) : new Map<string, DirectPanelPortType>();
   const references: Reference[] = [];
   for (const [key, wiring] of Object.entries(members)) {
     const { target } = wiring;
-    const triggerOutputs = Object.values(events).flatMap(({ on }) => on?.member === key ? [on.output] : []);
-    const add = (target: Target) => references.push({ key, target, wiring, itemType: repeatTypes.get(key), triggerOutputs });
+    const add = (target: Target, fromObjectDetail?: true) =>
+      references.push({ key, target, wiring, itemType: repeatTypes.get(key), fromObjectDetail });
     if ("panelId" in target || "projectionId" in target) {
       add(fixedTarget(target));
     } else if ("fromState" in target) {
@@ -70,7 +70,7 @@ function collectReferences(
         const { type } = state[target.fromState];
         if (type.kind === "object" || type.kind === "object-union") {
           for (const [className, id] of details) {
-            if (matchesObjectType(type, className)) add({ kind: "panel", id });
+            if (matchesObjectType(type, className)) add({ kind: "panel", id }, true);
           }
         }
       }
@@ -171,7 +171,7 @@ function ports(definition: ProductPanelInput | ProductProjectionInput) {
 }
 
 function incompatiblePort(
-  source: PanelManifest, { wiring, itemType, triggerOutputs }: Reference, definition: ProductPanelInput | ProductProjectionInput,
+  source: PanelManifest, { key, wiring, itemType }: Reference, definition: ProductPanelInput | ProductProjectionInput,
 ) {
   const target = ports(definition);
   for (const [name, value] of Object.entries(wiring.inputs ?? {})) {
@@ -190,8 +190,13 @@ function incompatiblePort(
     if (!type || !field || !panelPortAccepts(field.type, type))
       return `output '${name}' does not match its connected field`;
   }
-  for (const name of triggerOutputs ?? []) {
-    if (!Object.hasOwn(target.outputs, name)) return `output '${name}' does not exist`;
+  for (const { on, do: action } of Object.values(source.events)) {
+    if (on?.member !== key) continue;
+    const type = target.outputs[on.output];
+    if (!type) return `output '${on.output}' does not exist`;
+    if ("set" in action && Object.entries(action.set.fields)
+      .some(([field, value]) => "event" in value && !panelPortAccepts(source.state[field].type, type)))
+      return `output '${on.output}' does not match its event's state fields`;
   }
 }
 
@@ -211,15 +216,19 @@ export async function validateCurrentProductReferences(
   if ("manifest" in input) {
     rejectCycles(panels, details, [id]);
 
-    const approved = new Map<string, ProductPanelInput | ProductProjectionInput>();
+    const inspected = new Map<string, ProductPanelInput | ProductProjectionInput>();
+    const authorized = new Set<string>();
     for (const reference of collectReferences(input, details)) {
       const { target, key } = reference;
-      let definition = approved.get(target.id);
-      if (!definition) {
+      if (!reference.fromObjectDetail && !authorized.has(target.id)) {
         await requireProductGrant(target.id, "use", credentials);
+        authorized.add(target.id);
+      }
+      let definition = inspected.get(target.id);
+      if (!definition) {
         definition = target.kind === "panel" ? panels.get(target.id) : await requireProjection(owner.domainId, target.id, client);
         if (!definition) throw new HttpError(404, "Current member definition not found", "PRODUCT_UNAVAILABLE");
-        approved.set(target.id, definition);
+        inspected.set(target.id, definition);
       }
       const issue = incompatiblePort(input.manifest, reference, definition);
       if (issue) throw new HttpError(400, `Member '${key}': ${issue}`, "PANEL_PORT_MISMATCH");
