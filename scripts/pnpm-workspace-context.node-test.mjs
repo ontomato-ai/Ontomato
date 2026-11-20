@@ -245,6 +245,7 @@ function managerPair(t) {
   json(join(publicRoot, "packages/ontology-manager/package.json"), { name: "@ontomato/ontology-manager" });
   text(join(publicRoot, "packages/ontology-manager/src/index.ts"), "export {};\n");
   text(join(publicRoot, "packages/core/src/core.ts"), "export {};\n");
+  text(join(publicRoot, "packages/core/chart-maps/README.md"), "# provenance\n");
   text(join(publicRoot, "apps/workbench/src/server.ts"), "export {};\n");
   commit(publicRoot, "public manager fixture");
   json(join(privateRoot, "apps/ontology-manager/package.json"), { name: "@enterprise/ontology-manager-app" });
@@ -336,6 +337,7 @@ test("without owners the workbench keeps every JS owner of the record", (t) => {
   copy();
   for (const rel of [
     "ontomato/packages/core/src/core.ts",
+    "ontomato/packages/core/chart-maps/README.md",
     "ontomato/apps/workbench/src/server.ts",
     "ontomato/packages/ontology-manager/src/index.ts",
     "enterprise/apps/workbench/src/server.ts",
