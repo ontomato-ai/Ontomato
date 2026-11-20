@@ -24,7 +24,7 @@ for (const [command, option] of [
 
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -120,6 +120,27 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     sdkBasePath: "/public" + sdkPath, checkPath: "/public" + sdkPath + "/node/panel-check.mjs",
     componentsPath: "/public" + sdkPath + "/components.json",
   };
+  const typeTable = {
+    objectTypes: {
+      "platform:AgentDefinition": {
+        reads: {
+          list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+          record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+          form: { source: "object", parameterMode: "fixed", params: {}, result: "panelFormDescription" },
+          createForm: { source: "type", parameterMode: "fixed", params: {}, result: "panelFormDescription" },
+        },
+        operations: [{ id: "platform:AgentDefinition.save", effect: "write", target: { source: "draft" }, inputSchema: {}, batch: false }],
+      },
+      "platform:ReviewQueue": {
+        reads: {
+          query: { source: "type", parameterMode: "fixed", params: { search: "keyword", status: "reviewStatus" }, result: "panelRecordQuery" },
+          counts: { source: "type", parameterMode: "fixed", params: { by: "countField", search: "keyword" }, result: "panelGroupCounts" },
+          record: { source: "object", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecord" },
+        },
+        operations: [{ id: "reviews.approve", effect: "write", target: { source: "input", input: "review" }, inputSchema: {}, batch: true }],
+      },
+    },
+  };
   const checkModule = `
     const parse = value => {
       if ("sdkVersion" in value) throw new Error("The current SDK refuses sdkVersion");
@@ -127,7 +148,13 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     };
     export const registerProductPanelRequestSchema = { parse };
     export const registerProductProjectionRequestSchema = { parse };
+    export const platformTypeTableResponseSchema = { parse };
+    export const panelReadParameterSchemas = {
+      reviewStatus: { safeParse: value => ({ success: value === "all" }) },
+      countField: { safeParse: value => ({ success: value === "status" }) },
+    };
     export const panelDefinitionContentSchema = {
+      parse,
       safeParse(value) {
         return value.content.html === "<bad>"
           ? { success: false, error: { issues: [{ path: ["content", "html"], params: { line: 1, column: 2 }, message: "Rejected by the release parser" }] } }
@@ -146,7 +173,9 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     requests.push([request.method, request.url, body, request.headers["x-api-key"]]);
     response.setHeader("content-type", "application/json");
     if (request.url === "/api/apps-sdk/current") response.end(JSON.stringify(release));
-    else if (request.url === `${sdkPath}/components.json`) response.end(JSON.stringify({ version: sdkVersion, components: [{ componentId: "ObjectList" }] }));
+    else if (request.url === "/api/app-builder/type-table") response.end(JSON.stringify(typeTable));
+    else if (request.url === `${sdkPath}/components.json`) response.end(JSON.stringify({ version: sdkVersion, components:
+      ["ObjectList", "ObjectSummary", "ObjectForm", "SegmentedControl", "OperationButton"].map(componentId => ({ componentId })) }));
     else if (request.url === `${sdkPath}/node/panel-check.mjs`) response.end(checkModule);
     else if (request.url === projectionPath) response.end(JSON.stringify({ projection: { componentId: "@ontomato/sdk:ObjectList" } }));
     else if (request.url === candidatePath) response.end(JSON.stringify(source));
@@ -207,11 +236,54 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.deepEqual(JSON.parse(checked.stdout), { status: "valid", version: sdkVersion, digest: release.digest, unchecked: [] });
     assert.deepEqual(new Map(requests.splice(0).map(([method, url]) => [url, method])), new Map([
       ["/api/apps-sdk/current", "GET"], [`${sdkPath}/node/panel-check.mjs`, "GET"],
-      [`${sdkPath}/components.json`, "GET"], [projectionPath, "GET"],
+      [`${sdkPath}/components.json`, "GET"], ["/api/app-builder/type-table", "GET"], [projectionPath, "GET"],
     ]));
     await writeFile(layout, "<bad>");
     await assert.rejects(run("panel", "check", directory), error => error.stderr.includes(`${layout}:1:2: Rejected by the release parser`));
     assert.equal(requests.some(([method, url]) => method !== "GET" || url === projectionPath), false);
+    requests.length = 0;
+    const draft = join(directory, "manager");
+    const scaffold = await run("panel", "scaffold", "platform:AgentDefinition", draft, "--id", "example-agent-management", "--operation", "platform:AgentDefinition.save");
+    assert.equal(JSON.parse(scaffold.stdout).entry, "/applications/example-agent-management/manage");
+    for (const name of ["panel.html", "panel.json", "registration.json"]) {
+      const sample = await readFile(join("agent-skills/ontomato-app-builder/examples/agent-management", name), "utf8");
+      assert.equal(await readFile(join(draft, name), "utf8"), sample);
+    }
+    assert.deepEqual(requests.map(([method, url]) => [method, url]), [
+      ["GET", "/api/apps-sdk/current"], ["GET", `${sdkPath}/node/panel-check.mjs`], ["GET", "/api/app-builder/type-table"],
+    ]);
+    const review = join(directory, "review");
+    await run("panel", "scaffold", "platform:ReviewQueue", review, "--operation", "reviews.approve", "--batch", "reviews.approve");
+    const { manifest: reviewManifest } = JSON.parse(await readFile(join(review, "panel.json"), "utf8"));
+    const { projections: reviewProjections } = JSON.parse(await readFile(join(review, "registration.json"), "utf8"));
+    const queries = Object.fromEntries(reviewProjections.flatMap(({ input }) => Object.entries(input.data)));
+    assert.deepEqual(queries.rows.params, {});
+    assert.deepEqual(queries.record.params, {});
+    assert.deepEqual(queries.counts.params, { by: { literal: "status" } });
+    assert.deepEqual(reviewManifest.members.list.outputs.search, { state: "search" });
+    assert.deepEqual(reviewManifest.members.list.inputs, { status: { state: "status" } });
+    assert.deepEqual(reviewManifest.members.tabs.outputs.value, { state: "status" });
+    assert.deepEqual(reviewManifest.members.detail.inputs.search, { state: "search" });
+    assert.deepEqual(reviewManifest.members.list.outputs.checked, { state: "checked" });
+    assert.deepEqual(reviewManifest.members.action1.inputs, { review: { state: "selected" } });
+    assert.deepEqual(reviewManifest.members.batch2.inputs, { review: { state: "checked" } });
+    const reviewLayout = await readFile(join(review, "panel.html"), "utf8");
+    assert(reviewLayout.indexOf('ref="batch2"') < reviewLayout.indexOf('ref="list"'));
+    const reviewMaterial = join(review, "registration.json");
+    await run("panel", "check", review, "--material", reviewMaterial);
+    const reviewPanel = join(review, "panel.json");
+    const incorrectPanel = JSON.parse(await readFile(reviewPanel, "utf8"));
+    incorrectPanel.manifest.members.batch2.inputs = { entry: { state: "checked" } };
+    await writeFile(reviewPanel, JSON.stringify(incorrectPanel));
+    await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
+      error.stderr.includes("member batch2 (projection review-queue-manager-batch2): bind operation reviews.approve's target input review"));
+    await writeFile(reviewPanel, JSON.stringify({ manifest: reviewManifest }));
+    const incorrect = JSON.parse(await readFile(reviewMaterial, "utf8"));
+    const batch = incorrect.projections.find(({ id }) => id.endsWith("-batch2"));
+    delete batch.input.inputs.review;
+    await writeFile(reviewMaterial, JSON.stringify(incorrect));
+    await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
+      error.stderr.includes(`projection ${batch.id}: operation reviews.approve requires the owner target input review`));
   } finally {
     await rm(directory, { recursive: true });
     await new Promise(resolve => server.close(resolve));
