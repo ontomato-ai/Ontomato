@@ -10,6 +10,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
+import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { config } from "../../config/application";
 import { installContentLayout } from "../../content/layout";
 import { configureI18n } from "../../i18n";
@@ -84,6 +85,7 @@ beforeAll(async () => {
   await ensureProductPanelsSchema(state.pool);
 
   root = await mkdtemp(join(tmpdir(), "chart-sources-"));
+  await writeBundledAppSdkFixture(root);
   installContentLayout({ runtimeRoot: root, publicSkillsRoot: root, prompts: [], runtimeResources: [] });
   const { default: dashboardsRouter } = await import("../routes/dashboards");
   const { createChartProjectionsRouter, productProjectionsRouter } = await import("../routes/product-panels");
