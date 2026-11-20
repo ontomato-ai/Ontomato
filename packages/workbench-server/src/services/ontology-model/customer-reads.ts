@@ -38,13 +38,17 @@ type ClassRelationship = z.infer<typeof classRelationshipsSchema>[number];
 /** POST /data/getWholeClassDataByPage: the class's rows with the real total, or the owner's refusal. */
 const classPageSchema = z.union([
   z.object({ success: z.literal(true), data: z.array(z.record(z.unknown())), total_count: z.number() }),
-  z.object({ success: z.literal(false), message: z.string() }),
+  z.object({ success: z.literal(false), code: z.literal("DATA_PERMISSION_DENIED"), message: z.string() }),
 ]);
 
 /** POST /data/queryInfoByNode: the object's attribute values, or the owner's reason. */
 const objectRecordSchema = z.union([
   z.object({ success: z.literal(true), data: z.object({ data: z.record(z.unknown()) }) }),
-  z.object({ success: z.literal(false), message: z.string() }),
+  z.object({
+    success: z.literal(false),
+    code: z.enum(["DATA_PERMISSION_DENIED", "OBJECT_NOT_FOUND", "QUERY_FAILED"]),
+    message: z.string(),
+  }),
 ]);
 
 /** POST /dsl/executeV1: the owner's answer rows, or the execution error it reports. */
@@ -92,11 +96,6 @@ export interface CustomerOntologyReadAdapter {
 const NEIGHBORS_LIMIT_DEFAULT = 50;
 const NEIGHBORS_LIMIT_MAX = 100;
 
-// Java reports a missing object and a data-permission refusal identically except for the message text
-// (DataServiceImpl.queryInfoByNode), and the shipped language pack is English-only, so these are the texts it returns.
-const OBJECT_NOT_FOUND_TEXT = "Object not found";
-const DATA_PERMISSION_TEXT = "You do not have data permission";
-
 /** Row values cross the owner boundary as display text: null is empty, objects and arrays become JSON text. */
 function displayText(value: unknown): string {
   if (value == null) return "";
@@ -127,10 +126,10 @@ function panelRecord(attributes: readonly ClassAttribute[], row: Record<string, 
   return { primaryKey, label: recordLabel(attributes, primaryKey, row), fields, fieldLabels };
 }
 
-/** The owner's reason for an unreadable object: a permission refusal answers forbidden, a missing object keeps its reason. */
-function objectFailure(message: string): HttpError {
-  if (message === DATA_PERMISSION_TEXT) return new HttpError(403, message, "CUSTOMER_DATA_PERMISSION");
-  if (message === OBJECT_NOT_FOUND_TEXT) return new HttpError(404, message, "OBJECT_NOT_FOUND");
+/** The owner's reason for an unreadable object, by its code: a permission refusal answers forbidden, a missing object keeps its reason. */
+function objectFailure(code: "DATA_PERMISSION_DENIED" | "OBJECT_NOT_FOUND" | "QUERY_FAILED", message: string): HttpError {
+  if (code === "DATA_PERMISSION_DENIED") return new HttpError(403, message, "CUSTOMER_DATA_PERMISSION");
+  if (code === "OBJECT_NOT_FOUND") return new HttpError(404, message, "OBJECT_NOT_FOUND");
   return new HttpError(502, message, "CUSTOMER_OBJECT_READ_FAILED");
 }
 
@@ -338,7 +337,7 @@ export function createCustomerOntologyReadAdapter(
       options,
     );
     const answer = objectRecordSchema.parse(JSON.parse(response.text));
-    if (!answer.success) throw objectFailure(answer.message);
+    if (!answer.success) throw objectFailure(answer.code, answer.message);
     // Java drops a primary-key column literally named "id" from the answer, so the requested key is the authoritative value.
     const row = { ...answer.data.data, [primaryKeyName(attributes)]: primaryKey };
     return panelRecord(attributes, row);
@@ -372,7 +371,6 @@ export function createCustomerOntologyReadAdapter(
         options,
       );
       const answer = classPageSchema.parse(JSON.parse(response.text));
-      // The owner's only refusal on this endpoint is the viewer's data permission.
       if (!answer.success) throw new HttpError(403, answer.message, "CUSTOMER_DATA_PERMISSION");
       return { items: answer.data.map(row => panelRecord(attributes, row)), total: answer.total_count };
     },
