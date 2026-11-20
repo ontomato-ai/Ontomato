@@ -10,6 +10,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { ownerEnvelopeSchema } from "../product-panels/data-query-operations";
 import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
+import { tForLocale } from "../../i18n";
 import { knowledgeEntrySchema } from "./panel-operations";
 
 /*
