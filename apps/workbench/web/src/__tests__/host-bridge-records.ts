@@ -17,9 +17,10 @@ const current = {
   visibility: "domain" as const,
 };
 
-type ProjectionFields = Pick<ProductProjection, "id" | "componentId" | "data"> & Partial<Pick<ProductProjection, "inputs" | "conversationEntry">>;
+type ProjectionFields = Pick<ProductProjection, "id" | "componentId" | "data"> & Partial<Pick<ProductProjection, "inputs" | "conversationEntry">>
+  & { chartSource?: { dashboardId: string; cardId: string }; metricId?: string };
 
-/** A projection's current record as Node answers it. */
+/** A projection's current record as Node answers it; a chart's also names its source card and metric. */
 export const projectionRecord = ({ inputs = {}, ...fields }: ProjectionFields): ProductProjection =>
   productProjectionSchema.parse({ ...current, name: fields.id, description: "", outputs: {}, config: {}, inputs, ...fields });
 
