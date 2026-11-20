@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.applications;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -16,7 +17,18 @@ public final class PageSkills {
     public record Mapping(String permissionCode, String access, String pageKey, Skill skill, List<Default> defaults) {
         public String locator() { return PageSkills.locator(permissionCode, access, pageKey); }
     }
-    public record Projection(List<Mapping> pageSkills, List<Skill> registeredSkills) {}
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record Entrance(String permissionCode, String access, String pageKey) {}
+    public record Projection(List<Mapping> pageSkills, List<Skill> registeredSkills, List<Entrance> admittedEntrances) {}
+
+    static Mapping withPanelDefaults(Mapping nativeMapping, Mapping panelGroup) {
+        if (panelGroup.defaults() == null) return nativeMapping;
+        var defaults = new ArrayList<Default>();
+        if (nativeMapping.defaults() != null) defaults.addAll(nativeMapping.defaults());
+        defaults.addAll(panelGroup.defaults());
+        return new Mapping(nativeMapping.permissionCode(), nativeMapping.access(), nativeMapping.pageKey(),
+            nativeMapping.skill(), defaults);
+    }
 
     public static String locator(String permissionCode, String access, String pageKey) {
         return permissionCode != null ? "permission:" + permissionCode : "access:" + access + ":" + pageKey;
