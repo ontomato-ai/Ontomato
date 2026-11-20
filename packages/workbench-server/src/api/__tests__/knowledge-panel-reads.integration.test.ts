@@ -75,7 +75,7 @@ const ownerFormDescription = (target: { kind: string; primaryKey?: string }, val
     },
     {
       path: "/knowledgeText", label: "Knowledge content", valueSchema: { type: "string" }, required: true,
-      readOnly: false, control: { kind: "textarea" },
+      readOnly: false, control: { kind: "text", multiline: true },
     },
     {
       path: "/knowledgeTags", label: "Tags", valueSchema: { type: "array", items: { type: "string" } }, required: false,
