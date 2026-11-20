@@ -28,16 +28,16 @@ const projections: Record<string, DirectProjection> = {
   "task-run": {
     ...record, id: "task-run", name: "Run now", componentId: "@ontomato/sdk:OperationButton",
     inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: {}, config: {},
-    data: { operation: { source: { operation: "schedules.runNow" }, read: "describe", params: {} } },
+    data: { operation: { source: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, read: "describe", params: {} } },
   },
 };
 const panel = definePanel({
-  state: { selectedTask: { kind: "object", objectType: SCHEDULED_TASK, deepLink: true } },
-  slots: {
-    form: { projectionId: "task-form", inputs: { task: { state: "selectedTask" } } },
-    run: { projectionId: "task-run", inputs: { task: { state: "selectedTask" } } },
+  state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
+  members: {
+    form: { target: { projectionId: "task-form" }, inputs: { task: { state: "selectedTask" } } },
+    run: { target: { projectionId: "task-run" }, inputs: { task: { state: "selectedTask" } } },
   },
-  operations: [],
+  events: {},
 });
 const description = {
   fields: [{ path: "/name", label: "Name", control: { kind: "text" as const }, valueSchema: {}, required: false, readOnly: false }],
@@ -81,7 +81,7 @@ it("draws a declared projection in a frame from this version's task module, and 
   const app = createApp(defineComponent({
     setup: () => {
       provide(panelContextKey, {
-        panel: { content: { html: "", module: "" }, manifest: panel, sdkVersion: "1.1.1" },
+        panel: { content: { html: "", module: "" }, manifest: panel },
         manifest: panel, instance,
         projection: (id: string) => instance.projection(id),
         invoke: (handlerRef: string, call) => instance.runHandler(handlerRef, call),

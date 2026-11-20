@@ -1,6 +1,6 @@
 # Build a panel application
 
-Follow the [Product Layer and Application Composition Standard](https://infohub.eloyzh.de/o/standard-66842053) and the exact installed SDK guide. Use the current product records. Business logic belongs in Functions owned by Java. Use the deployment, domain and authorized business scope already established with the user; obtain technical names, IDs, parameters and relationships from the platform. Do not invent them or write directly to the database.
+Follow the [Product Layer and Application Composition Standard](https://infohub.eloyzh.de/o/standard-66842053) and the current SDK guide. Use current product records. Keep business logic and permission checks with the resource owners. Use the deployment, domain and authorized business scope already established with the user. Obtain technical names, IDs, parameters and relationships from the platform through its discovery commands and owner interfaces.
 
 When planning how to bring an existing application onto the platform, start with the [application decomposition skill](references/app-standard/SKILL.md).
 
@@ -17,10 +17,12 @@ A workspace is the application source tree. Business definitions remain in Java;
 
 1. Use `sdk read components.json` and `sdk read docs/index.md` to see the current release's official components and their inputs and outputs. Inspect the actual ontology resources, projections and application uses. Reuse existing records and ask the owner for any missing business capability or named read.
 2. Write `panel.html` using the layout elements documented by the SDK, and `panel.json` with `{manifest, content?}`. The manifest declares members and typed state. Optional `content.messages` supplies translations. Use `recipes.md` for task guidance. Compose new panels without a module so the platform renders the official components directly.
-3. Run `panel check <workspace directory>`. When a panel references projections still in the proposed registration material, pass that file with `--material`.
+3. Run `panel check <workspace directory>`. The command reads `registration.json` in that directory and looks up other references on the platform. Use `--material` to select a different registration file.
 4. Submit the selected projections, panels and application uses with `panel register`, then open the application's declared entry. Use an application ID and route you control.
 
 When converting a platform page that needs a new owner read, operation or official component, use the [platform development examples](references/platform-development.md).
+
+For instances of customer ontology classes, bind the detail to the owner's `record` read and use a registered Action for changes. For platform resources with owner-declared forms, use the corresponding form and save operation.
 
 | Command | Result |
 | --- | --- |
@@ -35,7 +37,7 @@ Registration material has up to three arrays, `projections`, `panels` and `appli
 - For projections, `input` describes the official component, its inputs, outputs, named data and configuration. Build the named reads from the actual owner declarations for the target. Use the editable definition metadata `name`, `description` and `visibility`.
 - For panels, `input` contains the workspace manifest and content, together with `name`, `description` and `visibility`. Use `panel.html` as `content.html`, any `recipes.md` as `content.recipes`, and carry any `content.messages` from the descriptor. The deployment supplies the current SDK.
 - Projection and panel updates carry the owner-returned current `revision` on the item alongside `mode`. Creation omits it. Only the chosen records should appear in the material. Updating a shared definition affects every use of that record.
-- Application `input` contains `entry: {path, renderer: "panels"}` and `panelUses`. Creation includes `declaration` and `entryAccess`. An update replaces the use set, so preserve the uses required by the app. Each use has `id`, `pageKey`, `panelId`, `path` and `access`, with optional localized `names` and `defaultAgentId`. Domain app paths use `/applications/<applicationId>/…` and `access: {kind: "domain-member"}` or the real `{permissionCode}` for the use. The platform owns built-in paths and derives skills from use access. Supply the actual existing agent definition ID for `defaultAgentId` when the use needs a default.
+- Application `input` contains `entry: {path, renderer: "panels"}` and `panelUses`. Creation includes `declaration` and `entryAccess`. For a domain-member application, use `entryAccess: ["domain-member"]` and `access: {kind: "domain-member"}` on a use open to the domain. Each use has `id`, `pageKey`, `panelId`, `path` and `access`, with optional localized `names` and `defaultAgent`. Domain app paths start with `/applications/<applicationId>/`. Use the application's real `{permissionCode}` for a restricted use. When a use needs a default agent, use `defaultAgent: {kind: "id", id}` with its actual definition ID or `{kind: "preset", agentKind}` for an existing preset. An update replaces the use set, so preserve the uses required by the app. The platform owns built-in paths and derives skills from use access.
 
 The command submits projections, panels and uses in that order. It prints each completed item and exits nonzero at the first failure. On a stale revision, compare the owner's current definition with the requested change before preparing a new update.
 
@@ -159,7 +161,7 @@ Positional names, IDs, paths, questions and descriptions are strings. Arguments 
 | `schema`, `relationships` | At least one class name, sent as `classNames: string[]`. |
 | `execute-dsl` | Required DSL JSON, using the DSL endpoint's documented syntax. |
 | `function list/get/save/delete` | list filter defaults to `{}`; get/delete require an ID. save requires a Function object; READ uses queryPackage, WRITE uses Python v2 code. Parameter names/types/descriptions must have their declared JSON types. No boolean parameter type is added. |
-| `action` / `metric-view` `generate` | Required description → `question: string`; `persistence` is false unless `--save` is given. Invalid generated fields fail by name; no successful asset is fabricated. |
+| `action` / `metric-view` `generate` | Required authored definition JSON. Action also requires `--sample <JSON or @file>`. The command tests and accepts the definition. Pass `--save` to persist the accepted definition. |
 | `action` / `metric-view` `find/get/save/publish/delete` | find requires a class, optional question defaults to omitted. get/publish/delete require ID. save takes the full definition object, with the embedded Function. publish saves that definition as PUBLISHED; it does not bypass asset admission. |
 | `action` / `metric-view` `execute` | Required ID; JSON parameters default to `{}` only for zero-parameter assets. Every declared key must be present. Explicit null is accepted; `""` and `0` are preserved. Missing keys fail with `Missing parameter: <name>`. MetricView `--binding` supplies its complete saved parameter object and cannot be overridden. |
 | `action re-explain` | Optional repeated IDs; `--missing` defaults false. Results identify individual failures. |

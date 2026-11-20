@@ -1,4 +1,5 @@
 import type { PresentationBinding } from "@ontomato/contracts/agent-presentation";
+import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import { historyCursor } from "@ontomato/contracts/session-history";
 import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from "vue";
 import type { AgentTasksSnapshot } from "@ontomato/contracts/agent-tasks";
@@ -29,12 +30,15 @@ const TASK_RECONNECT_MS = 2000;
  */
 /**
  * `presentation` is the page's live display binding, when it has one: a run this conversation starts may then show
- * what it presents beside the conversation the reader is in.
+ * what it presents beside the conversation the reader is in. `pageSkill` is the page shown as the message leaves, as its
+ * own snapshot named it; the server checks it again for this run, and a message sent before the page named itself goes
+ * without one.
  */
 export function useAgentConversation(
   port: () => AgentHostClient,
   agent: () => string | null,
   presentation: () => PresentationBinding | null = () => null,
+  pageSkill: () => PageSkillContext | null = () => null,
 ) {
   const state = reactive<ConversationState>(emptyConversation());
   const loading = ref(false);
@@ -234,7 +238,10 @@ export function useAgentConversation(
       if (current !== token) return null;
       if (createdSession) state.sessionId = createdSession.id;
       const binding = presentation();
-      const result = await client.send(state.sessionId!, { message: text, ...reply, ...(binding ? { presentationBinding: binding } : {}) });
+      const page = pageSkill();
+      const result = await client.send(state.sessionId!, {
+        message: text, ...reply, ...(binding ? { presentationBinding: binding } : {}), ...(page ? { pageSkillContext: page } : {}),
+      });
       if (current !== token) return moved() ? null : { createdSession, ...result };
       applyNotifications(state,[result.input]);
       state.pendingQuestions=result.pendingQuestions;

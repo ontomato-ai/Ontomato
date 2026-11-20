@@ -1,24 +1,26 @@
 /*
  * The four-layer platform capability map panel's declaration (M3, overall design section 5): the state one instance
- * keeps, the projections it composes, and its state operations. `material.mjs` writes both the workspace candidate
- * (`panel.json`) and the registered panel input from this single source.
+ * keeps, the projections it composes as members, and its explicit state events. `material.mjs` writes both the
+ * workspace candidate (`panel.json`) and the registered panel input from this single source.
  *
  * Layer filter, expanded instance nodes, dragged positions and canvas viewport are internal view state of
  * `OntologyGraph` and deliberately stay out of panel state.
  */
 const allLayers = ["fact", "capability", "governance", "product"];
+const anyLayerObject = { kind: "object-union", layers: allLayers };
+const text = { kind: "scalar", type: "string" };
 
 export default {
   state: {
-    mode: { kind: "scalar", type: "string", deepLink: true },
-    start: { kind: "object-union", layers: allLayers, deepLink: true },
-    selected: { kind: "object-union", layers: allLayers, deepLink: true },
-    selectedType: { kind: "scalar", type: "string", deepLink: true },
-    query: { kind: "scalar", type: "string", deepLink: false },
+    mode: { type: text, deepLink: true, default: "instance" },
+    start: { type: anyLayerObject, deepLink: true },
+    selected: { type: anyLayerObject, deepLink: true },
+    selectedType: { type: text, deepLink: true },
+    query: { type: text, deepLink: false },
   },
-  slots: {
+  members: {
     graph: {
-      projectionId: "capability-map-graph",
+      target: { projectionId: "capability-map-graph" },
       inputs: {
         mode: { state: "mode" },
         start: { state: "start" },
@@ -32,7 +34,7 @@ export default {
       },
     },
     relations: {
-      projectionId: "capability-map-relations",
+      target: { projectionId: "capability-map-relations" },
       inputs: {
         selected: { state: "selected" },
       },
@@ -41,7 +43,7 @@ export default {
       },
     },
     typeObjects: {
-      projectionId: "capability-map-type-objects",
+      target: { projectionId: "capability-map-type-objects" },
       inputs: {
         type: { state: "selectedType" },
       },
@@ -50,21 +52,25 @@ export default {
       },
     },
     userPicker: {
-      projectionId: "capability-map-user-picker",
+      target: { projectionId: "capability-map-user-picker" },
       inputs: {},
       outputs: {
         selected: { state: "start" },
       },
     },
   },
-  operations: [
-    { id: "showTypeMode", labelKey: "capMap.modeType", kind: "state", sets: { mode: "type" } },
-    { id: "showInstanceMode", labelKey: "capMap.modeInstance", kind: "state", sets: { mode: "instance" } },
-    {
-      id: "resetToCurrentUser",
-      labelKey: "capMap.resetToCurrentUser",
-      kind: "state",
-      sets: { mode: "instance", start: null, selected: null },
+  events: {
+    showTypeMode: {
+      labelKey: "capMap.modeType",
+      do: { set: { fields: { mode: { literal: "type" } } } },
     },
-  ],
+    showInstanceMode: {
+      labelKey: "capMap.modeInstance",
+      do: { set: { fields: { mode: { literal: "instance" } } } },
+    },
+    resetToCurrentUser: {
+      labelKey: "capMap.resetToCurrentUser",
+      do: { set: { fields: { mode: { literal: "instance" }, start: { literal: null }, selected: { literal: null } } } },
+    },
+  },
 };

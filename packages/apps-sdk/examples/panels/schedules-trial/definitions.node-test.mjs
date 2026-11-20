@@ -31,17 +31,17 @@ async function taken(check) {
 }
 
 test("P is a direct panel: its layout parses against its declaration and it carries no code", async () => {
-  const answer = await taken(String(({ directPanelInputSchema, parsePanelLayout }, { panels: [p], panelContent }) => {
+  const answer = await taken(String(({ productPanelInputSchema, parsePanelLayout }, { panels: [p], panelContent }) => {
     const content = panelContent(p.directory);
-    const input = directPanelInputSchema.parse({ name: p.name, description: p.description, visibility: "domain", content, manifest: p.manifest });
+    const input = productPanelInputSchema.parse({ name: p.name, description: p.description, visibility: "domain", content, manifest: p.manifest });
     return { module: Object.hasOwn(content, "module"), roots: parsePanelLayout(input.content.html, input.manifest).map(node => node.kind) };
   }));
   assert.deepEqual(answer, { module: false, roots: ["container"] });
 });
 
 test("every trial projection names the owner's registered reads under the data names its component takes", async () => {
-  const answer = await taken(String(({ directProjectionInputSchema }, { projections }) =>
-    Object.fromEntries(projections.map(({ id, input }) => [id, Object.keys(directProjectionInputSchema.parse(input).data)]))));
+  const answer = await taken(String(({ productProjectionInputSchema }, { projections }) =>
+    Object.fromEntries(projections.map(({ id, input }) => [id, Object.keys(productProjectionInputSchema.parse(input).data)]))));
   assert.deepEqual(answer, {
     "projection-schedules-summary": ["record"],
     "projection-schedules-tasks": ["rows"],
@@ -53,7 +53,7 @@ test("every trial projection names the owner's registered reads under the data n
 test("Q keeps its module and stays a panel written with code", async () => {
   const answer = await taken(String(({ productPanelInputSchema }, { panels: [, q], panelContent }) => {
     const content = panelContent(q.directory);
-    productPanelInputSchema.parse({ name: q.name, description: q.description, visibility: "domain", content, manifest: q.manifest, sdkVersion: "1.1.2" });
+    productPanelInputSchema.parse({ name: q.name, description: q.description, visibility: "domain", content, manifest: q.manifest });
     return typeof content.module;
   }));
   assert.equal(answer, "string");

@@ -1,10 +1,10 @@
-import { expect, it } from "vitest";
-import { effectScope, nextTick } from "vue";
+import { expect, it, vi } from "vitest";
+import { effectScope, nextTick, type ComputedRef } from "vue";
 import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
-import { createDirectPanelInstance } from "../../../../../packages/apps-sdk/src/panel/direct";
+import { createDirectPanelInstance, type MemberDataState } from "../../../../../packages/apps-sdk/src/panel/direct";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 import { noOperations } from "./panel-frame";
 
@@ -22,7 +22,7 @@ const projections: Record<string, DirectProjection> = {
   "task-list": {
     ...record, id: "task-list", name: "Tasks", componentId: "@ontomato/sdk:ObjectList",
     inputs: { value: { kind: "object", objectType: SCHEDULED_TASK } }, outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK } }, config: {},
-    data: { rows: { source: { type: SCHEDULED_TASK }, read: "list", params: {} } },
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
   },
   "task-summary": {
     ...record, id: "task-summary", name: "Task", componentId: "@ontomato/sdk:ObjectSummary",
@@ -52,9 +52,8 @@ it("reads a list's rows once while the selection changes, and the selected recor
     },
   });
   const inputsOf = (member: string) => () => {
-    const declared = manifest.members[member]!.inputs ?? {};
-    return Object.fromEntries(Object.entries(declared).map(([name, source]) =>
-      [name, "state" in source ? instance.state.values.value[source.state] ?? null : source.literal])) as never;
+    const selected = instance.state.values.value.selectedTask as { className: string; primaryKey: string } | null;
+    return { [member === "tasks" ? "value" : "task"]: selected ?? null };
   };
   const scope = effectScope();
   scope.run(() => {
@@ -72,5 +71,33 @@ it("reads a list's rows once while the selection changes, and the selected recor
   await nextTick();
   expect(count("rows")).toBe(1);
   expect(count("record")).toBe(2);
+  scope.stop();
+});
+
+it("keeps a shown datum on screen while it is read again, and shows its new answer once it arrives", async () => {
+  // The second read of the summary is held, as a slow owner holds it; the first answer stays until it comes.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let reads = 0;
+  const instance = createDirectPanelInstance(manifest, {
+    pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
+    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
+    readProjection: async (id) => projections[id]!,
+    read: async (request) => {
+      if (++reads === 2) await held;
+      return { status: "ready", value: row(String((request.inputs.task as { primaryKey: string }).primaryKey)) as never };
+    },
+  });
+  const inputs = () => ({ task: instance.state.values.value.selectedTask ?? null }) as never;
+  const scope = effectScope();
+  let summary!: ComputedRef<MemberDataState>;
+  scope.run(() => { summary = instance.memberData("summary", projections["task-summary"]!, inputs).use("record"); });
+  await vi.waitFor(() => expect(summary.value).toMatchObject({ status: "ready", value: { primaryKey: "t-1" } }));
+
+  instance.state.set("selectedTask", { className: SCHEDULED_TASK, primaryKey: "t-2" });
+  await nextTick();
+  expect(summary.value).toMatchObject({ status: "ready", value: { primaryKey: "t-1" } });
+  release();
+  await vi.waitFor(() => expect(summary.value).toMatchObject({ status: "ready", value: { primaryKey: "t-2" } }));
   scope.stop();
 });

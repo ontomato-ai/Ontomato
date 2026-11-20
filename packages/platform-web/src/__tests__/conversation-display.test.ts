@@ -269,6 +269,8 @@ describe("what an agent presents", () => {
     expect(host.stream.opened).toHaveLength(1);
     const view = host.stream.current().view!.id;
     expect(host.inputs.at(-1)).toMatchObject({ presentationBinding: { viewId: view } });
+    // No page is shown, so the run starts without a page skill context.
+    expect(host.inputs.at(-1)).not.toHaveProperty("pageSkillContext");
   });
 
   it("shows an artifact beside the conversation and answers once with what is shown, leaving the address alone", async () => {

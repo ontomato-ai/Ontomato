@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, provide, ref, useSlots, watch } from "vue";
-import { Maximize2, Menu, Minimize2, X } from "lucide-vue-next";
+import { Columns2, Maximize, Menu, X } from "lucide-vue-next";
+import { ActionTooltip } from "@ontomato/foundation-ui/overlay";
 import { pageDockSpaceKey, shellContextKey, useDisplayPlacement } from "../context";
 import type { ShellFeatureDeclaration } from "../types";
 import { usePanelWidth } from "../usePanelWidth";
@@ -29,6 +30,11 @@ const props = defineProps<{
 const emit = defineEmits<{ send: [text: string]; stop: []; expand: []; collapse: []; close: []; menu: [] }>();
 const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value);
+const layoutLabel = computed(() => props.view === "full" ? labels.value.collapse : labels.value.expand);
+function toggleLayout() {
+  if (props.view === "full") emit("collapse");
+  else emit("expand");
+}
 const slots = useSlots();
 const { width, resizing, beyond, startResize } = usePanelWidth((edge) => {
   if (edge === "expand") emit("expand");
@@ -68,20 +74,12 @@ const paneStyle = computed(() => ({
         <Menu :size="18" />
       </button>
       <slot name="header"><h1 class="pane-title">{{ feature?.label }}</h1></slot>
-      <button
-        v-if="view === 'full'"
-        type="button"
-        class="pane-button"
-        :title="labels.collapse"
-        :aria-label="labels.collapse"
-        @click="emit('collapse')"
-      >
-        <Minimize2 :size="16" />
-      </button>
-      <!-- Enlarged, the display decides where: a page with its own address opens there, one without grows in the shell. -->
-      <button type="button" class="pane-button" :title="labels.expand" :aria-label="labels.expand" @click="emit('expand')">
-        <Maximize2 :size="16" />
-      </button>
+      <ActionTooltip :content="layoutLabel">
+        <button type="button" class="pane-button pane-layout" :aria-label="layoutLabel" @click="toggleLayout">
+          <Columns2 v-if="view === 'full'" :size="16" aria-hidden="true" />
+          <Maximize v-else :size="16" aria-hidden="true" />
+        </button>
+      </ActionTooltip>
       <button type="button" class="pane-button" :title="labels.close" :aria-label="labels.close" @click="emit('close')">
         <X :size="17" />
       </button>

@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
 import { z } from "zod";
+import { dashboardCardPrimaryKey } from "@ontomato/contracts/dashboard";
+import { DASHBOARD_CARD } from "@ontomato/contracts/platform-object-types";
 import { ontologyParameterTypeSchema, type OntologyParameterType } from "@ontomato/contracts/panel-manifest";
 import {
   chartProjectionSchema, METRIC_CHART_COMPONENT, productProjectionInputSchema,
@@ -54,7 +56,7 @@ async function requireChartProjection(owner: ProductOwner, credentials: Assistan
 }
 
 function association(projection: z.infer<typeof chartProjectionSchema>) {
-  return { source: projection.display.chartSource, dashboardOwnerId: projection.ownerId, metricId: projection.binding.id };
+  return { source: projection.chartSource, dashboardOwnerId: projection.ownerId, metricId: projection.metricId };
 }
 
 export function createChartProjectionService(dashboards: typeof dashboardChartSources) {
@@ -71,15 +73,25 @@ export function createChartProjectionService(dashboards: typeof dashboardChartSo
           await requireProductGrant(id, "use", credentials);
           const editable = (await grantedProductIds("edit", credentials)).includes(id);
           const projection = chartProjectionSchema.parse(currentProductRecord(existing, editable));
-          if (projection.ownerId !== owner.userId || projection.binding.id !== card.metricId ||
-            projection.display.chartSource.dashboardId !== source.dashboardId || projection.display.chartSource.cardId !== source.cardId)
+          if (projection.ownerId !== owner.userId || projection.metricId !== card.metricId ||
+            projection.chartSource.dashboardId !== source.dashboardId || projection.chartSource.cardId !== source.cardId)
             throw new HttpError(409, "Chart registration no longer matches the source card", "CHART_SOURCE_MISMATCH");
           return { projection, created: false };
         }
+        const inputs = panelInputs(card.parameterDefs);
+        const cardSource = {
+          object: { literal: { className: DASHBOARD_CARD, primaryKey: dashboardCardPrimaryKey(source) } },
+        };
         const input: ProductProjectionInput = productProjectionInputSchema.parse({
           name: card.name, description: "", visibility: "private", componentId: METRIC_CHART_COMPONENT,
-          binding: { kind: "MetricView", id: card.metricId },
-          inputs: panelInputs(card.parameterDefs), display: { chartSource: source },
+          chartSource: source, metricId: card.metricId, inputs, outputs: {}, config: {},
+          data: {
+            template: { source: cardSource, read: "chartTemplate", params: {} },
+            result: {
+              source: cardSource, read: "result",
+              params: Object.fromEntries(Object.keys(inputs).map(name => [name, { input: name }])),
+            },
+          },
         });
         const row = await insertCurrentProduct(client, owner, credentials, "projection", id, input);
         return { projection: chartProjectionSchema.parse(currentProductRecord(row, true)), created: true };
@@ -112,7 +124,7 @@ export async function findChartProjectionsForCards(client: PoolClient, domainId:
   const { rows } = await client.query<{ id: string }>(
     `SELECT id FROM ${t(currentProductTables.projection)}
      WHERE domain_id=$1 AND definition->>'componentId'=$2
-       AND definition#>>'{display,chartSource,dashboardId}'=$3 AND definition#>>'{display,chartSource,cardId}'=ANY($4::text[])`,
+       AND definition#>>'{chartSource,dashboardId}'=$3 AND definition#>>'{chartSource,cardId}'=ANY($4::text[])`,
     [domainId, METRIC_CHART_COMPONENT, dashboardId, cardIds],
   );
   return rows.map(row => row.id);
@@ -123,7 +135,7 @@ export async function deleteChartProjectionsForDashboards(client: PoolClient, da
     `DELETE FROM ${t(currentProductTables.projection)} AS projection
      USING unnest($1::text[], $2::text[]) AS source(domain_id, dashboard_id)
      WHERE projection.domain_id=source.domain_id AND definition->>'componentId'=$3
-       AND definition#>>'{display,chartSource,dashboardId}'=source.dashboard_id`,
+       AND definition#>>'{chartSource,dashboardId}'=source.dashboard_id`,
     [dashboards.map(source => source.domainId), dashboards.map(source => source.dashboardId), METRIC_CHART_COMPONENT],
   );
 }

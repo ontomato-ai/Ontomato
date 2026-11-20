@@ -307,7 +307,7 @@ function onKeydown(event: KeyboardEvent) {
 }
 .question-option.chosen {
   border-color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
+  background: var(--ui-selection-background, var(--el-color-primary-light-9));
 }
 .question-option:focus-visible {
   outline: 2px solid var(--el-color-primary);

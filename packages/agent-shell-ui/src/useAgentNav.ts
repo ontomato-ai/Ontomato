@@ -1,4 +1,4 @@
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, ref, shallowRef, watch } from "vue";
 import type { AgentHostAgent, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import type { AgentHostClient } from "./host";
@@ -31,7 +31,8 @@ export function useAgentNav(options: AgentNavOptions) {
   /** The open page's agents while a page with its own skill is open; null when it has none or none is open. */
   const pageAgents = ref<{ agents: AgentHostAgent[]; defaultAgentId?: string } | null>(null);
   /** The page whose skill the composer is choosing agents for, as the shell reports it opening and closing. */
-  const page = ref<PageSkillContext | null>(null);
+  // A snapshot the page reported, replaced whole and never edited in place.
+  const page = shallowRef<PageSkillContext | null>(null);
   /**
    * The open conversation's own agent kept while a page narrows `agents` to candidates that do not include it, so the
    * head and composer still recognise it. Cleared as soon as `agentId` changes or the agent is listed again.

@@ -189,6 +189,13 @@ export const components: readonly ComponentMetadata[] = [
       "Lists or tabulates platform objects or declared child collections of the bound type through its resource adapter's query or list port, providing search, faceted filters (two-way bindable to scalar panel state via slot inputs/outputs), safe highlight rendering, paging, single viewing selection, optional explicit multi-selection and clickable reference navigation without embedding business query rules.",
     effects: "Reads the bound type's list or query as the reader; it writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*"],
+    // Either list shape draws the table, and an ontology type lists its declared objects instead: no single one of these
+    // is what a placement must declare, so none is required.
+    data: {
+      // The list pages itself; search and filters are the panel's state, bound by the author.
+      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false, runtimeParams: ["cursor", "size"] },
+      objects: { results: ["panelOntologyObjects"], required: false, runtimeParams: ["page"] },
+    },
     outputs: ["selected", "checked", "navigate", "search"],
   }),
   defineComponentMeta({
@@ -200,6 +207,7 @@ export const components: readonly ComponentMetadata[] = [
       "Shows the few facts of one platform object a reader recognises it by, including owner-supplied highlight ranges, status tags and clickable object references. Which facts and in what order is the projection's display; what each holds is the object's own owner's.",
     effects: "Reads one object of the type the projection binds, as the reader.",
     bindsElement: ["PlatformObjectType:*"],
+    data: { record: { results: ["panelRecord"], required: true } },
     outputs: ["navigate"],
   }),
   defineComponentMeta({
@@ -211,6 +219,12 @@ export const components: readonly ComponentMetadata[] = [
       "Draws one platform object's form exactly as its owner declares it, asks the owner again when a field the form depends on changes, and keeps the reader's draft until it is saved.",
     effects: "Reads the owner's form and saves through the owner's own interface; the save is the projection's own operation.",
     bindsElement: ["PlatformObjectType:*", "Action:*"],
+    // A form edits an existing record or creates a new one; which of the two a placement shows is its own choice.
+    data: {
+      // The form asks its owner again with the values it holds and the field that changed.
+      form: { results: ["panelFormDescription"], required: false, runtimeParams: ["values", "changedField"] },
+      createForm: { results: ["panelFormDescription"], required: false, runtimeParams: ["values", "changedField"] },
+    },
     // The owner's own save: `@binding` stands for the type the projection binds, so one declared operation serves every
     // type this version registers.
     operations: [{ client: "@binding", name: "save", label: "Save", kind: "form.save", inputSchema: {} }],
@@ -224,6 +238,8 @@ export const components: readonly ComponentMetadata[] = [
       "The button of one operation a projection publishes: it shows the operation's own label and runs it on the object the panel has selected, through the handler the operation names.",
     effects: "Runs the projection's operation as the reader, with the object the panel has selected.",
     bindsElement: ["PlatformOperation:*"],
+    // The button is the operation's own: without its description there is no label to press.
+    data: { operation: { results: ["panelOperationDescriptor"], required: true } },
   }),
   defineComponentMeta({
     componentId: "ReferencePicker",
@@ -234,6 +250,12 @@ export const components: readonly ComponentMetadata[] = [
       "Chooses the value of one reference field of a form in the same panel from the catalogue of the type the projection binds, writing the owner's own value (a skill's whole reference, a model's key) into that form, so the choice is saved, discarded and drafted with it. A value the form holds that the catalogue no longer offers stays listed, unavailable, with the owner's reason.",
     effects: "Reads the bound type's choices as the reader; it writes only the form field its slot's field port names.",
     bindsElement: ["PlatformObjectType:*"],
+    // The catalogue it offers, and the held values it lists beside it: both are the member's own reads.
+    data: {
+      // The reader's search and page of choices, and the values the form holds now.
+      options: { results: ["panelOptionList"], required: true, runtimeParams: ["keyword", "page"] },
+      selected: { results: ["panelOptionList"], required: true, runtimeParams: ["values"] },
+    },
   }),
   defineComponentMeta({
     componentId: "ObjectGraph",
@@ -244,6 +266,10 @@ export const components: readonly ComponentMetadata[] = [
       "Draws the objects of the bound type as a graph joined by the objects of its graph's edge type, and chooses on it the list of node keys one form field of the same panel holds: a choice adds or removes a node, the nodes one edge away from a chosen one are marked, and one action adds them all. It decides nothing about what the nodes stand for or who may read them.",
     effects: "Reads the node and edge types' lists as the reader; it writes only the form field its slot's field port names.",
     bindsElement: ["PlatformObjectType:*"],
+    data: {
+      nodes: { results: ["panelRecordList"], required: true },
+      edges: { results: ["panelRecordList"], required: true },
+    },
   }),
   defineComponentMeta({
     componentId: "MetricChart",
@@ -251,9 +277,14 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "MetricChart",
     role: "presentation",
     meaning:
-      "Draws one registered chart as its source card draws it: the card's chart file, which its dashboard owner hands over for this projection, filled with the bound MetricView's output for the MetricView's own defaults and the values the panel binds. The projection keeps no drawing, query or data of its own.",
-    effects: "Reads the chart's source template through the product service and the MetricView through the data engine, both as the reader.",
+      "Draws one chart as its source card draws it: the card's chart file (`template`) filled with a MetricView's output (`result`) for the card's saved parameters and the values the panel binds over them. The platform supplies both, and an output with no rows is the owner's empty answer. The projection keeps no drawing, query or data of its own.",
+    effects: "Sends no request of its own: the platform reads the source card's template and the MetricView's output, both as the reader.",
     bindsElement: ["MetricView:*"],
+    // The chart file and the output it is filled with: drawn once both are read.
+    data: {
+      template: { results: ["chartTemplate"], required: true },
+      result: { results: ["metricOutput"], required: true },
+    },
   }),
   defineComponentMeta({
     componentId: "GraphCanvas",
@@ -282,6 +313,14 @@ export const components: readonly ComponentMetadata[] = [
       "Draws an interactive G6 graph from the bound resource's graph source port: type mode arranges declared object types and relation kinds by layer with per-type readable counts and access statuses; instance mode starts from a node and expands one hop of neighbors on click, preserving complete object identities, highlighting drawn query matches, keeping layer filter and viewport as internal view state, distinguishing no-neighbors, owner-refused and read-failed outcomes, and exposing fit and relayout controls.",
     effects: "Reads the bound graph source's schema, counts, starting node and one-hop neighbors as the reader; writes only the panel's own selection state.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
+    // Expanding from a node is what the graph does; the three overview reads it shows when a placement supplies them.
+    data: {
+      schema: { results: ["panelGraphSchema"], required: false },
+      counts: { results: ["panelGraphCounts"], required: false },
+      start: { results: ["panelGraphStart"], required: false },
+      // The node the reader expands, and the layers and relation kinds the graph shows now.
+      neighbors: { results: ["panelGraphNeighbors"], required: true, runtimeParams: ["node", "layers", "relationKinds"] },
+    },
     outputs: ["selectedNode", "selected", "selectedType"],
   }),
   defineComponentMeta({
@@ -293,6 +332,8 @@ export const components: readonly ComponentMetadata[] = [
       "Lists one-hop relations of the selected node from the bound resource's graph neighbors port, grouped by relation kind with distinct no-neighbors, owner-refused, read-failed and unavailable states, showing edge direction and stored/derived line semantics, and moving selection to a clicked peer node with its complete identity.",
     effects: "Reads the bound graph source's one-hop neighbors as the reader; writes only the panel's own selection state.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
+    // The node a reader moved to, when no state the author bound holds it.
+    data: { neighbors: { results: ["panelGraphNeighbors", "panelRelationNeighbors"], required: true, runtimeParams: ["node"] } },
     outputs: ["selected"],
   }),
   defineComponentMeta({
@@ -301,7 +342,8 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "SegmentedControl",
     role: "control",
     meaning:
-      "Switches one declared scalar panel state between mutually exclusive options supplied by the panel template or display configuration. It binds no ontology element and performs no platform reads.",
+      "Switches one declared scalar panel state between mutually exclusive options supplied by the panel template or display configuration, and shows each option's platform count where the placement reads them. It binds no ontology element.",
+    data: { counts: { results: ["panelGroupCounts"], required: false } },
     outputs: ["value"],
   }),
   defineComponentMeta({
@@ -379,5 +421,7 @@ export const components: readonly ComponentMetadata[] = [
       "Renders a generic button for a projection's declared conversationEntry. Clicking it asks the platform host to expand the page's composer with the declared agent target and optional prefill text without sending a message.",
     effects: "Requests the host to expand the page's composer with the projection's declared conversationEntry; performs no writes and never sends messages.",
     bindsElement: ["PlatformObjectType:platform:AgentDefinition"],
+    // A button the host acts on: it reads nothing from the platform, and says so, so a placement may carry it as a member.
+    data: {},
   }),
 ];

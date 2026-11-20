@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
@@ -10,7 +10,6 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const run = promisify(execFile);
 const ROOT = join(HERE, "..", "..", "..", "..", "..");
 
-const SDK = "4.1.9-dev." + "a".repeat(64);
 const projectionPaths = [
   "/api/product-projections/projection-schedules-summary",
   "/api/product-projections/projection-schedules-tasks",
@@ -23,6 +22,17 @@ const panelPaths = [
 ];
 const recordPaths = [...projectionPaths, ...panelPaths];
 const idOf = (path) => path.split("/").at(-1);
+
+/*
+ * The deployment's current SDK, which the script reads before it writes a definition. Its check module is the one the
+ * release is built from, so the trial is checked by the real schemas.
+ */
+const SDK_PATH = "/apps-sdk/current";
+const release = {
+  version: "4.1.9-dev." + "a".repeat(64), digest: "b".repeat(64), publicBasePath: "", sdkBasePath: SDK_PATH,
+  checkPath: SDK_PATH + "/node/panel-check.mjs", componentsPath: SDK_PATH + "/components.json",
+};
+const checkModule = `export * from ${JSON.stringify(pathToFileURL(join(ROOT, "packages/contracts/src/panel-check.ts")).href)};`;
 
 const notFound = (response) => {
   response.writeHead(403, { "Content-Type": "application/json" });
@@ -40,13 +50,19 @@ function platform({ held = new Map(), existingApplications = false } = {}) {
     request.on("data", (chunk) => (body += chunk));
     request.on("end", () => {
       const parsed = body ? JSON.parse(body) : null;
-      requests.push({ method: request.method, url: request.url, body: parsed, credential: request.headers.tk });
+      if (!request.url.startsWith(SDK_PATH) && request.url !== "/api/apps-sdk/current") {
+        requests.push({ method: request.method, url: request.url, body: parsed, credential: request.headers.tk });
+      }
       const answer = (status, value) => {
         response.writeHead(status, { "Content-Type": "application/json" });
         response.end(JSON.stringify(value));
       };
       const path = request.url;
-      if (path === `/apps-sdk/${SDK}/sdk.json`) return answer(200, { version: SDK });
+      if (path === "/api/apps-sdk/current") return answer(200, release);
+      if (path === release.checkPath) {
+        response.writeHead(200, { "Content-Type": "text/javascript" });
+        return response.end(checkModule);
+      }
       if (path.includes("/platform/applications/")) {
         if (request.method === "GET") return existingApplications
           ? answer(200, { success: true, data: { panelUses: [] } }) : answer(404, {});
@@ -101,7 +117,7 @@ async function register(args, stand) {
 
 test("registers the trial's projections, panels and applications in that order", async () => {
   const stand = platform();
-  const { error } = await register(["--mode", "create", "--sdk-version", SDK, "--token", "a-credential"], stand);
+  const { error } = await register(["--mode", "create", "--token", "a-credential"], stand);
   assert.equal(error, null, String(error?.stderr ?? ""));
   const { requests } = stand;
   const uses = requests.filter((request) => request.method === "PUT" && request.url.includes("/platform/applications/"))
@@ -139,11 +155,11 @@ test("registers the trial's projections, panels and applications in that order",
   assert.ok(requests.every((request) => !JSON.stringify(request.body ?? {}).includes("a-credential")));
   const productRequests = requests.filter((request) => request.url.startsWith("/api/product"));
   assert.ok(productRequests.every((request) => request.method === "PUT" && request.body.revision === 0));
-  // P is written without code and names no SDK version; Q keeps its module, pinned to the version given.
+  // Both panels use the deployment SDK. Q keeps its module.
   assert.deepEqual(productRequests.filter((request) => request.url.startsWith("/api/product-panels/"))
-    .map(({ url, body }) => [decodeURIComponent(url), body.sdkVersion, Object.hasOwn(body.content, "module")]), [
-    ["/api/product-panels/panel-schedules-trial", undefined, false],
-    ["/api/product-panels/panel-schedules-summary", SDK, true],
+    .map(({ url, body }) => [decodeURIComponent(url), Object.hasOwn(body, "sdkVersion"), Object.hasOwn(body.content, "module")]), [
+    ["/api/product-panels/panel-schedules-trial", false, false],
+    ["/api/product-panels/panel-schedules-summary", false, true],
   ]);
   assert.ok(productRequests.filter((request) => request.url.startsWith("/api/product-projections/"))
     .every((request) => request.body.componentId.startsWith("@ontomato/sdk:") && Object.keys(request.body.data).length === 1));
@@ -157,13 +173,13 @@ test("snapshots the pre-upgrade revisions and uses them without reading the lega
   assert.ok(stand.requests.every((request) => request.credential === undefined));
   stand.requests.length = 0;
 
-  const { error } = await register(["--mode", "update", "--sdk-version", SDK, "--revisions", snapshot.stdout], stand);
+  const { error } = await register(["--mode", "update", "--revisions", snapshot.stdout], stand);
   assert.equal(error, null, String(error?.stderr ?? ""));
   const writes = stand.requests.filter(request => request.method === "PUT");
   assert.deepEqual(writes.slice(0, 6).map(({ url, body }) => [url, body.revision]), recordPaths.map(path => [path, 3]));
-  assert.ok(stand.requests.filter(request => request.method === "GET").every(request => !request.url.startsWith("/api/")));
+  assert.ok(stand.requests.every(request => request.method === "PUT"));
   assert.equal(writes.length, 8);
-  assert.deepEqual(writes.slice(4, 6).map(({ body }) => body.sdkVersion), [undefined, SDK]);
+  assert.ok(writes.slice(4, 6).every(({ body }) => !Object.hasOwn(body, "sdkVersion")));
   assert.deepEqual(writes.slice(6).map(({ body }) => [body.entry.path, body.panelUses.map(use => use.path)]), [
     ["/applications/app-panels-trial-a", ["/applications/app-panels-trial-a/tasks"]],
     ["/applications/app-panels-trial-b", ["/applications/app-panels-trial-b/tasks", "/applications/app-panels-trial-b/summary"]],
@@ -180,7 +196,7 @@ test("stops at a stale owner revision, preserving the completed item and exposin
     existingApplications: true,
   });
   const revisions = JSON.stringify(Object.fromEntries(recordPaths.map(path => [idOf(path), 3])));
-  const { stdout, error } = await register(["--mode", "update", "--sdk-version", SDK, "--revisions", revisions], stand);
+  const { stdout, error } = await register(["--mode", "update", "--revisions", revisions], stand);
   assert.equal(error?.code, 1);
   assert.match(stdout, /panel panel-schedules-trial/);
   assert.match(error.stderr, /panel panel-schedules-summary.*409.*PRODUCT_CONFLICT/);
@@ -192,7 +208,7 @@ test("stops at a stale owner revision, preserving the completed item and exposin
 
 test("does not update an occupied application in create mode", async () => {
   const stand = platform({ existingApplications: true });
-  const { error } = await register(["--mode", "create", "--sdk-version", SDK], stand);
+  const { error } = await register(["--mode", "create"], stand);
   assert.equal(error?.code, 1);
   assert.match(error.stderr, /application app-panels-trial-a.*already exists/);
   assert.deepEqual(stand.requests.filter(request => request.url.includes("/platform/applications/")).map(request => request.method), ["GET"]);
@@ -201,7 +217,7 @@ test("does not update an occupied application in create mode", async () => {
 test("refuses before it sends anything when the token file names no file", async () => {
   const stand = platform();
   // No server is listening: if the script got as far as a request, this test would fail for the wrong reason.
-  const { error } = await script("http://127.0.0.1:1", ["--mode", "create", "--sdk-version", SDK, "--token-file", join(HERE, "no-such-token-file")]);
+  const { error } = await script("http://127.0.0.1:1", ["--mode", "create", "--token-file", join(HERE, "no-such-token-file")]);
   assert.notEqual(error, null);
   assert.equal(stand.requests.length, 0);
   assert.match(String(error?.stderr ?? ""), /ENOENT/);

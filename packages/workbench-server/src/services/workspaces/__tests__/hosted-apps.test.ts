@@ -22,29 +22,6 @@ it("exposes a Java rejection", async () => {
   await expect(writeHostedPublication("app-test", "release-test", {}, { token: "current", locale: "en" })).rejects.toThrow("Wrong domain");
 });
 
-it("reuses identical SDK content and rejects a different payload at the same version", async () => {
-  const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
-  const { tmpdir } = await import("node:os");
-  const { join } = await import("node:path");
-  const { assertSameSdk } = await import("../hosted-apps");
-  const root = await mkdtemp(join(tmpdir(), "sdk-install-"));
-  try {
-    const shipped = join(root, "shipped");
-    const installed = join(root, "installed");
-    for (const dir of [shipped, installed]) {
-      await mkdir(dir);
-      await writeFile(join(dir, "sdk.js"), "export const sdk = 1;");
-      await writeFile(join(dir, "sdk.json"), JSON.stringify({ version: "1.0.0" }));
-    }
-    await writeFile(join(installed, "sdk.json"), JSON.stringify({ version: "1.0.0", sources: [{ revision: "old" }], productVersion: "old" }));
-    await expect(assertSameSdk(shipped, installed, "1.0.0")).resolves.toBeUndefined();
-    await writeFile(join(shipped, "sdk.js"), "export const sdk = 2;");
-    await expect(assertSameSdk(shipped, installed, "1.0.0")).rejects.toThrow("version conflict: 1.0.0");
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
 it("excludes test materials from actual release files while preserving workspace source",async()=>{
   const {mkdtemp,readFile,rm}=await import("node:fs/promises");
   const {tmpdir}=await import("node:os");const {join}=await import("node:path");
@@ -61,17 +38,36 @@ it("excludes test materials from actual release files while preserving workspace
     expect(files).toHaveLength(3);expect(files[1]!.content).toBe("sample-source");
   } finally {await rm(root,{recursive:true,force:true});}
 });
-it('requires a host-transport SDK for new source publications while accepting its installed version',async()=>{
-  const {requireHostedSdkTransport}=await import('../hosted-apps');
-  const files=[{path:'index.html',encoding:'utf8' as const,content:'<script type="module" src="/apps-sdk/1.2.0/sdk.js"></script>'}];
-  await expect(requireHostedSdkTransport(files,async()=>({hostTransport:1,messageBridge:2}))).resolves.toBeUndefined();
-  await expect(requireHostedSdkTransport(files,async()=>({}))).rejects.toMatchObject({code:'PRODUCT_SDK_UPGRADE_REQUIRED'});
-  await expect(requireHostedSdkTransport(files,async()=>({hostTransport:1}))).rejects.toMatchObject({code:'PRODUCT_SDK_UPGRADE_REQUIRED'});
-  await expect(requireHostedSdkTransport([],async()=>({hostTransport:1}))).rejects.toMatchObject({code:'PRODUCT_SDK_UPGRADE_REQUIRED'});
+const sdk = {
+  sdkBasePath: "/deployment/apps-sdk/current",
+  manifest: {
+    entries: { "@ontomato/sdk": "sdk.js" },
+    stylesheet: "styles/sdk.css",
+    hostTransport: 1,
+    messageBridge: 2,
+  },
+};
+const source = '<head><!-- ontomato:apps-sdk --><script type="module" src="./app.js"></script></head>';
+const html = (content: string) => ({ path: "index.html", encoding: "utf8" as const, content });
+
+it("injects the current import map and stylesheet before the authored module and validates the result", async () => {
+  const { injectHostedSdkHtml, requireHostedSdkTransport } = await import("../hosted-sdk");
+  const published = injectHostedSdkHtml(source, sdk);
+  expect(published).toContain('href="/deployment/apps-sdk/current/styles/sdk.css"');
+  expect(published).toContain('"@ontomato/sdk":"/deployment/apps-sdk/current/sdk.js"');
+  expect(published.indexOf('type="importmap"')).toBeLessThan(published.indexOf('type="module"'));
+  expect(() => requireHostedSdkTransport([html(published)], sdk)).not.toThrow();
+  const next = { ...sdk, manifest: { ...sdk.manifest, entries: { ...sdk.manifest.entries, "vue": "vue.js" } } };
+  expect(() => requireHostedSdkTransport([html(published)], next)).not.toThrow();
 });
-it('prevents retry or rollback from reactivating an unsandboxed historical release',async()=>{
-  const {requireHostedReleasePolicy}=await import('../hosted-apps');
-  await expect(requireHostedReleasePolicy('app-example','release',async()=>({hostTransport:1,messageBridge:2}))).resolves.toBeUndefined();
-  for(const policy of [{},{hostTransport:1},{messageBridge:2}])await expect(requireHostedReleasePolicy('app-example','release',async()=>policy)).rejects.toMatchObject({code:'PRODUCT_SDK_UPGRADE_REQUIRED'});
-  await expect(requireHostedReleasePolicy('app-example','release',async()=>{throw Object.assign(new Error('Missing'),{code:'ENOENT'});})).rejects.toMatchObject({code:'PRODUCT_SDK_UPGRADE_REQUIRED'});
+
+it("rejects old or hand-written SDK paths before publication and reactivation", async () => {
+  const { injectHostedSdkHtml, requireHostedSdkTransport } = await import("../hosted-sdk");
+  const legacy = '<script type="module" src="/apps-sdk/1.2.0/sdk.js"></script>';
+  expect(() => injectHostedSdkHtml(source + legacy, sdk)).toThrow();
+  expect(() => requireHostedSdkTransport([html(legacy)], sdk)).toThrow();
+  const published = injectHostedSdkHtml(source, sdk);
+  expect(() => requireHostedSdkTransport([html(published.replace("/current/", "/1.2.0/"))], sdk)).toThrow();
+  expect(() => requireHostedSdkTransport([html(published)], { ...sdk, manifest: { ...sdk.manifest, messageBridge: 1 } })).toThrow();
+  expect(() => requireHostedSdkTransport([], sdk)).toThrow();
 });

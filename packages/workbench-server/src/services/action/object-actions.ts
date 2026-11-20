@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { actionFormSchema, type ActionForm } from "@ontomato/contracts/action-forms";
+import { actionFormSchema } from "@ontomato/contracts/action-forms";
+import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import {
-  panelOwnerOperationDescriptorSchema, type panelOwnerOperationTargetSchema,
+  describePanelOperationFromDeclaration, type PanelOperationDeclaration,
 } from "@ontomato/contracts/panel-operations";
 import { HttpError } from "../../utils/errors";
 import {
@@ -16,12 +17,15 @@ import type { PanelWriteServerOperation, SinglePanelOperationOutcome } from "../
  * A published business Action executed on one customer object. Every Action shares the `actions.execute` handler; the
  * Action and the object it acts on are resolved from the data engine and bound into the operation built for them. The
  * data engine's `/action/form` is the authority on whether this Action may run for this caller (it exists in the
- * caller's domain, is published and executable, and is granted); `/action/queryById` only supplies its name, target
- * and code hash. The Action's parameters are its own: which are required and whether a value is valid is answered by
+ * caller's domain, is published and executable, and is granted); `/action/queryById` only supplies its name, target,
+ * code hash and parameters. The Action's parameters are its own: an author's catalogue and a reader's description both
+ * declare them from the stored definition through `objectActionDeclaration`, and whether a value is valid is answered by
  * the owner when the values are submitted, never checked here.
  */
 
 export const ACTIONS_EXECUTE = "actions.execute";
+/** The logical input that carries the object an Action runs on, in its declaration and in a projection's params. */
+export const OBJECT_ACTION_TARGET = "target";
 
 export interface ObjectActionSelection {
   actionId: string;
@@ -35,18 +39,28 @@ export interface ResolvedObjectAction {
   /** The Action parameter that carries the target object's primary key. */
   keyParameter: string;
   object: PanelObjectIdentity;
-  /** The Action's form as it opens for this object, with the key parameter bound and read-only. */
-  form: ActionForm;
+  declaration: PanelOperationDeclaration;
 }
 
-type OwnerOperationTarget = z.infer<typeof panelOwnerOperationTargetSchema>;
 type OwnerEnvelope = z.infer<typeof ownerEnvelopeSchema>;
 
-const storedActionSchema = z.object({
+/** The stored fields an object Action is declared and resolved from; the rest of the stored Action is not read. */
+export const storedObjectActionSchema = z.object({
+  id: z.string().min(1),
   name: z.string().min(1),
   codeHash: z.string().min(1),
   target: z.object({ className: z.string().min(1), keyParameter: z.string().min(1) }).passthrough().nullable(),
+  function: z.object({
+    parameters: z.array(z.object({
+      name: z.string().min(1), type: z.string().min(1), description: z.string().nullish(),
+    }).passthrough()),
+  }).passthrough(),
 }).passthrough();
+type StoredObjectAction = z.infer<typeof storedObjectActionSchema>;
+type ObjectTarget = NonNullable<StoredObjectAction["target"]>;
+
+/** Parameter types the owner's form takes as typed text rather than as JSON. */
+const TEXT_PARAMETER_TYPES = new Set(["TYPE_STRING", "TYPE_TIME"]);
 const executedSchema = z.object({
   result: z.string().nullable(),
   affects: z.array(z.string()),
@@ -56,6 +70,9 @@ export const objectActionResultSchema = z.object({
   result: z.string().nullable(),
   affects: z.array(z.string()),
 }).strict();
+const objectActionResultJsonSchema = runtimeJsonObjectSchema.parse(
+  zodToJsonSchema(objectActionResultSchema, { effectStrategy: "input" }),
+);
 const objectActionInputSchema = z.object({ values: z.record(z.string(), z.string()) }).strict();
 
 /** An owner code that denies the caller is a forbidden read; one that finds nothing is a missing one; the rest conflict. */
@@ -86,44 +103,60 @@ export async function resolveObjectAction(host: Host, selection: ObjectActionSel
   const stored = await ownerPost(host, "/action/queryById", { id: selection.actionId }, ownerEnvelopeSchema);
   if (!stored.success) throw readRefusal(stored, "ACTION_READ_FAILED", "The owner could not read the action");
   if (stored.data == null) throw new HttpError(404, "The action does not exist", "ACTION_NOT_FOUND");
-  const action = storedActionSchema.parse(stored.data);
-  if (action.target === null)
+  const action = storedObjectActionSchema.parse(stored.data);
+  const { target } = action;
+  if (target === null)
     throw new HttpError(409, "This action does not act on an object", "ACTION_NOT_OBJECT_ACTION");
-  if (action.target.className !== selection.object.objectType)
+  if (target.className !== selection.object.objectType)
     throw new HttpError(409, "This action acts on another object type", "ACTION_TARGET_MISMATCH");
-  const located = { actionId: selection.actionId, keyParameter: action.target.keyParameter, object: selection.object };
+  const located = { actionId: selection.actionId, keyParameter: target.keyParameter, object: selection.object };
+  // The owner's form admits this caller to run this Action now; its fields are the declaration's, so only the answer counts.
   const opened = await actionForm(host, located);
   if (!opened.success) throw readRefusal(opened, "ACTION_FORM_FAILED", "The owner could not open the action form");
-  return { ...located, codeHash: action.codeHash, name: action.name, form: actionFormSchema.parse(opened.data) };
-}
-
-/** The values the Action's current definition asks for, as its reader and an agent see them; the owner still judges. */
-function describedInputSchema(resolved: ResolvedObjectAction) {
-  const fields = resolved.form.fields.filter(field => field.key !== resolved.keyParameter);
   return {
-    type: "object",
-    properties: {
-      values: {
-        type: "object",
-        properties: Object.fromEntries(fields.map(field => [field.key, { type: "string", title: field.label }])),
-        required: fields.filter(field => field.required).map(field => field.key),
-        additionalProperties: false,
-      },
-    },
-    required: ["values"],
-    additionalProperties: false,
+    ...located, codeHash: action.codeHash, name: action.name, declaration: objectActionDeclaration({ ...action, target }),
   };
 }
 
-export function describeObjectAction(resolved: ResolvedObjectAction, target: OwnerOperationTarget) {
-  return panelOwnerOperationDescriptorSchema.parse({
+/**
+ * The static operation an object Action declares, from its stored definition alone: one text value per parameter other
+ * than the key the target binds, JSON text for a non-text type, none required (the owner's form marks none). Nothing in
+ * it depends on an object, a caller's grants or the code; the owner judges the values when they are submitted.
+ */
+export function objectActionDeclaration(
+  action: Pick<StoredObjectAction, "id" | "function"> & { target: ObjectTarget },
+): PanelOperationDeclaration {
+  const parameters = action.function.parameters.filter(parameter => parameter.name !== action.target.keyParameter);
+  return {
+    id: action.id,
+    effect: "write",
+    target: { source: "input", input: OBJECT_ACTION_TARGET },
+    batch: false,
+    inputSchema: {
+      type: "object",
+      properties: {
+        values: {
+          type: "object",
+          properties: Object.fromEntries(parameters.map(parameter => [parameter.name, {
+            type: "string",
+            title: parameter.name,
+            ...(parameter.description ? { description: parameter.description } : {}),
+            ...(TEXT_PARAMETER_TYPES.has(parameter.type) ? {} : { contentMediaType: "application/json" }),
+          }])),
+          additionalProperties: false,
+        },
+      },
+      required: ["values"],
+      additionalProperties: false,
+    },
+  };
+}
+
+export function describeObjectAction(resolved: ResolvedObjectAction) {
+  return describePanelOperationFromDeclaration(resolved.declaration, {
     handlerRef: ACTIONS_EXECUTE,
     label: resolved.name,
-    effect: "write",
-    target,
-    inputSchema: describedInputSchema(resolved),
-    resultSchema: zodToJsonSchema(objectActionResultSchema, { effectStrategy: "input" }),
-    batch: false,
+    resultSchema: objectActionResultJsonSchema,
   });
 }
 
@@ -151,7 +184,7 @@ async function execute(host: Host, resolved: ResolvedObjectAction, values: Recor
   };
 }
 
-export function objectActionOperation(resolved: ResolvedObjectAction, targetInput: string) {
+export function objectActionOperation(resolved: ResolvedObjectAction) {
   const { objectType, primaryKey } = resolved.object;
   return {
     handlerRef: ACTIONS_EXECUTE,
@@ -160,7 +193,7 @@ export function objectActionOperation(resolved: ResolvedObjectAction, targetInpu
     effect: "write",
     batch: false,
     targetType: objectType,
-    targetInput,
+    targetInput: OBJECT_ACTION_TARGET,
     targetSchema: z.object({
       kind: z.literal("object"), objectType: z.literal(objectType), primaryKey: z.literal(primaryKey),
     }).strict(),

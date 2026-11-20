@@ -2,11 +2,11 @@ import { afterEach, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import type { PanelFormValues } from "@ontomato/contracts/panel-projection";
-import { FUNCTION } from "@ontomato/contracts/panel-client-requests";
+import type { PanelFormSaveInput } from "@ontomato/contracts/panel-projection";
+import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
-  ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
+  formSaveCalls, humanIntents, ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
 /*
@@ -18,59 +18,94 @@ import {
  * that row and their typing is gone.
  */
 
-const assets = [{ id: "fn-1", name: "Revenue" }, { id: "fn-2", name: "Churn" }];
+const FIRST = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a01";
+const SECOND = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a02";
+const CREATED = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a03";
+const listPath = "/api/assistant/agent-definitions";
+const formPath = `${listPath}/form`;
+const revision = 7;
 const fields = [{ path: "/name", label: "Name", control: { kind: "text" }, valueSchema: { type: "string" }, required: true, readOnly: false }];
-const save = (operation: string) => ({ method: "POST", path: "/function/save", bodySchema: {}, draftOperation: operation });
-const record = (id: string, componentId: string, inputs: ProductProjection["inputs"], display: Record<string, unknown>): ProductProjection => ({
+const agent = { kind: "object", objectType: AGENT_DEFINITION } as const;
+const source = { type: { kind: "PlatformObjectType", id: AGENT_DEFINITION } } as const;
+const formParams = { values: { input: "values" }, changedField: { input: "changedField" } };
+const current = {
   domainId: "domain-1", ownerId: "owner-1", revision: 1, createdAt: "2026-11-19T00:00:00.000Z",
-  updatedAt: "2026-11-19T00:00:00.000Z", editable: false, visibility: "domain",
-  id, name: id, description: "", componentId, binding: { kind: "PlatformObjectType", id: FUNCTION }, inputs, display,
-});
+  updatedAt: "2026-11-19T00:00:00.000Z", editable: false, visibility: "domain" as const, description: "",
+};
 const projections: Record<string, ProductProjection> = {
-  "function-list": record("function-list", "ObjectList", {}, { selectable: true, fallbackToFirst: true }),
-  "function-form": record("function-form", "ObjectForm", {
-    fn: { kind: "object", objectType: FUNCTION }, mode: { kind: "scalar", type: "string" },
-  }, { creates: true, createWhen: { input: "mode", equals: "create" } }),
+  "agent-list": {
+    ...current, id: "agent-list", name: "Agents", componentId: "@ontomato/sdk:ObjectList",
+    inputs: {}, outputs: { selected: agent },
+    config: { selectable: true, fallbackToFirst: true },
+    data: { rows: { source, read: "list", params: {} } },
+  },
+  "agent-form": {
+    ...current, id: "agent-form", name: "Agent form", componentId: "@ontomato/sdk:ObjectForm",
+    inputs: {
+      agent, mode: { kind: "scalar", type: "string" },
+      values: { kind: "json" }, changedField: { kind: "scalar", type: "string" },
+    },
+    outputs: {},
+    config: { creates: true, createWhen: { input: "mode", equals: "create" } },
+    data: {
+      form: { source: { object: { input: "agent" } }, read: "form", params: formParams },
+      createForm: { source, read: "createForm", params: formParams },
+    },
+  },
 };
 const manifest = definePanel({
   state: {
-    selected: { kind: "object", objectType: FUNCTION, deepLink: true },
-    mode: { kind: "scalar", type: "string", deepLink: true },
+    selected: { type: agent, deepLink: true },
+    mode: { type: { kind: "scalar", type: "string" }, deepLink: true },
   },
-  slots: {
-    list: { projectionId: "function-list", inputs: {}, outputs: { selected: { state: "selected" } } },
-    form: { projectionId: "function-form", inputs: { fn: { state: "selected" }, mode: { state: "mode" } } },
+  members: {
+    list: { target: { projectionId: "agent-list" }, outputs: { selected: { state: "selected" } } },
+    form: { target: { projectionId: "agent-form" }, inputs: { agent: { state: "selected" }, mode: { state: "mode" } } },
   },
-  operations: [],
+  events: {},
 });
-const panel = panelRecord("panel-create-mode", "Functions", manifest);
-const use = panelUse("use-create-mode", "create-mode", panel.id, "/ontology/functions");
+const panel = panelRecord("panel-create-mode", "Agents", manifest);
+const use = panelUse("use-create-mode", "create-mode", panel.id, "/ontology/agents");
 
-const ok = (data: unknown) => Response.json({ success: true, data });
+const definition = (id: string, name: string) => ({
+  id, name, description: "", icon: null, enabled: true, executionUserId: null, modelSelection: { modelId: null },
+  skills: [], classNames: [], enabledMcpServiceIds: [], systemPrompt: "", sortOrder: 0,
+});
+
 async function open(state: Record<string, unknown>) {
+  const agents = [definition(FIRST, "Revenue"), definition(SECOND, "Churn")];
+  const intents = humanIntents((_, { input }) => {
+    agents.push(definition(CREATED, String((input as PanelFormSaveInput).values.name)));
+    return {
+      kind: "success", data: {},
+      affected: { objects: [{ objectType: AGENT_DEFINITION, primaryKey: CREATED }], objectTypes: [AGENT_DEFINITION] },
+    };
+  }, { source: "input", input: "agent" });
   const sent = installPlatform((request: Sent) => {
     const projected = /^\/api\/product-projections\/(.+)$/.exec(request.path);
     if (projected) return Response.json({ projection: projections[projected[1]!] });
-    if (request.path === "/api/data-query/function/queryList") return ok(assets);
-    if (request.path === "/api/data-query/function/form") {
+    if (request.path === listPath) return Response.json({ agents });
+    if (request.path === formPath) {
       const { target } = request.body as { target: { kind: string; primaryKey?: string } };
-      const values = target.kind === "draft" ? { name: "" } : assets.find((asset) => asset.id === target.primaryKey)!;
-      return ok({ fields, values, errors: [], save: save(target.kind === "draft" ? "function.create" : "function.update") });
+      const name = target.kind === "draft" ? "" : agents.find((agent) => agent.id === target.primaryKey)!.name;
+      const save = target.kind === "draft"
+        ? { method: "POST", path: "/assistant/agent-definitions", bodySchema: {}, draftOperation: "agent.create" }
+        : { method: "PUT", path: "/assistant/agent-definitions/:id", bodySchema: {}, draftOperation: "agent.update" };
+      return Response.json({ fields, values: { name }, revision, errors: [], save });
     }
-    if (request.path === "/api/data-query/function/save") return ok({ id: "fn-new", ...(request.body as PanelFormValues) });
-    return nothingAt(request);
+    return intents(request) ?? nothingAt(request);
   });
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
   platformPanelHost("ontology", use, ignoreChanges).frame(frame, registered("ontology", use, panel), true);
-  writePanelDocument(registered("ontology", use, panel), "/ontology/functions", state as never);
+  writePanelDocument(registered("ontology", use, panel), use.path, state as never);
   inside(frame);
   const mounted = await mountPanel(panelOf("list", "form"));
   return { ...mounted, sent };
 }
 
 const name = () => document.querySelector<HTMLInputElement>('#app [data-field="/name"] input');
-const formReads = (sent: Sent[]) => sent.filter((request) => request.path === "/api/data-query/function/form")
+const formReads = (sent: Sent[]) => sent.filter((request) => request.path === formPath)
   .map((request) => (request.body as { target: { kind: string; primaryKey?: string } }).target);
 
 afterEach(() => {
@@ -82,7 +117,7 @@ it("opened at a creating address, keeps the new object while the list selects it
   const { context, sent } = await open({ mode: "create" });
   // The list selected its first row; the form is still on the new object.
   await vi.waitFor(() => {
-    expect(context.instance.state.values.value.selected).toEqual({ className: FUNCTION, primaryKey: "fn-1" });
+    expect(context.instance.state.values.value.selected).toEqual({ className: AGENT_DEFINITION, primaryKey: FIRST });
     expect(name()?.value).toBe("");
   }, { timeout: 5000 });
   expect(formReads(sent)).toEqual([{ kind: "draft" }]);
@@ -92,16 +127,19 @@ it("opened at a creating address, keeps the new object while the list selects it
   await nextTick();
   // The list reloads, and selects its first row again: the reader's typing stays.
   context.instance.refreshObjects();
-  await vi.waitFor(() => expect(sent.filter((request) => request.path === "/api/data-query/function/queryList")).toHaveLength(2));
+  await vi.waitFor(() => expect(sent.filter((request) => request.path === listPath)).toHaveLength(2));
   await nextTick();
   expect(name()!.value).toBe("Margin");
   expect(formReads(sent)).toEqual([{ kind: "draft" }]);
 
   await context.instance.invoke("form.save");
-  expect(sent.find((request) => request.path === "/api/data-query/function/save")!.body).toEqual({ name: "Margin" });
+  expect(formSaveCalls(sent)).toEqual([{
+    target: { kind: "draft" },
+    input: { values: { name: "Margin" }, revision, submittedFields: ["/name"] },
+  }]);
   // Saved, the panel no longer creates: it selects the object the owner created and the form edits it.
   await vi.waitFor(() => expect(context.instance.state.values.value).toMatchObject({
-    selected: { className: FUNCTION, primaryKey: "fn-new" }, mode: null,
+    selected: { className: AGENT_DEFINITION, primaryKey: CREATED }, mode: null,
   }));
 });
 
@@ -110,6 +148,6 @@ it("turns to a new object when the panel's state says it creates, whatever is se
   await vi.waitFor(() => expect(name()?.value).toBe("Revenue"), { timeout: 5000 });
   context.instance.state.set("mode", "create");
   await vi.waitFor(() => expect(name()?.value).toBe(""));
-  expect(context.instance.state.values.value.selected).toEqual({ className: FUNCTION, primaryKey: "fn-1" });
+  expect(context.instance.state.values.value.selected).toEqual({ className: AGENT_DEFINITION, primaryKey: FIRST });
   expect(formReads(sent).at(-1)).toEqual({ kind: "draft" });
 });

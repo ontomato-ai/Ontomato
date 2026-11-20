@@ -7,7 +7,7 @@ current owner declarations and SDK catalogue. Extend the owner or SDK where a re
 
 ## Add a named owner read or operation
 
-Scheduled tasks show the full path. The owner separates `list`, `record`, `form` and
+Scheduled tasks are a platform resource with an owner-declared form. The owner separates `list`, `record`, `form` and
 `schedules.runNow.describe`. The corresponding projections bind the list, selected task, owner form and operation
 button. Use `packages/apps-sdk/examples/panels/schedules-trial/definitions.mjs` and `p/panel.json` in that
 directory for the registered definitions and wiring.
@@ -40,12 +40,12 @@ directory for the registered definitions and wiring.
    with `RUNTIME_TEST_DATABASE_URL` set to a disposable PostgreSQL database. The agent confirmation cases are in
    `packages/workbench-server/src/services/product-panels/__tests__/operations.test.ts`.
 
-The task-list projection uses `data.rows = { source: { type: "platform:ScheduledTask" }, read: "list", params: {} }`.
+The task-list projection uses `data.rows = { source: { type: { kind: "PlatformObjectType", id: "platform:ScheduledTask" } }, read: "list", params: {} }`.
 The summary uses `data.record = { source: { object: { input: "task" } }, read: "record", params: {} }`. The form
 binds `params.values` to `{ input: "values" }` and `params.changedField` to `{ input: "changedField" }`.
 The list's `selected` output and the summary, form and button inputs share a panel state of type
 `{ kind: "object", objectType: "platform:ScheduledTask" }`. The member wiring maps the values through `{ state: "selectedTask" }`.
-The button reads `data.operation = { source: { operation: "schedules.runNow" }, read: "describe", params: {} }`.
+The button reads `data.operation = { source: { operation: { kind: "PlatformOperation", id: "schedules.runNow" } }, read: "describe", params: {} }`.
 Its owner description names the write effect and targets the `task` input. In that placement the operation is
 `run.runNow`, with writes going through the operation dispatcher.
 
@@ -78,6 +78,29 @@ A `confirmation-required` result ends that tool call without a write. After the 
 the answering run uses its own credentials to dispatch that intent. The owner write starts the run and returns
 the result and affected task. A repeated dispatch reports the existing result.
 
+## Write the page skill's common tasks
+
+In `recipes.md`, describe how to use the declared reads, forms and operations for common tasks. Use the business
+owner's rules and actual operation descriptions for the page.
+
+For Business Knowledge at `/ontology/knowledge`, the owner supplies these rules.
+
+1. A record has a required title and body, tags, and a status. The body is the retrievable text. Use the owner's
+   tag choices or create a new tag. Status `0` means pending review and `1` means approved, the default for manual creation.
+2. Split a search on whitespace. A match contains every term somewhere in its title, body or tags.
+3. Read the current record before editing. The owner uses last-write-wins updates.
+4. In the default mode, hand a draft to the user for form saves. Execute declared writes after the user's confirmation
+   or when the application allows automatic execution.
+5. Approval sets the status to `1`. A delete confirmation names the titles and number of entries because deletion is
+   permanent. For batch approvals or deletions, report each outcome and leave failed entries for review.
+6. Use the Business Knowledge page for creating, editing, reviewing and deleting records. Use the existing
+   `knowledge-governance` agent for extracting or organizing knowledge from conversations and documents.
+
+For Business Knowledge search, give the list, status counts and detail the same panel state as their `search` input.
+In `query`, `counts` and `record`, map `params.search` to `{ input: "search" }`. The counts read also takes
+`params.by: { literal: "status" }`. The detail receives the selected knowledge record. Use `ObjectSummary` to show
+the full body as text with its original line breaks. The owner returns highlight ranges in the record for the current search.
+
 ## Add an official SDK component
 
 Use an existing component if its ports already express the interaction. For a new component, record these five
@@ -95,15 +118,17 @@ Use `packages/apps-sdk/src/base/ObjectSummary.vue` as a component example. In a 
 `useMemberData("record")`. A projection's `config.fields` controls which fields appear and in what order.
 The component declares the optional `fields` and `input` props and the `navigate` event. Its public export is in
 `packages/apps-sdk/src/entries/base.ts`, with the template binding in `packages/apps-sdk/src/base-components.ts`.
-The `ObjectSummary` entry in `packages/apps-sdk/src/catalogue.ts` declares its meaning, binding and output through
-`defineComponentMeta`. Controls add operations. For example, `ObjectForm` declares the owner form save
+The `ObjectSummary` entry in `packages/apps-sdk/src/catalogue.ts` uses `defineComponentMeta` to declare its meaning,
+binding, output and required datum `data: { record: { results: ["panelRecord"], required: true } }`.
+Controls add operations. For example, `ObjectForm` declares the owner form save
 with `client: "@binding"` and `kind: "form.save"`.
 
-A direct projection uses `@ontomato/sdk:ObjectSummary` from the supported component IDs in
-`packages/contracts/src/panel-projection.ts`. Register any new shared data or port shapes with the public contract
-owner. Write JSDoc for the props and events in the component source. The SDK build checks the public export
-against the catalogue, then emits the generated ports in `components.json`, `docs/components.md` and
-`docs/reference.md`.
+Write the catalogue declaration alongside the component. Give it a package-qualified component ID for projection
+registration, such as `@ontomato/sdk:ObjectSummary`. Declare the accepted result types and whether each datum is
+required. Keep display configuration separate from the inputs supplied by a placement.
+Write JSDoc for props and events in the component source. The SDK build checks the public export against the
+catalogue, then generates `components.json`, `docs/components.md` and `docs/reference.md`. Registration uses the
+current release catalogue to check the component exists and the projection supplies the declared data keys and types.
 
 Verify the component in a projection with the real owner result. Check that its input and emitted values match the
 catalogue and that writes go through the declared operation. Reuse the host's loading, error, empty and forbidden

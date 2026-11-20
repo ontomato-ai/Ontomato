@@ -1,12 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { APP_BRIDGE_CHANNEL } from "@ontomato/contracts/app-bridge";
-import { definePanel } from "@ontomato/contracts/panel-manifest";
-import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { createApp, inject } from "vue";
 import { servePageComposerKey, type PageComposerExpand } from "../../../../../packages/agent-shell-ui/src/page-composer-entry";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import { installProductEmbedding } from "../../../../../packages/platform-web/src/app-host";
-import { ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, type Sent } from "./panel-frame";
+import { ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelUse, registered, type Sent } from "./panel-frame";
+import { codePanelRecord, connectBridge, projectionRecord } from "./host-bridge-records";
 
 /*
  * A panel's conversation entry (shared parts design, U18): the frame asks the platform to expand the page's composer,
@@ -15,34 +13,15 @@ import { ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFra
  * format directly, as any SDK version does.
  *
  * What this rules out: a frame that names an agent or a sentence its projection does not declare reaching the composer;
- * a frame that has not read its projection through the platform, or names a slot it does not declare, doing so; and a
+ * a frame that has not read its projection through the platform, or names a member it does not declare, doing so; and a
  * page whose composer is not shown silently swallowing the request.
  */
 
 const governance = "projection-knowledge-governance";
 const declared = { target: { kind: "preset" as const, agentKind: "knowledge-governance" }, prefill: "Please review these entries" };
-const projection: ProductProjection = {
-  id: governance,
-  name: "Governance",
-  description: "Governance",
-  componentId: "ConversationEntry",
-  binding: { kind: "PlatformObjectType", id: "platform:AgentDefinition" },
-  inputs: {},
-  display: {},
-  conversationEntry: declared,
-  domainId: "domain-1",
-  ownerId: "owner-1",
-  revision: 1,
-  createdAt: "2026-11-19T00:00:00.000Z",
-  updatedAt: "2026-11-19T00:00:00.000Z",
-  editable: false,
-  visibility: "domain",
-};
-const panel = panelRecord("panel-knowledge", "Business knowledge", definePanel({
-  state: {},
-  slots: { governance: { projectionId: governance, inputs: {} } },
-  operations: [],
-}));
+const projection = projectionRecord({ id: governance, componentId: "@ontomato/sdk:ConversationEntry", data: {}, conversationEntry: declared });
+/** The panel's member `governance` places the entry; the bridge's `slot` names a member of this instance. */
+const panel = codePanelRecord("panel-knowledge", { governance });
 const use = panelUse("use-knowledge", "business-knowledge", panel.id, "/applications/app-knowledge/knowledge");
 
 function answer(request: Sent) {
@@ -50,35 +29,15 @@ function answer(request: Sent) {
   return nothingAt(request);
 }
 
-/** The frame's end of the bridge: one call per operation, answered with its result or refused with its error. */
-function connect() {
-  const channel = new MessageChannel();
-  window.parent.postMessage({ channel: APP_BRIDGE_CHANNEL, operation: "connect" }, "*", [channel.port2]);
-  channel.port1.start();
-  let calls = 0;
-  return (operation: string, payload?: unknown) =>
-    new Promise<unknown>((resolve, reject) => {
-      const id = `call-${++calls}`;
-      const listener = (event: MessageEvent) => {
-        if (event.data?.id !== id) return;
-        channel.port1.removeEventListener("message", listener);
-        if (event.data.error) reject(new Error(event.data.error));
-        else resolve(event.data.result);
-      };
-      channel.port1.addEventListener("message", listener);
-      channel.port1.postMessage({ channel: APP_BRIDGE_CHANNEL, id, operation, payload });
-    });
-}
-
 function shownFrame(open = true) {
   installPlatform(answer);
   const frame = panelFrame();
   const registration = platformPanelHost("app-knowledge", use, ignoreChanges).frame(frame, registered("app-knowledge", use, panel), open);
   inside(frame);
-  return { invoke: connect(), registration };
+  return { invoke: connectBridge(), registration };
 }
 
-const readProjection = (invoke: ReturnType<typeof connect>) =>
+const readProjection = (invoke: ReturnType<typeof connectBridge>) =>
   invoke("request", { path: `/product-projections/${governance}`, service: "", method: "GET", headers: [], body: null });
 
 /**

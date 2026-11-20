@@ -1,3 +1,5 @@
+import { currentSdkClient } from "./current-sdk.mjs";
+
 const productPath = (kind, id) => `/api/product-${kind}s/${encodeURIComponent(id)}`;
 
 async function readAnswer(response, method, path) {
@@ -23,17 +25,42 @@ function productBody({ mode, revision, input }) {
   return { ...input, revision: mode === "create" ? 0 : revision };
 }
 
+function registrationIssues(issues) {
+  return issues.flatMap(issue => {
+    if (issue.code === "invalid_union") {
+      const mismatchedComponent = ({ issues }) => issues.some(item =>
+        item.path.at(-1) === "componentId" && ["invalid_literal", "invalid_enum_value"].includes(item.code));
+      const [branch] = [...issue.unionErrors].sort((left, right) =>
+        Number(mismatchedComponent(left)) - Number(mismatchedComponent(right)) || left.issues.length - right.issues.length);
+      return registrationIssues(branch.issues);
+    }
+    if (issue.code === "unrecognized_keys") {
+      return issue.keys.map(key => `${[...issue.path, key].join(".")}: unexpected field`);
+    }
+    const field = issue.path.join(".") || "input";
+    const message = issue.code === "invalid_type" && issue.received === "undefined" ? "required field is missing" : issue.message;
+    return [`${field}: ${message}`];
+  });
+}
+
 export function panelRegistrationRecords({ projections = [], panels = [] }, checks) {
   return [
-    ["projection", projections, checks.registerDirectProjectionRequestSchema],
-    ["panel", panels, checks.registerDirectPanelRequestSchema],
+    ["projection", projections, checks.registerProductProjectionRequestSchema],
+    ["panel", panels, checks.registerProductPanelRequestSchema],
   ].map(([kind, records, schema]) => [
     kind,
-    records.map(item => ({ id: item.id, body: schema.parse(productBody(item)) })),
+    records.map(item => {
+      const result = schema.safeParse(productBody(item));
+      if (!result.success) {
+        throw new Error(`${kind} ${item.id}: ${registrationIssues(result.error.issues).join("\n")}`);
+      }
+      return { id: item.id, body: result.data };
+    }),
   ]);
 }
 
 export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workbenchUrl}/api/data-query`, headers = {} }) {
+  const sdk = currentSdkClient({ workbenchUrl, headers });
   const send = (base, method, path, body) => fetch(base + path, {
     method,
     headers: { ...headers, Accept: "application/json", "Content-Type": "application/json" },
@@ -64,25 +91,19 @@ export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workben
         }
       }
 
-      await apply("projection", projections, item => call(workbenchUrl, "PUT", productPath("projection", item.id), productBody(item)));
-      const checkedVersions = new Set();
-      await apply("panel", panels, async item => {
-        const body = productBody(item);
-        const version = body.sdkVersion;
-        if (version !== undefined || body.content?.module !== undefined) {
-          if (typeof version !== "string" || !/^\d+\.\d+\.\d+(?:[-+][\w.-]+)*$/.test(version)) {
-            throw new Error("sdkVersion must be the exact installed SDK version");
-          }
-          if (!checkedVersions.has(version)) {
-            const path = `/apps-sdk/${encodeURIComponent(version)}/sdk.json`;
-            const sdk = await send(workbenchUrl, "GET", path);
-            if (!sdk.ok) await readAnswer(sdk, "GET", path);
-            await sdk.arrayBuffer();
-            checkedVersions.add(version);
-          }
+      if (projections.length || panels.length) {
+        const release = await sdk.current();
+        const checks = await sdk.check(release);
+        const writes = panelRegistrationRecords({ projections, panels }, checks);
+        for (const [kind, items] of writes) {
+          await apply(kind, items, async ({ id, body }) => {
+            const answer = await call(workbenchUrl, "PUT", productPath(kind, id), body);
+            if (answer[kind].revision !== body.revision + 1) {
+              throw new Error(`Owner did not advance revision ${body.revision} by one`);
+            }
+          });
         }
-        await call(workbenchUrl, "PUT", productPath("panel", item.id), body);
-      });
+      }
       await apply("application", applications, async ({ id, mode, input }) => {
         requireMode(mode);
         const path = `/platform/applications/${encodeURIComponent(id)}/panel-uses`;

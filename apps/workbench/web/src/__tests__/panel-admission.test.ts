@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
+import { PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
+import { platformPanelHost, type PanelObjectChange } from "../../../../../packages/platform-web/src/panel-host";
 import { contextTransport } from "../../../../../packages/apps-sdk/src/context";
 import { mountPanel } from "../../../../../packages/apps-sdk/src/panel/mount";
-import { ignoreChanges,
+import { formSaveCalls, ignoreChanges,
   READER,
   SCHEDULED_TASK,
   humanIntents,
@@ -46,11 +47,10 @@ const draftOf = (pageKey: string) => ({
   form: { ...task.content, caseSetId: "set-regression" },
 });
 
-/** The run the reader starts, as the task service's registered operation answers through the platform's coordinator. */
-const intents = humanIntents(() => ({
-  kind: "success", data: { runId: run.id },
-  affected: { objects: [{ objectType: SCHEDULED_TASK, primaryKey: task.id }], objectTypes: [SCHEDULED_TASK] },
-}));
+const affected = { objects: [{ objectType: SCHEDULED_TASK, primaryKey: task.id }], objectTypes: [SCHEDULED_TASK] };
+const intents = humanIntents((operationId) => operationId === "form.save"
+  ? { kind: "success", data: {}, affected }
+  : { kind: "success", data: { runId: run.id } });
 function answer(request: Sent) {
   const prepared = intents(request);
   if (prepared) return prepared;
@@ -59,7 +59,6 @@ function answer(request: Sent) {
   if (request.path === tasks && request.method === "GET") return Response.json({ tasks: [task], timeZone: task.timeZone });
   if (request.path === `${tasks}/${task.id}` && request.method === "GET") return Response.json(task);
   if (request.path === `${tasks}/applications/${task.appId}/form`) return Response.json(taskForm);
-  if (request.path === `${tasks}/${task.id}` && request.method === "PUT") return Response.json({ ...task, revision: task.revision + 1 });
   if (request.path === "/api/assistant/sessions/session-1/runs/run-1/page-draft") return Response.json(draftOf(useOfP.pageKey));
   if (request.path === "/api/assistant/sessions/session-1/runs/run-2/page-draft") return Response.json(draftOf("dashboard"));
   if (request.path === "/api/assistant/sessions/session-1/runs/run-3/page-draft")
@@ -74,8 +73,11 @@ describe("what a panel's frame may ask the platform for", () => {
   it("everything panel P needs, and nothing its declaration does not cover", { timeout: 20000 }, async () => {
     const sent = installPlatform(answer);
     const frame = panelFrame();
-    // A's page shows P: A's panel host registers the frame with P's current record.
-    platformPanelHost("app-panels-trial-a", useOfP, ignoreChanges).frame(frame, registered("app-panels-trial-a", useOfP, panelP), true);
+    // The page forwards the coordinator's change through the same refresh message as the panel host.
+    const changed = vi.fn(({ target }: PanelObjectChange) => {
+      frame.postMessage({ channel: PANEL_HOST_CHANNEL, kind: "object-changed", target }, "*");
+    });
+    platformPanelHost("app-panels-trial-a", useOfP, changed).frame(frame, registered("app-panels-trial-a", useOfP, panelP), true);
     writePanelDocument(registered("app-panels-trial-a", useOfP, panelP), "/applications/app-panels-trial-a/tasks", {
       selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id },
     });
@@ -91,20 +93,27 @@ describe("what a panel's frame may ask the platform for", () => {
       },
       { timeout: 5000 },
     );
-    // The reader saves the form, in the frame, and runs the task now, through the platform's coordinator: the frame only
-    // prepares the intent, which the host dispatches.
     const operations = context.instance.operations.value;
+    const formReads = () => sent.filter(request => request.path === `${tasks}/applications/${task.appId}/form`);
+    expect(formReads()).toHaveLength(1);
     await context.instance.invoke(operations.find((operation) => operation.kind === "form.save")!.id);
+    expect(formSaveCalls(sent)).toEqual([{
+      target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: task.id },
+      input: { values: task.content, revision: task.revision, submittedFields: [] },
+    }]);
+    expect(changed.mock.calls).toEqual([[{ target: null, affected }]]);
+    await vi.waitFor(() => {
+      expect(formReads()).toHaveLength(2);
+      expect(document.querySelector('[data-field="/caseSetId"]')).not.toBeNull();
+    });
+    const dispatchIndex = sent.findIndex(request => request.method === "POST" && request.path.endsWith("/dispatch"));
+    expect(dispatchIndex).toBeGreaterThanOrEqual(0);
+    expect(sent.indexOf(formReads()[1]!)).toBeGreaterThan(dispatchIndex);
+
     await expect(
       context.instance.invoke(operations.find((operation) => operation.handlerRef === "schedules.runNow")!.id),
     ).resolves.toMatchObject({ decision: "confirm", response: { kind: "dispatched", outcome: { kind: "success", data: { runId: run.id } } } });
     expect(sent.some((request) => request.path === `${tasks}/${task.id}/runs`)).toBe(false);
-    // The initial form, save validation and the form's refresh after its own save all use the same allowed path. What the
-    // run changed reaches the frame through the host's refresh port, which this test leaves unwired.
-    await vi.waitFor(() => {
-      expect(sent.filter(request => request.path === `${tasks}/applications/${task.appId}/form`)).toHaveLength(3);
-      expect(document.querySelector('[data-field="/caseSetId"]')).not.toBeNull();
-    });
     // A draft an agent wrote for this page is read the way the SDK reads one.
     const transport = contextTransport(appContext);
     const draft = await transport.request("/assistant/sessions/session-1/runs/run-1/page-draft?path=drafts%2Ftask.json", {}, "");
@@ -119,7 +128,6 @@ describe("what a panel's frame may ask the platform for", () => {
         `GET ${tasks}`,
         `GET ${tasks}/${task.id}`,
         `POST ${tasks}/applications/${task.appId}/form`,
-        `PUT ${tasks}/${task.id}`,
         // Running the task now: the frame reads the operation's description and prepares an intent; the host reads it
         // back and dispatches it.
         "GET /api/panel-operations/descriptor",

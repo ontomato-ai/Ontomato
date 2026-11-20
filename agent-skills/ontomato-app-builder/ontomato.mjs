@@ -296,32 +296,33 @@ async function assetCommand(api, prefix, argv, workspaceId) {
   usage();
 }
 
-async function workbench(api, method, endpoint, body) {
-  return readJson(await fetch(`${api.envUrl}/api${endpoint}`, {
+async function workbench(api, method, endpoint, body, decode = readJson) {
+  return decode(await fetch(`${api.envUrl}/api${endpoint}`, {
     method, headers: { ...headers(api), "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body), redirect: "error",
   }));
 }
 const print = value => console.log(JSON.stringify(value, null, 2));
 async function sdkCommand(api, args) {
-  if (args[0] === "current" && args.length === 1) return print(await workbench(api, "GET", "/apps-sdk/current"));
-  if (args[0] !== "read" || (args.length !== 2 && args.length !== 3)) die("sdk requires current or read [<exact version>] <relative path>");
-  const version = args.length === 3 ? args[1] : (await workbench(api, "GET", "/apps-sdk/current")).version;
-  // The CLI reaches the deployment or internal Node URL; only source rendered in the browser uses public paths.
-  const response = await fetch(`${api.envUrl}/apps-sdk/${encodeURIComponent(version)}/${args.at(-1)}`, { headers: headers(api), redirect: "error" });
-  const text = await response.text();
-  if (!response.ok) die(`${response.status}\n${text}`);
-  console.log(text);
+  const sdk = currentSdkClient({ workbenchUrl: api.envUrl, headers: headers(api) });
+  if (args[0] === "current" && args.length === 1) return print(await sdk.current());
+  if (args[0] !== "read" || args.length !== 2) die("sdk requires current or read <relative path>");
+  console.log(await (await sdk.read(await sdk.current(), args[1])).text());
 }
 
 async function checkCurrentPanel(api, directory, materialPath) {
   const sdk = currentSdkClient({ workbenchUrl: api.envUrl, headers: headers(api) });
   const release = await sdk.current();
   const [checks, catalogue] = await Promise.all([sdk.check(release), sdk.components(release)]);
-  const lookup = async (kind, id) => {
-    const answer = await workbench(api, "GET", `/product-${kind}s/${encodeURIComponent(id)}`);
-    return answer[kind];
-  };
+  const lookup = (kind, id) => workbench(api, "GET", `/product-${kind}s/${encodeURIComponent(id)}`, undefined,
+    async response => {
+      if (response.status === 404) return null;
+      try {
+        return (await readJson(response))[kind];
+      } catch (error) {
+        throw new Error(`${kind} ${id}: ${error.message}`, { cause: error });
+      }
+    });
   return print(await checkPanelWorkspace(directory, { checks, catalogue, version: release.version, digest: release.digest, lookup, materialPath }));
 }
 

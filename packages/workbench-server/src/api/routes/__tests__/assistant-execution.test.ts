@@ -223,7 +223,7 @@ it.each([
   ["GET", `/platform/scheduled-tasks/${other}`],
   ["POST", "/platform/scheduled-tasks/applications/agents/form"],
   ["POST", "/ontology/query/metrics/describe"],
-  ["POST", "/metricView/execute"],
+  ["POST", "/ontology/query/metrics/execute"],
 ])("forwards %s %s with the executor credential", async (method, path) => {
   const upstream = vi.fn(async (_url: string, _request?: Parameters<typeof fetch>[1]) => Response.json({}));
   vi.stubGlobal("fetch", upstream);

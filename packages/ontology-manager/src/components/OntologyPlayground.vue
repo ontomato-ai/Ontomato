@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ManagerIconButton from "./ManagerIconButton.vue";
 import { Graph } from "@antv/g6";
 import {
   Box,
@@ -545,7 +546,7 @@ onBeforeUnmount(() => {
             {{ t("nav.relationTypes") }}
           </span>
           <el-button :loading="productGraphLoading" @click="showProductGraph">{{ ot('productRelationGraph') }}</el-button>
-          <el-button :icon="RefreshCw" class="manager-icon-button" :title="t('common.refresh')" :aria-label="t('common.refresh')" @click="refresh" />
+          <ManagerIconButton :icon="RefreshCw" :label="t('common.refresh')" :loading="loading" @click="refresh" />
         </div>
       </template>
     </PlatformPageHeader>
@@ -628,13 +629,11 @@ onBeforeUnmount(() => {
             <span>{{ ot("createObjectsFirst") }}</span>
           </div>
           <div class="graph-toolbar">
-            <button :title="ot('zoomIn')" :aria-label="ot('zoomIn')" @click="zoomIn"><Plus :size="18" /></button>
-            <button :title="ot('zoomOut')" :aria-label="ot('zoomOut')" @click="zoomOut"><Minus :size="18" /></button>
-            <button :title="ot('fitCanvas')" :aria-label="ot('fitCanvas')" @click="fitGraph"><Maximize :size="18" /></button>
-            <button :title="ot('relayout')" :aria-label="ot('relayout')" :disabled="layouting" @click="relayoutGraph">
-              <Network :size="18" />
-            </button>
-            <button :title="ot('downloadPng')" :aria-label="ot('downloadPng')" @click="downloadGraph"><Download :size="18" /></button>
+            <ManagerIconButton :icon="Plus" :label="ot('zoomIn')" @click="zoomIn" />
+            <ManagerIconButton :icon="Minus" :label="ot('zoomOut')" @click="zoomOut" />
+            <ManagerIconButton :icon="Maximize" :label="ot('fitCanvas')" @click="fitGraph" />
+            <ManagerIconButton :icon="Network" :label="ot('relayout')" :loading="layouting" @click="relayoutGraph" />
+            <ManagerIconButton :icon="Download" :label="ot('downloadPng')" @click="downloadGraph" />
           </div>
           <div class="graph-hint">
             <span />
@@ -972,24 +971,11 @@ onBeforeUnmount(() => {
   bottom: 18px;
   left: 18px;
   display: flex;
-  padding: 4px;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-sm);
-  background: var(--el-bg-color);
-}
-.graph-toolbar button {
-  display: grid;
-  width: var(--control-height);
-  height: 32px;
-  place-items: center;
-  border: 0;
-  border-radius: var(--radius-sm);
-  color: var(--el-text-color-secondary);
-  background: transparent;
-}
-.graph-toolbar button:hover {
-  color: var(--el-color-primary);
-  background: var(--el-fill-color-light);
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs);
+  border-radius: var(--radius-md);
+  background: var(--el-bg-color-overlay);
+  box-shadow: var(--elevation-overlay);
 }
 .graph-hint {
   position: absolute;

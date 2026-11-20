@@ -6,6 +6,7 @@ import { h, nextTick, ref } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { PANEL_LOAD_ERROR_CODES, type PresentationFrame } from "@ontomato/contracts/agent-presentation";
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
+import type { PanelFormSaveInput } from "@ontomato/contracts/panel-projection";
 import type { ProductDefinitionStreamFrame, ProductDefinitionTarget } from "@ontomato/contracts/product-subscriptions";
 import { PanelHost } from "@ontomato/platform-shell";
 import { panelAuthorDefinitions, platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
@@ -15,10 +16,11 @@ import { useConversationDisplay } from "../../../../../packages/agent-shell-ui/s
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { platformLayoutRoute } from "../../../../../packages/platform-web/src/layout-route";
+import ownerAnswered from "./fixtures/scheduled-task-panel-http.json";
 import {
   framedTasksPanelHtml, ignoreChanges,
   hostMessageOf, inspectionTaskForm, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt,
-  currentSdk, humanIntents, panelHostFrame, panelRecord, panelSnapshot, panelUse, projections, READER, run, SCHEDULED_TASK, SDK_VERSION, task, taskForm,
+  currentSdk, formSaveCalls, humanIntents, panelHostFrame, panelRecord, panelSnapshot, panelUse, projections, READER, run, SCHEDULED_TASK, task, taskForm,
   writeFrameDocument,
   type Sent,
   caseSetLabel,
@@ -37,6 +39,7 @@ const useQ = panelUse("use-trial-b-summary", "panels-trial-b-summary", q.id, `/a
 const taskPath = "/api/data-query/platform/scheduled-tasks";
 const deepState = { selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id } };
 const secondTask = { ...task, id: "ac186b00-a3dd-46d2-b404-72065d877a34", title: "Second scheduled task" };
+const taskAffected = { objects: [{ objectType: SCHEDULED_TASK, primaryKey: task.id }], objectTypes: [SCHEDULED_TASK] };
 
 function answer(request: Sent) {
   if (request.path === "/api/data-query/platform/applications") return Response.json({ success: true, data: [appA, appB].map(id => ({
@@ -55,6 +58,10 @@ function answer(request: Sent) {
   const projection = Object.values(projections).find(projection => request.path === `/api/product-projections/${projection.id}`);
   if (projection) return Response.json({ projection });
   if (request.path === "/api/apps-sdk/current") return currentSdk();
+  if (request.method === "GET" && request.path === "/api/panel-operations/descriptor"
+    && new URLSearchParams(request.search).get("operationId") === "run.runNow") {
+    return Response.json(ownerAnswered.operation.value);
+  }
   if (request.path === taskPath) return Response.json({ tasks: [task], timeZone: task.timeZone });
   if (request.path === `${taskPath}/${task.id}`) return Response.json(task);
   if (request.path === `${taskPath}/${secondTask.id}`) return Response.json(secondTask);
@@ -156,7 +163,7 @@ it("updates shared summary X from P's selection and opens the next application's
       await router.push(panelAddress(`${samePage}?${draftQuery}`, context.instance.deepLink()));
       await vi.waitFor(() => expect(context.draft.value?.form.caseSetId).toBe("set-smoke"));
       expect(element.querySelector("iframe.panel-host-frame")).toBe(frame);
-      expect(sent.some(request => request.method === "PUT")).toBe(false);
+      expect(formSaveCalls(sent)).toHaveLength(0);
 
       await router.push(`/applications/${appB}/summary`);
       await vi.waitFor(() => {
@@ -438,16 +445,17 @@ it("blocks a presentation while a reader's form edit is unsaved, then clears dir
   const baseline = { operation: "inspection", instruction: "Inspect the latest failures" };
   const saved = { ...baseline, instruction: "Inspect the monthly failures" };
   let current = { ...task, content: baseline, formRevision: inspectionTaskForm.formRevision };
+  const intents = humanIntents((_, { input }) => {
+    current = { ...current, revision: current.revision + 1, content: input.values as typeof saved };
+    return { kind: "success", data: {}, affected: taskAffected };
+  });
   const onDisplayDirty = vi.fn(display.dirty);
   const { app, element, frame, router, sent } = await open(address, false, request => {
     if (request.path === `${taskPath}/applications/${task.appId}/form`) {
       return Response.json({ ...inspectionTaskForm, values: current.content, submittable: true });
     }
-    if (request.path === `${taskPath}/${task.id}`) {
-      if (request.method === "PUT") current = { ...current, revision: current.revision + 1, content: saved };
-      return Response.json(current);
-    }
-    return answer(request);
+    if (request.path === `${taskPath}/${task.id}`) return Response.json(current);
+    return intents(request) ?? answer(request);
   }, {
     address,
     navigate: vi.fn(),
@@ -483,13 +491,16 @@ it("blocks a presentation while a reader's form edit is unsaved, then clears dir
 
     clickFormButton("Discard");
     await vi.waitFor(() => expect(onDisplayDirty).toHaveBeenLastCalledWith(false));
-    expect(sent.filter(request => request.method === "PUT")).toHaveLength(0);
+    expect(formSaveCalls(sent)).toHaveLength(0);
 
     editInstruction(saved.instruction);
     await vi.waitFor(() => expect(onDisplayDirty).toHaveBeenLastCalledWith(true));
     clickFormButton("Save");
     await vi.waitFor(() => expect(onDisplayDirty).toHaveBeenLastCalledWith(false));
-    expect(sent.find(request => request.method === "PUT")?.body).toMatchObject({ content: saved });
+    expect(formSaveCalls(sent)).toEqual([{
+      target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: task.id },
+      input: { values: saved, revision: task.revision, submittedFields: ["/instruction"] },
+    }]);
     expect(await display.present(presentation)).toMatchObject({
       status: "opened", reason: "target_selected", current: { target: { url: dashboard } },
     });
@@ -501,25 +512,22 @@ it("blocks a presentation while a reader's form edit is unsaved, then clears dir
 it("refreshes X from the owner after the panel's form saves", async () => {
   let current = task;
   const before = panelAddress(`/applications/${appA}/tasks`, deepState);
-  // The run, as the task service's registered operation does it when the platform's coordinator dispatches it.
-  const intents = humanIntents(() => {
+  const intents = humanIntents((operationId, { input }) => {
+    if (operationId === "form.save") {
+      current = {
+        ...current, revision: current.revision + 1,
+        content: input.values as typeof task.content,
+        summary: [{ key: "instruction", label: "Instruction", value: "Saved instruction" }],
+      };
+      return { kind: "success", data: {}, affected: taskAffected };
+    }
+    expect(operationId).toBe("run.runNow");
     current = { ...current, summary: [{ key: "run", label: "Run", value: "Run started" }] };
-    return {
-      kind: "success", data: { runId: run.id },
-      affected: { objects: [{ objectType: SCHEDULED_TASK, primaryKey: task.id }], objectTypes: [SCHEDULED_TASK] },
-    };
+    return { kind: "success", data: { runId: run.id }, affected: taskAffected };
   });
   const { app, frame, sent } = await open(before, false, request => {
-    const prepared = intents(request);
-    if (prepared) return prepared;
-    if (request.path === `${taskPath}/${task.id}`) {
-      if (request.method === "PUT") {
-        current = { ...current, revision: current.revision + 1,
-          summary: [{ key: "instruction", label: "Instruction", value: "Saved instruction" }] };
-      }
-      return Response.json(current);
-    }
-    return answer(request);
+    if (request.path === `${taskPath}/${task.id}`) return Response.json(current);
+    return intents(request) ?? answer(request);
   });
   try {
     const { context } = await startFrame(frame);
@@ -555,22 +563,22 @@ it("opens the saved draft's old link as an ordinary panel", async () => {
   const runId = "5b0f8a52-3d2e-4c1a-9a7e-1f2b3c4d5e02";
   const draftQuery = new URLSearchParams({ draftSessionId: session, draftRunId: runId, draftPath: "outputs/drafts/task.page-draft.json" });
   const draftAddress = panelAddress(`${path}?${draftQuery}`, deepState);
+  const intents = humanIntents((_, { input }) => {
+    const { values } = input as PanelFormSaveInput;
+    current = { ...current, revision: current.revision + 1, content: values as typeof task.content };
+    return { kind: "success", data: {}, affected: taskAffected };
+  });
   const { app, element, frame, router, sent } = await open(draftAddress, false, request => {
     if (request.path === `/api/assistant/sessions/${session}/runs/${runId}/page-draft`) return Response.json({
       pageKey: useP.pageKey, operation: `${SCHEDULED_TASK}.save`, target: { id: task.id },
       form: { ...task.content, caseSetId: "set-smoke" },
     });
-    if (request.path === `${taskPath}/${task.id}`) {
-      if (request.method === "PUT") {
-        current = { ...current, revision: current.revision + 1, content: (request.body as { content: typeof task.content }).content };
-      }
-      return Response.json(current);
-    }
+    if (request.path === `${taskPath}/${task.id}`) return Response.json(current);
     if (request.path === `${taskPath}/applications/${task.appId}/form`) {
       const body = request.body as { values: typeof taskForm.values };
       return taskFormFor(body.values);
     }
-    return answer(request);
+    return intents(request) ?? answer(request);
   });
   try {
     const { context } = await startFrame(frame);
@@ -599,7 +607,7 @@ it("opens the saved draft's old link as an ordinary panel", async () => {
     });
     expect(element.querySelector(".panel-host-error")?.textContent).toBeUndefined();
     expect(element.querySelector("iframe.panel-host-frame")).toBe(frame);
-    expect(sent.filter(request => request.method === "PUT")).toHaveLength(1);
+    expect(formSaveCalls(sent)).toHaveLength(1);
   } finally {
     app.unmount();
   }
@@ -708,7 +716,7 @@ it("reconciles definitions and objects on foreground without replacing an unchan
     expect(frame.srcdoc).toBe(srcdoc);
 
     foreground.set("hidden");
-    summary = { ...summary, revision: summary.revision + 1, display: { fields: ["settings"] } };
+    summary = { ...summary, revision: summary.revision + 1, config: { ...summary.config, fields: ["settings"] } };
     foreground.set("visible");
     await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary dt")?.textContent).toBe("Settings"));
     expect(definitionReads().slice(initialDefinitions).map(request => request.path)).toEqual([
@@ -729,7 +737,7 @@ it("reconciles definitions and objects on foreground without replacing an unchan
     panel = { ...p, revision: p.revision + 2, content: { ...p.content, html: `${p.content.html}<p id="rearranged"></p>` } };
     foreground.set("visible");
     await vi.waitFor(() => expect(hostMessageOf(frame.srcdoc).panel.content.html).toContain('id="rearranged"'));
-    expect(hostMessageOf(frame.srcdoc).panel).toEqual({ content: panel.content, manifest: panel.manifest, sdkVersion: SDK_VERSION });
+    expect(hostMessageOf(frame.srcdoc).panel).toEqual({ content: panel.content, manifest: panel.manifest });
     expect(sent.filter(request => request.path.startsWith("/api/product-assets/"))).toEqual([]);
   } finally {
     app.unmount();
@@ -802,7 +810,7 @@ it("shares one definition stream across author panels, restores a changed collec
 
     // The shared projection changed while the old request closed and the reduced collection opened.
     const previous = summary;
-    summary = { ...summary, revision: summary.revision + 1, display: { fields: ["settings"] } };
+    summary = { ...summary, revision: summary.revision + 1, config: { ...summary.config, fields: ["settings"] } };
     send(reduced, { kind: "snapshot", definitions: [{ kind: "projection", id: summary.id, revision: summary.revision }] });
     await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary dt")?.textContent).toBe("Settings"));
     send(reduced, { kind: "definition-changed", definition: { kind: "projection", id: summary.id, revision: previous.revision } });

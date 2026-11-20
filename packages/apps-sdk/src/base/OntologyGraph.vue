@@ -4,6 +4,10 @@ import { useI18n } from "vue-i18n";
 import { ElEmpty } from "element-plus/es/components/empty/index";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
 import { matchesObjectType, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import type {
+  PlatformOntologyCountsResponse,
+  PlatformOntologyStartResponse,
+} from "@ontomato/contracts/platform-ontology";
 import { platformObjectTypes, platformRelationKinds } from "@ontomato/contracts/platform-object-types";
 import {
   G6GraphCanvas,
@@ -14,19 +18,17 @@ import {
   type GraphCanvasPoint,
   type GraphCanvasViewport,
 } from "@ontomato/foundation-ui/graph/g6";
-import {
-  slotInputState,
-  slotOutputState,
-  usePanelContext,
-  useProjectionGraph,
-  useProjectionSlot,
-} from "../panel/context";
+import { usePanelContext } from "../panel/context";
+import type { MemberDataState } from "../panel/direct";
+import { useMember, useMemberRead, type PanelMemberContext } from "../panel/member";
 import type {
   PlatformGraphEdge,
+  PlatformGraphNeighborsResult,
   PlatformGraphNode,
   PlatformGraphRelationStatus,
   PlatformGraphSchema,
   PlatformGraphTypeCount,
+  PlatformObjectGraph,
 } from "../panel/platform-objects";
 
 type PanelObjectValue = Extract<PanelStateValue, { className: string }>;
@@ -42,9 +44,9 @@ import {
  * Projection-level interactive graph powered by G6 (`@ontomato/foundation-ui/graph/g6`), shared by the four-layer
  * platform capability map (M3: type mode + instance mode) and the object browser instance graph (M4: instance mode).
  *
- * Reads through the bound resource adapter's `graph` port (`schema`, `counts`, `start`, `neighbors`) and keeps layer
- * filters, expanded nodes, dragged coordinates and viewport as internal view state rather than panel state. Node
- * selection always writes complete `{ className, primaryKey }` identities.
+ * Reads `schema`, `counts`, `start`, and `neighbors` through the member's named data port (in both direct and framed
+ * panels). Keeps layer filters, expanded nodes, dragged coordinates and viewport as internal view state rather than
+ * panel state. Node selection always writes complete `{ className, primaryKey }` identities through `instance.output`.
  */
 const props = withDefaults(
   defineProps<{
@@ -61,7 +63,7 @@ const props = withDefaults(
     /** Accessible graph label; falls back to the projection's name. */
     label?: string;
     /** Initial enabled layers; defaults to all layers present in schema or loaded nodes. */
-    layers?: readonly string[];
+    layers?: readonly string[] | null;
     /** Show layer filter pills when multiple layers exist. */
     showLayerFilter?: boolean;
     /** Show legend strip. */
@@ -93,10 +95,72 @@ const emit = defineEmits<{
   "update:selectedType": [typeId: string | null];
 }>();
 
+class MemberReadForbiddenError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MemberReadForbiddenError";
+  }
+}
+
 const { t, te } = useI18n();
 const panel = usePanelContext();
-const slot = useProjectionSlot();
-const graphSource = useProjectionGraph();
+const member = useMember();
+
+function nameNodes(nodes: readonly PlatformGraphNode[]) {
+  const byType = new Map<string, { primaryKey: string; label: string }[]>();
+  for (const node of nodes) {
+    let bucket = byType.get(node.className);
+    if (!bucket) {
+      bucket = [];
+      byType.set(node.className, bucket);
+    }
+    bucket.push({ primaryKey: node.primaryKey, label: node.label });
+  }
+  for (const [className, items] of byType) panel.instance.nameObjects(className, items);
+}
+
+function createMemberGraphSource(ctx: PanelMemberContext): PlatformObjectGraph {
+  const unwrap = <T>(state: MemberDataState): T => {
+    if (state.status === "ready") return state.value as unknown as T;
+    if (state.status === "forbidden") throw new MemberReadForbiddenError(t("platform.dataForbidden"));
+    if (state.status === "error") throw new Error(state.message);
+    throw new Error(t("platform.dataAwaiting"));
+  };
+  if (!ctx.projection.data.neighbors) throw new Error(`Member '${ctx.key}' declares no 'neighbors' datum`);
+  const readSchema = ctx.projection.data.schema ? useMemberRead("schema") : undefined;
+  const readCounts = ctx.projection.data.counts ? useMemberRead("counts") : undefined;
+  const readStart = ctx.projection.data.start ? useMemberRead("start") : undefined;
+  const readNeighbors = useMemberRead("neighbors");
+  return {
+    ...(readSchema ? { schema: async () => unwrap<PlatformGraphSchema>(await readSchema({})) } : {}),
+    ...(readCounts ? {
+      counts: async () => {
+        const state = await readCounts({});
+        return state.status === "empty" ? [] : unwrap<PlatformOntologyCountsResponse>(state).counts;
+      },
+    } : {}),
+    ...(readStart ? {
+      start: async () => {
+        const state = await readStart({});
+        if (state.status === "empty") return null;
+        const node = unwrap<PlatformOntologyStartResponse>(state).node;
+        if (node) nameNodes([node]);
+        return node;
+      },
+    } : {}),
+    neighbors: async (query) => {
+      const result = unwrap<PlatformGraphNeighborsResult>(await readNeighbors({
+        node: { className: query.node.className, primaryKey: query.node.primaryKey },
+        ...(query.layers ? { layers: [...query.layers] } : {}),
+        ...(query.relationKinds ? { relationKinds: [...query.relationKinds] } : {}),
+      }));
+      nameNodes([result.node, ...result.neighbors]);
+      return result;
+    },
+  };
+}
+
+const graphSource = createMemberGraphSource(member);
 
 const relationLabelKeyById = new Map(platformRelationKinds.map((kind) => [kind.id, kind.labelKey]));
 
@@ -106,7 +170,18 @@ const paletteSize = ref(0);
 
 const loading = ref(false);
 const expanding = ref(false);
+const forbidden = ref(false);
 const errorMessage = ref<string | null>(null);
+
+function recordFailure(reason: unknown) {
+  if (reason instanceof MemberReadForbiddenError) {
+    forbidden.value = true;
+    errorMessage.value = null;
+    return;
+  }
+  forbidden.value = false;
+  errorMessage.value = reason instanceof Error ? reason.message : String(reason);
+}
 
 // Type-mode state
 const typeSchema = shallowRef<PlatformGraphSchema | null>(null);
@@ -123,8 +198,9 @@ const relationStatusesByNode = shallowRef<Map<string, readonly PlatformGraphRela
 const instancePositions = shallowRef<Map<string, GraphCanvasPoint>>(new Map());
 
 // Internal view state (deliberately excluded from panel state)
-const enabledLayers = shallowRef<Set<string>>(new Set(props.layers ?? []));
-const layersInitialized = ref(Boolean(props.layers?.length));
+const hasExplicitLayers = Array.isArray(props.layers) && props.layers.length > 0;
+const enabledLayers = shallowRef<Set<string>>(new Set(hasExplicitLayers ? props.layers! : []));
+const seenLayers = new Set<string>(hasExplicitLayers ? props.layers! : []);
 const manualPositions = shallowRef<Map<string, GraphCanvasPoint>>(new Map());
 const currentViewport = shallowRef<GraphCanvasViewport | null>(null);
 const focusedNodeId = ref<string | null>(null);
@@ -132,7 +208,17 @@ const focusedNodeId = ref<string | null>(null);
 let loadGeneration = 0;
 
 const activeMode = computed<"type" | "instance">(() => (props.mode === "type" ? "type" : "instance"));
-const accessibleLabel = computed(() => props.label ?? slot.projection.name);
+const accessibleLabel = computed(() => props.label ?? member.projection.name);
+
+const declaredNodeIdentity = computed(() => {
+  const candidate =
+    member.projection.outputs.selectedNode
+    ?? member.projection.outputs.selected
+    ?? member.projection.inputs.start
+    ?? member.projection.inputs.selected
+    ?? member.projection.inputs.node;
+  return candidate && (candidate.kind === "object" || candidate.kind === "object-union") ? candidate : undefined;
+});
 
 function resolveKey(key: string | undefined, fallback: string): string {
   if (!key) return fallback;
@@ -166,7 +252,7 @@ const availableLayers = computed<readonly string[]>(() => {
     }
     return [...discovered];
   }
-  const declaredIdentity = slot.projection.graph?.nodeIdentity;
+  const declaredIdentity = declaredNodeIdentity.value;
   if (declaredIdentity && "layers" in declaredIdentity) {
     return declaredIdentity.layers;
   }
@@ -177,15 +263,30 @@ const availableLayers = computed<readonly string[]>(() => {
   return [...discovered];
 });
 
+const hasDeclaredLayerSet = computed(() =>
+  Boolean(
+    hasExplicitLayers
+    || (activeMode.value === "type" && typeSchema.value?.layers?.length)
+    || (declaredNodeIdentity.value && "layers" in declaredNodeIdentity.value),
+  ),
+);
+
 watch(
   availableLayers,
   (layers) => {
-    if (!layersInitialized.value && layers.length > 0) {
-      enabledLayers.value = new Set(layers);
-      layersInitialized.value = true;
+    if (hasExplicitLayers) return;
+    let changed = false;
+    const next = new Set(enabledLayers.value);
+    for (const layer of layers) {
+      if (!seenLayers.has(layer)) {
+        seenLayers.add(layer);
+        next.add(layer);
+        changed = true;
+      }
     }
+    if (changed) enabledLayers.value = next;
   },
-  { immediate: true },
+  { immediate: true, flush: "sync" },
 );
 
 function toggleLayer(layer: string) {
@@ -433,42 +534,35 @@ function formatRelationNames(statuses: readonly PlatformGraphRelationStatus[]): 
 }
 
 // ---- Panel state output writers ----
-function resolveInstanceSelectionState(): string | null {
-  return (
-    slotOutputState(panel.manifest, slot.slot, "selectedNode")
-    ?? slotOutputState(panel.manifest, slot.slot, "selected")
-    ?? slotInputState(panel.manifest, slot.slot, "selected")
-  );
-}
-
-function resolveTypeSelectionState(): string | null {
-  return (
-    slotOutputState(panel.manifest, slot.slot, "selectedType")
-    ?? slotInputState(panel.manifest, slot.slot, "selectedType")
-  );
-}
-
 function writeSelectedNode(refValue: PanelObjectValue | null) {
-  const declaredIdentity = slot.projection.graph?.nodeIdentity;
+  const declaredIdentity = declaredNodeIdentity.value;
   if (refValue && declaredIdentity && !matchesObjectType(declaredIdentity, refValue.className)) {
     throw new TypeError(`Graph node '${refValue.className}' is outside the projection's declared nodeIdentity`);
   }
-  const stateName = resolveInstanceSelectionState();
-  if (stateName) {
-    panel.instance.state.set(stateName, refValue ? { className: refValue.className, primaryKey: refValue.primaryKey } : null);
-  }
+  const next = refValue ? { className: refValue.className, primaryKey: refValue.primaryKey } : null;
+  const memberDecl = panel.manifest.members[member.key];
+  const outputName = memberDecl?.outputs?.selectedNode
+    ? "selectedNode"
+    : memberDecl?.outputs?.selected
+      ? "selected"
+      : member.projection.outputs.selectedNode
+        ? "selectedNode"
+        : member.projection.outputs.selected
+          ? "selected"
+          : "selectedNode";
+  void panel.instance.output(member.key, outputName, next);
   emit("update:selected", refValue);
 }
 
 function writeSelectedType(typeId: string | null) {
-  const stateName = resolveTypeSelectionState();
-  if (stateName) panel.instance.state.set(stateName, typeId);
+  void panel.instance.output(member.key, "selectedType", typeId);
   emit("update:selectedType", typeId);
 }
 
 // ---- Data loading & incremental 1-hop expansion ----
 async function loadTypeMode(generation: number) {
   loading.value = true;
+  forbidden.value = false;
   errorMessage.value = null;
   try {
     const schemaPromise = graphSource.schema!();
@@ -478,15 +572,11 @@ async function loadTypeMode(generation: number) {
     typeSchema.value = schema;
     typeCounts.value = counts;
     manualPositions.value = new Map();
-    if (!layersInitialized.value && schema.layers?.length) {
-      enabledLayers.value = new Set(schema.layers);
-      layersInitialized.value = true;
-    }
     await nextTick();
     void canvas.value?.fit({ maxZoom: 1.15, padding: 36 });
   } catch (reason: unknown) {
     if (generation !== loadGeneration) return;
-    errorMessage.value = reason instanceof Error ? reason.message : String(reason);
+    recordFailure(reason);
   } finally {
     if (generation === loadGeneration) loading.value = false;
   }
@@ -499,10 +589,15 @@ async function expandInstanceNode(refValue: PanelObjectValue, generation: number
 
   if (isRoot) loading.value = true;
   else expanding.value = true;
+  forbidden.value = false;
   errorMessage.value = null;
 
-  const activeLayers = availableLayers.value.length > 0 ? [...enabledLayers.value] : undefined;
-  const allLayersActive = activeLayers !== undefined && activeLayers.length === availableLayers.value.length;
+  const allLayersActive = availableLayers.value.length > 0
+    && availableLayers.value.every((layer) => enabledLayers.value.has(layer));
+  const activeLayers =
+    availableLayers.value.length > 0 && (hasDeclaredLayerSet.value || !allLayersActive)
+      ? [...enabledLayers.value]
+      : undefined;
 
   try {
     const result = await graphSource.neighbors({
@@ -556,7 +651,7 @@ async function expandInstanceNode(refValue: PanelObjectValue, generation: number
     }
   } catch (reason: unknown) {
     if (generation !== loadGeneration) return;
-    errorMessage.value = reason instanceof Error ? reason.message : String(reason);
+    recordFailure(reason);
   } finally {
     expandingNodeIds.delete(nodeId);
     if (generation === loadGeneration) {
@@ -568,6 +663,7 @@ async function expandInstanceNode(refValue: PanelObjectValue, generation: number
 
 async function loadInstanceMode(generation: number) {
   loading.value = true;
+  forbidden.value = false;
   errorMessage.value = null;
   instanceNodes.value = new Map();
   instanceEdges.value = new Map();
@@ -600,7 +696,7 @@ async function loadInstanceMode(generation: number) {
     await expandInstanceNode(startRef, generation, true);
   } catch (reason: unknown) {
     if (generation !== loadGeneration) return;
-    errorMessage.value = reason instanceof Error ? reason.message : String(reason);
+    recordFailure(reason);
     loading.value = false;
   }
 }
@@ -746,7 +842,10 @@ onMounted(() => {
       </span>
     </div>
 
-    <div v-if="errorMessage" class="sdk-ontology-graph-notice is-error" role="alert" data-graph-state="error">
+    <div v-if="forbidden" class="sdk-ontology-graph-notice is-warning" role="status" data-graph-state="forbidden">
+      {{ t("platform.dataForbidden") }}
+    </div>
+    <div v-else-if="errorMessage" class="sdk-ontology-graph-notice is-error" role="alert" data-graph-state="error">
       {{ errorMessage }}
     </div>
 
@@ -766,7 +865,7 @@ onMounted(() => {
     </template>
 
     <el-skeleton v-if="loading && canvasNodes.length === 0" :rows="6" animated class="sdk-ontology-graph-skeleton" />
-    <el-empty v-else-if="!loading && !errorMessage && canvasNodes.length === 0" :description="t('platform.graphEmpty')" :image-size="48" />
+    <el-empty v-else-if="!loading && !forbidden && !errorMessage && canvasNodes.length === 0" :description="t('platform.graphEmpty')" :image-size="48" />
     <div v-else class="sdk-ontology-graph-frame">
       <G6GraphCanvas
         ref="canvas"

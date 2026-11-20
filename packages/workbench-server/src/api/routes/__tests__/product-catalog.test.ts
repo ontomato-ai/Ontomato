@@ -5,10 +5,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
+import { dashboardCardPrimaryKey } from "@ontomato/contracts/dashboard";
+import { DASHBOARD_CARD, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
 import {
-  productPanelInUseErrorSchema, productPanelListResponseSchema, productPanelResponseSchema,
+  METRIC_CHART_COMPONENT, productPanelInUseErrorSchema, productPanelListResponseSchema, productPanelResponseSchema,
   productProjectionInUseErrorSchema, productProjectionListResponseSchema, productProjectionResponseSchema,
 } from "@ontomato/contracts/product-panels";
+import { writeBundledAppSdkFixture } from "../../../__tests__/fixtures/bundled-app-sdk";
 import { config } from "../../../config/application";
 import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
@@ -33,17 +36,28 @@ type Location = { applicationId: string; names: Record<string, string>; useId: s
 const ownerGrant = (principalId: string, verb: Verb): Grant => ({ principalKind: "principal", principalId, verb });
 const projectionDefinition = {
   name: "Metrics", description: "Sales overview", visibility: "domain",
-  componentId: "ObjectSummary", binding: { kind: "ObjectType", id: "Department" }, inputs: {}, display: {},
+  componentId: "@ontomato/sdk:ObjectSummary", inputs: {}, outputs: {}, config: {},
+  data: {
+    record: {
+      source: { object: { literal: { className: SCHEDULED_TASK, primaryKey: "00000000-0000-4000-8000-000000000001" } } },
+      read: "record", params: {},
+    },
+  },
 };
+const chartSource = { dashboardId: "board", cardId: "chart" };
+const chartObject = { object: { literal: { className: DASHBOARD_CARD, primaryKey: dashboardCardPrimaryKey(chartSource) } } };
 const chartDefinition = {
-  ...projectionDefinition, componentId: "MetricChart", binding: { kind: "MetricView", id: "metric" },
-  display: { chartSource: { dashboardId: "board", cardId: "chart" } },
+  ...projectionDefinition, componentId: METRIC_CHART_COMPONENT, chartSource, metricId: "metric",
+  data: {
+    template: { source: chartObject, read: "chartTemplate", params: {} },
+    result: { source: chartObject, read: "result", params: {} },
+  },
 };
 function panelDefinition(projectionId?: string) {
   return {
-    name: "Overview", description: "", visibility: "private", sdkVersion: "1.1.2",
+    name: "Overview", description: "", visibility: "private",
     content: { html: "<main></main>", module: "export {}" },
-    manifest: { state: {}, slots: projectionId ? { kpi: { projectionId, inputs: {} } } : {}, operations: [] },
+    manifest: { state: {}, members: projectionId ? { kpi: { target: { projectionId }, inputs: {} } } : {}, events: {} },
   };
 }
 let records: Record<Table, Map<string, CurrentProductRow>>;
@@ -74,6 +88,7 @@ beforeAll(async () => {
     packs: { en: { messages: { ...en, ...appTextEn }, ...enLocaleMeta } },
   });
   root = await mkdtemp(join(tmpdir(), "catalog-owners-"));
+  await writeBundledAppSdkFixture(root);
   installContentLayout({ runtimeRoot: root, publicSkillsRoot: root, prompts: [], runtimeResources: [] });
   const { productPanelsRouter, productProjectionsRouter } = await import("../product-panels");
   const app = express();
@@ -161,6 +176,7 @@ beforeEach(() => {
   db.query.mockReset().mockImplementation((sql: string, values: unknown[] = []) => {
     if (["BEGIN", "COMMIT", "ROLLBACK"].includes(sql) || sql.includes("pg_advisory_xact_lock") || sql.startsWith("UPDATE product_subscriptions"))
       return { rows: [] };
+    if (sql.includes("FROM product_object_details")) return { rows: [] };
     const table = (sql.match(/(?:FROM|INTO) (product_panels|product_projections)/)?.[1]) as Table;
     const collection = records[table];
     const id = String(values[1]);
@@ -168,12 +184,11 @@ beforeEach(() => {
       const row = collection.get(id);
       return { rows: row?.domainId === values[0] ? [row] : [] };
     }
-    if (sql.includes("jsonb_each")) {
-      const rows = [...collection.values()].filter(row => {
-        const manifest = row.definition.manifest as ReturnType<typeof panelDefinition>["manifest"];
-        return row.domainId === values[0] && Object.values(manifest.slots).some(slot => slot.projectionId === id);
-      }).map(row => ({ id: row.id, name: row.definition.name }));
-      return { rows };
+    if (sql.startsWith("SELECT id,definition FROM product_panels")) {
+      return { rows: [...records.product_panels.values()]
+        .filter(row => row.domainId === values[0])
+        .sort((a, b) => a.id.localeCompare(b.id))
+        .map(({ id, definition }) => ({ id, definition })) };
     }
     if (sql.includes('AS "sortKey"')) {
       const [domain, usable, scope, caller, query, key, position, limit] =
@@ -185,7 +200,8 @@ beforeEach(() => {
         .map(row => ({
           id: row.id, ownerId: row.ownerId, revision: row.revision, updatedAt: row.updatedAt,
           name: String(row.definition.name), description: String(row.definition.description), visibility: row.definition.visibility,
-          ...(table === "product_projections" ? { componentId: row.definition.componentId, binding: row.definition.binding } : {}),
+          ...(sql.includes('AS "componentId"') ? { componentId: row.definition.componentId } : {}),
+          ...(sql.includes("AS binding") ? { binding: row.definition.binding ?? null } : {}),
           sortKey: sortByName ? String(row.definition.name).toLowerCase() : row.updatedAt.toISOString(),
         }))
         .filter(row => [row.name, row.description].some(text => text.toLowerCase().includes(query.toLowerCase())));
@@ -260,10 +276,13 @@ it("localizes entries using a panel, falling back to English, and returns the sa
   ]);
   const path = "product-panels/panel";
   const used = await (await request(path + "/used-by", "GET", undefined, "alice", "zh-CN")).json();
-  expect(used).toEqual({ applicationEntries: [
-    { applicationId: local.applicationId, path: local.path, entryId: local.useId, applicationName: "应用甲" },
-    { applicationId: fallback.applicationId, path: fallback.path, entryId: fallback.useId, applicationName: "App B" },
-  ] });
+  expect(used).toEqual({
+    panels: [], hiddenCount: 0, classNames: [],
+    applicationEntries: [
+      { applicationId: local.applicationId, path: local.path, entryId: local.useId, applicationName: "应用甲" },
+      { applicationId: fallback.applicationId, path: fallback.path, entryId: fallback.useId, applicationName: "App B" },
+    ],
+  });
   const denied = await request(path + "?revision=2", "DELETE", undefined, "alice", "zh-CN");
   expect(denied.status).toBe(409);
   expect(productPanelInUseErrorSchema.parse(await denied.json()).details).toEqual(used);

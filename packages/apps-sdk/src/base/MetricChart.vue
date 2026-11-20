@@ -1,79 +1,63 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, shallowRef, watch } from "vue";
+import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { ElSkeleton } from "element-plus/es/components/skeleton/index";
-import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import type { chartProjectionTemplateSchema, DashboardMetricOutput } from "@ontomato/contracts/dashboard";
 import { MetricChart as ChartView } from "@ontomato/foundation-ui/chart";
-import { useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
-import { metricChartClient, type ChartRead } from "../panel/metric-chart";
-import { stateObject, type PanelFieldValue } from "../panel/state";
+import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
+import { useMemberData } from "../panel/member";
 
 /**
- * One registered chart, drawn as its source card draws it: the drawing is the card's chart file and the parameters are
- * the card's saved ones, both handed over by the dashboard owner for this projection; the data is the bound
- * MetricView's, read with the reader's own credential, with the values this panel binds laid over the card's
- * parameters here alone. The projection holds neither a drawing nor a query nor data, so all of it is read again
- * whenever the chart is opened, the reader comes back to it, or a bound value changes. A chart whose source is gone,
- * or a MetricView that refuses, shows its owner's reason in the chart's place — never an older chart or another one.
+ * One chart, drawn as its source card draws it: the card's chart file (the member's `template`) filled with a
+ * MetricView's output (its `result`) for the card's saved parameters with the values this panel binds laid over them,
+ * which the card's owner works out for the reader. The platform supplies both, in a directly rendered panel and in a
+ * panel's frame alike; the chart sends no request of its own. It is drawn once both are read; until then, or when
+ * either cannot be, the state of the first that is not ready stands in its place, in the product's one presentation —
+ * an output with no rows is the owner's empty answer, a refusal its owner's reason — never an older chart or another.
  */
 defineOptions({ inheritAttrs: false });
 
 const { t } = useI18n();
-const slot = useProjectionSlot();
-const client = metricChartClient();
+const template = useMemberData("template");
+const result = useMemberData("result");
 
-/**
- * What this panel binds, by MetricView parameter: each declared input that holds a value, an object by its primary key
- * as a MetricView parameter takes it. An input with no value leaves the card's own parameter.
- */
-const bound = computed<Record<string, RuntimeJsonValue>>(() => Object.fromEntries(
-  Object.entries(slot.inputs)
-    // A collection binds no MetricView parameter.
-    .filter(([, value]) => value !== null && value !== undefined && !Array.isArray(value))
-    .map(([name, value]) => [name, stateObject(value as PanelFieldValue)?.primaryKey ?? value as RuntimeJsonValue]),
-));
+/** The source card's chart file and saved parameters, as its owner hands them over. */
+type ChartTemplate = ReturnType<typeof chartProjectionTemplateSchema.parse>;
 
-const chart = shallowRef<ChartRead | null>(null);
-const loading = ref(true);
-const failure = shallowRef<Error | null>(null);
-let reading = 0;
-
-function load() {
-  const current = ++reading;
-  loading.value = true;
-  failure.value = null;
-  void client.read(slot.projection.id, slot.projection.binding.id, bound.value).then(
-    (read) => {
-      if (current !== reading) return;
-      chart.value = read;
-      loading.value = false;
-    },
-    (reason: unknown) => {
-      if (current !== reading) return;
-      chart.value = null;
-      failure.value = reason instanceof Error ? reason : new Error(String(reason));
-      loading.value = false;
-    },
-  );
+/** What the chart draws: the card's chart file and the output, the owner's note when it was cut. */
+interface ChartDrawing {
+  file: ChartTemplate["chartFile"]["content"];
+  metric: { columns: DashboardMetricOutput["columns"]; rows: DashboardMetricOutput["rows"]; truncation?: { truncationHint: string } };
 }
 
-onMounted(load);
-watch(() => JSON.stringify(bound.value), load);
-// The reader coming back to the panel reads it all again; an object this chart is bound to that changed does too.
-useProjectionObjectRefresh((id) => Object.values(bound.value).includes(id), load);
+const chart = computed<DataStateResult<ChartDrawing>>(() => {
+  if (template.value.status !== "ready") return template.value;
+  if (result.value.status !== "ready") return result.value;
+  const { chartFile } = template.value.value as unknown as ChartTemplate;
+  const { columns, rows, truncation } = result.value.value as unknown as DashboardMetricOutput;
+  return {
+    status: "ready",
+    value: { file: chartFile.content, metric: { columns, rows, ...(truncation ? { truncation: { truncationHint: truncation.truncationHint } } : {}) } },
+  };
+});
+const labels = computed(() => ({
+  empty: t("ontology.ovNoChartData"),
+  forbidden: t("platform.dataForbidden"),
+  awaiting: t("platform.dataAwaiting"),
+}));
 </script>
 
 <template>
   <div class="sdk-metric-chart">
-    <p v-if="failure" role="alert">{{ failure.message }}</p>
-    <el-skeleton v-else-if="loading" :rows="4" animated></el-skeleton>
-    <ChartView
-      v-else-if="chart"
-      :file="chart.template.content"
-      :metric="chart.metric"
-      :undated="t('ontology.ovUndated')"
-      :empty="t('ontology.ovNoChartData')"
-    ></ChartView>
+    <DataState :result="chart" :labels="labels">
+      <template #default="{ value }">
+        <ChartView
+          :file="value.file"
+          :metric="value.metric"
+          :undated="t('ontology.ovUndated')"
+          :empty="t('ontology.ovNoChartData')"
+        ></ChartView>
+      </template>
+    </DataState>
   </div>
 </template>
 

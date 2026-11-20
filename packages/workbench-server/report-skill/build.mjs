@@ -1,4 +1,4 @@
-// Rebuild the committed runtime package from its single source before publishing a source change.
+// Build the assistant-report runtime package from its single source.
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -24,6 +24,15 @@ for (const input of Object.keys(result.metafile.inputs)) {
   while (!fs.existsSync(path.join(parent, "package.json"))) parent = path.dirname(parent);
   packages.add(parent);
 }
+function copyEntry(source, target) {
+  if (fs.statSync(source).isDirectory()) {
+    fs.mkdirSync(target, { recursive: true });
+    for (const entry of fs.readdirSync(source)) copyEntry(path.join(source, entry), path.join(target, entry));
+  } else {
+    fs.copyFileSync(source, target);
+  }
+}
+
 const notices = [];
 for (const root of [...packages].sort()) {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
@@ -39,7 +48,7 @@ for (const root of [...packages].sort()) {
     }
   }
   for (const name of files)
-    fs.cpSync(path.join(root, name), path.join(output, "licenses", `${pkg.name.replaceAll("/", "_")}-${name}`), { recursive: true });
+    copyEntry(path.join(root, name), path.join(output, "licenses", `${pkg.name.replaceAll("/", "_")}-${name}`));
   notices.push(`${pkg.name} ${pkg.version}: ${pkg.license}`);
 }
 fs.writeFileSync(path.join(output, "licenses/THIRD_PARTY.txt"), notices.sort().join("\n") + "\n");

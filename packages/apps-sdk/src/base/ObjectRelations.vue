@@ -3,30 +3,25 @@ import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import { platformObjectTypes, platformRelationKinds } from "@ontomato/contracts/platform-object-types";
-import {
-  slotInputState,
-  slotOutputState,
-  usePanelContext,
-  useProjectionGraph,
-  useProjectionSlot,
-} from "../panel/context";
+import { usePanelContext } from "../panel/context";
+import { useMember, useMemberData, useMemberRead } from "../panel/member";
 import type {
   PlatformGraphEdge,
   PlatformGraphNeighborsResult,
   PlatformGraphNode,
   PlatformGraphStatus,
 } from "../panel/platform-objects";
-import { stateObject } from "../panel/state";
+import { stateObject, type PanelFieldValue } from "../panel/state";
 
 type PanelObjectValue = Extract<PanelStateValue, { className: string }>;
 
 /**
- * Displays one-hop relations of the currently selected node through the bound resource's `graph.neighbors` port,
- * shared by the four-layer capability map (M3) and the object browser instance graph (M4).
+ * Displays one-hop relations of the currently selected node, shared by the four-layer capability map (M3) and the
+ * object browser instance graph (M4). Reads the member's `neighbors` datum (in both direct and framed panels).
  *
  * Groups edges by relation kind, distinguishes no-neighbors, owner-refused, read-failed and unavailable statuses per
  * relation kind, renders direction and solid/dashed line semantics, and writes the peer node's complete
- * `{ className, primaryKey }` identity to `selected` when clicked.
+ * `{ className, primaryKey }` identity to `selected` through `instance.output` when clicked.
  */
 const props = withDefaults(
   defineProps<{
@@ -51,30 +46,85 @@ const emit = defineEmits<{
 
 const { t, te } = useI18n();
 const panel = usePanelContext();
-const slot = useProjectionSlot();
-const graphSource = useProjectionGraph();
+const member = useMember();
+
+const neighborsDatum = member.projection.data.neighbors;
+if (!neighborsDatum) {
+  throw new Error(`Member '${member.key}' declares no 'neighbors' datum`);
+}
+const nodeParam = neighborsDatum.params.node;
+const memberNodeInput = nodeParam && "input" in nodeParam ? nodeParam.input : undefined;
+const memberNeighbors = useMemberData("neighbors");
+const readMemberNeighbors = useMemberRead("neighbors");
 
 const relationMetaById = new Map(platformRelationKinds.map((kind) => [kind.id, kind]));
 
-const loading = ref(false);
-const failure = shallowRef<Error | null>(null);
-const result = shallowRef<PlatformGraphNeighborsResult | null>(null);
-
-const selectedStateName = computed(
-  () => slotOutputState(panel.manifest, slot.slot, "selected")
-    ?? slotInputState(panel.manifest, slot.slot, props.input),
-);
-
-const activeSelected = computed<PanelObjectValue | null>(() => {
-  if (props.selected !== undefined) return props.selected;
-  if (!selectedStateName.value) return null;
-  const value = stateObject(panel.instance.state.values.value[selectedStateName.value]);
-  return value && { className: value.className, primaryKey: value.primaryKey };
-});
+const manualLoading = ref(false);
+const manualForbidden = ref(false);
+const manualFailure = shallowRef<Error | null>(null);
+const manualResult = shallowRef<PlatformGraphNeighborsResult | null>(null);
 
 function nodeKey(ref: PanelObjectValue): string {
   return `${ref.className}\u0000${ref.primaryKey}`;
 }
+
+const memberBoundNode = computed<PanelObjectValue | null>(() => {
+  if (!memberNodeInput) return null;
+  const value = stateObject(member.inputs.value[memberNodeInput] as PanelFieldValue | undefined);
+  return value && { className: value.className, primaryKey: value.primaryKey };
+});
+
+const activeSelected = computed<PanelObjectValue | null>(() => {
+  if (props.selected !== undefined) return props.selected;
+  const raw = member.inputs.value[props.input] as PanelFieldValue | undefined;
+  const value = stateObject(raw);
+  return value ? { className: value.className, primaryKey: value.primaryKey } : memberBoundNode.value;
+});
+
+const usesMemberDatum = computed(() => {
+  if (!memberNodeInput) return true;
+  if (!activeSelected.value && !memberBoundNode.value) return true;
+  if (!activeSelected.value || !memberBoundNode.value) return false;
+  return nodeKey(activeSelected.value) === nodeKey(memberBoundNode.value);
+});
+
+const loading = computed(() =>
+  usesMemberDatum.value ? memberNeighbors.value.status === "loading" : manualLoading.value,
+);
+const forbidden = computed(() =>
+  usesMemberDatum.value ? memberNeighbors.value.status === "forbidden" : manualForbidden.value,
+);
+const failure = computed<Error | null>(() => {
+  if (!usesMemberDatum.value) return manualFailure.value;
+  return memberNeighbors.value.status === "error" ? new Error(memberNeighbors.value.message) : null;
+});
+const result = computed<PlatformGraphNeighborsResult | null>(() => {
+  if (!usesMemberDatum.value) return manualResult.value;
+  return memberNeighbors.value.status === "ready"
+    ? (memberNeighbors.value.value as unknown as PlatformGraphNeighborsResult)
+    : null;
+});
+
+function nameNodes(nodes: readonly PlatformGraphNode[]) {
+  const byType = new Map<string, { primaryKey: string; label: string }[]>();
+  for (const node of nodes) {
+    let bucket = byType.get(node.className);
+    if (!bucket) {
+      bucket = [];
+      byType.set(node.className, bucket);
+    }
+    bucket.push({ primaryKey: node.primaryKey, label: node.label });
+  }
+  for (const [className, items] of byType) panel.instance.nameObjects(className, items);
+}
+
+watch(
+  result,
+  (data) => {
+    if (data) nameNodes([data.node, ...data.neighbors]);
+  },
+  { immediate: true },
+);
 
 function resolveKey(key: string | undefined, fallback: string): string {
   if (!key) return fallback;
@@ -108,6 +158,7 @@ interface RelationGroup {
   readonly status: PlatformGraphStatus;
   readonly reason?: string;
   readonly derived?: boolean;
+  readonly truncated?: boolean;
   readonly edges: readonly RelationEdgeRow[];
 }
 
@@ -162,12 +213,14 @@ const groups = computed<readonly RelationGroup[]>(() => {
     const kindEdges = edgesByKind.get(statusEntry.relationKind) ?? [];
     const meta = relationMetaById.get(statusEntry.relationKind);
     const derived = kindEdges[0]?.derived ?? meta?.derived;
+    const truncated = "truncated" in statusEntry ? Boolean((statusEntry as { truncated?: boolean }).truncated) : false;
     built.push({
       relationKind: statusEntry.relationKind,
       label: relationDisplayName(statusEntry.relationKind, kindEdges[0]?.label),
       status: statusEntry.status,
       reason: statusEntry.reason,
       derived,
+      ...(truncated ? { truncated: true } : {}),
       edges: toRows(kindEdges, derived),
     });
   }
@@ -192,45 +245,51 @@ let requestSeq = 0;
 
 function load(target: PanelObjectValue | null) {
   const seq = ++requestSeq;
-  failure.value = null;
-  if (!target) {
-    result.value = null;
-    loading.value = false;
+  manualForbidden.value = false;
+  manualFailure.value = null;
+  if (!target || usesMemberDatum.value) {
+    manualResult.value = null;
+    manualLoading.value = false;
     return;
   }
-  loading.value = true;
-  void graphSource.neighbors({ node: { className: target.className, primaryKey: target.primaryKey } }).then(
-    (loaded) => {
-      if (seq !== requestSeq) return;
-      result.value = loaded;
-      loading.value = false;
-    },
-    (reason: unknown) => {
-      if (seq !== requestSeq) return;
-      result.value = null;
-      failure.value = reason instanceof Error ? reason : new Error(String(reason));
-      loading.value = false;
-    },
-  );
+  manualLoading.value = true;
+  void readMemberNeighbors({ node: { className: target.className, primaryKey: target.primaryKey } }).then((state) => {
+    if (seq !== requestSeq) return;
+    manualLoading.value = false;
+    if (state.status === "ready") {
+      manualResult.value = state.value as unknown as PlatformGraphNeighborsResult;
+    } else if (state.status === "forbidden") {
+      manualResult.value = null;
+      manualForbidden.value = true;
+    } else if (state.status === "error") {
+      manualResult.value = null;
+      manualFailure.value = new Error(state.message);
+    } else {
+      manualResult.value = null;
+    }
+  }, (reason: unknown) => {
+    if (seq !== requestSeq) return;
+    manualResult.value = null;
+    manualFailure.value = reason instanceof Error ? reason : new Error(String(reason));
+    manualLoading.value = false;
+  });
 }
 
 watch(
-  () => (activeSelected.value ? nodeKey(activeSelected.value) : null),
+  () => [usesMemberDatum.value, activeSelected.value ? nodeKey(activeSelected.value) : null] as const,
   () => load(activeSelected.value),
   { immediate: true },
 );
 
 onBeforeUnmount(
   panel.instance.onObjectChanged(() => {
-    if (activeSelected.value) load(activeSelected.value);
+    if (!usesMemberDatum.value && activeSelected.value) load(activeSelected.value);
   }),
 );
 
 function selectPeer(peer: PanelObjectValue) {
   const next: PanelObjectValue = { className: peer.className, primaryKey: peer.primaryKey };
-  if (selectedStateName.value) {
-    panel.instance.state.set(selectedStateName.value, next);
-  }
+  void panel.instance.output(member.key, "selected", next);
   emit("update:selected", next);
 }
 
@@ -243,7 +302,7 @@ function statusText(status: PlatformGraphStatus): string {
 </script>
 
 <template>
-  <section class="sdk-object-relations" :aria-label="slot.projection.name">
+  <section class="sdk-object-relations" :aria-label="member.projection.name">
     <p v-if="!activeSelected" class="sdk-object-relations-prompt">
       {{ emptyText ? panel.t(emptyText) : t("platform.relationsEmptySelection") }}
     </p>
@@ -253,7 +312,10 @@ function statusText(status: PlatformGraphStatus): string {
         <span v-if="currentNodeTypeLabel" class="sdk-object-relations-type">{{ currentNodeTypeLabel }}</span>
       </header>
 
-      <p v-if="failure" role="alert" class="sdk-object-relations-error">{{ failure.message }}</p>
+      <p v-if="forbidden" role="status" class="sdk-object-relations-status" data-status="forbidden">
+        {{ t("platform.dataForbidden") }}
+      </p>
+      <p v-else-if="failure" role="alert" class="sdk-object-relations-error">{{ failure.message }}</p>
       <p v-else-if="loading" class="sdk-object-relations-loading" role="status">
         {{ t("platform.relationsLoading") }}
       </p>
@@ -268,6 +330,7 @@ function statusText(status: PlatformGraphStatus): string {
           class="sdk-object-relations-group"
           :data-relation-kind="group.relationKind"
           :data-status="group.status === 'ok' && group.edges.length === 0 ? 'empty' : group.status"
+          :data-truncated="group.truncated ? 'true' : undefined"
         >
           <div class="sdk-object-relations-group-head">
             <span class="sdk-object-relations-kind">{{ group.label }}</span>

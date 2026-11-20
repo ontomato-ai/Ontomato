@@ -11,7 +11,7 @@ async function readJson(file) {
   }
 }
 
-async function workspaceDefinition(directory, checks) {
+async function workspaceDefinition(directory, files, checks) {
   const descriptorFile = resolve(directory, "panel.json");
   const document = await readJson(descriptorFile);
   if (document === null || typeof document !== "object" || Array.isArray(document)) {
@@ -22,7 +22,6 @@ async function workspaceDefinition(directory, checks) {
       Object.keys(content).some(key => key !== "messages")) {
     throw new Error(`${descriptorFile}: content only accepts messages`);
   }
-  const files = await readdir(directory);
   const sources = [
     ["html", "panel.html"],
     ...[["module", "panel.mjs"], ["recipes", "recipes.md"]].filter(([, file]) => files.includes(file)),
@@ -30,7 +29,7 @@ async function workspaceDefinition(directory, checks) {
   const contents = await Promise.all(sources.map(async ([key, file]) => [
     key, await readFile(resolve(directory, file), "utf8"),
   ]));
-  const result = checks.directPanelDefinitionContentSchema.safeParse({
+  const result = checks.panelDefinitionContentSchema.safeParse({
     ...descriptor, content: { ...content, ...Object.fromEntries(contents) },
   });
   if (result.success) return result.data;
@@ -50,9 +49,11 @@ export async function checkPanelWorkspace(directory, { checks, catalogue, versio
   if (catalogue.version !== version) {
     throw new Error(`Expected SDK catalogue ${version}, found ${catalogue.version}`);
   }
-  const { manifest } = await workspaceDefinition(directory, checks);
-  const records = materialPath === undefined ? new Map() : new Map(
-    panelRegistrationRecords(await readJson(materialPath), checks).map(([kind, items]) => [
+  const files = await readdir(directory);
+  const { manifest } = await workspaceDefinition(directory, files, checks);
+  const registration = materialPath ?? (files.includes("registration.json") ? resolve(directory, "registration.json") : undefined);
+  const records = registration === undefined ? new Map() : new Map(
+    panelRegistrationRecords(await readJson(registration), checks).map(([kind, items]) => [
       kind, new Map(items.map(({ id, body }) => [id, body])),
     ]),
   );
@@ -67,7 +68,9 @@ export async function checkPanelWorkspace(directory, { checks, catalogue, versio
   const unchecked = [];
   for (const [kind, id] of references.values()) {
     const record = records.get(kind)?.get(id) ?? (lookup && await lookup(kind, id));
-    if (record === undefined) {
+    if (record === null) {
+      throw new Error(`${resolve(directory, "panel.json")}: ${kind} ${id} was not found in the material or on the platform`);
+    } else if (record === undefined) {
       unchecked.push({ kind, id });
     } else if (kind === "projection" && !components.has(record.componentId)) {
       throw new Error(`${resolve(directory, "panel.json")}: projection ${id} uses unavailable SDK component ${record.componentId}`);

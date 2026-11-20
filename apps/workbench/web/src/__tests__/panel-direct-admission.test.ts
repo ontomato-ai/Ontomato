@@ -1,10 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { APP_BRIDGE_CHANNEL } from "@ontomato/contracts/app-bridge";
-import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { RUN_NOW, SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
-import { directProjectionSchema, type DirectProjection } from "@ontomato/contracts/product-panels";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, task, type Sent } from "./panel-frame";
+import { ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelUse, registered, task, type Sent } from "./panel-frame";
+import { codePanelRecord, connectBridge, projectionRecord } from "./host-bridge-records";
 
 /*
  * A code panel's frame reading a direct projection (an older panel placing a declared projection, as Q places X in the
@@ -17,39 +15,22 @@ import { ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFra
  * from its declared data (a type, an object, an operation), never from a binding it does not have.
  */
 
-const current = {
-  domainId: "domain-1",
-  ownerId: "owner-1",
-  revision: 1,
-  createdAt: "2026-11-20T00:00:00.000Z",
-  updatedAt: "2026-11-20T00:00:00.000Z",
-  editable: false,
-  visibility: "domain" as const,
-};
-const direct = (id: string, fields: Pick<DirectProjection, "componentId" | "inputs" | "data">): DirectProjection =>
-  directProjectionSchema.parse({ ...current, id, name: id, description: "", outputs: {}, config: {}, ...fields });
-
 const taskInput = { kind: "object" as const, objectType: SCHEDULED_TASK };
-const projections: Record<string, DirectProjection> = {
-  "direct-tasks": direct("direct-tasks", {
-    componentId: "@ontomato/sdk:ObjectList", inputs: {},
-    data: { rows: { source: { type: SCHEDULED_TASK }, read: "list", params: {} } },
+const projections = Object.fromEntries([
+  projectionRecord({
+    id: "direct-tasks", componentId: "@ontomato/sdk:ObjectList",
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
   }),
-  "direct-summary": direct("direct-summary", {
-    componentId: "@ontomato/sdk:ObjectSummary", inputs: { task: taskInput },
+  projectionRecord({
+    id: "direct-summary", componentId: "@ontomato/sdk:ObjectSummary", inputs: { task: taskInput },
     data: { record: { source: { object: { input: "task" } }, read: "record", params: {} } },
   }),
-  "direct-run": direct("direct-run", {
-    componentId: "@ontomato/sdk:OperationButton", inputs: { task: taskInput },
-    data: { describe: { source: { operation: RUN_NOW }, read: "describe", params: {} } },
+  projectionRecord({
+    id: "direct-run", componentId: "@ontomato/sdk:OperationButton", inputs: { task: taskInput },
+    data: { describe: { source: { operation: { kind: "PlatformOperation", id: RUN_NOW } }, read: "describe", params: {} } },
   }),
-};
-const slot = (projectionId: string) => ({ projectionId, inputs: {} });
-const panel = panelRecord("panel-q", "Q", definePanel({
-  state: {},
-  slots: { tasks: slot("direct-tasks"), summary: slot("direct-summary"), run: slot("direct-run") },
-  operations: [],
-}));
+].map((projection) => [projection.id, projection]));
+const panel = codePanelRecord("panel-q", { tasks: "direct-tasks", summary: "direct-summary", run: "direct-run" });
 const use = panelUse("use-q", "q", panel.id, "/applications/app-q/q");
 const tasks = "/platform/scheduled-tasks";
 
@@ -62,26 +43,6 @@ function answer(request: Sent) {
   return nothingAt(request);
 }
 
-/** The frame's end of the bridge: one call per operation, answered with its result or refused with its error. */
-function connect() {
-  const channel = new MessageChannel();
-  window.parent.postMessage({ channel: APP_BRIDGE_CHANNEL, operation: "connect" }, "*", [channel.port2]);
-  channel.port1.start();
-  let calls = 0;
-  return (operation: string, payload?: unknown) =>
-    new Promise<unknown>((resolve, reject) => {
-      const id = `call-${++calls}`;
-      const listener = (event: MessageEvent) => {
-        if (event.data?.id !== id) return;
-        channel.port1.removeEventListener("message", listener);
-        if (event.data.error) reject(new Error(event.data.error));
-        else resolve(event.data.result);
-      };
-      channel.port1.addEventListener("message", listener);
-      channel.port1.postMessage({ channel: APP_BRIDGE_CHANNEL, id, operation, payload });
-    });
-}
-
 afterEach(leaveFrame);
 
 describe("a code panel's frame reading direct projections", () => {
@@ -90,7 +51,7 @@ describe("a code panel's frame reading direct projections", () => {
     const frame = panelFrame();
     platformPanelHost("app-q", use, ignoreChanges).frame(frame, registered("app-q", use, panel), true);
     inside(frame);
-    const invoke = connect();
+    const invoke = connectBridge();
     const request = (path: string, method = "GET", service = "/data-query") =>
       invoke("request", { path, service, method, headers: [], body: method === "GET" ? null : "{}" });
 

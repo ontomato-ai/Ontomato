@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, onMounted, provide, ref, shallowRef, toRef, useSlots, watch } from "vue";
-import { PanelRightOpen } from "lucide-vue-next";
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, provide, ref, shallowRef, toRef, useId, useSlots, watch } from "vue";
+import { PanelLeft, PanelRightOpen, X } from "lucide-vue-next";
 import { conversationQuestions, displayPlacementKey, shellContextKey, type ShellContext } from "../context";
 import {
   CLOSED_TARGET,
@@ -112,6 +112,22 @@ const agentId = defineModel<string | null>("agentId", { default: null });
 const sessionId = defineModel<string | null>("sessionId", { default: null });
 const display = props.display;
 const taskFocus = ref<{ taskId: string; at: number } | null>(null);
+const navOpen = ref(false);
+const navId = useId();
+const navToggle = ref<HTMLButtonElement>();
+const navClose = ref<HTMLButtonElement>();
+async function toggleNav() {
+  if (navOpen.value) return closeNav(true);
+  navOpen.value = true;
+  await nextTick();
+  navClose.value?.focus();
+}
+function closeNav(restoreFocus = false) {
+  if (!navOpen.value) return;
+  navOpen.value = false;
+  if (restoreFocus) navToggle.value?.focus();
+}
+watch([sessionId, () => display.page.value?.featureId], () => closeNav(true));
 
 /**
  * The page view's session stream, where its feed serves one: the runs this conversation starts carry the view's binding,
@@ -120,7 +136,9 @@ const taskFocus = ref<{ taskId: string; at: number } | null>(null);
  * in this conversation; and a stream that is ready again has the page read everything it shows.
  */
 const sessionStream = inject(pageSessionStream, null);
-const conversation = useAgentConversation(() => props.client, () => agentId.value, () => sessionStream?.binding ?? null);
+const conversation = useAgentConversation(
+  () => props.client, () => agentId.value, () => sessionStream?.binding ?? null, () => pageSkill.value,
+);
 if (sessionStream) {
   onBeforeUnmount(
     sessionStream.attach({
@@ -146,6 +164,11 @@ if (notice) watch(notice, frame => {
 const nav = props.nav;
 const { currentAgent } = nav;
 const currentFeature = display.feature;
+/**
+ * The page skill of the page shown: what its own snapshot named for the instance shown, else the page's declaration. It
+ * narrows who may take a message, and it travels with every message sent while that page is shown.
+ */
+const pageSkill = computed(() => display.pageSkill.value ?? currentFeature.value?.pageSkill ?? null);
 /** A page that sits in the agent-app states rather than replacing the conversation. */
 const pairedPage = computed(() => currentFeature.value?.withConversation === true);
 const pageFull = computed(() => pairedPage.value && display.view.value === "full");
@@ -267,11 +290,7 @@ watch(display.page, (current, previous) => {
  * applies from the start too: an address that opens with a page beside the conversation narrows the list the same way as
  * opening that page later does.
  */
-watch(
-  () => display.pageSkill.value ?? currentFeature.value?.pageSkill ?? null,
-  (page) => void nav.setPage(page).catch(report),
-  { immediate: true },
-);
+watch(pageSkill, (page) => void nav.setPage(page).catch(report), { immediate: true });
 
 /**
  * The agent is chosen at the head of the application's column (the user's place for it, 2026-11-06): one chooser for the
@@ -405,9 +424,23 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="agent-shell" :class="{ 'panel-open': openArtifact }">
+  <div class="agent-shell" :class="{ 'panel-open': openArtifact }" @keydown.esc="closeNav(true)">
+    <div class="compact-nav">
+      <button ref="navToggle" type="button" class="compact-nav-toggle" :aria-expanded="navOpen"
+        :aria-controls="navId" @click="toggleNav">
+        <PanelLeft :size="16" aria-hidden="true" />
+        <span>{{ title || workbench.label || labels.sessions }}</span>
+      </button>
+    </div>
     <!-- The application's own column. A host with its own navigation (the agent settings) fills the slot. -->
-    <ShellColumn :label="title">
+    <div v-if="navOpen" class="compact-nav-scrim" aria-hidden="true" @click="closeNav(true)" />
+    <ShellColumn :id="navId" :label="title || workbench.label" :class="{ 'compact-nav-open': navOpen }">
+      <div class="compact-nav-heading">
+        <span>{{ title || workbench.label || labels.sessions }}</span>
+        <button ref="navClose" type="button" class="compact-nav-close" :aria-label="labels.close" @click="closeNav(true)">
+          <X :size="16" aria-hidden="true" />
+        </button>
+      </div>
       <slot name="column">
         <ShellNavBody
           :workbench="workbench"
@@ -425,7 +458,7 @@ onMounted(() => {
           :panel-confirmation="panelConfirmation"
           :agent-picker="agentPicker"
           :labels="labels"
-          @new-conversation="nav.startNew()"
+          @new-conversation="nav.startNew(); closeNav(true)"
           @select-feature="display.openFeature($event)"
           @feature-action="emit('featureAction', $event)"
           @select-agent="chooseAgent"
@@ -521,6 +554,7 @@ onMounted(() => {
  * flat area, no gutter, no border and no shadow of its own (DESIGN.md "Applications and shells"). Its composer is raised.
  */
 .agent-shell {
+  position: relative;
   --shell-composer-shadow: var(--elevation-composer);
   display: flex;
   height: 100%;
@@ -576,13 +610,56 @@ onMounted(() => {
   min-height: 0;
   overflow: auto;
 }
+.compact-nav, .compact-nav-heading, .compact-nav-scrim { display: none; }
 @media (max-width: 760px) {
   .agent-shell { flex-direction: column; }
-  .agent-shell > :deep(.shell-column) {
-    flex: 0 0 auto;
-    max-height: 240px;
-    overflow: auto;
+  .compact-nav {
+    display: flex;
+    flex: none;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-bottom: 1px solid var(--el-border-color);
+    background: var(--shell-panel-bg);
   }
+  .compact-nav-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    max-width: 100%;
+    min-height: var(--control-height);
+    padding: 0 var(--spacing-sm);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  .compact-nav-toggle:hover { background: var(--shell-panel-hover); }
+  .compact-nav-toggle > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .compact-nav-toggle > svg { flex: none; }
+  .compact-nav-scrim { display: block; position: absolute; inset: 0; z-index: 19; background: var(--el-overlay-color-lighter); }
+  .agent-shell > :deep(.shell-column) {
+    display: none;
+    position: absolute;
+    z-index: 20;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: min(280px, calc(100% - 24px));
+    overflow: auto;
+    border-inline-end: 1px solid var(--el-border-color);
+    box-shadow: var(--elevation-overlay);
+  }
+  .agent-shell > :deep(.shell-column.compact-nav-open) { display: flex; animation: compact-nav-in var(--transition-base) both; }
+  .compact-nav-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); flex: none; margin-bottom: var(--spacing-sm); font-weight: var(--font-semibold); }
+  .compact-nav-close { display: grid; place-items: center; flex: none; width: var(--control-height); height: var(--control-height); padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--el-text-color-secondary); cursor: pointer; }
+  .compact-nav-close:hover { background: var(--shell-panel-hover); }
   .shell-main { min-height: 0; }
+}
+@keyframes compact-nav-in {
+  from { opacity: 0; translate: -8px 0; }
+  to { opacity: 1; translate: 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-shell > :deep(.shell-column.compact-nav-open) { animation: none; }
 }
 </style>

@@ -31,6 +31,7 @@ const input = { executionId: "33333333-3333-4333-8333-333333333333" };
 const member: RuntimeSkillRef = { namespace: { kind: "domain", domainId: owner.domainId }, name: "author-member" };
 const sibling: RuntimeSkillRef = { ...member, name: "sibling-member" };
 const entry = (skill: RuntimeSkillRef) => ({ skill, digest: "a".repeat(64), description: skill.name });
+const skillView = { pageSkills: [{ skills: [member, sibling] }] };
 
 function loaded(ref: RuntimeSkillRef) {
   mocks.ownedRun.mockResolvedValue({
@@ -46,12 +47,15 @@ function loaded(ref: RuntimeSkillRef) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.readView.mockResolvedValue({ pageSkills: [{ skills: [member, sibling] }] });
+  mocks.readView.mockResolvedValue(skillView);
   mocks.resolveSource.mockResolvedValue(member);
   mocks.post.mockResolvedValue({ text: '{"result":"tested"}' });
 });
 
-it.each(["action", "metric-view"] as const)("requires the actual author member for %s even when its sibling is loaded", async kind => {
+it.each([
+  ["action", { permissionCode: "action-management", pageKey: "actions" }, "ontology-actions"],
+  ["metric-view", { permissionCode: "ontology-modeling", pageKey: "metric-views" }, "ontology-metric-views"],
+] as const)("requires the registered root author member for %s even when its sibling is loaded", async (kind, entrance, useId) => {
   loaded(sibling);
   await expect(executeAuthoring(owner, credentials, runId, kind, "read-test", input)).rejects.toMatchObject({ status: 403 });
   expect(mocks.post).not.toHaveBeenCalled();
@@ -59,6 +63,9 @@ it.each(["action", "metric-view"] as const)("requires the actual author member f
   loaded(member);
   await expect(executeAuthoring(owner, credentials, runId, kind, "read-test", input)).resolves.toEqual({ result: "tested" });
   expect(mocks.readView).toHaveBeenCalledWith(owner.domainId, credentials);
+  expect(mocks.resolveSource).toHaveBeenLastCalledWith(skillView, entrance, {
+    kind: "application-use", applicationId: "ontology", useId,
+  }, []);
 });
 
 it("rejects an authoring request when its trusted use is unavailable", async () => {

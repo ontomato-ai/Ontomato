@@ -97,7 +97,7 @@ test("agent dispatch carries build-test context and preserves the entry-point re
   } finally {await new Promise(resolve=>server.close(resolve));}
 });
 
-test("the app-builder CLI uses the current checker and registers no-code material", async () => {
+test("the app-builder CLI checks a workspace and registers with the current SDK", async () => {
   const workspaceId = "11111111-1111-4111-8111-111111111111";
   const ref = "f".repeat(40);
   const sdkVersion = "4.1.9-dev." + "a".repeat(64);
@@ -107,28 +107,37 @@ test("the app-builder CLI uses the current checker and registers no-code materia
       module: 'import {mountPanel} from "@ontomato/sdk/panel"; await mountPanel({});',
       messages: { en: { "settings.title": "Settings for {name}" } },
     },
-    manifest: { slots: {}, state: {}, operations: [] },
-    sdkVersion,
+    manifest: { members: {}, state: {}, events: {} },
   };
   const source = {
     kind: "candidate", workspace: { id: workspaceId, ref }, panel,
     previewContext: { kind: "build-test", test: null },
   };
   const requests = [];
-  const sdkPath = `/apps-sdk/${sdkVersion}`;
+  const sdkPath = "/apps-sdk/current";
   const release = {
     version: sdkVersion, digest: "b".repeat(64), publicBasePath: "/public",
     sdkBasePath: "/public" + sdkPath, checkPath: "/public" + sdkPath + "/node/panel-check.mjs",
     componentsPath: "/public" + sdkPath + "/components.json",
   };
   const checkModule = `
-    const parse = value => {
-      if ("sdkVersion" in value) throw new Error("The current SDK refuses sdkVersion");
-      return value;
+    const ok = data => ({ success: true, data });
+    const invalid = issues => ({ success: false, error: { issues } });
+    export const registerProductPanelRequestSchema = {
+      safeParse: value => "sdkVersion" in value
+        ? invalid([{ path: ["sdkVersion"], message: "The current SDK refuses sdkVersion" }])
+        : ok(value),
     };
-    export const registerDirectPanelRequestSchema = { parse };
-    export const registerDirectProjectionRequestSchema = { parse };
-    export const directPanelDefinitionContentSchema = {
+    export const registerProductProjectionRequestSchema = {
+      safeParse: value => "data" in value ? ok(value) : invalid([{
+        code: "invalid_union",
+        unionErrors: [
+          { issues: [{ code: "invalid_type", received: "undefined", path: ["data"], message: "Required" }] },
+          { issues: [{ code: "invalid_literal", path: ["componentId"], message: "Expected chart" }] },
+        ],
+      }]),
+    };
+    export const panelDefinitionContentSchema = {
       safeParse(value) {
         return value.content.html === "<bad>"
           ? { success: false, error: { issues: [{ path: ["content", "html"], params: { line: 1, column: 2 }, message: "Rejected by the release parser" }] } }
@@ -150,6 +159,13 @@ test("the app-builder CLI uses the current checker and registers no-code materia
     else if (request.url === `${sdkPath}/components.json`) response.end(JSON.stringify({ version: sdkVersion, components: [{ componentId: "ObjectList" }] }));
     else if (request.url === `${sdkPath}/node/panel-check.mjs`) response.end(checkModule);
     else if (request.url === projectionPath) response.end(JSON.stringify({ projection: { componentId: "@ontomato/sdk:ObjectList" } }));
+    else if (request.url === "/api/product-projections/unwritten") {
+      response.statusCode = 404;
+      response.end(JSON.stringify({ error: { code: "PRODUCT_UNAVAILABLE" } }));
+    } else if (request.url === "/api/product-projections/hidden") {
+      response.statusCode = 403;
+      response.end(JSON.stringify({ error: { message: "Product use Grant required" } }));
+    }
     else if (request.url === candidatePath) response.end(JSON.stringify(source));
     else if (request.url === panelPath && body?.revision === 6) {
       response.statusCode = 409;
@@ -173,11 +189,7 @@ test("the app-builder CLI uses the current checker and registers no-code materia
     assert.equal(JSON.parse(catalog.stdout).version, sdkVersion);
     const preview = JSON.parse((await run("panel", "preview", ref)).stdout);
     assert.deepEqual(preview, source);
-    const input = {
-      content: { html: "<section></section>" },
-      manifest: { members: {}, state: {}, events: {} },
-      name: "Acceptance", description: "", visibility: "private",
-    };
+    const input = { ...preview.panel, name: "Acceptance", description: "", visibility: "private" };
     const application = { entry: { path: "/acceptance", renderer: "panels" }, panelUses: [] };
     const result = await run("panel", "register", JSON.stringify({
       panels: [{ id: "acceptance-panel", mode: "update", revision: 7, input }],
@@ -188,10 +200,17 @@ test("the app-builder CLI uses the current checker and registers no-code materia
       ["GET", "/api/apps-sdk/current", undefined, "author-key"],
       ["GET", `${sdkPath}/components.json`, undefined, "author-key"],
       ["GET", candidatePath, undefined, "author-key"],
+      ["GET", "/api/apps-sdk/current", undefined, "author-key"],
+      ["GET", `${sdkPath}/node/panel-check.mjs`, undefined, "author-key"],
       ["PUT", panelPath, { ...input, revision: 7 }, "author-key"],
       ["PUT", usesPath, application, "author-key"],
     ]);
-    const stale = { id: "acceptance-panel", mode: "update", input, revision: 6 };
+    const material = { panels: [{ id: "acceptance-panel", mode: "update", revision: 7, input: { ...input, sdkVersion } }] };
+    await assert.rejects(run("panel", "register", JSON.stringify(material)), error => error.stderr.includes("The current SDK refuses sdkVersion"));
+    assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), [
+      ["GET", "/api/apps-sdk/current"], ["GET", `${sdkPath}/node/panel-check.mjs`],
+    ]);
+    const stale = { ...material.panels[0], input, revision: 6 };
     await assert.rejects(run("panel", "register", JSON.stringify({
       panels: [stale, { ...stale, id: "later-panel", revision: 7 }],
     })), error => error.stderr.includes("409 Revision conflict"));
@@ -207,16 +226,35 @@ test("the app-builder CLI uses the current checker and registers no-code materia
       ["/api/apps-sdk/current", "GET"], [`${sdkPath}/node/panel-check.mjs`, "GET"],
       [`${sdkPath}/components.json`, "GET"], [projectionPath, "GET"],
     ]));
-    const materialPath = join(directory, "registration.json");
-    await writeFile(materialPath, JSON.stringify({
-      projections: [{ id: "tasks", mode: "create", input: { componentId: "@ontomato/sdk:ObjectList" } }],
-    }));
-    const checkedMaterial = await run("panel", "check", directory, "--material", materialPath);
-    assert.deepEqual(JSON.parse(checkedMaterial.stdout).unchecked, []);
-    assert.equal(requests.splice(0).some(([method, url]) => method !== "GET" || url === projectionPath), false);
     await writeFile(layout, "<bad>");
     await assert.rejects(run("panel", "check", directory), error => error.stderr.includes(`${layout}:1:2: Rejected by the release parser`));
     assert.equal(requests.some(([method, url]) => method !== "GET" || url === projectionPath), false);
+    requests.length = 0;
+    await writeFile(layout, '<panel-member ref="tasks"></panel-member>');
+    const reference = async id => {
+      manifest.members.tasks.target.projectionId = id;
+      await writeFile(join(directory, "panel.json"), JSON.stringify({ manifest }));
+    };
+    const registration = join(directory, "registration.json");
+    const localMaterial = { projections: [{
+      id: "draft-list", mode: "create", input: { componentId: "@ontomato/sdk:ObjectList", data: {} },
+    }] };
+    await writeFile(registration, JSON.stringify(localMaterial));
+    await reference("draft-list");
+    await run("panel", "check", directory);
+    assert.equal(requests.splice(0).some(([method, url]) => method !== "GET" || url.includes("/product-")), false);
+
+    await reference("unwritten");
+    await assert.rejects(run("panel", "check", directory), error =>
+      error.stderr.includes("projection unwritten was not found in the material or on the platform"));
+    await reference("hidden");
+    await assert.rejects(run("panel", "check", directory), error =>
+      error.stderr.includes("projection hidden: 403") && error.stderr.includes("Product use Grant required"));
+
+    delete localMaterial.projections[0].input.data;
+    await writeFile(registration, JSON.stringify(localMaterial));
+    await assert.rejects(run("panel", "check", directory), error =>
+      error.stderr.includes("projection draft-list: data: required field is missing") && !error.stderr.includes("Expected chart"));
   } finally {
     await rm(directory, { recursive: true });
     await new Promise(resolve => server.close(resolve));

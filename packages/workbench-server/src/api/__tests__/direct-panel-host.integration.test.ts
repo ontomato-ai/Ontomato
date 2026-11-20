@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
@@ -8,17 +8,20 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { appsSdkComponentCatalogSchema } from "@ontomato/contracts/apps-sdk";
 import {
-  directPanelSchema, productPanelInputSchema, productProjectionResponseSchema,
-  registerDirectPanelRequestSchema, registerDirectProjectionRequestSchema,
+  APPLICATION_PANEL_REFERENCES_PATH, productPanelResponseSchema, productProjectionResponseSchema,
+  registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
 } from "@ontomato/contracts/product-panels";
 import { panelOperationDescriptorResponseSchema } from "@ontomato/contracts/panel-agent";
+import { platformTypeTableResponseSchema } from "@ontomato/contracts/platform-type-table";
 import { panelManifestSchema } from "@ontomato/contracts/panel-manifest";
 import {
   panelDefinitionSnapshotSchema, productDefinitionStreamFrameSchema, productDefinitionStreamRequestSchema,
   type ProductDefinitionRevision,
 } from "@ontomato/contracts/product-subscriptions";
 import { installContentLayout } from "../../content/layout";
+import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { readSseFrames } from "../../infrastructure/agent-runtime/client";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
@@ -29,7 +32,12 @@ vi.mock("../../infrastructure/postgres", () => ({
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
 }));
 vi.mock("../../config/application", () => ({ config: { dataQuery: { get baseUrl() { return state.base; } } } }));
-vi.mock("../../config/environment", () => ({ environment: { agentRuntime: () => ({ queryServiceToken: "fixture-service" }) } }));
+vi.mock("../../config/environment", () => ({
+  environment: {
+    agentRuntime: () => ({ queryServiceToken: "fixture-service" }), publicBasePath: () => "",
+    queryBase: () => state.base, queryTimeout: () => 30000,
+  },
+}));
 vi.mock("../../utils/request-identity", async original => ({
   ...await original<typeof import("../../utils/request-identity")>(),
   requireDomainId: (req: { domainId: string }) => req.domainId,
@@ -40,11 +48,14 @@ if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable Po
 
 const trial = await import(fileURLToPath(new URL("../../../../apps-sdk/examples/panels/schedules-trial/definitions.mjs", import.meta.url))) as {
   panels: { id: string; directory: string; name: string; description: string; manifest: unknown }[];
-  projections: { id: string; input: Record<string, unknown> }[];
+  projections: { id: string; input: Record<string, unknown> & {
+    data: Record<string, { source: { type: { kind: string; id: string } } | { operation: { kind: string; id: string } } | { object: { input: string } }; read: string; params: object }>;
+  } }[];
   panelContent(directory: string): unknown;
 };
 let server: Server;
 let contentRoot: string;
+let cataloguePath: string;
 const grants = new Set<string>();
 const codePanelId = "panel-schedules-mixed";
 
@@ -55,9 +66,11 @@ beforeAll(async () => {
   await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
   contentRoot = await mkdtemp(path.join(os.tmpdir(), "direct-panel-host-"));
+  cataloguePath = await writeBundledAppSdkFixture(contentRoot);
   installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
 
-  const { panelOperationsRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
+  const { panelOperationsRouter, productPanelsInternalRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
+  const { appBuilderRouter } = await import("../routes/app-builder");
   const app = express();
   app.use(express.json());
   app.post("/product-governance/register", (req, res) => {
@@ -66,12 +79,30 @@ beforeAll(async () => {
     res.json({ success: true });
   });
   app.post("/product-governance/check", (req, res) => {
-    expect(req.header("tk")).toBe("host-reader");
-    res.json({ allowed: grants.has(req.body.id) });
+    res.json({ allowed: req.header("tk") === "host-reader" && grants.has(req.body.id) });
   });
   app.post("/product-governance/resources", (req, res) => {
     expect(req.header("tk")).toBe("host-reader");
     res.json({ ids: [...grants] });
+  });
+  app.get("/platform/applications", (req, res) => {
+    expect(req.query.purpose).toBe("navigation");
+    res.json({ success: true, data: req.header("tk") !== "host-reader" ? [] : [{
+      id: "app-builder", kind: "native", names: { en: "App Builder" }, descriptions: {}, icon: "Hammer",
+      rail: "apps", category: "build", sort: 1, entry: { path: "/app-builder" },
+      entryAccess: ["app-builder"], scheduleAdapter: null, releaseId: null,
+    }] });
+  });
+  app.post("/action/queryList", (req, res) => {
+    expect(req.header("tk")).toBe("host-reader");
+    expect(req.body).toEqual({ status: "PUBLISHED" });
+    res.json({ success: true, data: [{
+      id: "approve-expense", name: "Approve expense", codeHash: "author-private-hash",
+      target: { className: "expense", keyParameter: "id" },
+      function: { code: "author-private-source", parameters: [
+        { name: "id", type: "TYPE_STRING" }, { name: "amount", type: "TYPE_NUMBER" },
+      ] },
+    }] });
   });
   app.get("/platform/applications/app-mixed/panel-uses", (req, res) => {
     expect(req.header("tk")).toBe("host-reader");
@@ -82,16 +113,147 @@ beforeAll(async () => {
     } });
   });
   app.use("/api", (req, _res, next) => {
-    Object.assign(req, { domainId: "pilot", userId: "reader", token: "host-reader", locale: "en" });
+    Object.assign(req, { domainId: "pilot", userId: "reader", token: req.header("X-Test-Token") ?? "host-reader", locale: "en" });
     next();
   });
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
   app.use("/api", panelOperationsRouter);
+  app.use("/api", appBuilderRouter);
+  app.use("/internal/product-panels", productPanelsInternalRouter);
   server = await new Promise<Server>(resolve => {
     const started = app.listen(0, "127.0.0.1", () => resolve(started));
   });
   state.base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+});
+
+it("reads the authoritative operation type table before there is a panel use", async () => {
+  const response = await request("GET", "app-builder/type-table");
+  expect(response.status).toBe(200);
+  const raw = await response.text();
+  const { objectTypes } = platformTypeTableResponseSchema.parse(JSON.parse(raw));
+  expect(objectTypes["platform:ScheduledTask"].operations).toContainEqual(expect.objectContaining({
+    id: "schedules.runNow", target: { source: "input", input: "task" }, batch: false, effect: "write",
+  }));
+  expect(objectTypes.expense.operations).toEqual([expect.objectContaining({
+    id: "approve-expense", target: { source: "input", input: "target" }, batch: false, effect: "write",
+    inputSchema: expect.objectContaining({
+      properties: { values: expect.objectContaining({ properties: {
+        amount: { type: "string", title: "amount", contentMediaType: "application/json" },
+      } }) },
+    }),
+  })]);
+  expect(raw).not.toContain("author-private");
+  const denied = await fetch(state.base + "/api/app-builder/type-table", { headers: { "X-Test-Token": "ordinary-reader" } });
+  expect(denied.status).toBe(403);
+});
+
+it("identifies malformed registrations and missing author references without bypassing use grants", async () => {
+  const summary = trial.projections.find(projection => projection.id === "projection-schedules-summary")!;
+  const { data: _data, ...input } = projectionRequest(summary.input, 0) as { data: unknown };
+  const invalidProjection = await request("PUT", "product-projections/author-invalid", input);
+  expect(invalidProjection.status).toBe(400);
+  expect(await invalidProjection.json()).toMatchObject({ error: {
+    code: "INVALID_REQUEST", message: "Projection 'author-invalid', field 'data' is required",
+  } });
+
+  const panel = {
+    name: "Author panel", description: "", visibility: "private", revision: 0,
+    content: { html: '<section><panel-member ref="summary"></panel-member></section>' },
+    manifest: { state: {}, members: { summary: { target: { projectionId: "author-missing" } } }, events: {} },
+  };
+  const extraField = await request("PUT", "product-panels/author-panel", { ...panel, typo: true });
+  expect(extraField.status).toBe(400);
+  expect(await extraField.json()).toMatchObject({ error: {
+    code: "INVALID_REQUEST", message: "Panel 'author-panel', field 'typo' is not allowed",
+  } });
+  const invalidReference = await request("PUT", "product-panels/author-panel", panel);
+  expect(invalidReference.status).toBe(404);
+  expect(await invalidReference.json()).toMatchObject({ error: {
+    code: "PRODUCT_UNAVAILABLE", message: expect.stringContaining("Projection 'author-missing' does not exist"),
+  } });
+  expect(grants.has("author-panel")).toBe(false);
+
+  for (const [collection, kind] of [["product-projections", "Projection"], ["product-panels", "Panel"]]) {
+    const lookup = await request("GET", collection + "/author-missing");
+    expect(lookup.status).toBe(404);
+    expect(await lookup.json()).toMatchObject({ error: {
+      code: "PRODUCT_UNAVAILABLE", message: `${kind} 'author-missing' does not exist`,
+    } });
+  }
+  const readerLookup = await fetch(state.base + "/api/product-projections/author-missing", {
+    headers: { "X-Test-Token": "ordinary-reader" },
+  });
+  expect(readerLookup.status).toBe(403);
+
+  const saved = await request("PUT", "product-projections/author-protected", projectionRequest(summary.input, 0));
+  expect(saved.status).toBe(200);
+  grants.delete("author-protected");
+  const forbidden = await request("GET", "product-projections/author-protected");
+  expect(forbidden.status).toBe(403);
+  expect(await forbidden.json()).toMatchObject({ error: { code: "PRODUCT_FORBIDDEN" } });
+});
+
+it("checks projection data against the current release before registering or changing a record", async () => {
+  const trialSummary = trial.projections.find(projection => projection.id === "projection-schedules-summary")!;
+  const summary = projectionRequest(trialSummary.input, 0);
+  expect("data" in summary).toBe(true);
+  if (!("data" in summary)) throw new Error("Expected an ordinary projection in the trial");
+  const rows = { source: { type: { kind: "PlatformObjectType", id: "platform:ScheduledTask" } }, read: "list", params: {} };
+  const rejects = async (id: string, body: object, code: string) => {
+    const result = await request("PUT", "product-projections/" + id, body);
+    expect(result.status).toBe(400);
+    expect(await result.json()).toMatchObject({ error: { code } });
+  };
+
+  await rejects("catalogue-wrong-result", { ...summary, data: { record: rows } }, "PANEL_COMPONENT_DATA_RESULT_MISMATCH");
+  await rejects("catalogue-unknown-data", { ...summary, data: { ...summary.data, extra: rows } }, "PANEL_COMPONENT_DATA_UNKNOWN");
+  await rejects("catalogue-missing-record", { ...summary, data: {} }, "PANEL_COMPONENT_DATA_REQUIRED");
+  expect([...grants].some(id => id.startsWith("catalogue-"))).toBe(false);
+
+  const optional = await request("PUT", "product-projections/catalogue-optional-data", {
+    ...summary, componentId: "@ontomato/sdk:SegmentedControl", data: {}, inputs: {},
+    config: { options: [{ value: "all", label: "All" }] },
+  });
+  expect(optional.status, await optional.text()).toBe(200);
+
+  const id = "catalogue-existing";
+  const saved = await request("PUT", "product-projections/" + id, summary);
+  expect(saved.status).toBe(200);
+  const before = productProjectionResponseSchema.parse(await saved.json());
+  await rejects(id, { ...summary, revision: 1, data: { record: rows } }, "PANEL_COMPONENT_DATA_RESULT_MISMATCH");
+  const stored = await request("GET", "product-projections/" + id);
+  expect(productProjectionResponseSchema.parse(await stored.json())).toEqual(before);
+
+  const entry = await request("PUT", "product-projections/catalogue-conversation", {
+    ...summary, componentId: "@ontomato/sdk:ConversationEntry", data: {}, inputs: {}, config: {},
+    conversationEntry: { target: { kind: "page-default" } },
+  });
+  expect(entry.status, await entry.text()).toBe(200);
+
+  const catalogue = appsSdkComponentCatalogSchema.parse(JSON.parse(await readFile(cataloguePath, "utf8")));
+  const others = catalogue.components.filter(component => component.componentId !== "ObjectSummary");
+  const declaredSummary = catalogue.components.find(component => component.componentId === "ObjectSummary")!;
+  try {
+    await writeFile(cataloguePath, JSON.stringify({ ...catalogue, components: others }));
+    await rejects("catalogue-absent", summary, "PANEL_COMPONENT_UNAVAILABLE");
+    const { data: _data, ...codeOnly } = declaredSummary;
+    await writeFile(cataloguePath, JSON.stringify({ ...catalogue, components: [...others, codeOnly] }));
+    await rejects("catalogue-code-only", summary, "PANEL_COMPONENT_NOT_PROJECTABLE");
+    expect(grants.has("catalogue-absent") || grants.has("catalogue-code-only")).toBe(false);
+
+    const component = {
+      ...declaredSummary, module: "@fixture/widgets/base", componentId: "FixtureSummary", exportName: "FixtureSummary",
+    };
+    await writeFile(cataloguePath, JSON.stringify({ ...catalogue, components: [...others, component] }));
+    const registered = await request("PUT", "product-projections/catalogue-new-component", {
+      ...summary, componentId: "@fixture/widgets:FixtureSummary",
+    });
+    expect(registered.status).toBe(200);
+    expect(productProjectionResponseSchema.parse(await registered.json()).projection.componentId).toBe("@fixture/widgets:FixtureSummary");
+  } finally {
+    await writeFile(cataloguePath, JSON.stringify(catalogue));
+  }
 });
 
 afterAll(async () => {
@@ -108,14 +270,18 @@ function request(method: string, resource: string, body?: object, signal?: Abort
   });
 }
 
+function projectionRequest(input: (typeof trial.projections)[number]["input"], revision: number) {
+  return registerProductProjectionRequestSchema.parse({ ...input, revision });
+}
+
 it("reads the registered trial and follows its directly placed projections through the host routes", async () => {
   const { id, directory, name, description, manifest } = trial.panels.find(entry => entry.id === "panel-schedules-trial")!;
   for (const projection of trial.projections) {
-    const body = registerDirectProjectionRequestSchema.parse({ ...projection.input, revision: 0 });
+    const body = projectionRequest(projection.input, 0);
     const response = await request("PUT", `product-projections/${projection.id}`, body);
     expect(response.status, await response.text()).toBe(200);
   }
-  const body = registerDirectPanelRequestSchema.parse({
+  const body = registerProductPanelRequestSchema.parse({
     name, description, manifest, visibility: "domain", content: trial.panelContent(directory), revision: 0,
   });
   const saved = await request("PUT", `product-panels/${id}`, body);
@@ -124,14 +290,14 @@ it("reads the registered trial and follows its directly placed projections throu
   const panelResponse = await request("GET", `product-panels/${id}`);
   expect(panelResponse.status).toBe(200);
   const panelPayload = await panelResponse.json();
-  const panel = directPanelSchema.parse(panelPayload.panel);
+  const { panel } = productPanelResponseSchema.parse(panelPayload);
   const snapshotResponse = await request("GET", `product-panels/${id}/snapshot`);
   const snapshotPayload = await snapshotResponse.json();
   expect(snapshotResponse.status, JSON.stringify(snapshotPayload)).toBe(200);
   const snapshot = panelDefinitionSnapshotSchema.parse(snapshotPayload);
   expect(snapshot.panel).toEqual({ id, revision: panel.revision });
   expect(snapshot.projections.map(projection => projection.id)).toEqual(
-    Object.values(panel.manifest.members).map(member => member.target.projectionId),
+    Object.values(panel.manifest.members).flatMap(({ target }) => "projectionId" in target ? [target.projectionId] : []),
   );
 
   const projectionPayloads: Record<string, unknown> = {};
@@ -161,7 +327,7 @@ it("reads the registered trial and follows its directly placed projections throu
         const projectionId = projectionDefinitions[0]!.id;
         const projection = trial.projections.find(item => item.id === projectionId)!;
         const update = await request("PUT", `product-projections/${projectionId}`, {
-          ...projection.input, revision: projectionDefinitions[0]!.revision, name: "Updated summary",
+          ...projectionRequest(projection.input, projectionDefinitions[0]!.revision), name: "Updated summary",
         });
         expect(update.status, await update.text()).toBe(200);
       } else {
@@ -174,49 +340,117 @@ it("reads the registered trial and follows its directly placed projections throu
   }
   expect(frames).toEqual(["snapshot", "definition-changed"]);
 
+  const deniedProjection = "projection-schedules-summary";
+  grants.delete(deniedProjection);
+  const partial = await request("GET", `product-panels/${id}/snapshot`);
+  expect(partial.status).toBe(200);
+  const partialSnapshot = panelDefinitionSnapshotSchema.parse(await partial.json());
+  expect(partialSnapshot.members).toContainEqual({ status: "forbidden", memberPath: [{ member: "summary" }] });
+  expect(partialSnapshot.projections.map(projection => projection.id)).not.toContain(deniedProjection);
+  expect(partialSnapshot.members).toContainEqual(expect.objectContaining({
+    status: "ready", memberPath: [{ member: "run" }], target: { kind: "projection", id: "projection-schedules-run" },
+  }));
+
   const evidencePath = process.env.DIRECT_PANEL_HOST_HTTP_EVIDENCE;
   if (evidencePath) {
     await writeFile(evidencePath, JSON.stringify({ panel: panelPayload, snapshot: snapshotPayload, projections: projectionPayloads }, null, 2) + "\n");
   }
 });
 
-it("describes a mixed code panel's direct operation without treating the other slot as an operation", async () => {
+it("preserves a code panel's ID and revision rules and describes its member operation", async () => {
   const summaryId = "mixed-summary", runId = "mixed-run";
   for (const [id, source] of [[summaryId, "projection-schedules-summary"], [runId, "projection-schedules-run"]] as const) {
     const { input } = trial.projections.find(projection => projection.id === source)!;
-    const response = await request("PUT", `product-projections/${id}`, registerDirectProjectionRequestSchema.parse({ ...input, revision: 0 }));
+    const response = await request("PUT", "product-projections/" + id, projectionRequest(input, 0));
     expect(response.status, await response.text()).toBe(200);
   }
   const trialPanel = trial.panels.find(panel => panel.id === "panel-schedules-summary")!;
-  const sdkVersion = "1.0.0-fixture";
-  const installed = path.join(contentRoot, "data/apps-sdk", sdkVersion);
-  await mkdir(installed, { recursive: true });
-  await writeFile(path.join(installed, "components.json"), JSON.stringify({ version: sdkVersion, components: [] }));
-  const manifest = panelManifestSchema.parse(trialPanel.manifest);
-  const definition = productPanelInputSchema.parse({
-    name: trialPanel.name, description: trialPanel.description, content: trial.panelContent(trialPanel.directory),
-    sdkVersion, visibility: "domain",
-    manifest: { ...manifest, slots: {
-      summary: { ...manifest.slots.summary, projectionId: summaryId },
-      run: { projectionId: runId, inputs: { task: { state: "selectedTask" } } },
+  const content = trial.panelContent(trialPanel.directory);
+  const directTrial = trial.panels.find(panel => panel.id === "panel-schedules-trial")!;
+  const { state: panelState, members } = panelManifestSchema.parse(directTrial.manifest);
+  const replacement = {
+    name: trialPanel.name, description: trialPanel.description, visibility: "domain", content,
+    manifest: { state: panelState, events: {}, members: {
+      summary: { ...members.summary, target: { projectionId: summaryId } },
+      run: { ...members.run, target: { projectionId: runId } },
     } },
+  };
+  const panelPath = "product-panels/" + codePanelId;
+  const initial = await request("PUT", panelPath, { ...replacement, revision: 0 });
+  expect(initial.status, await initial.text()).toBe(200);
+  const legacy = await request("PUT", panelPath, {
+    ...replacement, revision: 1, sdkVersion: "1.0.0-fixture", manifest: trialPanel.manifest,
   });
-  // This is the already registered shape a caller could reach after its projections were updated.
-  await state.pool!.query(
-    `INSERT INTO "${state.schema}".product_panels (domain_id,id,owner_id,definition) VALUES ($1,$2,$3,$4)`,
-    ["pilot", codePanelId, "reader", definition],
+  expect(legacy.status).toBe(400);
+  const stale = await request("PUT", panelPath, { ...replacement, revision: 2 });
+  expect(stale.status, await stale.text()).toBe(409);
+  const stored = await state.pool!.query(
+    `SELECT revision,definition FROM "${state.schema}".product_panels WHERE domain_id=$1 AND id=$2`,
+    ["pilot", codePanelId],
   );
-  grants.add(codePanelId);
+  expect(stored.rows).toEqual([{ definition: replacement, revision: 1 }]);
+
+  const saved = await request("PUT", panelPath, { ...replacement, revision: 1 });
+  expect(saved.status, await saved.text()).toBe(200);
+  const readback = await request("GET", panelPath);
+  expect(readback.status).toBe(200);
+  const { panel } = productPanelResponseSchema.parse(await readback.json());
+  expect(panel).toMatchObject({ id: codePanelId, ownerId: "reader", revision: 2, ...replacement });
+  expect(panel).not.toHaveProperty("sdkVersion");
+  const snapshot = await request("GET", panelPath + "/snapshot");
+  expect(snapshot.status).toBe(200);
+  const current = panelDefinitionSnapshotSchema.parse(await snapshot.json());
+  expect(current.panel).toEqual({ id: codePanelId, revision: 2 });
+  expect([...current.projections].sort((left, right) => left.id.localeCompare(right.id))).toEqual([
+    { id: runId, revision: 1 }, { id: summaryId, revision: 1 },
+  ]);
 
   const describe = (operationId: string) => request("GET", "panel-operations/descriptor?" +
     new URLSearchParams({ applicationId: "app-mixed", useId: "mixed", operationId }));
   const response = await describe("run.runNow");
   const payload = await response.json();
   expect(response.status, JSON.stringify(payload)).toBe(200);
-  expect(panelOperationDescriptorResponseSchema.parse(payload)).toMatchObject({
+  const descriptor = panelOperationDescriptorResponseSchema.parse(payload);
+  expect(descriptor).toMatchObject({
     handlerRef: "schedules.runNow", effect: "write", target: { source: "input", input: "task" },
   });
+  const authorResponse = await request("GET", "app-builder/type-table");
+  const table = platformTypeTableResponseSchema.parse(await authorResponse.json());
+  const { id: _id, ...declaration } = table.objectTypes["platform:ScheduledTask"].operations!.find(op => op.id === "schedules.runNow")!;
+  expect(descriptor).toMatchObject(declaration);
   expect((await describe("summary.runNow")).status).toBe(422);
-  const saved = await request("PUT", `product-panels/${codePanelId}`, { ...definition, revision: 1 });
-  expect(saved.status, await saved.text()).toBe(200);
+
+  const application = {
+    domainId: "pilot",
+    uses: [{ id: "mixed", panelId: codePanelId, inputs: { selectedTask: { literal: null } } }],
+    delivery: { panels: [codePanelId], projections: [summaryId, runId] },
+  };
+  const validate = (body: object, token = "fixture-service") => fetch(state.base + APPLICATION_PANEL_REFERENCES_PATH, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Ontomato-Query-Service-Token": token },
+    body: JSON.stringify(body),
+  });
+  expect((await validate(application, "reader")).status).toBe(403);
+  const allowed = await validate(application);
+  expect(allowed.status, await allowed.text()).toBe(204);
+  expect((await validate({ ...application, delivery: { panels: [], projections: [] } })).status).toBe(204);
+  const framePanelId = "panel-app-frame";
+  const frameSaved = await request("PUT", "product-panels/" + framePanelId, {
+    name: "Application frame", description: "", visibility: "domain", revision: 0, content: { html: "<div></div>" },
+    manifest: { state: { choice: panelState.selectedTask }, members: {}, events: {} },
+  });
+  expect(frameSaved.status, await frameSaved.text()).toBe(200);
+  const framed = { ...application, framePanelId, uses: [{
+    ...application.uses[0], inputs: { selectedTask: { frameState: "choice" } },
+  }] };
+  expect((await validate(framed)).status).toBe(204);
+  expect((await validate({ ...framed, framePanelId: undefined })).status).toBe(400);
+  const invalidInput = await validate({ ...application, uses: [{
+    ...application.uses[0], inputs: { selectedTask: { literal: "not an object" } },
+  }] });
+  expect(invalidInput.status).toBe(400);
+  expect((await invalidInput.json()).error.message).toContain("selectedTask");
+  const unreachable = await validate({ ...application, delivery: { panels: [], projections: ["unreachable"] } });
+  expect(unreachable.status).toBe(400);
+  expect((await unreachable.json()).error.message).toContain("unreachable");
 });

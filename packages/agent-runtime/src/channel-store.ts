@@ -101,6 +101,7 @@ export class ChannelStore {
       const occupied = await c.query(`UPDATE ${this.store.table("sessions")} SET preparing_run_id=$4 WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND (active_run_id IS NULL OR active_run_id=$5) AND preparing_run_id IS NULL RETURNING id`, [...this.key(scope), sessionId, intent.cancelled ? null : runId, options.afterRunId ?? null]);
       if (!occupied.rowCount) throw new RuntimeError(409, "SESSION_BUSY", "Session already has an execution intent");
       await c.query(`UPDATE ${this.store.table("messages")} SET intent_id=$4 WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND run_id IS NULL AND intent_id IS NULL`, [...this.key(scope),sessionId,runId]);
+      await this.store.lockOpenAdmission(c, scope, runId);
       await c.query(`INSERT INTO ${this.store.table("admissions")} (host_id,domain_id,key,operation,fingerprint,session_id,intent) VALUES($1,$2,$3,'run','',$4,$5)`, [...this.key(scope), runId, sessionId, intent]);
     });
     return intent;

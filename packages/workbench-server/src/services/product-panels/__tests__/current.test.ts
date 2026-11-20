@@ -1,4 +1,9 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { writeBundledAppSdkFixture } from "../../../__tests__/fixtures/bundled-app-sdk";
+import { installContentLayout } from "../../../content/layout";
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { registerProductPanelRequestSchema, registerProductProjectionRequestSchema } from "@ontomato/contracts/product-panels";
 import { HttpError } from "../../../utils/errors";
 const mocks = vi.hoisted(() => ({ query: vi.fn(), grant: vi.fn(), register: vi.fn(), share: vi.fn(), notify: vi.fn(), edits: [] as string[] }));
@@ -6,23 +11,31 @@ vi.mock("../../../infrastructure/postgres", () => ({ getPostgresPool: () => ({ q
 vi.mock("../../../infrastructure/postgres-transaction", () => ({ transaction: (action: (client: { query: typeof mocks.query }) => unknown) => action({ query: mocks.query }) }));
 vi.mock("../../product-governance/grants", () => ({ requireProductGrant: mocks.grant, registerProductResource: mocks.register,
   shareProductResource: mocks.share, grantedProductIds: async () => mocks.edits }));
+vi.mock("../../app-builder/access", () => ({ assertAppBuilderAccess: async () => undefined }));
 vi.mock("../definition-stream", () => ({ notifyProductDefinitionChanged: mocks.notify }));
-import { readCurrentPanel, readCurrentProjection, requireCurrentPanels, saveCurrentPanel, saveCurrentProjection } from "../current";
+import { readCurrentPanel, readCurrentProjection, saveCurrentPanel, saveCurrentProjection, validateApplicationPanelReferences } from "../current";
 import type { CurrentProductRow } from "../../../infrastructure/product-current";
 
 const owner = { domainId: "domain", userId: "author" }, credentials = { token: "caller" };
 let rows: Map<string, CurrentProductRow>;
 const projection = () => registerProductProjectionRequestSchema.parse({ name: "Task summary", description: "", visibility: "domain", revision: 0,
-  componentId: "TaskSummary", binding: { kind: "PlatformObjectType", id: "platform:ScheduledTask" },
-  inputs: { task: { kind: "object", objectType: "platform:ScheduledTask" } }, display: { fields: ["name"] } });
-const panel = () => registerProductPanelRequestSchema.parse({ name: "Tasks", description: "", visibility: "domain", revision: 0, sdkVersion: "1.1.2",
+  componentId: "@ontomato/sdk:ObjectSummary", inputs: { task: { kind: "object", objectType: "platform:ScheduledTask" } },
+  data: { record: { source: { object: { input: "task" } }, read: "record", params: {} } }, outputs: {}, config: { fields: ["name"] } });
+const panel = () => registerProductPanelRequestSchema.parse({ name: "Tasks", description: "", visibility: "domain", revision: 0,
   content: { html: "<main></main>", module: "throw new Error('Node must never execute this module')", recipes: "Choose a test task." },
-  manifest: { state: { selectedTask: { kind: "object", objectType: "platform:ScheduledTask" } },
-    slots: { summary: { projectionId: "x", inputs: { task: { state: "selectedTask" } } } }, operations: [] } });
+  manifest: { state: { selectedTask: { type: { kind: "object", objectType: "platform:ScheduledTask" } } },
+    members: { summary: { target: { projectionId: "x" }, inputs: { task: { state: "selectedTask" } } } }, events: {} } });
 async function seedProjection() {
-  const { revision, ...input } = projection();
-  return saveCurrentProjection(owner, credentials, "x", input, revision);
+  return saveCurrentProjection(owner, credentials, "x", projection());
 }
+
+let runtimeRoot: string;
+beforeAll(async () => {
+  runtimeRoot = await mkdtemp(path.join(os.tmpdir(), "current-product-"));
+  await writeBundledAppSdkFixture(runtimeRoot);
+  installContentLayout({ runtimeRoot, publicSkillsRoot: runtimeRoot, prompts: [], runtimeResources: [] });
+});
+afterAll(() => rm(runtimeRoot, { recursive: true }));
 
 beforeEach(() => {
   vi.resetAllMocks(); mocks.edits = []; rows = new Map();
@@ -30,6 +43,9 @@ beforeEach(() => {
   mocks.query.mockImplementation(async (sql: string, args: unknown[] = []) => {
     const kind = sql.includes("product_panels") ? "panel" : "projection";
     const key = `${kind}:${args[1]}`;
+    if (sql.startsWith("SELECT id,definition")) return { rows: [...rows.entries()]
+      .filter(([key]) => key.startsWith("panel:"))
+      .map(([, row]) => ({ id: row.id, definition: row.definition })) };
     if (sql.startsWith("SELECT id,domain_id")) return { rows: rows.has(key) ? [rows.get(key)] : [] };
     if (sql.startsWith("SELECT id FROM") && sql.includes("ANY")) return { rows: (args[1] as string[]).filter(id => rows.has(`panel:${id}`)).map(id => ({ id })) };
     if (sql.startsWith("SELECT id FROM")) return { rows: [] };
@@ -53,10 +69,10 @@ it("registers source text without executing it, uses current definitions and nev
   const { revision, ...input } = panel();
   const saved = await saveCurrentPanel(owner, credentials, "p", input, revision);
   expect(saved.content).toEqual(input.content);
-  const { revision: _initial, ...updated } = projection();
-  await saveCurrentProjection(owner, credentials, "x", { ...updated, display: { fields: ["name", "status"] } }, 1);
-  expect((await readCurrentProjection(owner, credentials, "x")).display).toEqual({ fields: ["name", "status"] });
-  expect((await readCurrentPanel(owner, credentials, "p")).manifest.slots.summary.projectionId).toBe("x");
+  const updated = registerProductProjectionRequestSchema.parse({ ...projection(), revision: 1, config: { fields: ["name", "status"] } });
+  await saveCurrentProjection(owner, credentials, "x", updated);
+  expect((await readCurrentProjection(owner, credentials, "x")).config).toEqual({ fields: ["name", "status"] });
+  expect((await readCurrentPanel(owner, credentials, "p")).manifest.members.summary.target).toEqual({ projectionId: "x" });
   expect(mocks.notify).toHaveBeenCalledWith({ kind: "definition-changed", domainId: "domain", target: { kind: "projection", id: "x" } });
   expect(mocks.query.mock.calls.some(([sql]) => /(?:INSERT INTO|UPDATE) (?:product_assets|product_asset_revisions|product_releases|product_bundle_heads)/.test(sql))).toBe(false);
 });
@@ -78,28 +94,30 @@ it("requires current use/edit grants, preserves the owner for delegated edits an
 it("rejects missing projection IDs, unknown slot inputs and mismatched ontology types before creating a panel", async () => {
   await seedProjection();
   const { revision, ...input } = panel();
-  for (const [slots, state, code] of [
-    [{ summary: { projectionId: "missing", inputs: {} } }, input.manifest.state, "PRODUCT_UNAVAILABLE"],
-    [{ summary: { projectionId: "x", inputs: { unknown: { state: "selectedTask" } } } }, input.manifest.state, "PANEL_INPUT_UNKNOWN"],
-    [input.manifest.slots, { selectedTask: { kind: "scalar", type: "string", deepLink: false } }, "PANEL_INPUT_TYPE_MISMATCH"],
+  for (const [members, state, code] of [
+    [{ summary: { target: { projectionId: "missing" }, inputs: {} } }, input.manifest.state, "PRODUCT_UNAVAILABLE"],
+    [{ summary: { target: { projectionId: "x" }, inputs: { unknown: { state: "selectedTask" } } } }, input.manifest.state, "PANEL_PORT_MISMATCH"],
+    [input.manifest.members, { selectedTask: { type: { kind: "scalar", type: "string" }, deepLink: false } }, "PANEL_PORT_MISMATCH"],
   ] as const) {
-    const request = registerProductPanelRequestSchema.parse({ ...input, revision, manifest: { ...input.manifest, slots, state } });
+    const request = registerProductPanelRequestSchema.parse({ ...input, revision, manifest: { ...input.manifest, members, state } });
     await expect(saveCurrentPanel(owner, credentials, "invalid", request, revision)).rejects.toMatchObject({ code });
     expect(rows.has("panel:invalid")).toBe(false);
   }
 });
 
 it("does not accept a legacy asset ID as a current panel reference", async () => {
-  await expect(requireCurrentPanels(owner.domainId, ["legacy-page"])).rejects.toMatchObject({ code: "INVALID_PANEL_REFERENCE" });
+  const request = (panelId: string) => ({
+    domainId: owner.domainId, uses: [{ id: "use", panelId }], delivery: { panels: [], projections: [] },
+  });
+  await expect(validateApplicationPanelReferences(request("legacy-page"))).rejects.toMatchObject({ code: "INVALID_PANEL_REFERENCE" });
   await seedProjection(); const { revision, ...input } = panel(); await saveCurrentPanel(owner, credentials, "p", input, revision);
-  await expect(requireCurrentPanels(owner.domainId, ["p"])).resolves.toBeUndefined();
+  await expect(validateApplicationPanelReferences(request("p"))).resolves.toBeUndefined();
 });
 
 it("does not assume resource registration restores a revoked edit Grant", async () => {
   mocks.register.mockResolvedValue(undefined);
   mocks.grant.mockRejectedValue(new HttpError(403, "Edit was revoked", "PRODUCT_FORBIDDEN"));
-  const { revision, ...input } = projection();
-  await expect(saveCurrentProjection(owner, credentials, "x", input, revision)).rejects.toMatchObject({ code: "PRODUCT_FORBIDDEN" });
+  await expect(saveCurrentProjection(owner, credentials, "x", projection())).rejects.toMatchObject({ code: "PRODUCT_FORBIDDEN" });
   expect(rows.has("projection:x")).toBe(false);
   expect(mocks.notify).not.toHaveBeenCalled();
 });

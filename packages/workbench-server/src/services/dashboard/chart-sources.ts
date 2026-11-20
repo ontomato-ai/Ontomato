@@ -1,5 +1,7 @@
 import type { ChartProjectionSource } from "@ontomato/contracts/product-panels";
-import type { DashboardChartEntry, DashboardDetail } from "@ontomato/contracts/dashboard";
+import {
+  parseDashboardCardPrimaryKey, type DashboardChartEntry, type DashboardDetail, type DashboardMetricReference,
+} from "@ontomato/contracts/dashboard";
 import type { PoolClient } from "pg";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { transaction } from "../../infrastructure/postgres-transaction";
@@ -62,3 +64,24 @@ export const dashboardChartSources = {
     });
   },
 };
+
+type ChartRegistration = Pick<RegisteredSource, "dashboardOwnerId" | "metricId">;
+
+export function createDashboardCardReadAdapter({ domainId }: DashboardOwner, viewer: AssistantCredentials) {
+  const association = (primaryKey: string, registration: ChartRegistration): RegisteredSource => ({
+    ...registration,
+    source: parseDashboardCardPrimaryKey(primaryKey),
+  });
+
+  return {
+    chartTemplate(primaryKey: string, registration: ChartRegistration) {
+      return dashboardChartSources.read(domainId, association(primaryKey, registration));
+    },
+    async result(primaryKey: string, registration: ChartRegistration, parameters: DashboardMetricReference["parameters"]) {
+      const { card } = await registeredChart(domainId, association(primaryKey, registration));
+      const metric = new DashboardMetricClient(domainId, viewer);
+      const { revision } = await metric.describe(registration.metricId);
+      return metric.execute({ ...card.query, parameters: { ...card.query.parameters, ...parameters } }, revision);
+    },
+  };
+}

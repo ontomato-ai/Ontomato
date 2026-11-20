@@ -134,6 +134,22 @@ class OntologyModelControllerTest {
 	}
 
 	@Test
+	void anUngrantedReaderIsRefusedWithForbiddenAndTheFieldLabelsAnswerInTheReadersLanguage() throws Exception {
+		when(service.objectTypes(user, "en")).thenThrow(new org.springframework.web.server.ResponseStatusException(
+				org.springframework.http.HttpStatus.FORBIDDEN, "Operation permission is required: /ontology/model/object-types"));
+		var refused = mvc().perform(get("/ontology/model/object-types").header("Accept-Language", "en"))
+				.andExpect(status().isForbidden()).andReturn().getResponse();
+		assertEquals("FORBIDDEN", JSON.parseObject(refused.getContentAsString()).getJSONObject("error").getString("code"));
+
+		when(service.fieldLabels("zh-CN")).thenReturn(new OntologyModelService.FieldLabels(
+				Map.of("className", "API 名"), Map.of("name", "属性名"), Map.of("desc", "关系描述")));
+		var labels = JSON.parseObject(mvc().perform(get("/ontology/model/field-labels").header("Accept-Language", "zh-CN"))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8));
+		assertEquals("API 名", labels.getJSONObject("objectType").getString("className"));
+		assertEquals("关系描述", labels.getJSONObject("relationship").getString("desc"));
+	}
+
+	@Test
 	void aStoredModelThatBreaksThePrimaryKeyRuleAnswers409WithTheReason() throws Exception {
 		when(service.updateObjectType(eq("Pump"), any(), eq(user), eq(null))).thenThrow(
 				new IllegalArgumentException("Class [Legacy] must have exactly one attribute marked primaryKey=true, but found 0"));

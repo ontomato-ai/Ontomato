@@ -4,7 +4,7 @@ import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import { panelDefinitionSnapshotSchema } from "@ontomato/contracts/product-subscriptions";
-import { directPanelSchema, productProjectionResponseSchema } from "@ontomato/contracts/product-panels";
+import { productPanelSchema, productProjectionResponseSchema } from "@ontomato/contracts/product-panels";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import recorded from "./fixtures/direct-panel-host-http.json";
 import { panelAnswer, pageSkillContextFor, installPlatform, mountPlatformPage, nothingAt, panelUse, type Sent } from "./panel-frame";
@@ -27,7 +27,7 @@ import { panelAnswer, pageSkillContextFor, installPlatform, mountPlatformPage, n
 
 const application = "app-panels-trial-a";
 const use = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", "panel-schedules-trial", `/applications/${application}/tasks`);
-const panel = directPanelSchema.parse(recorded.panel.panel);
+const panel = productPanelSchema.parse(recorded.panel.panel);
 const snapshot = panelDefinitionSnapshotSchema.parse(recorded.snapshot);
 const projections = Object.fromEntries(Object.entries(recorded.projections).map(([id, answer]) => [id, productProjectionResponseSchema.parse(answer)]));
 

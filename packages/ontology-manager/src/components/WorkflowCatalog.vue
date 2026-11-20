@@ -15,6 +15,7 @@ import {
   vLoading,
 } from "element-plus";
 import { ArrowDownUp, Pause, Play, Plus, RefreshCw, Trash2 } from "lucide-vue-next";
+import ManagerIconButton from "./ManagerIconButton.vue";
 import { PlatformPageHeader } from "@ontomato/platform-shell";
 import type {
   CapabilityGrantRecord,
@@ -465,12 +466,8 @@ function grantSummary(workflow: WorkflowRecord) {
     <!-- The platform's one page header: the title, its line of description, and this page's own buttons. -->
     <PlatformPageHeader compact :title="ot('workflowTitle')" :description="ot('workflowDesc')">
       <template #actions>
-        <el-button :loading="loading" @click="refresh">
-          <RefreshCw :size="16" />
-          <span>{{ ot("workflowRefresh") }}</span>
-        </el-button>
-        <el-button type="primary" @click="openCreate">
-          <Plus :size="16" />
+        <ManagerIconButton :icon="RefreshCw" :label="ot('workflowRefresh')" :loading="loading" @click="refresh" />
+        <el-button type="primary" :icon="Plus" @click="openCreate">
           <span>{{ ot("workflowCreate") }}</span>
         </el-button>
       </template>

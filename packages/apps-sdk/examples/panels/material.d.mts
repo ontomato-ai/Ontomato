@@ -8,10 +8,10 @@ export interface PanelMaterial<Id extends string> {
   messages: PanelMessages;
   projections: readonly { id: string; input: ProductProjectionInput }[];
   panelContent(): ProductPanelContent;
-  candidateFiles(sdkVersion: string): WorkspaceFile[];
-  panelInput(sdkVersion: string): ProductPanelInput;
+  candidateFiles(): WorkspaceFile[];
+  panelInput(): ProductPanelInput;
   projectionMaterial(): { projections: { id: string; mode: "create"; input: ProductProjectionInput }[] };
-  panelMaterial(sdkVersion: string): { panels: { id: Id; mode: "create"; input: ProductPanelInput }[] };
+  panelMaterial(): { panels: { id: Id; mode: "create"; input: ProductPanelInput }[] };
   runCli(): void;
 }
 

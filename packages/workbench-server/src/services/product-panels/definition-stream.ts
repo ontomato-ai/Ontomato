@@ -1,13 +1,13 @@
-import {z} from 'zod';
-import type {PanelDefinitionSnapshot,ProductDefinitionTarget,ProductDefinitionRevision,ProductDefinitionStreamFrame} from '@ontomato/contracts/product-subscriptions';
-import type {ProductDefinitionChangedEvent} from '@ontomato/contracts/product-panels';
+import type {PanelDefinitionSnapshot,PanelMemberSnapshot,ProductDefinitionTarget,ProductDefinitionRevision,ProductDefinitionStreamFrame} from '@ontomato/contracts/product-subscriptions';
+import {productPanelSchema,type ProductDefinitionChangedEvent} from '@ontomato/contracts/product-panels';
 import type {ProductOwner} from '../product-governance/grants';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {HttpError} from '../../utils/errors';
-import {findCurrentProduct,type CurrentProductKind} from '../../infrastructure/product-current';
+import {currentProductRecord,findCurrentProduct,type CurrentProductKind} from '../../infrastructure/product-current';
 import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres';
-import {directPanelManifestSchema,panelManifestSchema} from '@ontomato/contracts/panel-manifest';
 import {requireProductGrant} from '../product-governance/grants';
+import {resolvePanelMemberPath} from './member-path';
+import {repeatItemTypes} from './references';
 import {checkpoint,subscriptions} from './subscription-state';
 
 type AuthorStream = {
@@ -17,7 +17,6 @@ type AuthorStream = {
   close: () => void;
 };
 const authorStreams = new Set<AuthorStream>();
-const definitionManifestSchema = z.union([panelManifestSchema, directPanelManifestSchema]);
 
 export function assertSubscriptionCapacity(owner:ProductOwner){
   const owned=({owner:other}:{owner:ProductOwner})=>other.domainId===owner.domainId&&other.userId===owner.userId;
@@ -41,17 +40,28 @@ export async function authorizeDefinitionStream(
   };
 }
 export async function requirePanelDefinitions(owner:ProductOwner,credentials:AssistantCredentials,panelId:string):Promise<PanelDefinitionSnapshot>{
-  const panel=await requireDefinition(owner,credentials,'panel',panelId);
-  const manifest=definitionManifestSchema.parse(panel.definition.manifest);
-  const projectionIds=new Set('members' in manifest
-    ? Object.values(manifest.members).map(member=>member.target.projectionId)
-    : Object.values(manifest.slots).map(slot=>slot.projectionId));
-  const projections=[];
-  for(const id of projectionIds){
-    const projection=await requireDefinition(owner,credentials,'projection',id);
-    projections.push({id,revision:projection.revision});
+  const row = await requireDefinition(owner, credentials, 'panel', panelId);
+  const panel = productPanelSchema.parse(currentProductRecord(row, false));
+  const repeated = repeatItemTypes(panel);
+  const fixedMembers = Object.entries(panel.manifest.members).filter(([key, { target }]) =>
+    !repeated.has(key) && ('projectionId' in target || 'panelId' in target));
+  const members = await Promise.all(fixedMembers.map(async ([member]): Promise<PanelMemberSnapshot> => {
+    const memberPath = [{ member }] as [{ member: string }];
+    try {
+      const resolved = await resolvePanelMemberPath(owner, credentials, panel, memberPath);
+      const { id, revision } = resolved.kind === 'projection' ? resolved.projection : resolved.panel;
+      return { status: 'ready', memberPath, target: { kind: resolved.kind, id }, revision };
+    } catch (error) {
+      if (error instanceof HttpError && error.status === 403) return { status: 'forbidden', memberPath };
+      throw error;
+    }
+  }));
+  const projections = new Map<string, { id: string; revision: number }>();
+  for (const member of members) {
+    if (member.status === 'ready' && member.target.kind === 'projection')
+      projections.set(member.target.id, { id: member.target.id, revision: member.revision });
   }
-  return {panel:{id:panelId,revision:panel.revision},projections};
+  return { panel: { id: panelId, revision: panel.revision }, members, projections: [...projections.values()] };
 }
 export async function requireDefinition(owner:ProductOwner,credentials:AssistantCredentials,kind:CurrentProductKind,id:string){
   await requireProductGrant(id,'use',credentials);

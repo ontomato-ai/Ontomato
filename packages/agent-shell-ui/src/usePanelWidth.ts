@@ -23,13 +23,14 @@ export function usePanelWidth(snap?: (edge: PanelSnap) => void) {
   const width = ref(Math.round(Math.min(Math.max(window.innerWidth * 0.42, 420), 760)));
   const resizing = ref(false);
   const beyond = ref<PanelSnap | null>(null);
-  let drag: { handle: HTMLElement; x: number; width: number } | null = null;
+  let drag: { handle: HTMLElement; x: number; width: number; storedWidth: number; max: number } | null = null;
 
   function resize(event: PointerEvent) {
     const next = drag!.width + (drag!.x - event.clientX);
-    const max = Math.round(window.innerWidth * MAX_SHARE);
-    width.value = Math.min(Math.max(next, MIN_WIDTH), max);
-    if (snap) beyond.value = next > max + SNAP_DISTANCE ? "expand" : next < MIN_WIDTH - SNAP_DISTANCE ? "close" : null;
+    const max = drag!.max;
+    const min = Math.min(MIN_WIDTH, max);
+    width.value = Math.min(Math.max(next, min), max);
+    if (snap) beyond.value = next > max + SNAP_DISTANCE ? "expand" : next < min - SNAP_DISTANCE ? "close" : null;
   }
   function stopResize() {
     if (!drag) return;
@@ -42,7 +43,7 @@ export function usePanelWidth(snap?: (edge: PanelSnap) => void) {
   }
   function release() {
     const edge = beyond.value;
-    const start = drag!.width;
+    const start = drag!.storedWidth;
     stopResize();
     if (!edge) return;
     width.value = start;
@@ -50,7 +51,11 @@ export function usePanelWidth(snap?: (edge: PanelSnap) => void) {
   }
   function startResize(event: PointerEvent) {
     const handle = event.currentTarget as HTMLElement;
-    drag = { handle, x: event.clientX, width: width.value };
+    const panel = handle.parentElement;
+    const cssMax = panel ? getComputedStyle(panel).maxWidth : "";
+    const viewportMax = Math.round(window.innerWidth * MAX_SHARE);
+    const max = cssMax.endsWith("px") ? Math.min(viewportMax, Math.floor(parseFloat(cssMax))) : viewportMax;
+    drag = { handle, x: event.clientX, width: panel?.offsetWidth || width.value, storedWidth: width.value, max };
     resizing.value = true;
     handle.setPointerCapture(event.pointerId);
     handle.addEventListener("pointermove", resize);

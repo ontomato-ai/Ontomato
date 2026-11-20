@@ -1,21 +1,28 @@
 import { computed, onScopeDispose, shallowRef, watch } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import { panelOperationId } from "@ontomato/contracts/panel-manifest";
+import { panelOperationId, type PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { directReadDeclaration, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
-import { readKey, type MemberData, type MemberDataState, type MemberInputs } from "./direct";
+import { awaitsInputs, memberReadKey, paramValues, runValues, type MemberData, type MemberDataState, type MemberInputs } from "./direct";
 import type { PanelInstance } from "./instance";
-import { adapterPart, type PlatformObjectRecord } from "./platform-objects";
+import { adapterPart, type PlatformGraphNeighborsQuery, type PlatformObjectRecord } from "./platform-objects";
+
+type PanelObjectValue = NonNullable<ReturnType<typeof stateObject>>;
 import { stateObject, type PanelFieldValue } from "./state";
 
 /*
  * A direct projection placed in a panel's frame (an older code panel using a declared projection): its components get
- * the same member data as in the platform's document, read here through this version's resource modules for the
- * projection's type — rows by its list, a record by its single read, a form by its form, an operation's description
- * from the coordinator — until every caller reads through the platform (design 4.2, step 4). A module that cannot
- * answer rejects; a shown datum says why.
+ * the same member data as in the platform's document, read here through this release's resource modules for the
+ * projection's type — rows by its list, a record by its single read, a form by its form (a create form for the type),
+ * choices by its options, the ontology graph by its graph reads, a registered chart's drawing and output by its source
+ * card's metric reads — and an operation's description from the coordinator, until every caller reads through the
+ * platform (design 4.2, step 4). A datum waits, unread, for its object or a parameter its owner requires. A module that
+ * cannot answer rejects; a shown datum says why.
  */
+
+/** The graph reads of a type's module. */
+const graphOf = (type: string) => adapterPart(type, "graph");
 
 /** The object a datum is read from, given the member's inputs. */
 function objectOf(data: DirectProjectionData, inputs: MemberInputs) {
@@ -29,40 +36,94 @@ function panelRecord({ primaryKey, label, subtitle, fields, fieldLabels }: Platf
   return { primaryKey, label, ...(subtitle === undefined ? {} : { subtitle }), fields, ...(fieldLabels === undefined ? {} : { fieldLabels }) };
 }
 
-export function frameMemberData(projection: DirectProjection, slot: string, instance: PanelInstance, inputs: () => MemberInputs): MemberData {
-  /** The run input a read parameter takes its value from, when the projection declares one. */
-  const runInput = (data: DirectProjectionData, parameter: string) => {
-    const source = data.params[parameter];
-    return source && "input" in source ? source.input : undefined;
-  };
+/** The form a type's module describes: an object's, or the type's create form (a draft) when the datum reads the type. */
+function formOf(data: DirectProjectionData, object: PanelObjectValue | null, params: Record<string, unknown>) {
+  const target: PanelFormTarget = object
+    ? { kind: "object", objectType: object.className, primaryKey: object.primaryKey }
+    : { kind: "draft" };
+  const objectType = object ? object.className : (data.source as { type: { id: string } }).type.id;
+  return adapterPart(objectType, "forms").describe({
+    target,
+    ...(params.values === undefined || params.values === null ? {} : { values: params.values as Record<string, RuntimeJsonValue> }),
+    changedField: (params.changedField ?? null) as string | null,
+  });
+}
 
-  async function answer(name: string, values: MemberInputs): Promise<MemberDataState> {
+export function frameMemberData(projection: DirectProjection, slot: string, instance: PanelInstance, inputs: () => MemberInputs): MemberData {
+  /** What the member's component set itself; a frame's resource module takes it with the author's parameters. */
+  const own = () => instance.ownParams(slot);
+  const placement = instance.manifest.members[slot]!;
+  async function answer(name: string, values: MemberInputs, ownRun: MemberInputs = own()): Promise<MemberDataState> {
     const data = projection.data[name];
     if (!data) throw new Error(`Projection ${projection.id} declares no datum '${name}'`);
     const declaration = directReadDeclaration(projection, data);
     if (!declaration) throw new Error(`No owner registers the read '${data.read}' that datum '${name}' names`);
+    if (awaitsInputs(projection, data, placement, values, ownRun)) return { status: "awaiting" };
     const object = objectOf(data, values);
-    if ("object" in data.source && object === null) return { status: "awaiting" };
+    const params = paramValues(projection, data, placement, values, ownRun);
+    const type = "type" in data.source ? data.source.type.id : object?.className;
     let value: unknown;
-    if (declaration.result === "panelRecordList" && "type" in data.source) {
-      const rows = await adapterPart(data.source.type, "list")();
-      value = rows.map(panelRecord);
-    } else if (declaration.result === "panelRecord" && object) {
-      value = panelRecord(await adapterPart(object.className, "read")(object.primaryKey));
-    } else if (declaration.result === "panelFormDescription" && object) {
-      const valuesInput = runInput(data, "values");
-      const changedInput = runInput(data, "changedField");
-      value = await adapterPart(object.className, "forms").describe({
-        target: { kind: "object", objectType: object.className, primaryKey: object.primaryKey },
-        ...(valuesInput && values[valuesInput] !== undefined ? { values: values[valuesInput] as Record<string, RuntimeJsonValue> } : {}),
-        changedField: (changedInput ? values[changedInput] ?? null : null) as string | null,
-      });
-    } else if (declaration.result === "panelOperationDescriptor" && "operation" in data.source) {
-      value = await instance.describeOperation(panelOperationId(slot, data.source.operation.split(".").pop()!));
-    } else {
-      throw new Error(`This version reads no '${data.read}' for datum '${name}' in a panel's frame`);
+    switch (declaration.result) {
+      case "panelRecordList":
+        value = (await adapterPart(type!, "list")()).map(panelRecord);
+        break;
+      case "panelRecord":
+        value = panelRecord(await adapterPart(object!.className, "read")(object!.primaryKey));
+        break;
+      case "panelFormDescription":
+        value = await formOf(data, object, params);
+        break;
+      case "panelOperationDescriptor":
+        value = await instance.describeOperation(panelOperationId(slot, (data.source as { operation: { id: string } }).operation.id.split(".").pop()!));
+        break;
+      case "panelOptionList": {
+        const options = adapterPart(type!, "options");
+        value = data.read === "resolve"
+          ? { options: await options.resolve(params.values as RuntimeJsonValue[]) }
+          : await options.list({
+            ...(params.keyword ? { keyword: params.keyword as string } : {}),
+            ...(params.page ? { page: params.page as { number: number; size: number } } : {}),
+          });
+        break;
+      }
+      case "panelGraphSchema":
+        value = await graphOf(type!).schema!();
+        break;
+      case "panelGraphCounts":
+        value = { counts: await graphOf(type!).counts!() };
+        break;
+      case "panelGraphStart":
+        value = { node: await graphOf(type!).start!() };
+        break;
+      case "panelGraphNeighbors":
+        value = await graphOf(type!).neighbors({
+          node: params.node as unknown as PanelObjectValue,
+          ...(params.relationKinds ? { relationKinds: params.relationKinds as string[] } : {}),
+          ...(params.layers ? { layers: params.layers as PlatformGraphNeighborsQuery["layers"] } : {}),
+        });
+        break;
+      case "panelOntologyObjects": {
+        const page = params.page as { number: number; size: number } | null;
+        value = await graphOf(type!).objects!({
+          type: params.type as string,
+          ...(params.keyword ? { keyword: params.keyword as string } : {}),
+          ...(page ? { page: page.number, pageSize: page.size } : {}),
+        });
+        break;
+      }
+      case "chartTemplate":
+      case "metricOutput": {
+        // A frame reaches a chart's source only through the registered chart projection it read.
+        if (!("metricId" in projection))
+          throw new Error(`Only a registered chart reads '${data.read}' in a panel's frame`);
+        const metric = adapterPart(object!.className, "metric");
+        value = declaration.result === "chartTemplate"
+          ? await metric.template(projection)
+          : await metric.result(projection, params as Record<string, RuntimeJsonValue>);
+        break;
+      }
     }
-    return { status: "ready", value: panelReadResultSchemas[declaration.result].parse(value) };
+    return { status: "ready", value: panelReadResultSchemas[declaration.result].parse(value) as RuntimeJsonValue };
   }
 
   return {
@@ -71,7 +132,9 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
       let sequence = 0;
       const reread = () => {
         const reading = ++sequence;
-        state.value = { status: "loading" };
+        // A datum already shown stays on screen until its new answer arrives: rereading replaces what it shows, never
+        // the component drawing it. Only a first read (or one after an empty, refused or failed answer) shows loading.
+        if (state.value.status !== "ready") state.value = { status: "loading" };
         answer(name, inputs()).then(
           (result) => { if (reading === sequence) state.value = result; },
           (reason: unknown) => {
@@ -81,15 +144,18 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
       };
       // An object an operation changed is read again where it is shown: its own datum, or a list of its type.
       const data = projection.data[name]!;
-      watch(() => readKey(data, inputs()), reread, { immediate: true });
+      watch(() => memberReadKey(projection, data, placement, inputs(), own()), reread, { immediate: true });
       onScopeDispose(instance.onObjectChanged((changed) => {
         const object = objectOf(data, inputs());
         if (!changed || (object && object.className === changed.objectType && object.primaryKey === changed.primaryKey)
-          || ("type" in data.source && data.source.type === changed.objectType)) reread();
+          || ("type" in data.source && data.source.type.id === changed.objectType)) reread();
       }));
       return computed(() => state.value);
     },
     // A refusal the module raises (a draft the owner refuses, by field) reaches the form as it was raised.
-    read: (name, run) => answer(name, { ...inputs(), ...run }),
+    read: (name, params, overrides = {}) => {
+      const { inputs: run, own: ownRun } = runValues(projection, name, params);
+      return answer(name, { ...inputs(), ...overrides, ...run }, { ...own(), ...ownRun });
+    },
   };
 }
