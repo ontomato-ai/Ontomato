@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { ACTION, DELETE_ACTION, SET_ACTION_STATUS } from "@ontomato/contracts/panel-client-requests";
-import { panelOwnerOperationDescriptorSchema } from "@ontomato/contracts/panel-operations";
+import { panelOwnerOperationDescriptorSchema, type PanelOperationDeclaration } from "@ontomato/contracts/panel-operations";
 import {
   panelFormDescriptionSchema, type PanelFormDescription, type PanelFormValues, type PanelRecord,
 } from "@ontomato/contracts/panel-projection";
@@ -11,12 +11,13 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { ownerEnvelopeSchema } from "../product-panels/data-query-operations";
 import type { ProductOwner } from "../product-governance/grants";
-import { readRefusal } from "./object-actions";
+import { objectActionDeclaration, readRefusal, storedObjectActionSchema } from "./object-actions";
 import { m6ServerOperations } from "./panel-operations";
 
 /*
  * The action catalog's named reads for a direct panel, read as the viewer: the list and one action as records, the
  * owner's definition form for one action, and the descriptions of the status change and the delete the panel offers.
+ * For an author's type table it also declares the published Actions that run on one customer object type.
  * The data engine answers the records' display names and the form in the reader's language; the column names are
  * this owner's text.
  */
@@ -32,6 +33,12 @@ const actionSchema = z.object({
   function: z.object({ name: z.string().nullish() }).passthrough().nullish(),
 }).passthrough();
 type ActionAsset = z.infer<typeof actionSchema>;
+
+/** One object Action for an author's type table: the object type it runs on and its static declaration. */
+export interface ObjectActionEntry {
+  className: string;
+  declaration: PanelOperationDeclaration;
+}
 
 interface ActionFormParams {
   values?: PanelFormValues;
@@ -95,6 +102,19 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
         ...(values !== undefined && { values }),
         changedField: changedField ?? null,
       }, panelFormDescriptionSchema);
+    },
+    /**
+     * The published Actions of the viewer's domain that run on an object, each with the object type its stored target
+     * names, as static declarations; with an object type, only that type's. One owner read serves a whole type table.
+     */
+    async objectActions(objectType?: string): Promise<ObjectActionEntry[]> {
+      const published = await owner(
+        "action-object-catalog", "/action/queryList", { status: "PUBLISHED" }, z.array(storedObjectActionSchema),
+      );
+      return published.flatMap(({ target, ...action }) =>
+        target !== null && (objectType === undefined || target.className === objectType)
+          ? [{ className: target.className, declaration: objectActionDeclaration({ ...action, target }) }]
+          : []);
     },
     [`${SET_ACTION_STATUS}.describe`]() {
       return operationDescription(SET_ACTION_STATUS, translate("panels.action.operations.setStatus"));
