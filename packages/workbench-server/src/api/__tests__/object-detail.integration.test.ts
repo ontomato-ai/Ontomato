@@ -44,7 +44,12 @@ const owner = { domainId: "domain", userId: "editor" };
 const credentials = { token: "caller" };
 const panel = {
   name: "Details", description: "", visibility: "private",
-  content: { html: "<section></section>" }, manifest: { state: {}, members: {}, events: {} },
+  content: {
+    html: '<div id="app"><section></section></div>',
+    module: `import { mountPanel } from "@ontomato/sdk/panel";
+await mountPanel({});`,
+  },
+  manifest: { state: {}, members: {}, events: {} },
 };
 
 beforeAll(async () => {
@@ -213,7 +218,7 @@ it("requires a platform token for the Java read and distinguishes absent and bro
 it("rejects a remapping that closes a panel cycle without changing the old mapping", async () => {
   await addPanel("root", {
     ...panel,
-    content: { html: '<section><panel-member ref="detail"></panel-member></section>' },
+    content: { ...panel.content, html: '<div id="app"><section><projection slot="detail"></projection></section></div>' },
     manifest: {
       state: { selected: { type: { kind: "object", objectType: "Customer" },
         deepLink: false, external: false, personal: false, default: null } },
@@ -223,7 +228,7 @@ it("rejects a remapping that closes a panel cycle without changing the old mappi
   });
   await addPanel("loop", {
     ...panel,
-    content: { html: '<section><panel-member ref="back"></panel-member></section>' },
+    content: { ...panel.content, html: '<div id="app"><section><projection slot="back"></projection></section></div>' },
     manifest: { ...panel.manifest, members: { back: { target: { panelId: "root" } } } },
   });
   await addPanel("old");
