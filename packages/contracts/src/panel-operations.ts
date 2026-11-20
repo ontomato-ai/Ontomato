@@ -5,7 +5,9 @@ import {
   panelFormDescriptionSchema, panelFormValuesSchema, panelGroupCountsSchema, panelOptionListSchema,
   panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema, panelRelationNeighborsSchema,
 } from "./panel-projection";
+import { actionDefinitionSchema, actionExplanationSchema } from "./action-panel";
 import { chartProjectionTemplateSchema, dashboardMetricOutputSchema } from "./dashboard";
+import { appsSdkComponentCatalogEntrySchema } from "./apps-sdk";
 import { applicationEntryMenuSchema } from "./product-panels";
 import {
   platformOntologyCountsResponseSchema, platformOntologyNeighborsResponseSchema, platformOntologyObjectsResponseSchema,
@@ -70,6 +72,9 @@ export const panelReadOperationDescriptorSchema = panelOwnerOperationDescriptorS
   batch: z.literal(false),
 });
 
+const sdkComponentDefinitionSchema: z.ZodType<z.infer<typeof runtimeJsonObjectSchema>> =
+  z.lazy(() => appsSdkComponentCatalogEntrySchema);
+
 /** Result schema identifiers used by the registered read declarations. */
 export const panelReadResultSchemas = {
   panelRecordList: panelRecordListSchema,
@@ -88,6 +93,9 @@ export const panelReadResultSchemas = {
   panelRelationNeighbors: panelRelationNeighborsSchema,
   chartTemplate: chartProjectionTemplateSchema,
   metricOutput: dashboardMetricOutputSchema,
+  sdkComponentDefinition: sdkComponentDefinitionSchema,
+  actionDefinition: actionDefinitionSchema,
+  actionExplanation: actionExplanationSchema,
 };
 
 export const panelReadResultIdSchema = z.custom<PanelReadResultId>(

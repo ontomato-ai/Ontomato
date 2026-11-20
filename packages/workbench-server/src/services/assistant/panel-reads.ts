@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { runtimeIdSchema } from "@ontomato/contracts/agent-runtime-values";
 import { agentExecutionOptionsSchema, type AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
 import { modelOptionsSchema, modelReferenceSchema } from "@ontomato/contracts/model-settings";
 import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
@@ -6,6 +7,7 @@ import type { PanelFormRequest, PanelOption, PanelRecord } from "@ontomato/contr
 import { config } from "../../config/application";
 import { tForLocale } from "../../i18n";
 import { assertPermission } from "../../identity/installed";
+import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendGet, buildBackendHeaders } from "../../utils/backend-client";
 import { describeAgentDefinitionForm } from "./definition-form";
@@ -94,6 +96,24 @@ export function createAgentOptionReadAdapters(viewer: AssistantCredentials) {
           };
         })) };
       },
+    },
+  };
+}
+
+export function createMcpServiceOptionReadAdapter(owner: AssistantOwner, viewer: AssistantCredentials) {
+  const runtime = new RuntimeClient(owner.domainId, undefined, owner.userId);
+  const list = async (): Promise<PanelOption[]> =>
+    (await runtime.mcpOptions()).map(({ id, name }) => ({ primaryKey: id, value: id, label: name }));
+
+  return {
+    async options() {
+      return { options: await list() };
+    },
+    async resolve(values: readonly unknown[]) {
+      const ids = values.map(value => runtimeIdSchema.parse(value));
+      const options = new Map((await list()).map(option => [option.primaryKey, option]));
+      const reason = tForLocale(viewer.locale, "panels.agentOptions.unavailable");
+      return { options: ids.map(id => options.get(id) ?? { primaryKey: id, value: id, label: id, unavailable: { reason } }) };
     },
   };
 }

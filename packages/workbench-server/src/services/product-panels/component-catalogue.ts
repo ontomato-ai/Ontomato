@@ -1,6 +1,7 @@
 import { appsSdkComponentCatalogSchema, appsSdkComponentDatum } from "@ontomato/contracts/apps-sdk";
-import { directReadDeclaration } from "@ontomato/contracts/panel-projection";
+import { directReadDeclaration, type PanelRecord } from "@ontomato/contracts/panel-projection";
 import type { ProductProjectionInput } from "@ontomato/contracts/product-panels";
+import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
 import { readCurrentAppSdkComponents } from "../app-builder/sdk";
 
@@ -13,6 +14,29 @@ export async function readPanelComponentCatalogue() {
     return [`${packageName}:${component.componentId}`, component];
   }));
   return { version, digest, components };
+}
+
+export async function listSdkComponents(locale: string | undefined, search?: string): Promise<PanelRecord[]> {
+  const { components } = await readPanelComponentCatalogue();
+  const term = search?.trim().toLowerCase();
+  const fieldLabels = {
+    package: tForLocale(locale, "panels.sdkComponent.package"),
+    meaning: tForLocale(locale, "panels.sdkComponent.meaning"),
+  };
+  return [...components].flatMap(([primaryKey, { componentId, module, meaning, effects }]) => {
+    if (term && ![primaryKey, module, meaning, effects].some(text => text?.toLowerCase().includes(term))) return [];
+    return [{
+      primaryKey, label: componentId,
+      fields: { package: primaryKey.slice(0, primaryKey.lastIndexOf(":")), meaning }, fieldLabels,
+    }];
+  });
+}
+
+export async function readSdkComponent(componentId: string, locale: string | undefined) {
+  const { components } = await readPanelComponentCatalogue();
+  const component = components.get(componentId);
+  if (!component) throw new HttpError(404, tForLocale(locale, "panels.sdkComponent.notFound", { componentId }), "SDK_COMPONENT_NOT_FOUND");
+  return component;
 }
 
 export async function validateProjectionComponent(id: string, projection: ProductProjectionInput) {

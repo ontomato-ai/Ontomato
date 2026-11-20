@@ -2,6 +2,9 @@ import { scheduledTaskPanelMessages, scheduledTaskPanelTextEn } from "@ontomato/
 
 export const en = {
   ...scheduledTaskPanelMessages(scheduledTaskPanelTextEn),
+  "panels.sdkComponent.package": "SDK package",
+  "panels.sdkComponent.meaning": "Purpose",
+  "panels.sdkComponent.notFound": "SDK component '{componentId}' is not in the current release.",
   "panels.agentForm.name": "Name",
   "panels.agentForm.description": "Description",
   "panels.agentForm.icon": "Avatar",
@@ -53,6 +56,7 @@ export const en = {
   "panels.ontologyModel.operations.deleteAttribute": "Delete attribute",
   "panels.ontologyModel.operations.deleteRelationship": "Delete relationship",
   "panels.ontologyModel.operations.setPrimaryKey": "Set as primary key",
+  "panels.ontologyModel.objectTypeUnavailable": "This object type no longer exists.",
   "assistant.governance.report.title": "Governance report",
   "assistant.default.knowledge-governance.name": "Knowledge governance",
   "assistant.default.knowledge-governance.description": "Review business knowledge with traceable evidence",

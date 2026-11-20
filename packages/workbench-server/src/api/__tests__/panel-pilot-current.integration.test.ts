@@ -8,7 +8,7 @@ import path from "node:path";
 import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { appsSdkComponentCatalogSchema } from "@ontomato/contracts/apps-sdk";
+import { appsSdkComponentCatalogEntrySchema, appsSdkComponentCatalogSchema } from "@ontomato/contracts/apps-sdk";
 import { fileURLToPath } from "node:url";
 import { panelFormDescriptionSchema, panelOptionListSchema } from "@ontomato/contracts/panel-projection";
 import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
@@ -32,7 +32,10 @@ vi.mock("../../infrastructure/postgres", () => ({
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
 }));
 vi.mock("../../config/application", () => ({ config: { dataQuery: { get baseUrl() { return state.base; } } } }));
-vi.mock("../../config/environment", () => ({ environment: { agentRuntime: () => ({ queryServiceToken: "fixture-service" }), publicBasePath: () => "" } }));
+vi.mock("../../config/environment", () => ({ environment: {
+  agentRuntime: () => ({ queryServiceToken: "fixture-service", url: state.base, token: "fixture-runtime" }),
+  publicBasePath: () => "",
+} }));
 vi.mock("../../utils/request-identity", async original => ({
   ...await original<typeof import("../../utils/request-identity")>(),
   requireDomainId: (req: { domainId: string }) => req.domainId,
@@ -59,6 +62,7 @@ const graphPanelId = "panel-ontology-pilot";
 const dataPanelId = "panel-data-port-pilot";
 const agentPanelId = "panel-agent-settings-pilot";
 const agentId = randomUUID();
+const mcpServiceId = randomUUID();
 const task = platformTaskSchema.parse(examples.creates.find(item => item.name === "governance-instruction")!.response);
 const taskForm = platformScheduleFormSchema.parse(examples.forms.find(item => item.name === "governance-ready")!.response);
 const taskRun = platformTaskRunSchema.parse({
@@ -230,6 +234,12 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.header("Accept-Language")).toBe("zh-CN");
     res.json({ success: true, data: { pageSkills: [], registeredSkills: [], admittedEntrances: [] } });
+  });
+  app.get("/v1/mcp/services/names", (req, res) => {
+    expect(req.header("authorization")).toBe("Bearer fixture-runtime");
+    expect(req.header("x-domain-id")).toBe("pilot");
+    expect(req.header("x-ontomato-user-id")).toBe("reader");
+    res.json([{ id: mcpServiceId, name: "Inventory tools" }]);
   });
   app.get("/model-options", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
@@ -706,9 +716,13 @@ it("reads agent settings and reference options with the panel viewer", async () 
     summary: { componentId: "@ontomato/sdk:ObjectSummary", inputs: agentType, data: { record: object("record") } },
     definition: { componentId: "@ontomato/sdk:ObjectForm", inputs: agentType,
       data: { form: object("form"), createForm: type("platform:AgentDefinition", "createForm") },
-      operations: { save: { operation: { kind: "PlatformOperation", id: "platform:AgentDefinition.save" }, target: { input: "agent" } } },
+      operations: {
+        save: { operation: { kind: "PlatformOperation", id: "platform:AgentDefinition.save" }, target: { input: "agent" } },
+        remove: { operation: { kind: "PlatformOperation", id: "agents.delete" }, target: { input: "agent" } },
+      },
     },
     models: picker("platform:ModelOption"),
+    tools: picker("platform:McpServiceOption"),
     users: picker("platform:User", { keyword: { kind: "scalar", type: "string" }, page: { kind: "json" } },
       { keyword: { input: "keyword" }, page: { input: "page" } }),
     skills: picker("platform:Skill"),
@@ -749,7 +763,10 @@ it("reads agent settings and reference options with the panel viewer", async () 
     memberPath: [{ member: "definition" }], operations: true, inputs,
   })).json();
   expect(await describeSave({ agent })).toMatchObject({
-    status: "ready", value: { save: { kind: "form.save", target: { source: "input", input: "agent" } } },
+    status: "ready", value: {
+      save: { kind: "form.save", target: { source: "input", input: "agent" } },
+      remove: { handlerRef: "agents.delete", kind: "action", target: { source: "input", input: "agent" } },
+    },
   });
   expect(await describeSave({ agent: null })).toMatchObject({
     status: "ready", value: { save: { kind: "form.save", target: { source: "draft", slot: "definition" } } },
@@ -769,6 +786,14 @@ it("reads agent settings and reference options with the panel viewer", async () 
   const models = panelOptionListSchema.parse(await ready("models", "selected", { values: ["demo/missing", "demo/chat", null] }));
   expect(models.options.map(option => option.value)).toEqual(["demo/missing", "demo/chat", null]);
   expect(models.options[0]?.unavailable?.reason).toEqual(expect.any(String));
+  const service = { primaryKey: mcpServiceId, value: mcpServiceId, label: "Inventory tools" };
+  expect(panelOptionListSchema.parse(await ready("tools", "options")).options).toEqual([service]);
+  const unavailableId = randomUUID();
+  expect(panelOptionListSchema.parse(await ready("tools", "selected", { values: [unavailableId, mcpServiceId, mcpServiceId] })).options)
+    .toEqual([
+      { primaryKey: unavailableId, value: unavailableId, label: unavailableId, unavailable: { reason: "This option is no longer available." } },
+      service, service,
+    ]);
   const users = panelOptionListSchema.parse(await ready("users", "options", { keyword: "Ada", page: { number: 2, size: 5 } }));
   expect(users).toEqual({ options: [{ primaryKey: "ada", value: "ada", label: "Ada" }] });
   expect(panelOptionListSchema.parse(await ready("users", "selected", { values: ["former", null] })).options).toMatchObject([
@@ -846,6 +871,41 @@ it("reads the metric and function catalogues, a definition and its forms with th
     expect(await read("definition", "form")).toMatchObject({ status: "ready", value: { values: { name: "Draft" }, errors: [] } });
     expect(await read("create", "form")).toMatchObject({ status: "ready", value: { values: { name: "" }, save: { draftOperation: "create" } } });
   }
+});
+
+it("reads the SDK component catalogue and definition from the installed SDK release", async () => {
+  const componentType = "platform:SDKComponent";
+  const typeSource = { type: { kind: "PlatformObjectType", id: componentType } };
+  const read = await ownerReadPanel("sdk-components", {
+    components: {
+      componentId: "@ontomato/sdk:PanelData",
+      inputs: { search: { kind: "scalar", type: "string" }, component: { kind: "object", objectType: componentType } },
+      data: {
+        matches: { source: typeSource, read: "catalogue", params: { search: { input: "search" } } },
+        definition: { source: { object: { input: "component" } }, read: "definition", params: {} },
+      },
+    },
+  });
+  const catalogue = appsSdkComponentCatalogSchema.parse(JSON.parse(await readFile(cataloguePath, "utf8")));
+  const summary = catalogue.components.find(component => component.componentId === "ObjectSummary")!;
+  expect(await read("components", "matches", { search: "oBJECTsUMMARY" })).toEqual({
+    status: "ready", value: [{
+      primaryKey: "@ontomato/sdk:ObjectSummary", label: "ObjectSummary",
+      fields: { package: "@ontomato/sdk", meaning: summary.meaning }, fieldLabels: { package: "SDK package", meaning: "Purpose" },
+    }],
+  });
+  expect(await read("components", "matches", { search: "light or dark theme" })).toMatchObject({
+    status: "ready", value: expect.arrayContaining([expect.objectContaining({ primaryKey: "@ontomato/sdk:MarkdownView" })]),
+  });
+  expect(await read("components", "matches", { search: "no-matching-component-9f82" })).toEqual({ status: "empty" });
+  const component = { className: componentType, primaryKey: "@ontomato/sdk:ObjectSummary" };
+  const definition = await read("components", "definition", { component });
+  expect(definition.status).toBe("ready");
+  if (definition.status !== "ready") throw new Error(definition.status);
+  expect(appsSdkComponentCatalogEntrySchema.parse(definition.value)).toEqual(summary);
+  expect(await read("components", "definition", { component: { ...component, primaryKey: "@ontomato/sdk:Missing" } })).toMatchObject({
+    status: "error", message: "SDK component '@ontomato/sdk:Missing' is not in the current release.",
+  });
 });
 
 it("dispatches the action catalog's three reads and both operation descriptions", async () => {

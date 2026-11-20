@@ -9,7 +9,7 @@ import {
   RELATIONSHIP,
   SET_PRIMARY_KEY,
 } from "@ontomato/contracts/platform-object-types";
-import { panelFormDescriptionSchema, panelRecordListSchema, panelRecordSchema } from "@ontomato/contracts/panel-projection";
+import { panelFormDescriptionSchema, panelOptionListSchema, panelRecordListSchema, panelRecordSchema } from "@ontomato/contracts/panel-projection";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { createOntologyModelReadAdapter } from "../model-reads";
@@ -530,5 +530,19 @@ describe("ontology model read adapter", () => {
     expect(setPrimaryKey).toMatchObject({ label: "Set as primary key", target: { source: "input", input: "attribute" } });
     expect(setPrimaryKey).not.toHaveProperty("inspectImpact");
     expect(adapter.describe(DELETE_RELATIONSHIP).target).toEqual({ source: "input", input: "relationship" });
+  });
+
+  it("offers the classes as picker options and resolves chosen class names, keeping a vanished one as unavailable", async () => {
+    stubOwner(request => catalogRoute(request));
+    const adapter = createOntologyModelReadAdapter(owner, viewer);
+
+    expect(panelOptionListSchema.parse(await adapter.objectTypeOptions())).toEqual({ options: [
+      { primaryKey: "Device", value: "Device", label: "Device", description: "A device" },
+      { primaryKey: "Site", value: "Site", label: "Site", description: "A site" },
+    ] });
+    expect(panelOptionListSchema.parse(await adapter.resolveObjectTypes(["Site", "Gone"]))).toEqual({ options: [
+      { primaryKey: "Site", value: "Site", label: "Site", description: "A site" },
+      { primaryKey: "Gone", value: "Gone", label: "Gone", unavailable: { reason: "This object type no longer exists." } },
+    ] });
   });
 });
