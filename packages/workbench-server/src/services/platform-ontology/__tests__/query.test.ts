@@ -164,13 +164,13 @@ beforeEach(() => {
 });
 
 describe("platform-ontology composite query", () => {
-  it("exposes all four layers, declared layered object types, and 27 relation kinds directly from contracts", () => {
+  it("exposes all four layers, declared layered object types, and 29 relation kinds directly from contracts", () => {
     const schema = readPlatformOntologySchema();
     const expectedTypes = Object.entries(platformObjectTypes).filter(([, decl]) => Boolean(decl.layer));
     expect(schema.layers).toEqual(["fact", "capability", "governance", "product"]);
     expect(schema.objectTypes).toHaveLength(expectedTypes.length);
     expect(schema.relationKinds).toBe(platformRelationKinds);
-    expect(schema.relationKinds).toHaveLength(27);
+    expect(schema.relationKinds).toHaveLength(29);
 
     expect(schema.objectTypes.map((t) => t.id)).toEqual(expectedTypes.map(([id]) => id));
     expect(schema.objectTypes.every((t) => t.labelKey.startsWith("platformOntology.types."))).toBe(true);
@@ -181,7 +181,7 @@ describe("platform-ontology composite query", () => {
     expect(publishedRelations.every((r) => r.derived === false)).toBe(true);
 
     const derivedIds = schema.relationKinds.filter((r) => r.derived).map((r) => r.id);
-    expect(derivedIds).toEqual(["role.can-author-workflow", "role.owns-workflow-step"]);
+    expect(derivedIds).toEqual(["role.can-author-workflow", "role.owns-workflow-step", "panel.provides-skill"]);
   });
 
   it("coalesces shared owners in counts and separates ok, refused, failed, and unavailable statuses", async () => {
@@ -209,7 +209,7 @@ describe("platform-ontology composite query", () => {
     expect(byType.get("platform:AgentDefinition")).toMatchObject({ status: "refused" });
     expect(byType.get("platform:Trigger")).toMatchObject({ status: "failed" });
     expect(byType.get("platform:SDKComponent")).toMatchObject({ status: "unavailable" });
-    expect(byType.get("platform:ApplicationPanelUse")).toMatchObject({ status: "unavailable" });
+    expect(byType.get("platform:ApplicationPanelUse")).toBeUndefined();
 
     // /admin/getMetas must be called only once across ObjectType + Attribute + Relationship
     const metaCalls = vi.mocked(backendPost).mock.calls.filter(([, url]) => String(url).endsWith("/admin/getMetas"));

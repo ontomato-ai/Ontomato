@@ -1,7 +1,7 @@
 /**
  * Platform ontology schema projection for the composite query service.
  *
- * All four-layer platform object types and 27 relation kinds are owned by
+ * All four-layer platform object types and declared relation kinds are owned by
  * `@ontomato/contracts/platform-object-types`. This module re-exports them and
  * derives the layered type index used by the composite query service.
  */

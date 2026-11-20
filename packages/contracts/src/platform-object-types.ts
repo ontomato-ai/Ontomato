@@ -169,7 +169,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [PRODUCT_PANEL]: describeType("productPanel", "product"),
   [APPLICATION]: describeType("application", "product"),
   [APPLICATION_PANEL_USE]: {
-    ...describeType("applicationPanelUse", "product"),
+    ...describeType("applicationPanelUse"),
     reads: { visible: { source: "type", parameterMode: "fixed", params: {}, result: "panelApplicationMenu" } },
   },
   [AGENT_DEFINITION]: {
@@ -261,6 +261,8 @@ export const platformRelationKinds: readonly PlatformRelationKindDeclaration[] =
   relation("projection.uses-component", PRODUCT_PROJECTION, SDK_COMPONENT, "node-product-panels"),
   relation("projection.binds-target", PRODUCT_PROJECTION, declaredTypes, "node-product-panels"),
   relation("panel.contains-projection", PRODUCT_PANEL, PRODUCT_PROJECTION, "node-product-panels"),
+  relation("panel.contains-panel", PRODUCT_PANEL, PRODUCT_PANEL, "node-product-panels"),
+  relation("panel.provides-skill", PRODUCT_PANEL, SKILL, "node-product-panels", true),
   relation("application.uses-panel", APPLICATION, PRODUCT_PANEL, "java-application-catalog"),
   relation("agent.uses-skill", AGENT_DEFINITION, SKILL, "node-assistant"),
   relation("agent.executes-as-user", AGENT_DEFINITION, USER, "node-assistant"),
