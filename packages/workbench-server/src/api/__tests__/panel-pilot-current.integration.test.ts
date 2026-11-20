@@ -178,13 +178,21 @@ beforeAll(async () => {
   app.get("/ontology/model/relationships", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     const relationship = { relationship: "contains", fromclass: "warehouse", toclass: "item", desc: "Contains", fromField: "id", toField: "store" };
-    res.json(req.query.className === "item" ? [{ ...relationship, relationship: "filtered-contains" }] : [relationship]);
+    if (req.query.className === "person") {
+      res.json([{ ...relationship, relationship: "person_to_org", fromclass: "person", toclass: "org" }]);
+    } else {
+      res.json(req.query.className === "item" ? [{ ...relationship, relationship: "filtered-contains" }] : [relationship]);
+    }
   });
   app.get("/ontology/model/attributes", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
-    expect(req.query.className).toBe("warehouse");
-    res.json([{ className: "warehouse", name: "id", showName: "Identifier", type: "string", attrDesc: "",
-      enable: true, businessKey: false, primaryKey: true }]);
+    const className = req.query.className;
+    expect(["warehouse", "person", "org"]).toContain(className);
+    const primary = { className, name: "id", showName: "Identifier", type: "string", attrDesc: "",
+      enable: true, businessKey: false, primaryKey: true };
+    res.json(className === "warehouse" ? [primary] : [
+      primary, { ...primary, name: "name", showName: "Name", primaryKey: false, businessKey: true },
+    ]);
   });
   app.get("/platform/applications/agent-settings/panel-uses", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
@@ -226,6 +234,67 @@ beforeAll(async () => {
       return;
     }
     res.json({ canSetExecutionUser: false, users: [] });
+  });
+  app.get("/platform/applications/:family/panel-uses", (req, res) => {
+    const family = req.params.family;
+    expect(req.header("tk")).toBe("pilot-reader");
+    res.json({ success: true, data: {
+      applicationId: family, entry: { path: `/applications/${family}`, renderer: "panels" },
+      panelUses: [{ id: "data", pageKey: "data", path: `/applications/${family}/data`,
+        panelId: `panel-${family}`, access: { kind: "domain-member" } }],
+    } });
+  });
+  for (const endpoint of ["queryList", "queryById", "definitionForm"]) {
+    app.post("/action/" + endpoint, (req, res) => {
+      expect(req.header("tk")).toBe("pilot-reader");
+      expect(req.header("Accept-Language")).toBe("zh-CN");
+      const action = { id: "review", name: "Review", statusLabel: "Published" };
+      if (endpoint === "queryList") {
+        expect(req.body).toEqual({});
+        res.json({ success: true, data: [action] });
+      } else if (endpoint === "queryById") {
+        expect(req.body).toEqual({ id: action.id });
+        res.json({ success: true, data: action });
+      } else {
+        expect(req.body).toMatchObject({
+          target: { kind: "object", objectType: "platform:Action", primaryKey: action.id },
+          values: { name: "Draft review" }, changedField: "/name",
+        });
+        res.json({ success: true, data: {
+          fields: [], values: req.body.values, errors: [],
+          save: { method: "POST", path: "/action/save", bodySchema: {}, draftOperation: "action.update" },
+        } });
+      }
+    });
+  }
+  const columns = [{ key: "value", label: null, type: null }];
+  app.post("/ontology/query/metrics/describe", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.header("Accept-Language")).toBe("zh-CN");
+    expect(req.body).toEqual({ id: "metric-pilot" });
+    res.json({ id: "metric-pilot", revision: "metric-r2", status: "PUBLISHED", name: "Example metric",
+      parameterDefs: [], outputColumns: columns, sourceObjectTypes: [] });
+  });
+  app.post("/ontology/query/metrics/execute", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.body).toMatchObject({ id: "metric-pilot", revision: "metric-r2", parameters: { customer: "p1" } });
+    res.json({ columns, rows: req.body.parameters.year === 2023 ? [] : [{ value: 15 }], truncation: null });
+  });
+  app.post("/data/getWholeClassDataByPage", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.header("Accept-Language")).toBe("zh-CN");
+    expect(req.body).toEqual({ classname: "person", pagenum: 2, pagecount: 3, search: "Ali" });
+    res.json({ success: true, data: [{ id: "p1", name: "Alice" }], total_count: 12 });
+  });
+  app.post("/data/queryInfoByNode", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.body).toEqual({ class: "person", id: "person:p1" });
+    res.json({ success: true, data: { data: { name: "Alice" } } });
+  });
+  app.post("/dsl/executeV1", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.body.answer.steps[0].graph.patterns[0].relationship).toEqual([{ from: 0, to: 1, type: ["person_to_org"] }]);
+    res.json({ data: [{ answer: [{ id: "org1", name: "Example Org" }] }] });
   });
   app.get("/platform/scheduled-tasks", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
@@ -594,4 +663,113 @@ it("reads agent settings and reference options with the panel viewer", async () 
   state.allowAgentReads = false;
   expect(await read("definition", "createForm")).toEqual({ status: "forbidden" });
   expect(await read("skills", "selected", { values: [missing] })).toEqual({ status: "forbidden" });
+});
+
+async function ownerReadPanel(
+  family: string, projections: Record<string, object>, state = {},
+  wiring: Record<string, object> = {},
+) {
+  const members: Record<string, object> = {};
+  for (const [name, projection] of Object.entries(projections)) {
+    const projectionId = `${family}-${name}`;
+    const response = await request("PUT", "product-projections/" + projectionId, {
+      name, description: "", visibility: "domain", revision: 0, inputs: {}, outputs: {}, config: {}, ...projection,
+    });
+    expect(response.status, await response.text()).toBe(200);
+    members[name] = { target: { projectionId }, ...wiring[name] };
+  }
+  const response = await request("PUT", "product-panels/panel-" + family, {
+    name: family, description: "", visibility: "domain", revision: 0,
+    content: { html: "<section>" + Object.keys(members).map(name => `<panel-member ref="${name}"></panel-member>`).join("") + "</section>" },
+    manifest: { state, members, events: {} },
+  });
+  expect(response.status, await response.text()).toBe(200);
+  return async (member: string, dataName: string, inputs: object = {}) => {
+    const read = await request("POST", "product-panels/read", {
+      source: { kind: "registered", applicationId: family, useId: "data" },
+      memberPath: [{ member }], dataName, inputs,
+    });
+    expect(read.status).toBe(200);
+    return productPanelReadResponseSchema.parse(await read.json());
+  };
+}
+
+it("dispatches the action catalog's three reads and both operation descriptions", async () => {
+  const action = { className: "platform:Action", primaryKey: "review" };
+  const actionType = { kind: "object", objectType: action.className };
+  const selected = { object: { literal: action } };
+  const operation = (id: string) => ({
+    componentId: "@ontomato/sdk:OperationButton", inputs: { action: actionType },
+    data: { operation: { source: { operation: { kind: "PlatformOperation", id } }, read: "describe", params: {} } },
+  });
+  const read = await ownerReadPanel("owner-actions", {
+    list: { componentId: "@ontomato/sdk:ObjectList", data: {
+      rows: { source: { type: { kind: "PlatformObjectType", id: action.className } }, read: "list", params: {} },
+    } },
+    summary: { componentId: "@ontomato/sdk:ObjectSummary", data: { record: { source: selected, read: "record", params: {} } } },
+    definition: { componentId: "@ontomato/sdk:ObjectForm", data: {
+      form: { source: selected, read: "form", params: {
+        values: { literal: { name: "Draft review" } }, changedField: { literal: "/name" },
+      } },
+    } },
+    status: operation("actions.setStatus"),
+    remove: operation("actions.delete"),
+  }, { selected: { type: actionType, default: null } }, {
+    status: { inputs: { action: { state: "selected" } } },
+    remove: { inputs: { action: { state: "selected" } } },
+  });
+  expect(await read("list", "rows")).toMatchObject({ status: "ready", value: [{ primaryKey: "review", label: "Review" }] });
+  expect(await read("summary", "record")).toMatchObject({ status: "ready", value: { fields: { status: "Published" } } });
+  expect(await read("definition", "form")).toMatchObject({ status: "ready", value: { values: { name: "Draft review" }, errors: [] } });
+  expect(await read("status", "operation")).toMatchObject({ status: "ready", value: { handlerRef: "actions.setStatus", batch: true } });
+  expect(await read("remove", "operation")).toMatchObject({
+    status: "ready", value: { handlerRef: "actions.delete", inspectImpact: { handlerRef: "actions.delete.inspect-impact" } },
+  });
+});
+
+it("passes named metric parameters to the owner and reports untruncated zero rows as empty", async () => {
+  const installed = await readFile(cataloguePath, "utf8");
+  const catalogue = appsSdkComponentCatalogSchema.parse(JSON.parse(installed));
+  // This Node fixture declares a projection consumer for the owner's result.
+  await writeFile(cataloguePath, JSON.stringify({
+    ...catalogue, components: catalogue.components.map(component => component.componentId === "MetricViewData"
+      ? { ...component, data: { result: { results: ["metricOutput"], required: true } } } : component),
+  }));
+  try {
+    const read = await ownerReadPanel("owner-metric", {
+      metric: {
+        componentId: "@ontomato/sdk:MetricViewData", inputs: { year: { kind: "scalar", type: "number" } },
+        data: { result: {
+          source: { object: { literal: { className: "platform:MetricView", primaryKey: "metric-pilot" } } },
+          read: "result", params: { customer: { literal: { className: "person", primaryKey: "p1" } }, year: { input: "year" } },
+        } },
+      },
+    });
+    expect(await read("metric", "result", { year: 2026 })).toMatchObject({ status: "ready", value: { rows: [{ value: 15 }] } });
+    expect(await read("metric", "result", { year: 2023 })).toEqual({ status: "empty" });
+  } finally {
+    await writeFile(cataloguePath, installed);
+  }
+});
+
+it("reads a customer type and a relationship by the registered source identity", async () => {
+  const person = { className: "person", primaryKey: "p1" };
+  const read = await ownerReadPanel("owner-customer", {
+    rows: { componentId: "@ontomato/sdk:ObjectList", data: { rows: {
+      source: { type: { kind: "ObjectType", id: "person" } }, read: "query",
+      params: { search: { literal: "Ali" }, page: { literal: { number: 2, size: 3 } } },
+    } } },
+    detail: { componentId: "@ontomato/sdk:ObjectSummary", data: { record: {
+      source: { object: { literal: person } }, read: "record", params: {},
+    } } },
+    relations: { componentId: "@ontomato/sdk:ObjectRelations", data: { neighbors: {
+      source: { type: { kind: "Relationship", id: "person_to_org" } }, read: "neighbors",
+      params: { node: { literal: person }, limit: { literal: 10 } },
+    } } },
+  });
+  expect(await read("rows", "rows")).toMatchObject({ status: "ready", value: { rows: [{ label: "Alice" }], total: 12 } });
+  expect(await read("detail", "record")).toMatchObject({ status: "ready", value: { primaryKey: "p1", label: "Alice" } });
+  expect(await read("relations", "neighbors")).toMatchObject({
+    status: "ready", value: { neighbors: [{ primaryKey: "org1", label: "Example Org" }] },
+  });
 });
