@@ -3,8 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
 import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
-import { panelOptionListSchema } from "@ontomato/contracts/panel-projection";
+import { panelOptionListSchema, panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema } from "@ontomato/contracts/panel-projection";
 import { installContentLayout } from "../../../content/layout";
+import { registerSkillProvider } from "../../../core/skills/providers";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 
@@ -126,4 +127,145 @@ it("answers unreadable, missing, and removed skills with the same generalized la
   }
   expect("Unavailable skill").not.toContain("gone-skill");
   expect(resolved.options[2].value).toEqual(removed);
+});
+
+it("queries the skill library with search, cursor/size paging, and read-only markers", async () => {
+  await installDomainSkill("alpha-helper", "Alpha domain skill");
+  await fs.writeFile(
+    path.join(root, "data", "domain-skills", domain, "alpha-helper", "README.md"),
+    "Alpha readme\n",
+  );
+  const publicSkillDir = path.join(publicSkillsRoot, "builtin-guide");
+  await fs.mkdir(publicSkillDir, { recursive: true });
+  await fs.writeFile(
+    path.join(publicSkillDir, "SKILL.md"),
+    "---\nname: builtin-guide\ndescription: Builtin guide skill\n---\nGuide body\n",
+  );
+  registerSkillProvider({
+    id: "provider-ext",
+    name: "External Studio",
+    async list(context) {
+      return [
+        {
+          skill: { namespace: { kind: "domain", domainId: context.domainId }, name: "ext-provider-skill" },
+          manifest: { name: "ext-provider-skill", description: "Provided from external studio" },
+          async provide() {
+            return {
+              skill: { namespace: { kind: "domain" as const, domainId: context.domainId }, name: "ext-provider-skill" },
+              files: [
+                { path: "SKILL.md", content: "---\nname: ext-provider-skill\ndescription: Provided from external studio\n---\nExternal body\n" },
+              ],
+            };
+          },
+        },
+      ];
+    },
+  });
+
+  const adapter = createSkillReadAdapter(owner, credentials);
+
+  const page1 = panelRecordQuerySchema.parse(await adapter.query({ size: 2 }));
+  expect(page1.total).toBe(4);
+  expect(page1.nextCursor).toBe("2");
+  expect(page1.rows).toHaveLength(2);
+
+  const page2 = panelRecordQuerySchema.parse(await adapter.query({ cursor: "2", size: 2 }));
+  expect(page2.total).toBe(4);
+  expect(page2.nextCursor).toBeUndefined();
+  expect(page2.rows).toHaveLength(2);
+
+  const all = panelRecordQuerySchema.parse(await adapter.query({}));
+  expect(all.rows.map(row => row.primaryKey)).toEqual([
+    "builtin-guide",
+    "alpha-helper",
+    "domain-helper",
+    "ext-provider-skill",
+  ]);
+  expect(all.rows[0]).toEqual({
+    primaryKey: "builtin-guide",
+    label: "builtin-guide",
+    subtitle: "Builtin guide skill",
+    fieldLabels: { description: "Description", source: "Source", writeRestriction: "Write restriction" },
+    fields: {
+      description: "Builtin guide skill",
+      source: "Platform",
+      writeRestriction: "Built-in skills come with the product and cannot be deleted",
+    },
+  });
+  expect(all.rows[3]).toEqual({
+    primaryKey: "ext-provider-skill",
+    label: "ext-provider-skill",
+    subtitle: "Provided from external studio",
+    fieldLabels: { description: "Description", source: "Source", writeRestriction: "Write restriction" },
+    fields: {
+      description: "Provided from external studio",
+      source: "External Studio",
+      writeRestriction: "Provided by External Studio and cannot be deleted here",
+    },
+  });
+  expect(all.rows.find(row => row.primaryKey === "alpha-helper")).toEqual({
+    primaryKey: "alpha-helper",
+    label: "alpha-helper",
+    subtitle: "Alpha domain skill",
+    fieldLabels: { description: "Description", source: "Source", writeRestriction: "Write restriction" },
+    fields: {
+      description: "Alpha domain skill",
+      source: "This domain",
+      writeRestriction: "",
+    },
+  });
+
+  const searched = panelRecordQuerySchema.parse(await adapter.query({ search: "External" }));
+  expect(searched).toEqual({
+    rows: [all.rows[3]],
+    total: 1,
+  });
+});
+
+it("reads one skill record, its package files with path keys, and one file's content", async () => {
+  await installDomainSkill("file-skill", "Skill with files");
+  const skillDir = path.join(root, "data", "domain-skills", domain, "file-skill");
+  await fs.mkdir(path.join(skillDir, "scripts"), { recursive: true });
+  await fs.writeFile(path.join(skillDir, "scripts", "run.mjs"), "console.log('ok');\n");
+
+  const adapter = createSkillReadAdapter(owner, credentials);
+
+  const rec = panelRecordSchema.parse(await adapter.record("file-skill"));
+  expect(rec.primaryKey).toBe("file-skill");
+  expect(rec.fields.source).toBe("This domain");
+  expect(rec.fields.writeRestriction).toBe("");
+
+  await expect(adapter.record("missing-skill")).rejects.toMatchObject({
+    status: 404,
+    code: "SKILL_NOT_FOUND",
+  });
+
+  const files = panelRecordListSchema.parse(await adapter.files("file-skill"));
+  expect(files).toEqual([
+    {
+      primaryKey: "SKILL.md",
+      label: "SKILL.md",
+      fieldLabels: { size: "Size" },
+      fields: { size: expect.any(String) },
+    },
+    {
+      primaryKey: "scripts/run.mjs",
+      label: "scripts/run.mjs",
+      fieldLabels: { size: "Size" },
+      fields: { size: String(Buffer.byteLength("console.log('ok');\n", "utf8")) },
+    },
+  ]);
+
+  const file = panelRecordSchema.parse(await adapter.file("file-skill", { path: "scripts/run.mjs" }));
+  expect(file).toEqual({
+    primaryKey: "scripts/run.mjs",
+    label: "scripts/run.mjs",
+    fieldLabels: { content: "Content" },
+    fields: { content: "console.log('ok');\n" },
+  });
+
+  await expect(adapter.file("file-skill", { path: "scripts/none.mjs" })).rejects.toMatchObject({
+    status: 404,
+    code: "SKILL_FILE_NOT_FOUND",
+  });
 });
