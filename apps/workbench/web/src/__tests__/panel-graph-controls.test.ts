@@ -395,7 +395,7 @@ it("switches declared scalar panel state with SegmentedControl (unbound in catal
   expect(meta).toBeDefined();
   expect(meta?.bindsElement).toBeUndefined();
   expect(meta?.role).toBe("control");
-  expect(meta?.outputs).toEqual(["value"]);
+  expect(meta?.outputs).toEqual({ value: { kind: "scalar", type: "string" } });
 
   const manifest = definePanel({
     state: {
