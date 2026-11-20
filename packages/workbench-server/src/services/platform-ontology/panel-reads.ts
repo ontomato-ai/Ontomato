@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { panelReadParameterSchemas, type PanelRecord } from "@ontomato/contracts/panel-projection";
+import { panelReadParameterSchemas } from "@ontomato/contracts/panel-projection";
 import {
   platformOntologyNeighborsRequestSchema,
   type PlatformOntologyCountsResponse,
@@ -10,9 +10,7 @@ import {
   type PlatformOntologyStartResponse,
 } from "@ontomato/contracts/platform-ontology";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
-import { PlatformOntologyOwnerReaders, type RawOntologyMeta } from "./owners";
 import {
   readPlatformOntologyCounts,
   readPlatformOntologyNeighbors,
@@ -23,19 +21,17 @@ import {
 
 const platformOntologyObjectsReadParamsSchema = z.object({
   type: panelReadParameterSchemas.ontologyType,
-  keyword: panelReadParameterSchemas.keyword.optional(),
+  search: panelReadParameterSchemas.keyword.optional(),
   page: panelReadParameterSchemas.page.optional(),
 }).strict();
 
 export interface PlatformOntologyObjectsReadParams {
   type: string;
-  keyword?: string;
+  search?: string;
   page?: { number: number; size: number };
 }
 
 export interface PlatformOntologyReadAdapter {
-  listObjectTypes(): Promise<PanelRecord[]>;
-  listRelationships(): Promise<PanelRecord[]>;
   schema(): PlatformOntologySchemaResponse;
   counts(): Promise<PlatformOntologyCountsResponse>;
   start(): Promise<PlatformOntologyStartResponse>;
@@ -43,21 +39,9 @@ export interface PlatformOntologyReadAdapter {
   objects(params: PlatformOntologyObjectsReadParams | Record<string, unknown>): Promise<PlatformOntologyObjectsResponse>;
 }
 
-async function readOntologyMetadata(owner: ProductOwner, viewer: AssistantCredentials): Promise<RawOntologyMeta> {
-  const readers = new PlatformOntologyOwnerReaders(owner, viewer);
-  const result = await readers.ontologyMeta();
-  if (!result.ok) {
-    if (result.status === "refused") {
-      throw new HttpError(403, result.reason, "FORBIDDEN");
-    }
-    throw new HttpError(502, result.reason, "ONTOLOGY_META_READ_FAILED");
-  }
-  return result.data;
-}
-
 /**
- * Named panel data reads for `platform:ObjectType`, `platform:Relationship`, and `platform:OntologyType`,
- * shared by the four-layer capability map and the agent-settings data-scope graph.
+ * Named panel data reads for `platform:OntologyType` (`schema`, `counts`, `start`, `neighbors`, `objects`),
+ * serving the four-layer capability map and platform ontology explorers.
  */
 export function createPlatformOntologyReadAdapter(
   owner: ProductOwner,
@@ -65,31 +49,6 @@ export function createPlatformOntologyReadAdapter(
   callerUserName?: string,
 ): PlatformOntologyReadAdapter {
   return {
-    async listObjectTypes(): Promise<PanelRecord[]> {
-      const meta = await readOntologyMetadata(owner, viewer);
-      return meta.classes.map((cls) => ({
-        primaryKey: cls.className,
-        label: cls.showName || cls.classDesc || cls.className,
-        fields: {
-          className: cls.className,
-          showName: cls.showName ?? "",
-          classDesc: cls.classDesc ?? "",
-        },
-      }));
-    },
-
-    async listRelationships(): Promise<PanelRecord[]> {
-      const meta = await readOntologyMetadata(owner, viewer);
-      return meta.relationships.map((rel) => ({
-        primaryKey: rel.relationship,
-        label: rel.showName || rel.desc || rel.relationship,
-        fields: {
-          fromclass: rel.fromclass ?? "",
-          toclass: rel.toclass ?? "",
-        },
-      }));
-    },
-
     schema(): PlatformOntologySchemaResponse {
       return readPlatformOntologySchema();
     },
@@ -114,10 +73,10 @@ export function createPlatformOntologyReadAdapter(
     objects(
       params: PlatformOntologyObjectsReadParams | Record<string, unknown>,
     ): Promise<PlatformOntologyObjectsResponse> {
-      const { type, keyword, page } = platformOntologyObjectsReadParamsSchema.parse(params);
+      const { type, search, page } = platformOntologyObjectsReadParamsSchema.parse(params);
       return readPlatformOntologyObjects(owner, viewer, {
         type,
-        ...(keyword !== undefined ? { keyword } : {}),
+        ...(search !== undefined ? { keyword: search } : {}),
         ...(page !== undefined ? { page: page.number, pageSize: page.size } : {}),
       });
     },

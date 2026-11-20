@@ -3,7 +3,7 @@ import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
 
 /*
  * Four-layer platform capability map (M3). All platform ontology reads (schema, per-type counts, default starting user,
- * one-hop neighbors and per-type object lists) live inside the four bound projections; this module only coordinates the
+ * one-hop neighbors and per-type object lists) live inside the bound projections; this module only coordinates the
  * panel's own declared state:
  * - Default mode is `"instance"` when unset; switching mode clears the in-canvas highlight query and closes the user
  *   start picker.
@@ -21,11 +21,6 @@ const CapabilityMap = {
     const { instance } = usePanelContext();
     const state = instance.state;
     const showUserPicker = ref(false);
-
-    const modeOptions = [
-      { value: "type", labelKey: "capMap.modeType" },
-      { value: "instance", labelKey: "capMap.modeInstance" },
-    ];
 
     const mode = computed(() => (state.values.value.mode === "type" ? "type" : "instance"));
     const start = computed(() => {
@@ -92,7 +87,6 @@ const CapabilityMap = {
     }
 
     return {
-      modeOptions,
       mode,
       query,
       showUserPicker,

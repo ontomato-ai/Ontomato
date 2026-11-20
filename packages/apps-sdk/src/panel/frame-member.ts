@@ -4,7 +4,7 @@ import { panelOperationId, type PanelFormTarget } from "@ontomato/contracts/pane
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { directReadDeclaration, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
-import { awaitsInputs, paramValues, readKey, type MemberData, type MemberDataState, type MemberInputs } from "./direct";
+import { awaitsInputs, memberReadKey, paramValues, runValues, type MemberData, type MemberDataState, type MemberInputs } from "./direct";
 import type { PanelInstance } from "./instance";
 import { adapterPart, type PlatformGraphNeighborsQuery, type PlatformObjectRecord } from "./platform-objects";
 
@@ -50,14 +50,17 @@ function formOf(data: DirectProjectionData, object: PanelObjectValue | null, par
 }
 
 export function frameMemberData(projection: DirectProjection, slot: string, instance: PanelInstance, inputs: () => MemberInputs): MemberData {
-  async function answer(name: string, values: MemberInputs): Promise<MemberDataState> {
+  /** What the member's component set itself; a frame's resource module takes it with the author's parameters. */
+  const own = () => instance.ownParams(slot);
+  const placement = instance.manifest.members[slot]!;
+  async function answer(name: string, values: MemberInputs, ownRun: MemberInputs = own()): Promise<MemberDataState> {
     const data = projection.data[name];
     if (!data) throw new Error(`Projection ${projection.id} declares no datum '${name}'`);
     const declaration = directReadDeclaration(projection, data);
     if (!declaration) throw new Error(`No owner registers the read '${data.read}' that datum '${name}' names`);
-    if (awaitsInputs(projection, data, values)) return { status: "awaiting" };
+    if (awaitsInputs(projection, data, placement, values, ownRun)) return { status: "awaiting" };
     const object = objectOf(data, values);
-    const params = paramValues(data, values);
+    const params = paramValues(projection, data, placement, values, ownRun);
     const type = "type" in data.source ? data.source.type.id : object?.className;
     let value: unknown;
     switch (declaration.result) {
@@ -94,7 +97,7 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
         break;
       case "panelGraphNeighbors":
         value = await graphOf(type!).neighbors({
-          node: params.node as PanelObjectValue,
+          node: params.node as unknown as PanelObjectValue,
           ...(params.relationKinds ? { relationKinds: params.relationKinds as string[] } : {}),
           ...(params.layers ? { layers: params.layers as PlatformGraphNeighborsQuery["layers"] } : {}),
         });
@@ -129,7 +132,9 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
       let sequence = 0;
       const reread = () => {
         const reading = ++sequence;
-        state.value = { status: "loading" };
+        // A datum already shown stays on screen until its new answer arrives: rereading replaces what it shows, never
+        // the component drawing it. Only a first read (or one after an empty, refused or failed answer) shows loading.
+        if (state.value.status !== "ready") state.value = { status: "loading" };
         answer(name, inputs()).then(
           (result) => { if (reading === sequence) state.value = result; },
           (reason: unknown) => {
@@ -139,7 +144,7 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
       };
       // An object an operation changed is read again where it is shown: its own datum, or a list of its type.
       const data = projection.data[name]!;
-      watch(() => readKey(data, inputs()), reread, { immediate: true });
+      watch(() => memberReadKey(projection, data, placement, inputs(), own()), reread, { immediate: true });
       onScopeDispose(instance.onObjectChanged((changed) => {
         const object = objectOf(data, inputs());
         if (!changed || (object && object.className === changed.objectType && object.primaryKey === changed.primaryKey)
@@ -148,6 +153,9 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
       return computed(() => state.value);
     },
     // A refusal the module raises (a draft the owner refuses, by field) reaches the form as it was raised.
-    read: (name, run) => answer(name, { ...inputs(), ...run }),
+    read: (name, params, overrides = {}) => {
+      const { inputs: run, own: ownRun } = runValues(projection, name, params);
+      return answer(name, { ...inputs(), ...overrides, ...run }, { ...own(), ...ownRun });
+    },
   };
 }

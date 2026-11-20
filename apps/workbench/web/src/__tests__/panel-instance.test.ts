@@ -54,7 +54,7 @@ const records: Record<string, ProductProjection> = {
 const locale = ref("en");
 const text = createPanelText({ en: { "tasks.clear": "Clear" }, "zh-CN": { "tasks.clear": "清除" } }, locale, "en");
 
-function instance(initial?: Record<string, unknown>, coordinator = noOperations) {
+function instance(initial?: Record<string, unknown>, coordinator: Pick<typeof noOperations, "operations" | "confirmOperation"> = noOperations) {
   return createPanelInstance(panel, {
     ...coordinator,
     text,

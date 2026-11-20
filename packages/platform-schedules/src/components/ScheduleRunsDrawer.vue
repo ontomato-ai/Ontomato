@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { History } from "lucide-vue-next";
 import type { PlatformScheduleResultLink, PlatformTask, PlatformTaskRun } from "@ontomato/contracts/platform-schedules";
 import type { SchedulesApi } from "../api";
 import { useScheduleText } from "../text";
@@ -151,12 +152,14 @@ defineExpose({ reload: load });
         </ul>
       </section>
 
-      <p v-if="state === 'loading' && runs.length === 0" class="note" aria-busy="true">…</p>
-      <p v-else-if="state === 'error' && runs.length === 0" class="note" role="alert">
-        <span>{{ t("runs.loadFailed") }}</span>
-        <button type="button" class="link" @click="load">{{ t("retry") }}</button>
-      </p>
-      <p v-else-if="runs.length === 0" class="note">{{ t("runs.empty") }}</p>
+      <el-skeleton v-if="state === 'loading' && runs.length === 0" :rows="3" aria-busy="true" />
+      <el-alert v-else-if="state === 'error' && runs.length === 0" :title="t('runs.loadFailed')" type="error" :closable="false" show-icon>
+        <el-button text size="small" @click="load">{{ t("retry") }}</el-button>
+      </el-alert>
+      <div v-else-if="runs.length === 0" class="empty" role="status">
+        <History :size="24" aria-hidden="true" />
+        <p>{{ t("runs.empty") }}</p>
+      </div>
       <ul v-else class="runs">
         <ScheduleRunItem
           v-for="run in runs"
@@ -201,22 +204,15 @@ defineExpose({ reload: load });
   border-radius: var(--radius-md);
   overflow: hidden;
 }
-.note {
-  display: flex;
-  flex-wrap: wrap;
+.empty {
+  display: grid;
+  justify-items: center;
   gap: var(--spacing-sm);
-  margin: 0;
-  font-size: var(--text-sm);
+  padding: var(--spacing-3xl) var(--spacing-lg);
+  text-align: center;
   color: var(--el-text-color-secondary);
 }
-.link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--brand-link);
-  font: inherit;
-  cursor: pointer;
-}
+.empty p { margin: 0; }
 .more {
   display: flex;
   justify-content: center;

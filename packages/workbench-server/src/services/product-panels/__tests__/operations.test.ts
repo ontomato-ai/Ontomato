@@ -232,7 +232,10 @@ it("notifies the initiator once after the later run dispatches an approved actio
 });
 it("rejects a declaration whose target type does not match its platform operation",async()=>{
  const panel=await mocks.panel();panel.manifest.state.task.type.objectType="customer:Account";
- await expect(operatePanel(owner,credentials,current.id,action())).rejects.toMatchObject({code:"OPERATION_UNAVAILABLE"});
+ await expect(operatePanel(owner,credentials,current.id,action())).rejects.toMatchObject({
+   status: 422, code: "PANEL_OPERATION_TARGET_MISMATCH",
+   message: expect.stringContaining("connect input 'task' to an object of type 'platform:ScheduledTask'"),
+ });
  expect(ownerWrites()).toHaveLength(0);
 });
 

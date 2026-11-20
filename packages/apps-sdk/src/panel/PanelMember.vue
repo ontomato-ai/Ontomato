@@ -2,13 +2,13 @@
 import { computed, onBeforeUnmount, provide, shallowRef, type Component } from "vue";
 import { useI18n } from "vue-i18n";
 import { DataState } from "@ontomato/foundation-ui/data-state";
-import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { componentFor } from "../catalogue-components";
 import { panelContextKey, projectionKey, type ProjectionSlot } from "./context";
 import { directPanelContext, type DirectPanelInstance, type MemberInputs } from "./direct";
 import { memberComponentId } from "./projection-element";
 import { panelMemberKey, type PanelMemberContext } from "./member";
 import { portsOf } from "./ports-of";
+import { slotInputValues } from "./ports";
 
 /**
  * One member of a directly rendered panel, drawn in the platform's own document: the member's projection, read once for
@@ -28,15 +28,9 @@ if (!declaration) throw new Error(`The panel declares no member '${props.member}
 const failure = shallowRef<Error | null>(null);
 const loaded = shallowRef<{ component: Component; slot: ProjectionSlot; member: PanelMemberContext } | null>(null);
 
-/** What the placement gives each input now: the state it names, or its literal. */
-const inputs = computed<MemberInputs>(() => Object.fromEntries(Object.entries(declaration.inputs ?? {}).map(([name, source]) =>
-  // A state value is JSON as it is: an object reference, a collection of them, a scalar, or null.
-  [name, "state" in source ? (props.instance.state.values.value[source.state] ?? null) as RuntimeJsonValue : memberLiteral(name, source)])));
+/** What the placement gives each input now: the state it names, or its literal; an output's state reads back by its name. */
+const inputs = computed<MemberInputs>(() => slotInputValues(props.instance.manifest, props.member, props.instance.state.values.value) as MemberInputs);
 
-function memberLiteral(input: string, source: { literal: RuntimeJsonValue } | { item: true }): RuntimeJsonValue {
-  if ("item" in source) throw new Error(`Member '${props.member}' fills '${input}' from a repeated item, which this SDK release does not place`);
-  return source.literal;
-}
 
 let release: (() => void) | undefined;
 void props.instance.projectionOf(props.member).then(async (projection) => {

@@ -13,6 +13,8 @@ import {
   type GraphCanvasViewport,
 } from "@ontomato/foundation-ui/graph/g6";
 import type { ObjectReference } from "@ontomato/contracts/object-views";
+import ManagerIconButton from "../components/ManagerIconButton.vue";
+import { actionTooltipProps } from "@ontomato/foundation-ui/overlay";
 import {
   Box,
   ArrowLeft,
@@ -34,7 +36,7 @@ import {
   Eye,
 } from "lucide-vue-next";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
-import { ElButton, ElPopover, ElSelect, ElOption, ElCheckbox, ElSwitch, ElSelectV2, vLoading } from "element-plus";
+import { ElButton, ElPopover, ElSelect, ElOption, ElCheckbox, ElSwitch, ElSelectV2, ElTooltip, vLoading } from "element-plus";
 import { useManagerFeedback } from "../feedback";
 import type { InstanceGraphEdge, InstanceGraphNode, InstanceGraphStatus, InstanceGraphSummary } from "../api";
 import { useManagerClient, useManagerContext, useOntologyText, useSharedText } from "../context";
@@ -63,6 +65,7 @@ const { loadInstanceGraphSummary, loadInstanceGraphConnections, searchInstanceGr
   useManagerClient();
 
 const root = ref<HTMLElement | null>(null);
+const statisticsButton = ref<HTMLButtonElement | null>(null);
 const canvas = ref<InstanceType<typeof G6GraphCanvas> | null>(null);
 const loading = ref(false);
 const connectionsLoading = ref(false);
@@ -313,6 +316,11 @@ const classGroups = computed(() => {
     const halfWidth = Math.max(18, Math.min(G6_LABEL_WIDTH, textWidth(node.name?.trim() || "—", G6_LABEL_SIZE)) / 2) * view.zoom;
     instances.push({ x: point.x - halfWidth, y: point.y - 18 * view.zoom,
       width: halfWidth * 2, height: 58 * view.zoom });
+  }
+  const toolbar = root.value.querySelector('.graph-toolbar')?.getBoundingClientRect();
+  const frame = root.value.querySelector('.graph-canvas')?.getBoundingClientRect();
+  if (frame && toolbar?.width && toolbar.height) {
+    instances.push({ x: toolbar.left - frame.left, y: toolbar.top - frame.top, width: toolbar.width, height: toolbar.height });
   }
   return overviewClassHeadings([...groups].map(([name, points]) => {
     const label = classLabels.value[name] || name;
@@ -601,13 +609,13 @@ onBeforeUnmount(() => {
       <div v-if="summary && overview" class="sample-legend class-groups" :aria-label="t('nav.objectTypes')">
         <div v-for="group in classGroups" :key="group.name" class="class-group"
           :style="{ left: `${group.x}px`, top: `${group.y}px`, width: `${group.width}px`, height: `${group.height}px`, '--group-color': colorForClass(group.name) }">
-        <button
-          :title="`${classLabels[group.name] || group.name} · ${classCount(group.name, nodes.filter(node => node.class === group.name).length)}`"
-          :class="{ 'is-selected': selectedClass === group.name }" :aria-pressed="selectedClass === group.name"
-          @click.stop="chooseClass(group.name)">
-          <span class="legend-label">{{ classLabels[group.name] || group.name }}</span>
-          <span class="legend-count">{{ classCount(group.name, nodes.filter(node => node.class === group.name).length) }}</span>
-        </button>
+          <ElTooltip v-bind="actionTooltipProps" placement="top" :content="classLabels[group.name] || group.name">
+            <button type="button" :class="{ 'is-selected': selectedClass === group.name }"
+              :aria-pressed="selectedClass === group.name" @click.stop="chooseClass(group.name)">
+              <span class="legend-label">{{ classLabels[group.name] || group.name }}</span>
+              <span class="legend-count">{{ classCount(group.name, nodes.filter(node => node.class === group.name).length) }}</span>
+            </button>
+          </ElTooltip>
         </div>
       </div>
     </div>
@@ -615,11 +623,10 @@ onBeforeUnmount(() => {
     <div v-if="selectedNode && nodeActionPosition" class="node-actions"
       :style="{ left: `${nodeActionPosition.x}px`, top: `${nodeActionPosition.y}px` }"
       role="toolbar" :aria-label="selectedNode.name || selectedNode.id">
-      <button :title="ot(currentPage ? 'instanceGraphMore' : 'instanceGraphExpand')"
-        :aria-label="ot(currentPage ? 'instanceGraphMore' : 'instanceGraphExpand')"
-        :disabled="expanding || rendering || filtersDirty || versionChanged || currentPage?.nextOffset === null" @click="expandNeighbors"><GitFork :size="17" /></button>
-      <button :title="ot('instanceGraphCollapse')" :aria-label="ot('instanceGraphCollapse')"
-        :disabled="expanding || rendering || versionChanged" @click="showDirectNeighborhood"><Waypoints :size="17" /></button>
+      <ManagerIconButton :icon="GitFork" :label="ot(currentPage ? 'instanceGraphMore' : 'instanceGraphExpand')"
+        :loading="expanding" :disabled="rendering || filtersDirty || versionChanged || currentPage?.nextOffset === null" @click="expandNeighbors" />
+      <ManagerIconButton :icon="Waypoints" :label="ot('instanceGraphCollapse')"
+        :disabled="expanding || rendering || versionChanged" @click="showDirectNeighborhood" />
     </div>
     <div v-if="error" class="graph-empty" role="alert"><strong>{{ error }}</strong></div>
 
@@ -639,13 +646,13 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="graph-toolbar" role="toolbar" :aria-label="ot('instanceGraphTitle')">
-      <button :title="ot('zoomIn')" :aria-label="ot('zoomIn')" @click="zoomIn"><Plus :size="18" /></button>
-      <button :title="ot('zoomOut')" :aria-label="ot('zoomOut')" @click="zoomOut"><Minus :size="18" /></button>
-      <button :title="ot('fitCanvas')" :aria-label="ot('fitCanvas')" @click="fitGraphView"><Maximize :size="18" /></button>
+      <ManagerIconButton :icon="Plus" :label="ot('zoomIn')" @click="zoomIn" />
+      <ManagerIconButton :icon="Minus" :label="ot('zoomOut')" @click="zoomOut" />
+      <ManagerIconButton :icon="Maximize" :label="ot('fitCanvas')" @click="fitGraphView" />
       <span class="toolbar-separator" aria-hidden="true" />
       <el-popover trigger="click" :width="260" placement="top-start" :teleported="false">
         <template #reference>
-          <button :title="ot('instanceGraphDisplaySettings')" :aria-label="ot('instanceGraphDisplaySettings')"><Settings2 :size="18" /></button>
+          <button type="button" class="manager-icon-button" :title="ot('instanceGraphDisplaySettings')" :aria-label="ot('instanceGraphDisplaySettings')"><Settings2 :size="16" aria-hidden="true" /></button>
         </template>
         <div class="graph-display-settings">
           <strong>{{ ot('instanceGraphDisplaySettings') }}</strong>
@@ -659,12 +666,10 @@ onBeforeUnmount(() => {
           </label>
         </div>
       </el-popover>
-      <button :title="ot('relayout')" :aria-label="ot('relayout')" :disabled="loading || rendering || layouting || expanding" @click="relayoutGraph">
-        <Network :size="18" />
-      </button>
+      <ManagerIconButton :icon="Network" :label="ot('relayout')" :loading="layouting" :disabled="loading || rendering || expanding" @click="relayoutGraph" />
       <span class="toolbar-separator" aria-hidden="true" />
-      <button :title="ot('downloadPng')" :aria-label="ot('downloadPng')" @click="downloadGraph"><Download :size="18" /></button>
-      <button :title="t('common.refresh')" :aria-label="t('common.refresh')" :disabled="expanding" @click="refresh"><RefreshCw :size="18" /></button>
+      <ManagerIconButton :icon="Download" :label="ot('downloadPng')" @click="downloadGraph" />
+      <ManagerIconButton :icon="RefreshCw" :label="t('common.refresh')" :loading="loading" :disabled="expanding" @click="refresh" />
     </div>
 
     <div class="graph-hint">
@@ -680,7 +685,7 @@ onBeforeUnmount(() => {
         <span v-if="connectionsLoading && overview" class="summary-counts" role="status">{{ ot('instanceGraphGenerating') }}</span>
         <el-popover trigger="click" :width="300" :teleported="false" placement="bottom-start">
           <template #reference>
-            <button class="summary-info" :title="ot('instanceGraphStatistics')" :aria-label="ot('instanceGraphStatistics')"><Info :size="15" /></button>
+            <button ref="statisticsButton" type="button" class="summary-info" :aria-label="ot('instanceGraphStatistics')"><Info :size="15" aria-hidden="true" /></button>
           </template>
           <div class="summary-details">
             <strong>{{ ot('instanceGraphStatistics') }}</strong>
@@ -690,6 +695,7 @@ onBeforeUnmount(() => {
             <span v-if="overview && summary.overviewEdgesTruncated" class="graph-warning">{{ ot('instanceGraphSampleEdgesLimited') }}</span>
           </div>
         </el-popover>
+        <ElTooltip v-if="statisticsButton" v-bind="actionTooltipProps" virtual-triggering :virtual-ref="statisticsButton" :content="ot('instanceGraphStatistics')" />
       </div>
       <small v-if="overview && summary.overviewEdgesTruncated" class="graph-warning">{{ ot('instanceGraphSampleEdgesLimited') }}</small>
       <small v-if="summary.complete === false" role="alert" class="graph-warning">{{ ot('instanceGraphPartial', { failures: (summary.failures || []).join(', ') }) }}</small>
@@ -1082,7 +1088,7 @@ onBeforeUnmount(() => {
 .sample-legend button:hover { background: color-mix(in srgb, var(--group-color) 26%, var(--el-bg-color)); }
 .sample-legend button.is-selected { background: color-mix(in srgb, var(--group-color) 32%, var(--el-bg-color)); color: var(--el-text-color-primary); font-weight: var(--font-semibold); }
 .sample-legend button:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: -2px; }
-.legend-label { width: 100%; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: color-mix(in srgb, var(--group-color) 45%, var(--el-text-color-primary)); }
+.legend-label { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--el-text-color-primary); }
 .legend-count { flex: none; margin-left: 6px; color: var(--el-text-color-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .class-option-count { float: right; margin-left: 12px; color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums; }
 .instance-candidates { display: grid; gap: 2px; min-width: 0; max-height: 260px; overflow: auto; }

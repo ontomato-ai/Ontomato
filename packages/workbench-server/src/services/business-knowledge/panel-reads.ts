@@ -28,12 +28,12 @@ import { knowledgeEntrySchema, m7ServerOperations } from "./panel-operations";
  */
 
 type KnowledgeEntry = z.infer<typeof knowledgeEntrySchema>;
-type StatusFilter = "all" | "pending" | "approved";
+type StatusFilter = z.infer<typeof panelReadParameterSchemas.knowledgeStatus>;
 
-/** The list read's inputs, as the first-phase list contract declares them. */
+/** The list read's inputs, as the flattened list contract declares them. */
 const queryInputSchema = z.object({
   search: z.string().optional(),
-  filter: panelReadParameterSchemas.knowledgeFilter.optional(),
+  status: panelReadParameterSchemas.knowledgeStatus.optional(),
   cursor: z.string().regex(/^\d+$/).optional(),
   size: z.number().int().positive().optional(),
 }).strict();
@@ -204,10 +204,10 @@ export function createBusinessKnowledgeReadAdapter(viewer: AssistantCredentials,
   return {
     /** The searched and filtered entries, paged by cursor, with the total the filter keeps. */
     async query(params: Record<string, unknown>) {
-      const { search, filter, cursor, size } = queryInputSchema.parse(params);
+      const { search, status, cursor, size } = queryInputSchema.parse(params);
       const [entries, text] = await Promise.all([ownerEntries(), ownerEntryText()]);
       const terms = searchTerms(search);
-      const kept = statusFiltered(searchedEntries(entries, terms), filter?.status ?? "all");
+      const kept = statusFiltered(searchedEntries(entries, terms), status ?? "all");
       const offset = cursor === undefined ? 0 : Number(cursor);
       return {
         rows: kept.slice(offset, size === undefined ? undefined : offset + size).map(entry => entryRow(entry, text, terms)),
@@ -215,12 +215,17 @@ export function createBusinessKnowledgeReadAdapter(viewer: AssistantCredentials,
         total: kept.length,
       };
     },
-    /** The status counts over the searched entries, one per tab. */
+    /** The status counts over the searched entries, in tab order. */
     async counts(params: Record<string, unknown>) {
       const { search } = countsInputSchema.parse(params);
-      const kept = searchedEntries(await ownerEntries(), searchTerms(search));
+      const [entries, text] = await Promise.all([ownerEntries(), ownerEntryText()]);
+      const kept = searchedEntries(entries, searchTerms(search));
       const pending = kept.filter(entry => entry.status !== 1).length;
-      return { all: kept.length, pending, approved: kept.length - pending };
+      return [
+        { key: "all", label: tForLocale(viewer.locale, "panels.knowledge.statusAll"), count: kept.length },
+        { key: "pending", label: text.pendingName, count: pending },
+        { key: "approved", label: text.approvedName, count: kept.length - pending },
+      ];
     },
     /** One entry, read from the whole-domain list the owner keeps, with highlights when search matches it. */
     async record(primaryKey: string, params: Record<string, unknown> = {}) {

@@ -1,6 +1,6 @@
 // Native replacement for POSIX-only environment assignments in package scripts.
 // Uses the already installed development CLIs, not a second shell or dependency.
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, openSync, closeSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
@@ -10,6 +10,18 @@ import { ensurePythonEnv, runtimeEnvironment, waitForRuntime } from "./dev-runti
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const WINDOWS = process.platform === "win32";
+const SKILL_BUILDERS = [
+  "packages/workbench-server/report-skill/build.mjs",
+  "packages/workbench-server/chart-skill/build.mjs",
+  "packages/workbench-server/dashboard-skill/build.mjs",
+];
+
+/** Build generated workbench skill bundles before local dev server startup. */
+export function buildWorkbenchSkills(root = ROOT) {
+  for (const script of SKILL_BUILDERS) {
+    execFileSync(process.execPath, [join(root, script)], { cwd: root, stdio: "inherit" });
+  }
+}
 
 // Pure: mode + product -> the child's env/tool/args/cwd.
 // server/web pass the entry, config and root as absolute paths so a
@@ -127,6 +139,9 @@ export async function runCli(product) {
     if (!["dev", "runtime", "server"].includes(mode)) {
       start(product);
       return;
+    }
+    if (mode === "dev" || mode === "server") {
+      buildWorkbenchSkills();
     }
     const env = runtimeEnvironment(product);
     if (mode === "dev" || mode === "runtime")

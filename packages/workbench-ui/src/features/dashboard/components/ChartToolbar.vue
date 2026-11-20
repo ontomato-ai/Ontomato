@@ -4,6 +4,7 @@
       class="ai-chart-tool-btn"
       type="button"
       :title="t('dashboard.zoomIn')"
+      :aria-label="t('dashboard.zoomIn')"
       @click.stop.prevent="emit('openZoom')"
     >
       <Expand class="tool-icon" :size="16" />
@@ -13,6 +14,8 @@
       class="ai-chart-tool-btn"
       type="button"
       :title="dataOpen ? t('dashboard.showChart') : t('dashboard.showData')"
+      :aria-label="dataOpen ? t('dashboard.showChart') : t('dashboard.showData')"
+      :aria-expanded="dataOpen"
       @click.stop.prevent="emit('toggleData')"
     >
       <BarChart3 v-if="dataOpen" class="tool-icon" :size="16" />
@@ -23,6 +26,7 @@
       class="ai-chart-tool-btn"
       type="button"
       :title="t('dashboard.editParameters')"
+      :aria-label="t('dashboard.editParameters')"
       @click.stop.prevent="emit('edit-parameters')"
     >
       <Filter class="tool-icon" :size="16" />

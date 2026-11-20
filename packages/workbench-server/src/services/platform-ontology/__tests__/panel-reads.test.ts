@@ -10,13 +10,11 @@ import {
   ACTION,
   OBJECT_TYPE,
   ONTOLOGY_TYPE,
-  RELATIONSHIP,
   USER,
   platformObjectTypes,
 } from "@ontomato/contracts/platform-object-types";
 import { installWorkbenchIdentity } from "../../../identity/installed";
 import type { WorkbenchIdentity } from "../../../identity/types";
-import { HttpError } from "../../../utils/errors";
 import { listAgentDefinitions } from "../../assistant/definitions";
 import { assistantSkillCatalog } from "../../assistant/skills";
 import { listPublishedDefinitions } from "../../business-definitions/definitions";
@@ -131,59 +129,8 @@ afterEach(() => {
 });
 
 describe("createPlatformOntologyReadAdapter", () => {
-  it("serves ObjectType.list and Relationship.list matching panelRecordList and edgeEnds pointers", async () => {
-    const { seenRequests } = stubOwnerHttp();
-    const reads = createPlatformOntologyReadAdapter(owner, viewer, "Alice");
-
-    const objectTypes = panelReadResultSchemas.panelRecordList.parse(await reads.listObjectTypes());
-    expect(objectTypes).toEqual([
-      {
-        primaryKey: "Order",
-        label: "Sales Order",
-        fields: { className: "Order", showName: "Sales Order", classDesc: "Customer order record" },
-      },
-      {
-        primaryKey: "Customer",
-        label: "Customer",
-        fields: { className: "Customer", showName: "Customer", classDesc: "" },
-      },
-    ]);
-
-    const relationships = panelReadResultSchemas.panelRecordList.parse(await reads.listRelationships());
-    expect(relationships).toEqual([
-      {
-        primaryKey: "PLACED_BY",
-        label: "Placed By",
-        fields: { fromclass: "Order", toclass: "Customer" },
-      },
-    ]);
-
-    expect(seenRequests.every((req) => req.token === viewer.token)).toBe(true);
-  });
-
-  it("maps ontologyMeta refusal to 403 and backend failure to 502 HttpError, and returns [] when empty", async () => {
-    stubOwnerHttp({
-      "/admin/getMetas": () => new Response(JSON.stringify({ message: "Denied" }), { status: 403 }),
-    });
-    const reads = createPlatformOntologyReadAdapter(owner, viewer);
-    await expect(reads.listObjectTypes()).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
-    await expect(reads.listRelationships()).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
-
-    stubOwnerHttp({
-      "/admin/getMetas": () => new Response(JSON.stringify({ message: "Upstream error" }), { status: 500 }),
-    });
-    await expect(reads.listObjectTypes()).rejects.toBeInstanceOf(HttpError);
-    await expect(reads.listObjectTypes()).rejects.toMatchObject({ status: 502 });
-
-    stubOwnerHttp({
-      "/admin/getMetas": () => jsonResponse({ classDef: [], relationship_rule: {} }),
-    });
-    expect(panelReadResultSchemas.panelRecordList.parse(await reads.listObjectTypes())).toEqual([]);
-    expect(panelReadResultSchemas.panelRecordList.parse(await reads.listRelationships())).toEqual([]);
-  });
-
   it("serves schema, counts, start and neighbors conforming to contract result schemas", async () => {
-    stubOwnerHttp();
+    const { seenRequests } = stubOwnerHttp();
     const reads = createPlatformOntologyReadAdapter(owner, viewer, "Alice");
 
     const schema = panelReadResultSchemas.panelGraphSchema.parse(reads.schema());
@@ -214,6 +161,8 @@ describe("createPlatformOntologyReadAdapter", () => {
     expect(neighbors.relations.map((r) => r.relationKind).sort()).toEqual(["user.created-action", "user.holds-role"]);
     expect(neighbors.edges.some((e) => e.relationKind === "user.holds-role" && e.to.primaryKey === "ops")).toBe(true);
     expect(neighbors.edges.some((e) => e.relationKind === "user.created-action" && e.to.primaryKey === "act-1")).toBe(true);
+    expect(seenRequests.length).toBeGreaterThan(0);
+    expect(seenRequests.every((req) => req.token === viewer.token)).toBe(true);
   });
 
   it("falls back to authenticated callerUserName for start when subject directory is refused", async () => {
@@ -233,16 +182,16 @@ describe("createPlatformOntologyReadAdapter", () => {
     });
   });
 
-  it("serves OntologyType.objects with keyword, page.{number,size} translation and per-type refusal status", async () => {
+  it("serves OntologyType.objects with search, page.{number,size} translation and per-type refusal status", async () => {
     stubOwnerHttp();
     const reads = createPlatformOntologyReadAdapter(owner, viewer);
 
     const typeParam = panelReadParameterSchemas.ontologyType.parse(ACTION);
-    const keywordParam = panelReadParameterSchemas.keyword.parse("order");
+    const searchParam = panelReadParameterSchemas.keyword.parse("order");
     const pageParam = panelReadParameterSchemas.page.parse({ number: 2, size: 1 });
 
     const paged = panelReadResultSchemas.panelOntologyObjects.parse(
-      await reads.objects({ type: typeParam, keyword: keywordParam, page: pageParam }),
+      await reads.objects({ type: typeParam, search: searchParam, page: pageParam }),
     );
     expect(paged).toMatchObject({
       type: ACTION,
@@ -259,6 +208,7 @@ describe("createPlatformOntologyReadAdapter", () => {
         detail: "DRAFT",
       },
     ]);
+    expect(() => reads.objects({ type: typeParam, keyword: "order" })).toThrow();
 
     const users = panelReadResultSchemas.panelOntologyObjects.parse(
       await reads.objects({ type: USER }),
@@ -283,17 +233,7 @@ describe("createPlatformOntologyReadAdapter", () => {
     });
   });
 
-  it("matches all seven registered platformObjectTypes read declarations for graph and picker projections", () => {
-    expect(platformObjectTypes[OBJECT_TYPE]?.reads?.list).toMatchObject({
-      source: "type",
-      parameterMode: "fixed",
-      result: "panelRecordList",
-    });
-    expect(platformObjectTypes[RELATIONSHIP]?.reads?.list).toMatchObject({
-      source: "type",
-      parameterMode: "fixed",
-      result: "panelRecordList",
-    });
+  it("matches all five registered platform:OntologyType read declarations for graph and picker projections", () => {
     expect(Object.keys(platformObjectTypes[ONTOLOGY_TYPE]?.reads ?? {}).sort()).toEqual([
       "counts",
       "neighbors",
@@ -310,16 +250,6 @@ describe("createPlatformOntologyReadAdapter", () => {
     } = { kind: "object-union", layers: ["fact", "capability", "governance", "product"] };
 
     const projections: Array<z.input<typeof directProjectionPortsSchema>> = [
-      {
-        componentId: "@ontomato/sdk:ObjectGraph",
-        inputs: {},
-        outputs: {},
-        data: {
-          nodes: { source: { type: platformType(OBJECT_TYPE) }, read: "list", params: {} },
-          edges: { source: { type: platformType(RELATIONSHIP) }, read: "list", params: {} },
-        },
-        config: { edgeEnds: { source: "/fromclass", target: "/toclass" } },
-      },
       {
         componentId: "@ontomato/sdk:OntologyGraph",
         inputs: {
@@ -361,23 +291,22 @@ describe("createPlatformOntologyReadAdapter", () => {
         componentId: "@ontomato/sdk:ObjectList",
         inputs: {
           type: { kind: "scalar", type: "string" },
-          keyword: { kind: "scalar", type: "string" },
-          page: { kind: "json" },
         },
         outputs: { selected: anyLayerObject },
         data: {
           objects: {
             source: { type: platformType(ONTOLOGY_TYPE) },
             read: "objects",
-            params: { type: { input: "type" }, keyword: { input: "keyword" }, page: { input: "page" } },
+            params: { type: { input: "type" } },
           },
         },
-        config: { searchable: true, showCount: true, pageSize: 20, toggleable: false, emptyTypeText: "capMap.typePickerEmpty" },
+        config: {},
       },
       {
         componentId: "@ontomato/sdk:ObjectList",
         inputs: {
-          keyword: { kind: "scalar", type: "string" },
+          type: { kind: "scalar", type: "string" },
+          search: { kind: "scalar", type: "string" },
           page: { kind: "json" },
         },
         outputs: { selected: { kind: "object", objectType: USER } },
@@ -385,10 +314,10 @@ describe("createPlatformOntologyReadAdapter", () => {
           objects: {
             source: { type: platformType(ONTOLOGY_TYPE) },
             read: "objects",
-            params: { type: { literal: USER }, keyword: { input: "keyword" }, page: { input: "page" } },
+            params: { type: { input: "type" }, search: { input: "search" }, page: { input: "page" } },
           },
         },
-        config: { searchable: true, showCount: true, pageSize: 20, toggleable: false },
+        config: {},
       },
     ];
 

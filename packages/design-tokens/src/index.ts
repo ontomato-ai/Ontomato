@@ -78,8 +78,11 @@ export interface BrandColors {
   /** Readable success text when the status accent is intentionally brighter. */
   successInk?: string;
   warning: string;
+  warningInk?: string;
   danger: string;
+  dangerInk?: string;
   info: string;
+  infoInk?: string;
 }
 
 export interface BrandSource {
@@ -89,6 +92,8 @@ export interface BrandSource {
   dataviz: Readonly<Record<BrandMode, readonly string[]>>;
   /** A fixed product colour card uses labels and mark outlines instead of standalone colour contrast. */
   datavizLabeled?: boolean;
+  /** Shell regions can share a canvas when a visible border defines the workspace. */
+  sharedNavigationCanvas?: boolean;
 }
 
 const LADDER = [3, 5, 7, 8] as const;
@@ -119,9 +124,12 @@ export function brandProperties(brand: BrandSource, mode: BrandMode): Record<str
     ...statusFamily("success", c.success, c),
     "--el-color-success-text": c.successInk ?? c.success,
     ...statusFamily("warning", c.warning, c),
+    "--el-color-warning-text": c.warningInk ?? c.warning,
     ...statusFamily("danger", c.danger, c),
+    "--el-color-danger-text": c.dangerInk ?? c.danger,
     ...statusFamily("error", c.danger, c),
     ...statusFamily("info", c.info, c),
+    "--el-color-info-text": c.infoInk ?? c.info,
 
     "--el-bg-color-page": c.workspace,
     "--el-bg-color": c.surface,
@@ -268,7 +276,7 @@ export function brandContrastFailures(brand: BrandSource): string[] {
       check(`link on ${name}`, c.link ?? c.primary, c[name], BODY_TEXT);
     check("link on primary tint", c.link ?? c.primary, primaryTint(c), BODY_TEXT);
     for (const status of ["success", "warning", "danger", "info"] as const) {
-      const text = status === 'success' ? c.successInk ?? c.success : c[status];
+      const text = c[`${status}Ink`] ?? c[status];
       check(`${status} on surface`, text, c.surface, BODY_TEXT);
       check(`${status} on its soft fill`, text, mix(c[status], c.surface, 0.9), BODY_TEXT);
     }
@@ -276,7 +284,7 @@ export function brandContrastFailures(brand: BrandSource): string[] {
     check("accentInk on accentSoft", c.accentInk, c.accentSoft, BODY_TEXT);
     // The three bands carry no divider, so their tones alone must tell them apart; this is a separation floor, not a
     // reading requirement.
-    check("rail and panel tones apart", c.rail, c.panel, BAND_SEPARATION);
+    if (!brand.sharedNavigationCanvas) check("rail and panel tones apart", c.rail, c.panel, BAND_SEPARATION);
     check("panel and workspace tones apart", c.panel, c.workspace, BAND_SEPARATION);
     if (!brand.datavizLabeled) brand.dataviz[mode].forEach((color, index) => check(`chart ${index + 1} on surface`, color, c.surface, GRAPHIC));
   }

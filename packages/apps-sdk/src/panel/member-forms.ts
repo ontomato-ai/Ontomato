@@ -3,7 +3,8 @@ import { panelOperationId, type PanelFormTarget } from "@ontomato/contracts/pane
 import type { PanelFormDescription, PanelFormRequest, PanelFormSaveInput, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import type { MemberDataState } from "./direct";
 import type { PanelInstance } from "./instance";
-import { readRun, type PanelMemberContext } from "./member";
+import type { PanelMemberContext } from "./member";
+import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { PlatformObjectRefusal } from "./platform-objects";
 
 /*
@@ -16,6 +17,12 @@ import { PlatformObjectRefusal } from "./platform-objects";
 export interface FormSource {
   describe(request: PanelFormRequest): Promise<PanelFormDescription>;
   save(target: PanelFormTarget, input: PanelFormSaveInput): Promise<{ primaryKey: string }>;
+}
+
+/** The input a form's `form` datum reads its object from: the panel state the edited object is held in. */
+export function editedInput(projection: ProductProjection): string | undefined {
+  const data = projection.data.form;
+  return data && "object" in data.source && "input" in data.source.object ? data.source.object.input : undefined;
 }
 
 /** A datum the owner did not answer with a value: no permission, or the reason it could not be read. */
@@ -37,24 +44,20 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
     const name = target.kind === "object" ? "form" : "createForm";
     const data = projection.data[name];
     if (!data) throw new Error(`Member '${member.key}' declares no ${name} datum: it ${target.kind === "object" ? "edits no object" : "creates nothing"}`);
-    const takes = (param: string) => { const source = data.params[param]; return source !== undefined && "input" in source; };
-    if (values !== undefined && !takes("values"))
-      throw new Error(`Member '${member.key}' declares no values its owner checks the form with`);
-    const run: Record<string, RuntimeJsonValue> = {
-      ...readRun(projection, name, { ...(values === undefined ? {} : { values }), changedField }),
-    };
+    const params: Record<string, RuntimeJsonValue> = { ...(values === undefined ? {} : { values }), changedField };
+    const inputs: Record<string, RuntimeJsonValue> = {};
     if (target.kind === "object") {
       if (!("object" in data.source) || !("input" in data.source.object))
         throw new Error(`Member '${member.key}' reads its form from no object one of its inputs names`);
-      run[data.source.object.input] = { className: target.objectType, primaryKey: target.primaryKey };
+      inputs[data.source.object.input] = { className: target.objectType, primaryKey: target.primaryKey };
     }
-    return { name, run, type: "type" in data.source ? data.source.type.id : null };
+    return { name, params, inputs, type: "type" in data.source ? data.source.type.id : null };
   }
 
   return {
     async describe({ target, values, changedField }) {
-      const { name, run } = formRead(target, values, changedField);
-      const result = await member.data.read(name, run);
+      const { name, params, inputs } = formRead(target, values, changedField);
+      const result = await member.data.read(name, params, inputs);
       if (result.status !== "ready") throw new MemberDataUnavailable(result);
       return result.value as PanelFormDescription;
     },

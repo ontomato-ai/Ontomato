@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { ArrowRight } from "lucide-vue-next";
 import type { PlatformScheduleResultLink, PlatformTaskRun } from "@ontomato/contracts/platform-schedules";
 import { useScheduleText } from "../text";
+import ScheduleRunStatus from "./ScheduleRunStatus.vue";
 
 /**
  * One run's record: its state, how it was started, when, for how long, why it failed, what it came to and where its
@@ -29,8 +30,7 @@ const hasDetails = computed(
 <template>
   <li class="run" :class="{ focused }" :data-run="run.id">
     <div class="run-head">
-      <span class="dot" :class="run.status" aria-hidden="true" />
-      <strong class="status" :class="run.status">{{ text.runStatus(run.status) }}</strong>
+      <ScheduleRunStatus :status="run.status" />
       <span>{{ text.trigger(run.trigger) }}</span>
       <span class="sep" aria-hidden="true" />
       <span>{{ text.moment(run.startedAt, timeZone) }}</span>
@@ -38,10 +38,10 @@ const hasDetails = computed(
         <span class="sep" aria-hidden="true" />
         <span>{{ t("duration.took", { time: text.duration(run.spendTime) }) }}</span>
       </template>
-      <button v-if="run.resultLink" type="button" class="link result" @click="emit('openResult', run.resultLink)">
+      <el-button v-if="run.resultLink" link type="primary" size="small" class="result" @click="emit('openResult', run.resultLink)">
         <span>{{ t("runs.viewResult") }}</span>
         <ArrowRight :size="14" aria-hidden="true" />
-      </button>
+      </el-button>
     </div>
     <p v-if="run.scheduledAt && run.trigger === 'schedule'" class="sub">
       {{ t("runs.scheduledFor", { time: text.moment(run.scheduledAt, timeZone) }) }}
@@ -49,9 +49,9 @@ const hasDetails = computed(
     <p v-if="run.error" class="error">{{ text.runError(run.error) }}</p>
     <p v-if="run.resultSummary" class="outcome">{{ run.resultSummary }}</p>
     <p v-if="run.status === 'running'" class="sub" aria-live="polite">{{ t("runs.refreshing") }}</p>
-    <button v-if="hasDetails" type="button" class="link toggle" :aria-expanded="expanded" @click="emit('toggle')">
+    <el-button v-if="hasDetails" link type="primary" size="small" class="toggle" :aria-expanded="expanded" @click="emit('toggle')">
       {{ expanded ? t("runs.hide") : t("runs.details") }}
-    </button>
+    </el-button>
     <dl v-if="expanded && hasDetails" class="details">
       <template v-if="run.snapshot.summary.length > 0">
         <dt>{{ t("runs.content") }}</dt>
@@ -83,7 +83,7 @@ const hasDetails = computed(
   border-top: 1px solid var(--el-border-color-lighter);
 }
 .run.focused {
-  background: var(--el-color-primary-light-9);
+  background: var(--el-fill-color-light);
 }
 .run-head {
   display: flex;
@@ -97,52 +97,10 @@ const hasDetails = computed(
   height: 10px;
   background: var(--el-border-color);
 }
-/* A state reads by its word; the dot and the colour only repeat it. */
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-full);
-  background: var(--el-border-color-dark);
-}
-.dot.completed {
-  background: var(--el-color-success);
-}
-.dot.failed {
-  background: var(--el-color-danger);
-}
-.dot.running {
-  background: var(--el-color-primary);
-}
-.status {
-  font-weight: var(--font-semibold);
-}
-.status.completed {
-  color: var(--el-color-success);
-}
-.status.failed {
-  color: var(--el-color-danger);
-}
-.status.running {
-  color: var(--brand-link);
-}
-.status.skipped {
-  color: var(--el-text-color-secondary);
-}
-.link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--brand-link);
-  font: inherit;
-  cursor: pointer;
-}
 .result {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  margin-left: auto;
-  font-weight: var(--font-semibold);
+  margin-inline-start: auto;
 }
+.result :deep(> span) { gap: var(--spacing-xs); }
 .sub {
   margin: 0;
   font-size: var(--text-xs);
@@ -151,15 +109,16 @@ const hasDetails = computed(
 }
 .error {
   margin: 0;
-  color: var(--el-color-danger);
+  color: var(--el-color-danger-text);
+  overflow-wrap: anywhere;
 }
 .outcome {
   margin: 0;
   color: var(--el-text-color-primary);
+  overflow-wrap: anywhere;
 }
 .toggle {
   align-self: flex-start;
-  font-size: var(--text-xs);
 }
 .details {
   display: grid;

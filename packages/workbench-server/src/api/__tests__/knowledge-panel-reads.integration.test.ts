@@ -110,7 +110,7 @@ const projections = {
     componentId: "@ontomato/sdk:ObjectList",
     inputs: {
       search: { kind: "scalar", type: "string" },
-      filter: { kind: "json" },
+      status: { kind: "scalar", type: "string" },
       cursor: { kind: "scalar", type: "string" },
       size: { kind: "scalar", type: "number" },
     },
@@ -122,7 +122,7 @@ const projections = {
         read: "query",
         params: {
           search: { input: "search" },
-          filter: { input: "filter" },
+          status: { input: "status" },
           cursor: { input: "cursor" },
           size: { input: "size" },
         },
@@ -133,7 +133,7 @@ const projections = {
     name: "Knowledge counts", description: "", visibility: "domain",
     componentId: "@ontomato/sdk:SegmentedControl",
     inputs: { search: { kind: "scalar", type: "string" } },
-    outputs: {},
+    outputs: { value: { kind: "scalar", type: "string" } },
     config: {},
     data: {
       counts: {
@@ -195,7 +195,7 @@ const projections = {
   "projection-knowledge-approve": productProjectionInputSchema.parse({
     name: "Approve knowledge", description: "", visibility: "domain",
     componentId: "@ontomato/sdk:OperationButton",
-    inputs: {},
+    inputs: { knowledge: knowledgeType },
     outputs: {},
     config: {},
     data: {
@@ -209,7 +209,7 @@ const projections = {
   "projection-knowledge-delete": productProjectionInputSchema.parse({
     name: "Delete knowledge", description: "", visibility: "domain",
     componentId: "@ontomato/sdk:OperationButton",
-    inputs: {},
+    inputs: { knowledge: knowledgeType },
     outputs: {},
     config: {},
     data: {
@@ -229,16 +229,17 @@ const panel = productPanelInputSchema.parse({
   },
   manifest: {
     state: {
+      status: { type: { kind: "scalar", type: "string" }, deepLink: true, external: true, personal: false, default: "all" },
       selectedEntry: { type: knowledgeType, deepLink: true, external: true, personal: false, default: null },
     },
     members: {
-      counts: { target: { projectionId: "projection-knowledge-counts" } },
-      list: { target: { projectionId: "projection-knowledge-list" } },
+      counts: { target: { projectionId: "projection-knowledge-counts" }, outputs: { value: { state: "status" } } },
+      list: { target: { projectionId: "projection-knowledge-list" }, inputs: { status: { state: "status" } } },
       detail: { target: { projectionId: "projection-knowledge-detail" }, inputs: { entry: { state: "selectedEntry" } } },
       form: { target: { projectionId: "projection-knowledge-form" }, inputs: { entry: { state: "selectedEntry" } } },
       createForm: { target: { projectionId: "projection-knowledge-create-form" } },
-      approve: { target: { projectionId: "projection-knowledge-approve" } },
-      remove: { target: { projectionId: "projection-knowledge-delete" } },
+      approve: { target: { projectionId: "projection-knowledge-approve" }, inputs: { knowledge: { state: "selectedEntry" } } },
+      remove: { target: { projectionId: "projection-knowledge-delete" }, inputs: { knowledge: { state: "selectedEntry" } } },
     },
     events: {},
   },
@@ -248,8 +249,8 @@ beforeAll(async () => {
   configureI18n({
     defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: true,
     packs: {
-      en: { ...enLocaleMeta, messages: { ...en, "panels.knowledge.approve": "Approve", "panels.knowledge.delete": "Delete" } as typeof en },
-      "zh-CN": { ...enLocaleMeta, messages: { ...en, "panels.knowledge.approve": "通过", "panels.knowledge.delete": "删除" } as typeof en },
+      en: { ...enLocaleMeta, messages: { ...en, "panels.knowledge.approve": "Approve", "panels.knowledge.delete": "Delete", "panels.knowledge.statusAll": "All" } as typeof en },
+      "zh-CN": { ...enLocaleMeta, messages: { ...en, "panels.knowledge.approve": "通过", "panels.knowledge.delete": "删除", "panels.knowledge.statusAll": "全部" } as typeof en },
     },
   });
   state.schema = `panel_knowledge_${randomUUID().replaceAll("-", "")}`;
@@ -261,7 +262,7 @@ beforeAll(async () => {
   await writeBundledAppSdkFixture(contentRoot);
   installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
 
-  const { productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
+  const { panelOperationsRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const { ensurePanelOperationsSchema } = await import("../../infrastructure/postgres-migrations/20261118-panel-operations/schema");
   await ensurePanelOperationsSchema(state.pool);
   const app = express();
@@ -307,6 +308,7 @@ beforeAll(async () => {
   });
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
+  app.use("/api", panelOperationsRouter);
   server = await new Promise<Server>(resolve => {
     const started = app.listen(0, "127.0.0.1", () => resolve(started));
   });
@@ -368,7 +370,7 @@ it("serves business knowledge panel reads over real HTTP routes backed by Postgr
     },
   });
 
-  const pendingFiltered = await (await read("list", "rows", { search: "rule", filter: { status: "pending" } })).json();
+  const pendingFiltered = await (await read("list", "rows", { search: "rule", status: "pending" })).json();
   expect(pendingFiltered).toMatchObject({
     status: "ready",
     value: {
@@ -377,28 +379,51 @@ it("serves business knowledge panel reads over real HTTP routes backed by Postgr
     },
   });
 
-  const page1 = await (await read("list", "rows", { filter: { status: "approved" }, size: 1 })).json();
+  const page1 = await (await read("list", "rows", { status: "approved", size: 1 })).json();
   expect(page1).toMatchObject({
     status: "ready",
     value: { rows: [{ primaryKey: "k-1" }], nextCursor: "1", total: 2 },
   });
   expect(page1.value.rows[0].highlights).toBeUndefined();
 
-  const page2 = await (await read("list", "rows", { filter: { status: "approved" }, cursor: "1", size: 1 })).json();
+  const page2 = await (await read("list", "rows", { status: "approved", cursor: "1", size: 1 })).json();
   expect(page2).toMatchObject({
     status: "ready",
     value: { rows: [{ primaryKey: "k-4" }], total: 2 },
   });
   expect(page2.value.nextCursor).toBeUndefined();
 
-  // counts: status tabs with and without search.
+  // Clearing the panel's search state behaves the same as omitting the parameter.
+  expect(await (await read("list", "rows", { search: null })).json()).toEqual(
+    await (await read("list", "rows", {})).json(),
+  );
+  expect(await (await read("counts", "counts", { search: null })).json()).toEqual(
+    await (await read("counts", "counts", {})).json(),
+  );
+  // counts: ordered status tabs with and without search, using localized "All" label and form status labels.
   expect(await (await read("counts", "counts", {})).json()).toEqual({
     status: "ready",
-    value: { all: 4, pending: 2, approved: 2 },
+    value: [
+      { key: "all", label: "All", count: 4 },
+      { key: "pending", label: "Pending review", count: 2 },
+      { key: "approved", label: "Approved", count: 2 },
+    ],
   });
   expect(await (await read("counts", "counts", { search: "rule" })).json()).toEqual({
     status: "ready",
-    value: { all: 3, pending: 1, approved: 2 },
+    value: [
+      { key: "all", label: "All", count: 3 },
+      { key: "pending", label: "Pending review", count: 1 },
+      { key: "approved", label: "Approved", count: 2 },
+    ],
+  });
+  expect(await (await read("counts", "counts", {}, "zh-CN")).json()).toMatchObject({
+    status: "ready",
+    value: [
+      { key: "all", label: "全部", count: 4 },
+      { key: "pending", label: "Pending review", count: 2 },
+      { key: "approved", label: "Approved", count: 2 },
+    ],
   });
 
   // record: without search omits highlights; with matching search includes highlights; with non-matching search omits highlights.
@@ -461,4 +486,81 @@ it("serves business knowledge panel reads over real HTTP routes backed by Postgr
       inspectImpact: { handlerRef: `${DELETE_KNOWLEDGE}.inspect-impact` },
     },
   });
+});
+
+it("checks the operation target at registration and when preparing a legacy button", async () => {
+  const intent = {
+    applicationId: "app-knowledge", useId: "knowledge", operationId: "approve.approve",
+    call: { target: { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-2" }, input: {} },
+  };
+  const approve = projections["projection-knowledge-approve"];
+  const legacyProjectionId = "projection-knowledge-approve-entry";
+  const savedProjection = await request("PUT", "product-projections/" + legacyProjectionId, {
+    ...approve, inputs: { entry: knowledgeType }, revision: 0,
+  });
+  expect(savedProjection.status, await savedProjection.text()).toBe(200);
+  const legacyPanel = { ...panel, manifest: { ...panel.manifest, members: {
+    ...panel.manifest.members,
+    approve: { target: { projectionId: legacyProjectionId }, inputs: { entry: { state: "selectedEntry" } } },
+  } } };
+  const badMember = await request("PUT", "product-panels/" + panelId, { ...legacyPanel, revision: 1 });
+  expect(badMember.status).toBe(400);
+  expect(await badMember.json()).toMatchObject({ error: {
+    code: "PANEL_PORT_MISMATCH",
+    message: expect.stringContaining("operation 'knowledge.approve' expects target input 'knowledge'"),
+  } });
+
+  const wrongProjectionId = "projection-knowledge-approve-task";
+  const wrongProjection = await request("PUT", "product-projections/" + wrongProjectionId, {
+    ...approve, revision: 0, inputs: { knowledge: { kind: "object", objectType: "platform:ScheduledTask" } },
+  });
+  expect(wrongProjection.status, await wrongProjection.text()).toBe(200);
+  const wrongType = await request("PUT", "product-panels/" + panelId, {
+    ...panel, revision: 1, manifest: { ...panel.manifest, members: {
+      ...panel.manifest.members,
+      approve: { target: { projectionId: wrongProjectionId }, inputs: { knowledge: { state: "selectedEntry" } } },
+    } },
+  });
+  expect(wrongType.status).toBe(400);
+  expect(await wrongType.json()).toMatchObject({ error: {
+    code: "PANEL_PORT_MISMATCH",
+    message: expect.stringContaining("input 'knowledge' of type 'platform:BusinessKnowledge'"),
+  } });
+
+  const accepted = await request("POST", "panel-operations/intents", intent);
+  expect(accepted.status).toBe(200);
+  expect(await accepted.json()).toMatchObject({ operationId: "approve.approve", confirmation: { kind: "none" } });
+
+  const targetList = { kind: "list", items: knowledgeType };
+  const batchProjectionId = "projection-knowledge-approve-batch";
+  const savedBatch = await request("PUT", "product-projections/" + batchProjectionId, {
+    ...approve, inputs: { knowledge: targetList }, revision: 0,
+  });
+  expect(savedBatch.status, await savedBatch.text()).toBe(200);
+  const batchPanel = await request("PUT", "product-panels/" + panelId, {
+    ...panel, revision: 1, manifest: {
+      ...panel.manifest, state: { ...panel.manifest.state, checked: { type: targetList, default: [] } },
+      members: { ...panel.manifest.members,
+        approve: { target: { projectionId: batchProjectionId }, inputs: { knowledge: { state: "checked" } } },
+      },
+    },
+  });
+  expect(batchPanel.status, await batchPanel.text()).toBe(200);
+  const wrongInvocation = await request("POST", "panel-operations/intents", intent);
+  expect(wrongInvocation.status).toBe(422);
+  expect(await wrongInvocation.json()).toMatchObject({ error: { code: "OPERATION_BATCH_REQUIRED" } });
+  const { call, ...operation } = intent;
+  const batch = await request("POST", "panel-operations/intents", { ...operation, calls: [call] });
+  expect(batch.status, await batch.text()).toBe(200);
+
+  // A published definition may predate the registration check.
+  await state.pool!.query(`UPDATE "${state.schema}".product_panels SET definition=$1 WHERE id=$2`, [
+    JSON.stringify(legacyPanel), panelId,
+  ]);
+  const wrongTarget = await request("POST", "panel-operations/intents", intent);
+  expect(wrongTarget.status).toBe(422);
+  expect(await wrongTarget.json()).toMatchObject({ error: {
+    code: "PANEL_OPERATION_TARGET_UNBOUND",
+    message: "Operation 'knowledge.approve' expects target input 'knowledge', but member 'approve' does not connect it.",
+  } });
 });

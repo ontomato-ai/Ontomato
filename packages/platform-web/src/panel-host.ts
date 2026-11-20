@@ -17,7 +17,7 @@ import { buildExecutionContext } from "@ontomato/contracts/build-tests";
 import { pageSkillContextSchema, type PageSkillContext } from "@ontomato/contracts/page-skills";
 import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
-import { confirmPanelIntent, registerCandidateFrame, registerPanelFrame } from "./app-host";
+import { confirmPanelIntent, expandDeclaredComposer, registerCandidateFrame, registerPanelFrame } from "./app-host";
 import type { DirectPanelRun, PanelHostPort, PanelSdkRelease } from "@ontomato/platform-shell";
 import { mountDirectPanel, type PlatformRequests } from "@ontomato/apps-sdk/direct";
 import { workbenchI18n } from "@ontomato/workbench-ui/i18n";
@@ -202,6 +202,7 @@ function mountDirect(source: DirectPanelHostSource, run: DirectPanelRun, use: Pa
     use,
     read: request => readPanelData({ source: { kind: "registered", ...use }, ...request }),
     confirmOperation: preparation => confirmPanelIntent(use, preparation.intentId, changed),
+    expandPageComposer: expandDeclaredComposer,
     messages: source.panel.content.messages ?? {},
     locale: global.locale,
     defaultLocale: String(global.fallbackLocale.value),

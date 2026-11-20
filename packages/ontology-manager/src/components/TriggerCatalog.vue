@@ -14,6 +14,7 @@ import {
   vLoading,
 } from "element-plus";
 import { CalendarClock, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-vue-next";
+import ManagerIconButton from "./ManagerIconButton.vue";
 import { PlatformPageHeader } from "@ontomato/platform-shell";
 import type { SmartAsset, TriggerRecord, WorkflowRecord } from "../api";
 import { useManagerClient, useOntologyText } from "../context";
@@ -356,12 +357,8 @@ onMounted(async () => {
           :placeholder="ot('triggerFilter')"
           clearable
         />
-        <el-button @click="refresh">
-          <RefreshCw :size="16" />
-          <span>{{ ot("triggerRefresh") }}</span>
-        </el-button>
-        <el-button type="primary" @click="openCreate">
-          <Plus :size="16" />
+        <ManagerIconButton :icon="RefreshCw" :label="ot('triggerRefresh')" :loading="loading" @click="refresh" />
+        <el-button type="primary" :icon="Plus" @click="openCreate">
           <span>{{ ot("triggerNew") }}</span>
         </el-button>
       </template>

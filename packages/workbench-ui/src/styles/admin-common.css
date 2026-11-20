@@ -330,8 +330,9 @@
   overflow: hidden;
 }
 
-.el-table.admin-table::before {
-  height: 0;
+.el-table.admin-table::before,
+.el-table.admin-table .el-table__inner-wrapper::before {
+  display: none;
 }
 
 /* ---- Table header ---- */

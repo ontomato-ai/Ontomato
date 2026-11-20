@@ -24,6 +24,7 @@ const props = withDefaults(
     localeNames?: Readonly<Record<string, string>>;
     /** Controlled from outside; when absent the shell remembers the choice itself. */
     collapsed?: boolean;
+    hideRail?: boolean;
   }>(),
   { collapsed: undefined, brand: undefined },
 );
@@ -59,8 +60,9 @@ const collapsed = computed({
 </script>
 
 <template>
-  <div class="platform-shell" :class="{ 'rail-collapsed': collapsed }">
+  <div class="platform-shell" :class="{ 'rail-collapsed': collapsed && !hideRail, 'rail-hidden': hideRail }">
     <PlatformRail
+      v-if="!hideRail"
       :loading="loading"
       :apps="apps"
       :active-app-id="activeAppId"
@@ -120,4 +122,5 @@ const collapsed = computed({
   background: var(--shell-workspace-bg);
   overflow: hidden;
 }
+.rail-hidden > .platform-app { border: 0; border-radius: 0; }
 </style>

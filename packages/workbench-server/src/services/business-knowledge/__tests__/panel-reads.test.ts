@@ -149,32 +149,49 @@ it("searches as the page did, ranks by title hits, filters and pages by cursor",
   });
 
   // The status filter keeps the searched entries; the cursor pages them with the filtered total.
-  expect(await reads.query({ search: "rule", filter: { status: "approved" } })).toEqual({
+  expect(await reads.query({ status: "all" })).toEqual({
+    rows: [
+      row(entries["k-1"], "Approved"),
+      row(entries["k-2"], "Pending review"),
+      row(entries["k-3"], "Pending review"),
+      row(entries["k-4"], "Approved"),
+    ],
+    total: 4,
+  });
+  expect(await reads.query({ search: "rule", status: "approved" })).toEqual({
     rows: [
       { ...row(entries["k-1"], "Approved"), highlights: { label: [{ start: 6, end: 10 }] } },
       { ...row(entries["k-4"], "Approved"), highlights: { label: [{ start: 0, end: 4 }], knowledgeText: [{ start: 5, end: 9 }] } },
     ],
     total: 2,
   });
-  expect(await reads.query({ search: "rule", filter: { status: "pending" } })).toEqual({
+  expect(await reads.query({ search: "rule", status: "pending" })).toEqual({
     rows: [{ ...row(entries["k-2"], "Pending review"), highlights: { label: [{ start: 7, end: 11 }] } }],
     total: 1,
   });
-  expect(await reads.query({ filter: { status: "approved" }, size: 1 })).toEqual({
+  expect(await reads.query({ status: "approved", size: 1 })).toEqual({
     rows: [row(entries["k-1"], "Approved")], nextCursor: "1", total: 2,
   });
-  expect(await reads.query({ filter: { status: "approved" }, cursor: "1", size: 1 })).toEqual({
+  expect(await reads.query({ status: "approved", cursor: "1", size: 1 })).toEqual({
     rows: [row(entries["k-4"], "Approved")], total: 2,
   });
   expect(await reads.query({ search: "nothing matches this" })).toEqual({ rows: [], total: 0 });
 });
 
-it("counts the tabs on the searched entries", async () => {
+it("counts the tabs on the searched entries in order with localized labels", async () => {
   vi.stubGlobal("fetch", ownerFetch().fetchOwner);
   const reads = createBusinessKnowledgeReadAdapter(viewer);
 
-  expect(await reads.counts({ by: "status" })).toEqual({ all: 4, pending: 2, approved: 2 });
-  expect(await reads.counts({ by: "status", search: "rule" })).toEqual({ all: 3, pending: 1, approved: 2 });
+  expect(await reads.counts({ by: "status" })).toEqual([
+    { key: "all", label: "All", count: 4 },
+    { key: "pending", label: "Pending review", count: 2 },
+    { key: "approved", label: "Approved", count: 2 },
+  ]);
+  expect(await reads.counts({ by: "status", search: "rule" })).toEqual([
+    { key: "all", label: "All", count: 3 },
+    { key: "pending", label: "Pending review", count: 1 },
+    { key: "approved", label: "Approved", count: 2 },
+  ]);
 });
 
 it("reads one entry from the whole-domain list the owner keeps, with highlights only when search matches", async () => {

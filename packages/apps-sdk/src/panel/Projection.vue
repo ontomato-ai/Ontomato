@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, provide, ref, shallowRef, watch, type Component } from "vue";
+import { computed, inject, onBeforeUnmount, provide, ref, shallowRef, useAttrs, watch, type Component } from "vue";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { type MemberInputs } from "./direct";
 import { memberComponentId, memberProjectionId } from "./projection-element";
@@ -14,7 +14,8 @@ import { componentFor } from "../catalogue-components";
  * The SDK's projection component: `<Projection slot="taskForm"/>`. A panel author places it and names the member;
  * everything else is the SDK's. It reads the member's projection by ID through this frame's request path under the
  * reader's own credential, finds the component of the record's `componentId` in this release's own catalogue, draws it
- * with the record's `config` as configuration and the member's inputs as values, derives its ports from the data it reads
+ * with the record's `config` as its only configuration (an attribute written on `<Projection>` configures nothing) and
+ * the member's inputs as values, derives its ports from the data it reads
  * and that catalogue entry, registers them with the instance, and gives the drawn component the member's data, read here
  * through this release's resource modules.
  *
@@ -31,6 +32,9 @@ const props = defineProps<{
 const panel = inject(panelContextKey, null);
 if (!panel) throw new Error("<Projection> runs inside a panel, which provides its context");
 
+const attrs = useAttrs();
+/** What the panel's template listens to on the component; an attribute written here configures nothing. */
+const listeners = computed(() => Object.fromEntries(Object.entries(attrs).filter(([name]) => /^on[A-Z]/.test(name))));
 const loading = ref(true);
 const failure = shallowRef<Error | null>(null);
 const loaded = shallowRef<{ projection: ProductProjection; component: Component; member: PanelMemberContext } | null>(null);
@@ -120,7 +124,7 @@ provide(panelMemberKey, () => loaded.value!.member);
 <template>
   <p v-if="failure" role="alert">{{ failure.message }}</p>
   <div v-else-if="loading || !loaded" class="sdk-projection-loading"></div>
-  <component :is="loaded.component" v-else v-bind="{ ...loaded.projection.config, ...$attrs, ...inputs }">
+  <component :is="loaded.component" v-else v-bind="{ ...loaded.projection.config, ...listeners, ...inputs }">
     <template v-for="(_, name) in $slots" :key="name" #[name]="slotProps">
       <slot :name="name" v-bind="slotProps ?? {}"></slot>
     </template>

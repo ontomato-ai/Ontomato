@@ -3,7 +3,7 @@ import { effectScope, nextTick, type ComputedRef } from "vue";
 import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
-import { ACTION, AGENT_DEFINITION, MODEL_OPTION, ONTOLOGY_TYPE, USER } from "@ontomato/contracts/platform-object-types";
+import { ACTION, AGENT_DEFINITION, BUSINESS_KNOWLEDGE, MODEL_OPTION, ONTOLOGY_TYPE, USER } from "@ontomato/contracts/platform-object-types";
 import { createDirectPanelInstance, type MemberDataState, type MemberInputs } from "../../../../../packages/apps-sdk/src/panel/direct";
 import { frameMemberData } from "../../../../../packages/apps-sdk/src/panel/frame-member";
 import { memberFormSource } from "../../../../../packages/apps-sdk/src/panel/member-forms";
@@ -79,6 +79,38 @@ it("reads nothing for a datum whose required parameter has no value, in the plat
   await vi.waitFor(() => expect(objects.value.status).toBe("ready"));
   expect(reads).toEqual([{ memberPath: [{ member: "objects" }], dataName: "objects", inputs: { type: ACTION } }]);
   scope.stop();
+});
+
+it("reads nothing for a required parameter the projection leaves unmapped or the panel's state leaves empty", async () => {
+  // The business knowledge tabs count by a field the owner requires; nothing gives it here, or the state given is empty.
+  const counts = (params: DirectProjection["data"][string]["params"]): DirectProjection => ({
+    ...record, id: "knowledge-tabs", name: "Tabs", componentId: "@ontomato/sdk:SegmentedControl",
+    inputs: { by: { kind: "scalar", type: "string" } }, outputs: {}, config: {},
+    data: { counts: { source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } }, read: "counts", params } },
+  });
+  for (const projection of [counts({}), counts({ by: { input: "by" } })]) {
+    const reads: unknown[] = [];
+    const instance = createDirectPanelInstance(definePanel({
+      state: { by: { type: { kind: "scalar", type: "string" } } },
+      members: { tabs: { target: { projectionId: projection.id }, inputs: { by: { state: "by" } } } },
+      events: {},
+    }), {
+      pageKey: "knowledge", url: () => "/knowledge", label: () => "Knowledge", initial: {},
+      text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
+      readProjection: async () => projection,
+      read: async (request) => {
+        reads.push(request);
+        return { status: "ready", value: [] as never };
+      },
+    });
+    const scope = effectScope();
+    let tabs!: ComputedRef<MemberDataState>;
+    scope.run(() => { tabs = instance.memberData("tabs", projection, () => ({ by: instance.state.values.value.by ?? null }) as MemberInputs).use("counts"); });
+    await nextTick();
+    expect(tabs.value).toEqual({ status: "awaiting" });
+    expect(reads).toEqual([]);
+    scope.stop();
+  }
 });
 
 it("answers the ontology's reads in a code panel's frame as the platform's reads answer them", async () => {

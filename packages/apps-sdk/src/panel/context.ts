@@ -92,14 +92,18 @@ export function slotState(manifest: PanelManifest, slot: string, input?: string)
   return state;
 }
 
-/** Like `slotState`, returning `null` when the slot binds no matching input. */
+/**
+ * Like `slotState`, returning `null` when the member binds no state of that name: its input of the name, else its output
+ * of the name (an output and an input of one name are bound once, by either), else, unnamed, its first input.
+ */
 export function slotInputState(manifest: PanelManifest, slot: string, input?: string): string | null {
   const declaration = manifest.members[slot];
   if (!declaration) throw new Error(`The panel declares no member '${slot}'`);
   const inputs = declaration.inputs ?? {};
   const [name] = input ? [input] : Object.keys(inputs);
   const source = name ? inputs[name] : undefined;
-  return source && "state" in source ? source.state : null;
+  if (source) return "state" in source ? source.state : null;
+  return name ? declaration.outputs?.[name]?.state ?? null : null;
 }
 
 /** The panel state a named projection output port writes to, or `null` when the slot does not bind that output. */
@@ -135,7 +139,10 @@ export function useProjectionForm(adapter: PanelFormAdapter): void {
   const drawn = useProjectionSlot();
   const saves = context.instance.projections.value
     .find((registration) => registration.slot === drawn.slot)?.ports.operations.some((item) => item.kind === "form.save");
-  if (!saves) throw new Error(`The projection in slot '${drawn.slot}' publishes no form save`);
+  if (!saves) {
+    const type = projectionElement(drawn.projection).id;
+    throw new Error(`Owner type '${type}' registers no '${type}.save', so the form in member '${drawn.slot}' cannot save`);
+  }
   onBeforeUnmount(context.instance.forms.register(drawn.slot, adapter));
 }
 

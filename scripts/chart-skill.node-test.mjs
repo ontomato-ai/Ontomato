@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { test } from "node:test";
+import { before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -27,19 +27,8 @@ async function chart(directory, name) {
   return JSON.parse(await readFile(path.join(directory, "outputs", `${name}.chart.json`), "utf8"));
 }
 
-test("committed chart skill packages match the shared source", async (t) => {
-  const output = await workspace(t);
-  await run(process.execPath, [path.join(server, "chart-skill/build.mjs"), output], { cwd: root });
-  for (const skill of ["echarts", "leaflet", "admin-choropleth-map"]) {
-    const files = ["scripts/index.mjs", "licenses/zod-LICENSE.txt"];
-    if (skill === "admin-choropleth-map") files.push("licenses/china-provinces-README.md");
-    for (const file of files) {
-      const generated = await readFile(path.join(output, skill, file));
-      const committed = await readFile(path.join(visualization, skill, file));
-      assert.equal(Buffer.compare(generated, committed), 0,
-        `${skill}/${file} is stale: run pnpm --filter @ontomato/workbench-server build:chart-skill`);
-    }
-  }
+before(async () => {
+  await run(process.execPath, [path.join(server, "chart-skill/build.mjs")], { cwd: root });
 });
 
 test("echarts writes a chart file with the used columns and a MetricView reference", async (t) => {

@@ -80,6 +80,7 @@ export function appDeclarations(
       label: app.label ?? t(app.labelKey!),
       description: app.description ?? (app.descriptionKey ? t(app.descriptionKey) : null),
       icon: app.icon,
+      built: app.built,
       rail: app.rail ?? "apps",
       category: app.category,
       prefix: app.prefix,
