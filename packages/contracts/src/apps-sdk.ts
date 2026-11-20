@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { panelReadResultSchemas } from "./panel-operations";
+import { componentOperationSchema, directProjectionInputTypeSchema } from "./panel-projection";
+import type { PanelReadResultId } from "./platform-object-types";
 import { workspacePathSchema } from "./workspaces";
 
 /** Written by the image build beside its exact SDK version directory. */
@@ -35,3 +38,54 @@ export const appsSdkCurrentSchema = appsSdkBuildSchema.extend({
   referencePath: z.string(),
 }).strict();
 export type AppsSdkCurrent = z.infer<typeof appsSdkCurrentSchema>;
+
+const name = z.string().min(1);
+const componentPortSchema = z.object({
+  name,
+  type: z.string(),
+  description: z.string(),
+}).strict();
+const componentPropSchema = componentPortSchema.extend({
+  required: z.boolean(),
+  default: z.string().optional(),
+});
+const componentConfigSchema = z.array(componentPropSchema);
+const panelReadResultIdSchema = z.custom<PanelReadResultId>(
+  value => typeof value === "string" && Object.hasOwn(panelReadResultSchemas, value),
+  "Expected a registered panel read result ID",
+);
+
+export const appsSdkComponentDataSchema = z.record(name, z.object({
+  results: z.array(panelReadResultIdSchema).min(1),
+  required: z.boolean(),
+}).strict());
+export type AppsSdkComponentData = z.infer<typeof appsSdkComponentDataSchema>;
+
+export const appsSdkComponentCatalogEntrySchema = z.object({
+  componentId: name,
+  module: name,
+  exportName: name,
+  role: z.enum(["presentation", "control"]),
+  meaning: name,
+  effects: z.string().optional(),
+  bindsElement: z.array(name).optional(),
+  /** Omit this declaration for components that do not consume platform-supplied data. */
+  data: appsSdkComponentDataSchema.optional(),
+  config: componentConfigSchema.optional(),
+  inputs: z.record(name, directProjectionInputTypeSchema).optional(),
+  outputs: z.array(name).optional(),
+  operations: z.array(componentOperationSchema).optional(),
+  ports: z.object({
+    props: componentConfigSchema,
+    events: z.array(componentPortSchema),
+    slots: z.array(componentPortSchema),
+  }).strict(),
+}).strict();
+export type AppsSdkComponentCatalogEntry = z.infer<typeof appsSdkComponentCatalogEntrySchema>;
+
+/** The generated components.json for one release. */
+export const appsSdkComponentCatalogSchema = z.object({
+  version: appsSdkBuildSchema.shape.version,
+  components: z.array(appsSdkComponentCatalogEntrySchema),
+}).strict();
+export type AppsSdkComponentCatalog = z.infer<typeof appsSdkComponentCatalogSchema>;
