@@ -54,9 +54,9 @@ jobs:
           python3 -B scripts/offline-mirror-test.py
           python3 -B scripts/deploy-runtime_test.py
 
-  # The Java contract and permission-boundary group: it needs a database and
-  # nothing else. The adapter contract suites (Testcontainers), the process
-  # suites and the full reactor stay on demand with `./mvnw test`.
+  # The workbench integration tests and Java contract and permission-boundary
+  # tests share this job's PostgreSQL service. The Java adapter contract suites
+  # (Testcontainers), process suites and full reactor stay on demand with `./mvnw test`.
   java:
     runs-on: ubuntu-24.04
     services:
@@ -97,6 +97,9 @@ jobs:
         run: |
           npm install --global pnpm@9.15.9
           pnpm install --frozen-lockfile
+
+      - name: Test workbench server integration
+        run: pnpm --filter @ontomato/workbench-server test:integration
 
       - name: Install Python HTTP helper dependency
         run: python3 -m pip install requests==2.32.5
