@@ -109,6 +109,15 @@ describe("metric and function resource adapters", () => {
     expect(sent.every(request => request.service === "/data-query")).toBe(true);
   });
 
+  it("sends the fields a metric or function save submitted with its values", async () => {
+    const { requests, sent } = fake(() => ({ success: true, data: metric("m1", "Revenue", "", "PUBLISHED", "Published", "USER", "User") }));
+    const [metrics] = metricViewAdapters(requests);
+    await metrics!.forms!.save({ kind: "object", objectType: METRIC_VIEW, primaryKey: "m1" },
+      { values: { description: "Weekly" }, submittedFields: ["/description"] });
+    expect(sent.find(request => request.path === "/metricView/save")?.body)
+      .toEqual({ description: "Weekly", id: "m1", submittedFields: ["/description"] });
+  });
+
   it("binds a metric save to its target and refuses another id", async () => {
     const { requests, sent } = fake(() => ({ success: true, data: metric("m1", "Revenue", "", "PUBLISHED", "Published", "USER", "User") }));
     const [adapter] = metricViewAdapters(requests);
