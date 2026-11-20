@@ -14,6 +14,8 @@ export const panelOwnerOperationTargetSchema = z.discriminatedUnion("source", [
 /** The trusted owner supplies the effect and schemas. Requests carry only the operation identity and input. */
 export const panelOwnerOperationDescriptorSchema = z.object({
   handlerRef: z.string().min(1).max(300),
+  /** Display text supplied by the owner in the reader's locale. */
+  label: z.string().min(1).max(200),
   effect: z.enum(["read", "write"]),
   target: panelOwnerOperationTargetSchema,
   inputSchema: runtimeJsonObjectSchema,

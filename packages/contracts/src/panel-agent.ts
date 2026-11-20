@@ -97,6 +97,8 @@ export const dispatchPanelHumanOperationIntentRequestSchema = dispatchPanelOpera
 const singleOutcomeSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("success"),
+    /** The owner's localized completion text, separate from the operation result. */
+    message: z.string().min(1).optional(),
     data: runtimeJsonObjectSchema,
     affected: panelOperationAffectedSchema.optional(),
   }).strict(),
@@ -129,7 +131,6 @@ export type PanelOperationOutcome = z.infer<typeof panelOperationOutcomeSchema>;
 /** The server resolves and freezes the owner description before confirmation. */
 export const panelWriteOperationSnapshotSchema = panelOwnerOperationDescriptorSchema.extend({
   id: key,
-  label: z.string().min(1).max(200),
   kind: z.enum(["form.save", "action"]),
   slot: key,
   effect: z.literal("write"),
