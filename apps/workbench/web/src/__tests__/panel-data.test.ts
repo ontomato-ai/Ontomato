@@ -356,3 +356,38 @@ it("opens a platform address from the panel's own code through the host, and hea
   expect(opened).toEqual(["/agents/chat?agentId=agent-knowledge-governance", "/missing"]);
   (await mount).dispose();
 });
+
+it("shows a read the platform could not answer as the datum's failure, with the platform's reason", async () => {
+  const element = document.createElement("div");
+  document.body.append(element);
+  let mounted!: (mount: DirectPanelMount) => void;
+  const mount = new Promise<DirectPanelMount>((resolve) => { mounted = resolve; });
+  const module = panelModuleFor({
+    mounted, element, template: `<p class="task">{{ shown }}</p>`,
+    install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
+    manifest,
+    run: {
+      pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: chosen("t-1") },
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
+      failed: (reason) => { throw reason; },
+    },
+    messages: {}, locale: ref("en"), defaultLocale: "en",
+    requests: { request: async () => Response.json({ projection: taskData }) },
+    use: { applicationId: "app-tasks", useId: "tasks" },
+    expandPageComposer: noOperations.expandPageComposer, confirmOperation: noOperations.confirmOperation,
+    navigate: noOperations.navigate,
+    // The platform's read entry is unavailable: the port rejects rather than answering one of the four states.
+    read: async (request): Promise<ProductPanelReadResponse> => {
+      if (request.operations) return { status: "ready", value: {} as never };
+      throw new Error("Service unavailable");
+    },
+  });
+  await module.mountPanel({
+    setup() {
+      const task = module.usePanelData("task", "record");
+      return { shown: computed(() => (task.value.status === "error" ? `error: ${task.value.message}` : task.value.status)) };
+    },
+  });
+  await vi.waitFor(() => expect(element.querySelector(".task")?.textContent).toBe("error: Service unavailable"));
+  (await mount).dispose();
+});

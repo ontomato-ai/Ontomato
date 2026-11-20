@@ -386,6 +386,13 @@ export function subscribeAppPageContext(listener: PageContextListener) {
  * load, never its Vue state: an app runs its own Vue and SDK version. The credential and the auth failure handling are
  * the ones the edition already gives its Manager pages, so a changed identity rebuilds the page and its app frames.
  */
+/** The platform's router, as its app host was installed with it: where a panel's own navigation goes at full page. */
+let hostRouter: Router | null = null;
+export function platformRouter(): Router {
+  if (!hostRouter) throw new Error("The platform's router comes with its app host, which is not installed");
+  return hostRouter;
+}
+
 export function installAppHost(options: {
   credential: AppHostCredential | null;
   preferences: PlatformPreferences;
@@ -393,6 +400,7 @@ export function installAppHost(options: {
   onAuthFailure(status: 401 | 402): void;
 }) {
   const { preferences } = options;
+  hostRouter = options.router;
   const current = (): AppHostPreferences => ({ locale: preferences.locale.value, theme: preferences.theme.value });
   (window as Window & { [APP_HOST_GLOBAL]?: AppHost })[APP_HOST_GLOBAL] = {
     snapshot() {

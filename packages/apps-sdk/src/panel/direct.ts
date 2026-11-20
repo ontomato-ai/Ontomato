@@ -196,10 +196,12 @@ export async function readMemberDatum(read: PanelReadPort, projection: DirectPro
   if (awaitsInputs(projection, data, placement, values, own)) return { status: "awaiting" };
   // What the member's component set itself goes apart from the author's inputs, and is checked as such.
   const { runtime, authored } = readParams(projection, data, placement, values, own);
+  // A read the platform could not answer (unavailable, refused before the owner) is this datum's failure, with the
+  // platform's reason: the member shows it where its data would be.
   const result = await read({
     memberPath: [{ member }], dataName: name, inputs: authored,
     ...(Object.keys(runtime).length ? { runtimeParams: runtime } : {}),
-  });
+  }).catch((reason: unknown) => ({ status: "error" as const, message: reason instanceof Error ? reason.message : String(reason) }));
   if (result.status !== "ready") return result;
   // The host's answer is checked against the result the owner registered for this read.
   const declaration = directReadDeclaration(projection, data);
