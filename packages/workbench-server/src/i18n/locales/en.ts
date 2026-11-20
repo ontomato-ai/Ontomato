@@ -25,6 +25,7 @@ export const en = {
   "panels.confirmation.deleteKnowledgeImpact": "This deletes the selected business knowledge ({count} in total).",
   "panels.knowledge.approve": "Approve",
   "panels.knowledge.delete": "Delete",
+  "panels.knowledge.statusAll": "All",
   "panels.action.fields.status": "Status",
   "panels.action.fields.origin": "Origin",
   "panels.action.fields.createdBy": "Created by",
