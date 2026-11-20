@@ -8,7 +8,7 @@ import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import {
-  directPanelSchema, productProjectionInUseErrorSchema, productProjectionResponseSchema,
+  directPanelSchema, productPanelInUseErrorSchema, productProjectionInUseErrorSchema, productProjectionResponseSchema,
   productProjectionUsedBySchema, registerDirectPanelRequestSchema, registerDirectProjectionRequestSchema,
 } from "@ontomato/contracts/product-panels";
 import { installContentLayout } from "../../content/layout";
@@ -73,6 +73,11 @@ beforeAll(async () => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     grants.delete(req.body.id);
     res.json({ success: true });
+  });
+  app.get("/platform/applications/panel-uses/by-panel", (req, res) => {
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
+    expect(req.query).toEqual({ domainId: "test-domain", panelId });
+    res.json({ success: true, data: [] });
   });
   app.use("/api", (req, _res, next) => {
     const userId = req.header("X-Test-User") ?? "author";
@@ -144,4 +149,21 @@ it("rejects deletion when a direct member references the projection, even for a 
   const current = await request("GET", resource, "projection-owner");
   expect(current.status).toBe(200);
   expect(productProjectionResponseSchema.parse(await current.json()).projection.revision).toBe(revision);
+});
+
+it("rejects deleting a panel that is the current detail for a class", async () => {
+  await state.pool!.query(
+    `INSERT INTO "${state.schema}".product_object_details (domain_id, class_name, panel_id, updated_by) VALUES ($1,$2,$3,$4)`,
+    ["test-domain", "Teacher", panelId, "author"],
+  );
+  const resource = `product-panels/${panelId}`;
+  const current = await request("GET", resource, "author");
+  const panel = directPanelSchema.parse((await current.json()).panel);
+  const deletion = await request("DELETE", `${resource}?revision=${panel.revision}`, "author");
+  const payload = await deletion.json();
+  expect(deletion.status, JSON.stringify(payload)).toBe(409);
+  expect(productPanelInUseErrorSchema.parse(payload).code).toBe("PRODUCT_IN_USE");
+  const retained = await request("GET", resource, "author");
+  expect(retained.status).toBe(200);
+  expect(directPanelSchema.parse((await retained.json()).panel)).toEqual(panel);
 });

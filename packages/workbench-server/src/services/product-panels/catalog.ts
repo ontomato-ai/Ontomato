@@ -16,6 +16,7 @@ import {
 } from "../product-governance/grants";
 import { insertCurrentProduct, loadCurrentProduct, requireCurrentProduct, requireOrdinaryProjection } from "./current";
 import { closeDeletedDefinitionStreams, notifyProductDefinitionChanged } from "./definition-stream";
+import { classesUsingDetailPanel } from "./object-detail";
 import { applicationEntriesUsingPanel, panelsUsingProjection } from "./used-by";
 
 const cursorSchema = z.discriminatedUnion("sort", [
@@ -101,7 +102,7 @@ export async function deleteCurrentProduct(owner: ProductOwner, credentials: Ass
         throw new HttpError(409, "Projection is in use", PRODUCT_IN_USE, usage);
     } else {
       const usage = await applicationEntriesUsingPanel(owner.domainId, id, credentials.locale);
-      if (usage.applicationEntries.length)
+      if (usage.applicationEntries.length || (await classesUsingDetailPanel(owner.domainId, id, client)).length)
         throw new HttpError(409, "Panel is in use", PRODUCT_IN_USE, usage);
     }
     await client.query(`DELETE FROM ${t(currentProductTables[kind])} WHERE domain_id=$1 AND id=$2`, [owner.domainId, id]);
