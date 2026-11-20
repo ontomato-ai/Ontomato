@@ -36,6 +36,10 @@ it("reads the viewer's task rows and selected summary, and recomputes the select
       const input = JSON.parse(String(init.body));
       expect(input).toMatchObject({ taskId: task.id, timeZone: task.timeZone });
       if (input.changedField === null) {
+        if (input.values.operation === "inspection") {
+          expect(input.values).toEqual({ operation: "inspection", instruction: input.values.instruction });
+          return Response.json({ ...refreshed, values: input.values, submittable: Boolean(input.values.instruction) });
+        }
         expect(input.values).toEqual(task.content);
         return Response.json({ ...opening, values: task.content, submittable: true });
       }
@@ -75,6 +79,33 @@ it("reads the viewer's task rows and selected summary, and recomputes the select
       { field: "/caseSetId", code: "invalid_object", message: "Not a field of this form" },
       { field: "/instruction", code: "required", message: expect.any(String) },
     ]),
+  });
+  const switchedValues = { operation: "inspection", instruction: "Review the latest run" };
+  await expect(reads.form(task.id, { values: switchedValues, changedField: null })).resolves.toMatchObject({
+    values: switchedValues,
+    errors: [],
+  });
+});
+
+it("checks a partial draft against the task's stored application values", async () => {
+  const agentTask = examples.creates.find(create => create.name === "agents-instruction")!.response;
+  const agentForm = examples.forms.find(form => form.name === "agents-empty")!.response;
+  vi.stubGlobal("fetch", async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+    const path = new URL(url).pathname;
+    if (init.method === "GET" && path.endsWith(`/platform/scheduled-tasks/${agentTask.id}`))
+      return Response.json(agentTask);
+    if (init.method === "POST" && path.endsWith("/platform/scheduled-tasks/applications/agents/form")) {
+      const { values } = JSON.parse(String(init.body));
+      const complete = { agentId: "", instruction: "", ...values };
+      return Response.json({ ...agentForm, values: complete, submittable: Boolean(complete.agentId && complete.instruction) });
+    }
+    throw new Error(`Unexpected owner request ${init.method} ${path}`);
+  });
+  const instruction = "Review the new inventory";
+  const draft = await createScheduledTaskReadAdapter(viewer).form(agentTask.id, { values: { instruction }, changedField: null });
+  expect(draft).toMatchObject({
+    values: { ...agentTask.content, instruction },
+    errors: [],
   });
 });
 
