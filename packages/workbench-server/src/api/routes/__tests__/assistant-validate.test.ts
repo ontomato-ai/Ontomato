@@ -193,7 +193,7 @@ it("opens a stored definition and checks execution permissions concurrently", as
   expect(mocks.pool).not.toHaveBeenCalled();
 });
 
-it("validates update drafts without filling in an omitted skill selection", async () => {
+it("shows the visible skills of an update draft without treating them as submitted", async () => {
   const skill = { name: "stored-page-skill", namespace: { kind: "domain", domainId: "domain" } };
   mocks.agent.mockResolvedValue({
     id, kind: "custom", name: "Stored assistant", description: "", icon: null, enabled: true,
@@ -209,7 +209,7 @@ it("validates update drafts without filling in an omitted skill selection", asyn
   }, "alice", "/form");
   expect(response.status).toBe(200);
   const described = await response.json();
-  expect(described.values).not.toHaveProperty("skills");
+  expect(described.values.skills).toEqual([skill]);
   expect(described.save.bodySchema.required).not.toContain("skills");
   expect((await request({ target: { id }, form: update })).status).toBe(204);
   expect((await request({ target: {}, form: update })).status).toBe(400);

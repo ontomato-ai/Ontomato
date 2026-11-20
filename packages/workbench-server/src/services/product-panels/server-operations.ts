@@ -121,7 +121,8 @@ export function describePanelRead(handler: PanelReadServerOperation, label: stri
 }
 
 export function panelResultProjection(handlerRef: string) {
-  return operations.get(handlerRef)?.projectResult;
+  const operation = operations.get(handlerRef);
+  if (operation?.effect === "write") return operation.projectResult;
 }
 
 export function panelServerOperation(handlerRef: string): PanelServerOperation {
