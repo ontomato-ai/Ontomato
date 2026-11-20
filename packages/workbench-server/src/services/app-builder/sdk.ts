@@ -6,7 +6,7 @@ import { workspacePathSchema } from "@ontomato/contracts/workspaces";
 import { installedAppsSdkDir, runtimeRoot } from "../../content/layout";
 import { environment } from "../../config/environment";
 
-const catalogueLocationSchema = z.object({ components: workspacePathSchema });
+const sdkPathsSchema = z.object({ components: workspacePathSchema, check: workspacePathSchema });
 
 export async function appSdkBuild() {
   return appsSdkBuildSchema.parse(JSON.parse(await readFile(path.join(runtimeRoot(), "dist/apps-sdk/current.json"), "utf8")));
@@ -15,8 +15,8 @@ async function installedCurrentAppSdk() {
   const build = await appSdkBuild();
   const directory = path.join(installedAppsSdkDir(), build.version);
   const manifest = JSON.parse(await readFile(path.join(directory, "sdk.json"), "utf8"));
-  const { components } = catalogueLocationSchema.parse(manifest);
-  return { build, directory, components };
+  const { components, check } = sdkPathsSchema.parse(manifest);
+  return { build, directory, components, check };
 }
 
 /** Reads the catalogue served by the currently installed SDK. Its consumer owns the catalogue schema. */
@@ -27,7 +27,7 @@ export async function readCurrentAppSdkComponents() {
 }
 
 export async function currentAppSdk(): Promise<AppsSdkCurrent> {
-  const { build, components } = await installedCurrentAppSdk();
+  const { build, components, check } = await installedCurrentAppSdk();
   const publicBasePath = environment.publicBasePath();
   const sdkBasePath = `${publicBasePath}/apps-sdk/${build.version}`;
   return {
@@ -36,6 +36,7 @@ export async function currentAppSdk(): Promise<AppsSdkCurrent> {
     sdkBasePath,
     manifestPath: `${sdkBasePath}/sdk.json`,
     componentsPath: `${sdkBasePath}/${components}`,
+    checkPath: `${sdkBasePath}/${check}`,
     docsPath: `${sdkBasePath}/docs/index.md`,
     referencePath: `${sdkBasePath}/docs/reference.md`,
   };
