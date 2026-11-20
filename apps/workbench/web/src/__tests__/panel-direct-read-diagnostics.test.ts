@@ -64,28 +64,31 @@ const agentForm = {
   save: { method: "PUT", path: "/agents/:id", bodySchema: {}, draftOperation: "agent.save" },
 };
 
-function answer(request: PanelMemberReadRequest): ProductPanelReadResponse {
+const unchecked = { unavailable: { reason: "Its source did not answer" } };
+/** The owners' answers: some skills came back, or (`none`) not one did while the form still holds two. */
+function answer(request: PanelMemberReadRequest, none: boolean): ProductPanelReadResponse {
   if (request.operations) return ready({});
-  if (request.dataName === "rows") return ready({ rows: [{ primaryKey: "sql", label: "SQL", fields: {} }], diagnostics: ["The vendor skill source did not answer."] });
+  if (request.dataName === "rows")
+    return ready({ rows: none ? [] : [{ primaryKey: "sql", label: "SQL", fields: {} }], diagnostics: ["The vendor skill source did not answer."] });
   if (request.dataName === "form") return ready(agentForm);
-  if (request.dataName === "options") return ready({ options: [option("sql")], diagnostics: ["Some skills of the vendor source are not listed."] });
+  if (request.dataName === "options") return ready({ options: none ? [] : [option("sql")], diagnostics: ["Some skills of the vendor source are not listed."] });
   if (request.dataName === "selected")
-    return ready({ options: [option("sql"), option("vendor", { unavailable: { reason: "Its source did not answer" } })], diagnostics: ["A chosen skill could not be checked."] });
+    return ready({ options: [option("sql", none ? unchecked : {}), option("vendor", unchecked)], diagnostics: ["A chosen skill could not be checked."] });
   throw new Error(`Nothing answers ${request.dataName}`);
 }
 
-function open(...members: string[]) {
+function open(members: string[], none = false) {
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "p", url: () => "/p", label: () => "P", initial: { agent },
     text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
     readProjection: async (id) => projections[id]!,
-    read: async (request) => answer(request),
+    read: async (request) => answer(request, none),
   });
   const element = document.createElement("div");
   document.body.append(element);
   createApp({ render: () => h("div", members.map((member) => h(PanelMember, { instance, member })) ) })
     .use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus).mount(element);
-  return element;
+  return { element, instance };
 }
 
 afterEach(() => {
@@ -93,13 +96,25 @@ afterEach(() => {
 });
 
 it("shows a list's diagnostics beside the rows that did come back", async () => {
-  const element = open("list");
+  const { element } = open(["list"]);
   await vi.waitFor(() => expect(element.textContent).toContain("SQL"));
   expect(element.textContent).toContain("The vendor skill source did not answer.");
 });
 
 it("shows a choice's diagnostics, the catalogue's and the held values', beside the choices", async () => {
-  const element = open("form", "skills");
+  const { element } = open(["form", "skills"]);
   await vi.waitFor(() => expect(element.querySelector('[data-field="/skills"]')?.textContent).toContain("Some skills of the vendor source are not listed."));
   await vi.waitFor(() => expect(element.querySelector('[data-field="/skills"]')?.textContent).toContain("A chosen skill could not be checked."));
+});
+
+it("with not one good answer, still says why, and keeps the values the form holds unchanged", async () => {
+  const { element, instance } = open(["list", "form", "skills"], true);
+  const picker = () => element.querySelector('[data-field="/skills"]')?.textContent ?? "";
+  await vi.waitFor(() => expect(picker()).toContain("A chosen skill could not be checked."));
+  expect(picker()).toContain("Some skills of the vendor source are not listed.");
+  expect(element.textContent).toContain("The vendor skill source did not answer.");
+  expect(element.querySelector(".sdk-object-list-row, .sdk-object-list-table tbody tr")).toBeNull();
+  const form = instance.forms.handle("form")!;
+  expect(form.values.value.skills).toEqual([skill("sql"), skill("vendor")]);
+  expect(form.changed.value.size).toBe(0);
 });
