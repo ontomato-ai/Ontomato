@@ -1,6 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { panelRecordSchema } from "@ontomato/contracts/panel-projection";
-import { platformOntologyNeighborsResponseSchema } from "@ontomato/contracts/platform-ontology";
+import { panelRecordQuerySchema, panelRecordSchema, panelRelationNeighborsSchema } from "@ontomato/contracts/panel-projection";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { createCustomerOntologyReadAdapter } from "../customer-reads";
@@ -111,10 +110,11 @@ it("queries a class's page with the declared paging and maps each row the owner 
     return undefined;
   });
 
-  const page = await createCustomerOntologyReadAdapter(owner, viewer).query("person", { search: "ali", page: 2, size: 3 });
+  const page = await createCustomerOntologyReadAdapter(owner, viewer).query("person", { search: "ali", page: { number: 2, size: 3 } });
   // The total is the owner's count, not the rows this page happens to hold.
   expect(page.total).toBe(42);
-  expect(page.items.map(record => panelRecordSchema.parse(record))).toEqual([
+  panelRecordQuerySchema.parse(page);
+  expect(page.rows.map(record => panelRecordSchema.parse(record))).toEqual([
     {
       primaryKey: "p1", label: "Alice",
       fields: { id: "p1", name: "Alice", age: "30" },
@@ -144,7 +144,7 @@ it("labels a class without business keys by the primary key", async () => {
   });
 
   const page = await createCustomerOntologyReadAdapter(owner, viewer).query("log", {});
-  expect(page.items[0]).toMatchObject({ primaryKey: "l9", label: "l9" });
+  expect(page.rows[0]).toMatchObject({ primaryKey: "l9", label: "l9" });
 });
 
 it("reports the owner's data-permission refusal on a class page as forbidden", async () => {
@@ -201,187 +201,125 @@ it("tells the owner's missing object, permission refusal and query failure apart
   await expect(reads.record("person", "p5")).rejects.toMatchObject({ status: 502, code: "CUSTOMER_OBJECT_READ_FAILED" });
 });
 
-it("reads both directions of the anchor's relations, including a self-loop, and dedups the neighbors", async () => {
-  const dslCalls: Record<string, any>[] = [];
-  const attributeReads: string[] = [];
+const anchor = { className: "person", primaryKey: "p1" };
+
+/** The owner answers the anchor's record and each relation-direction query with the given rows. */
+function stubNeighbors(rows: (kind: string, direction: string) => Response, dslCalls: Record<string, any>[] = [], attributeReads: string[] = []) {
   stubOwner(request => {
-    const className = request.url.searchParams.get("className");
-    if (request.url.pathname === "/ontology/model/attributes") {
-      attributeReads.push(className!);
-      return catalogRoute(request);
-    }
+    if (request.url.pathname === "/ontology/model/attributes") attributeReads.push(request.url.searchParams.get("className")!);
     const route = catalogRoute(request);
     if (route) return route;
     if (request.url.pathname === "/data/queryInfoByNode")
       return Response.json({ success: true, data: { classDef: { className: "person" }, data: { name: "Alice", age: 30 } } });
     if (request.url.pathname === "/dsl/executeV1") {
       dslCalls.push(request.body!);
-      const { kind } = dslRoute(request.body!);
-      if (kind === "person_to_org")
-        return Response.json(dslAnswer([{ id: "o1", title: "Acme" }, { id: "o2", title: "Globex" }]));
-      return Response.json(dslAnswer([{ id: "p2", name: "Bob" }]));
+      const { kind, direction } = dslRoute(request.body!);
+      return rows(kind, direction);
     }
     return undefined;
   });
+}
 
-  const result = await createCustomerOntologyReadAdapter(owner, viewer)
-    .neighbors({ className: "person", primaryKey: "p1" }, {});
-  // The result keeps M3's neighbors shape, checked here without the added truncation flag.
-  const m3 = platformOntologyNeighborsResponseSchema.parse({
-    ...result,
-    relations: result.relations.map(({ truncated: _truncated, ...relation }) => relation),
-  });
+it("reads an outgoing relationship's neighbors with the anchor's key, one row over the limit", async () => {
+  const dslCalls: Record<string, any>[] = [];
+  const attributeReads: string[] = [];
+  stubNeighbors(() => Response.json(dslAnswer([{ id: "o1", title: "Acme" }, { id: "o2", title: "Globex" }])), dslCalls, attributeReads);
 
-  // The anchor's class and each target class are read once per call; the self-loop's target is the anchor's own class.
+  const result = panelRelationNeighborsSchema.parse(
+    await createCustomerOntologyReadAdapter(owner, viewer).neighbors("person_to_org", { node: anchor }),
+  );
+
+  // The anchor's class and the target class are read once per call.
   expect(attributeReads).toEqual(["person", "org"]);
+  expect(dslCalls.map(call => dslRoute(call))).toEqual([{ kind: "person_to_org", direction: "outgoing" }]);
+  const pattern = relationPattern(dslCalls[0]);
+  expect(pattern.objects[0]).toMatchObject({ class: "person" });
+  expect(pattern.objects[0].conditions.properties).toEqual({ field: "id", operator: "=", value: "p1" });
+  expect(pattern.relationship).toEqual([{ from: 0, to: 1, type: ["person_to_org"] }]);
+  expect(dslCalls[0].answer.steps[0].output.limit).toEqual({ count: 51, offset: 0 });
+  expect(dslCalls[0].answer.steps[0].output.sort).toEqual({ fields: [{ variable: "target", field: "id", order: "asc" }] });
 
-  // Each (relation, direction) is one DSL call: the anchor is matched by its primary key, the rows are asked one over the limit.
-  const personToPerson = dslCalls.filter(call => dslRoute(call)!.kind === "person_to_person");
-  expect(personToPerson.map(call => dslRoute(call)!.direction)).toEqual(["outgoing", "incoming"]);
-  expect(dslCalls.filter(call => dslRoute(call)!.kind === "person_to_org").map(call => dslRoute(call)!.direction))
-    .toEqual(["outgoing"]);
-  const outgoing = relationPattern(personToPerson[0]);
-  expect(outgoing.objects[0]).toMatchObject({ class: "person" });
-  expect(outgoing.objects[0].conditions.properties).toEqual({ field: "id", operator: "=", value: "p1" });
-  expect(outgoing.relationship).toEqual([{ from: 0, to: 1, type: ["person_to_person"] }]);
-  expect(relationPattern(personToPerson[1]).relationship).toEqual([{ from: 1, to: 0, type: ["person_to_person"] }]);
-  expect(personToPerson[0].answer.steps[0].output.limit).toEqual({ count: 51, offset: 0 });
-  expect(personToPerson[0].answer.steps[0].output.sort).toEqual({ fields: [{ variable: "target", field: "id", order: "asc" }] });
-
-  expect(m3.node).toEqual({ className: "person", primaryKey: "p1", label: "Alice", layer: "fact" });
-  expect(m3.edges).toEqual([
-    {
-      id: "person_to_org:outgoing:p1:o1", relationKind: "person_to_org",
-      from: { className: "person", primaryKey: "p1" }, to: { className: "org", primaryKey: "o1" },
-      direction: "outgoing", derived: false,
-    },
-    {
-      id: "person_to_org:outgoing:p1:o2", relationKind: "person_to_org",
-      from: { className: "person", primaryKey: "p1" }, to: { className: "org", primaryKey: "o2" },
-      direction: "outgoing", derived: false,
-    },
-    {
-      id: "person_to_person:outgoing:p1:p2", relationKind: "person_to_person",
-      from: { className: "person", primaryKey: "p1" }, to: { className: "person", primaryKey: "p2" },
-      direction: "outgoing", derived: false,
-    },
-    {
-      // An incoming edge keeps the relationship's own direction: the neighbor is its from end.
-      id: "person_to_person:incoming:p1:p2", relationKind: "person_to_person",
-      from: { className: "person", primaryKey: "p2" }, to: { className: "person", primaryKey: "p1" },
-      direction: "incoming", derived: false,
-    },
+  expect(result.node).toEqual({ className: "person", primaryKey: "p1", label: "Alice", layer: "fact" });
+  expect(result.edges.map(edge => [edge.id, edge.from, edge.to, edge.direction])).toEqual([
+    ["person_to_org:outgoing:p1:o1", anchor, { className: "org", primaryKey: "o1" }, "outgoing"],
+    ["person_to_org:outgoing:p1:o2", anchor, { className: "org", primaryKey: "o2" }, "outgoing"],
   ]);
-  expect(m3.neighbors).toEqual([
+  expect(result.neighbors).toEqual([
     { className: "org", primaryKey: "o1", label: "Acme", layer: "fact" },
     { className: "org", primaryKey: "o2", label: "Globex", layer: "fact" },
-    // Both directions of the self-loop reach the same object; it stays one neighbor.
-    { className: "person", primaryKey: "p2", label: "Bob", layer: "fact" },
   ]);
-  expect(result.relations).toEqual([
-    { relationKind: "person_to_org", status: "ok", edgeCount: 2, truncated: false },
-    { relationKind: "person_to_person", status: "ok", edgeCount: 2, truncated: false },
-  ]);
+  expect(result.relations).toEqual([{ relationKind: "person_to_org", status: "ok", edgeCount: 2, truncated: false }]);
 });
 
-it("reads only the declared relation kinds, and an unknown kind fails alone", async () => {
-  const dslCalls: string[] = [];
-  stubOwner(request => {
-    const route = catalogRoute(request);
-    if (route) return route;
-    if (request.url.pathname === "/data/queryInfoByNode")
-      return Response.json({ success: true, data: { classDef: { className: "person" }, data: { name: "Alice" } } });
-    if (request.url.pathname === "/dsl/executeV1") {
-      dslCalls.push(dslRoute(request.body!)!.kind);
-      return Response.json(dslAnswer([{ id: "o1", title: "Acme" }]));
-    }
-    return undefined;
-  });
+it("reads both directions of a self-loop and keeps a neighbor reached twice as one", async () => {
+  const dslCalls: Record<string, any>[] = [];
+  const attributeReads: string[] = [];
+  stubNeighbors(() => Response.json(dslAnswer([{ id: "p2", name: "Bob" }])), dslCalls, attributeReads);
 
-  const result = await createCustomerOntologyReadAdapter(owner, viewer)
-    .neighbors({ className: "person", primaryKey: "p1" }, { relationKinds: ["person_to_org", "made_up"] });
+  const result = await createCustomerOntologyReadAdapter(owner, viewer).neighbors("person_to_person", { node: anchor });
 
-  expect(dslCalls).toEqual(["person_to_org"]);
+  // The self-loop's target is the anchor's own class, read once.
+  expect(attributeReads).toEqual(["person"]);
+  expect(dslCalls.map(call => dslRoute(call).direction)).toEqual(["outgoing", "incoming"]);
+  expect(relationPattern(dslCalls[1]).relationship).toEqual([{ from: 1, to: 0, type: ["person_to_person"] }]);
+  // An incoming edge keeps the relationship's own direction: the neighbor is its from end.
+  expect(result.edges.map(edge => [edge.direction, edge.from.primaryKey, edge.to.primaryKey]))
+    .toEqual([["outgoing", "p1", "p2"], ["incoming", "p2", "p1"]]);
+  expect(result.neighbors).toEqual([{ className: "person", primaryKey: "p2", label: "Bob", layer: "fact" }]);
+  expect(result.relations).toEqual([{ relationKind: "person_to_person", status: "ok", edgeCount: 2, truncated: false }]);
+});
+
+it("refuses relationKinds that point the read at another relationship", async () => {
+  stubNeighbors(() => Response.json(dslAnswer([{ id: "o1", title: "Acme" }])));
+  const reads = createCustomerOntologyReadAdapter(owner, viewer);
+
+  await expect(reads.neighbors("person_to_org", { node: anchor, relationKinds: ["person_to_person"] }))
+    .rejects.toMatchObject({ status: 400 });
+  await expect(reads.neighbors("person_to_org", { node: anchor, relationKinds: ["person_to_org"] }))
+    .resolves.toMatchObject({ relations: [{ relationKind: "person_to_org", status: "ok" }] });
+});
+
+it("fails a relationship the anchor's class does not have, without querying it", async () => {
+  const dslCalls: Record<string, any>[] = [];
+  stubNeighbors(() => Response.json(dslAnswer([])), dslCalls);
+
+  const result = await createCustomerOntologyReadAdapter(owner, viewer).neighbors("made_up", { node: anchor });
+
+  expect(dslCalls).toEqual([]);
+  expect(result.edges).toEqual([]);
   expect(result.relations).toEqual([
-    { relationKind: "person_to_org", status: "ok", edgeCount: 1, truncated: false },
     { relationKind: "made_up", status: "failed", edgeCount: 0, truncated: false, reason: expect.any(String) },
   ]);
-  expect(result.edges).toHaveLength(1);
 });
 
-it("keeps the read alive when one relation is refused, and names only that relation", async () => {
-  stubOwner(request => {
-    const route = catalogRoute(request);
-    if (route) return route;
-    if (request.url.pathname === "/data/queryInfoByNode")
-      return Response.json({ success: true, data: { classDef: { className: "person" }, data: { name: "Alice" } } });
-    if (request.url.pathname === "/dsl/executeV1") {
-      if (dslRoute(request.body!)!.kind === "person_to_org")
-        return Response.json({ success: false, code: 403, message: "Class is outside the authorized scope" }, { status: 403 });
-      return Response.json(dslAnswer([{ id: "p2", name: "Bob" }]));
-    }
-    return undefined;
-  });
+it("reports the viewer's refusal on the relationship as refused, with the owner's reason", async () => {
+  stubNeighbors(() => Response.json({ success: false, code: 403, message: "Class is outside the authorized scope" }, { status: 403 }));
 
-  const result = await createCustomerOntologyReadAdapter(owner, viewer)
-    .neighbors({ className: "person", primaryKey: "p1" }, {});
+  const result = await createCustomerOntologyReadAdapter(owner, viewer).neighbors("person_to_org", { node: anchor });
 
-  expect(result.relations.find(relation => relation.relationKind === "person_to_org"))
-    .toMatchObject({ status: "refused", edgeCount: 0, reason: "Class is outside the authorized scope" });
-  expect(result.relations.find(relation => relation.relationKind === "person_to_person"))
-    .toMatchObject({ status: "ok", edgeCount: 2 });
-  expect(result.edges.map(edge => edge.relationKind)).toEqual(["person_to_person", "person_to_person"]);
+  expect(result.relations).toEqual([{
+    relationKind: "person_to_org", status: "refused", edgeCount: 0, truncated: false, reason: "Class is outside the authorized scope",
+  }]);
+  expect(result.edges).toEqual([]);
 });
 
-it("marks a relation the owner's execution failed, with its reason", async () => {
-  stubOwner(request => {
-    const route = catalogRoute(request);
-    if (route) return route;
-    if (request.url.pathname === "/data/queryInfoByNode")
-      return Response.json({ success: true, data: { classDef: { className: "person" }, data: { name: "Alice" } } });
-    if (request.url.pathname === "/dsl/executeV1") {
-      if (dslRoute(request.body!)!.kind === "person_to_org")
-        return Response.json({ error: "upstream adapter failed" });
-      return Response.json(dslAnswer([{ id: "p2", name: "Bob" }]));
-    }
-    return undefined;
-  });
+it("marks the relationship failed when the owner's execution fails, with its reason", async () => {
+  stubNeighbors(() => Response.json({ error: "upstream adapter failed" }));
 
-  const result = await createCustomerOntologyReadAdapter(owner, viewer)
-    .neighbors({ className: "person", primaryKey: "p1" }, {});
+  const result = await createCustomerOntologyReadAdapter(owner, viewer).neighbors("person_to_org", { node: anchor });
 
-  expect(result.relations.find(relation => relation.relationKind === "person_to_org"))
-    .toMatchObject({ status: "failed", edgeCount: 0, reason: "upstream adapter failed" });
-  expect(result.relations.find(relation => relation.relationKind === "person_to_person"))
-    .toMatchObject({ status: "ok", edgeCount: 2 });
+  expect(result.relations).toEqual([{
+    relationKind: "person_to_org", status: "failed", edgeCount: 0, truncated: false, reason: "upstream adapter failed",
+  }]);
 });
 
-it("caps the returned rows at the limit and reports the relation as truncated by the extra row", async () => {
-  stubOwner(request => {
-    const route = catalogRoute(request);
-    if (route) return route;
-    if (request.url.pathname === "/data/queryInfoByNode")
-      return Response.json({ success: true, data: { classDef: { className: "person" }, data: { name: "Alice" } } });
-    if (request.url.pathname === "/dsl/executeV1") {
-      const { kind } = dslRoute(request.body!);
-      const rows = kind === "person_to_org"
-        ? [{ id: "o1", title: "Acme" }, { id: "o2", title: "Globex" }, { id: "o3", title: "Initech" }]
-        : [{ id: "p2", name: "Bob" }];
-      return Response.json(dslAnswer(rows));
-    }
-    return undefined;
-  });
+it("caps the returned rows at the limit and reports the relationship as truncated by the extra row", async () => {
+  stubNeighbors(() => Response.json(dslAnswer([{ id: "o1", title: "Acme" }, { id: "o2", title: "Globex" }, { id: "o3", title: "Initech" }])));
 
-  const result = await createCustomerOntologyReadAdapter(owner, viewer)
-    .neighbors({ className: "person", primaryKey: "p1" }, { limit: 2 });
+  const result = await createCustomerOntologyReadAdapter(owner, viewer).neighbors("person_to_org", { node: anchor, limit: 2 });
 
-  expect(result.relations.find(relation => relation.relationKind === "person_to_org"))
-    .toMatchObject({ status: "ok", edgeCount: 2, truncated: true });
-  expect(result.relations.find(relation => relation.relationKind === "person_to_person"))
-    .toMatchObject({ status: "ok", edgeCount: 2, truncated: false });
-  expect(result.edges.filter(edge => edge.relationKind === "person_to_org").map(edge => edge.id))
-    .toEqual(["person_to_org:outgoing:p1:o1", "person_to_org:outgoing:p1:o2"]);
-  expect(result.neighbors.map(neighbor => neighbor.primaryKey)).toEqual(["o1", "o2", "p2"]);
+  expect(result.relations).toEqual([{ relationKind: "person_to_org", status: "ok", edgeCount: 2, truncated: true }]);
+  expect(result.neighbors.map(neighbor => neighbor.primaryKey)).toEqual(["o1", "o2"]);
 });
 
 it("fails the whole neighbors read by the record's rule when the anchor is unreadable", async () => {
@@ -394,6 +332,6 @@ it("fails the whole neighbors read by the record's rule when the anchor is unrea
   });
 
   await expect(createCustomerOntologyReadAdapter(owner, viewer)
-    .neighbors({ className: "person", primaryKey: "p9" }, {}))
+    .neighbors("person_to_org", { node: { className: "person", primaryKey: "p9" } }))
     .rejects.toMatchObject({ status: 404, code: "OBJECT_NOT_FOUND" });
 });
