@@ -1,6 +1,8 @@
+import { zodToJsonSchema } from "zod-to-json-schema";
 import type { PanelPlacement } from "@ontomato/contracts/panel-manifest";
 import { projectionOperationTargetMatches } from "@ontomato/contracts/panel-projection";
 import { platformObjectTypes } from "@ontomato/contracts/platform-object-types";
+import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { platformTypeTableResponseSchema } from "@ontomato/contracts/platform-type-table";
 import type { ProductProjectionInput } from "@ontomato/contracts/product-panels";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -25,8 +27,10 @@ export async function readPanelTypeTable(owner: ProductOwner, viewer: AssistantC
     if (entry) (entry.operations ??= []).push(declaration);
     else objectTypes.set(className, { operations: [declaration] });
   }
+  const resultIds = new Set([...objectTypes.values()].flatMap(entry => Object.values(entry.reads ?? {}).map(read => read.result)));
+  const resultSchemas = Object.fromEntries([...resultIds].map(id => [id, zodToJsonSchema(panelReadResultSchemas[id])]));
   return platformTypeTableResponseSchema.parse({
-    objectTypes: Object.fromEntries(objectTypes),
+    objectTypes: Object.fromEntries(objectTypes), resultSchemas,
     ...(unavailableActions.length > 0 && { unavailableActions }),
   });
 }
