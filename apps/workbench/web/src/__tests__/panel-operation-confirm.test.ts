@@ -1,12 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { APP_BRIDGE_CHANNEL } from "@ontomato/contracts/app-bridge";
-import { definePanel } from "@ontomato/contracts/panel-manifest";
-import { AGENT_DEFINITION, DELETE_AGENT, RUN_NOW } from "@ontomato/contracts/panel-client-requests";
-import type { ProductProjection } from "@ontomato/contracts/product-panels";
+import { AGENT_DEFINITION, DELETE_KNOWLEDGE, RUN_NOW } from "@ontomato/contracts/panel-client-requests";
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
+import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import { confirmPanelIntent } from "../../../../../packages/platform-web/src/app-host";
-import { inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, type Sent } from "./panel-frame";
+import { inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelUse, registered, type Sent } from "./panel-frame";
+import { codePanelRecord, connectBridge, projectionRecord } from "./host-bridge-records";
 
 /*
  * A person's confirmation before an operation that cannot be undone (shared parts design U9, §3): the frame has prepared
@@ -24,27 +23,13 @@ import { inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord
 
 const removal = "projection-agent-remove";
 const run = "projection-task-run";
-const base = {
-  description: "",
-  inputs: {},
-  display: {},
-  domainId: "domain-1",
-  ownerId: "owner-1",
-  revision: 1,
-  createdAt: "2026-11-19T00:00:00.000Z",
-  updatedAt: "2026-11-19T00:00:00.000Z",
-  editable: false,
-  visibility: "domain" as const,
-};
-const projections: Record<string, ProductProjection> = {
-  [removal]: { ...base, id: removal, name: "Remove", componentId: "OperationButton", binding: { kind: "PlatformOperation", id: DELETE_AGENT } },
-  [run]: { ...base, id: run, name: "Run", componentId: "OperationButton", binding: { kind: "PlatformOperation", id: RUN_NOW } },
-};
-const panel = panelRecord("panel-agents", "Agents", definePanel({
-  state: {},
-  slots: { remove: { projectionId: removal, inputs: {} }, run: { projectionId: run, inputs: {} } },
-  operations: [],
-}));
+const operationButton = (id: string, operation: string) => projectionRecord({
+  id, componentId: "@ontomato/sdk:OperationButton",
+  data: { describe: { source: { operation: { kind: "PlatformOperation", id: operation } }, read: "describe", params: {} } },
+});
+const projections: Record<string, ProductProjection> = { [removal]: operationButton(removal, DELETE_KNOWLEDGE), [run]: operationButton(run, RUN_NOW) };
+/** The panel's members `remove` and `run` place the two buttons; an operation ID is `<member>.<operation>`. */
+const panel = codePanelRecord("panel-agents", { remove: removal, run });
 const use = panelUse("use-agents", "agents", panel.id, "/applications/app-agents/agents");
 
 const impact = {
@@ -81,26 +66,6 @@ function answer(request: Sent) {
 }
 const writes = (sent: Sent[]) => sent.filter((request) => request.method !== "GET");
 
-/** The frame's end of the bridge: one call per operation, answered with its result or refused with its error. */
-function connect() {
-  const channel = new MessageChannel();
-  window.parent.postMessage({ channel: APP_BRIDGE_CHANNEL, operation: "connect" }, "*", [channel.port2]);
-  channel.port1.start();
-  let calls = 0;
-  return (operation: string, payload?: unknown) =>
-    new Promise<unknown>((resolve, reject) => {
-      const id = `call-${++calls}`;
-      const listener = (event: MessageEvent) => {
-        if (event.data?.id !== id) return;
-        channel.port1.removeEventListener("message", listener);
-        if (event.data.error) reject(new Error(event.data.error));
-        else resolve(event.data.result);
-      };
-      channel.port1.addEventListener("message", listener);
-      channel.port1.postMessage({ channel: APP_BRIDGE_CHANNEL, id, operation, payload });
-    });
-}
-
 function shownFrame() {
   const sent = installPlatform(answer);
   const frame = panelFrame();
@@ -108,7 +73,7 @@ function shownFrame() {
   const changed = vi.fn();
   const registration = platformPanelHost("app-agents", use, changed).frame(frame, registered("app-agents", use, panel), true);
   inside(frame);
-  const invoke = connect();
+  const invoke = connectBridge();
   const read = (id: string) => invoke("request", { path: `/product-projections/${id}`, service: "", method: "GET", headers: [], body: null });
   return { sent, invoke, read, registration, changed };
 }
