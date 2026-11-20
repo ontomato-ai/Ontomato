@@ -6,6 +6,7 @@ export { mountDirectPanel, type DirectPanelMount, type DirectPanelMountOptions, 
 export {
   createDirectPanelInstance, type DirectPanelInstance, type DirectPanelInstanceOptions, type MemberDataState, type PanelOperationAffected,
 } from "./panel/direct";
+export { panelModuleFor, type DirectPanelComponentPort, type DirectPanelModuleExports } from "./panel/direct-run";
 export { default as PanelMember } from "./panel/PanelMember.vue";
 export { panelHumanOperations, type ConfirmPanelOperation, type PanelHumanOperations } from "./panel/human-operations";
 export type { PlatformRequests } from "./panel/platform-objects";
