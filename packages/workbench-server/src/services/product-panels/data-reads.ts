@@ -114,7 +114,7 @@ export async function readProductPanelData(
     const params = Object.fromEntries(
       Object.entries(data.params).flatMap(([name, ref]) => {
         const value = "literal" in ref ? ref.literal : inputs[ref.input];
-        if (value === undefined) return [];
+        if (value == null) return [];
         const parameter = panelReadParameterId(declaration, name)!;
         return [[name, panelReadParameterSchemas[parameter].parse(value)]];
       }),
