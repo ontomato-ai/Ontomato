@@ -59,6 +59,10 @@ public class ApplicationCatalogUpgrade implements InitializingBean {
                     )) ELSE mapping END ORDER BY mapping_position)
                 FROM jsonb_array_elements(app.page_skills) WITH ORDINALITY AS mappings(mapping, mapping_position)
             ) WHERE app.page_skills @? '$[*].defaults[*].agentKey';
+
+            UPDATE sys_application
+                SET panel_settings = panel_settings #- '{delivery,panels}' #- '{delivery,projections}'
+                WHERE (panel_settings->'delivery') ?| ARRAY['panels', 'projections'];
             """);
     }
     @Component("applicationBuiltins")

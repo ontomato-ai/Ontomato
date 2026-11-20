@@ -26,15 +26,12 @@ public class PanelResources {
     }
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private record UseReference(String id, String panelId, Map<String, Map<String, Object>> inputs) {}
-    private record DeliveryReferences(List<String> panels, List<String> projections) {}
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    private record References(String domainId, String framePanelId, List<UseReference> uses, DeliveryReferences delivery) {}
+    private record References(String domainId, String framePanelId, List<UseReference> uses) {}
 
-    public void requireCurrent(String domain, String framePanelId, List<ApplicationPanelUse> uses, ApplicationCatalog.Delivery delivery) {
+    public void requireCurrent(String domain, String framePanelId, List<ApplicationPanelUse> uses) {
         var references = new References(domain, framePanelId,
-            uses.stream().map(use -> new UseReference(use.id(), use.panelId(), use.inputs())).toList(),
-            delivery == null ? new DeliveryReferences(List.of(), List.of())
-                : new DeliveryReferences(delivery.panels(), delivery.projections()));
+            uses.stream().map(use -> new UseReference(use.id(), use.panelId(), use.inputs())).toList());
         try {
             http.post().uri("/internal/product-panels/validate-references").contentType(MediaType.APPLICATION_JSON)
                 .body(references).retrieve().toBodilessEntity();

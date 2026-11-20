@@ -179,9 +179,8 @@ export const applicationEntryResolutionSchema = z.object({
 }).strict();
 export type ApplicationEntryResolution = z.infer<typeof applicationEntryResolutionSchema>;
 
+/** Only additional resources are declared here; panels and projections follow from the registered uses. */
 export const applicationDeliverySchema = z.object({
-  panels: z.array(id),
-  projections: z.array(id),
   packages: z.array(id),
   agents: z.array(id),
   skills: z.array(runtimeSkillRefSchema),
@@ -200,7 +199,6 @@ export const applicationPanelReferencesRequestSchema = z.object({
   domainId: id,
   framePanelId: id.optional(),
   uses: z.array(applicationPanelUseSchema.pick({ id: true, panelId: true, inputs: true })),
-  delivery: applicationDeliverySchema.pick({ panels: true, projections: true }),
 }).strict();
 export type ApplicationPanelReferencesRequest = z.infer<typeof applicationPanelReferencesRequestSchema>;
 
