@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  BUILTIN_PRODUCT_ID_PREFIX,
+  builtinApplicationPanelUseSchema,
+  builtinProductIdSchema,
+  builtinProductPanelInputSchema,
+  builtinProductProjectionInputSchema,
   copyProductCurrentRequestSchema,
+  currentPanelRecordSchema,
+  currentProjectionRecordSchema,
+  domainProductIdParamsSchema,
   deleteProductCurrentQuerySchema,
   deleteProductCurrentResponseSchema,
   deleteProductPanelResponseSchema,
@@ -13,6 +21,8 @@ import {
   productProjectionInUseErrorSchema,
   productProjectionListResponseSchema,
   productProjectionUsedBySchema,
+  registerProductPanelRequestSchema,
+  registerProductProjectionRequestSchema,
 } from "./product-panels";
 import {
   changeProductDomainGrantRequestSchema,
@@ -45,8 +55,57 @@ test("the product catalog accepts HTTP queries and returns cursor pages of summa
   assert.equal(productProjectionListResponseSchema.safeParse(panels).success, false);
 });
 
+test("platform products use a reserved identity and are read-only without a domain owner", async () => {
+  const { panelAuthoringMemberSchema } = await import("./panel-check");
+  const panelId = `${BUILTIN_PRODUCT_ID_PREFIX}sales-panel`;
+  const projectionId = `${BUILTIN_PRODUCT_ID_PREFIX}sales-list`;
+  const definition = { name: "Sales", description: "", visibility: "platform" };
+  const record = {
+    domainId: null, ownerId: null, editable: false, revision: 1,
+    createdAt: "2026-11-20T00:00:00Z", updatedAt: "2026-11-20T00:00:00Z",
+  };
+  const panelInput = {
+    ...definition,
+    content: { html: '<div id="app"></div>', module: "export default {}" },
+    manifest: { state: {}, members: {}, events: {} },
+  };
+  const projectionInput = {
+    ...definition, componentId: "@ontomato/sdk:ObjectList", inputs: {}, outputs: {}, config: {}, data: {},
+  };
+  assert.equal(builtinProductPanelInputSchema.safeParse(panelInput).success, true);
+  assert.equal(builtinProductProjectionInputSchema.safeParse(projectionInput).success, true);
+  const panel = { ...panelInput, ...record, id: panelId };
+  const projection = { ...projectionInput, ...record, id: projectionId };
+  assert.equal(currentPanelRecordSchema.safeParse(panel).success, true);
+  assert.equal(currentProjectionRecordSchema.safeParse(projection).success, true);
+  assert.equal(currentPanelRecordSchema.safeParse({ ...panel, editable: true }).success, false);
+  assert.equal(currentProjectionRecordSchema.safeParse({ ...projection, ownerId: "owner" }).success, false);
+  assert.equal(currentPanelRecordSchema.safeParse({ ...panel, id: "sales-panel" }).success, false);
+  assert.equal(currentPanelRecordSchema.safeParse({ ...panel, domainId: "domain", ownerId: "owner", visibility: "domain" }).success, false);
+  assert.equal(registerProductPanelRequestSchema.safeParse({ ...panelInput, revision: 0 }).success, false);
+  assert.equal(registerProductProjectionRequestSchema.safeParse({ ...projectionInput, revision: 0 }).success, false);
+
+  const summary = { ...definition, id: panelId, ownerId: null, editable: false, revision: 1, updatedAt: record.updatedAt };
+  assert.equal(productPanelListResponseSchema.safeParse({ items: [summary], nextCursor: null }).success, true);
+  assert.equal(productProjectionListResponseSchema.safeParse({
+    items: [{ ...summary, id: projectionId, componentId: projectionInput.componentId }], nextCursor: null,
+  }).success, true);
+
+  assert.equal(builtinProductIdSchema.safeParse(BUILTIN_PRODUCT_ID_PREFIX).success, false);
+  assert.equal(domainProductIdParamsSchema.safeParse({ id: panelId }).success, false);
+  assert.equal(domainProductIdParamsSchema.safeParse({ id: "sales-panel" }).success, true);
+  assert.equal(panelAuthoringMemberSchema.safeParse({
+    id: projectionId, component: "ObjectList", type: "platform:ScheduledTask", data: { rows: "list" },
+  }).success, true);
+  const use = { id: "sales", pageKey: "sales", path: "/sales", panelId, access: { permissionCode: "sales" } };
+  assert.deepEqual(builtinApplicationPanelUseSchema.parse(use), use);
+  assert.equal(builtinApplicationPanelUseSchema.safeParse({ ...use, panelId: "sales-panel" }).success, false);
+});
+
 test("copy and deletion reuse current ID rules and require a valid revision for deletion", () => {
-  assert.equal(copyProductCurrentRequestSchema.shape.id, productCurrentIdParamsSchema.shape.id);
+  const reserved = `${BUILTIN_PRODUCT_ID_PREFIX}copy`;
+  assert.equal(productCurrentIdParamsSchema.safeParse({ id: reserved }).success, true);
+  assert.equal(copyProductCurrentRequestSchema.safeParse({ id: reserved, name: "Copy" }).success, false);
   assert.deepEqual(copyProductCurrentRequestSchema.parse({ id: "copy", name: " Copy " }), { id: "copy", name: "Copy" });
   assert.deepEqual(deleteProductCurrentQuerySchema.parse({ revision: "2" }), { revision: 2 });
   for (const query of [{}, { revision: "0" }, { revision: "2.5" }]) {

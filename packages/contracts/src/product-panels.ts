@@ -13,8 +13,11 @@ export { ontologyElementRefSchema, type OntologyElementRef } from "./ontology-el
 import { objectDetailUsedByResponseSchema } from "./object-detail";
 import { productCatalogCursorSchema } from "./product-catalog-query";
 export { productCatalogQuerySchema, type ProductCatalogQuery } from "./product-catalog-query";
-import { productCurrentIdParamsSchema } from "./product-record-id";
-export { productCurrentIdParamsSchema } from "./product-record-id";
+import { builtinProductIdSchema, domainProductIdParamsSchema, domainProductIdSchema, productCurrentIdParamsSchema } from "./product-record-id";
+export {
+  BUILTIN_PRODUCT_ID_PREFIX, builtinProductIdSchema, domainProductIdParamsSchema, domainProductIdSchema,
+  isBuiltinProductId, productCurrentIdParamsSchema,
+} from "./product-record-id";
 
 const id = productCurrentIdParamsSchema.shape.id;
 const path = z.string().regex(/^\/(?!\/)/);
@@ -26,23 +29,39 @@ export const applicationPanelUsePathSchema = path.pipe(z.string().refine((value)
     (value === "/" || value.slice(1).split("/").every(Boolean));
 }, "Expected a canonical site path without query or fragment"));
 
+export const productVisibilitySchema = z.enum(["private", "domain", "platform"]);
+export type ProductVisibility = z.infer<typeof productVisibilitySchema>;
+
 const editableDefinitionFields = {
   name: z.string().trim().min(1).max(200),
   description: z.string().max(2000),
   /** Initial sharing on creation; subsequent Grant changes use the existing governance API. */
-  visibility: z.enum(["private", "domain"]),
+  visibility: productVisibilitySchema.exclude(["platform"]),
 };
 
 const currentRecordFields = {
-  id,
-  domainId: id,
-  ownerId: id,
   /** Compare on save only; this does not identify a retained or published definition. */
   revision: z.number().int().positive(),
   createdAt: z.string(),
   updatedAt: z.string(),
+};
+
+const domainProductRecordFields = {
+  ...currentRecordFields,
+  id: domainProductIdSchema,
+  domainId: id,
+  ownerId: id,
   editable: z.boolean(),
 };
+/** A platform product has no domain or user owner and is read-only at runtime. */
+const builtinProductRecordFields = {
+  ...currentRecordFields,
+  id: builtinProductIdSchema,
+  domainId: z.null(),
+  ownerId: z.null(),
+  editable: z.literal(false),
+};
+const builtinVisibility = z.literal("platform");
 
 export const METRIC_CHART_COMPONENT = "@ontomato/sdk:MetricChart";
 export const chartProjectionSourceSchema = dashboardCardRequestSchema;
@@ -65,10 +84,15 @@ export const productProjectionInputSchema = z.union([
 ]);
 export type ProductProjectionInput = z.infer<typeof productProjectionInputSchema>;
 
-export const chartProjectionSchema = chartProjectionDefinition.extend(currentRecordFields).superRefine(validateDirectProjection);
+const builtinProjectionDefinition = ordinaryProjectionDefinition.extend({ visibility: builtinVisibility });
+export const builtinProductProjectionInputSchema = builtinProjectionDefinition.superRefine(validateDirectProjection);
+export type BuiltinProductProjectionInput = z.infer<typeof builtinProductProjectionInputSchema>;
+
+export const chartProjectionSchema = chartProjectionDefinition.extend(domainProductRecordFields).superRefine(validateDirectProjection);
 export const productProjectionSchema = z.union([
   chartProjectionSchema,
-  ordinaryProjectionDefinition.extend(currentRecordFields).superRefine(validateDirectProjection),
+  ordinaryProjectionDefinition.extend(domainProductRecordFields).superRefine(validateDirectProjection),
+  builtinProjectionDefinition.extend(builtinProductRecordFields).superRefine(validateDirectProjection),
 ]);
 export type ProductProjection = z.infer<typeof productProjectionSchema>;
 export const currentProjectionRecordSchema = productProjectionSchema;
@@ -108,7 +132,13 @@ export type PanelDefinitionContent = z.infer<typeof panelDefinitionContentSchema
 export const productPanelInputSchema = panelDefinitionContentSchema.extend(editableDefinitionFields);
 export type ProductPanelInput = z.infer<typeof productPanelInputSchema>;
 
-export const productPanelSchema = productPanelInputSchema.extend(currentRecordFields);
+export const builtinProductPanelInputSchema = productPanelInputSchema.extend({ visibility: builtinVisibility });
+export type BuiltinProductPanelInput = z.infer<typeof builtinProductPanelInputSchema>;
+
+export const productPanelSchema = z.discriminatedUnion("visibility", [
+  productPanelInputSchema.extend(domainProductRecordFields),
+  builtinProductPanelInputSchema.extend(builtinProductRecordFields),
+]);
 export type ProductPanel = z.infer<typeof productPanelSchema>;
 export const currentPanelRecordSchema = productPanelSchema;
 
@@ -135,6 +165,9 @@ export const applicationPanelUseSchema = z.object({
   groupKey: applicationMetadataSchema.shape.groups.element.shape.key.optional(),
 }).strict();
 export type ApplicationPanelUse = z.infer<typeof applicationPanelUseSchema>;
+
+/** An entry shipped by the platform must point to a panel shipped by the platform. */
+export const builtinApplicationPanelUseSchema = applicationPanelUseSchema.extend({ panelId: builtinProductIdSchema });
 
 export const applicationEntryResolutionQuerySchema = z.object({ path: applicationPanelUsePathSchema }).strict();
 export const applicationEntryMenuSchema = z.object({
@@ -255,22 +288,30 @@ export const productPanelResponseSchema = z.object({
 }).strict();
 export type ProductPanelResponse = z.infer<typeof productPanelResponseSchema>;
 
-const productCurrentSummarySchema = productPanelSchema.pick({
-  id: true,
-  name: true,
-  description: true,
-  ownerId: true,
-  visibility: true,
-  updatedAt: true,
-  revision: true,
-  editable: true,
+const productCurrentSummarySchema = z.object({
+  ...editableDefinitionFields,
+  id: domainProductRecordFields.id,
+  ownerId: domainProductRecordFields.ownerId,
+  updatedAt: currentRecordFields.updatedAt,
+  revision: currentRecordFields.revision,
+  editable: domainProductRecordFields.editable,
+}).strict();
+const builtinProductCurrentSummarySchema = productCurrentSummarySchema.extend({
+  id: builtinProductRecordFields.id,
+  ownerId: builtinProductRecordFields.ownerId,
+  visibility: builtinVisibility,
+  editable: builtinProductRecordFields.editable,
 });
-export const productPanelSummarySchema = productCurrentSummarySchema.extend(
-  productPanelSchema.pick({ template: true }).shape,
-);
-export const productProjectionSummarySchema = productCurrentSummarySchema.extend(
-  projectionDefinition.pick({ componentId: true }).shape,
-);
+const panelSummaryFields = panelDefinitionContentSchema.pick({ template: true }).shape;
+const projectionSummaryFields = projectionDefinition.pick({ componentId: true }).shape;
+export const productPanelSummarySchema = z.discriminatedUnion("visibility", [
+  productCurrentSummarySchema.extend(panelSummaryFields),
+  builtinProductCurrentSummarySchema.extend(panelSummaryFields),
+]);
+export const productProjectionSummarySchema = z.discriminatedUnion("visibility", [
+  productCurrentSummarySchema.extend(projectionSummaryFields),
+  builtinProductCurrentSummarySchema.extend(projectionSummaryFields),
+]);
 export type ProductPanelSummary = z.infer<typeof productPanelSummarySchema>;
 export type ProductProjectionSummary = z.infer<typeof productProjectionSummarySchema>;
 
@@ -294,13 +335,13 @@ export const deleteProductPanelResponseSchema = deleteProductCurrentResponseSche
 });
 
 /** Copy returns the same response shape as reading the new current record. */
-export const copyProductCurrentRequestSchema = productCurrentIdParamsSchema.extend({
+export const copyProductCurrentRequestSchema = domainProductIdParamsSchema.extend({
   name: editableDefinitionFields.name,
 });
 
 /** Visible references include names. Hidden panels contribute only to the count. */
 export const productProjectionUsedBySchema = z.object({
-  panels: z.array(productPanelSummarySchema.pick({ id: true, name: true })),
+  panels: z.array(z.object({ id, name: editableDefinitionFields.name }).strict()),
   hiddenCount: z.number().int().nonnegative(),
 }).strict();
 export const productPanelUsedBySchema = productProjectionUsedBySchema.extend({
