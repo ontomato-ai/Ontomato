@@ -17,7 +17,8 @@ declared read or operation. Keep business rules, confirmation and permissions wi
 3. Write the template and interactions in Vue. The platform runs the panel directly from `panel.html` and
    the required `panel.mjs`. The declared member keys connect the layout to the projections.
    Add common page tasks in `recipes.md` when the assistant needs them.
-4. Check the workspace, register the projection and panel records, and open the application entry.
+4. Check and register the workspace, then open the registered application entry. Use the page's input box
+   for the [assistant check](#check-the-assistant-from-the-page).
 
 Page selection supplies an object reference and may include its display name. If a page task needs current fields
 such as status, expose the owner's `record` read that takes this reference. Use `recipes.md` for the owner's
@@ -34,8 +35,8 @@ node "$SKILL/ontomato.mjs" panel register "$WORKSPACE"
 Use a fresh application ID starting with `app-` and a path under `/applications/<application-id>/`. In `registration.json`, provide
 one panel item with `id`, `mode` and `input` containing its name, description and visibility. Create omits
 `revision`. Application creation supplies `entry`, `declaration`, `entryAccess` and `panelUses`. Each use
-supplies its domain-unique `pageKey`, `panelId`, `path` and `access`. The platform derives the page skill.
-Omit `defaultAgent` for the general assistant. Specify a preset only if the preset already selects this panel's skill.
+supplies its domain-unique `pageKey`, `panelId`, `path` and `access`. See [entry settings and page
+skills](CODE.md#register-and-open) for the icon, default agent and recipes.
 
 For a temporary domain application, the application item can have this shape. Choose your own IDs and use the
 actual panel ID.
@@ -53,4 +54,17 @@ actual panel ID.
 }
 ```
 
-Use the [Vue authoring guide](CODE.md) for the panel sources, owner operations, forms and draft links.
+## Check the assistant from the page
+
+Open the registered application entry in the browser and select a known record. Send these requests from the
+page's input box. Choose any specific assistant through that input box's picker.
+
+1. Ask it to read the selected record and report a current field. Compare its answer with the page.
+2. Ask it to draft a small form edit. Open the draft link and check that the changed field is populated and
+   highlighted. Confirm that the stored record changes when the reader saves it.
+3. Ask it to run a declared operation on a suitable test record. Review and confirm the action in the conversation,
+   then check the result on the page.
+
+Use this conversation and its visible results to verify the page skill and candidate availability.
+
+Use the [Vue authoring guide](CODE.md) for panel sources, owner operations, forms and draft links.
