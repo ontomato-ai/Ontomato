@@ -17,7 +17,7 @@ A workspace is the application source tree. Business definitions remain in Java;
 
 1. Use `sdk read components.json` and `sdk read docs/index.md` to see the current release's official components and their inputs and outputs. Inspect the actual ontology resources, projections and application uses. Reuse existing records and ask the owner for any missing business capability or named read.
 2. Write `panel.html` using the layout elements documented by the SDK, and `panel.json` with `{manifest, content?}`. The manifest declares members and typed state. Optional `content.messages` supplies translations. Use `recipes.md` for task guidance. Compose new panels without a module so the platform renders the official components directly.
-3. Run `panel check <workspace directory>`. The command reads `registration.json` in that directory and looks up other references on the platform. Use `--material` to select a different registration file.
+3. Run `panel check <workspace directory>` to validate the layout, declarations and references.
 4. Submit the selected projections, panels and application uses with `panel register`, then open the application's declared entry. Use an application ID and route you control.
 
 When converting a platform page that needs a new owner read, operation or official component, use the [platform development examples](references/platform-development.md).
@@ -68,6 +68,22 @@ Registration material has up to three arrays, `projections`, `panels` and `appli
 - Application `input` contains `entry: {path, renderer: "panels"}` and `panelUses`. Creation includes `declaration` and `entryAccess`. For a domain-member application, use `entryAccess: ["domain-member"]` and `access: {kind: "domain-member"}` on a use open to the domain. Each use has `id`, `pageKey`, `panelId`, `path` and `access`, with optional localized `names` and `defaultAgent`. Domain app paths start with `/applications/<applicationId>/`. Use the application's real `{permissionCode}` for a restricted use. When a use needs a default agent, use `defaultAgent: {kind: "id", id}` with its actual definition ID or `{kind: "preset", agentKind}` for an existing preset. An update replaces the use set, so preserve the uses required by the app. The platform owns built-in paths and derives skills from use access.
 
 The command submits projections, panels and uses in that order. It prints each completed item and exits nonzero at the first failure. On a stale revision, compare the owner's current definition with the requested change before preparing a new update.
+
+### Fix panel check and registration errors
+
+Run `panel check <directory>` before registering. It reads `registration.json` in that directory by default.
+Use `--material <file>` to select a different file. An online check looks for each referenced projection in
+the material first, then in the current domain. `--sdk-dir` checks local material and reports any references
+that still need an online check in `unchecked`.
+
+- **404 `PRODUCT_UNAVAILABLE`** names a panel or projection that is missing in the current domain. When a
+  projection is also absent from the material, `panel check` reports its ID before registration. Correct the
+  reference or include the projection definition in the material. A panel save with a missing projection fails
+  before saving that panel.
+- **403 `PRODUCT_FORBIDDEN`** on an author lookup means an existing record requires a use Grant. Ask the
+  record owner to grant access or choose a projection that the current author can use.
+- **A field error** names the record ID and field and explains what to fix. For example, if `data` is missing
+  from a projection, fill in `data` for that projection and run the check again.
 
 ## Discover and save business capabilities
 
