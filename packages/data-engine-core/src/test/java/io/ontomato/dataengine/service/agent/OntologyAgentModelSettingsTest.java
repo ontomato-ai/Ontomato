@@ -46,11 +46,11 @@ class OntologyAgentModelSettingsTest {
     var definitions=new OntologyAgentDefinitions(runtime, mock(io.ontomato.dataengine.service.RuntimeCodeClient.class), selections) {
       @Override public String resource(String path) { return path.endsWith(".json") ? "\"contract\"" : "prompt"; }
     };
-    assertEquals(OntologyAgentStore.RETRIEVER,definitions.definition("d","en",1000).getString("modelId"));
-    assertEquals(ActionCreationService.AGENT,definitions.actionCreation("d","prompt","en",1000).getString("modelId"));
-    assertEquals(OntologyAgentDefinitions.METRICVIEW_AGENT,definitions.metricView("d","prompt","en",1000).getString("modelId"));
+    assertEquals(OntologyAgentStore.RETRIEVER,definitions.definition("d","en",1000,List.of()).getString("modelId"));
+    assertEquals(ActionCreationService.AGENT,definitions.actionCreation("d","prompt","en",1000,List.of()).getString("modelId"));
+    assertEquals(OntologyAgentDefinitions.METRICVIEW_AGENT,definitions.metricView("d","prompt","en",1000,List.of()).getString("modelId"));
     for(String kind:OntologyGenerationService.KINDS)
-      assertEquals(OntologyGenerationService.agentId(kind),definitions.generation("d",kind,"prompt","en",1000).getString("modelId"));
+      assertEquals(OntologyGenerationService.agentId(kind),definitions.generation("d",kind,"prompt","en",1000,List.of()).getString("modelId"));
   }
 
 }

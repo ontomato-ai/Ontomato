@@ -6,6 +6,7 @@ import { panelManifestSchema, panelMessageKeySchema, panelThemeOverridesSchema }
 import { PanelLayoutError, parsePanelLayout } from "./panel-layout";
 import { directProjectionPortsSchema, validateDirectProjection } from "./panel-projection";
 import { applicationMetadataSchema } from "./application-metadata";
+import { pageSkillContextSchema, pageSkillEntranceSchema } from "./page-skills";
 import { runtimeJsonValueSchema } from "./agent-runtime-values";
 import { dashboardCardPrimaryKey, dashboardCardRequestSchema, dashboardChartFileSchema } from "./dashboard";
 import { DASHBOARD_CARD } from "./platform-object-types";
@@ -203,6 +204,9 @@ export const applicationPanelReferencesRequestSchema = z.object({
 }).strict();
 export type ApplicationPanelReferencesRequest = z.infer<typeof applicationPanelReferencesRequestSchema>;
 
+export const panelUseRefSchema = z.object({ applicationId: id, useId: id }).strict();
+export type PanelUseRef = z.infer<typeof panelUseRefSchema>;
+
 export const panelSkillSourceSchema = z.object({
   skill: runtimeSkillRefSchema,
   uses: z.array(applicationPanelUseSchema.pick({ pageKey: true, panelId: true, path: true }).extend({
@@ -218,6 +222,15 @@ export const panelApplicationEntrySchema = z.object({
   renderer: z.literal("panels"),
 }).strict();
 export type PanelApplicationEntry = z.infer<typeof panelApplicationEntrySchema>;
+
+const [menuEntrance, domainMemberEntrance] = pageSkillEntranceSchema.options;
+/** GET /api/product-panels/:id and /:id/snapshot take either no query or one complete application-use entrance. */
+export const productPanelReadQuerySchema = z.union([
+  z.object({}).strict(),
+  panelUseRefSchema.merge(menuEntrance),
+  panelUseRefSchema.merge(domainMemberEntrance),
+]);
+export type ProductPanelReadQuery = z.infer<typeof productPanelReadQuerySchema>;
 
 /** The source card owner creates chart projections; ordinary updates may only edit chart metadata. */
 export const registerProductProjectionRequestSchema = z.union([
@@ -264,7 +277,10 @@ export const registerProductPanelRequestSchema = productPanelInput.extend({
 }).superRefine(validatePanelLayout);
 export type RegisterProductPanelRequest = z.infer<typeof registerProductPanelRequestSchema>;
 
-export const productPanelResponseSchema = z.object({ panel: productPanelSchema }).strict();
+export const productPanelResponseSchema = z.object({
+  panel: currentPanelRecordSchema,
+  pageSkillContext: pageSkillContextSchema.optional(),
+}).strict();
 export type ProductPanelResponse = z.infer<typeof productPanelResponseSchema>;
 
 const productCatalogCursorSchema = z.string().min(1);
