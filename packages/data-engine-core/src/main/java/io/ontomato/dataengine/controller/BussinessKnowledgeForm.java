@@ -40,6 +40,21 @@ public final class BussinessKnowledgeForm {
             throw new IllegalArgumentException(langService.get(lang, "Admin.knowledge.form.invalidTarget"));
         }
 
+        JSONObject values = values(current, request.get("values") == null ? null
+                : object(request.get("values"), lang, langService, "Admin.knowledge.form.invalidValues"));
+
+        JSONObject form = new JSONObject();
+        form.put("values", values);
+        form.put("fields", fields(lang, langService, tagConfig));
+        form.put("save", save(current == null));
+        return form;
+    }
+
+    /**
+     * The values a form shows and a save writes: the entry's current values, or a new entry's defaults, with the
+     * submitted fields over them. A caller that sends only the fields it changes, as an agent's draft does, keeps the rest.
+     */
+    public static JSONObject values(KnowledgeEntity current, Map<String, Object> submitted) {
         JSONObject values = current == null
                 ? new JSONObject()
                         .fluentPut("knowledgeID", "")
@@ -54,16 +69,9 @@ public final class BussinessKnowledgeForm {
                         .fluentPut("knowledgeTags",
                                 current.getKnowledgeTags() == null ? new JSONArray() : current.getKnowledgeTags())
                         .fluentPut("status", current.getStatus());
-        if (request.get("values") != null)
-            values = new JSONObject(object(request.get("values"), lang, langService, "Admin.knowledge.form.invalidValues"));
-        if (!values.containsKey("knowledgeID"))
-            values.put("knowledgeID", current == null ? "" : current.getKnowledgeID());
-
-        JSONObject form = new JSONObject();
-        form.put("values", values);
-        form.put("fields", fields(lang, langService, tagConfig));
-        form.put("save", save(current == null));
-        return form;
+        if (submitted != null)
+            values.putAll(submitted);
+        return values;
     }
 
     private static JSONArray fields(String lang, LangService langService, KnowledgeTagConfig tagConfig) {

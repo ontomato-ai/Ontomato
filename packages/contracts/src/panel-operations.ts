@@ -15,10 +15,11 @@ import {
 } from "./product-panels";
 import { applicationCatalogueEntriesSchema, applicationCatalogueQueryResultSchema, applicationCatalogueRecordSchema } from "./application-catalogue";
 import { panelManifestSchema } from "./panel-manifest";
+import { platformOntologySchemaResponseSchema } from "./platform-ontology";
 import {
   platformOntologyCountsResponseSchema, platformOntologyNeighborsResponseSchema, platformOntologyObjectsResponseSchema,
-  platformOntologySchemaResponseSchema, platformOntologyStartResponseSchema,
-} from "./platform-ontology";
+  platformOntologyStartResponseSchema,
+} from "./platform-ontology-data";
 import type { PanelReadResultId } from "./platform-object-types";
 
 const inputTarget = z.object({ source: z.literal("input"), input: runtimeKeySchema }).strict();
@@ -101,7 +102,8 @@ export const panelReadResultSchemas = {
   panelFormDescription: panelFormDescriptionSchema,
   panelOperationDescriptor: panelOwnerOperationDescriptorSchema,
   panelOptionList: panelOptionListSchema,
-  panelGraphSchema: platformOntologySchemaResponseSchema,
+  // The graph schema also describes the reads registered here. Resolve its validators on access.
+  get panelGraphSchema() { return platformOntologySchemaResponseSchema; },
   panelGraphCounts: platformOntologyCountsResponseSchema,
   panelGraphStart: platformOntologyStartResponseSchema,
   panelGraphNeighbors: platformOntologyNeighborsResponseSchema,
