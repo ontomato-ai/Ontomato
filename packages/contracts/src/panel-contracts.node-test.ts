@@ -303,6 +303,55 @@ test("ontology object lists use search while reference options keep keyword", ()
   }).success, true);
 });
 
+test("feedback, governance records and the skill library read through their owners' fixed signatures", async () => {
+  const { directReadDeclaration } = await import("./panel-projection");
+  const base = {
+    name: "Owner reads", description: "", visibility: "domain", inputs: {}, outputs: {}, config: {},
+    componentId: "@ontomato/sdk:ObjectList",
+  };
+  const object = (className: string) => ({ object: { literal: { className, primaryKey: "item" } } });
+  const result = (data: Record<string, unknown>) => {
+    const projection = productProjectionInputSchema.parse({ ...base, data });
+    return Object.fromEntries(Object.entries(projection.data).map(([port, read]) => [port, directReadDeclaration(projection, read)?.result]));
+  };
+  assert.deepEqual(result({
+    rows: {
+      source: { type: platformType(FEEDBACK_RECORD) }, read: "query",
+      params: { search: { literal: "slow" }, sourceType: { literal: "qa" }, rating: { literal: "dislike" }, size: { literal: 20 } },
+    },
+    counts: { source: { type: platformType(FEEDBACK_RECORD) }, read: "counts", params: { by: { literal: "rating" }, sourceType: { literal: "all" } } },
+    record: { source: object(FEEDBACK_RECORD), read: "record", params: {} },
+  }), { rows: "panelRecordQuery", counts: "panelGroupCounts", record: "panelRecord" });
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...base, data: { rows: { source: { type: platformType(FEEDBACK_RECORD) }, read: "query", params: { rating: { literal: "neutral" } } } },
+  }).success, false);
+
+  assert.deepEqual(result({
+    record: { source: object(KNOWLEDGE_GOVERNANCE_RECORD), read: "record", params: {} },
+    issues: { source: object(KNOWLEDGE_GOVERNANCE_RECORD), read: "issues", params: {} },
+    sources: { source: object(KNOWLEDGE_GOVERNANCE_RECORD), read: "sources", params: {} },
+    passages: {
+      source: object(KNOWLEDGE_GOVERNANCE_RECORD), read: "sourcePage", params: { source: { literal: "source-1" }, cursor: { literal: "c" } },
+    },
+  }), { record: "panelRecord", issues: "panelRecordList", sources: "panelRecordList", passages: "panelRecordQuery" });
+
+  assert.deepEqual(result({
+    rows: { source: { type: platformType(SKILL) }, read: "query", params: { search: { literal: "report" } } },
+    record: { source: object(SKILL), read: "record", params: {} },
+    files: { source: object(SKILL), read: "files", params: {} },
+    file: { source: object(SKILL), read: "file", params: { path: { literal: "SKILL.md" } } },
+    options: { source: { type: platformType(SKILL) }, read: "options", params: {} },
+  }), { rows: "panelRecordQuery", record: "panelRecord", files: "panelRecordList", file: "panelRecord", options: "panelOptionList" });
+  const required = (type: string, read: string) => {
+    const declaration = platformObjectTypes[type].reads?.[read];
+    return declaration?.parameterMode === "fixed" ? declaration.requiredParams : undefined;
+  };
+  assert.deepEqual(required(FEEDBACK_RECORD, "counts"), ["by"]);
+  assert.deepEqual(required(KNOWLEDGE_GOVERNANCE_RECORD, "sourcePage"), ["source"]);
+  assert.deepEqual(required(SKILL, "file"), ["path"]);
+  assert.deepEqual(platformObjectTypes[SKILL].operations, [DELETE_SKILL]);
+});
+
 test("model reads and operations use their owner's fixed signatures", async () => {
   const { directReadDeclaration } = await import("./panel-projection");
   const base = {

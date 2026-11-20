@@ -2,6 +2,9 @@ import { scheduledTaskPanelMessages, scheduledTaskPanelTextEn } from "@ontomato/
 
 export const en = {
   ...scheduledTaskPanelMessages(scheduledTaskPanelTextEn),
+  "panels.sdkComponent.package": "SDK package",
+  "panels.sdkComponent.meaning": "Purpose",
+  "panels.sdkComponent.notFound": "SDK component '{componentId}' is not in the current release.",
   "panels.agentForm.name": "Name",
   "panels.agentForm.description": "Description",
   "panels.agentForm.icon": "Avatar",

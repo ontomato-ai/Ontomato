@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { productCurrentIdParamsSchema } from "./product-record-id";
 
 const productGrantRecordSchema = z.object({
   principalKind: z.enum(["principal", "role", "domain"]),
@@ -22,3 +23,6 @@ export type ChangeProductGrantRequest = z.infer<typeof changeProductGrantRequest
 
 export const changeProductDomainGrantRequestSchema = z.object({ shared: z.boolean() }).strict();
 export const productGrantChangeResponseSchema = z.object({ success: z.literal(true) }).strict();
+export const changeProductPanelDomainGrantResponseSchema = productGrantChangeResponseSchema.extend({
+  skippedProjectionIds: z.array(productCurrentIdParamsSchema.shape.id),
+});

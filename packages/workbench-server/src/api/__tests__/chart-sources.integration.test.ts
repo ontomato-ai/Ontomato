@@ -110,6 +110,14 @@ beforeAll(async () => {
   app.post("/java/product-governance/resources", (_req, res) => {
     res.json({ ids: registrations.map(resource => resource.id) });
   });
+  app.post("/java/product-governance/unregister", (req, res) => {
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("governance");
+    registrations = registrations.filter(resource => resource.id !== req.body.id);
+    res.json({ success: true });
+  });
+  app.get("/java/platform/applications/panel-uses/by-panel", (_req, res) => {
+    res.json({ success: true, data: [] });
+  });
   app.post("/java/ontology/query/metrics/describe", (req, res) => {
     metricCallers.push(req.header("tk")!);
     res.json({
@@ -370,6 +378,20 @@ async function readChartMember(dataName: "template" | "result") {
   expect(response.status).toBe(200);
   return productPanelReadResponseSchema.parse(await response.json());
 }
+
+it("removes an orphaned chart projection when its only panel is deleted and leaves the source card available", async () => {
+  const projection = await registerChartPanel(2028);
+  const removal = await request("/product-panels/chart-pilot?revision=1", "DELETE");
+  expect(removal.status).toBe(200);
+  expect(await removal.json()).toEqual({
+    success: true, deletedProjectionIds: [projection.id], retainedProjectionIdsWithoutEdit: [],
+  });
+  expect(registrations.some(resource => resource.id === projection.id)).toBe(false);
+  const path = CHART_PROJECTION_SOURCES_PATH + "?" + new URLSearchParams(source);
+  expect(await (await request(path)).json()).toEqual({ projectionId: null });
+  expect((await readBoard()).groups[0].charts[0]).toEqual(sampleCard);
+  expect((await register()).id).toBe(projection.id);
+});
 
 it("reads a registered chart's template and result as a different panel viewer", async () => {
   await registerChartPanel(2028);

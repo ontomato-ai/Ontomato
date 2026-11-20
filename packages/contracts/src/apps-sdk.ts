@@ -51,7 +51,7 @@ const componentPropSchema = componentPortSchema.extend({
 const componentConfigSchema = z.array(componentPropSchema);
 /** Use named entries, or a single optional "*" entry for all datum names declared by a projection. */
 export const appsSdkComponentDataSchema = z.record(name, z.object({
-  results: z.array(panelReadResultIdSchema).min(1),
+  results: z.array(z.lazy(() => panelReadResultIdSchema)).min(1),
   required: z.boolean(),
   /** Read parameters this component can supply for this datum at runtime. */
   runtimeParams: z.array(name).optional(),
@@ -85,7 +85,7 @@ export const appsSdkComponentCatalogEntrySchema = z.object({
   /** Omit this declaration for components that do not consume platform-supplied data. */
   data: appsSdkComponentDataSchema.optional(),
   config: componentConfigSchema.optional(),
-  inputs: z.record(name, directProjectionInputTypeSchema).optional(),
+  inputs: z.record(name, z.lazy(() => directProjectionInputTypeSchema)).optional(),
   outputs: z.array(name).optional(),
   ports: z.object({
     props: componentConfigSchema,
