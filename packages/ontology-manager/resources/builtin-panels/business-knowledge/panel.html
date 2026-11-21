@@ -17,19 +17,17 @@
   <section class="bk" :class="{ narrow, 'detail-open': detailOpen }" ref="root">
     <div class="bk-head">
       <projection slot="governance"></projection>
-      <el-button type="primary" @click="newRecord">{{ t("panel.new") }}</el-button>
-      <template v-if="checked.length">
-        <span class="bk-batch-count">{{ t("panel.checkedCount", { count: checked.length }) }}</span>
-        <projection slot="approveAll"></projection>
-        <projection slot="deleteAll"></projection>
-        <el-button text @click="clearChecked">{{ t("panel.clearChecked") }}</el-button>
-      </template>
       <span class="bk-head-spacer"></span>
       <projection slot="tabs"></projection>
     </div>
     <div class="bk-body">
       <div class="bk-list">
-        <projection slot="list" @update:selected="onUserSelect"></projection>
+        <projection slot="list" @update:selected="onUserSelect">
+          <template #batch-actions>
+            <projection slot="approveAll"></projection>
+            <projection slot="deleteAll"></projection>
+          </template>
+        </projection>
       </div>
       <div class="bk-detail">
         <button type="button" class="bk-back" @click="detailOpen = false">‹ {{ t("panel.backToList") }}</button>
@@ -39,8 +37,8 @@
           <el-button @click="openEdit">{{ t("panel.edit") }}</el-button>
           <projection slot="remove"></projection>
         </div>
-        <projection slot="form" ref="formProj" v-show="mode === 'edit'" @saved="onSaved" @discarded="onDiscarded"></projection>
-        <div class="bk-form-actions" v-show="mode === 'edit'">
+        <projection slot="form" ref="formProj" v-show="editing" @saved="onSaved" @discarded="onDiscarded"></projection>
+        <div class="bk-form-actions" v-show="editing">
           <el-button @click="cancelEdit">{{ t("panel.cancel") }}</el-button>
           <el-button type="primary" :disabled="formBusy" @click="saveForm">{{ t("panel.save") }}</el-button>
         </div>

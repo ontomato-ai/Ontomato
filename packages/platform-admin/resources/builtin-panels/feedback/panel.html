@@ -17,7 +17,6 @@
         <projection slot="rating"></projection>
       </div>
       <div class="feedback-actions">
-        <button type="button" @click="refresh">{{ t("panel.refresh") }}</button>
         <button type="button" :disabled="exporting" @click="runExport">
           {{ exporting ? t("panel.exporting") : t("panel.export") }}
         </button>

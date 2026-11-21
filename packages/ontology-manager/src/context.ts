@@ -40,13 +40,6 @@ export interface ManagerPresentation {
   readonly compactDialogs: boolean;
 }
 
-/** This edition's stored values of the three business knowledge tags: submitted and stored as-is; option labels come from Manager messages. */
-export interface ManagerKnowledgeTagValues {
-  readonly general: string;
-  readonly business: string;
-  readonly tech: string;
-}
-
 /** What the page supplies to the Manager pages for one page load. */
 export interface ManagerOptions {
   /** Data engine proxy entry without a trailing slash; requests go to `${apiBase}/data-query/*`. */
@@ -60,7 +53,6 @@ export interface ManagerOptions {
   translate: (key: string, params?: TextParams) => string;
   dataFallbacks: ManagerDataFallbacks;
   presentation: ManagerPresentation;
-  knowledgeTagValues: ManagerKnowledgeTagValues;
   /** 401/402 from a Manager request; the page decides what to do. */
   onAuthFailure: (status: ManagerAuthFailureStatus) => void;
 }
@@ -73,7 +65,6 @@ export interface ManagerContext {
   readonly locale: string;
   readonly dataFallbacks: ManagerDataFallbacks;
   readonly presentation: ManagerPresentation;
-  readonly knowledgeTagValues: ManagerKnowledgeTagValues;
 }
 
 /** Resource counts shown next to the ontology and asset navigation entries; null until read. */
@@ -150,7 +141,6 @@ export function createManager(options: ManagerOptions) {
     },
     dataFallbacks: options.dataFallbacks,
     presentation: options.presentation,
-    knowledgeTagValues: options.knowledgeTagValues,
   };
   const client = createManagerClient(
     {
@@ -238,5 +228,5 @@ export function useSharedText() {
  */
 export function usePlatformText() {
   const { t: translate } = useI18n();
-  return { pt: (key: "platform.operations" | "platform.governance") => translate(key) };
+  return { pt: (key: "platform.operations") => translate(key) };
 }

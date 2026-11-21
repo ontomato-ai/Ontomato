@@ -81,7 +81,7 @@ public class ApplicationCatalogUpgrade implements InitializingBean {
             var declarations = new ArrayList<ApplicationCatalog.Builtin>();
             for (var resource : new PathMatchingResourcePatternResolver().getResources("classpath*:applications/*.json"))
                 declarations.add(readDeclaration(resource));
-            catalog.builtins("data-engine", declarations);
+            catalog.reconcileBuiltins("data-engine", declarations);
         }
 
         static ApplicationCatalog.Builtin readDeclaration(Resource resource) throws IOException {

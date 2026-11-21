@@ -1,5 +1,5 @@
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { Activity, Cpu, Database, MessageSquareText, ScrollText, Server, SlidersHorizontal } from "lucide-vue-next";
+import { Activity, Cpu, Database, ScrollText, Server, SlidersHorizontal } from "lucide-vue-next";
 import type { RouteRecordRaw } from "vue-router";
 import type { PlatformGroup, PlatformPage } from "./navigation";
 
@@ -67,20 +67,6 @@ export const platformPages = {
     permissions: ["system-monitoring"],
     group: "platform",
   },
-  /**
-   * The feedback users gave on their conversations. It belongs to the knowledge pages (beside business knowledge), not
-   * to platform administration; the records themselves are the workbench's.
-   */
-  userFeedback: {
-    path: platformRoutes.feedback.path,
-    titleKey: "nav.userFeedback",
-    descriptionKey: "platform.descriptions.userFeedback",
-    icon: MessageSquareText,
-    permissions: ["user-feedback"],
-    group: "knowledge",
-    // The knowledge governance application's frame surrounds it (its column, its header): the platform draws no header.
-    ownHeader: true,
-  },
 } satisfies Record<string, PlatformPage>;
 
 /** Lazily loaded components of the shared pages, keyed by path; the two model pages are one screen of one draft. */
@@ -92,7 +78,6 @@ export const platformPageComponents: Readonly<Record<string, () => Promise<unkno
   [platformPages.dataAdapters.path]: () => import("./pages/DataAdaptersPage.vue"),
   [platformPages.auditLog.path]: () => import("./pages/AuditLogPage.vue"),
   [platformPages.systemMonitor.path]: () => import("./pages/SystemMonitorPage.vue"),
-  [platformPages.userFeedback.path]: () => import("./pages/FeedbackRecordsPage.vue"),
 };
 
 /** One route per page: the page renders at its own address and names itself in `meta.page`, which the guard reads. */
@@ -134,29 +119,11 @@ export const ossPlatformPages: readonly PlatformPage[] = [
   platformPages.systemMonitor,
 ];
 
-/** The pages outside platform administration that this package ships: the feedback records, under knowledge. */
-export const platformKnowledgePages: readonly PlatformPage[] = [platformPages.userFeedback];
-
-/** Pages whose screen another application's frame surrounds, so their route is that application's. */
-const MULTI_APPLICATION_PAGES = new Set<string>([platformRoutes.feedback.path]);
-
 /**
- * The screen of a shared page: the page's component, for an edition that mounts it inside another application's frame.
- * The feedback records show inside the knowledge governance application's column, so their route is that application's
- * and this package only supplies the screen.
- */
-export const platformPageScreen = (path: string) => platformPageComponents[path];
-
-/**
- * Every route the shared pages need: the edition's settings pages, the pages beside them and the former parents'
- * addresses. Pages this package does not ship, such as an edition's own permissions and licence, are routed by the
- * edition.
- *
- * The feedback records are routed by the knowledge governance application (its column surrounds them), so they are
- * listed in the navigation and left out of the routes here.
+ * Every route the shared pages need: the edition's settings pages and the former parents' addresses. Pages this package
+ * does not ship, such as an edition's own permissions and licence, are routed by the edition.
  */
 export function sharedPageRoutes(pages: readonly PlatformPage[] = ossPlatformPages): RouteRecordRaw[] {
   const shared = pages.filter((page) => page.path in platformPageComponents);
-  const routed = [...shared, ...platformKnowledgePages].filter((page) => !MULTI_APPLICATION_PAGES.has(page.path));
-  return [...pageRoutes(routed, platformPageComponents), ...formerParentRoutes];
+  return [...pageRoutes(shared, platformPageComponents), ...formerParentRoutes];
 }

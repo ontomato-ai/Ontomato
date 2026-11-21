@@ -287,9 +287,8 @@ export async function createAgentDefinitionSnapshot(
 }
 
 export async function listAgentDefinitions(owner: AssistantOwner, credentials: AssistantCredentials) {
-  const [agents, skillView] = await Promise.all([
-    assistantStore.agents(owner.domainId), readAssistantSkillView(owner.domainId, credentials),
-  ]);
+  const skillView = await readAssistantSkillView(owner.domainId, credentials);
+  const agents = await assistantStore.agents(owner.domainId, { skillView });
   return { agents: agents.map(agent => projectAgentDefinitionSkills(view(agent, credentials.locale), skillView)) };
 }
 export async function deleteAgentDefinition(id: string, owner: AssistantOwner) {

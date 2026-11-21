@@ -11,7 +11,6 @@ export function installObjectViewHost(app: App, apiBase = "/api", token = "test-
     apiBase, credential: { type: "token", token }, theme: ref("light"), locale: ref("en"),
     translate: (key, params) => i18n.global.t(key, params ?? {}),
     dataFallbacks: { noBusinessDescription: "", unnamedAsset: "" },
-    knowledgeTagValues: { general: "", business: "", tech: "" },
     presentation: { themeProperties: { light: {}, dark: {} }, nodePalette: { light: [], dark: [] }, maxFitZoom: null, dataBrowserDescription: () => "", compactDialogs: false },
     onAuthFailure: () => {},
   });

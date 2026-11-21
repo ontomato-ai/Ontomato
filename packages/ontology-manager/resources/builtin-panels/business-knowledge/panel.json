@@ -38,6 +38,14 @@
           "kind": "object",
           "objectType": "platform:BusinessKnowledge"
         }
+      },
+      "mode": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "view"
       }
     },
     "members": {
@@ -183,7 +191,21 @@
         "id": "builtin-product-caeb4407-6da9-4ce6-922c-1ab4129bd431"
       }
     },
-    "commands": {}
+    "commands": {
+      "create": {
+        "labelKey": "panel.new",
+        "primary": true,
+        "do": {
+          "set": {
+            "fields": {
+              "mode": {
+                "literal": "create"
+              }
+            }
+          }
+        }
+      }
+    }
   },
   "content": {
     "messages": {
@@ -196,9 +218,7 @@
         "panel.cancel": "取消",
         "panel.save": "保存",
         "panel.backToList": "返回列表",
-        "panel.discardConfirm": "有未保存的修改，是否放弃？",
-        "panel.checkedCount": "已选 {count} 条",
-        "panel.clearChecked": "清空"
+        "panel.discardConfirm": "有未保存的修改，是否放弃？"
       },
       "en": {
         "panel.name": "Business knowledge",
@@ -209,9 +229,7 @@
         "panel.cancel": "Cancel",
         "panel.save": "Save",
         "panel.backToList": "Back to list",
-        "panel.discardConfirm": "Discard the unsaved changes?",
-        "panel.checkedCount": "{count} selected",
-        "panel.clearChecked": "Clear"
+        "panel.discardConfirm": "Discard the unsaved changes?"
       }
     }
   }

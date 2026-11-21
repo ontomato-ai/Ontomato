@@ -55,7 +55,6 @@ function mountPage(credential: ManagerCredential = { type: "token", token: "t-1"
       dataBrowserDescription: () => "",
       compactDialogs: false,
     },
-    knowledgeTagValues: { general: "General", business: "Business", tech: "Tech" },
     onAuthFailure: (status) => failures.push(status),
   });
   const clients = {} as Record<Page, ManagerClient>;

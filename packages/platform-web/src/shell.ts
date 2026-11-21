@@ -17,7 +17,6 @@ import {
   type ManagerAuthFailureStatus,
   type ManagerCredential,
   type ManagerDataFallbacks,
-  type ManagerKnowledgeTagValues,
   type ManagerPresentation,
 } from "@ontomato/ontology-manager";
 import { managerMessageTree, type ManagerMessages } from "@ontomato/ontology-manager/i18n";
@@ -44,8 +43,6 @@ export interface ManagerShellProfile {
   dataFallbacks: ManagerDataFallbacks;
   /** This product's Manager presentation values (theme values, node palette, graph interaction, narrow dialogs, etc.). */
   presentation: ManagerPresentation;
-  /** This product's stored values for the business knowledge tags. */
-  knowledgeTagValues: ManagerKnowledgeTagValues;
 }
 
 /** The page's theme and language, shared by the layout, the Manager pages and the platform pages. */
@@ -148,7 +145,6 @@ export function createServiceManager(options: {
     translate: (key, params) => i18n.global.t(key, params ?? {}),
     dataFallbacks: profile.dataFallbacks,
     presentation: profile.presentation,
-    knowledgeTagValues: profile.knowledgeTagValues,
     onAuthFailure: options.onAuthFailure,
   });
 }
@@ -157,7 +153,6 @@ export function createServiceManager(options: {
 const ontologyWorkspacePages: readonly PlatformPage[] = [
   {path:platformRoutes.systemAgentModels.path,titleKey:'platform.systemAgentModels',descriptionKey:'platform.systemAgentModelsDescription',icon:Bot,permissions:['system-config','app-builder'],group:'platform',ownHeader:true},
   {path:platformRoutes.builderModels.path,titleKey:'platform.builderAgentModels',icon:Cpu,permissions:['app-builder'],group:'platform',ownHeader:true},
-  {path:platformRoutes.governanceKnowledge.path,titleKey:'nav.businessKnowledge',icon:Cpu,permissions:['business-knowledge'],group:'knowledge',ownHeader:true},
   { path: platformRoutes.ontologySkills.path, titleKey: "capabilities.skillTitle", icon: Puzzle, permissions: ["skill-management"], group: "assets", ownHeader: true, count: skillLibraryCount },
 ];
 

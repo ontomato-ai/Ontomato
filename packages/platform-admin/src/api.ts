@@ -22,7 +22,6 @@ import {
   type GeneralConfigKey,
 } from "./config/types";
 import { vectorRebuildStatusSchema } from "./models/types";
-import { feedbackPageSchema, feedbackPath, type FeedbackQuery } from "./feedback";
 
 /**
  * Platform area requests. The platform pages live next to the Ontology Manager and call the Java service through the
@@ -177,9 +176,6 @@ export function platformApi(client: PlatformClient) {
       ontologyAgentModelSchema.parse(
         (await client.put(`/ontology/ai/agent-models/${encodeURIComponent(id)}`, { modelSelection })).data
       ),
-    // The workbench's feedback records (Node under /api, not the data engine): read only, filtered and paged.
-    listFeedback: async (query: FeedbackQuery) =>
-      feedbackPageSchema.parse((await client.get(feedbackPath(query), "")).data),
     getVectorRebuildStatus: async () =>
       vectorRebuildStatusSchema.parse((await client.get("/businessConfig/vectorRebuildStatus")).data),
     rebuildVectors: () => client.post("/businessConfig/rebuildVectors"),

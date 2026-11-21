@@ -245,32 +245,6 @@ export default {
     "maxRetriesHint": "Retries after a failed request; 0 means no retry.",
     "maxRetryDelay": "Max retry wait (s)",
     "maxRetryDelayHint": "The longest wait a provider may ask for before a retry; 0 means no limit.",
-    "feedbackExport": "Export",
-    "feedbackExportEmpty": "No records to export",
-    "feedbackExportSucceeded": "Exported",
-    "feedbackExportFailed": "Export failed",
-    "feedbackLoadFailed": "Failed to load feedback records",
-    "feedbackSearchPlaceholder": "Search the question, answer or comment",
-    "feedbackDetailTitle": "Feedback record",
-    "feedbackSources": {
-      "qa": "Query",
-      "analysis_task": "Analysis task"
-    },
-    "feedbackRatings": {
-      "like": "Like",
-      "dislike": "Dislike"
-    },
-    "feedbackColumns": {
-      "time": "Time",
-      "source": "Source",
-      "rating": "Rating",
-      "user": "User",
-      "turnKey": "Turn key",
-      "input": "Question",
-      "output": "Answer",
-      "feedback": "Comment",
-      "relatedId": "Related"
-    },
     "generalSettingNames": {
       "knowledgeMaxResult": "Knowledge Max Results",
       "dslCookerTimeout": "DSL generator timeout",

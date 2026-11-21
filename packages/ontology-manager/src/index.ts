@@ -6,12 +6,11 @@ export {
   type Manager,
   type ManagerContext,
   type ManagerCounts,
-  type ManagerKnowledgeTagValues,
   type ManagerOptions,
   type ManagerPresentation,
   type ManagerTheme,
 } from "./context";
-export { managerRoutes, managerStandaloneRoutes, registerGovernanceScreen } from "./routes";
+export { managerRoutes, managerStandaloneRoutes } from "./routes";
 export {
   managerGroups,
   managerNavigation,

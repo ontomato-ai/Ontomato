@@ -37,13 +37,10 @@ export {
   pageRoutes,
   platformGroups,
   platformPageComponents,
-  platformPageScreen,
-  platformKnowledgePages,
   platformPages,
   sharedPageRoutes,
   systemMonitorPanel,
 } from "./pages";
-export { feedbackPageSchema, type FeedbackPageData, type FeedbackQuery } from "./feedback";
 export type {
   BusinessConfigAdapterDisplay,
   BusinessConfigLanguageOption,
