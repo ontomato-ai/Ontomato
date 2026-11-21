@@ -11,6 +11,7 @@ import { platformObjectTypes } from "@ontomato/contracts/platform-object-types";
 import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { components } from "../../../../../packages/apps-sdk/src/catalogue";
+import examples from "../../../../../packages/contracts/examples/platform-schedules.json";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import { panelEntryGuard, unknownAddressRoute } from "../../../../../packages/platform-web/src/panel-entries";
 import { catalogFixture } from "../../../../../packages/platform-web/src/__tests__/fixtures";
@@ -23,6 +24,15 @@ const application = catalogFixture().find(app => app.id === "schedules")!;
 const use = application.panelUses![0]!;
 const id = "00000000-0000-4000-8000-000000000001";
 const operationId = "renew.renewCredential";
+const taskId = "10000000-0000-4000-8000-000000000001";
+const runId = "20000000-0000-4000-8000-000000000001";
+const run = { ...examples.runs.find(item => item.response.status === "completed")!.response, id: runId, taskId };
+const row = {
+  primaryKey: taskId, label: "Nightly test", fields: {
+    application: "agents", frequency: "Every Monday", state: "off", nextRun: "", timeZone: "UTC",
+    lastRun: "completed", lastRunAt: "2026-11-21T00:00:00Z", lastRunSummary: "**Finished**",
+  },
+};
 const target = { kind: "object", objectType: "platform:Application", primaryKey: "schedules" };
 const objectTypes = Object.fromEntries(Object.entries(platformObjectTypes).map(([type, entry]) => [
   type,
@@ -60,7 +70,11 @@ afterEach(() => {
   useApplicationCatalog().applications.value = [];
 });
 
-it.each([["succeeds", false], ["is refused", true]])("keeps the native schedule panel open when renewal %s", async (_status, refused) => {
+it.each([["normalizes a legacy address and renews", false], ["keeps the schedule panel open when renewal is refused", true]])("%s", async (_scenario, refused) => {
+  const router = createRouter({ history: createMemoryHistory(), routes: [
+    { ...platformRoutes.layout, component: RouterView, children: [] }, unknownAddressRoute,
+  ] });
+  router.beforeEach(panelEntryGuard(router));
   const sent = installPlatform(request => {
     const { path } = request;
     if (path === "/api/data-query/platform/applications/schedules/panel-uses")
@@ -76,7 +90,13 @@ it.each([["succeeds", false], ["is refused", true]])("keeps the native schedule 
           effect: "write", batch: false, target: { source: "input", input: "application" }, inputSchema: {}, resultSchema: {},
         },
       } : {} });
-      return Response.json({ status: "empty" });
+      switch (body.dataName) {
+        case "rows": return Response.json({ status: "ready", value: [row] });
+        case "record": return Response.json({ status: "ready", value: row });
+        case "runs": return Response.json({ status: "ready", value: { runs: [run], nextCursor: null } });
+        case "run": return Response.json({ status: "ready", value: run });
+        default: return Response.json({ status: "empty" });
+      }
     }
     if (path === "/api/panel-operations/intents") {
       if (refused) return Response.json({ error: { code: "DEPENDENCY_UNAVAILABLE", message: "Credential service unavailable" } }, { status: 503 });
@@ -87,13 +107,9 @@ it.each([["succeeds", false], ["is refused", true]])("keeps the native schedule 
     if (path === `/api/panel-operations/intents/${id}/dispatch`)
       return Response.json({ kind: "dispatched", intentId: id, outcome: { kind: "success", data: {} } });
     return nothingAt(request);
-  });
+  }, router);
   useApplicationCatalog().applications.value = catalogFixture();
-  const router = createRouter({ history: createMemoryHistory(), routes: [
-    { ...platformRoutes.layout, component: RouterView, children: [] }, unknownAddressRoute,
-  ] });
-  router.beforeEach(panelEntryGuard(router));
-  await router.push("/schedules");
+  await router.push(refused ? "/schedules" : `/schedules?app=agents&taskId=${taskId}&runId=${runId}`);
   const { app, element } = mountPlatformPage(() => h(RouterView), router);
   try {
     await vi.waitFor(() => expect(sent).toContainEqual(expect.objectContaining({
@@ -102,10 +118,22 @@ it.each([["succeeds", false], ["is refused", true]])("keeps the native schedule 
     })), { timeout: 5000 });
     if (refused)
       await vi.waitFor(() => expect(element.querySelector(".schedules [role=alert]")?.textContent).toContain("Credential service unavailable"));
-    else
+    else {
       await vi.waitFor(() => expect(sent).toContainEqual(expect.objectContaining({ path: `/api/panel-operations/intents/${id}/dispatch` })));
-    expect(element.querySelector(".schedules .toolbar")).not.toBeNull();
-    expect(router.currentRoute.value.fullPath).toBe("/schedules");
+      await vi.waitFor(() => expect(sent).toContainEqual(expect.objectContaining({
+        path: "/api/product-panels/read",
+        body: expect.objectContaining({
+          memberPath: [{ member: "focus" }], dataName: "run",
+          inputs: { target: { className: "platform:ScheduledTask", primaryKey: taskId }, runId },
+        }),
+      })));
+      await vi.waitFor(() => expect(router.currentRoute.value.query.taskId).toBeUndefined());
+      expect(JSON.parse(String(router.currentRoute.value.query.state))).toEqual({
+        app: "agents", selectedTask: { className: "platform:ScheduledTask", primaryKey: taskId }, runId,
+      });
+      await vi.waitFor(() => expect(element.querySelector(".schedules [data-run].focused")).not.toBeNull());
+    }
+    await vi.waitFor(() => expect(element.querySelector('.schedules [data-task] [title="Finished"]')?.textContent).toBe("Finished"));
   } finally {
     app.unmount();
   }
