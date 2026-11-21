@@ -10,7 +10,6 @@ import OntologyAssetCatalog from "./components/OntologyAssetCatalog.vue";
 import OntologyModelCatalog from "./components/OntologyModelCatalog.vue";
 import OntologyObjectCreateDialog from "./components/OntologyObjectCreateDialog.vue";
 import OntologyObjectDetail from "./components/OntologyObjectDetail.vue";
-import OntologyRelationDetail from "./components/OntologyRelationDetail.vue";
 import WorkflowCatalog from "./components/WorkflowCatalog.vue";
 import TriggerCatalog from "./components/TriggerCatalog.vue";
 import { managerPaths } from "./navigation";
@@ -18,14 +17,13 @@ import type { AssetTab, ModelResource } from "./workspace";
 
 /*
  * Heavy pages load when first entered, so their graph, chart and Markdown libraries stay out of the entry script:
- * the graph view and visual modeling bring AntV G6/X6, data browsing loads G6 only for its graph view, asset details
+ * visual modeling brings AntV G6/X6, data browsing loads G6 only for its graph view, asset details
  * bring Markdown and code highlighting, and knowledge governance brings the agent shell.
  */
 const GovernancePage = defineAsyncComponent(() => import("./knowledge-governance/GovernancePage.vue"));
 const DataBrowser = defineAsyncComponent(() => import("./data-browser/DataBrowser.vue"));
 const VisualModeling = defineAsyncComponent(() => import("./visual-modeling/VisualModeling.vue"));
 const OntologyAssetDetail = defineAsyncComponent(() => import("./components/OntologyAssetDetail.vue"));
-const OntologyPlayground = defineAsyncComponent(() => import("./components/OntologyPlayground.vue"));
 const ObjectViewPage = defineAsyncComponent(() => import("./object-views/ObjectViewPage.vue"));
 const ObjectViewBuilder = defineAsyncComponent(() => import("./object-views/ObjectViewBuilder.vue"));
 const ProductAssetCatalog=defineAsyncComponent(()=>import("./products/ProductAssetCatalog.vue"));
@@ -70,20 +68,6 @@ const ObjectViewEditorRoute = defineComponent({
 const assetDetails = { metrics: routes.metric, actions: routes.action, functions: routes.function };
 const ASSET_KINDS: readonly AssetTab[] = ["metrics", "actions", "functions"];
 
-const GraphPage = defineComponent({
-  name: "ManagerGraphPage",
-  setup() {
-    const router = useRouter();
-    return () =>
-      h(OntologyPlayground, {
-        class: "playground-surface",
-        onOpenModeling: (focus: "object" | "relation", id: string) =>
-          void router.push({ path: managerPaths.visualModeling, query: { focus, id, back: "playground" } }),
-        onOpenProduct:(id:string)=>void router.push(`${routes.products.path}/${encodeURIComponent(id)}`),
-      });
-  },
-});
-
 const ModelCatalogPage = defineComponent({
   name: "ManagerModelCatalogPage",
   props: { resource: { type: String as PropType<ModelResource>, required: true } },
@@ -97,8 +81,6 @@ const ModelCatalogPage = defineComponent({
           resource: props.resource,
           onCreateObject: () => (creating.value = true),
           onEditObject: (className: string) => void router.push({ name: "manager-object", params: { className } }),
-          onEditRelation: (relationship: string) =>
-            void router.push({ name: "manager-relation", params: { relationship }, query: { from: "catalog" } }),
         }),
         h(OntologyObjectCreateDialog, {
           modelValue: creating.value,
@@ -129,39 +111,9 @@ const ObjectDetailPage = defineComponent({
           onUpdated: () => void counts.refresh(),
           onConfigureView: () => void router.push({ name: routes.objectViewEditor.name, params: { className: props.className } }),
           onBrowse: (className: string) => void router.push({ name: "manager-data", params: { className } }),
+          // The relation types panel selects the relationship its detail address names.
           onRelation: (relationship: string) =>
-            void router.push({ name: "manager-relation", params: { relationship }, query: { from: "object" } }),
-        }),
-      ]);
-  },
-});
-
-const RelationDetailPage = defineComponent({
-  name: "ManagerRelationDetailPage",
-  props: { relationship: { type: String, required: true } },
-  setup(props) {
-    const router = useRouter();
-    const route = useRoute();
-    const counts = useManagerCounts();
-    const { loadOntology } = useManagerClient();
-    // Back from a relation opened on an object returns to that object; otherwise to the relation catalog.
-    async function back() {
-      let target: string | { name: string; params: { className: string } } = managerPaths.relations;
-      if (route.query.from === "object") {
-        const ontology = await loadOntology();
-        const relation = ontology.relations.find((item) => item.relationship === props.relationship);
-        if (relation) target = { name: "manager-object", params: { className: relation.fromclass } };
-      }
-      void router.push(target);
-      void counts.refresh();
-    }
-    return () =>
-      h("section", { class: "model-surface" }, [
-        h(OntologyRelationDetail, {
-          relationship: props.relationship,
-          onBack: () => void back(),
-          onUpdated: () => void counts.refresh(),
-          onObject: (className: string) => void router.push({ name: "manager-object", params: { className } }),
+            void router.push(`${managerPaths.relations}/${encodeURIComponent(relationship)}`),
         }),
       ]);
   },
@@ -354,8 +306,7 @@ export function managerRoutes(): RouteRecordRaw[] {
         { ...routes.objectView, component: ObjectViewRoute, meta: { page: managerPaths.dataBrowser, ownHeader: true } },
         { ...routes.objectViewEditor, component: ObjectViewEditorRoute, meta: { page: managerPaths.objects } },
         { path: "/views/:className", redirect: (to) => ({ name: to.query.edit === "true" ? routes.objectViewEditor.name : routes.objectView.name, params: to.params, query: to.query }) },
-        { ...routes.playground, component: GraphPage, meta: { page: managerPaths.graph } },
-        ...(["objects", "attributes", "relations"] as const).map((resource) => ({
+        ...(["objects", "attributes"] as const).map((resource) => ({
           ...routes[resource],
           component: ModelCatalogPage,
           props: { resource },
@@ -366,12 +317,6 @@ export function managerRoutes(): RouteRecordRaw[] {
           component: ObjectDetailPage,
           props: stringParam("className"),
           meta: { page: managerPaths.objects },
-        },
-        {
-          ...routes.relation,
-          component: RelationDetailPage,
-          props: stringParam("relationship"),
-          meta: { page: managerPaths.relations },
         },
         {
           ...routes.data,

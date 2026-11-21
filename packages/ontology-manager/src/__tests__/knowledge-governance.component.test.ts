@@ -32,7 +32,6 @@ function installManager(app: App): Translate {
     presentation: {
       themeProperties: { light: {}, dark: {} },
       nodePalette: { light: [], dark: [] },
-      edgeLabel: {},
       maxFitZoom: null,
       dataBrowserDescription: () => "",
       compactDialogs: false,

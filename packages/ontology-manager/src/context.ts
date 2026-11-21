@@ -23,19 +23,16 @@ export type ManagerTheme = "light" | "dark";
 export interface ManagerPresentation {
   /**
    * Custom properties per theme, bound by the page on the document root: the brand's colour variables plus the
-   * component-specific --manager-relation-icon-color / --manager-relation-icon-background (graph relation icon),
-   * --manager-model-catalog-min-height (model catalog), --manager-modeling-panel-header-background (modeling right-panel
+   * component-specific --manager-model-catalog-min-height (model catalog), --manager-modeling-panel-header-background (modeling right-panel
    * header) and --manager-filter-drawer-radius (data browser filter drawer).
    */
   readonly themeProperties: Readonly<Record<ManagerTheme, Readonly<Record<string, string>>>>;
   /**
-   * Node palette per theme, shared by the ontology graph, visual modeling and the instance graph; colours are picked by
+   * Node palette per theme, shared by visual modeling and the instance graph; colours are picked by
    * class-name hash, so a class keeps its slot in both themes.
    */
   readonly nodePalette: Readonly<Record<ManagerTheme, readonly string[]>>;
-  /** Label fragment of the ontology graph edge style, spread into the edge style as-is. */
-  readonly edgeLabel: Readonly<{ labelPlacement?: "center"; labelAutoRotate?: boolean }>;
-  /** Zoom limit after the ontology graph fits the canvas; null means no limit. */
+  /** Zoom limit after visual modeling or the instance graph fits the canvas; null means no limit. */
   readonly maxFitZoom: number | null;
   /** Data browser header description; the argument is the current object type's display name, absent when none is selected. */
   readonly dataBrowserDescription: (objectLabel: string | undefined) => string;
