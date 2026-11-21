@@ -667,7 +667,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[0].refreshOnChange").value(true))
             .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[1].refreshOnChange").value(true))
             .andExpect(jsonPath("$.data.fields[2].control.itemFields[8].control.options[1].value.permissionCode").value("app:app-translated:read"))
-            .andExpect(jsonPath("$.data.fields[2].control.itemFields[8].control.options[1].label").value("Read"))
+            .andExpect(jsonPath("$.data.fields[2].control.itemFields[8].control.options[1].label").value("查看"))
             .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.kind").value("object-array"))
             .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemKeyPath").doesNotHaveJsonPath())
             .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.defaultItem.code").value("app:app-translated:"))
