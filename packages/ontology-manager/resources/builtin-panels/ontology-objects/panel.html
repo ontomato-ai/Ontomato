@@ -40,7 +40,15 @@
   .ot-editor-actions { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); }
   .ot-title { flex: 1; min-width: 8rem; font-weight: var(--font-semibold); color: var(--el-text-color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ot-detail.is-create { grid-template-columns: minmax(0, 1fr); }
+  /* A narrow detail card keeps the table readable: it scrolls sideways inside the card rather than losing its last column. */
+  .ot-detail-main { min-width: 0; }
+  .ot-detail-main .ot-table { overflow-x: auto; }
   @container (max-width: 56rem) { .ot-detail { grid-template-columns: minmax(0, 1fr); } }
+  /* The class's attribute table keeps every column: in a narrow card it scrolls sideways instead of losing one. */
+  @container (max-width: 52rem) {
+    .ot-attr-grid { min-width: 32rem; }
+    .ot-rel-grid { min-width: 26rem; }
+  }
   @container (max-width: 36rem) {
     .ot-catalog-grid { grid-template-columns: minmax(0, 1fr) 4rem; }
     .ot-catalog-grid > :nth-child(2), .ot-catalog-grid > :nth-child(4) { display: none; }

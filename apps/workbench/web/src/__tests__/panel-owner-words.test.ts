@@ -53,6 +53,7 @@ it("draws the owner's field names, button name and run message in a directly ren
     commands: {},
   };
   const instance = createDirectPanelInstance(manifest, {
+    readComponentPackage: noOperations.readComponentPackage,
     pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: selected },
     text: createPanelText({}, { value: "en" } as never, "en"),
     operations: {

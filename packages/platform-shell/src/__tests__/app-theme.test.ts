@@ -116,3 +116,18 @@ it("themes a pop-up the library added before its trigger named it, once the trig
   await new Promise((resolve) => setTimeout(resolve));
   expect(popup.style.getPropertyValue("--el-color-primary")).toBe("#0f7b6c");
 });
+
+// Element Plus's shades of primary are worked out on the page's root; the area declares them again from its own primary,
+// so a focus ring, a hovered button and a soft fill inside it follow the application's colour, its pop-ups too.
+it("declares the shades of a colour the theme recolours in the area and its pop-ups, and takes them away with it", async () => {
+  const mode = ref<ThemeMode>("light");
+  const assigned = ref<PanelThemeOverrides | null>(theme);
+  const area = mountArea(mode, assigned);
+  await nextTick();
+  expect(area().style.getPropertyValue("--el-color-primary-light-3")).toBe("color-mix(in srgb, var(--el-color-primary), var(--el-bg-color) 30%)");
+  expect(area().style.getPropertyValue("--el-color-primary-rgb")).toBe("15, 123, 108");
+  expect((await popup("picker-popup")).style.getPropertyValue("--el-color-primary-light-3")).not.toBe("");
+  assigned.value = null;
+  await nextTick();
+  expect(area().style.getPropertyValue("--el-color-primary-light-3")).toBe("");
+});

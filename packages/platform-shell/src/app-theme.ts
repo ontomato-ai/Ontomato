@@ -1,5 +1,6 @@
 import { inject, onBeforeUnmount, provide, shallowRef, watch, type InjectionKey, type Ref } from "vue";
 import type { PanelThemeOverrides } from "@ontomato/contracts/panel-manifest";
+import { themeDerivedProperties } from "@ontomato/design-tokens";
 
 /*
  * An application's theme (product-layer standard, parts one and two; design §三 and §六, big main's ruling 2026-11-21):
@@ -14,10 +15,14 @@ import type { PanelThemeOverrides } from "@ontomato/contracts/panel-manifest";
 
 export type ThemeMode = "light" | "dark";
 
-/** The custom properties a theme assigns in one mode: each name as a CSS custom property, `--` included. */
+/**
+ * The custom properties a theme assigns in one mode — each name as a CSS custom property, `--` included — and the shades
+ * of each colour family it recolours, which the area declares again from its own colours (design tokens' rule).
+ */
 export function themeProperties(theme: PanelThemeOverrides | null | undefined, mode: ThemeMode): Record<string, string> {
   const values = theme?.[mode] ?? {};
-  return Object.fromEntries(Object.entries(values).map(([name, value]) => [name.startsWith("--") ? name : `--${name}`, value]));
+  const assigned = Object.fromEntries(Object.entries(values).map(([name, value]) => [name.startsWith("--") ? name : `--${name}`, value]));
+  return { ...themeDerivedProperties(assigned), ...assigned };
 }
 
 /** The themed areas shown now, by their element: what a pop-up opened inside one of them takes. */

@@ -1,4 +1,4 @@
-import { contrastRatio, mix, rgbTriplet } from "./color";
+import { contrastRatio, literalRgbTriplet, mix, rgbTriplet } from "./color";
 
 /** Colour arithmetic for consumers that derive further shades from a brand source (chart gradients, ramps). */
 export { contrastRatio, mix, rgbTriplet } from "./color";
@@ -96,7 +96,11 @@ export interface BrandSource {
   sharedNavigationCanvas?: boolean;
 }
 
+/** Element Plus's shades of a colour family: `light-N` mixes the colour with the surface by N×10%. */
 const LADDER = [3, 5, 7, 8] as const;
+/** A family's soft fill (`light-9`), how far toward the surface, and its pressed tone (`dark-2`), how far toward ink. */
+const SOFT = 0.9;
+const PRESS = 0.2;
 
 /** Element Plus colour family: `light-N` mixes the colour with `surface` by N×10%; `light-9` and `dark-2` as given. */
 function family(name: string, color: string, light9: string, dark2: string, surface: string) {
@@ -112,7 +116,7 @@ function family(name: string, color: string, light9: string, dark2: string, surf
 
 /** Status family: the soft fill (`light-9`) is the status at 10% over surface; `dark-2` moves toward ink. */
 function statusFamily(name: string, color: string, colors: BrandColors) {
-  return family(name, color, mix(color, colors.surface, 0.9), mix(color, colors.ink, 0.2), colors.surface);
+  return family(name, color, mix(color, colors.surface, SOFT), mix(color, colors.ink, PRESS), colors.surface);
 }
 
 /** Every brand custom property of one mode: the Element Plus variables plus the roles Element Plus lacks. */
@@ -204,7 +208,48 @@ function chartSequential(brand: BrandSource, mode: BrandMode): string[] {
 }
 
 function primaryTint(c: BrandColors) {
-  return mix(c.primary, c.surface, 0.9);
+  return mix(c.primary, c.surface, SOFT);
+}
+
+/** The colour families a theme may recolour (theme-overrides.ts); `error` is Element Plus's second name for danger. */
+const THEMED_FAMILIES = ["primary", "success", "warning", "danger", "info"] as const;
+
+/** `var(name)` mixed toward `toward` by `weight`, worked out where it is declared: the area's own colours. */
+const cssMix = (name: string, toward: string, weight: number) => `color-mix(in srgb, var(${name}), var(${toward}) ${Math.round(weight * 100)}%)`;
+
+/** A family's shades in CSS, by the rule `family` and `statusFamily` apply to the brand, from the area's own colours. */
+function cssFamily(name: string, assigned: string) {
+  const color = `--el-color-${name}`;
+  const properties: Record<string, string> = {};
+  for (const step of LADDER) properties[`${color}-light-${step}`] = cssMix(color, "--el-bg-color", step / 10);
+  properties[`${color}-light-9`] = cssMix(color, "--el-bg-color", SOFT);
+  properties[`${color}-dark-2`] = cssMix(color, "--el-text-color-primary", PRESS);
+  const rgb = literalRgbTriplet(assigned);
+  if (rgb !== undefined) properties[`${color}-rgb`] = rgb;
+  return properties;
+}
+
+/**
+ * What an area must declare besides the values a theme assigns there (product-layer standard, the theme layers): the
+ * shades of each colour family it recolours, which Element Plus works out once on the page's root and so would stay the
+ * platform's, and the platform's roles that follow primary — its soft fill, a hovered primary button, and link text
+ * where the theme sets none. Each is worked out where it is declared, from the area's own colour and surface, so a
+ * layer inside the area that recolours again has its own worked out over it; the rule is the brand's own (`family`).
+ */
+export function themeDerivedProperties(assigned: Readonly<Record<string, string>>): Record<string, string> {
+  const properties: Record<string, string> = {};
+  for (const name of THEMED_FAMILIES) {
+    const value = assigned[`--el-color-${name}`];
+    if (value === undefined) continue;
+    Object.assign(properties, cssFamily(name, value));
+    if (name === "danger") Object.assign(properties, { "--el-color-error": "var(--el-color-danger)" }, cssFamily("error", value));
+  }
+  if (assigned["--el-color-primary"] !== undefined) {
+    properties["--brand-primary-tint"] = cssMix("--el-color-primary", "--el-bg-color", SOFT);
+    properties["--brand-primary-hover"] = "var(--el-color-primary-light-3)";
+    if (assigned["--brand-link"] === undefined) properties["--brand-link"] = "var(--el-color-primary)";
+  }
+  return properties;
 }
 
 function declarations(properties: Record<string, string>) {
