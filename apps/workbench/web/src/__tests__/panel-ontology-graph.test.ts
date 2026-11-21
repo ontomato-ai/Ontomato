@@ -227,6 +227,21 @@ it("validates object-union state via contracts and formats panelSelection with t
   ]);
 });
 
+it("keeps graph coordinates as personal state even when node keys resemble object fields", async () => {
+  const { createPanelState, stateObject, stateChildObject } = await import("../../../../../packages/apps-sdk/src/panel/state");
+  const manifest = definePanel({
+    state: { positions: { type: { kind: "node-positions" }, personal: true } },
+    members: {}, commands: {},
+  });
+  const state = createPanelState(manifest);
+  const coordinates = { className: { x: 4, y: 5 }, parent: { x: -2, y: 0 } };
+  state.set("positions", coordinates);
+  expect(state.values.value.positions).toEqual(coordinates);
+  expect(stateObject(state.values.value.positions)).toBeNull();
+  expect(stateChildObject(state.values.value.positions)).toBeNull();
+  expect(state.deepLinkable()).toEqual({});
+});
+
 it("renders type mode in four-layer columns with count statuses, internal layer filter, query highlight and selectedType output", async () => {
   const projections = { "cap-graph": graphProjection("cap-graph") };
   const manifest = definePanel({

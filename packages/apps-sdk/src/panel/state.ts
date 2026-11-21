@@ -28,12 +28,12 @@ export interface PanelObjectRef {
   readonly primaryKey: string;
 }
 
-/** One field's value as the panel reads it: an object reference, a collection of them, a scalar, or null while unset. */
+/** One field's value as the panel reads it: an object reference, a collection of them, a scalar, node positions, or null while unset. */
 export type PanelFieldValue = Exclude<PanelStateValue, readonly unknown[]> | readonly PanelObjectRef[];
 
 /** The one top-level object a state value names; null for a child identity, a scalar, a collection or nothing. */
 export function stateObject(value: DeepReadonly<PanelFieldValue> | undefined): PanelObjectRef | null {
-  return value !== null && value !== undefined && typeof value === "object" && "className" in value
+  return value !== null && value !== undefined && typeof value === "object" && "className" in value && typeof value.className === "string"
     ? value as PanelObjectRef
     : null;
 }
@@ -41,6 +41,7 @@ export function stateObject(value: DeepReadonly<PanelFieldValue> | undefined): P
 /** The parent-scoped child identity a state value holds; null for anything else. */
 export function stateChildObject(value: DeepReadonly<PanelFieldValue> | undefined): PanelChildObjectIdentity | null {
   return value !== null && value !== undefined && typeof value === "object" && "parent" in value
+    && "primaryKey" in value && typeof value.primaryKey === "string"
     ? value as PanelChildObjectIdentity
     : null;
 }
@@ -125,7 +126,7 @@ export function createPanelState(manifest: PanelManifest, initial: PanelInitialS
       values.value = { ...values.value, ...checked };
     },
     deepLinkable() {
-      // A collection is the instance's own and never deep-links; the declaration already refuses that.
+      // The declaration keeps collections and node positions out of addresses.
       return Object.fromEntries(Object.entries(values.value).filter((entry): entry is [string, PanelDeepLinkStateValue] =>
         entry[1] !== null && !Array.isArray(entry[1]) && manifest.state[entry[0]]!.deepLink));
     },

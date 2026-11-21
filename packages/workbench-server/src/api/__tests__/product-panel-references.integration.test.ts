@@ -633,7 +633,11 @@ it("rejects a reverse cycle and protects a nested panel referenced by its parent
 
 it("writes declared personal state under the authenticated viewer and isolates it from another viewer", async () => {
   const child = await savePanel(personalChildId, {
-    state: { chosen: { type: portType, personal: true }, transient: { type: portType } }, members: {}, commands: {},
+    state: {
+      chosen: { type: portType, personal: true }, transient: { type: portType },
+      positions: { type: { kind: "node-positions" }, personal: true },
+    },
+    members: {}, commands: {},
   });
   expect(child.status, await child.text()).toBe(200);
   const target = { panelId: personalChildId };
@@ -647,13 +651,17 @@ it("writes declared personal state under the authenticated viewer and isolates i
   const write = (user: string, member: string, values: object) => request("PUT", "product-panels/personal-state", user,
     panelPersonalStateWriteRequestSchema.parse({ source, memberPath: [{ member }], values }));
   const read = (user: string, member: string) => request("POST", "product-panels/personal-state/read", user,
-    panelPersonalStateReadRequestSchema.parse({ source, memberPath: [{ member }], fields: ["chosen"] }));
-  expect((await write("author", "left", { chosen: "left choice" })).status).toBe(200);
+    panelPersonalStateReadRequestSchema.parse({ source, memberPath: [{ member }], fields: ["chosen", "positions"] }));
+  const positions = { a: { x: -6.25, y: 14 }, b: { x: 0, y: 0 } };
+  expect((await write("author", "left", { chosen: "left choice", positions })).status).toBe(200);
+  const rejected = await write("author", "left", { chosen: "changed", positions: { a: { x: "bad", y: 0 } } });
+  expect(rejected.status).toBe(400);
+  expect(await rejected.text()).toContain("PANEL_PERSONAL_VALUE_INVALID");
   expect((await write("author", "right", { chosen: "right choice" })).status).toBe(200);
   expect((await write("author", "left", { chosen: "changed", transient: "invalid" })).status).toBe(400);
 
   for (const [user, member, values] of [
-    ["author", "left", { chosen: "left choice" }],
+    ["author", "left", { chosen: "left choice", positions }],
     ["author", "right", { chosen: "right choice" }],
     ["another-viewer", "left", {}],
   ] as const) {
@@ -661,10 +669,14 @@ it("writes declared personal state under the authenticated viewer and isolates i
     expect(response.status).toBe(200);
     expect(panelPersonalStateResponseSchema.parse(await response.json())).toEqual({ values });
   }
+  expect((await write("author", "left", { positions: null })).status).toBe(200);
+  expect(panelPersonalStateResponseSchema.parse(await (await read("author", "left")).json())).toEqual({
+    values: { chosen: "left choice", positions: null },
+  });
   expect((await read("author", "undeclared")).status).toBe(403);
   const placementRead = (placement: typeof defaultPlacement) => request(
     "POST", "product-panels/personal-state/read", "author", {
-      source, memberPath: [{ member: "$state.destination", selection: { placement } }], fields: ["chosen"],
+      source, memberPath: [{ member: "$state.destination", selection: { placement } }], fields: ["chosen", "positions"],
     });
   // The placement comes from saved/default state, even when the layout does not mention it.
   const admitted = await placementRead(defaultPlacement);
