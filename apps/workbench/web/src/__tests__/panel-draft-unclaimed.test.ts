@@ -77,7 +77,17 @@ describe("closing the notice of a draft the page cannot use", () => {
   it("opens the page as it is without the draft: its entry's own address, no draft read again", { timeout: 20000 }, async () => {
     const { router, sent, app, element } = await opened();
     try {
-      (element.querySelector(".panel-host-draft .el-alert__close-btn") as HTMLElement).click();
+      // A real button the keyboard reaches: named in the reader's words, in the tab order after the notice's other button,
+      // and activated as a button is (Enter and Space are the browser's own for a <button>).
+      const notice = element.querySelector<HTMLElement>(".panel-host-draft")!;
+      const tabbable = [...notice.querySelectorAll<HTMLElement>("button, [href], [tabindex]")].filter((node) => node.tabIndex >= 0);
+      const close = tabbable.at(-1) as HTMLButtonElement;
+      expect(close.classList.contains("panel-host-draft-close")).toBe(true);
+      expect(close.type).toBe("button");
+      expect(close.getAttribute("aria-label")).toBe("Close this notice");
+      close.focus();
+      expect(document.activeElement).toBe(close);
+      close.click();
       await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe("/applications/app-panels-trial-a/form"));
       expect(element.querySelector(".panel-host-draft")).toBeNull();
       expect(element.querySelector(".panel-host-error")).toBeNull();

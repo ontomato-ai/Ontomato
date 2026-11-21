@@ -376,12 +376,18 @@ export const panelApplicationEntrySchema = z.object({
 export type PanelApplicationEntry = z.infer<typeof panelApplicationEntrySchema>;
 
 const [menuEntrance, domainMemberEntrance] = pageSkillEntranceSchema.options;
+export const productPanelPageSkillContextQuerySchema = z.union([
+  panelUseRefSchema.merge(menuEntrance),
+  panelUseRefSchema.merge(domainMemberEntrance),
+]);
+export type ProductPanelPageSkillContextQuery = z.infer<typeof productPanelPageSkillContextQuerySchema>;
+export const productPanelPageSkillContextResponseSchema = z.object({ pageSkillContext: pageSkillContextSchema }).strict();
+
 export const applicationFrameReadQuerySchema = panelUseRefSchema.extend({ source: applicationFrameSourceSchema.shape.kind });
 /** Record and snapshot reads accept the same content or frame entry. A frame has no content page-skill context. */
 export const productPanelReadQuerySchema = z.union([
   z.object({}).strict(),
-  panelUseRefSchema.merge(menuEntrance),
-  panelUseRefSchema.merge(domainMemberEntrance),
+  ...productPanelPageSkillContextQuerySchema.options,
   applicationFrameReadQuerySchema,
 ]);
 export const productPanelSnapshotQuerySchema = productPanelReadQuerySchema;

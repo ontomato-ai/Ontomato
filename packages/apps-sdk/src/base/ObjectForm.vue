@@ -10,12 +10,14 @@ import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import type { PanelFormDescription, PanelFormField, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import { slotState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
 import { PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
-import { changedPaths, fieldAt, movedPath, valueAt, withValueAt } from "../panel/form-values";
+import { changedPaths, fieldAt, movedPath, valueAt, withValueAt, withoutValueAt } from "../panel/form-values";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMember } from "../panel/member";
 import { editedInput, memberFormSource, MemberDataUnavailable, type FormSource } from "../panel/member-forms";
 import { formControlsKey, rowControlKey, rowControlsOf } from "./form-controls";
 import FormFieldControl from "./FormFieldControl.vue";
+import FormAdvancedSection from "./FormAdvancedSection.vue";
+import { fieldShowing } from "./form-placement";
 import { useDataStateLabels } from "./data-state-labels";
 
 /**
@@ -153,6 +155,9 @@ const drawnElsewhere = (path: string) => Object.values(panel.manifest.members).s
  */
 const drawn = computed(() => fields.value.filter((field) =>
   field.control.kind !== "hidden" && !(field.control.kind === "reference" && drawnElsewhere(field.path))));
+/** Of those, the owner's advanced ones, drawn after the others in one section. */
+const advanced = computed(() => drawn.value.filter((field) => field.advanced === true));
+const plain = computed(() => drawn.value.filter((field) => field.advanced !== true));
 /** Changed values, or text a reader typed that is no value yet (JSON that does not parse): either is unsaved. */
 const dirty = computed(() => opened.value !== null
   && (JSON.stringify(values.value) !== JSON.stringify(opened.value.values) || Object.keys(invalid.value).length > 0));
@@ -306,23 +311,59 @@ watch(fixedValues, (next, previous) => {
 
 /** One field changed: the form holds the value; a field the owner's form depends on has the owner asked again. */
 function set(path: string, value: RuntimeJsonValue) {
+  edit(path, withValueAt(values.value, path, value));
+}
+function remove(path: string) {
+  edit(path, withoutValueAt(values.value, path));
+}
+/** The reader's edit of one field, as the values it leaves: submitted, and the owner asked again where it says so. */
+function edit(path: string, next: PanelFormValues) {
   if (isFixed(path)) throw new Error(`The page fixes the field ${path}; it is not edited in the form`);
   // The described field the edit is in: a row's or an object's field submits the array or object it belongs to.
   const described = fields.value.find((item) => path === item.path || path.startsWith(`${item.path}/`));
   if (described) submitted.value = new Set([...submitted.value, described.path]);
-  values.value = withValueAt(values.value, path, value);
+  values.value = next;
+  editedAt.set(path, ++edits);
   const field = fieldAt(fields.value, path);
-  if (!field?.refreshOnChange) return;
+  if (field?.refreshOnChange) askOwner(path);
+}
+
+/** How many edits the reader has made, and when each path was last edited, counted in them. */
+let edits = 0;
+const editedAt = new Map<string, number>();
+/** A question to the owner on its way, and the field changed since that the next question is about. */
+let asking = false;
+let askNext: string | null = null;
+/**
+ * Asks the owner for its form again for the values as they are now, `changedField` the field that set it off. One
+ * question at a time: edits made while one is on its way wait for its answer and set off one more, for the values then.
+ * An answer is for the values it was asked with, so what the reader edited after asking stays as they left it.
+ */
+function askOwner(changedField: string) {
+  if (asking) {
+    askNext = changedField;
+    return;
+  }
+  asking = true;
   const asked = target.value!;
   const askedKey = targetKey(asked);
+  const askedAt = edits;
   // The owner changes the fields for these edits; the opened reading, its revision and the discard baseline stay.
-  void forms.describe({ target: asked, values: values.value, changedField: path }).then((answer) => {
+  void forms.describe({ target: asked, values: values.value, changedField }).then((answer) => {
     if (loaded !== askedKey) return;
     ownerShown.value = answer;
     description.value = fixDescription(answer);
-    values.value = description.value.values;
+    values.value = [...editedAt].filter(([, at]) => at > askedAt).reduce((all, [edited]) => {
+      const kept = valueAt(values.value, edited);
+      return kept === undefined ? withoutValueAt(all, edited) : withValueAt(all, edited, kept);
+    }, description.value.values);
     errors.value = fieldMessages(answer.errors);
-  }, fail);
+  }, fail).finally(() => {
+    asking = false;
+    const again = askNext;
+    askNext = null;
+    if (again !== null && loaded === askedKey) askOwner(again);
+  });
 }
 
 /**
@@ -370,6 +411,7 @@ provide(formControlsKey, {
   busy: saving,
   sharedReadOnlyReasons,
   set,
+  remove,
   reorder,
   invalid: markInvalid,
   rowControl(path, itemPath) {
@@ -447,6 +489,32 @@ async function saveFromForm() {
   }
 }
 
+/**
+ * What the foot of the form says of the owner's refusal (panelisation lead, 2026-11-22): a message shown on a field is
+ * not said again there — the reader is told how many fields to change, and taken to the first — and only what no field
+ * shows is said in full. A refusal that names no field is its own message.
+ */
+const refusalFoot = computed(() => {
+  if (!refusal.value) return null;
+  const named = Object.entries(errors.value);
+  if (!(refusal.value instanceof PlatformObjectRefusal) || !named.length) return { fields: [], said: [refusal.value.message] };
+  const onFields = new Set<string>();
+  const said: string[] = [];
+  for (const [path, message] of named) {
+    const field = fieldShowing(fields.value, path);
+    if (field === null) said.push(message);
+    else onFields.add(field);
+  }
+  return { fields: [...onFields], said };
+});
+const formElement = ref<HTMLElement | null>(null);
+/** Takes the reader to the first field, in the form's order, that the refusal's messages are on. */
+function showFirstRefused() {
+  const refused = new Set(refusalFoot.value!.fields);
+  [...formElement.value!.querySelectorAll<HTMLElement>("[data-field]")].find((item) => refused.has(item.dataset.field!))!
+    .scrollIntoView({ block: "center" });
+}
+
 function showRefusal(reason: unknown) {
   refusal.value = reason instanceof Error ? reason : new Error(String(reason));
   errors.value = reason instanceof PlatformObjectRefusal ? reason.fields : {};
@@ -509,18 +577,26 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
 </script>
 
 <template>
-  <div class="sdk-owner-form">
+  <div ref="formElement" class="sdk-owner-form">
     <data-state :result="shown" :labels="labels">
     <!-- The panel frame is sandboxed without allow-forms, so the browser drops a native form submission before any
          submit handler runs: the reader's save is the button's own click. -->
     <el-form label-position="top">
       <p v-for="reason in sharedReadOnlyReasons" :key="reason" class="sdk-owner-form-readonly" role="note">{{ reason }}</p>
-      <form-field-control v-for="field in drawn" :key="field.path" :field="field" :path="field.path"></form-field-control>
+      <form-field-control v-for="field in plain" :key="field.path" :field="field" :path="field.path"></form-field-control>
+      <form-advanced-section v-if="advanced.length" :paths="advanced.map((field) => field.path)">
+        <form-field-control v-for="field in advanced" :key="field.path" :field="field" :path="field.path"></form-field-control>
+      </form-advanced-section>
       <slot name="after-fields"></slot>
       <p v-if="changed.size" class="sdk-owner-form-changed" role="status">
         {{ t("platform.panelDraftChanged", { fields: changedLabels }) }}
       </p>
-      <p v-if="refusal" class="sdk-owner-form-refusal" role="alert">{{ refusal.message }}</p>
+      <div v-if="refusalFoot" class="sdk-owner-form-refusal" role="alert">
+        <button v-if="refusalFoot.fields.length" type="button" class="sdk-owner-form-refusal-count" @click="showFirstRefused">
+          {{ t("platform.formFieldsNeedChanges", { n: refusalFoot.fields.length }, refusalFoot.fields.length) }}
+        </button>
+        <p v-for="message in refusalFoot.said" :key="message">{{ message }}</p>
+      </div>
       <div class="sdk-owner-form-actions">
         <el-button :disabled="saving || !canSettle" @click="discard">{{ t("platform.discard") }}</el-button>
         <el-button type="primary" :disabled="!canSettle" :loading="saving" @click="saveFromForm">{{ t("platform.save") }}</el-button>
@@ -553,5 +629,18 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
   color: var(--el-color-danger-text);
   font-size: var(--text-xs);
   margin: var(--spacing-xs) 0 0;
+}
+.sdk-owner-form-refusal > p {
+  margin: 0;
+}
+/* The count of fields to change, which takes the reader to the first of them. */
+.sdk-owner-form-refusal-count {
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
 }
 </style>

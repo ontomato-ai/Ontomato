@@ -78,6 +78,16 @@ describe("backend HTTP failures and recovery", () => {
     expect(getCircuitStatus(`permission-${stream}`).consecutiveFailures).toBe(0);
   });
 
+  it("keeps an owner's whole refusal by default, so a caller can read the fields it names", async () => {
+    const reason = "Entry 'entry-two' default agent '869d0f4e-9cc1-4176-9d12-496e1f0ad7cf' is disabled.";
+    const body = JSON.stringify({ message: reason, code: "PAGE_DEFAULT_AGENT_UNAVAILABLE",
+      errors: [{ field: "/values/panelUses/1/defaultAgent", code: "target_unavailable", message: reason }] });
+    expect(body.length).toBeGreaterThan(200);
+    const error = await checkBackendResponse(fakeResponse(409, body)).catch(error => error);
+    expect(error).toBeInstanceOf(BackendResponseError);
+    expect(error.detail).toBe(body);
+  });
+
   it("parses the complete error envelope before limiting the retained raw detail", async () => {
     const message = "Permission refused: " + "resource ".repeat(50);
     const error = await checkBackendResponse(fakeResponse(403, JSON.stringify({ error: { code: "RESOURCE_FORBIDDEN", message } })), 20).catch(error => error);

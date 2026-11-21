@@ -9,6 +9,7 @@ import pg from "pg";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { panelOptionListSchema, panelRecordQuerySchema } from "@ontomato/contracts/panel-projection";
 import { PANEL_MEMBER_RENDER_HEADER, productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
+import { productPanelPageSkillContextResponseSchema } from "@ontomato/contracts/product-panels";
 import { appsSdkComponentCatalogSchema } from "@ontomato/contracts/apps-sdk";
 import { SDK_COMPONENT, SKILL } from "@ontomato/contracts/platform-object-types";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
@@ -527,16 +528,22 @@ it("rejects old uncertain roots without writes and gives old hidden roots preced
   }
 });
 
-it.each(["", "/snapshot"])("serves the authorized member on GET %s despite a broken sibling", async route => {
+const contextRoutes = ["", "/snapshot", "/page-skill-context"];
+
+it.each(contextRoutes)("serves the authorized member on GET %s despite a broken sibling", async route => {
   const response = await read(good, route);
   const body = await response.json();
   expect(response.status, JSON.stringify(body)).toBe(200);
+  if (route === "/page-skill-context") {
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(productPanelPageSkillContextResponseSchema.safeParse(body).success).toBe(true);
+  }
   expect(body.pageSkillContext).toEqual({ mode: "member", locator: good.entrance,
     member: { source: { kind: "application-use", applicationId, useId: good.useId }, memberPath: [],
       ref: protectedSkillRef("product-panels", domainId, good.panelId) } });
 });
 
-it.each(["", "/snapshot"])("reports the authorized broken projection and field on GET %s", async route => {
+it.each(contextRoutes)("reports the authorized broken projection and field on GET %s", async route => {
   const response = await read(broken, route);
   const body = await response.json();
   expect(response.status, JSON.stringify(body)).toBe(502);
@@ -547,7 +554,15 @@ it.each(["", "/snapshot"])("reports the authorized broken projection and field o
   expect(JSON.stringify(body)).not.toContain(privateOperation);
 });
 
-it.each(["", "/snapshot"])("withholds the member on GET %s when its invalid dependency is not granted", async route => {
+it("still reads the panel record separately when its skill context fails", async () => {
+  const response = await fetch(`${state.base}/api/product-panels/${broken.panelId}`);
+  const body = await response.json();
+  expect(response.status, JSON.stringify(body)).toBe(200);
+  expect(body.panel.id).toBe(broken.panelId);
+  expect(body).not.toHaveProperty("pageSkillContext");
+});
+
+it.each(contextRoutes)("withholds the member on GET %s when its invalid dependency is not granted", async route => {
   denied = brokenProjection;
   const response = await read(broken, route);
   const body = await response.json();
@@ -556,7 +571,7 @@ it.each(["", "/snapshot"])("withholds the member on GET %s when its invalid depe
   expect(JSON.stringify(body)).not.toContain(privateOperation);
 });
 
-it.each(["", "/snapshot"])("denies GET %s before exposing the invalid dependency of an inaccessible panel", async route => {
+it.each(contextRoutes)("denies GET %s before exposing the invalid dependency of an inaccessible panel", async route => {
   denied = broken.panelId;
   const response = await read(broken, route);
   const body = await response.json();
@@ -565,12 +580,12 @@ it.each(["", "/snapshot"])("denies GET %s before exposing the invalid dependency
   expect(JSON.stringify(body)).not.toContain(privateOperation);
 });
 
-it.each(["", "/snapshot"])("keeps the displayed panel distinct from its repointed use on GET %s", async route => {
+it.each(contextRoutes)("keeps the displayed panel distinct from its repointed use on GET %s", async route => {
   entries = [{ ...good, panelId: broken.panelId }, broken];
   const response = await read(good, route);
   const body = await response.json();
   expect(response.status, JSON.stringify(body)).toBe(200);
-  expect(body.panel.id).toBe(good.panelId);
+  if (route !== "/page-skill-context") expect(body.panel.id).toBe(good.panelId);
   expect(body.pageSkillContext).toEqual({ mode: "member", locator: good.entrance, member: null });
 });
 

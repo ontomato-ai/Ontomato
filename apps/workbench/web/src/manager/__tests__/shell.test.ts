@@ -5,14 +5,6 @@ import { catalogFixture } from "../../../../../../packages/platform-web/src/__te
 // The heavy Manager pages (graph libraries, Markdown) are doubled; the router, layout, catalogs and requests are real.
 vi.hoisted(() => { window.__APP_CONFIG__ = { API_BASE: "/custom-base/api" }; });
 
-vi.mock("../../../../../../packages/ontology-manager/src/visual-modeling/VisualModeling.vue", () => ({
-  __esModule: true,
-  default: defineComponent({
-    name: "VisualModelingDouble",
-    props: { focus: String, focusId: String },
-    setup: (props) => () => h("p", { class: "page-double" }, `modeling ${props.focus}:${props.focusId}`),
-  }),
-}));
 vi.mock("../../../../../../packages/ontology-manager/src/data-browser/DataBrowser.vue", () => ({
   __esModule: true,
   default: defineComponent({
@@ -88,10 +80,8 @@ describe("open-source Ontology Service page", () => {
     ["/#/", "#/home", null],
     ["/?view=data-browser", "#/browser/data", "data "],
     ["/?view=assets", "#/ontology/assets/metrics", null],
-    ["/?view=visual-modeling&focus=object&id=Order", "#/ontology/visual-modeling?focus=object&id=Order", "modeling object:Order"],
     ["/#/data/Order", "#/browser/data/Order", "data Order"],
     ["/#/objects", "#/ontology/objects", null],
-    ["/#/admin/ontology/visual-modeling", "#/ontology/visual-modeling", "modeling :"],
     ["/#/admin", "#/settings/model-config/usage", "models"],
     ["/#/admin/audit-log", "#/settings/records/audit-log", null],
     ["/#/no-such-page", "#/home", null],
@@ -99,6 +89,26 @@ describe("open-source Ontology Service page", () => {
     await start(url);
     expect(hash()).toBe(landed);
     if (page) expect(document.querySelector(".page-double")?.textContent).toBe(page);
+  });
+
+  /*
+   * The visual modeling page is a panel now: its old addresses still land on it, and the class or relation they named
+   * is selected through the state the address is converted into (the panel's own state, not the old page's query).
+   */
+  it.each([
+    ["/?view=visual-modeling&focus=object&id=Order", "selectedNode", "Order"],
+    ["/#/admin/ontology/visual-modeling?focus=relation&id=has", "selectedEdge", "has"],
+    ["/#/admin/ontology/visual-modeling", null, null],
+  ])("old visual modeling address %s lands on the modeling page", async (url, selection, primaryKey) => {
+    await start(url);
+    expect(hash().startsWith("#!/ontology/visual-modeling") || hash().startsWith("#/ontology/visual-modeling")).toBe(true);
+    const state = new URLSearchParams(hash().split("?")[1] ?? "").get("state");
+    if (selection === null) {
+      expect(state).toBeNull();
+      return;
+    }
+    const selected = JSON.parse(state!)[selection];
+    expect(selected.primaryKey).toBe(primaryKey);
   });
 
   it("the current application is marked in the rail", async () => {

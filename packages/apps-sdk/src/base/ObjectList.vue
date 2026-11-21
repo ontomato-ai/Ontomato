@@ -10,6 +10,7 @@ import {
 } from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
+import { formatListTime } from "@ontomato/workbench-ui/utils/relative-time";
 import { slotOutputState, usePanelContext, useProjectionSlot } from "../panel/context";
 import { paramValues } from "../panel/direct";
 import { useMember, useMemberData, useMemberParam } from "../panel/member";
@@ -97,7 +98,7 @@ const emit = defineEmits<{
   navigate: [reference: PlatformFieldReference, columnKey: string];
 }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
 const member = useMember();
@@ -308,6 +309,38 @@ const searchText = computed<string>(() => {
 });
 
 const isTable = computed(() => Boolean(props.columns?.length));
+
+/** From this many characters a text column shrinks to the table's room and ends in an ellipsis rather than set its width. */
+const LONG_TEXT = 24;
+/** A column's text in a row, as the cell shows it. */
+function columnText(row: PlatformObjectRecord, column: ObjectListColumn): string {
+  return row.references?.[column.key]?.label ?? fieldValue(row, column.key);
+}
+/**
+ * How a column is laid out, with no width of its own: one line at its own width by default, so a short value never
+ * breaks; a text column whose values run long shrinks to the room left and ends in an ellipsis; a column the panel marks
+ * `wrap` runs onto several lines. A table wider than its frame scrolls inside it.
+ */
+const columnFit = computed(() => new Map((props.columns ?? []).map((column) => [column.key,
+  column.wrap ? "sdk-object-list-col-wrap"
+    : (column.kind === undefined || column.kind === "text" || column.kind === "reference") && rows.value.some((row) => columnText(row, column).length > LONG_TEXT)
+      ? "sdk-object-list-col-shrink" : ""])));
+/**
+ * A time column's owner value (an ISO time) as the platform shows a time in a list, so neighbouring times keep their
+ * order: in the reader's language and time zone, recent ones relative, then by clock time and date. A value that is no
+ * time is shown as it is.
+ */
+function timeText(value: string): string {
+  return formatListTime(value) || value;
+}
+/** The text a cell's title gives in full: a long text column's whole text, or a time column's whole local time. */
+function cellTitle(row: PlatformObjectRecord, column: ObjectListColumn): string | undefined {
+  if (column.kind === "time") {
+    const value = fieldValue(row, column.key);
+    return value && !Number.isNaN(Date.parse(value)) ? new Date(value).toLocaleString(locale.value) : undefined;
+  }
+  return columnFit.value.get(column.key) === "sdk-object-list-col-shrink" ? columnText(row, column) : undefined;
+}
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / effectivePageSize.value)));
 
 const showCount = computed(
@@ -582,7 +615,7 @@ watch(someVisibleChecked, () => {
                   @change="toggleAllVisible(($event.target as HTMLInputElement).checked)"
                 />
               </th>
-              <th v-for="column in columns" :key="column.key">{{ columnLabel(column) }}</th>
+              <th v-for="column in columns" :key="column.key" :class="columnFit.get(column.key)">{{ columnLabel(column) }}</th>
             </tr>
           </thead>
           <tbody>
@@ -601,7 +634,12 @@ watch(someVisibleChecked, () => {
                   @change="toggleChecked(row, ($event.target as HTMLInputElement).checked)"
                 />
               </td>
-              <td v-for="column in columns" :key="column.key">
+              <td
+                v-for="column in columns"
+                :key="column.key"
+                :class="columnFit.get(column.key)"
+                :title="cellTitle(row, column)"
+              >
                 <button
                   v-if="(column.kind === 'reference' || row.references?.[column.key]) && row.references?.[column.key]"
                   type="button"
@@ -621,6 +659,7 @@ watch(someVisibleChecked, () => {
                     <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                   </template>
                 </span>
+                <template v-else-if="column.kind === 'time'">{{ fieldValue(row, column.key) ? timeText(fieldValue(row, column.key)) : columnEmpty(column) }}</template>
                 <span v-else-if="column.kind === 'tags'" class="sdk-object-list-item-tags">
                   <span
                     v-for="tag in row.tags?.[column.key] ?? []"
@@ -848,6 +887,23 @@ watch(someVisibleChecked, () => {
   padding: var(--spacing-sm) var(--spacing-md);
   text-align: left;
   vertical-align: middle;
+  /* A value stays on its line: a short column is as wide as its text, never two characters over two lines. */
+  white-space: nowrap;
+}
+/* A long text column takes the room the others leave, down to a readable minimum, and ends in an ellipsis. */
+.sdk-object-list-table .sdk-object-list-col-shrink {
+  width: 100%;
+  max-width: 0;
+  min-width: 12em;
+}
+.sdk-object-list-col-shrink :is(.sdk-object-list-cell-main, .sdk-object-list-cell-sub, .sdk-object-ref-link) {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sdk-object-list-table .sdk-object-list-col-wrap {
+  white-space: normal;
+  min-width: 12em;
 }
 .sdk-object-list-table th {
   color: var(--el-text-color-secondary);

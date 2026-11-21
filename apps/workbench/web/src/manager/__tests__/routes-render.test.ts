@@ -23,13 +23,8 @@ vi.mock("../../../../../../packages/ontology-manager/src/data-browser/DataBrowse
   __esModule: true,
   default: { name: "DataBrowserDouble", template: '<p class="page-double">data browser</p>' },
 }));
-// The visual modeling and governance pages pull in the graph libraries (an ES module inside a CommonJS package); they are
-// doubled so the shell is exercised without them. Their own tests cover the pages.
-vi.mock("../../../../../../packages/ontology-manager/src/visual-modeling/VisualModeling.vue", () => ({
-  __esModule: true,
-  default: { name: "VisualModelingDouble", template: '<p class="page-double">visual modeling</p>' },
-}));
-// The service status draws only from a full status report of the data engine; its own page reads it.
+// The governance page pulls in the graph libraries (an ES module inside a CommonJS package); it is
+// doubled so the shell is exercised without them. Its own tests cover the page.
 vi.mock("../../../../../../packages/platform-admin/src/pages/SystemMonitorPage.vue", () => ({
   __esModule: true,
   default: { name: "SystemMonitorDouble", template: '<p class="page-double">system monitor</p>' },

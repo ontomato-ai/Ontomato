@@ -1066,20 +1066,22 @@ it("rejects an unavailable default agent before accepting a proposed application
   await assistant(governanceId, "knowledge-governance", [anotherDomain]);
   await assistant(randomUUID(), "regular", []);
 
-  const proposed = (defaultAgent?: { kind: "preset"; agentKind: string } | { kind: "id"; id: string }) =>
+  const proposed = (defaultAgent?: { kind: "preset"; agentKind: string } | { kind: "id"; id: string }, useId = "manage") =>
     fetch(state.base + APPLICATION_PANEL_REFERENCES_PATH, {
       method: "POST", headers: { "Content-Type": "application/json", "X-Ontomato-Query-Service-Token": "fixture-service" },
       body: JSON.stringify({
-        domainId: "pilot", uses: [{ id: "manage", panelId, defaultAgent }], delivery: { panels: [], projections: [] },
+        domainId: "pilot", uses: [{ id: useId, panelId, defaultAgent }], delivery: { panels: [], projections: [] },
       }),
     });
   const governance = { kind: "preset", agentKind: "knowledge-governance" } as const;
   const missingSkill = await proposed(governance);
   expect(missingSkill.status).toBe(409);
-  expect(await missingSkill.json()).toMatchObject({ error: {
+  const missingSkillBody = await missingSkill.json();
+  expect(missingSkillBody.error).toEqual({
     code: "PAGE_DEFAULT_AGENT_UNAVAILABLE",
     message: "Entry 'manage' default agent preset 'knowledge-governance' does not select the skill for panel 'default-agent-panel'.",
-  } });
+  });
+  expect(missingSkillBody.details).toEqual({ useId: "manage" });
 
   await state.pool!.query(`UPDATE "${state.schema}".assistant_agents SET skills=$2::jsonb WHERE id=$1`,
     [governanceId, JSON.stringify([ref])]);
@@ -1088,10 +1090,12 @@ it("rejects an unavailable default agent before accepting a proposed application
   expect((await proposed()).status).toBe(204);
 
   await state.pool!.query(`UPDATE "${state.schema}".assistant_agents SET enabled=false WHERE id=$1`, [governanceId]);
-  const disabled = await proposed({ kind: "id", id: governanceId });
+  const disabled = await proposed({ kind: "id", id: governanceId }, "review-entry");
   expect(disabled.status).toBe(409);
-  expect(await disabled.json()).toMatchObject({ error: {
+  const disabledBody = await disabled.json();
+  expect(disabledBody.error).toEqual({
     code: "PAGE_DEFAULT_AGENT_UNAVAILABLE",
-    message: `Entry 'manage' default agent '${governanceId}' is disabled.`,
-  } });
+    message: `Entry 'review-entry' default agent '${governanceId}' is disabled.`,
+  });
+  expect(disabledBody.details).toEqual({ useId: "review-entry" });
 });

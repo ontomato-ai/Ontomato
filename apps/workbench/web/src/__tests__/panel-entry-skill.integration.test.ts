@@ -63,7 +63,7 @@ beforeAll(async () => {
   vi.stubGlobal("fetch", async (...[input, init]: Parameters<typeof fetch>) => {
     const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url, server.origin);
     const response = await passOn(typeof input === "string" || input instanceof URL ? url : input, init);
-    const noted = /^\/api\/product-panels\/[^/]+$/.test(url.pathname) || url.pathname === "/api/assistant/agents"
+    const noted = /^\/api\/product-panels\/[^/]+(\/page-skill-context)?$/.test(url.pathname) || url.pathname === "/api/assistant/agents"
       || /^\/api\/assistant\/sessions\/[^/]+\/runs$/.test(url.pathname);
     if (noted) {
       const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
@@ -120,14 +120,22 @@ async function openAt(path: string) {
   return { root, router };
 }
 
-/** The shown instance's read of its panel, and the context Node answered with it. */
+/**
+ * The shown instance's reads for its page: the panel's record, read as the panel's alone, and beside it the page skill
+ * context Node answers for the page's use relation and entrance — the context the page's composer and its runs carry.
+ */
 async function readOf(panelId: string) {
-  const read = await vi.waitFor(() => {
-    const found = seen.find((request) => request.url.pathname === `/api/product-panels/${panelId}`);
-    expect(found).toBeDefined();
-    return found!;
+  const [record, context] = await vi.waitFor(() => {
+    const panel = seen.find((request) => request.url.pathname === `/api/product-panels/${panelId}`);
+    const skill = seen.find((request) => request.url.pathname === `/api/product-panels/${panelId}/page-skill-context`);
+    expect(panel).toBeDefined();
+    expect(skill).toBeDefined();
+    return [panel!, skill!] as const;
   }, { timeout: 20000 });
-  return (read.answer as { pageSkillContext: PageSkillContext }).pageSkillContext;
+  // The record names no page: what the page reaches is never worked out while the panel waits to be drawn.
+  expect(record.url.search).toBe("");
+  expect(record.answer).not.toHaveProperty("pageSkillContext");
+  return (context.answer as { pageSkillContext: PageSkillContext }).pageSkillContext;
 }
 
 /** The page's candidates, asked for one member. */

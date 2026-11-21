@@ -10,6 +10,7 @@ import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import { addressLandingGuard, panelEntryGuard, unknownAddressRoute } from "../../../../../packages/platform-web/src/panel-entries";
+import { panelNavigator } from "../../../../../packages/platform-web/src/panel-navigate";
 import { DETAIL_SELECTIONS, detailSelectionGuard } from "../../../../../packages/platform-web/src/detail-selection";
 import { startPage } from "../../../../../packages/platform-web/src/shell";
 import { catalogFixture } from "../../../../../packages/platform-web/src/__tests__/fixtures";
@@ -171,6 +172,23 @@ it("hands a draft linked at a built-in entry's original address to its panel, pa
   }
 });
 
+it("lets a page open another page's entry before either has been visited", async () => {
+  // The ontology graph's "go to modeling": a panel asks for the address of an entry the reader has not opened yet.
+  installPlatform(answer);
+  useApplicationCatalog().applications.value = catalogWith([components]);
+  const { router, app } = await open("/home");
+  try {
+    await vi.waitFor(async () => {
+      await panelNavigator(router)("/ontology/components");
+      expect(router.currentRoute.value.path).toBe("/ontology/components");
+    });
+    // An address no entry serves is still refused, with the reader told.
+    await expect(panelNavigator(router)("/ontology/nothing")).rejects.toThrow(/nothing/);
+  } finally {
+    app.unmount();
+  }
+});
+
 it.each([
   ["ontology", "/ontology/agents", "ontology-modeling"],
   ["agents", "/agents/settings", "analysis-agent"],
@@ -201,7 +219,7 @@ it.each([
   try {
     expect(router.currentRoute.value.path).toBe(path);
     await vi.waitFor(() => expect(element.querySelector(".panel-host-coded")).not.toBeNull());
-    const query = new URLSearchParams(sent.find(request => request.path === `/api/product-panels/${panel.id}`)?.search);
+    const query = new URLSearchParams(sent.find(request => request.path === `/api/product-panels/${panel.id}/page-skill-context`)?.search);
     expect(query.get("applicationId")).toBe(applicationId);
     expect(query.get("useId")).toBe(use?.id);
   } finally {
@@ -251,6 +269,41 @@ it("explains the missing owner permission to a reader admitted to the ontology s
       }),
     }));
     expect(element.textContent).not.toContain("New agent");
+  } finally {
+    app.unmount();
+  }
+});
+
+it("opens another built-in application's entry from an entry, and back, without the page being loaded again", { timeout: 20000 }, async () => {
+  const catalog = catalogFixture();
+  const ontology = catalog.find(app => app.id === "ontology")!;
+  const agents = catalog.find(app => app.id === "agents")!;
+  const ontologyUse = ontology.panelUses!.find(entry => entry.path === "/ontology/agents")!;
+  const agentsUse = agents.panelUses!.find(entry => entry.path === "/agents/settings")!;
+  const panel = {
+    ...panelRecord(ontologyUse.panelId, "Agent settings", definePanel({ state: {}, members: {}, commands: {} })),
+    visibility: "platform" as const, domainId: null, ownerId: null, editable: false as const,
+  };
+  installPlatform(request => {
+    for (const [application, use] of [[ontology, ontologyUse], [agents, agentsUse]] as const)
+      if (request.path === `/api/data-query/platform/applications/${application.id}/panel-uses`)
+        return Response.json({ data: { applicationId: application.id, entry: application.entry, panelUses: [use] } });
+    if (request.path === `/api/product-panels/${panel.id}`) return panelAnswer(panel, request);
+    if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel, {}, request);
+    return nothingAt(request);
+  });
+  useApplicationCatalog().applications.value = catalog;
+  const { router, app, element } = await open("/ontology/agents");
+  try {
+    await vi.waitFor(() => expect(element.querySelector(".panel-host-coded")).not.toBeNull());
+    // Another application's entry, by the address alone (a link, the address bar): its panel is drawn too.
+    await router.push("/agents/settings");
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe("/agents/settings"));
+    await vi.waitFor(() => expect(element.querySelectorAll(".panel-host-coded").length).toBe(1), { timeout: 5000 });
+    // And back again.
+    await router.push("/ontology/agents");
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe("/ontology/agents"));
+    await vi.waitFor(() => expect(element.querySelectorAll(".panel-host-coded").length).toBe(1), { timeout: 5000 });
   } finally {
     app.unmount();
   }

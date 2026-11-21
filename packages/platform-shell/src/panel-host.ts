@@ -252,7 +252,7 @@ export interface PanelHostLabels {
    * The words about a linked draft: shown while it is being opened, and, for one the panel cannot take, handing the reason
    * back to the agent and the sentence the composer is filled with (`{reason}` stands for the panel's sentence).
    */
-  draft: { opening: string; toAgent: string; toAgentText: string };
+  draft: { opening: string; close: string; toAgent: string; toAgentText: string };
   /** The page command that reads the panel's shown data again. */
   refresh: string;
 }
@@ -345,7 +345,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const instance = newPanelInstanceName();
   const notice = shallowRef("");
   const draftRefusal = shallowRef("");
-  const draftOpening = shallowRef(false);
+  // An instance opened at an address linking a draft says so from the start, while its panel is still being read.
+  const draftOpening = shallowRef(draftLinkOf(options.address()) !== null);
   /** Takes the drawn panel's CSS away again. */
   let dropStyle: (() => void) | undefined;
   const pageContext = shallowRef<PageContext | null>(null);

@@ -23,9 +23,12 @@ export type PanelFormValues = z.infer<typeof panelFormValuesSchema>;
 export const panelObjectListColumnSchema = z.object({
   key: z.string().min(1),
   labelKey: panelMessageKeySchema.optional(),
-  kind: z.enum(["text", "tag", "tags", "reference"]).optional(),
+  kind: z.enum(["text", "tag", "tags", "reference", "time"]).optional().describe(
+    "A time column displays the owner's ISO time string in the reader's language and local time zone, with the full time in its title. Sorting and filtering use the original string.",
+  ),
   subtitleKey: z.string().min(1).optional(),
   emptyKey: panelMessageKeySchema.optional(),
+  wrap: z.boolean().optional().describe("Allow text in this column to wrap onto multiple lines. Defaults to false."),
 }).strict();
 export type PanelObjectListColumn = z.infer<typeof panelObjectListColumnSchema>;
 
@@ -418,6 +421,9 @@ const fieldShape = z.object({
   readOnly: z.boolean(),
   readOnlyReason: z.string().min(1).optional(),
   refreshOnChange: z.boolean().optional(),
+  advanced: z.literal(true).optional().describe(
+    "Group this field with the advanced fields at the end of its form, object, or array row. The group starts collapsed and opens when it contains a field error.",
+  ),
 }).strict();
 
 export type PanelFormField = z.infer<typeof fieldShape> & {
@@ -436,7 +442,19 @@ const controlSchema = z.discriminatedUnion("kind", [
   objectControl.extend({ fields: childFields }),
 ]);
 
-export const panelFormFieldSchema = fieldShape.extend({ control: controlSchema });
+export const panelFormFieldSchema = fieldShape.extend({ control: controlSchema }).superRefine(({ control }, ctx) => {
+  if (control.kind !== "select" || !control.options.some(option => typeof option.value === "object")) return;
+  if (control.allowCreate)
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ["control", "allowCreate"],
+      message: "An object-valued select only accepts its declared options",
+    });
+  if (control.options.some(option => typeof option.value !== "object"))
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ["control", "options"],
+      message: "All options of an object-valued select must be objects",
+    });
+});
 
 /** The client's native owner request. The form's binding supplies the body mapping to that owner's existing schema. */
 const formSaveRequestSchema = z.object({

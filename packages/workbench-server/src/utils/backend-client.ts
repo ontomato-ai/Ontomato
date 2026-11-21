@@ -178,7 +178,13 @@ type BufferedBackendResponse = Pick<Response, "headers" | "status" | "statusText
   text: string;
 };
 
-export async function checkBackendResponse(response: Response, detailLimit = 200): Promise<void> {
+/**
+ * A refusal's body is kept whole by default, so a caller can read the fields an owner names in it; the cap only guards
+ * against an unexpected page-sized body. A caller that wants less passes `errorDetailLimit`.
+ */
+const ERROR_DETAIL_LIMIT = 64 * 1024;
+
+export async function checkBackendResponse(response: Response, detailLimit = ERROR_DETAIL_LIMIT): Promise<void> {
   if (response.ok) return;
   // The received HTTP status decides the classification; a body read failure only affects the error detail.
   const detail = String(await response.text().catch(() => ""));

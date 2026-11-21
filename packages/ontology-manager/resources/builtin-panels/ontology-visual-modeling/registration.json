@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ontology-visual-modeling",
+      "input": {
+        "name": "可视化建模",
+        "description": "在画布上编辑本域的对象类型、属性与关系：拖动布局、连线建关系、选中编辑与删除"
+      }
+    }
+  ]
+}

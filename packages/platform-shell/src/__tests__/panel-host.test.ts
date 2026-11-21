@@ -31,7 +31,7 @@ const labels: PanelHostLabels = {
   notStarted: "Not started",
   failures: { fileUnavailable: "Could not load {file}", scriptThrew: "Script failed", scriptRejected: "Script rejected" },
     content: { styleOutside: "Style outside" },
-    draft: { opening: "Opening the draft", toAgent: "To agent", toAgentText: "Unused: {reason}" },
+    draft: { opening: "Opening the draft", close: "Close", toAgent: "To agent", toAgentText: "Unused: {reason}" },
     refresh: "Refresh",
 };
 
@@ -544,6 +544,8 @@ describe("the panel host", () => {
       address: () => page.value,
       initial: () => ({}),
     }))!;
+    // Said at once, while the panel is still being read.
+    expect(a.draftOpening.value).toBe(true);
     await a.ready;
     const instance = port.started("use-a");
     // The panel runs, out of sight, while its draft is opened.

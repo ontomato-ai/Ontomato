@@ -293,6 +293,20 @@ export function panelAnswer(panel: ProductPanel, request: Sent) {
   return Response.json({ panel, ...(pageSkillContext ? { pageSkillContext } : {}) });
 }
 
+const PAGE_SKILL_CONTEXT_SUFFIX = "/page-skill-context";
+/**
+ * Node's page skill context for a panel, read on its own: what a test answers for the panel's record read with the same
+ * page — its use relation and entrance — carries it, so each test states the context once, beside its record.
+ */
+async function pageSkillContextFrom(answer: (request: Sent) => Response | Promise<Response>, request: Sent) {
+  const record = await answer({ ...request, path: request.path.slice(0, -PAGE_SKILL_CONTEXT_SUFFIX.length) });
+  if (!record.ok) return record;
+  const { pageSkillContext } = await record.json() as { pageSkillContext?: unknown };
+  return pageSkillContext === undefined
+    ? Response.json({ error: { code: "NOT_FOUND", message: `No page skill context at ${request.path}` } }, { status: 404 })
+    : Response.json({ pageSkillContext });
+}
+
 /** One request that reached the network, as the platform sent it for the frame. */
 export interface Sent {
   method: string;
@@ -348,6 +362,7 @@ export function installPlatform(answer: (request: Sent) => Response | Promise<Re
     sent.push(request);
     if (request.path === SDK_MANIFEST_PATH) return Response.json(sdkManifest);
     if (request.path === RESOLVE_ENTRY_PATH) return resolveEntryFrom(answer, request);
+    if (request.path.endsWith(PAGE_SKILL_CONTEXT_SUFFIX)) return pageSkillContextFrom(answer, request);
     return answer(request);
   });
   return sent;

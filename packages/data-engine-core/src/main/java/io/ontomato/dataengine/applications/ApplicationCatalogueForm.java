@@ -83,7 +83,8 @@ final class ApplicationCatalogueForm {
         } else {
             errors = entryErrors(id, draft, app, conflicts);
         }
-        return describe(entryFields(id), values, errors, APPLICATIONS + id + "/panel-uses", "saveEntries", registrationSchema(false));
+        return describe(entryFields(id, entryAccessOptions(id, app.get("permissions"))), values, errors,
+            APPLICATIONS + id + "/panel-uses", "saveEntries", registrationSchema(false));
     }
 
     JSONObject create(String id, JSONObject draft, Function<String, String> conflicts) {
@@ -92,7 +93,8 @@ final class ApplicationCatalogueForm {
                 "icon", "pages", "groups", List.of(), "permissions", List.of()),
             "entry", JSONObject.of("path", ApplicationCatalog.assignedPanelRoot(id), "renderer", "panels"),
             "entryAccess", List.of(DOMAIN_MEMBER), "panelUses", List.of()) : draft;
-        var fields = entryFields(id);
+        var permissions = values.get("declaration") instanceof Map<?, ?> declaration ? declaration.get("permissions") : null;
+        var fields = entryFields(id, entryAccessOptions(id, permissions));
         var metadata = identityFields();
         metadata.add(groupsField());
         metadata.add(permissionsField(id));
@@ -119,14 +121,19 @@ final class ApplicationCatalogueForm {
     }
 
     private JSONObject permissionsField(String id) {
-        var fields = JSONArray.of(
-            field("/code", "permissionCode", PanelFormFields.text(false), STRING, true),
-            field("/names", "name", localizedText(List.of("en"), false), STRING_MAP, true),
+        var code = field("/code", "permissionCode", PanelFormFields.text(false), STRING, true);
+        var names = field("/names", "name", localizedText(List.of("en"), false), STRING_MAP, true);
+        // Edited permissions supply the entry access choices in the same draft.
+        code.put("refreshOnChange", true);
+        names.put("refreshOnChange", true);
+        var fields = JSONArray.of(code, names,
             field("/groupKey", "groupKey", PanelFormFields.text(false), STRING, true),
             field("/sort", "groupSort", JSONObject.of("kind", "number"), INTEGER, true));
         var empty = JSONObject.of("code", ApplicationCatalog.permissionPrefix(id), "names", JSONObject.of("en", ""),
             "groupKey", "", "sort", 0);
-        return field("/permissions", "permissions", PanelFormFields.objectArray(fields, empty, null), PERMISSIONS_SCHEMA, true);
+        var permissions = field("/permissions", "permissions", PanelFormFields.objectArray(fields, empty, null), PERMISSIONS_SCHEMA, true);
+        permissions.put("refreshOnChange", true);
+        return permissions;
     }
 
     private JSONObject localizedText(List<String> requiredLocales, boolean multiline) {
@@ -137,18 +144,38 @@ final class ApplicationCatalogueForm {
             "requiredLocales", requiredLocales, "multiline", multiline);
     }
 
-    private JSONArray entryFields(String id) {
+    private JSONArray entryAccessOptions(String id, Object declaredPermissions) {
+        var options = JSONArray.of(PanelFormFields.option(JSONObject.of("kind", DOMAIN_MEMBER), copy.getString("domainMember")));
+        if (!(declaredPermissions instanceof List<?> permissions)) return options;
+        var rows = new JSONArray(permissions);
+        for (int i = 0; i < rows.size(); i++) {
+            if (!(rows.get(i) instanceof Map<?, ?> || rows.get(i) instanceof ApplicationCatalog.Permission)) continue;
+            var permission = rows.getJSONObject(i);
+            if (!(permission.get("code") instanceof String code) || !ApplicationCatalog.ownsPermissionCode(id, code)) continue;
+            var label = code;
+            if (permission.get("names") instanceof Map<?, ?> names) {
+                if (names.get("en") instanceof String english && !english.isBlank()) label = english;
+                if (names.get(locale.toLanguageTag()) instanceof String localized && !localized.isBlank()) label = localized;
+            }
+            options.add(PanelFormFields.option(JSONObject.of("permissionCode", code), label));
+        }
+        return options;
+    }
+
+    private JSONArray entryFields(String id, JSONArray accessOptions) {
+        var inputs = field("/inputs", "inputs", PanelFormFields.code("json"), INPUTS, false);
+        inputs.put("advanced", true);
         var item = JSONArray.of(
             field("/id", "entryId", PanelFormFields.text(false), STRING, true),
             field("/pageKey", "pageKey", PanelFormFields.text(false), STRING, true),
             field("/path", "address", PanelFormFields.text(false), STRING, true),
             field("/panelId", "panelId", PanelFormFields.text(false), STRING, true),
-            field("/inputs", "inputs", PanelFormFields.code("json"), INPUTS, false),
-            field("/names", "menuNames", PanelFormFields.code("json"), STRING_MAP, false),
-            field("/descriptions", "entryDescriptions", PanelFormFields.code("json"), STRING_MAP, false),
+            inputs,
+            field("/names", "menuNames", localizedText(List.of("en"), false), STRING_MAP, false),
+            field("/descriptions", "entryDescriptions", localizedText(List.of("en"), true), STRING_MAP, false),
             field("/groupKey", "menuGroup", PanelFormFields.text(false), STRING, false),
-            field("/access", "entryAccess", PanelFormFields.code("json"), ACCESS, true),
-            field("/defaultAgent", "defaultAgent", PanelFormFields.code("json"), DEFAULT_AGENT, false));
+            field("/access", "entryAccess", PanelFormFields.select(accessOptions), ACCESS, true),
+            field("/defaultAgent", "defaultAgent", PanelFormFields.select(new JSONArray()), DEFAULT_AGENT, false));
         var root = ApplicationCatalog.assignedPanelRoot(id);
         return JSONArray.of(
             field("/entry/path", "applicationAddress", PanelFormFields.text(false), STRING, true),

@@ -424,7 +424,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             {"entry":{"path":"/applications/app-school","renderer":"panels"},"entryAccess":["domain-member"],
              "declaration":{"names":{"en":"School"},"descriptions":{},"icon":"school",
                "groups":[{"key":"school","names":{"en":"School"},"sort":1}],
-               "permissions":[{"code":"app:app-school:private","names":{"en":"Private"},"groupKey":"school","sort":1}]},
+               "permissions":[{"code":"app:app-school:private","names":{"en":"Private","zh-CN":"仅限内部"},"groupKey":"school","sort":1}]},
              "framePanelId":"panel-frame","theme":{"light":{"--el-color-primary":"#123456"}},
              "delivery":{"panels":["panel-frame","panel-school"],"projections":["projection-school"],"packages":[],"agents":[],"skills":[]},
              "panelUses":[
@@ -439,6 +439,41 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.declaration.permissions[0].code").value("app:app-school:private"))
             .andExpect(jsonPath("$.data.framePanelId").value("panel-frame"))
             .andExpect(jsonPath("$.data.delivery.projections[0]").value("projection-school"));
+
+        var form = http.perform(post(CATALOGUE + "/form").locale(Locale.SIMPLIFIED_CHINESE)
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                    {"section":"entries","target":{"kind":"object","objectType":"platform:Application","primaryKey":"app-school"}}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.values.panelUses[0].names.en").value("School"))
+            .andExpect(jsonPath("$.data.values.panelUses[1].names").doesNotHaveJsonPath())
+            .andExpect(jsonPath("$.data.values.panelUses[1].descriptions").doesNotHaveJsonPath())
+            .andReturn().getResponse().getContentAsString();
+        var rowFields = JSON.parseObject(form).getJSONObject("data").getJSONArray("fields").getJSONObject(1)
+            .getJSONObject("control").getJSONArray("itemFields").toJavaList(JSONObject.class);
+        for (var fieldPath : List.of("/names", "/descriptions")) {
+            var field = rowFields.stream().filter(item -> fieldPath.equals(item.getString("path"))).findFirst().orElseThrow();
+            var control = field.getJSONObject("control");
+            assertEquals("localized-text", control.getString("kind"));
+            assertEquals("zh-CN", control.getString("primaryLocale"));
+            assertEquals(List.of("en"), control.getList("requiredLocales", String.class));
+            assertFalse(field.getBooleanValue("required"));
+        }
+        var inputsField = rowFields.stream().filter(item -> "/inputs".equals(item.getString("path"))).findFirst().orElseThrow();
+        assertTrue(inputsField.getBooleanValue("advanced"));
+        assertEquals("code", inputsField.getJSONObject("control").getString("kind"));
+        var accessField = rowFields.stream().filter(item -> "/access".equals(item.getString("path"))).findFirst().orElseThrow();
+        var accessControl = accessField.getJSONObject("control");
+        assertTrue(accessField.getBooleanValue("required"));
+        assertEquals("select", accessControl.getString("kind"));
+        var options = accessControl.getJSONArray("options");
+        assertEquals(JSONObject.of("kind", "domain-member"), options.getJSONObject(0).getJSONObject("value"));
+        assertEquals("本域成员", options.getJSONObject(0).getString("label"));
+        assertEquals(JSONObject.of("permissionCode", "app:app-school:private"), options.getJSONObject(1).getJSONObject("value"));
+        assertEquals("仅限内部", options.getJSONObject(1).getString("label"));
+        var defaultAgent = rowFields.stream().filter(item -> "/defaultAgent".equals(item.getString("path"))).findFirst().orElseThrow();
+        assertFalse(defaultAgent.getBooleanValue("required"));
+        assertEquals(JSONObject.of("kind", "select", "options", List.of()), defaultAgent.getJSONObject("control"));
         when(identity.getCurrentUser()).thenReturn(viewer);
         http.perform(get(path).param("purpose", "management")).andExpect(status().isForbidden());
         http.perform(get(path)).andExpect(status().isOk()).andExpect(jsonPath("$.data.panelUses.length()").value(1));
@@ -631,6 +666,11 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.values.declaration.groups[0].names['zh-CN']").value("工具"))
             .andExpect(jsonPath("$.data.values.declaration.groups[0].sort").value(7))
             .andExpect(jsonPath("$.data.fields[0].control.fields[4].label").value("菜单权限"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].refreshOnChange").value(true))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[0].refreshOnChange").value(true))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[1].refreshOnChange").value(true))
+            .andExpect(jsonPath("$.data.fields[2].control.itemFields[8].control.options[1].value.permissionCode").value("app:app-translated:read"))
+            .andExpect(jsonPath("$.data.fields[2].control.itemFields[8].control.options[1].label").value("查看"))
             .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.kind").value("object-array"))
             .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemKeyPath").doesNotHaveJsonPath())
             .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.defaultItem.code").value("app:app-translated:"))
@@ -769,6 +809,57 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         http.perform(put(identityPath).contentType(MediaType.APPLICATION_JSON).content(update.toJSONString()))
             .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("Icon is reserved"));
         assertEquals("ontology", catalog.require("app-icon-proof").getString("icon"));
+    }
+
+    @Test void registrationReportsARefusedDefaultAgentOnItsSubmittedEntryRow() throws Exception {
+        var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        var reason = "Entry 'history' default agent preset 'knowledge-governance' does not select the skill for panel 'panel-overview'.";
+        var payload = JSONObject.of(
+            "error", JSONObject.of("code", "PAGE_DEFAULT_AGENT_UNAVAILABLE", "message", reason),
+            "details", JSONObject.of("useId", "history"));
+        server.createContext("/internal/product-panels/validate-references", exchange -> {
+            try {
+                var body = payload.toJSONString().getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
+                exchange.sendResponseHeaders(409, body.length);
+                exchange.getResponseBody().write(body);
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        try {
+            var panelClient = new PanelResources("http://127.0.0.1:" + server.getAddress().getPort(), "test-service");
+            var remoteCatalog = new ApplicationCatalog(jdbc, new TransactionTemplate(new DataSourceTransactionManager(dataSource)),
+                access, "{}", panelClient, grants);
+            var mvc = MockMvcBuilders.standaloneSetup(new ApplicationController(remoteCatalog, identity,
+                    new WorkbenchServiceAuthentication("test-service")))
+                .setControllerAdvice(new ApplicationErrors())
+                .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+            when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser("owner", "domain"));
+            when(grants.allowed("panel-overview", "use")).thenReturn(true);
+
+            mvc.perform(put("/platform/applications/app-default-agent-proof/panel-uses")
+                    .param("create", "true").contentType(MediaType.APPLICATION_JSON).content("""
+                    {"entry":{"path":"/applications/app-default-agent-proof","renderer":"panels"},"entryAccess":["domain-member"],
+                     "declaration":{"names":{"en":"Default agent proof"},"descriptions":{},"icon":"pages","groups":[],"permissions":[]},
+                     "panelUses":[
+                       {"id":"overview","pageKey":"overview-proof","panelId":"panel-overview",
+                        "path":"/applications/app-default-agent-proof/overview","access":{"kind":"domain-member"}},
+                       {"id":"history","pageKey":"history-proof","panelId":"panel-overview",
+                        "path":"/applications/app-default-agent-proof/history","access":{"kind":"domain-member"},
+                        "defaultAgent":{"kind":"preset","agentKind":"knowledge-governance"}}]}
+                    """)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("PAGE_DEFAULT_AGENT_UNAVAILABLE"))
+                .andExpect(jsonPath("$.message").value(reason))
+                .andExpect(jsonPath("$.errors[0].field").value("/values/panelUses/1/defaultAgent"))
+                .andExpect(jsonPath("$.errors[0].code").value("target_unavailable"))
+                .andExpect(jsonPath("$.errors[0].message").value(reason));
+            assertTrue(records().isEmpty());
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test void registrationForwardsRawThemeAndLeavesRefusedSettingsUnwritten() throws Exception {

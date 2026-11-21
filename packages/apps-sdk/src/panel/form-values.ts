@@ -32,6 +32,17 @@ export function withValueAt(values: PanelFormValues, path: string, value: Runtim
   return replace(values, tokens(path)) as PanelFormValues;
 }
 
+/** The values with the one a pointer names left out: the key goes from the object that holds it. */
+export function withoutValueAt(values: PanelFormValues, path: string): PanelFormValues {
+  const drop = (node: RuntimeJsonValue | undefined, [token, ...rest]: string[]): RuntimeJsonValue | undefined => {
+    if (token === undefined || node === null || typeof node !== "object") return node;
+    if (Array.isArray(node)) return node.map((item, index) => (index === Number(token) ? drop(item, rest)! : item));
+    if (!rest.length) return Object.fromEntries(Object.entries(node).filter(([key]) => key !== token));
+    return Object.hasOwn(node, token) ? { ...node, [token]: drop(node[token], rest)! } : node;
+  };
+  return drop(values, tokens(path)) as PanelFormValues;
+}
+
 /** The fields whose value differs between two readings of one form, by path: what a draft changed. */
 export function changedPaths(
   fields: readonly PanelFormField[],

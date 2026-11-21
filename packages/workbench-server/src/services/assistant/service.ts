@@ -524,7 +524,7 @@ export const assistantService = {
   ): Promise<PageDraft<Record<string, unknown>>> {
     const { artifact } = await this.resolve(sessionId, runId, path, owner);
     if (!artifact || artifact.runId !== runId || artifact.sessionId !== sessionId) {
-      throw new HttpError(404, "Page draft not found");
+      throw new HttpError(404, "Page draft not found", "PAGE_DRAFT_NOT_FOUND");
     }
     const bytes = await this.content(sessionId, artifact.id, owner);
     let value: unknown;

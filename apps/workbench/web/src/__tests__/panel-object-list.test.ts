@@ -21,6 +21,8 @@ import { createDirectPanelInstance } from "../../../../../packages/apps-sdk/src/
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 import { noOperations } from "./panel-frame";
+import { installWorkbenchI18n } from "@ontomato/workbench-ui/i18n";
+import elementEn from "element-plus/es/locale/lang/en";
 import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 
 /*
@@ -1004,4 +1006,94 @@ it("draws a declared ObjectList with data.objects in a frame via <Projection> an
   element.querySelector<HTMLButtonElement>(".sdk-object-list-item-btn")!.click();
   await nextTick();
   expect(instance.state.values.value.selectedNode).toEqual({ className: ACTION, primaryKey: "act-1" });
+});
+
+// A list's columns (the feedback page, 2026-11-22): a short value never breaks onto two lines; a long one ends in an
+// ellipsis within the space the table has, its whole text kept as the cell's title; a table wider than its frame scrolls
+// inside it; and only a column the panel marks `wrap` runs onto several lines. No column is given a width.
+it("keeps short columns on one line, ends long text in an ellipsis, and wraps only a column marked to wrap", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "feedback-list": {
+      ...meta,
+      id: "feedback-list",
+      name: "Feedback",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK } },
+      config: { columns: [{ key: "source" }, { key: "question" }, { key: "answer", wrap: true }] },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
+    members: { list: { target: { projectionId: "feedback-list" }, outputs: { selected: { state: "selectedTask" } } } },
+    commands: {},
+  });
+  const question = "How many contract staff joined the faculty of engineering after the 2024 reorganisation?";
+  const record = { primaryKey: "f-1", label: "Feedback 1", fields: { source: "问答", question, answer: "A long answer the reader reads whole." } };
+  const { element } = mountDirect(manifest, projections, () => ready([record]));
+  await vi.waitFor(() => expect(element.querySelectorAll("tbody td")).toHaveLength(3));
+  const [source, long, answer] = [...element.querySelectorAll<HTMLElement>("tbody td")];
+  expect(element.querySelector(".sdk-object-list-table")?.parentElement?.classList.contains("sdk-object-list-table-wrap")).toBe(true);
+  expect(source!.className).toBe("");
+  expect(long!.classList.contains("sdk-object-list-col-shrink")).toBe(true);
+  expect(long!.title).toBe(question);
+  expect(answer!.classList.contains("sdk-object-list-col-wrap")).toBe(true);
+  expect([...element.querySelectorAll<HTMLElement>("thead th")].map((th) => th.className)).toEqual(["", "sdk-object-list-col-shrink", "sdk-object-list-col-wrap"]);
+});
+
+// A time column (the feedback page, 2026-11-22, A's contract; rule by the panelisation lead): the owner gives an ISO
+// time; the list shows it in the reader's language and time zone so that neighbours keep their order at a glance — within
+// a minute "just now", within an hour minutes ago, today's and yesterday's by their clock time, an older one by its date
+// — with the whole time as the cell's title, on one line. A value that is no time is shown as it is, an empty one as the
+// column's empty text.
+it("shows a time column so neighbouring times keep their order, the whole time in its title", async () => {
+  installWorkbenchI18n({
+    supported: ["en"], defaultLocale: "en", initialLocale: "en", switchEnabled: false, save: null, messages: { en: publicEn }, elementLocale: () => elementEn,
+  });
+  vi.useFakeTimers({ toFake: ["Date"] });
+  const now = new Date(2026, 10, 22, 12, 0, 0);
+  vi.setSystemTime(now);
+  try {
+    const projections: Record<string, DirectProjection> = {
+      "feedback-list": {
+        ...meta,
+        id: "feedback-list",
+        name: "Feedback",
+        componentId: "@ontomato/sdk:ObjectList",
+        inputs: {},
+        outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK } },
+        config: { columns: [{ key: "createdAt", kind: "time" }] },
+        data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+      },
+    };
+    const manifest = definePanel({
+      state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
+      members: { list: { target: { projectionId: "feedback-list" }, outputs: { selected: { state: "selectedTask" } } } },
+      commands: {},
+    });
+    const today = new Date(2026, 10, 22, 6, 14, 46);
+    const yesterday = new Date(2026, 10, 21, 6, 14, 42);
+    const older = new Date(2026, 10, 20, 22, 14, 41);
+    const times = [new Date(now.getTime() - 30_000), new Date(now.getTime() - 5 * 60_000), today, yesterday, older];
+    const values = [...times.map((time) => time.toISOString()), "not a time", ""];
+    const rows = values.map((createdAt, index) => ({ primaryKey: `f-${index}`, label: `Feedback ${index}`, fields: { createdAt } }));
+    const { element } = mountDirect(manifest, projections, () => ready(rows));
+    await vi.waitFor(() => expect(element.querySelectorAll("tbody td")).toHaveLength(values.length));
+    const cells = [...element.querySelectorAll<HTMLElement>("tbody td")];
+    const clock = (time: Date) => time.toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit" });
+    expect(cells.map((cell) => cell.textContent?.trim())).toEqual([
+      "Just now",
+      "5 minutes ago",
+      `Today ${clock(today)}`,
+      `Yesterday ${clock(yesterday)}`,
+      older.toLocaleString("en", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }),
+      "not a time",
+      "—",
+    ]);
+    expect(cells.slice(0, 5).map((cell) => cell.title)).toEqual(times.map((time) => time.toLocaleString("en")));
+    expect(cells.map((cell) => cell.className)).toEqual(values.map(() => ""));
+  } finally {
+    vi.useRealTimers();
+  }
 });

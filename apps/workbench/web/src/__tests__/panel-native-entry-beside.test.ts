@@ -57,7 +57,7 @@ it("shows a built-in application's entry beside the conversation as that applica
   try {
     await vi.waitFor(() => expect(beside.element.querySelector(".panel-host-coded")).not.toBeNull());
     // The panel is read as that application's use, for its own page: the skill a message beside it reaches.
-    expect(sent.some(request => request.path === `/api/product-panels/${panel.id}` && request.search.includes("applicationId=ontology"))).toBe(true);
+    expect(sent.some(request => request.path === `/api/product-panels/${panel.id}/page-skill-context` && request.search.includes("applicationId=ontology"))).toBe(true);
     await vi.waitFor(() => expect(skills.length).toBeGreaterThan(0));
   } finally {
     beside.app.unmount();

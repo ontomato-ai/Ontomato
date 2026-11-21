@@ -21,7 +21,8 @@ import { z } from "zod";
 import {
   applicationPanelReferencesRequestSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema, METRIC_CHART_COMPONENT,
   PROJECTION_REUSE_PANEL_HEADER,
-  productCurrentIdParamsSchema, productPanelReadQuerySchema, type ProductPanelReadQuery,
+  productCurrentIdParamsSchema, productPanelPageSkillContextQuerySchema, productPanelPageSkillContextResponseSchema,
+  productPanelReadQuerySchema, type ProductPanelPageSkillContextQuery, type ProductPanelReadQuery,
   registerChartProjectionRequestSchema, registerChartProjectionResponseSchema,
   registerProductPanelRequestSchema,
   registerProductProjectionRequestSchema, updateChartProjectionSourceRequestSchema,
@@ -34,7 +35,8 @@ import { context, wrap } from "../utils/agent-host";
 import { buildAttachmentContentDisposition } from "../utils/http";
 import { platformService } from "../middleware/platform-service";
 import {
-  readCurrentPanelRecord, readCurrentProjectionRecord, saveCurrentPanel, saveCurrentProjection, validateApplicationPanelReferences,
+  readCurrentPanelRecord, readCurrentProjectionRecord, requireCurrentProduct, saveCurrentPanel, saveCurrentProjection,
+  validateApplicationPanelReferences,
 } from "../../services/product-panels/current";
 import { HttpError } from "../../utils/errors";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
@@ -48,7 +50,6 @@ import { panelSkillProvider } from "../../services/product-panels/skill-provider
 import { readRegisteredPanelPageSkillContext } from "../../services/skills/view";
 
 type FrameRead = Extract<ProductPanelReadQuery, { source: "frame" }>;
-type ContentEntryRead = Exclude<Extract<ProductPanelReadQuery, { applicationId: string }>, FrameRead>;
 
 function requireFrameForRead({ applicationId, useId }: FrameRead, caller: ReturnType<typeof context>, id: string) {
   return requireRegisteredPanelRoot(caller.owner, caller.credentials,
@@ -56,7 +57,7 @@ function requireFrameForRead({ applicationId, useId }: FrameRead, caller: Return
 }
 
 function pageSkillContextFor(
-  query: ContentEntryRead,
+  query: ProductPanelPageSkillContextQuery,
   caller: ReturnType<typeof context>,
   panel: { id: string },
 ) {
@@ -118,6 +119,14 @@ productPanelsRouter.get("/:id/snapshot", wrap(async (req, res) => {
   }
   const readContext = "applicationId" in query ? (panel: { id: string }) => pageSkillContextFor(query, c, panel) : undefined;
   res.json(await requirePanelDefinitions(c.owner, c.credentials, id, readContext));
+}));
+productPanelsRouter.get("/:id/page-skill-context", wrap(async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
+  const query = productPanelPageSkillContextQuerySchema.parse(req.query);
+  const panel = await requireCurrentProduct(c.owner, c.credentials, "panel", id, "use");
+  const pageSkillContext = await pageSkillContextFor(query, c, panel);
+  res.json(productPanelPageSkillContextResponseSchema.parse({ pageSkillContext }));
 }));
 productPanelsRouter.post("/definition-stream", wrap(async (req, res) => {
   const {owner,credentials}=context(req);

@@ -378,7 +378,6 @@ const ontologyEn = {
   taskResultView: "View",
   taskResultOutput: "Execution output",
   taskResultNoOutput: "No output",
-  visualModelingDesc: "Edit object types, properties and relationships on the canvas",
   backToGraph: "Back to graph",
   focusObjectNotFound: "Object to focus on not found",
   focusRelationNotFound: "Relationship to focus on not found",
