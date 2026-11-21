@@ -29,11 +29,13 @@ const controls = useFormControls();
 </template>
 
 <style scoped>
-/* Fields share a row's line, each at least wide enough to read. */
+/* A row's fields share its lines, as many to a line as fit with every field at least 12rem wide, so no input is narrower
+   than a value can be read in (panelisation lead, 2026-11-22): where there is less room, the row grows taller and its
+   fields fill their lines, never an input cut down to a few letters. */
 .sdk-form-field,
 .sdk-form-field-unavailable {
-  flex: 1 1 160px;
-  min-width: 0;
+  flex: 1 1 12rem;
+  min-width: min(100%, 12rem);
 }
 .sdk-form-field-unavailable {
   color: var(--el-color-danger-text);
