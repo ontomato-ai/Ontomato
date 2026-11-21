@@ -1,0 +1,218 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:BusinessKnowledge"
+        },
+        "deepLink": true
+      },
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "status": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "all"
+      },
+      "checked": {
+        "type": {
+          "kind": "list",
+          "items": {
+            "kind": "object",
+            "objectType": "platform:BusinessKnowledge"
+          }
+        },
+        "default": []
+      },
+      "formTarget": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:BusinessKnowledge"
+        }
+      }
+    },
+    "members": {
+      "governance": {
+        "component": "ConversationEntry",
+        "agent": {
+          "kind": "preset",
+          "agentKind": "knowledge-governance"
+        },
+        "prefillKey": "panel.governancePrefill",
+        "config": {
+          "labelKey": "panel.governance"
+        },
+        "id": "builtin-product-6fbcf139-2ed6-46d3-919f-f06e4ed7bb58"
+      },
+      "tabs": {
+        "component": "SegmentedControl",
+        "type": "platform:BusinessKnowledge",
+        "data": {
+          "counts": {
+            "read": "counts",
+            "params": {
+              "by": {
+                "literal": "status"
+              },
+              "search": {
+                "state": "search"
+              }
+            }
+          }
+        },
+        "state": {
+          "value": "status"
+        },
+        "id": "builtin-product-593d865b-b0e2-44d7-b1a9-b7a0933f4f66"
+      },
+      "list": {
+        "component": "ObjectList",
+        "type": "platform:BusinessKnowledge",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {
+              "status": {
+                "state": "status"
+              }
+            }
+          }
+        },
+        "state": {
+          "selected": "selected",
+          "checked": "checked",
+          "search": "search"
+        },
+        "config": {
+          "statusField": "status",
+          "tagsField": "knowledgeTags",
+          "fallbackToFirst": true,
+          "pageSize": 200
+        },
+        "id": "builtin-product-16a4ae34-1731-4890-9484-30a2835f146f"
+      },
+      "detail": {
+        "component": "ObjectSummary",
+        "type": "platform:BusinessKnowledge",
+        "target": "selected",
+        "data": {
+          "record": {
+            "read": "record",
+            "params": {
+              "search": {
+                "state": "search"
+              }
+            }
+          }
+        },
+        "id": "builtin-product-44b10c95-3dd2-4372-8656-afb5a8b18de4"
+      },
+      "form": {
+        "component": "ObjectForm",
+        "type": "platform:BusinessKnowledge",
+        "target": "formTarget",
+        "data": {
+          "form": "form",
+          "createForm": "createForm"
+        },
+        "operation": "platform:BusinessKnowledge.save",
+        "id": "builtin-product-02d94714-1db8-4cd9-84ae-abbc36df45d7"
+      },
+      "approve": {
+        "component": "OperationButton",
+        "type": "platform:BusinessKnowledge",
+        "operation": "knowledge.approve",
+        "target": "selected",
+        "config": {
+          "type": "primary"
+        },
+        "id": "builtin-product-e42f001a-b065-45af-aba9-b26c809b2297"
+      },
+      "remove": {
+        "component": "OperationButton",
+        "type": "platform:BusinessKnowledge",
+        "operation": "knowledge.delete",
+        "target": "selected",
+        "config": {
+          "type": "danger"
+        },
+        "id": "builtin-product-09d5ea58-017f-4354-aca0-9d4f54f4ef9c"
+      },
+      "approveAll": {
+        "component": "OperationButton",
+        "type": "platform:BusinessKnowledge",
+        "operation": "knowledge.approve",
+        "target": "checked",
+        "id": "builtin-product-5bbc892f-1e45-47db-a991-23e7af1246dd"
+      },
+      "deleteAll": {
+        "component": "OperationButton",
+        "type": "platform:BusinessKnowledge",
+        "operation": "knowledge.delete",
+        "target": "checked",
+        "config": {
+          "type": "danger"
+        },
+        "id": "builtin-product-ef4e17ed-f3a4-4fb8-bcf3-d9d285772c6b"
+      },
+      "probe": {
+        "component": "PanelData",
+        "type": "platform:BusinessKnowledge",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {
+              "status": {
+                "state": "status"
+              },
+              "search": {
+                "state": "search"
+              }
+            }
+          }
+        },
+        "id": "builtin-product-caeb4407-6da9-4ce6-922c-1ab4129bd431"
+      }
+    },
+    "events": {}
+  },
+  "content": {
+    "messages": {
+      "zh-CN": {
+        "panel.name": "业务知识",
+        "panel.governance": "知识治理",
+        "panel.governancePrefill": "请帮我治理当前的业务知识，先从待审核的条目开始。",
+        "panel.new": "新增",
+        "panel.edit": "编辑",
+        "panel.cancel": "取消",
+        "panel.save": "保存",
+        "panel.backToList": "返回列表",
+        "panel.discardConfirm": "有未保存的修改，是否放弃？",
+        "panel.checkedCount": "已选 {count} 条",
+        "panel.clearChecked": "清空"
+      },
+      "en": {
+        "panel.name": "Business knowledge",
+        "panel.governance": "Knowledge governance",
+        "panel.governancePrefill": "Help me govern the business knowledge on this page, starting with the entries pending review.",
+        "panel.new": "New",
+        "panel.edit": "Edit",
+        "panel.cancel": "Cancel",
+        "panel.save": "Save",
+        "panel.backToList": "Back to list",
+        "panel.discardConfirm": "Discard the unsaved changes?",
+        "panel.checkedCount": "{count} selected",
+        "panel.clearChecked": "Clear"
+      }
+    }
+  }
+}

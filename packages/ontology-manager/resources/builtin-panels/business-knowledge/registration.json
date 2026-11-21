@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-business-knowledge",
+      "input": {
+        "name": "Business knowledge",
+        "description": "List, search, review and maintain business knowledge."
+      }
+    }
+  ]
+}
