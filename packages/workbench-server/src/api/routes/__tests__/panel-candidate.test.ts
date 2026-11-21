@@ -30,7 +30,7 @@ const projectionId = "agent-form";
 const manifest = {
   state: {},
   members: { form: { target: { projectionId } } },
-  events: {},
+  commands: {},
 };
 const messages = {
   en: { "settings.title": "Settings for {name}" },

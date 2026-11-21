@@ -374,7 +374,7 @@ describe("platform-ontology composite query", () => {
                   members: {
                     list: { target: { projectionId: "proj-kb" } },
                   },
-                  events: {},
+                  commands: {},
                 },
               },
             },
@@ -727,7 +727,7 @@ describe("platform-ontology composite query", () => {
               tabPanel: { target: { fromState: "activeTab", candidates: { panelIds: ["panel-tab-candidate"] } } },
               detail: { target: { fromState: "selectedOrder", candidates: { rule: "objectDetail" } } },
             },
-            events: {},
+            commands: {},
           },
         },
       },
@@ -743,7 +743,7 @@ describe("platform-ontology composite query", () => {
             members: {
               form: { target: { projectionId: "proj-kb-form" } },
             },
-            events: {},
+            commands: {},
           },
         },
       },
@@ -754,7 +754,7 @@ describe("platform-ontology composite query", () => {
           description: "",
           visibility: "domain",
           content: { html: "<div></div>", module: "export default {};" },
-          manifest: { state: {}, members: {}, events: {} },
+          manifest: { state: {}, members: {}, commands: {} },
         },
       },
       {
@@ -764,7 +764,7 @@ describe("platform-ontology composite query", () => {
           description: "",
           visibility: "domain",
           content: { html: "<div></div>", module: "export default {};" },
-          manifest: { state: {}, members: {}, events: {} },
+          manifest: { state: {}, members: {}, commands: {} },
         },
       },
       {
@@ -774,7 +774,7 @@ describe("platform-ontology composite query", () => {
           description: "",
           visibility: "domain",
           content: { html: "<div></div>", module: "export default {};" },
-          manifest: { state: {}, members: {}, events: {} },
+          manifest: { state: {}, members: {}, commands: {} },
         },
       },
     ];

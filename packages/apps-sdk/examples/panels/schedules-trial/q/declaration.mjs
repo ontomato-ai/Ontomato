@@ -9,5 +9,5 @@ export default {
   members: {
     summary: { target: { projectionId: "projection-schedules-summary" }, inputs: { task: { state: "selectedTask" } } },
   },
-  events: {},
+  commands: {},
 };

@@ -429,11 +429,15 @@ export const productProjectionSummarySchema = z.discriminatedUnion("visibility",
 export type ProductPanelSummary = z.infer<typeof productPanelSummarySchema>;
 export type ProductProjectionSummary = z.infer<typeof productProjectionSummarySchema>;
 
-export const productPanelListResponseSchema = z.object({
-  items: z.array(productPanelSummarySchema),
+const productCataloguePageSchema = z.object({
   nextCursor: productCatalogCursorSchema.nullable(),
 }).strict();
-export const productProjectionListResponseSchema = productPanelListResponseSchema.extend({
+export const productPanelListResponseSchema = productCataloguePageSchema.extend({
+  items: z.array(productPanelSummarySchema),
+  /** Only records this catalogue read is authorized to list can appear here. */
+  unavailableItems: z.array(z.object({ id, reason: z.string().min(1) }).strict()).optional(),
+});
+export const productProjectionListResponseSchema = productCataloguePageSchema.extend({
   items: z.array(productProjectionSummarySchema),
 });
 export type ProductPanelListResponse = z.infer<typeof productPanelListResponseSchema>;

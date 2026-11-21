@@ -33,7 +33,7 @@ afterEach(() => {
 it("shows the owner's refusal of the create form instead of an empty form", async () => {
   const reads: PanelMemberReadRequest[] = [];
   const instance = createDirectPanelInstance(definePanel({
-    state: {}, members: { form: { target: { projectionId: creating.id } } }, events: {},
+    state: {}, members: { form: { target: { projectionId: creating.id } } }, commands: {},
   }), {
     pageKey: "agents", url: () => "/agents", label: () => "Agents", initial: {},
     text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},

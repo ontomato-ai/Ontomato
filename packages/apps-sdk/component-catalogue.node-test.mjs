@@ -77,7 +77,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       const editor = { component: "ObjectForm", type: "platform:MetricView", data: { createForm: "createForm" } };
       const trial = { component: "OperationButton", operation: "metricViews.test" };
       const descriptor = join(workspace, "panel.json");
-      const document = { manifest: { state: {}, events: {}, members: { metricEditor: editor, preview: trial } } };
+      const document = { manifest: { state: {}, commands: {}, members: { metricEditor: editor, preview: trial } } };
       const cli = join(HERE, "../../agent-skills/ontomato-app-builder/ontomato.mjs");
       const check = () => execFileSync(process.execPath, [
         cli, "panel", "check", workspace, "--builtin", "--sdk-dir", join(out, version),

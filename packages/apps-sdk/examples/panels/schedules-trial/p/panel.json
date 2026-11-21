@@ -25,5 +25,5 @@
       "inputs": { "task": { "state": "selectedTask" } }
     }
   },
-  "events": {}
+  "commands": {}
 }

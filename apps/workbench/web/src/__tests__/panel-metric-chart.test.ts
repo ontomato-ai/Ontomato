@@ -132,7 +132,7 @@ it("draws a chart a coded panel places through the platform's bridge, as the rea
   const panel = panelRecord("panel-charts", "Charts", definePanel({
     state: { customer: { type: { kind: "object", objectType: "Customer" }, deepLink: true } },
     members: { revenue: { target: { projectionId: chart.id }, inputs: { customer: { state: "customer" } } } },
-    events: {},
+    commands: {},
   }));
   const use = panelUse("use-charts", "charts", panel.id, "/applications/app-charts/charts");
   const sent = installPlatform((request: PlatformSent) => {

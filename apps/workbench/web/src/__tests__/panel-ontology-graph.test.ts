@@ -190,7 +190,7 @@ it("validates object-union state via contracts and formats panelSelection with t
       explicit: { type: { kind: "object-union", objectTypes: [USER, ACTION] }, deepLink: false },
     },
     members: {},
-    events: {},
+    commands: {},
   });
 
   // Accepts declared types and preserves full { className, primaryKey }
@@ -252,7 +252,7 @@ it("renders type mode in four-layer columns with count statuses, internal layer 
         },
       },
     },
-    events: {},
+    commands: {},
   });
   const panel = panelRecord("panel-cap-type", "Capability Map", manifest);
   panel.content.html = `<div id="app"><Projection slot="graph"></Projection></div>`;
@@ -380,7 +380,7 @@ it("runs instance mode with default start, incremental neighbor expand, full obj
         },
       },
     },
-    events: {},
+    commands: {},
   });
   const panel = panelRecord("panel-cap-instance", "Capability Map", manifest);
   panel.content.html = `<div id="app"><Projection slot="graph"></Projection></div>`;
@@ -528,7 +528,7 @@ it("separates no-neighbors, owner-refused and read-failed states without collaps
         outputs: { selectedNode: { state: "selected" } },
       },
     },
-    events: {},
+    commands: {},
   });
   const panel = panelRecord("panel-cap-states", "Capability Map", manifest);
   panel.content.html = `<div id="app"><Projection slot="graph"></Projection></div>`;
@@ -618,7 +618,7 @@ it("fits the view when the canvas first appears, so a graph shown after an empty
         outputs: { selectedNode: { state: "selected" } },
       },
     },
-    events: {},
+    commands: {},
   });
   const panel = panelRecord("panel-cap-single", "Capability Map", manifest);
   panel.content.html = `<div id="app"><Projection slot="graph"></Projection></div>`;

@@ -3,8 +3,8 @@ import { inject, onBeforeUnmount, provide, shallowRef, watch, type Component, ty
 /**
  * The actions a page shows at the right of the header above it (DESIGN.md "Page architecture"). Any application's page
  * hands them over the same way, and the frame that draws the header reads them; the header only presents them. A panel's
- * page hands over its named shortcuts (its events with a label and no trigger) and the host's refresh: the panel host
- * builds those buttons, and an agent reaches the same shortcuts through the page's skill.
+ * page hands over its declared commands and the host's refresh: the panel host builds those buttons, and an agent reaches
+ * the same commands through the page's skill.
  */
 
 /** One of a page's own buttons: refresh, new, delete. */

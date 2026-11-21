@@ -57,7 +57,7 @@ it("reads nothing for a datum whose required parameter has no value, in the plat
   const manifest: DirectPanelManifest = {
     state: { selectedType: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: true, external: false } },
     members: { objects: { target: { projectionId: typeObjects.id }, inputs: { type: { state: "selectedType" } } } },
-    events: {},
+    commands: {},
   };
   const reads: PanelMemberReadRequest[] = [];
   const instance = createDirectPanelInstance(manifest, {
@@ -96,7 +96,7 @@ it("reads nothing for a required parameter the projection leaves unmapped or the
     const instance = createDirectPanelInstance(definePanel({
       state: { by: { type: { kind: "scalar", type: "string" } } },
       members: { tabs: { target: { projectionId: projection.id }, inputs: { by: { state: "by" } } } },
-      events: {},
+      commands: {},
     }), {
       pageKey: "knowledge", url: () => "/knowledge", label: () => "Knowledge", initial: {},
       text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
@@ -133,7 +133,7 @@ it("answers the ontology's reads in a code panel's frame as the platform's reads
     },
   };
   platformOntologyAdapters(requests).forEach(registerPlatformObjectAdapter);
-  const instance = createPanelInstance(definePanel({ state: {}, members: {}, events: {} }), {
+  const instance = createPanelInstance(definePanel({ state: {}, members: {}, commands: {} }), {
     text: (key) => key, pageKey: "map", url: () => "/map", label: () => "Map", initial: {}, ...noOperations,
     recordDraftCreated: async () => {}, readProjection: async () => { throw new Error("unused"); },
   });
@@ -169,7 +169,7 @@ it("reads a reference's choices and held values, and a type's create form, as a 
   };
   const describe = vi.fn(async () => description);
   registerPlatformObjectAdapter({ objectType: AGENT_DEFINITION, forms: { describe, save: vi.fn() } });
-  const instance = createPanelInstance(definePanel({ state: {}, members: {}, events: {} }), {
+  const instance = createPanelInstance(definePanel({ state: {}, members: {}, commands: {} }), {
     text: (key) => key, pageKey: "agents", url: () => "/agents", label: () => "Agents", initial: {}, ...noOperations,
     recordDraftCreated: async () => {}, readProjection: async () => { throw new Error("unused"); },
   });
