@@ -191,6 +191,77 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(status().isForbidden());
     }
 
+    private static String panelsTrialRegistration(String id) {
+        return """
+            {"entry":{"path":"/applications/%1$s","renderer":"panels"},
+             "declaration":{"names":{"en":"Panel trial"},"descriptions":{},"icon":"pages","permissions":[],"groups":[]},
+             "entryAccess":["domain-member"],"panelUses":[
+               {"id":"trial","pageKey":"ontology-panels","panelId":"trial-panel","path":"/applications/%1$s/trial",
+                "access":{"kind":"domain-member"},"names":{"en":"Trial"}},
+               {"id":"other","pageKey":"other-page","panelId":"trial-panel","path":"/applications/%1$s/other",
+                "access":{"kind":"domain-member"},"names":{"en":"Other"}}]}
+            """.formatted(id);
+    }
+
+    @Test void startupKeepsTheBuiltinAndQuarantinesOnlyTheConflictingDomainUse() throws Exception {
+        var operator = new QueryAccessService.GrantUser("operator", "trial-domain");
+        when(identity.getCurrentUser()).thenReturn(operator);
+        when(access.canEnter(any(), eq(operator))).thenReturn(true);
+        when(access.canMaintain(any(), eq(operator))).thenReturn(true);
+        when(access.pageSkills(anyList(), eq(operator))).thenAnswer(call -> call.getArgument(0));
+        when(access.panelUses(anyList(), eq(operator))).thenAnswer(call -> call.getArgument(0));
+        when(grants.allowed(anyString(), eq("use"))).thenReturn(true);
+
+        var id = "app-ontology-panels";
+        var path = "/applications/" + id;
+        http.perform(put("/platform/applications/" + id + "/panel-uses").contentType(MediaType.APPLICATION_JSON)
+                .content(panelsTrialRegistration(id))).andExpect(status().isOk());
+
+        new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
+
+        http.perform(get("/platform/applications/resolve-entry").param("path", "/ontology/panels"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.applicationId").value("ontology"))
+            .andExpect(jsonPath("$.data.use.pageKey").value("ontology-panels"));
+        http.perform(get("/platform/applications/resolve-entry").param("path", path + "/trial"))
+            .andExpect(status().isNotFound());
+        http.perform(get("/platform/applications/resolve-entry").param("applicationId", id).param("useId", "trial"))
+            .andExpect(status().isNotFound());
+        http.perform(get("/platform/applications/resolve-entry").param("path", path + "/other"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.use.id").value("other"));
+        http.perform(get("/platform/applications/" + id + "/panel-uses"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.panelUses[*].id").value(org.hamcrest.Matchers.contains("other")));
+        http.perform(get("/platform/page-skills")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.admittedEntrances[?(@.pageKey == 'ontology-panels')].permissionCode")
+                .value(org.hamcrest.Matchers.contains("ontology-modeling")));
+        http.perform(get(ApplicationController.PANEL_SKILL_SOURCES).param("domainId", "trial-domain")
+                .header(WorkbenchServiceAuthentication.HEADER, "test-service"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data[?(@.applicationId == 'app-ontology-panels')].useId")
+                .value(org.hamcrest.Matchers.contains("other")));
+        http.perform(post("/platform/applications/catalogue/form").contentType(MediaType.APPLICATION_JSON).content("""
+            {"section":"entries","target":{"kind":"object","objectType":"platform:Application","primaryKey":"app-ontology-panels"}}
+            """)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.values.panelUses.length()").value(2))
+            .andExpect(jsonPath("$.data.errors[0].field").value("/panelUses/0/pageKey"))
+            .andExpect(jsonPath("$.data.errors[0].message").value(org.hamcrest.Matchers.allOf(
+                org.hamcrest.Matchers.containsString("ontology-panels"), org.hamcrest.Matchers.containsString("/ontology/panels"),
+                org.hamcrest.Matchers.containsString("trial-domain"), org.hamcrest.Matchers.containsString(id))));
+    }
+
+    @Test void domainRegistrationNamesTheBuiltinEntryThatReservedThePageKey() throws Exception {
+        new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
+        var operator = new QueryAccessService.GrantUser("operator", "trial-domain");
+        when(identity.getCurrentUser()).thenReturn(operator);
+        when(grants.allowed(anyString(), eq("use"))).thenReturn(true);
+
+        var response = http.perform(put("/platform/applications/app-new-trial/panel-uses")
+                .contentType(MediaType.APPLICATION_JSON).content(panelsTrialRegistration("app-new-trial")))
+            .andExpect(status().isBadRequest()).andReturn().getResponse().getContentAsString();
+        assertTrue(response.contains("ontology-panels"));
+        assertTrue(response.contains("/ontology/panels"));
+        assertTrue(response.contains("built-in application 'ontology'"));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM sys_application WHERE id='app-new-trial'", Integer.class));
+    }
+
     @Test void aBuiltinEntryResolvesTheSamePanelForTwoDomainsWithoutGrantRows() throws Exception {
         var resourceGrants = new ProductGrantService(jdbc, identity, (userId, domainId) -> java.util.Set.of());
         resourceGrants.afterPropertiesSet();

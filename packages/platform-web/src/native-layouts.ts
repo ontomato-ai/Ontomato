@@ -44,8 +44,13 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
       {
         key: "ontology:products",
         titleKey: "platform.layers.products",
-        // The products, and after them the agents' settings: what a product page is given to run on.
-        paths: [managerPaths.products, platformRoutes.ontologyAgents.path],
+        // The product layer in its own order — base components, projections, panels, applications, agents — each a panel
+        // entry the ontology manager declares. The old products catalogue stays until its page is taken out, before the
+        // agents' settings: what a product page is given to run on.
+        paths: [
+          "/ontology/components", "/ontology/projections", "/ontology/panels", "/ontology/applications",
+          managerPaths.products, platformRoutes.ontologyAgents.path,
+        ],
       },
     ],
     // The models of the modeling agents, at the foot of the menu like every application's own settings.
@@ -146,13 +151,20 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
       id: panelUsePath(use.path),
       label: use.names[locale] ?? use.names.en!,
     }] : []) ?? [] : [];
+    // A native application's panel entries stand where its menu table lists their addresses.
+    const entries = !panels && !embedded ? new Map(app.panelUses?.flatMap(use => use.names ? [[panelUsePath(use.path), {
+      id: panelUsePath(use.path),
+      label: use.names[locale] ?? use.names.en!,
+      icon: "pages",
+      count: null,
+    }] as const] : []) ?? []) : undefined;
     const layout: NativeLayout = panelPages.length > 1
       ? { frame: "menu", sections: [{ key: app.id, pages: panelPages }] }
       : applicationRoute || app.kind === "product" ? { sections: [] } : {
       ...nativeLayouts[app.entry.renderer!], ...renderers[app.entry.renderer!],
       sections: renderers[app.entry.renderer!]?.sections ?? nativeLayouts[app.entry.renderer!]?.sections ?? [],
     };
-    return { ...layout, id: app.id, label: app.names[locale] ?? app.names.en!, description: app.descriptions[locale] ?? ("descriptionKey" in layout && layout.descriptionKey ? undefined : app.descriptions.en ?? null), icon: app.icon, rail: app.rail, category: app.category,
+    return { ...layout, entries, id: app.id, label: app.names[locale] ?? app.names.en!, description: app.descriptions[locale] ?? ("descriptionKey" in layout && layout.descriptionKey ? undefined : app.descriptions.en ?? null), icon: app.icon, rail: app.rail, category: app.category,
       built: (app.kind === "hosted" || app.kind === "product") && (!!app.releaseId || panels),
       prefix: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?`/products/${app.id}`:app.entry.path,
       home: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?app.entry.path:app.entry.home ?? layout.home };

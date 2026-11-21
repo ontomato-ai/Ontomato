@@ -11,7 +11,7 @@ import {
 import { metricViewsKey } from "./clients/metric-views";
 import type { MessageKey, SharedKey, TextParams } from "./i18n";
 import { emptyOntologyResourceCounts, type OntologyResourceCounts } from "./workspace";
-import { ACTION, ATTRIBUTE, FUNCTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
+import { ATTRIBUTE, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
 
 export type ManagerTheme = "light" | "dark";
 
@@ -23,19 +23,16 @@ export type ManagerTheme = "light" | "dark";
 export interface ManagerPresentation {
   /**
    * Custom properties per theme, bound by the page on the document root: the brand's colour variables plus the
-   * component-specific --manager-relation-icon-color / --manager-relation-icon-background (graph relation icon),
-   * --manager-model-catalog-min-height (model catalog), --manager-modeling-panel-header-background (modeling right-panel
+   * component-specific --manager-model-catalog-min-height (model catalog), --manager-modeling-panel-header-background (modeling right-panel
    * header) and --manager-filter-drawer-radius (data browser filter drawer).
    */
   readonly themeProperties: Readonly<Record<ManagerTheme, Readonly<Record<string, string>>>>;
   /**
-   * Node palette per theme, shared by the ontology graph, visual modeling and the instance graph; colours are picked by
+   * Node palette per theme, shared by visual modeling and the instance graph; colours are picked by
    * class-name hash, so a class keeps its slot in both themes.
    */
   readonly nodePalette: Readonly<Record<ManagerTheme, readonly string[]>>;
-  /** Label fragment of the ontology graph edge style, spread into the edge style as-is. */
-  readonly edgeLabel: Readonly<{ labelPlacement?: "center"; labelAutoRotate?: boolean }>;
-  /** Zoom limit after the ontology graph fits the canvas; null means no limit. */
+  /** Zoom limit after visual modeling or the instance graph fits the canvas; null means no limit. */
   readonly maxFitZoom: number | null;
   /** Data browser header description; the argument is the current object type's display name, absent when none is selected. */
   readonly dataBrowserDescription: (objectLabel: string | undefined) => string;
@@ -94,7 +91,7 @@ export interface ManagerCounts {
 }
 
 /** The object types whose writes move a count: what `refresh` reads. */
-const COUNTED_TYPES: ReadonlySet<string> = new Set([OBJECT_TYPE, ATTRIBUTE, RELATIONSHIP, METRIC_VIEW, ACTION, FUNCTION]);
+const COUNTED_TYPES: ReadonlySet<string> = new Set([OBJECT_TYPE, ATTRIBUTE, RELATIONSHIP, METRIC_VIEW]);
 
 const contextKey: InjectionKey<ManagerContext> = Symbol("ontology-manager-context");
 const clientKey: InjectionKey<ManagerClient> = Symbol("ontology-manager-client");
@@ -111,11 +108,9 @@ function createCounts(client: ManagerClient): ManagerCounts {
   async function refresh() {
     started = true;
     // The scheduled tasks of functions are the platform's now: this area counts only what it owns.
-    const [ontology, metrics, actions, functions, products] = await Promise.allSettled([
+    const [ontology, metrics, products] = await Promise.allSettled([
       client.loadOntology(),
       client.loadSmartAssets("metrics"),
-      client.loadSmartAssets("actions"),
-      client.loadSmartAssets("functions"),
       client.products.counts(),
     ]);
     if (ontology.status === "fulfilled") {
@@ -124,8 +119,6 @@ function createCounts(client: ManagerClient): ManagerCounts {
       values.relations = ontology.value.relations.length;
     }
     if (metrics.status === "fulfilled") values.metrics = metrics.value.length;
-    if (actions.status === "fulfilled") values.actions = actions.value.length;
-    if (functions.status === "fulfilled") values.functions = functions.value.length;
     if (products.status === "fulfilled") values.products = Object.values(products.value).reduce((sum,count)=>sum+count,0);
   }
   return {

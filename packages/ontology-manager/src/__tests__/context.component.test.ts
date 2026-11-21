@@ -50,7 +50,6 @@ function mountPage(credential: ManagerCredential = { type: "token", token: "t-1"
     presentation: {
       themeProperties: { light: {}, dark: {} },
       nodePalette: { light: ["#000001"], dark: ["#000004"] },
-      edgeLabel: {},
       maxFitZoom: null,
       dataBrowserDescription: () => "",
       compactDialogs: false,

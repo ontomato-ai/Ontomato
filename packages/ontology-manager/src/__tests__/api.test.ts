@@ -517,7 +517,7 @@ describe("requests used by data browsing and visual modeling", () => {
 
     const { objects } = await client.loadOntology();
     expect(objects[0].classDesc).toBe("No business description provided");
-    const assets = await client.loadSmartAssets("functions");
+    const assets = await client.loadSmartAssets("metrics");
     expect(assets.map((asset) => asset.name)).toEqual(["", "Unnamed asset", "Unnamed asset"]);
   });
 });

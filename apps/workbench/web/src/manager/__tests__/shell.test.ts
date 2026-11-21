@@ -5,10 +5,6 @@ import { catalogFixture } from "../../../../../../packages/platform-web/src/__te
 // The heavy Manager pages (graph libraries, Markdown) are doubled; the router, layout, catalogs and requests are real.
 vi.hoisted(() => { window.__APP_CONFIG__ = { API_BASE: "/custom-base/api" }; });
 
-vi.mock("../../../../../../packages/ontology-manager/src/components/OntologyPlayground.vue", () => ({
-  __esModule: true,
-  default: defineComponent({ name: "PlaygroundDouble", setup: () => () => h("p", { class: "page-double" }, "graph") }),
-}));
 vi.mock("../../../../../../packages/ontology-manager/src/visual-modeling/VisualModeling.vue", () => ({
   __esModule: true,
   default: defineComponent({
@@ -188,10 +184,10 @@ describe("open-source Ontology Service page", () => {
   });
 
   it("a 401 stops the page with its status; a 402 keeps it", async () => {
-    statusFor = (url) => (url.endsWith("/action/queryList") ? 402 : 200);
+    statusFor = (url) => (url.endsWith("/metricView/queryList") ? 402 : 200);
     await start("/#/objects");
     expect(document.querySelector(".platform-shell")).not.toBeNull();
-    statusFor = (url) => (url.endsWith("/function/queryList") ? 401 : 200);
+    statusFor = (url) => (url.endsWith("/metricView/queryList") ? 401 : 200);
     await start("/#/objects");
     expect(document.querySelector(".platform-shell")).toBeNull();
   });
