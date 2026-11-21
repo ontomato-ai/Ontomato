@@ -3,7 +3,7 @@ import { computed, ref, watch } from "vue";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { productPanelDisplayName } from "@ontomato/contracts/product-panels";
 import { usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./panel-host";
-import { RefreshCw } from "lucide-vue-next";
+import { RefreshCw, X as CloseIcon } from "lucide-vue-next";
 import { ElAlert, ElButton } from "element-plus";
 import { usePageActions, type PlatformPageAction } from "./page-actions";
 
@@ -166,18 +166,17 @@ defineExpose({ ...view, operations, commands });
     <header v-if="title" class="panel-host-title">{{ title }}</header>
     <p v-if="view.error.value" role="alert" class="panel-host-error">{{ view.error.value }}</p>
     <!-- A draft the panel cannot take never fails it (owner refused, unreadable, no form takes it): its sentence, above it. -->
-    <ElAlert
-      v-else-if="view.draftRefusal.value && view.admitted.value"
-      class="panel-host-draft"
-      type="warning"
-      show-icon
-      :title="view.draftRefusal.value"
-      @close="leave"
-    >
-      <div v-if="draftToAgent" class="panel-host-draft-actions">
-        <ElButton size="small" @click="toAgent">{{ labels.draft.toAgent }}</ElButton>
-      </div>
-    </ElAlert>
+    <div v-else-if="view.draftRefusal.value && view.admitted.value" class="panel-host-draft">
+      <ElAlert type="warning" show-icon :closable="false" :title="view.draftRefusal.value">
+        <div v-if="draftToAgent" class="panel-host-draft-actions">
+          <ElButton size="small" @click="toAgent">{{ labels.draft.toAgent }}</ElButton>
+        </div>
+      </ElAlert>
+      <!-- The library's own close is no button (no role, no name, not in the tab order): this one is. -->
+      <button type="button" class="panel-host-draft-close" :aria-label="labels.draft.close" :title="labels.draft.close" @click="leave">
+        <CloseIcon :size="16" aria-hidden="true" />
+      </button>
+    </div>
     <!-- A linked draft is opened before the page is shown: never a page that is about to turn into the draft's. -->
     <p v-if="!view.error.value && view.draftOpening.value && view.admitted.value" role="status" class="panel-host-draft-opening">
       {{ labels.draft.opening }}
@@ -231,12 +230,38 @@ defineExpose({ ...view, operations, commands });
   color: var(--el-text-color-secondary);
 }
 .panel-host-draft {
+  position: relative;
   flex-shrink: 0;
   margin: var(--spacing-md, 12px) var(--spacing-md, 12px) 0;
-  width: auto;
+}
+.panel-host-draft :deep(.el-alert) {
+  padding-right: calc(var(--spacing-md, 12px) + 24px);
 }
 .panel-host-draft :deep(.el-alert__title) {
   overflow-wrap: anywhere;
+}
+.panel-host-draft-close {
+  position: absolute;
+  top: var(--spacing-sm, 8px);
+  right: var(--spacing-sm, 8px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--el-border-radius-small, 2px);
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+}
+.panel-host-draft-close:hover {
+  color: var(--el-text-color-primary);
+}
+.panel-host-draft-close:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 1px;
 }
 .panel-host-draft-actions {
   display: flex;
