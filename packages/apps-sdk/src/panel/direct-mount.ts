@@ -19,7 +19,7 @@ import PanelMember from "./PanelMember.vue";
  * member's data through the host's one read port.
  */
 
-export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions, "read" | "confirmOperation" | "translate" | "expandPageComposer" | "navigate"> {
+export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions, "read" | "confirmOperation" | "translate" | "expandPageComposer" | "navigate" | "placement"> {
   manifest: PanelManifest;
   run: DirectPanelRun;
   /** The platform's request path, as the reader: drafts, projection records and the coordinator's operations. */
@@ -53,6 +53,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       confirmOperation: options.confirmOperation,
       expandPageComposer: options.expandPageComposer,
       navigate: options.navigate,
+      placement: options.placement,
       translate: options.translate,
       // A draft the panel cannot take fails it where it would have been, as in a frame.
       reportDraftError: run.failed,

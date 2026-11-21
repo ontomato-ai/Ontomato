@@ -80,7 +80,7 @@ function open(
     pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial,
     text: createPanelText({}, { value: "en" } as never, "en"),
     operations: { ...noOperations.operations, prepare },
-    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, placement: noOperations.placement,
     confirmOperation: async ({ intentId }) => ({ decision: "confirm", response: { kind: "dispatched", intentId, outcome: outcome as never } }),
     recordDraftCreated: async () => {},
     reportDraftError: (reason) => draftErrors.push(reason),
