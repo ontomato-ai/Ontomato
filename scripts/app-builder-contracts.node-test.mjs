@@ -205,6 +205,9 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       }]),
     };
     export const platformTypeTableResponseSchema = { parse };
+    export const COMPONENT_PACKAGES_PATH = "/api/component-packages";
+    export const componentPackageNameSchema = { parse };
+    export const componentPackageResponseSchema = { parse };
     export const panelAuthoringManifestSchema = { parse, safeParse: ok };
     export const panelAuthoringMemberSchema = { safeParse: member => member.sourceCard && member.id
       ? invalid([{ message: "MetricChart takes its projection definition from the source card" }]) : ok(member) };
@@ -280,6 +283,8 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       }
     };
   `;
+  const installedPackage = { name: "@example/tools", version: "2.0.0", components: [] };
+  const installedPackagePath = "/api/component-packages/" + encodeURIComponent(installedPackage.name);
   const candidatePath = `/api/workspaces/${workspaceId}/panel-candidate?ref=${ref}`;
   const panelPath = "/api/product-panels/acceptance-panel";
   const projectionPath = "/api/product-projections/tasks";
@@ -314,6 +319,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     response.setHeader("content-type", "application/json");
     if (request.url === "/api/apps-sdk/current") response.end(JSON.stringify(release));
     else if (request.url === "/api/app-builder/type-table") response.end(JSON.stringify(typeTable));
+    else if (request.url === installedPackagePath) response.end(JSON.stringify(installedPackage));
     else if (request.url === `${sdkPath}/components.json`) response.end(JSON.stringify(catalogue));
     else if (request.url === `${sdkPath}/node/panel-check.mjs`) response.end(checkModule);
     else if (request.url === chartQuery && request.method === "GET") {
@@ -520,6 +526,14 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       id: typeId, read: "counts", ...reads.counts, resultSchema: typeTable.resultSchemas.panelGroupCounts,
     });
     assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), typeReadRequests);
+    const allTypes = await run("panel", "type", "--all");
+    assert.deepEqual(JSON.parse(allTypes.stdout), typeTable);
+    assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), typeReadRequests);
+    const currentPackage = await run("sdk", "package", installedPackage.name);
+    assert.deepEqual(JSON.parse(currentPackage.stdout), installedPackage);
+    assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), [
+      ...typeReadRequests.slice(0, 2), ["GET", installedPackagePath],
+    ]);
     await writeFile(moduleFile, 'import { ElButton } from "element-plus";');
     await assert.rejects(run("panel", "check", directory), error =>
       error.stderr.includes("panel.mjs: A panel's module imports element-plus"));

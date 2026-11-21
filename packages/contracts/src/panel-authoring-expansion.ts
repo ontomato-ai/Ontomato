@@ -14,6 +14,7 @@ import type { PlatformTypeTableResponse } from "./platform-type-table";
 type ShortMember = Extract<PanelAuthoringMember, { component: string }>;
 
 function qualifiedId(component: AppsSdkComponentCatalogEntry): string {
+  if (component.componentId.includes(":")) return component.componentId;
   const packageName = component.module.split("/", component.module.startsWith("@") ? 2 : 1).join("/");
   return `${packageName}:${component.componentId}`;
 }

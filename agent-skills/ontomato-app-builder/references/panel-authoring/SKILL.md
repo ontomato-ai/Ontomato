@@ -9,8 +9,9 @@ description: Build and register an Ontomato panel from its owner's reads and ope
    for the owner's reads, operations and result shapes. Use `--read <name>` for one read's signature,
    required parameters and `resultSchema`. Use these commands as the authoring reference for owner APIs.
 2. Compare the original page's visible behavior with the owner's reads, forms and actions. Keep business rules,
-   confirmation and permissions with their owner. For SDK component
-   behavior, configuration, outputs and events, use only `node "$SKILL/ontomato.mjs" sdk read docs/components.md`.
+   confirmation and permissions with their owner. For official components, use
+   `node "$SKILL/ontomato.mjs" sdk read docs/components.md` for
+   behavior, configuration, outputs and events. For third-party components, [look up the installed package](../../GUIDE.md#use-an-installed-component-package).
    Use the [member field reference](FIELDS.md) and [registration mapping](../../GUIDE.md#write-projections-inside-the-panel) to declare projections. Choose an official display component or
    [PanelData](CODE.md#read-declared-data) for custom Vue, and use `target.projectionId` for an existing projection.
    For graphs, see [graph wiring and selection](CODE.md#connect-a-graph-and-its-relations).

@@ -77,6 +77,8 @@ const CHECK_EXPORTS = [
   "BUILTIN_PRODUCT_ID_PREFIX", "builtinProductIdSchema", "domainProductIdSchema", "isBuiltinProductId",
   "builtinApplicationPanelUseSchema", "builtinProductPanelInputSchema", "builtinProductProjectionInputSchema",
   "panelModuleImports", "applicationIconKeys", "applicationCatalogueRecordSchema", "applicationIdentityUpdateSchema", "draftReadOperationIds",
+  "COMPONENT_PACKAGES_PATH", "componentPackageNameSchema", "componentPackageManifestSchema",
+  "componentPackageDeclarationSchema", "componentPackageResponseSchema",
 ];
 
 /** Only the draft requirement of registered platform operations is needed by the offline checker. */

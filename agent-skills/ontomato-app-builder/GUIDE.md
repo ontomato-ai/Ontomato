@@ -31,7 +31,9 @@ Create short members from the reads listed by `panel type`. For customer ontolog
 | --- | --- |
 | `sdk read docs/components.md` | Current SDK component guide with data, configuration, outputs and events |
 | `sdk read components.json` | The same current SDK's machine-readable component catalogue |
+| `sdk package <name>` | The deployment's installed release and component declarations for a named package |
 | `panel type <type-id> [--read <name>]` | Read signature with its result schema. With no filter, list the type's reads and operations. |
+| `panel type --all` | The visible author type table as JSON, for offline checks |
 | `panel delete application\|panel <id>` | Delete a trial application or panel through its owner |
 | `panel projection <id>`, `panel get <id>` | Authorized current projection or panel, including its revision |
 | `panel applications`, `panel uses <applicationId>` | Java navigation catalog and visible use relations |
@@ -39,6 +41,34 @@ Create short members from the reads listed by `panel type`. For customer ontolog
 | `panel check <directory> [--material <file>] [--sdk-dir <release directory>]` | Check the panel source and declaration with the current SDK schemas, and resolve registered references using the author's access. With an installed release directory, check offline and list unresolved references. |
 | `panel register <directory> [--material <file>]` | Register a panel from its workspace sources, including its inline projections |
 | `panel register <JSON or @file>` | Register selected current definitions and application uses under the author's permissions |
+
+### Use an installed component package
+
+Look up the package before writing the member. Use its installed declaration for the exact component ID, data
+names and accepted results, settings, ports and declared operations. For example:
+
+```sh
+node "$SKILL/ontomato.mjs" sdk package @example/tools
+```
+
+If the declaration lists `@example/tools:RecordCard`, use that string in the member's `component` field.
+Bind owner reads and operations from the type table as with official components. The lookup reports the current
+version and digest. The deployment selects one release of each package, and the component ID uses the package
+name and component name.
+
+For an offline check, provide the matching SDK release and a local package release directory with its root
+`package.json` and the JSON declaration at `ontomato.components`. Use one release directory for each package.
+Save the target deployment's visible type table while connected if the panel has new short members:
+
+```sh
+node "$SKILL/ontomato.mjs" panel type --all > author-type-table.json
+node "$SKILL/ontomato.mjs" panel check "$PANEL_DIR" --sdk-dir "$SDK_RELEASE" \
+  --component-package "$PACKAGE_RELEASE" --type-table author-type-table.json
+```
+
+Repeat `--component-package` for other packages. Offline checks read declarations and report unresolved
+deployment references in `unchecked`. Registration uses the target deployment's current package selection,
+owner declarations and permissions.
 
 ### Write projections inside the panel
 
@@ -139,8 +169,9 @@ is protected by the owner's in-use check. Released or shared definitions stay un
 Run `panel check <directory>` before registering. It reads `registration.json` in that directory by default.
 Use `--material <file>` to select a different file. The online check uses the current component catalogue and
 owner type table to expand new projections. It looks for references in the material first, then in the domain.
-With `--sdk-dir`, complete local material can be checked offline. New short members require the online type
-table, and unresolved registered references appear in `unchecked`.
+With `--sdk-dir`, local material can be checked offline. Supply `--type-table` for new short members
+and `--component-package` for their [local package declarations](#use-an-installed-component-package).
+Unresolved registered references appear in `unchecked`.
 
 - **404 `PRODUCT_UNAVAILABLE`** names a panel or projection that is missing in the current domain. When a
   projection is also absent from the material, `panel check` reports its ID before registration. Correct the
