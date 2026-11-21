@@ -26,7 +26,7 @@ import { createDirectPanelInstance, type MemberDataState } from "../../../../../
 import { encodeGraphNodeId } from "../../../../../packages/apps-sdk/src/base/ontology-graph-layout";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
-import { noOperations, pagePlacement } from "./panel-frame";
+import { noOperations } from "./panel-frame";
 import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 import { memberProjectionId } from "../../../../../packages/apps-sdk/src/panel/projection-element";
 
@@ -385,7 +385,7 @@ it("draws direct ObjectGraph in a frame via frameMemberData and edits the paired
         t: (key: string) => key,
         resources: async () => {},
         expandPageComposer: async () => {},
-        notify: () => { throw new Error("This test tells the reader nothing"); }, placement: pagePlacement, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); },
+        notify: () => { throw new Error("This test tells the reader nothing"); }, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); },
       });
       return () => h("div", [h(Projection, { slot: "definition" }), h(Projection, { slot: "scope" })]);
     },
@@ -492,7 +492,7 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
         t: (key: string) => key,
         resources: async () => {},
         expandPageComposer: async () => {},
-        notify: () => { throw new Error("This test tells the reader nothing"); }, placement: pagePlacement, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); },
+        notify: () => { throw new Error("This test tells the reader nothing"); }, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); },
       });
       provide(projectionKey, {
         slot: "scope",
@@ -1036,7 +1036,7 @@ it("draws direct OntologyGraph and ObjectRelations in a frame via frameMemberDat
         t: (key: string) => key,
         resources: async () => {},
         expandPageComposer: async () => {},
-        notify: () => { throw new Error("This test tells the reader nothing"); }, placement: pagePlacement, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); },
+        notify: () => { throw new Error("This test tells the reader nothing"); }, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); },
       });
       return () => h("div", [h(Projection, { slot: "graph" }), h(Projection, { slot: "relations" })]);
     },

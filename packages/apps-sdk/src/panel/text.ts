@@ -25,7 +25,10 @@ export function createPanelText(messages: PanelMessages, locale: Readonly<Ref<st
     fallbackLocale: defaultLocale,
     // A key is the panel's own name for a text, dots and all; it is not a path into nested messages.
     flatJson: true,
-    messages,
+    // vue-i18n nests flat keys in the object it is given, in place: it gets a copy, so the panel's record — which the
+    // host reads its name from and compares definitions by — stays as it was registered. The words are JSON, and a
+    // record the host holds reactively copies the same way.
+    messages: JSON.parse(JSON.stringify(messages)) as PanelMessages,
     // A missing word shows its key, as the platform's do; the panel's author sees it there, not in the console.
     missingWarn: false,
     fallbackWarn: false,
