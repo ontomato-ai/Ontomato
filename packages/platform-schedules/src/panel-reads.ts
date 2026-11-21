@@ -11,7 +11,7 @@ import type { SchedulesApi } from "./api";
 import { scheduledTaskCreateDescription, scheduledTaskSaveDescription } from "./panel-operations";
 import { scheduledTaskRunNowOperation } from "./panel-server-operations";
 import { scheduledTaskFieldLabels, scheduledTaskFrequencyText } from "./panel-text";
-import { scheduledTaskPanelSettings, scheduledTaskPanelValues, type ScheduledTaskPanelSettings } from "./panel-task-values";
+import { parseScheduledTaskPanelDraft, scheduledTaskPanelSettings, type ScheduledTaskPanelSettings } from "./panel-task-values";
 
 type NamedApplication = PlatformScheduleApplication & { name: string };
 type TaskReadApi = Pick<SchedulesApi, "list" | "task" | "form" | "runs" | "run"> & {
@@ -141,26 +141,34 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
     task: PlatformTask | undefined, serviceZone: string, params: TaskCreateFormParams,
   ): Promise<PanelFormDescription> {
     const current = scheduledTaskPanelSettings(task, serviceZone);
-    const { settings: provided, parameters } = scheduledTaskPanelValues(params.values ?? {});
+    const draft = parseScheduledTaskPanelDraft(params.values ?? {});
+    const provided = draft.success ? draft.data.task : {};
+    const errors: FormFieldError[] = draft.success ? [] : draft.error.issues.map(issue => {
+      const isParameter = issue.path[0] === "parameters";
+      const path = isParameter ? issue.path.slice(1) : issue.path;
+      const field = path.map(key => taskFieldPath(String(key))).join("");
+      const messageKey = isParameter ? "invalidDraftParameter" : "invalidDraftField";
+      return { field, code: "invalid_format", message: translate(`platformSchedules.panelErrors.${messageKey}`, { field }) };
+    });
     const applicationList = api.applications();
     if (!task && provided.appId === undefined && params.defaultAppId) {
       const initial = (await applicationList).find(app => app.id === params.defaultAppId && app.available);
       if (initial) current.appId = initial.id;
     }
     const settings = { ...current, ...provided };
-    const field = params.changedField;
+    const field = draft.success ? params.changedField : null;
     const changedApplication = field === "/task/appId";
     const sameApp = settings.appId === current.appId;
     const stored = sameApp ? task?.content ?? {} : {};
     const zone = platformScheduleTimeZoneSchema.safeParse(settings.timeZone);
-    const errors: FormFieldError[] = zone.success ? [] : [
-      { field: "/task/timeZone", code: "invalid_time", message: zone.error.issues[0]!.message },
-    ];
+    if (!zone.success) errors.push({ field: "/task/timeZone", code: "invalid_time", message: zone.error.issues[0]!.message });
     const readForm: FormReader = (values, changedField) => api.form(settings.appId, {
       values, changedField, taskId: sameApp ? task?.id ?? null : null, timeZone: zone.success ? zone.data : current.timeZone,
     });
     const readApplicationForm = () => {
       if (!settings.appId) return undefined;
+      if (!draft.success) return readForm(stored, null);
+      const { parameters } = draft.data;
       if (params.values !== undefined && field == null) return checkDraft(readForm, stored, parameters);
       const changedKey = field == null || field.startsWith("/task/") ? null : formFieldKey(field, "/");
       return readForm(changedApplication ? {} : params.values === undefined ? stored : parameters, changedKey);

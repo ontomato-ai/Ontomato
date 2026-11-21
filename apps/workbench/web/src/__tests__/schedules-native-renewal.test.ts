@@ -138,3 +138,64 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
     app.unmount();
   }
 }, 10_000);
+
+it("opens the edit form from a draft link even when the owner refuses the draft", async () => {
+  const router = createRouter({ history: createMemoryHistory(), routes: [
+    { ...platformRoutes.layout, component: RouterView, children: [] }, unknownAddressRoute,
+  ] });
+  router.beforeEach(panelEntryGuard(router));
+  const titleField = {
+    path: "/task/title", label: "Title", control: { kind: "text" }, valueSchema: { type: "string" },
+    required: true, readOnly: false,
+  };
+  const operation = "platform:ScheduledTask.save";
+  const draft = { pageKey: use.pageKey, operation, target: { objectType: "platform:ScheduledTask", id: taskId }, form: { content: { title: "Invalid" } } };
+  const message = "The draft field /content must be text. Fill in each application field separately.";
+  installPlatform(request => {
+    const { path } = request;
+    if (path === "/api/data-query/platform/applications/schedules/panel-uses")
+      return Response.json({ data: { applicationId: application.id, entry: application.entry, panelUses: [use] } });
+    if (path === `/api/product-panels/${panel.id}`) return panelAnswer(panel, request);
+    if (path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel, Object.fromEntries(projections), request);
+    if (path.startsWith("/api/product-projections/")) return Response.json({ projection: projections.get(path.split("/").at(-1)!) });
+    if (path === "/api/assistant/sessions/session-1/runs/run-1/page-draft") return Response.json(draft);
+    if (path === "/api/product-panels/read") {
+      const body = request.body as ProductPanelReadRequest;
+      const member = body.memberPath[0].member;
+      if (body.operations) return Response.json({ status: "ready", value: member === "editForm" ? {
+        save: {
+          kind: "form.save", label: "Save task", handlerRef: operation, effect: "write", batch: false,
+          target: { source: "input", input: "target" }, inputSchema: {}, resultSchema: {},
+        },
+      } : {} });
+      if (body.dataName === "rows") return Response.json({ status: "ready", value: [row] });
+      if (body.dataName === "form" && (member === "detail" || member === "editForm")) return Response.json({
+        status: "ready", value: {
+          fields: [titleField], values: { task: { title: row.label } }, revision: 1,
+          errors: body.runtimeParams?.values ? [{ field: "/content", code: "invalid_format", message }] : [],
+          save: { method: "PUT", path: `/scheduled-tasks/${taskId}`, bodySchema: {}, draftOperation: operation },
+        },
+      });
+      return Response.json({ status: "empty" });
+    }
+    return nothingAt(request);
+  }, router);
+  useApplicationCatalog().applications.value = catalogFixture();
+  const state = { selectedTask: { className: "platform:ScheduledTask", primaryKey: taskId }, compose: "edit" };
+  await router.push({ path: "/schedules", query: {
+    state: JSON.stringify(state), draftSessionId: "session-1", draftRunId: "run-1", draftPath: "outputs/drafts/task.page-draft.json",
+  } });
+  const { app, element } = mountPlatformPage(() => h(RouterView), router);
+  try {
+    const editForm = await vi.waitFor(() => {
+      const form = element.querySelector<HTMLElement>('[data-form="edit"]');
+      expect(form?.querySelector(".sdk-owner-form-refusal")?.textContent).toBe(message);
+      return form!;
+    });
+    expect(editForm.style.display).not.toBe("none");
+    expect(editForm.querySelector<HTMLInputElement>('[data-field="/task/title"] input')?.value).toBe(row.label);
+    expect(element.querySelector("[data-task]")?.textContent).toContain(row.label);
+  } finally {
+    app.unmount();
+  }
+}, 10_000);
