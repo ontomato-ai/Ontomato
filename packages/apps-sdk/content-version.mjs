@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
-import { brotliCompressSync, gzipSync } from "node:zlib";
+import { brotliCompressSync, constants, gzipSync } from "node:zlib";
 
 export const VERSION_PLACEHOLDER = "__APPS_SDK_VERSION__";
 
@@ -29,7 +29,7 @@ function digestOf(dir, names) {
 }
 
 // Hash the actual output before inserting its own version into docs, examples and manifests.
-export function finalizeSdk(root, base, release) {
+export function finalizeSdk(root, base, release, archiveModule) {
   const staged = join(root, VERSION_PLACEHOLDER);
   const names = files(staged);
   const version = release ? base : `${base}-dev.${digestOf(staged, names)}`;
@@ -46,7 +46,9 @@ export function finalizeSdk(root, base, release) {
   for (const name of names) {
     if (!COMPRESSIBLE.has(extname(name))) continue;
     const bytes = readFileSync(join(root, version, name));
-    writeFileSync(join(root, version, `${name}.br`), brotliCompressSync(bytes));
+    // The authoring module already embeds a compressed archive.
+    const options = name === archiveModule ? { params: { [constants.BROTLI_PARAM_QUALITY]: 4 } } : undefined;
+    writeFileSync(join(root, version, `${name}.br`), brotliCompressSync(bytes, options));
     writeFileSync(join(root, version, `${name}.gz`), gzipSync(bytes, { level: 9 }));
   }
   writeFileSync(join(root, "current.json"), JSON.stringify({ version, digest }) + "\n");

@@ -20,7 +20,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { HttpError } from "../../utils/errors";
 import { assertAppBuilderAccess } from "../app-builder/access";
 import { requireProductGrant, type ProductOwner } from "../product-governance/grants";
-import { readPanelComponentCatalogue } from "./component-catalogue";
+import { readPanelComponentCatalogue, readProjectionComponent } from "./component-catalogue";
 import { listObjectDetailPanelMappings } from "./object-detail";
 import { panelStateDomainPrefix, panelStateKeyNamespace } from "./personal-state-key";
 import type { panelOperationTargetCheck } from "./type-table";
@@ -65,8 +65,8 @@ function collectReferences(
       } else if ("projectionIds" in candidates) {
         for (const id of candidates.projectionIds) add({ kind: "projection", id });
       } else if (candidates.rule === "objectDetail") {
-        const { type } = state[target.fromState];
-        if (type.kind === "object" || type.kind === "object-union") {
+        const type = state[target.fromState]?.type;
+        if (type?.kind === "object" || type?.kind === "object-union") {
           for (const [className, id] of details) {
             if (matchesObjectType(type, className)) add({ kind: "panel", id }, true);
           }
@@ -109,18 +109,27 @@ async function loadDetails(domainId: string, client: QueryClient) {
   return new Map(mappings.map(({ className, panelId }) => [className, panelId]));
 }
 
-async function loadSavedPlacements(domainId: string, panels: ReadonlyMap<string, PanelDefinition>, client: QueryClient) {
+async function loadSavedPlacements(domainId: string, panels: ReadonlyMap<string, PanelDefinition>, client: QueryClient, tolerateInvalid = false) {
   const placements = new Map<string, SavedPlacement[]>();
   const hasPersonalPlacements = Array.from(panels.values()).some(({ manifest }) =>
     Object.values(manifest.state).some(field => field.personal && field.type.kind === "placement"));
   if (!hasPersonalPlacements) return placements;
-  const { rows } = await client.query<{ scope: [string, string, unknown, string, string]; value: unknown }>(
-    `SELECT substring(key FROM char_length($2::text)+1)::jsonb AS scope,value
+  const scope = "substring(key FROM char_length($2::text)+1)";
+  const parsedScope = tolerateInvalid ? `CASE WHEN ${scope} IS JSON ARRAY THEN ${scope}::jsonb END` : `${scope}::jsonb`;
+  const { rows } = await client.query<{ scope: [string, string, unknown, string, string] | null; value: unknown }>(
+    `SELECT ${parsedScope} AS scope,value
      FROM ${table("user_preferences")} WHERE starts_with(key,$1) AND jsonb_typeof(value)='object' AND value ? 'target'`,
     [panelStateDomainPrefix(domainId), panelStateKeyNamespace],
   );
-  for (const { scope: [, , , panelId, field], value } of rows) {
-    const placement = panelPlacementSchema.parse(value);
+  for (const { scope, value } of rows) {
+    if (scope === null) continue;
+    const [, , , panelId, field] = scope;
+    const parsed = panelPlacementSchema.safeParse(value);
+    if (!parsed.success) {
+      if (tolerateInvalid) continue;
+      throw parsed.error;
+    }
+    const placement = parsed.data;
     const existing = placements.get(panelId) ?? [];
     existing.push({ field, placement });
     placements.set(panelId, existing);
@@ -135,6 +144,82 @@ export async function findPanelUsers(domainId: string, kind: CurrentProductKind,
     .filter(parent => collectReferences(parent.panel, details, saved.get(parent.id)).some(({ target }) => target.kind === kind && target.id === id))
     .map(({ id, panel }) => ({ id, name: panel.name }))
     .sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id));
+}
+
+type ScopedProductId = { domainId: string | null; id: string };
+type ProjectionPanelUse = ScopedProductId & { inputs: Set<string>; outputs: Set<string> };
+export function productReferenceKey({ domainId, id }: ScopedProductId) {
+  return JSON.stringify([domainId, id]);
+}
+
+/** Scan stored bindings in the domains of affected projections, including personal placements on built-in panels. */
+export async function findProjectionPanelUsers(projections: readonly ScopedProductId[], client: QueryClient) {
+  const ids = new Set(projections.map(productReferenceKey));
+  const domains = new Set(projections.flatMap(({ domainId }) => domainId === null ? [] : [domainId]));
+  const builtins = projections.some(({ domainId }) => domainId === null);
+  const { rows } = await client.query<ScopedProductId & { definition: unknown }>(
+    `SELECT domain_id AS "domainId",id,definition FROM ${currentProductRows("panel")} AS definitions
+     WHERE domain_id IS NULL OR domain_id=ANY($1::text[]) OR $2::boolean`, [[...domains], builtins],
+  );
+  if (builtins) {
+    const { rows: preferences } = await client.query<{ domainId: string }>(
+      `SELECT DISTINCT CASE WHEN substring(key FROM char_length($1::text)+1) IS JSON ARRAY
+        THEN substring(key FROM char_length($1::text)+1)::jsonb->>0 END AS "domainId"
+       FROM ${table("user_preferences")} WHERE starts_with(key,$1)`, [panelStateKeyNamespace],
+    );
+    for (const { domainId } of preferences) if (domainId) domains.add(domainId);
+  }
+
+  const panels = new Map<string | null, Map<string, PanelDefinition>>();
+  const facts = z.object({ manifest: z.object({ members: z.record(z.unknown()).catch({}), state: z.record(z.unknown()).catch({}) }) });
+  const manifest = panelManifestSchema.innerType().shape;
+
+  const retained = <T>(values: Record<string, unknown>, schema: z.ZodType<T, z.ZodTypeDef, unknown>) =>
+    Object.fromEntries(Object.entries(values).flatMap(([name, value]) => {
+      const item = schema.safeParse(value);
+      return item.success ? [[name, item.data] as const] : [];
+    }));
+  for (const { domainId, id, definition } of rows) {
+    const parsed = facts.safeParse(definition);
+    if (!parsed.success) continue;
+    const inDomain = panels.get(domainId) ?? new Map<string, PanelDefinition>();
+    const { members, state } = parsed.data.manifest;
+    const fields = retained(state, manifest.state.valueSchema);
+    for (const [name, field] of Object.entries(fields)) {
+      if (field.type.kind === "placement" && field.default != null && !panelPlacementSchema.safeParse(field.default).success)
+        fields[name] = { ...field, default: undefined };
+    }
+    inDomain.set(id, { name: id, manifest: { members: retained(members, manifest.members.valueSchema), state: fields } });
+    panels.set(domainId, inDomain);
+    if (domainId !== null) domains.add(domainId);
+  }
+  const users = new Map<string, Map<string, ProjectionPanelUse>>();
+  const platformPanels = panels.get(null);
+  const record = (domainId: string | null, panel: ScopedProductId, references: readonly Reference[]) => {
+    for (const { target, wiring } of references) {
+      if (target.kind !== "projection") continue;
+      const key = productReferenceKey({ id: target.id, domainId: isBuiltinProductId(target.id) ? null : domainId });
+      if (!ids.has(key)) continue;
+      const found = users.get(key) ?? new Map<string, ProjectionPanelUse>();
+      const panelKey = productReferenceKey(panel);
+      const use = found.get(panelKey) ?? { ...panel, inputs: new Set<string>(), outputs: new Set<string>() };
+      for (const name of Object.keys(wiring.inputs ?? {})) use.inputs.add(name);
+      for (const name of Object.keys(wiring.outputs ?? {})) use.outputs.add(name);
+      found.set(panelKey, use);
+      users.set(key, found);
+    }
+  };
+  for (const [id, panel] of platformPanels ?? []) record(null, { domainId: null, id }, collectReferences(panel, new Map()));
+  for (const domainId of domains) {
+    const domainPanels = panels.get(domainId);
+    const scoped = new Map([...platformPanels ?? [], ...domainPanels ?? []]);
+    const saved = await loadSavedPlacements(domainId, scoped, client, true);
+    for (const [id, panel] of scoped) {
+      record(domainId, { domainId: domainPanels?.has(id) ? domainId : null, id },
+        collectReferences(panel, new Map(), saved.get(id)));
+    }
+  }
+  return users;
 }
 
 function rejectCycles(
@@ -213,8 +298,8 @@ async function incompatiblePort(
   if ("data" in definition) {
     for (const { name, datum, declaration } of reads) {
       if (!missingRequiredReadParameters(declaration, datum.params, undefined, wiring).length) continue;
-      const { components } = await readCatalogue();
-      const runtimeParams = appsSdkComponentDatum(components.get(definition.componentId)?.data, name)?.runtimeParams;
+      const component = await readProjectionComponent(definition.componentId, readCatalogue);
+      const runtimeParams = appsSdkComponentDatum(component?.data, name)?.runtimeParams;
       const [missing] = missingRequiredReadParameters(declaration, datum.params, runtimeParams, wiring);
       if (missing !== undefined) return `data '${name}' requires parameter '${missing}'`;
     }
