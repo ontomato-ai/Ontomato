@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type { SkillCatalogReason } from "@ontomato/contracts/skills";
 import { HttpError } from "../../utils/errors";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
-import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
+import type { AssistantCredentials } from "../../utils/assistant-credentials";
 import {
   runtimeRegisterSkillRequestSchema,
   type RuntimeSkillRef,

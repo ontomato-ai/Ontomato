@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { SkillCatalogDiagnostics } from "@ontomato/contracts/skills";
-import type { AssistantCredentials } from "../../../platform/agent-runtime/runtime";
+import type { AssistantCredentials } from "../../../utils/assistant-credentials";
 import {
   runtimeSkillKey,
   standardSkillFrontmatterSchema,

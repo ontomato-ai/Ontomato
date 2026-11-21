@@ -17,13 +17,8 @@ import {
   qualifiedTable as table,
 } from "../../infrastructure/postgres";
 import { HttpError } from "../../utils/errors";
-export interface AssistantCredentials {
-  token?: string;
-  apiKey?: string;
-  locale?: string;
-  headers?: Record<string, string>;
-  executionUserId?: string | null;
-}
+import type { AssistantCredentials } from "../../utils/assistant-credentials";
+export type { AssistantCredentials } from "../../utils/assistant-credentials";
 /**
  * The scenario a skill script runs in. Inside the platform a page's own save is the only writer of that page's data;
  * declared panel operations instead go through the server coordinator. Outside the platform, skills keep their own caller path.
