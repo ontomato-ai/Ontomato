@@ -44,6 +44,10 @@
       "id": "ontology-relations", "pageKey": "ontology-relations", "panelId": "builtin-product-ontology-relations",
       "path": "/ontology/relations", "access": {"permissionCode": "ontology-modeling"},
       "names": {"en": "Relation types", "zh-CN": "关系类型"}
+    }, {
+      "id": "capability-map", "pageKey": "capability-map", "panelId": "builtin-product-capability-map",
+      "path": "/ontology/assets/capability-map", "access": {"permissionCode": "action-management"},
+      "names": {"en": "Capability map", "zh-CN": "能力图谱"}
     }]
   }
 }
