@@ -93,7 +93,7 @@ export interface PanelInstance {
   readonly projections: DeepReadonly<Ref<readonly PanelProjectionRegistration[]>>;
   /** The form adapters its projections registered, for the draft its address names. */
   readonly forms: PanelFormAdapters;
-  /** The draft this instance received, once one arrived. */
+  /** Set once a mounted form accepts a draft with changed fields. Cleared when the reader saves or discards it. */
   readonly draft: Readonly<Ref<ReceivedPanelDraft<Record<string, unknown>> | null>>;
   receiveDraft(value: ReceivedPanelDraft<Record<string, unknown>>): void;
   /**

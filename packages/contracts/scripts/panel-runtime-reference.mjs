@@ -10,6 +10,7 @@ import { applicationIconKeys } from "../src/application-icons.ts";
 import { panelAddress, panelDataStateSchema } from "../src/panel-host.ts";
 import { directPanelPortTypeSchema, panelChildObjectIdentitySchema, panelStateFieldSchema } from "../src/panel-manifest.ts";
 import { panelModuleSpecifiers } from "../src/panel-module.ts";
+import { PAGE_DRAFT_QUERY_KEYS } from "../src/page-draft.ts";
 import { SDK_COMPONENT } from "../src/platform-object-types.ts";
 
 const destination = new URL("../../../agent-skills/ontomato-app-builder/references/panel-authoring/RUNTIME.md", import.meta.url);
@@ -110,7 +111,7 @@ const contents = [
   "",
   sdkFields("PanelContext", ["instance", "t", "navigate", "notify"]),
   "",
-  sdkFields("PanelInstance", ["state", "pageContext", "onObjectChanged", "refreshObjects"]),
+  sdkFields("PanelInstance", ["state", "pageContext", "draft", "onObjectChanged", "refreshObjects"]),
   "",
   sdkSection("PanelStateStore"),
   "",
@@ -127,6 +128,25 @@ const contents = [
   sdkSection("usePanelOperation"),
   "",
   sdkSection("PanelOperationHandle"),
+  "",
+  "## Open events and navigation",
+  "",
+  "A `manifest.events` event with `labelKey` and no `on` is a page-header operation. An event with `on` runs from that member's output.",
+  "`do.open` with `mode: \"entry\"` describes a `platform:ApplicationPanelUse` reference and optional destination state inputs.",
+  "In the current direct runtime, an open event reports that the SDK opens no entry or member from an event.",
+  "For a browser button or component output that should navigate, call `usePanelContext().navigate` with the registered path",
+  "from `panel uses <application-id>` and, when needed, the destination's deep-linkable state.",
+  "",
+  "## Draft links and instance state",
+  "",
+  `A draft link uses the destination entry path and the query keys ${inline(PAGE_DRAFT_QUERY_KEYS)}.`,
+  "Use the session and run that wrote the artifact and the original relative `outputs/drafts/<name>.page-draft.json` path.",
+  "The SDK reads the artifact, verifies it was written for the entry's `pageKey`, and offers it to the mounted forms.",
+  "A form asks its owner for the target's description, matches `save.draftOperation`, then gives the owner's form read",
+  "the proposed field values to check. If the owner accepts changed fields, the SDK fills the form and sets `instance.draft`.",
+  "Keep the form projection mounted with `v-show` so it can receive the draft before the editor is visible.",
+  "Watch `instance.draft` to reveal the editor. It is null while waiting or when the draft changes nothing.",
+  "The reader saves or discards the proposed change in the form.",
   "",
   "## List paging",
   "",

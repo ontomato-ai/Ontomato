@@ -50,6 +50,8 @@ interface PanelInstance {
   // A computed context, read only at its top: a deep read-only type of it recurses through the member paths' JSON values
   // (a nested panel's selection) without end.
   readonly pageContext: ComputedRef<PageContext>;
+  /** Set once a mounted form accepts a draft with changed fields. Cleared when the reader saves or discards it. */
+  readonly draft: Readonly<Ref<ReceivedPanelDraft<Record<string, unknown>> | null>>;
   refreshObjects(): void;
   onObjectChanged(listener: (object: PanelObjectIdentity | null) => void): () => void;
 }
@@ -128,6 +130,25 @@ interface PanelOperationHandle {
   run(input?: Readonly<Record<string, unknown>>): Promise<unknown>;
 }
 ```
+
+## Open events and navigation
+
+A `manifest.events` event with `labelKey` and no `on` is a page-header operation. An event with `on` runs from that member's output.
+`do.open` with `mode: "entry"` describes a `platform:ApplicationPanelUse` reference and optional destination state inputs.
+In the current direct runtime, an open event reports that the SDK opens no entry or member from an event.
+For a browser button or component output that should navigate, call `usePanelContext().navigate` with the registered path
+from `panel uses <application-id>` and, when needed, the destination's deep-linkable state.
+
+## Draft links and instance state
+
+A draft link uses the destination entry path and the query keys `draftSessionId`, `draftRunId`, `draftPath`.
+Use the session and run that wrote the artifact and the original relative `outputs/drafts/<name>.page-draft.json` path.
+The SDK reads the artifact, verifies it was written for the entry's `pageKey`, and offers it to the mounted forms.
+A form asks its owner for the target's description, matches `save.draftOperation`, then gives the owner's form read
+the proposed field values to check. If the owner accepts changed fields, the SDK fills the form and sets `instance.draft`.
+Keep the form projection mounted with `v-show` so it can receive the draft before the editor is visible.
+Watch `instance.draft` to reveal the editor. It is null while waiting or when the draft changes nothing.
+The reader saves or discards the proposed change in the form.
 
 ## List paging
 
