@@ -176,10 +176,10 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
       return { actions, unavailableActions };
     },
     [`${SET_ACTION_STATUS}.describe`]() {
-      return describeServerOperation(panelServerOperation(SET_ACTION_STATUS), translate("panels.action.operations.setStatus"));
+      return describeServerOperation(panelServerOperation(SET_ACTION_STATUS), viewer.locale);
     },
     [`${DELETE_ACTION}.describe`]() {
-      return describeServerOperation(panelServerOperation(DELETE_ACTION), translate("panels.action.operations.delete"));
+      return describeServerOperation(panelServerOperation(DELETE_ACTION), viewer.locale);
     },
   };
 }
