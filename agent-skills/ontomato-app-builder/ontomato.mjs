@@ -396,7 +396,10 @@ async function panelCommand(api, workspaceId, [command, ...args]) {
     if (args.length !== 1) die("panel register requires one workspace directory or registration object");
     const connection = { workbenchUrl: api.envUrl, ontologyUrl: api.ontologyUrl, headers: headers(api) };
     const client = panelRegistrationClient(connection);
-    const report = (kind, id) => console.log(`${kind} ${id}`);
+    const report = (kind, id, details) => {
+      console.log(`${kind} ${id}`);
+      if (details?.recoveredUpdate) console.log(`Updated projection ${id}`);
+    };
     const [source] = args;
     if (source.startsWith("@") || source.trimStart().startsWith("{")) {
       if (materialPath !== undefined) die("--material applies to workspace registration");

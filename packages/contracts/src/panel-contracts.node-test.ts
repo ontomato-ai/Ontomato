@@ -22,6 +22,7 @@ import { defaultAgentSchema } from "./default-agent";
 import { pageSkillSchema } from "./page-skills";
 import assert from "node:assert/strict";
 import test from "node:test";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import { dashboardCardPrimaryKey } from "./dashboard";
 import { DASHBOARD_CARD } from "./platform-object-types";
 import {
@@ -170,7 +171,10 @@ test("the checker accepts short data and operation members with reusable project
       ...list, data: { rows: { read: "query", params: { search: { state: "search" }, status: { literal: "pending" } } } },
     } },
   }).success, true);
-  for (const member of [{ ...list, inputs: {} }, { ...list, id: "not-a-uuid" }, { component: "ObjectList" }]) {
+  assert.equal(panelAuthoringManifestSchema.safeParse({
+    ...manifest, members: { list: { ...list, id: "previously-registered-list" } },
+  }).success, true);
+  for (const member of [{ ...list, inputs: {} }, { ...list, id: "" }, { component: "ObjectList" }]) {
     assert.equal(panelAuthoringManifestSchema.safeParse({ ...manifest, members: { list: member } }).success, false);
   }
 });
@@ -459,7 +463,10 @@ test("feedback, governance records and the skill library read through their owne
     passages: {
       source: object(KNOWLEDGE_GOVERNANCE_RECORD), read: "sourcePage", params: { source: { literal: "source-1" }, cursor: { literal: "c" } },
     },
-  }), { record: "panelRecord", issues: "panelRecordList", sources: "panelRecordList", passages: "panelRecordQuery" });
+    cited: { source: object(KNOWLEDGE_GOVERNANCE_RECORD), read: "issueSources", params: { issue: { literal: "issue-1" } } },
+  }), {
+    record: "panelRecord", issues: "panelRecordList", sources: "panelRecordList", passages: "panelRecordQuery", cited: "panelRecordList",
+  });
 
   assert.deepEqual(result({
     rows: { source: { type: platformType(SKILL) }, read: "query", params: { search: { literal: "report" } } },
@@ -474,6 +481,7 @@ test("feedback, governance records and the skill library read through their owne
   };
   assert.deepEqual(required(FEEDBACK_RECORD, "counts"), ["by"]);
   assert.deepEqual(required(KNOWLEDGE_GOVERNANCE_RECORD, "sourcePage"), ["source"]);
+  assert.deepEqual(required(KNOWLEDGE_GOVERNANCE_RECORD, "issueSources"), ["issue"]);
   assert.deepEqual(required(SKILL, "file"), ["path"]);
   assert.deepEqual(platformObjectTypes[SKILL].operations, [DELETE_SKILL, EXPORT_SKILL]);
   assert.deepEqual(platformObjectTypes[FEEDBACK_RECORD].operations, [EXPORT_FEEDBACK]);
@@ -1434,7 +1442,7 @@ test("a read-only trial carries the current draft and parameters without a write
 });
 
 test("the author type table and live descriptions share operation declarations", async () => {
-  const { panelOperationDeclarationSchema, describePanelOperationFromDeclaration } = await import("./panel-operations");
+  const { panelOperationDeclarationSchema, describePanelOperationFromDeclaration, panelReadResultSchemas } = await import("./panel-operations");
   const { platformTypeTableResponseSchema } = await import("./platform-type-table");
   const run = panelOperationDeclarationSchema.parse({
     id: RUN_NOW, kind: "action", effect: "write", batch: false, target: { source: "input", input: "task" }, inputSchema: { type: "object" },
@@ -1442,11 +1450,13 @@ test("the author type table and live descriptions share operation declarations",
   const save = panelOperationDeclarationSchema.parse({
     id: SCHEDULED_TASK + ".save", kind: "form.save", effect: "write", batch: false, target: { source: "draft" }, inputSchema: { type: "object" },
   });
-  const table = {
-    objectTypes: { [SCHEDULED_TASK]: { reads: platformObjectTypes[SCHEDULED_TASK].reads, operations: [run, save] } },
-    resultSchemas: { panelRecordList: { type: "array" }, panelRecord: { type: "object" }, panelFormDescription: { type: "object" } },
-  };
+  const reads = platformObjectTypes[SCHEDULED_TASK].reads!;
+  const resultIds = new Set(Object.values(reads).map(read => read.result));
+  const resultSchemas = Object.fromEntries([...resultIds].map(id => [id, zodToJsonSchema(panelReadResultSchemas[id])]));
+  const table = { objectTypes: { [SCHEDULED_TASK]: { reads, operations: [run, save] } }, resultSchemas };
   assert.deepEqual(platformTypeTableResponseSchema.parse(table), table);
+  const { panelFormDescription: _form, ...incomplete } = resultSchemas;
+  assert.equal(platformTypeTableResponseSchema.safeParse({ ...table, resultSchemas: incomplete }).success, false);
   assert.equal(panelOperationDeclarationSchema.safeParse({ ...run, label: "Run now" }).success, false);
 
   const { id, ...staticFields } = run;

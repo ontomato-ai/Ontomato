@@ -10,7 +10,7 @@ import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { AGENT_DEFINITION, DELETE_AGENT, PRODUCT_PANEL, PRODUCT_PROJECTION, SCHEDULED_TASK, SDK_COMPONENT } from "@ontomato/contracts/platform-object-types";
 import {
-  productPanelInUseErrorSchema, productPanelResponseSchema, productPanelUsedBySchema,
+  PROJECTION_REUSE_PANEL_HEADER, productPanelInUseErrorSchema, productPanelResponseSchema, productPanelUsedBySchema,
   productProjectionInUseErrorSchema, productProjectionResponseSchema,
   productProjectionUsedBySchema, registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
 } from "@ontomato/contracts/product-panels";
@@ -203,9 +203,9 @@ afterAll(async () => {
   await rm(contentRoot, { recursive: true });
 });
 
-function request(method: string, resource: string, user: string, body?: object) {
+function request(method: string, resource: string, user: string, body?: object, headers?: Record<string, string>) {
   return fetch(`${state.base}/api/${resource}`, {
-    method, headers: { "Content-Type": "application/json", "X-Test-User": user }, body: JSON.stringify(body),
+    method, headers: { "Content-Type": "application/json", "X-Test-User": user, ...headers }, body: JSON.stringify(body),
   });
 }
 
@@ -378,6 +378,37 @@ async function saveProjection(id: string, user = "author") {
 function projectionMembers(...ids: string[]) {
   return Object.fromEntries(ids.map((projectionId, index) => [`member${index}`, { target: { projectionId } }]));
 }
+
+it("only accepts a recovered projection update while the original panel is its sole user", async () => {
+  const id = "recovered-projection", originalPanel = "recovery-original", laterPanel = "recovery-later";
+  const resource = `product-projections/${id}`;
+  await saveProjection(id);
+  const manifest = { state: {}, events: {}, members: projectionMembers(id) };
+  expect((await savePanel(originalPanel, manifest)).status).toBe(200);
+  const usage = await request("GET", `${resource}/used-by`, "author");
+  expect(productProjectionUsedBySchema.parse(await usage.json())).toEqual({
+    panels: [{ id: originalPanel, name: originalPanel }], hiddenCount: 0,
+  });
+  const guarded = { [PROJECTION_REUSE_PANEL_HEADER]: originalPanel };
+  const change = { ...projectionInput, name: "Updated", visibility: "private", revision: 1 };
+  const soleUpdate = await request("PUT", resource, "author", change, guarded);
+  expect(soleUpdate.status).toBe(200);
+  expect(productProjectionResponseSchema.parse(await soleUpdate.json()).projection.revision).toBe(2);
+
+  expect((await savePanel(laterPanel, manifest)).status).toBe(200);
+  const sharedChange = { ...change, name: "Shared update", revision: 2 };
+  const refused = await request("PUT", resource, "author", sharedChange, guarded);
+  expect(refused.status).toBe(409);
+  expect(await refused.json()).toMatchObject({ error: { code: "PROJECTION_REUSE_CONFLICT" } });
+  const current = await request("GET", resource, "author");
+  expect(productProjectionResponseSchema.parse(await current.json()).projection).toMatchObject({ name: "Updated", revision: 2 });
+
+  const explicitUpdate = await request("PUT", resource, "author", sharedChange);
+  expect(explicitUpdate.status).toBe(200);
+  expect(productProjectionResponseSchema.parse(await explicitUpdate.json()).projection).toMatchObject({
+    name: "Shared update", revision: 3,
+  });
+});
 
 it("shares editable member projections, reports skipped members once and does not revoke their sharing", async () => {
   const editable = "share-editable", restricted = "share-restricted", id = "share-panel";

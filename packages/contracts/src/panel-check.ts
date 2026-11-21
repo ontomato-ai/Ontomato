@@ -9,6 +9,7 @@ export { panelModuleImports } from "./panel-module";
 export {
   chartProjectionLookupResponseSchema, panelDefinitionContentSchema, productProjectionInputSchema,
   productProjectionResponseSchema, registerChartProjectionResponseSchema,
+  productProjectionUsedBySchema, PROJECTION_REUSE_PANEL_HEADER,
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
 } from "./product-panels";
 export {

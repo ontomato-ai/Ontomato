@@ -312,6 +312,11 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
       issues: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       sources: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      // The sources one issue cites, in the order it cites them, as the same rows as `sources`.
+      issueSources: {
+        source: "object", parameterMode: "fixed", params: { issue: "governanceIssue" }, requiredParams: ["issue"],
+        result: "panelRecordList",
+      },
       // One registered source, read in segments: each row is a passage and the owner encodes its position in the cursor.
       sourcePage: {
         source: "object", parameterMode: "fixed", params: { source: "governanceSource", cursor: "cursor" },

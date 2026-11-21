@@ -1,12 +1,12 @@
 import { z } from "zod";
-import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
+import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { dashboardCardRequestSchema } from "./dashboard";
 import { defaultAgentSchema } from "./default-agent";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import { panelManifestSchema, panelMemberSchema, panelObjectRefSchema, panelStateRefSchema } from "./panel-manifest";
 import { panelOperationDeclarationSchema } from "./panel-operations";
 import { directProjectionDataSchema, directProjectionPortsSchema } from "./panel-projection";
-import { builtinProductIdSchema } from "./product-record-id";
+import { productCurrentIdParamsSchema } from "./product-record-id";
 
 const stateKey = panelStateRefSchema.shape.state;
 const memberKey = panelManifestSchema.innerType().shape.members.keySchema;
@@ -31,7 +31,7 @@ function isOfficialComponent(component: string, name: string) {
 }
 
 const inlineMemberSchema = z.object({
-  id: z.union([runtimeIdSchema, builtinProductIdSchema]).optional().describe("Stable projection ID written by registration or by the offline check for a packaged panel. Keep it when renaming or moving the member."),
+  id: productCurrentIdParamsSchema.shape.id.optional().describe("Stable projection ID written by registration or by the offline check for a packaged panel. Keep it when renaming or moving the member."),
   component: z.union([
     z.string().regex(/^[^@\s/:]+$/u, "Expected an SDK component name"),
     directProjectionPortsSchema.shape.componentId,

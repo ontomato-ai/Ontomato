@@ -86,13 +86,14 @@ export function panelRegistrationRecords({ projections = [], panels = [], applic
 
 export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workbenchUrl}/api/data-query`, headers = {} }) {
   const sdk = currentSdkClient({ workbenchUrl, headers });
-  const send = (base, method, path, body) => fetch(base + path, {
+  const send = (base, method, path, body, requestHeaders) => fetch(base + path, {
     method,
-    headers: { ...headers, Accept: "application/json", "Content-Type": "application/json" },
+    headers: { ...headers, Accept: "application/json", "Content-Type": "application/json", ...requestHeaders },
     body: body === undefined ? undefined : JSON.stringify(body),
     redirect: "error",
   });
-  const call = async (base, method, path, body) => readAnswer(await send(base, method, path, body), method, path);
+  const call = async (base, method, path, body, requestHeaders) =>
+    readAnswer(await send(base, method, path, body, requestHeaders), method, path);
   async function currentRecord(kind, id) {
     const path = productPath(kind, id);
     const response = await send(workbenchUrl, "GET", path);
@@ -108,6 +109,10 @@ export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workben
 
   return {
     currentRecord,
+    async projectionUsedBy(id, checks) {
+      const result = await call(workbenchUrl, "GET", `${productPath("projection", id)}/used-by`);
+      return checks.productProjectionUsedBySchema.parse(result);
+    },
     currentRevision,
     async deleteApplication(id) {
       await call(ontologyUrl, "DELETE", `/platform/applications/${encodeURIComponent(id)}`);
@@ -128,7 +133,7 @@ export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workben
       const result = await call(workbenchUrl, "POST", `/api${checks.CHART_PROJECTION_SOURCES_PATH}`, sourceCard);
       return checks.registerChartProjectionResponseSchema.parse(result).projection;
     },
-    async register(material, onRegistered, checks) {
+    async register(material, onRegistered, checks, recoveredProjectionPanels = new Map()) {
       const { projections = [], panels = [], applications = [], ...unknown } = material;
       if (Object.keys(unknown).length) throw new Error(`Unknown registration fields: ${Object.keys(unknown).join(", ")}`);
       for (const { id, mode } of applications) {
@@ -151,7 +156,9 @@ export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workben
         const writes = panelRegistrationRecords({ projections, panels, applications }, checks);
         for (const [kind, items] of writes) {
           await apply(kind, items, async ({ id, body }) => {
-            const answer = await call(workbenchUrl, "PUT", productPath(kind, id), body);
+            const panelId = kind === "projection" ? recoveredProjectionPanels.get(id) : undefined;
+            const guard = panelId === undefined ? undefined : { [checks.PROJECTION_REUSE_PANEL_HEADER]: panelId };
+            const answer = await call(workbenchUrl, "PUT", productPath(kind, id), body, guard);
             if (answer[kind].revision !== body.revision + 1) {
               throw new Error(`Owner did not advance revision ${body.revision} by one`);
             }

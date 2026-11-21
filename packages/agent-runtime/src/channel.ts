@@ -245,7 +245,9 @@ export class AgentChannel {
           const message=original.message as AgentInput;
           if(original.sessionId!==target.sessionId || message.role!==input.role || message.content!==input.content || (message.role==="notification" ? message.replyTo : undefined)!==(input.role==="notification" ? input.replyTo : undefined) || (message.role==="notification" ? message.selectedOption : undefined)!==(input.role==="notification" ? input.selectedOption : undefined)) throw new RuntimeError(409,"IDEMPOTENCY_CONFLICT","Input changed");
           const intent=await this.facts.intent(scope,original.runId ?? original.intentId!);
-          if(intent.status === "failed" || intent.cancelled) throw new RuntimeError(409,"RUN_CLOSED",intent.error ?? "Execution intent is closed");
+          // A failed provider callback after the run is committed does not revoke its admission.
+          if (intent.cancelled || (intent.status === "failed" && !await this.facts.hasRun(scope, intent.id)))
+            throw new RuntimeError(409, "RUN_CLOSED", intent.error ?? "Execution intent is closed");
           return {input:original,replayed:true,delivery:{messageId:original.id,sessionRef:target,runId:intent.id,delivery:intent.inputId===original.id?"run":"steer",status:intent.status==="starting"?"starting":"running"}};
         }
       }
