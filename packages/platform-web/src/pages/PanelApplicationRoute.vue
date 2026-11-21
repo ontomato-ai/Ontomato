@@ -2,8 +2,9 @@
 import { computed, inject, markRaw, ref, shallowRef, toRaw, watch, type Ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { PanelHost, panelUnavailable, usePageHeading, useUnsavedChanges, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
-import { panelAddress, panelAddressState, panelUsePath } from "@ontomato/contracts/panel-host";
+import { PanelHost, panelUnavailable, useApplicationTheme, useAppTheme, usePageHeading, useUnsavedChanges, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
+import { applicationPanelAddress, panelAddress, panelAddressState, panelUsePath, parseApplicationPanelAddress } from "@ontomato/contracts/panel-host";
+import type { PanelDeepLinkStateValue } from "@ontomato/contracts/panel-manifest";
 import { applicationRootPath } from "@ontomato/contracts/platform-identity";
 import type { ApplicationEntryResolution, ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
@@ -12,6 +13,7 @@ import { countedTypesChangedKey } from "@ontomato/ontology-manager";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import { platformPanelHost, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
+import { hostThemeMode } from "../app-host";
 import { useApplicationCatalog } from "../catalog";
 
 /**
@@ -182,6 +184,13 @@ const use = computed<ApplicationPanelUse | null>(() => {
   const at = (candidate: ApplicationPanelUse) => panelUsePath(candidate.path) === path;
   return kept.value.find((page) => at(page.use))?.use ?? listed.value.find(at) ?? null;
 });
+/**
+ * The application's theme from Java's answer (a \`panels\` application's only). At full page the platform's layout assigns
+ * it on the application's area, its menu and its page; beside a conversation it is assigned on this content alone.
+ */
+const area = ref<HTMLElement | null>(null);
+if (props.navigate) useAppTheme(area, () => resolution.value?.theme, hostThemeMode);
+else useApplicationTheme(() => resolution.value?.theme);
 /** An address that names no use relation the reader may open is a page that cannot load, and its receipt says so. */
 const missing = computed(() => answered.value && !use.value
   ? entryFailure.value || t("platform.panelNotInApplication", { path: openedPath.value }) : "");
@@ -238,12 +247,31 @@ const pageAddress = computed(() => {
 /** The display owns a paired page's address. A standalone route reflects the same state in place. */
 function reportAddress(input: DisplayPageAddressInput) {
   const page = shownPage.value!;
-  page.reported = input.address;
+  const address = withoutEntryInputs(input.address, page.use);
+  page.reported = address;
   if (props.navigate) {
-    emit("display-address", input);
+    emit("display-address", { ...input, address });
     return;
   }
-  if (opened.value !== input.address) void router.replace(input.address);
+  if (opened.value !== address) void router.replace(address);
+}
+
+/**
+ * The values an entry passes its content panel (product-layer standard, part three): a field the entry wires is the
+ * entry's, so the panel takes the passed value whatever the address or the reader's saved state says, and the address
+ * does not carry it. Only fixed values (\`literal\`) are passed for now: a value from a frame's state comes with frames.
+ */
+function entryInputs(use: ApplicationPanelUse): Record<string, PanelDeepLinkStateValue> {
+  return Object.fromEntries(Object.entries(use.inputs ?? {}).flatMap(([field, input]) =>
+    "literal" in input ? [[field, input.literal as PanelDeepLinkStateValue]] : []));
+}
+/** An address without the state fields the entry wires: those are the entry's to give, not the address's. */
+function withoutEntryInputs(address: string, use: ApplicationPanelUse) {
+  const wired = Object.keys(use.inputs ?? {});
+  if (!wired.length || !address.includes("?")) return address;
+  const { path, frame, state, query } = parseApplicationPanelAddress(address);
+  for (const field of wired) delete state[field];
+  return applicationPanelAddress(path, { frame, state, query });
 }
 
 const requestedState = computed(() => panelAddressState(opened.value));
@@ -380,7 +408,8 @@ function addressOf(page: KeptPage) {
   return page === shownPage.value && opened.value.includes("?") ? pageAddress.value : panelAddress(page.reported, {});
 }
 function stateOf(page: KeptPage) {
-  return page === shownPage.value && opened.value.includes("?") ? requestedState.value : panelAddressState(page.reported);
+  const state = page === shownPage.value && opened.value.includes("?") ? requestedState.value : panelAddressState(page.reported);
+  return { ...state, ...entryInputs(page.use) };
 }
 
 function reportContext(page: KeptPage, context: PageContext) {
@@ -395,6 +424,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
 </script>
 
 <template>
+  <div ref="area" class="panel-application-area">
   <p v-if="failure" role="alert">{{ failure }}</p>
   <p v-else-if="missing" role="alert">{{ missing }}</p>
   <template v-if="!failure">
@@ -427,9 +457,14 @@ function reportDirty(page: KeptPage, dirty: boolean) {
     />
     <p v-if="!props.navigate && composerProblem" class="page-composer-error" role="alert">{{ composerProblem }}</p>
   </template>
+  </div>
 </template>
 
 <style scoped>
+/* The application's area beside a conversation, where its theme is assigned; it lays out nothing of its own. */
+.panel-application-area {
+  display: contents;
+}
 /*
  * At full page the platform's page body already holds the gutter the header's title stands on: the panel's content starts
  * on the same line, with no inset of the host's own (visual acceptance E-01).

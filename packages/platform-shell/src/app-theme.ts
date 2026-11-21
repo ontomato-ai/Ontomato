@@ -1,4 +1,4 @@
-import { onBeforeUnmount, watch, type Ref } from "vue";
+import { inject, onBeforeUnmount, provide, shallowRef, watch, type InjectionKey, type Ref } from "vue";
 import type { PanelThemeOverrides } from "@ontomato/contracts/panel-manifest";
 
 /*
@@ -118,4 +118,24 @@ export function useAppTheme(area: Ref<HTMLElement | null | undefined>, theme: ()
     followPopups();
   }, { immediate: true, flush: "post" });
   onBeforeUnmount(clear);
+}
+
+const applicationThemeKey: InjectionKey<Ref<PanelThemeOverrides | null>> = Symbol("platform-application-theme");
+
+/**
+ * Called by the frame that draws an application's area (the platform's layout): the application's page writes its
+ * entry's theme here, and the frame assigns it on the area it draws — the application's menu and its page, not the rail.
+ */
+export function provideApplicationTheme(): Readonly<Ref<PanelThemeOverrides | null>> {
+  const theme = shallowRef<PanelThemeOverrides | null>(null);
+  provide(applicationThemeKey, theme);
+  return theme;
+}
+
+/** Hands the calling page's application theme to the frame that draws its area, and takes it back when the page goes. */
+export function useApplicationTheme(theme: () => PanelThemeOverrides | null | undefined) {
+  const target = inject(applicationThemeKey, null);
+  if (!target) return;
+  watch(() => JSON.stringify(theme() ?? null), () => { target.value = theme() ?? null; }, { immediate: true });
+  onBeforeUnmount(() => { target.value = null; });
 }

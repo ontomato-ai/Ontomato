@@ -23,7 +23,9 @@ export {
   type PlatformPageDraft,
 } from "./page-actions";
 export { providePageHeading, usePageHeading, type PlatformPageHeading } from "./page-heading";
-export { applyTheme, composeThemes, themeProperties, useAppTheme, type ThemeMode } from "./app-theme";
+export {
+  applyTheme, composeThemes, provideApplicationTheme, themeProperties, useApplicationTheme, useAppTheme, type ThemeMode,
+} from "./app-theme";
 export {
   agentModelLabelsKey,
   useAgentModelLabels,

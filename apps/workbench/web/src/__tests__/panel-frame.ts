@@ -378,7 +378,12 @@ async function resolveEntryFrom(answer: (request: Sent) => Response | Promise<Re
   const useId = query.get("useId");
   const use = uses.find((candidate) => useId ? candidate.id === useId : panelUsePath(candidate.path) === path);
   if (!use) return notFound(`No entry of ${applicationId} at ${path ?? useId}`);
-  return Response.json({ success: true, data: { applicationId, use, menu: { groups: [], panelUses: uses.filter((one) => one.names) } } });
+  // A \`panels\` application's frame panel and theme, where the test declares them beside its uses.
+  const { framePanelId, theme } = (body.data ?? body) as { framePanelId?: string; theme?: unknown };
+  return Response.json({ success: true, data: {
+    applicationId, use, menu: { groups: [], panelUses: uses.filter((one) => one.names) },
+    ...(framePanelId ? { framePanelId } : {}), ...(theme ? { theme } : {}),
+  } });
 }
 
 /** The answer a test gives for anything it did not expect. */
