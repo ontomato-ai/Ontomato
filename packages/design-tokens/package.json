@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./oss": "./src/oss.ts",
+    "./theme-overrides": "./src/theme-overrides.ts",
     "./foundation.css": "./src/foundation.css"
   },
   "scripts": {
