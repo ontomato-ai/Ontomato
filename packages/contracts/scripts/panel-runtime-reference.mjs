@@ -77,6 +77,7 @@ const graphState = {
   selectedType: SDK_COMPONENT,
 };
 assert.ok(Object.keys(graphState).every(name => capabilityMap.state[name].deepLink));
+const graphSelection = panelStateFieldSchema.parse(capabilityMap.state.selected);
 const graphAddress = panelAddress("/destination", graphState);
 const graphQuery = new URL(graphAddress, "http://runtime-reference.invalid").search;
 
@@ -139,6 +140,17 @@ const contents = [
   "",
   `The ${asCode("deepLink")} flag is ${deepLink.type} and defaults to ${deepLink.default}. The capability-map type view uses`,
   `${asCode(JSON.stringify(graphState))} as state. The address contract encodes it as ${asCode(graphQuery)}.`,
+  "",
+  "### Graph selection",
+  "",
+  "The capability map uses this declaration for its public `selected` state:",
+  "",
+  "```json",
+  JSON.stringify(graphSelection, null, 2),
+  "```",
+  "",
+  "An `object-union` admits one object reference of a type in the selected ontology layers, the explicit `objectTypes`, or both.",
+  "The value has `className` and `primaryKey`. Linking the graph and relation list to this same state keeps their selection in sync.",
   "",
   "### Child objects",
   "",
