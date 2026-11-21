@@ -22,7 +22,6 @@ final class ApplicationCatalogueForm {
     private static final JSONObject OBJECT = PanelFormFields.schema("object");
     private static final JSONObject INTEGER = PanelFormFields.schema("integer");
     private static final JSONObject STRING_MAP = JSONObject.of("type", "object", "additionalProperties", STRING);
-    private static final JSONObject OBJECT_ARRAY = PanelFormFields.arraySchema(OBJECT);
     private static final JSONObject STRING_ARRAY = PanelFormFields.arraySchema(STRING);
     private static final JSONObject ACCESS = JSONObject.of("oneOf", List.of(
         objectSchema(JSONObject.of("kind", JSONObject.of("const", DOMAIN_MEMBER)), List.of("kind")),
@@ -37,8 +36,11 @@ final class ApplicationCatalogueForm {
         "names", STRING_MAP, "descriptions", STRING_MAP, "icon", STRING), List.of("names", "descriptions", "icon"));
     private static final JSONObject GROUPS_SCHEMA = PanelFormFields.arraySchema(objectSchema(
         JSONObject.of("key", STRING, "names", STRING_MAP, "sort", INTEGER), List.of("key", "names", "sort")));
+    private static final JSONObject PERMISSIONS_SCHEMA = PanelFormFields.arraySchema(objectSchema(
+        JSONObject.of("code", STRING, "names", STRING_MAP, "groupKey", STRING, "sort", INTEGER),
+        List.of("code", "names", "groupKey", "sort")));
     private static final JSONObject DECLARATION_SCHEMA = objectSchema(JSONObject.of(
-        "names", STRING_MAP, "descriptions", STRING_MAP, "icon", STRING, "groups", GROUPS_SCHEMA, "permissions", OBJECT_ARRAY),
+        "names", STRING_MAP, "descriptions", STRING_MAP, "icon", STRING, "groups", GROUPS_SCHEMA, "permissions", PERMISSIONS_SCHEMA),
         List.of("names", "descriptions", "icon", "groups", "permissions"));
     private static final JSONObject ENTRY_SCHEMA = objectSchema(JSONObject.of(
         "path", STRING, "renderer", JSONObject.of("const", "panels")), List.of("path", "renderer"));
@@ -93,7 +95,7 @@ final class ApplicationCatalogueForm {
         var fields = entryFields(id);
         var metadata = identityFields();
         metadata.add(groupsField());
-        metadata.add(field("/permissions", "permissions", PanelFormFields.code("json"), OBJECT_ARRAY, true));
+        metadata.add(permissionsField(id));
         fields.addFirst(field("/declaration", "identity", PanelFormFields.object(metadata, null), DECLARATION_SCHEMA, true));
         fields.add(field("/entryAccess", "applicationAccess", PanelFormFields.stringArray(), STRING_ARRAY, true));
         return describe(fields, values, draft == null ? List.of() : entryErrors(id, draft, null, conflicts),
@@ -116,6 +118,17 @@ final class ApplicationCatalogueForm {
         return field("/groups", "groups", PanelFormFields.objectArray(fields, empty, null), GROUPS_SCHEMA, true);
     }
 
+    private JSONObject permissionsField(String id) {
+        var fields = JSONArray.of(
+            field("/code", "permissionCode", PanelFormFields.text(false), STRING, true),
+            field("/names", "name", localizedText(List.of("en"), false), STRING_MAP, true),
+            field("/groupKey", "groupKey", PanelFormFields.text(false), STRING, true),
+            field("/sort", "groupSort", JSONObject.of("kind", "number"), INTEGER, true));
+        var empty = JSONObject.of("code", ApplicationCatalog.permissionPrefix(id), "names", JSONObject.of("en", ""),
+            "groupKey", "", "sort", 0);
+        return field("/permissions", "permissions", PanelFormFields.objectArray(fields, empty, null), PERMISSIONS_SCHEMA, true);
+    }
+
     private JSONObject localizedText(List<String> requiredLocales, boolean multiline) {
         var languages = LOCALES.stream()
             .map(language -> JSONObject.of("code", language.toLanguageTag(), "label", language.getDisplayName(locale)))
@@ -125,11 +138,10 @@ final class ApplicationCatalogueForm {
     }
 
     private JSONArray entryFields(String id) {
-        var path = field("/path", "address", PanelFormFields.text(false), STRING, true);
         var item = JSONArray.of(
             field("/id", "entryId", PanelFormFields.text(false), STRING, true),
             field("/pageKey", "pageKey", PanelFormFields.text(false), STRING, true),
-            path,
+            field("/path", "address", PanelFormFields.text(false), STRING, true),
             field("/panelId", "panelId", PanelFormFields.text(false), STRING, true),
             field("/inputs", "inputs", PanelFormFields.code("json"), INPUTS, false),
             field("/names", "menuNames", PanelFormFields.code("json"), STRING_MAP, false),
@@ -139,7 +151,7 @@ final class ApplicationCatalogueForm {
             field("/defaultAgent", "defaultAgent", PanelFormFields.code("json"), DEFAULT_AGENT, false));
         var root = ApplicationCatalog.assignedPanelRoot(id);
         return JSONArray.of(
-            field("/entry", "applicationAddress", PanelFormFields.object(JSONArray.of(path), null), ENTRY_SCHEMA, true),
+            field("/entry/path", "applicationAddress", PanelFormFields.text(false), STRING, true),
             field("/panelUses", "entries", PanelFormFields.objectArray(item,
                 JSONObject.of("id", "", "pageKey", "", "panelId", "", "path", root + "/",
                     "access", JSONObject.of("kind", DOMAIN_MEMBER)), "/id"),
@@ -179,14 +191,18 @@ final class ApplicationCatalogueForm {
     }
 
     private static void validateIdentity(JSONObject values, String prefix, PanelFormErrors errors) {
-        var names = errors.requiredObject(values, "names", prefix + "/names");
-        if (names != null) {
-            if (!names.containsKey("en")) errors.required(prefix + "/names/en", "English name is required");
-            validateTranslations(names, prefix + "/names", true, errors);
-        }
+        validateNames(values, prefix + "/names", errors);
         var descriptions = errors.requiredObject(values, "descriptions", prefix + "/descriptions");
         if (descriptions != null) validateTranslations(descriptions, prefix + "/descriptions", false, errors);
         if (!(values.get("icon") instanceof String)) errors.requiredString(values, "icon", prefix + "/icon");
+    }
+
+    private static void validateNames(JSONObject values, String path, PanelFormErrors errors) {
+        var names = errors.requiredObject(values, "names", path);
+        if (names != null) {
+            if (!names.containsKey("en")) errors.required(path + "/en", "English name is required");
+            validateTranslations(names, path, true, errors);
+        }
     }
 
     private static void validateTranslations(JSONObject values, String path, boolean nonempty, PanelFormErrors errors) {
@@ -212,9 +228,9 @@ final class ApplicationCatalogueForm {
             declaration = errors.requiredObject(values, "declaration", "/declaration");
             if (declaration != null) {
                 validateIdentity(declaration, "/declaration", errors);
-                for (var array : List.of("groups", "permissions"))
-                    if (!(declaration.get(array) instanceof List<?> items) || items.stream().anyMatch(item -> !(item instanceof Map<?, ?>)))
-                        errors.invalidArray("/declaration/" + array, "Expected an array of objects");
+                if (!(declaration.get("groups") instanceof List<?> groups) || groups.stream().anyMatch(group -> !(group instanceof Map<?, ?>)))
+                    errors.invalidArray("/declaration/groups", "Expected an array of objects");
+                validatePermissionRows(id, declaration, errors);
             }
             var access = values.get("entryAccess");
             if (!(access instanceof List<?> list) || list.size() != 1 || !(list.getFirst() instanceof String code)
@@ -223,6 +239,29 @@ final class ApplicationCatalogueForm {
         }
         validateUses(id, values, root, declaration, existing == null, conflicts, errors);
         return errors.list();
+    }
+
+    private static void validatePermissionRows(String id, JSONObject declaration, PanelFormErrors errors) {
+        var path = "/declaration/permissions";
+        if (!(declaration.get("permissions") instanceof List<?> permissions)) {
+            errors.invalidArray(path, "Expected an array of objects");
+            return;
+        }
+        for (int i = 0; i < permissions.size(); i++) {
+            var row = path + "/" + i;
+            if (!(permissions.get(i) instanceof Map<?, ?>)) {
+                errors.invalidObject(row, "Expected a permission object");
+                continue;
+            }
+            var permission = declaration.getJSONArray("permissions").getJSONObject(i);
+            var code = errors.requiredString(permission, "code", row + "/code");
+            if (code != null && !ApplicationCatalog.ownsPermissionCode(id, code))
+                errors.invalidOption(row + "/code", "A permission code must have a suffix after " + ApplicationCatalog.permissionPrefix(id));
+            validateNames(permission, row + "/names", errors);
+            errors.requiredString(permission, "groupKey", row + "/groupKey");
+            if (!(permission.get("sort") instanceof Integer))
+                errors.invalidObject(row + "/sort", "Expected an integer sort order");
+        }
     }
 
     private static void validateUses(String id, JSONObject values, String root, JSONObject declaration,

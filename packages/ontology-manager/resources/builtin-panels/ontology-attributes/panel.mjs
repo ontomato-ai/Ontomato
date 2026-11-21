@@ -33,6 +33,9 @@ await mountPanel({
         [row.label, row.fields.name, row.fields.type, ownerLabel(row)].join(" ").toLowerCase().includes(query));
     });
 
+    // A count waits for the owner's answer: while the list is still being read there is no number to show.
+    const countText = computed(() => (rowsData.value.status === "ready" ? visibleRows.value.length : null));
+
     const setClassName = value => instance.state.setState({ className: value || null });
     const setSearch = value => instance.state.set("search", value || null);
     const isSelected = row => selected.value?.primaryKey === row.primaryKey;
@@ -79,7 +82,7 @@ await mountPanel({
 
     return {
       selected, selectedKey, isPrimaryKey, className, search, typesData, rowsData, detail, creating, types, rows, visibleRows,
-      ownerLabel, setClassName, setSearch, isSelected, selectRow, closeEditor, onSaved, onDiscarded, yes, openOwner,
+      ownerLabel, countText, setClassName, setSearch, isSelected, selectRow, closeEditor, onSaved, onDiscarded, yes, openOwner,
     };
   },
 });
