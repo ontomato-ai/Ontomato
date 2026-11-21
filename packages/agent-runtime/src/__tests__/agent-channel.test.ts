@@ -655,3 +655,147 @@ it("parses a task-stream notification with no invented pending-question property
    id:inputId,runId,messageSeq:1,contextSeq:null,message:notification,
  }]}).notifications?.[0].message).toEqual(notification);
 });
+
+it("enforces run-scoped channel command authentication, rejection order, build-test refusal and native delegation", async () => {
+  const { channel: port } = channel();
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "channel-cmd-"));
+  const activeRun: RuntimeRun = { ...run, status: "running", executionUserId: "exec-user", channel: humanChannel };
+  const secret = "per-run-channel-secret";
+  const otherRunId = "44444444-4444-4444-8444-444444444444";
+  const auxRunId = "66666666-6666-4666-8666-666666666666";
+  const activeMap = new Map<string, any>([
+    [canonical([scope.hostId, scope.domainId, runId]), {
+      scope,
+      run: activeRun,
+      controller: new AbortController(),
+      sealed: false,
+      channelSecret: secret,
+      sandbox: { workspace },
+    }],
+    [canonical([scope.hostId, scope.domainId, auxRunId]), {
+      scope,
+      run: { ...run, id: auxRunId, status: "running", channel: undefined },
+      controller: new AbortController(),
+      sealed: false,
+    }],
+  ]);
+  const runtime = Object.assign(Object.create(AgentRuntime.prototype), {
+    options: {
+      hosts: [{ id: scope.hostId, token: "fixture-host-token", providers: [context.agent.providerId] }],
+      channelCommandBaseUrl: "http://127.0.0.1:3001",
+    },
+    channel: port,
+    active: activeMap,
+  }) as AgentRuntime;
+  const server = createRuntimeHttp(runtime).listen(0, "127.0.0.1");
+  await new Promise<void>((done) => server.once("listening", done));
+  const addr = server.address() as AddressInfo;
+  const baseUrl = `http://127.0.0.1:${addr.port}`;
+  const commandUrl = (host: string, domain: string, targetRunId: string) =>
+    `${baseUrl}/v1/channel/hosts/${host}/domains/${domain}/runs/${targetRunId}/commands`;
+  const post = (targetUrl: string, hdrs: Record<string, string>, body: unknown = { op: "list" }) =>
+    fetch(targetUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...hdrs },
+      body: JSON.stringify(body),
+    });
+
+  try {
+    // 1. Missing secret or forged run header -> 401 before active lookup
+    expect((await post(commandUrl(scope.hostId, scope.domainId, runId), { "X-Ontomato-Run-Id": runId })).status).toBe(401);
+    expect((await post(commandUrl(scope.hostId, scope.domainId, runId), { tk: "user-only", "X-Ontomato-Run-Id": runId })).status).toBe(401);
+    expect((await post(commandUrl(scope.hostId, scope.domainId, runId), { "X-Ontomato-Callback-Credential": secret, "X-Ontomato-Run-Id": otherRunId })).status).toBe(401);
+
+    // 2. Credential present, target not in active (different host/domain/run) -> 409 RUN_CLOSED
+    for (const [h, d, r] of [[scope.hostId, scope.domainId, otherRunId], ["other-host", scope.domainId, runId], [scope.hostId, "other-domain", runId]]) {
+      const missing = await post(commandUrl(h, d, r), { "X-Ontomato-Callback-Credential": secret, "X-Ontomato-Run-Id": r });
+      expect(missing.status).toBe(409);
+      expect(await missing.json()).toMatchObject({ error: { code: "RUN_CLOSED" } });
+    }
+
+    // 3. Target in active, secret mismatch or no channelSecret -> 401
+    expect((await post(commandUrl(scope.hostId, scope.domainId, runId), { "X-Ontomato-Callback-Credential": "wrong-secret", "X-Ontomato-Run-Id": runId })).status).toBe(401);
+    expect((await post(commandUrl(scope.hostId, scope.domainId, auxRunId), { "X-Ontomato-Callback-Credential": secret, "X-Ontomato-Run-Id": auxRunId })).status).toBe(401);
+
+    // 4. Extra field rejected by strict command schema -> 400
+    expect((await post(commandUrl(scope.hostId, scope.domainId, runId), { "X-Ontomato-Callback-Credential": secret, "X-Ontomato-Run-Id": runId }, { op: "list", caller: "forged" })).status).toBe(400);
+
+    // 5. Execution-context header refused with 422 BUILD_TEST_UNSUPPORTED
+    const buildTestHeader = await post(commandUrl(scope.hostId, scope.domainId, runId), {
+      "X-Ontomato-Callback-Credential": secret,
+      "X-Ontomato-Run-Id": runId,
+      "X-Ontomato-Execution-Context": JSON.stringify({ kind: "build-test", contextId: null }),
+    });
+    expect(buildTestHeader.status).toBe(422);
+    expect(await buildTestHeader.json()).toMatchObject({ error: { code: "BUILD_TEST_UNSUPPORTED" } });
+
+    // 6. Live run start via script channel inherits requestedBy/root/userRecipient and can be read/cancelled natively
+    const childId = inputId;
+    const childIntent: AgentRunIntent = {
+      id: childId,
+      session: { providerId: "registered-custom", sessionId: childId },
+      channel: { ...humanChannel, requestedBy: source },
+      language: "en",
+      inputId: childId,
+      status: "running",
+      createdAt: new Date(0).toISOString(),
+      error: null,
+      cancelled: false,
+    };
+    const reserve = vi.spyOn(port.facts, "reserve").mockResolvedValue(childIntent);
+    vi.spyOn(port, "prepare").mockResolvedValue();
+    const started = await post(commandUrl(scope.hostId, scope.domainId, runId), {
+      "X-Ontomato-Callback-Credential": secret,
+      "X-Ontomato-Run-Id": runId,
+    }, { op: "start", agent: context.agent, message: "Count active rows" });
+    expect(started.status).toBe(200);
+    const startedBody = await started.json();
+    expect(startedBody).toEqual({
+      taskId: childId,
+      sessionRef: { providerId: context.agent.providerId, sessionId: expect.any(String) },
+      status: "running",
+    });
+    expect(reserve.mock.calls[0]?.[4]).toMatchObject({
+      requestedBy: source,
+      root: context.root,
+      actor: context.actor,
+      authority: context.authority,
+      userRecipient: humanChannel.userRecipient,
+    });
+
+    const cancel = vi.spyOn(port, "cancel").mockResolvedValue();
+    vi.spyOn(port.facts, "task").mockResolvedValue({ scope, intent: childIntent });
+    vi.mocked(port.facts.intent).mockImplementation(async (_scope, id) =>
+      id === childId ? childIntent : { id: runId, session: source.session, channel: humanChannel, inputId, status: "running", language: "en", createdAt: new Date(0).toISOString(), error: null, cancelled: false },
+    );
+    await port.execute(scope, activeRun, { op: "cancel", taskId: childId });
+    expect(cancel).toHaveBeenCalledWith(scope, childIntent);
+
+    // 7. Build-test authority on the active run is refused with 422
+    activeMap.get(canonical([scope.hostId, scope.domainId, runId])).run = {
+      ...activeRun,
+      channel: { ...humanChannel, authority: { ...humanChannel.authority, executionKind: "build-test" } },
+    };
+    const buildTestRun = await post(commandUrl(scope.hostId, scope.domainId, runId), {
+      "X-Ontomato-Callback-Credential": secret,
+      "X-Ontomato-Run-Id": runId,
+    });
+    expect(buildTestRun.status).toBe(422);
+    expect(await buildTestRun.json()).toMatchObject({ error: { code: "BUILD_TEST_UNSUPPORTED" } });
+
+    // 8. Sealed or aborted active run, or removed run -> 409 RUN_CLOSED
+    activeMap.get(canonical([scope.hostId, scope.domainId, runId])).sealed = true;
+    expect((await post(commandUrl(scope.hostId, scope.domainId, runId), { "X-Ontomato-Callback-Credential": secret, "X-Ontomato-Run-Id": runId })).status).toBe(409);
+    activeMap.delete(canonical([scope.hostId, scope.domainId, runId]));
+    expect((await post(commandUrl(scope.hostId, scope.domainId, runId), { "X-Ontomato-Callback-Credential": secret, "X-Ontomato-Run-Id": runId })).status).toBe(409);
+
+    // 9. Command URL builds from the configured base URL
+    const channelCommandUrl = (AgentRuntime.prototype as unknown as { channelCommandUrl: (s: typeof scope, r: string) => string }).channelCommandUrl;
+    expect(channelCommandUrl.call(runtime, scope, runId))
+      .toBe(`http://127.0.0.1:3001/v1/channel/hosts/${scope.hostId}/domains/${scope.domainId}/runs/${runId}/commands`);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((done) => server.close(() => done()));
+    await rm(workspace, { recursive: true, force: true });
+  }
+});

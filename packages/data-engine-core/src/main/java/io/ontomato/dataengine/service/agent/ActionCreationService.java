@@ -227,7 +227,6 @@ public class ActionCreationService {
               JSONObject.of(
                   "values",
                   JSONObject.of(
-                      "ONTOMATO_SKILL_SCENARIO", "platform",
                       "ONTOMATO_ONTOLOGY_URL",
                       runtime.ontologyUrl(),
                       "ONTOMATO_GENERATION_ID",
