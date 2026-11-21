@@ -52,6 +52,13 @@ interface PanelInstance {
   readonly pageContext: ComputedRef<PageContext>;
   /** Set once a mounted form accepts a draft with changed fields. Cleared when the reader saves or discards it. */
   readonly draft: Readonly<Ref<ReceivedPanelDraft<Record<string, unknown>> | null>>;
+  /**
+   * Runs a write as the reader, the way an agent's runs: one intent freezes the calls, the host confirms it where the
+   * owner or a batch asks and dispatches it once. What the owner reports changed comes back through the host's refresh
+   * port, not from here. A cancelled confirmation writes nothing. With the answer come the targets the owner named
+   * when it prepared the write (each by its own label, as the confirmation shows them), for a receipt to name them too.
+   */
+  writeOperation(operationId: string, invocation: PanelWriteInvocation): Promise<PanelWriteResult>;
   refreshObjects(): void;
   onObjectChanged(listener: (object: PanelObjectIdentity | null) => void): () => void;
 }
@@ -130,6 +137,21 @@ interface PanelOperationHandle {
   run(input?: Readonly<Record<string, unknown>>): Promise<unknown>;
 }
 ```
+
+### Operation IDs and write results
+
+The member declaration's `operation` is the owner's full ID. Invoke using the member-qualified ID from the page
+skill's Declared operations. For a member `opRunNow` declaring `schedules.runNow`, send `opRunNow.runNow`
+as `operationId` to `/operate`. In Vue, the same binding is `usePanelOperation("opRunNow", "runNow")`.
+
+A custom editor that supplies an explicit target and input can use `instance.writeOperation(id, { call: { target, input } })`.
+It resolves to a receipt. Read these fields before updating the editor or announcing a save.
+
+- `decision: "cancel"` means the user cancelled. Keep the editor open.
+- On `decision: "confirm"`, read `response`. If its kind is `not-dispatched`, show its message.
+- For a single dispatched call, `response.outcome.kind === "success"` confirms the write. Use its `data` and then
+  show success. On `refusal` or `failure`, keep the edits and show the owner's message and any named field errors.
+- A null or `unknown` outcome leaves the result unconfirmed. A batch receipt reports one outcome per item.
 
 ## Open events and navigation
 
