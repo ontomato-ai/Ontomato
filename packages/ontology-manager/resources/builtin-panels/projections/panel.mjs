@@ -102,11 +102,12 @@ const operationTargetText = (target) => {
   return "—";
 };
 
-const formatTime = (value) => {
-  return new Date(value).toLocaleString(document.documentElement.lang, {
-    year: "2-digit", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit",
-  });
-};
+const formatDate = (value) => new Date(value).toLocaleDateString(document.documentElement.lang, {
+  year: "2-digit", month: "numeric", day: "numeric",
+});
+const formatTime = (value) => new Date(value).toLocaleTimeString(document.documentElement.lang, {
+  hour: "numeric", minute: "2-digit",
+});
 
 const jsonText = (value) => JSON.stringify(value ?? {}, null, 2);
 
@@ -376,7 +377,7 @@ await mountPanel({
       setScope, setSort, setPageSize, copyDialog, copyForm, openCopy, submitCopy,
       deleteDialog, openDelete, submitDelete, grantForm, submitGrant, submitShare,
       openClass, openPanel, refreshAll, notice,
-      componentLabel, scopeLabel, formatTime, jsonText, isChart,
+      componentLabel, scopeLabel, formatDate, formatTime, jsonText, isChart,
     };
   },
 });
