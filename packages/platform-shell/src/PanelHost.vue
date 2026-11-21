@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
+import { productPanelDisplayName } from "@ontomato/contracts/product-panels";
 import { usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./panel-host";
 import { usePageActions } from "./page-actions";
 
@@ -31,6 +32,8 @@ const props = withDefaults(defineProps<{
   title?: string;
   /** What the host says to the reader, in the platform's language. */
   labels: PanelHostLabels;
+  /** The reader's language and the deployment's default, which a panel's own name is given in. */
+  language: { locale: string; fallback: string };
   /**
    * Whether the reader is on this page. A page kept while the reader is on another holds no stream, offers nothing in the
    * header, asks the platform for nothing new and is reconciled when shown again. Absent means shown.
@@ -52,7 +55,11 @@ const emit = defineEmits<{
 
 const view = usePanelInstance(props.port, {
   labels: props.labels,
-  label: (source) => source.kind === "candidate" ? props.label! : props.label ? `${props.label} · ${source.panel.name}` : source.panel.name,
+  label: (source) => {
+    if (source.kind === "candidate") return props.label!;
+    const name = productPanelDisplayName(source.panel, props.language.locale, props.language.fallback);
+    return props.label ? `${props.label} · ${name}` : name;
+  },
   address: () => props.address,
   initial: () => props.initial ?? {},
   shown: () => props.shown,

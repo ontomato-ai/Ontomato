@@ -26,6 +26,12 @@ export interface PlatformShownPage {
   description?: string | null;
   /** The page draws its own header (the ontology manager's pages, the conversation). */
   ownHeader?: boolean;
+  /**
+   * The page named itself (a panel application's entry): its title stands whether or not the application has a menu.
+   */
+  named?: boolean;
+  /** Back to where the reader came from, for a page the application's menu does not reach. */
+  back?: () => void;
 }
 
 const props = defineProps<{
@@ -105,7 +111,8 @@ function selectMenuPage(path:string){
  * an application of one page is named by its own header (the object browser). A page that draws its own header (the
  * ontology manager's, the external MCP services) is left to draw it, so no page has two.
  */
-const headerTitle = computed(() => (menu.value ? props.shownPage?.title : activeApp.value?.label) ?? props.shownPage?.title ?? "");
+const headerTitle = computed(() =>
+  (props.shownPage?.named || menu.value ? props.shownPage?.title : activeApp.value?.label) ?? props.shownPage?.title ?? "");
 const headerDescription = computed(() =>
   (menu.value ? props.shownPage?.description : activeApp.value?.description) ?? props.shownPage?.description ?? null,
 );
@@ -168,6 +175,8 @@ const headerLabels = computed(() => ({
           :actions="pageActions?.actions"
           :draft="pageActions?.draft ?? null"
           :labels="headerLabels"
+          :back-label="shownPage?.back ? labels.back : undefined"
+          @back="shownPage?.back?.()"
           @save="pageActions?.draft?.save()"
           @discard="pageActions?.draft?.discard()"
         />

@@ -1,7 +1,8 @@
 # Write a Vue panel
 
 Write the Vue template and scoped panel styles in `panel.html`. Put the template inside `<div id="app">`. Place a
-declared member with `<projection slot="detail"></projection>`. Use Vue attributes, events, `v-if` and `v-for` for
+declared member with `<projection slot="detail"></projection>`. The slot names the key in `manifest.members`.
+Use Vue attributes, events, `v-if` and `v-for` for
 interactions. Adapt the layout to the container width. The host draws the page title and back control.
 Panel CSS positions member containers. Design variables style components inside them.
 
@@ -26,6 +27,10 @@ use `<el-alert>`.
 For translations, put flat message keys under locale tags in `panel.json`'s `content.messages`. For example,
 `{"en":{"panel.greeting":"Hello, {name}"}}` is a message table. Use `t("panel.greeting", { name })` in the
 template and `usePanelContext().t` in `setup()`. The direct runtime supplies the template function.
+Use the flat `panel.name` key for the panel title, for example
+`{"zh-CN":{"panel.name":"治理报告"},"en":{"panel.name":"Governance report"}}`. The host uses an entry's menu name
+when present. Otherwise it uses the panel name in the reader's locale, then the platform's default locale and the
+name in `registration.json`. Keep the entry's menu metadata for entries that belong in the menu.
 
 ## Open a panel at a specific state
 
@@ -49,6 +54,18 @@ and consume each datum with [the SDK read hooks](RUNTIME.md#reads-and-operations
 before any `await`. Use the return states
 to show loading, missing inputs, empty data, denied access or an error in the view. Read each ready value
 according to the type table's result shape.
+
+## Connect a graph and its relations
+
+Run `node "$SKILL/ontomato.mjs" sdk read docs/components.md` and use the `OntologyGraph` and `ObjectRelations`
+sections for each component's datum names, accepted result types, `config`, outputs and events. Inspect named
+reads with `panel type <type-id> --read <name>`. Declare the shared [graph selection type](RUNTIME.md#graph-selection)
+in `manifest.state`. In new members, map component ports to that field using the member's `state` map. For example,
+`OntologyGraph` can write `selectedNode` and `ObjectRelations` can write `selected` to the same state field.
+
+Mount the graph and list as `<projection slot="graph"></projection>` and
+`<projection slot="relations"></projection>` when those are the member keys. Use the
+[Vue setup reference](RUNTIME.md#vue-setup) for reads or actions added in page code.
 
 ## Select a child record and read from its parent
 

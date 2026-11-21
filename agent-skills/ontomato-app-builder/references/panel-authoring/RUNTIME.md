@@ -42,8 +42,6 @@ interface PanelContext {
 }
 ```
 
-`type PanelPlacement = "conversation" | "page";`
-
 ### PanelInstance
 
 ```ts
@@ -141,6 +139,33 @@ ObjectList's `data.rows` accepts `panelRecordList`, `panelRecordQuery` and suppl
 
 The `deepLink` flag is boolean and defaults to false. The capability-map type view uses
 `{"mode":"type","selectedType":"platform:SDKComponent"}` as state. The address contract encodes it as `?state=%7B%22mode%22%3A%22type%22%2C%22selectedType%22%3A%22platform%3ASDKComponent%22%7D`.
+
+### Graph selection
+
+The capability map uses this declaration for its public `selected` state:
+
+```json
+{
+  "type": {
+    "kind": "object-union",
+    "layers": [
+      "fact",
+      "capability",
+      "governance",
+      "product"
+    ],
+    "objectTypes": [
+      "platform:OntologyType"
+    ]
+  },
+  "personal": false,
+  "deepLink": true,
+  "external": false
+}
+```
+
+An `object-union` admits one object reference of a type in the selected ontology layers, the explicit `objectTypes`, or both.
+The value has `className` and `primaryKey`. Linking the graph and relation list to this same state keeps their selection in sync.
 
 ### Child objects
 

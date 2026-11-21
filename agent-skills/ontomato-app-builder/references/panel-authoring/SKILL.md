@@ -14,7 +14,7 @@ declared read or operation. Keep business rules, confirmation and permissions wi
    for that deployment's component data, configuration, outputs and events.
 2. Use the [member field reference](FIELDS.md) to declare projections in `panel.json`. Choose an official
    display component or use [PanelData](CODE.md#read-declared-data) for custom Vue. Use `target.projectionId`
-   to reuse an existing projection.
+   to reuse an existing projection. For graph pages, start with [graph wiring and selection](CODE.md#connect-a-graph-and-its-relations).
 3. Write the template and interactions in Vue. Follow the [direct runtime and import rules](CODE.md#write-a-vue-panel)
    and declare the [state that travels in an address](CODE.md#open-a-panel-at-a-specific-state).
 4. Check and register the workspace, then open the registered entry. Use the page's input box
