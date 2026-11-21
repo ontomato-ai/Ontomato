@@ -1,5 +1,5 @@
 <style>
-  .attrs { display: flex; flex-direction: column; gap: var(--spacing-md); }
+  .attrs { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; container-type: inline-size; }
   .attrs-lead { margin: 0; color: var(--el-text-color-secondary); font-size: var(--text-sm); }
   .attrs-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
   .attrs-toolbar .attrs-search { width: 260px; max-width: 100%; }
@@ -29,10 +29,16 @@
   .attrs-side-head h3 { margin: 0; font-size: var(--text-base); }
   .attrs-side-head small { display: block; color: var(--el-text-color-secondary); font-size: var(--text-xs); }
   .attrs-actions { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); }
-  @media (max-width: 56rem) { .attrs-body { grid-template-columns: minmax(0, 1fr); } }
-  @media (max-width: 36rem) {
-    .attrs-row { grid-template-columns: minmax(140px, 1fr) minmax(80px, .8fr); }
-    .attrs-row > :nth-child(n+3) { display: none; }
+  /* The panel is also shown in a narrow column beside a conversation: its layout follows its own width, not the window's. */
+  @container (max-width: 62rem) { .attrs-body { grid-template-columns: minmax(0, 1fr); } }
+  /* A narrow list drops the columns a reader can live without, and never the key columns. */
+  @container (max-width: 46rem) {
+    .attrs-row { grid-template-columns: minmax(110px, 1fr) minmax(70px, .7fr) 56px 56px; }
+    .attrs-row > :nth-child(3) { display: none; }
+  }
+  @container (max-width: 34rem) {
+    .attrs-row { grid-template-columns: minmax(90px, 1fr) 48px 48px; }
+    .attrs-row > :nth-child(2) { display: none; }
   }
 </style>
 <div id="app">
@@ -46,7 +52,7 @@
         <el-option v-for="type in types" :key="type.primaryKey" :value="type.primaryKey"
           :label="`${type.label} (${type.primaryKey})`"></el-option>
       </el-select>
-      <span class="attrs-count">{{ t("attr.count", { count: visibleRows.length }) }}</span>
+      <span v-if="countText !== null" class="attrs-count">{{ t("attr.count", { count: countText }) }}</span>
     </div>
     <div class="attrs-body" :class="{ single: !selected && !creating }">
       <div class="attrs-table">

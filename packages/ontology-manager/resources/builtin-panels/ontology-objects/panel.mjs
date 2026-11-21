@@ -48,6 +48,9 @@ await mountPanel({
       set: value => instance.state.set("search", value || null),
     });
     const rows = computed(() => readyRows(catalog));
+    // A count waits for the owner's answer: while the list is still being read there is no number to show.
+    const catalogCount = computed(() => (catalog.value.status === "ready" ? filteredRows.value.length : null));
+    const relationCount = computed(() => (relations.value.status === "ready" ? relationRows.value.length : null));
     const filteredRows = computed(() => {
       const query = search.value.trim().toLowerCase();
       if (!query) return rows.value;
@@ -207,7 +210,7 @@ await mountPanel({
     })}`;
 
     return {
-      t, view, attributeOpen, search, catalog, filteredRows, labels, detail, record, attributes, attributeRows, relations, relationRows,
+      t, view, attributeOpen, search, catalog, filteredRows, catalogCount, relationCount, labels, detail, record, attributes, attributeRows, relations, relationRows,
       summary, primaryKeyStatus, selected, selectedAttribute, editingAttribute, isPrimaryKey, attributeMode, attributeError, busy,
       deleteObjectOp, setPrimaryKeyOp, deleteAttributeOp,
       openClass, backToCatalog, objectSaved, formDiscarded, openAttribute, startCreateAttribute, closeAttribute,

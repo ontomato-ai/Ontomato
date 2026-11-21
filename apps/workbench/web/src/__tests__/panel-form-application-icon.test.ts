@@ -34,7 +34,7 @@ const manifest: DirectPanelManifest = {
   commands: {},
 };
 const description = {
-  fields: [{ path: "/icon", label: "Icon", control: { kind: "application-icon" }, valueSchema: {}, required: true, readOnly: false }],
+  fields: [{ path: "/icon", label: "Icon", help: "Tells the application apart in the navigation.", control: { kind: "application-icon" }, valueSchema: {}, required: true, readOnly: false }],
   values: { icon: "retired-key" },
   errors: [], revision: 1,
   save: { method: "PUT", path: "/applications/:id", bodySchema: {}, draftOperation: "application.save" },
@@ -71,4 +71,14 @@ it("shows the icons available to a domain application and keeps the key the read
   await nextTick();
   expect(values()).toBe("users");
   expect(field.querySelector('button[aria-label="users"]')?.getAttribute("aria-pressed")).toBe("true");
+
+  // Laid out as the form's other controls are (M2, 2026-11-21): across the row, its help under it, and the icon it holds
+  // beside the search rather than alone at the far end of an empty heading.
+  const picker = field.querySelector<HTMLElement>(".application-icon-picker")!;
+  expect(picker.classList.contains("sdk-form-field-wide")).toBe(true);
+  expect(picker.nextElementSibling?.textContent).toBe("Tells the application apart in the navigation.");
+  expect(picker.querySelector(".icon-heading")).toBeNull();
+  const search = picker.querySelector(".icon-search")!;
+  expect(search.querySelector("input")).not.toBeNull();
+  expect(search.querySelector(".icon-current svg")).not.toBeNull();
 });

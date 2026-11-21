@@ -31,7 +31,7 @@ await mountPanel({
     const renewalProblem = ref("");
 
     // Keep the links issued by the original page and execution results working at their original address.
-    onMounted(() => {
+    onMounted(async () => {
       const address = new URL(instance.pageContext.value.url, window.location.origin);
       const params = address.searchParams;
       const legacyApp = params.get("app");
@@ -49,7 +49,8 @@ await mountPanel({
       if (legacyRun && !Object.hasOwn(state, "runId")) state.runId = legacyRun;
       for (const key of ["app", "taskId", "runId"]) params.delete(key);
       params.set("state", JSON.stringify(state));
-      void navigate(address.pathname + address.search);
+      await navigate(address.pathname + address.search);
+      instance.state.setState(state);
     });
 
     // Page-local state.
@@ -162,6 +163,13 @@ await mountPanel({
       if (state.kind === "off") return t("state.off");
       if (state.kind === "paused") return t("state.paused");
       return row.fields.nextRun ? t("card.next", { time: moment(row.fields.nextRun, row.fields.timeZone) }) : t("card.noNext");
+    }
+    function resultPreview(value) {
+      return value.replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+        .replace(/^\s{0,3}(?:#{1,6}\s+|>\s*|[-*+]\s+)/gm, "")
+        .replace(/(\*\*|__|`+)(.*?)\1/g, "$2")
+        .replace(/\s+/g, " ").trim();
     }
     const statusLabel = (status) => (status ? t(`runStatus.${status}`) : "");
     const runReason = (error) => (error ? (error.message?.trim() || t(`runError.${error.code}`)) : "");
@@ -401,7 +409,7 @@ await mountPanel({
 
     return {
       t, app, search, chips, shown, rows, emptyText, tasksData, pickApp, appLabel, applicationIcon, appsProblem, renewalProblem, unavailableApps,
-      taskState, nextText, statusLabel, moment, duration, runError, summaryText,
+      taskState, nextText, statusLabel, moment, duration, runError, summaryText, resultPreview,
       selected, selectedId, selectedRow, record, form, detailRow, settings, revision, taskZone, paneOpen, mode,
       select, closePane, busy, toggle, runNow, askDelete, edit, command, showRecords,
       runs, runsLoading, runsFailed, nextCursor, loadingMore, loadMore, pinned, runId, expanded, toggleRun, hasDetails,

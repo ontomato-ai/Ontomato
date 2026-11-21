@@ -21,7 +21,7 @@ import { getDefaultLocale, getLocale, resolveLocale } from "../../i18n";
 import { findCurrentProduct, type CurrentProductRow } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { readObjectActions } from "../action/panel-reads";
-import { readPanelComponentCatalogue } from "./component-catalogue";
+import { readPanelComponentCatalogue, readProjectionComponent } from "./component-catalogue";
 import { allowsOperationDraft, boundProjectionOperations, type BoundProjectionOperation } from "./operation-bindings";
 import { panelServerOperationLabel } from "./server-operations";
 import { panelSkillScope } from "./skill-identity";
@@ -138,11 +138,16 @@ export async function panelSkillSources(
         ? await (actionNames ??= readObjectActions(reader).then(({ actions }) =>
           new Map(actions.map(({ declaration, name }) => [declaration.id, name]))))
         : undefined;
-      const description = describePanel(panel, new Map(entries), sdk.components, locale, names);
+      const installedIds = [...new Set(entries.map(([, projection]) => projection.componentId))]
+        .filter(componentId => !sdk.components.has(componentId));
+      const installed = await Promise.all(installedIds.map(async id => [id, await readProjectionComponent(id, () => Promise.resolve(sdk))] as const));
+      const components = new Map(sdk.components);
+      for (const [id, component] of installed) if (component) components.set(id, component);
+      const description = describePanel(panel, new Map(entries), components, locale, names);
       const operationLabels = description.operations.map(({ id, label }) => [id, label]);
       return {
         description, markdown: describeSkill(description),
-        fingerprint: fingerprint([id, panel, entries, sdk.version, sdk.digest, locale, operationLabels]),
+        fingerprint: fingerprint([id, panel, entries, sdk.version, sdk.digest, locale, operationLabels, ...installed]),
       };
     }
     let snapshot: ReturnType<typeof buildSnapshot> | undefined;
@@ -354,7 +359,7 @@ function describeDraft(forms: readonly OperationDescription[]): string {
     "Put the selected object's ID in `target.id` when editing an existing object.",
     "An owner's revision, when required, is part of the operation input.",
     "Each run has its own artifact area. Use a distinct path for each draft written in the same run.",
-    `Link to the canonical path from the current page context and preserve the entry's existing query parameters. Set \`${sessionKey}\` to the producing run's \`$ONTOMATO_SESSION_ID\` and \`${runKey}\` to that run's \`$ONTOMATO_RUN_ID\`. For a draft written in a later run, build a new link using that run's ID.`,
+    `Use the current page context's canonical path as a site-relative address starting with a single \`/\` (for example, \`/ontology/assets/actions\`) and preserve the entry's existing query parameters. Do not prefix it with \`$ONTOMATO_BASE_URL\`, a hostname, or a URL scheme. Set \`${sessionKey}\` to the producing run's \`$ONTOMATO_SESSION_ID\` and \`${runKey}\` to that run's \`$ONTOMATO_RUN_ID\`. For a draft written in a later run, build a new link using that run's ID.`,
     `The raw value of \`${pathKey}\` is the draft file's path relative to the producing run's artifact area. It starts with \`outputs/drafts/\` and has no leading \`/\`. URL-encode that value exactly once when adding it to the query.`,
     `Use \`?${sessionKey}=SESSION_ID&${runKey}=RUN_ID&${pathKey}=outputs%2Fdrafts%2Fedit.page-draft.json\` for an \`edit.page-draft.json\` draft. Replace \`SESSION_ID\` and \`RUN_ID\` with the producing run's actual session and run IDs. The panel fills the form for the reader to review and save.`,
     "In your reply, give the reader a Markdown link to the page address you just built so they can open the prefilled form. Use the draft file path only inside `draftPath`. A standalone file link opens a JSON file card.",

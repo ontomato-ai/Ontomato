@@ -104,6 +104,7 @@ beforeEach(async () => {
     stylesheet: "styles/sdk.css",
     components: "catalogue/metadata.json",
     check: "node/panel-check.mjs",
+    packageComponents: "node/package-components.mjs",
     libraries: {},
     docs: "docs/index.md",
   });
@@ -465,6 +466,8 @@ it("keeps the package and recipes for a panel independent of its entrance", asyn
     expect(draftSection).toContain("`draftRunId` to that run's `$ONTOMATO_RUN_ID`");
     expect(draftSection).toContain("For a draft written in a later run, build a new link using that run's ID.");
     expect(draftSection).toContain("preserve the entry's existing query parameters");
+    expect(draftSection).toContain("site-relative address starting with a single `/`");
+    expect(draftSection).toContain("Do not prefix it with `$ONTOMATO_BASE_URL`, a hostname, or a URL scheme.");
     expect(draftSection).toContain("It starts with `outputs/drafts/` and has no leading `/`.");
     expect(draftSection).toContain("URL-encode that value exactly once");
     expect(draftSection).toContain("?draftSessionId=SESSION_ID&draftRunId=RUN_ID&draftPath=outputs%2Fdrafts%2Fedit.page-draft.json");

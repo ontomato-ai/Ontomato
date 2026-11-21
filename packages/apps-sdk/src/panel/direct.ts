@@ -10,6 +10,7 @@ import { authoredReadParameterSource, directReadDeclaration, type DirectProjecti
 import type { ApplicationEntryMenu, CurrentApplicationEntry, DirectProjection } from "@ontomato/contracts/product-panels";
 import type { PanelDataState, ProductPanelNestedReadRequest, ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { createPanelInstance, type PanelInstance, type PanelInstanceOptions, type PublisherPath } from "./instance";
+import type { ComponentPackageReader } from "./component-packages";
 import { stateObject, type PanelFieldValue } from "./state";
 import type { PanelText } from "./text";
 import type { PanelContext } from "./context";
@@ -50,6 +51,8 @@ export type MemberPlacement = Pick<PanelManifest["members"][string], "inputs" | 
 export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "readProjection"> {
   /** Only for an application's frame: the entry the platform resolved, its menu, and where its content goes. */
   currentEntry?: DirectPanelRun["currentEntry"];
+  /** Reads an installed component package's current release, for a member whose component is the package's. */
+  readComponentPackage: ComponentPackageReader;
   /** Reads one named datum of one member, as the platform's read entry answers it for this panel's source. */
   read: PanelReadPort;
   /** Reads a member's current projection by ID, as the reader. */
@@ -138,6 +141,8 @@ export interface DirectPanelInstance extends PanelInstance {
   readonly currentEntry: ComputedRef<CurrentApplicationEntry | null>;
   /** In an application's frame, the menu the same resolution gave; null elsewhere. */
   readonly entryMenu: ComputedRef<ApplicationEntryMenu | null>;
+  /** Reads an installed component package's current release (see the options). */
+  readonly readComponentPackage: ComponentPackageReader;
   /** The panel's own words, in the current language. */
   readonly text: PanelText;
   /** The page's composer, expanded with a member's declared conversation entry. */
@@ -416,6 +421,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     currentEntry: computed(() => options.currentEntry?.entry.value ?? null),
     entryMenu: computed(() => options.currentEntry?.menu.value ?? null),
     direct,
+    readComponentPackage: options.readComponentPackage,
     text: options.text,
     expandPageComposer: options.expandPageComposer,
     navigate: options.navigate,

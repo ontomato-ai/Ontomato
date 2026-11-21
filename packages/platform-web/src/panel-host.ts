@@ -10,7 +10,8 @@ import {
   type ProductDefinitionRevision, type ProductDefinitionTarget,
 } from "@ontomato/contracts/product-subscriptions";
 import {
-  candidatePanelSourceSchema, PANEL_NESTED_READ_PATH, productPanelNestedReadResponseSchema, productPanelReadResponseSchema,
+  candidatePanelSourceSchema, PANEL_NESTED_READ_PATH, PANEL_PERSONAL_STATE_PATH, PANEL_PERSONAL_STATE_READ_PATH,
+  panelPersonalStateResponseSchema, productPanelNestedReadResponseSchema, productPanelReadResponseSchema,
   type ProductPanelNestedReadRequest,
   type CandidatePanelSource, type DirectPanelHostSource, type PanelHostSource, type PanelAuthorDefinitions, type PanelDefinitionMode,
   type ProductPanelReadRequest, type ProductPanelReadResponse,
@@ -24,9 +25,9 @@ import { confirmPanelIntent, expandDeclaredComposer, hostThemeMode, platformRout
 import { panelNavigator } from "./panel-navigate";
 import {
   adoptPanelStyle, applyTheme, codedPanelTarget, composeThemes, newPanelInstanceName, scopedPanelStyle,
-  type CodedPanelTarget, type DirectPanelMount, type DirectPanelRun, type PanelHostPort, type PanelSdkRelease,
+  type CodedPanelTarget, type DirectPanelMount, type DirectPanelRun, type PanelHostPort, type PanelHostState, type PanelSdkRelease,
 } from "@ontomato/platform-shell";
-import type { PanelMemberPath } from "@ontomato/contracts/panel-manifest";
+import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import {
   panelModuleFor, PanelMemberUnavailable, type DirectPanelMount as PanelRunMount, type DirectPanelMountOptions, type PlatformRequests,
 } from "@ontomato/apps-sdk/direct";
@@ -152,8 +153,8 @@ export function platformPanelHost(
     frame: (frame, source, open) => registerPanelFrame(frame, shown, { pageKey: use.pageKey, manifest: source.panel.manifest }, open, changed),
     // The panel runs in this document, as the same application's page: its members read through the platform as the
     // reader, within this use, and a person's write is confirmed and dispatched here.
-    coded: (source, run, target) =>
-      mountCoded(withNested(directOptions(source, run, shown, changed, beside), { kind: "registered", ...shown }), target, source.panel.content.module),
+    coded: (source, run, target) => withPersonalState({ kind: "registered", ...shown }, [], source.panel.manifest, run,
+      (opened) => mountCoded(withNested(directOptions(source, opened, shown, changed, beside), { kind: "registered", ...shown }), target, source.panel.content.module)),
     // The relation this page opens is still the application's, bound to the same panel: a kept page shown again is
     // checked against Java's current relations before its frame may ask for anything.
     async current() {
@@ -329,14 +330,66 @@ async function mountNested(
   // The placed panel's own theme with this placement's laid over it (default → … → the panel → this placement).
   const dropTheme = applyTheme(element, () => composeThemes(panel.theme, run.theme), hostThemeMode);
   try {
-    const inner = withNested({ ...outer, manifest: panel.manifest, messages: panel.content.messages ?? {}, run, memberPath: placedAt }, source);
-    const mount = await mountCoded(inner, { element, template }, panel.content.module);
+    const mount = await withPersonalState(source, placedAt, panel.manifest, run, (opened) => mountCoded(
+      withNested({ ...outer, manifest: panel.manifest, messages: panel.content.messages ?? {}, run: opened, memberPath: placedAt }, source),
+      { element, template }, panel.content.module,
+    ));
     return { element, mount: { ...mount, dispose() { mount.dispose(); dropStyle?.(); dropTheme(); } } };
   } catch (failure) {
     dropStyle?.();
     dropTheme();
     throw failure;
   }
+}
+
+/*
+ * Personal state (product-layer standard, part two): a field a panel declares \`personal: true\` is kept for each reader,
+ * by the use relation and the place the panel stands at. Opening, the panel takes the reader's saved values under what
+ * the address or the entry gives it (those win), above its declared defaults; as the reader changes them, they are
+ * saved, a moment after the last change and once more when the page goes. A panel that keeps none reads and writes
+ * nothing; a read that fails opens the panel at its defaults.
+ */
+const PERSONAL_STATE_DELAY = 400;
+
+function personalFields(manifest: PanelManifest) {
+  return Object.entries(manifest.state).filter(([, field]) => field.personal).map(([name]) => name);
+}
+
+async function withPersonalState(
+  source: PanelReadSource, memberPath: PanelMemberPath, manifest: PanelManifest, run: DirectPanelRun,
+  mount: (run: DirectPanelRun) => Promise<PanelRunMount>,
+): Promise<PanelRunMount> {
+  const fields = personalFields(manifest);
+  if (!fields.length || source.kind !== "registered") return mount(run);
+  const scope = { source, memberPath };
+  const saved = await json(`/api${PANEL_PERSONAL_STATE_READ_PATH}`, { method: "POST", body: JSON.stringify({ ...scope, fields }) })
+    .then((answer) => panelPersonalStateResponseSchema.parse(answer).values, () => ({}));
+  const mounted = await mount({ ...run, initial: { ...saved, ...run.initial } as PanelHostState });
+  const current = () => JSON.stringify(Object.fromEntries(fields.map((field) => [field, mounted.instance.state.values.value[field] ?? null])));
+  let stored = current();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const save = () => {
+    timer = undefined;
+    const next = current();
+    if (next === stored) return;
+    stored = next;
+    void json(`/api${PANEL_PERSONAL_STATE_PATH}`, { method: "PUT", body: JSON.stringify({ ...scope, values: JSON.parse(next) }) }).catch(() => {});
+  };
+  const stop = Vue.watch(current, () => {
+    clearTimeout(timer);
+    timer = setTimeout(save, PERSONAL_STATE_DELAY);
+  });
+  return {
+    ...mounted,
+    dispose() {
+      stop();
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        save();
+      }
+      mounted.dispose();
+    },
+  };
 }
 
 /** A placement's segment, completed with the panel Node answered when it was asked by the selected object alone. */

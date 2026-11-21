@@ -72,6 +72,7 @@ function open(initial: Record<string, RuntimeJsonValue>) {
     return { intentId: "5f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d05", operationId, label: operationId, confirmation: { kind: "none" } };
   });
   const instance = createDirectPanelInstance(manifest, {
+    readComponentPackage: noOperations.readComponentPackage,
     pageKey: "classes", url: () => "/classes", label: () => "Classes", initial,
     text: createPanelText({}, { value: "en" } as never, "en"),
     operations: { ...noOperations.operations, prepare },

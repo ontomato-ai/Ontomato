@@ -13,10 +13,21 @@ import { g6Edges, type G6Colors } from "../g6-elements";
 const calls: Array<[string, unknown]> = [];
 const handlers: Record<string, (event: any) => void> = {};
 const nodeData = new Map<string, any>();
+/** The zoom G6 reports, and the zoom its fitView would choose for the whole graph. */
+const view = { zoom: 1, fitted: 1, options: null as any };
 
 vi.mock("@antv/g6", () => ({
   Graph: class {
-    constructor() {}
+    constructor(options: any) {
+      view.options = options;
+    }
+    getViewportByCanvas(point: number[]) {
+      // The view is 800 by 600, its middle on the canvas origin before any move.
+      return [400 + point[0]! * view.zoom, 300 + point[1]! * view.zoom];
+    }
+    async translateBy(offset: number[]) {
+      calls.push(["translate", offset.map(Math.round)]);
+    }
     on(name: string, handler: (event: any) => void) {
       handlers[name] = handler;
     }
@@ -50,7 +61,24 @@ vi.mock("@antv/g6", () => ({
       return [nodeData.get(id).style.x + 5, nodeData.get(id).style.y + 7];
     }
     getZoom() {
-      return 1;
+      return view.zoom;
+    }
+    setOptions(options: unknown) {
+      calls.push(["options", options]);
+    }
+    async fitView() {
+      view.zoom = view.fitted;
+      calls.push(["fitView", view.zoom]);
+    }
+    async zoomTo(zoom: number) {
+      view.zoom = zoom;
+      calls.push(["zoomTo", zoom]);
+    }
+    async fitCenter() {
+      calls.push(["fitCenter", null]);
+    }
+    async focusElement(id: string) {
+      calls.push(["focus", id]);
     }
     getCanvasByViewport(point: number[]) {
       return point;
@@ -64,6 +92,7 @@ vi.mock("@antv/g6", () => ({
 const { default: G6GraphCanvas } = await import("../G6GraphCanvas.vue");
 
 beforeEach(() => {
+  Object.assign(view, { zoom: 1, fitted: 1 });
   calls.length = 0;
   nodeData.clear();
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
@@ -169,4 +198,64 @@ it("fans parallel edges into arcs, loops a self-relation round its anchor's grou
   expect(drawn.reviews!.style).toMatchObject({ lineDash: [5, 4], opacity: 0.15, lineWidth: 3.5 });
   expect(drawn.self!.style).toMatchObject({ loop: true, loopDist: 60 });
   expect(drawn.group!.style).toMatchObject({ loop: true, loopDist: 160 });
+});
+
+it("fits a graph no smaller than names stay readable at, and then shows the part around the node it is given", async () => {
+  const wrapper = mount(G6GraphCanvas, { props: { label: "Graph", nodes: placed(3), layout: { type: "preset" } } });
+  await flushPromises();
+  const fit = (options: object) => (wrapper.vm as unknown as { fit(options: object): Promise<void> }).fit(options);
+  const steps = () => calls.filter(([name]) => ["fitView", "zoomTo", "fitCenter", "focus"].includes(name));
+
+  // A graph that fits at a readable size is shown whole.
+  view.fitted = 0.9;
+  calls.length = 0;
+  await fit({ minZoom: 0.85, around: "n1" });
+  expect(steps()).toEqual([["fitView", 0.9], ["fitCenter", null]]);
+
+  // One that would shrink below it is shown at that size, around the node given.
+  view.fitted = 0.3;
+  calls.length = 0;
+  await fit({ minZoom: 0.85, around: "n1" });
+  expect(steps()).toEqual([["fitView", 0.3], ["zoomTo", 0.85]]);
+  expect(of("translate")).toHaveLength(1);
+
+  // Without a node, around the middle of the graph; a small graph is not blown up past maxZoom.
+  calls.length = 0;
+  await fit({ minZoom: 0.85 });
+  expect(steps()).toEqual([["fitView", 0.3], ["zoomTo", 0.85]]);
+  expect(of("translate")).toHaveLength(1);
+  view.fitted = 3;
+  calls.length = 0;
+  await fit({ maxZoom: 1.15, minZoom: 0.85 });
+  expect(steps()).toEqual([["fitView", 3], ["zoomTo", 1.15], ["fitCenter", null]]);
+  wrapper.unmount();
+});
+
+it("keeps a node's name readable when the reader zooms out, and hides only names that would overlap", async () => {
+  const wrapper = mount(G6GraphCanvas, { props: { label: "Graph", nodes: placed(2), layout: { type: "preset" }, readableLabels: true } });
+  await flushPromises();
+  const behaviors = view.options.behaviors as any[];
+  const fixed = behaviors.find((behavior) => behavior.type === "fix-element-size");
+  expect(fixed).toMatchObject({ state: "", node: [{ shape: "label", fields: ["fontSize", "lineHeight"] }] });
+  expect(fixed.enable({ data: { scale: 0.5 } })).toBe(true);
+  expect(fixed.enable({ data: { scale: 1.2 } })).toBe(false);
+  expect(behaviors.some((behavior) => behavior.type === "auto-adapt-label")).toBe(true);
+  wrapper.unmount();
+});
+
+it("shows a graph too large to read whole from its own edge, around the node it is given, not past it into empty canvas", async () => {
+  // Nodes from x 0 to 2000 and y 0 to 1000: at zoom 1 far wider and taller than the 800 by 600 view.
+  const nodes = [{ id: "a", label: "A", x: 0, y: 0 }, { id: "b", label: "B", x: 2000, y: 1000 }];
+  const wrapper = mount(G6GraphCanvas, { props: { label: "Graph", nodes, layout: { type: "preset" } } });
+  await flushPromises();
+  view.fitted = 0.2;
+  calls.length = 0;
+  await (wrapper.vm as unknown as { fit(options: object): Promise<void> }).fit({ minZoom: 1, around: "a", padding: 0 });
+  // Around "a", at the top-left corner: the view moves so the graph's own corner, not "a", sits at the view's corner.
+  const [translate] = of("translate");
+  expect(of("focus")).toEqual([]);
+  // Centring "a" would leave it where it is; the view moves on until the graph's own corner — a's position less its
+  // name's half width and its node's half size — sits at the view's corner: a ends up 320 right and 284 down of centre.
+  expect(translate).toEqual([-320, -284]);
+  wrapper.unmount();
 });
