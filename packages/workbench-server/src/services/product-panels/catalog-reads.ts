@@ -1,3 +1,4 @@
+import { productPanelCatalogQuerySchema } from "@ontomato/contracts/product-catalog-query";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
@@ -12,7 +13,7 @@ import { domainProductIdSchema } from "@ontomato/contracts/product-record-id";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import type { ProductOwner } from "../product-governance/grants";
-import { currentProductUsedBy, listCurrentProducts } from "./catalog";
+import { currentProductGrants, currentProductUsedBy, listCurrentProducts } from "./catalog";
 import { readPanelComponentCatalogue } from "./component-catalogue";
 import { readCurrentPanel, readCurrentProjection } from "./current";
 
@@ -23,7 +24,12 @@ const option = (value: string, label: string) => ({ value, label, description: n
 
 function catalogueQuery(params: Record<string, unknown>) {
   const { search, size, scope, sort, cursor } = params;
-  return productCatalogQuerySchema.parse({ q: search, limit: size, scope, sort, cursor });
+  return { q: search, limit: size, scope, sort, cursor };
+}
+
+async function catalogueGrants(owner: ProductOwner, viewer: AssistantCredentials, kind: CatalogueKind, id: string) {
+  const { grants } = await currentProductGrants(owner, viewer, kind, id);
+  return { grants, shared: grants.some(({ principalKind, verb }) => principalKind === "domain" && verb === "use") };
 }
 
 function formFields(locale: string | undefined, editable: boolean, creating: boolean, builtin: boolean) {
@@ -98,7 +104,9 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
 
   return {
     query(params: Record<string, unknown>) {
-      return listCurrentProducts(owner, viewer, "panel", catalogueQuery(params));
+      return listCurrentProducts(owner, viewer, "panel", productPanelCatalogQuerySchema.parse({
+        ...catalogueQuery(params), template: params.template,
+      }));
     },
     record,
     async members(primaryKey: string) {
@@ -106,6 +114,9 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
     },
     usedBy(primaryKey: string) {
       return currentProductUsedBy(owner, viewer, "panel", primaryKey);
+    },
+    grants(primaryKey: string) {
+      return catalogueGrants(owner, viewer, "panel", primaryKey);
     },
     async form(primaryKey: string, params: FormParams) {
       const panel = await record(primaryKey);
@@ -155,11 +166,14 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
 
   return {
     query(params: Record<string, unknown>) {
-      return listCurrentProducts(owner, viewer, "projection", catalogueQuery(params));
+      return listCurrentProducts(owner, viewer, "projection", productCatalogQuerySchema.parse(catalogueQuery(params)));
     },
     record,
     usedBy(primaryKey: string) {
       return currentProductUsedBy(owner, viewer, "projection", primaryKey);
+    },
+    grants(primaryKey: string) {
+      return catalogueGrants(owner, viewer, "projection", primaryKey);
     },
     async form(primaryKey: string, params: FormParams) {
       const projection = await record(primaryKey);

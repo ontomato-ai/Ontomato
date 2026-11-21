@@ -14,6 +14,7 @@ import { handlerFor } from "./handlers";
 import { pageDraftLink } from "@ontomato/contracts/page-draft";
 import type { PanelOperationBinding } from "./types";
 import type { AppBridgeConfirmPanelOperationResult } from "@ontomato/contracts/app-bridge";
+import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
 import type { PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import type { ConfirmPanelOperation, PanelHumanOperations, PanelOperationDescriptor, PanelWriteInvocation } from "./human-operations";
 import type { ReadOperationInput } from "./read-operation-input";
@@ -100,9 +101,10 @@ export interface PanelInstance {
   /**
    * Runs a write as the reader, the way an agent's runs: one intent freezes the calls, the host confirms it where the
    * owner or a batch asks and dispatches it once. What the owner reports changed comes back through the host's refresh
-   * port, not from here. A cancelled confirmation writes nothing.
+   * port, not from here. A cancelled confirmation writes nothing. With the answer come the targets the owner named
+   * when it prepared the write (each by its own label, as the confirmation shows them), for a receipt to name them too.
    */
-  writeOperation(operationId: string, invocation: PanelWriteInvocation): Promise<AppBridgeConfirmPanelOperationResult>;
+  writeOperation(operationId: string, invocation: PanelWriteInvocation): Promise<PanelWriteResult>;
   objectChanged(object: PanelObjectIdentity): void;
   refreshObjects(): void;
   onObjectChanged(listener: (object: PanelObjectIdentity | null) => void): () => void;
@@ -125,6 +127,16 @@ export interface PanelInstance {
  * One panel instance: everything belongs to it, so two instances of one panel share the declaration and its reads and
  * nothing else.
  */
+/** A write's answer, with the targets its owner named when it prepared it; a target it left unnamed is not among them. */
+export type PanelWriteResult = AppBridgeConfirmPanelOperationResult & {
+  readonly named: readonly { readonly target: PanelObjectIdentity; readonly label: string }[];
+};
+
+/** The targets a preparation names: a batch's, by the labels its owner gave them. */
+function namedTargets(confirmation: PanelHumanOperationPreparation["confirmation"]): PanelWriteResult["named"] {
+  return confirmation.kind === "batch" ? confirmation.targets.objects : [];
+}
+
 export function createPanelInstance(manifest: PanelManifest, options: PanelInstanceOptions): PanelInstance {
   const state = createPanelState(manifest, options.initial);
   const objectListeners = new Set<(object: PanelObjectIdentity | null) => void>();
@@ -138,7 +150,8 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   async function writeOperation(operationId: string, invocation: PanelWriteInvocation) {
     // What the owner reports the write changed reaches the instance through the host's one refresh port, as an agent's
     // write does, and is read again from there; the receipt itself rereads nothing.
-    return options.confirmOperation(await options.operations.prepare(operationId, invocation));
+    const preparation = await options.operations.prepare(operationId, invocation);
+    return { ...await options.confirmOperation(preparation), named: namedTargets(preparation.confirmation) };
   }
   const events = createPanelEvents(manifest, {
     state,

@@ -2,7 +2,8 @@
 
 Write the Vue template and scoped panel styles in `panel.html`. Put the template inside `<div id="app">`. Place a
 declared member with `<projection slot="detail"></projection>`. Use Vue attributes, events, `v-if` and `v-for` for
-interactions. Panel CSS positions member containers. Design variables style components inside them.
+interactions. Adapt the layout to the container width. The host draws the page title and back control.
+Panel CSS positions member containers. Design variables style components inside them.
 
 Declare projections using the [member fields](FIELDS.md) and declare public typed state in `panel.json`.
 Keep page-local state in Vue. An object state
@@ -149,9 +150,6 @@ form wiring. Give your own panel and use their own IDs. The example opens at `/a
 Exercise the page and run the [assistant check](SKILL.md#check-the-assistant-from-the-page).
 
 ## What the assistant receives
-
-Use the host's read-only `placement` only to hide a title or back control the host already drew.
-Keep layout responsive to container width and keep data, operations and default selection the same in either placement.
 
 The platform builds page context from the registered entry's title and address and the current object and
 child-object selections in declared panel state. A selection supplies the type and ID, including a child's

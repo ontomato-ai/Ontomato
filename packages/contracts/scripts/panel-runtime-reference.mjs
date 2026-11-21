@@ -107,7 +107,7 @@ const contents = [
   "",
   sdkSection("usePanelContext"),
   "",
-  sdkFields("PanelContext", ["instance", "t", "navigate", "placement"]),
+  sdkFields("PanelContext", ["instance", "t", "navigate", "notify"]),
   "",
   asCode(sdkTypes.get("PanelPlacement")),
   "",
