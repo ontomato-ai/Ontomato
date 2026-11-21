@@ -66,3 +66,37 @@ test("a reused projection's opening-sentence key must be in each language the pl
   const { stdout } = await check(held);
   assert.equal(JSON.parse(stdout).status, "valid");
 });
+
+/** Runs the release's check of a platform panel's sources, as the image build stages them, with the real checks. */
+async function checkBuiltin(directory) {
+  const program = `
+    import * as checks from ${JSON.stringify(pathToFileURL(join(ROOT, "packages/contracts/src/panel-check.ts")).href)};
+    import { checkBuiltinPanelSource } from ${JSON.stringify(pathToFileURL(join(ROOT, "agent-skills/ontomato-app-builder/panel-check.mjs")).href)};
+    console.log(JSON.stringify(await checkBuiltinPanelSource(${JSON.stringify(directory)}, checks)));`;
+  return run(process.execPath, ["--import", "./packages/contracts/node_modules/tsx/dist/loader.mjs", "--input-type=module", "-e", program], { cwd: ROOT });
+}
+
+async function builtin(messages) {
+  const directory = await mkdtemp(join(tmpdir(), "ontomato-builtin-entry-key-"));
+  await writeFile(join(directory, "registration.json"), JSON.stringify({
+    panels: [{ id: "builtin-product-entry-key-panel", mode: "create", input: { name: "Actions", description: "", visibility: "domain" } }],
+  }));
+  await writeFile(join(directory, "panel.json"), JSON.stringify({
+    manifest: { state: {}, events: {}, members: {
+      create: { id: "builtin-product-entry-key-entry", component: "ConversationEntry", agent: "page-default", prefillKey: "actions.newPrefill" },
+    } },
+    content: { messages },
+  }));
+  await writeFile(join(directory, "panel.html"), '<div id="app"><projection slot="create"></projection></div>');
+  await writeFile(join(directory, "panel.mjs"), 'import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});\n');
+  return directory;
+}
+
+test("a platform panel's entry key must be in each language it declares, checked before the build stages it", async () => {
+  await assert.rejects(checkBuiltin(await builtin({ en: { "actions.newPrefill": "Help me create an action:" }, "zh-CN": {} })), (error) =>
+    error.stderr.includes("member create prefillKey 'actions.newPrefill' is not in content.messages (zh-CN)"));
+  const { stdout } = await checkBuiltin(await builtin({
+    en: { "actions.newPrefill": "Help me create an action:" }, "zh-CN": { "actions.newPrefill": "帮我新建一个动作：" },
+  }));
+  assert.equal(JSON.parse(stdout).panelId, "builtin-product-entry-key-panel");
+});
