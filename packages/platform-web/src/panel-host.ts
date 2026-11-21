@@ -194,6 +194,8 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
         confirmOperation: () => Promise.reject(new Error("A panel preview runs no operations; they run in the panel's application")),
         expandPageComposer: expandDeclaredComposer,
         navigate: panelNavigator(platformRouter()),
+        // An author's preview is the panel at a page of its own.
+        placement: "page",
         messages: source.panel.content.messages ?? {},
         locale: global.locale,
         defaultLocale: String(global.fallbackLocale.value),
@@ -227,6 +229,8 @@ function directOptions(
     confirmOperation: preparation => confirmPanelIntent(use, preparation.intentId, changed),
     expandPageComposer: expandDeclaredComposer,
     navigate: panelNavigator(platformRouter(), beside),
+    // Beside a conversation — side or full view — the conversation draws the page's title and its way back.
+    placement: beside ? "conversation" : "page",
     messages: source.panel.content.messages ?? {},
     locale: global.locale,
     defaultLocale: String(global.fallbackLocale.value),
