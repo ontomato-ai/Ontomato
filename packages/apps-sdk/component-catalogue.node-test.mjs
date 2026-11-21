@@ -81,10 +81,11 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.deepEqual(Object.keys(panelData.data), ["*"]);
     assert.equal(panelData.data["*"].required, false);
     // Every read result an owner can register, and every run-time value another component gives itself.
+    // A page's own code may give an owner's declared parameter no component gives.
     assert.deepEqual([...panelData.data["*"].results].sort(), [...registeredResults()].sort());
     const given = new Set(catalogue.components.filter(({ componentId }) => componentId !== panelData.componentId)
       .flatMap((component) => Object.values(component.data ?? {}).flatMap((datum) => datum.runtimeParams ?? [])));
-    assert.deepEqual([...panelData.data["*"].runtimeParams].sort(), [...given].sort());
+    for (const param of given) assert.ok(panelData.data["*"].runtimeParams.includes(param), `PanelData takes ${param}`);
     // A placement binds a component's outputs to the panel's state by type; an object of the projection's own type is
     // `@binding`, which registration resolves, and a signal with no state stays an event.
     assert.deepEqual(declared.get("ObjectList").outputs, {

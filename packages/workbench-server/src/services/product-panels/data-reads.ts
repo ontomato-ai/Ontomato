@@ -90,6 +90,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     form: (selection, params) => adapter.form(selection.primaryKey!, formParams(params)),
     createForm: (_selection, params) => adapter.createForm(formParams(params)),
     usedBy: selection => adapter.usedBy(selection.primaryKey!),
+    grants: selection => adapter.grants(selection.primaryKey!),
   });
   const definitions = async () => {
     const { createAgentDefinitionReadAdapter } = await import("../assistant/panel-reads");

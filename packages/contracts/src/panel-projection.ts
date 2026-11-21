@@ -1,4 +1,6 @@
-import { applicationCatalogueScopeSchema, applicationFormSectionSchema, productCatalogQuerySchema } from "./product-catalog-query";
+import {
+  applicationCatalogueScopeSchema, applicationFormSectionSchema, productCatalogQuerySchema, productPanelCatalogQuerySchema,
+} from "./product-catalog-query";
 import { z } from "zod";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema, formValuesSchema, panelFormOptionSchema } from "./form-fields";
@@ -85,6 +87,7 @@ const positiveInteger = z.number().int().positive();
 export const panelReadParameterSchemas = {
   productScope: productCatalogQuerySchema.shape.scope.removeDefault(),
   productSort: productCatalogQuerySchema.shape.sort.removeDefault(),
+  productTemplate: productPanelCatalogQuerySchema.shape.template.unwrap(),
   applicationScope: applicationCatalogueScopeSchema,
   applicationFormSection: applicationFormSectionSchema.exclude(["create"]),
   formValues: formValuesSchema,
@@ -135,6 +138,8 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "applicationScope":
     case "applicationFormSection":
       return input?.kind === "scalar" && input.type === "string";
+    case "productTemplate":
+      return input?.kind === "scalar" && input.type === "boolean";
     case "size":
     case "neighborsLimit":
       return input?.kind === "scalar" && input.type === "number";

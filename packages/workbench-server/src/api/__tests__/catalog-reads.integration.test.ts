@@ -88,12 +88,14 @@ beforeAll(async () => {
   await ensurePanelOperationsSchema(state.pool);
   for (const [id, name, ownerId] of [["one", "Alpha directory", "viewer"], ["two", "Beta directory", "author"], ["hidden", "Hidden directory", "author"]]) {
     await state.pool.query(`INSERT INTO "${state.schema}".product_panels (domain_id,id,owner_id,definition)
-      VALUES ($1,$2,$3,$4)`, [owner.domainId, id, ownerId, { name, content, manifest, description: "", visibility: "private" }]);
+      VALUES ($1,$2,$3,$4)`, [owner.domainId, id, ownerId, {
+        name, content, manifest, description: "", visibility: "private", ...(id !== "hidden" && { template: true }),
+      }]);
   }
 
   await state.pool.query(`INSERT INTO "${state.schema}".product_panels (domain_id,id,owner_id,definition)
     VALUES ($1,'catalogue-panel',$2,$3)`, [owner.domainId, owner.userId, {
-    name: "Catalogue host", description: "", visibility: "domain",
+    name: "Aardvark catalogue host", description: "", visibility: "domain",
     content: { ...content, html: '<div id="app"><projection slot="list"></projection></div>' },
     manifest: {
       ...manifest,
@@ -107,6 +109,9 @@ beforeAll(async () => {
     name: "Catalogue data", description: "", visibility: "domain", componentId: "@ontomato/sdk:PanelData",
     inputs: {
       application: { kind: "object", objectType: APPLICATION },
+      panel: { kind: "object", objectType: PRODUCT_PANEL },
+      projection: { kind: "object", objectType: PRODUCT_PROJECTION },
+      cursor: { kind: "scalar", type: "string" },
       section: { kind: "scalar", type: "string" },
       values: { kind: "json" },
       changedField: { kind: "scalar", type: "string" },
@@ -116,6 +121,10 @@ beforeAll(async () => {
     data: {
       listing: { source: { type: { kind: "PlatformObjectType", id: PRODUCT_PANEL } }, read: "query",
         params: { search: { literal: "directory" }, sort: { literal: "name" }, size: { literal: 1 } } },
+      templates: { source: { type: { kind: "PlatformObjectType", id: PRODUCT_PANEL } }, read: "query",
+        params: { sort: { literal: "name" }, size: { literal: 1 }, cursor: { input: "cursor" } } },
+      panelGrants: { source: { object: { input: "panel" } }, read: "grants", params: {} },
+      projectionGrants: { source: { object: { input: "projection" } }, read: "grants", params: {} },
       apps: { source: { type: { kind: "PlatformObjectType", id: APPLICATION } }, read: "query",
         params: { search: { literal: "App" }, scope: { literal: "visible" }, size: { literal: 4 } } },
       appRecord: { source: { object: { literal: { className: APPLICATION, primaryKey: applicationId } } }, read: "record", params: {} },
@@ -148,6 +157,16 @@ beforeAll(async () => {
   app.get(`/java/platform/applications/catalogue/${applicationId}`, (req, res) => {
     expect(req.header("tk")).toBe(viewer.token);
     res.json({ success: true, data: { ...summary, entry, panelUses: [publicUse], groups: [] } });
+  });
+  app.post("/java/product-governance/grants", (req, res) => {
+    expect(req.header("tk")).toBe(viewer.token);
+    if (!state.edit.includes(req.body.id)) {
+      res.status(403).json({ success: false, message: "Edit Grant required" });
+      return;
+    }
+    const grants = [{ principalKind: "principal", principalId: owner.userId, verb: "edit" }];
+    if (req.body.id === "one") grants.push({ principalKind: "domain", principalId: "*", verb: "use" });
+    res.json({ grants });
   });
   app.post("/java/platform/applications/catalogue/form", (req, res) => {
     const draft = req.body.section === "create";
@@ -249,17 +268,17 @@ function post(path: string, body: unknown, token = viewer.token) {
     headers: { "Content-Type": "application/json", tk: token }, body: JSON.stringify(body) });
 }
 
-async function readCatalogueResult(dataName: string, inputs: Record<string, unknown>, token?: string) {
+async function readCatalogueResult(dataName: string, inputs: Record<string, unknown>, token?: string, runtimeParams?: Record<string, unknown>) {
   const response = await post("product-panels/read", {
     source: { kind: "registered", applicationId, useId: publicUse.id },
-    memberPath: [{ member: "list" }], inputs, dataName,
+    memberPath: [{ member: "list" }], inputs, dataName, runtimeParams,
   }, token);
   expect(response.status).toBe(200);
   return productPanelReadResponseSchema.parse(await response.json());
 }
 
-async function readCatalogue(dataName: string, inputs: Record<string, unknown> = {}, token?: string) {
-  const result = await readCatalogueResult(dataName, inputs, token);
+async function readCatalogue(dataName: string, inputs: Record<string, unknown> = {}, token?: string, runtimeParams?: Record<string, unknown>) {
+  const result = await readCatalogueResult(dataName, inputs, token, runtimeParams);
   if (result.status !== "ready") throw new Error(JSON.stringify(result));
   return result.value;
 }
@@ -405,4 +424,26 @@ it("reads both edit forms for the selected application and accepts only the subm
   expect(await readCatalogueResult("appForm", { application, section: "create" }, "executor"))
     .toMatchObject({ status: "error" });
   expect(formReads).toHaveLength(reads);
+});
+
+it("requires edit for grant reads and derives domain sharing from the owner Grants", async () => {
+  expect(await readCatalogueResult("panelGrants", { panel: { className: PRODUCT_PANEL, primaryKey: "two" } }))
+    .toEqual({ status: "forbidden" });
+  expect(await readCatalogue("panelGrants", { panel: { className: PRODUCT_PANEL, primaryKey: "one" } })).toEqual({
+    grants: [{ principalKind: "principal", principalId: owner.userId, verb: "edit" },
+      { principalKind: "domain", principalId: "*", verb: "use" }],
+    shared: true,
+  });
+  expect(await readCatalogue("projectionGrants", {
+    projection: { className: PRODUCT_PROJECTION, primaryKey: "catalogue-data" },
+  })).toEqual({ grants: [{ principalKind: "principal", principalId: owner.userId, verb: "edit" }], shared: false });
+});
+
+it("filters panel templates in PostgreSQL before scanning cursor pages", async () => {
+  const first = panelReadResultSchemas.productPanelList.parse(await readCatalogue("templates", {}, undefined, { template: true }));
+  expect(first.items.map(item => ({ id: item.id, template: item.template }))).toEqual([{ id: "one", template: true }]);
+  expect(first.nextCursor).toEqual(expect.any(String));
+  const second = panelReadResultSchemas.productPanelList.parse(await readCatalogue("templates", { cursor: first.nextCursor }, undefined, { template: true }));
+  expect(second.items.map(item => ({ id: item.id, template: item.template }))).toEqual([{ id: "two", template: true }]);
+  expect(second.nextCursor).toBeNull();
 });
