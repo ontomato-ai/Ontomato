@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
+import { servePageComposer } from "../../../../../packages/platform-web/src/app-host";
 import { draftScenario, installPlatform, leaveFrame, mountPlatformPage } from "./panel-frame";
 
 /*
@@ -54,5 +55,55 @@ describe("a draft no form of the panel performs", () => {
     // Nothing was written.
     expect(sent.filter((request) => request.method === "PUT")).toEqual([]);
     page.unmount();
+  });
+});
+
+describe("closing the notice of a draft the page cannot use", () => {
+  async function opened() {
+    const scenario = draftScenario("platform:Dashboard.save");
+    const sent = installPlatform(scenario.answer);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: "/applications/:applicationId/:panelPath(.*)", component: PanelApplicationRoute, props: (route) => ({ applicationId: String(route.params.applicationId) }) }],
+    });
+    await router.push(scenario.address);
+    await router.isReady();
+    const mounted = mountPlatformPage(() => h(RouterView), router);
+    await vi.waitFor(() => expect(mounted.element.querySelector(".panel-host-draft")).not.toBeNull(), { timeout: 10000 });
+    return { router, sent, ...mounted };
+  }
+  const sentence = "This page has no form that takes this draft for platform:ScheduledTask (platform:Dashboard.save)";
+
+  it("opens the page as it is without the draft: its entry's own address, no draft read again", { timeout: 20000 }, async () => {
+    const { router, sent, app, element } = await opened();
+    try {
+      (element.querySelector(".panel-host-draft .el-alert__close-btn") as HTMLElement).click();
+      await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe("/applications/app-panels-trial-a/form"));
+      expect(element.querySelector(".panel-host-draft")).toBeNull();
+      expect(element.querySelector(".panel-host-error")).toBeNull();
+      const reads = sent.filter((request) => request.path.endsWith("/page-draft")).length;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(sent.filter((request) => request.path.endsWith("/page-draft")).length).toBe(reads);
+    } finally {
+      app.unmount();
+    }
+  });
+
+  it("hands the sentence back to the page's composer, unsent, and leaves the draft", { timeout: 20000 }, async () => {
+    const expand = vi.fn();
+    const withdraw = servePageComposer(expand);
+    const { router, sent, app, element } = await opened();
+    try {
+      const button = [...element.querySelectorAll(".panel-host-draft button")].find((node) => node.textContent?.trim() === "Hand back to the agent") as HTMLElement;
+      button.click();
+      expect(expand).toHaveBeenCalledWith({ target: { kind: "page-default" }, prefill: `The draft couldn't be used: ${sentence}` });
+      await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe("/applications/app-panels-trial-a/form"));
+      expect(element.querySelector(".panel-host-draft")).toBeNull();
+      // The composer only opens with the sentence: nothing goes to a conversation.
+      expect(sent.filter((request) => request.path.startsWith("/api/assistant/sessions") && request.method === "POST")).toEqual([]);
+    } finally {
+      withdraw();
+      app.unmount();
+    }
   });
 });

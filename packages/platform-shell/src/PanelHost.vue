@@ -53,7 +53,12 @@ const props = withDefaults(defineProps<{
    * the page has no composer (an author's preview): the notice then offers only leaving the draft.
    */
   draftToAgent?: (text: string) => void;
-}>(), { shown: true, wired: () => [], currentEntry: undefined, draftToAgent: undefined });
+  /**
+   * Leaves the linked draft once the reader closes its notice: the page that holds this instance opens it as without the
+   * draft (its address, state and forms). Absent, the instance's address only drops the draft's link.
+   */
+  leaveDraft?: () => void;
+}>(), { shown: true, wired: () => [], currentEntry: undefined, draftToAgent: undefined, leaveDraft: undefined });
 const emit = defineEmits<{
   /** What a message from this instance carries now. */
   context: [context: import("@ontomato/contracts/page-context").PageContext];
@@ -83,10 +88,17 @@ const view = usePanelInstance(props.port, {
 });
 const frame = ref<HTMLIFrameElement | null>(null);
 /** Where the panel goes in the page: the element its own component is mounted in, placed once. */
-/** Hands the reason back to the agent: the page's composer opens with it, for the reader to send or change. */
+/** The reader closes the notice: the page goes on as it does without the draft. */
+function leave() {
+  view.dismissDraftRefusal();
+  if (props.leaveDraft) props.leaveDraft();
+  else view.leaveDraft();
+}
+
+/** Hands the reason back to the agent — the page's composer opens with it, for the reader to send or change — and closes. */
 function toAgent() {
   props.draftToAgent?.(props.labels.draft.toAgentText.replace("{reason}", view.draftRefusal.value));
-  view.dismissDraftRefusal();
+  leave();
 }
 
 function placeCoded(place: unknown) {
@@ -160,11 +172,10 @@ defineExpose({ ...view, operations, commands });
       type="warning"
       show-icon
       :title="view.draftRefusal.value"
-      @close="view.dismissDraftRefusal()"
+      @close="leave"
     >
-      <div class="panel-host-draft-actions">
-        <ElButton size="small" @click="view.leaveDraft()">{{ labels.draft.leave }}</ElButton>
-        <ElButton v-if="draftToAgent" size="small" @click="toAgent">{{ labels.draft.toAgent }}</ElButton>
+      <div v-if="draftToAgent" class="panel-host-draft-actions">
+        <ElButton size="small" @click="toAgent">{{ labels.draft.toAgent }}</ElButton>
       </div>
     </ElAlert>
     <!-- Drawn while Java's answer is coming, so its members read at once; shown only once that answer names the page. -->
@@ -223,9 +234,6 @@ defineExpose({ ...view, operations, commands });
   flex-wrap: wrap;
   gap: var(--spacing-sm, 8px);
   margin-top: var(--spacing-sm, 8px);
-}
-.panel-host-draft-actions .el-button + .el-button {
-  margin-left: 0;
 }
 .panel-host-frame {
   border: 0;
