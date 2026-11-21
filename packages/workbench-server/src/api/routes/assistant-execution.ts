@@ -1,5 +1,5 @@
 import type { AuthenticatedRequest } from "../../utils/request-identity";
-import { createPanelOperationIntentRequestSchema, dispatchPanelOperationIntentRequestSchema, panelOperationRefSchema } from "@ontomato/contracts/panel-agent";
+import { createPanelOperationIntentRequestSchema, dispatchPanelOperationIntentRequestSchema } from "@ontomato/contracts/panel-agent";
 import { operatePanel, dispatchPanel, rejectPanelEventForRun, requirePanelSkillForRun } from "../../services/product-panels/operations";
 import { productPanelReadRequestSchema } from "@ontomato/contracts/panel-host";
 import { readProductPanelData } from "../../services/product-panels/data-reads";
@@ -88,13 +88,18 @@ const executorPanelReads = [
   chartProjectionSourceRead,
 ];
 
+const singlePanelInvocation = createPanelOperationIntentRequestSchema.options[0];
+const panelInvocationWithoutTarget = singlePanelInvocation.partial({ intentId: true }).extend({
+  call: singlePanelInvocation.shape.call.omit({ target: true }).optional(),
+});
+
 assistantExecutionRouter.post("/:runId/panels/operate",wrap(async(req,res)=>{
   const runId = callbackRun(req, res.locals.runtimeCallback);
   const {owner,credentials}=context(req);
   const input = createPanelOperationIntentRequestSchema.safeParse(req.body);
   if (!input.success) {
     // Events have no owner call target. Resolve their scope separately so the caller can receive the event guidance.
-    const ref = panelOperationRefSchema.strip().safeParse(req.body);
+    const ref = panelInvocationWithoutTarget.safeParse(req.body);
     if (ref.success) await rejectPanelEventForRun(owner, credentials, runId, ref.data);
     throw input.error;
   }
