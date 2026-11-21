@@ -242,9 +242,9 @@ function describePanelEvent(event: PanelEvent, state: PanelManifest["state"], me
   const target = members[open.member].target;
   if ("projectionId" in target) return `Open the current panel's canonical address to reach its embedded member \`${open.member}\`.`;
   const panel = "panelId" in target ? `panel \`${target.panelId}\``
-    : "fromState" in target ? `the panel resolved for member \`${open.member}\` by state field \`${target.fromState}\``
+    : "fromState" in target ? `the panel selected for member \`${open.member}\` by state field \`${target.fromState}\``
       : `the panel used by member \`${open.member}\``;
-  return `Find the admitted entry for ${panel} in \`GET /api/data-query/platform/applications/<current applicationId>/panel-uses\`. Open that entry's \`path\`. A member without a registered entry has no separate address.${carryState}`;
+  return `Find the admitted entry for ${panel} in \`GET /api/data-query/platform/applications/<current applicationId>/panel-uses\`. Open that entry's \`path\` when available. Use the current panel's canonical address for embedded content.${carryState}`;
 }
 
 function describeSkill({ name, description, content, state, members, events, projections, operations, forms, reads }: PanelDescription): string {
@@ -271,7 +271,7 @@ function describeSkill({ name, description, content, state, members, events, pro
     describeDraft(forms),
     ...(declaredEvents.length ? [[
       "### Panel events",
-      "Use the corresponding address or declared operation below. Event names cannot be passed to `/operate`. That endpoint accepts only IDs from Declared operations.",
+      "The names below identify panel events. The `/operate` endpoint accepts only IDs from Declared operations. Follow the address or operation given for each event.",
       ...declaredEvents,
     ].join("\n")] : []),
     [

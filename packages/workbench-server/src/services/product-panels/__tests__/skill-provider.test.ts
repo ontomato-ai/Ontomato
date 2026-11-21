@@ -178,7 +178,7 @@ it("describes events as addresses or declared operations in the generated skill"
   assert(offering && "provide" in offering);
   const { content } = (await offering.provide(taskRef)).files[0]!;
   const events = content.split("### Panel events\n")[1]!.split("\n\n### Declared operations")[0];
-  expect(events).toContain("Event names cannot be passed to `/operate`.");
+  expect(events).toContain("The names below identify panel events. The `/operate` endpoint accepts only IDs from Declared operations.");
   expect(events).toContain('(reset). Open the current panel\'s canonical address. Set `mode` = `"instance"`, `selectedTask` = `null`');
   expect(events).toContain("(runSelected). Invoke `run.runNow` as specified under Declared operations.");
   expect(events).toContain("`task` = the current value of state field `selectedTask`");
