@@ -61,36 +61,6 @@ export function dashboardsPageFeature(label: string, address: string): ShellFeat
   };
 }
 
-/** One governance record's report, opened beside the conversation that wrote it. */
-export const GOVERNANCE_REPORT_PAGE_ID = "governance-report";
-
-/**
- * The report's own skill: the governance preset the platform's mapping names for `governance-report`, under the business
- * knowledge menu code. One declaration, read by the composer beside the conversation and by the page's own composer.
- */
-export const GOVERNANCE_REPORT_PAGE_SKILL: PageSkillContext = {
-  mode: "public",
-  locator: { pageKey: "governance-report", permissionCode: "business-knowledge" },
-};
-
-/**
- * The report page beside the conversation. Its address is what this application's page parameter names, and its own
- * skill narrows the composer to the agents that carry it: the governance preset the platform's mapping names for
- * `governance-report`, under the business knowledge menu code.
- */
-export function governanceReportPageFeature(label: string, address: string): ShellFeatureDeclaration {
-  return {
-    id: GOVERNANCE_REPORT_PAGE_ID,
-    label,
-    icon: "report",
-    availability: "page",
-    listed: false,
-    withConversation: true,
-    address,
-    pageSkill: GOVERNANCE_REPORT_PAGE_SKILL,
-  };
-}
-
 /** A panel application's page, opened beside the conversation. */
 export const PANEL_APPLICATION_PAGE_ID = "panel-application";
 
@@ -117,15 +87,12 @@ export function workbenchFeatures(
   pages: { agents: string; dashboards: string },
   /** The addresses those two pages are open at. */
   addresses: { agents: string; dashboards: string },
-  /** A governance record's report, declared only while the conversation's page parameter names one. */
-  governanceReport: ShellFeatureDeclaration | null = null,
   /** A panel application's page, declared only while the conversation's page parameter names one. */
   panelApplication: ShellFeatureDeclaration | null = null,
 ): ShellFeatureDeclaration[] {
   return [
     agentSettingsFeature(pages.agents, addresses.agents),
     dashboardsPageFeature(pages.dashboards, addresses.dashboards),
-    ...(governanceReport ? [governanceReport] : []),
     ...(panelApplication ? [panelApplication] : []),
     ...editionFeatures,
   ];

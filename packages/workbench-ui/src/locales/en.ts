@@ -669,8 +669,6 @@ export default {
     "chartUndated": "Undated",
     "noChartRows": "No rows to draw.",
     "featureDashboards": "Dashboards",
-    "featureGovernanceReport": "Governance report",
-    "governanceFinding": "Finding",
     "featureAgents": "Agent settings",
     "featureOpsDiagnosis": "Operations diagnosis",
     "featureSchedule": "Scheduled tasks",
@@ -1132,7 +1130,6 @@ export default {
       "agentDefinition": "Agent",
       "ontologyType": "Ontology type",
       "ontologyRelationKind": "Relation kind",
-      "knowledgeGovernanceRecord": "Governance record",
       "feedbackRecord": "Feedback"
     },
     "relations": {

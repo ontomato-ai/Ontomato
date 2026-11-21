@@ -67,11 +67,10 @@ const assetReadPaths = [
 ];
 const queryOutput = /^\/ontology\/query\/outputs\/[0-9a-f-]+$/u;
 const queryOutputCancel = /^\/ontology\/query\/outputs\/[0-9a-f-]+\/cancel$/u;
-const governanceRead = /^\/ontology\/ai\/knowledge-governance\/[^/]+\/(?:work|sources\/[^/]+)$/u;
 const governanceAction = /^\/ontology\/ai\/knowledge-governance\/[^/]+\/runs\/[^/]+\/actions\/[^/]+$/u;
 const governanceClose = /^\/ontology\/ai\/knowledge-governance\/[^/]+\/skill-runs\/[^/]+\/close$/u;
 function ontologyAllowed(method: string, path: string) {
-  if (method === "GET") return ontologyReads.includes(path) || queryOutput.test(path) || governanceRead.test(path);
+  if (method === "GET") return ontologyReads.includes(path) || queryOutput.test(path);
   if (method === "POST") {
     return ontologyPosts.includes(path) ||
       queryOutputCancel.test(path) ||

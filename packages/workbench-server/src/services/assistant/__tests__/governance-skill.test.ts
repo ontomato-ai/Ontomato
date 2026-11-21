@@ -30,8 +30,7 @@ function command(name:string,platform:boolean,input?:unknown,selected=false){ret
 it("platform commands request the bound host window and use its scoped grant, never an external begin",async()=>{
   await mkdir(path.join(directory,"work"));await writeFile(path.join(directory,"work/.governance-run.json"),JSON.stringify({id,sessionId:id,runId:"old-external"}));
   const result=JSON.parse((await command("read-work-record",true)).stdout);
-  expect(result).toMatchObject({saved:true});
-  expect(result.reportLink).toMatch(new RegExp(`^\\[[^\\]]+\\]\\(#/governance/reports/${id}\\)$`));
+  expect(result).toEqual({saved:true});
   expect(calls).toEqual([{path:"/window",token:"host-callback",run},{path:`/ontology/ai/knowledge-governance/${id}/runs/${run}/actions/read_work_record`,token:"governance-grant",run}]);
   await expect(command("close",true)).rejects.toThrow();expect(calls).toHaveLength(2);
 });
@@ -73,7 +72,7 @@ it("platform import uses the execution callback for its business-page read witho
  expect(await readFile(path.join(directory,result.drafts[0].path),"utf8")).not.toContain("executor-callback");
 });
 
-it("platform work-record updates return a ready in-app Markdown report link",async()=>{
+it("platform work-record updates return only the saved result without a report link",async()=>{
   const result=JSON.parse((await command("update-work-record",true,{summary:"Reviewed"})).stdout);
-  expect(result.reportLink).toMatch(new RegExp(`^\\[[^\\]]+\\]\\(#/governance/reports/${id}\\)$`));
+  expect(result).toEqual({saved:true});
 });

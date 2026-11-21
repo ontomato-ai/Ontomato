@@ -17,10 +17,9 @@ import type { AssetTab, ModelResource } from "./workspace";
 
 /*
  * Heavy pages load when first entered, so their graph, chart and Markdown libraries stay out of the entry script:
- * visual modeling brings AntV G6/X6, data browsing loads G6 only for its graph view, asset details
- * bring Markdown and code highlighting, and knowledge governance brings the agent shell.
+ * visual modeling brings AntV G6/X6, data browsing loads G6 only for its graph view, and asset details
+ * bring Markdown and code highlighting.
  */
-const GovernancePage = defineAsyncComponent(() => import("./knowledge-governance/GovernancePage.vue"));
 const DataBrowser = defineAsyncComponent(() => import("./data-browser/DataBrowser.vue"));
 const VisualModeling = defineAsyncComponent(() => import("./visual-modeling/VisualModeling.vue"));
 const OntologyAssetDetail = defineAsyncComponent(() => import("./components/OntologyAssetDetail.vue"));

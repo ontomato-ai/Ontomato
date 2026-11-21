@@ -5,7 +5,7 @@ import { platformSchedulesPath } from "./platform-schedules";
 import {
   DELETE_AGENT, ACTION, AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION,
   METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL,
-  USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, KNOWLEDGE_GOVERNANCE_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE,
+  USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE,
   RUN_NOW, SET_ACTION_STATUS, DELETE_ACTION, APPROVE_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL,
   IMPORT_SKILL, EXPORT_SKILL, EXPORT_FEEDBACK, DELETE_METRIC_VIEW, SET_METRIC_VIEW_STATUS, TEST_METRIC_VIEW,
   TEST_EXECUTE_METRIC_VIEW, DELETE_FUNCTION,
@@ -14,7 +14,7 @@ import {
 export {
   DELETE_AGENT, ACTION, AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION,
   METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL,
-  USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, KNOWLEDGE_GOVERNANCE_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE,
+  USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE,
   RUN_NOW, SET_ACTION_STATUS, DELETE_ACTION, APPROVE_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL,
   IMPORT_SKILL, EXPORT_SKILL, EXPORT_FEEDBACK, DELETE_METRIC_VIEW, SET_METRIC_VIEW_STATUS, TEST_METRIC_VIEW,
   TEST_EXECUTE_METRIC_VIEW, DELETE_FUNCTION,
@@ -180,19 +180,6 @@ const knowledgeReads = [
   },
 ] as const satisfies readonly PanelClientRead[];
 
-const governanceRecordReads = [
-  {
-    method: "GET", service: "/data-query", path: /^\/ontology\/ai\/knowledge-governance\/[^/?#]+\/work$/,
-    template: "/ontology/ai/knowledge-governance/:id/work",
-  },
-  {
-    method: "GET", service: "/data-query",
-    path: /^\/ontology\/ai\/knowledge-governance\/[^/?#]+\/sources\/[^/?#]+(?:\?offset=\d+)?$/,
-    template: "/ontology/ai/knowledge-governance/:id/sources/:source",
-    instructions: "Use the record's source ID and the returned offset to read more source material.",
-  },
-] as const satisfies readonly PanelClientRead[];
-
 const skillReads = [
   { method: "GET", service: "", path: /^\/assistant\/agent-skills$/, template: "/assistant/agent-skills" },
   { method: "GET", service: "", path: /^\/skills$/, template: "/skills" },
@@ -248,7 +235,6 @@ const readRequests: Readonly<Record<string, readonly PanelClientRead[]>> = {
   [objectBinding(AGENT_DEFINITION)]: agentDefinitionReads,
   [objectBinding(SKILL)]: skillReads,
   [objectBinding(BUSINESS_KNOWLEDGE)]: knowledgeReads,
-  [objectBinding(KNOWLEDGE_GOVERNANCE_RECORD)]: governanceRecordReads,
   [objectBinding(FEEDBACK_RECORD)]: feedbackReads,
   [objectBinding(MODEL_OPTION)]: [
     { method: "GET", service: "/data-query", path: /^\/model-options$/, template: "/model-options" },

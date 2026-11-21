@@ -300,10 +300,11 @@ async function readDraft() {
 async function openGovernance() {
   try {
     const list = assistantAgentListSchema.parse(await (await client.request(
-      `/assistant/agents?${new URLSearchParams({ pageKey: "governance-report", permissionCode: "business-knowledge" })}`,
+      `/assistant/agents?${new URLSearchParams({ pageKey: "business-knowledge", permissionCode: "business-knowledge" })}`,
       {}, "")).json());
-    if (!list.defaultAgentId) throw new Error(ot("knowledgeGovernanceUnavailable"));
-    emit("governance", list.defaultAgentId);
+    const agentId = list.presetAgentIds?.["knowledge-governance"];
+    if (!agentId) throw new Error(ot("knowledgeGovernanceUnavailable"));
+    emit("governance", agentId);
   } catch (error) {
     message.error(error instanceof Error ? error.message : ot("knowledgeGovernanceUnavailable"));
   }

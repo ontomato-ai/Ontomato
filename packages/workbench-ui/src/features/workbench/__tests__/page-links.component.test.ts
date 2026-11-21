@@ -61,7 +61,6 @@ async function openAt(): Promise<{ router: Router; wrapper: VueWrapper }> {
           { ...platformRoutes.chat, component: { template: "<div />" } },
           { ...platformRoutes.knowledge, component: { template: "<div />" } },
           { ...platformRoutes.dashboards, component: { template: "<div />" } },
-          { ...platformRoutes.governance, component: { template: "<div />" } },
         ],
       },
       // The platform answers any other address with its start page; that is no page of its own.
@@ -75,9 +74,9 @@ async function openAt(): Promise<{ router: Router; wrapper: VueWrapper }> {
     global: { plugins: [i18n, ElementPlus, router], provide: {
       [ontologyServiceAccessKey as symbol]: openOntologyServiceAccess,
       [platformPageAccessKey as symbol]: () => true,
-      // The assembly's own pages beside the conversation: a board and a governance report, and no others.
+      // The assembly's own pages beside the conversation: dashboards, and no others.
       [pilotPageKey as symbol]: () => (address: string) =>
-        address.startsWith("/dashboards") || address.startsWith("/governance/reports/")
+        address.startsWith("/dashboards")
           ? { id: "page", component: defineComponent({ render: () => h("div") }), props: {} }
           : null,
     } },
@@ -105,10 +104,10 @@ describe("the pages an answer links", () => {
 
   it("opens the pages beside the conversation there, and leaves the address's page parameter to carry them", async () => {
     const { router, wrapper } = await openAt();
-    await openLink(wrapper, "#/governance/reports/record-1?issue=order-rule");
+    await openLink(wrapper, "#/dashboards?dashboardId=board-1");
 
     expect(router.currentRoute.value.path).toBe(platformRoutes.chat.path);
-    expect(router.currentRoute.value.query.page).toBe("/governance/reports/record-1?issue=order-rule");
+    expect(router.currentRoute.value.query.page).toBe("/dashboards?dashboardId=board-1");
   });
 
   it.each([

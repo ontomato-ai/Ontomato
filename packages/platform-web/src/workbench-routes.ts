@@ -5,7 +5,6 @@ import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { observeRoutes } from "./observe-routes";
 import AgentSettingsRoute from "./pages/AgentSettingsRoute.vue";
 import DashboardsPage from "./pages/DashboardsRoute.vue";
-import GovernanceReportRoute from "./pages/GovernanceReportRoute.vue";
 import PlatformSchedulesPage from "./pages/PlatformSchedulesRoute.vue";
 
 type PageComponent = NonNullable<RouteRecordSingleView["component"]>;
@@ -91,14 +90,6 @@ export function workbenchPages(
     { path: "/agents", redirect: (to) => capabilityTabLink(to) ?? { name: routes.chat.name, query: to.query } },
     // The models of the platform's ontology service agents: a page of its navigation, so it opens with its permission.
     { ...routes.agentModels, component, meta: { workbench: true, page: routes.agentModels.path } },
-    // One governance record's report: the page the conversation beside it also draws, with the platform's composer at its
-    // foot. It belongs to business knowledge — the page's own menu code — so `meta.page` sits on its parent (the
-    // parameterised address never equals a page address, and the guard reads the tree's).
-    {
-      path: routes.governance.path.replace("/:recordId", ""),
-      meta: { service: true, page: routes.knowledge.path },
-      children: [{ ...routes.governance, component: GovernanceReportRoute }],
-    },
     { ...observeRoutes.root, ...observe, children: observeRoutes.children },
   ];
 }

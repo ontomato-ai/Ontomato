@@ -52,8 +52,6 @@ export const platformRoutes = {
   caseDetail: { name: "ObserveAutoTestCaseDetail", path: "/ops/autotest/runs/:runId/cases/:caseId" },
   dsl: { name: "ObserveDsl", path: "/ops/dsl" },
   opsModel: { name: "ObserveModel", path: "/ops/model" },
-  /** One governance record's report and the sources it cites; the conversation that produced it lives in the agent platform. */
-  governance: { name: "KnowledgeGovernance", path: "/governance/reports/:recordId" },
   /** 应用构建: the workspace in the address, the open conversation as `?sessionId=`. */
   appBuilder: { name: "AppBuilder", path: "/app-builder/:workspaceId?" },
   feedback: { name: "Feedback", path: "/governance/feedback" },

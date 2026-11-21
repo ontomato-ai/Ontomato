@@ -7,7 +7,22 @@ import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
-import { KNOWLEDGE_GOVERNANCE_RECORD, SKILL } from "@ontomato/contracts/platform-object-types";
+import { SKILL } from "@ontomato/contracts/platform-object-types";
+
+vi.mock("@ontomato/contracts/panel-projection", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@ontomato/contracts/panel-projection")>();
+  return {
+    ...actual,
+    directReadDeclaration(projection: Parameters<typeof actual.directReadDeclaration>[0], data: Parameters<typeof actual.directReadDeclaration>[1]) {
+      if (data.read === "sources")
+        return { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" } as const;
+      if (data.read === "sourcePage")
+        return { source: "object", parameterMode: "fixed", params: { source: "keyword", cursor: "cursor" }, requiredParams: ["source"], result: "panelRecordQuery" } as const;
+      return actual.directReadDeclaration(projection, data);
+    },
+  };
+});
+
 import { createDirectPanelInstance, type PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
@@ -25,7 +40,7 @@ import { noOperations } from "./panel-frame";
 
 const base = { domainId: "d", ownerId: "o", revision: 1, createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "" };
 const recordOf = (input: string) => ({ object: { input } });
-const governed = { className: KNOWLEDGE_GOVERNANCE_RECORD, primaryKey: "g-1" };
+const documentRef = { className: "Document", primaryKey: "doc-1" };
 
 function mount(projection: DirectProjection, inputs: Record<string, RuntimeJsonValue>, answer: (request: PanelMemberReadRequest) => ProductPanelReadResponse) {
   const reads: PanelMemberReadRequest[] = [];
@@ -51,16 +66,16 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-it("reads a governance record's sources page by page through the owner's reads", async () => {
+it("reads a record's sources page by page through the owner's reads", async () => {
   const projection: DirectProjection = {
     ...base, id: "sources", name: "Sources", componentId: "@ontomato/sdk:ObjectTextReader",
-    inputs: { record: { kind: "object", objectType: KNOWLEDGE_GOVERNANCE_RECORD } }, outputs: {}, config: {},
+    inputs: { record: { kind: "object", objectType: "Document" } }, outputs: {}, config: {},
     data: {
       sources: { source: recordOf("record"), read: "sources", params: {} },
       page: { source: recordOf("record"), read: "sourcePage", params: {} },
     },
   };
-  const { element, reads } = mount(projection, { record: governed }, (request) => {
+  const { element, reads } = mount(projection, { record: documentRef }, (request) => {
     if (request.dataName === "sources")
       return { status: "ready", value: [{ primaryKey: "s-1", label: "Policy memo", fields: { kind: "Document", target: "memo", excerpt: "…" } }] as never };
     const cursor = request.runtimeParams?.cursor;
@@ -76,7 +91,7 @@ it("reads a governance record's sources page by page through the owner's reads",
   });
   chip.click();
   await vi.waitFor(() => expect(element.querySelector(".fui-segmented-reader-segment")?.textContent).toBe("First part."));
-  expect(reads().at(-1)).toMatchObject({ dataName: "page", inputs: { record: governed }, runtimeParams: { source: "s-1" } });
+  expect(reads().at(-1)).toMatchObject({ dataName: "page", inputs: { record: documentRef }, runtimeParams: { source: "s-1" } });
 
   element.querySelector<HTMLButtonElement>(".fui-segmented-reader-more")!.click();
   await vi.waitFor(() => expect(element.querySelector(".fui-segmented-reader-segment")?.textContent).toBe("Second part."));
@@ -104,7 +119,7 @@ it("shows one object's whole text from its record, with its line breaks", async 
 it("opens the source the page writes, in the reader its anchor names, and reads its first page", async () => {
   const reader = (id: string, anchor: string): DirectProjection => ({
     ...base, id, name: id, componentId: "@ontomato/sdk:ObjectTextReader",
-    inputs: { record: { kind: "object", objectType: KNOWLEDGE_GOVERNANCE_RECORD } },
+    inputs: { record: { kind: "object", objectType: "Document" } },
     outputs: { activeSourceId: { kind: "scalar", type: "string" }, activeAnchor: { kind: "scalar", type: "string" } }, config: { anchor },
     data: {
       sources: { source: recordOf("record"), read: "sources", params: {} },
@@ -112,7 +127,7 @@ it("opens the source the page writes, in the reader its anchor names, and reads 
     },
   });
   const projections: Record<string, DirectProjection> = { "issue-sources": reader("issue-sources", "issue"), "all-sources": reader("all-sources", "all") };
-  const shared = { record: { literal: governed } };
+  const shared = { record: { literal: documentRef } };
   const opened = { activeSourceId: { state: "openSource" }, activeAnchor: { state: "openReader" } };
   const reads: PanelMemberReadRequest[] = [];
   const instance = createDirectPanelInstance(definePanel({

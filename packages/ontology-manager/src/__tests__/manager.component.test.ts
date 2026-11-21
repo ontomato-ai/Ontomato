@@ -366,7 +366,6 @@ function markedMessages(marker: string): ManagerMessages {
     shared: Object.fromEntries(
       Object.entries(englishMessages.shared).map(([group, table]) => [group, mark(table)])
     ),
-    governance: englishMessages.governance,
   } as ManagerMessages;
 }
 

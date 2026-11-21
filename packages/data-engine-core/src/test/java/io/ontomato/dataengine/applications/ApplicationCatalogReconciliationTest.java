@@ -131,9 +131,9 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         http.perform(get("/platform/page-skills")).andExpect(status().isOk())
             .andExpect(jsonPath("$.data.pageSkills.length()").value(metadata.pageSkills().size()))
             .andExpect(jsonPath("$.data.pageSkills[0].skill.name").value("knowledge-governance"))
-            .andExpect(jsonPath("$.data.pageSkills[0].defaults[0].pageKey").value("governance-report"))
-            .andExpect(jsonPath("$.data.pageSkills[0].defaults[0].defaultAgent.agentKind").value("knowledge-governance"))
-            .andExpect(jsonPath("$.data.pageSkills[0].defaults[1].pageKey").value("knowledge"))
+            .andExpect(jsonPath("$.data.pageSkills[0].defaults.length()").value(1))
+            .andExpect(jsonPath("$.data.pageSkills[0].defaults[0].pageKey").value("knowledge"))
+            .andExpect(jsonPath("$.data.pageSkills[0].defaults[0].defaultAgent.id").value("knowledge-agent"))
             .andExpect(jsonPath("$.data.admittedEntrances[0].pageKey").value("knowledge"))
             .andExpect(jsonPath("$.data.registeredSkills[0].name").value("knowledge-governance"));
     }

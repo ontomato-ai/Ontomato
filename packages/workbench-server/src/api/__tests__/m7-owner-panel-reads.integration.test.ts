@@ -9,7 +9,7 @@ import AdmZip from "adm-zip";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import {
-  AGENT_DEFINITION, DELETE_SKILL, EXPORT_FEEDBACK, EXPORT_SKILL, FEEDBACK_RECORD, KNOWLEDGE_GOVERNANCE_RECORD, SKILL,
+  AGENT_DEFINITION, DELETE_SKILL, EXPORT_FEEDBACK, EXPORT_SKILL, FEEDBACK_RECORD, SKILL,
 } from "@ontomato/contracts/panel-client-requests";
 import { productPanelOperationsReadResponseSchema } from "@ontomato/contracts/panel-host";
 import { productPanelInputSchema, productProjectionInputSchema } from "@ontomato/contracts/product-panels";
@@ -65,7 +65,6 @@ let publicSkillsRoot: string;
 const resourceIds = new Set<string>();
 const domainId = "m7-owner-domain";
 const panelId = "panel-m7-owners";
-const governanceId = randomUUID();
 const feedbackIds = {
   qaLike: randomUUID(),
   qaDislike: randomUUID(),
@@ -87,7 +86,6 @@ const agentIds = {
 };
 
 const feedbackRefType = { kind: "object", objectType: FEEDBACK_RECORD } as const;
-const governanceRefType = { kind: "object", objectType: KNOWLEDGE_GOVERNANCE_RECORD } as const;
 const skillRefType = { kind: "object", objectType: SKILL } as const;
 
 const projections = {
@@ -152,27 +150,6 @@ const projections = {
       record: { source: { object: { input: "record" } }, read: "record", params: {} },
     },
   }),
-  "proj-governance-summary": productProjectionInputSchema.parse({
-    name: "Governance record", description: "", visibility: "domain",
-    componentId: "@ontomato/sdk:PanelData",
-    inputs: {
-      record: governanceRefType, issue: { kind: "scalar", type: "string" },
-      source: { kind: "scalar", type: "string" }, cursor: { kind: "scalar", type: "string" },
-    },
-    outputs: {},
-    config: {},
-    data: {
-      record: { source: { object: { input: "record" } }, read: "record", params: {} },
-      issues: { source: { object: { input: "record" } }, read: "issues", params: {} },
-      sources: { source: { object: { input: "record" } }, read: "sources", params: {} },
-      issueSources: { source: { object: { input: "record" } }, read: "issueSources", params: { issue: { input: "issue" } } },
-      sourcePage: {
-        source: { object: { input: "record" } },
-        read: "sourcePage",
-        params: { source: { input: "source" }, cursor: { input: "cursor" } },
-      },
-    },
-  }),
   "proj-skill-list": productProjectionInputSchema.parse({
     name: "Skill list", description: "", visibility: "domain",
     componentId: "@ontomato/sdk:ObjectList",
@@ -217,7 +194,6 @@ const panel = productPanelInputSchema.parse({
       '  <projection slot="feedbackCounts"></projection>',
       '  <projection slot="feedbackList"></projection>',
       '  <projection slot="feedbackDetail"></projection>',
-      '  <projection slot="governanceDetail"></projection>',
       '  <projection slot="skillList"></projection>',
       '  <projection slot="skillDetail"></projection>',
       "</div>",
@@ -231,52 +207,18 @@ const panel = productPanelInputSchema.parse({
   manifest: {
     state: {
       selectedFeedback: { type: feedbackRefType, default: null },
-      selectedGovernance: { type: governanceRefType, default: null },
       selectedSkill: { type: skillRefType, default: null },
     },
     members: {
       feedbackList: { target: { projectionId: "proj-feedback-list" } },
       feedbackCounts: { target: { projectionId: "proj-feedback-counts" } },
       feedbackDetail: { target: { projectionId: "proj-feedback-detail" }, inputs: { record: { state: "selectedFeedback" } } },
-      governanceDetail: { target: { projectionId: "proj-governance-summary" }, inputs: { record: { state: "selectedGovernance" } } },
       skillList: { target: { projectionId: "proj-skill-list" } },
       skillDetail: { target: { projectionId: "proj-skill-detail" }, inputs: { skill: { state: "selectedSkill" } } },
     },
     events: {},
   },
 });
-
-const governanceWork = {
-  revision: 4,
-  work: {
-    summary: "Reviewed 2 rules",
-    notes: "Ready for confirmation",
-    reviewedKnowledgeIds: ["k-1", "k-2"],
-    knowledgeTotal: 3,
-    issues: [
-      {
-        id: "issue-1",
-        title: "Missing order cutoff",
-        category: "knowledge",
-        status: "pending",
-        problem: "Cutoff time is omitted",
-        before: "Same-day shipping",
-        after: "Orders before 18:00 ship same day",
-        basis: "Fulfillment policy v2",
-        sourceIds: ["src-1"],
-      },
-    ],
-    sources: [
-      {
-        id: "src-1",
-        kind: "knowledge",
-        target: "k-1",
-        title: "Fulfillment policy",
-        excerpt: "Orders before 18:00",
-      },
-    ],
-  },
-};
 
 beforeAll(async () => {
   configureI18n({
@@ -473,42 +415,6 @@ beforeAll(async () => {
       artifacts: [],
     });
   });
-  app.get("/ontology/ai/knowledge-governance/:id/work", (req, res) => {
-    if (req.header("tk") !== "m7-reader") {
-      res.status(403).json({ error: { code: "FORBIDDEN", message: "Governance access required" } });
-      return;
-    }
-    expect(req.params.id).toBe(governanceId);
-    res.json(governanceWork);
-  });
-  app.get("/ontology/ai/knowledge-governance/:id/sources/:source", (req, res) => {
-    if (req.header("tk") !== "m7-reader") {
-      res.status(403).json({ error: { code: "FORBIDDEN", message: "Governance access required" } });
-      return;
-    }
-    const sourceId = req.params.source;
-    const offset = Number(req.query.offset ?? 0);
-    if (sourceId === "src-artifact") {
-      res.json({ source: { ...governanceWork.work.sources[0], id: "src-artifact", kind: "artifact" }, page: null });
-      return;
-    }
-    res.json({
-      source: governanceWork.work.sources[0],
-      page: offset === 0
-        ? {
-          items: [{ id: "k-1", title: "Fulfillment policy", text: "First half", start: 0, end: 10, totalChars: 20 }],
-          totalItems: 1,
-          matchedItems: 1,
-          next: { index: 0, offset: 10 },
-        }
-        : {
-          items: [{ id: "k-1", title: "Fulfillment policy", text: "Second half", start: 10, end: 20, totalChars: 20 }],
-          totalItems: 1,
-          matchedItems: 1,
-          next: null,
-        },
-    });
-  });
 
   app.use("/api", (req, _res, next) => {
     const token = req.header("tk") ?? "m7-reader";
@@ -648,64 +554,8 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
   } finally {
     state.permissions.add("user-feedback");
   }
-  // 2. KnowledgeGovernanceRecord reads forwarded to Java with viewer credentials.
-  const govRef = { className: KNOWLEDGE_GOVERNANCE_RECORD, primaryKey: governanceId };
-  expect(await read("governanceDetail", "record", { record: govRef })).toEqual({
-    status: "ready",
-    value: {
-      primaryKey: governanceId,
-      label: "Reviewed 2 rules",
-      fieldLabels: {
-        summary: "Summary",
-        revision: "Revision",
-        progress: "Progress",
-        issueCount: "Issues",
-        sourceCount: "Sources",
-        notes: "Notes",
-      },
-      fields: {
-        summary: "Reviewed 2 rules",
-        revision: "4",
-        progress: "2/3",
-        issueCount: "1",
-        sourceCount: "1",
-        notes: "Ready for confirmation",
-      },
-    },
-  });
-  expect(await read("governanceDetail", "issues", { record: govRef })).toMatchObject({
-    status: "ready",
-    value: [{ primaryKey: "issue-1", label: "Missing order cutoff" }],
-  });
-  expect(await read("governanceDetail", "sources", { record: govRef })).toMatchObject({
-    status: "ready",
-    value: [{ primaryKey: "src-1", label: "Fulfillment policy" }],
-  });
-  expect(await read("governanceDetail", "issueSources", { record: govRef, issue: "issue-1" })).toMatchObject({
-    status: "ready",
-    value: [{ primaryKey: "src-1", label: "Fulfillment policy" }],
-  });
-  expect(await read("governanceDetail", "sourcePage", { record: govRef, source: "src-1" })).toMatchObject({
-    status: "ready",
-    value: {
-      rows: [{ primaryKey: "k-1:0", fields: { text: "First half", start: "0", end: "10", totalChars: "20" } }],
-      nextCursor: "10",
-    },
-  });
-  const govLastPage = await read("governanceDetail", "sourcePage", { record: govRef, source: "src-1", cursor: "10" });
-  expect(govLastPage).toMatchObject({
-    status: "ready",
-    value: {
-      rows: [{ primaryKey: "k-1:10", fields: { text: "Second half", start: "10", end: "20", totalChars: "20" } }],
-    },
-  });
-  expect(govLastPage.value.nextCursor).toBeUndefined();
-  expect(await read("governanceDetail", "sourcePage", { record: govRef, source: "src-artifact" })).toEqual({
-    status: "ready",
-    value: { rows: [] },
-  });
 
-  // 3. Skill library reads (available without analysis-agent permission) and skills.delete operation.
+  // 2. Skill library reads (available without analysis-agent permission) and skills.delete operation.
   state.permissions.delete("analysis-agent");
   const skillPage = await read("skillList", "rows", { size: 2 });
   expect(skillPage).toMatchObject({

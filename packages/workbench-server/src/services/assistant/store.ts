@@ -1,4 +1,4 @@
-import { GOVERNANCE_KIND, GOVERNANCE_SKILL } from "./governance-definition";
+import { GOVERNANCE_KIND, GOVERNANCE_SKILLS } from "./governance-definition";
 import { defaultAssistantSkills } from "../../config/assistant-defaults";
 import { APP_BUILDER, APP_BUILDER_KIND,isAppBuilderKind } from "../app-builder/definition";
 import type { ModelSelection } from "@ontomato/contracts/model-settings";
@@ -88,7 +88,7 @@ export const assistantStore = {
     }
     await db().query(
       `INSERT INTO ${table("assistant_agents")} (id,domain_id,kind,name,description,system_prompt,skills,sort_order) VALUES($1,$2,$3,$4,$5,NULL,$6,2) ON CONFLICT(domain_id,kind) DO NOTHING`,
-      [randomUUID(), domainId, GOVERNANCE_KIND, "Knowledge governance", "Review business knowledge with traceable evidence", JSON.stringify([GOVERNANCE_SKILL])],
+      [randomUUID(), domainId, GOVERNANCE_KIND, "Knowledge governance", "Review business knowledge with traceable evidence", JSON.stringify(GOVERNANCE_SKILLS)],
     );
     return (
       await db().query(

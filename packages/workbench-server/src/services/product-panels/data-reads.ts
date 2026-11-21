@@ -3,7 +3,7 @@ import { z } from "zod";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import {
-  AGENT_DEFINITION, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, KNOWLEDGE_GOVERNANCE_RECORD, MODEL_OPTION, SCHEDULED_TASK, SKILL, USER,
+  AGENT_DEFINITION, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, MODEL_OPTION, SCHEDULED_TASK, SKILL, USER,
 } from "@ontomato/contracts/panel-client-requests";
 import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
@@ -112,10 +112,6 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   const feedback = async () => {
     const { createFeedbackReadAdapter } = await import("../admin/feedback-panel-reads");
     return createFeedbackReadAdapter(owner, viewer);
-  };
-  const governance = async () => {
-    const { createKnowledgeGovernanceReadAdapter } = await import("../assistant/governance-panel-reads");
-    return createKnowledgeGovernanceReadAdapter(viewer);
   };
   return {
     [ACTION]: {
@@ -241,13 +237,6 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       query: async (_selection, params) => (await feedback()).query(params),
       counts: async (_selection, params) => (await feedback()).counts(params),
       record: async selection => (await feedback()).record(selection.primaryKey!),
-    },
-    [KNOWLEDGE_GOVERNANCE_RECORD]: {
-      record: async selection => (await governance()).record(selection.primaryKey!),
-      issues: async selection => (await governance()).issues(selection.primaryKey!),
-      sources: async selection => (await governance()).sources(selection.primaryKey!),
-      issueSources: async (selection, params) => (await governance()).issueSources(selection.primaryKey!, params),
-      sourcePage: async (selection, params) => (await governance()).sourcePage(selection.primaryKey!, params),
     },
   };
 }
