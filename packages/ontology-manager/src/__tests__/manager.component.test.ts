@@ -1222,3 +1222,16 @@ describe("Manager pages in the service router", () => {
   });
 });
 
+function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  input.value = value;
+  input.dispatchEvent(new Event("input"));
+}
+
+function openDialog(buttonText: string) {
+  const dialog = [...document.querySelectorAll(".el-dialog")].find((item) =>
+    item.textContent?.includes(buttonText)
+  );
+  if (!dialog) throw new Error(`Dialog not found: ${buttonText}`);
+  return dialog;
+}
+
