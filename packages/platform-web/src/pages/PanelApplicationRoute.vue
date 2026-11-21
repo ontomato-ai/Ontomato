@@ -267,7 +267,6 @@ const labels = computed<PanelHostLabels>(() => ({
   },
   content: { styleOutside: t("platform.panelStyleOutside") },
   draft: {
-    leave: t("platform.panelDraftLeave"),
     toAgent: t("platform.panelDraftToAgent"),
     // The host puts the reason where `{reason}` stands.
     toAgentText: t("platform.panelDraftToAgentText", { reason: "{reason}" }),
@@ -281,6 +280,16 @@ const labels = computed<PanelHostLabels>(() => ({
  */
 function draftToAgent(text: string) {
   expandDeclaredComposer({ target: { kind: "page-default" }, prefill: text });
+}
+
+/**
+ * The reader closed the notice of a draft the shown page cannot use: the page opens as it does without the draft — its
+ * entry's own address, the panel's defaults, no form left half open — as its menu row does. A frame keeps its own state.
+ */
+function leaveDraft() {
+  const page = shownPage.value;
+  if (!page) return;
+  reportAddress({ kind: "state", address: applicationPanelAddress(panelUsePath(page.use.path), { frame: frameState.value }) });
 }
 
 /**
@@ -544,6 +553,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
       :address="addressOf(page)"
       :initial="stateOf(page)"
       :draft-to-agent="draftToAgent"
+      :leave-draft="leaveDraft"
       @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"
       @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
       @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"
@@ -568,6 +578,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
       :address="addressOf(page)"
       :initial="stateOf(page)"
       :draft-to-agent="draftToAgent"
+      :leave-draft="leaveDraft"
       @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"
       @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
       @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"

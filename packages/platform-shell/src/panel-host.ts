@@ -196,7 +196,7 @@ export interface PanelInstanceView {
   readonly notice: Readonly<ShallowRef<string>>;
   /** Why the draft the address links cannot be used here; empty when there is none, or the reader closed the notice. */
   readonly draftRefusal: Readonly<ShallowRef<string>>;
-  /** The reader closed the draft's notice: the panel stays as it is, the address still linking the draft. */
+  /** The notice goes; what the address links is left to the caller. */
   dismissDraftRefusal(): void;
   /** The reader leaves the draft: the address drops its draft link and the notice goes. */
   leaveDraft(): void;
@@ -239,10 +239,10 @@ export interface PanelHostLabels {
   /** What a panel tells its author: its CSS reached outside it. */
   content: { styleOutside: string };
   /**
-   * The notice above a panel whose linked draft it cannot take: the way back to the page without the draft, handing the
-   * reason to the agent, and the sentence the composer is filled with (`{reason}` stands for the panel's sentence).
+   * The notice above a panel whose linked draft it cannot take: handing the reason back to the agent, and the sentence the
+   * composer is filled with (`{reason}` stands for the panel's sentence).
    */
-  draft: { leave: string; toAgent: string; toAgentText: string };
+  draft: { toAgent: string; toAgentText: string };
   /** The page command that reads the panel's shown data again. */
   refresh: string;
 }

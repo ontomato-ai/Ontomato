@@ -31,7 +31,7 @@ const labels: PanelHostLabels = {
   notStarted: "Not started",
   failures: { fileUnavailable: "Could not load {file}", scriptThrew: "Script failed", scriptRejected: "Script rejected" },
     content: { styleOutside: "Style outside" },
-    draft: { leave: "Back", toAgent: "To agent", toAgentText: "Unused: {reason}" },
+    draft: { toAgent: "To agent", toAgentText: "Unused: {reason}" },
     refresh: "Refresh",
 };
 
