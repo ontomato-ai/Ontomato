@@ -23,6 +23,21 @@ export function rgbTriplet(color: string) {
   return channels(color).join(", ");
 }
 
+/**
+ * "r, g, b" of a literal colour as a theme may write it (`#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()`, `rgba()`), its
+ * alpha left out as Element Plus's triplet leaves it; undefined for any other value.
+ */
+export function literalRgbTriplet(value: string): string | undefined {
+  const literal = value.trim();
+  const hex = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(literal)?.[1];
+  if (hex) {
+    const full = hex.length <= 4 ? [...hex].map((digit) => digit + digit).join("") : hex;
+    return [0, 2, 4].map((start) => parseInt(full.slice(start, start + 2), 16)).join(", ");
+  }
+  const rgb = /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,[^)]*)?\)$/i.exec(literal);
+  return rgb ? rgb.slice(1, 4).map(Number).join(", ") : undefined;
+}
+
 function luminance(color: string) {
   const [r, g, b] = channels(color).map((value) => {
     const channel = value / 255;
