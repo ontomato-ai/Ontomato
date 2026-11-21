@@ -59,12 +59,16 @@ it("platform knowledge import emits separate original-page forms and never calls
     return pageDraftSchema.parse(JSON.parse(await readFile(path.join(directory,entry.path),"utf8")));
   }));
   expect(drafts).toEqual([
-    {pageKey:"business-knowledge",operation:"knowledge.create",target:{objectType:"platform:BusinessKnowledge"},form:{knowledgeID:"",knowledgeTitle:"New",knowledgeText:"New text",knowledgeTags:["new-tag"],status:0}},
+    {pageKey:"business-knowledge",operation:"knowledge.create",target:{objectType:"platform:BusinessKnowledge"},form:{knowledgeTitle:"New",knowledgeText:"New text",knowledgeTags:["new-tag"],status:0}},
     {pageKey:"business-knowledge",operation:"knowledge.update",target:{objectType:"platform:BusinessKnowledge",id:"existing"},form:{knowledgeID:"existing",knowledgeTitle:"Changed",knowledgeText:"Changed text",knowledgeTags:["retained"],status:1}},
   ]);
   expect(new Set(result.drafts.map((entry:{path:string})=>entry.path)).size).toBe(2);
   // The draft decides create or update before it exists; its own operation and target must agree with what a page
   // derives from the draft it reads, so changing either side alone breaks here.
+  // A drafted new item stays pending for review, and names no id in its form: the target says it is a create.
+  const created=drafts.find((draft)=>draftTarget(draft).kind==="create")!;
+  expect((created.form as Record<string,unknown>).status).toBe(0);
+  expect("knowledgeID" in (created.form as Record<string,unknown>)).toBe(false);
   const kinds=drafts.map((draft)=>({derived:draftTarget(draft).kind,operation:draft.operation}));
   expect(kinds).toEqual([{derived:"create",operation:"knowledge.create"},{derived:"update",operation:"knowledge.update"}]);
 });
