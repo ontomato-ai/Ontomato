@@ -62,3 +62,27 @@ export function formatRelativeTime(
   if (opts?.showSeconds) opts_base.second = "2-digit";
   return new Date(time).toLocaleString(localeStr, opts_base);
 }
+
+/**
+ * A time in a list a reader scans, where neighbouring times must keep their order at a glance (panelisation lead,
+ * 2026-11-22): within a minute "just now", within an hour how many minutes ago, today's and yesterday's by their clock
+ * time, an older one by its date and time — in the reader's language and time zone. A value that is no time gives "".
+ */
+export function formatListTime(ts: string): string {
+  const time = new Date(ts);
+  if (Number.isNaN(time.getTime())) return "";
+  const now = new Date(getSynchronizedNow());
+  const diff = now.getTime() - time.getTime();
+  if (diff >= 0 && diff < 60_000) return t("common.justNow");
+  if (diff >= 0 && diff < 3600_000) {
+    const minutes = Math.floor(diff / 60_000);
+    return t("common.minutesAgo", { n: minutes }, minutes);
+  }
+  const locale = workbenchI18n().global.locale.value as string;
+  const clock = time.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+  const day = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const days = Math.round((day(now) - day(time)) / 86_400_000);
+  if (days === 0) return t("common.todayAt", { time: clock });
+  if (days === 1) return t("common.yesterdayAt", { time: clock });
+  return time.toLocaleString(locale, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}

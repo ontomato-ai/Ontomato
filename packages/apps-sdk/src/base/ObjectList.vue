@@ -10,7 +10,7 @@ import {
 } from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
-import { formatRelativeTime } from "@ontomato/workbench-ui/utils/relative-time";
+import { formatListTime } from "@ontomato/workbench-ui/utils/relative-time";
 import { slotOutputState, usePanelContext, useProjectionSlot } from "../panel/context";
 import { paramValues } from "../panel/direct";
 import { useMember, useMemberData, useMemberParam } from "../panel/member";
@@ -326,11 +326,12 @@ const columnFit = computed(() => new Map((props.columns ?? []).map((column) => [
     : (column.kind === undefined || column.kind === "text" || column.kind === "reference") && rows.value.some((row) => columnText(row, column).length > LONG_TEXT)
       ? "sdk-object-list-col-shrink" : ""])));
 /**
- * A time column's owner value (an ISO time) as the platform shows a time, in the reader's language and time zone: a
- * recent one as how long ago, an older one by its date. A value that is no time is shown as it is.
+ * A time column's owner value (an ISO time) as the platform shows a time in a list, so neighbouring times keep their
+ * order: in the reader's language and time zone, recent ones relative, then by clock time and date. A value that is no
+ * time is shown as it is.
  */
 function timeText(value: string): string {
-  return formatRelativeTime(value, { showYear: true }) || value;
+  return formatListTime(value) || value;
 }
 /** The text a cell's title gives in full: a long text column's whole text, or a time column's whole local time. */
 function cellTitle(row: PlatformObjectRecord, column: ObjectListColumn): string | undefined {
