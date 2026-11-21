@@ -142,7 +142,8 @@ export const panelObjectActionSnapshotSchema = z.object({
 }).strict();
 export type PanelObjectActionSnapshot = z.infer<typeof panelObjectActionSnapshotSchema>;
 
-export const panelWriteOperationSnapshotSchema = panelOwnerOperationDescriptorSchema.extend({
+/** Availability is a live display fact. The owner checks the concrete target again when executing. */
+export const panelWriteOperationSnapshotSchema = panelOwnerOperationDescriptorSchema.omit({ unavailable: true }).extend({
   id: panelOperationIdSchema,
   kind: z.enum(["form.save", "action"]),
   slot: key,

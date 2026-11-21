@@ -1494,6 +1494,36 @@ test("the author type table and live descriptions share operation declarations",
 });
 
 
+test("live operation availability preserves the owner's reason without putting it in a write snapshot", async () => {
+  const { describePanelOperationFromDeclaration, panelOperationDeclarationSchema } = await import("./panel-operations");
+  const { productPanelOperationsReadResponseSchema } = await import("./panel-host");
+  const declaration = panelOperationDeclarationSchema.parse({
+    id: DELETE_FUNCTION, kind: "action", effect: "write", batch: false,
+    target: { source: "input", input: "function" }, inputSchema: {},
+  });
+  const unavailable = { reason: "被动作引用的函数不能删除。" };
+  const described = describePanelOperationFromDeclaration(declaration, { label: "删除", resultSchema: {}, unavailable });
+  const reply = { status: "ready", value: { remove: described } };
+  assert.deepEqual(productPanelOperationsReadResponseSchema.parse(reply), reply);
+  for (const invalid of [{ reason: "" }, { reason: "x".repeat(501) }, { ...unavailable, readonly: true }]) {
+    assert.equal(productPanelOperationsReadResponseSchema.safeParse({
+      status: "ready", value: { remove: { ...described, unavailable: invalid } },
+    }).success, false);
+  }
+
+  const manifest = panelManifestSchema.parse({
+    state: { selected: { type: { kind: "object", objectType: FUNCTION } } },
+    members: { remove: { target: { projectionId: "delete-function" }, inputs: { function: { state: "selected" } } } },
+    commands: {},
+  });
+  const placed = projectionOperation(manifest, "remove", "delete", described);
+  assert.deepEqual(panelOperationSchema.parse(placed).unavailable, unavailable);
+
+  const { unavailable: _display, ...snapshot } = described;
+  assert.equal(panelWriteOperationSnapshotSchema.safeParse({ ...snapshot, id: placed.id, slot: "remove" }).success, true);
+  assert.equal(panelWriteOperationSnapshotSchema.safeParse({ ...described, id: placed.id, slot: "remove" }).success, false);
+});
+
 test("owner select options preserve integer status and customizable string tags", () => {
   const option = { description: null, disabled: false, disabledReason: null };
   const fields = [

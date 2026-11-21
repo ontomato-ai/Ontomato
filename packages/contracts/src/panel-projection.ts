@@ -505,7 +505,7 @@ export function projectionOperation(
   name: string,
   descriptor: PanelOwnerOperationDescriptor,
 ): PanelOperation {
-  const { kind, label, handlerRef, inputSchema, target } = descriptor;
+  const { kind, label, handlerRef, inputSchema, target, unavailable } = descriptor;
   let placed: PanelOperation["target"];
   if (kind === "form.save") placed = { source: "draft", slot: member };
   else if (target.source === "literal" || target.source === "none") placed = target;
@@ -514,7 +514,10 @@ export function projectionOperation(
     if (binding && "state" in binding) placed = { source: "state", state: binding.state };
     else if (binding && "literal" in binding) placed = { source: "literal", literal: panelObjectRefSchema.parse(binding.literal) };
   }
-  return { id: panelOperationId(member, name), kind, label, handlerRef, inputSchema, target: placed, slot: member };
+  return {
+    id: panelOperationId(member, name), kind, label, handlerRef, inputSchema, target: placed, slot: member,
+    ...(unavailable !== undefined && { unavailable }),
+  };
 }
 
 /** The wire description is shared by the SDK's header and the generated skill. */
