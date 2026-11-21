@@ -48,6 +48,10 @@
       "id": "ontology-actions", "pageKey": "actions", "panelId": "builtin-product-ontology-actions",
       "path": "/ontology/assets/actions", "access": {"permissionCode": "action-management"},
       "names": {"en": "Actions", "zh-CN": "动作"}
+    }, {
+      "id": "capability-map", "pageKey": "capability-map", "panelId": "builtin-product-capability-map",
+      "path": "/ontology/assets/capability-map", "access": {"permissionCode": "action-management"},
+      "names": {"en": "Capability map", "zh-CN": "能力图谱"}
     }]
   }
 }

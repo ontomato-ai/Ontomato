@@ -1,0 +1,468 @@
+{
+  "manifest": {
+    "state": {
+      "mode": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "instance"
+      },
+      "view": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "graph"
+      },
+      "start": {
+        "type": {
+          "kind": "object-union",
+          "layers": [
+            "fact",
+            "capability",
+            "governance",
+            "product"
+          ],
+          "objectTypes": [
+            "platform:OntologyType"
+          ]
+        },
+        "deepLink": true
+      },
+      "selected": {
+        "type": {
+          "kind": "object-union",
+          "layers": [
+            "fact",
+            "capability",
+            "governance",
+            "product"
+          ],
+          "objectTypes": [
+            "platform:OntologyType"
+          ]
+        },
+        "deepLink": true
+      },
+      "selectedType": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "query": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": false
+      },
+      "relationKinds": {
+        "type": {
+          "kind": "list",
+          "items": {
+            "kind": "object",
+            "objectType": "platform:OntologyRelationKind"
+          }
+        },
+        "deepLink": false
+      }
+    },
+    "members": {
+      "graph": {
+        "component": "OntologyGraph",
+        "name": "Four-layer capability graph",
+        "description": "Interactive platform ontology graph across fact, capability, governance and product layers in type or instance mode.",
+        "type": "platform:OntologyType",
+        "data": {
+          "schema": "schema",
+          "counts": "counts",
+          "start": "start",
+          "neighbors": "neighbors"
+        },
+        "state": {
+          "mode": "mode",
+          "start": "start",
+          "selected": "selected",
+          "selectedType": "selectedType",
+          "query": "query",
+          "visibleRelationKinds": "relationKinds"
+        },
+        "config": {
+          "showLayerFilter": true,
+          "showLegend": true,
+          "showToolbar": true
+        },
+        "id": "builtin-product-d3cca6a3-6036-49d1-acd5-1c7a82ddb486"
+      },
+      "classes": {
+        "component": "PanelData",
+        "name": "Platform ontology catalogue",
+        "description": "Declared four-layer platform types, relation kinds and per-type readable counts.",
+        "type": "platform:OntologyType",
+        "data": {
+          "schema": "schema",
+          "counts": "counts"
+        },
+        "id": "builtin-product-6bd89039-b492-422a-9b3c-ac893b5466c5"
+      },
+      "relations": {
+        "component": "PanelData",
+        "name": "Selected node relations",
+        "description": "One-hop incoming and outgoing relations of the selected platform ontology node.",
+        "type": "platform:OntologyType",
+        "data": {
+          "neighbors": {
+            "read": "neighbors",
+            "params": {
+              "node": {
+                "state": "selected"
+              }
+            }
+          }
+        },
+        "id": "builtin-product-64592d46-d739-421f-b88a-8d2801a8ad18"
+      },
+      "typeObjects": {
+        "component": "ObjectList",
+        "name": "Objects by ontology type",
+        "description": "Readable objects of the selected type to pick as a starting node for instance exploration.",
+        "type": "platform:OntologyType",
+        "data": {
+          "objects": {
+            "read": "objects",
+            "params": {
+              "type": {
+                "state": "selectedType"
+              }
+            }
+          }
+        },
+        "state": {
+          "selected": "start"
+        },
+        "config": {
+          "emptyText": "cm.pickEmpty"
+        },
+        "id": "builtin-product-aa68c86d-e520-4ab4-bcef-33a48a295e9b"
+      },
+      "userPicker": {
+        "component": "ObjectList",
+        "name": "Starting user",
+        "description": "Readable platform users to switch the starting node in instance mode.",
+        "type": "platform:OntologyType",
+        "data": {
+          "objects": {
+            "read": "objects",
+            "params": {
+              "type": {
+                "literal": "platform:User"
+              }
+            }
+          }
+        },
+        "state": {
+          "selected": "start"
+        },
+        "config": {
+          "emptyText": "cm.userEmpty"
+        },
+        "id": "builtin-product-4dd589de-911e-45de-8ee0-06bb03127a26"
+      }
+    },
+    "events": {
+      "showTypeMode": {
+        "labelKey": "cm.eventShowTypeMode",
+        "do": {
+          "set": {
+            "fields": {
+              "mode": {
+                "literal": "type"
+              }
+            }
+          }
+        }
+      },
+      "showInstanceMode": {
+        "labelKey": "cm.eventShowInstanceMode",
+        "do": {
+          "set": {
+            "fields": {
+              "mode": {
+                "literal": "instance"
+              }
+            }
+          }
+        }
+      },
+      "showGraphView": {
+        "labelKey": "cm.eventShowGraphView",
+        "do": {
+          "set": {
+            "fields": {
+              "view": {
+                "literal": "graph"
+              }
+            }
+          }
+        }
+      },
+      "showListView": {
+        "labelKey": "cm.eventShowListView",
+        "do": {
+          "set": {
+            "fields": {
+              "view": {
+                "literal": "list"
+              }
+            }
+          }
+        }
+      },
+      "clearSelection": {
+        "labelKey": "cm.eventClearSelection",
+        "do": {
+          "set": {
+            "fields": {
+              "selected": {
+                "literal": null
+              }
+            }
+          }
+        }
+      },
+      "resetToCurrentUser": {
+        "labelKey": "cm.eventResetToCurrentUser",
+        "do": {
+          "set": {
+            "fields": {
+              "mode": {
+                "literal": "instance"
+              },
+              "start": {
+                "literal": null
+              },
+              "selected": {
+                "literal": null
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "cm.modeLabel": "Display mode",
+        "cm.viewLabel": "Type view",
+        "cm.viewGraph": "Graph",
+        "cm.viewList": "By layer",
+        "cm.searchType": "Highlight drawn type nodes",
+        "cm.searchInstance": "Highlight drawn nodes",
+        "cm.clearSearch": "Clear",
+        "cm.switchUser": "Switch start user",
+        "cm.closeUserPicker": "Close",
+        "cm.useSelectedAsStart": "Use selected as start",
+        "cm.resetStart": "Back to current user",
+        "cm.startTitle": "Start",
+        "cm.startCurrentUser": "Current user",
+        "cm.userPickerTitle": "Choose a start user",
+        "cm.userPickerHint": "Pick a readable user; the graph restarts from their one-hop neighbors.",
+        "cm.typeListTitle": "Four-layer types",
+        "cm.typeListHint": "Click a type to read its details on the right.",
+        "cm.classTitle": "Class details",
+        "cm.classEmpty": "Select a type on the graph or in the layer list to read its details.",
+        "cm.classLoading": "Reading the type catalogue…",
+        "cm.classFailed": "The type catalogue could not be read: {reason}",
+        "cm.definition": "Definition",
+        "cm.layer": "Layer",
+        "cm.readableCount": "Readable instances",
+        "cm.statusOk": "Readable",
+        "cm.statusRefused": "No permission",
+        "cm.statusFailed": "Read failed",
+        "cm.statusUnavailable": "Not connected",
+        "cm.properties": "Public properties",
+        "cm.propertyName": "Property",
+        "cm.propertyType": "Type",
+        "cm.propertyOptional": "Optional",
+        "cm.propertyDescription": "Description",
+        "cm.optionalYes": "Optional",
+        "cm.optionalNo": "Required",
+        "cm.relations": "Relations",
+        "cm.outgoing": "Outgoing",
+        "cm.incoming": "Incoming",
+        "cm.stored": "Stored",
+        "cm.derived": "Derived",
+        "cm.noRelations": "This type declares no relation.",
+        "cm.reads": "Named reads",
+        "cm.operations": "Operations",
+        "cm.noReads": "This type registers no named read.",
+        "cm.noOperations": "This type registers no operation.",
+        "cm.readParameters": "Parameters",
+        "cm.readResult": "Result",
+        "cm.operationKind": "Kind",
+        "cm.operationEffect": "Effect",
+        "cm.operationInputs": "Inputs",
+        "cm.rules": "Creation and use rules",
+        "cm.noRules": "This type declares no creation or use rule.",
+        "cm.viewInstances": "View instances",
+        "cm.pickStart": "Pick a starting object",
+        "cm.pickHint": "Choosing an object opens instance mode with it as the start.",
+        "cm.pickByTypeTitle": "Pick a start by type",
+        "cm.pickByTypeHint": "Choose a type, filter its objects, then pick one as the start.",
+        "cm.chooseType": "Type",
+        "cm.relationsTitle": "Node relations",
+        "cm.relationsHint": "Every one-hop relation of the selected node, incoming and outgoing.",
+        "cm.relationsPrompt": "Select a node on the graph to inspect all its one-hop relations.",
+        "cm.relationsLoading": "Reading relations…",
+        "cm.relationsForbidden": "You may not read this node's relations.",
+        "cm.relationsFailed": "The relations could not be read: {reason}",
+        "cm.noNeighbors": "No neighbors: every relation of this node was read and has none.",
+        "cm.refusedKinds": "Relations you may not read: {names}",
+        "cm.failedKinds": "Relations that failed to read: {names}",
+        "cm.unavailableKinds": "Relations not connected yet: {names}",
+        "cm.kindFilter": "Relation kind",
+        "cm.allKinds": "All kinds",
+        "cm.selectPeer": "Select",
+        "cm.setAsStart": "Set as start",
+        "cm.boundReads": "Bound reads: {names}",
+        "cm.boundOperations": "Bound operations: {names}",
+        "cm.viaInput": "Bound through an input",
+        "cm.noEdges": "No edge",
+        "cm.navUnavailable": "“{name}” has no entry yet, or you may not open it: {reason}",
+        "cm.dirComponents": "Components",
+        "cm.dirProjections": "Projections",
+        "cm.dirPanels": "Panels",
+        "cm.dirApplications": "Applications",
+        "cm.dirAgents": "Agents",
+        "cm.eventShowTypeMode": "Show type mode",
+        "cm.eventShowInstanceMode": "Show instance mode",
+        "cm.eventShowGraphView": "Show the graph view",
+        "cm.eventShowListView": "Show the layer list view",
+        "cm.eventClearSelection": "Clear the selected node",
+        "cm.eventResetToCurrentUser": "Reset the start to the current user",
+        "cm.layerFact": "Fact",
+        "cm.layerCapability": "Capability",
+        "cm.layerGovernance": "Governance",
+        "cm.layerProduct": "Product",
+        "cm.edgeLegend": "Solid: stored reference · Dashed: derived from the records",
+        "cm.modeType": "Type mode",
+        "cm.modeInstance": "Instance mode",
+        "cm.pickEmpty": "No readable object for this type, or its list cannot be read here.",
+        "cm.userEmpty": "No readable user for this reader.",
+        "cm.pickChooseType": "Choose a type above to list its objects.",
+        "cm.emptyKinds": "{count} more declared relations have no object here.",
+        "cm.noProperties": "This type declares no public property.",
+        "cm.noDefinition": "This type registers no one-line definition."
+      },
+      "zh-CN": {
+        "cm.modeLabel": "显示模式",
+        "cm.viewLabel": "类型视图",
+        "cm.viewGraph": "图形",
+        "cm.viewList": "按层分组",
+        "cm.searchType": "高亮已画出的类型节点",
+        "cm.searchInstance": "高亮已画出的节点",
+        "cm.clearSearch": "清空",
+        "cm.switchUser": "切换起点用户",
+        "cm.closeUserPicker": "关闭",
+        "cm.useSelectedAsStart": "以选中节点为起点",
+        "cm.resetStart": "回到当前用户",
+        "cm.startTitle": "起点",
+        "cm.startCurrentUser": "当前用户",
+        "cm.userPickerTitle": "选择起点用户",
+        "cm.userPickerHint": "挑一个可读用户，图谱从该用户的一跳邻居重新展开。",
+        "cm.typeListTitle": "四层类型",
+        "cm.typeListHint": "点击类型，在右侧读它的类详情。",
+        "cm.classTitle": "类详情",
+        "cm.classEmpty": "在图形或按层列表里选中一个类型，读它的类详情。",
+        "cm.classLoading": "正在读取类型目录…",
+        "cm.classFailed": "类型目录读取失败：{reason}",
+        "cm.definition": "一句话定义",
+        "cm.layer": "所属层",
+        "cm.readableCount": "可读实例",
+        "cm.statusOk": "可读",
+        "cm.statusRefused": "无权限",
+        "cm.statusFailed": "读取失败",
+        "cm.statusUnavailable": "尚未接入",
+        "cm.properties": "公开属性",
+        "cm.propertyName": "属性名",
+        "cm.propertyType": "类型",
+        "cm.propertyOptional": "是否可选",
+        "cm.propertyDescription": "说明",
+        "cm.optionalYes": "可选",
+        "cm.optionalNo": "必填",
+        "cm.relations": "关系",
+        "cm.outgoing": "出向",
+        "cm.incoming": "入向",
+        "cm.stored": "存储",
+        "cm.derived": "推导",
+        "cm.noRelations": "该类型没有声明关系。",
+        "cm.reads": "具名读法",
+        "cm.operations": "可发起的操作",
+        "cm.noReads": "该类型没有登记具名读法。",
+        "cm.noOperations": "该类型没有登记可发起的操作。",
+        "cm.readParameters": "参数",
+        "cm.readResult": "结果",
+        "cm.operationKind": "种类",
+        "cm.operationEffect": "效果",
+        "cm.operationInputs": "输入",
+        "cm.rules": "创建与使用规则",
+        "cm.noRules": "该类型没有声明创建与使用规则。",
+        "cm.viewInstances": "看实例",
+        "cm.pickStart": "选一个作图谱起点",
+        "cm.pickHint": "选中一个对象后将以它作为起点打开实例模式。",
+        "cm.pickByTypeTitle": "按类型挑选起点",
+        "cm.pickByTypeHint": "选类型、按关键字过滤，再挑一个对象作为起点。",
+        "cm.chooseType": "类型",
+        "cm.relationsTitle": "节点关系",
+        "cm.relationsHint": "选中节点的全部入向与出向一跳关系。",
+        "cm.relationsPrompt": "在画布上选中一个节点，查看它的全部一跳关系。",
+        "cm.relationsLoading": "正在读取关系…",
+        "cm.relationsForbidden": "无权读取这个节点的关系。",
+        "cm.relationsFailed": "关系读取失败：{reason}",
+        "cm.noNeighbors": "没有邻居：这个节点的每条关系都读过了，都没有对象。",
+        "cm.refusedKinds": "无权读取的关系：{names}",
+        "cm.failedKinds": "读取失败的关系：{names}",
+        "cm.unavailableKinds": "尚未接入的关系：{names}",
+        "cm.kindFilter": "关系种类",
+        "cm.allKinds": "全部种类",
+        "cm.selectPeer": "选中",
+        "cm.setAsStart": "设为起点",
+        "cm.boundReads": "绑定读法：{names}",
+        "cm.boundOperations": "绑定操作：{names}",
+        "cm.viaInput": "经输入绑定",
+        "cm.noEdges": "没有关系",
+        "cm.navUnavailable": "“{name}”目录尚未接入或你无入口准入：{reason}",
+        "cm.dirComponents": "基础组件",
+        "cm.dirProjections": "投影",
+        "cm.dirPanels": "面板",
+        "cm.dirApplications": "应用",
+        "cm.dirAgents": "智能体",
+        "cm.eventShowTypeMode": "切到类型模式",
+        "cm.eventShowInstanceMode": "切到实例模式",
+        "cm.eventShowGraphView": "切到图形视图",
+        "cm.eventShowListView": "切到按层列表视图",
+        "cm.eventClearSelection": "清除选中节点",
+        "cm.eventResetToCurrentUser": "起点回到当前用户",
+        "cm.layerFact": "事实层",
+        "cm.layerCapability": "能力层",
+        "cm.layerGovernance": "治理层",
+        "cm.layerProduct": "产品层",
+        "cm.edgeLegend": "实线：明确存储的引用 · 虚线：能从记录推导",
+        "cm.modeType": "类型模式",
+        "cm.modeInstance": "实例模式",
+        "cm.pickEmpty": "这个类型没有可读对象，或列表在这里读不到。",
+        "cm.userEmpty": "当前用户没有可读的用户。",
+        "cm.pickChooseType": "先在上面选一个类型，这里会列出它的对象。",
+        "cm.emptyKinds": "另有 {count} 种已声明的关系在这个节点上没有对象。",
+        "cm.noProperties": "该类型没有声明公开属性。",
+        "cm.noDefinition": "该类型没有登记一句话定义。"
+      }
+    }
+  }
+}
