@@ -99,7 +99,8 @@ const operations = computed(() =>
 /**
  * The page's commands, drawn where its title is (big main's ruling, 2026-11-21): the host's refresh — the panel's shown
  * data read again, the reader's unsaved edits kept — when the panel has members that read anything, then the panel's
- * named shortcuts, its events with a label and no trigger, in its declaration's order. A member's operations (a row's
+ * named shortcuts, its events with a label and no trigger, in its declaration's order, the one it marks primary as the
+ * main action. A member's operations (a row's
  * delete, a form's save) stay where the panel draws them; a placed panel's shortcuts are its own page's, not this one's.
  */
 const commands = computed<PlatformPageAction[]>(() => {
@@ -110,7 +111,13 @@ const commands = computed<PlatformPageAction[]>(() => {
     : [];
   const shortcuts = view.operations.value
     .filter((operation) => operation.kind === "state" && !operation.memberPath)
-    .map((operation): PlatformPageAction => ({ id: operation.id, label: operation.label, onClick: () => void view.invoke(operation.id) }));
+    .map((operation): PlatformPageAction => ({
+      id: operation.id,
+      label: operation.label,
+      // The one event the panel marks primary is the page's main action; a shortcut's ID is its event's key.
+      primary: shown.panel.manifest.events[operation.id]?.primary === true,
+      onClick: () => void view.invoke(operation.id),
+    }));
   return [...refresh, ...shortcuts];
 });
 usePageActions(() => (props.shown && view.source.value ? { actions: commands.value } : null));

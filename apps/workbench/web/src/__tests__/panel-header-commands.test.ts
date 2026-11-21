@@ -23,10 +23,13 @@ const at = (path: string) => `/applications/${app}/${path}`;
 const panel = {
   ...panelRecord("panel-header-commands", "Tasks", {
     ...manifestP,
-    events: { clear: { labelKey: "tasks.clear", do: { set: { fields: { selectedTask: { literal: null } } } } } },
+    events: {
+      clear: { labelKey: "tasks.clear", do: { set: { fields: { selectedTask: { literal: null } } } } },
+      create: { labelKey: "tasks.create", primary: true, do: { set: { fields: { selectedTask: { literal: null } } } } },
+    },
   }),
 };
-panel.content = { ...panel.content, messages: { en: { "tasks.clear": "Clear selection" } } };
+panel.content = { ...panel.content, messages: { en: { "tasks.clear": "Clear selection", "tasks.create": "New task" } } };
 const selected = { selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id } };
 
 function answer(request: Sent) {
@@ -60,10 +63,12 @@ it("draws the host's refresh and the panel's named shortcuts in the header, and 
     },
   })), router);
   try {
-    await vi.waitFor(() => expect(header.value?.actions?.map(action => action.id)).toEqual(["refresh", "clear"]));
-    const [refresh, clear] = header.value!.actions!;
+    await vi.waitFor(() => expect(header.value?.actions?.map(action => action.id)).toEqual(["refresh", "clear", "create"]));
+    const [refresh, clear, create] = header.value!.actions!;
     expect(refresh).toMatchObject({ label: "Refresh", iconOnly: true });
-    expect(clear).toMatchObject({ label: "Clear selection" });
+    expect(clear).toMatchObject({ label: "Clear selection", primary: false });
+    // The event the panel marks primary is the page's main action.
+    expect(create).toMatchObject({ label: "New task", primary: true });
 
     // Refresh reads the shown data again.
     const reads = () => sent.filter(request => request.path === "/api/product-panels/read").length;
