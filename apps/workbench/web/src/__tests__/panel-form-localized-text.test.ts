@@ -107,3 +107,27 @@ it("edits a text in the languages the owner keeps: the reader's first, the rest 
   expect(values()).toEqual({ en: "", "zh-CN": "订单" });
   expect(row("en")!.querySelector(".sdk-form-locale-remove")).toBeNull();
 });
+
+// An optional text the reader empties in every language is not given at all (as an optional choice cleared): the owner
+// receives no value for it, never an empty object of languages (A-Java, 2026-11-22: an entry's description).
+it("leaves an optional text out of the values once every language of it is emptied", async () => {
+  const optional = { ...names, path: "/note", label: "Note", required: false, control: { ...names.control, requiredLocales: undefined } };
+  const instance = createDirectPanelInstance(manifest, {
+    pageKey: "applications", url: () => "/applications", label: () => "Applications", initial: { app },
+    text: createPanelText({}, ref("en"), "en"), ...noOperations, recordDraftCreated: async () => {},
+    readProjection: async () => projection,
+    read: async (request) => (request.operations ? ready({}) : ready({ ...description, fields: [optional], values: { note: { "zh-CN": "备注" } }, errors: [] })),
+  });
+  const element = document.createElement("div");
+  document.body.append(element);
+  createApp({ render: () => h(PanelMember, { instance, member: "form" }) })
+    .use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus).mount(element);
+  const input = await vi.waitFor(() => {
+    const found = element.querySelector<HTMLInputElement>('[data-field="/note"] [data-locale="zh-CN"] input');
+    if (!found) throw new Error("The note is not drawn");
+    return found;
+  });
+  input.value = "";
+  input.dispatchEvent(new Event("input"));
+  await vi.waitFor(() => expect(Object.hasOwn(instance.forms.handle("form")!.values.value, "note")).toBe(false));
+});
