@@ -37,15 +37,11 @@ await mountPanel({
       }
     });
 
-    function create() {
-      state.setState({ selected: null, mode: "create" });
-    }
-
     function viewType() {
       const address = `${CAPABILITY_MAP}?state=${encodeURIComponent(JSON.stringify({ mode: "type", selectedType: AGENT }))}`;
       void navigate(address);
     }
 
-    return { mode, rows, create, viewType };
+    return { mode, rows, viewType };
   },
 });

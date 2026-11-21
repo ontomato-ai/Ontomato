@@ -52,10 +52,10 @@ export function createSkillReadAdapter(
 
   function diagnosticText(diagnostics?: SkillCatalogDiagnostics): string[] | undefined {
     if (!diagnostics) return;
-    const messages = diagnostics.items.map(({ skill, resourceId, field, reason }) =>
-      t(field === undefined ? "skills.diagnostics.item" : "skills.diagnostics.itemField", {
-        skill: runtimeSkillKey(skill), resource: resourceId, field, reason: t(`skills.diagnostics.${reason}`),
-      }));
+    const messages = diagnostics.items.map(({ title, field, reason }) => {
+      const label = title ?? t("assistant.skills.unavailable.name");
+      return [label, field, t(`skills.diagnostics.${reason}`)].filter(Boolean).join(" · ");
+    });
     if (diagnostics.sourceUnavailable) messages.push(t("skills.diagnostics.sourceUnavailable"));
     return messages.length ? messages : undefined;
   }

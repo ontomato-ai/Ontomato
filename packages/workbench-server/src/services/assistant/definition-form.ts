@@ -39,7 +39,9 @@ const fields = [
 
 const fieldSchemas = fields.map(({ schema, ...field }) => ({
   ...field, valueSchema: agentFormJsonSchema(schema),
-  required: field.key !== "modelSelection" && !schema.isOptional(),
+  // Reference lists may be empty even when the save body carries the array.
+  required: field.key !== "modelSelection" && !schema.isOptional()
+    && !(field.control.kind === "reference" && field.control.multiple && schema.safeParse([]).success),
   defaultValue: field.key === "modelSelection" ? initialValues.modelSelection.modelId : initialValues[field.key],
 }));
 
@@ -98,7 +100,6 @@ export async function describeAgentDefinitionForm(
       const readOnly = key === "executionUserId" && !canSetExecutionUser;
       return {
         ...field,
-        required: key === "skills" ? target.kind === "draft" : field.required,
         label: text(key), readOnly, ...(readOnly ? { readOnlyReason: text("executionReadOnly") } : {}),
       };
     }),

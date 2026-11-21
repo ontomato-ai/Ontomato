@@ -129,8 +129,8 @@ function owners(request: Sent): Response {
 }
 
 /** Opens the preview route the platform registers, at a state: the candidate's own module runs in the platform's document. */
-async function preview(state: Record<string, unknown>) {
-  const sent = installPlatform(owners);
+async function preview(state: Record<string, unknown>, respond: typeof owners | ((request: Sent) => Promise<Response>) = owners) {
+  const sent = installPlatform(respond);
   const routes = appBuilderPages().map(route => route.name === "PanelCandidatePreview" ? { ...route, component: PanelCandidateRoute } as RouteRecordRaw : route);
   const router = createRouter({ history: createMemoryHistory(), routes });
   await router.push(panelAddress(previewPath, state));
@@ -256,6 +256,29 @@ it("opens a new agent with the owner's defaults, and its create is the owner's t
     expect(sent.filter(isWrite)).toEqual([]);
     expect(fieldItem("/name")?.querySelector("input")?.value).toBe("e2e-new-agent");
   } finally {
+    app.unmount();
+  }
+});
+
+it("waits for the new form before showing reference values and puts Save after all the fields", async () => {
+  let release!: () => void;
+  const delayed = new Promise<void>(resolve => { release = resolve; });
+  const { app, router, sent } = await preview({ selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } }, async request => {
+    if (request.path === "/api/product-panels/read" && (request.body as Read).dataName === "createForm") await delayed;
+    return owners(request);
+  });
+  try {
+    await vi.waitFor(() => expect(fieldItem("/skills")?.textContent).toContain("SQL"), { timeout: 5000 });
+    expect(fieldItem("/classNames")!.compareDocumentPosition(formSave()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await router.push(panelAddress(previewPath, { mode: "create" }));
+    await vi.waitFor(() => expect(reads(sent).some(read => read.dataName === "createForm")).toBe(true));
+    expect(fieldItem("/modelSelection/modelId")).toBeNull();
+    expect(fieldItem("/skills")).toBeNull();
+    release();
+    await vi.waitFor(() => expect(fieldItem("/skills")).not.toBeNull());
+    expect(fieldItem("/skills")?.textContent).not.toContain("SQL");
+  } finally {
+    release();
     app.unmount();
   }
 });

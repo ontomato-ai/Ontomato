@@ -12,6 +12,7 @@ export const skillCatalogDiagnosticsSchema = z.object({
   items: z.array(z.object({
     skill: runtimeSkillRefSchema,
     resourceId: runtimeKeySchema,
+    title: z.string().trim().min(1).max(200).optional(),
     field: runtimeKeySchema.optional(),
     reason: skillCatalogReasonSchema,
   }).strict()),
