@@ -26,6 +26,6 @@ const json = computed(() => (props.result.kind === "json" ? JSON.stringify(props
 
 <style scoped>
 .sdk-operation-result {
-  margin-block-start: 8px;
+  margin-block-start: var(--spacing-sm);
 }
 </style>

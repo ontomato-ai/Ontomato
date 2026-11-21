@@ -94,33 +94,51 @@ async function openComposer() {
 </template>
 
 <style scoped>
+/* A primary action is solid; any other is a neutral outline with a quiet fill on hover and press (DESIGN.md). */
 .sdk-conversation-entry {
   display: inline-flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--spacing-xs);
 }
 .sdk-conversation-entry-btn {
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color);
-  border-radius: 4px;
+  background: transparent;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
   color: var(--el-text-color-primary);
   cursor: pointer;
-  font-size: var(--el-font-size-small, 12px);
-  min-height: 30px;
-  padding: 4px 12px;
+  font-size: var(--text-sm);
+  height: var(--control-height);
+  padding: 0 var(--spacing-lg);
+  transition: background-color var(--transition-fast);
+}
+.sdk-conversation-entry-btn:hover:not(:disabled) {
+  background: var(--ui-fill-tertiary);
+}
+.sdk-conversation-entry-btn:active:not(:disabled) {
+  background: var(--ui-fill-quaternary);
 }
 .sdk-conversation-entry-btn.primary {
   background: var(--el-color-primary);
   border-color: var(--el-color-primary);
-  color: var(--el-color-white, #fff);
+  color: var(--on-primary);
+}
+.sdk-conversation-entry-btn.primary:hover:not(:disabled) {
+  background: var(--brand-primary-hover);
+  border-color: var(--brand-primary-hover);
+}
+.sdk-conversation-entry-btn:focus-visible {
+  outline: 2px solid var(--brand-link);
+  outline-offset: 2px;
 }
 .sdk-conversation-entry-btn:disabled {
+  background: var(--el-fill-color-light);
+  border-color: var(--ui-divider);
+  color: var(--el-disabled-text-color);
   cursor: not-allowed;
-  opacity: 0.55;
 }
 .sdk-conversation-entry-error {
-  color: var(--el-color-danger);
-  font-size: var(--el-font-size-small, 12px);
+  color: var(--el-color-danger-text);
+  font-size: var(--text-xs);
   margin: 0;
 }
 </style>

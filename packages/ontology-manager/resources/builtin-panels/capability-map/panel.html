@@ -5,124 +5,124 @@
 -->
 <style>
   [v-cloak] { display: none; }
-  .capmap { display: flex; flex-direction: column; gap: var(--page-content-gap, 16px); min-height: 100%; }
+  .capmap { display: flex; flex-direction: column; gap: var(--page-content-gap); min-height: 100%; }
   .capmap-toolbar {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px;
-    padding: 10px 14px; border: 1px solid var(--el-border-color-lighter); border-radius: 10px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm) var(--spacing-md);
+    padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--ui-divider); border-radius: var(--radius-md);
     background: var(--el-bg-color);
   }
   .capmap-search { flex: 1 1 200px; min-width: 160px; max-width: 320px; }
   .capmap-search input {
-    width: 100%; height: 32px; padding: 0 10px; box-sizing: border-box;
-    border: 1px solid var(--el-border-color); border-radius: 6px;
-    background: var(--el-fill-color-blank); color: var(--el-text-color-primary); font-size: 13px;
+    width: 100%; height: var(--control-height); padding: 0 var(--spacing-sm); box-sizing: border-box;
+    border: 1px solid var(--ui-border); border-radius: var(--radius-sm);
+    background: var(--el-fill-color-blank); color: var(--el-text-color-primary); font-size: var(--text-sm);
   }
-  .capmap-search input:focus { border-color: var(--el-color-primary); outline: none; }
-  .capmap-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-inline-start: auto; }
+  .capmap-search input:focus { border-color: var(--brand-link); box-shadow: var(--focus-ring); outline: none; }
+  .capmap-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); margin-inline-start: auto; }
   .capmap-btn {
-    height: 32px; padding: 0 12px; border: 1px solid var(--el-border-color); border-radius: 6px;
-    background: var(--el-fill-color-blank); color: var(--el-text-color-regular); font-size: 13px; cursor: pointer;
+    height: var(--control-height); padding: 0 var(--spacing-md); border: 1px solid var(--ui-border); border-radius: var(--radius-sm);
+    background: var(--el-fill-color-blank); color: var(--el-text-color-regular); font-size: var(--text-sm); cursor: pointer;
   }
-  .capmap-btn:hover:not(:disabled) { border-color: var(--el-color-primary); color: var(--el-color-primary); }
-  .capmap-btn:disabled { opacity: .5; cursor: not-allowed; }
-  .capmap-hint { margin: 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.6; }
+  .capmap-btn:hover:not(:disabled) { border-color: var(--el-color-primary); color: var(--brand-link); }
+  .capmap-btn:disabled { color: var(--el-disabled-text-color); cursor: not-allowed; }
+  .capmap-hint { margin: 0; color: var(--el-text-color-secondary); font-size: var(--text-xs); line-height: 1.6; }
   .capmap-notice {
-    display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px; border-radius: 8px;
+    display: flex; align-items: flex-start; gap: var(--spacing-sm); padding: var(--spacing-sm) var(--spacing-md); border-radius: var(--radius-md);
     border: 1px solid var(--el-color-warning-light-7); background: var(--el-color-warning-light-9);
-    color: var(--el-color-warning-dark-2); font-size: 13px; line-height: 1.6;
+    color: var(--el-color-warning-dark-2); font-size: var(--text-sm); line-height: 1.6;
   }
-  .capmap-notice button { border: 0; background: none; color: inherit; cursor: pointer; font-size: 16px; line-height: 1; }
-  .capmap-body { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: var(--page-content-gap, 16px); align-items: start; }
+  .capmap-notice button { border: 0; background: none; color: inherit; cursor: pointer; font-size: var(--text-lg); line-height: 1; }
+  .capmap-body { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: var(--page-content-gap); align-items: start; }
   .capmap-main { position: relative; min-width: 0; min-height: clamp(560px, calc(100vh - 230px), 880px); }
   .capmap-canvas {
     display: flex; flex-direction: column;
-    height: clamp(560px, calc(100vh - 230px), 880px); padding: 12px; box-sizing: border-box;
-    border: 1px solid var(--el-border-color-lighter); border-radius: 10px; background: var(--el-bg-color); overflow: hidden;
+    height: clamp(560px, calc(100vh - 230px), 880px); padding: var(--spacing-md); box-sizing: border-box;
+    border: 1px solid var(--ui-divider); border-radius: var(--radius-md); background: var(--el-bg-color); overflow: hidden;
   }
   .capmap-canvas > [data-member] { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
   .capmap-canvas.is-behind { position: absolute; inset: 0; visibility: hidden; }
   .capmap-types {
-    height: clamp(560px, calc(100vh - 230px), 880px); overflow: auto; padding: 14px 16px; box-sizing: border-box;
-    border: 1px solid var(--el-border-color-lighter); border-radius: 10px; background: var(--el-bg-color);
+    height: clamp(560px, calc(100vh - 230px), 880px); overflow: auto; padding: var(--spacing-md) var(--spacing-lg); box-sizing: border-box;
+    border: 1px solid var(--ui-divider); border-radius: var(--radius-md); background: var(--el-bg-color);
   }
-  .capmap-layer + .capmap-layer { margin-top: 14px; }
+  .capmap-layer + .capmap-layer { margin-top: var(--spacing-md); }
   .capmap-layer > h3 {
-    margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--el-text-color-secondary);
-    letter-spacing: .04em;
+    margin: 0 0 var(--spacing-sm); font-size: var(--text-sm); font-weight: var(--font-semibold); color: var(--el-text-color-secondary);
+    letter-spacing: var(--tracking-label);
   }
-  .capmap-layer ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .capmap-layer ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: calc(var(--spacing-xs) / 2); }
   .capmap-type-row {
-    display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 10px; box-sizing: border-box;
-    border: 1px solid transparent; border-radius: 6px; background: none; cursor: pointer; text-align: start;
-    color: var(--el-text-color-primary); font-size: 13px;
+    display: flex; align-items: center; gap: var(--spacing-sm); width: 100%; padding: var(--spacing-xs) var(--spacing-sm); box-sizing: border-box;
+    border: 1px solid transparent; border-radius: var(--radius-sm); background: none; cursor: pointer; text-align: start;
+    color: var(--el-text-color-primary); font-size: var(--text-sm);
   }
-  .capmap-type-row:hover { background: var(--el-fill-color-light); }
-  .capmap-type-row.active { border-color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
+  .capmap-type-row:hover { background: var(--ui-fill-tertiary); }
+  .capmap-type-row.active { border-color: var(--el-color-primary); background: var(--ui-fill-secondary); }
   .capmap-type-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .capmap-type-id { color: var(--el-text-color-placeholder); font-size: 12px; }
+  .capmap-type-id { color: var(--el-text-color-placeholder); font-size: var(--text-xs); }
   .capmap-aside {
-    display: flex; flex-direction: column; gap: 12px; min-width: 0;
+    display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0;
     max-height: clamp(560px, calc(100vh - 230px), 880px); overflow: auto;
-    padding: 14px; box-sizing: border-box;
-    border: 1px solid var(--el-border-color-lighter); border-radius: 10px; background: var(--el-bg-color);
+    padding: var(--spacing-md); box-sizing: border-box;
+    border: 1px solid var(--ui-divider); border-radius: var(--radius-md); background: var(--el-bg-color);
   }
   .capmap-count {
-    flex: 0 0 auto; min-width: 20px; padding: 0 6px; box-sizing: border-box; text-align: center;
-    border-radius: 999px; background: var(--el-fill-color); color: var(--el-text-color-regular); font-size: 12px; line-height: 20px;
+    flex: 0 0 auto; min-width: 20px; padding: 0 var(--spacing-xs); box-sizing: border-box; text-align: center;
+    border-radius: var(--radius-full); background: var(--el-fill-color); color: var(--el-text-color-regular); font-size: var(--text-xs); line-height: var(--leading-sm);
   }
   .capmap-count[data-status="refused"] { background: var(--el-color-warning-light-9); color: var(--el-color-warning-dark-2); }
-  .capmap-count[data-status="failed"] { background: var(--el-color-danger-light-9); color: var(--el-color-danger); }
-  .capmap-count[data-status="unavailable"] { background: var(--el-fill-color-light); color: var(--el-text-color-placeholder); }
-  .capmap-detail-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
-  .capmap-detail-head h2 { margin: 0; font-size: 16px; font-weight: 600; }
-  .capmap-detail-head code { color: var(--el-text-color-secondary); font-size: 12px; }
-  .capmap-def { margin: 8px 0 0; font-size: 13px; line-height: 1.7; color: var(--el-text-color-regular); }
-  .capmap-block { margin-top: 14px; }
+  .capmap-count[data-status="failed"] { background: var(--el-color-danger-light-9); color: var(--el-color-danger-text); }
+  .capmap-count[data-status="unavailable"] { background: var(--ui-fill-tertiary); color: var(--el-text-color-placeholder); }
+  .capmap-detail-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-xs) var(--spacing-sm); }
+  .capmap-detail-head h2 { margin: 0; font-size: var(--text-lg); font-weight: var(--font-semibold); }
+  .capmap-detail-head code { color: var(--el-text-color-secondary); font-size: var(--text-xs); }
+  .capmap-def { margin: var(--spacing-sm) 0 0; font-size: var(--text-sm); line-height: 1.7; color: var(--el-text-color-regular); }
+  .capmap-block { margin-top: var(--spacing-md); }
   .capmap-block > h4 {
-    margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--el-text-color-secondary); letter-spacing: .04em;
+    margin: 0 0 var(--spacing-xs); font-size: var(--text-xs); font-weight: var(--font-semibold); color: var(--el-text-color-secondary); letter-spacing: var(--tracking-label);
   }
-  .capmap-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .capmap-table { width: 100%; border-collapse: collapse; font-size: var(--text-xs); }
   .capmap-table th, .capmap-table td {
-    padding: 5px 6px; border-bottom: 1px solid var(--el-border-color-lighter); text-align: start; vertical-align: top;
+    padding: var(--spacing-xs) var(--spacing-xs); border-bottom: 1px solid var(--ui-divider); text-align: start; vertical-align: top;
   }
-  .capmap-table th { color: var(--el-text-color-secondary); font-weight: 500; white-space: nowrap; }
+  .capmap-table th { color: var(--el-text-color-secondary); font-weight: var(--font-medium); white-space: nowrap; }
   .capmap-table td code { color: var(--el-text-color-regular); }
-  .capmap-rowlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+  .capmap-rowlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--spacing-xs); font-size: var(--text-xs); }
   .capmap-rowlist li {
-    display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; padding: 4px 6px;
-    border-radius: 6px; background: var(--el-fill-color-lighter);
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--spacing-xs) var(--spacing-xs); padding: var(--spacing-xs) var(--spacing-xs);
+    border-radius: var(--radius-sm); background: var(--ui-fill-quaternary);
   }
   .capmap-rowlist .capmap-muted { color: var(--el-text-color-secondary); }
-  .capmap-status { margin: 6px 0 0; padding: 6px 10px; border-radius: 6px; font-size: 12px; line-height: 1.6; }
+  .capmap-status { margin: var(--spacing-xs) 0 0; padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); font-size: var(--text-xs); line-height: 1.6; }
   .capmap-status[data-status="refused"] { background: var(--el-color-warning-light-9); color: var(--el-color-warning-dark-2); }
-  .capmap-status[data-status="failed"] { background: var(--el-color-danger-light-9); color: var(--el-color-danger); }
+  .capmap-status[data-status="failed"] { background: var(--el-color-danger-light-9); color: var(--el-color-danger-text); }
   .capmap-status[data-status="unavailable"], .capmap-status[data-status="no-neighbors"] {
-    background: var(--el-fill-color-light); color: var(--el-text-color-secondary);
+    background: var(--ui-fill-tertiary); color: var(--el-text-color-secondary);
   }
-  .capmap-pick { display: flex; flex-direction: column; gap: 8px; }
-  .capmap-node-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-bottom: 6px; font-size: 13px; }
-  .capmap-node-head code { color: var(--el-text-color-secondary); font-size: 12px; }
-  .capmap-relgroup { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--el-border-color-lighter); }
-  .capmap-relgroup-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 4px; }
-  .capmap-rel-name { font-size: 13px; font-weight: 600; }
-  .capmap-relgroup ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-  .capmap-relgroup li { font-size: 12px; }
+  .capmap-pick { display: flex; flex-direction: column; gap: var(--spacing-sm); }
+  .capmap-node-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--spacing-sm); margin-bottom: var(--spacing-xs); font-size: var(--text-sm); }
+  .capmap-node-head code { color: var(--el-text-color-secondary); font-size: var(--text-xs); }
+  .capmap-relgroup { margin-top: var(--spacing-sm); padding-top: var(--spacing-sm); border-top: 1px solid var(--ui-divider); }
+  .capmap-relgroup-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-xs); margin-bottom: var(--spacing-xs); }
+  .capmap-rel-name { font-size: var(--text-sm); font-weight: var(--font-semibold); }
+  .capmap-relgroup ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--spacing-xs); }
+  .capmap-relgroup li { font-size: var(--text-xs); }
   .capmap-dir {
-    display: inline-block; min-width: 34px; padding: 0 6px; border-radius: 4px; text-align: center;
-    background: var(--el-fill-color); color: var(--el-text-color-secondary); font-size: 11px; line-height: 18px;
+    display: inline-block; min-width: 34px; padding: 0 var(--spacing-xs); border-radius: var(--radius-xs); text-align: center;
+    background: var(--el-fill-color); color: var(--el-text-color-secondary); font-size: var(--text-xs); line-height: var(--leading-sm);
   }
-  .capmap-dir[data-dir="outgoing"] { background: var(--el-color-primary-light-9); color: var(--el-color-primary); }
+  .capmap-dir[data-dir="outgoing"] { background: var(--ui-fill-secondary); color: var(--brand-link); }
   .capmap-peer {
-    border: 0; background: none; padding: 0 2px; cursor: pointer; font-size: 12px;
-    color: var(--el-color-primary); text-decoration: underline; text-underline-offset: 2px;
+    border: 0; background: none; padding: 0 calc(var(--spacing-xs) / 2); cursor: pointer; font-size: var(--text-xs);
+    color: var(--brand-link); text-decoration: underline; text-underline-offset: 2px;
   }
-  .capmap-peer-type { color: var(--el-text-color-placeholder); font-size: 11px; }
+  .capmap-peer-type { color: var(--el-text-color-placeholder); font-size: var(--text-xs); }
   .capmap-mini {
-    margin-inline-start: 4px; padding: 0 6px; border: 1px solid var(--el-border-color); border-radius: 4px;
-    background: var(--el-fill-color-blank); color: var(--el-text-color-secondary); font-size: 11px; line-height: 18px; cursor: pointer;
+    margin-inline-start: var(--spacing-xs); padding: 0 var(--spacing-xs); border: 1px solid var(--ui-border); border-radius: var(--radius-xs);
+    background: var(--el-fill-color-blank); color: var(--el-text-color-secondary); font-size: var(--text-xs); line-height: var(--leading-sm); cursor: pointer;
   }
-  .capmap-mini:hover { border-color: var(--el-color-primary); color: var(--el-color-primary); }
-  .capmap-binding { flex: 1 1 100%; color: var(--el-text-color-secondary); font-size: 11px; line-height: 1.6; }
+  .capmap-mini:hover { border-color: var(--el-color-primary); color: var(--brand-link); }
+  .capmap-binding { flex: 1 1 100%; color: var(--el-text-color-secondary); font-size: var(--text-xs); line-height: 1.6; }
   @media (max-width: 1080px) {
     .capmap-body { grid-template-columns: minmax(0, 1fr); }
     .capmap-actions { margin-inline-start: 0; }

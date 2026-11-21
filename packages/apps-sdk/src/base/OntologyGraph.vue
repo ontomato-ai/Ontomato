@@ -950,7 +950,7 @@ onMounted(() => {
 .sdk-ontology-graph {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--spacing-sm);
   min-height: 0;
   height: 100%;
 }
@@ -960,62 +960,62 @@ onMounted(() => {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px 12px;
+  gap: var(--spacing-sm) var(--spacing-md);
 }
 
 .sdk-ontology-graph-layers {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--spacing-xs);
 }
 
 .sdk-ontology-graph-layer-pill {
-  padding: 3px 10px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 999px;
+  padding: calc(var(--spacing-xs) / 2) var(--spacing-sm);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-full);
   background: var(--el-bg-color);
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--text-xs);
   line-height: 1.5;
   cursor: pointer;
 }
 
 .sdk-ontology-graph-layer-pill.is-active {
-  border-color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
+  border-color: var(--ui-border);
+  background: var(--ui-fill-secondary);
+  color: var(--el-text-color-primary);
 }
 
 .sdk-ontology-graph-meta {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  font-size: 12px;
+  gap: var(--spacing-sm);
+  font-size: var(--text-xs);
   color: var(--el-text-color-secondary);
 }
 
 .sdk-ontology-graph-matches {
-  color: var(--el-color-primary);
-  font-weight: 500;
+  color: var(--brand-link);
+  font-weight: var(--font-medium);
 }
 
 .sdk-ontology-graph-legend {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 14px;
-  font-size: 12px;
+  gap: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--text-xs);
   color: var(--el-text-color-secondary);
 }
 
 .sdk-ontology-graph-legend-item {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--spacing-xs);
 }
 
 .sdk-ontology-graph-legend-item b {
-  font-weight: 600;
+  font-weight: var(--font-semibold);
   color: var(--el-text-color-regular);
 }
 
@@ -1044,15 +1044,15 @@ onMounted(() => {
 }
 
 .sdk-ontology-graph-notice {
-  padding: 6px 10px;
-  border-radius: 6px;
-  font-size: 12px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
   line-height: 1.5;
-  border: 1px solid var(--el-border-color-lighter);
+  border: 1px solid var(--ui-divider);
 }
 
 .sdk-ontology-graph-notice.is-info {
-  background: var(--el-fill-color-light);
+  background: var(--ui-fill-tertiary);
   color: var(--el-text-color-regular);
 }
 
@@ -1074,7 +1074,7 @@ onMounted(() => {
 }
 
 .sdk-ontology-graph-skeleton {
-  padding: 16px;
+  padding: var(--spacing-lg);
 }
 
 .sdk-ontology-graph-frame {
@@ -1082,8 +1082,8 @@ onMounted(() => {
   flex: 1;
   min-height: 420px;
   overflow: hidden;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
+  border: 1px solid var(--ui-divider);
+  border-radius: var(--radius-md);
   background-color: var(--el-fill-color-blank);
 }
 
@@ -1096,39 +1096,49 @@ onMounted(() => {
 
 .sdk-ontology-graph-tools {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: var(--spacing-sm);
+  right: var(--spacing-sm);
   display: flex;
-  gap: 4px;
+  gap: var(--spacing-xs);
+  padding: calc(var(--spacing-xs) / 2);
+  border: 1px solid var(--ui-divider);
+  border-radius: var(--radius-md);
+  background: var(--el-bg-color-overlay);
 }
 
 .sdk-ontology-graph-tool {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 6px;
-  background: var(--el-bg-color);
-  color: var(--el-text-color-regular);
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--el-text-color-secondary);
   cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
 }
 
+/* Icon tools are borderless: a quiet fill on hover and press, the group's surface behind them (DESIGN.md). */
 .sdk-ontology-graph-tool:hover {
-  border-color: var(--el-color-primary);
-  color: var(--el-color-primary);
+  background: var(--ui-fill-tertiary);
+  color: var(--el-text-color-primary);
+}
+
+.sdk-ontology-graph-tool:active {
+  background: var(--ui-fill-quaternary);
 }
 
 .sdk-ontology-graph-busy {
   position: absolute;
-  bottom: 10px;
-  right: 10px;
-  padding: 2px 8px;
-  border-radius: 4px;
+  bottom: var(--spacing-sm);
+  right: var(--spacing-sm);
+  padding: calc(var(--spacing-xs) / 2) var(--spacing-sm);
+  border-radius: var(--radius-xs);
   background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-  font-size: 12px;
+  border: 1px solid var(--ui-divider);
+  font-size: var(--text-xs);
   color: var(--el-text-color-secondary);
 }
 </style>

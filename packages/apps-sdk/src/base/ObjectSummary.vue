@@ -117,7 +117,8 @@ function navigateTo(reference: PlatformFieldReference, fieldName: string) {
 <style scoped>
 dl {
   display: grid;
-  gap: 4px 12px;
+  font-size: var(--text-sm);
+  gap: var(--spacing-xs) var(--spacing-md);
   grid-template-columns: auto 1fr;
   margin: 0;
 }
@@ -132,13 +133,14 @@ dd {
   white-space: pre-wrap;
 }
 .sdk-object-summary-title {
-  font-size: 14px;
-  margin: 0 0 8px;
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  margin: 0 0 var(--spacing-sm);
 }
 .sdk-object-ref-link {
   background: none;
   border: 0;
-  color: var(--el-color-primary);
+  color: var(--brand-link);
   cursor: pointer;
   font-size: inherit;
   padding: 0;
@@ -150,37 +152,38 @@ dd {
 .sdk-object-summary-tags {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--spacing-xs);
 }
+/* Tags are light fills: neutral, or a status's soft fill with its readable text colour. */
 .sdk-object-summary-tag {
-  background: var(--el-fill-color-light);
-  border-radius: 4px;
+  background: var(--ui-fill-tertiary);
+  border-radius: var(--radius-xs);
   color: var(--el-text-color-regular);
   display: inline-block;
-  font-size: 11px;
-  line-height: 1.4;
-  padding: 1px 6px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  padding: 0 var(--spacing-xs);
 }
 .sdk-object-summary-tag[data-tone="info"] {
   background: var(--el-color-info-light-9);
-  color: var(--el-color-info);
+  color: var(--el-color-info-text);
 }
 .sdk-object-summary-tag[data-tone="success"] {
   background: var(--el-color-success-light-9);
-  color: var(--el-color-success);
+  color: var(--el-color-success-text);
 }
 .sdk-object-summary-tag[data-tone="warning"] {
   background: var(--el-color-warning-light-9);
-  color: var(--el-color-warning);
+  color: var(--el-color-warning-text);
 }
 .sdk-object-summary-tag[data-tone="danger"] {
   background: var(--el-color-danger-light-9);
-  color: var(--el-color-danger);
+  color: var(--el-color-danger-text);
 }
 mark {
-  background: var(--el-color-warning-light-7, #f8e3c5);
-  border-radius: 2px;
+  background: var(--el-color-warning-light-7);
+  border-radius: var(--radius-xs);
   color: inherit;
-  padding: 0 1px;
+  padding: 0 calc(var(--spacing-xs) / 4);
 }
 </style>

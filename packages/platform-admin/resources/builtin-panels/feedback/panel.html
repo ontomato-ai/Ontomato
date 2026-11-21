@@ -1,12 +1,12 @@
 <style>
-  .feedback { display: flex; flex-direction: column; gap: 1rem; min-height: 0; }
-  .feedback-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
-  .feedback-filters { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
-  .feedback-actions { margin-inline-start: auto; display: flex; align-items: center; gap: .5rem; }
-  .feedback-error { margin: 0; color: var(--el-color-danger, #f56c6c); font-size: .85rem; }
-  .feedback-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem); gap: 1rem; align-items: start; }
+  .feedback { display: flex; flex-direction: column; gap: var(--spacing-lg); min-height: 0; }
+  .feedback-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-md); }
+  .feedback-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-md); }
+  .feedback-actions { margin-inline-start: auto; display: flex; align-items: center; gap: var(--spacing-sm); }
+  .feedback-error { margin: 0; color: var(--el-color-danger-text); font-size: var(--text-base); }
+  .feedback-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem); gap: var(--spacing-lg); align-items: start; }
   .feedback-detail { min-width: 0; }
-  .feedback-hint { margin: 0; color: var(--el-text-color-secondary, #909399); font-size: .85rem; }
+  .feedback-hint { margin: 0; color: var(--el-text-color-secondary); font-size: var(--text-base); }
   @media (max-width: 56rem) { .feedback-body { grid-template-columns: minmax(0, 1fr); } }
 </style>
 <div id="app">
