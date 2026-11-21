@@ -5,8 +5,10 @@ import { usePanelContext, useProjectionSlot } from "../panel/context";
 
 /**
  * Generic conversation entry button (U18): bound to a projection whose `conversationEntry` declares an agent target
- * (`id`, `preset`, or `page-default`) and optional prefill text. Clicking only asks the host to expand the page's
- * composer with that exact declaration; it never sends a message and carries no business copy of its own.
+ * (`id`, `preset`, or `page-default`) and an optional opening sentence — written out (`prefill`), or a key into the
+ * panel's messages (`prefillKey`), read in the reader's language and else the deployment's default. Clicking only asks
+ * the host to expand the page's composer with that declaration; it never sends a message and carries no business copy
+ * of its own.
  */
 const props = withDefaults(
   defineProps<{
@@ -56,10 +58,11 @@ async function openComposer() {
   }
   opening.value = true;
   try {
+    const prefill = entry.prefillKey !== undefined ? panel.t(entry.prefillKey) : entry.prefill;
     await panel.expandPageComposer({
       slot: slot.slot,
       target: entry.target,
-      ...(entry.prefill !== undefined ? { prefill: entry.prefill } : {}),
+      ...(prefill !== undefined ? { prefill } : {}),
     });
     emit("expanded");
   } catch (reason: unknown) {

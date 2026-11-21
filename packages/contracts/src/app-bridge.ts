@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {panelConversationEntrySchema} from './panel-conversation-entry';
+import {panelConversationEntryFields} from './panel-conversation-entry';
 import {panelHumanOperationDispatchResponseSchema,panelHumanOperationPreparationSchema} from './panel-agent';
 
 export const APP_BRIDGE_CHANNEL='ontomato-app-v2';
@@ -31,7 +31,7 @@ export const appBridgeInvalidationSchema=z.object({actionId:z.string(),objectTyp
  * A current conversation keeps its existing agent.
  * Expanding for this action leaves the user's saved collapse preference alone.
  */
-export const appBridgeExpandPageComposerSchema = panelConversationEntrySchema.extend({
+export const appBridgeExpandPageComposerSchema = panelConversationEntryFields.extend({
   slot: z.string().min(1).max(200),
 });
 export type AppBridgeExpandPageComposer = z.infer<typeof appBridgeExpandPageComposerSchema>;

@@ -6,6 +6,7 @@ export { panelAuthoringManifestSchema, panelAuthoringMemberSchema } from "./pane
 export { bindPanelAuthoringChart, expandPanelAuthoringMember } from "./panel-authoring-expansion";
 export { panelManifestSchema, panelPortAccepts } from "./panel-manifest";
 export { panelModuleImports } from "./panel-module";
+export { missingEntryMessageKeys } from "./panel-conversation-entry";
 export {
   chartProjectionLookupResponseSchema, panelDefinitionContentSchema, productProjectionInputSchema,
   productProjectionResponseSchema, registerChartProjectionResponseSchema,
