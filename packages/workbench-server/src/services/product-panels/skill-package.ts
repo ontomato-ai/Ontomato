@@ -162,9 +162,20 @@ export async function panelSkillSources(
         const { description, fingerprint } = await read();
         return panelSkillManifest(skill, description, fingerprint);
       },
-      async provide(skill) {
-        const { description, markdown, fingerprint } = await read();
-        const manifest = panelSkillManifest(skill, description, fingerprint);
+      async provide(skill, context) {
+        let { description, markdown, fingerprint: sourceFingerprint } = await read();
+        if (context) {
+          const bound = new Set(context.entryInputKeys);
+          const commands = Object.entries(description.commands);
+          const visible = commands.filter(([, { do: action }]) =>
+            !("set" in action && Object.keys(action.set.fields).some(field => bound.has(field))));
+          if (visible.length !== commands.length) {
+            description = { ...description, commands: Object.fromEntries(visible) };
+            markdown = describeSkill(description);
+            sourceFingerprint = fingerprint([sourceFingerprint, Object.keys(description.commands)]);
+          }
+        }
+        const manifest = panelSkillManifest(skill, description, sourceFingerprint);
         return { skill, files: [{ path: "SKILL.md", content: `---\n${stringify(manifest)}---\n\n${markdown}\n` }] };
       },
     };

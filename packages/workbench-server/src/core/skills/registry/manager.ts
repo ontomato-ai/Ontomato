@@ -14,7 +14,7 @@ import { InvalidSkillPackageError } from "../manifest";
 import { parseSkillPackage, readSkillPackage } from "../package";
 import {
   isProtectedSkillName, protectedSourceSkillRef, registeredSkillProviders, SkillSourceRecordError, type SkillSourceFailure,
-  type ProtectedSkillOffering, type SkillOffering, type SkillPackage, type RegisteredSkillProvider,
+  type ProtectedSkillOffering, type SkillOffering, type SkillPackage, type SkillPackageContext, type RegisteredSkillProvider,
 } from "../providers";
 import type { SkillEntry, SkillMeta, SkillSource } from "../types";
 
@@ -54,7 +54,8 @@ export class SkillRegistryManager {
   }
 
   private async providerEntry(provider: RegisteredSkillProvider, skill: RuntimeSkillRef,
-    readManifest: () => StandardSkillFrontmatter | Promise<StandardSkillFrontmatter>, provide: () => Promise<SkillPackage>,
+    readManifest: () => StandardSkillFrontmatter | Promise<StandardSkillFrontmatter>,
+    provide: (context?: SkillPackageContext) => Promise<SkillPackage>,
     protectedOffering?: ProtectedSkillOffering,
   ): Promise<SkillEntry> {
     let supplied: StandardSkillFrontmatter;
@@ -81,9 +82,9 @@ export class SkillRegistryManager {
     const manifest = parsed.data;
     const key = runtimeSkillKey(skill);
     const source: SkillSource = { kind: "provider", providerId: provider.id, providerName: provider.name };
-    return { skill, manifest, source, provide: async () => {
+    return { skill, manifest, source, provide: async (context) => {
       let pkg: SkillPackage;
-      try { pkg = await provide(); }
+      try { pkg = await provide(context); }
       catch (error) { throw providerFailure(provider, `supply ${refLabel(skill)}`, error, !protectedOffering); }
       if (runtimeSkillKey(pkg.skill) !== key)
         throw new InvalidSkillPackageError(`Skill provider "${provider.name}" (${provider.id}) supplied `
@@ -148,7 +149,8 @@ export class SkillRegistryManager {
     for (const { provider, offering, skill } of protectedOfferings) {
       if (!visibility?.protected(skill)) continue;
       try {
-        this.skills.push(await this.providerEntry(provider, skill, () => offering.readManifest(skill), () => offering.provide(skill), offering));
+        this.skills.push(await this.providerEntry(provider, skill, () => offering.readManifest(skill),
+          context => offering.provide(skill, context), offering));
       } catch (error) {
         if (!(error instanceof SkillSourceRecordError)) throw error;
         this.failedManifests.set(runtimeSkillKey(skill), { skill, ...error.detail });

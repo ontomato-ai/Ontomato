@@ -177,6 +177,7 @@ it("describes panel commands as addresses or declared operations in the generate
     members: { ...panel.manifest.members, details: { target: { panelId: "panel-task-details" } } },
     commands: {
       reset: { labelKey: "task.reset", primary: true, do: { set: { fields: { mode: { literal: "instance" }, selectedTask: { literal: null } } } } },
+      summaryMode: { labelKey: "task.summary", do: { set: { fields: { mode: { literal: "summary" } } } } },
       runSelected: { labelKey: "task.run", do: { invoke: { member: "run", operation: "runNow",
         inputs: { task: { state: "selectedTask" } } } } },
       openOverview: { labelKey: "task.overview", do: { open: { mode: "entry",
@@ -187,7 +188,8 @@ it("describes panel commands as addresses or declared operations in the generate
   javaSources(uses);
   const offering = await panelSkillProvider.findByUse(domainId, use, skillReader);
   assert(offering && "provide" in offering);
-  const { content } = (await offering.provide(taskRef)).files[0]!;
+  const shared = await offering.provide(taskRef);
+  const { content } = shared.files[0]!;
   const reads = content.split("### Read current data\n")[1]!.split("\n### Open the panel")[0];
   expect(reads).toContain('memberPath: [previewSegment,{member:"detail"}]');
   expect(reads).toContain('dataName: "record"');
@@ -204,6 +206,14 @@ it("describes panel commands as addresses or declared operations in the generate
   expect(commands).toContain("Open the returned `data.use.path`.");
   expect(commands).toContain("Find the admitted entry for panel `panel-task-details`");
   expect(commands).not.toContain(uses[1]!.path);
+  const scoped = await offering.provide(taskRef, { entryInputKeys: ["selectedTask"] });
+  expect(scoped.skill).toEqual(shared.skill);
+  expect(scoped.files[0]!.content).not.toContain("(reset).");
+  expect(scoped.files[0]!.content).toContain("(summaryMode).");
+  expect(scoped.files[0]!.content).toContain("(runSelected).");
+  expect(scoped.files[0]!.content).toContain("(openOverview).");
+  expect(await offering.provide(taskRef)).toEqual(shared);
+  expect(await offering.provide(taskRef, { entryInputKeys: ["unrelated"] })).toEqual(shared);
 });
 
 it.each(["record_missing", "invalid_definition"] as const)("reports %s without offering the affected panel", async reason => {

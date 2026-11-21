@@ -7,11 +7,11 @@ import { runtimeSkillKey, type RuntimeSkillRef, type RuntimeSkillVersion } from 
 import type { PageSkillContext, PageSkillLocator } from "@ontomato/contracts/page-skills";
 import type { SkillCatalogReason, SkillInfo } from "@ontomato/contracts/skills";
 import { assistantSkillCatalogSchema, type AssistantSkillOption } from "@ontomato/contracts/assistant-chat";
-import { SkillSourceRecordError } from "../../core/skills/providers";
+import { SkillSourceRecordError, type SkillPackageContext } from "../../core/skills/providers";
 import { skillRegistryManager } from "../../core/skills/registry/manager";
 import { HttpError } from "../../utils/errors";
 import { skillManager } from "../skills/skill-manager";
-import { isStoredProtectedSkillRef, readSkillView, resolveCurrentPageSkillMember } from "../skills/view";
+import { isStoredProtectedSkillRef, readSkillView, resolveCurrentPageSkillMember, type AuthorizedPageSkillMember } from "../skills/view";
 import {
   publishOntologyAssistantSkill, publishSkill, publishSkillPackage, workbenchBuiltinSkillRoot,
 } from "../agent-runtime/skills";
@@ -152,7 +152,9 @@ export function loadedPageSkillVersion(ref: RuntimeSkillRef, loaded: readonly Ru
   return actual ? { skill: actual.skill, digest: actual.digest } : null;
 }
 
-async function publishSelectedSkill(domainId: string, ref: RuntimeSkillRef, view: AssistantSkillView): Promise<RuntimeSkillVersion> {
+async function publishSelectedSkill(domainId: string, ref: RuntimeSkillRef, view: AssistantSkillView,
+  packageContext?: SkillPackageContext,
+): Promise<RuntimeSkillVersion> {
   const key = runtimeSkillKey(ref);
   if (key === runtimeSkillKey(GOVERNANCE_SKILL)) return publishGovernanceSkill(domainId);
   if (key === runtimeSkillKey(ANALYST_SKILL)) return publishOntologyAssistantSkill(domainId);
@@ -161,7 +163,7 @@ async function publishSelectedSkill(domainId: string, ref: RuntimeSkillRef, view
   if (entry) {
     const { skill, digest } = entry.source.kind === "public"
       ? await publishSkill(entry.source.path, ref)
-      : await publishSkillPackage(await entry.provide(), domainId);
+      : await publishSkillPackage(await entry.provide(packageContext), domainId);
     return { skill, digest };
   }
   if (key === runtimeSkillKey(APP_BUILDER_SKILL) ||
@@ -207,16 +209,19 @@ export async function prepareAssistantSkills(domainId: string, agent: { kind: st
     view.requireReadableManifest(ref);
     if (!view.hasSkill(ref) && !view.unavailableStoredPageSkill(ref)) throw unavailableRunSkill();
   }
-  let currentPage = null;
+  let currentPage: Omit<AuthorizedPageSkillMember, "packageContext"> | null = null;
+  let packageContext: SkillPackageContext | undefined;
   if (pageSkillContext?.mode === "member" && pageSkillContext.member) {
-    currentPage = await resolveCurrentPageSkillMember(view, pageSkillContext.locator, pageSkillContext.member);
-    if (!currentPage) throw new HttpError(403, "Page skill is unavailable", "PAGE_SKILL_FORBIDDEN");
+    const resolved = await resolveCurrentPageSkillMember(view, pageSkillContext.locator, pageSkillContext.member);
+    if (!resolved) throw new HttpError(403, "Page skill is unavailable", "PAGE_SKILL_FORBIDDEN");
+    ({ packageContext, ...currentPage } = resolved);
   }
   const selected = effectiveAssistantSkills(agent, view);
   const required = new Set(agent.skills.map(runtimeSkillKey));
   const currentRef = currentPage?.member.ref ??
     (pageSkillContext?.mode === "public" ? view.publicPageSkill(pageSkillContext.locator) : null);
-  if (currentRef) required.add(runtimeSkillKey(currentRef));
+  const currentKey = currentRef ? runtimeSkillKey(currentRef) : undefined;
+  if (currentKey) required.add(currentKey);
   const regular = agent.kind === "regular";
   const optional = (ref: RuntimeSkillRef) => regular && !required.has(runtimeSkillKey(ref));
   const skipped: SkippedPageSkill[] = [];
@@ -239,7 +244,8 @@ export async function prepareAssistantSkills(domainId: string, agent: { kind: st
   const skills: RuntimeSkillVersion[] = [];
   for (const ref of available) {
     try {
-      skills.push(await publishSelectedSkill(domainId, ref, view));
+      const context = currentKey === runtimeSkillKey(ref) ? packageContext : undefined;
+      skills.push(await publishSelectedSkill(domainId, ref, view, context));
     } catch (error) {
       if (!optional(ref)) throw error;
       skip(ref, publicationFailure(error));

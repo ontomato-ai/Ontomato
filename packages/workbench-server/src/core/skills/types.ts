@@ -1,7 +1,7 @@
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import type { SkillWriteRestriction } from "@ontomato/contracts/skills";
 import type { SkillManifest } from "./manifest";
-import type { SkillPackage } from "./providers";
+import type { SkillPackage, SkillPackageContext } from "./providers";
 
 export type { SkillManifest } from "./manifest";
 
@@ -25,7 +25,7 @@ export interface SkillEntry {
   skill: RuntimeSkillRef;
   manifest: SkillManifest;
   source: SkillSource;
-  provide(): Promise<SkillPackage>;
+  provide(context?: SkillPackageContext): Promise<SkillPackage>;
 }
 
 /** The single place that decides whether a skill's content may be changed here. */
