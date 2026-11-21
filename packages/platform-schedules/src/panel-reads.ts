@@ -1,18 +1,23 @@
 import { zodToJsonSchema } from "zod-to-json-schema";
+import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import { formFieldKey, formFieldPointer, type FormField, type FormFieldError, type FormValues } from "@ontomato/contracts/form-fields";
 import { panelOwnerOperationDescriptorSchema } from "@ontomato/contracts/panel-operations";
-import type { PanelFormDescription, PanelFormField, PanelRecord } from "@ontomato/contracts/panel-projection";
-import type { PlatformScheduleForm, PlatformTask } from "@ontomato/contracts/platform-schedules";
+import type { PanelFormDescription, PanelFormField, PanelFormValues, PanelRecord } from "@ontomato/contracts/panel-projection";
+import {
+  PLATFORM_SCHEDULE_TITLE_MAX, platformScheduleTimeZoneSchema, platformTaskFrequencySchema,
+  type PlatformScheduleApplication, type PlatformScheduleForm, type PlatformTask,
+} from "@ontomato/contracts/platform-schedules";
 import type { SchedulesApi } from "./api";
-import { scheduledTaskSaveDescription } from "./panel-operations";
+import { scheduledTaskCreateDescription, scheduledTaskSaveDescription } from "./panel-operations";
 import { scheduledTaskRunNowOperation } from "./panel-server-operations";
 import { scheduledTaskFieldLabels } from "./panel-text";
+import { scheduledTaskPanelSettings, scheduledTaskPanelValues, type ScheduledTaskPanelSettings } from "./panel-task-values";
 
-type TaskReadApi = Pick<SchedulesApi, "list" | "task" | "form">;
+type TaskReadApi = Pick<SchedulesApi, "list" | "task" | "form" | "applications" | "runs" | "run">;
 const taskFieldPath = (key: string) => formFieldPointer("/", key);
 
 interface TaskFormParams {
-  values?: FormValues;
+  values?: PanelFormValues;
   changedField?: string | null;
 }
 
@@ -71,7 +76,8 @@ async function checkDraft(readForm: FormReader, savedValues: FormValues, draft: 
       });
     }
   }
-  const answer = changed ? effective : await readForm(submitted, null);
+  // A selector can reset dependent fields while resolving the form. Validate after applying the draft to that form.
+  const answer = await readForm({ ...effective.values, ...submitted }, null);
   // The owner marks an incomplete draft un-submittable without listing missing required values.
   for (const { key, required, label } of answer.fields) {
     if (required && !answer.values[key].trim()) {
@@ -83,7 +89,68 @@ async function checkDraft(readForm: FormReader, savedValues: FormValues, draft: 
   return { ...answer, values: { ...answer.values, ...submitted }, errors: [...answer.errors, ...errors] };
 }
 
+const taskFrequencyValueSchema = runtimeJsonObjectSchema.parse(zodToJsonSchema(platformTaskFrequencySchema));
+
+function settingsFields(
+  applications: readonly PlatformScheduleApplication[], translate: (key: string) => string,
+): PanelFormField[] {
+  const field = (key: keyof ScheduledTaskPanelSettings, required = true) => ({
+    path: formFieldPointer("/task/", key), label: translate(key === "appId" ? "platformSchedules.form.app" : `platformSchedules.panelSettings.${key}`), required,
+    readOnly: false, valueSchema: { type: "string" },
+  });
+  return [
+    { ...field("title"), control: { kind: "text", maxLength: PLATFORM_SCHEDULE_TITLE_MAX } },
+    {
+      ...field("appId"), refreshOnChange: true,
+      control: {
+        kind: "select",
+        options: applications.map(app => ({
+          value: app.id, label: app.description ?? app.id, description: null, disabled: !app.available,
+          disabledReason: app.unavailableReason,
+        })),
+      },
+    },
+    { ...field("frequency"), control: { kind: "frequency" }, valueSchema: taskFrequencyValueSchema },
+    { ...field("timeZone"), control: { kind: "text" } },
+    { ...field("notifyEmail", false), control: { kind: "text" } },
+  ];
+}
+
 export function createScheduledTaskReads(api: TaskReadApi, translate: (key: string) => string) {
+  async function describe(task: PlatformTask | undefined, serviceZone: string, params: TaskFormParams): Promise<PanelFormDescription> {
+    const current = scheduledTaskPanelSettings(task, serviceZone);
+    const { settings: provided, parameters } = scheduledTaskPanelValues(params.values ?? {});
+    const settings = { ...current, ...provided };
+    const field = params.changedField;
+    const changedApplication = field === "/task/appId";
+    const sameApp = settings.appId === current.appId;
+    const stored = sameApp ? task?.content ?? {} : {};
+    const zone = platformScheduleTimeZoneSchema.safeParse(settings.timeZone);
+    const errors: FormFieldError[] = zone.success ? [] : [
+      { field: "/task/timeZone", code: "invalid_time", message: zone.error.issues[0]!.message },
+    ];
+    const readForm: FormReader = (values, changedField) => api.form(settings.appId, {
+      values, changedField, taskId: sameApp ? task?.id ?? null : null, timeZone: zone.success ? zone.data : current.timeZone,
+    });
+    const readApplicationForm = () => {
+      if (!settings.appId) return undefined;
+      if (params.values !== undefined && field == null) return checkDraft(readForm, stored, parameters);
+      const changedKey = field == null || field.startsWith("/task/") ? null : formFieldKey(field, "/");
+      return readForm(changedApplication ? {} : params.values === undefined ? stored : parameters, changedKey);
+    };
+    const [{ applications }, form] = await Promise.all([api.applications(), readApplicationForm()]);
+    return {
+      fields: [...settingsFields(applications, translate), ...(form?.fields.map(typedField) ?? [])],
+      values: { ...form?.values, task: settings },
+      errors: [
+        ...errors,
+        ...(form?.errors.map(error => ({ ...error, field: error.field.replace(/^\/values\//, "/") })) ?? []),
+      ],
+      ...(task && { revision: task.revision }),
+      save: task ? scheduledTaskSaveDescription(task.id) : scheduledTaskCreateDescription,
+    };
+  }
+
   return {
     async list() {
       const fieldLabels = scheduledTaskFieldLabels(translate);
@@ -92,25 +159,15 @@ export function createScheduledTaskReads(api: TaskReadApi, translate: (key: stri
     async record(primaryKey: string) {
       return taskRecord(await api.task(primaryKey), scheduledTaskFieldLabels(translate));
     },
-    async form(
-      primaryKey: string, { values, changedField }: TaskFormParams,
-    ): Promise<PanelFormDescription> {
+    async form(primaryKey: string, params: TaskFormParams) {
       const task = await api.task(primaryKey);
-      const field = changedField == null ? null : formFieldKey(changedField, "/");
-      const readForm: FormReader = (values, changedField) => api.form(task.appId, {
-        values, changedField, taskId: task.id, timeZone: task.timeZone,
-      });
-      const answer = values !== undefined && field === null
-        ? await checkDraft(readForm, task.content, values)
-        : await readForm(values ?? task.content, field);
-      return {
-        fields: answer.fields.map(typedField),
-        values: answer.values,
-        errors: answer.errors.map(error => ({ ...error, field: error.field.replace(/^\/values\//, "/") })),
-        revision: task.revision,
-        save: scheduledTaskSaveDescription(task.id),
-      };
+      return describe(task, task.timeZone, params);
     },
+    async createForm(params: TaskFormParams) {
+      return describe(undefined, (await api.list()).timeZone, params);
+    },
+    runs: api.runs,
+    run: api.run,
     [runNowRead]() {
       return panelOwnerOperationDescriptorSchema.parse({
         ...scheduledTaskRunNowDescription, label: translate("platformSchedules.action.runNow"),
