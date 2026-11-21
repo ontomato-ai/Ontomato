@@ -1,6 +1,7 @@
 import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
 import {
-  applicationPanelUsesResponseSchema, productPanelResponseSchema, productPanelSchema, type ApplicationPanelUse,
+  applicationEntryResolutionQuerySchema, applicationEntryResolutionSchema, productPanelResponseSchema, productPanelSchema,
+  type ApplicationEntryResolution, type ApplicationEntryResolutionQuery, type ApplicationPanelUse,
   type ProductPanelReadQuery,
 } from "@ontomato/contracts/product-panels";
 import { appsSdkCurrentSchema, appsSdkReleaseManifestSchema } from "@ontomato/contracts/apps-sdk";
@@ -116,15 +117,15 @@ export type PanelObjectChange = DisplayObjectChange;
 export function platformPanelHost(
   applicationId: string, use: ApplicationPanelUse, changed: (change: PanelObjectChange) => void, mode: PanelDefinitionMode = { kind: "view" },
   /** Java's answer for the application, when the page was opened from the shell's catalog before it came. */
-  relations?: Promise<readonly ApplicationPanelUse[]>,
+  resolution?: Promise<ApplicationEntryResolution>,
   /** Hears which page skill a message written beside this page reaches, as Node answers it with the panel. */
   pageSkill?: (context: PageSkillContext) => void,
   /** Beside a conversation, the conversation's display, which opens an address the panel asks for; at full page, none. */
   beside?: (address: string) => void,
 ): PanelHostPort<Extract<PanelHostSource | DirectPanelHostSource, { kind: "registered" }>> {
   const shown: PanelUseRef = { applicationId, useId: use.id };
-  const names = (records: readonly ApplicationPanelUse[]) =>
-    records.some(relation => relation.id === use.id && relation.panelId === use.panelId);
+  /** Whether Java's answer for an entry is this page's use relation, still bound to the same panel. */
+  const names = (answer: ApplicationEntryResolution) => answer.use.id === use.id && answer.use.panelId === use.panelId;
   // The page these reads are made for: the use relation it is shown for, and the entrance it is reached by — its menu
   // code, or domain membership, with its page key. Node answers with them which page skill member the reader reaches
   // here: null when it does not, never a public guess.
@@ -156,10 +157,10 @@ export function platformPanelHost(
     // The relation this page opens is still the application's, bound to the same panel: a kept page shown again is
     // checked against Java's current relations before its frame may ask for anything.
     async current() {
-      return names(await panelUsesOf(applicationId));
+      return names(await resolveApplicationEntry(shown));
     },
     // Java's answer not coming is not admitting the page: the route that asked for it says why where the page would be.
-    ...(relations ? { admitted: relations.then(names, () => false) } : {}),
+    ...(resolution ? { admitted: resolution.then(names, () => false) } : {}),
     // The page's check of its definitions, when it is shown again or comes back to the foreground, is read for this page
     // too: the page skill it reaches is confirmed again with it, since what it may reach can have changed meanwhile.
     async snapshot(panelId) {
@@ -330,10 +331,17 @@ async function mountCoded(options: DirectPanelMountOptions, target: CodedPanelTa
   return mounted;
 }
 
-/** One application's use relations, as Java declares them; the app's entry and its page skills belong to them. */
-export async function panelUsesOf(applicationId: string) {
-  const answer = await json(panelHostPaths.applicationPanelUses(applicationId));
-  return applicationPanelUsesResponseSchema.parse(answer.data ?? answer).panelUses;
+/**
+ * Java's answer for one entry of an application: by the address the reader opened, or by the application and use
+ * relation a kept page was opened for. It admits the reader (the application's entry access and the use relation's), and
+ * gives the use, the application's frame panel and theme where its renderer is \`panels\`, and the menu of the entries the
+ * reader may see — one answer, so the page, its frame and its menu never come from two readings of the catalogue.
+ */
+export async function resolveApplicationEntry(query: ApplicationEntryResolutionQuery): Promise<ApplicationEntryResolution> {
+  const search = new URLSearchParams(applicationEntryResolutionQuerySchema.parse(query) as Record<string, string>);
+  const answer = await json(`/api/data-query/platform/applications/resolve-entry?${search}`);
+  if (answer.success === false) throw new Error(answer.message ?? "This entry cannot be opened");
+  return applicationEntryResolutionSchema.parse(answer.data ?? answer);
 }
 
 class PanelStreamContractError extends Error {}
