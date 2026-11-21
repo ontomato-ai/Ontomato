@@ -79,3 +79,42 @@ it("says the owner's refusal of a draft on its form, and does not fail the panel
   app.unmount();
   mount.dispose();
 });
+
+// The schedules page, 2026-11-21 (B2): an agent wrote a value the owner cannot read at all, and its check of the draft
+// failed instead of naming fields. That is still the owner not taking this form's draft: said on the form, the panel on.
+it("says on its form an owner's failure to check a draft's values, and does not fail the panel", async () => {
+  const failed: unknown[] = [];
+  const mount = mountDirectPanel({
+    manifest,
+    run: {
+      pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
+      failed: (reason) => failed.push(reason),
+    },
+    messages: {}, locale: ref("en"), defaultLocale: "en",
+    requests: { request: async () => Response.json({ projection: taskForm }) },
+    use: { applicationId: "app-tasks", useId: "tasks" },
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
+    confirmOperation: noOperations.confirmOperation,
+    read: async (request): Promise<ProductPanelReadResponse> =>
+      request.operations ? { status: "ready", value: { save } as never }
+        : request.inputs.values ? { status: "error", message: "content: Expected string, received object" }
+          : { status: "ready", value: form as never },
+  });
+  const element = document.createElement("div");
+  document.body.append(element);
+  const app = createApp({ render: () => mount.member("form") });
+  app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus).mount(element);
+  await vi.waitFor(() => expect(element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.value).toBe("t-1"));
+
+  const link = { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/drafts/task.page-draft.json" };
+  await receivePanelDraft("tasks", mount.instance.forms, {
+    readPageDraft: async () => ({ pageKey: "tasks", operation: `${SCHEDULED_TASK}.save`, target: { objectType: SCHEDULED_TASK, id: "t-1" }, form: { content: { title: "x" } } }),
+  }, link, mount.instance.receiveDraft);
+  await vi.waitFor(() => expect(element.querySelector(".sdk-owner-form-refusal")?.textContent).toBe("content: Expected string, received object"));
+  // The form still shows the task as its owner holds it.
+  expect(element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.value).toBe("t-1");
+  expect(failed).toEqual([]);
+  app.unmount();
+  mount.dispose();
+});
