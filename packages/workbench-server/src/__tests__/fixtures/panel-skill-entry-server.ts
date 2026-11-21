@@ -9,7 +9,7 @@ import { expect, vi } from "vitest";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import type { PageSkill } from "@ontomato/contracts/page-skills";
-import type { PanelSkillSource } from "@ontomato/contracts/product-panels";
+import type { ApplicationPanelInputs, PanelSkillSource } from "@ontomato/contracts/product-panels";
 import { panelUsePath } from "@ontomato/contracts/panel-host";
 import { SkillRegistry, type InstalledSkill } from "../../../../agent-runtime/src/skills";
 import { runtimeStartRunRequestSchema } from "@ontomato/contracts/agent-runtime";
@@ -58,14 +58,10 @@ const panelEntries: PanelSkillSource[] = [
     path: "/applications/app-panels-trial-a/tasks", entrance: { access: "domain-member", pageKey: "panels-trial-a-tasks" } },
 ];
 
-function javaUse({ useId, panelId, path, entrance }: PanelSkillSource) {
-  return { id: useId, panelId, path, pageKey: entrance.pageKey, names: { en: entrance.pageKey },
-    access: "permissionCode" in entrance ? { permissionCode: entrance.permissionCode } : { kind: entrance.access } };
-}
-
 /** One origin for the panel, assistant, runtime and the external Java/Grant HTTP fixtures. */
 export async function startPanelSkillEntryServer(options: {
   entries?: PanelSkillSource[];
+  entryInputs?: (entry: PanelSkillSource) => ApplicationPanelInputs | undefined;
   grants?: Set<string>;
   nativeMapping?: () => PageSkill | undefined;
   admittedEntrances?: () => PanelSkillSource["entrance"][] | undefined;
@@ -74,6 +70,12 @@ export async function startPanelSkillEntryServer(options: {
   const database = process.env.RUNTIME_TEST_DATABASE_URL;
   if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
   const entries = options.entries ?? structuredClone(panelEntries);
+  function javaUse(entry: PanelSkillSource) {
+    const { useId, panelId, path, entrance } = entry;
+    return { id: useId, panelId, path, pageKey: entrance.pageKey, names: { en: entrance.pageKey },
+      access: "permissionCode" in entrance ? { permissionCode: entrance.permissionCode } : { kind: entrance.access },
+      inputs: options.entryInputs?.(entry) };
+  }
   const grants = options.grants ?? new Set(["records", ...entries.map(page => page.panelId)]);
   const regularAgentId = randomUUID();
   const root = await mkdtemp(path.join(tmpdir(), "panel-entry-skill-"));
