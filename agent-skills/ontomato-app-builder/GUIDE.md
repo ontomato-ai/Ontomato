@@ -31,7 +31,8 @@ Create short members from the reads listed by `panel type`. For customer ontolog
 | --- | --- |
 | `sdk read docs/components.md` | Current SDK component guide with data, configuration, outputs and events |
 | `sdk read components.json` | The same current SDK's machine-readable component catalogue |
-| `panel type <type-id>` | The type's read parameters, required parameters, result schemas and operation declarations |
+| `panel type <type-id> [--read <name>]` | Read signature with its result schema. With no filter, list the type's reads and operations. |
+| `panel delete application\|panel <id>` | Delete a trial application or panel through its owner |
 | `panel projection <id>`, `panel get <id>` | Authorized current projection or panel, including its revision |
 | `panel applications`, `panel uses <applicationId>` | Java navigation catalog and visible use relations |
 | `panel scaffold <type> <new directory> [--id <application id>] [--operation <id>] [--batch <id>]` | Draft a Vue management panel from the type table. Select single and batch buttons by owner operation ID. |
@@ -72,6 +73,18 @@ For workspace registration, keep the panel definition in `panel.json`, `panel.ht
 - Application `input` contains `entry: {path, renderer: "panels"}` and `panelUses`. Create with an ID starting with `app-`, plus `declaration` and `entryAccess`. For a domain-member application, use `entryAccess: ["domain-member"]` and `access: {kind: "domain-member"}` on a use open to the domain. Each use has `id`, `pageKey`, `panelId`, `path` and `access`, with optional localized `names` and `defaultAgent`. Domain app paths start with `/applications/<applicationId>/`. Use the application's real `{permissionCode}` for a restricted use. Omit `defaultAgent` to use the general assistant. To choose a default, use `defaultAgent: {kind: "id", id}` or `{kind: "preset", agentKind}` after that agent has selected the panel’s skill. An update replaces the use set, so preserve the uses required by the app. In `mode: "update"`, include `input.declaration` with any changed `names`, `descriptions` or `icon`. Registration reads the existing identity and writes it through the owner only when it differs. Omit identity fields to keep their current values. If you supply a localized map, supply its full set of translations. The platform owns built-in paths and derives skills from use access.
 
 The command submits projections, panels and uses in that order. It prints each completed item and exits nonzero at the first failure. On a stale revision, compare the owner's current definition with the requested change before preparing a new update.
+
+### Delete a trial application or panel
+
+Delete a trial application first to remove its entry references. Then delete a panel by its exact registered ID.
+
+```sh
+node "$SKILL/ontomato.mjs" panel delete application <application-id>
+node "$SKILL/ontomato.mjs" panel delete panel <panel-id>
+```
+
+The panel owner also removes editable projections used only by that panel and reports their IDs. A referenced panel
+is protected by the owner's in-use check. Released or shared definitions stay under the owner's normal permissions.
 
 ### Fix panel check and registration errors
 
