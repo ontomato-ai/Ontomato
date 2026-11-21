@@ -1,4 +1,4 @@
-import { createApp, h, nextTick, provide, ref, shallowReactive, watch, type Component, type Ref } from "vue";
+import { computed, createApp, h, nextTick, provide, ref, shallowReactive, watch, type Component, type Ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { contextExpandPageComposer, contextTranslate, contextTransport, panelBridgeHost, type AppContext } from "../context";
 import { connectPanelContext } from "./app-context";
@@ -109,6 +109,9 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     navigate: () => Promise.reject(new Error("Navigating is a panel the platform runs in its own page; a frame has none")),
     notify: () => { throw new Error("Telling the reader through the platform's message is a panel the platform runs; a frame has none"); },
     readPanelData: (request) => readPanelData(transport, request),
+    // A frame is never an application's frame: the platform runs that panel in its own page.
+    currentEntry: computed(() => null),
+    entryMenu: computed(() => null),
   };
   const app = createApp({
     setup: () => {

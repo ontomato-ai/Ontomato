@@ -1,7 +1,7 @@
 import { computed, inject, onBeforeUnmount, type ComputedRef, type InjectionKey, type Ref } from "vue";
 import type { AppBridgeExpandPageComposer } from "@ontomato/contracts/app-bridge";
 import { panelChildCollectionQuerySchema, type PanelManifest, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
-import type { PanelDefinitionContent, ProductProjection } from "@ontomato/contracts/product-panels";
+import type { ApplicationEntryMenu, CurrentApplicationEntry, PanelDefinitionContent, ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PanelInstance } from "./instance";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormField } from "@ontomato/contracts/panel-projection";
@@ -53,6 +53,13 @@ export interface PanelContext {
   readonly manifest: PanelManifest;
   /** This instance: its state, page context, projections and operations. */
   readonly instance: PanelInstance;
+  /**
+   * In an application's frame: the entry the reader opened (it follows the reader to another entry of the application),
+   * and the menu the same resolution gave, to draw the frame's menu with and mark the entry. Null in any other panel.
+   * Neither is the panel's state: they are the platform's, read only.
+   */
+  readonly currentEntry: ComputedRef<CurrentApplicationEntry | null>;
+  readonly entryMenu: ComputedRef<ApplicationEntryMenu | null>;
   /** The projection record a slot's declaration names, read now from its owner. */
   projection(id: string): Promise<ProductProjection>;
   /** Runs one operation of this instance here, with the reader's own credential and the call it is given. */

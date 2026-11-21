@@ -26,6 +26,13 @@ interface PanelContext {
   /** This instance: its state, page context, projections and operations. */
   readonly instance: PanelInstance;
   /**
+   * In an application's frame: the entry the reader opened (it follows the reader to another entry of the application),
+   * and the menu the same resolution gave, to draw the frame's menu with and mark the entry. Null in any other panel.
+   * Neither is the panel's state: they are the platform's, read only.
+   */
+  readonly currentEntry: ComputedRef<CurrentApplicationEntry | null>;
+  readonly entryMenu: ComputedRef<ApplicationEntryMenu | null>;
+  /**
    * The panel's own words (its content's `messages`) in the platform's current language: the current language, else
    * the deployment's default, else the key. The panel's HTML reads the same function as `t(key, params)`.
    */

@@ -425,6 +425,15 @@ export const components: readonly ComponentMetadata[] = [
     data: {},
   }),
   defineComponentMeta({
+    componentId: "CurrentEntry",
+    module: "@ontomato/sdk/base",
+    exportName: "CurrentEntry",
+    role: "presentation",
+    meaning:
+      "Where an application's frame panel shows the entry the reader opened: write <current-entry member=\"content\"> in the frame's template for its member whose target is {fromPlatform: \"currentEntry\", candidates: {rule: \"applicationEntry\"}}. The content drawn there is the one the platform already admitted and runs, never started again here; the frame chooses where it goes, not which panel or with what inputs. The frame's code reads the entry shown and the menu the same resolution gave through usePanelContext().currentEntry and .entryMenu, to draw its menu and mark the entry; opening another entry goes through navigate. Outside an application's frame the place says it shows nothing; a member that is not the current entry is refused in its place.",
+    effects: "Reads nothing and writes nothing: the platform places the admitted content.",
+  }),
+  defineComponentMeta({
     componentId: "PanelData",
     module: "@ontomato/sdk/base",
     exportName: "PanelData",
