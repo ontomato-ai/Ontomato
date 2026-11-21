@@ -402,7 +402,7 @@ describe("metric and function panel server operations", () => {
 
   it("tests a metric draft with the chosen parameter values written into its parameter definitions", async () => {
     const operation = read(TEST_METRIC_VIEW);
-    expect(operation.target).toEqual({ source: "draft", slot: "definition" });
+    expect(operation.target).toEqual({ source: "draft" });
     const draft = { name: "Revenue", function: { queryPackage: { manifest: { parameterDefs: [
       { name: "year", type: "TYPE_NUMBER", value: 2025 }, { name: "region", type: "TYPE_STRING", value: "east" },
     ] } } } };
