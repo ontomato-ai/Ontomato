@@ -6,6 +6,7 @@ import type { PlatformAccount, PlatformApp, PlatformPreferences, PlatformShellLa
 const labels: PlatformShellLabels = {
   expandRail: "Expand applications",
   collapseRail: "Collapse applications",
+  back: "Back",
   applications: "Applications",
   brand: "Ontomato",
   account: "Account",

@@ -19,6 +19,7 @@ export { panelReadResultSchemas } from "./panel-operations";
 export { platformObjectTypes } from "./platform-object-types";
 export { platformTypeTableResponseSchema } from "./platform-type-table";
 export { CHART_PROJECTION_SOURCES_PATH } from "./panel-client-requests";
+export { PANEL_NAME_MESSAGE_KEY } from "./product-panels";
 export {
   BUILTIN_PRODUCT_ID_PREFIX, builtinProductIdSchema, domainProductIdSchema, isBuiltinProductId,
 } from "./product-record-id";
