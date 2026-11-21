@@ -1906,6 +1906,21 @@ test("a state placement selects a product's kind and carries the complete nested
   const nestedRequest = { source: { kind: "registered", ...use }, memberPath: [memberPath[0]] };
   assert.deepEqual(productPanelNestedReadRequestSchema.parse(nestedRequest), nestedRequest);
   assert.equal(productPanelNestedReadRequestSchema.safeParse({ ...nestedRequest, memberPath: [] }).success, false);
+  const unresolvedDetail = {
+    member: "objectDetails",
+    selection: { stateValue: { className: "platform:ScheduledTask", primaryKey: "task-1" } },
+  };
+  const unresolved = { ...nestedRequest, memberPath: [memberPath[0], unresolvedDetail] };
+  assert.deepEqual(productPanelNestedReadRequestSchema.parse(unresolved), unresolved);
+  for (const invalidPath of [
+    [unresolvedDetail, memberPath[0]],
+    [{ ...unresolvedDetail, selection: { stateValue: "task-1" } }],
+  ]) {
+    assert.equal(productPanelNestedReadRequestSchema.safeParse({ ...nestedRequest, memberPath: invalidPath }).success, false);
+  }
+  const { productPanelReadRequestSchema } = await import("./panel-host");
+  assert.equal(productPanelReadRequestSchema.safeParse({ ...unresolved, dataName: "record", inputs: {} }).success, false);
+  assert.equal(panelOperationRefSchema.safeParse({ ...use, operationId, memberPath: unresolved.memberPath }).success, false);
   const nested = {
     panel: {
       id: "detail-panel", revision: 1, content: { html: "", module: "" },
