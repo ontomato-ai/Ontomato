@@ -26,7 +26,11 @@ export function createAgentDefinitionReadAdapter(owner: AssistantOwner, viewer: 
     enabled: tForLocale(viewer.locale, "panels.agentForm.enabled"),
   });
   const record = ({ id, name, description, enabled }: AssistantAgentDefinition): PanelRecord => ({
-    primaryKey: id, label: name, fields: { name, description, enabled: String(enabled) }, fieldLabels: fieldLabels(),
+    primaryKey: id,
+    label: name,
+    fields: { name, description, enabled: tForLocale(viewer.locale, enabled ? "panels.agentForm.enabledOn" : "panels.agentForm.enabledOff") },
+    fieldLabels: fieldLabels(),
+    tones: { enabled: enabled ? "success" : "default" },
   });
   return {
     async list() {

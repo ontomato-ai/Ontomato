@@ -926,5 +926,9 @@
   {
     "key": "Authoring.businessTestRequired",
     "value": "The exact source and parameters must pass a business test"
+  },
+  {
+    "key": "Action.functionMissing",
+    "value": "This action's function no longer exists, so it cannot run"
   }
 ]
