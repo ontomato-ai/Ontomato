@@ -345,17 +345,23 @@ async function checkCurrentPanel(api, directory, materialPath) {
 }
 
 async function panelCommand(api, workspaceId, [command, ...args]) {
-  if (command === "type" && args.length === 1) {
+  if (command === "type") {
+    const readName = takeOption(args, "--read");
+    if (args.length !== 1) die("panel type <type-id> [--read <name>]");
     const [id] = args;
     const sdk = currentSdkClient({ workbenchUrl: api.envUrl, headers: headers(api) });
     const checks = await sdk.check(await sdk.current());
     const { objectTypes, resultSchemas } = await readPlatformTypeTable(api, checks);
     if (!Object.hasOwn(objectTypes, id)) die(`Type ${id} is not listed in the author's type table`);
-    const entry = objectTypes[id];
-    const results = new Set(Object.values(entry.reads ?? {}).map(read => read.result));
-    return print({ id, ...entry, resultSchemas: Object.fromEntries(
-      [...results].map(result => [result, resultSchemas[result]]),
-    ) });
+    const { reads = {}, ...metadata } = objectTypes[id];
+    const describe = read => ({ ...read, resultSchema: resultSchemas[read.result] });
+    if (readName !== null) {
+      if (!Object.hasOwn(reads, readName)) die(`Type ${id} has no read '${readName}'`);
+      return print({ id, read: readName, ...describe(reads[readName]) });
+    }
+    return print({
+      id, reads: Object.fromEntries(Object.entries(reads).map(([name, read]) => [name, describe(read)])), ...metadata,
+    });
   }
   if (command === "scaffold") {
     const id = takeOption(args, "--id") ?? undefined;
@@ -404,6 +410,15 @@ async function panelCommand(api, workspaceId, [command, ...args]) {
       return { catalogue, typeTable };
     });
   }
+  if (command === "delete") {
+    const [kind, id] = args;
+    if (args.length !== 2 || !["application", "panel"].includes(kind)) {
+      die("panel delete application|panel <id>");
+    }
+    const client = panelRegistrationClient({ workbenchUrl: api.envUrl, ontologyUrl: api.ontologyUrl, headers: headers(api) });
+    const result = kind === "application" ? await client.deleteApplication(id) : await client.deletePanel(id);
+    return print({ kind, id, ...result });
+  }
   if (command === "uses" && args.length === 1) {
     return printData(await requestJson(api, "GET", `/platform/applications/${encodeURIComponent(args[0])}/panel-uses`));
   }
@@ -411,7 +426,7 @@ async function panelCommand(api, workspaceId, [command, ...args]) {
     const collection = command === "projection" ? "projections" : "panels";
     return print(await workbench(api, "GET", `/product-${collection}/${encodeURIComponent(args[0])}`));
   }
-  die("panel requires applications, type <id>, projection <id>, get <id>, uses <applicationId>, preview <working|commit> [--workspace <id>], scaffold <type> <directory>, check <directory>, or register <directory|json|@file>");
+  die("panel requires applications, type <id> [--read <name>], delete application|panel <id>, projection <id>, get <id>, uses <applicationId>, preview <working|commit> [--workspace <id>], scaffold <type> <directory>, check <directory>, or register <directory|json|@file>");
 }
 
 async function functionCommand(api, [command, ...args]) {
@@ -506,7 +521,8 @@ function usage() {
   sdk current
   sdk read <relative path, e.g. docs/components.md>
   panel applications
-  panel type <id>
+  panel type <id> [--read <name>]
+  panel delete application|panel <id>
   panel projection <id>
   panel get <id>
   panel uses <applicationId>

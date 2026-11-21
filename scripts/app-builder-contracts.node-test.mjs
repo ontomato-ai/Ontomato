@@ -254,7 +254,8 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
   const candidatePath = `/api/workspaces/${workspaceId}/panel-candidate?ref=${ref}`;
   const panelPath = "/api/product-panels/acceptance-panel";
   const projectionPath = "/api/product-projections/tasks";
-  const usesPath = "/owner/platform/applications/app-acceptance/panel-uses";
+  const applicationPath = "/owner/platform/applications/app-acceptance";
+  const usesPath = applicationPath + "/panel-uses";
   const applicationRecordPath = "/owner/platform/applications/catalogue/app-acceptance";
   const identityPath = "/owner/platform/applications/app-acceptance/identity";
   let identity = { names: { en: "Original" }, descriptions: { en: "Keep the description" }, icon: "settings" };
@@ -267,6 +268,10 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
   let registeredChart = false;
   const inlineRecords = new Map();
   let rejectInlinePanel = false;
+  let panelInUse = true;
+  const deletedPanel = {
+    success: true, deletedProjectionIds: ["exclusive-projection"], retainedProjectionIdsWithoutEdit: ["owner-projection"],
+  };
   const server = createServer(async (request, response) => {
     let content = "";
     for await (const chunk of request) content += chunk;
@@ -291,6 +296,12 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     } else if (request.url === "/api/product-projections/hidden") {
       response.statusCode = 403;
       response.end(JSON.stringify({ error: { message: "Product use Grant required" } }));
+    } else if (request.method === "DELETE" &&
+        request.url === `${inlinePanelPath}?revision=${inlineRecords.get(inlinePanelPath)?.revision}`) {
+      if (panelInUse) {
+        response.statusCode = 409;
+        response.end(JSON.stringify({ error: { code: "PRODUCT_IN_USE", message: "Panel is still in use" } }));
+      } else response.end(JSON.stringify(deletedPanel));
     } else if (request.url === inlinePanelPath || request.url.startsWith("/api/product-projections/")) {
       const kind = request.url === inlinePanelPath ? "panel" : "projection";
       const existing = inlineRecords.get(request.url);
@@ -309,7 +320,10 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       response.end(JSON.stringify({ error: { message: "Revision conflict" } }));
     } else if (request.url === panelPath) response.end(JSON.stringify({ panel: { revision: 8 } }));
     else if (request.url === applicationRecordPath) response.end(JSON.stringify({ success: true, data: identity }));
-    else if (request.url === identityPath && request.method === "PUT") {
+    else if (request.url === applicationPath && request.method === "DELETE") {
+      response.statusCode = 204;
+      response.end();
+    } else if (request.url === identityPath && request.method === "PUT") {
       identity = body;
       response.end(JSON.stringify({ success: true, data: identity }));
     } else if (request.url === usesPath) response.end(JSON.stringify({ success: true, data: { panelUses: [] } }));
@@ -392,18 +406,23 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       ["/api/apps-sdk/current", "GET"], [`${sdkPath}/node/panel-check.mjs`, "GET"],
       [`${sdkPath}/components.json`, "GET"], ["/api/app-builder/type-table", "GET"], [projectionPath, "GET"],
     ]));
-    const type = await run("panel", "type", "platform:ReviewQueue");
-    assert.deepEqual(JSON.parse(type.stdout), {
-      id: "platform:ReviewQueue", ...typeTable.objectTypes["platform:ReviewQueue"],
-      resultSchemas: {
-        panelRecordQuery: typeTable.resultSchemas.panelRecordQuery,
-        panelGroupCounts: typeTable.resultSchemas.panelGroupCounts,
-        panelRecord: typeTable.resultSchemas.panelRecord,
-      },
-    });
-    assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), [
+    const typeId = "platform:ReviewQueue";
+    const { reads, ...metadata } = typeTable.objectTypes[typeId];
+    const type = await run("panel", "type", typeId);
+    assert.deepEqual(JSON.parse(type.stdout), { id: typeId, reads: {
+      query: { ...reads.query, resultSchema: typeTable.resultSchemas.panelRecordQuery },
+      counts: { ...reads.counts, resultSchema: typeTable.resultSchemas.panelGroupCounts },
+      record: { ...reads.record, resultSchema: typeTable.resultSchemas.panelRecord },
+    }, ...metadata });
+    const typeReadRequests = [
       ["GET", "/api/apps-sdk/current"], ["GET", `${sdkPath}/node/panel-check.mjs`], ["GET", "/api/app-builder/type-table"],
-    ]);
+    ];
+    assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), typeReadRequests);
+    const singleRead = await run("panel", "type", typeId, "--read", "counts");
+    assert.deepEqual(JSON.parse(singleRead.stdout), {
+      id: typeId, read: "counts", ...reads.counts, resultSchema: typeTable.resultSchemas.panelGroupCounts,
+    });
+    assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), typeReadRequests);
     await writeFile(moduleFile, 'import { ElButton } from "element-plus";');
     await assert.rejects(run("panel", "check", directory), error =>
       error.stderr.includes("panel.mjs: A panel's module imports element-plus"));
@@ -580,6 +599,21 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.deepEqual(registered.unchecked, []);
     assert.deepEqual(requests.splice(0).filter(([method, url]) => method !== "GET" || url.includes("/product-"))
       .map(([method, url]) => [method, url]), [["GET", chartQuery], ["GET", storedChartPath]]);
+
+    const deletePath = `${inlinePanelPath}?revision=${inlineRecords.get(inlinePanelPath).revision}`;
+    await assert.rejects(run("panel", "delete", "panel", "inline-panel"),
+      error => error.stderr.includes("PRODUCT_IN_USE") && error.stderr.includes("Panel is still in use"));
+    assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), [
+      ["GET", inlinePanelPath], ["DELETE", deletePath],
+    ]);
+    const applicationDelete = await run("panel", "delete", "application", "app-acceptance");
+    assert.deepEqual(JSON.parse(applicationDelete.stdout), { kind: "application", id: "app-acceptance", success: true });
+    panelInUse = false;
+    const panelDelete = await run("panel", "delete", "panel", "inline-panel");
+    assert.deepEqual(JSON.parse(panelDelete.stdout), { kind: "panel", id: "inline-panel", ...deletedPanel });
+    assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), [
+      ["DELETE", applicationPath], ["GET", inlinePanelPath], ["DELETE", deletePath],
+    ]);
   } finally {
     await rm(directory, { recursive: true });
     await new Promise(resolve => server.close(resolve));

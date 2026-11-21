@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef } from "vue";
+import { computed, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { SegmentedTextReader, type SegmentedTextPage, type SegmentedTextSource } from "@ontomato/foundation-ui/reader";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import type { PanelRecordQuery } from "@ontomato/contracts/panel-projection";
 import { usePanelContext } from "../panel/context";
-import { useMember, useMemberData } from "../panel/member";
+import { useMember, useMemberData, useMemberParam } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 
 /**
@@ -15,7 +15,9 @@ import type { PlatformObjectRecord } from "../panel/platform-objects";
  *   chosen source's text one page at a time (an owner's query, its rows the text's segments, `nextCursor` the next
  *   page); "more" reads the next page;
  * - one object's whole text: `record` reads it, and the field `textField` names is shown, its line breaks kept.
- * Several readers on one page can share `activeAnchor` / `activeSourceId`, so only one of them is open at a time.
+ * The source open now is the member's `activeSourceId`, and with an `anchor` the reader open on the page is its
+ * `activeAnchor`: bound to the panel's state, they are read as well as written, so the page opens a source by writing
+ * it (and the reader's anchor), and several readers sharing them on one page have only one open at a time.
  */
 const props = withDefaults(
   defineProps<{
@@ -23,10 +25,6 @@ const props = withDefaults(
     textField?: string;
     /** This reader's key on the page; with a shared `activeAnchor`, only the reader it names is open. */
     anchor?: string;
-    /** The reader open on the page, shared between readers (`v-model:activeAnchor`). */
-    activeAnchor?: string | null;
-    /** The source open now (`v-model:activeSourceId`). */
-    activeSourceId?: string | null;
     /** The panel's message key for the "More" button, in place of the platform's own words. */
     moreLabel?: string;
     /** The panel's message key for the Close button's accessible label. */
@@ -37,8 +35,6 @@ const props = withDefaults(
   {
     textField: "content",
     anchor: undefined,
-    activeAnchor: undefined,
-    activeSourceId: undefined,
     moreLabel: undefined,
     closeLabel: undefined,
     emptyText: undefined,
@@ -46,10 +42,6 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-  /** The reader open on the page changed. */
-  "update:activeAnchor": [anchor: string | null];
-  /** The source open now changed. */
-  "update:activeSourceId": [sourceId: string | null];
   /** The reader was closed. */
   close: [anchor?: string];
 }>();
@@ -61,13 +53,16 @@ const declared = member.projection.data;
 const sourcesData = Object.hasOwn(declared, "sources") ? useMemberData("sources") : null;
 const recordData = Object.hasOwn(declared, "record") ? useMemberData("record") : null;
 
-const localAnchor = ref<string | null>(null);
-const localSourceId = ref<string | null>(null);
+const activeSource = useMemberParam("activeSourceId");
+const activeAnchor = useMemberParam("activeAnchor");
 const page = shallowRef<SegmentedTextPage | null>(null);
 const loading = ref(false);
 const failure = shallowRef<Error | null>(null);
-const currentAnchor = computed(() => (props.activeAnchor !== undefined ? props.activeAnchor : localAnchor.value));
-const currentSourceId = computed(() => (props.activeSourceId !== undefined ? props.activeSourceId : localSourceId.value));
+const text = (value: unknown) => (typeof value === "string" ? value : null);
+const currentAnchor = computed(() => text(activeAnchor.value.value));
+const currentSourceId = computed(() => text(activeSource.value.value));
+/** The source this reader shows now: the one open, while this reader is the one open on the page (or has no anchor). */
+const shownSourceId = computed(() => (props.anchor === undefined || currentAnchor.value === props.anchor ? currentSourceId.value : null));
 
 /** The chips: the owner's sources, by their ID and label. */
 const sources = computed<readonly SegmentedTextSource[]>(() => {
@@ -95,34 +90,42 @@ function readPage(sourceId: string, cursor: string | null) {
     const { rows, nextCursor } = answer.value as unknown as PanelRecordQuery;
     page.value = {
       sourceId,
-      title: sources.value.find((source) => source.id === sourceId)?.title ?? sourceId,
+      title: sourceId,
       items: rows.map((row) => ({ id: row.primaryKey, text: row.fields.text ?? "" })),
       nextOffset: nextCursor === undefined ? null : Number(nextCursor),
     };
   });
 }
 
-function setActive(anchor: string | null, sourceId: string | null) {
-  if (props.activeAnchor === undefined) localAnchor.value = anchor;
-  if (props.activeSourceId === undefined) localSourceId.value = sourceId;
-  emit("update:activeAnchor", anchor);
-  emit("update:activeSourceId", sourceId);
-}
+// Whatever opens a source — a chip, the page's own code, an address — the reader reads its first page; closed, nothing.
+watch(shownSourceId, (sourceId) => {
+  if (sourceId !== null) {
+    readPage(sourceId, null);
+    return;
+  }
+  reading++;
+  page.value = null;
+  loading.value = false;
+  failure.value = null;
+}, { immediate: true });
+
 function onOpen(sourceId: string) {
-  setActive(props.anchor ?? null, sourceId);
-  readPage(sourceId, null);
+  if (props.anchor !== undefined) activeAnchor.set(props.anchor);
+  activeSource.set(sourceId);
 }
 function onMore(sourceId: string, nextOffset: number) {
   readPage(sourceId, String(nextOffset));
 }
 function onClose() {
-  reading++;
-  page.value = null;
-  loading.value = false;
-  failure.value = null;
-  setActive(null, null);
+  activeSource.set(null);
+  if (props.anchor !== undefined) activeAnchor.set(null);
   emit("close", props.anchor);
 }
+
+/** The page shown, titled by its source as the sources list it once that is read (an address can open one before). */
+const shownPage = computed(() => page.value && {
+  ...page.value, title: sources.value.find((source) => source.id === page.value!.sourceId)?.title ?? page.value.sourceId,
+});
 
 /** One object's whole text, as the `record` datum holds it. */
 const wholeText = computed(() =>
@@ -143,7 +146,7 @@ const labels = computed(() => ({ empty: t("platform.dataEmpty"), forbidden: t("p
       :anchor="anchor"
       :active-anchor="currentAnchor"
       :active-source-id="currentSourceId"
-      :page="page"
+      :page="shownPage"
       :loading="loading"
       :error="failure?.message ?? sourcesFailure"
       :more-label="moreLabel ? panel.t(moreLabel) : t('platform.readerMore')"
