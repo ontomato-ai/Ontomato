@@ -168,8 +168,8 @@ function setFrequency(next: FrequencyDraft) {
       @update:model-value="set($event)"
     >
       <el-option
-        v-for="option in control.options"
-        :key="option.value"
+        v-for="(option, index) in control.options"
+        :key="index"
         :value="option.value"
         :label="option.label"
         :disabled="option.disabled"
