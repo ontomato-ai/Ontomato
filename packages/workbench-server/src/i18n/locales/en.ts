@@ -56,7 +56,7 @@ export const en = {
   "panels.productCatalog.template": "Use as a template",
   "panels.productCatalog.state": "State",
   "panels.productCatalog.members": "Members",
-  "panels.productCatalog.events": "Events",
+  "panels.productCatalog.commands": "Header commands",
   "panels.productCatalog.save": "Save",
   "panels.productCatalog.copy": "Copy",
   "panels.productCatalog.delete": "Delete",

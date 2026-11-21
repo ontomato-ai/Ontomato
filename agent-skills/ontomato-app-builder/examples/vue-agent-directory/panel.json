@@ -37,6 +37,6 @@
         "operation": "platform:AgentDefinition.save"
       }
     },
-    "events": {}
+    "commands": {}
   }
 }

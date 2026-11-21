@@ -4,12 +4,12 @@ import { operationCall, operationInvocation, type PanelProjectionRegistration } 
 import type { PanelOperationBinding } from "./types";
 import type { PanelStateStore } from "./state";
 import type { PanelFormAdapters } from "./draft";
-import type { PanelEvents } from "./events";
+import type { PanelCommands } from "./commands";
 import type { PanelReadCall, PanelWriteInvocation } from "./human-operations";
 
 /*
  * The operations a panel instance offers (overall design 3.4, 5.1, "list and execute operations"): the ones its members'
- * projections name, as their owners admit them now, under the member's key and the projection's name, and the events its declaration
+ * projections name, as their owners admit them now, under the member's key and the projection's name, and the commands its declaration
  * offers for explicit invocation (a header button, an agent's call). Each is the description an agent reads and the handler a header button and an agent's call both
  * reach, so one operation has one implementation and there is no second "similar command".
  *
@@ -18,13 +18,13 @@ import type { PanelReadCall, PanelWriteInvocation } from "./human-operations";
  * implementation, the owner's registered one. A form's save stays the form's own, and a state change the panel's.
  */
 
-/** What a panel offers: its projections' operations, then its explicitly invoked events, each with what runs it. */
+/** What a panel offers: its projections' operations, then its commands, each with what runs it. */
 export function panelOperations(
   manifest: PanelManifest,
   registrations: readonly PanelProjectionRegistration[],
   state: PanelStateStore,
   forms: PanelFormAdapters,
-  events: PanelEvents,
+  commands: PanelCommands,
   write: (operationId: string, invocation: PanelWriteInvocation) => Promise<unknown>,
   read: (operationId: string, call: PanelReadCall) => Promise<unknown>,
   /** Where a member's operation is published: its ID, and the path the platform finds a nested publisher by. */
@@ -52,6 +52,6 @@ export function panelOperations(
         };
       }),
     ),
-    ...events.operations().map((operation) => ({ ...operation, invoke: () => events.invoke(operation.id) })),
+    ...commands.operations().map((operation) => ({ ...operation, invoke: () => commands.invoke(operation.id) })),
   ];
 }

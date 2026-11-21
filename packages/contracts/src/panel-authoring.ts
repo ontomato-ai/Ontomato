@@ -3,7 +3,7 @@ import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime
 import { dashboardCardRequestSchema } from "./dashboard";
 import { defaultAgentSchema } from "./default-agent";
 import { panelConversationEntryFields } from "./panel-conversation-entry";
-import { panelManifestSchema, panelMemberSchema, panelObjectRefSchema, panelReadOperationInputsSchema, panelStateRefSchema } from "./panel-manifest";
+import { panelManifestSchema, panelMemberSchema, panelObjectRefSchema, panelReadOperationInputsSchema, panelStateRefSchema, validatePanelCommandAddresses } from "./panel-manifest";
 import { panelOperationDeclarationSchema } from "./panel-operations";
 import { directProjectionDataSchema, directProjectionPortsSchema } from "./panel-projection";
 import { productCurrentIdParamsSchema } from "./product-record-id";
@@ -98,5 +98,5 @@ export type PanelAuthoringMember = z.infer<typeof panelAuthoringMemberSchema>;
 /** The tool expands short members before checking the resulting formal manifest and registrations. */
 export const panelAuthoringManifestSchema = panelManifestSchema.innerType().extend({
   members: z.record(memberKey, panelAuthoringMemberSchema),
-});
+}).superRefine(validatePanelCommandAddresses);
 export type PanelAuthoringManifest = z.infer<typeof panelAuthoringManifestSchema>;

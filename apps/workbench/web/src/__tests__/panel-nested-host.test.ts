@@ -30,7 +30,7 @@ await mountPanel({});
 const outer = panelRecord("panel-catalog", "Panel catalog", definePanel({
   state: { detailPanel: { type: { kind: "object", objectType: PRODUCT_PANEL }, personal: false, deepLink: true, external: false } },
   members: { detail: { target: { fromState: "detailPanel", candidates: { rule: "usable" } } } },
-  events: {},
+  commands: {},
 }));
 outer.content = { html: '<div id="app" class="catalog"><projection slot="detail"></projection></div>', module: PLACE_DETAIL };
 const use = panelUse("use-catalog", "catalog", outer.id, `/applications/${application}/panels`);
@@ -38,7 +38,7 @@ const use = panelUse("use-catalog", "catalog", outer.id, `/applications/${applic
 /** A panel the catalog may preview: its own words, and CSS that would paint anything it reached. */
 function previewed(id: string, words: string): Pick<ProductPanel, "id" | "revision" | "content" | "manifest"> {
   return {
-    id, revision: 1, manifest: definePanel({ state: {}, members: {}, events: {} }),
+    id, revision: 1, manifest: definePanel({ state: {}, members: {}, commands: {} }),
     content: { html: `<style>p { outline: 3px solid red; }</style><div id="app"><p class="previewed">${words}</p></div>`, module: PLACE_DETAIL },
   };
 }
@@ -113,12 +113,12 @@ it("asks Node for an object's detail panel by the object alone, and reads inside
   const objectOuter = panelRecord("panel-tasks-detail", "Tasks", definePanel({
     state: { picked: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false } },
     members: { detail: { target: { fromState: "picked", candidates: { rule: "objectDetail" } } } },
-    events: {},
+    commands: {},
   }));
   objectOuter.content = { html: '<div id="app"><projection slot="detail"></projection></div>', module: PLACE_DETAIL };
   const detail = {
     id: "panel-task-detail", revision: 1, content: { html: '<div id="app"></div>', module: PLACE_EVERY_MEMBER },
-    manifest: definePanel({ state: {}, members: { tasks: { target: { projectionId: "projection-schedules-tasks" } } }, events: {} }),
+    manifest: definePanel({ state: {}, members: { tasks: { target: { projectionId: "projection-schedules-tasks" } } }, commands: {} }),
   };
   const objectUse = panelUse("use-tasks-detail", "tasks-detail", objectOuter.id, `/applications/${application}/tasks`);
   const sent = installPlatform((request) => {

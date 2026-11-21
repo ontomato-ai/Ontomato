@@ -118,7 +118,7 @@ const panel = {
       },
       manage: { target: { projectionId: "projection-pilot-manage-task" }, inputs: { task: { state: "selectedTask" } } },
     },
-    events: {},
+    commands: {},
   },
 };
 
@@ -692,7 +692,7 @@ it("reads the seven named ontology data items with the panel viewer", async () =
   const saveGraph = (placements: Record<string, typeof placement>, revision: number) => request("PUT", "product-panels/" + graphPanelId, {
     name: "Ontology", description: "", visibility: "domain", revision,
     content: vuePanelContent(...Object.keys(placements)),
-    manifest: { state, members: placements, events: {} },
+    manifest: { state, members: placements, commands: {} },
   });
   const unbound = await saveGraph({ runtime: placement }, 0);
   expect(unbound.status).toBe(400);
@@ -805,7 +805,7 @@ it("registers and reads an author-named datum through the SDK catalogue wildcard
     const savedPanel = await request("PUT", "product-panels/" + dataPanelId, {
       name: "Warehouse data", description: "", visibility: "domain", revision: 0,
       content: vuePanelContent("data"),
-      manifest: { state: {}, members: { data: { target: { projectionId: "data-port-pilot" } } }, events: {} },
+      manifest: { state: {}, members: { data: { target: { projectionId: "data-port-pilot" } } }, commands: {} },
     });
     expect(savedPanel.status, await savedPanel.text()).toBe(200);
 
@@ -870,7 +870,7 @@ it("reads agent settings and reference options with the panel viewer", async () 
   const saved = await request("PUT", "product-panels/" + agentPanelId, {
     name: "Agent settings", description: "", visibility: "domain", revision: 0,
     content: vuePanelContent(...Object.keys(members)),
-    manifest: { state: { selectedAgent: { type: agentType.agent, default: null } }, members, events: {} },
+    manifest: { state: { selectedAgent: { type: agentType.agent, default: null } }, members, commands: {} },
   });
   expect(saved.status, await saved.text()).toBe(200);
   const read = async (member: string, dataName: string, inputs: object = {}) => {
@@ -993,7 +993,7 @@ async function ownerReadPanel(
   const response = await request("PUT", "product-panels/panel-" + family, {
     name: family, description: "", visibility: "domain", revision: 0,
     content: vuePanelContent(...Object.keys(members)),
-    manifest: { state, members, events: {} },
+    manifest: { state, members, commands: {} },
   });
   expect(response.status, await response.text()).toBe(200);
   return async (member: string, dataName: string, inputs: object = {}) => {
@@ -1166,7 +1166,7 @@ it("describes the metric trials by the owner's names and takes their draft from 
   const panel = (trials: object) => ({
     name: "Metric trials", description: "", visibility: "domain", revision: 0,
     content: vuePanelContent("metricEditor", "trials"),
-    manifest: { state: {}, events: {}, members: {
+    manifest: { state: {}, commands: {}, members: {
       metricEditor: { target: { projectionId: "owner-metric-trials-metricEditor" } },
       trials: { target: { projectionId: "owner-metric-trials-trials" }, ...trials },
     } },

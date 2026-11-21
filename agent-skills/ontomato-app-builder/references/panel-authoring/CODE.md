@@ -13,8 +13,8 @@ in `docs/design/DESIGN.md` explains which roles to use.
 Declare projections using the [member fields](FIELDS.md) and declare public typed state in `panel.json`.
 Keep page-local state in Vue. An object state
 such as `selected` stores `{className, primaryKey}`. Enable `deepLink` when the address should restore the selection.
-For a page-header event with a `labelKey`, set `deepLink: true` on every state field the event changes so the
-assistant can open the same state by address.
+Declare named page-header commands in `manifest.commands`. Give each command a `labelKey` and a `do`
+action. Fields changed by a `do.set` command need `deepLink: true` so the assistant can open the same state.
 Use `recipes.md` for tasks the assistant needs to know how to do.
 
 Use the required `panel.mjs` to mount the Vue page as in the [agent directory module](../../examples/vue-agent-directory/panel.mjs).
@@ -44,7 +44,7 @@ Run `node "$SKILL/ontomato.mjs" panel uses <destination-app-id>` to get the dest
 Use its path with the encoded state on `usePanelContext().navigate`, captured during setup. The
 [generated capability-map address example](RUNTIME.md#state-in-an-address) opens the type view at a selected class.
 Give `URLSearchParams` raw JSON once. For a browser link in the workbench shell, put the same route after `#`.
-See [open events and navigation](RUNTIME.md#open-events-and-navigation) when wiring a button to an entry.
+See [header commands and navigation](RUNTIME.md#header-commands-and-navigation) when wiring a button to an entry.
 
 ## Read declared data
 
@@ -77,6 +77,8 @@ run-time values such as a cursor through [the SDK read hook](RUNTIME.md#usepanel
 Listen on the placed `<projection>` using Vue's event binding. For the `ObjectList` event `navigate`,
 for example, wire `<projection slot="list" @navigate="openReference"></projection>` to the Vue handler
 returned from setup. Bind component output values through the member's `state` map.
+Write component-driven state changes in Vue. For example, a list's `@update:selected` can call a setup
+handler that runs `instance.state.set("filePath", null)`.
 
 ## Connect a graph and its relations
 
