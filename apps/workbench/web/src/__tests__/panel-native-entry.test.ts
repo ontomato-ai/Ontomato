@@ -45,7 +45,11 @@ function answer(request: Sent) {
 async function open(address: string) {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     // The root lands where the deployment's start page says, as the platform's layout route does.
-    { ...platformRoutes.layout, component: RouterView, redirect: () => startPage(), children: [{ path: "/home", component: { render: () => h("p", { class: "home" }, "Home") } }] },
+    { ...platformRoutes.layout, component: RouterView, redirect: () => startPage(), children: [
+      { path: "/home", component: { render: () => h("p", { class: "home" }, "Home") } },
+      // Where the platform's page guard sends a reader whose landing they may not open: their first page, the home here.
+      { ...platformRoutes.ontology, redirect: "/home" },
+    ] },
     unknownAddressRoute,
   ] });
   router.beforeEach(panelEntryGuard(router));

@@ -19,7 +19,8 @@ export const unknownAddressRoute: RouteRecordRaw = { ...platformRoutes.unknown, 
  * application catalog is asked who declares the address — the catalog lists only the entries the reader may open, so the
  * entry's access has been checked — and the address opens that use relation's panel through the same route a panel
  * application's pages take, with its title, composer, page skill and admission. An address no entry declares lands
- * where the root does, or at the home when that landing is itself an address nothing serves for this reader.
+ * where the root does, or, when that landing is itself an address nothing serves for this reader, on the first page
+ * their access opens.
  */
 export function panelEntryGuard(router: Router): NavigationGuard {
   const catalog = useApplicationCatalog();
@@ -43,7 +44,9 @@ export function panelEntryGuard(router: Router): NavigationGuard {
       }
     }
     if (!unknown(to.fullPath)) return to.fullPath;
+    // The landing a reader may not open — a start page a panel took over, which this reader's catalog does not offer —
+    // is the platform's landing for such a reader: the first page their access opens, as for a native page they lack.
     const start = startPage();
-    return unknown(start) ? platformRoutes.home.path : start;
+    return unknown(start) ? { name: platformRoutes.ontology.name } : start;
   };
 }
