@@ -185,4 +185,31 @@ class AgentChannelBoundaryTest {
     verify(identity).requireQueryAccess("V","a");verify(execution).require("a","V");
     assertThrows(AgentHttpException.class,()->caller.query(JSONObject.of("id",RUN,"domainId","a"),"a","en",JSONObject.of("classNames",java.util.List.of(),"executionKind","live"),null,JSONObject.of("runId",RUN),JSONObject.of("userId","V","domainId","other")));
   }
+
+  @Test void assistantSkillPublicationSharesDirectoryRetrieverRef() throws Exception {
+    var runtime = mock(AgentRuntimeClient.class);
+    var captured = new java.util.concurrent.atomic.AtomicReference<java.util.List<java.util.Map<String, String>>>();
+    when(runtime.publishSkill(eq("ontology-assistant-skill-registration"), eq(io.ontomato.dataengine.service.RuntimeCodeClient.ASSISTANT_SKILL), any()))
+      .thenAnswer(inv -> {
+        captured.set(inv.getArgument(2));
+        return new AgentRuntimeClient.SkillVersion(io.ontomato.dataengine.service.RuntimeCodeClient.ASSISTANT_SKILL, "a".repeat(64));
+      });
+    new io.ontomato.dataengine.service.RuntimeCodeClient(runtime).registerAssistantSkill();
+    var files = captured.get().stream().collect(java.util.stream.Collectors.toMap(f -> f.get("path"), f -> f.get("content")));
+    assertEquals(java.util.Set.of("SKILL.md", "ontomato.mjs", "client.mjs", "application.yml", "retriever-ref.json"), files.keySet());
+    assertTrue(files.get("ontomato.mjs").contains("start-retrieval"));
+
+    var agentCallers = mock(AgentCaller.class);
+    var labels = mock(OntologyAgentLabels.class);
+    when(labels.localize(anyString(), any(), anyString())).thenAnswer(inv -> inv.getArgument(1));
+    var actor = JSONObject.of("id", RUN, "domainId", "a");
+    var user = new io.ontomato.dataengine.service.QueryAccessService.GrantUser("U", "a");
+    when(agentCallers.restore(actor, "a")).thenReturn(new AgentCaller.Actor(RUN, user, System.currentTimeMillis() + 60000));
+    when(agentCallers.executionUser(any(), isNull())).thenReturn(user);
+    var actions = mock(ActionCreationService.class);
+    doThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN)).when(actions).authorize(any());
+    var listed = new AgentDirectory(agentCallers, actions, labels).list(actor, "a", "en");
+    var directoryRef = listed.getJSONArray("agents").getJSONObject(0).getJSONObject("ref");
+    assertEquals(directoryRef, JSONObject.parseObject(files.get("retriever-ref.json")));
+  }
 }

@@ -97,8 +97,11 @@ receipts stay readable. Cancellation closes pending outputs before stopping work
 
 ## Metric delivery
 
-The assistant recalls published metrics and runs one itself, in its own
-retrieval run: `POST /ontology/retrievals/skill-runs` with the question,
+The assistant calls `start-retrieval` once with the complete question to
+concurrently start the retriever through the active run's agent channel (using the
+bundled `retriever-ref.json`) and recall published metric definitions from ontology
+before potentially executing a formal metric. In its own retrieval run:
+`POST /ontology/retrievals/skill-runs` with the question,
 `POST .../runs/:runId/submit-metric` with `{id,revision,bindingId?,parameters?}`
 and a UUID Idempotency-Key, the same status/content reads, then `close`. The
 selector is the whole input: Java reads the published definition, the declared
@@ -134,20 +137,26 @@ service without a runtime agent or synthetic history. External snapshots have
 null runtime IDs/run and empty messages. External work uses normal user authority;
 in-product retrieval issues its exploration grant locally.
 
-Scripts use `ONTOMATO_ONTOLOGY_URL`, **`ONTOMATO_TK` as current user credential**,
-`ONTOMATO_RETRIEVAL_ID`, runtime session/run identity, language/correlation/output
-variables. Every process uses one `ONTOMATO_TK`: agent calls carry a scoped user
-authority; Java injects a distinct, short-lived execution tk into its Python job.
-The agent cannot select or receive that internal credential. Retrieval
-stops consuming ONTOMATO_WORKBENCH_URL; other workbench skills retain their own
-configuration. Environment precedes external application.yml. Ask downloads
-accepted bytes through the ontology proxy; the retriever uses direct queries and
-dataset.mjs rather than recursive ask.
+Scripts use `ONTOMATO_ONTOLOGY_URL`, **`ONTOMATO_TK` as current user credential**
+(or `ONTOMATO_EXECUTION_CALLBACK` with `ONTOMATO_RETRIEVAL_CALLBACK_URL` when a
+selected execution user is configured), `ONTOMATO_RETRIEVAL_ID`, runtime
+session/run identity, language/correlation/output variables. Runtime channel
+credentials (`ONTOMATO_AGENT_COMMAND_URL` and `ONTOMATO_AGENT_CALLBACK`) are used
+only for the active run's agent channel command route. Every process uses one
+`ONTOMATO_TK`: agent calls carry a scoped user authority; Java injects a distinct,
+short-lived execution tk into its Python job. The agent cannot select or receive
+that internal credential. Environment precedes external application.yml. External
+packages download accepted bytes through the ontology proxy; platform runs read
+delivered files via the agent channel into `outputs/agents/`, and the retriever uses
+direct queries and `dataset.mjs`.
 
 ## Assistant caller scope
 
-Approved and implemented boundary (D1): workbench owns parent meaning;
-Java owns an opaque caller admission scope. Runtime gains no parent/child model.
+Approved and implemented boundary (D1): workbench owns business associations and
+reply adoption; Java owns data permissions, opaque caller admission scope,
+retrieval admission and formal delivery; runtime owns generic `requestedBy/root`,
+delivery and wakeup. Retrieval adds no retrieval-specific parent/child model to
+runtime; delegation uses the existing generic agent channel.
 
 | Ontology operation | Shape / meaning |
 | --- | --- |
@@ -164,7 +173,10 @@ required. Java applies the scope's class/deadline restrictions and uses the scop
 user's own words instead of a model-supplied rewrite; request fields cannot widen
 the scope. Continuation is limited to this scope's children or the
 validated continuationIds supplied by workbench for the same assistant session.
-No script calls a workbench retrieval route. Workbench stores only the association
+Only the selected execution-user callback path (`ONTOMATO_RETRIEVAL_CALLBACK_URL`)
+calls workbench's restricted retrieval proxy; scripts do not call workbench
+retrieval orchestration, and the runtime channel credential (`ONTOMATO_AGENT_CALLBACK`)
+only enters the runtime channel route. Workbench stores only the association
 in `assistant_turns.retrieval_scope_id` and asks Java for child references.
 
 Workbench evidence reads carry existing service authorization, domain and caller

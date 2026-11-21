@@ -596,6 +596,9 @@ async function main() {
     if (builtin) return print(await checkBuiltinPanelSource(argv[2], sdk.checks, { assignIds: true }));
     return print(await checkPanelWorkspace(argv[2], { ...sdk, materialPath }));
   }
+  if (cmd === "agent" && process.env.ONTOMATO_SKILL_SCENARIO === "platform") {
+    return analystCommand({}, argv);
+  }
   const platformAuthoring = ["action", "metric-view"].includes(cmd) && ["context", "generate"].includes(argv[1])
     && isPlatformAuthoring();
   const cfg = loadConfig();
