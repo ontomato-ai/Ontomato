@@ -181,11 +181,17 @@ export type PanelOperationTarget = z.infer<typeof panelOperationTargetSchema>;
  * SDK receives the owner's admitted operation description. A state operation comes from the panel's own declaration.
  */
 export const panelOperationIdSchema = z.string().min(1);
+
+/** The owner's reason, in the reader's language, that this operation would currently be refused. */
+export const panelOperationUnavailableSchema = z.object({
+  reason: z.string().min(1).max(500),
+}).strict();
 export const panelOperationSchema = z
   .object({
     id: panelOperationIdSchema,
     label: z.string().min(1).max(200),
     kind: panelOperationKindSchema,
+    unavailable: panelOperationUnavailableSchema.optional(),
     /** The parameters the operation takes, by name; a form save's parameters are the owner's form fields, read live. */
     inputSchema: runtimeJsonObjectSchema.default({}),
     /** Absent on a state operation: what it changes is the panel's own state, not an object. */

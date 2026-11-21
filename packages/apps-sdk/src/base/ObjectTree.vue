@@ -6,6 +6,7 @@ import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-st
 import { usePanelContext } from "../panel/context";
 import { useMemberData, useMemberParam } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
+import { useDataStateLabels } from "./data-state-labels";
 
 /**
  * The files of one object — a skill package's, say — as a folder/file tree, read through its owner's `files` read (the
@@ -57,7 +58,7 @@ function onSelect(key: string) {
   selected.set(key);
 }
 
-const labels = computed(() => ({ empty: props.emptyText ? panel.t(props.emptyText) : t("platform.dataEmpty"), forbidden: t("platform.dataForbidden"), awaiting: t("platform.dataAwaiting") }));
+const labels = useDataStateLabels(props.emptyText ? () => panel.t(props.emptyText!) : undefined);
 </script>
 
 <template>

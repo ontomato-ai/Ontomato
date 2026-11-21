@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { ElInput } from "element-plus/es/components/input/index";
+import { ElInputNumber } from "element-plus/es/components/input-number/index";
+import { ElOption, ElSelect } from "element-plus/es/components/select/index";
+import { ElTimeSelect } from "element-plus/es/components/time-select/index";
 import { weekdayName, type FrequencyDraft } from "../frequency";
 import { useScheduleText } from "../text";
 
@@ -8,6 +12,8 @@ import { useScheduleText } from "../text";
  * in the task's zone, which the form names under these controls.
  */
 const draft = defineModel<FrequencyDraft>({ required: true });
+/** Shown, not editable: an owner's read-only frequency, or a form that is saving. */
+defineProps<{ disabled?: boolean }>();
 const { t, locale } = useScheduleText();
 
 const weekdays = computed(() =>
@@ -22,6 +28,7 @@ function set<K extends keyof FrequencyDraft>(key: K, value: FrequencyDraft[K]) {
 <template>
   <div class="frequency">
     <el-select
+      :disabled="disabled"
       :model-value="draft.kind"
       class="kind"
       :aria-label="t('form.time')"
@@ -35,6 +42,7 @@ function set<K extends keyof FrequencyDraft>(key: K, value: FrequencyDraft[K]) {
     </el-select>
     <template v-if="draft.kind === 'interval'">
       <el-input-number
+        :disabled="disabled"
         :model-value="draft.every"
         class="number"
         :min="1"
@@ -45,13 +53,14 @@ function set<K extends keyof FrequencyDraft>(key: K, value: FrequencyDraft[K]) {
         :aria-label="t('form.every')"
         @update:model-value="set('every', Number($event ?? 1))"
       />
-      <el-select :model-value="draft.unit" class="unit" :aria-label="t('form.every')" @update:model-value="set('unit', $event)">
+      <el-select :disabled="disabled" :model-value="draft.unit" class="unit" :aria-label="t('form.every')" @update:model-value="set('unit', $event)">
         <el-option value="minute" :label="t('form.unit.minute')" />
         <el-option value="hour" :label="t('form.unit.hour')" />
         <el-option value="day" :label="t('form.unit.day')" />
       </el-select>
     </template>
     <el-select
+      :disabled="disabled"
       v-if="draft.kind === 'weekly'"
       :model-value="draft.weekday"
       class="unit"
@@ -61,6 +70,7 @@ function set<K extends keyof FrequencyDraft>(key: K, value: FrequencyDraft[K]) {
       <el-option v-for="weekday in weekdays" :key="weekday.value" :value="weekday.value" :label="weekday.label" />
     </el-select>
     <el-input-number
+      :disabled="disabled"
       v-if="draft.kind === 'monthly'"
       :model-value="draft.day"
       class="number"
@@ -73,6 +83,7 @@ function set<K extends keyof FrequencyDraft>(key: K, value: FrequencyDraft[K]) {
       @update:model-value="set('day', Number($event ?? 1))"
     />
     <el-time-select
+      :disabled="disabled"
       v-if="draft.kind === 'daily' || draft.kind === 'weekly' || draft.kind === 'monthly'"
       :model-value="draft.time"
       class="clock"
@@ -84,6 +95,7 @@ function set<K extends keyof FrequencyDraft>(key: K, value: FrequencyDraft[K]) {
       @update:model-value="set('time', String($event ?? ''))"
     />
     <el-input
+      :disabled="disabled"
       v-if="draft.kind === 'cron'"
       :model-value="draft.expression"
       class="cron"

@@ -16,6 +16,7 @@ import { useMember } from "../panel/member";
 import { editedInput, memberFormSource, MemberDataUnavailable, type FormSource } from "../panel/member-forms";
 import { formControlsKey, rowControlKey, rowControlsOf } from "./form-controls";
 import FormFieldControl from "./FormFieldControl.vue";
+import { useDataStateLabels } from "./data-state-labels";
 
 /**
  * One object's form, exactly as its owner describes it: the owner's fields at their JSON Pointer paths, its values in
@@ -57,6 +58,10 @@ const emit = defineEmits<{
   saved: [object: { className: string; primaryKey: string }];
   /** The reader discarded the changes the form held. */
   discarded: [];
+}>();
+defineSlots<{
+  /** Projections that edit this form's fields, drawn with the current owner values before Save and Discard. */
+  "after-fields"(): unknown;
 }>();
 const { t } = useI18n();
 const slot = useProjectionSlot();
@@ -477,7 +482,7 @@ const shown = computed<DataStateResult<PanelFormDescription>>(() => {
   if (loading.value) return { status: "loading" };
   return description.value ? { status: "ready", value: description.value } : { status: "awaiting" };
 });
-const labels = computed(() => ({ empty: t("platform.dataEmpty"), forbidden: t("platform.dataForbidden"), awaiting: t("platform.dataAwaiting") }));
+const labels = useDataStateLabels();
 
 /** The fields a received draft changed, by the owner's labels, in the form's order — those other slots draw included. */
 const changedLabels = computed(() => fields.value.filter((field) => changed.value.has(field.path)).map((field) => field.label).join(", "));
@@ -491,6 +496,7 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
     <el-form label-position="top">
       <p v-for="reason in sharedReadOnlyReasons" :key="reason" class="sdk-owner-form-readonly" role="note">{{ reason }}</p>
       <form-field-control v-for="field in drawn" :key="field.path" :field="field" :path="field.path"></form-field-control>
+      <slot name="after-fields"></slot>
       <p v-if="changed.size" class="sdk-owner-form-changed" role="status">
         {{ t("platform.panelDraftChanged", { fields: changedLabels }) }}
       </p>

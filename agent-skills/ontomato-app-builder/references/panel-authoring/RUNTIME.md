@@ -104,7 +104,10 @@ before any `await`.
 function usePanelData(member: string, name: string, runtimeParams?: MaybeRefOrGetter<Readonly<Record<string, RuntimeJsonValue>>> | undefined): ComputedRef<MemberDataState>
 ```
 
-The result type is `type MemberDataState = PanelDataState | { status: "awaiting" };`.
+The result type is `type MemberDataState =
+  | Exclude<PanelDataState, { status: "error" }>
+  | { status: "error"; message: string; unreachable?: true; retry?: () => void }
+  | { status: "awaiting" };`.
 
 | Status in PanelDataState | Additional fields |
 | --- | --- |
@@ -113,6 +116,10 @@ The result type is `type MemberDataState = PanelDataState | { status: "awaiting"
 | `error` | `message` |
 | `forbidden` |  |
 | `loading` |  |
+
+A datum in `error` also carries `retry()`, which reads it again: offer it beside the message. When the platform never
+answered (the request reached nothing), `unreachable` is `true` and `message` already says so in the reader's language;
+show `message` as it is.
 
 ### usePanelOperation
 

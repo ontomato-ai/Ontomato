@@ -12,7 +12,9 @@ import { appsSdkComponentCatalogEntrySchema, appsSdkComponentCatalogSchema } fro
 import { fileURLToPath } from "node:url";
 import { panelFormDescriptionSchema, panelOptionListSchema } from "@ontomato/contracts/panel-projection";
 import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
-import { METRIC_VIEW, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW } from "@ontomato/contracts/platform-object-types";
+import {
+  DELETE_FUNCTION, FUNCTION, METRIC_VIEW, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW,
+} from "@ontomato/contracts/platform-object-types";
 import { platformScheduleFormSchema, platformTaskRunSchema, platformTaskSchema } from "@ontomato/contracts/platform-schedules";
 import { scheduledTaskPanelMessages, scheduledTaskPanelTextZhCn } from "@ontomato/platform-schedules/panel-text";
 import examples from "../../../../contracts/examples/platform-schedules.json";
@@ -357,6 +359,16 @@ beforeAll(async () => {
       } });
     });
   }
+  // The function owner's deletion rule in the reader's language: the pilot function is referenced, any other is free.
+  app.post("/function/deleteRefusal", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    const referenced: Record<string, string> = {
+      "zh-CN": "被指标引用的函数不能修改或删除", en: "Function referenced by MetricView cannot be modified or deleted",
+    };
+    res.json({ success: true, data: {
+      reason: req.body.id === "function-pilot" ? referenced[req.header("Accept-Language") ?? ""] : null,
+    } });
+  });
   app.post("/ontology/query/metrics/describe", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.header("Accept-Language")).toBe("zh-CN");
@@ -921,6 +933,12 @@ it("reads agent settings and reference options with the panel viewer", async () 
     await setEnabled(false);
   }
   const form = panelFormDescriptionSchema.parse(await ready("definition", "form", { agent }));
+  const createForm = panelFormDescriptionSchema.parse(await ready("definition", "createForm"));
+  for (const answer of [form, createForm]) {
+    for (const path of ["/skills", "/enabledMcpServiceIds"]) {
+      expect(answer.fields.find(field => field.path === path)?.required).toBe(false);
+    }
+  }
   expect(form.values).toMatchObject({ name: "Inventory analyst", enabled: false, skills: [] });
   expect(form.fields.find(field => field.path === "/executionUserId")?.readOnly).toBe(true);
   expect(panelFormDescriptionSchema.parse(await ready("definition", "createForm")).values).toMatchObject({
@@ -1194,6 +1212,31 @@ it("describes the metric trials by the owner's names and takes their draft from 
       handlerRef: TEST_EXECUTE_METRIC_VIEW, label: "Test and return JSON", target: { source: "draft", slot: "metricEditor" },
     }),
   } });
+});
+
+/*
+ * The function delete says why it is unavailable before anyone tries it: the owner's own deletion rule, read for the
+ * function the panel holds now and in the reader's language. A function the owner would delete carries no reason.
+ */
+it("describes the function delete with the owner's reason it is unavailable, in the reader's language", async () => {
+  await ownerReadPanel("owner-function-delete", {
+    remove: {
+      componentId: "@ontomato/sdk:OperationButton", inputs: { function: { kind: "object", objectType: FUNCTION } }, data: {},
+      operations: { remove: { operation: { kind: "PlatformOperation", id: DELETE_FUNCTION }, target: { input: "function" } } },
+    },
+  }, { selected: { type: { kind: "object", objectType: FUNCTION }, default: null } }, {
+    remove: { inputs: { function: { state: "selected" } } },
+  });
+  const described = async (primaryKey: string) => (await request("POST", "product-panels/read", {
+    source: { kind: "registered", applicationId: "owner-function-delete", useId: "data" },
+    memberPath: [{ member: "remove" }], operations: true, inputs: { function: { className: FUNCTION, primaryKey } },
+  })).json();
+  expect(await described("function-pilot")).toMatchObject({ status: "ready", value: {
+    remove: { handlerRef: DELETE_FUNCTION, unavailable: { reason: "被指标引用的函数不能修改或删除" } },
+  } });
+  const free = await described("function-free");
+  expect(free).toMatchObject({ status: "ready", value: { remove: { handlerRef: DELETE_FUNCTION } } });
+  expect(free.value.remove).not.toHaveProperty("unavailable");
 });
 
 /** Reads a MetricView result through a registered projection whose SDK component this fixture declares as its consumer. */

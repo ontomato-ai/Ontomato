@@ -1,4 +1,5 @@
-import { inject, type ComputedRef, type InjectionKey } from "vue";
+import { computed, inject, type ComputedRef, type InjectionKey } from "vue";
+import { useI18n } from "vue-i18n";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { MemberData, MemberDataState, MemberInputs } from "./direct";
@@ -32,9 +33,21 @@ export function useMember(): PanelMemberContext {
 
 const member = useMember;
 
+/**
+ * A datum as the reader is shown it: a read the platform never answered is said in the reader's language, not with the
+ * browser's words for a dropped request; a reason the owner or the platform gave stays its own.
+ */
+export function readerDataState(state: Readonly<ComputedRef<MemberDataState>>): ComputedRef<MemberDataState> {
+  const { t } = useI18n();
+  return computed(() => {
+    const shown = state.value;
+    return shown.status === "error" && shown.unreachable ? { ...shown, message: t("platform.dataUnreachable") } : shown;
+  });
+}
+
 /** A named datum of this member, read and kept current while the component is mounted. */
 export function useMemberData(name: string): ComputedRef<MemberDataState> {
-  return member().data.use(name);
+  return readerDataState(member().data.use(name));
 }
 
 /** This member's operations, as their owners admit them now, by the projection's local name. */
