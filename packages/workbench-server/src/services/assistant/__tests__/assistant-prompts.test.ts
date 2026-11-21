@@ -41,7 +41,8 @@ describe("default assistant prompts", () => {
     expect(template).toContain("ontomato-analyst-assistant/SKILL.md");
     expect(template).not.toMatch(/ontomato-analyst-assistant\s+ask|\bask\s+--|--resume|cancel-retriever|resume (?:that|the same|that same) retrieval/i);
     expect(template).toMatch(/only when the user requests them/i);
-    expect(template).toMatch(/only the accepted dataset files used as evidence/i);
+    expect(template).toMatch(/only the files used as evidence/i);
+    expect(template).toMatch(/never link a path that no tool returned/i);
     expect(template).not.toMatch(/Show every dataset file you obtained/i);
     const customized="Use ontomato-analyst-assistant ask according to my own instructions";
     expect(effectiveSystemPrompt({kind,system_prompt:customized})).toBe(customized);
