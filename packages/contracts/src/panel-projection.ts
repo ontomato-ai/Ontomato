@@ -367,6 +367,8 @@ const simpleControls = [
   z.object({ kind: z.literal("switch") }).strict(),
   z.object({ kind: z.literal("markdown") }).strict(),
   z.object({ kind: z.literal("avatar") }).strict(),
+  /** The owner keeps the icon's string key, including keys written by older releases. */
+  z.object({ kind: z.literal("application-icon") }).strict(),
   z.object({
     kind: z.literal("code"),
     /** JSON source edits the owner's JSON value, with a parse error on this field. */
