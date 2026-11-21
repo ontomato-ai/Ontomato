@@ -148,6 +148,13 @@ beforeEach(()=>{
 afterEach(()=>{vi.unstubAllGlobals();vi.restoreAllMocks();});
 const ownerWrites=()=>vi.mocked(fetch).mock.calls.filter(([,init])=>["POST","PUT"].includes(init?.method ?? "GET"));
 function answer(source:object={kind:"user"}) {human={role:"notification",kind:"agent-answer",source,replyTo:agentQuestionId(),answerId:uuid(11)};}
+it("does not let a content page's loaded skill authorize a frame operation", async () => {
+  await expect(operatePanel(owner, credentials, current.id, { ...action(), root: "frame" })).rejects.toMatchObject({
+    status: 403, code: "PANEL_FRAME_SKILL_REQUIRED",
+  });
+  expect(intents.size).toBe(0);
+});
+
 it("returns immediately and ignores the parent's endorsement; a later run uses V once after a genuine U selection",async()=>{
  const request=action();const response=await operatePanel(owner,credentials,current.id,request);
  expect(response.kind).toBe("confirmation-required");expect(ownerWrites()).toHaveLength(0);

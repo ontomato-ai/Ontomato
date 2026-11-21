@@ -16,7 +16,7 @@ async function personalFields(
   owner: ProductOwner, viewer: AssistantCredentials, request: PanelPersonalStateReadRequest | PanelPersonalStateWriteRequest,
   names: string[], client?: PoolClient,
 ) {
-  const { panel: root, entry } = await requireRegisteredPanelRoot(owner, viewer, request.source, client);
+  const { panel: root, entry } = await requireRegisteredPanelRoot(owner, viewer, request.source, { client });
   const scope = await resolvePanelMemberPath(owner, viewer, root, request.memberPath, entry, client);
   if (scope.kind !== "panel")
     throw new HttpError(400, "Personal state belongs to a panel instance", "PANEL_PERSONAL_FIELD_INVALID");

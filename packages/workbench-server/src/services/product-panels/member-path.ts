@@ -3,7 +3,7 @@ import {
 } from "@ontomato/contracts/panel-manifest";
 import {
   productPanelSchema, productProjectionSchema,
-  type ApplicationPanelUse, type ProductPanel,
+  type ApplicationPanelUse, type PanelUseRef, type ProductPanel,
 } from "@ontomato/contracts/product-panels";
 import type { PoolClient } from "pg";
 import { getPostgresPool, qualifiedTable } from "../../infrastructure/postgres";
@@ -14,6 +14,7 @@ import type { ProductPanelNestedReadRequest, ProductPanelNestedReadResponse } fr
 import { HttpError } from "../../utils/errors";
 import { requireProductGrant, type ProductOwner } from "../product-governance/grants";
 import { requirePanelEntry } from "./application-use";
+import { parseStoredDefinition } from "./definition-diagnostics";
 import { findObjectDetailPanelId } from "./object-detail";
 import { panelStateKey, type PanelStatePathKey } from "./personal-state-key";
 
@@ -29,16 +30,25 @@ function unavailable(): never {
 async function requireTarget(owner: ProductOwner, viewer: AssistantCredentials, target: Target, client?: QueryClient) {
   await requireProductGrant(target.id, "use", viewer);
   const row = await findCurrentProduct(owner.domainId, target.kind, target.id, client);
-  if (!row) throw new HttpError(404, "Current member definition not found", "PRODUCT_UNAVAILABLE");
+  if (!row) {
+    const kind = target.kind === "panel" ? "Panel" : "Projection";
+    throw new HttpError(404, `${kind} '${target.id}' does not exist`, "PRODUCT_UNAVAILABLE");
+  }
   return currentProductRecord(row, false);
 }
 
 export async function requireRegisteredPanelRoot(
-  owner: ProductOwner, viewer: AssistantCredentials, source: Parameters<typeof requirePanelEntry>[1], client?: QueryClient,
+  owner: ProductOwner, viewer: AssistantCredentials, source: PanelUseRef & { kind?: "registered" | "frame" },
+  { client, expectedPanelId }: { client?: QueryClient; expectedPanelId?: string } = {},
 ) {
-  const { use } = await requirePanelEntry(viewer, source);
-  const panel = productPanelSchema.parse(await requireTarget(owner, viewer, { kind: "panel", id: use.panelId }, client));
-  return { panel, entry: use };
+  const { use, framePanelId } = await requirePanelEntry(viewer, source);
+  // The entry owner only returns framePanelId for its panels renderer.
+  const id = source.kind === "frame" ? framePanelId : use.panelId;
+  if (id === undefined || (expectedPanelId !== undefined && expectedPanelId !== id))
+    throw new HttpError(404, "This entry does not use the requested application frame", "PANEL_FRAME_UNAVAILABLE");
+
+  const record = await requireTarget(owner, viewer, { kind: "panel", id }, client);
+  return { panel: parseStoredDefinition(productPanelSchema, record, "Panel"), entry: use };
 }
 
 async function declaredTarget(
@@ -148,10 +158,10 @@ async function resolveMemberPath<Root extends PanelPathRoot>(
     const record = await requireTarget(owner, viewer, target, client);
     if (target.kind === "projection") {
       if (index !== memberPath.length - 1) unavailable();
-      return { kind: "projection" as const, projection: productProjectionSchema.parse(record), panel, member, keys };
+      return { kind: "projection" as const, projection: parseStoredDefinition(productProjectionSchema, record, "Projection"), panel, member, keys };
     }
     ancestors.add(target.id);
-    panel = productPanelSchema.parse(record);
+    panel = parseStoredDefinition(productPanelSchema, record, "Panel");
     controlled = Object.keys("fromPlatform" in member.target ? entry?.inputs ?? {} : member.inputs ?? {});
   }
   return { kind: "panel" as const, panel, keys, controlled, ancestors };

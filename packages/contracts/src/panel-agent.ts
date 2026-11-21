@@ -11,7 +11,7 @@ import {
 } from "./panel-operations";
 import { ontologyElementRefSchema } from "./ontology-element-ref";
 import { EXECUTE_OBJECT_ACTION } from "./platform-object-types";
-import { panelUseRefSchema } from "./product-panels";
+import { applicationFrameSourceSchema, panelUseRefSchema } from "./product-panels";
 import { pageDraftSchema } from "./page-draft";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeKeySchema } from "./agent-runtime-values";
 
@@ -33,6 +33,7 @@ export type UpdatePanelOperationSettingsRequest = z.infer<typeof updatePanelOper
 
 /** Locate the published operation through its actual application use and any nested publisher. */
 export const panelOperationRefSchema = panelUseRefSchema.extend({
+  root: applicationFrameSourceSchema.shape.kind.optional(),
   operationId: panelOperationIdSchema,
   memberPath: z.lazy(() => panelMemberPathSchema.nonempty()).optional(),
 }).strict();
@@ -159,6 +160,7 @@ export const panelWriteOperationSnapshotSchema = panelOwnerOperationDescriptorSc
 const commonIntentFactsSchema = z.object({
   intentId: runtimeIdSchema,
   use: panelUseRefSchema,
+  root: panelOperationRefSchema.shape.root,
   panelId: key,
   projectionId: key.nullable(),
   binding: ontologyElementRefSchema.nullable(),
