@@ -27,6 +27,8 @@ See [what the assistant receives](CODE.md#what-the-assistant-receives) for page 
 
 Use `ConversationEntry` when a page needs a button that opens the composer with a specific agent and an optional
 opening line. The reader still sends the message. Use the page's existing composer for general questions.
+For the opening line of a built-in panel's `ConversationEntry`, use `prefillKey` with a flat key in
+`content.messages` and provide the line in every declared language, as verified by `panel check`.
 
 ```sh
 node "$SKILL/ontomato.mjs" panel check "$WORKSPACE"

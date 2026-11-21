@@ -39,6 +39,15 @@ export async function checkBuiltinPanelSource(directory, checks, { assignIds = f
   const document = parseJson(file, source);
   const parsed = checks.panelAuthoringManifestSchema.safeParse(document?.manifest);
   if (!parsed.success) throw new Error(`${file}: ${parsed.error.message}`);
+  // A platform panel ships to every language: an entry's opening sentence named by key is in each language it declares.
+  for (const [member, declaration] of Object.entries(parsed.data.members)) {
+    if (declaration.prefillKey === undefined) continue;
+    const missing = checks.missingEntryMessageKeys([{ prefillKey: declaration.prefillKey }], document.content?.messages);
+    if (missing.length) {
+      const where = missing.map(({ locale }) => locale ?? "any locale").join(", ");
+      throw new Error(`${file}: member ${member} prefillKey '${declaration.prefillKey}' is not in content.messages (${where})`);
+    }
+  }
 
   const files = await readdir(directory);
   const trialPath = "/applications/app-";
@@ -133,6 +142,7 @@ async function workspaceDefinition(directory, files, checks, panel, loadAuthorin
     } catch (error) {
       throw new Error(`${resolve(directory, "panel.mjs")}: ${error.message}`, { cause: error });
     }
+
     return { definition: result.data, inline: expanded.inline, charts: expanded.charts, descriptorFile, document, source };
   }
 
@@ -345,6 +355,16 @@ export async function checkPanelWorkspace(directory, { checks, catalogue, versio
       }
       checkProjectionData(id, record, component, checks);
       if (typeTable) checkOperations(id, record, typeTable, placements.get(id), manifest.state, checks);
+      // A conversation entry's opening sentence named by key is the placing panel's own words, in each language it
+      // declares: a reused projection's key counts as much as a new one's.
+      if (record.conversationEntry?.prefillKey !== undefined) {
+        const missing = checks.missingEntryMessageKeys([record.conversationEntry], workspace.definition.content.messages);
+        if (missing.length) {
+          const members = placements.get(id).map(([member]) => member).join(", ");
+          const where = missing.map(({ locale }) => locale ?? "any locale").join(", ");
+          throw new Error(`${resolve(directory, "panel.json")}: member ${members} (projection ${id}) prefillKey '${missing[0].key}' is not in content.messages (${where})`);
+        }
+      }
     }
   }
   return { status: "valid", version, ...(digest && { digest }), unchecked };
