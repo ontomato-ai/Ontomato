@@ -76,7 +76,6 @@ jobs:
       ONTOMATO_TEST_POSTGRES_PASSWORD: ontomato
       RUNTIME_TEST_DATABASE_URL: postgres://ontomato:ontomato@127.0.0.1:5432/ontomato
       STARTUP_TEST_DATABASE_URL: postgres://ontomato:ontomato@127.0.0.1:5432/ontomato
-      ONTOLOGY_HOST_CONTRACT_OUTPUT: ${{ runner.temp }}/ontology-host-contract.json
     steps:
       - uses: actions/checkout@v5
 
@@ -108,13 +107,14 @@ jobs:
       - name: Install Python HTTP helper dependency
         run: python3 -m pip install requests==2.32.5
 
-      - name: Test the Java contract and boundary group
+      - name: Test the Java contract and boundary group and verify the ontology wire response
+        env:
+          ONTOLOGY_HOST_CONTRACT_OUTPUT: ${{ runner.temp }}/ontology-host-contract.json
         run: |
           maven_repo_url=$(cat .github/maven-wrapper-repo-url)
           MVNW_REPOURL="$maven_repo_url" ./mvnw -B -ntp -s .github/maven-settings.xml -Pcontract test
 
-      - name: Verify Java's ontology host response against the web contract
-        run: pnpm --filter @ontomato/workbench-server exec vitest run src/services/assistant/__tests__/ontology-wire.integration.test.ts
+          pnpm --filter @ontomato/workbench-server exec vitest run src/services/assistant/__tests__/ontology-wire.integration.test.ts
 
       # Match docker/workbench/Dockerfile and the public branch image build facts.
       - name: Build the apps SDK
