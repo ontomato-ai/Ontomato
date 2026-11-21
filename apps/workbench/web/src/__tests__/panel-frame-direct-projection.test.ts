@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { createApp, defineComponent, h, provide } from "vue";
+import { computed, createApp, defineComponent, h, provide } from "vue";
 import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
@@ -91,7 +91,7 @@ it("draws a declared projection in a frame from this version's task module, and 
         projection: (id: string) => instance.projection(id),
         invoke: (handlerRef: string, call) => instance.runHandler(handlerRef, call),
         projectionsChanged: () => () => {}, draft: instance.draft, holdUnsaved: () => () => {},
-        t: (key: string) => key, resources: async () => {}, expandPageComposer: async () => {}, readPanelData, navigate: async () => {}, notify: () => {},
+        t: (key: string) => key, resources: async () => {}, expandPageComposer: async () => {}, readPanelData, navigate: async () => {}, notify: () => {}, currentEntry: computed(() => null), entryMenu: computed(() => null),
       });
       return () => h("div", [h(Projection, { slot: "form" }), h(Projection, { slot: "run" })]);
     },

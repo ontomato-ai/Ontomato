@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createApp, defineComponent, h, nextTick, ref, shallowRef } from "vue";
+import { computed, createApp, defineComponent, h, nextTick, ref, shallowRef } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { PanelDefinitionContent, ProductProjection } from "@ontomato/contracts/product-panels";
 import { createPanelInstance, applyPanelRequest } from "../../../../../packages/apps-sdk/src/panel/instance";
@@ -222,7 +222,7 @@ describe("a panel's module", () => {
       t: (key: string) => key,
       resources: async () => {},
       expandPageComposer: async () => {},
-      notify: () => { throw new Error("This test tells the reader nothing"); }, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); },
+      notify: () => { throw new Error("This test tells the reader nothing"); }, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); }, currentEntry: computed(() => null), entryMenu: computed(() => null),
     });
     app.mount(element);
     await nextTick();
