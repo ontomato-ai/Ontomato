@@ -531,7 +531,7 @@ describe("ontology model read adapter", () => {
     });
     const setPrimaryKey = adapter.describe(SET_PRIMARY_KEY);
     expect(setPrimaryKey).toMatchObject({ label: "Set as primary key", target: { source: "input", input: "attribute" } });
-    expect(setPrimaryKey).not.toHaveProperty("inspectImpact");
+    expect(setPrimaryKey.inspectImpact).toEqual({ handlerRef: `${SET_PRIMARY_KEY}.inspect-impact` });
     expect(adapter.describe(DELETE_RELATIONSHIP).target).toEqual({ source: "input", input: "relationship" });
   });
 
