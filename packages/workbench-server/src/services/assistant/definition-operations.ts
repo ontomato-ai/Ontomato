@@ -84,7 +84,7 @@ export const agentDefinitionOperations = [
     resultSchema: assistantAgentDefinitionSchema,
     draftOperation: (target: PanelOperationTarget) => agentDefinitionSave(target).draftOperation,
     draftInput,
-    formInstructions: "Read the definition form for the intended target. Use its fields and option sources, save.bodySchema for the values, and save.draftOperation for the draft. When editing, omit skills unless the selection is explicitly changing.",
+    formInstructions: "Read the definition form for the intended target. Use its fields and option sources, save.bodySchema for the value shapes, and save.draftOperation for the draft. For an edit draft, put only the changed fields in form, including skills only when changing the selection. For a create draft, include all required fields.",
     projectResult(data: unknown, view: AssistantSkillView) {
       return projectAgentDefinitionSkills(assistantAgentDefinitionSchema.parse(data), view);
     },
