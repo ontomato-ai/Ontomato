@@ -114,6 +114,46 @@ it("does not accept a legacy asset ID as a current panel reference", async () =>
   await expect(validateApplicationPanelReferences(request("p"))).resolves.toBeUndefined();
 });
 
+it("rejects a frame state input without a frame and preserves typed literal wiring", async () => {
+  const { revision, ...input } = panel();
+  const type = { kind: "scalar", type: "string" } as const;
+  const field = { type, personal: false, deepLink: true, external: true };
+  const definition = { ...input, manifest: { state: { term: field }, members: {}, commands: {} } };
+  await saveCurrentPanel(owner, credentials, "content", definition, revision);
+  const validates = (ref: { literal: string } | { frameState: string }, framePanelId?: string) =>
+    validateApplicationPanelReferences({
+      domainId: owner.domainId, framePanelId,
+      uses: [{ id: "orders", panelId: "content", inputs: { term: ref } }],
+      delivery: { panels: [], projections: [] },
+    });
+
+  await expect(validates({ frameState: "semester" })).rejects.toMatchObject({
+    status: 400, code: "INVALID_PANEL_ENTRY_INPUT", message: expect.stringMatching(/orders.*term.*frame.*semester/),
+  });
+  await expect(validates({ literal: "A" })).resolves.toBeUndefined();
+  await saveCurrentPanel(owner, credentials, "frame", {
+    ...definition, manifest: { ...definition.manifest, state: { semester: field, privateTerm: { ...field, external: false } } },
+  }, revision);
+  await expect(validates({ frameState: "semester" }, "frame")).resolves.toBeUndefined();
+  await expect(validates({ frameState: "privateTerm" }, "frame")).rejects.toMatchObject({ code: "INVALID_PANEL_ENTRY_INPUT" });
+});
+
+it("checks theme values in the application registration preflight with the design-token catalogue", async () => {
+  const request = { domainId: owner.domainId, uses: [], delivery: { panels: [], projections: [] } };
+  await expect(validateApplicationPanelReferences({
+    ...request, theme: { light: { "--el-color-primary": "#498", "--radius-md": "8px" }, dark: { "--elevation-panel": "overlay" } },
+  })).resolves.toBeUndefined();
+  for (const [name, value] of [
+    ["--unpublished-token", "#fff"], ["--el-color-primary", "url(/color)"],
+    ["--radius-md", "-2px"], ["--radius-md", "calc(2px + 2px)"], ["--elevation-panel", "0 8px #000"],
+  ]) {
+    await expect(validateApplicationPanelReferences({
+      ...request, theme: { dark: { [name]: value } },
+    })).rejects.toMatchObject({ status: 400, code: "INVALID_PANEL_THEME", message: expect.stringContaining(`dark.${name}`) });
+  }
+  expect(mocks.query).not.toHaveBeenCalled();
+});
+
 it("does not assume resource registration restores a revoked edit Grant", async () => {
   mocks.register.mockResolvedValue(undefined);
   mocks.grant.mockRejectedValue(new HttpError(403, "Edit was revoked", "PRODUCT_FORBIDDEN"));

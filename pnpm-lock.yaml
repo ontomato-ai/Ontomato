@@ -766,6 +766,9 @@ importers:
       '@ontomato/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@ontomato/design-tokens':
+        specifier: workspace:*
+        version: link:../design-tokens
       '@ontomato/markdown':
         specifier: workspace:*
         version: link:../markdown

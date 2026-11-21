@@ -1,3 +1,4 @@
+import { themeOverrideProblems } from "@ontomato/design-tokens/theme-overrides";
 import type { ZodError } from "zod";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import {
@@ -175,7 +176,13 @@ export async function saveCurrentPanel(owner: ProductOwner, credentials: Assista
 
 /** Java authorizes the registrant. This service call checks the current definitions used by the declaration. */
 export async function validateApplicationPanelReferences(request: ApplicationPanelReferencesRequest) {
-  const { domainId, framePanelId, uses, delivery } = request;
+  const { domainId, framePanelId, uses, delivery, theme } = request;
+  if (theme) {
+    const [issue] = themeOverrideProblems(theme);
+    if (issue) {
+      throw new HttpError(400, `Application theme '${issue.mode}.${issue.name}': ${issue.message}`, "INVALID_PANEL_THEME");
+    }
+  }
   const panels = new Map<string, Pick<ProductPanel, "manifest">>();
   const projections = new Set<string>();
   const pending = new Set(uses.map(use => use.panelId));
@@ -197,11 +204,14 @@ export async function validateApplicationPanelReferences(request: ApplicationPan
   for (const use of uses) {
     const { state } = panels.get(use.panelId)!.manifest;
     for (const [name, ref] of Object.entries(use.inputs ?? {})) {
+      if ("frameState" in ref && frame === undefined) {
+        throw new HttpError(400, `Entry '${use.id}' input '${name}' requires an application frame for state '${ref.frameState}'`, "INVALID_PANEL_ENTRY_INPUT");
+      }
       const field = state[name];
       const source = "frameState" in ref ? frame?.manifest.state[ref.frameState] : undefined;
       if (!field?.external || !("literal" in ref
         ? matchesDirectPanelValue(field.type, ref.literal)
-        : source && panelPortAccepts(field.type, source.type))) {
+        : source?.external && panelPortAccepts(field.type, source.type))) {
         throw new HttpError(400, `Entry '${use.id}' has incompatible input '${name}'`, "INVALID_PANEL_ENTRY_INPUT");
       }
     }
