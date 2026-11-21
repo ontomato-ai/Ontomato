@@ -14,7 +14,7 @@ export type ComponentPackageUpgradeChange = ComponentPackageUpgradeError["detail
 export type CheckComponentPackageUpgrade = (
   previous: ComponentPackageResponse,
   candidate: ComponentPackageResponse,
-  caller: RequestIdentity & { credentials: AssistantCredentials },
+  caller: RequestIdentity & { credentials: AssistantCredentials; diagnosticsScope?: "deployment" },
 ) => Promise<readonly ComponentPackageUpgradeChange[]>;
 
 function packageRoot(name: string) {
@@ -73,8 +73,10 @@ export async function requireCompatibleComponentPackage(
   const rejected = componentPackageUpgradeErrorSchema.parse({
     success: false,
     code: COMPONENT_PACKAGE_INCOMPATIBLE,
-    error: `Package '${release.name}' is incompatible with existing uses`,
-    details: { package: release.name, changes },
+    error: caller.diagnosticsScope === "deployment"
+      ? `Package '${release.name}' is incompatible with existing uses. This deployment-level check lists all affected projections and panels.`
+      : `Package '${release.name}' is incompatible with existing uses`,
+    details: { package: release.name, scope: caller.diagnosticsScope ?? "domain", changes },
   });
   throw new HttpError(409, rejected.error, rejected.code, rejected.details);
 }

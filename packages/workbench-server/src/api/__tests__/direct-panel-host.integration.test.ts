@@ -966,7 +966,7 @@ it("freezes the frame of a human operation and rechecks it before dispatch", asy
   expect(frameDispatches).toEqual([newIntent]);
 });
 
-it("refuses package upgrades that remove a persisted input and identifies its panel users", async () => {
+it("reports cross-domain references to admitted package maintainers and keeps the installed digest", async () => {
   const value = { kind: "scalar", type: "string" };
   const packageFiles = (version: string, inputs: Record<string, object>) => {
     const files = release(version);
@@ -996,22 +996,28 @@ it("refuses package upgrades that remove a persisted input and identifies its pa
   });
   expect(panel.status, await panel.text()).toBe(200);
 
-  // Other domains and damaged siblings still participate in the scan without disclosing their IDs.
+  // The deployment check sees both domains, and a damaged row does not hide reference details for other records.
   await state.pool!.query(`INSERT INTO "${state.schema}".product_projections (domain_id,id,owner_id,definition,revision)
     SELECT 'another-domain','secret-package-projection',owner_id,definition,revision
     FROM "${state.schema}".product_projections WHERE domain_id='pilot' AND id=$1
     UNION ALL SELECT 'another-domain','broken-package-projection','reader',$2::jsonb,1`,
   [projectionId, JSON.stringify({ componentId, inputs: false })]);
   await state.pool!.query(`INSERT INTO "${state.schema}".product_panels (domain_id,id,owner_id,definition,revision)
-    VALUES ('another-domain','broken-package-panel','reader','{"manifest":{"members":{"bad":false}}}',1)`);
+    SELECT 'another-domain','other-package-panel',owner_id,
+      jsonb_set(definition,'{manifest,members,example,target,projectionId}',to_jsonb('secret-package-projection'::text)),revision
+    FROM "${state.schema}".product_panels WHERE domain_id='pilot' AND id=$1
+    UNION ALL SELECT 'another-domain','broken-package-panel','reader','{"manifest":{"members":{"bad":false}}}'::jsonb,1`, [panelId]);
 
   for (const mode of ["inspect", "install"] as const) {
     const refused = await packageRequest(mode, packageFiles("2.0.0", { unused: value }));
     expect(refused.status, await refused.clone().text()).toBe(409);
     expect(await refused.json()).toMatchObject({
       code: "COMPONENT_PACKAGE_INCOMPATIBLE",
-      details: { changes: [{ component: componentId, field: "inputs.value", before: value,
-        projectionIds: [projectionId], panelIds: [panelId] }] },
+      error: expect.stringContaining("This deployment-level check lists all affected projections and panels"),
+      details: { scope: "deployment", changes: [{ component: componentId, field: "inputs.value", before: value,
+        projectionIds: [projectionId, "secret-package-projection"], panelIds: ["other-package-panel", panelId],
+        projections: [{ id: "secret-package-projection", domainId: "another-domain" }, { id: projectionId, domainId: "pilot" }],
+        panels: [{ id: "other-package-panel", domainId: "another-domain" }, { id: panelId, domainId: "pilot" }] }] },
     });
   }
   const current = async () => (await fetch(state.base + installedPackagePath)).json();

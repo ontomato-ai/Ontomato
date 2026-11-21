@@ -79,12 +79,13 @@ it("keeps the current release after a referenced upgrade conflict and serves onl
   const changes = [{
     component: componentId, field: "inputs.value", before: { kind: "scalar", type: "string" },
     projectionIds: ["projection"], panelIds: ["panel"],
+    projections: [{ id: "projection", domainId: "domain" }], panels: [{ id: "panel", domainId: "domain" }],
   }];
   checkUpgrade.mockResolvedValueOnce(changes);
   const candidate = { ...release(), "dist/mark.svg": "<svg id=\"next\"/>" };
   const refused = await post(upload(candidate, "install", "directory"));
   expect(refused.status).toBe(409);
-  expect(await refused.json()).toMatchObject({ code: "COMPONENT_PACKAGE_INCOMPATIBLE", details: { package: name, changes } });
+  expect(await refused.json()).toMatchObject({ code: "COMPONENT_PACKAGE_INCOMPATIBLE", details: { package: name, scope: "deployment", changes } });
   expect(await (await fetch(base + cataloguePath)).json()).toEqual(previous);
 
   const next = await post(upload(candidate, "install", "directory"));

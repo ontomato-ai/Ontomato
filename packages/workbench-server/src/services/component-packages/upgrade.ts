@@ -104,30 +104,41 @@ export const checkComponentPackageUpgrade: CheckComponentPackageUpgrade = async 
   });
   if (!affected.length) return [];
 
+  const deployment = caller.diagnosticsScope === "deployment";
   const visible = new Set<string>();
-  if (caller.domainId) {
+  if (!deployment && caller.domainId) {
     try {
       for (const id of await grantedProductIds("use", caller.credentials)) visible.add(id);
     } catch (error) {
       if (!(error instanceof HttpError && (error.status === 401 || error.status === 403))) throw error;
     }
   }
-  const canSee = ({ domainId, id }: { domainId: string | null; id: string }) =>
-    domainId === null || (domainId === caller.domainId && visible.has(id));
-  const found = new Map<string, DeclarationChange & { component: string; projectionIds: Set<string>; panelIds: Set<string> }>();
+  type ResourceRef = ComponentPackageUpgradeChange["projections"][number];
+  const canSee = ({ domainId, id }: ResourceRef) =>
+    deployment || domainId === null || (domainId === caller.domainId && visible.has(id));
+  const found = new Map<string, DeclarationChange & {
+    component: string; projections: Map<string, ResourceRef>; panels: Map<string, ResourceRef>;
+  }>();
   for (const projection of affected) {
+    const { component, id, domainId } = projection;
+    const projectionKey = productReferenceKey(projection);
     for (const change of projection.changes) {
-      const { component } = projection;
       const key = JSON.stringify([component, change.field, change.before, change.after]);
-      const entry = found.get(key) ?? { ...change, component, projectionIds: new Set(), panelIds: new Set() };
-      if (canSee(projection)) entry.projectionIds.add(projection.id);
-      for (const panel of users.get(productReferenceKey(projection))?.values() ?? []) {
-        if (canSee(panel)) entry.panelIds.add(panel.id);
+      const entry = found.get(key) ?? { ...change, component, projections: new Map(), panels: new Map() };
+      if (canSee(projection)) entry.projections.set(projectionKey, { id, domainId });
+      for (const panel of users.get(projectionKey)?.values() ?? []) {
+        if (canSee(panel)) entry.panels.set(productReferenceKey(panel), { id: panel.id, domainId: panel.domainId });
       }
       found.set(key, entry);
     }
   }
-  return [...found.values()].map(({ projectionIds, panelIds, ...change }) =>
-    ({ ...change, projectionIds: [...projectionIds].sort(), panelIds: [...panelIds].sort() }))
-    .sort((left, right) => left.component.localeCompare(right.component) || left.field.localeCompare(right.field));
+  const references = (entries: Map<string, ResourceRef>) => [...entries.values()]
+    .sort((left, right) => (left.domainId ?? "").localeCompare(right.domainId ?? "") || left.id.localeCompare(right.id));
+  const ids = (entries: ResourceRef[]) => [...new Set(entries.map(({ id }) => id))].sort();
+  return [...found.values()].map(({ projections, panels, ...change }) => {
+    const affectedProjections = references(projections);
+    const affectedPanels = references(panels);
+    return { ...change, projections: affectedProjections, panels: affectedPanels,
+      projectionIds: ids(affectedProjections), panelIds: ids(affectedPanels) };
+  }).sort((left, right) => left.component.localeCompare(right.component) || left.field.localeCompare(right.field));
 };

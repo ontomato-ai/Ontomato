@@ -2215,10 +2215,11 @@ test("a refused component package upgrade reports the changed shape and its affe
     component: "@acme/widgets:SaveButton", field: "inputs.task",
     before: { kind: "object", objectType: SCHEDULED_TASK },
     projectionIds: ["save-task"], panelIds: ["manage-tasks"],
+    projections: [{ id: "save-task", domainId: "domain" }], panels: [{ id: "manage-tasks", domainId: "domain" }],
   };
   const response = {
     success: false, error: "The task input is still in use", code: COMPONENT_PACKAGE_INCOMPATIBLE,
-    details: { package: "@acme/widgets", changes: [change] },
+    details: { package: "@acme/widgets", scope: "deployment", changes: [change] },
   };
   assert.deepEqual(componentPackageUpgradeErrorSchema.parse(response), response);
   assert.equal(componentPackageUpgradeErrorSchema.safeParse({

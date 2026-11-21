@@ -115,14 +115,16 @@ export type ComponentPackageResponse = z.infer<typeof componentPackageResponseSc
 
 export const COMPONENT_PACKAGE_INCOMPATIBLE = "COMPONENT_PACKAGE_INCOMPATIBLE";
 const productId = productCurrentIdParamsSchema.shape.id;
+const affectedResource = z.object({ id: productId, domainId: productId.nullable() }).strict();
 
-/** HTTP 409. IDs are limited to affected resources the caller may see. Omit a shape when that side has no field. */
+/** HTTP 409. Domain diagnostics show visible references; deployment diagnostics show all references. */
 export const componentPackageUpgradeErrorSchema = z.object({
   success: z.literal(false),
   error: nonblank,
   code: z.literal(COMPONENT_PACKAGE_INCOMPATIBLE),
   details: z.object({
     package: componentPackageNameSchema,
+    scope: z.enum(["domain", "deployment"]),
     changes: z.array(z.object({
       component: componentId,
       field: nonblank,
@@ -130,6 +132,8 @@ export const componentPackageUpgradeErrorSchema = z.object({
       after: runtimeJsonValueSchema.optional(),
       projectionIds: z.array(productId),
       panelIds: z.array(productId),
+      projections: z.array(affectedResource),
+      panels: z.array(affectedResource),
     }).strict()).nonempty(),
   }).strict(),
 }).strict();
