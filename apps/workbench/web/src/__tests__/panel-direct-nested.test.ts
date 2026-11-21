@@ -116,6 +116,8 @@ it("runs the panel the state chooses in place, publishing its operations and con
       detail: {
         target: { fromState: "detailPanel", candidates: { rule: "usable" } },
         inputs: { task: { state: "task" } }, outputs: { note: { state: "picked" } },
+        // The placement's theme: the host lays it over the placed panel's own, where it mounts that panel.
+        theme: { light: { "--el-color-primary": "#0a7d4f" } },
       },
     },
     commands: {},
@@ -128,7 +130,7 @@ it("runs the panel the state chooses in place, publishing its operations and con
     members: { approve: { target: { projectionId: "tasks-a" } } },
     commands: {},
   };
-  const placed: { path: PanelMemberPath; initial: unknown; inner: ReturnType<typeof createDirectPanelInstance>; dispose: ReturnType<typeof vi.fn> }[] = [];
+  const placed: { path: PanelMemberPath; initial: unknown; theme: unknown; inner: ReturnType<typeof createDirectPanelInstance>; dispose: ReturnType<typeof vi.fn> }[] = [];
   const outer = createDirectPanelInstance(outerManifest, {
     ...base(reads, { "tasks-a": list("tasks-a") }), initial: { detailPanel: chosenPanel("p-1"), task: task("t-1") },
     // The host runs the placed panel at the outer path plus the member's segment, as its own instance.
@@ -141,7 +143,7 @@ it("runs the panel the state chooses in place, publishing its operations and con
       element.className = "inner-panel";
       element.textContent = `Panel ${(path[0]!.selection as { target: { panelId: string } }).target.panelId}`;
       const dispose = vi.fn();
-      placed.push({ path: path as PanelMemberPath, initial: run.initial, inner, dispose });
+      placed.push({ path: path as PanelMemberPath, initial: run.initial, theme: run.theme, inner, dispose });
       return { element, mount: { instance: inner, refresh: vi.fn(), projectionsChanged: vi.fn(), activate: vi.fn(), dispose } };
     },
   });
@@ -149,6 +151,7 @@ it("runs the panel the state chooses in place, publishing its operations and con
   const segment = (id: string) => ({ member: "detail", selection: { stateValue: chosenPanel(id), target: { panelId: id } } });
   await vi.waitFor(() => expect(element.querySelector(".inner-panel")?.textContent).toBe("Panel p-1"));
   expect(placed.map(({ path, initial }) => [path, initial])).toEqual([[[segment("p-1")], { task: task("t-1") }]]);
+  expect(placed[0]!.theme).toEqual({ light: { "--el-color-primary": "#0a7d4f" } });
 
   // Its operations are this panel's too, under their full path, found by it; its reads name the same path.
   const approvePath = [segment("p-1"), { member: "approve" }];
