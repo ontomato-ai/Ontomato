@@ -41,12 +41,12 @@ describe("a draft no form of the panel performs", () => {
 
     // The draft is held, and the form's slot has not registered: nothing is refused yet.
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(host.querySelector(".panel-host-notice")).toBeNull();
+    expect(host.querySelector(".panel-host-draft")).toBeNull();
 
     // The slot registers, and it performs another operation: the reason is said above the panel, which stays.
     release();
     await vi.waitFor(
-      () => expect(host.querySelector(".panel-host-notice")?.textContent).toBe("This page has no form that takes this draft for platform:ScheduledTask (platform:Dashboard.save)"),
+      () => expect(host.querySelector(".panel-host-draft .el-alert__title")?.textContent).toBe("This page has no form that takes this draft for platform:ScheduledTask (platform:Dashboard.save)"),
       { timeout: 5000 },
     );
     expect(host.querySelector(".panel-host-error")).toBeNull();
