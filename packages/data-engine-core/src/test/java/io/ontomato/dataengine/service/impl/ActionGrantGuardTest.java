@@ -227,6 +227,27 @@ class ActionGrantGuardTest {
   }
 
   @Test
+  void anActionWhoseFunctionIsGoneCannotRunAndSaysSo() {
+    publishedAction();
+    // The stored row still names its function, but that function's row is gone.
+    when(functionDao.queryById(FUNCTION_ID)).thenReturn(null);
+    grantAnswer(true);
+    when(lang.get(anyString(), eq("Action.functionMissing"))).thenReturn("This action's function no longer exists");
+
+    OwnerRefusal executed = assertThrows(OwnerRefusal.class,
+        () -> service.execute(ACTION_ID, params(), LANG, alice, permission, 5));
+    OwnerRefusal opened = assertThrows(OwnerRefusal.class,
+        () -> service.form(ACTION_ID, new JSONObject(), null, List.of(), LANG, alice));
+
+    // It exists in the caller's domain, so it is not reported as missing or as another domain's.
+    for (OwnerRefusal refusal : List.of(executed, opened)) {
+      assertEquals("ACTION_NOT_EXECUTABLE", refusal.code());
+      assertEquals("This action's function no longer exists", refusal.getMessage());
+    }
+    verify(grants, never()).admission(anyString(), anyString(), anyString(), anyString());
+  }
+
+  @Test
   void anUnknownActionReportsNotFoundRatherThanNotGranted() throws Exception {
     when(actionDao.queryById(ACTION_ID)).thenReturn(null);
     when(lang.get(anyString(), eq("Action.notFound"))).thenReturn("Action not found");

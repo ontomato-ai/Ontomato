@@ -901,11 +901,23 @@ it("reads agent settings and reference options with the panel viewer", async () 
   expect(await describeSave({ agent: null })).toMatchObject({
     status: "ready", value: { save: { kind: "form.save", target: { source: "draft", slot: "definition" } } },
   });
-  expect(await ready("agents", "rows")).toContainEqual(expect.objectContaining({ primaryKey: agentId, label: "Inventory analyst" }));
+  const disabled = { primaryKey: agentId, label: "Inventory analyst",
+    fields: { name: "Inventory analyst", description: "Inventory summary", enabled: "Disabled" }, tones: { enabled: "default" } };
+  expect(await ready("agents", "rows")).toContainEqual(expect.objectContaining(disabled));
   expect(await ready("summary", "record", { agent })).toMatchObject({
-    primaryKey: agentId, fields: { description: "Inventory summary", enabled: "false" },
-    fieldLabels: { description: "Description", enabled: "Enabled" },
+    ...disabled, fieldLabels: { description: "Description", enabled: "Enabled" },
   });
+  const setEnabled = (enabled: boolean) => state.pool!.query(
+    `UPDATE "${state.schema}".assistant_agents SET enabled=$2 WHERE id=$1`, [agentId, enabled],
+  );
+  await setEnabled(true);
+  try {
+    const enabled = { ...disabled, fields: { ...disabled.fields, enabled: "Enabled" }, tones: { enabled: "success" } };
+    expect(await ready("agents", "rows")).toContainEqual(expect.objectContaining(enabled));
+    expect(await ready("summary", "record", { agent })).toMatchObject(enabled);
+  } finally {
+    await setEnabled(false);
+  }
   const form = panelFormDescriptionSchema.parse(await ready("definition", "form", { agent }));
   expect(form.values).toMatchObject({ name: "Inventory analyst", enabled: false, skills: [] });
   expect(form.fields.find(field => field.path === "/executionUserId")?.readOnly).toBe(true);
