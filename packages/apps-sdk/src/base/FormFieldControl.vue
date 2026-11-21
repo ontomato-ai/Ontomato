@@ -233,23 +233,23 @@ const addObject = () => set(control.value.kind === "object" ? control.value.defa
 .sdk-form-avatar {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--spacing-sm);
 }
 .sdk-form-avatar-choices {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--spacing-xs);
 }
 .sdk-form-avatar-icon,
 .sdk-form-avatar-color {
   align-items: center;
-  border: 1px solid var(--el-border-color);
-  border-radius: 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
   cursor: pointer;
   display: inline-flex;
-  height: 32px;
+  height: var(--control-height);
   justify-content: center;
-  width: 32px;
+  width: var(--control-height);
 }
 .sdk-form-avatar-icon {
   background: var(--el-bg-color);
@@ -257,8 +257,8 @@ const addObject = () => set(control.value.kind === "object" ? control.value.defa
 }
 .sdk-form-avatar-icon.active,
 .sdk-form-avatar-color.active {
-  border-color: var(--el-color-primary);
-  box-shadow: 0 0 0 1px var(--el-color-primary);
+  border-color: var(--brand-link);
+  box-shadow: 0 0 0 1px var(--brand-link);
 }
 .sdk-form-avatar-icon:disabled,
 .sdk-form-avatar-color:disabled {
@@ -269,19 +269,19 @@ const addObject = () => set(control.value.kind === "object" ? control.value.defa
   width: 100%;
 }
 .sdk-owner-form-field-changed > :deep(.el-form-item__label) {
-  color: var(--el-color-primary);
+  color: var(--brand-link);
 }
 .sdk-form-field-help {
   color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
   line-height: 1.5;
-  margin: 4px 0 0;
+  margin: var(--spacing-xs) 0 0;
 }
 .sdk-form-field-time {
   width: 160px;
 }
 .sdk-form-field-unavailable {
-  color: var(--el-color-danger);
+  color: var(--el-color-danger-text);
   font-size: var(--text-xs);
   margin: 0;
 }
@@ -289,22 +289,22 @@ const addObject = () => set(control.value.kind === "object" ? control.value.defa
 .sdk-form-object {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--spacing-sm);
   width: 100%;
 }
 .sdk-form-string-row {
   display: flex;
-  gap: 8px;
+  gap: var(--spacing-sm);
 }
 .sdk-form-row {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  padding: 8px 12px;
+  border: 1px solid var(--ui-divider);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
 }
 .sdk-form-row-fields {
   display: flex;
   flex-wrap: wrap;
-  gap: 0 12px;
+  gap: 0 var(--spacing-md);
 }
 .sdk-form-row-fields > .sdk-form-field {
   flex: 1 1 160px;

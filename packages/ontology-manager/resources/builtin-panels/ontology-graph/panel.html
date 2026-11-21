@@ -2,7 +2,7 @@
   .ontology-graph {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--spacing-md);
     min-width: 0;
   }
   .ontology-graph-head {
@@ -10,37 +10,37 @@
     flex-wrap: wrap;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 12px;
+    gap: var(--spacing-md);
   }
   .ontology-graph-head h1 {
     margin: 0;
     color: var(--el-text-color-primary);
-    font-size: 18px;
-    line-height: 26px;
+    font-size: var(--text-title);
+    line-height: var(--leading-reading);
   }
   .ontology-graph-head p {
-    margin: 2px 0 0;
+    margin: calc(var(--spacing-xs) / 2) 0 0;
     color: var(--el-text-color-secondary);
-    font-size: 13px;
+    font-size: var(--text-sm);
   }
   .ontology-graph-actions {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: var(--spacing-lg);
     color: var(--el-text-color-secondary);
-    font-size: 13px;
+    font-size: var(--text-sm);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
   .ontology-graph-actions strong {
     color: var(--el-text-color-primary);
-    font-weight: 600;
+    font-weight: var(--font-semibold);
   }
   .ontology-graph-body {
     display: grid;
     grid-template-columns: 260px minmax(320px, 1fr) 320px;
-    border: 1px solid var(--el-border-color);
-    border-radius: 6px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--radius-sm);
     overflow: hidden;
     min-height: 0;
   }
@@ -48,13 +48,13 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
-    border-right: 1px solid var(--el-border-color);
+    border-right: 1px solid var(--ui-border);
   }
   .ontology-graph-search {
     display: grid;
-    gap: 8px;
-    padding: 12px;
-    border-bottom: 1px solid var(--el-border-color-light);
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--ui-border);
   }
   .ontology-graph-search .el-segmented {
     width: 100%;
@@ -62,39 +62,39 @@
   .ontology-graph-list {
     flex: 1;
     overflow: auto;
-    padding: 8px;
+    padding: var(--spacing-sm);
     max-height: 560px;
   }
   .ontology-graph-list > section + section {
-    margin-top: 12px;
+    margin-top: var(--spacing-md);
   }
   .ontology-graph-list > section > p {
-    margin: 0 6px 5px;
+    margin: 0 var(--spacing-xs) var(--spacing-xs);
     color: var(--el-text-color-tertiary);
-    font-size: 12px;
-    font-weight: 600;
+    font-size: var(--text-xs);
+    font-weight: var(--font-semibold);
   }
   .resource-row {
     display: flex;
     width: 100%;
     align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-xs) var(--spacing-sm);
     border: 0;
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     background: transparent;
     color: var(--el-text-color-secondary);
     text-align: left;
     cursor: pointer;
   }
   .resource-row:hover {
-    background: var(--el-fill-color-light);
+    background: var(--ui-fill-tertiary);
   }
   .resource-row.active {
-    background: var(--el-color-primary-light-9);
+    background: var(--ui-fill-secondary);
   }
   .resource-row.active strong {
-    color: var(--el-color-primary);
+    color: var(--brand-link);
   }
   .resource-copy {
     display: flex;
@@ -110,27 +110,27 @@
   }
   .resource-copy strong {
     color: var(--el-text-color-primary);
-    font-size: 13px;
-    font-weight: 500;
+    font-size: var(--text-sm);
+    font-weight: var(--font-medium);
   }
   .resource-copy small {
     color: var(--el-text-color-tertiary);
-    font-size: 11px;
+    font-size: var(--text-xs);
   }
   .resource-icon {
     display: grid;
     width: 24px;
-    height: 24px;
+    height: var(--control-height-inline);
     flex: 0 0 24px;
     place-items: center;
-    border-radius: 4px;
-    background: var(--el-color-primary-light-9);
-    color: var(--el-color-primary);
-    font-size: 11px;
+    border-radius: var(--radius-xs);
+    background: var(--ui-fill-secondary);
+    color: var(--brand-link);
+    font-size: var(--text-xs);
   }
   .resource-icon.relation {
     background: var(--el-fill-color);
-    color: var(--el-color-warning);
+    color: var(--el-color-warning-text);
   }
   .ontology-graph-canvas {
     position: relative;
@@ -138,7 +138,7 @@
     height: 100%;
     min-height: 420px;
     background-color: var(--el-bg-color-page);
-    background-image: radial-gradient(var(--el-border-color) 1px, transparent 1px);
+    background-image: radial-gradient(var(--ui-border) 1px, transparent 1px);
     background-size: 20px 20px;
   }
   .ontology-graph-stage {
@@ -147,21 +147,21 @@
   }
   .graph-toolbar {
     position: absolute;
-    bottom: 14px;
-    left: 14px;
+    bottom: var(--spacing-md);
+    left: var(--spacing-md);
     display: flex;
-    gap: 6px;
-    padding: 6px;
-    border-radius: 6px;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-xs);
+    border-radius: var(--radius-sm);
     background: var(--el-bg-color-overlay);
     box-shadow: var(--el-box-shadow-light);
   }
   .graph-hint {
     position: absolute;
-    right: 14px;
-    bottom: 18px;
+    right: var(--spacing-md);
+    bottom: var(--spacing-lg);
     color: var(--el-text-color-tertiary);
-    font-size: 12px;
+    font-size: var(--text-xs);
   }
   .graph-empty {
     position: absolute;
@@ -169,20 +169,20 @@
     display: grid;
     place-content: center;
     justify-items: center;
-    gap: 6px;
+    gap: var(--spacing-xs);
     color: var(--el-text-color-secondary);
-    font-size: 13px;
+    font-size: var(--text-sm);
     text-align: center;
   }
   .graph-empty strong {
     color: var(--el-text-color-primary);
-    font-size: 14px;
+    font-size: var(--text-base);
   }
   .ontology-graph-inspector {
     display: flex;
     flex-direction: column;
     min-width: 0;
-    border-left: 1px solid var(--el-border-color);
+    border-left: 1px solid var(--ui-border);
     overflow: auto;
     max-height: 640px;
   }
@@ -190,61 +190,61 @@
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 8px;
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--el-border-color-light);
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-bottom: 1px solid var(--ui-border);
   }
   .inspector-heading strong {
     color: var(--el-text-color-primary);
-    font-size: 13px;
+    font-size: var(--text-sm);
   }
   .inspector-heading small {
     color: var(--el-text-color-tertiary);
-    font-size: 11px;
+    font-size: var(--text-xs);
   }
   .path-panel {
-    border-bottom: 1px solid var(--el-border-color);
+    border-bottom: 1px solid var(--ui-border);
   }
   .path-controls {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
-    gap: 6px;
-    padding: 12px;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-md);
   }
   .path-arrow {
     color: var(--el-text-color-tertiary);
   }
   .path-panel .el-button {
     width: calc(100% - 24px);
-    margin: 0 12px 12px;
+    margin: 0 var(--spacing-md) var(--spacing-md);
   }
   .path-message {
-    margin: 0 12px 12px;
+    margin: 0 var(--spacing-md) var(--spacing-md);
     color: var(--el-text-color-regular);
-    font-size: 12px;
+    font-size: var(--text-xs);
   }
   .path-message.miss {
-    color: var(--el-color-warning);
+    color: var(--el-color-warning-text);
   }
   .detail-content {
-    padding: 12px;
+    padding: var(--spacing-md);
   }
   .detail-title {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 8px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--el-border-color-light);
+    gap: var(--spacing-sm);
+    padding-bottom: var(--spacing-sm);
+    border-bottom: 1px solid var(--ui-border);
   }
   .detail-title h2 {
     margin: 0;
     overflow: hidden;
     color: var(--el-text-color-primary);
-    font-size: 14px;
-    font-weight: 600;
-    line-height: 20px;
+    font-size: var(--text-base);
+    font-weight: var(--font-semibold);
+    line-height: var(--leading-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -253,59 +253,59 @@
     display: block;
     overflow: hidden;
     color: var(--el-text-color-tertiary);
-    font-family: var(--el-font-family-mono, ui-monospace, monospace);
-    font-size: 11px;
+    font-family: var(--el-font-family-mono);
+    font-size: var(--text-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .detail-description {
-    margin: 8px 0 0;
+    margin: var(--spacing-sm) 0 0;
     color: var(--el-text-color-secondary);
-    font-size: 13px;
+    font-size: var(--text-sm);
     line-height: 1.6;
   }
   .detail-section {
-    margin-top: 12px;
+    margin-top: var(--spacing-md);
   }
   .section-label {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--el-border-color-light);
+    padding-bottom: var(--spacing-xs);
+    border-bottom: 1px solid var(--ui-border);
     color: var(--el-text-color-primary);
-    font-size: 13px;
-    font-weight: 600;
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
   }
   .section-label small {
     color: var(--el-text-color-tertiary);
-    font-weight: 400;
+    font-weight: var(--font-normal);
   }
   .attribute-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    padding: 6px 0;
-    border-bottom: 1px solid var(--el-border-color-extra-light);
+    gap: var(--spacing-sm);
+    padding: var(--spacing-xs) 0;
+    border-bottom: 1px solid var(--ui-divider);
   }
   .attribute-row strong {
     color: var(--el-text-color-regular);
-    font-size: 13px;
-    font-weight: 500;
+    font-size: var(--text-sm);
+    font-weight: var(--font-medium);
   }
   .connection-row {
     display: grid;
     width: 100%;
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
-    gap: 6px;
-    padding: 7px 0;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-sm) 0;
     border: 0;
-    border-bottom: 1px solid var(--el-border-color-extra-light);
+    border-bottom: 1px solid var(--ui-divider);
     background: transparent;
     color: var(--el-text-color-regular);
-    font-size: 12px;
+    font-size: var(--text-xs);
     text-align: left;
     cursor: pointer;
   }
@@ -315,20 +315,20 @@
   .connection-name {
     max-width: 96px;
     overflow: hidden;
-    color: var(--el-color-primary);
+    color: var(--brand-link);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .relation-flow {
     display: grid;
-    gap: 10px;
-    margin-top: 12px;
+    gap: var(--spacing-sm);
+    margin-top: var(--spacing-md);
   }
   .relation-flow button {
-    min-height: 40px;
-    border: 1px solid var(--el-border-color);
-    border-radius: 4px;
-    background: var(--el-fill-color-light);
+    min-height: var(--control-height-lg);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--radius-xs);
+    background: var(--ui-fill-tertiary);
     color: var(--el-text-color-primary);
     cursor: pointer;
   }
@@ -336,29 +336,29 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    color: var(--el-color-primary);
-    font-size: 12px;
+    gap: var(--spacing-xs);
+    color: var(--brand-link);
+    font-size: var(--text-xs);
   }
   .inspector-empty {
     display: grid;
     flex: 1;
     place-content: center;
     justify-items: center;
-    gap: 6px;
-    padding: 28px 18px;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-xl) var(--spacing-lg);
     color: var(--el-text-color-secondary);
-    font-size: 12px;
+    font-size: var(--text-xs);
     text-align: center;
   }
   .inspector-empty strong {
     color: var(--el-text-color-primary);
-    font-size: 13px;
+    font-size: var(--text-sm);
   }
   .muted-note {
-    margin: 8px 0 0;
+    margin: var(--spacing-sm) 0 0;
     color: var(--el-text-color-tertiary);
-    font-size: 12px;
+    font-size: var(--text-xs);
   }
   @media (max-width: 1180px) {
     .ontology-graph-body {
@@ -372,7 +372,7 @@
     .ontology-graph-explorer,
     .ontology-graph-inspector {
       border: 0;
-      border-bottom: 1px solid var(--el-border-color);
+      border-bottom: 1px solid var(--ui-border);
     }
     .ontology-graph-canvas {
       min-height: 460px;

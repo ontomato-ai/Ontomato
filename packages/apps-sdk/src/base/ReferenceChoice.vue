@@ -157,20 +157,20 @@ function choose(keys: string | string[] | undefined) {
   width: 100%;
 }
 .sdk-reference-picker-changed :deep(.el-form-item__label) {
-  color: var(--el-color-primary);
+  color: var(--brand-link);
 }
 .sdk-reference-picker-notes {
-  color: var(--el-color-warning);
+  color: var(--el-color-warning-text);
   font-size: var(--text-xs);
   line-height: 1.5;
   list-style: none;
-  margin: 4px 0 0;
+  margin: var(--spacing-xs) 0 0;
   padding: 0;
 }
 .sdk-reference-picker-help {
   color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
   line-height: 1.5;
-  margin: 4px 0 0;
+  margin: var(--spacing-xs) 0 0;
 }
 </style>

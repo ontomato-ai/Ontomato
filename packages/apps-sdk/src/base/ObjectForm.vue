@@ -489,16 +489,16 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
 .sdk-owner-form-actions {
   display: flex;
   justify-content: flex-end;
-  margin-block-start: 12px;
+  margin-block-start: var(--spacing-md);
 }
 .sdk-owner-form-changed {
-  color: var(--el-color-primary);
+  color: var(--brand-link);
   font-size: var(--text-xs);
-  margin: 4px 0 0;
+  margin: var(--spacing-xs) 0 0;
 }
 .sdk-owner-form-refusal {
-  color: var(--el-color-danger);
-  font-size: 12px;
-  margin: 4px 0 0;
+  color: var(--el-color-danger-text);
+  font-size: var(--text-xs);
+  margin: var(--spacing-xs) 0 0;
 }
 </style>

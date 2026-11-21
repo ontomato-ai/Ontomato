@@ -181,12 +181,12 @@ function includeAdjacent() {
   align-self: flex-start;
 }
 .sdk-object-graph-changed :deep(.el-form-item__label) {
-  color: var(--el-color-primary);
+  color: var(--brand-link);
 }
 .sdk-object-graph-help {
   color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
   line-height: 1.5;
-  margin: 4px 0 0;
+  margin: var(--spacing-xs) 0 0;
 }
 </style>
