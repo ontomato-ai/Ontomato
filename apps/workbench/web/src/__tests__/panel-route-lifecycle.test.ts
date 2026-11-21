@@ -190,6 +190,7 @@ it("shares one definition stream across author panels, restores a changed collec
   }
   const signals = () => vi.mocked(fetch).mock.calls
     .filter(([url]) => String(url).endsWith("/definition-stream")).map(([, init]) => init!.signal!);
+  const language = { locale: "en", fallback: "en" };
   const labels = {
     notStarted: "Panel has not started",
     failures: { fileUnavailable: "File unavailable", scriptThrew: "Script threw", scriptRejected: "Script rejected" },
@@ -200,8 +201,8 @@ it("shares one definition stream across author panels, restores a changed collec
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/", component: { render: () => null } }] });
   await router.push("/");
   const page = mountPlatformPage(() => h("main", [
-    showP.value ? h(PanelHost, { key: "p", port: portA, address: useP.path, labels }) : null,
-    h(PanelHost, { key: "q", port: portB, address: useQ.path, labels, initial: deepState }),
+    showP.value ? h(PanelHost, { key: "p", port: portA, address: useP.path, labels, language }) : null,
+    h(PanelHost, { key: "q", port: portB, address: useQ.path, labels, language, initial: deepState }),
   ]), router);
   try {
     await vi.waitFor(() => expect(streams.at(-1)?.targets).toEqual(expect.arrayContaining([

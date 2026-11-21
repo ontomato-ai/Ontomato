@@ -58,7 +58,9 @@ const emit = defineEmits<{
 
 const route = useRoute();
 const router = useRouter();
-const { t, locale } = useI18n();
+const { t, locale, fallbackLocale } = useI18n();
+/** The language a panel's own name is given in: the reader's, else the deployment's default. */
+const language = computed(() => ({ locale: locale.value, fallback: String(fallbackLocale.value) }));
 /** The application's use relations, once Java has answered; until then the page names none and says nothing. */
 const uses = ref<readonly ApplicationPanelUse[] | null>(null);
 /** The shown page's instance, which the conversation's object signal reaches; kept pages are reconciled when shown again. */
@@ -366,6 +368,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
       :ref="(instance) => { if (page === shownPage) host = instance as ShownInstance | null; }"
       :port="page.port"
       :labels="labels"
+      :language="language"
       :shown="page === shownPage"
       :address="addressOf(page)"
       :initial="stateOf(page)"

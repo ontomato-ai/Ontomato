@@ -10,7 +10,7 @@ import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer,
 /*
  * A panel application's page at its own address is titled and, when its menu does not reach it, given its way back by the
  * platform (big main's ruling, 2026-11-21): the panel draws neither. The title is what a message names the page by — the
- * entry's menu name, else its panel's own name; the way back returns to the page the reader came from, or to the
+ * entry's menu name, else its panel's own name in the reader's language; the way back returns to the page the reader came from, or to the
  * application's root when the page was opened directly.
  *
  * Real route, panel host and SDK, under a frame that reads the heading the way the platform's layout does; the network is
@@ -21,7 +21,9 @@ import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer,
  */
 
 const application = "app-heading";
-const panel = panelRecord("panel-report", "Governance report", definePanel({ state: {}, members: {}, events: {} }));
+const panel = panelRecord("panel-report", "governance-report", definePanel({ state: {}, members: {}, events: {} }));
+// The panel's own name in the reader's language, which stands where its registered name would.
+panel.content.messages = { en: { "panel.name": "Governance report" }, "zh-CN": { "panel.name": "治理报告" } };
 const listed = { ...panelUse("use-knowledge", "knowledge", panel.id, `/applications/${application}/knowledge`), names: { en: "Business knowledge" } };
 const unlisted = panelUse("use-report", "report", panel.id, `/applications/${application}/report`);
 
@@ -75,7 +77,7 @@ it("titles an entry its menu does not reach by its panel's name, and leads back 
   try {
     const shown = await vi.waitFor(async () => {
       const current = await named();
-      if (current.title !== panel.name) throw new Error("The panel has not reported its name yet");
+      if (current.title !== "Governance report") throw new Error("The panel has not reported its name yet: " + current.title);
       return current;
     });
     expect(shown.back).toBeTypeOf("function");
