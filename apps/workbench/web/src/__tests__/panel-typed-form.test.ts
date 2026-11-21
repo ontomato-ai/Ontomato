@@ -109,7 +109,7 @@ const manifest = definePanel({
     model: { target: { projectionId: "agent-model-choice" }, inputs: {}, formField: { slot: "definition", path: "/modelSelection/modelId" } },
     scope: { target: { projectionId: "agent-data-scope" }, inputs: {}, formField: { slot: "definition", path: "/classNames" } },
   },
-  events: {},
+  commands: {},
 });
 const panel = panelRecord("panel-agent-settings", "Agent settings", manifest);
 const use = panelUse("use-agent-settings", "agent-settings", panel.id, "/ontology/agents");

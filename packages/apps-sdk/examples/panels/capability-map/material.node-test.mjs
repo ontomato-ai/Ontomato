@@ -12,7 +12,7 @@ import test from "node:test";
  *   `productProjectionInputSchema` and `registerProductProjectionRequestSchema`, using
  *   `{ kind: "PlatformObjectType", id: "platform:OntologyType" }` data reads and runtime-supplied list search/page.
  *   The static mode switcher renders directly with `<segmented-control>` rather than as a projection.
- * - The panel manifest validates against `panelManifestSchema` (`members` + `events`), carries no `sdkVersion`,
+ * - The panel manifest validates against `panelManifestSchema` (`members` + `commands`), carries no `sdkVersion`,
  *   keeps its rendering module (`content.module`), and matches `candidatePanelSourceSchema`.
  * - Every `en` / `zh-CN` message key matches across locales and covers all event and projection config label keys.
  */
@@ -122,7 +122,7 @@ test("capability-map panel input, candidate files, and locale messages validate 
     );
     const enKeys = Object.keys(messages.en).sort();
     const zhKeys = Object.keys(messages["zh-CN"]).sort();
-    const eventLabelKeys = Object.values(parsedPanel.manifest.events).map((event) => event.labelKey);
+    const commandLabelKeys = Object.values(parsedPanel.manifest.commands).map((command) => command.labelKey);
     const configLabelKeys = projections.flatMap(({ input: p }) => {
       const optionKeys = Array.isArray(p.config.options)
         ? p.config.options.map((opt) => opt?.labelKey)
@@ -139,7 +139,7 @@ test("capability-map panel input, candidate files, and locale messages validate 
       candidateMembers: Object.keys(candidate.panel.manifest.members).sort(),
       allMembersReferenceDeclaredProjections: referencedIds.every((id) => id !== null && projectionIds.has(id)),
       localesMatch: JSON.stringify(enKeys) === JSON.stringify(zhKeys),
-      allLabelKeysTranslated: [...eventLabelKeys, ...configLabelKeys].every(
+      allLabelKeysTranslated: [...commandLabelKeys, ...configLabelKeys].every(
         (key) => Boolean(messages.en[key]) && Boolean(messages["zh-CN"][key]),
       ),
       selectedAcceptsOntologyType: matchesDirectPanelValue(parsedPanel.manifest.state.selected.type, {

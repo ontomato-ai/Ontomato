@@ -44,7 +44,7 @@ const manifest = definePanel({
     remove: { target: { projectionId: "knowledge-remove" }, inputs: { entry: { state: "selectedKnowledge" } } },
     removeAll: { target: { projectionId: "knowledge-remove-all" }, inputs: { entry: { state: "checkedKnowledge" } } },
   },
-  events: {},
+  commands: {},
 });
 const panel = panelRecord("panel-knowledge-operations", "Business knowledge", manifest);
 const use = panelUse("use-knowledge-operations", "knowledge-operations", panel.id, "/applications/app-knowledge/entries");

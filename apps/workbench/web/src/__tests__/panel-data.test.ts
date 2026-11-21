@@ -37,7 +37,7 @@ const manifest: DirectPanelManifest = {
     // A member the panel's code neither reads nor draws: its own buttons run its operation.
     actions: { target: { projectionId: taskData.id }, inputs: { task: { state: "selectedTask" } } },
   },
-  events: {},
+  commands: {},
 };
 const record = (primaryKey: string) => ({ primaryKey, label: `Task ${primaryKey}`, fields: {} });
 const chosen = (primaryKey: string) => ({ className: SCHEDULED_TASK, primaryKey });
@@ -221,7 +221,7 @@ it("reads a list and its counts again when an operation reports their type chang
   const module = panelModuleFor({
     mounted, element, template: `<p class="counts">{{ pendingCount }}</p><p class="rows">{{ rowCount }}</p>`,
     install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
-    manifest: definePanel({ state: {}, members: { board: { target: { projectionId: counted.id } } }, events: {} }),
+    manifest: definePanel({ state: {}, members: { board: { target: { projectionId: counted.id } } }, commands: {} }),
     run: {
       pageKey: "board", url: () => "/board", label: () => "Board", initial: {},
       state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},

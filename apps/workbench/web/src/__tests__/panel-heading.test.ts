@@ -21,7 +21,7 @@ import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer,
  */
 
 const application = "app-heading";
-const panel = panelRecord("panel-report", "governance-report", definePanel({ state: {}, members: {}, events: {} }));
+const panel = panelRecord("panel-report", "governance-report", definePanel({ state: {}, members: {}, commands: {} }));
 // The panel's own name in the reader's language, which stands where its registered name would.
 panel.content.messages = { en: { "panel.name": "Governance report" }, "zh-CN": { "panel.name": "治理报告" } };
 const listed = { ...panelUse("use-knowledge", "knowledge", panel.id, `/applications/${application}/knowledge`), names: { en: "Business knowledge" } };

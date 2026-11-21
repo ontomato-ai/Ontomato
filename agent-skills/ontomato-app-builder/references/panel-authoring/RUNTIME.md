@@ -156,14 +156,16 @@ updating the editor or announcing a successful write.
 
 ## Header commands and navigation
 
-Declare each page-header command under `manifest.commands` with a localized `labelKey` and a `do` action.
-Use `primary: true` to mark the main command. Use `commands: {}` when the panel has no header commands.
-Handle component-driven interactions in Vue.
+Each `manifest.commands` entry is a page-header command with a required `labelKey` and a `do` action; at most one is
+`primary: true`, the header's main button. `manifest.commands` is required; use `commands: {}` when the panel has no
+header commands. A command's values are literals or state fields. A `do.set` field must be a `deepLink: true` state field,
+so the changed address reproduces the page. Handle component-driven interactions (a selection, an output) in Vue.
 `do.open` with `mode: "entry"` describes a `platform:ApplicationPanelUse` reference and optional destination state inputs.
+In the current direct runtime, an open command reports that the SDK opens no entry or member from a command.
 For a browser button or component output that should navigate, call `usePanelContext().navigate` with the registered path
 from `panel uses <application-id>` and, when needed, the destination's deep-linkable state.
 
-The generated page skill gives the assistant the address or operation for each header command.
+For the assistant, the generated page skill's Panel commands section gives the address or operation for each command.
 `do.set` opens the current entry with the changed deep-linkable fields in `state`. `do.invoke` calls the listed
 owner operation. `do.open` follows the indicated destination address. Use a declared operation ID for `/operate`.
 

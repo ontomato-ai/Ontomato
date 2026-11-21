@@ -32,7 +32,7 @@ const panel = definePanel({
     taskForm: { target: { projectionId: "projection-task-form" }, inputs: { task: { state: "selectedTask" } } },
     runTask: { target: { projectionId: "projection-run-task" }, inputs: { task: { state: "selectedTask" } } },
   },
-  events: {
+  commands: {
     "task.clear": { labelKey: "tasks.clear", do: { set: { fields: { selectedTask: { literal: null } } } } },
   },
 });

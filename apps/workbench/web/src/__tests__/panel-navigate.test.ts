@@ -35,7 +35,7 @@ await mountPanel({
   },
 });
 `;
-const panel = panelRecord("panel-navigate", "Navigate", definePanel({ state: {}, members: {}, events: {} }));
+const panel = panelRecord("panel-navigate", "Navigate", definePanel({ state: {}, members: {}, commands: {} }));
 panel.content.module = NAVIGATE;
 const use = panelUse("use-navigate", "navigate", panel.id, `/applications/${application}/navigate`);
 

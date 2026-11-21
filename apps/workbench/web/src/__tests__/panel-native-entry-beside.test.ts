@@ -22,7 +22,7 @@ import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer,
  * message about it carries no page skill.
  */
 
-const panel = panelRecord("builtin-components", "Base components", definePanel({ state: {}, members: {}, events: {} }));
+const panel = panelRecord("builtin-components", "Base components", definePanel({ state: {}, members: {}, commands: {} }));
 const components: ApplicationPanelUse = {
   id: "ontology-components", pageKey: "ontology-components", panelId: panel.id, path: "/ontology/components",
   access: { permissionCode: "ontology-modeling" }, names: { en: "Base components" },
