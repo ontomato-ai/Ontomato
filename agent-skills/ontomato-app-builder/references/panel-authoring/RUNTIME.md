@@ -180,11 +180,14 @@ owner operation. `do.open` follows the indicated destination address. Use a decl
 
 ## Draft links and instance state
 
-Append the draft query to the destination entry path and keep any existing entry parameters.
-Use the producing session and run IDs. Pass a path relative to that run, starting with `outputs/drafts/` and
-without a leading slash. Encode that raw path once. The complete draft query has this form:
+Copy the registered entry path, including its initial slash, and keep any existing entry parameters.
+Use the producing session and run IDs. Give `draftPath` only the run-relative artifact path
+`outputs/drafts/<name>.page-draft.json`. Encode that value once.
 
-`?draftSessionId=SESSION_ID&draftRunId=RUN_ID&draftPath=outputs%2Fdrafts%2Fedit.page-draft.json`
+The agent directory example opens at `#/applications/app-example-vue-agent-directory/manage?draftSessionId=SESSION_ID&draftRunId=RUN_ID&draftPath=outputs%2Fdrafts%2Fedit.page-draft.json`.
+
+A raw `draftPath` of `/outputs/drafts/edit.page-draft.json` starts with a slash and is invalid.
+The encoded query value `draftPath=%2Foutputs%2Fdrafts%2Fedit.page-draft.json` still starts with that slash after decoding.
 
 The SDK reads the artifact, verifies it was written for the entry's `pageKey`, and offers it to the mounted forms.
 A form asks its owner for the target's description, matches `save.draftOperation`, then gives the owner's form read
