@@ -29,6 +29,14 @@ interface TaskCreateFormParams extends TaskFormParams {
   defaultAppId?: string;
 }
 
+function resultPreview(value: string | null | undefined): string {
+  return value?.replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}(?:#{1,6}\s+|>\s*|[-*+]\s+)/gm, "")
+    .replace(/(\*\*|__|`+)(.*?)\1/g, "$2")
+    .replace(/\s+/g, " ").trim() ?? "";
+}
+
 function taskRecord(task: PlatformTask, locale: string, translate: Translate): PanelRecord {
   return {
     primaryKey: task.id,
@@ -50,7 +58,7 @@ function taskRecord(task: PlatformTask, locale: string, translate: Translate): P
       frequency: scheduledTaskFrequencyText(task.frequency, locale, translate),
       timeZone: task.timeZone,
       lastRunAt: task.lastRun?.startedAt ?? "",
-      lastRunSummary: task.lastRun?.error?.message ?? task.lastRun?.resultSummary ?? "",
+      lastRunSummary: task.lastRun?.error?.message ?? resultPreview(task.lastRun?.resultSummary),
       latestResultPath: task.latestResult?.link.path ?? "",
     },
   };
