@@ -36,11 +36,12 @@ export const applicationPanelUsePathSchema = path.pipe(z.string().refine((value)
     (value === "/" || value.slice(1).split("/").every(Boolean));
 }, "Expected a canonical site path without query or fragment"));
 
+const productNameSchema = z.string().trim().min(1).max(200);
 export const productVisibilitySchema = z.enum(["private", "domain", "platform"]);
 export type ProductVisibility = z.infer<typeof productVisibilitySchema>;
 
 const editableDefinitionFields = {
-  name: z.string().trim().min(1).max(200),
+  name: productNameSchema,
   description: z.string().max(2000),
   /** Initial sharing on creation; subsequent Grant changes use the existing governance API. */
   visibility: productVisibilitySchema.exclude(["platform"]),
@@ -167,10 +168,22 @@ export type DirectProjection = ProductProjection;
 const panelContentByteLimit = 256 * 1024;
 const panelText = z.string().refine(value => new TextEncoder().encode(value).byteLength <= panelContentByteLimit,
   "Panel text must not exceed 256 KiB");
+/** The flat panel message key used as the localized panel name by the host. */
+export const PANEL_NAME_MESSAGE_KEY = "panel.name";
+
 /** Panel-authored text, by locale and literal flat key, using the platform's named interpolation syntax. */
 export const panelMessagesSchema = z.record(z.string().min(1), z.record(panelMessageKeySchema, z.string()))
   .refine(messages => new TextEncoder().encode(JSON.stringify(messages)).byteLength <= panelContentByteLimit,
-    "Panel messages must not exceed 256 KiB");
+    "Panel messages must not exceed 256 KiB")
+  .superRefine((messages, ctx) => {
+    for (const [locale, entries] of Object.entries(messages)) {
+      const name = entries[PANEL_NAME_MESSAGE_KEY];
+      if (name !== undefined && !productNameSchema.safeParse(name).success) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [locale, PANEL_NAME_MESSAGE_KEY],
+          message: "A localized panel name must contain 1 to 200 characters" });
+      }
+    }
+  });
 export type PanelMessages = z.infer<typeof panelMessagesSchema>;
 
 /** The shared sources of a registered panel or workspace candidate. */
@@ -231,6 +244,14 @@ export const productPanelSchema = z.discriminatedUnion("visibility", [
 });
 export type ProductPanel = z.infer<typeof productPanelSchema>;
 export const currentPanelRecordSchema = productPanelSchema;
+
+/** An entry without a menu name uses the panel's localized name or its stored default. */
+export function productPanelDisplayName(panel: Pick<ProductPanel, "name" | "content">, locale: string, defaultLocale: string): string {
+  const messages = panel.content.messages;
+  return messages?.[locale]?.[PANEL_NAME_MESSAGE_KEY]?.trim()
+    || messages?.[defaultLocale]?.[PANEL_NAME_MESSAGE_KEY]?.trim()
+    || panel.name;
+}
 
 /** Values wired into a content panel's public fields by its application entry. */
 export const applicationPanelInputsSchema = z.record(id, z.union([

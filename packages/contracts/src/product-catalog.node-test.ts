@@ -55,6 +55,19 @@ test("the product catalog accepts HTTP queries and returns cursor pages of summa
   assert.equal(productProjectionListResponseSchema.safeParse(panels).success, false);
 });
 
+test("a panel name uses authored locale messages and falls back to its stored name", async () => {
+  const { PANEL_NAME_MESSAGE_KEY, panelMessagesSchema, productPanelDisplayName } = await import("./product-panels");
+  const messages = panelMessagesSchema.parse({
+    "zh-CN": { [PANEL_NAME_MESSAGE_KEY]: "治理报告" },
+    en: { [PANEL_NAME_MESSAGE_KEY]: "Governance report" },
+  });
+  const panel = { name: "Stored panel name", content: { html: "", module: "", messages } };
+  assert.equal(productPanelDisplayName(panel, "zh-CN", "en"), "治理报告");
+  assert.equal(productPanelDisplayName(panel, "fr", "en"), "Governance report");
+  assert.equal(productPanelDisplayName(panel, "fr", "de"), panel.name);
+  assert.equal(panelMessagesSchema.safeParse({ en: { [PANEL_NAME_MESSAGE_KEY]: "  " } }).success, false);
+});
+
 test("platform products use a reserved identity and are read-only without a domain owner", async () => {
   const { panelAuthoringMemberSchema } = await import("./panel-check");
   const panelId = `${BUILTIN_PRODUCT_ID_PREFIX}sales-panel`;
