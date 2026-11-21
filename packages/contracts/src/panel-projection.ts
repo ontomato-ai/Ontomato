@@ -437,7 +437,19 @@ const controlSchema = z.discriminatedUnion("kind", [
   objectControl.extend({ fields: childFields }),
 ]);
 
-export const panelFormFieldSchema = fieldShape.extend({ control: controlSchema });
+export const panelFormFieldSchema = fieldShape.extend({ control: controlSchema }).superRefine(({ control }, ctx) => {
+  if (control.kind !== "select" || !control.options.some(option => typeof option.value === "object")) return;
+  if (control.allowCreate)
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ["control", "allowCreate"],
+      message: "An object-valued select only accepts its declared options",
+    });
+  if (control.options.some(option => typeof option.value !== "object"))
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ["control", "options"],
+      message: "All options of an object-valued select must be objects",
+    });
+});
 
 /** The client's native owner request. The form's binding supplies the body mapping to that owner's existing schema. */
 const formSaveRequestSchema = z.object({

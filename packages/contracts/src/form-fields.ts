@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { runtimeJsonObjectSchema, type RuntimeJsonValue } from "./agent-runtime-values";
 
 /*
  * A form as its owner declares it: text fields and choices, whose values travel as text and are interpreted only by
@@ -22,8 +23,26 @@ const optionAvailabilityMessage = "A disabled option must explain why it is unav
 
 export const formOptionSchema = formOptionShape.refine(optionAvailabilityMatches, optionAvailabilityMessage);
 export const panelFormOptionSchema = formOptionShape.extend({
-  value: z.union([nonempty, z.number().finite()]),
+  value: z.union([nonempty, z.number().finite(), runtimeJsonObjectSchema]),
 }).refine(optionAvailabilityMatches, optionAvailabilityMessage);
+export type PanelFormOption = z.infer<typeof panelFormOptionSchema>;
+
+function equalJsonValue(left: RuntimeJsonValue, right: RuntimeJsonValue): boolean {
+  if (left === right) return true;
+  if (left === null || right === null || typeof left !== "object" || typeof right !== "object") return false;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) && left.length === right.length
+      && left.every((value, index) => equalJsonValue(value, right[index]));
+  }
+  const keys = Object.keys(left);
+  return keys.length === Object.keys(right).length
+    && keys.every(key => Object.hasOwn(right, key) && equalJsonValue(left[key], right[key]));
+}
+
+/** Match a received selection to its declared option, independent of object key order. */
+export function findPanelFormOption(options: readonly PanelFormOption[], value: RuntimeJsonValue | undefined) {
+  return value === undefined ? undefined : options.find(option => equalJsonValue(option.value, value));
+}
 
 const fieldBase = {
   key: nonempty,
@@ -73,6 +92,22 @@ export const formFieldErrorSchema = z.object({
   code: formFieldErrorCodeSchema,
   message: nonempty,
 }).strict();
+
+/** For an owner saving an object-valued select, pass the same choices used by the form. An optional clear omits the value. */
+export function panelFormObjectSelectError(
+  field: string, value: RuntimeJsonValue | undefined,
+  { required, options }: { required: boolean; options: readonly PanelFormOption[] },
+): FormFieldError | undefined {
+  if (value === undefined) {
+    if (required) return { field, code: "required", message: `Field '${field}' requires a selection` };
+    return undefined;
+  }
+  const received = JSON.stringify(value);
+  if (!runtimeJsonObjectSchema.safeParse(value).success)
+    return { field, code: "invalid_object", message: `Field '${field}' expects an object option, received ${received}` };
+  if (!findPanelFormOption(options, value))
+    return { field, code: "invalid_option", message: `Field '${field}' has no declared option for ${received}` };
+}
 
 /** The JSON Pointer to a field's value under `prefix` (`/values/` or `/content/`). */
 export function formFieldPointer(prefix: string, key: string): string {
