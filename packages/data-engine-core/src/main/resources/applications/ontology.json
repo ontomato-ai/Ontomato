@@ -26,60 +26,7 @@
       "zh-CN": "建模本体，管理指标、函数、动作、流程与技能"
     },
     "icon": "ontology",
-    "groups": [
-      {
-        "key": "products",
-        "names": {
-          "en": "Products",
-          "zh-CN": "产品层"
-        },
-        "sort": 0
-      }
-    ],
-    "panelUses": [
-      {
-        "id": "use-ontology-projections",
-        "pageKey": "ontology-projections",
-        "panelId": "builtin-product-ontology-projections",
-        "path": "/ontology/projections",
-        "access": {
-          "permissionCode": "ontology-modeling"
-        },
-        "names": {
-          "en": "Projections",
-          "zh-CN": "投影"
-        },
-        "groupKey": "products"
-      },
-      {
-        "id": "use-ontology-panels",
-        "pageKey": "ontology-panels",
-        "panelId": "builtin-product-ontology-panels",
-        "path": "/ontology/panels",
-        "access": {
-          "permissionCode": "ontology-modeling"
-        },
-        "names": {
-          "en": "Panels",
-          "zh-CN": "面板"
-        },
-        "groupKey": "products"
-      },
-      {
-        "id": "use-ontology-applications",
-        "pageKey": "ontology-applications",
-        "panelId": "builtin-product-ontology-applications",
-        "path": "/ontology/applications",
-        "access": {
-          "permissionCode": "ontology-modeling"
-        },
-        "names": {
-          "en": "Applications",
-          "zh-CN": "应用"
-        },
-        "groupKey": "products"
-      }
-    ],
+    "groups": [{"key": "products","names": {"en": "Products","zh-CN": "产品层"},"sort": 0}],
     "permissions": [],
     "pageSkills": [{
       "permissionCode": "business-knowledge",
@@ -88,6 +35,27 @@
     }, {
       "permissionCode": "analysis-agent",
       "skill": {"namespace": {"kind": "provider", "provider": "workbench"}, "name": "ontomato-agent-builder"}
+    }],
+    "panelUses": [{
+      "id": "ontology-playground", "pageKey": "ontology-playground", "panelId": "builtin-product-ontology-graph",
+      "path": "/ontology/playground", "access": {"permissionCode": "ontology-modeling"},
+      "names": {"en": "Ontology graph", "zh-CN": "本体图谱"}
+    }, {
+      "id": "ontology-relations", "pageKey": "ontology-relations", "panelId": "builtin-product-ontology-relations",
+      "path": "/ontology/relations", "access": {"permissionCode": "ontology-modeling"},
+      "names": {"en": "Relation types", "zh-CN": "关系类型"}
+    }, {
+      "id": "use-ontology-projections", "pageKey": "ontology-projections", "panelId": "builtin-product-ontology-projections",
+      "path": "/ontology/projections", "access": {"permissionCode": "ontology-modeling"},
+      "names": {"en": "Projections","zh-CN": "投影"}, "groupKey": "products"
+    }, {
+      "id": "use-ontology-panels", "pageKey": "ontology-panels", "panelId": "builtin-product-ontology-panels",
+      "path": "/ontology/panels", "access": {"permissionCode": "ontology-modeling"},
+      "names": {"en": "Panels","zh-CN": "面板"}, "groupKey": "products"
+    }, {
+      "id": "use-ontology-applications", "pageKey": "ontology-applications", "panelId": "builtin-product-ontology-applications",
+      "path": "/ontology/applications", "access": {"permissionCode": "ontology-modeling"},
+      "names": {"en": "Applications","zh-CN": "应用"}, "groupKey": "products"
     }]
   }
 }

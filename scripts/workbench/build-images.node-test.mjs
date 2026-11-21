@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { checkBuiltinPanelSource } from "../../agent-skills/ontomato-app-builder/panel-check.mjs";
 import { buildStamp, sampleSources } from "../build-support.mjs";
 import { buildWorkbenchImage, isFormalSdkRelease } from "./build-images.mjs";
 import { assembleAppStage, stageDirectory } from "./stage-app.mjs";
@@ -519,7 +520,7 @@ test("the panel bundle contains the panels referenced by the built-in entry decl
   writeFileSync(join(panelFolder, "panel.json"), '{"manifest":{"state":{},"members":{}}}');
   writeFileSync(join(panelFolder, "panel.html"), '<div id="app"></div>');
   writeFileSync(join(panelFolder, "panel.mjs"), 'import { mountPanel } from "@ontomato/sdk/panel";');
-  writeFileSync(join(panelFolder, "recipes.md"), "Read the catalogue");
+  writeFileSync(join(panelFolder, "recipes.md"), "Open the [capability map](/ontology/assets/capability-map).");
   const java = { id: "ontology", declaration: { panelUses: [
     { id: "catalogue", path: "/ontology/catalogue", panelId },
   ] } };
@@ -531,10 +532,12 @@ test("the panel bundle contains the panels referenced by the built-in entry decl
     directory: join(root, "dist/builtin-panels"),
     members: [{ name: "@ontomato/page-owner", absolute: owner }],
     applications,
-    checks: { builtinApplicationPanelUseSchema: { safeParse: () => ({ success: true }) } },
-    checkSource: async folder => ({
-      panelId: JSON.parse(readFileSync(join(folder, "registration.json"), "utf8")).panels[0].id,
-    }),
+    checks: {
+      builtinApplicationPanelUseSchema: { safeParse: () => ({ success: true }) },
+      builtinProductIdSchema: { safeParse: data => ({ success: true, data }) },
+      panelAuthoringManifestSchema: { safeParse: data => ({ success: true, data }) },
+    },
+    checkSource: checkBuiltinPanelSource,
   };
   await stageBuiltinPanels(options);
   const [relative] = JSON.parse(readFileSync(join(options.directory, "index.json"), "utf8"));
@@ -542,6 +545,20 @@ test("the panel bundle contains the panels referenced by the built-in entry decl
   for (const file of ["registration.json", "panel.json", "panel.html", "panel.mjs", "recipes.md"]) {
     assert.equal(readFileSync(join(options.directory, relative, file), "utf8"), readFileSync(join(panelFolder, file), "utf8"));
   }
+  const trialAddress = "/applications/app-e2e-capability-map/map";
+  for (const [name, source, column] of [
+    ["panel.html", `<!-- navigation -->\n<a href="#${trialAddress}">Map</a>`, 11],
+    ["panel.mjs", `// Navigation\nnavigate("${trialAddress}");`, 11],
+    ["recipes.md", `See below.\r\n[Map](${trialAddress})`, 7],
+  ]) {
+    const file = join(panelFolder, name);
+    const valid = readFileSync(file, "utf8");
+    writeFileSync(file, source);
+    await assert.rejects(stageBuiltinPanels(options), error =>
+      error.message.startsWith(`${file}:2:${column}: `) && error.message.includes("/applications/app-"));
+    writeFileSync(file, valid);
+  }
+
   await assert.rejects(stageBuiltinPanels({
     ...options, applications: [...applications, { id: "agents", declaration: {
       panelUses: [{ id: "teams", path: "/agents/teams", panelId: "builtin-product-teams" }],
