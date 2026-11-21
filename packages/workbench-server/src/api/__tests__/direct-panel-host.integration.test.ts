@@ -65,6 +65,8 @@ let contentRoot: string;
 let cataloguePath: string;
 const grants = new Set<string>();
 const codePanelId = "panel-schedules-mixed";
+const frameHostPanelId = "panel-host-frame";
+const frameHostContentId = "panel-host-frame-content";
 const builtinPanelId = "builtin-product-host-fixture";
 const builtinProjectionId = "builtin-product-components-fixture";
 const builtinUse = {
@@ -166,6 +168,18 @@ beforeAll(async () => {
         applicationId: "app-builtin-fixture", menu: { groups: [], panelUses: [] },
         use: { id: "catalogue", pageKey: "catalogue", path: "/applications/app-builtin-fixture/catalogue",
           panelId: builtinPanelId, access: { kind: "domain-member" } },
+      } });
+      return;
+    }
+    if (req.query.applicationId === "app-frame-host") {
+      expect(req.header("tk")).toBe("host-reader");
+      const useId = String(req.query.useId);
+      if (useId === "hidden") { res.sendStatus(403); return; }
+      res.json({ success: true, data: {
+        applicationId: "app-frame-host", menu: { groups: [], panelUses: [] },
+        use: { id: useId, pageKey: useId, path: `/applications/app-frame-host/${useId}`,
+          panelId: frameHostContentId, access: { kind: "domain-member" } },
+        ...(useId === "framed" && { framePanelId: frameHostPanelId }),
       } });
       return;
     }
@@ -778,6 +792,73 @@ it("preserves a code panel's ID and revision rules and describes its member oper
   const unreachable = await validate({ ...application, delivery: { panels: [], projections: ["unreachable"] } });
   expect(unreachable.status).toBe(400);
   expect((await unreachable.json()).error.message).toContain("unreachable");
+});
+
+it("uses the authorized frame root for its record, member reads, nested content and personal state", async () => {
+  const projectionId = "frame-host-components";
+  const brokenId = "frame-host-invalid-sibling";
+  const projection = {
+    name: "Frame components", description: "", visibility: "domain", revision: 0,
+    componentId: "@ontomato/sdk:PanelData", config: {}, inputs: {}, outputs: {},
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: "platform:SDKComponent" } }, read: "catalogue", params: {} } },
+  };
+  for (const id of [projectionId, brokenId]) {
+    const saved = await request("PUT", `product-projections/${id}`, projection);
+    expect(saved.status, await saved.text()).toBe(200);
+  }
+  const panel = { name: "Application frame", description: "", visibility: "domain", revision: 0, content: vuePanelContent() };
+  const content = await request("PUT", `product-panels/${frameHostContentId}`, {
+    ...panel, manifest: { state: {}, members: {}, commands: {} },
+  });
+  expect(content.status, await content.text()).toBe(200);
+  const theme = { light: { "--el-color-primary": "#123456" } };
+  const frame = await request("PUT", `product-panels/${frameHostPanelId}`, {
+    ...panel, theme, manifest: {
+      state: { term: { type: { kind: "scalar", type: "string" }, personal: true } }, commands: {},
+      members: {
+        content: { target: { fromPlatform: "currentEntry", candidates: { rule: "applicationEntry" } } },
+        components: { target: { projectionId } },
+        invalid: { target: { projectionId: brokenId } },
+      },
+    },
+  });
+  expect(frame.status, await frame.text()).toBe(200);
+  await state.pool!.query(
+    `UPDATE "${state.schema}".product_projections SET definition = definition || '{"obsolete":true}' WHERE id=$1`, [brokenId],
+  );
+
+  const source = { kind: "frame", applicationId: "app-frame-host", useId: "framed" };
+  const getFrame = (id = frameHostPanelId, useId = source.useId) => request("GET", `product-panels/${id}?` +
+    new URLSearchParams({ applicationId: source.applicationId, useId, source: "frame" }));
+  const get = await getFrame();
+  expect(get.status, await get.clone().text()).toBe(200);
+  expect(get.headers.get("cache-control")).toBe("no-store");
+  expect(await get.json()).toEqual({ panel: expect.objectContaining({
+    id: frameHostPanelId, theme, manifest: expect.objectContaining({ members: expect.any(Object) }),
+  }) });
+  expect((await getFrame(frameHostContentId)).status).toBe(404);
+  expect((await getFrame(frameHostPanelId, "native")).status).toBe(404);
+  expect((await getFrame(frameHostPanelId, "hidden")).status).toBe(403);
+
+  const read = (member: string) => request("POST", "product-panels/read", {
+    source, memberPath: [{ member }], dataName: "rows", inputs: {},
+  });
+  expect(await (await read("invalid")).json()).toMatchObject({
+    status: "error", message: expect.stringContaining(`Projection '${brokenId}': Unrecognized field 'obsolete'`),
+  });
+  expect(await (await read("components")).json()).toMatchObject({ status: "ready" });
+  const nested = await request("POST", "product-panels/nested", { source, memberPath: [{ member: "content" }] });
+  expect(nested.status, await nested.clone().text()).toBe(200);
+  expect(await nested.json()).toMatchObject({ panel: { id: frameHostContentId } });
+
+  const personal = { source, memberPath: [] };
+  expect((await request("PUT", "product-panels/personal-state", { ...personal, values: { term: "spring" } })).status).toBe(200);
+  const preference = await request("POST", "product-panels/personal-state/read", { ...personal, fields: ["term"] });
+  expect(await preference.json()).toEqual({ values: { term: "spring" } });
+
+  grants.delete(frameHostPanelId);
+  expect((await getFrame()).status).toBe(403);
+  expect(await (await read("components")).json()).toEqual({ status: "forbidden" });
 });
 
 it("rejects an unavailable default agent before accepting a proposed application use", async () => {

@@ -19,7 +19,8 @@ import {
   changeProductDomainGrant, changeProductGrant, grantedProductIds, productGrantAllowed, readProductGrantRecords, unregisterProductResource,
   type ProductOwner,
 } from "../product-governance/grants";
-import { insertCurrentProduct, loadCurrentProduct, panelDefinitionProblem, requireCurrentProduct, requireOrdinaryProjection } from "./current";
+import { insertCurrentProduct, loadCurrentProduct, requireCurrentProduct, requireOrdinaryProjection } from "./current";
+import { panelDefinitionProblem } from "./definition-diagnostics";
 import { closeDeletedDefinitionStreams, notifyProductDefinitionChanged } from "./definition-stream";
 import { findPanelUsers, panelReferenceDefinitionSchema } from "./references";
 import { panelsUsingProjection, panelUsers } from "./used-by";
