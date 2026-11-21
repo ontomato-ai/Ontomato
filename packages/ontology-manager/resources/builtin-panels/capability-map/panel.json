@@ -174,7 +174,7 @@
         "id": "builtin-product-4dd589de-911e-45de-8ee0-06bb03127a26"
       }
     },
-    "events": {
+    "commands": {
       "showTypeMode": {
         "labelKey": "cm.eventShowTypeMode",
         "do": {

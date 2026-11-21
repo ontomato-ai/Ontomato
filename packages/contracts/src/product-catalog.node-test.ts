@@ -83,7 +83,7 @@ test("platform products use a reserved identity and are read-only without a doma
   const panelInput = {
     ...definition,
     content: { html: '<div id="app"></div>', module: "export default {}" },
-    manifest: { state: {}, members: {}, events: {} },
+    manifest: { state: {}, members: {}, commands: {} },
   };
   const projectionInput = {
     ...definition, componentId: "@ontomato/sdk:ObjectList", inputs: {}, outputs: {}, config: {}, data: {},
@@ -169,7 +169,7 @@ test("platform panels place only packaged products and do not pin domain object 
   const taskType = "platform:ScheduledTask";
   const state = { selected: { type: { kind: "object", objectType: taskType } } };
   const member = { target: { projectionId }, inputs: { task: { state: "selected" } } };
-  const manifest = { state, members: { related: member }, events: {} };
+  const manifest = { state, members: { related: member }, commands: {} };
   assert.equal(builtinProductPanelInputSchema.safeParse({ ...base, manifest }).success, true);
   for (const [changes, field] of [
     [{ target: { projectionId: "domain-projection" } }, "manifest.members.related.target.projectionId"],

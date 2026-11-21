@@ -403,44 +403,40 @@ export const panelMemberSchema = z.object({
 }).strict();
 export type PanelMember = z.infer<typeof panelMemberSchema>;
 
-const eventPayload = z.object({ event: z.literal(true) }).strict();
-export const panelEventValueSchema = z.union([panelMemberInputSchema, eventPayload]);
-const eventInputs = z.record(key, panelEventValueSchema);
+const commandInputs = z.record(key, panelMemberInputSchema);
 const openMember = z.object({
   mode: z.enum(["replace", "drawer", "dialog"]),
   member: key,
-  inputs: eventInputs.optional(),
+  inputs: commandInputs.optional(),
 }).strict();
 const openEntry = z.object({
   mode: z.literal("entry"),
   entry: z.union([
     z.object({ literal: panelObjectRefSchema.extend({ className: z.literal(APPLICATION_PANEL_USE) }) }).strict(),
-    panelStateRefSchema, itemValue, eventPayload,
+    panelStateRefSchema, itemValue,
   ]),
-  inputs: eventInputs.optional(),
+  inputs: commandInputs.optional(),
 }).strict();
-export const panelEventSchema = z.object({
-  on: z.object({ member: key, output: key }).strict().optional(),
-  labelKey: panelMessageKeySchema.optional(),
-  /** The primary button among this panel's named header events. */
+export const panelCommandSchema = z.object({
+  labelKey: panelMessageKeySchema,
+  /** The primary button among this panel's header commands. */
   primary: z.literal(true).optional(),
   do: z.union([
-    z.object({ set: z.object({ fields: eventInputs.refine(fields => Object.keys(fields).length > 0, "Set at least one state field") }).strict() }).strict(),
-    z.object({ invoke: z.object({ member: key, operation: key, inputs: eventInputs }).strict() }).strict(),
+    z.object({ set: z.object({ fields: commandInputs.refine(fields => Object.keys(fields).length > 0, "Set at least one state field") }).strict() }).strict(),
+    z.object({ invoke: z.object({ member: key, operation: key, inputs: commandInputs }).strict() }).strict(),
     z.object({ open: z.union([openMember, openEntry]) }).strict(),
   ]),
 }).strict();
-export type PanelEvent = z.infer<typeof panelEventSchema>;
+export type PanelCommand = z.infer<typeof panelCommandSchema>;
 
-const panelEventsSchema = z.record(key, panelEventSchema).superRefine((events, ctx) => {
+const panelCommandsSchema = z.record(key, panelCommandSchema).superRefine((commands, ctx) => {
   let primary: string | undefined;
-  for (const [name, event] of Object.entries(events)) {
-    if (!event.primary) continue;
-    const path = [name, "primary"];
-    if (event.on || !event.labelKey) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: "Only a named header event without an output trigger can be primary" });
-    } else if (primary !== undefined) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: `Event '${primary}' is already primary` });
+  for (const [name, command] of Object.entries(commands)) {
+    if (!command.primary) continue;
+    if (primary !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom, path: [name, "primary"], message: `Command '${primary}' is already primary`,
+      });
     } else {
       primary = name;
     }
@@ -450,8 +446,8 @@ const panelEventsSchema = z.record(key, panelEventSchema).superRefine((events, c
 export const panelManifestSchema = z.object({
   state: panelStateSchema,
   members: z.record(key, panelMemberSchema),
-  events: panelEventsSchema,
-}).strict().superRefine(({ state, members, events }, ctx) => {
+  commands: panelCommandsSchema,
+}).strict().superRefine(({ state, members, commands }, ctx) => {
   function issue(path: string[], message: string) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
   }
@@ -499,12 +495,9 @@ export const panelManifestSchema = z.object({
       }
     }
   }
-  for (const [name, event] of Object.entries(events)) {
-    const path = ["events", name];
-    if (event.on) requireName(members, event.on.member, [...path, "on", "member"]);
-    else if (!event.labelKey) issue(path, "Declare an output trigger or a label for explicit invocation");
-
-    const action = event.do;
+  for (const [name, command] of Object.entries(commands)) {
+    const path = ["commands", name];
+    const action = command.do;
     const [operation, values] = "set" in action ? ["set", action.set.fields] as const
       : "invoke" in action ? ["invoke", action.invoke.inputs] as const
       : ["open", action.open.inputs ?? {}] as const;
@@ -513,8 +506,6 @@ export const panelManifestSchema = z.object({
     if ("open" in action && action.open.mode === "entry") {
       const entry = action.open.entry;
       if ("state" in entry) requireName(state, entry.state, [...path, "do", "open", "entry", "state"]);
-      if ("event" in entry && (!event.on || event.labelKey))
-        issue([...path, "do", "open", "entry"], "An event value requires an output-only trigger");
     }
     for (const [field, value] of Object.entries(values)) {
       const valuePath = [...path, "do", operation, operation === "set" ? "fields" : "inputs", field];
@@ -527,8 +518,6 @@ export const panelManifestSchema = z.object({
         if ("state" in value && Object.hasOwn(state, value.state) && !panelPortAccepts(target, state[value.state].type))
           issue([...valuePath, "state"], "The source state type does not match the target state type");
       }
-      if ("event" in value && (!event.on || event.labelKey))
-        issue([...valuePath, "event"], "An event value requires an output-only trigger");
     }
   }
 });
