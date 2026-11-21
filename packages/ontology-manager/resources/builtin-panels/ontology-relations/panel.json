@@ -1,0 +1,66 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Relationship"
+        },
+        "deepLink": true
+      },
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      }
+    },
+    "members": {
+      "catalogue": {
+        "component": "PanelData",
+        "type": "platform:Relationship",
+        "data": {
+          "rows": "list"
+        },
+        "id": "builtin-product-2a6a25e8-ec04-41aa-8146-e49741e7d530"
+      },
+      "types": {
+        "component": "PanelData",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": "list"
+        },
+        "id": "builtin-product-f0bcb58b-8ef7-4f65-b818-336c72ac6db7"
+      },
+      "detail": {
+        "component": "PanelData",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "id": "builtin-product-1aaa68ea-6ded-4fe8-abb7-f8c51b43d8e7"
+      },
+      "form": {
+        "component": "ObjectForm",
+        "target": "selected",
+        "data": {
+          "form": "form",
+          "createForm": "createForm"
+        },
+        "operation": "platform:Relationship.save",
+        "id": "builtin-product-6063073e-28b1-4a47-bcff-64b305b1a600"
+      },
+      "remove": {
+        "component": "OperationButton",
+        "operation": "relationships.delete",
+        "target": "selected",
+        "config": {
+          "type": "danger"
+        },
+        "id": "builtin-product-655a5639-5fd3-4e29-9192-096597b6a77d"
+      }
+    },
+    "events": {}
+  }
+}

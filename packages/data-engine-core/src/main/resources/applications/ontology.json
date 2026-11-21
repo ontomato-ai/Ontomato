@@ -51,6 +51,15 @@
     }, {
       "permissionCode": "analysis-agent",
       "skill": {"namespace": {"kind": "provider", "provider": "workbench"}, "name": "ontomato-agent-builder"}
+    }],
+    "panelUses": [{
+      "id": "ontology-playground", "pageKey": "ontology-playground", "panelId": "builtin-product-ontology-graph",
+      "path": "/ontology/playground", "access": {"permissionCode": "ontology-modeling"},
+      "names": {"en": "Ontology graph", "zh-CN": "本体图谱"}
+    }, {
+      "id": "ontology-relations", "pageKey": "ontology-relations", "panelId": "builtin-product-ontology-relations",
+      "path": "/ontology/relations", "access": {"permissionCode": "ontology-modeling"},
+      "names": {"en": "Relation types", "zh-CN": "关系类型"}
     }]
   }
 }
