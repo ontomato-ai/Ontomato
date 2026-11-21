@@ -122,9 +122,13 @@ export function assembleAppStage({
     );
   const { plan, copies } = stagePlan(graph, members, index);
   for (const copy of copies) copyMember(copy.from, join(stageRoot, copy.to));
-  if (record.web !== false)
+  if (record.web !== false) {
     for (const output of ["dist/web", "dist/apps-sdk"])
       cpSync(join(root, output), join(stageRoot, output), { recursive: true });
+    const builtinPanels = "dist/builtin-panels";
+    if (existsSync(join(root, builtinPanels)))
+      cpSync(join(root, builtinPanels), join(stageRoot, builtinPanels), { recursive: true });
+  }
   writeStage(stageRoot, storeRoot, plan);
   return { graph, plan, copies };
 }

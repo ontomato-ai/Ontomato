@@ -5,9 +5,10 @@ import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-value
 import { directProjectionPortsSchema, type PanelFormDescription, type PanelFormField } from "@ontomato/contracts/panel-projection";
 import {
   METRIC_CHART_COMPONENT, productCatalogQuerySchema,
-  productCurrentIdParamsSchema, productPanelInputSchema, registerProductPanelRequestSchema,
+  productPanelInputSchema, productVisibilitySchema, registerProductPanelRequestSchema, type ProductVisibility,
   registerProductProjectionRequestSchema,
 } from "@ontomato/contracts/product-panels";
+import { domainProductIdSchema } from "@ontomato/contracts/product-record-id";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import type { ProductOwner } from "../product-governance/grants";
@@ -25,7 +26,7 @@ function catalogueQuery(params: Record<string, unknown>) {
   return productCatalogQuerySchema.parse({ q: search, limit: size, scope, sort, cursor });
 }
 
-function formFields(locale: string | undefined, editable: boolean, creating: boolean) {
+function formFields(locale: string | undefined, editable: boolean, creating: boolean, builtin: boolean) {
   const label = (name: string) => tForLocale(locale, `panels.productCatalog.${name}`);
   const field = (path: string, schema: z.ZodTypeAny, control: PanelFormField["control"],
     { required = true, readOnly = !editable, help, labelKey = path.split("/").at(-1)! }: {
@@ -35,11 +36,13 @@ function formFields(locale: string | undefined, editable: boolean, creating: boo
     ...(help && { help }),
   });
   const common = productPanelInputSchema.shape;
+  const visibility = builtin ? productVisibilitySchema : common.visibility;
   const fields = [
     field("/name", common.name, { kind: "text" }),
     field("/description", common.description, { kind: "text", multiline: true }),
-    field("/visibility", common.visibility, {
-      kind: "select", options: common.visibility.options.map(value => option(value, label(value))),
+    field("/visibility", visibility, {
+      kind: "select", options: visibility.options.map(value =>
+        option(value, value === "platform" ? tForLocale(locale, "panels.skill.sourcePublic") : label(value))),
     }, { readOnly: !creating }),
   ];
   return { field, fields };
@@ -64,10 +67,10 @@ function formResult(
 }
 
 function draftId(values: Record<string, unknown> | undefined) {
-  return productCurrentIdParamsSchema.shape.id.parse(values?.id ?? randomUUID());
+  return domainProductIdSchema.parse(values?.id ?? randomUUID());
 }
 
-function commonValues({ name, description, visibility }: { name: string; description: string; visibility: "private" | "domain" }) {
+function commonValues({ name, description, visibility }: { name: string; description: string; visibility: ProductVisibility }) {
   return { name, description, visibility };
 }
 
@@ -75,7 +78,7 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
   const record = (primaryKey: string) => readCurrentPanel(owner, viewer, primaryKey);
 
   function describeForm(id: string, values: Record<string, unknown>, editable: boolean, revision?: number) {
-    const { field, fields } = formFields(viewer.locale, editable, revision === undefined);
+    const { field, fields } = formFields(viewer.locale, editable, revision === undefined, values.visibility === "platform");
     const { content, manifest, template, theme } = productPanelInputSchema.shape;
     const manifestShape = manifest.innerType().shape;
     return formResult("panel", id, [
@@ -129,7 +132,7 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
   const record = (primaryKey: string) => readCurrentProjection(owner, viewer, primaryKey);
 
   async function describeForm(id: string, values: Record<string, unknown>, editable: boolean, revision?: number, chart = false) {
-    const { field, fields } = formFields(viewer.locale, editable, revision === undefined);
+    const { field, fields } = formFields(viewer.locale, editable, revision === undefined, values.visibility === "platform");
     if (chart) return formResult("projection", id, fields, values, revision);
     const { components } = await readPanelComponentCatalogue();
     const candidates = [...components].filter(([key, item]) => key !== METRIC_CHART_COMPONENT && item.data !== undefined);

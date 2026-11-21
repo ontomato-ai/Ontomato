@@ -3,9 +3,10 @@ import type { PoolClient } from "pg";
 import { panelPlacementSchema } from "@ontomato/contracts/panel-manifest";
 import {
   PRODUCT_IN_USE, productCurrentIdParamsSchema, productPanelInputSchema, productProjectionInputSchema, type ProductCatalogQuery,
+  type ProductVisibility,
 } from "@ontomato/contracts/product-panels";
 import {
-  currentProductRecord, currentProductTables, findCurrentProduct, type CurrentProductKind,
+  currentProductRecord, currentProductRows, currentProductTables, findCurrentProduct, type CurrentProductKind,
 } from "../../infrastructure/product-current";
 import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
@@ -39,10 +40,10 @@ function readCursor(input: ProductCatalogQuery) {
 
 interface SummaryRow {
   id: string;
-  ownerId: string;
+  ownerId: string | null;
   name: string;
   description: string;
-  visibility: "private" | "domain";
+  visibility: ProductVisibility;
   revision: number;
   updatedAt: Date;
   sortKey: string;
@@ -64,9 +65,9 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
   const { rows } = await getPostgresPool().query<SummaryRow>(
     `SELECT id,owner_id AS "ownerId",definition->>'name' AS name,definition->>'description' AS description,
        definition->>'visibility' AS visibility,revision,updated_at AS "updatedAt",${cursorKey} AS "sortKey"${kindColumn}
-     FROM ${t(currentProductTables[kind])}
-     WHERE domain_id=$1 AND id=ANY($2::text[])
-       AND ($3='all' OR (owner_id=$4)=($3='mine'))
+     FROM ${currentProductRows(kind)} AS definitions
+     WHERE (domain_id IS NULL OR (domain_id=$1 AND id=ANY($2::text[])))
+       AND ($3='all' OR COALESCE(owner_id=$4,false)=($3='mine'))
        AND (strpos(lower(definition->>'name'),lower($5))>0 OR strpos(lower(definition->>'description'),lower($5))>0)
        AND ($6::${keyType} IS NULL OR (${order},id) ${updated ? "<" : ">"} ($6::${keyType},$7::text))
      ORDER BY ${order} ${direction},id ${direction} LIMIT $8`,
@@ -74,7 +75,8 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
   );
   const edited = new Set(editable);
   const items = rows.slice(0, input.limit).map(({ sortKey: _sortKey, updatedAt, template, ...row }) => ({
-    ...row, ...(template == null ? {} : { template }), updatedAt: updatedAt.toISOString(), editable: edited.has(row.id),
+    ...row, ...(template == null ? {} : { template }), updatedAt: updatedAt.toISOString(),
+    editable: row.ownerId !== null && edited.has(row.id),
   }));
   const last = rows[input.limit - 1];
   const nextCursor = rows.length > input.limit
