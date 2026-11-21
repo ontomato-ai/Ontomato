@@ -209,11 +209,10 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       query: (_selection, params) => applications.query(params),
       record: selection => applications.record(selection.primaryKey!),
       entries: selection => applications.entries(selection.primaryKey!),
-      form: (_selection, params) => applications.form({
-        ...formParams(params),
-        section: panelReadParameterSchemas.applicationFormSection.parse(params.section),
-        target: panelReadParameterSchemas.applicationFormTarget.parse(params.target),
+      form: (selection, params) => applications.form(selection.primaryKey!, {
+        ...formParams(params), section: panelReadParameterSchemas.applicationFormSection.parse(params.section),
       }),
+      createForm: (_selection, params) => applications.createForm(formParams(params)),
     },
     [ONTOLOGY_TYPE]: {
       schema: async () => (await ontology()).schema(),
