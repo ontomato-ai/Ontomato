@@ -173,6 +173,46 @@ export function platformPanelHost(
 }
 
 /**
+ * An application's own frame for the entry the reader opened (product-layer standard, part one; design §三): the panel
+ * \`resolve-entry\` named as the application's \`framePanelId\`, read for that entry (\`source=frame\`) and run in this
+ * document. Its members read with the frame as their root, its people's operations are bound to the frame, and Node
+ * admits it by the same entry and the reader's own use of it — being the frame widens nothing. Where it shows the entry's
+ * page is the run's \`currentEntry\`, which the route gives it.
+ */
+export function framePanelHost(
+  applicationId: string, use: ApplicationPanelUse, framePanelId: string, changed: (change: PanelObjectChange) => void,
+): PanelHostPort<Extract<PanelHostSource | DirectPanelHostSource, { kind: "registered" }>> {
+  const shown: PanelUseRef = { applicationId, useId: use.id };
+  const frameSource: PanelReadSource = { kind: "frame", applicationId, useId: use.id } as PanelReadSource;
+  const query = new URLSearchParams({ applicationId, useId: use.id, source: "frame" });
+  return {
+    async source() {
+      // Node answers the frame's record alone, with no page skill: the frame is no page of its own.
+      const answer = await json(`${panelHostPaths.panel(framePanelId)}?${query}`);
+      return { kind: "registered", applicationId, use, panel: productPanelSchema.parse(answer.panel) };
+    },
+    pageKey: use.pageKey,
+    use: shown,
+    panel,
+    release,
+    frame: () => { throw new Error("An application's frame runs in the platform's document, not in a frame"); },
+    coded: (source, run, target) => mountCoded(
+      withNested(directOptions(source, run, shown, changed, undefined, frameSource, "frame"), frameSource),
+      target, source.panel.content.module,
+    ),
+    // The frame is the entry's: it stands while Java still names the same entry, bound to the same frame panel.
+    async current() {
+      const answer = await resolveApplicationEntry(shown);
+      return answer.use.id === use.id && answer.framePanelId === framePanelId;
+    },
+    async snapshot(panelId) {
+      return panelDefinitionSnapshotSchema.parse(await json(`${panelHostPaths.snapshot(panelId)}?${query}`));
+    },
+    mode: { kind: "view" },
+  };
+}
+
+/**
  * The author's preview of a workspace candidate (design 6.2): the same host, reading the candidate instead of a use
  * relation. The preview is an author's host, so it declares author mode: the registered projections the candidate names
  * follow the document's definition stream. Its frame runs on the workspace's build-test context — NONE when the
@@ -226,14 +266,18 @@ const platformRequests: PlatformRequests = {
 /** What a panel of an application use runs on in this document: the SDK's instance with this platform's reads, requests and words. */
 function directOptions(
   source: DirectPanelHostSource, run: DirectPanelRun, use: PanelUseRef, changed: (change: PanelObjectChange) => void, beside?: (address: string) => void,
+  /** Where its members read from: the entry's content (\`registered\`), or the application's frame for that entry. */
+  readSource: PanelReadSource = { kind: "registered", ...use },
+  /** The root its people's operations are bound to: the frame's, for a frame panel. */
+  root?: "frame",
 ): OwnPanelOptions {
   const { global } = workbenchI18n();
   return {
     manifest: source.panel.manifest,
     run,
     requests: platformRequests,
-    use,
-    read: request => readPanelData({ source: { kind: "registered", ...use }, ...request }),
+    use: root ? { ...use, root } as PanelUseRef : use,
+    read: request => readPanelData({ source: readSource, ...request }),
     confirmOperation: preparation => confirmPanelIntent(use, preparation.intentId, changed),
     expandPageComposer: expandDeclaredComposer,
     navigate: panelNavigator(platformRouter(), beside),
