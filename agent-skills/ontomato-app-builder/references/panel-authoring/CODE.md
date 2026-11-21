@@ -182,7 +182,7 @@ For a trial app open to its domain, set `entryAccess: ["domain-member"]` and eac
 `access: {kind: "domain-member"}`. For a restricted trial, declare a permission owned by that app, such as
 `app:app-my-management-page:view`, and use it in `entryAccess` and `access.permissionCode`.
 Set the use's localized `names` for the title beside conversations. The panel name supplies the fallback title.
-Choose `declaration.icon` from the [platform icon IDs](RUNTIME.md#imports-and-application-icons).
+Choose a domain app's `declaration.icon` from the [domain icon choices](RUNTIME.md#imports-and-application-icons).
 
 Omit the use's `defaultAgent` for the general assistant in a trial. Set `{kind: "id", id}` or
 `{kind: "preset", agentKind}` when that agent already selects this panel's skill and appears in the page

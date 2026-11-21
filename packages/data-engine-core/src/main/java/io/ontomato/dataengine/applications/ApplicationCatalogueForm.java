@@ -186,9 +186,7 @@ final class ApplicationCatalogueForm {
         }
         var descriptions = errors.requiredObject(values, "descriptions", prefix + "/descriptions");
         if (descriptions != null) validateTranslations(descriptions, prefix + "/descriptions", false, errors);
-        var icon = errors.requiredString(values, "icon", prefix + "/icon");
-        if (icon != null && !ApplicationCatalog.validIcon(icon))
-            errors.invalidOption(prefix + "/icon", "Icon must be a lowercase identifier up to 64 characters");
+        if (!(values.get("icon") instanceof String)) errors.requiredString(values, "icon", prefix + "/icon");
     }
 
     private static void validateTranslations(JSONObject values, String path, boolean nonempty, PanelFormErrors errors) {

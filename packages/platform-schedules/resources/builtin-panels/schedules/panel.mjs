@@ -279,8 +279,12 @@ await mountPanel({
       return response?.outcome ?? receipt.outcome ?? { kind: "unknown" };
     }
     async function renewCredential() {
-      const outcome = outcomeOf(await opRenew.run());
-      if (outcome.kind !== "success") renewalProblem.value = refusalText(outcome);
+      try {
+        const outcome = outcomeOf(await opRenew.run());
+        if (outcome.kind !== "success") renewalProblem.value = refusalText(outcome);
+      } catch (failure) {
+        renewalProblem.value = failure.message;
+      }
     }
     onMounted(() => {
       if (opRenew.operation.value) return renewCredential();

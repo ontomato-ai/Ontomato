@@ -129,7 +129,7 @@ export const applications = [
     declaration: {
       names: { en: "Panels trial A", "zh-CN": "面板试点 A" },
       descriptions: { en: "The scheduled tasks panel, as the first trial application.", "zh-CN": "定时任务面板，第一个试点应用。" },
-      icon: "schedule",
+      icon: "calendar",
       groups: [],
       permissions: [],
     },
@@ -142,7 +142,7 @@ export const applications = [
     declaration: {
       names: { en: "Panels trial B", "zh-CN": "面板试点 B" },
       descriptions: { en: "The same scheduled tasks panel, and a second panel that shows one task.", "zh-CN": "同一个定时任务面板，另加一个只显示一个任务的面板。" },
-      icon: "schedule",
+      icon: "calendar",
       groups: [],
       permissions: [],
     },
