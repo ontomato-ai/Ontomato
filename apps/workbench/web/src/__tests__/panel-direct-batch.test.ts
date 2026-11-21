@@ -43,6 +43,7 @@ const deleteKnowledge = {
 function open() {
   const prepared: unknown[] = [];
   const instance = createDirectPanelInstance(manifest, {
+    readComponentPackage: noOperations.readComponentPackage,
     pageKey: "knowledge", url: () => "/ontology/knowledge", label: () => "Knowledge",
     initial: { checked: [item("k-1"), item("k-2")] },
     text: createPanelText({}, { value: "en" } as never, "en"),

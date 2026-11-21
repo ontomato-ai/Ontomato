@@ -49,7 +49,7 @@ afterEach(() => {
 });
 
 it("draws an installed package's component from its release, with the platform's Vue and the release's styles", async () => {
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+  vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
     const path = new URL(String(input), location.origin).pathname;
     return files[path] === undefined ? new Response("missing", { status: 404 }) : new Response(files[path], { headers: { "content-type": "text/javascript" } });
   }));
