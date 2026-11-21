@@ -345,7 +345,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const instance = newPanelInstanceName();
   const notice = shallowRef("");
   const draftRefusal = shallowRef("");
-  const draftOpening = shallowRef(false);
+  // An instance opened at an address linking a draft says so from the start, while its panel is still being read.
+  const draftOpening = shallowRef(draftLinkOf(options.address()) !== null);
   /** Takes the drawn panel's CSS away again. */
   let dropStyle: (() => void) | undefined;
   const pageContext = shallowRef<PageContext | null>(null);
