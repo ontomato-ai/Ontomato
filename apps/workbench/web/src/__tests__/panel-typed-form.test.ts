@@ -206,10 +206,12 @@ it("edits the owner's JSON through one form, with the skill picker and the data 
     // The picker resolves the held skills by its own read, independent of the form's.
     expect(fieldItem("/skills")?.textContent).toContain("SQL");
   }, { timeout: 5000 });
-  // The owner's own rules: false stays false, a read-only field says why, a hidden one is not drawn.
+  // The owner's own rules: false stays false, a read-only field says why, a hidden one is not drawn. A reference no
+  // member of this panel draws is named and says it cannot be edited here; the avatar is chosen in the form.
   expect(fieldItem("/enabled")?.querySelector(".el-switch")?.classList.contains("is-checked")).toBe(false);
-  expect(fieldItem("/executionUserId")).toBeNull();
-  expect(fieldItem("/icon")).toBeNull();
+  expect(fieldItem("/executionUserId")?.textContent).toContain("This field cannot be edited here yet");
+  expect(fieldItem("/executionUserId")?.textContent).toContain("Only a domain governance administrator changes it");
+  expect(fieldItem("/icon")?.querySelector(".sdk-form-avatar")).not.toBeNull();
   expect(fieldItem("/classNames")?.textContent).toContain("Nothing chosen keeps the default scope");
   // The data scope: the chosen class, and the one a drawn relationship joins it to, marked.
   expect(node("Order").classList.contains("selected")).toBe(true);

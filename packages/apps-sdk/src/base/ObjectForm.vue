@@ -139,11 +139,15 @@ function fixDescription(next: PanelFormDescription): PanelFormDescription {
 }
 
 const fields = computed(() => description.value?.fields ?? []);
+/** Whether a member of the panel draws this reference field, choosing from its own catalogue. */
+const drawnElsewhere = (path: string) => Object.values(panel.manifest.members).some(({ formField }) =>
+  formField?.slot === slot.slot && formField.path === path && formField.itemPath === undefined);
 /**
- * The fields this form draws itself; a reference is drawn by the projection that edits it, an avatar by the page that
- * shows it, a hidden one by none.
+ * The fields this form draws: all but a hidden one, which no control draws, and a reference a member of the panel draws.
+ * A reference no member draws is drawn here too, saying it cannot be edited here — never left out without a word.
  */
-const drawn = computed(() => fields.value.filter((field) => !["reference", "avatar", "hidden"].includes(field.control.kind)));
+const drawn = computed(() => fields.value.filter((field) =>
+  field.control.kind !== "hidden" && !(field.control.kind === "reference" && drawnElsewhere(field.path))));
 /** Changed values, or text a reader typed that is no value yet (JSON that does not parse): either is unsaved. */
 const dirty = computed(() => opened.value !== null
   && (JSON.stringify(values.value) !== JSON.stringify(opened.value.values) || Object.keys(invalid.value).length > 0));
@@ -364,8 +368,12 @@ useProjectionForm({
     const into: PanelFormTarget = draft.created ? { kind: "object", objectType, primaryKey: draft.created.id } : named;
     const baseline = targetKey(into) === targetKey(named) ? namedForm : await forms.describe({ target: into, changedField: null });
     const checked = await forms.describe({ target: into, values: draft.form as PanelFormValues, changedField: null });
-    // A draft the owner does not accept is refused whole, with the fields and the reasons.
-    if (checked.errors.length) throw new PlatformObjectRefusal(checked.errors[0]!.message, fieldMessages(checked.errors));
+    // A draft the owner does not accept is refused whole, with the fields and the reasons — said here, on this form, and
+    // nothing of it taken; it is this form's to say, so the rest of the panel goes on as it was.
+    if (checked.errors.length) {
+      showRefusal(new PlatformObjectRefusal(checked.errors[0]!.message, fieldMessages(checked.errors)));
+      return new Set();
+    }
     const marked = changedPaths(checked.fields, baseline.values, checked.values);
     // What the draft wrote, by its presence: a field it left out is not submitted, though the owner's check returns it.
     const written = new Set(checked.fields.filter((item) => valueAt(draft.form as PanelFormValues, item.path) !== undefined).map((item) => item.path));

@@ -82,5 +82,8 @@ const labels = computed(() => ({ empty: t("platform.dataEmpty"), forbidden: t("p
   <data-state v-else-if="awaiting" :result="{ status: 'awaiting' }" :labels="labels"></data-state>
   <div v-else-if="nested" ref="container" class="sdk-panel-member-nested"></div>
   <data-state v-else-if="!loaded" :result="{ status: 'loading' }" :labels="labels"></data-state>
-  <component :is="loaded.component" v-else v-bind="bound"></component>
+  <component :is="loaded.component" v-else v-bind="bound">
+    <!-- What the panel's template placed in the component's slots, drawn where the component puts each slot. -->
+    <template v-for="(_, name) in $slots" #[name]="scope"><slot :name="name" v-bind="scope ?? {}"></slot></template>
+  </component>
 </template>

@@ -12,11 +12,11 @@ import { receivePanelDraft } from "../../../../../packages/apps-sdk/src/panel/dr
 import { noOperations } from "./panel-frame";
 
 /*
- * A draft a directly run panel cannot take — its owner refuses it, or its form cannot be read — fails the panel where it
- * would have been, through the run's own report, as it does in a frame: the host passes nothing more for it.
+ * A draft a directly run panel's owner refuses is said where it was meant to go: on its form, with the owner's reason at
+ * its top and the field messages beside their fields (the agent settings page, redone 2026-11-21) — the rest of the panel
+ * goes on. A draft no form of the panel takes still fails the panel, through the run's own report.
  *
- * What this rules out: a refused draft dropped without a word in the platform's document, the panel left as if no draft
- * had come.
+ * What this rules out: a refused draft dropped without a word; one form's refusal taking down the whole panel.
  */
 
 const record = { domainId: "d", ownerId: "o", revision: 1, createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "" };
@@ -46,7 +46,7 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-it("fails the panel with the owner's reason when the owner refuses the draft", async () => {
+it("says the owner's refusal of a draft on its form, and does not fail the panel", async () => {
   const failed: unknown[] = [];
   const mount = mountDirectPanel({
     manifest,
@@ -74,8 +74,8 @@ it("fails the panel with the owner's reason when the owner refuses the draft", a
   await receivePanelDraft("tasks", mount.instance.forms, {
     readPageDraft: async () => ({ pageKey: "tasks", operation: `${SCHEDULED_TASK}.save`, target: { id: "t-1" }, form: { name: "t-1", note: "x" } }),
   }, link, mount.instance.receiveDraft);
-  await vi.waitFor(() => expect(failed).toHaveLength(1));
-  expect((failed[0] as Error).message).toBe("A note is a sentence");
+  await vi.waitFor(() => expect(element.querySelector(".sdk-owner-form-refusal")?.textContent).toBe("A note is a sentence"));
+  expect(failed).toEqual([]);
   app.unmount();
   mount.dispose();
 });
