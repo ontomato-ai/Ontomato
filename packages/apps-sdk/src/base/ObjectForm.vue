@@ -17,6 +17,7 @@ import { editedInput, memberFormSource, MemberDataUnavailable, type FormSource }
 import { formControlsKey, rowControlKey, rowControlsOf } from "./form-controls";
 import FormFieldControl from "./FormFieldControl.vue";
 import FormAdvancedSection from "./FormAdvancedSection.vue";
+import { fieldShowing } from "./form-placement";
 import { useDataStateLabels } from "./data-state-labels";
 
 /**
@@ -488,6 +489,32 @@ async function saveFromForm() {
   }
 }
 
+/**
+ * What the foot of the form says of the owner's refusal (panelisation lead, 2026-11-22): a message shown on a field is
+ * not said again there — the reader is told how many fields to change, and taken to the first — and only what no field
+ * shows is said in full. A refusal that names no field is its own message.
+ */
+const refusalFoot = computed(() => {
+  if (!refusal.value) return null;
+  const named = Object.entries(errors.value);
+  if (!(refusal.value instanceof PlatformObjectRefusal) || !named.length) return { fields: [], said: [refusal.value.message] };
+  const onFields = new Set<string>();
+  const said: string[] = [];
+  for (const [path, message] of named) {
+    const field = fieldShowing(fields.value, path);
+    if (field === null) said.push(message);
+    else onFields.add(field);
+  }
+  return { fields: [...onFields], said };
+});
+const formElement = ref<HTMLElement | null>(null);
+/** Takes the reader to the first field, in the form's order, that the refusal's messages are on. */
+function showFirstRefused() {
+  const refused = new Set(refusalFoot.value!.fields);
+  [...formElement.value!.querySelectorAll<HTMLElement>("[data-field]")].find((item) => refused.has(item.dataset.field!))!
+    .scrollIntoView({ block: "center" });
+}
+
 function showRefusal(reason: unknown) {
   refusal.value = reason instanceof Error ? reason : new Error(String(reason));
   errors.value = reason instanceof PlatformObjectRefusal ? reason.fields : {};
@@ -550,7 +577,7 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
 </script>
 
 <template>
-  <div class="sdk-owner-form">
+  <div ref="formElement" class="sdk-owner-form">
     <data-state :result="shown" :labels="labels">
     <!-- The panel frame is sandboxed without allow-forms, so the browser drops a native form submission before any
          submit handler runs: the reader's save is the button's own click. -->
@@ -564,7 +591,12 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
       <p v-if="changed.size" class="sdk-owner-form-changed" role="status">
         {{ t("platform.panelDraftChanged", { fields: changedLabels }) }}
       </p>
-      <p v-if="refusal" class="sdk-owner-form-refusal" role="alert">{{ refusal.message }}</p>
+      <div v-if="refusalFoot" class="sdk-owner-form-refusal" role="alert">
+        <button v-if="refusalFoot.fields.length" type="button" class="sdk-owner-form-refusal-count" @click="showFirstRefused">
+          {{ t("platform.formFieldsNeedChanges", { n: refusalFoot.fields.length }, refusalFoot.fields.length) }}
+        </button>
+        <p v-for="message in refusalFoot.said" :key="message">{{ message }}</p>
+      </div>
       <div class="sdk-owner-form-actions">
         <el-button :disabled="saving || !canSettle" @click="discard">{{ t("platform.discard") }}</el-button>
         <el-button type="primary" :disabled="!canSettle" :loading="saving" @click="saveFromForm">{{ t("platform.save") }}</el-button>
@@ -597,5 +629,18 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
   color: var(--el-color-danger-text);
   font-size: var(--text-xs);
   margin: var(--spacing-xs) 0 0;
+}
+.sdk-owner-form-refusal > p {
+  margin: 0;
+}
+/* The count of fields to change, which takes the reader to the first of them. */
+.sdk-owner-form-refusal-count {
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
 }
 </style>

@@ -75,7 +75,8 @@ it("says the owner's refusal of a draft on its form, and does not fail the panel
   await receivePanelDraft("tasks", mount.instance.forms, {
     readPageDraft: async () => ({ pageKey: "tasks", operation: `${SCHEDULED_TASK}.save`, target: { objectType: SCHEDULED_TASK, id: "t-1" }, form: { name: "t-1", note: "x" } }),
   }, link, mount.instance.receiveDraft);
-  await vi.waitFor(() => expect(element.querySelector(".sdk-owner-form-refusal")?.textContent).toBe("A note is a sentence"));
+  await vi.waitFor(() => expect(element.querySelector(".sdk-owner-form-refusal")?.textContent?.trim()).toBe("1 field needs changing"));
+  await vi.waitFor(() => expect(element.querySelector('[data-field="/note"] .el-form-item__error')?.textContent?.trim()).toBe("A note is a sentence"));
   expect(failed).toEqual([]);
   app.unmount();
   mount.dispose();

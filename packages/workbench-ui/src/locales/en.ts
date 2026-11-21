@@ -260,6 +260,7 @@ export default {
     "relationsLoading": "Loading relations...",
     "formAdd": "Add",
     "formAdvanced": "Advanced",
+    "formFieldsNeedChanges": "1 field needs changing | {n} fields need changing",
     "formRemove": "Remove",
     "formMoveUp": "Move up",
     "formMoveDown": "Move down",

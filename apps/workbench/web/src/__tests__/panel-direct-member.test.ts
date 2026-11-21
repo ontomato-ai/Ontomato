@@ -231,9 +231,9 @@ it("refuses a draft whole on its form when the owner's check of it names fields 
   await receivePanelDraft("tasks", instance.forms, {
     readPageDraft: async () => ({ pageKey: "tasks", operation: `${SCHEDULED_TASK}.save`, target: { objectType: SCHEDULED_TASK, id: "t-1" }, form: { name: "t-1", note: "x" } }),
   }, link, instance.receiveDraft);
-  // The refusal is the form's to say, at its top and beside the field it names; the panel itself has not failed, and its
-  // other member is drawn as it was.
-  await vi.waitFor(() => expect(element.querySelector(".sdk-owner-form-refusal")?.textContent).toBe("A note is a sentence"));
+  // The refusal is the form's to say, on the field it names and, below the form, as the count of fields to change; the
+  // panel itself has not failed, and its other member is drawn as it was.
+  await vi.waitFor(() => expect(element.querySelector(".sdk-owner-form-refusal")?.textContent?.trim()).toBe("1 field needs changing"));
   await vi.waitFor(() => expect(element.querySelector('[data-field="/note"] .el-form-item__error')?.textContent?.trim()).toBe("A note is a sentence"));
   expect(draftErrors).toEqual([]);
   expect(element.querySelector(".sdk-operation-button")).not.toBeNull();
