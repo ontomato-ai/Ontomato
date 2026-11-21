@@ -381,6 +381,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
       v-for="page in kept"
       v-show="page === shownPage"
       :key="page.use.id"
+      :class="{ 'panel-host-page': !props.navigate }"
       :ref="(instance) => { if (page === shownPage) host = instance as ShownInstance | null; }"
       :port="page.port"
       :labels="labels"
@@ -408,6 +409,13 @@ function reportDirty(page: KeptPage, dirty: boolean) {
 </template>
 
 <style scoped>
+/*
+ * At full page the platform's page body already holds the gutter the header's title stands on: the panel's content starts
+ * on the same line, with no inset of the host's own (visual acceptance E-01).
+ */
+.panel-host-page :deep(.panel-host-direct) {
+  padding-inline: 0;
+}
 /* The page's own configuration error, where its composer would be: the reader is told, not left guessing. */
 .page-composer-error {
   width: min(760px, 100%);

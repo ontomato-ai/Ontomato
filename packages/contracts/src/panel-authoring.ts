@@ -47,6 +47,7 @@ const inlineMemberSchema = z.object({
   bindingId: panelReadOperationInputsSchema.shape.bindingId
     .describe("Optional binding ID for a draft read operation, from {state: fieldName} or {formField: {slot, path}}."),
   state: z.record(stateKey, stateKey).optional().describe("Map typed component port names or owner read parameter names to panel state fields."),
+  formField: panelMemberSchema.shape.formField.describe("Connect this member to an ObjectForm field. Use {slot: formMember, path: ownerFieldPointer}, with itemPath for a field inside each array row."),
   config: runtimeJsonObjectSchema.optional().describe("Component configuration from the released SDK catalogue."),
   agent: z.union([z.literal("page-default"), defaultAgentSchema]).optional().describe('Required for ConversationEntry. Use "page-default", {kind:"id", id}, or {kind:"preset", agentKind}.'),
   prefill: panelConversationEntryFields.shape.prefill.describe("ConversationEntry text placed in the page composer without sending it."),
@@ -58,7 +59,7 @@ const inlineMemberSchema = z.object({
   const issue = (field: string[], message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path: field, message });
   if (isOfficialComponent(member.component, "MetricChart")) {
     if (member.sourceCard === undefined) issue(["sourceCard"], "MetricChart needs a source card");
-    for (const field of ["id", "type", "target", "data", "operation", "draft", "parameters", "bindingId", "config", "agent", "prefill", "prefillKey", "name", "description"] as const) {
+    for (const field of ["id", "type", "target", "data", "operation", "draft", "parameters", "bindingId", "config", "formField", "agent", "prefill", "prefillKey", "name", "description"] as const) {
       if (member[field] !== undefined) issue([field], "MetricChart takes its projection definition from the source card");
     }
     return;
@@ -68,7 +69,7 @@ const inlineMemberSchema = z.object({
   if (isOfficialComponent(member.component, "ConversationEntry")) {
     if (member.agent === undefined) issue(["agent"], "ConversationEntry needs an agent target");
     if (member.prefill !== undefined && member.prefillKey !== undefined) issue(["prefillKey"], "Write the opening sentence out or name its message key, not both");
-    for (const field of ["type", "target", "data", "operation", "draft", "parameters", "bindingId", "state"] as const) {
+    for (const field of ["type", "target", "data", "operation", "draft", "parameters", "bindingId", "state", "formField"] as const) {
       if (member[field] !== undefined) issue([field], "ConversationEntry uses only its declared agent and optional prefill");
     }
     return;
