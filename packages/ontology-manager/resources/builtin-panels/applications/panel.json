@@ -1,6 +1,13 @@
 {
   "manifest": {
     "state": {
+      "creating": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "deepLink": true
+      },
       "selected": {
         "type": {
           "kind": "object",
@@ -155,6 +162,33 @@
         "id": "builtin-product-fe66a20c-a476-4988-ac4d-d42dfaa1908a"
       }
     },
-    "commands": {}
+    "commands": {
+      "create": {
+        "labelKey": "action.create",
+        "primary": true,
+        "do": {
+          "set": {
+            "fields": {
+              "selected": {
+                "literal": null
+              },
+              "creating": {
+                "literal": true
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "action.create": "New application"
+      },
+      "zh-CN": {
+        "action.create": "新建应用"
+      }
+    }
   }
 }

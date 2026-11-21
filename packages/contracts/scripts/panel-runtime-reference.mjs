@@ -81,6 +81,12 @@ assert.ok(Object.keys(graphState).every(name => capabilityMap.state[name].deepLi
 const graphSelection = panelStateFieldSchema.parse(capabilityMap.state.selected);
 const graphAddress = panelAddress("/destination", graphState);
 const graphQuery = new URL(graphAddress, "http://runtime-reference.invalid").search;
+const [draftSessionKey, draftRunKey, draftPathKey] = PAGE_DRAFT_QUERY_KEYS;
+const draftQueryExample = new URLSearchParams({
+  [draftSessionKey]: "SESSION_ID",
+  [draftRunKey]: "RUN_ID",
+  [draftPathKey]: "outputs/drafts/edit.page-draft.json",
+});
 
 const mark = "`";
 const asCode = value => mark + value + mark;
@@ -104,6 +110,8 @@ const contents = [
   `Direct panel modules can import ${inline(Object.values(panelModuleSpecifiers))}.`,
   "",
   `The supported application icon IDs are ${inline(applicationIconKeys)}.`,
+  "To show an application by its icon key, draw `<component :is=\"appIcon(key)\" :size=\"16\" />` with `appIcon` from",
+  "`@ontomato/sdk/panel`: it is the platform's own icon for the key, and an unknown key draws the platform's fallback.",
   "",
   "## Vue setup",
   "",
@@ -169,8 +177,12 @@ const contents = [
   "",
   "## Draft links and instance state",
   "",
-  `A draft link uses the destination entry path and the query keys ${inline(PAGE_DRAFT_QUERY_KEYS)}.`,
-  "Use the session and run that wrote the artifact and the original relative `outputs/drafts/<name>.page-draft.json` path.",
+  "Append the draft query to the destination entry path and keep any existing entry parameters.",
+  "Use the producing session and run IDs. Pass a path relative to that run, starting with `outputs/drafts/` and",
+  "without a leading slash. Encode that raw path once. The complete draft query has this form:",
+  "",
+  asCode(`?${draftQueryExample}`),
+  "",
   "The SDK reads the artifact, verifies it was written for the entry's `pageKey`, and offers it to the mounted forms.",
   "A form asks its owner for the target's description, matches `save.draftOperation`, then gives the owner's form read",
   "the proposed field values to check. If the owner accepts changed fields, the SDK fills the form and sets `instance.draft`.",

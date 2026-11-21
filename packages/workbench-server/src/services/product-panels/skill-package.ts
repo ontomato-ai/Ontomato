@@ -350,7 +350,9 @@ function describeDraft(forms: readonly OperationDescription[]): string {
     "Put the selected object's ID in `target.id` when editing an existing object.",
     "An owner's revision, when required, is part of the operation input.",
     "Each run has its own artifact area. Use a distinct path for each draft written in the same run.",
-    `Link to the canonical path from the current page context. Set \`${sessionKey}\` to the producing run's \`$ONTOMATO_SESSION_ID\`, \`${runKey}\` to that run's \`$ONTOMATO_RUN_ID\`, and \`${pathKey}\` to the encoded path of its draft file. For a draft written in a later run, build a new link using that run's ID. The panel fills the form for the reader to review and save.`,
+    `Link to the canonical path from the current page context and preserve the entry's existing query parameters. Set \`${sessionKey}\` to the producing run's \`$ONTOMATO_SESSION_ID\` and \`${runKey}\` to that run's \`$ONTOMATO_RUN_ID\`. For a draft written in a later run, build a new link using that run's ID.`,
+    `The raw value of \`${pathKey}\` is the draft file's path relative to the producing run's artifact area. It starts with \`outputs/drafts/\` and has no leading \`/\`. URL-encode that value exactly once when adding it to the query.`,
+    `Use \`?${sessionKey}=SESSION_ID&${runKey}=RUN_ID&${pathKey}=outputs%2Fdrafts%2Fedit.page-draft.json\` for an \`edit.page-draft.json\` draft. Replace \`SESSION_ID\` and \`RUN_ID\` with the producing run's actual session and run IDs. The panel fills the form for the reader to review and save.`,
     "In your reply, give the reader a Markdown link to the page address you just built so they can open the prefilled form. Use the draft file path only inside `draftPath`. A standalone file link opens a JSON file card.",
   ].join("\n");
 }

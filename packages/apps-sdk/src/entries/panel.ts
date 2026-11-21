@@ -32,3 +32,8 @@ export { usePanelData } from "../panel/panel-data";
 export { usePanelOperation, type PanelOperationHandle } from "../panel/panel-operation";
 export { savePanelFile, type PanelDownloadReceipt } from "../panel/save-file";
 export type { PanelStateStore } from "../panel/state";
+/**
+ * The platform's icon for an application's icon key, as its navigation draws it (an unknown key draws the platform's
+ * fallback): a panel shows an application by `<component :is="appIcon(key)">`, never by the key's text.
+ */
+export { appIcon } from "@ontomato/platform-shell";

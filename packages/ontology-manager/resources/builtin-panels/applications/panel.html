@@ -12,7 +12,6 @@
   .apps-name-text { display: flex; flex-direction: column; min-width: 0; }
   .apps-name-text strong { font-weight: var(--font-semibold); }
   .apps-name-text small { color: var(--el-text-color-secondary); font-size: var(--text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .apps-icon { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: var(--control-height-inline); padding: 0 var(--spacing-xs); border-radius: var(--radius-sm); background: var(--ui-fill-tertiary); color: var(--el-text-color-regular); font-size: var(--text-xs); font-family: var(--font-mono); flex: none; }
   .apps-hint { margin: 0; color: var(--el-text-color-secondary); font-size: var(--text-sm); line-height: 1.6; }
   .apps-error { margin: 0; color: var(--el-color-danger-text); font-size: var(--text-sm); line-height: 1.6; }
   .apps-ok { margin: 0; color: var(--el-color-success-text); font-size: var(--text-sm); line-height: 1.6; }
@@ -37,7 +36,7 @@
   .apps-link { color: var(--brand-link); font-size: var(--text-xs); }
   .apps-sheet { border-color: var(--ui-border); box-shadow: var(--elevation-panel); }
   .apps-confirm { border-color: var(--el-color-danger-light-5); }
-  .apps-list-icon { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+  .apps-list-icon { display: inline-flex; vertical-align: middle; color: var(--el-text-color-regular); }
   .apps-list .el-table__cell { padding-inline: var(--spacing-xs) !important; }
   .apps-list .cell { padding-inline: var(--spacing-xs); }
   .apps-list .el-tag { padding-inline: var(--spacing-xs); }
@@ -58,14 +57,17 @@
           <el-option :value="50" label="50 条/页"></el-option>
         </el-select>
         <span class="apps-count">{{ rows.length }} 条{{ pageIndex > 1 ? ' · 第 ' + pageIndex + ' 页' : '' }}{{ nextCursor ? ' · 还有更多' : '' }}</span>
-        <el-button type="primary" @click="startCreate">新建应用</el-button>
       </div>
 
       <p class="apps-error" v-if="listError" role="alert">{{ listError }}</p>
 
       <el-table class="apps-list" v-loading="catalogue.status === 'loading'" :data="rows" row-key="id" @row-click="openRow">
-        <el-table-column label="图标" width="92">
-          <template #default="{ row }"><span class="apps-icon apps-list-icon" :title="row.icon">{{ row.icon }}</span></template>
+        <el-table-column label="图标" width="52">
+          <template #default="{ row }">
+            <span class="apps-list-icon" :title="row.icon">
+              <component :is="appIcon(row.icon)" :size="16" aria-hidden="true"></component>
+            </span>
+          </template>
         </el-table-column>
         <el-table-column label="名称" min-width="110">
           <template #default="{ row }">

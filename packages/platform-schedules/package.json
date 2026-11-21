@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./panel-operations": "./src/panel-operations.ts",
+    "./frequency-control": "./src/frequency-control.ts",
     "./panel-text": "./src/panel-text.ts",
     "./panel-reads": "./src/panel-reads.ts",
     "./panel-server-operations": "./src/panel-server-operations.ts",

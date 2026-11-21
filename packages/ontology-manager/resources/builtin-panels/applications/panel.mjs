@@ -1,5 +1,5 @@
 import { computed, reactive, ref, watch } from "vue";
-import { mountPanel, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
+import { appIcon, mountPanel, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
 
 /** The application catalogue uses the owner's declared reads, forms and operations. */
 
@@ -61,7 +61,12 @@ const Applications = {
     const record = usePanelData("record", "record");
     const panelInfo = usePanelData("panelInfo", "panel");
 
-    const creating = ref(false);
+    const creating = computed({
+      get: () => values.value.creating === true,
+      set(active) {
+        instance.state.set("creating", active ? true : null);
+      },
+    });
     const mode = computed(() => (creating.value ? "create" : selected.value ? "detail" : "list"));
     const busy = ref(false);
     const listError = ref("");
@@ -136,14 +141,6 @@ const Applications = {
       actionNote.value = "";
       classLinkNote.value = "";
       creating.value = false;
-      instance.state.set("selected", null);
-    }
-
-    function startCreate() {
-      closeForm();
-      actionError.value = "";
-      actionNote.value = "";
-      creating.value = true;
       instance.state.set("selected", null);
     }
 
@@ -432,11 +429,18 @@ const Applications = {
       if (run) await run();
     }
 
+    watch(creating, active => {
+      if (!active) return;
+      closeForm();
+      actionError.value = "";
+      actionNote.value = "";
+    }, { immediate: true });
     watch(instance.draft, (draft) => {
       if (!draft) return;
       const id = draft.target.id;
       if (!id) {
-        startCreate();
+        creating.value = true;
+        instance.state.set("selected", null);
         return;
       }
       creating.value = false;
@@ -445,9 +449,9 @@ const Applications = {
     }, { immediate: true });
 
     return {
-      APPLICATION, catalogue, record, panelInfo, selected, rows, nextCursor, app, mode, creating, busy,
+      APPLICATION, catalogue, record, panelInfo, selected, rows, nextCursor, app, appIcon, mode, creating, busy,
       searchText, scope, pageSize, pageIndex, isFirstPage, listError, actionError, actionNote, classLinkNote,
-      scheduleSearch, setScope, setSize, nextPage, firstPage, openRow, backToList, startCreate, createdApplication,
+      scheduleSearch, setScope, setSize, nextPage, firstPage, openRow, backToList, createdApplication,
       openApplication, openClassCatalogue, openPanelCatalogue, usedPanels, inspectedPanelId, inspectedProjections,
       inspectPanel, groupText, permissionSummary, localeRows, localizedText, secondaryName,
       accessText, agentText, inputsText, themeText,
