@@ -1,14 +1,15 @@
-import { computed, effectScope, onScopeDispose, shallowReactive, shallowRef, watch, type ComputedRef, type EffectScope } from "vue";
+import { computed, effectScope, onScopeDispose, shallowReactive, shallowRef, watch, type ComputedRef, type EffectScope, type Ref } from "vue";
 import { ElMessage } from "element-plus/es/components/message/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
+import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
+import { PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
+import type { DirectPanelRun } from "@ontomato/platform-shell";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import { panelOperationAffectedSchema, panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
-import { memberProjectionId } from "./projection-element";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { PanelDataState, ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
-import { createPanelInstance, type PanelInstance, type PanelInstanceOptions } from "./instance";
+import { createPanelInstance, type PanelInstance, type PanelInstanceOptions, type PublisherPath } from "./instance";
 import { stateObject, type PanelFieldValue } from "./state";
 import type { PanelText } from "./text";
 import type { PanelContext } from "./context";
@@ -54,6 +55,49 @@ export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "
    * guard that stopped it), the host says why on the page and rejects with the same reason.
    */
   navigate(address: string): Promise<void>;
+  /**
+   * Runs the panel a member places from the panel's state (see the mount's options): `memberPath` is that member's
+   * segment with the selection, relative to this instance; `run` is how the placed panel reports to this one.
+   */
+  nested(memberPath: PanelMemberPath, run: DirectPanelRun): Promise<{ element: HTMLElement; mount: NestedPanelMount }>;
+}
+
+/** What this instance needs of a placed panel's run: its own instance, and how the host drives and ends it. */
+export interface NestedPanelMount {
+  readonly instance: PanelInstance;
+  refresh(target: null, affected?: PanelOperationAffected): void;
+  projectionsChanged(projections: readonly { id: string; revision: number }[]): void;
+  activate(active: boolean): void;
+  dispose(): void;
+}
+
+/**
+ * Why a member could not be placed: the reader may not use what was chosen (403), or it is not there, or not among the
+ * member's candidates (404). The member shows it in its own place; the rest of the panel goes on.
+ */
+export class PanelMemberUnavailable extends Error {
+  constructor(readonly status: 403 | 404, message: string) {
+    super(message);
+    this.name = "PanelMemberUnavailable";
+  }
+}
+
+/**
+ * What a member places now: a projection, drawn by its component; a panel, run in an element of its own; or nothing
+ * yet, while the panel's state chooses nothing for it.
+ */
+export type MemberPlacing =
+  | { kind: "projection"; context: PanelMemberContext }
+  | { kind: "panel"; element: HTMLElement; failure: Readonly<Ref<Error | null>> }
+  | { kind: "awaiting" };
+
+/** The target a state value chooses for a member placed from it: the panel or projection it names. */
+function chosenTarget(direct: PanelManifest, member: string, value: unknown): { panelId: string } | { projectionId: string } | null {
+  const chosen = stateObject(value as PanelFieldValue);
+  if (chosen === null) return null;
+  if (chosen.className === PRODUCT_PANEL) return { panelId: chosen.primaryKey };
+  if (chosen.className === PRODUCT_PROJECTION) return { projectionId: chosen.primaryKey };
+  throw new Error(`Member '${member}' is placed from ${chosen.className}, which this SDK release does not place (only a panel or a projection)`);
 }
 
 /** One member's data: the shown data by name, and a read the component asks for with run inputs of its own. */
@@ -80,8 +124,10 @@ export interface DirectPanelInstance extends PanelInstance {
   expandPageComposer(entry: PanelConversationEntry): void;
   /** Opens one of the platform's addresses, or says on the page why it cannot (see the options). */
   navigate(address: string): Promise<void>;
-  /** The member's projection, read once for this instance. */
+  /** The member's projection, read once for this instance: its fixed one, or the one the panel's state chose. */
   projectionOf(member: string): Promise<DirectProjection>;
+  /** What the member places now, held from the start, drawn or not, and placed anew when the state choosing it changes. */
+  placing(member: string): Promise<MemberPlacing>;
   /**
    * The member as the instance holds it, drawn or not: its projection, the inputs its placement fills now, its data and
    * the operations its owners admit, registered with the instance once its projection is read. A member is held once per
@@ -189,8 +235,9 @@ export type PanelReadPort = (request: PanelMemberReadRequest) => Promise<Product
  * checked against the result its registered read declares. A directly rendered panel and a panel's frame read the same
  * way and differ only in the port: the host's own, or the frame's request path through its bridge.
  */
-export async function readMemberDatum(read: PanelReadPort, projection: DirectProjection, member: string, placement: MemberPlacement,
-  name: string, values: MemberInputs, own: MemberInputs): Promise<MemberDataState> {
+export async function readMemberDatum(read: PanelReadPort, projection: DirectProjection, memberPath: PublisherPath,
+  placement: MemberPlacement, name: string, values: MemberInputs, own: MemberInputs): Promise<MemberDataState> {
+  const member = memberPath.at(-1)!.member;
   const data = projection.data[name];
   if (!data) throw new Error(`Member '${member}' declares no datum '${name}'`);
   // A datum waits for its object or a required parameter; no read is made for nothing.
@@ -200,7 +247,7 @@ export async function readMemberDatum(read: PanelReadPort, projection: DirectPro
   // A read the platform could not answer (unavailable, refused before the owner) is this datum's failure, with the
   // platform's reason: the member shows it where its data would be.
   const result = await read({
-    memberPath: [{ member }], dataName: name, inputs: authored,
+    memberPath, dataName: name, inputs: authored,
     ...(Object.keys(runtime).length ? { runtimeParams: runtime } : {}),
   }).catch((reason: unknown) => ({ status: "error" as const, message: reason instanceof Error ? reason.message : String(reason) }));
   if (result.status !== "ready") return result;
@@ -223,8 +270,17 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   const readRevisions = new Map<string, number>();
   const versions = shallowReactive(new Map<string, number>());
   let active = true;
+  /** A member's segment of a path: its key, and for one placed from the panel's state the selection that chose it. */
+  const segmentOf = (member: string): PanelMemberPath[number] => {
+    const target = direct.members[member]?.target;
+    if (!target || !("fromState" in target)) return { member };
+    const stateValue = (instance.state.values.value[target.fromState] ?? null) as RuntimeJsonValue;
+    const chosen = chosenTarget(direct, member, stateValue);
+    return chosen ? { member, selection: { stateValue, target: chosen } } : { member };
+  };
   const instance = createPanelInstance(direct, {
     ...options,
+    segmentOf,
     // The shared machinery reads no projection of a direct panel; its members are read here.
     readProjection: () => Promise.reject(new Error("A direct panel's members read their projections through the instance")),
   });
@@ -234,7 +290,77 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   const operationReads = new Set<() => void>();
   /** Where the members the instance holds live, each in its own scope, so a member held anew ends the old one. */
   const membersScope = effectScope();
-  const members = new Map<string, { scope: EffectScope; context: Promise<PanelMemberContext> }>();
+  const members = new Map<string, { scope: EffectScope; placing: Promise<MemberPlacing> }>();
+  /** The panels placed in this instance's members, which follow it as it is refreshed, seen and changed. */
+  const nestedMounts = new Set<NestedPanelMount>();
+  /** The projection a member places now: its fixed one, or the one the panel's state chose; none for a panel. */
+  const placedProjectionId = (member: string): string | null => {
+    const declaration = direct.members[member];
+    if (!declaration) throw new Error(`The panel declares no member '${member}'`);
+    const { target } = declaration;
+    if ("projectionId" in target) return target.projectionId;
+    if ("fromState" in target) {
+      const selection = segmentOf(member).selection;
+      return selection && "target" in selection && "projectionId" in selection.target ? selection.target.projectionId : null;
+    }
+    return null;
+  };
+  /** A member placed anew: what it held ends, and whoever draws it draws it again. */
+  function release(member: string) {
+    projections.delete(member);
+    versions.set(member, (versions.get(member) ?? 0) + 1);
+    const held = members.get(member);
+    if (!held) return;
+    held.scope.stop();
+    members.delete(member);
+  }
+  /** The state a placed panel's inputs take from this instance, by the placed panel's names. */
+  const nestedInputs = (member: string) => Object.fromEntries(Object.entries(direct.members[member]!.inputs ?? {}).map(([name, from]) => [
+    name, "literal" in from ? from.literal : "state" in from ? instance.state.values.value[from.state] ?? null : null,
+  ])) as Record<string, PanelFieldValue>;
+  /** Holds the projection a member places: its inputs, its operations as its owners admit them, and its data. */
+  async function placeProjection(member: string, scope: EffectScope): Promise<MemberPlacing> {
+    const projection = await directInstance.projectionOf(member);
+    const context = scope.run(() => {
+      const inputs = computed(() => slotInputValues(direct, member, instance.state.values.value) as MemberInputs);
+      const operations = directInstance.memberOperations(member, projection, () => inputs.value);
+      onScopeDispose(instance.register({
+        slot: member, projectionId: projection.id, ports: portsOf(projection),
+        get operations() { return admittedOperations(operations.value); },
+        takesDrafts: readsOwnerForm(projection),
+      }));
+      return { key: member, projection, inputs, operations, data: directInstance.memberData(member, projection, () => inputs.value) };
+    })!;
+    return { kind: "projection", context };
+  }
+  /** Runs the panel a member places, publishing into this instance and following it until the member is placed anew. */
+  async function placePanel(member: string, scope: EffectScope): Promise<MemberPlacing> {
+    const failure = shallowRef<Error | null>(null);
+    const run: DirectPanelRun = {
+      pageKey: options.pageKey, url: options.url, label: options.label,
+      initial: nestedInputs(member) as never,
+      // The placed panel's state stays its own; what this one takes of it is its declared outputs, read below.
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
+      failed: (reason) => { failure.value = reason instanceof Error ? reason : new Error(String(reason)); },
+    };
+    const { element, mount } = await options.nested([segmentOf(member)], run);
+    scope.run(() => {
+      nestedMounts.add(mount);
+      const placed = mount.instance;
+      onScopeDispose(instance.publish(member, computed(() => ({
+        operations: placed.operations.value, dirty: () => placed.dirty(), context: placed.pageContext.value,
+      }))));
+      // Its inputs follow this instance's state; its outputs write it.
+      watch(() => JSON.stringify(nestedInputs(member)), () => placed.state.setState(nestedInputs(member)));
+      for (const [name, to] of Object.entries(direct.members[member]!.outputs ?? {}))
+        watch(() => placed.state.values.value[name], (value) => instance.state.set(to.state, (value ?? null) as never), { immediate: true });
+      onScopeDispose(() => {
+        nestedMounts.delete(mount);
+        mount.dispose();
+      });
+    });
+    return { kind: "panel", element, failure };
+  }
 
   const directInstance: DirectPanelInstance = Object.assign(instance, {
     direct,
@@ -244,10 +370,14 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     projectionOf(member: string) {
       let found = projections.get(member);
       if (!found) {
-        found = options.readProjection(memberProjectionId(direct, member)).then((projection) => {
+        const id = placedProjectionId(member);
+        if (id === null) throw new Error(`Member '${member}' places no projection now`);
+        found = options.readProjection(id).then((projection) => {
           readRevisions.set(member, projection.revision);
           return projection;
         }).catch((reason: unknown) => {
+          // Whether the reader may use it, or it is there at all, is what the member says in its place, as it is.
+          if (reason instanceof PanelMemberUnavailable) throw reason;
           const message = reason instanceof Error ? reason.message : String(reason);
           throw new Error(`Member '${member}': ${message}`, { cause: reason });
         });
@@ -255,29 +385,31 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       }
       return found;
     },
-    memberContext(member: string) {
+    async memberContext(member: string) {
+      const placing = await directInstance.placing(member);
+      if (placing.kind === "projection") return placing.context;
+      if (placing.kind === "panel") throw new Error(`Member '${member}' places a panel: its data and operations are that panel's`);
+      throw new Error(`Member '${member}' waits for the panel's state to choose what it places`);
+    },
+    placing(member: string) {
       const held = members.get(member);
-      if (held) return held.context;
+      if (held) return held.placing;
       if (!Object.hasOwn(direct.members, member)) throw new Error(`The panel declares no member '${member}'`);
       const scope = membersScope.run(() => effectScope())!;
-      const context = directInstance.projectionOf(member).then((projection) => scope.run(() => {
-        const inputs = computed(() => slotInputValues(direct, member, instance.state.values.value) as MemberInputs);
-        const operations = directInstance.memberOperations(member, projection, () => inputs.value);
-        onScopeDispose(instance.register({
-          slot: member, projectionId: projection.id, ports: portsOf(projection),
-          get operations() { return admittedOperations(operations.value); },
-          takesDrafts: readsOwnerForm(projection),
-        }));
-        return { key: member, projection, inputs, operations, data: directInstance.memberData(member, projection, () => inputs.value) };
-      })!);
-      members.set(member, { scope, context });
-      return context;
+      const segment = segmentOf(member);
+      const placing: Promise<MemberPlacing> = "fromState" in direct.members[member]!.target && !segment.selection
+        ? Promise.resolve({ kind: "awaiting" })
+        : segment.selection && "target" in segment.selection && "panelId" in segment.selection.target
+          ? placePanel(member, scope)
+          : placeProjection(member, scope);
+      members.set(member, { scope, placing });
+      return placing;
     },
     memberData(member: string, projection: DirectProjection, inputs: () => MemberInputs): MemberData {
       const own = () => instance.ownParams(member);
       const placement = direct.members[member]!;
       const answer = (name: string, values: MemberInputs, ownRun: MemberInputs = own()) =>
-        readMemberDatum(options.read, projection, member, placement, name, values, ownRun);
+        readMemberDatum(options.read, projection, instance.memberPathOf(member), placement, name, values, ownRun);
 
       return {
         use(name) {
@@ -306,7 +438,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       };
     },
     memberOperations(member: string, projection: DirectProjection, inputs: () => MemberInputs) {
-      const { state, reread } = watchMemberOperations(options.read, projection, member, inputs, () => active);
+      const { state, reread } = watchMemberOperations(options.read, projection, () => instance.memberPathOf(member), inputs, () => active);
       operationReads.add(reread);
       onScopeDispose(() => operationReads.delete(reread));
       return state;
@@ -319,31 +451,43 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
         else if ("type" in data.source && affected.objectTypes.includes(data.source.type.id)) reread();
       }
       for (const object of affected.objects) instance.objectChanged(object);
+      // What changed may be shown by a panel placed here, too.
+      for (const mount of nestedMounts) mount.refresh(null, affected);
     },
     refreshAll() {
       for (const { reread } of shown) reread();
       for (const reread of operationReads) reread();
       instance.refreshObjects();
+      for (const mount of nestedMounts) mount.refresh(null);
     },
     setActive(next: boolean) {
       active = next;
+      for (const mount of nestedMounts) mount.activate(next);
     },
     projectionChanged(id: string, revision?: number) {
       for (const member of Object.keys(direct.members)) {
-        if (memberProjectionId(direct, member) !== id) continue;
+        if (placedProjectionId(member) !== id) continue;
         if (revision !== undefined && revision <= (readRevisions.get(member) ?? 0)) continue;
-        projections.delete(member);
-        versions.set(member, (versions.get(member) ?? 0) + 1);
         // A member the instance held is held anew from the newer definition, drawn or not.
-        const held = members.get(member);
-        if (!held) continue;
-        held.scope.stop();
-        members.delete(member);
-        void directInstance.memberContext(member).catch(() => undefined);
+        const held = members.has(member);
+        release(member);
+        if (held) void directInstance.placing(member).catch(() => undefined);
       }
+      if (revision !== undefined) for (const mount of nestedMounts) mount.projectionsChanged([{ id, revision }]);
     },
     projectionVersion: (member: string) => versions.get(member) ?? 0,
   });
+  // A member placed from the panel's state is placed anew when that state chooses something else: what it held ends
+  // (a placed panel is let go, its operations and context leave this instance) and whoever draws it draws the new one.
+  for (const [member, declaration] of Object.entries(direct.members)) {
+    const { target } = declaration;
+    if (!("fromState" in target)) continue;
+    membersScope.run(() => watch(() => JSON.stringify(instance.state.values.value[target.fromState] ?? null), () => {
+      const held = members.has(member);
+      release(member);
+      if (held) void directInstance.placing(member).catch(() => undefined);
+    }));
+  }
   return directInstance;
 }
 

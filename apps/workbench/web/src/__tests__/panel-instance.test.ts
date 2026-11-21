@@ -135,7 +135,7 @@ describe("a panel's instance", () => {
     const [operation] = panelInstance.operations.value.filter((candidate) => candidate.slot === "runTask");
     await panelInstance.invoke(operation!.id);
     // One intent for the selected task, which the host dispatches; nothing runs in the frame.
-    expect(prepare).toHaveBeenCalledWith("runTask.runNow", { call: { target: task, input: {} } });
+    expect(prepare).toHaveBeenCalledWith("runTask.runNow", { call: { target: task, input: {} } }, undefined);
     expect(confirmOperation).toHaveBeenCalledWith(await prepare.mock.results[0]!.value);
     expect(registeredHandlers()).not.toContain("schedules.runNow");
     // What the owner reported changed comes back through the host's refresh port; the receipt rereads nothing itself.

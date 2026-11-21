@@ -58,7 +58,7 @@ it("fails the panel with the owner's reason when the owner refuses the draft", a
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({ projection: taskForm }) },
     use: { applicationId: "app-tasks", useId: "tasks" },
-    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
     confirmOperation: noOperations.confirmOperation,
     // The owner checks the draft's values and answers its form with what it does not accept.
     read: async (request): Promise<ProductPanelReadResponse> =>

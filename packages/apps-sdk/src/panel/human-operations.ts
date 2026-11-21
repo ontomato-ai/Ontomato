@@ -3,7 +3,7 @@ import {
   type PanelHumanOperationPreparation, type PanelUseRef,
 } from "@ontomato/contracts/panel-agent";
 import type { AppBridgeConfirmPanelOperationResult } from "@ontomato/contracts/app-bridge";
-import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import type { PanelMemberPath, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import type { PlatformRequests } from "./platform-objects";
 import type { ReadOperationInput } from "./read-operation-input";
@@ -30,11 +30,11 @@ export interface PanelReadCall {
 
 export interface PanelHumanOperations {
   /** The owner's description of one operation of this panel: its effect, schemas, target, batch and confirmation. */
-  describe(operationId: string): Promise<PanelOperationDescriptor>;
+  describe(operationId: string, memberPath?: PanelMemberPath): Promise<PanelOperationDescriptor>;
   /** Runs a read-only operation and returns what it read; nothing is written and nothing reported changed. */
-  read(operationId: string, call: PanelReadCall): Promise<PanelReadOperationResult>;
+  read(operationId: string, call: PanelReadCall, memberPath?: PanelMemberPath): Promise<PanelReadOperationResult>;
   /** Freezes one write, of one call or a batch, for the host to confirm and dispatch. */
-  prepare(operationId: string, invocation: PanelWriteInvocation): Promise<PanelHumanOperationPreparation>;
+  prepare(operationId: string, invocation: PanelWriteInvocation, memberPath?: PanelMemberPath): Promise<PanelHumanOperationPreparation>;
 }
 
 /** What the host does with a prepared write: confirms it where it must and dispatches it once, or the reader cancels. */
@@ -62,22 +62,24 @@ async function answer(response: Promise<Response>): Promise<unknown> {
  * runs none of its operations.
  */
 export function panelHumanOperations(use: PanelUseRef | null, requests: PlatformRequests): PanelHumanOperations {
-  const of = (operationId: string) => {
+  // A nested publisher's operation is found through its path in the opened panel, the selections that placed it included.
+  const of = (operationId: string, memberPath?: PanelMemberPath) => {
     if (!use) throw new Error("A panel preview runs no operations; they run in the panel's application");
-    return { applicationId: use.applicationId, useId: use.useId, operationId };
+    return { applicationId: use.applicationId, useId: use.useId, operationId, ...(memberPath ? { memberPath } : {}) };
   };
   const post = (path: string, body: unknown) =>
     answer(requests.request(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, ""));
   return {
-    async describe(operationId) {
-      const query = new URLSearchParams(of(operationId));
+    async describe(operationId, memberPath) {
+      const { memberPath: path, ...ref } = of(operationId, memberPath);
+      const query = new URLSearchParams({ ...ref, ...(path ? { memberPath: JSON.stringify(path) } : {}) });
       return panelOperationDescriptorResponseSchema.parse(await answer(requests.request(`/panel-operations/descriptor?${query}`, {}, "")));
     },
-    async read(operationId, { target, input }) {
+    async read(operationId, { target, input }, memberPath) {
       // A read acts on the chosen object or the draft, or on nothing, which the call then leaves out.
       const call = { ...(target ? { target } : {}), input };
       const response = await sent(requests.request("/panel-operations/read", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...of(operationId), call }),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...of(operationId, memberPath), call }),
       }, ""));
       // An owner's file comes as its bytes, an attachment of one of the allowed types: the reader saves it.
       const disposition = response.headers.get("Content-Disposition");
@@ -87,8 +89,8 @@ export function panelHumanOperations(use: PanelUseRef | null, requests: Platform
       }
       return readPanelOperationResponseSchema.parse(await response.json());
     },
-    async prepare(operationId, invocation) {
-      return panelHumanOperationPreparationSchema.parse(await post("/panel-operations/intents", { ...of(operationId), ...invocation }));
+    async prepare(operationId, invocation, memberPath) {
+      return panelHumanOperationPreparationSchema.parse(await post("/panel-operations/intents", { ...of(operationId, memberPath), ...invocation }));
     },
   };
 }

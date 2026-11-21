@@ -1,5 +1,4 @@
 import { computed, getCurrentInstance, type ComputedRef } from "vue";
-import { panelOperationId } from "@ontomato/contracts/panel-manifest";
 import { usePanelContext } from "./context";
 import type { PanelOperationBinding } from "./types";
 
@@ -29,7 +28,7 @@ export function usePanelOperation(member: string, name: string): PanelOperationH
     throw new Error("Call usePanelOperation in a component's setup, before any await: it finds the panel through the component that calls it");
   const { instance, manifest } = usePanelContext();
   if (!Object.hasOwn(manifest.members, member)) throw new Error(`The panel declares no member '${member}'`);
-  const id = panelOperationId(member, name);
+  const id = instance.operationIdOf(member, name);
   return {
     operation: computed(() => instance.operations.value.find((operation) => operation.id === id) ?? null),
     run: (input) => instance.invoke(id, input),
