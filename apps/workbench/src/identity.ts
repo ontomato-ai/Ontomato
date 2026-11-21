@@ -4,6 +4,7 @@ import { environment } from "@ontomato/workbench-server/config/environment";
 import { resolveLocale } from "@ontomato/workbench-server/i18n/index";
 import { runWithLogContext } from "@ontomato/workbench-server/logging/log-context";
 import { getLocaleFromRequest } from "@ontomato/workbench-server/api/utils/request";
+import { platformService } from "@ontomato/workbench-server/api/middleware/platform-service";
 import type { AuthenticatedRequest } from "@ontomato/workbench-server/utils/request-identity";
 
 const pass: RequestHandler = (_req, _res, next) => {
@@ -55,6 +56,8 @@ export const ossIdentity: WorkbenchIdentity = {
   },
 
   async assertPermission() {},
+
+  requireDeploymentMaintenance: platformService,
 
   guardMcpServiceManagement: pass,
 
