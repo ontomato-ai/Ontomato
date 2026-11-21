@@ -36,7 +36,7 @@ const actions = providePageActions();
       @save="actions?.draft?.save()"
       @discard="actions?.draft?.discard()"
     />
-    <div class="panel-entry-unit-body">
+    <div class="panel-entry-unit-body platform-page-gutter">
       <slot />
     </div>
   </div>
