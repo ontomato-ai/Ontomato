@@ -102,6 +102,57 @@ test("platform products use a reserved identity and are read-only without a doma
   assert.equal(builtinApplicationPanelUseSchema.safeParse({ ...use, panelId: "sales-panel" }).success, false);
 });
 
+test("platform projections bind declared types and runtime state instead of stored domain identities", () => {
+  const taskType = "platform:ScheduledTask";
+  const object = { className: taskType, primaryKey: "domain-task" };
+  const base = {
+    name: "Example", description: "", visibility: "platform", componentId: "@ontomato/sdk:PanelData",
+    inputs: { task: { kind: "object", objectType: taskType } }, outputs: {}, data: {}, config: {},
+  };
+  assert.equal(builtinProductProjectionInputSchema.safeParse({
+    ...base, data: { record: { source: { object: { input: "task" } }, read: "record", params: {} } },
+  }).success, true);
+  const button = { ...base, componentId: "@ontomato/sdk:ConversationEntry", inputs: {} };
+  for (const target of [{ kind: "page-default" }, { kind: "preset", agentKind: "knowledge-governance" }]) {
+    assert.equal(builtinProductProjectionInputSchema.safeParse({ ...button, conversationEntry: { target } }).success, true);
+  }
+  const platformOperation = { operation: { kind: "PlatformOperation", id: "schedules.runNow" } };
+  for (const [changes, field] of [
+    [{ componentId: "@ontomato/sdk:MetricChart" }, "componentId"],
+    [{ conversationEntry: { target: { kind: "id", id: "domain-agent" } } }, "conversationEntry.target.id"],
+    [{ data: { record: { source: { object: { literal: object } }, read: "record", params: {} } } }, "data.record.source.object.literal"],
+    [{ data: { rows: { source: { type: { kind: "ObjectType", id: "Account" } }, read: "query", params: {} } } }, "data.rows.source.type"],
+    [{ data: { selected: { source: { type: { kind: "PlatformObjectType", id: "platform:User" } },
+      read: "resolve", params: { values: { literal: ["domain-user"] } } } } }, "data.selected.params.values.literal"],
+    [{ operations: { run: { ...platformOperation, target: { literal: object } } } }, "operations.run.target.literal"],
+    [{ operations: { run: { operation: { kind: "Action", id: "domain-action" }, target: { input: "task" } } } }, "operations.run.operation.id"],
+  ] as const) {
+    const result = builtinProductProjectionInputSchema.safeParse({ ...base, ...changes });
+    assert(!result.success);
+    assert(result.error.issues.some(issue => issue.path.join(".") === field && issue.message.includes(field)), field);
+  }
+});
+
+test("platform panels place only packaged products and do not pin domain object inputs", () => {
+  const base = { name: "Example", description: "", visibility: "platform", content: { html: "", module: "" } };
+  const projectionId = `${BUILTIN_PRODUCT_ID_PREFIX}related-tasks`;
+  const taskType = "platform:ScheduledTask";
+  const state = { selected: { type: { kind: "object", objectType: taskType } } };
+  const member = { target: { projectionId }, inputs: { task: { state: "selected" } } };
+  const manifest = { state, members: { related: member }, events: {} };
+  assert.equal(builtinProductPanelInputSchema.safeParse({ ...base, manifest }).success, true);
+  for (const [changes, field] of [
+    [{ target: { projectionId: "domain-projection" } }, "manifest.members.related.target.projectionId"],
+    [{ inputs: { task: { literal: { className: taskType, primaryKey: "domain-task" } } } }, "manifest.members.related.inputs.task.literal"],
+  ] as const) {
+    const result = builtinProductPanelInputSchema.safeParse({
+      ...base, manifest: { ...manifest, members: { related: { ...member, ...changes } } },
+    });
+    assert(!result.success);
+    assert(result.error.issues.some(issue => issue.path.join(".") === field && issue.message.includes(field)), field);
+  }
+});
+
 test("copy and deletion reuse current ID rules and require a valid revision for deletion", () => {
   const reserved = `${BUILTIN_PRODUCT_ID_PREFIX}copy`;
   assert.equal(productCurrentIdParamsSchema.safeParse({ id: reserved }).success, true);

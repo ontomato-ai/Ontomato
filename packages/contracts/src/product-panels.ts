@@ -2,11 +2,18 @@ import { z } from "zod";
 import { defaultAgentSchema } from "./default-agent";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
-import { panelManifestSchema, panelMessageKeySchema, panelThemeOverridesSchema } from "./panel-manifest";
-import { directProjectionPortsSchema, validateDirectProjection } from "./panel-projection";
+import {
+  panelChildObjectIdentitySchema, panelFormTargetSchema, panelManifestSchema, panelMessageKeySchema,
+  panelObjectRefSchema, panelThemeOverridesSchema,
+} from "./panel-manifest";
+import {
+  directProjectionPortsSchema, directReadDeclaration, panelReadParameterId, validateDirectProjection,
+  type DirectProjectionPorts,
+} from "./panel-projection";
+import { platformObjectTypes } from "./platform-object-types";
 import { applicationMetadataSchema } from "./application-metadata";
 import { pageSkillContextSchema, pageSkillEntranceSchema } from "./page-skills";
-import { runtimeJsonValueSchema } from "./agent-runtime-values";
+import { runtimeJsonValueSchema, type RuntimeJsonValue } from "./agent-runtime-values";
 import { dashboardCardRequestSchema, dashboardChartFileSchema } from "./dashboard";
 export { chartProjectionTemplateSchema } from "./dashboard";
 export { ontologyElementRefSchema, type OntologyElementRef } from "./ontology-element-ref";
@@ -84,15 +91,70 @@ export const productProjectionInputSchema = z.union([
 ]);
 export type ProductProjectionInput = z.infer<typeof productProjectionInputSchema>;
 
-const builtinProjectionDefinition = ordinaryProjectionDefinition.extend({ visibility: builtinVisibility });
-export const builtinProductProjectionInputSchema = builtinProjectionDefinition.superRefine(validateDirectProjection);
+function containsObjectIdentity(value: RuntimeJsonValue): boolean {
+  if (value === null || typeof value !== "object") return false;
+  if (Array.isArray(value)) return value.some(containsObjectIdentity);
+  if (panelObjectRefSchema.safeParse(value).success || panelFormTargetSchema.options[0].safeParse(value).success
+    || panelChildObjectIdentitySchema.safeParse(value).success) return true;
+  const skill = runtimeSkillRefSchema.safeParse(value);
+  return (skill.success && skill.data.namespace.kind === "domain") || Object.values(value).some(containsObjectIdentity);
+}
+
+const domainProjectionBinding = (field: string) => `Platform-supplied projections cannot bind a domain object: ${field}`;
+/** Read parameters whose literal is the identity of an existing object within its owner. */
+const domainIdentityParameters: ReadonlySet<string> = new Set(["governanceSource", "scheduledRunId"]);
+
+function validateBuiltinProjection(projection: DirectProjectionPorts, ctx: z.RefinementCtx) {
+  validateDirectProjection(projection, ctx);
+  const reject = (path: string[]) => ctx.addIssue({
+    code: z.ZodIssueCode.custom, path, message: domainProjectionBinding(path.join(".")),
+  });
+  if (projection.conversationEntry?.target.kind === "id") reject(["conversationEntry", "target", "id"]);
+  for (const [side, ports] of Object.entries({ inputs: projection.inputs, outputs: projection.outputs })) {
+    for (const [name, port] of Object.entries(ports)) {
+      const objectType = port.kind === "object" ? port.objectType : port.kind === "list" ? port.items.objectType : undefined;
+      if (objectType !== undefined && !Object.hasOwn(platformObjectTypes, objectType)) reject([side, name]);
+    }
+  }
+  for (const [name, datum] of Object.entries(projection.data)) {
+    const source = datum.source;
+    if ("type" in source && source.type.kind !== "PlatformObjectType") reject(["data", name, "source", "type"]);
+    if ("object" in source && "literal" in source.object) reject(["data", name, "source", "object", "literal"]);
+    const declaration = directReadDeclaration(projection, datum);
+    for (const [param, value] of Object.entries(datum.params)) {
+      if (!("literal" in value)) continue;
+      const parameter = declaration && panelReadParameterId(declaration, param);
+      const scopedType = (parameter === "className" || parameter === "ontologyType")
+        && typeof value.literal === "string" && !Object.hasOwn(platformObjectTypes, value.literal);
+      const scopedIdentity = parameter !== undefined && domainIdentityParameters.has(parameter);
+      const heldChoices = parameter === "optionValues" && Array.isArray(value.literal) && value.literal.length > 0;
+      if (scopedType || scopedIdentity || heldChoices || containsObjectIdentity(value.literal))
+        reject(["data", name, "params", param, "literal"]);
+    }
+  }
+  for (const [name, binding] of Object.entries(projection.operations ?? {})) {
+    if (binding.operation.kind === "Action") reject(["operations", name, "operation", "id"]);
+    if (binding.target && "literal" in binding.target) reject(["operations", name, "target", "literal"]);
+  }
+  for (const [key, value] of Object.entries(projection.config)) {
+    if (containsObjectIdentity(value)) reject(["config", key]);
+  }
+}
+
+const builtinProjectionDefinition = projectionDefinition.extend({
+  visibility: builtinVisibility,
+  componentId: projectionDefinition.shape.componentId.refine(
+    componentId => componentId !== METRIC_CHART_COMPONENT, domainProjectionBinding("componentId"),
+  ),
+});
+export const builtinProductProjectionInputSchema = builtinProjectionDefinition.superRefine(validateBuiltinProjection);
 export type BuiltinProductProjectionInput = z.infer<typeof builtinProductProjectionInputSchema>;
 
 export const chartProjectionSchema = chartProjectionDefinition.extend(domainProductRecordFields).superRefine(validateDirectProjection);
 export const productProjectionSchema = z.union([
   chartProjectionSchema,
   ordinaryProjectionDefinition.extend(domainProductRecordFields).superRefine(validateDirectProjection),
-  builtinProjectionDefinition.extend(builtinProductRecordFields).superRefine(validateDirectProjection),
+  builtinProjectionDefinition.extend(builtinProductRecordFields).superRefine(validateBuiltinProjection),
 ]);
 export type ProductProjection = z.infer<typeof productProjectionSchema>;
 export const currentProjectionRecordSchema = productProjectionSchema;
@@ -132,13 +194,41 @@ export type PanelDefinitionContent = z.infer<typeof panelDefinitionContentSchema
 export const productPanelInputSchema = panelDefinitionContentSchema.extend(editableDefinitionFields);
 export type ProductPanelInput = z.infer<typeof productPanelInputSchema>;
 
-export const builtinProductPanelInputSchema = productPanelInputSchema.extend({ visibility: builtinVisibility });
+function validateBuiltinPanel(panel: PanelDefinitionContent, ctx: z.RefinementCtx) {
+  const reject = (path: (string | number)[]) => ctx.addIssue({
+    code: z.ZodIssueCode.custom, path, message: `Platform-supplied panels cannot bind a domain object: ${path.join(".")}`,
+  });
+  for (const [name, member] of Object.entries(panel.manifest.members)) {
+    const { target, inputs } = member;
+    const path = ["manifest", "members", name];
+    if ("projectionId" in target && !builtinProductIdSchema.safeParse(target.projectionId).success)
+      reject([...path, "target", "projectionId"]);
+    if ("panelId" in target && !builtinProductIdSchema.safeParse(target.panelId).success)
+      reject([...path, "target", "panelId"]);
+    if ("candidates" in target && "panelIds" in target.candidates) {
+      target.candidates.panelIds.forEach((panelId, index) => {
+        if (!builtinProductIdSchema.safeParse(panelId).success) reject([...path, "target", "candidates", "panelIds", index]);
+      });
+    }
+    for (const [port, input] of Object.entries(inputs ?? {})) {
+      if ("literal" in input && containsObjectIdentity(input.literal)) reject([...path, "inputs", port, "literal"]);
+    }
+  }
+  for (const [name, state] of Object.entries(panel.manifest.state)) {
+    if (state.default !== undefined && containsObjectIdentity(state.default)) reject(["manifest", "state", name, "default"]);
+  }
+}
+
+const builtinPanelDefinition = productPanelInputSchema.extend({ visibility: builtinVisibility });
+export const builtinProductPanelInputSchema = builtinPanelDefinition.superRefine(validateBuiltinPanel);
 export type BuiltinProductPanelInput = z.infer<typeof builtinProductPanelInputSchema>;
 
 export const productPanelSchema = z.discriminatedUnion("visibility", [
   productPanelInputSchema.extend(domainProductRecordFields),
-  builtinProductPanelInputSchema.extend(builtinProductRecordFields),
-]);
+  builtinPanelDefinition.extend(builtinProductRecordFields),
+]).superRefine((panel, ctx) => {
+  if (panel.visibility === "platform") validateBuiltinPanel(panel, ctx);
+});
 export type ProductPanel = z.infer<typeof productPanelSchema>;
 export const currentPanelRecordSchema = productPanelSchema;
 
