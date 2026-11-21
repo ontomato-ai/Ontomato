@@ -11,7 +11,7 @@ description: "照 Ontomato《产品层与应用组装标准》把一个已有的
 
 ## 先读
 
-[references/standard.md](references/standard.md)：标准全文。至少读完“一、总的结构”和“二、每类对象的定义”，再开始拆。
+先读[规范的原则和五类对象的职责](references/standard.md)，再开始拆。选用能力时看最后一节“和现在的实现差在哪”。
 
 ## 步骤
 
