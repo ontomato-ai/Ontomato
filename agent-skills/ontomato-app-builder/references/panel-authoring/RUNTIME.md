@@ -188,11 +188,13 @@ owner operation. `do.open` follows the indicated destination address. Use a decl
 
 ## Draft links and instance state
 
-Copy the registered entry path, including its initial slash, and keep any existing entry parameters.
+Give readers a site-relative Markdown draft link. Use the registered entry path with its initial slash and keep
+any existing query parameters. Omit the scheme, hostname and port, including `localhost`. The destination
+starts with one slash and contains no `http://`, `https://`, or `//host` prefix.
 Use the producing session and run IDs. Give `draftPath` only the run-relative artifact path
 `outputs/drafts/<name>.page-draft.json`. Encode that value once.
 
-The agent directory example opens at `#/applications/app-example-vue-agent-directory/manage?draftSessionId=SESSION_ID&draftRunId=RUN_ID&draftPath=outputs%2Fdrafts%2Fedit.page-draft.json`.
+For the agent directory, the reply is `[Open the draft](/applications/app-example-vue-agent-directory/manage?draftSessionId=SESSION_ID&draftRunId=RUN_ID&draftPath=outputs%2Fdrafts%2Fedit.page-draft.json)`.
 
 A raw `draftPath` of `/outputs/drafts/edit.page-draft.json` starts with a slash and is invalid.
 The encoded query value `draftPath=%2Foutputs%2Fdrafts%2Fedit.page-draft.json` still starts with that slash after decoding.

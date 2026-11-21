@@ -65,7 +65,7 @@ the page declares.
 
 1. **Read.** “What page and record are selected? Read the current [field] on this record.” Compare the selected
    identity and the field value with the page.
-2. **Draft.** “Draft a change to [field] on this record. Give me the draft link and leave it for me to save.”
+2. **Draft.** “Draft a change to [field] on this record. Give me a site-relative draft link and leave it for me to save.”
    Open the link and inspect the proposed change. Save as the reader, then verify the value.
 3. **Execute.** “Run [declared operation] on this test record, with confirmation when required.” Use the
    confirmation in the conversation and verify the outcome on the page.
