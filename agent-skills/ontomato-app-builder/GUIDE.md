@@ -83,6 +83,8 @@ The command submits projections, panels and uses in that order. It prints each c
    Remove trial projection IDs from inline members in the copied `panel.json` so the checker can allocate
    platform IDs. For reused projections, use a packaged projection ID or supply an inline definition
    backed by platform types and owner reads. Pass domain objects through the panel's runtime state.
+   Use formal built-in addresses for internal links in `panel.html`, `panel.mjs` and `recipes.md`. The checker
+   reports the file, line and column of any `/applications/app-…` address.
 2. **Assign the projection IDs.** Point `SDK_RELEASE` to the installed SDK version directory containing
    `sdk.json`, and run the local check with the copied panel directory as `PANEL_DIR`:
 
