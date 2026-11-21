@@ -39,7 +39,11 @@ export interface FeedbackRecord {
   metadata?: unknown;
   /** The turn the feedback belongs to, derived by the owner; empty when it names a turn this record does not reach. */
   turnKey: string;
-  createdAt: number;
+  /**
+   * When this reader last gave or changed the rating (`assistant_feedback.updated_at`): the feedback row keeps no
+   * separate creation time, so the list orders by the newest change and says so.
+   */
+  updatedAt: number;
 }
 
 export interface FeedbackPage {

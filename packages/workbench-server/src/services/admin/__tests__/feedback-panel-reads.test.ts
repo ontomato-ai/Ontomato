@@ -129,7 +129,7 @@ it("queries feedback with search, treats 'all' as unfiltered, pages by cursor/si
           assistantOutput: "Answer",
           feedbackText: "Comment",
           turnKey: "Turn key",
-          createdAt: "Time",
+          updatedAt: "Last updated",
         },
         fields: {
           sourceType: "Query",
@@ -139,7 +139,7 @@ it("queries feedback with search, treats 'all' as unfiltered, pages by cursor/si
           assistantOutput: "Total sales are 100.",
           feedbackText: "Helpful answer",
           turnKey: `turn.${session1}.4`,
-          createdAt: "2026-11-20T08:00:00.000Z",
+          updatedAt: "2026-11-20T08:00:00.000Z",
         },
       },
     ],
