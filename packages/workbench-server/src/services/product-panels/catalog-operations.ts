@@ -5,7 +5,7 @@ import {
 } from "@ontomato/contracts/application-catalogue";
 import { runtimeJsonObjectSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { panelFormTargetSchema, panelObjectIdentitySchema } from "@ontomato/contracts/panel-manifest";
-import { panelFormSaveInputSchema, panelFormValuesSchema } from "@ontomato/contracts/panel-projection";
+import { panelFormSaveInputSchema, panelFormValuesSchema, type PanelFormDescription, type PanelFormField } from "@ontomato/contracts/panel-projection";
 import {
   changeProductDomainGrantRequestSchema, changeProductGrantRequestSchema,
   changeProductPanelDomainGrantResponseSchema, productGrantChangeResponseSchema,
@@ -28,6 +28,7 @@ import {
 } from "./catalog";
 import { readCurrentPanel, readCurrentPanelLabel, readCurrentProjection, requireCurrentProduct, saveCurrentPanel, saveCurrentProjection } from "./current";
 import { applySubmittedFields } from "./submitted-form-values";
+import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "./catalog-reads";
 import { ownerEnvelopeSchema, ownerWriteFailure } from "./data-query-operations";
 import type { PanelOperationHost, PanelWriteServerOperation, SinglePanelOperationOutcome } from "./server-operations";
 
@@ -37,10 +38,68 @@ const grantInput = changeProductGrantRequestSchema.omit({ remove: true });
 const chartMetadata = registerProductProjectionRequestSchema.options[1].omit({ revision: true }).strip();
 type OutcomeData = Record<string, RuntimeJsonValue>;
 
+/** The fields of the form the values came from, as its owner declares them. */
+type FormFields = () => Promise<PanelFormDescription["fields"]>;
+
+/** Values a caller sent that do not fit; `write` answers in the reader's language and logs the issues. */
+class InputRefusal extends Error {
+  constructor(readonly issues: z.ZodIssue[], readonly fields?: FormFields) { super("The input does not fit"); }
+}
+
+/** The operation's own request: a misfit is the caller's mistake, said generally. */
 function writeInput<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, input: unknown): T {
   const result = schema.safeParse(input);
-  if (!result.success) throw new HttpError(400, result.error.message, "INVALID_REQUEST");
+  if (!result.success) throw new InputRefusal(result.error.issues);
   return result.data;
+}
+
+/** Form values: a misfit is named at the form field holding it, so the form shows it there and opens its section. */
+function formValues<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, input: unknown, fields: FormFields): T {
+  const result = schema.safeParse(input);
+  if (!result.success) throw new InputRefusal(result.error.issues, fields);
+  return result.data;
+}
+
+const pointer = (path: readonly (string | number)[]) =>
+  path.map(part => "/" + String(part).replaceAll("~", "~0").replaceAll("/", "~1")).join("");
+const segments = (path: string) => path.split("/").slice(1).map(part => part.replaceAll("~1", "/").replaceAll("~0", "~"));
+
+/** Each declared field's path as segments; an array row is "*". */
+function fieldPatterns(fields: readonly PanelFormField[], prefix: string[] = []): string[][] {
+  return fields.flatMap(field => {
+    const path = [...prefix, ...segments(field.path)];
+    const { control } = field;
+    if (control.kind === "object") return [path, ...fieldPatterns(control.fields, path)];
+    if (control.kind === "object-array") return [path, ...fieldPatterns(control.itemFields, [...path, "*"])];
+    return [path];
+  });
+}
+
+/** The deepest declared field that holds the value at `path`. */
+function holdingField(patterns: readonly string[][], path: readonly (string | number)[]) {
+  const parts = path.map(String);
+  const holds = (pattern: readonly string[]) => pattern.length <= parts.length
+    && pattern.every((part, index) => part === "*" ? /^\d+$/.test(parts[index]!) : part === parts[index]);
+  const deepest = patterns.filter(holds).sort((left, right) => right.length - left.length)[0];
+  return deepest && pointer(parts.slice(0, deepest.length));
+}
+
+async function inputRefusal({ issues, fields }: InputRefusal, locale?: string): Promise<Extract<SinglePanelOperationOutcome, { kind: "refusal" }>> {
+  logger.warn("A product catalog write was refused for values that do not fit", { issues: JSON.stringify(issues).slice(0, 4096) });
+  const refused = { kind: "refusal" as const, code: "INVALID_REQUEST", message: tForLocale(locale, "panels.productCatalog.inputInvalid") };
+  if (!fields) return refused;
+  const patterns = fieldPatterns(await fields().catch(() => []));
+  const named = new Map<string, z.ZodIssue>();
+  for (const issue of issues) {
+    const field = holdingField(patterns, issue.path);
+    if (field && !named.has(field)) named.set(field, issue);
+  }
+  const errors = [...named].map(([field, issue]) => {
+    const missing = issue.code === z.ZodIssueCode.invalid_type && issue.received === "undefined" && pointer(issue.path) === field;
+    return { field, code: missing ? "required" as const : "invalid_format" as const,
+      message: tForLocale(locale, missing ? "panels.productCatalog.fieldRequired" : "panels.productCatalog.fieldInvalid") };
+  });
+  return errors.length ? { ...refused, message: errors[0]!.message, errors } : refused;
 }
 
 const logger = createLogger("product-catalog-operations");
@@ -107,6 +166,7 @@ async function write(
     return { kind: "success", data, affected: { objects: [{ objectType: type, primaryKey }], objectTypes: [type] } };
   } catch (error) {
     if (error instanceof FieldRefusal) return error.outcome;
+    if (error instanceof InputRefusal) return await inputRefusal(error, locale);
     if (error instanceof BackendResponseError && error.status >= 400 && error.status < 500) return ownerRefusal(error, locale);
     if (error instanceof HttpError && error.status >= 400 && error.status < 500)
       return { kind: "refusal", code: error.code ?? "PRODUCT_WRITE_REFUSED", message: error.message };
@@ -135,7 +195,7 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
       draftValues: values => panelFormValuesSchema.parse(values),
       createdObject: data => ({ objectType: type, primaryKey: savedId.parse(data).id }),
     },
-    async execute({ executor: { owner, credentials } }, target, input) {
+    async execute({ locale, executor: { owner, credentials } }, target, input) {
       return write(type, async () => {
         const { values: { id, ...submitted }, revision, submittedFields } = writeInput(panelFormSaveInputSchema, input);
         const primaryKey = target.kind === "object" ? target.primaryKey : writeInput(savedId.shape.id, target.id ?? id ?? randomUUID());
@@ -149,17 +209,20 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
           values = applySubmittedFields(current, submitted, submittedFields);
         }
 
+        const reads = kind === "projection"
+          ? createProductProjectionReadAdapter(owner, credentials) : createProductPanelReadAdapter(owner, credentials);
+        const fields = async () => (await (target.kind === "object" ? reads.form(primaryKey, {}) : reads.createForm({}))).fields;
         if (kind === "projection") {
           await saveCurrentProjection(owner, credentials, primaryKey,
-            writeInput(registerProductProjectionRequestSchema, { ...values, revision: expectedRevision }));
+            formValues(registerProductProjectionRequestSchema, { ...values, revision: expectedRevision }, fields));
         } else {
-          const { revision: parsedRevision, ...definition } = writeInput(registerProductPanelRequestSchema, {
+          const { revision: parsedRevision, ...definition } = formValues(registerProductPanelRequestSchema, {
             ...values, revision: expectedRevision,
-          });
+          }, fields);
           await saveCurrentPanel(owner, credentials, primaryKey, definition, parsedRevision);
         }
         return { primaryKey, data: { id: primaryKey } };
-      });
+      }, locale ?? credentials.locale);
     },
   };
 
@@ -187,8 +250,9 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
         const read = kind === "panel" ? readCurrentPanel : readCurrentProjection;
         return (await read(owner, credentials, target.primaryKey)).name;
       },
-      async execute({ executor }, target, input) {
-        return write(type, () => run(executor, writeInput(objectTarget, target).primaryKey, writeInput(inputSchema, input)));
+      async execute({ locale, executor }, target, input) {
+        return write(type, () => run(executor, writeInput(objectTarget, target).primaryKey, writeInput(inputSchema, input)),
+          locale ?? executor.credentials.locale);
       },
     };
   }
@@ -243,9 +307,10 @@ const applicationSave: PanelWriteServerOperation = {
       const { values, submittedFields } = writeInput(panelFormSaveInputSchema, input);
       const java = applicationCatalogueClient(credentials);
       if (target.kind === "draft") {
-        const { id: formId, ...formValues } = values;
-        checkDefaultAgentShapes(formValues);
-        const body = writeInput(applicationCatalogueCreateSchema, formValues);
+        const { id: formId, ...createValues } = values;
+        checkDefaultAgentShapes(createValues);
+        const body = formValues(applicationCatalogueCreateSchema, createValues,
+          async () => (await java.form({ section: "create", target: { kind: "draft", id: target.id }, changedField: null })).fields);
         const id = writeInput(applicationDraftIdSchema,
           target.id ?? formId ?? writeInput(applicationDraftPath, body.entry.path).slice("/applications/".length));
         await java.create(id, body);
@@ -257,13 +322,14 @@ const applicationSave: PanelWriteServerOperation = {
       const entries = submittedFields === undefined ? "panelUses" in values
         : submittedFields.some(pointer => Object.hasOwn(applicationEntriesUpdateSchema.shape, pointer.split("/", 2)[1]));
       const section = entries ? "entries" : "identity";
+      const sectionFields = (form: "entries" | "identity") => async () => (await java.form({ section: form, target, changedField: null })).fields;
       const body = submittedFields === undefined ? values : applySubmittedFields(
         (await java.form({ section, target, changedField: null })).values, values, submittedFields,
       );
       if (entries) {
         checkDefaultAgentShapes(body);
-        await java.saveEntries(id, writeInput(applicationEntriesUpdateSchema, body));
-      } else await java.saveIdentity(id, writeInput(applicationIdentityUpdateSchema, body));
+        await java.saveEntries(id, formValues(applicationEntriesUpdateSchema, body, sectionFields("entries")));
+      } else await java.saveIdentity(id, formValues(applicationIdentityUpdateSchema, body, sectionFields("identity")));
       return { primaryKey: id, data: { id } };
     }, locale ?? credentials.locale);
   },

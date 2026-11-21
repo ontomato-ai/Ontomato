@@ -1,5 +1,7 @@
 import { APPLICATION } from "@ontomato/contracts/platform-object-types";
-import { beforeEach, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, expect, it, vi } from "vitest";
+import { configureI18n } from "../../../i18n";
+import { en, enLocaleMeta } from "../../../i18n/locales/en";
 
 const java = vi.hoisted(() => ({ form: vi.fn(), saveEntries: vi.fn() }));
 const agents = vi.hoisted(() => ({ list: vi.fn() }));
@@ -33,6 +35,10 @@ const saveEntries = (defaultAgent?: unknown) => save.execute(
   { executor: { owner, credentials: { locale: "en" } } } as never,
   { kind: "object", objectType: APPLICATION, primaryKey: "app-one" } as never,
   { values: values(defaultAgent) }, "intent-one");
+
+beforeAll(() => configureI18n({
+  defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { ...enLocaleMeta, messages: en } },
+}));
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -76,4 +82,17 @@ it.each([
   expect(await saveEntries(defaultAgent)).toMatchObject({ kind: "success" });
   expect(java.saveEntries).toHaveBeenCalledWith("app-one", values(defaultAgent));
   expect(agents.list).not.toHaveBeenCalled();
+});
+
+it("names a malformed entry value at its field in the reader's words, never as the parser's text", async () => {
+  java.form.mockResolvedValue({ ...description({ kind: "select", options: [] }), fields: [field("/panelUses", { kind: "object-array",
+    itemFields: [field("/pageKey", { kind: "text" }), field("/inputs", { kind: "code", language: "json" })] })] });
+  const outcome = await save.execute(
+    { locale: "en", executor: { owner, credentials: { locale: "en" } } } as never,
+    { kind: "object", objectType: APPLICATION, primaryKey: "app-one" } as never,
+    { values: { ...values(), panelUses: [{ ...entry(), inputs: { term: 1 } }] } }, "intent-one");
+  expect(outcome).toMatchObject({ kind: "refusal", code: "INVALID_REQUEST",
+    errors: [{ field: "/panelUses/0/inputs", code: "invalid_format", message: "This value is not valid here." }] });
+  expect(JSON.stringify(outcome)).not.toContain("invalid_union");
+  expect(java.saveEntries).not.toHaveBeenCalled();
 });
