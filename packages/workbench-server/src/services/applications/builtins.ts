@@ -164,7 +164,8 @@ export const workbenchApplications: BuiltinApplication[] = [
       "renderer": "operations"
     },
     "entryAccess": [
-      "observer"
+      "observer",
+      "user-feedback"
     ],
     "scheduleAdapter": "workbench:operations",
     "declaration": {
@@ -178,7 +179,18 @@ export const workbenchApplications: BuiltinApplication[] = [
       },
       "icon": "diagnosis",
       "groups": [],
-      "permissions": []
+      "permissions": [],
+      "panelUses": [{
+        "id": "user-feedback",
+        "pageKey": "user-feedback",
+        "panelId": "builtin-product-feedback",
+        "path": "/ops/feedback",
+        "access": { "permissionCode": "user-feedback" },
+        "descriptions": {
+          "en": "Ratings and comments users give on query and analysis results",
+          "zh-CN": "用户对问答与分析结果的评价和留言"
+        }
+      }]
     }
   },
   {

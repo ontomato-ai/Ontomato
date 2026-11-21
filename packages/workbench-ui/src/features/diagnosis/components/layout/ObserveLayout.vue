@@ -8,7 +8,8 @@ import {
   AgentShell, useAgentNav, useConversationDisplay, useSessionRunFeed,
   type DisplayPage, type PageContext, type PageSelection, type ShellWorkbenchDeclaration,
 } from "@ontomato/agent-shell-ui";
-import { useAgentModelLabels, useLeaveConfirmation } from "@ontomato/platform-shell";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
+import { useAgentModelLabels, useLeaveConfirmation, usePageAccess } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import { DIAGNOSIS_AGENT_ID, type DiagnosisTarget } from "@ontomato/contracts/ops-diagnosis";
 import { useShellLabels } from "../../../../composables/useShellLabels";
@@ -38,6 +39,8 @@ const pages = [
   { id: "dsl", path: "/ops/dsl", label: "ops.dsl", icon: "query", match: ["/ops/dsl"] },
   { id: "knowledge", path: "/ops/knowledge", label: "ops.knowledge", icon: "knowledge", match: ["/ops/knowledge"] },
 ] as const;
+const FEEDBACK = "feedback";
+const canOpen = usePageAccess();
 /** The model the diagnosis runs on: the application's own entry at the foot of its column, not one of its pages. */
 const MODEL = { id: "model", path: "/ops/model" } as const;
 const modelLabels = useAgentModelLabels();
@@ -48,15 +51,26 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   label: t("platform.operations"),
   // Every page here draws its own pane (a list beside a detail, an editor, a log terminal) and scrolls inside it, so the
   // shell leaves it the whole height and each page marks where its content ends.
-  features: pages.map(({ id, label, icon }) => ({
-    id,
-    label: t(label),
-    icon,
-    availability: "page" as const,
-    withConversation: true,
-    scrollsItself: true,
-  })),
+  features: [
+    ...pages.map(({ id, label, icon }) => ({
+      id,
+      label: t(label),
+      icon,
+      availability: "page" as const,
+      withConversation: true,
+      scrollsItself: true,
+    })),
+    // User feedback is this application's built-in panel entry (big main's ruling, 2026-11-21): a plain link to its own
+    // page, which the platform draws with its title and a way back, listed only for a reader who may open it.
+    ...(canOpen(platformRoutes.feedback.path)
+      ? [{ id: FEEDBACK, label: t("ops.feedback"), icon: "feedback", availability: "action" as const }]
+      : []),
+  ],
 }));
+/** Opens the feedback entry, leaving this application's conversation for the platform's page. */
+function featureAction(id: string) {
+  if (id === FEEDBACK) void router.push(platformRoutes.feedback.path);
+}
 const pageOf = (path: string) =>
   path === MODEL.path
     ? MODEL.id
@@ -199,6 +213,7 @@ onMounted(async () => {
     :labels="labels"
     :nav="nav"
     @open-bottom="display.openFeature('model')"
+    @feature-action="featureAction"
     @error="ElMessage.error($event)"
   >
     <template #feature="{ featureId: page }">

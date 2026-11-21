@@ -1,3 +1,16 @@
+/*
+ * How an area takes a theme (product-layer standard, the theme layers): it declares the values the theme assigns, the
+ * shades worked out from a colour it recolours (`themeDerivedProperties`), and again every custom property the page's
+ * stylesheets compose on the root from any of those (`rootComposites`) — a value composed on the root is worked out
+ * there once and inherited as it came out, so without that the area would keep the platform's colour in it.
+ *
+ * The rule for anyone writing a stylesheet: compose a value from the brand's colours as a custom property on the root
+ * that reads them with `var()` (`--control-focus-ring: 0 0 0 2px var(--brand-primary-tint)`), and read that property
+ * where it is used. Such a rule is found and declared again in every themed area without being listed anywhere. A colour
+ * worked out by hand from the brand's — a literal, or one composed outside a custom property — stays the platform's in
+ * every application.
+ */
+
 /** The public variables an application, panel or placement may override. Defaults stay with the foundation and brand. */
 export const themeOverrideTokens = {
   "--el-color-primary": "color",
