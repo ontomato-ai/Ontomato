@@ -1,0 +1,191 @@
+{
+  "manifest": {
+    "state": {
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:SDKComponent"
+        },
+        "deepLink": true
+      }
+    },
+    "members": {
+      "list": {
+        "component": "ObjectList",
+        "type": "platform:SDKComponent",
+        "data": {
+          "rows": "catalogue"
+        },
+        "state": {
+          "search": "search",
+          "selected": "selected"
+        },
+        "config": {
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "components.column.name"
+            },
+            {
+              "key": "package"
+            },
+            {
+              "key": "meaning"
+            }
+          ],
+          "fallbackToFirst": false
+        },
+        "name": "组件目录",
+        "description": "当前 SDK 发行声明的组件，按名称和用途搜索。",
+        "id": "builtin-product-257c4795-da58-46dd-8cc2-5145e1735b1f"
+      },
+      "detail": {
+        "component": "PanelData",
+        "target": "selected",
+        "data": {
+          "definition": "definition"
+        },
+        "name": "组件声明",
+        "description": "选中组件在发行里声明的含义、数据、配置、输入、输出和操作签名。",
+        "id": "builtin-product-4a5c84eb-637c-4b0b-93f5-2f37f4f672bf"
+      }
+    },
+    "events": {}
+  },
+  "content": {
+    "messages": {
+      "zh-CN": {
+        "components.title": "基础组件",
+        "components.hint": "当前部署的 SDK 发行声明的组件。组件随发行增改，这一页只读：可以搜索和查看声明，不能新增、修改或删除。",
+        "components.column.name": "组件名",
+        "components.meta.package": "所属包",
+        "components.meta.export": "导出名",
+        "components.meta.role": "角色",
+        "components.meta.binds": "可绑定的本体元素",
+        "components.role.presentation": "展示组件",
+        "components.role.control": "控件",
+        "components.viewClass": "查看所属类",
+        "components.section.meaning": "含义",
+        "components.effectsLine": "副作用：{text}",
+        "components.section.data": "数据和类型",
+        "components.section.dataHint": "组件声明的数据：每个数据名要哪种读取结果、是否必需、它自己在运行时会给出哪些读取参数。",
+        "components.data.uiOnly": "这个组件不读本体数据，只能当界面用。",
+        "components.data.wildcard": "任意名称",
+        "components.section.config": "配置项和默认值",
+        "components.section.configHint": "组件声明的配置项，超出默认值的由使用它的投影给出。",
+        "components.config.none": "这个组件不声明配置项。",
+        "components.section.input": "输入",
+        "components.section.inputHint": "组件声明的取值输入，以及页面可以填入内容的插槽。",
+        "components.input.declared": "组件声明的取值输入。",
+        "components.slot.declared": "页面填入内容的插槽。",
+        "components.input.none": "这个组件不声明输入，输入由使用它的投影声明。",
+        "components.section.output": "输出",
+        "components.section.outputHint": "组件交给页面的值（可连到页面的状态），以及它发出的事件。",
+        "components.output.declared": "可以连到页面状态的输出值。",
+        "components.output.none": "这个组件不声明输出。",
+        "components.section.operations": "操作",
+        "components.section.operationsHint": "组件自己声明的操作签名；不显示某个投影实际绑定了哪个业务操作。",
+        "components.operations.none": "当前发行没有组件声明操作。页面能执行的操作由投影声明，例如 OperationButton 运行它所在投影声明的操作。",
+        "components.table.name": "名称",
+        "components.table.datum": "数据",
+        "components.table.results": "读取结果",
+        "components.table.required": "必需",
+        "components.table.runtime": "组件自带的读取参数",
+        "components.table.type": "类型",
+        "components.table.default": "默认值",
+        "components.table.description": "说明",
+        "components.table.signature": "签名",
+        "components.yes": "是",
+        "components.no": "否",
+        "components.loading": "正在读取组件声明…",
+        "components.forbidden": "你没有读取这个组件的权限。",
+        "components.selectPrompt": "从左侧选择一个组件，查看它在当前发行里声明的各栏。",
+        "components.port.binding": "使用它的投影所绑定的对象类型",
+        "components.port.object": "{type} 的对象",
+        "components.port.scalar": "标量 {type}",
+        "components.port.union": "对象联合 {parts}",
+        "components.port.childObject": "子对象 {parent} / {collection}",
+        "components.port.list": "列表 <{items}>",
+        "components.port.placement": "放置位置",
+        "components.port.json": "JSON",
+        "components.tag.input": "输入",
+        "components.tag.slot": "插槽",
+        "components.tag.output": "输出",
+        "components.tag.event": "事件",
+        "components.meta.module": "模块",
+        "panel.name": "基础组件"
+      },
+      "en": {
+        "components.title": "Base components",
+        "components.hint": "The components the deployed SDK release declares. Components change with a release, so this page is read-only: search and read declarations; nothing is created, changed or deleted here.",
+        "components.column.name": "Component",
+        "components.meta.package": "Package",
+        "components.meta.export": "Export",
+        "components.meta.role": "Role",
+        "components.meta.binds": "Ontology elements it may bind",
+        "components.role.presentation": "presentation",
+        "components.role.control": "control",
+        "components.viewClass": "View its class",
+        "components.section.meaning": "Meaning",
+        "components.effectsLine": "Effects: {text}",
+        "components.section.data": "Data and types",
+        "components.section.dataHint": "The data each datum names: which read results it accepts, whether every placement must supply it, and the read parameters the component supplies at run time.",
+        "components.data.uiOnly": "This component reads no ontology data; it is the interface only.",
+        "components.data.wildcard": "any name",
+        "components.section.config": "Configuration and defaults",
+        "components.section.configHint": "The configuration the component declares; a projection that uses it supplies the values beyond these defaults.",
+        "components.config.none": "This component declares no configuration.",
+        "components.section.input": "Inputs",
+        "components.section.inputHint": "The typed inputs the component declares, and the slots a page fills with content.",
+        "components.input.declared": "A typed input the component declares.",
+        "components.slot.declared": "A slot the page fills with content.",
+        "components.input.none": "This component declares no inputs; the projection that uses it declares them.",
+        "components.section.output": "Outputs",
+        "components.section.outputHint": "The values the component hands the page, bindable to its state, and the events it emits.",
+        "components.output.declared": "An output value bindable to page state.",
+        "components.output.none": "This component declares no outputs.",
+        "components.section.operations": "Operations",
+        "components.section.operationsHint": "The operation signatures the component itself declares; which business operation a projection binds is not shown.",
+        "components.operations.none": "No component of the current release declares an operation. A page runs the operations its projections declare, such as OperationButton running the one its projection names.",
+        "components.table.name": "Name",
+        "components.table.datum": "Datum",
+        "components.table.results": "Read results",
+        "components.table.required": "Required",
+        "components.table.runtime": "Run-time read parameters",
+        "components.table.type": "Type",
+        "components.table.default": "Default",
+        "components.table.description": "Description",
+        "components.table.signature": "Signature",
+        "components.yes": "Yes",
+        "components.no": "No",
+        "components.loading": "Reading the component's declaration…",
+        "components.forbidden": "You cannot read this component.",
+        "components.selectPrompt": "Choose a component on the left to read what the current release declares for it.",
+        "components.port.binding": "the object type of the projection that uses it",
+        "components.port.object": "an object of {type}",
+        "components.port.scalar": "a {type} scalar",
+        "components.port.union": "an object union of {parts}",
+        "components.port.childObject": "a child object of {parent} / {collection}",
+        "components.port.list": "a list of <{items}>",
+        "components.port.placement": "a placement",
+        "components.port.json": "JSON",
+        "components.tag.input": "input",
+        "components.tag.slot": "slot",
+        "components.tag.output": "output",
+        "components.tag.event": "event",
+        "components.meta.module": "Module",
+        "panel.name": "Base components"
+      },
+      "zh-TW": {
+        "panel.name": "基礎組件"
+      }
+    }
+  }
+}
