@@ -28,3 +28,7 @@ export {
 export {
   builtinApplicationPanelUseSchema, builtinProductPanelInputSchema, builtinProductProjectionInputSchema,
 } from "./product-panels";
+export {
+  COMPONENT_PACKAGES_PATH, componentPackageNameSchema, componentPackageManifestSchema,
+  componentPackageDeclarationSchema, componentPackageResponseSchema,
+} from "./component-packages";

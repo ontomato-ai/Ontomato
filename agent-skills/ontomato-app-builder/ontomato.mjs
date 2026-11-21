@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { analystCommand } from "./client.mjs";
 import { authenticate } from "./identity.mjs";
 import { panelRegistrationClient } from "./panel-registration.mjs";
-import { currentSdkClient, installedPanelSdk } from "./current-sdk.mjs";
+import { currentSdkClient, installedPanelSdk, readLocalComponentPackages } from "./current-sdk.mjs";
 import { checkBuiltinPanelSource, checkPanelWorkspace, registerPanelWorkspace } from "./panel-check.mjs";
 import { managementPanel, writeManagementPanel } from "./panel-scaffold.mjs";
 import path from "node:path";
@@ -307,7 +307,11 @@ const print = value => console.log(JSON.stringify(value, null, 2));
 async function sdkCommand(api, args) {
   const sdk = currentSdkClient({ workbenchUrl: api.envUrl, headers: headers(api) });
   if (args[0] === "current" && args.length === 1) return print(await sdk.current());
-  if (args[0] !== "read" || args.length !== 2) die("sdk requires current or read <relative path>");
+  if (args[0] === "package" && args.length === 2) {
+    const checks = await sdk.check(await sdk.current());
+    return print(await sdk.componentPackage(args[1], checks));
+  }
+  if (args[0] !== "read" || args.length !== 2) die("sdk requires current, package <name>, or read <relative path>");
   console.log(await (await sdk.read(await sdk.current(), args[1])).text());
 }
 
@@ -341,17 +345,23 @@ async function checkCurrentPanel(api, directory, materialPath) {
   const findChartSource = source => registration.findChartSource(source, checks);
   return print(await checkPanelWorkspace(directory, {
     checks, catalogue, version: release.version, digest: release.digest, typeTable, lookup, findChartSource, materialPath,
+    loadPackage: name => sdk.componentPackage(name, checks),
   }));
 }
 
 async function panelCommand(api, workspaceId, [command, ...args]) {
   if (command === "type") {
     const readName = takeOption(args, "--read");
-    if (args.length !== 1) die("panel type <type-id> [--read <name>]");
+    const all = takeFlag(args, "--all");
+    if (all ? args.length || readName !== null : args.length !== 1) {
+      die("panel type <type-id> [--read <name>] or panel type --all");
+    }
     const [id] = args;
     const sdk = currentSdkClient({ workbenchUrl: api.envUrl, headers: headers(api) });
     const checks = await sdk.check(await sdk.current());
-    const { objectTypes, resultSchemas } = await readPlatformTypeTable(api, checks);
+    const typeTable = await readPlatformTypeTable(api, checks);
+    if (all) return print(typeTable);
+    const { objectTypes, resultSchemas } = typeTable;
     if (!Object.hasOwn(objectTypes, id)) die(`Type ${id} is not listed in the author's type table`);
     const { reads = {}, ...metadata } = objectTypes[id];
     const describe = read => ({ ...read, resultSchema: resultSchemas[read.result] });
@@ -411,7 +421,7 @@ async function panelCommand(api, workspaceId, [command, ...args]) {
     return registerPanelWorkspace(source, materialPath, checks, client, report, async () => {
       const [catalogue, typeTable] = await Promise.all([sdk.components(release), readPlatformTypeTable(api, checks)]);
       return { catalogue, typeTable };
-    });
+    }, name => sdk.componentPackage(name, checks));
   }
   if (command === "delete") {
     const [kind, id] = args;
@@ -523,15 +533,17 @@ function usage() {
   test start|status|stop [--workspace <id>] [--sample test-data/sample.json]
   sdk current
   sdk read <relative path, e.g. docs/components.md>
+  sdk package <name>
   panel applications
   panel type <id> [--read <name>]
+  panel type --all
   panel delete application|panel <id>
   panel projection <id>
   panel get <id>
   panel uses <applicationId>
   panel preview <working|commit> [--workspace <id>]
   panel scaffold <type> <new directory> [--id <application id>] [--operation <id>] [--batch <id>]
-  panel check <directory> [--material <registration file>] [--sdk-dir <installed SDK release directory>]
+  panel check <directory> [--material <registration file>] [--sdk-dir <installed SDK release directory> [--component-package <release directory>]... [--type-table <file>]]
   panel check <platform panel directory> --builtin --sdk-dir <installed SDK release directory>
   panel register <directory> [--material <registration file>]
   panel register <json|@file>
@@ -587,14 +599,30 @@ async function main() {
   const builtin = checkingPanel && takeFlag(argv, "--builtin");
   const sdkDirectory = checkingPanel ? takeOption(argv, "--sdk-dir") : null;
   const materialPath = checkingPanel ? takeOption(argv, "--material") ?? undefined : undefined;
-  if (checkingPanel && argv.length !== 3) die("panel check requires one workspace directory");
-  if (builtin && (sdkDirectory === null || materialPath !== undefined)) {
+  const typeTablePath = checkingPanel ? takeOption(argv, "--type-table") : null;
+  const packageDirectories = [];
+  if (checkingPanel) {
+    let directory = takeOption(argv, "--component-package");
+    while (directory !== null) {
+      packageDirectories.push(directory);
+      directory = takeOption(argv, "--component-package");
+    }
+    if (argv.length !== 3) die("panel check requires one workspace directory");
+  }
+  const offlineMaterial = typeTablePath !== null || packageDirectories.length > 0;
+  if (builtin && (sdkDirectory === null || materialPath !== undefined || offlineMaterial)) {
     die("panel check <platform panel directory> --builtin --sdk-dir <installed SDK release directory>");
   }
+  if (offlineMaterial && sdkDirectory === null) die("--component-package and --type-table require --sdk-dir");
   if (sdkDirectory !== null) {
     const sdk = await installedPanelSdk(sdkDirectory);
     if (builtin) return print(await checkBuiltinPanelSource(argv[2], sdk.checks, { assignIds: true }));
-    return print(await checkPanelWorkspace(argv[2], { ...sdk, materialPath }));
+    const packages = await readLocalComponentPackages(packageDirectories, sdk.checks);
+    const typeTable = typeTablePath === null ? undefined
+      : sdk.checks.platformTypeTableResponseSchema.parse(JSON.parse(fs.readFileSync(typeTablePath, "utf8")));
+    return print(await checkPanelWorkspace(argv[2], {
+      ...sdk, materialPath, typeTable, loadPackage: name => packages.get(name),
+    }));
   }
   if (cmd === "agent" && process.env.ONTOMATO_SKILL_SCENARIO === "platform") {
     return analystCommand({}, argv);

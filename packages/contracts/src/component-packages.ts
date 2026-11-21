@@ -79,15 +79,13 @@ export const currentComponentPackageSchema = packageIdentity.extend({
 }).strict();
 export type CurrentComponentPackage = z.infer<typeof currentComponentPackageSchema>;
 
-/**
- * Install and GET /api/component-packages/:name return the selected release and its static declarations.
- * Inspect returns the same shape for the candidate, with the artifactRoot it would have when installed.
- */
-export const componentPackageResponseSchema = currentComponentPackageSchema.extend({
+const packageDeclaration = packageIdentity.extend({
   components: componentPackageComponentsSchema,
   entries,
   styles,
-}).superRefine(({ name, components, entries }, ctx) => {
+});
+
+function checkDeclarations({ name, components, entries }: z.infer<typeof packageDeclaration>, ctx: z.RefinementCtx) {
   checkEntryNames(name, entries, ctx, ["entries"]);
   const seen = new Set<string>();
   for (const [index, component] of components.entries()) {
@@ -102,7 +100,16 @@ export const componentPackageResponseSchema = currentComponentPackageSchema.exte
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...path, "module"], message: `No entry for module '${component.module}'` });
     }
   }
-});
+}
+
+/** Static package declarations, available before installation. */
+export const componentPackageDeclarationSchema = packageDeclaration.superRefine(checkDeclarations);
+
+/**
+ * Install and GET /api/component-packages/:name return the selected release and its static declarations.
+ * Inspect returns the same shape for the candidate, with the artifactRoot it would have when installed.
+ */
+export const componentPackageResponseSchema = packageDeclaration.merge(currentComponentPackageSchema).superRefine(checkDeclarations);
 export const componentPackageInstallResponseSchema = componentPackageResponseSchema;
 export type ComponentPackageResponse = z.infer<typeof componentPackageResponseSchema>;
 
