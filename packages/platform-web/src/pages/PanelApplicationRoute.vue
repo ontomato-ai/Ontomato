@@ -124,9 +124,8 @@ const catalog = useApplicationCatalog();
  */
 const resolution = shallowRef<ApplicationEntryResolution | null>(null);
 let resolving: Promise<ApplicationEntryResolution> | null = null;
-/** Whether \`resolution\` is Java's answer for the address opened now, or why there is none. */
+/** Whether \`resolution\` is Java's answer for the address opened now. */
 const answered = ref(false);
-const entryFailure = ref("");
 /** Read again after a kept page's use relation was withdrawn. */
 const rereads = ref(0);
 
@@ -153,7 +152,6 @@ watch([() => props.applicationId, entryPath, rereads], ([applicationId, path], _
   let current = true;
   onCleanup(() => { current = false; });
   answered.value = false;
-  entryFailure.value = "";
   if (!path) {
     resolution.value = null;
     answered.value = true;
@@ -165,10 +163,10 @@ watch([() => props.applicationId, entryPath, rereads], ([applicationId, path], _
     // An answer for another application is not this route's page.
     resolution.value = answer.applicationId === applicationId ? answer : null;
     answered.value = true;
-  }, (reason) => {
+  }, () => {
+    // Java finds no entry the reader may open at this address: the page says so in the platform's language.
     if (!current) return;
     resolution.value = null;
-    entryFailure.value = reason instanceof Error ? reason.message : String(reason);
     answered.value = true;
   });
 }, { immediate: true });
@@ -192,8 +190,7 @@ const area = ref<HTMLElement | null>(null);
 if (props.navigate) useAppTheme(area, () => resolution.value?.theme, hostThemeMode);
 else useApplicationTheme(() => resolution.value?.theme);
 /** An address that names no use relation the reader may open is a page that cannot load, and its receipt says so. */
-const missing = computed(() => answered.value && !use.value
-  ? entryFailure.value || t("platform.panelNotInApplication", { path: openedPath.value }) : "");
+const missing = computed(() => answered.value && !use.value ? t("platform.panelNotInApplication", { path: openedPath.value }) : "");
 watch(missing, (message) => {
   if (message) emit("display-loaded", panelUnavailable(new Error(message)));
 });
