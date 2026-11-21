@@ -130,6 +130,47 @@ it("goes home when the landing picks back the very address nothing serves for th
 });
 
 
+it("hands a draft linked at a built-in entry's original address to its panel, past the state the host adds", async () => {
+  // A panel with deep-linked state, as business knowledge has (`mode`): the host adds `state` to the address it opens.
+  const stated = panelRecord("builtin-components", "Base components", definePanel({
+    state: { mode: { type: { kind: "scalar", type: "string" }, deepLink: true, default: "view" } }, members: {}, commands: {},
+  }));
+  const sent = installPlatform((request) => {
+    if (request.path === "/api/data-query/platform/applications/ontology/panel-uses")
+      return Response.json({ data: { applicationId: "ontology", entry: { path: "/ontology", renderer: "ontology" }, panelUses: [components] } });
+    if (request.path === `/api/product-panels/${stated.id}`) return panelAnswer(stated, request);
+    if (request.path === `/api/product-panels/${stated.id}/snapshot`) return panelSnapshot(stated, {}, request);
+    return nothingAt(request);
+  });
+  useApplicationCatalog().applications.value = catalogWith([components]);
+  const link = { draftSessionId: "session-1", draftRunId: "run-1", draftPath: "outputs/drafts/component.page-draft.json" };
+  const drafts = () => sent.filter((request) => request.path.endsWith("/page-draft"));
+
+  // Opened with the link and a state, as an address the host has already written its state into.
+  const { router, app, element } = await open(`/ontology/components?${new URLSearchParams({ ...link, state: JSON.stringify({ mode: "view" }) })}`);
+  try {
+    await vi.waitFor(() => expect(element.querySelector(".panel-host-coded")).not.toBeNull());
+    await vi.waitFor(() => expect(drafts()).toHaveLength(1));
+    expect(drafts()[0]!.path).toBe("/api/assistant/sessions/session-1/runs/run-1/page-draft");
+    expect(new URLSearchParams(drafts()[0]!.search).get("path")).toBe(link.draftPath);
+    // The link stays in the address beside the state.
+    expect(router.currentRoute.value.query).toMatchObject(link);
+  } finally {
+    app.unmount();
+  }
+
+  // The same entry opened without a link reads no draft and says nothing about one.
+  sent.length = 0;
+  const plain = await open("/ontology/components");
+  try {
+    await vi.waitFor(() => expect(plain.element.querySelector(".panel-host-coded")).not.toBeNull());
+    expect(drafts()).toEqual([]);
+    expect(plain.element.querySelector(".panel-host-draft")).toBeNull();
+  } finally {
+    plain.app.unmount();
+  }
+});
+
 it.each([
   ["ontology", "/ontology/agents", "ontology-modeling"],
   ["agents", "/agents/settings", "analysis-agent"],
