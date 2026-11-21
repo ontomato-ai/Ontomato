@@ -172,10 +172,6 @@ plain text too; without `readonly` it edits through `v-model`). Never draw eithe
 `usePanelContext().notify({ kind: "success" | "info" | "warning" | "error", text })`: the platform's own message, which
 fades by itself. A note that stays on the page is `<el-alert>`.
 
-`usePanelContext().placement` says where the platform shows the panel: `"conversation"` beside a conversation, where
-the conversation already draws the page's title and its way back, or `"page"` at the panel's own address. Draw your own
-title and back only on the page (`v-if="placement === 'page'"`); lay out by the container's width, and read, act and
-select the same in both. Do not add an address parameter for it.
 
 Run the App Builder skill's `ontomato panel check` on the workspace directory. It uses the current release's
 declarations. Register the requested projections, panel and application uses through their owners, then open the

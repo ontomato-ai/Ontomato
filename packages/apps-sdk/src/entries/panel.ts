@@ -20,7 +20,6 @@ export { registerHandler, handlerFor, registeredHandlers, type RegisteredHandler
 export { usePanelContext, type PanelContext, type ProjectionSlot } from "../panel/context";
 export { PlatformUploadConflict } from "../panel/platform-objects";
 export type { PanelInstance } from "../panel/instance";
-export type { PanelPlacement } from "../panel/direct";
 export { applyPanelRequest } from "../panel/instance";
 export { defineComponentMeta } from "../components";
 export type { ComponentCatalogue, ComponentMetadata, ComponentPort, ComponentPorts, ComponentRole } from "../components";
