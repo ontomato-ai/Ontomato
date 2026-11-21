@@ -11,9 +11,7 @@
 <style>
   [v-cloak] { display: none; }
   .ac { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; }
-  .ac-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--spacing-sm); }
-  .ac-title { margin: 0; color: var(--el-text-color-primary); font-size: var(--text-title); font-weight: var(--font-semibold); line-height: 1.5; }
-  .ac-subtitle { margin: var(--spacing-xs) 0 0; color: var(--el-text-color-secondary); font-size: var(--text-sm); line-height: 1.6; }
+  .ac-head { display: flex; justify-content: flex-end; }
   .ac-filter { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
   .ac-filter-input { max-width: 20rem; }
   .ac-count { color: var(--el-text-color-secondary); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
@@ -90,16 +88,10 @@
 </style>
 <div id="app" v-cloak>
   <section class="ac">
-    <header class="ac-head">
-      <div>
-        <h1 class="ac-title">{{ t("title") }}</h1>
-        <p class="ac-subtitle">{{ t("subtitle") }}</p>
-      </div>
-      <div>
-        <!-- The one way to create: open this page's agent input; nothing is sent until the reader sends it. -->
-        <projection slot="newAction"></projection>
-      </div>
-    </header>
+    <div class="ac-head">
+      <!-- The one way to create: open this page's agent input; nothing is sent until the reader sends it. -->
+      <projection slot="newAction"></projection>
+    </div>
 
     <!-- Catalog: all actions of the domain, filtered by name or description; checked ones change status together. -->
     <section class="ac-section" v-show="!detailVisible">

@@ -1,10 +1,7 @@
 <style>
   [v-cloak] { display: none; }
   .projections { display: flex; flex-direction: column; gap: var(--spacing-md); min-height: 0; padding-block-end: var(--spacing-4xl); }
-  .projections-head { display: flex; gap: var(--spacing-md); justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
-  .projections-head h1 { margin: 0; font-size: var(--el-font-size-large); font-weight: var(--font-semibold); }
-  .projections-head p { margin: var(--spacing-xs) 0 0; color: var(--el-text-color-secondary); font-size: var(--el-font-size-small); }
-  .projections-head-actions { display: flex; gap: var(--spacing-sm); flex-wrap: wrap; }
+  .projections-head-actions { display: flex; gap: var(--spacing-sm); flex-wrap: wrap; justify-content: flex-end; }
   .projections-toolbar { display: flex; align-items: center; gap: var(--spacing-sm); flex-wrap: wrap; }
   .projections-search { width: 240px; }
   .projections-sort { width: 132px; }
@@ -43,16 +40,10 @@
 </style>
 <div id="app" v-cloak>
   <section class="projections">
-    <header class="projections-head">
-      <div>
-        <h1>投影</h1>
-        <p>本域里我能使用的投影。选中一条，看它读什么、怎么配置、属主登记了哪些操作，以及哪些面板在用它。</p>
-      </div>
-      <div class="projections-head-actions">
-        <el-button type="primary" @click="startCreate">新建投影</el-button>
-        <el-button @click="refreshAll">刷新</el-button>
-      </div>
-    </header>
+    <div class="projections-head-actions">
+      <el-button type="primary" @click="startCreate">新建投影</el-button>
+      <el-button @click="refreshAll">刷新</el-button>
+    </div>
 
     <div class="projections-toolbar">
       <el-input v-model="searchDraft" class="projections-search" clearable placeholder="搜索名称或说明" />

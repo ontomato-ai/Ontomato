@@ -32,7 +32,6 @@
     gap: var(--spacing-sm);
   }
   .pd-header { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--spacing-sm) var(--spacing-md); }
-  .pd-header h1 { font-size: var(--text-title); font-weight: var(--font-semibold); margin: 0; }
   .pd-header h2 { font-size: var(--text-base); font-weight: var(--font-semibold); margin: 0; }
   .pd-header p { margin: 0; color: var(--el-text-color-secondary); flex: 1 1 18rem; min-width: 0; }
   .pd-actions { display: flex; flex-wrap: wrap; gap: var(--spacing-xs); margin-inline-start: auto; }
@@ -134,10 +133,6 @@
 <div id="app" v-cloak>
   <section class="pd">
     <aside class="pd-pane">
-      <div class="pd-header">
-        <h1>{{ t('title') }}</h1>
-      </div>
-      <p class="pd-note">{{ t('description') }}</p>
       <div class="pd-bar">
         <input
           class="pd-input"

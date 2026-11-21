@@ -4,8 +4,7 @@
   .apps { display: flex; flex-direction: column; gap: var(--spacing-md); padding-bottom: var(--spacing-4xl); }
   .apps-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--spacing-sm); }
   .apps-title { margin: 0; color: var(--el-text-color-primary); font-size: var(--text-lg); font-weight: var(--font-semibold); line-height: 1.5; }
-  .apps-sub { margin: calc(var(--spacing-xs) / 2) 0 0; color: var(--el-text-color-secondary); font-size: var(--text-xs); line-height: 1.6; }
-  .apps-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
+  .apps-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--spacing-sm); }
   .apps-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
   .apps-toolbar .apps-search { width: 260px; max-width: 100%; }
   .apps-count { margin-inline-start: auto; color: var(--el-text-color-secondary); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
@@ -41,15 +40,9 @@
   <section class="apps shell-dock-room">
 
     <template v-if="mode === 'list'">
-      <header class="apps-head">
-        <div>
-          <h1 class="apps-title">应用</h1>
-          <p class="apps-sub">本域可见的全部应用：内置的与域内建的同列。展开一行看它的身份、入口和用到的面板。</p>
-        </div>
-        <div class="apps-actions">
-          <el-button type="primary" @click="startCreate">新建应用</el-button>
-        </div>
-      </header>
+      <div class="apps-actions">
+        <el-button type="primary" @click="startCreate">新建应用</el-button>
+      </div>
 
       <div class="apps-toolbar">
         <el-input class="apps-search" v-model="searchText" clearable placeholder="搜索应用名称或 ID" aria-label="搜索应用" @input="scheduleSearch"></el-input>

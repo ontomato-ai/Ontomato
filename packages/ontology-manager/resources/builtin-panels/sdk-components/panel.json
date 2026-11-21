@@ -51,7 +51,6 @@
   "content": {
     "messages": {
       "zh-CN": {
-        "components.hint": "当前部署的 SDK 发行声明的组件。组件随发行增改，这一页只读：可以搜索和查看声明，不能新增、修改或删除。",
         "components.meta.package": "所属包",
         "components.meta.export": "导出名",
         "components.meta.role": "角色",
@@ -110,7 +109,6 @@
         "panel.name": "基础组件"
       },
       "en": {
-        "components.hint": "The components the deployed SDK release declares. Components change with a release, so this page is read-only: search and read declarations; nothing is created, changed or deleted here.",
         "components.meta.package": "Package",
         "components.meta.export": "Export",
         "components.meta.role": "Role",

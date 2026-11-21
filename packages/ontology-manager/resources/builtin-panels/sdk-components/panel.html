@@ -8,11 +8,6 @@
     container-type: inline-size;
     overflow-wrap: anywhere;
   }
-  .sdk-catalogue-hint {
-    margin: 0;
-    color: var(--el-text-color-secondary);
-    font-size: var(--text-sm);
-  }
   .sdk-catalogue-body {
     display: grid;
     grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.25fr);
@@ -161,8 +156,6 @@
 
 <div id="app" v-cloak>
   <section class="sdk-catalogue">
-    <p class="sdk-catalogue-hint">{{ t('components.hint') }}</p>
-
     <div class="sdk-catalogue-body">
       <div class="sdk-catalogue-pane sdk-catalogue-list">
         <projection slot="list"></projection>
