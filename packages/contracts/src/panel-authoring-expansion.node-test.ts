@@ -95,6 +95,33 @@ test("short operations take their target and local name from the owner declarati
   }));
 });
 
+test("short draft reads must name their form member and keep the binding on the placement", () => {
+  const trial = panelOperationDeclarationSchema.parse({
+    id: "metricViews.testExecute", kind: "action", effect: "read", batch: false,
+    target: { source: "draft" }, inputSchema: { type: "object" },
+  });
+  const table = { objectTypes: { "platform:MetricView": { reads: undefined, operations: [trial] } } };
+  const member = { component: "OperationButton", operation: trial.id };
+  assert.throws(() => expand("trial", member, table), /Member 'trial', field 'draft'.*metricViews.testExecute/);
+  const { projection, placement } = expand("trial", { ...member, draft: "metricEditor" }, table);
+  assert.deepEqual(projection.operations, {
+    testExecute: { operation: { kind: "PlatformOperation", id: trial.id } },
+  });
+  assert.deepEqual(placement, {
+    readOperationInputs: { testExecute: { draft: { slot: "metricEditor" }, parameters: { fields: {} } } },
+  });
+
+  const parameters = { formField: { slot: "trialOptions", path: "/parameters" } };
+  const bindingId = { state: "search" };
+  const withParameters = expand("trial", { ...member, draft: "metricEditor", parameters, bindingId }, table);
+  assert.deepEqual(withParameters.placement.readOperationInputs?.testExecute, {
+    draft: { slot: "metricEditor" }, parameters, bindingId,
+  });
+  assert.throws(() => expand("approve", {
+    component: "OperationButton", operation: approve.id, target: "selected", draft: "metricEditor",
+  }), /Member 'approve', field 'draft'.*requires an operation that reads a form draft/);
+});
+
 test("short forms share the object input between the form read and save operation", () => {
   const { projection } = expand("form", {
     component: "ObjectForm", target: "selected", data: { form: "form", createForm: "createForm" }, operation: save.id,
