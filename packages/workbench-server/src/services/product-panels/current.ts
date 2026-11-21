@@ -205,16 +205,12 @@ export async function validateApplicationPanelReferences(request: ApplicationPan
     const { defaultAgent } = use;
     if (!defaultAgent) continue;
     definitions ??= await assistantStore.agents(domainId);
-    const unavailable = (reason: "missing" | "disabled" | "missingSkill") => {
-      const selection = defaultAgent.kind === "id" ? `'${defaultAgent.id}'`
-        : tForLocale(locale, "panels.productCatalog.defaultAgent.preset", { agentKind: defaultAgent.agentKind });
-      return new HttpError(
-        409,
-        tForLocale(locale, `panels.productCatalog.defaultAgent.${reason}`, { useId: use.id, selection, panelId: use.panelId }),
-        "PAGE_DEFAULT_AGENT_UNAVAILABLE",
-        { useId: use.id },
-      );
-    };
+    const unavailable = (reason: "missing" | "disabled" | "missingSkill") => new HttpError(
+      409,
+      tForLocale(locale, `panels.productCatalog.defaultAgent.${reason}`),
+      "PAGE_DEFAULT_AGENT_UNAVAILABLE",
+      { useId: use.id },
+    );
     const choice = resolveDefaultAgent(definitions, defaultAgent);
     if ("reason" in choice) throw unavailable(choice.reason);
 

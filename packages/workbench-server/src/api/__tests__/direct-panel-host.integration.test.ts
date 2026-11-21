@@ -94,9 +94,8 @@ beforeAll(async () => {
     packs: {
       en: { ...enLocaleMeta, messages: en },
       "zh-CN": { ...enLocaleMeta, messages: {
-        "panels.productCatalog.defaultAgent.preset": "预设 {agentKind}",
-        "panels.productCatalog.defaultAgent.missing": "{useId} 所选智能体 {selection} 不存在。",
-        "panels.productCatalog.defaultAgent.disabled": "{useId} 所选智能体 {selection} 已停用。",
+        "panels.productCatalog.defaultAgent.missing": "这个默认智能体在本域不存在。",
+        "panels.productCatalog.defaultAgent.disabled": "这个默认智能体已停用。",
       } },
     },
   });
@@ -1091,7 +1090,7 @@ it("rejects an unavailable default agent before accepting a proposed application
   const missingSkillBody = await missingSkill.json();
   expect(missingSkillBody.error).toEqual({
     code: "PAGE_DEFAULT_AGENT_UNAVAILABLE",
-    message: "Entry 'manage' default agent preset 'knowledge-governance' does not select the skill for panel 'default-agent-panel'.",
+    message: "This default agent has not selected this panel's skill.",
   });
   expect(missingSkillBody.details).toEqual({ useId: "manage" });
 
@@ -1107,7 +1106,7 @@ it("rejects an unavailable default agent before accepting a proposed application
   const disabledBody = await disabled.json();
   expect(disabledBody.error).toEqual({
     code: "PAGE_DEFAULT_AGENT_UNAVAILABLE",
-    message: `review-entry 所选智能体 '${governanceId}' 已停用。`,
+    message: "这个默认智能体已停用。",
   });
   expect(disabledBody.details).toEqual({ useId: "review-entry" });
 
@@ -1116,7 +1115,7 @@ it("rejects an unavailable default agent before accepting a proposed application
   const missingBody = await missing.json();
   expect(missingBody.error).toEqual({
     code: "PAGE_DEFAULT_AGENT_UNAVAILABLE",
-    message: "new-entry 所选智能体 预设 missing-preset 不存在。",
+    message: "这个默认智能体在本域不存在。",
   });
   expect(missingBody.details).toEqual({ useId: "new-entry" });
 });
