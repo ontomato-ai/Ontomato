@@ -392,20 +392,24 @@ defineExpose({
    * Shows the whole graph, no larger than `maxZoom`, keeping `padding` pixels clear (one value, or top, right, bottom,
    * left). With `minZoom` it is never shown smaller: a graph that would be is shown at `minZoom` around the node
    * `around` (its middle when absent) as far as the graph's own edges allow, and the reader pans to the rest — names
-   * stay readable rather than all in view.
+   * stay readable rather than all in view. Resolves whether the whole graph is in view.
    */
-  fit: (options: { maxZoom?: number; minZoom?: number; around?: string; padding?: number | [number, number, number, number] } = {}) =>
-    afterChanges(async (target) => {
+  fit: async (options: { maxZoom?: number; minZoom?: number; around?: string; padding?: number | [number, number, number, number] } = {}) => {
+    let whole = true;
+    await afterChanges(async (target) => {
       if (options.padding !== undefined) target.setOptions({ padding: options.padding });
       await target.fitView({ when: "always", direction: "both" });
       const zoom = target.getZoom();
       if (options.maxZoom !== undefined && zoom > options.maxZoom) await target.zoomTo(options.maxZoom, false);
       else if (options.minZoom !== undefined && zoom < options.minZoom) {
+        whole = false;
         await target.zoomTo(options.minZoom, false);
         return showAround(target, options.minZoom, options.around, options.padding);
       }
       await target.fitCenter(false);
-    }),
+    });
+    return whole;
+  },
   /**
    * Zooms by `ratio` about the middle of the view, as a zoom to the level it reaches: G6 reports a relative zoom by its
    * step, and what follows the zoom (names kept readable) would take the step for the level.

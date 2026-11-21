@@ -203,19 +203,20 @@ it("fans parallel edges into arcs, loops a self-relation round its anchor's grou
 it("fits a graph no smaller than names stay readable at, and then shows the part around the node it is given", async () => {
   const wrapper = mount(G6GraphCanvas, { props: { label: "Graph", nodes: placed(3), layout: { type: "preset" } } });
   await flushPromises();
-  const fit = (options: object) => (wrapper.vm as unknown as { fit(options: object): Promise<void> }).fit(options);
+  const fit = (options: object) => (wrapper.vm as unknown as { fit(options: object): Promise<boolean> }).fit(options);
   const steps = () => calls.filter(([name]) => ["fitView", "zoomTo", "fitCenter", "focus"].includes(name));
 
   // A graph that fits at a readable size is shown whole.
   view.fitted = 0.9;
   calls.length = 0;
-  await fit({ minZoom: 0.85, around: "n1" });
+  // It says whether the whole graph is in view, for its caller to tell the reader when it is not.
+  expect(await fit({ minZoom: 0.85, around: "n1" })).toBe(true);
   expect(steps()).toEqual([["fitView", 0.9], ["fitCenter", null]]);
 
   // One that would shrink below it is shown at that size, around the node given.
   view.fitted = 0.3;
   calls.length = 0;
-  await fit({ minZoom: 0.85, around: "n1" });
+  expect(await fit({ minZoom: 0.85, around: "n1" })).toBe(false);
   expect(steps()).toEqual([["fitView", 0.3], ["zoomTo", 0.85]]);
   expect(of("translate")).toHaveLength(1);
 
