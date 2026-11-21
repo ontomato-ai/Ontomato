@@ -146,6 +146,16 @@ export const workbenchApplications: BuiltinApplication[] = [
         "path": "/schedules",
         "access": { "kind": "domain-member" },
         "inputs": { "schedulesApplication": { "literal": { "className": "platform:Application", "primaryKey": "schedules" } } },
+        "names": {
+          "en": "Scheduled tasks",
+          "zh-CN": "定时任务",
+          "zh-TW": "排程任務",
+          "ja": "定期タスク",
+          "de": "Geplante Aufgaben",
+          "fr": "Tâches planifiées",
+          "it": "Attività pianificate",
+          "ar": "المهام المجدولة"
+        },
         "descriptions": {
           "en": "Schedule application tasks and review their execution history",
           "zh-CN": "配置各应用的定时任务，查看执行记录与结果"
@@ -186,6 +196,16 @@ export const workbenchApplications: BuiltinApplication[] = [
         "panelId": "builtin-product-feedback",
         "path": "/ops/feedback",
         "access": { "permissionCode": "user-feedback" },
+        "names": {
+          "en": "User feedback",
+          "zh-CN": "用户反馈",
+          "zh-TW": "使用者回饋",
+          "ja": "ユーザーフィードバック",
+          "de": "Nutzerfeedback",
+          "fr": "Retours des utilisateurs",
+          "it": "Feedback degli utenti",
+          "ar": "ملاحظات المستخدمين"
+        },
         "descriptions": {
           "en": "Ratings and comments users give on query and analysis results",
           "zh-CN": "用户对问答与分析结果的评价和留言"
