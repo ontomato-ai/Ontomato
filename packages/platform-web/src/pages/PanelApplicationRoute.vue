@@ -267,6 +267,18 @@ watch(use, (next, previous) => {
   emit("context", page.context ?? { url: page.reported, label: pageName.value, selection: [] });
 }, { immediate: true });
 
+/*
+ * The shown page sent to its bare address — its menu row clicked while it is open, or the address typed without a state —
+ * opens it at its panel's defaults, as a native page goes back to its start: only a page shown again from another keeps
+ * the state it was left at. A page with unsaved changes is not reset under them: the address goes back to its state.
+ */
+watch([() => use.value?.id, opened], ([id, next], [previousId, previous]) => {
+  const page = shownPage.value;
+  if (!id || id !== previousId || next === previous || next.includes("?") || !page) return;
+  if (page.dirty) reportAddress({ kind: "state", address: page.reported });
+  else page.reported = pageAddress.value;
+});
+
 // Leaving the shown page with unsaved changes asks the platform's question first. Beside a conversation the display
 // controller asks instead, from the page's dirty report.
 if (!props.navigate)

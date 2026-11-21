@@ -202,7 +202,11 @@ export function serviceNavigation(
   platformPages: readonly PlatformPage[]
 ): PlatformNavigation {
   const ontology = managerNavigation(manager.counts);
-  return { groups: [...ontology.groups, platformGroup], pages: [...ontology.pages, ...platformPages, ...applicationPages] };
+  return {
+    groups: [...ontology.groups, platformGroup],
+    pages: [...ontology.pages, ...platformPages, ...applicationPages],
+    entries: ontology.entries,
+  };
 }
 
 /** The root address's landing page for this deployment (see `serviceHome`). */

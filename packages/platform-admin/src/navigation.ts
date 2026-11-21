@@ -39,6 +39,21 @@ export interface PlatformPage {
 export interface PlatformNavigation {
   groups: readonly PlatformGroup[];
   pages: readonly PlatformPage[];
+  /**
+   * How a menu row looks where an application's menu table lists one of its panel entries instead of a page. The entry
+   * itself (its name, and whether the reader may open it) is the application catalog's; these rows give only what a page
+   * declaration would have: the icon and the count.
+   */
+  entries?: readonly PlatformEntryRow[];
+}
+
+/** The look of a panel entry's menu row, by the address it stands at. */
+export interface PlatformEntryRow {
+  path: string;
+  /** 16px navigation icon. */
+  icon: Component;
+  /** Count shown at the end of the navigation row; null or absent shows none. */
+  count?: () => number | null;
 }
 
 /** A navigation group; shown when at least one of its pages is available. */

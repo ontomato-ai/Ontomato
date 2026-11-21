@@ -3,10 +3,14 @@ import type { Component } from "vue";
 import {
   AlarmClock,
   BookOpen,
+  Bot,
   Boxes,
   ChartColumn,
   Link2,
+  MousePointerClick,
   Network,
+  Share2,
+  SquareFunction,
   Table2,
   Tags,
   Workflow as WorkflowIcon,
@@ -35,6 +39,16 @@ export interface ManagerNavigationPage {
    * data browser does not: it is a page of the object browser, whose header and gutter the platform draws around it.
    */
   ownHeader: boolean;
+  count?: () => number | null;
+}
+
+/**
+ * The look of a menu row where the Manager's menu lists a panel entry of the ontology application instead of a page: the
+ * icon and count the page it replaced had. The entry's name and whether the reader may open it are the catalog's.
+ */
+export interface ManagerEntryRow {
+  path: string;
+  icon: Component;
   count?: () => number | null;
 }
 
@@ -97,6 +111,17 @@ const pages = [
 ];
 
 /**
+ * The rows of the panel entries whose native pages are gone, with those pages' icons. An entry at an address the Manager
+ * still lists a page for (the graph, the relation types) takes that page's icon and count.
+ */
+const entries: readonly { path: string; icon: Component; count?: keyof OntologyResourceCounts }[] = [
+  { path: managerPaths.functions, icon: SquareFunction },
+  { path: managerPaths.actions, icon: MousePointerClick },
+  { path: managerPaths.capabilityMap, icon: Share2 },
+  { path: routes.ontologyAgents.path, icon: Bot },
+];
+
+/**
  * The Manager's navigation entries in display order (ontology, assets, knowledge); the counts come from the page's
  * Manager counts.
  */
@@ -106,5 +131,6 @@ export function managerNavigation(counts: ManagerCounts) {
     pages: pages.map(({ count, ...entry }): ManagerNavigationPage =>
       count ? { ...entry, count: () => counts.values[count] } : entry
     ),
+    entries: entries.map(({ count, ...row }): ManagerEntryRow => count ? { ...row, count: () => counts.values[count] } : row),
   };
 }

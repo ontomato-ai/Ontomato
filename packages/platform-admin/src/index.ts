@@ -7,6 +7,7 @@ export {
   type PlatformAccess,
   type PlatformGroup,
   type PlatformLink,
+  type PlatformEntryRow,
   type PlatformNavigation,
   type PlatformPage,
 } from "./navigation";

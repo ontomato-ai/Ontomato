@@ -155,8 +155,6 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
     const entries = !panels && !embedded ? new Map(app.panelUses?.flatMap(use => use.names ? [[panelUsePath(use.path), {
       id: panelUsePath(use.path),
       label: use.names[locale] ?? use.names.en!,
-      icon: "pages",
-      count: null,
     }] as const] : []) ?? []) : undefined;
     const layout: NativeLayout = panelPages.length > 1
       ? { frame: "menu", sections: [{ key: app.id, pages: panelPages }] }
