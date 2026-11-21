@@ -75,7 +75,7 @@ const partition = computed(() => catalogPartition(catalog.applications.value, ho
 const declarations = computed<PlatformAppDeclaration[]>(() =>
   appDeclarations(host.navigation.value, host.access, partition.value, (key) => t(key)),
 );
-const agentBuilder = computed(() => agentBuilderShortcut(declarations.value, host.navigation.value, host.access, t("platform.agentBuilder")));
+const agentBuilder = computed(() => agentBuilderShortcut(declarations.value, panelEntryApplication(platformRoutes.agents.path) === "agents", t("platform.agentBuilder")));
 const railDeclarations = computed(() => agentBuilder.value ? [...declarations.value, agentBuilder.value] : declarations.value);
 
 /** The page the navigation names for this address; a screen of a page (a detail) names the page it belongs to. */

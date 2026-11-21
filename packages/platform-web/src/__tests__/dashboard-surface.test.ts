@@ -114,8 +114,9 @@ describe("the pages beside the conversation are not entries of its column", () =
 
     const features = (wrapper.findComponent(AgentShell).props("workbench") as { features: { id: string; label: string; listed?: boolean }[] })
       .features;
-    // The page's title is what the shell shows for it: the settings and a board are named, not named by their keys.
-    expect(features.find((feature) => feature.id === "agents")).toMatchObject({ label: "Agent settings", listed: false });
+    // Settings open through the application's admitted panel entry, with the shortcut kept at the foot of the column.
+    expect(features.find((feature) => feature.id === "agents")).toBeUndefined();
+    expect(wrapper.findComponent(AgentShell).props("bottom")).toMatchObject({ label: "Agent settings", icon: "agents" });
     expect(features.find((feature) => feature.id === "dashboards")).toMatchObject({ label: "Dashboards", listed: false });
   });
 });
