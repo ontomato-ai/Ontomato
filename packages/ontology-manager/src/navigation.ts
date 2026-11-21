@@ -10,6 +10,7 @@ import {
   Component as ComponentIcon,
   Layers,
   Link2,
+  MessageSquareText,
   MousePointerClick,
   Network,
   PanelsTopLeft,
@@ -120,6 +121,7 @@ const pages = [
  * graph, the relation types) takes that page's icon and count.
  */
 const entries: readonly { path: string; icon: Component; count?: keyof OntologyResourceCounts }[] = [
+  { path: "/ontology/feedback", icon: MessageSquareText },
   { path: managerPaths.functions, icon: SquareFunction },
   { path: managerPaths.actions, icon: MousePointerClick },
   { path: managerPaths.capabilityMap, icon: Share2 },
