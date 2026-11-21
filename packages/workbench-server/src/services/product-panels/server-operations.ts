@@ -115,7 +115,10 @@ const registrations: readonly PanelServerOperation[] = [
   ...ontologyModelServerOperations,
   ...productCatalogServerOperations,
 ];
-const operations = new Map(registrations.map(operation => [operation.handlerRef, operation]));
+const operations = new Map(registrations.map(operation => {
+  requirePanelOperationLabelKey(operation);
+  return [operation.handlerRef, operation];
+}));
 const jsonSchema = (schema: z.ZodTypeAny) => zodToJsonSchema(schema, { effectStrategy: "input" });
 
 export function operationDeclaration(handler: PanelServerOperation) {
