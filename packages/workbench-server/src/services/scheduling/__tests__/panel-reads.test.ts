@@ -14,6 +14,14 @@ const task = examples.creates.find(create => create.name === "operations-autotes
 const opening = examples.forms.find(form => form.name === "operations-empty")!.response;
 const refreshed = examples.forms.find(form => form.name === "operations-switch-to-inspection")!.response;
 const viewer = { token: "test-viewer", locale: "en" };
+const catalogue = {
+  success: true,
+  data: examples.applicationsEnglish.response.applications.map(({ id }) => ({
+    id, kind: "native", names: { en: id === "operations" ? "Operations center" : id },
+    descriptions: {}, icon: "apps", rail: "apps", category: "business", sort: 0,
+    entry: { path: `/${id}` }, entryAccess: ["domain-member"], scheduleAdapter: `java:${id}`, releaseId: null,
+  })),
+};
 
 configureI18n({
   defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
@@ -28,6 +36,7 @@ it("reads the viewer's task rows and selected summary, and recomputes the select
   const fetchOwner = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
     const path = new URL(url).pathname;
+    if (init.method === "GET" && path === "/platform/applications") return Response.json(catalogue);
     if (init.method === "GET" && path.endsWith("/platform/scheduled-tasks/applications"))
       return Response.json(examples.applicationsEnglish.response);
     if (init.method === "GET" && path.endsWith("/platform/scheduled-tasks"))
@@ -36,6 +45,10 @@ it("reads the viewer's task rows and selected summary, and recomputes the select
       return Response.json(task);
     if (init.method === "POST" && path.endsWith("/platform/scheduled-tasks/applications/operations/form")) {
       const input = JSON.parse(String(init.body));
+      if (input.taskId === null) {
+        expect(input).toMatchObject({ values: {}, changedField: null, timeZone: task.timeZone });
+        return Response.json(opening);
+      }
       expect(input).toMatchObject({ taskId: task.id, timeZone: task.timeZone });
       if (input.changedField === null) {
         if (input.values.operation === "inspection") {
@@ -58,7 +71,7 @@ it("reads the viewer's task rows and selected summary, and recomputes the select
   expect(rows).toEqual([record]);
   expect(record).toMatchObject({
     primaryKey: task.id, label: task.title,
-    fields: { application: task.appId, state: "on", nextRun: task.nextRunAt },
+    fields: { application: task.appId, state: "on", nextRun: task.nextRunAt, frequency: expect.any(String), lastRunAt: "", lastRunSummary: "" },
     fieldLabels: {
       application: "Application", settings: "Settings", state: "Status", nextRun: "Next run", lastRun: "Last run",
     },
@@ -75,6 +88,11 @@ it("reads the viewer's task rows and selected summary, and recomputes the select
   expect(create).toMatchObject({
     values: { task: { title: "", appId: "", frequency: { kind: "daily", time: "09:00" }, timeZone: task.timeZone } },
     save: { draftOperation: "platform:ScheduledTask.create" },
+  });
+  const prefilling = await reads.createForm({ defaultAppId: "operations" });
+  expect(prefilling.values.task).toMatchObject({ appId: "operations" });
+  expect(prefilling.fields.find(({ path }) => path === "/task/appId")?.control).toMatchObject({
+    kind: "select", options: expect.arrayContaining([expect.objectContaining({ value: "operations", label: "Operations center" })]),
   });
   const replacement = panelReadResultSchemas.panelFormDescription.parse(await reads.form(task.id, {
     values: { operation: "inspection", caseSetId: "set-regression" }, changedField: "/operation",
@@ -105,6 +123,7 @@ it("checks a partial draft against the task's stored application values", async 
   const agentForm = examples.forms.find(form => form.name === "agents-empty")!.response;
   vi.stubGlobal("fetch", async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     const path = new URL(url).pathname;
+    if (init.method === "GET" && path === "/platform/applications") return Response.json(catalogue);
     if (init.method === "GET" && path.endsWith("/platform/scheduled-tasks/applications"))
       return Response.json(examples.applicationsEnglish.response);
     if (init.method === "GET" && path.endsWith(`/platform/scheduled-tasks/${agentTask.id}`))
@@ -129,6 +148,7 @@ it("keeps an unavailable choice and its owner error in the form", async () => {
   const agentTask = examples.creates.find(create => create.name === "agents-instruction")!.response;
   vi.stubGlobal("fetch", async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     const path = new URL(url).pathname;
+    if (init.method === "GET" && path === "/platform/applications") return Response.json(catalogue);
     if (init.method === "GET" && path.endsWith("/platform/scheduled-tasks/applications"))
       return Response.json(examples.applicationsEnglish.response);
     if (init.method === "GET" && path.endsWith(`/platform/scheduled-tasks/${agentTask.id}`))

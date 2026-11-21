@@ -59,6 +59,10 @@ const emit = defineEmits<{
   /** The reader discarded the changes the form held. */
   discarded: [];
 }>();
+defineSlots<{
+  /** Projections that edit this form's fields, drawn with the current owner values before Save and Discard. */
+  "after-fields"(): unknown;
+}>();
 const { t } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
@@ -492,6 +496,7 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
     <el-form label-position="top">
       <p v-for="reason in sharedReadOnlyReasons" :key="reason" class="sdk-owner-form-readonly" role="note">{{ reason }}</p>
       <form-field-control v-for="field in drawn" :key="field.path" :field="field" :path="field.path"></form-field-control>
+      <slot name="after-fields"></slot>
       <p v-if="changed.size" class="sdk-owner-form-changed" role="status">
         {{ t("platform.panelDraftChanged", { fields: changedLabels }) }}
       </p>

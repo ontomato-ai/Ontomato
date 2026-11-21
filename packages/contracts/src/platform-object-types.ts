@@ -6,6 +6,7 @@ export const SCHEDULED_TASK = "platform:ScheduledTask";
 export const CREATE_SCHEDULED_TASK = `${SCHEDULED_TASK}.create`;
 export const SET_SCHEDULED_TASK_ENABLED = `${SCHEDULED_TASK}.setEnabled`;
 export const DELETE_SCHEDULED_TASK = `${SCHEDULED_TASK}.delete`;
+export const RENEW_SCHEDULED_TASK_CREDENTIAL = "schedules.renewCredential";
 export const AGENT_DEFINITION = "platform:AgentDefinition";
 export const SKILL = "platform:Skill";
 export const MODEL_OPTION = "platform:ModelOption";
@@ -116,7 +117,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
-      createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
+      createForm: { source: "type", parameterMode: "fixed", params: { ...definitionFormParams, defaultAppId: "keyword" }, result: "panelFormDescription" },
       runs: { source: "object", parameterMode: "fixed", params: { cursor: "cursor" }, result: "scheduledTaskRunPage" },
       run: {
         source: "object", parameterMode: "fixed", params: { runId: "scheduledRunId" },
@@ -270,7 +271,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
     operations: [
       `${APPLICATION}.save`, "applications.delete", "applications.addEntry", "applications.updateEntry",
-      "applications.deleteEntry", "applications.grant",
+      "applications.deleteEntry", "applications.grant", RENEW_SCHEDULED_TASK_CREDENTIAL,
     ],
   },
   [APPLICATION_PANEL_USE]: {
