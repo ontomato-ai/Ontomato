@@ -1,5 +1,6 @@
 import { effectScope, h, ref, watch, type Ref, type VNode } from "vue";
 import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
+import type { ProductPanelNestedReadRequest } from "@ontomato/contracts/panel-host";
 import type { DirectPanelMount as HostDirectPanelMount, DirectPanelRun } from "@ontomato/platform-shell";
 import { createDirectPanelInstance, type DirectPanelInstance, type DirectPanelInstanceOptions } from "./direct";
 import { runPanel } from "./lifecycle";
@@ -40,9 +41,12 @@ export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions
    * Runs the panel one of this instance's members places from the panel's state: `memberPath` is that member's segment,
    * relative to this instance, with the selection the state made; `run` is how the placed panel reports to this one.
    * The host reads the placed panel's current definition at this instance's path plus `memberPath`, mounts it in an
-   * element of its own with its own scope, and disposes of both with the mount.
+   * element of its own with its own scope, and disposes of both with the mount. A member that places the chosen object's
+   * detail panel sends the object alone (`selection: { stateValue }`): the platform answers which panel it is, and the
+   * placed instance's own `memberPath` ends with that segment completed by `target: { panelId }` of the answer, which
+   * every read and operation of it needs.
    */
-  nested(memberPath: PanelMemberPath, run: DirectPanelRun): Promise<{ element: HTMLElement; mount: DirectPanelMount }>;
+  nested(memberPath: ProductPanelNestedReadRequest["memberPath"], run: DirectPanelRun): Promise<{ element: HTMLElement; mount: DirectPanelMount }>;
 }
 
 /**

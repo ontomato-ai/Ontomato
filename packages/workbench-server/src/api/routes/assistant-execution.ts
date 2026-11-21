@@ -2,7 +2,7 @@ import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { createPanelOperationIntentRequestSchema, dispatchPanelOperationIntentRequestSchema } from "@ontomato/contracts/panel-agent";
 import { operatePanel, dispatchPanel, requirePanelSkillForRun } from "../../services/product-panels/operations";
 import {
-  productPanelNestedReadRequestSchema, productPanelNestedReadResponseSchema, productPanelReadRequestSchema,
+  directPanelMemberPathSchema, productPanelNestedReadRequestSchema, productPanelNestedReadResponseSchema, productPanelReadRequestSchema,
   type DirectPanelMemberPath, type ProductPanelReadSource,
 } from "@ontomato/contracts/panel-host";
 import { readProductPanelData } from "../../services/product-panels/data-reads";
@@ -134,9 +134,12 @@ assistantExecutionRouter.post("/:runId/panels/read", wrap(async (req, res) => {
   res.json(await readProductPanelData(reader, credentials, input, userName));
 }));
 
+const assistantNestedPanelReadRequestSchema = productPanelNestedReadRequestSchema.extend({
+  memberPath: directPanelMemberPathSchema,
+});
 assistantExecutionRouter.post("/:runId/panels/nested", wrap(async (req, res) => {
   const runId = callbackRun(req, res.locals.runtimeCallback);
-  const input = productPanelNestedReadRequestSchema.parse(req.body);
+  const input = assistantNestedPanelReadRequestSchema.parse(req.body);
   const { reader, credentials } = await panelReader(req, runId, input.source, input.memberPath);
   res.json(productPanelNestedReadResponseSchema.parse(await readNestedPanel(reader, credentials, input)));
 }));
