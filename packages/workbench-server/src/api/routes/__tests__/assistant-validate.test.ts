@@ -117,6 +117,9 @@ it("opens a create form in build-test without validating empty values or admitti
   });
   expect(opened.values).not.toHaveProperty("sortOrder");
   expect(opened.save.bodySchema.properties).not.toHaveProperty("sortOrder");
+  expect(opened.fields).toContainEqual(expect.objectContaining({
+    path: "/enabledMcpServiceIds", control: { kind: "reference", objectType: "platform:McpServiceOption", multiple: true },
+  }));
   expect(opened.fields).toContainEqual(expect.objectContaining({ path: "/executionUserId", readOnly: true }));
   expect(mocks.setting).not.toHaveBeenCalled();
   expect((await request(form, "alice", "", headers)).status).toBe(422);
@@ -193,23 +196,33 @@ it("opens a stored definition and checks execution permissions concurrently", as
   expect(mocks.pool).not.toHaveBeenCalled();
 });
 
-it("shows the visible skills of an update draft without treating them as submitted", async () => {
+it("fills a partial edit draft from the stored definition without treating omitted fields as submitted", async () => {
   const skill = { name: "stored-page-skill", namespace: { kind: "domain", domainId: "domain" } };
   mocks.agent.mockResolvedValue({
-    id, kind: "custom", name: "Stored assistant", description: "", icon: null, enabled: true,
-    class_names: [], enabled_mcp_service_ids: [], sort_order: 13, system_prompt: "Before",
-    skills: [skill], model_selection: { modelId: null }, execution_user_id: null,
+    id, kind: "custom", name: "Stored assistant", description: "Keep this", icon: "kept icon", enabled: false,
+    class_names: ["Customer"], enabled_mcp_service_ids: [id], sort_order: 13, system_prompt: "Before",
+    skills: [skill], model_selection: { modelId: "test/chat" }, execution_user_id: "operator",
   });
   mocks.options.mockResolvedValue({ canSetExecutionUser: false, users: [] });
   const { skills: _omitted, ...update } = form;
   const request = await app();
-  const values = { ...update, enabledMcpServiceIds: [] };
+  const values = { systemPrompt: "Updated prompt" };
   const response = await request({
     target: { kind: "object", objectType: "platform:AgentDefinition", primaryKey: id }, changedField: null, values,
   }, "alice", "/form");
   expect(response.status).toBe(200);
   const described = await response.json();
-  expect(described.values.skills).toEqual([skill]);
+  expect(described).toMatchObject({
+    errors: [],
+    values: { name: "Stored assistant", description: "Keep this", icon: "kept icon", enabled: false,
+      classNames: ["Customer"], enabledMcpServiceIds: [id], modelSelection: { modelId: "test/chat" },
+      skills: [skill], executionUserId: "operator", ...values },
+  });
+  expect(described.values).not.toHaveProperty("sortOrder");
+  expect(mocks.model).toHaveBeenCalledWith("domain", { modelId: "test/chat" });
+  const incompleteCreate = await request({ target, changedField: null, values: { ...update, name: undefined } }, "alice", "/form");
+  expect((await incompleteCreate.json()).errors).toContainEqual(expect.objectContaining({ field: "/name", code: "required" }));
+  expect(mocks.pool).not.toHaveBeenCalled();
   expect(described.save.bodySchema.required).not.toContain("skills");
   expect((await request({ target: { id }, form: update })).status).toBe(204);
   expect((await request({ target: {}, form: update })).status).toBe(400);
