@@ -15,6 +15,8 @@ import { useDarkMode } from "@ontomato/foundation-ui/theme";
 import { useFormControls } from "./form-controls";
 import FormCodeField from "./FormCodeField.vue";
 import FormLocalizedText from "./FormLocalizedText.vue";
+import FormAdvancedSection from "./FormAdvancedSection.vue";
+import FormRowField from "./FormRowField.vue";
 import { ApplicationIconPicker } from "@ontomato/platform-shell";
 import { ScheduleFrequency, frequencyDraft, frequencyOf, type FrequencyDraft } from "@ontomato/platform-schedules/frequency-control";
 import type { PlatformTaskFrequency } from "@ontomato/contracts/platform-schedules";
@@ -109,8 +111,9 @@ const setAvatar = (next: { key?: string; swatch?: number }) => set(storedAgentAv
   key: next.key ?? avatar.value.key,
   color: next.swatch === undefined ? avatar.value.color : lightAvatarColorOptions[next.swatch]!,
 }));
-/** A hidden field is the owner's and is drawn by no control. */
-const drawn = (fields: readonly PanelFormField[]) => fields.filter((child) => child.control.kind !== "hidden");
+/** A hidden field is the owner's and is drawn by no control; an advanced one is drawn in the level's advanced section. */
+const drawn = (fields: readonly PanelFormField[], advanced: boolean) =>
+  fields.filter((child) => child.control.kind !== "hidden" && (child.advanced === true) === advanced);
 const addObject = () => set(control.value.kind === "object" ? control.value.defaultObject ?? {} : {});
 /**
  * A frequency, edited as the scheduled task page edits it: the editor keeps every kind's own values while the reader
@@ -237,12 +240,25 @@ function setFrequency(next: FrequencyDraft) {
     <div v-else-if="control.kind === 'object'" class="sdk-form-object">
       <template v-if="object">
         <form-field-control
-          v-for="child in drawn(control.fields)"
+          v-for="child in drawn(control.fields, false)"
           :key="child.path"
           :field="child"
           :path="path + child.path"
           :disabled="off"
         ></form-field-control>
+        <form-advanced-section
+          v-if="drawn(control.fields, true).length"
+          class="sdk-form-object"
+          :paths="drawn(control.fields, true).map((child) => path + child.path)"
+        >
+          <form-field-control
+            v-for="child in drawn(control.fields, true)"
+            :key="child.path"
+            :field="child"
+            :path="path + child.path"
+            :disabled="off"
+          ></form-field-control>
+        </form-advanced-section>
         <el-button v-if="!off && !field.required" text class="sdk-form-object-remove" @click="set(null)">
           {{ t("platform.formRemove") }}
         </el-button>
@@ -252,21 +268,28 @@ function setFrequency(next: FrequencyDraft) {
     <div v-else-if="control.kind === 'object-array'" class="sdk-form-rows">
       <div v-for="(row, index) in rows" :key="rowKey(row, index)" class="sdk-form-row" :data-row="path + '/' + index">
         <div class="sdk-form-row-fields">
-          <template v-for="child in drawn(control.itemFields)" :key="child.path">
-            <!-- A row's reference is drawn by the projection declared for it, at the row's current index. -->
-            <template v-if="child.control.kind === 'reference'">
-              <component
-                :is="controls.rowControl(path, child.path)"
-                v-if="controls.rowControl(path, child.path)"
-                class="sdk-form-field"
-                :path="path + '/' + index + child.path"
-              ></component>
-              <p v-else-if="controls.rowControl(path, child.path) === undefined" role="alert" class="sdk-form-field-unavailable">
-                {{ child.label }}: {{ t("platform.formControlUnavailable") }}
-              </p>
-            </template>
-            <form-field-control v-else :field="child" :path="path + '/' + index + child.path" :disabled="off"></form-field-control>
-          </template>
+          <form-row-field
+            v-for="child in drawn(control.itemFields, false)"
+            :key="child.path"
+            :field="child"
+            :path="path"
+            :index="index"
+            :disabled="off"
+          ></form-row-field>
+          <form-advanced-section
+            v-if="drawn(control.itemFields, true).length"
+            class="sdk-form-row-fields sdk-form-row-advanced"
+            :paths="drawn(control.itemFields, true).map((child) => path + '/' + index + child.path)"
+          >
+            <form-row-field
+              v-for="child in drawn(control.itemFields, true)"
+              :key="child.path"
+              :field="child"
+              :path="path"
+              :index="index"
+              :disabled="off"
+            ></form-row-field>
+          </form-advanced-section>
         </div>
         <div v-if="!off" class="sdk-form-row-tools">
           <el-button text :disabled="index === 0" @click="move(index, index - 1)">{{ t("platform.formMoveUp") }}</el-button>
@@ -397,9 +420,8 @@ function setFrequency(next: FrequencyDraft) {
   flex-wrap: wrap;
   gap: 0 var(--spacing-md);
 }
-.sdk-form-row-fields > .sdk-form-field {
-  flex: 1 1 160px;
-  min-width: 0;
+.sdk-form-row-advanced {
+  flex-basis: 100%;
 }
 .sdk-form-row-tools {
   display: flex;
