@@ -40,9 +40,15 @@
   .ot-detail-main { min-width: 0; }
   .ot-detail-main .ot-table { overflow-x: auto; }
   @container (max-width: 56rem) { .ot-detail { grid-template-columns: minmax(0, 1fr); } }
-  /* The class's tables keep every column: in a narrow card they scroll sideways instead of losing one. */
+  /* The class's tables keep every column: in a narrow card they scroll sideways instead of losing one, and the
+     description wraps rather than being cut. */
   .ot-attr-grid { min-width: 30rem; }
   .ot-rel-grid { min-width: 24rem; }
+  .ot-attr-grid > :last-child {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
   @container (max-width: 36rem) {
     .ot-catalog-grid { grid-template-columns: minmax(0, 1fr) 4rem; }
     .ot-catalog-grid > :nth-child(2), .ot-catalog-grid > :nth-child(4) { display: none; }
