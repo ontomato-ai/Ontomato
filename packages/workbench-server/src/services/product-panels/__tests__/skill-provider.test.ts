@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { vuePanelContent } from "../../../__tests__/fixtures/vue-panel";
-import { ONTOLOGY_TYPE } from "@ontomato/contracts/platform-object-types";
+import { APPLICATION_PANEL_USE, ONTOLOGY_TYPE } from "@ontomato/contracts/platform-object-types";
 import { appsSdkReleaseManifestSchema } from "@ontomato/contracts/apps-sdk";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -155,6 +155,37 @@ it("provides a single protected source for all uses of the same panel and lists 
   expect(backendGet).toHaveBeenNthCalledWith(1, "panel-skill-sources",
     "http://java.test/platform/applications/panel-skill-sources?domainId=trial-domain",
     { headers: { "X-Ontomato-Query-Service-Token": "fixture-platform-service" }, retries: 1 });
+});
+
+it("describes events as addresses or declared operations in the generated skill", async () => {
+  const use = uses[0]!;
+  const panel = codeTasksPanel({ run: { projectionId: "projection-schedules-run", inputs: taskInputBinding } });
+  panels.set(use.panelId, { ...panel, manifest: {
+    ...panel.manifest,
+    state: { ...panel.manifest.state, mode: { type: { kind: "scalar", type: "string" }, deepLink: true } },
+    members: { ...panel.manifest.members, details: { target: { panelId: "panel-task-details" } } },
+    events: {
+      reset: { labelKey: "task.reset", do: { set: { fields: { mode: { literal: "instance" }, selectedTask: { literal: null } } } } },
+      runSelected: { labelKey: "task.run", do: { invoke: { member: "run", operation: "runNow",
+        inputs: { task: { state: "selectedTask" } } } } },
+      openOverview: { labelKey: "task.overview", do: { open: { mode: "entry",
+        entry: { literal: { className: APPLICATION_PANEL_USE, primaryKey: "overview" } } } } },
+      openDetails: { labelKey: "task.details", do: { open: { mode: "drawer", member: "details" } } },
+    },
+  } });
+  javaSources(uses);
+  const offering = await panelSkillProvider.findByUse(domainId, use);
+  assert(offering && "provide" in offering);
+  const { content } = (await offering.provide(taskRef)).files[0]!;
+  const events = content.split("### Panel events\n")[1]!.split("\n\n### Declared operations")[0];
+  expect(events).toContain("Event names cannot be passed to `/operate`.");
+  expect(events).toContain('(reset). Open the current panel\'s canonical address. Set `mode` = `"instance"`, `selectedTask` = `null`');
+  expect(events).toContain("(runSelected). Invoke `run.runNow` as specified under Declared operations.");
+  expect(events).toContain("`task` = the current value of state field `selectedTask`");
+  expect(events).toContain('"primaryKey":"overview"');
+  expect(events).toContain("Open the returned `data.use.path`.");
+  expect(events).toContain("Find the admitted entry for panel `panel-task-details`");
+  expect(events).not.toContain(uses[1]!.path);
 });
 
 it.each(["record_missing", "invalid_definition"] as const)("reports %s without offering the affected panel", async reason => {
