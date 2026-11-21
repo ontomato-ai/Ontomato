@@ -404,9 +404,18 @@ function withdraw(page: KeptPage) {
 function addressOf(page: KeptPage) {
   return page === shownPage.value && opened.value.includes("?") ? pageAddress.value : panelAddress(page.reported, {});
 }
+/** The opening state last handed to each page: the same object while its content is the same, so the host sees no change. */
+const handed = new WeakMap<KeptPage, { key: string; state: Record<string, unknown> }>();
 function stateOf(page: KeptPage) {
   const state = page === shownPage.value && opened.value.includes("?") ? requestedState.value : panelAddressState(page.reported);
-  return { ...state, ...entryInputs(page.use) };
+  const inputs = entryInputs(page.use);
+  if (!Object.keys(inputs).length) return state;
+  const merged = { ...state, ...inputs };
+  const key = JSON.stringify(merged);
+  const last = handed.get(toRaw(page));
+  if (last?.key === key) return last.state;
+  handed.set(toRaw(page), { key, state: merged });
+  return merged;
 }
 
 function reportContext(page: KeptPage, context: PageContext) {
