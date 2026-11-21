@@ -349,8 +349,13 @@ it("fails a page-mapped skill that no source supplies instead of reusing its run
     published.push(JSON.parse(String(init?.body)));
     return Response.json({ skill: missing, digest: "a".repeat(64), description: "Missing" }, { status: 201 });
   }));
-  await expect(prepareAssistantSkills(domain, { kind: "regular", skills: [] }, {}))
+  const agent = { kind: "regular", skills: [] };
+  const context = { mode: "public", locator: { permissionCode: "business-knowledge", pageKey: "business-knowledge" } } as const;
+  await expect(prepareAssistantSkills(domain, agent, {}, context))
     .rejects.toMatchObject({ status: 422, code: "SKILL_NOT_FOUND" });
+  await expect(prepareAssistantSkills(domain, agent, {})).resolves.toMatchObject({
+    skills: [], skippedPageSkills: { items: [{ skill: missing, reason: "source_unavailable" }], sourceUnavailable: false },
+  });
   expect(published).toEqual([]);
 });
 

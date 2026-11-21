@@ -67,7 +67,7 @@ export async function startPanelSkillEntryServer(options: {
   grants?: Set<string>;
   nativeMapping?: () => PageSkill | undefined;
   admittedEntrances?: () => PanelSkillSource["entrance"][] | undefined;
-  onPublish?: (pkg: unknown) => void;
+  onPublish?: (pkg: unknown) => string | void;
 } = {}) {
   const database = process.env.RUNTIME_TEST_DATABASE_URL;
   if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
@@ -172,8 +172,12 @@ export async function startPanelSkillEntryServer(options: {
   const installedSessions = new Map<string, { installed: InstalledSkill[]; workspace: string; systemPrompt: string }>();
   app.post("/v1/skills", async (req, res) => {
     expect(req.header("X-Domain-Id")).toBe(domainId);
+    const rejection = options.onPublish?.(req.body);
+    if (rejection) {
+      res.status(422).json({ error: { code: "INVALID_REQUEST", message: rejection } });
+      return;
+    }
     const version = await registry.register(host, domainId, req.body);
-    options.onPublish?.(req.body);
     res.status(201).json(version);
   });
   app.post("/v1/sessions", async (req, res) => {
@@ -204,6 +208,13 @@ export async function startPanelSkillEntryServer(options: {
     const installed = await Promise.all(prepared.definition.skills.map(version => registry.resolve(host, domainId, version)));
     const sandbox = new SessionSandbox(store, root, { development: true, python: "python3" }, scope, sessionId);
     await sandbox.prepare(installed);
+    await store.admit(scope, {
+      id: runId, sessionId, domainId, status: "running", correlationId: runId, language: prepared.language,
+      createdAt: new Date().toISOString(), finishedAt: null, stopReason: null, errorMessage: null,
+      answerMessageId: null, workspaceCommit: null, definition: prepared.definition,
+      resolvedSkills: installed.map(({ skill, digest, description }) => ({ skill, digest, description })),
+      environment: { values: prepared.environment.values, secretNames: Object.keys(prepared.environment.secrets) },
+    }, runId, input);
     installedSessions.set(sessionId, { installed, workspace: sandbox.workspace, systemPrompt: prepared.definition.systemPrompt });
     res.status(202).json({
       delivery: { messageId: runId, sessionRef: { providerId: "workbench", sessionId }, runId, delivery: "run", status: "starting" },
