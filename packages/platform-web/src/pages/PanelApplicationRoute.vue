@@ -426,7 +426,7 @@ const heading = computed<PlatformPageHeading | null>(() => {
 /** The "more" of the header the frame holds: the same external link the platform's header offers. */
 const entryMore = computed(() => heading.value?.externalLink ? [{
   id: "copy-external-link", label: t("platform.copyExternalLink"), icon: Link,
-  onClick: () => void copyExternalLink(heading.value!.externalLink!, t("platform.externalLinkCopied")),
+  onClick: () => void copyExternalLink(heading.value!.externalLink!, { copied: t("platform.externalLinkCopied"), title: t("platform.copyExternalLink") }),
 }] : []);
 if (!props.navigate) usePageHeading(() => (framed.value ? null : heading.value));
 function goBack() {
