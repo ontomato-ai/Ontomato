@@ -33,10 +33,6 @@ node "$SKILL/ontomato.mjs" panel check "$WORKSPACE"
 node "$SKILL/ontomato.mjs" panel register "$WORKSPACE"
 ```
 
-For a development handoff, give the platform URL of the registered entry, for example
-`https://<deployment>/#/applications/app-my-management-page/manage`. Reserve the `standalone=1` marker for
-external sharing. Get that link from **More → Copy external link** in the page header.
-
 To ship a tested trial at the original platform address, follow [Replace a built-in page](../../GUIDE.md#replace-a-built-in-page).
 
 For a trial application, use a fresh ID starting with `app-` and a path under `/applications/<application-id>/`. In `registration.json`, provide
