@@ -1,4 +1,4 @@
-import { noOperations } from "./panel-frame";
+import { noOperations, directRun } from "./panel-frame";
 import { afterEach, expect, it, vi } from "vitest";
 import { createApp, h, nextTick, ref } from "vue";
 import { createI18n } from "vue-i18n";
@@ -58,10 +58,9 @@ it("keeps what the reader types into a clean form as the page comes back, its de
   let holdNext = false;
   const mount = mountDirectPanel({
     manifest,
-    run: {
-      pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: task },
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {}, failed: (reason) => { throw reason; },
-    },
+    run: directRun({
+      pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: task }, failed: (reason) => { throw reason; },
+    }),
     requests: {
       request: async (path: string) => {
         projectionReads(path);

@@ -8,7 +8,7 @@ import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { FUNCTION } from "@ontomato/contracts/platform-object-types";
 import { mountDirectPanel } from "../../../../../packages/apps-sdk/src/panel/direct-mount";
-import { noOperations } from "./panel-frame";
+import { noOperations, directRun } from "./panel-frame";
 
 /*
  * A new object's draft at a page whose form already shows an object (the business knowledge page on 128, 2026-11-22): the
@@ -45,11 +45,10 @@ afterEach(() => {
 async function openOn(saved: string) {
   const mount = mountDirectPanel({
     manifest,
-    run: {
+    run: directRun({
       pageKey: "entries", url: () => "/entries", label: () => "Entries", initial: { formTarget: { className: FUNCTION, primaryKey: "saved-1" } },
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => { throw reason; },
-    },
+    }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({ projection }) },
     use: { applicationId: "app", useId: "entries" },
