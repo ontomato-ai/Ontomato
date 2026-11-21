@@ -39,6 +39,18 @@ export async function checkBuiltinPanelSource(directory, checks, { assignIds = f
   const document = parseJson(file, source);
   const parsed = checks.panelAuthoringManifestSchema.safeParse(document?.manifest);
   if (!parsed.success) throw new Error(`${file}: ${parsed.error.message}`);
+  for (const [member, declaration] of Object.entries(parsed.data.members)) {
+    if (!("component" in declaration) || declaration.operation === undefined) continue;
+    if (!Array.isArray(checks.draftReadOperationIds)) {
+      throw new Error("Use an SDK release that includes the draft requirements of owner operations");
+    }
+    if (!checks.draftReadOperationIds.includes(declaration.operation)) continue;
+    const label = `${file}: member ${member} operation '${declaration.operation}'`;
+    if (declaration.draft === undefined) throw new Error(`${label}: draft must name the form member whose values the operation reads`);
+    if (!Object.hasOwn(parsed.data.members, declaration.draft)) {
+      throw new Error(`${label}: draft names undeclared member '${declaration.draft}'`);
+    }
+  }
   // A platform panel ships to every language: an entry's opening sentence named by key is in each language it declares.
   for (const [member, declaration] of Object.entries(parsed.data.members)) {
     if (declaration.prefillKey === undefined) continue;

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -62,6 +62,34 @@ test("the built SDK's components.json is the catalogue its contract declares", (
   return import(pathToFileURL(join(out, version, "node/panel-check.mjs")).href).then(async ({
     applicationIconKeys, appsSdkComponentCatalogSchema, panelModuleImports,
   }) => {
+    await t.test("the offline checker requires an explicit form for a draft read before writing any IDs", () => {
+      const workspace = join(out, "builtin-panel");
+      mkdirSync(workspace);
+      writeFileSync(join(workspace, "registration.json"), JSON.stringify({ panels: [{ id: "builtin-product-metric-check" }] }));
+      const editor = { component: "ObjectForm", type: "platform:MetricView", data: { createForm: "createForm" } };
+      const trial = { component: "OperationButton", operation: "metricViews.test" };
+      const descriptor = join(workspace, "panel.json");
+      const document = { manifest: { state: {}, events: {}, members: { metricEditor: editor, preview: trial } } };
+      const cli = join(HERE, "../../agent-skills/ontomato-app-builder/ontomato.mjs");
+      const check = () => execFileSync(process.execPath, [
+        cli, "panel", "check", workspace, "--builtin", "--sdk-dir", join(out, version),
+      ], { encoding: "utf8", stdio: "pipe" });
+
+      const withoutDraft = JSON.stringify(document);
+      writeFileSync(descriptor, withoutDraft);
+      assert.throws(check, error => error.stderr.includes("member preview") && error.stderr.includes("metricViews.test") &&
+        error.stderr.includes("draft"));
+      assert.equal(readFileSync(descriptor, "utf8"), withoutDraft);
+
+      trial.draft = "metricEditor";
+      const save = { component: "ObjectForm", type: "platform:MetricView", data: { createForm: "createForm" },
+        operation: "platform:MetricView.save" };
+      document.manifest.members.saveEditor = save;
+      writeFileSync(descriptor, JSON.stringify(document));
+      assert.deepEqual(Object.keys(JSON.parse(check()).assigned), ["metricEditor", "preview", "saveEditor"]);
+      assert.equal(JSON.parse(readFileSync(descriptor, "utf8")).manifest.members.preview.draft, "metricEditor");
+    });
+
     assert.ok(applicationIconKeys.includes("ontology"));
     await panelModuleImports('import { ref } from "vue"');
     await assert.rejects(panelModuleImports('import { ElButton } from "element-plus"'), /imports element-plus/);
