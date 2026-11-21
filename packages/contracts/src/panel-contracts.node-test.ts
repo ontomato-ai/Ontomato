@@ -825,23 +825,28 @@ test("an explicit batch operation can bind a checked object list", () => {
   assert.equal(projectionOperationTargetMatches(projection, projection.operations!.remove, { ...declaration, batch: false }, BUSINESS_KNOWLEDGE), false);
 });
 
-test("read operation inputs can take parameter values and a binding from this panel instance", () => {
+test("read operations can bind a draft, parameters and a binding ID in this panel instance", () => {
   const bindingId = { state: "bindingId" };
+  const draft = { slot: "metricEditor" };
   const parameters = { formField: { slot: "execution", path: "/parameters" } };
   const manifest = {
     state: { bindingId: { type: { kind: "scalar", type: "string" } } },
     members: {
+      metricEditor: { target: { projectionId: "metric-form" } },
       execution: { target: { projectionId: "runtime-form" } },
-      trial: { target: { projectionId: "trial" }, readOperationInputs: { testExecute: { parameters, bindingId } } },
+      trial: { target: { projectionId: "trial" }, readOperationInputs: { testExecute: { draft, parameters, bindingId } } },
     },
     events: {},
   };
-  assert.deepEqual(panelManifestSchema.parse(manifest).members.trial?.readOperationInputs?.testExecute, { parameters, bindingId });
+  assert.deepEqual(panelManifestSchema.parse(manifest).members.trial?.readOperationInputs?.testExecute, { draft, parameters, bindingId });
   assert.equal(panelManifestSchema.safeParse({ ...manifest, state: {} }).success, false);
-  const named = { parameters: { fields: { amount: { formField: { slot: "execution", path: "/amount" } }, binding: bindingId } } };
+  const named = { draft, parameters: { fields: { amount: { formField: { slot: "execution", path: "/amount" } }, binding: bindingId } } };
   const trial = { ...manifest.members.trial, readOperationInputs: { testExecute: named } };
   assert.deepEqual(panelManifestSchema.parse({ ...manifest, members: { ...manifest.members, trial } }).members.trial?.readOperationInputs?.testExecute, named);
-  assert.equal(panelManifestSchema.safeParse({ ...manifest, members: { trial } }).success, false);
+  const missingDraft = panelManifestSchema.safeParse({ ...manifest, members: { execution: manifest.members.execution, trial } });
+  assert.equal(missingDraft.success, false);
+  if (!missingDraft.success) assert.deepEqual(missingDraft.error.issues[0].path,
+    ["members", "trial", "readOperationInputs", "testExecute", "draft", "slot"]);
 });
 
 test("declared delete operations can read a named impact with the total count", () => {

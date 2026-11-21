@@ -145,8 +145,9 @@ const panelOperationInputRefSchema = z.union([
   z.object({ formField: panelFormFieldRefSchema.pick({ slot: true, path: true }) }).strict(),
 ]);
 
-/** Values supplied by this instance. The owner operation's target still supplies the draft. */
+/** Values supplied by the placing panel to a read operation. */
 export const panelReadOperationInputsSchema = z.object({
+  draft: z.object({ slot: key }).strict().optional(),
   parameters: z.union([
     panelOperationInputRefSchema,
     z.object({ fields: z.record(key, panelOperationInputRefSchema) }).strict(),
@@ -468,7 +469,8 @@ export const panelManifestSchema = z.object({
       if (slot === member) issue([...path, "formField", "slot"], "A field port must reference another member");
       else requireName(members, slot, [...path, "formField", "slot"]);
     }
-    for (const [operation, { parameters, bindingId }] of Object.entries(declaration.readOperationInputs ?? {})) {
+    for (const [operation, { draft, parameters, bindingId }] of Object.entries(declaration.readOperationInputs ?? {})) {
+      if (draft) requireName(members, draft.slot, [...path, "readOperationInputs", operation, "draft", "slot"]);
       const refs = "fields" in parameters
         ? Object.entries(parameters.fields).map(([name, ref]) => ({ path: ["parameters", "fields", name], ref }))
         : [{ path: ["parameters"], ref: parameters }];

@@ -169,6 +169,13 @@ function checkOperations(id, projection, typeTable, placements, state, checks) {
     const matched = declarations.filter(([type, operation]) => checks.projectionOperationTargetMatches(projection, binding, operation, type));
     const input = binding.target?.input;
     if (matched.length === 0) throw new Error(`projection ${id}: ${label} has an invalid ${input ? `target input ${input}` : "target"}`);
+    if (matched.some(([, operation]) => operation.effect === "read" && operation.target.source === "draft")) {
+      for (const [member, placement] of placements) {
+        if (!placement.readOperationInputs?.[name]?.draft) {
+          throw new Error(`member ${member} (projection ${id}): bind ${label} to a form member's draft`);
+        }
+      }
+    }
     if (input === undefined) continue;
     const portKind = projection.inputs[input].kind;
     for (const [member, placement] of placements) {
