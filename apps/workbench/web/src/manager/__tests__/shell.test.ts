@@ -116,8 +116,10 @@ describe("open-source Ontology Service page", () => {
     expect(requests.length).toBeGreaterThan(0);
     for (const request of requests) {
       const path = new URL(request.url, window.location.origin).pathname;
-      // The catalog and the pages read the data engine; entering an application records its opening with the workbench.
-      expect(path.startsWith("/custom-base/api/data-query/") || path === "/custom-base/api/skills" || path === '/custom-base/api/product-assets/counts' || path === '/custom-base/api/platform/home' || path.startsWith("/custom-base/api/platform/home/") || request.url.startsWith("/api/data-query/platform/applications"),request.url).toBe(true);
+      // The catalog and the pages read the data engine; entering an application records its opening with the workbench; a
+      // page the ontology manager serves as a built-in panel (object types) reads its panel and the SDK release.
+      expect(path.startsWith("/custom-base/api/data-query/") || path.startsWith("/custom-base/api/product-panels/") ||
+        path.startsWith("/custom-base/api/apps-sdk/") || path === "/custom-base/api/skills" || path === '/custom-base/api/product-assets/counts' || path === '/custom-base/api/platform/home' || path.startsWith("/custom-base/api/platform/home/") || request.url.startsWith("/api/data-query/platform/applications"),request.url).toBe(true);
       expect(request.headers).not.toHaveProperty("tk");
       expect(request.headers).not.toHaveProperty("x-api-key");
     }
@@ -125,7 +127,8 @@ describe("open-source Ontology Service page", () => {
 
   it("with one locale there is no language control; the theme control switches the whole page and is stored under the Ontology Service key", async () => {
     localStorage.setItem("theme-preference", "light");
-    await start("/?theme=dark#/ontology/objects");
+    // A page the Manager still draws itself, whose frame follows the theme (object types is a built-in panel now).
+    await start("/?theme=dark#/ontology/assets/workflows");
     expect(document.documentElement.classList.contains("dark")).toBe(false);
     // The theme and language live in the rail's account menu now.
     document.querySelector<HTMLButtonElement>(".account-trigger")!.click();
