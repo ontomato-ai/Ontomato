@@ -116,7 +116,8 @@ test("accepts a legacy hosted application entry without widening the panel regis
 });
 
 test("declares application creation and editing forms from their actual sources", async () => {
-  const { APPLICATION } = await import("./platform-object-types");
+  const { APPLICATION, platformObjectTypes } = await import("./platform-object-types");
+  const { missingRequiredReadParameters } = await import("./panel-projection");
   const { productProjectionInputSchema } = await import("./product-panels");
   const projection = {
     name: "Application forms", description: "", visibility: "private", componentId: "@ontomato/sdk:PanelData",
@@ -131,5 +132,5 @@ test("declares application creation and editing forms from their actual sources"
     ...projection, data: { draft, identity: edit("identity"), entries: edit("entries") },
   }).success, true);
   assert.equal(productProjectionInputSchema.safeParse({ ...projection, data: { wrong: edit("create") } }).success, false);
-  assert.equal(productProjectionInputSchema.safeParse({ ...projection, data: { wrong: { ...edit("identity"), params: {} } } }).success, false);
+  assert.deepEqual(missingRequiredReadParameters(platformObjectTypes[APPLICATION].reads!.form, {}), ["section"]);
 });
