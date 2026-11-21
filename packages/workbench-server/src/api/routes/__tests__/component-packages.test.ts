@@ -1,86 +1,28 @@
-import express from "express";
-import AdmZip from "adm-zip";
-import { mkdtemp, rm } from "node:fs/promises";
-import type { Server } from "node:http";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { COMPONENT_PACKAGES_PATH, componentPackageResponseSchema } from "@ontomato/contracts/component-packages";
-import { writeBundledAppSdkFixture } from "../../../__tests__/fixtures/bundled-app-sdk";
-import { installContentLayout } from "../../../content/layout";
+import { componentPackageResponseSchema } from "@ontomato/contracts/component-packages";
+import { cataloguePath, componentId, entry, name, release, startComponentPackageServer, upload } from "../../../__tests__/fixtures/component-packages";
 import { HttpError } from "../../../utils/errors";
-import { errorHandler } from "../../middleware";
-import { createComponentPackagesRouter, mountComponentPackageAssets } from "../component-packages";
 
-const name = "@example/testing";
-const namePath = encodeURIComponent(name);
-const cataloguePath = COMPONENT_PACKAGES_PATH + "/" + namePath;
-const entry = "dist/entry.mjs";
-const componentId = name + ":Example";
 const checkUpgrade = vi.fn();
-let root: string;
-let server: Server;
+let server: Awaited<ReturnType<typeof startComponentPackageServer>>;
 let base: string;
 
-function release(version = "1.0.0", exportName = "Example") {
-  return {
-    "package.json": JSON.stringify({
-      name, version, author: "Example",
-      scripts: { postinstall: "This release never runs npm hooks" },
-      ontomato: { entries: { [name]: entry }, components: "components.json", styles: ["dist/theme.css"] },
-    }),
-    "components.json": JSON.stringify([{
-      componentId, module: name, exportName, role: "presentation", meaning: "Test component",
-      data: {}, ports: { props: [], events: [], slots: [] },
-    }]),
-    [entry]: 'export { Example } from "./chunk.mjs";',
-    "dist/chunk.mjs": 'export const Example = { icon: new URL("./icon.svg", import.meta.url) }; throw new Error("Installing must not evaluate modules");',
-    "dist/theme.css": '.example { background-image: url("./mark.svg"); }',
-    "dist/mark.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"/>",
-    "dist/icon.svg": "<svg/>",
-  };
-}
-
-function upload(files: Record<string, string>, mode: "inspect" | "install", format: "directory" | "zip") {
-  const form = new FormData();
-  form.set("mode", mode);
-  if (format === "directory") {
-    for (const [path, content] of Object.entries(files)) form.append("files", new Blob([content]), path);
-  } else {
-    const zip = new AdmZip();
-    for (const [path, content] of Object.entries(files)) zip.addFile(path, Buffer.from(content));
-    form.set("archive", new Blob([Uint8Array.from(zip.toBuffer())], { type: "application/zip" }), "release.zip");
-  }
-  return form;
-}
-
 function post(body: FormData, keeper = true) {
-  return fetch(base + COMPONENT_PACKAGES_PATH + "/install", {
-    method: "POST", body, headers: { "x-test-maintainer": String(keeper) },
-  });
+  return server.post(body, { "x-test-maintainer": String(keeper) });
 }
 
 beforeEach(async () => {
   checkUpgrade.mockReset().mockResolvedValue([]);
-  root = await mkdtemp(join(tmpdir(), "component-packages-"));
-  await writeBundledAppSdkFixture(root);
-  installContentLayout({ runtimeRoot: root, publicSkillsRoot: root, prompts: [], runtimeResources: [] });
-  const app = express();
-  mountComponentPackageAssets(app);
-  app.use(COMPONENT_PACKAGES_PATH, createComponentPackagesRouter((req, _res, next) => {
-    next(req.header("x-test-maintainer") === "true" ? undefined : new HttpError(403, "Deployment maintenance required", "FORBIDDEN"));
-  }, checkUpgrade));
-  app.use(errorHandler);
-  server = app.listen(0, "127.0.0.1");
-  await new Promise<void>(resolve => server.once("listening", resolve));
-  base = "http://127.0.0.1:" + (server.address() as { port: number }).port;
+  server = await startComponentPackageServer({
+    authenticate: (_req, _res, next) => next(),
+    requireDeploymentMaintenance: (req, _res, next) => {
+      next(req.header("x-test-maintainer") === "true" ? undefined : new HttpError(403, "Deployment maintenance required", "FORBIDDEN"));
+    },
+  }, checkUpgrade);
+  base = server.base;
 });
 
-afterEach(async () => {
-  server.closeAllConnections();
-  await new Promise<void>(resolve => server.close(() => resolve()));
-  await rm(root, { recursive: true, force: true });
-});
+afterEach(() => server.close());
 
 it("inspects a directory and installs the same ZIP without evaluating the package", async () => {
   const files = release();

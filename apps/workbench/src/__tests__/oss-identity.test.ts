@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installWorkbenchIdentity, workbenchIdentity } from "@ontomato/workbench-server";
+import { expectComponentPackageMaintenance } from "@ontomato/workbench-server/__tests__/fixtures/component-packages";
 import { assertPermission, requirePermission } from "@ontomato/workbench-server/identity/installed";
 import { ossIdentity } from "../identity";
 
@@ -22,15 +23,9 @@ describe("oss identity", () => {
     expect(workbenchIdentity().requireDomainId({})).toBe("1");
   });
 
-  it("requires the platform service credential to maintain a deployment", () => {
+  it("installs a component package only with the deployment credential", async () => {
     vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "deployment-fixture");
-    const unavailable = vi.fn();
-    workbenchIdentity().requireDeploymentMaintenance({ header: () => undefined } as never, {} as never, unavailable);
-    expect(unavailable).toHaveBeenCalledWith(expect.objectContaining({ status: 403 }));
-    const allowed = vi.fn();
-    const request = { header: (name: string) => name === "X-Ontomato-Query-Service-Token" ? "deployment-fixture" : undefined };
-    workbenchIdentity().requireDeploymentMaintenance(request as never, {} as never, allowed);
-    expect(allowed).toHaveBeenCalledWith();
+    await expectComponentPackageMaintenance(ossIdentity, { "X-Ontomato-Query-Service-Token": "deployment-fixture" }, [{}]);
   });
 
   it("keeps MCP and scheduled test actors on system/1 despite declared domains", async () => {
