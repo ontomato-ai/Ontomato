@@ -388,6 +388,11 @@ export function subscribeAppPageContext(listener: PageContextListener) {
  */
 /** The platform's router, as its app host was installed with it: where a panel's own navigation goes at full page. */
 let hostRouter: Router | null = null;
+let hostPreferences: { theme: { value: string } } | null = null;
+/** The reader's light or dark mode, as the platform shows it: what a theme's values are taken in. */
+export function hostThemeMode(): "light" | "dark" {
+  return hostPreferences?.theme.value === "dark" ? "dark" : "light";
+}
 export function platformRouter(): Router {
   if (!hostRouter) throw new Error("The platform's router comes with its app host, which is not installed");
   return hostRouter;
@@ -401,6 +406,7 @@ export function installAppHost(options: {
 }) {
   const { preferences } = options;
   hostRouter = options.router;
+  hostPreferences = preferences;
   const current = (): AppHostPreferences => ({ locale: preferences.locale.value, theme: preferences.theme.value });
   (window as Window & { [APP_HOST_GLOBAL]?: AppHost })[APP_HOST_GLOBAL] = {
     snapshot() {

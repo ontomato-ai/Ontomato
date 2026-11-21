@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from "vitest";
 import { createApp, defineComponent, h, nextTick, ref, type Ref } from "vue";
 import type { PanelThemeOverrides } from "@ontomato/contracts/panel-manifest";
-import { useAppTheme, type ThemeMode } from "../app-theme";
+import { applyTheme, composeThemes, useAppTheme, type ThemeMode } from "../app-theme";
 
 /*
  * An application's theme assigned in its area only (product-layer standard; design §六): the area takes the values in the
@@ -74,5 +74,27 @@ it("takes the theme away when the application has none any more or goes", async 
   const element = area();
   unmount!();
   unmount = null;
+  expect(element.style.getPropertyValue("--el-color-primary")).toBe("");
+});
+
+it("lays a placement's theme over the panel's own, key by key and mode by mode", () => {
+  const panel: PanelThemeOverrides = { light: { "--a": "1", "--b": "1" }, dark: { "--a": "d1" } };
+  const placement: PanelThemeOverrides = { light: { "--b": "2" } };
+  expect(composeThemes(panel, placement)).toEqual({ light: { "--a": "1", "--b": "2" }, dark: { "--a": "d1" } });
+  expect(composeThemes(undefined, null)).toEqual({});
+});
+
+it("assigns a theme to a host-mounted element until it is taken away, and gives its pop-ups the same", async () => {
+  const mode = ref<ThemeMode>("light");
+  const element = document.createElement("div");
+  element.innerHTML = `<button aria-controls="nested-popup">Open</button>`;
+  document.body.append(element);
+  const drop = applyTheme(element, () => theme, () => mode.value);
+  expect(element.style.getPropertyValue("--el-color-primary")).toBe("#0f7b6c");
+  mode.value = "dark";
+  await nextTick();
+  expect(element.style.getPropertyValue("--el-color-primary")).toBe("#3cc4ad");
+  expect((await popup("nested-popup")).style.getPropertyValue("--el-color-primary")).toBe("#3cc4ad");
+  drop();
   expect(element.style.getPropertyValue("--el-color-primary")).toBe("");
 });

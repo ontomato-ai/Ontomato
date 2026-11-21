@@ -19,10 +19,10 @@ import { pageSkillContextSchema, type PageSkillContext } from "@ontomato/contrac
 import { panelModuleSpecifiers } from "@ontomato/contracts/panel-module";
 import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
-import { confirmPanelIntent, expandDeclaredComposer, platformRouter, registerCandidateFrame, registerPanelFrame } from "./app-host";
+import { confirmPanelIntent, expandDeclaredComposer, hostThemeMode, platformRouter, registerCandidateFrame, registerPanelFrame } from "./app-host";
 import { panelNavigator } from "./panel-navigate";
 import {
-  adoptPanelStyle, codedPanelTarget, newPanelInstanceName, scopedPanelStyle,
+  adoptPanelStyle, applyTheme, codedPanelTarget, composeThemes, newPanelInstanceName, scopedPanelStyle,
   type CodedPanelTarget, type DirectPanelMount, type DirectPanelRun, type PanelHostPort, type PanelSdkRelease,
 } from "@ontomato/platform-shell";
 import type { PanelMemberPath } from "@ontomato/contracts/panel-manifest";
@@ -281,12 +281,16 @@ async function mountNested(
   const { element, template, css } = codedPanelTarget(panel.content.html);
   element.dataset.panelInstance = instance;
   const dropStyle = css ? adoptPanelStyle(scopedPanelStyle(css, instance)) : undefined;
+  // This placement's theme on the placed panel's element; the panel's own theme goes under it once the nested read
+  // carries it (default → … → the panel → this placement).
+  const dropTheme = applyTheme(element, () => composeThemes(run.theme), hostThemeMode);
   try {
     const inner = withNested({ ...outer, manifest: panel.manifest, messages: panel.content.messages ?? {}, run, memberPath: placedAt }, source);
     const mount = await mountCoded(inner, { element, template }, panel.content.module);
-    return { element, mount: { ...mount, dispose() { mount.dispose(); dropStyle?.(); } } };
+    return { element, mount: { ...mount, dispose() { mount.dispose(); dropStyle?.(); dropTheme(); } } };
   } catch (failure) {
     dropStyle?.();
+    dropTheme();
     throw failure;
   }
 }

@@ -58,6 +58,41 @@ function followPopups() {
 }
 
 /**
+ * The panel's own theme with a placement's laid over it, key by key and mode by mode: the order the standard composes
+ * them in (platform default, deployment, application, the panel, this placement), for the two layers one element holds.
+ */
+export function composeThemes(...layers: (PanelThemeOverrides | null | undefined)[]): PanelThemeOverrides {
+  const composed: PanelThemeOverrides = {};
+  for (const mode of ["light", "dark"] as const) {
+    const values = Object.assign({}, ...layers.map((layer) => layer?.[mode] ?? {}));
+    if (Object.keys(values).length) composed[mode] = values;
+  }
+  return composed;
+}
+
+/**
+ * Assigns a theme to an element outside a component's lifetime (a panel instance the host mounts), following the theme
+ * and the reader's mode, until the returned function is called.
+ */
+export function applyTheme(element: HTMLElement, theme: () => PanelThemeOverrides | null | undefined, mode: () => ThemeMode) {
+  let shown: Record<string, string> = {};
+  const stop = watch([() => JSON.stringify(theme() ?? null), mode], () => {
+    const properties = themeProperties(theme(), mode());
+    assign(element, properties, shown);
+    shown = properties;
+    if (Object.keys(properties).length) {
+      areas.set(element, properties);
+      followPopups();
+    } else areas.delete(element);
+  }, { immediate: true });
+  return () => {
+    stop();
+    assign(element, {}, shown);
+    areas.delete(element);
+  };
+}
+
+/**
  * Assigns an application's theme to its area for as long as the caller is mounted: in the reader's current mode, again
  * when the theme or the mode changes, and taken away when the caller unmounts or the theme goes.
  */
