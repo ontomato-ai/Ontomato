@@ -24,7 +24,7 @@ for (const [command, option] of [
 
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -185,7 +185,14 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       }]),
     };
     export const platformTypeTableResponseSchema = { parse };
-    export const panelAuthoringManifestSchema = { parse };
+    export const panelAuthoringManifestSchema = { parse, safeParse: ok };
+    export const panelAuthoringMemberSchema = { safeParse: member => member.sourceCard && member.id
+      ? invalid([{ message: "MetricChart takes its projection definition from the source card" }]) : ok(member) };
+    export const BUILTIN_PRODUCT_ID_PREFIX = "builtin-product-";
+    export const domainProductIdSchema = { safeParse: id => id.startsWith(BUILTIN_PRODUCT_ID_PREFIX)
+      ? invalid([{ message: "IDs beginning with builtin-product- are reserved for platform products" }]) : ok(id) };
+    export const builtinProductIdSchema = { safeParse: id => id?.startsWith(BUILTIN_PRODUCT_ID_PREFIX)
+      ? ok(id) : invalid([{ message: "Expected a platform product ID with prefix builtin-product-" }]) };
     export const appsSdkComponentCatalogSchema = { parse };
     export const applicationIconKeys = ["settings", "ontology"];
     export const applicationCatalogueRecordSchema = { parse };
@@ -289,7 +296,9 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       response.end(JSON.stringify({ projection: chartProjection }));
     } else if (request.url === storedChartPath && request.method === "GET" && registeredChart) {
       response.end(JSON.stringify({ projection: chartProjection }));
-    } else if (request.url === projectionPath) response.end(JSON.stringify({ projection: { componentId: "@ontomato/sdk:ObjectList" } }));
+    } else if ([projectionPath, "/api/product-projections/builtin-product-reusable"].includes(request.url)) {
+      response.end(JSON.stringify({ projection: { componentId: "@ontomato/sdk:ObjectList" } }));
+    }
     else if (request.url === "/api/product-projections/unwritten") {
       response.statusCode = 404;
       response.end(JSON.stringify({ error: { code: "PRODUCT_UNAVAILABLE" } }));
@@ -396,6 +405,63 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await writeFile(layout, tasksTemplate);
     const moduleFile = join(directory, "panel.mjs");
     await writeFile(moduleFile, panel.content.module);
+    const offlineSdk = join(directory, "sdk");
+    await mkdir(offlineSdk);
+    await writeFile(join(offlineSdk, "sdk.json"), JSON.stringify({ version: sdkVersion, check: "check.mjs", components: "components.json" }));
+    await writeFile(join(offlineSdk, "check.mjs"), checkModule);
+    await writeFile(join(offlineSdk, "components.json"), JSON.stringify(catalogue));
+    const oldChecker = checkModule.replace("export const domainProductIdSchema", "const domainProductIdSchema");
+    await writeFile(join(offlineSdk, "check.mjs"), oldChecker);
+    assert.deepEqual(JSON.parse((await run("panel", "check", directory, "--sdk-dir", offlineSdk)).stdout).unchecked,
+      [{ kind: "projection", id: "tasks" }]);
+    await writeFile(join(offlineSdk, "check.mjs"), checkModule);
+    const builtin = join(directory, "builtin");
+    await mkdir(builtin);
+    const builtinFile = join(builtin, "panel.json");
+    const builtinRegistration = join(builtin, "registration.json");
+    const registrationBody = { panels: [{ id: "builtin-product-catalogue", mode: "create", input: {} }] };
+    await writeFile(builtinRegistration, JSON.stringify(registrationBody));
+    const builtinManifest = { ...manifest, members: {
+      catalogue: { component: "ObjectList", type: "platform:ReviewQueue", data: { rows: "query" } },
+      reuse: { target: { projectionId: "builtin-product-reusable" } },
+    } };
+    await writeFile(builtinFile, JSON.stringify({ manifest: builtinManifest }));
+    const prepared = JSON.parse((await run("panel", "check", builtin, "--builtin", "--sdk-dir", offlineSdk)).stdout);
+    const builtinId = prepared.assigned.catalogue;
+    assert.match(builtinId, /^builtin-product-[0-9a-f-]{36}$/u);
+    assert.equal(prepared.panelId, registrationBody.panels[0].id);
+    const published = JSON.parse(await readFile(builtinFile, "utf8"));
+    assert.equal(published.manifest.members.catalogue.id, builtinId);
+    assert.deepEqual(published.manifest.members.reuse, builtinManifest.members.reuse);
+    published.manifest.members.renamed = published.manifest.members.catalogue;
+    delete published.manifest.members.catalogue;
+    await writeFile(builtinFile, JSON.stringify(published));
+    const unchanged = JSON.parse((await run("panel", "check", builtin, "--builtin", "--sdk-dir", offlineSdk)).stdout);
+    assert.deepEqual(unchanged.assigned, {});
+    assert.equal(JSON.parse(await readFile(builtinFile, "utf8")).manifest.members.renamed.id, builtinId);
+    const chart = JSON.stringify({ manifest: { ...builtinManifest, members: {
+      chart: { component: "MetricChart", sourceCard: { dashboardId: "domain-dashboard", cardId: "card" } },
+    } } });
+    await writeFile(builtinFile, chart);
+    await assert.rejects(run("panel", "check", builtin, "--builtin", "--sdk-dir", offlineSdk), error =>
+      error.stderr.includes("manifest.members.chart.id") && error.stderr.includes("takes its projection definition from the source card"));
+    assert.equal(await readFile(builtinFile, "utf8"), chart);
+    await writeFile(builtinFile, JSON.stringify(published));
+    await assert.rejects(run("panel", "check", builtin, "--sdk-dir", offlineSdk), error =>
+      error.stderr.includes("builtin-product-catalogue") && error.stderr.includes("reserved for platform products"));
+    const trialMaterial = join(builtin, "trial.json");
+    await writeFile(trialMaterial, JSON.stringify({ panels: [{ ...registrationBody.panels[0], id: "trial-panel" }] }));
+    await assert.rejects(run("panel", "check", builtin, "--material", trialMaterial, "--sdk-dir", offlineSdk), error =>
+      error.stderr.includes("Member renamed") && error.stderr.includes("reserved for platform products"));
+    assert.deepEqual(requests, []);
+    await assert.rejects(run("panel", "register", JSON.stringify(registrationBody)), error =>
+      error.stderr.includes("builtin-product-catalogue") && error.stderr.includes("reserved for platform products"));
+    assert.equal(requests.splice(0).every(([method]) => method === "GET"), true);
+    await writeFile(join(directory, "panel.json"), JSON.stringify({ manifest: { ...manifest, members: { reuse: builtinManifest.members.reuse } } }));
+    await run("panel", "check", directory);
+    assert.equal(requests.splice(0).some(([method, url]) =>
+      method === "GET" && url === "/api/product-projections/builtin-product-reusable"), true);
+    await writeFile(join(directory, "panel.json"), JSON.stringify({ manifest }));
     const checked = await run("panel", "check", directory);
     assert.equal(checked.stderr,
       "Action legacy-action is unavailable. Stored function is missing\n" +

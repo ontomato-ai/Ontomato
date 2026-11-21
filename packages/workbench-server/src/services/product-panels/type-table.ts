@@ -22,8 +22,8 @@ async function customerTypeCatalogue(owner: ProductOwner, viewer: AssistantCrede
   }
 }
 
-export async function readPanelTypeTable(owner: ProductOwner, viewer: AssistantCredentials) {
-  const objectTypes = new Map(Object.entries(platformObjectTypes).map(([id, { operations, ...entry }]) => [
+export function platformTypeEntries() {
+  return new Map(Object.entries(platformObjectTypes).map(([id, { operations, ...entry }]) => [
     id, {
       ...entry,
       operations: operations?.flatMap(operationId => {
@@ -32,6 +32,10 @@ export async function readPanelTypeTable(owner: ProductOwner, viewer: AssistantC
       }),
     },
   ]));
+}
+
+export async function readPanelTypeTable(owner: ProductOwner, viewer: AssistantCredentials) {
+  const objectTypes = platformTypeEntries();
   const [catalogue, { actions, unavailableActions }] = await Promise.all([
     customerTypeCatalogue(owner, viewer),
     createActionReadAdapter(owner, viewer).objectActions(),
@@ -55,13 +59,14 @@ export async function readPanelTypeTable(owner: ProductOwner, viewer: AssistantC
   });
 }
 
-export function panelOperationTargetCheck(owner: ProductOwner, viewer: AssistantCredentials) {
+function operationTargetCheck(loadActions?: () => ReturnType<ReturnType<typeof createActionReadAdapter>["objectActions"]>) {
   let objectActions: ReturnType<ReturnType<typeof createActionReadAdapter>["objectActions"]> | undefined;
-  return async (projection: ProductProjectionInput, wiring?: Pick<PanelPlacement, "inputs">) => {
+  return async (projection: Pick<ProductProjectionInput, "inputs" | "operations" | "data">, wiring?: Pick<PanelPlacement, "inputs">) => {
     for (const { name, binding, owner: platform } of boundProjectionOperations(projection)) {
       const ref = binding.operation;
+      if (ref.kind === "Action" && !loadActions) return `operation '${name}' requires a domain action`;
       const catalog = ref.kind === "Action"
-        ? await (objectActions ??= createActionReadAdapter(owner, viewer).objectActions()) : undefined;
+        ? await (objectActions ??= loadActions!()) : undefined;
       const operation = catalog ? catalog.actions.find(action => action.declaration.id === ref.id) : platform;
       if (!operation) {
         const unavailable = catalog?.unavailableActions.find(action => action.id === ref.id);
@@ -77,4 +82,12 @@ export function panelOperationTargetCheck(owner: ProductOwner, viewer: Assistant
         return `operation '${name}' expects input '${target.input}', but it is not connected`;
     }
   };
+}
+
+export function panelOperationTargetCheck(owner: ProductOwner, viewer: AssistantCredentials) {
+  return operationTargetCheck(() => createActionReadAdapter(owner, viewer).objectActions());
+}
+
+export function builtinPanelOperationTargetCheck() {
+  return operationTargetCheck();
 }

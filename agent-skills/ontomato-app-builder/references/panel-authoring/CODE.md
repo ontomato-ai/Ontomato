@@ -1,13 +1,16 @@
 # Write a Vue panel
 
 Write the Vue template and scoped panel styles in `panel.html`. Put the template inside `<div id="app">`. Place a
-declared member with `<projection slot="detail"></projection>`. Use Vue attributes, events, `v-if` and `v-for` for
+declared member with `<projection slot="detail"></projection>`. The slot names the key in `manifest.members`.
+Use Vue attributes, events, `v-if` and `v-for` for
 interactions. Adapt the layout to the container width. The host draws the page title and back control.
 Panel CSS positions member containers. Design variables style components inside them.
 
 Declare projections using the [member fields](FIELDS.md) and declare public typed state in `panel.json`.
 Keep page-local state in Vue. An object state
 such as `selected` stores `{className, primaryKey}`. Enable `deepLink` when the address should restore the selection.
+For a page-header event with a `labelKey`, set `deepLink: true` on every state field the event changes so the
+assistant can open the same state by address.
 Use `recipes.md` for tasks the assistant needs to know how to do.
 
 Use the required `panel.mjs` to mount the Vue page as in the [agent directory module](../../examples/vue-agent-directory/panel.mjs).
@@ -47,6 +50,18 @@ and consume each datum with [the SDK read hooks](RUNTIME.md#reads-and-operations
 before any `await`. Use the return states
 to show loading, missing inputs, empty data, denied access or an error in the view. Read each ready value
 according to the type table's result shape.
+
+## Connect a graph and its relations
+
+Run `node "$SKILL/ontomato.mjs" sdk read docs/components.md` and use the `OntologyGraph` and `ObjectRelations`
+sections for each component's datum names, accepted result types, `config`, outputs and events. Inspect named
+reads with `panel type <type-id> --read <name>`. Declare the shared [graph selection type](RUNTIME.md#graph-selection)
+in `manifest.state`. In new members, map component ports to that field using the member's `state` map. For example,
+`OntologyGraph` can write `selectedNode` and `ObjectRelations` can write `selected` to the same state field.
+
+Mount the graph and list as `<projection slot="graph"></projection>` and
+`<projection slot="relations"></projection>` when those are the member keys. Use the
+[Vue setup reference](RUNTIME.md#vue-setup) for reads or actions added in page code.
 
 ## Select a child record and read from its parent
 

@@ -74,6 +74,19 @@ For workspace registration, keep the panel definition in `panel.json`, `panel.ht
 
 The command submits projections, panels and uses in that order. It prints each completed item and exits nonzero at the first failure. On a stale revision, compare the owner's current definition with the requested change before preparing a new update.
 
+### Package a built-in panel
+
+Put the panel's source files in its owning package under `resources/builtin-panels/<directory>`. Use
+the reserved platform prefix for its panel ID in `registration.json`. Allocate missing projection IDs
+locally with the installed SDK release:
+
+```bash
+node "$SKILL/ontomato.mjs" panel check <directory> --builtin --sdk-dir <sdk-release-directory>
+```
+
+Commit the IDs written to `panel.json` with the source. The Workbench image build checks the built-in
+application entries against the bundled panels. The platform registers this bundle on startup.
+
 ### Delete a trial application or panel
 
 Delete a trial application first to remove its entry references. Then delete a panel by its exact registered ID.
