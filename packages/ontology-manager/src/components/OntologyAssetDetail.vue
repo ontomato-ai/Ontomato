@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { submissionConditionRows } from "./actionCreation/submissionConditions";
 import ElDialog from "../ManagerDialog.vue";
 import { computed, onMounted, ref, watch } from "vue";
 import { ArrowLeft, Play, Plus, Save, Sparkles, Trash2 } from "lucide-vue-next";
@@ -16,7 +15,6 @@ import {
   ElSelect,
   ElTabPane,
   ElTabs,
-  ElTag,
   vLoading,
 } from "element-plus";
 import { CodeEditor } from "@ontomato/foundation-ui/code";
@@ -24,10 +22,6 @@ import { MarkdownView } from "@ontomato/foundation-ui/markdown";
 import { useManagerFeedback } from "../feedback";
 import type { SmartAsset } from "../api";
 import type { AssetTab } from "../workspace";
-import ActionCodeExplainer from "./codeExplainer/ActionCodeExplainer.vue";
-import ActionCreateDialog from "./actionCreation/ActionCreateDialog.vue";
-import BusinessMeaning from "./codeExplainer/BusinessMeaning.vue";
-import { normalizeBusinessMeaning, normalizeCodeSegments } from "./codeExplainer/codeSegments";
 import { useManagerClient, useOntologyText } from "../context";
 
 type AssetRecord = Record<string, any>;
@@ -90,7 +84,6 @@ function testMetricDraft() {
   return draft;
 }
 
-const showGeneration = ref(false);
 const metricGenerationPrompt = ref("");
 const metricGenerationVisible = ref(false);
 const metricGenerating = ref(false);
@@ -103,7 +96,6 @@ const testJson = ref("");
 const meta = computed(() => {
   const titles = {
     metrics: ot("assetKindMetrics"),
-    actions: ot("assetKindActions"),
     functions: ot("assetKindFunctions"),
   };
   return { title: titles[props.kind] };
@@ -159,150 +151,10 @@ const matchQuestionText = computed({
   },
 });
 
-// The explanation tab belongs only to actions with segments; other assets and actions without segments show no tab bar.
-const activeTab = ref<"definition" | "explainer">("definition");
-const savedCodeSnapshot = ref("");
-const targetClass = ref("");
-const targetKey = ref("");
-
-const editedCode = computed(() => {
-  const code = record.value?.function?.code;
-  return typeof code === "string" ? code : "";
-});
-
-const explainerState = computed(() => {
-  if (props.kind !== "actions") return null;
-  const raw = record.value?.codeSegments;
-  if (raw === null || raw === undefined) return null;
-  return normalizeCodeSegments(raw);
-});
-
-// Show the tab whenever there is an explanation: a normalized one is non-empty; an invalid format shows an error in the tab.
-const showExplainerTab = computed(() => explainerState.value !== null);
-
-const explainerSegments = computed(() => {
-  const state = explainerState.value;
-  return state && state.ok ? state.segments : [];
-});
-
-// When the editor has unsaved changes relative to the saved code, the explanation tab warns and still renders the saved version.
-const codeDirty = computed(() => editedCode.value !== savedCodeSnapshot.value);
-
-// Business meaning reflects the saved code and is read-only; its dirty state reuses the explanation tab's check instead of a separate one.
-const businessMeaning = computed(() =>
-  props.kind === "actions" ? normalizeBusinessMeaning(record.value?.businessMeaning) : null
-);
-
-// Derived, read-only projection attached by the action API. It is not an execution definition.
-const actionDefinition = computed(() =>
-  props.kind === "actions" ? record.value?.definition ?? null : null
-);
-
-const parameterNames = computed(() =>
-  (actionDefinition.value?.parameters || []).map((parameter: any) => parameter.name)
-);
-function escapeHtml(value: string) {
-  return value.replace(/[&<>"']/g, (ch) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] || ch
-  );
-}
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-function renderValueFrom(valueFrom: string) {
-  const text = escapeHtml(valueFrom || "");
-  const names = parameterNames.value.slice().sort((a: string, b: string) => b.length - a.length);
-  if (!names.length) return text;
-  const pattern = new RegExp(`\\b(${names.map(escapeRegExp).join("|")})\\b`, "g");
-  return text.replace(
-    pattern,
-    (name) =>
-      `<span class="param-link" data-param="${name}" title="查看参数说明">${name}</span>`
-  );
-}
-function onParamClick(event: MouseEvent) {
-  const target = (event.target as HTMLElement).closest("[data-param]");
-  if (!target) return;
-  const name = target.getAttribute("data-param");
-  const row = name ? document.getElementById(`param-row-${name}`) : null;
-  if (!row) return;
-  row.scrollIntoView({ behavior: "smooth", block: "center" });
-  row.classList.add("param-flash");
-  window.setTimeout(() => row.classList.remove("param-flash"), 1400);
-}
-const businessMeaningForDisplay = computed(() => {
-  const meaning = businessMeaning.value;
-  if (!meaning) return null;
-  const hasRules = (actionDefinition.value?.effects || []).length > 0;
-  if (!hasRules) return meaning;
-  return meaning.negativeEffect ? { ...meaning, operations: [] } : null;
-});
-function effectLabel(kind: string) {
-  switch (kind) {
-    case "CREATE_OBJECT": return ot("actionDefinitionCreateObject");
-    case "UPDATE_OBJECT": return ot("actionDefinitionUpdateObject");
-    case "DELETE_OBJECT": return ot("actionDefinitionDeleteObject");
-    case "CREATE_EDGE": return ot("actionDefinitionCreateEdge");
-    case "DELETE_EDGE": return ot("actionDefinitionDeleteEdge");
-    case "APPEND_VECTOR": return ot("actionDefinitionAppendVector");
-    case "UPDATE_VECTOR": return ot("actionDefinitionUpdateVector");
-    case "DELETE_VECTOR": return ot("actionDefinitionDeleteVector");
-    case "EXTERNAL_CALL": return ot("actionDefinitionExternal");
-    default: return kind;
-  }
-}
-const ruleGroups = computed(() => {
-  const groups = [
-    { key: "create", label: ot("actionDefinitionGroupCreate"), kinds: ["CREATE_OBJECT"] },
-    { key: "modify", label: ot("actionDefinitionGroupUpdate"), kinds: ["UPDATE_OBJECT"] },
-    { key: "delete", label: ot("actionDefinitionGroupDelete"), kinds: ["DELETE_OBJECT"] },
-    { key: "link", label: ot("actionDefinitionGroupLink"), kinds: ["CREATE_EDGE", "DELETE_EDGE"] },
-    { key: "vector", label: ot("actionDefinitionGroupVector"), kinds: ["APPEND_VECTOR", "UPDATE_VECTOR", "DELETE_VECTOR"] },
-    { key: "other", label: ot("actionDefinitionGroupOther"), kinds: ["EXTERNAL_CALL"] },
-  ];
-  const effects = actionDefinition.value?.effects || [];
-  return groups.map((group) => ({
-    ...group,
-    items: effects.filter((effect: any) => group.kinds.includes(effect.kind)),
-  })).filter((group) => group.items.length > 0);
-});
-const ruleLabel = (kind: string) => effectLabel(kind);
-const ruleTarget = (rule: any) => {
-  if (rule.relation)
-    return ot("actionDefinitionRelationTarget", {
-      source: rule.sourceClass || "?",
-      target: rule.targetClass || "?",
-      relation: rule.relation,
-    });
-  return rule.className || "—";
-};
-const submissionCriteria = computed(() => actionDefinition.value?.submissionCriteria ?? null);
-const criteriaConditions = computed(() => submissionConditionRows(submissionCriteria.value?.conditions || [], ot));
-const criteriaOperator = computed(() => submissionCriteria.value?.operator || "AND");
-const criteriaUnrepresentable = computed(() => submissionCriteria.value?.unrepresentable || []);
-
-function guardText(condition: any): string {
-  if (!condition) return "";
-  if (condition.properties) return guardText(condition.properties);
-  if (condition.operator === "logic") {
-    const and = (condition.and || []).map(guardText).filter(Boolean);
-    const or = (condition.or || []).map(guardText).filter(Boolean);
-    if (and.length) return and.join(" 且 ");
-    if (or.length) return or.join(" 或 ");
-    return "";
-  }
-  if (!condition.field) return "";
-  const value = condition.value === undefined ? "" : ` ${JSON.stringify(condition.value)}`;
-  return `${condition.field} ${condition.operator}${value}`;
-}
-
-// The snapshot syncs only when record is reassigned (not deep): new load paths are not missed and editor changes do not trigger it.
+// The drafts sync only when record is reassigned (not deep): new load paths are not missed and editor changes do not trigger it.
 watch(
   () => record.value,
   () => {
-    targetClass.value = record.value?.target?.className ?? "";
-    targetKey.value = record.value?.target?.keyParameter ?? "";
-    savedCodeSnapshot.value = editedCode.value;
     const fn = functionRecord.value;
     packageDraft.value = fn?.queryPackage ? JSON.stringify(fn.queryPackage, null, 2) : "";
     const labels = fn?.returnDef?.columnLabels ?? Object.fromEntries((fn?.returnDef?.sourceAnalysis?.nodes ?? [])
@@ -336,34 +188,21 @@ function createRecord(kind: AssetTab): AssetRecord {
       },
     };
   }
-  if (kind === "functions") {
-    return {
-      name: "",
-      description: "",
-      origin: "USER",
-      operation: "OPERATION_READ",
-      parameters: [],
-      returnDef: { isVoid: false, outKeyRefs: [], value: {}, classNames: [] },
-      code: "",
-      logic: "",
-    };
-  }
   return {
     name: "",
     description: "",
-    status: "STOPPED",
-    cron: "",
-    function: null,
+    origin: "USER",
+    operation: "OPERATION_READ",
+    parameters: [],
+    returnDef: { isVoid: false, outKeyRefs: [], value: {}, classNames: [] },
+    code: "",
+    logic: "",
   };
 }
 
 async function loadDetail() {
-  if (props.creating && props.kind !== "actions") {
+  if (props.creating) {
     record.value = createRecord(props.kind);
-    return;
-  }
-  if (props.creating && props.kind === "actions") {
-    showGeneration.value = true;
     return;
   }
   if (!props.asset?.id) {
@@ -390,29 +229,12 @@ async function save() {
   }
   saving.value = true;
   try {
-    const isAction = props.kind === "actions";
-    if (isAction) record.value.target = targetClass.value || targetKey.value
-      ? { className: targetClass.value.trim(), keyParameter: targetKey.value.trim() } : null;
-    const codeChanged = isAction && codeDirty.value;
-    // Recalculation happens synchronously in the save request, so actions with code changes first warn that it may take a while.
-    if (codeChanged) message.info(ot("explainerRegenerating"));
     if (readFunction.value) prepareQueryPackage(functionRecord.value!);
     const payload = props.kind === "metrics" ? { ...record.value, bindings: serializedBindings() } : record.value;
     await requestSmartAsset(props.kind, "save", payload);
     message.success(ot("assetSaved", { title: meta.value.title }));
-    if (props.creating) {
-      emit("created");
-    } else if (isAction) {
-      // Existing actions stay on the detail page: tell the parent to refresh the catalog, then reload this record.
-      emit("saved");
-      await loadDetail();
-      if (codeChanged && explainerSegments.value.length === 0) {
-        message.warning(ot("explainerNotGenerated"));
-      }
-      return;
-    } else {
-      emit("saved");
-    }
+    if (props.creating) emit("created");
+    else emit("saved");
     emit("back");
   } catch (error) {
     message.error(error instanceof Error ? error.message : ot("assetSaveFailed"));
@@ -514,11 +336,6 @@ async function testExecuteMetricView() {
   }
 }
 
-function onActionCreated() {
-  emit("created");
-  emit("back");
-}
-
 async function generateMetricView() {
   const question = metricGenerationPrompt.value.trim();
   if (!question) {
@@ -552,10 +369,7 @@ onMounted(() => void loadDetail());
 </script>
 
 <template>
-  <section
-    v-loading="loading"
-    :class="['asset-detail', { 'with-explainer-tab': showExplainerTab }]"
-  >
+  <section v-loading="loading" class="asset-detail">
     <header class="detail-titlebar platform-page-gutter">
       <el-button text :icon="ArrowLeft" @click="emit('back')">
         {{ ot("assetBackTo", { title: meta.title }) }}
@@ -590,53 +404,8 @@ onMounted(() => void loadDetail());
       </el-button>
     </header>
 
-    <nav v-if="record && showExplainerTab" class="detail-tabs platform-page-gutter" role="tablist">
-      <button
-        type="button"
-        role="tab"
-        :aria-selected="activeTab === 'definition'"
-        :class="['detail-tab', { 'is-active': activeTab === 'definition' }]"
-        @click="activeTab = 'definition'"
-      >
-        {{ ot("assetTabDefinition") }}
-      </button>
-      <button
-        type="button"
-        role="tab"
-        :aria-selected="activeTab === 'explainer'"
-        :class="['detail-tab', { 'is-active': activeTab === 'explainer' }]"
-        @click="activeTab = 'explainer'"
-      >
-        {{ ot("assetTabCodeExplainer") }}
-      </button>
-    </nav>
-
-    <div
-      v-if="record && showExplainerTab"
-      v-show="activeTab === 'explainer'"
-      class="explainer-pane platform-page-gutter"
-      role="tabpanel"
-    >
-      <el-alert
-        v-if="codeDirty"
-        :title="ot('explainerStale')"
-        type="warning"
-        show-icon
-        :closable="false"
-      />
-      <el-alert
-        v-if="explainerState && !explainerState.ok"
-        :title="ot('explainerInvalid')"
-        type="error"
-        show-icon
-        :closable="false"
-      />
-      <ActionCodeExplainer v-else :code="savedCodeSnapshot" :segments="explainerSegments" />
-    </div>
-
     <div
       v-if="record"
-      v-show="!showExplainerTab || activeTab === 'definition'"
       class="detail-body platform-page-gutter"
       :class="{ 'metric-detail-body': kind === 'metrics' }"
     >
@@ -654,14 +423,6 @@ onMounted(() => void loadDetail());
           <el-form-item :label="ot('description')">
             <el-input v-model="record.description" type="textarea" :rows="3" />
           </el-form-item>
-          <template v-if="kind === 'actions'">
-            <el-form-item :label="ot('actionTargetClass')"><el-input v-model="targetClass" /></el-form-item>
-            <el-form-item :label="ot('actionTargetKey')">
-              <el-select v-model="targetKey" clearable>
-                <el-option v-for="p in (functionRecord?.parameters ?? []).filter((p: AssetRecord) => p.type === 'TYPE_STRING')" :key="p.name" :value="p.name" :label="p.name" />
-              </el-select>
-            </el-form-item>
-          </template>
           <el-form-item v-if="!isFunction" :label="ot('status')">
             <el-select v-model="record.status">
               <el-option :label="ot('assetStatusPendingReview')" value="PENDING_REVIEW" />
@@ -684,113 +445,6 @@ onMounted(() => void loadDetail());
             </el-radio-group>
           </el-form-item>
         </el-form>
-
-      <section v-if="kind === 'actions' && actionDefinition" class="action-definition" @click="onParamClick">
-        <div class="section-title">
-          <div>
-            <span class="eyebrow">{{ ot("actionDefinitionTitle") }}</span>
-            <h2>{{ ot("actionDefinitionRules") }}</h2>
-          </div>
-          <el-tag size="small" type="info">{{ ot("actionDefinitionDerivedUnverified") }}</el-tag>
-        </div>
-        <p class="text-muted">{{ ot("actionDefinitionRulesHint") }}</p>
-        <div class="definition-objects">
-          <el-tag v-for="name in actionDefinition.objects || []" :key="name" size="small">
-            {{ name }}
-          </el-tag>
-        </div>
-        <div v-for="group in ruleGroups" :key="group.key" class="rule-group">
-          <h3 class="rule-group-title">
-            {{ group.label }}
-            <span class="rule-count">{{ group.items.length }}</span>
-          </h3>
-          <div v-for="(rule, index) in group.items" :key="index" class="rule-row">
-            <div class="rule-head">
-              <el-tag size="small">{{ ruleLabel(rule.kind) }}</el-tag>
-              <span class="rule-target">{{ ruleTarget(rule) }}</span>
-            </div>
-            <div v-if="(rule.assignments || []).length" class="rule-line">
-              <span class="rule-key">{{ ot("actionDefinitionFields") }}</span>
-              <span class="rule-values">
-                <span v-for="item in rule.assignments" :key="item.field" class="assignment">
-                  {{ item.field }} ← <span v-html="renderValueFrom(item.valueFrom)"></span>
-                </span>
-              </span>
-            </div>
-            <div v-if="rule.guards" class="rule-line">
-              <span class="rule-key">{{ ot("actionDefinitionConditions") }}</span>
-              <code class="rule-guard">{{ guardText(rule.guards) }}</code>
-            </div>
-            <div
-              v-if="rule.objectIdFrom || rule.sourceObjectIdFrom || rule.targetObjectIdFrom"
-              class="rule-line"
-            >
-              <span class="rule-key">{{ ot("actionDefinitionLocate") }}</span>
-              <span class="rule-values">
-                <span v-if="rule.objectIdFrom">
-                  {{ ot("actionDefinitionObject") }} ← <span v-html="renderValueFrom(rule.objectIdFrom)"></span>
-                </span>
-                <span v-if="rule.sourceObjectIdFrom">
-                  {{ ot("actionDefinitionSource") }} ← <span v-html="renderValueFrom(rule.sourceObjectIdFrom)"></span>
-                </span>
-                <span v-if="rule.targetObjectIdFrom">
-                  {{ ot("actionDefinitionRuleTarget") }} ← <span v-html="renderValueFrom(rule.targetObjectIdFrom)"></span>
-                </span>
-              </span>
-            </div>
-          </div>
-        </div>
-        <table class="param-table">
-          <thead>
-            <tr><th>{{ ot("actionDefinitionParameters") }}</th><th>{{ ot("actionDefinitionType") }}</th><th>{{ ot("actionDefinitionDescription") }}</th></tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="parameter in actionDefinition.parameters || []"
-              :id="`param-row-${parameter.name}`"
-              :key="parameter.name"
-            >
-              <td><span class="param-chip">{{ parameter.name }}</span></td>
-              <td>{{ parameter.type }}</td>
-              <td>{{ parameter.description }}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div class="group criteria-block">
-          <h4>{{ ot("actionDefinitionSubmissionCriteria") }}</h4>
-          <p class="desc">{{ ot("actionDefinitionCriteriaHint") }}</p>
-          <template v-if="submissionCriteria">
-            <div v-if="criteriaConditions.length" class="criteria-list">
-              <div v-for="(condition, index) in criteriaConditions" :key="index" class="criteria-row">
-                <div v-if="condition.expression" class="criteria-main">
-                  <span v-if="index > 0" class="kt">{{ criteriaOperator }}</span>
-                  <code class="rule-guard">{{ condition.expression }}</code>
-                </div>
-                <div v-if="condition.message" class="criteria-msg">
-                  {{ condition.message }}
-                </div>
-              </div>
-            </div>
-            <div v-else class="empty">{{ ot("actionDefinitionNoConditions") }}</div>
-            <div v-if="criteriaUnrepresentable.length" class="criteria-custom">
-              <b>{{ ot("actionDefinitionCustomChecks") }}</b>
-              <div v-for="(item, index) in criteriaUnrepresentable" :key="index">
-                {{ item.description }}
-                <span v-if="item.reason" class="muted">（{{ item.reason }}）</span>
-              </div>
-            </div>
-          </template>
-          <div v-else class="empty">{{ ot("actionDefinitionNoCriteria") }}</div>
-        </div>
-      </section>
-
-
-        <BusinessMeaning
-          v-if="kind === 'actions' && businessMeaning"
-          :meaning="businessMeaningForDisplay"
-          :stale="codeDirty"
-        />
       </section>
 
       <section v-if="kind === 'metrics'" class="definition-section metric-bindings">
@@ -914,12 +568,6 @@ onMounted(() => void loadDetail());
 
     </div>
 
-    <ActionCreateDialog
-      v-model="showGeneration"
-      @created="onActionCreated"
-      @back="emit('back')"
-    />
-
     <el-dialog
       v-model="metricGenerationVisible"
       :lock-scroll="false"
@@ -1028,45 +676,11 @@ onMounted(() => void loadDetail());
 .markdown-placeholder { color: var(--el-text-color-placeholder); margin: 0; }
 /*
  * The page paints no background of its own: it sits on the application's area, the darkest band in dark mode
- * (DESIGN.md "Colour roles"); its sections keep their own surfaces. The title row, the tabs and the panes under them take
+ * (DESIGN.md "Colour roles"); its sections keep their own surfaces. The title row and the body under it take
  * the page gutter (`platform-page-gutter`), so they start where the other pages' titles do.
  */
 .asset-detail {
   min-height: 100%;
-}
-.asset-detail.with-explainer-tab {
-  display: flex;
-  height: 100%;
-  flex-direction: column;
-}
-.detail-tabs {
-  display: flex;
-  flex: 0 0 auto;
-  gap: var(--spacing-sm);
-  padding-top: var(--spacing-sm);
-  border-bottom: 1px solid var(--el-border-color);
-}
-.detail-tab {
-  padding: var(--spacing-sm) var(--spacing-md);
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-.detail-tab.is-active {
-  border-bottom-color: var(--el-color-primary);
-  color: var(--brand-link);
-  font-weight: var(--font-medium);
-}
-.explainer-pane {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: var(--spacing-md);
-  padding-block: var(--spacing-md) var(--spacing-lg);
 }
 .detail-titlebar {
   display: flex;
@@ -1118,175 +732,6 @@ onMounted(() => void loadDetail());
   flex-direction: column;
   gap: var(--manager-module-gap);
 }
-.action-definition {
-  margin-top: var(--manager-content-gap);
-  padding-top: var(--manager-content-gap);
-  border-top: 1px solid var(--el-border-color-lighter);
-}
-
-.action-definition :deep(.param-link) {
-  color: var(--brand-link);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-
-.action-definition :deep(.param-link::after) {
-  content: "↗";
-  font-size: 10px;
-  margin-left: 2px;
-  opacity: 0.65;
-}
-
-.action-definition :deep(.param-link:hover) {
-  color: var(--brand-link);
-  text-decoration-thickness: 2px;
-}
-
-.param-chip {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.param-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-  margin-top: var(--manager-content-gap);
-}
-
-.param-table th {
-  text-align: left;
-  color: var(--el-text-color-secondary);
-  font-weight: 500;
-  padding: var(--manager-control-gap) var(--manager-content-gap);
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  background: var(--el-fill-color);
-}
-
-.param-table td {
-  padding: var(--manager-control-gap) var(--manager-content-gap);
-  border-bottom: 1px solid var(--el-border-color-lighter);
-}
-
-.param-flash td {
-  animation: param-flash 1.2s ease;
-}
-
-@keyframes param-flash {
-  0% { box-shadow: inset 0 0 0 2px var(--el-color-warning); }
-  100% { box-shadow: none; }
-}
-
-.criteria-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.criteria-row {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-  padding: var(--manager-content-gap);
-}
-
-.criteria-main {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-}
-
-.criteria-msg {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--el-color-danger);
-}
-
-.criteria-custom {
-  margin-top: var(--manager-control-gap);
-  font-size: 12px;
-  color: var(--el-text-color-regular);
-}
-
-.rule-group {
-  margin-top: var(--manager-content-gap);
-}
-
-.rule-group-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  margin: 0 0 8px;
-}
-
-.rule-count {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  background: var(--el-fill-color-light);
-  border-radius: var(--radius-md);
-  padding: 0 6px;
-}
-
-.rule-row {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-  padding: var(--manager-content-gap);
-  margin-bottom: var(--manager-control-gap);
-}
-
-.rule-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: var(--manager-control-gap);
-}
-
-.rule-target {
-  font-weight: 500;
-}
-
-.rule-line {
-  display: flex;
-  gap: 8px;
-  font-size: 12px;
-  margin-top: 4px;
-}
-
-.rule-key {
-  color: var(--el-text-color-secondary);
-  min-width: 32px;
-}
-
-.rule-values {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.rule-guard {
-  font-family: var(--font-mono);
-  background: var(--el-fill-color-light);
-  padding: 1px 4px;
-  border-radius: 3px;
-}
-
-.definition-objects {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 8px 0 12px;
-}
-
-.assignment {
-  flex: 1 1 100%;
-  display: block;
-  font-size: 12px;
-  color: var(--el-text-color-regular);
-}
-
 .definition-section,
 .logic-section {
   min-width: 0;
@@ -1399,9 +844,6 @@ h2 {
   }
 }
 @container ontology-manager (max-width: 640px) {
-  .explainer-pane {
-    padding-block: var(--spacing-md);
-  }
   .title-divider {
     display: none;
   }

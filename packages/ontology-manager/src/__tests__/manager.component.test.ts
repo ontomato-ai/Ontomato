@@ -710,7 +710,6 @@ describe("Manager pages in the service router", () => {
       expect.arrayContaining([
         "/admin/getMetas",
         "/metricView/queryList",
-        "/action/queryList",
         "/function/queryList",
       ])
     );
@@ -902,7 +901,7 @@ describe("Manager pages in the service router", () => {
 
   it("401/402 only notify the page; after 402 the credential is kept and later requests still carry it", async () => {
     statusFor = (path) =>
-      path === "/action/queryList" ? 402 : path === "/function/queryList" ? 401 : 200;
+      path === "/metricView/queryList" ? 402 : path === "/function/queryList" ? 401 : 200;
     const { host, failures } = mountHost(base);
     await settle();
     expect(failures.sort()).toEqual([401, 402]);

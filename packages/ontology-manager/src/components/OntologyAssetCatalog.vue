@@ -4,7 +4,6 @@ import { ElButton, ElCheckbox, ElEmpty, ElInput, ElOption, ElSelect, vLoading } 
 import {
   ChartColumn,
   ChevronRight,
-  MousePointerClick,
   ListChecks,
   Search,
   SquareFunction,
@@ -101,12 +100,6 @@ const meta: Record<
     description: "metricsDesc",
     create: "createMetric",
     icon: ChartColumn,
-  },
-  actions: {
-    title: "actionsTitle",
-    description: "actionsDesc",
-    create: "generateFromNaturalLanguage",
-    icon: MousePointerClick,
   },
   functions: {
     title: "functionsTitle",

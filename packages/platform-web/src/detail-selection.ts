@@ -2,6 +2,8 @@ import type { RouteLocation } from "vue-router";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import { PAGE_DRAFT_QUERY_KEYS } from "@ontomato/contracts/page-draft";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import { ACTION } from "@ontomato/contracts/platform-object-types";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
 
 /*
  * A page's detail address once a panel has taken the page over: the address a link, a bookmark, an agent's answer or a
@@ -28,9 +30,18 @@ export interface DetailSelection {
 /**
  * The detail addresses the platform converts: M4's table (its work item's "详情地址转选中"). A page's entries go in when
  * a panel takes that page over, together with taking out the page they replace: until then a detail address is still the
- * page's own, so there are none.
+ * page's own.
  */
-export const DETAIL_SELECTIONS: readonly DetailSelection[] = [];
+export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
+  // The actions page: an action's detail selects it; the old page's `new` (its creation dialog) opens the catalog, since
+  // an action is created by asking the page's agent.
+  {
+    path: platformRoutes.action.path,
+    use: platformRoutes.actions.path,
+    state: ({ id }): Record<string, PanelStateValue> =>
+      id === "new" ? {} : { selected: { className: ACTION, primaryKey: id! } },
+  },
+];
 
 /** The panel address a detail address opens, or null for an address none of the entries converts. */
 export function detailSelectionAddress(entries: readonly DetailSelection[], address: string): string | null {
