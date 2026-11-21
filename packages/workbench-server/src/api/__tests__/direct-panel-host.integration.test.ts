@@ -329,13 +329,25 @@ it("registers the shipped ontology catalogues and expands their previews and app
   const { registerBuiltinProducts } = await import("../../services/product-panels/builtin-products");
   const bundle = path.join(contentRoot, "ontology-catalogues");
   const catalogues = ["projections", "panels", "applications"];
+  const shipped = [...catalogues, "agent-settings"];
   await mkdir(bundle);
-  await writeFile(path.join(bundle, "index.json"), JSON.stringify(catalogues));
+  await writeFile(path.join(bundle, "index.json"), JSON.stringify(shipped));
   const sources = new URL("../../../../ontology-manager/resources/builtin-panels/", import.meta.url);
-  for (const catalogue of catalogues) {
+  for (const catalogue of shipped) {
     await symlink(fileURLToPath(new URL(catalogue, sources)), path.join(bundle, catalogue));
   }
   await registerBuiltinProducts(bundle);
+  const settingsResponse = await request("GET", "product-panels/builtin-product-agent-settings");
+  expect(settingsResponse.status).toBe(200);
+  const { panel: settings } = productPanelResponseSchema.parse(await settingsResponse.json());
+  const formTarget = settings.manifest.members.form!.target;
+  expect(formTarget).toHaveProperty("projectionId");
+  if (!("projectionId" in formTarget)) throw new Error("Agent settings must publish its form projection");
+  const formResponse = await request("GET", `product-projections/${formTarget.projectionId}`);
+  expect(productProjectionResponseSchema.parse(await formResponse.json()).projection).toMatchObject({
+    visibility: "platform", data: { form: { read: "form" }, createForm: { read: "createForm" } },
+    operations: { save: { operation: { id: "platform:AgentDefinition.save" } } },
+  });
   const definitions = new Map<string, PanelManifest["members"]>();
   for (const catalogue of catalogues) {
     const response = await request("GET", `product-panels/builtin-product-ontology-${catalogue}`);

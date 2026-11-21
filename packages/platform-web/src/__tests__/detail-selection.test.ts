@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
-import { ACTION, FUNCTION } from "@ontomato/contracts/platform-object-types";
+import { ACTION, AGENT_DEFINITION, FUNCTION } from "@ontomato/contracts/platform-object-types";
 import { DETAIL_SELECTIONS, detailSelectionAddress } from "../detail-selection";
 
 /*
@@ -33,4 +33,20 @@ it("opens a function's detail address as the functions panel with the function s
   });
   expect(open("/ontology/assets/functions/new")).toEqual({ path: "/ontology/assets/functions", state: {} });
   expect(open("/ontology/assets/functions")).toBeNull();
+});
+
+
+it.each(["/ontology/agents", "/agents/settings"])("routes the settings detail at %s to the shared panel state", (prefix) => {
+  expect(open(`${prefix}/new`)).toEqual({ path: prefix, state: { mode: "create" } });
+  expect(open(`${prefix}/agent-1`)).toEqual({
+    path: prefix, state: { mode: "edit", selected: { className: AGENT_DEFINITION, primaryKey: "agent-1" } },
+  });
+  const address = detailSelectionAddress(DETAIL_SELECTIONS, `${prefix}/agent-1?draftRunId=run&draftPath=outputs%2Fa.json`)!;
+  const query = new URL(address, "http://page.invalid").searchParams;
+  expect(query.get("draftRunId")).toBe("run");
+  expect(query.get("draftPath")).toBe("outputs/a.json");
+});
+
+it.each(["capabilities", "skills", "mcp", "models"])("leaves the separate agent platform %s page address alone", (page) => {
+  expect(open(`/agents/settings/${page}`)).toBeNull();
 });

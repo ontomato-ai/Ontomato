@@ -25,7 +25,7 @@ const reference = (objectType: string, multiple = false): Control => ({ kind: "r
 const fields = [
   { key: "name", path: "/name", schema: inputSchema.shape.name, control: { kind: "text" } },
   { key: "description", path: "/description", schema: inputSchema.shape.description, control: { kind: "text", multiline: true } },
-  { key: "icon", path: "/icon", schema: inputSchema.shape.icon, control: { kind: "hidden" } },
+  { key: "icon", path: "/icon", schema: inputSchema.shape.icon, control: { kind: "avatar" } },
   { key: "enabled", path: "/enabled", schema: inputSchema.shape.enabled, control: { kind: "switch" } },
   { key: "systemPrompt", path: "/systemPrompt", schema: inputSchema.shape.systemPrompt, control: { kind: "markdown" } },
   { key: "modelSelection", path: "/modelSelection/modelId",

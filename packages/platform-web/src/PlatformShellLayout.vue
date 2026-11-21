@@ -22,7 +22,7 @@ import { appDeclarations } from "./partition";
 import { catalogPartition, type NativeLayout } from "./native-layouts";
 import type { PlatformBrand } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { useApplicationCatalog } from "./catalog";
+import { panelEntryApplication, useApplicationCatalog } from "./catalog";
 import { nodeApiRequest } from "@ontomato/workbench-ui";
 import { appAt } from "./apps";
 import { pilotPageResolver as resolvePilotPages } from "./pilot-pages";
@@ -206,6 +206,7 @@ onBeforeUnmount(() => {
  * platform, knowledge governance) list an entry from it, by the same rule the guard and the menus read.
  */
 provide(platformPageAccessKey, (path: string) =>
+  Boolean(panelEntryApplication(path)) ||
   availablePages(host.navigation.value, host.access).some((page) => page.path === path),
 );
 provide(platformApplicationNameKey, (id: string) => declarations.value.find((app) => app.id === id)?.label ?? id);

@@ -6,7 +6,6 @@ import "@ontomato/design-tokens/foundation.css";
 import { computed } from "vue";
 import { Bot, Cable, Cpu, Puzzle, Plug } from "lucide-vue-next";
 import { skillLibraryCount } from "@ontomato/workbench-ui/features/workbench";
-import { AGENT_PAGE_PERMISSIONS } from "@ontomato/workbench-ui";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { ontologyAgentModelPages } from "@ontomato/platform-shell";
 import { useTheme } from "@ontomato/workbench-ui/composables/useTheme";
@@ -154,21 +153,6 @@ export function createServiceManager(options: {
   });
 }
 
-/**
- * The agents' settings as a page of the ontology manager's product layer, after its products: the same page the agent
- * platform shows at its own address, so an agent is configured with one page. It keeps the `analysis-agent` code; the
- * execution-permission field inside it answers who may change it.
- */
-const agentSettingsProductPage: PlatformPage = {
-  path: platformRoutes.ontologyAgents.path,
-  titleKey: "agents.title",
-  descriptionKey: "agents.intro",
-  icon: Bot,
-  permissions: [...AGENT_PAGE_PERMISSIONS],
-  group: "assets",
-  ownHeader: true,
-};
-
 /** The ontology manager's pages the agent platform's pages draw: the skills, beside its capabilities. */
 const ontologyWorkspacePages: readonly PlatformPage[] = [
   {path:platformRoutes.systemAgentModels.path,titleKey:'platform.systemAgentModels',descriptionKey:'platform.systemAgentModelsDescription',icon:Bot,permissions:['system-config','app-builder'],group:'platform',ownHeader:true},
@@ -201,31 +185,10 @@ const agentModelPages: readonly PlatformPage[] = ontologyAgentModelPages.map((pa
   ownHeader: true,
 }));
 
-/**
- * The agent platform's agents' settings (the agents, a new one, one agent's editor), open with the agents' permission:
- * the same page as the ontology manager's, shown in the platform's own shell. The conversation is no page of the
- * navigation: every member of the domain enters the application and holds conversations in it.
- */
-const agentSettingsPage: PlatformPage = {
-  path: platformRoutes.agents.path,
-  titleKey: "assistant.featureAgents",
-  icon: Bot,
-  permissions: [...AGENT_PAGE_PERMISSIONS],
-  group: "agents",
-  ownHeader: true,
-};
-
-/**
- * The pages this package's assembly draws for the applications beside the Manager's and the platform administration's,
- * for every edition's navigation: the skills, the system settings' connections, the agent platform's agents' settings
- * and the applications' model pages. A page denied falls back to the first page of its group the account may open, so
- * an account without the agents' permission that may open the agent platform's models goes there.
- */
+/** The native skill, integration and model pages shared by the edition assemblies. */
 export const applicationPages: readonly PlatformPage[] = [
-  agentSettingsProductPage,
   ...ontologyWorkspacePages,
   ...systemIntegrationPages,
-  agentSettingsPage,
   ...agentModelPages,
 ];
 

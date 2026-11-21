@@ -61,7 +61,7 @@ it("writes a draft that keeps the execution user and prints the page link", asyn
   const written = await run(["draft", "update", agentId, "@form.json"], env, cwd);
   expect(written.code).toBe(0);
   expect(JSON.parse(await readFile(path.join(cwd, "outputs/drafts/agent.page-draft.json"), "utf8"))).toEqual({
-    pageKey: "agent-settings", operation: "agent.update", target: { id: agentId }, form,
+    pageKey: "agents-agent-settings", operation: "agent.update", target: { id: agentId }, form,
   });
   const linked = await run(["draft-link", "@outputs/drafts/agent.page-draft.json"], env, cwd);
   expect(linked.code).toBe(0);

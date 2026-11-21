@@ -2,7 +2,7 @@ import type { RouteLocation } from "vue-router";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import { PAGE_DRAFT_QUERY_KEYS } from "@ontomato/contracts/page-draft";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
-import { ACTION, FUNCTION, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
+import { ACTION, AGENT_DEFINITION, FUNCTION, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 
 /*
@@ -33,6 +33,19 @@ export interface DetailSelection {
  * page's own.
  */
 export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
+  ...[
+    { path: platformRoutes.ontologyAgent.path, use: platformRoutes.ontologyAgents.path },
+    { path: platformRoutes.agentSettings.path, use: platformRoutes.agents.path },
+  ].map(({ path, use }): DetailSelection => ({
+    path,
+    use,
+    state({ agentId }): Record<string, PanelStateValue> | null {
+      if (use === platformRoutes.agents.path && ["capabilities", "skills", "mcp", "models"].includes(agentId!)) return null;
+      return agentId === "new"
+        ? { mode: "create" }
+        : { selected: { className: AGENT_DEFINITION, primaryKey: agentId! }, mode: "edit" };
+    },
+  })),
   {
     path: platformRoutes.relation.path,
     use: platformRoutes.relations.path,

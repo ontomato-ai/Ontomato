@@ -7,8 +7,7 @@ and the platform describes those from their current definitions.
 
 The domain's agents: choose one and change its definition, or create a new one. The definition is one form, the
 definitions service's own: its name, description, whether it is on, its instructions, its model, its skills, who it runs
-as, its data scope and its external MCP tools. The avatar is kept when the definition is saved. Deletion is outside
-this example.
+as, its data scope, its avatar and its external MCP tools. Deletion is outside this example.
 
 ## How an agent is chosen
 

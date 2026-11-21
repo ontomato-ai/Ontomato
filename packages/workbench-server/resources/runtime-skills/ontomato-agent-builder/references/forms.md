@@ -44,7 +44,7 @@ A draft is one JSON file at `outputs/drafts/<name>.page-draft.json`:
 
 ```json
 {
-  "pageKey": "agent-settings",
+  "pageKey": "agents-agent-settings",
   "operation": "agent.update",
   "target": {"id": "<agent id>"},
   "form": { "...": "AssistantAgentInput" }

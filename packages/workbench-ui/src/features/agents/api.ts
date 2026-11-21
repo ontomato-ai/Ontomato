@@ -1,110 +1,20 @@
-import { z } from "zod";
-import { randomId } from "@ontomato/contracts/random-id";
 import { modelOptionsSchema, type ModelOptions } from "@ontomato/contracts/model-settings";
-import {
-  assistantAgentDefinitionListSchema,
-  assistantSkillCatalogSchema,
-  assistantAgentDefinitionSchema,
-  agentExecutionOptionsSchema,
-  type AgentExecutionOptions,
-  type AssistantAgentDefinition,
-  type AssistantAgentInput,
-  type AssistantAgentUpdateInput,
-} from "@ontomato/contracts/assistant-chat";
+import { assistantAgentDefinitionListSchema, type AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
 import type { DataEngineTransport } from "@ontomato/platform-shell";
-import { apiGet, apiPut, nodeApiFetch, nodeApiGet, nodeApiPost, nodeApiPut } from "../../utils/api";
-import { listMcpServiceOptions } from "../mcp/api";
-import { queryViewApi } from "../query-view";
+import { apiGet, apiPut, nodeApiGet } from "../../utils/api";
 
-export interface ObjectClassOption {
-  className: string;
-  showName?: string;
-  classDesc?: string;
-}
-
-const base = "/assistant/agent-definitions";
-
-/** Agent definition management of the workbench (assistant-chat); requires the analysis-agent permission. */
 export const agentDefinitionsApi = {
-  async skills() {
-    return assistantSkillCatalogSchema.parse(await nodeApiGet("/assistant/agent-skills"));
-  },
   async list(): Promise<AssistantAgentDefinition[]> {
-    return assistantAgentDefinitionListSchema.parse(await nodeApiGet(base)).agents;
+    return assistantAgentDefinitionListSchema.parse(await nodeApiGet("/assistant/agent-definitions")).agents;
   },
-  async create(input: AssistantAgentInput): Promise<AssistantAgentDefinition> {
-    return assistantAgentDefinitionSchema.parse(
-      await nodeApiPost(base, input, { headers: { "Idempotency-Key": randomId() } }),
-    );
-  },
-  async update(id: string, input: AssistantAgentUpdateInput): Promise<AssistantAgentDefinition> {
-    return assistantAgentDefinitionSchema.parse(await nodeApiPut(`${base}/${encodeURIComponent(id)}`, input));
-  },
-  /**
-   * Whose permissions an agent may run with: the members the domain's identity service offers this reader, and — for
-   * anyone who may read the settings — the referenced member's name and availability, which is what the page shows even
-   * when the reader may not choose.
-   */
-  async executionOptions(keyword: string, selected: string | null): Promise<AgentExecutionOptions> {
-    const query = new URLSearchParams({ keyword, pageNum: "1", pageSize: "20" });
-    if (selected) query.set("selected", selected);
-    return agentExecutionOptionsSchema.parse(await apiGet(`/platform/agent-execution/options?${query}`));
-  },
-  async remove(id: string): Promise<void> {
-    await nodeApiFetch(`${base}/${encodeURIComponent(id)}`, "DELETE");
-  },
-  listMcpServiceOptions,
 };
 
-/** The data engine as the platform's model page reads it for the agent platform's ontology service agents. */
 export const dataEngineTransport: DataEngineTransport = {
   get: async (path) => (await apiGet(path)).data,
   put: async (path, body) => (await apiPut(path, body)).data,
 };
 
-/** The domain's models to choose from (names only, no connection settings); any account of the domain may read them. */
+
 export async function loadModelOptions(): Promise<ModelOptions> {
   return modelOptionsSchema.parse((await apiGet("/model-options")).data);
-}
-
-/** Authorized ontology classes used by the single analysis scope selector. */
-export async function loadOntologyOutline(): Promise<{ classes: ObjectClassOption[] }> {
-  const result = await apiGet("/ontology/query/overview");
-  return { classes: result.classes.map((cls: { name: string; description: string | null }) => ({
-    className: cls.name, classDesc: cls.description ?? "",
-  })) };
-}
-
-/** One relation of the ontology graph, between two object types. */
-export interface ObjectRelationOption {
-  from: string;
-  to: string;
-}
-
-/**
- * The object types with their relations, for the graph-scope selector: the same metadata the visual modelling reads, so
- * adjacent object types can be shown and added to the scope. A domain without relation rules simply has no edges.
- */
-export async function loadOntologyScope(): Promise<{ classes: ObjectClassOption[]; relations: ObjectRelationOption[] }> {
-  const json = await queryViewApi.getMetas();
-  const classDefs: Array<{ className?: string; showName?: string; classDesc?: string }> = Array.isArray(json?.data?.classDef)
-    ? json.data.classDef
-    : [];
-  const classes = classDefs
-    .filter((cls) => !!cls.className)
-    .map((cls) => ({ className: cls.className!, showName: cls.showName || "", classDesc: cls.classDesc || "" }));
-  const known = new Set(classes.map((cls) => cls.className));
-  const rule = json?.data?.relationship_rule;
-  const relations: ObjectRelationOption[] = [];
-  const seen = new Set<string>();
-  for (const relation of Object.values((rule || {}) as Record<string, { fromclass?: string; toclass?: string }>)) {
-    const from = String(relation?.fromclass || "").trim();
-    const to = String(relation?.toclass || "").trim();
-    if (!known.has(from) || !known.has(to) || from === to) continue;
-    const key = [from, to].sort().join("\u0000");
-    if (seen.has(key)) continue;
-    seen.add(key);
-    relations.push({ from, to });
-  }
-  return { classes, relations };
 }

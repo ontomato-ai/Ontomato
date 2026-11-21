@@ -1,6 +1,5 @@
 import type { PilotPage, PilotPageResolver } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import AgentSettingsRoute from "./pages/AgentSettingsRoute.vue";
 import DashboardsPage from "./pages/DashboardsRoute.vue";
 import PanelApplicationRoute from "./pages/PanelApplicationRoute.vue";
 import { DETAIL_SELECTIONS, detailSelectionAddress, type DetailSelection } from "./detail-selection";
@@ -38,19 +37,6 @@ export function pilotPageResolver(
         instance: path,
         props: { applicationId: entry, address, navigate: setPage },
       } satisfies PilotPage;
-    }
-    // The agents' settings at the agent platform's own prefix: the address an answer and a draft link name.
-    if (path === platformRoutes.agents.path || path.startsWith(`${platformRoutes.agents.path}/`)) {
-      return {
-        id: "agents",
-        component: AgentSettingsRoute,
-        props: {
-          // The page keeps its own address beside the conversation, a draft handoff included; which agent it shows, and
-          // whether it is a new one, is what that address says.
-          address,
-          navigate: setPage,
-        },
-      };
     }
     // A panel application's page: a use relation's full path under `/applications/<application>`, shown by the same
     // component that shows it full. It opens at the state its address names and reports selections to the display

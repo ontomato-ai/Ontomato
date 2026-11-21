@@ -1,36 +1,6 @@
 import type { ShellFeatureDeclaration } from "@ontomato/agent-shell-ui";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 
-/**
- * The agent platform's own entries in its column, before the recent conversations.
- *
- * The settings sit beside the conversation (the agent page is a pilot of page activation): an agent can be written in the
- * conversation, filled into the settings form by its draft and saved there. Enlarged, they are the application's own
- * settings page at its own address (`/agents/settings`), still in this application. The dashboards open beside it too,
- * drawn by the page's own component from the platform's registry. The scheduled tasks are the platform's one list, so
- * they are not listed here; an edition that later needs an entry of its own passes it in.
- *
- * A page's skill narrows the composer to the agents that carry it: the settings' own page declares `agent-settings` with
- * the `analysis-agent` code it opens with, and the dashboards' declaration arrives with the dashboard mapping.
- */
-/** The ids are what the conversation's parameter and the host's slots name; the labels are what a reader reads. */
-export const AGENT_SETTINGS_PAGE_ID = "agents";
-const agentSettingsPageSkill: PageSkillContext = {
-  mode: "public",
-  locator: { pageKey: "agent-settings", permissionCode: "analysis-agent" },
-};
-/** The settings page, at the address it is open at (one agent, a new one, a draft handoff), or at the settings' own. */
-const agentSettingsFeature = (label: string, address: string): ShellFeatureDeclaration => ({
-  id: AGENT_SETTINGS_PAGE_ID,
-  label,
-  icon: "agents",
-  availability: "page",
-  listed: false,
-  withConversation: true,
-  address,
-  pageSkill: agentSettingsPageSkill,
-});
-
 /** The dashboards are an application of their own: this application opens one beside its conversation, not a copy. */
 export const DASHBOARDS_PAGE_ID = "dashboards";
 
@@ -83,16 +53,12 @@ export function panelApplicationPageFeature(label: string, address: string): She
 
 export function workbenchFeatures(
   editionFeatures: readonly ShellFeatureDeclaration[],
-  /** The two pages this application opens beside its conversation, named in the reader's language. */
-  pages: { agents: string; dashboards: string },
-  /** The addresses those two pages are open at. */
-  addresses: { agents: string; dashboards: string },
+  dashboard: { label: string; address: string },
   /** A panel application's page, declared only while the conversation's page parameter names one. */
   panelApplication: ShellFeatureDeclaration | null = null,
 ): ShellFeatureDeclaration[] {
   return [
-    agentSettingsFeature(pages.agents, addresses.agents),
-    dashboardsPageFeature(pages.dashboards, addresses.dashboards),
+    dashboardsPageFeature(dashboard.label, dashboard.address),
     ...(panelApplication ? [panelApplication] : []),
     ...editionFeatures,
   ];

@@ -31,9 +31,6 @@
     "pageSkills": [{
       "permissionCode": "business-knowledge",
       "skill": {"namespace": {"kind": "provider", "provider": "ontology"}, "name": "knowledge-governance"}
-    }, {
-      "permissionCode": "analysis-agent",
-      "skill": {"namespace": {"kind": "provider", "provider": "workbench"}, "name": "ontomato-agent-builder"}
     }],
     "panelUses": [{
       "id": "ontology-playground", "pageKey": "ontology-playground", "panelId": "builtin-product-ontology-graph",
@@ -67,6 +64,10 @@
       "id": "use-ontology-applications", "pageKey": "ontology-applications", "panelId": "builtin-product-ontology-applications",
       "path": "/ontology/applications", "access": {"permissionCode": "ontology-modeling"},
       "names": {"en": "Applications","zh-CN": "应用"}, "groupKey": "products"
+    }, {
+      "id": "ontology-agent-settings", "pageKey": "agent-settings", "panelId": "builtin-product-agent-settings",
+      "path": "/ontology/agents", "access": {"permissionCode": "ontology-modeling"},
+      "names": {"en": "Agent settings", "zh-CN": "智能体设置"}, "groupKey": "products"
     }, {
       "id": "ontology-functions", "pageKey": "ontology-functions", "panelId": "builtin-product-ontology-functions",
       "path": "/ontology/assets/functions", "access": {"permissionCode": "ontology-modeling"},

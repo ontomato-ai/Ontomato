@@ -120,6 +120,7 @@ it("opens a create form in build-test without validating empty values or admitti
   expect(opened.fields).toContainEqual(expect.objectContaining({
     path: "/enabledMcpServiceIds", control: { kind: "reference", objectType: "platform:McpServiceOption", multiple: true },
   }));
+  expect(opened.fields).toContainEqual(expect.objectContaining({ path: "/icon", control: { kind: "avatar" } }));
   expect(opened.fields).toContainEqual(expect.objectContaining({ path: "/executionUserId", readOnly: true }));
   expect(mocks.setting).not.toHaveBeenCalled();
   expect((await request(form, "alice", "", headers)).status).toBe(422);

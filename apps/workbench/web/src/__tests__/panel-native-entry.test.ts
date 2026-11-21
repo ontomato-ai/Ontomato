@@ -2,10 +2,12 @@ import { afterEach, expect, it, vi } from "vitest";
 import { h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
+import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import { addressLandingGuard, panelEntryGuard, unknownAddressRoute } from "../../../../../packages/platform-web/src/panel-entries";
+import { DETAIL_SELECTIONS, detailSelectionGuard } from "../../../../../packages/platform-web/src/detail-selection";
 import { startPage } from "../../../../../packages/platform-web/src/shell";
 import { catalogFixture } from "../../../../../packages/platform-web/src/__tests__/fixtures";
 import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot, type Sent } from "./panel-frame";
@@ -52,6 +54,7 @@ async function open(address: string, landing = "/home") {
     ] },
     unknownAddressRoute,
   ] });
+  router.beforeEach(detailSelectionGuard(DETAIL_SELECTIONS));
   router.beforeEach(panelEntryGuard(router));
   router.beforeResolve(addressLandingGuard(router));
   await router.push(address);
@@ -118,6 +121,45 @@ it("goes home when the landing picks back the very address nothing serves for th
   const { router, app } = await open("/ontology/components", "/ontology/components");
   try {
     expect(router.currentRoute.value.path).toBe("/home");
+  } finally {
+    app.unmount();
+  }
+});
+
+
+it.each([
+  ["ontology", "/ontology/agents", "ontology-modeling"],
+  ["agents", "/agents/settings", "analysis-agent"],
+])("mounts the shared settings panel at the original %s address", async (applicationId, path, permissionCode) => {
+  const catalog = catalogFixture();
+  const application = catalog.find(app => app.id === applicationId)!;
+  const use = application.panelUses?.find(entry => entry.path === path);
+  expect(use).toMatchObject({ panelId: "builtin-product-agent-settings", access: { permissionCode } });
+  const panel = {
+    ...panelRecord(use!.panelId, "Agent settings", definePanel({
+      state: {
+        selected: { type: { kind: "object", objectType: AGENT_DEFINITION }, deepLink: true },
+        mode: { type: { kind: "scalar", type: "string" }, deepLink: true },
+      },
+      members: {}, events: {},
+    })),
+    visibility: "platform" as const, domainId: null, ownerId: null, editable: false as const,
+  };
+  const sent = installPlatform(request => {
+    if (request.path === `/api/data-query/platform/applications/${applicationId}/panel-uses`)
+      return Response.json({ data: { applicationId, entry: application.entry, panelUses: [use] } });
+    if (request.path === `/api/product-panels/${panel.id}`) return panelAnswer(panel, request);
+    if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel, {}, request);
+    return nothingAt(request);
+  });
+  useApplicationCatalog().applications.value = catalog;
+  const { router, app, element } = await open(`${path}/new`);
+  try {
+    expect(router.currentRoute.value.path).toBe(path);
+    await vi.waitFor(() => expect(element.querySelector(".panel-host-coded")).not.toBeNull());
+    const query = new URLSearchParams(sent.find(request => request.path === `/api/product-panels/${panel.id}`)?.search);
+    expect(query.get("applicationId")).toBe(applicationId);
+    expect(query.get("useId")).toBe(use?.id);
   } finally {
     app.unmount();
   }

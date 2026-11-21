@@ -24,6 +24,7 @@ import { installBrandTheme, type BrandSource } from "@ontomato/design-tokens";
 import { installWorkbenchBrand } from "@ontomato/workbench-ui/brand";
 import { DETAIL_SELECTIONS, detailSelectionGuard } from "./detail-selection";
 import { addressLandingGuard, panelEntryGuard } from "./panel-entries";
+import { legacyAgentSettingsTab } from "./workbench-routes";
 
 export interface WorkbenchWebOptions {
   /** This edition's brand source; the workbench colour variables and the chart colours are generated from it. */
@@ -60,6 +61,7 @@ export function startWorkbenchWeb(options: WorkbenchWebOptions): void {
   const pinia = createPinia();
   const router = createRouter({ history: createWebHashHistory(), routes: [] });
   // A page's old detail address opens the panel that took the page over, before any other guard sees it.
+  router.beforeEach(legacyAgentSettingsTab);
   router.beforeEach(detailSelectionGuard(DETAIL_SELECTIONS));
   // A built-in application's panel entry opens at its own address, through the panel route.
   router.beforeEach(panelEntryGuard(router));

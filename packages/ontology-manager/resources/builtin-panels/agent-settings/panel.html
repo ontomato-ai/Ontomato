@@ -1,0 +1,44 @@
+<style>
+  [v-cloak] { display: none; }
+  .agent-settings-aside { display: flex; flex-direction: column; gap: var(--spacing-sm); }
+  .agent-settings-new { display: flex; }
+  .agent-settings-empty { color: var(--el-text-color-secondary); margin: 0; }
+  .agent-settings-detail { display: flex; flex-direction: column; gap: var(--page-content-gap); }
+  .agent-settings-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--spacing-lg);
+    flex-wrap: wrap;
+  }
+  .agent-settings-summary { flex: 1 1 auto; min-width: 0; }
+  .agent-settings-actions { display: flex; align-items: center; gap: var(--spacing-sm); flex: 0 0 auto; }
+</style>
+<div id="app" v-cloak>
+  <two-pane-layout>
+    <template #aside>
+      <section-group :title="t('agents.title')">
+        <div class="agent-settings-aside">
+          <projection slot="list"></projection>
+          <div class="agent-settings-new">
+            <button type="button" @click="create">{{ t('agents.new') }}</button>
+          </div>
+        </div>
+      </section-group>
+    </template>
+    <p v-if="mode === 'list'" class="agent-settings-empty">{{ t('agents.choose') }}</p>
+    <div v-show="mode !== 'list'" class="agent-settings-detail">
+      <div class="agent-settings-head">
+        <projection v-if="mode === 'edit'" slot="summary" class="agent-settings-summary"></projection>
+        <span v-else class="agent-settings-summary"></span>
+        <div class="agent-settings-actions">
+          <button type="button" @click="viewType">{{ t('agents.viewType') }}</button>
+          <projection v-if="mode === 'edit'" slot="remove"></projection>
+        </div>
+      </div>
+      <section-group :title="mode === 'create' ? t('agents.creating') : t('agents.definition')">
+        <projection slot="form"></projection>
+      </section-group>
+    </div>
+  </two-pane-layout>
+</div>
