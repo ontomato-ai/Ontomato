@@ -1,6 +1,11 @@
 import { formOptionSchema } from "./form-fields";
 import { appsSdkBuildSchema, appsSdkCurrentSchema } from "./apps-sdk";
-import { panelModuleImports } from "./panel-module";
+import {
+  COMPONENT_PACKAGE_INCOMPATIBLE, componentPackageInstallRequestSchema, componentPackageInstallResponseSchema,
+  componentPackageManifestSchema, componentPackageResponseSchema, componentPackageUpgradeErrorSchema,
+  currentComponentPackageSchema,
+} from "./component-packages";
+import { panelModuleImports, readModuleFacts } from "./panel-module";
 import {
   APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL, EXPORT_FEEDBACK, EXPORT_SKILL,
   FEEDBACK_RECORD, IMPORT_SKILL, SKILL,
@@ -1954,4 +1959,67 @@ test("a conversation entry names its opening sentence by a key of the panel's me
   const { appBridgeExpandPageComposerSchema } = await import("./app-bridge");
   assert.equal(appBridgeExpandPageComposerSchema.safeParse({ slot: "entry", target, prefill: "Help me" }).success, true);
   assert.equal(appBridgeExpandPageComposerSchema.safeParse({ slot: "entry", target, prefillKey: "actions.create" }).success, false);
+});
+
+test("a component package declares a static release and inspection returns the installation shape", async () => {
+  const module = "@acme/widgets/base";
+  const manifest = {
+    name: "@acme/widgets", version: "1.2.0", author: { name: "Acme" },
+    ontomato: { components: "components.json", entries: { [module]: "dist/base.mjs" }, styles: ["dist/style.css"] },
+  };
+  assert.deepEqual(componentPackageManifestSchema.parse({ ...manifest, scripts: { postinstall: "anything" } }), manifest);
+  for (const ontomato of [
+    { ...manifest.ontomato, tokens: "tokens.json" },
+    { ...manifest.ontomato, components: "../components.json" },
+    { ...manifest.ontomato, entries: { "@other/widgets": "dist/base.mjs" } },
+    { ...manifest.ontomato, entries: { "@acme/widgets/../base": "dist/base.mjs" } },
+  ]) assert.equal(componentPackageManifestSchema.safeParse({ ...manifest, ontomato }).success, false);
+
+  const bytes = new Uint8Array([1, 2]);
+  assert.deepEqual(componentPackageInstallRequestSchema.parse({ mode: "inspect", archive: bytes }), { mode: "inspect", archive: bytes });
+  const files = [{ path: "dist/base.mjs", bytes }];
+  assert.deepEqual(componentPackageInstallRequestSchema.parse({ mode: "install", files }), { mode: "install", files });
+  assert.equal(componentPackageInstallRequestSchema.safeParse({ mode: "install", archive: bytes, files }).success, false);
+  assert.equal(componentPackageInstallRequestSchema.safeParse({ mode: "install", files: [{ path: "/dist/base.mjs", bytes }] }).success, false);
+
+  const current = {
+    name: manifest.name, version: manifest.version, author: manifest.author, digest: "a".repeat(64),
+    artifactRoot: "/deployment/apps-sdk/component-packages/%40acme%2Fwidgets/" + "a".repeat(64) + "/",
+  };
+  assert.deepEqual(currentComponentPackageSchema.parse(current), current);
+  const component = {
+    componentId: "@acme/widgets:SaveButton", module, exportName: "SaveButton", role: "control", meaning: "Shows a save button",
+    ports: { props: [], events: [], slots: [] }, data: {},
+    operations: [{ name: "save", handlerRef: "platform:ScheduledTask.save" }],
+  };
+  const response = { ...current, entries: manifest.ontomato.entries, styles: manifest.ontomato.styles, components: [component] };
+  assert.deepEqual(componentPackageResponseSchema.parse(response), response);
+  assert.equal(componentPackageInstallResponseSchema, componentPackageResponseSchema);
+  for (const invalid of [
+    { ...response, components: [{ ...component, componentId: "@other/widgets:SaveButton" }] },
+    { ...response, components: [{ ...component, module: "@acme/widgets/missing" }] },
+    { ...response, components: [component, component] },
+    { ...response, artifactRoot: "//other.example/widgets/" },
+  ]) assert.equal(componentPackageResponseSchema.safeParse(invalid).success, false);
+
+  const { imports, exports } = await readModuleFacts('export { SaveButton } from "./chunks/save.mjs";', "dist/base.mjs");
+  assert.equal(imports[0]?.specifier, "./chunks/save.mjs");
+  assert.equal(exports[0]?.type, "reexport");
+  if (exports[0]?.type === "reexport") assert.equal(exports[0].name, component.exportName);
+});
+
+test("a refused component package upgrade reports the changed shape and its affected records", () => {
+  const change = {
+    component: "@acme/widgets:SaveButton", field: "inputs.task",
+    before: { kind: "object", objectType: SCHEDULED_TASK },
+    projectionIds: ["save-task"], panelIds: ["manage-tasks"],
+  };
+  const response = {
+    success: false, error: "The task input is still in use", code: COMPONENT_PACKAGE_INCOMPATIBLE,
+    details: { package: "@acme/widgets", changes: [change] },
+  };
+  assert.deepEqual(componentPackageUpgradeErrorSchema.parse(response), response);
+  assert.equal(componentPackageUpgradeErrorSchema.safeParse({
+    ...response, details: { ...response.details, changes: [{ ...change, after: new Date() }] },
+  }).success, false);
 });
