@@ -159,6 +159,11 @@ To open another of the platform's pages, call `usePanelContext().navigate(addres
 `/agents/chat?agentId=…`; when the platform cannot open it, the page says why and the call rejects with that reason.
 Never call the platform's business endpoints from the page.
 
+`usePanelContext().placement` says where the platform shows the panel: `"conversation"` beside a conversation, where
+the conversation already draws the page's title and its way back, or `"page"` at the panel's own address. Draw your own
+title and back only on the page (`v-if="placement === 'page'"`); lay out by the container's width, and read, act and
+select the same in both. Do not add an address parameter for it.
+
 Run the App Builder skill's `ontomato panel check` on the workspace directory. It uses the current release's
 declarations. Register the requested projections, panel and application uses through their owners, then open the
 application's declared entry.

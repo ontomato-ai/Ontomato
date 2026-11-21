@@ -2,7 +2,7 @@ import { vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createApp, defineComponent, h, ref, resolveComponent, type App } from "vue";
+import { createApp, defineComponent, h, readonly, ref, resolveComponent, type App } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { definePanel, type PanelManifest, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
@@ -568,13 +568,19 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
 
 /** The coordinator of an instance a test builds by hand and runs no operation of: any call to it fails the test. */
 const unused = () => Promise.reject(new Error("This test runs no operation of the panel"));
+/** Where a hand-made panel context says its panel is shown: at its own address. */
+export const pagePlacement = readonly(ref<"conversation" | "page">("page"));
+
 export const noOperations: {
   operations: PanelHumanOperations; confirmOperation: ConfirmPanelOperation; expandPageComposer: () => never; navigate: () => never;
+  placement: "page";
 } = {
   operations: { describe: unused, read: unused, prepare: unused }, confirmOperation: unused,
   // A test that opens the page's composer gives its own; any other call to it fails the test.
   expandPageComposer: () => { throw new Error("This test opens no composer"); },
   navigate: () => { throw new Error("This test opens no address"); },
+  // A test panel runs at its own address; one that runs beside a conversation says so.
+  placement: "page",
 };
 
 /** The form save calls that reached the coordinator. */
