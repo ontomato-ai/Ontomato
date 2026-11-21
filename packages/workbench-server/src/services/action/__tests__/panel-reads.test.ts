@@ -6,7 +6,7 @@ import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { HttpError } from "../../../utils/errors";
 import { objectActionDeclaration } from "../object-actions";
-import { createActionReadAdapter } from "../panel-reads";
+import { createActionReadAdapter, readObjectActions } from "../panel-reads";
 
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://owner.test/" } } }));
 // The operation registry these describes come from also registers the agent operations, whose page skills these reads never load.
@@ -187,7 +187,8 @@ describe("action catalog reads", () => {
       { id: "unnamed-invoice", objectType: "Invoice", reason: "Invalid stored action field 'name': The action has no name" },
     ]);
     for (const { declaration } of actions) expect(panelOperationDeclarationSchema.parse(declaration)).toEqual(declaration);
-    const invoices = await adapter.objectActions("Invoice");
+    // A skill package holds only the reader's credentials: the same catalog, read with them alone.
+    const invoices = await readObjectActions(viewer, "Invoice");
     expect(invoices.actions.map(entry => entry.declaration.id)).toEqual(["close-invoice"]);
     expect(invoices.unavailableActions).toEqual(unavailableActions);
     expect(sent.map(request => request.body)).toEqual([{ status: "PUBLISHED" }, { status: "PUBLISHED" }]);
