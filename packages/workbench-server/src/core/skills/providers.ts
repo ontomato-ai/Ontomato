@@ -61,8 +61,9 @@ export function isProtectedSkillName(name: string): boolean {
 
 export function protectedSkillRef(providerId: string, domainId: string | null, sourceKey: string): RuntimeSkillRef {
   const hash = createHash("sha256").update(JSON.stringify([providerId, domainId, sourceKey])).digest("hex");
+  // Workbench publishes the shared package. The source provider still distinguishes its name.
   const namespace: RuntimeSkillRef["namespace"] = domainId === null
-    ? { kind: "provider", provider: providerId }
+    ? { kind: "provider", provider: "workbench" }
     : { kind: "domain", domainId };
   return { namespace, name: `pvt-${hash.slice(0, 48)}` };
 }

@@ -88,7 +88,9 @@ beforeAll(async () => {
   await ensureAssistantDefaultPromptSchema(state.pool);
   contentRoot = await mkdtemp(path.join(os.tmpdir(), "direct-panel-host-"));
   cataloguePath = await writeBundledAppSdkFixture(contentRoot);
-  installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
+  const publicSkillsRoot = path.join(contentRoot, "public-skills");
+  await mkdir(publicSkillsRoot);
+  installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot, prompts: [], runtimeResources: [] });
 
   const { panelOperationsRouter, productPanelsInternalRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const { appBuilderRouter } = await import("../routes/app-builder");
@@ -258,6 +260,22 @@ it("reconciles the released built-in authoring sources and exposes the same read
   }
   expect(packages[0]).toEqual(packages[1]);
   expect(packages[0]?.files[0]?.content).toContain(builtinProjectionId);
+  const { SkillRegistry } = await import("../../../../agent-runtime/src/skills");
+  const { RuntimeStore } = await import("../../../../agent-runtime/src/store");
+  const runtime = new RuntimeStore(database, state.schema);
+  try {
+    await runtime.initialize();
+    const registry = new SkillRegistry(runtime, path.join(contentRoot, "published-skills"));
+    const host = { id: "workbench", token: "fixture-runtime", providers: ["workbench", "ontology"],
+      publishProviders: ["workbench"], domainSkills: true };
+    const first = await registry.register(host, "pilot", packages[0]);
+    const second = await registry.register(host, "another-domain", packages[1]);
+    expect(first).toEqual(second);
+    expect(first.skill.namespace).toEqual({ kind: "provider", provider: "workbench" });
+    await expect(registry.resolve(host, "another-domain", first)).resolves.toMatchObject({ skill, digest: first.digest });
+  } finally {
+    await runtime.close();
+  }
   const noEntry = await readSkillView("pilot", { token: "host-no-entry" });
   expect(noEntry.registry.getSkillByRef(skill)).toBeNull();
   const inaccessible = await fetch(`${state.base}/api/product-panels/${builtinPanelId}/snapshot?${useQuery}`, {
@@ -285,7 +303,7 @@ it("reconciles the released built-in authoring sources and exposes the same read
   await registerBuiltinProducts(bundle);
   expect((await request("GET", "product-panels/" + builtinPanelId)).status).toBe(404);
   expect((await request("GET", "product-projections/" + builtinProjectionId)).status).toBe(404);
-});
+}, 20_000);
 
 it("reads the authoritative operation type table while isolating stale published actions", async () => {
   const response = await request("GET", "app-builder/type-table");
