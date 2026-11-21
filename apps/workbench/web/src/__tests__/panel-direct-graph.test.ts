@@ -10,6 +10,7 @@ import {
   ACTION,
   AGENT_DEFINITION,
   OBJECT_TYPE,
+  ONTOLOGY_RELATION_KIND,
   ONTOLOGY_TYPE,
   RELATIONSHIP,
   USER,
@@ -1141,4 +1142,77 @@ it("keeps newly discovered layers visible when OntologyGraph expands without dec
   element.querySelector<HTMLButtonElement>("[data-graph-layer='capability']")!.click();
   await nextTick();
   expect(canvasRecorder.nodes.map((n) => n.label).sort()).toEqual(["Admin", "Alice"]);
+});
+
+/*
+ * The relation kinds the graph draws follow the panel's state (M3's capability map, 2026-11-21): the page's own kind
+ * filter writes a list of relation kinds, and the canvas draws only those — their edges between types, and in instance
+ * mode only the neighbors they reach. Holding nothing, every kind is drawn; the graph's own reads are unchanged.
+ */
+it("draws only the relation kinds the panel's state holds, in type and instance modes", async () => {
+  const kindsType = { kind: "list" as const, items: { kind: "object" as const, objectType: ONTOLOGY_RELATION_KIND } };
+  const graphProjection: ProductProjection = {
+    ...meta, id: "kinds-graph", name: "Kinds", componentId: "@ontomato/sdk:OntologyGraph",
+    inputs: { mode: { kind: "scalar", type: "string" }, node: { kind: "object-union", layers: allLayers } },
+    outputs: { visibleRelationKinds: kindsType },
+    config: {},
+    data: {
+      schema: { source: typeSource(ONTOLOGY_TYPE), read: "schema", params: {} },
+      counts: { source: typeSource(ONTOLOGY_TYPE), read: "counts", params: {} },
+      start: { source: typeSource(ONTOLOGY_TYPE), read: "start", params: {} },
+      neighbors: { source: typeSource(ONTOLOGY_TYPE), read: "neighbors", params: { node: { input: "node" } } },
+    },
+  };
+  const manifest: PanelManifest = {
+    state: {
+      mode: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: true, external: false, default: "type" },
+      kinds: { type: kindsType, personal: false, deepLink: false, external: false },
+    },
+    members: {
+      graph: { target: { projectionId: "kinds-graph" }, inputs: { mode: { state: "mode" } }, outputs: { visibleRelationKinds: { state: "kinds" } } },
+    },
+    events: {},
+  };
+  const actionNode = { className: ACTION, primaryKey: "act-1", label: "Approve Order", layer: "capability" as const };
+  const workflowNode = { className: WORKFLOW, primaryKey: "wf-1", label: "Order Pipeline", layer: "capability" as const };
+  const userNode = { className: USER, primaryKey: "u-1", label: "Alice", layer: "governance" as const };
+  const { instance } = mountDirect(manifest, { "kinds-graph": graphProjection }, (request) => {
+    if (request.dataName === "schema") return ready({
+      layers: ["capability", "governance"],
+      objectTypes: [
+        { id: ACTION, layer: "capability", labelKey: "platformOntology.types.action" },
+        { id: WORKFLOW, layer: "capability", labelKey: "platformOntology.types.workflow" },
+        { id: USER, layer: "governance", labelKey: "platformOntology.types.user" },
+      ],
+      relationKinds: [
+        { id: "action.hasOwner", from: ACTION, to: USER, derived: false, owner: "java-action", labelKey: "platformOntology.relations.actionHasOwner" },
+        { id: "workflow.invokesAction", from: WORKFLOW, to: ACTION, derived: true, owner: "java-workflow", labelKey: "platformOntology.relations.workflowInvokesAction" },
+      ],
+    });
+    if (request.dataName === "counts") return ready({ counts: [] });
+    if (request.dataName === "start") return ready({ node: actionNode });
+    return ready({
+      node: actionNode, neighbors: [workflowNode, userNode],
+      edges: [
+        { id: "e-1", relationKind: "workflow.invokesAction", from: { className: WORKFLOW, primaryKey: "wf-1" }, to: { className: ACTION, primaryKey: "act-1" }, direction: "incoming", derived: true },
+        { id: "e-2", relationKind: "action.hasOwner", from: { className: ACTION, primaryKey: "act-1" }, to: { className: USER, primaryKey: "u-1" }, direction: "outgoing", derived: false },
+      ],
+      relations: [{ relationKind: "workflow.invokesAction", status: "ok", edgeCount: 1 }, { relationKind: "action.hasOwner", status: "ok", edgeCount: 1 }],
+    });
+  });
+  const kind = (id: string) => ({ className: ONTOLOGY_RELATION_KIND, primaryKey: id });
+  const edgeKinds = () => canvasRecorder.edges.map((edge) => edge.id.split(":")[0]).sort();
+
+  // Type mode: every kind while the state holds none, then only the kinds it holds.
+  await vi.waitFor(() => expect(edgeKinds()).toEqual(["action.hasOwner", "workflow.invokesAction"]));
+  instance.state.set("kinds", [kind("action.hasOwner")]);
+  await vi.waitFor(() => expect(edgeKinds()).toEqual(["action.hasOwner"]));
+
+  // Instance mode: only the neighbor an edge of a kind shown reaches, beside the start.
+  instance.state.set("mode", "instance");
+  await vi.waitFor(() => expect(canvasRecorder.edges.map((edge) => edge.id)).toEqual(["e-2"]));
+  expect(canvasRecorder.nodes.map((node) => node.id).sort()).toEqual([encodeGraphNodeId(actionNode), encodeGraphNodeId(userNode)].sort());
+  instance.state.set("kinds", null);
+  await vi.waitFor(() => expect(canvasRecorder.nodes).toHaveLength(3));
+  expect(canvasRecorder.edges.map((edge) => edge.id).sort()).toEqual(["e-1", "e-2"]);
 });
