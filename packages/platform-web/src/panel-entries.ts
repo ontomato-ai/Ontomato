@@ -18,9 +18,9 @@ export const unknownAddressRoute: RouteRecordRaw = { ...platformRoutes.unknown, 
  * (`/ontology/components`), which no route of the platform's names, so they reach the platform's last route. There the
  * application catalog is asked who declares the address — the catalog lists only the entries the reader may open, so the
  * entry's access has been checked — and the address opens that use relation's panel through the same route a panel
- * application's pages take, with its title, composer, page skill and admission. An address no entry declares lands
- * where the root does, or, when that landing is itself an address nothing serves for this reader, on the first page
- * their access opens.
+ * application's pages take, with its title, composer, page skill and admission. An address no entry serves for this
+ * reader goes on to the edition's own guards: one its navigation still lists is a page this reader lacks, and goes where
+ * any such page goes. Whatever is still unserved after them lands with `addressLandingGuard`.
  */
 export function panelEntryGuard(router: Router): NavigationGuard {
   const catalog = useApplicationCatalog();
@@ -42,25 +42,38 @@ export function panelEntryGuard(router: Router): NavigationGuard {
       }
     }
   }
-  /** The address last sent to the landing because nothing served it for this reader. */
-  let sentToLanding: string | null = null;
+  /** This start of the platform's own read of the catalog: one read before the first unknown address is decided. */
+  let read: Promise<void> | null = null;
   return async (to) => {
     if (to.name !== platformRoutes.unknown.name) return true;
+    await (read ??= catalog.refresh());
     serveEntries();
-    // A catalog read for another moment (before sign-in, before a grant) may not list the entry yet: read it again once.
+    // A grant since that read may not be listed yet: read it again once.
     if (unknown(to.fullPath)) {
       await catalog.refresh();
       serveEntries();
     }
-    if (!unknown(to.fullPath)) {
+    return unknown(to.fullPath) ? true : to.fullPath;
+  };
+}
+
+/**
+ * Where an address nothing serves for this reader lands, once every other guard has had its say: where the root does,
+ * or — when that landing is itself such an address, a start page a panel took over that this reader's catalog does not
+ * offer — the platform's landing for a reader, the first page their access opens. When that landing picks this same
+ * address again, nothing serves it for them: the home.
+ */
+export function addressLandingGuard(router: Router): NavigationGuard {
+  const unknown = (address: string) => router.resolve(address).name === platformRoutes.unknown.name;
+  /** The address last sent to the landing because nothing served it for this reader. */
+  let sentToLanding: string | null = null;
+  return (to) => {
+    if (to.name !== platformRoutes.unknown.name) {
       sentToLanding = null;
-      return to.fullPath;
+      return true;
     }
     const start = startPage();
     if (!unknown(start)) return start;
-    // The landing a reader may not open — a start page a panel took over that this reader's catalog does not offer — is
-    // the platform's landing for such a reader: the first page their access opens, as for a native page they lack. When
-    // that landing picks this same address again, nothing serves it for them: the home.
     if (sentToLanding === to.fullPath) {
       sentToLanding = null;
       return platformRoutes.home.path;

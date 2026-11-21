@@ -5,7 +5,7 @@ import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
-import { panelEntryGuard, unknownAddressRoute } from "../../../../../packages/platform-web/src/panel-entries";
+import { addressLandingGuard, panelEntryGuard, unknownAddressRoute } from "../../../../../packages/platform-web/src/panel-entries";
 import { startPage } from "../../../../../packages/platform-web/src/shell";
 import { catalogFixture } from "../../../../../packages/platform-web/src/__tests__/fixtures";
 import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot, type Sent } from "./panel-frame";
@@ -53,6 +53,7 @@ async function open(address: string, landing = "/home") {
     unknownAddressRoute,
   ] });
   router.beforeEach(panelEntryGuard(router));
+  router.beforeResolve(addressLandingGuard(router));
   await router.push(address);
   return { router, ...mountPlatformPage(() => h(RouterView), router) };
 }
