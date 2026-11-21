@@ -60,7 +60,7 @@ it("keeps what the reader types into a clean form as the page comes back, its de
     manifest,
     run: {
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: task },
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, failed: (reason) => { throw reason; },
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, failed: (reason) => { throw reason; },
     },
     requests: {
       request: async (path: string) => {

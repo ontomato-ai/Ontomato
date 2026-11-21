@@ -394,6 +394,8 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       initial: nestedInputs(member) as never,
       // The placed panel's state stays its own; what this one takes of it is its declared outputs, read below.
       state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
+      // The page's draft is told about by the panel the reader opened, above it; a placed panel adds no notice of its own.
+      draftRefused: () => {},
       failed: (reason) => { failure.value = reason instanceof Error ? reason : new Error(String(reason)); },
       // The theme this panel gives where it places the other: the host lays it over that panel's own.
       ...(direct.members[member]!.theme ? { theme: direct.members[member]!.theme } : {}),
