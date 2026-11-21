@@ -1,7 +1,4 @@
 # Manage agent definitions
 
-Use the selected agent's reference to read its owner record. For an edit draft, read the owner's form first, use
-its `save.draftOperation`, and put the changed field values in the draft. Set `target` to
-`{"objectType": "platform:AgentDefinition", "id": "<selected agent ID>"}`.
-For a new agent, use the owner's create form and set `target` to `{"objectType": "platform:AgentDefinition"}`.
-The reader opens the draft and saves through the form.
+Read the selected agent's current definition before proposing an edit. Preserve settings outside the requested change.
+For a new agent, start from the owner's create form. The reader reviews and saves the proposal through the form.
