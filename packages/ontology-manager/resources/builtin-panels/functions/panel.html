@@ -1,6 +1,7 @@
 <!--
   函数页：左边是函数目录（名称、说明、操作类型，可按名称和说明搜索），右边是选中那一条的详情与编辑；
-  新建、保存、删除都走属主自己的接口，页面不另写业务规则。
+  新建、保存、删除都走属主自己的接口，页面不另写业务规则。「新建函数」是页头命令（manifest.commands.newFunction），
+  由宿主画成主按钮：它清空 selected、把 creating 设为 true，打开属主的空白表单。
 
   - list：platform:Function 的 query 读，搜索词和选中的那一条都是本面板声明的状态。
   - form：platform:Function 的 form / createForm 读，保存用属主声明的 platform:Function.save。
@@ -13,17 +14,12 @@
 <style>
   [v-cloak] { display: none; }
   .fn { display: flex; flex-direction: column; gap: var(--spacing-md); }
-  .fn-toolbar { display: flex; justify-content: flex-end; }
   .fn-hint { margin: 0; color: var(--el-text-color-secondary); font-size: var(--text-sm); line-height: 1.6; }
   .fn-detail { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; }
   .fn-detail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--spacing-sm); }
 </style>
 <div id="app" v-cloak>
   <section class="fn">
-    <div class="fn-toolbar">
-      <el-button type="primary" @click="newFunction">{{ t("newFunction") }}</el-button>
-    </div>
-
     <two-pane-layout>
       <template #aside>
         <projection slot="list" @update:selected="showFunction"></projection>
