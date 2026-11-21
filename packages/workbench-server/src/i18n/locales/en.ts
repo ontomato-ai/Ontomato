@@ -55,6 +55,7 @@ export const en = {
   "panels.productCatalog.state": "State",
   "panels.productCatalog.members": "Members",
   "panels.productCatalog.events": "Events",
+  "panels.productCatalog.save": "Save",
   "panels.productCatalog.copy": "Copy",
   "panels.productCatalog.delete": "Delete",
   "panels.productCatalog.grant": "Grant access",

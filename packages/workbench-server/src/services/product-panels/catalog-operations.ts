@@ -55,6 +55,7 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
   const save: PanelWriteServerOperation = {
     handlerRef: `${type}.save`,
     binding: { kind: "PlatformObjectType", id: type },
+    labelKey: "panels.productCatalog.save",
     kind: "form.save",
     effect: "write",
     batch: false,
@@ -156,6 +157,7 @@ const applicationDraftPath = z.string().regex(/^\/applications\/app-[a-z0-9-]+$/
 const applicationSave: PanelWriteServerOperation = {
   handlerRef: `${APPLICATION}.save`,
   binding: { kind: "PlatformObjectType", id: APPLICATION },
+  labelKey: "panels.productCatalog.save",
   kind: "form.save",
   effect: "write",
   batch: false,
