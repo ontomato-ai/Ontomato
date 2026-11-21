@@ -439,6 +439,14 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.declaration.permissions[0].code").value("app:app-school:private"))
             .andExpect(jsonPath("$.data.framePanelId").value("panel-frame"))
             .andExpect(jsonPath("$.data.delivery.projections[0]").value("projection-school"));
+        var form = http.perform(post(CATALOGUE + "/form").contentType(MediaType.APPLICATION_JSON).content("""
+                {"section":"entries","target":{"kind":"object","objectType":"platform:Application","primaryKey":"app-school"}}
+                """)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var entryFields = JSON.parseObject(form).getJSONObject("data").getJSONArray("fields").getJSONObject(1)
+            .getJSONObject("control").getJSONArray("itemFields").toJavaList(JSONObject.class);
+        var agent = entryFields.stream().filter(field -> "/defaultAgent".equals(field.getString("path"))).findFirst().orElseThrow();
+        assertFalse(agent.getBooleanValue("required"));
+        assertEquals(JSONObject.of("kind", "select", "options", List.of()), agent.getJSONObject("control"));
         when(identity.getCurrentUser()).thenReturn(viewer);
         http.perform(get(path).param("purpose", "management")).andExpect(status().isForbidden());
         http.perform(get(path)).andExpect(status().isOk()).andExpect(jsonPath("$.data.panelUses.length()").value(1));
@@ -769,6 +777,57 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         http.perform(put(identityPath).contentType(MediaType.APPLICATION_JSON).content(update.toJSONString()))
             .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("Icon is reserved"));
         assertEquals("ontology", catalog.require("app-icon-proof").getString("icon"));
+    }
+
+    @Test void registrationReportsARefusedDefaultAgentOnItsSubmittedEntryRow() throws Exception {
+        var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        var reason = "Entry 'history' default agent preset 'knowledge-governance' does not select the skill for panel 'panel-overview'.";
+        var payload = JSONObject.of(
+            "error", JSONObject.of("code", "PAGE_DEFAULT_AGENT_UNAVAILABLE", "message", reason),
+            "details", JSONObject.of("useId", "history"));
+        server.createContext("/internal/product-panels/validate-references", exchange -> {
+            try {
+                var body = payload.toJSONString().getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
+                exchange.sendResponseHeaders(409, body.length);
+                exchange.getResponseBody().write(body);
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        try {
+            var panelClient = new PanelResources("http://127.0.0.1:" + server.getAddress().getPort(), "test-service");
+            var remoteCatalog = new ApplicationCatalog(jdbc, new TransactionTemplate(new DataSourceTransactionManager(dataSource)),
+                access, "{}", panelClient, grants);
+            var mvc = MockMvcBuilders.standaloneSetup(new ApplicationController(remoteCatalog, identity,
+                    new WorkbenchServiceAuthentication("test-service")))
+                .setControllerAdvice(new ApplicationErrors())
+                .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+            when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser("owner", "domain"));
+            when(grants.allowed("panel-overview", "use")).thenReturn(true);
+
+            mvc.perform(put("/platform/applications/app-default-agent-proof/panel-uses")
+                    .param("create", "true").contentType(MediaType.APPLICATION_JSON).content("""
+                    {"entry":{"path":"/applications/app-default-agent-proof","renderer":"panels"},"entryAccess":["domain-member"],
+                     "declaration":{"names":{"en":"Default agent proof"},"descriptions":{},"icon":"pages","groups":[],"permissions":[]},
+                     "panelUses":[
+                       {"id":"overview","pageKey":"overview-proof","panelId":"panel-overview",
+                        "path":"/applications/app-default-agent-proof/overview","access":{"kind":"domain-member"}},
+                       {"id":"history","pageKey":"history-proof","panelId":"panel-overview",
+                        "path":"/applications/app-default-agent-proof/history","access":{"kind":"domain-member"},
+                        "defaultAgent":{"kind":"preset","agentKind":"knowledge-governance"}}]}
+                    """)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("PAGE_DEFAULT_AGENT_UNAVAILABLE"))
+                .andExpect(jsonPath("$.message").value(reason))
+                .andExpect(jsonPath("$.errors[0].field").value("/values/panelUses/1/defaultAgent"))
+                .andExpect(jsonPath("$.errors[0].code").value("target_unavailable"))
+                .andExpect(jsonPath("$.errors[0].message").value(reason));
+            assertTrue(records().isEmpty());
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test void registrationForwardsRawThemeAndLeavesRefusedSettingsUnwritten() throws Exception {

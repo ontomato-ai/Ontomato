@@ -148,7 +148,7 @@ final class ApplicationCatalogueForm {
             field("/descriptions", "entryDescriptions", PanelFormFields.code("json"), STRING_MAP, false),
             field("/groupKey", "menuGroup", PanelFormFields.text(false), STRING, false),
             field("/access", "entryAccess", PanelFormFields.code("json"), ACCESS, true),
-            field("/defaultAgent", "defaultAgent", PanelFormFields.code("json"), DEFAULT_AGENT, false));
+            field("/defaultAgent", "defaultAgent", PanelFormFields.select(new JSONArray()), DEFAULT_AGENT, false));
         var root = ApplicationCatalog.assignedPanelRoot(id);
         return JSONArray.of(
             field("/entry/path", "applicationAddress", PanelFormFields.text(false), STRING, true),
