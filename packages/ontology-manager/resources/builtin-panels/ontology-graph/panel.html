@@ -28,12 +28,13 @@
     border: 1px solid var(--ui-border);
     border-radius: var(--radius-sm);
     overflow: hidden;
-    min-height: 0;
+    height: clamp(420px, calc(100vh - 340px), 760px);
   }
   .ontology-graph-explorer {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    min-height: 0;
     border-right: 1px solid var(--ui-border);
   }
   .ontology-graph-search {
@@ -48,8 +49,8 @@
   .ontology-graph-list {
     flex: 1;
     overflow: auto;
+    min-height: 0;
     padding: var(--spacing-sm);
-    max-height: 560px;
   }
   .ontology-graph-list > section + section {
     margin-top: var(--spacing-md);
@@ -122,7 +123,6 @@
     position: relative;
     min-width: 0;
     height: 100%;
-    min-height: 420px;
     background-color: var(--el-bg-color-page);
     background-image: radial-gradient(var(--ui-border) 1px, transparent 1px);
     background-size: 20px 20px;
@@ -413,7 +413,6 @@
       position: static;
       display: flex;
       width: auto;
-      max-height: 640px;
       box-shadow: none;
     }
     .inspector-close {
@@ -428,6 +427,10 @@
   @container (max-width: 40rem) {
     .ontology-graph-body {
       grid-template-columns: minmax(0, 1fr);
+      height: auto;
+    }
+    .ontology-graph-list {
+      max-height: 240px;
     }
     .ontology-graph-explorer {
       border-right: 0;

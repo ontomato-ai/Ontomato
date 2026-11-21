@@ -347,6 +347,16 @@ const simpleControls = [
     kind: z.literal("text"), multiline: z.boolean().optional(),
     placeholder: z.string().nullish(), maxLength: z.number().int().positive().optional(),
   }).strict(),
+  /** Each locale edits a string keyed by locale code in the owner's JSON object. */
+  z.object({
+    kind: z.literal("localized-text"),
+    primaryLocale: z.string().min(1),
+    locales: z.array(z.object({ code: z.string().min(1), label: z.string().min(1) }).strict()),
+    /** Languages that must have a text; omitted, none must. */
+    requiredLocales: z.array(z.string().min(1)).optional(),
+    multiline: z.boolean().optional(),
+    maxLength: positiveInteger.optional(),
+  }).strict(),
   z.object({
     kind: z.literal("select"),
     options: z.array(panelFormOptionSchema),
