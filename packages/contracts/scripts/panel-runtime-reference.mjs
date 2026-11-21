@@ -104,6 +104,8 @@ const contents = [
   `Direct panel modules can import ${inline(Object.values(panelModuleSpecifiers))}.`,
   "",
   `The supported application icon IDs are ${inline(applicationIconKeys)}.`,
+  "To show an application by its icon key, draw `<component :is=\"appIcon(key)\" :size=\"16\" />` with `appIcon` from",
+  "`@ontomato/sdk/panel`: it is the platform's own icon for the key, and an unknown key draws the platform's fallback.",
   "",
   "## Vue setup",
   "",

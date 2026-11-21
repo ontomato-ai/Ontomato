@@ -464,6 +464,8 @@ it("keeps the package and recipes for a panel independent of its entrance", asyn
     expect(draftSection).toContain("Each run has its own artifact area. Use a distinct path for each draft written in the same run.");
     expect(draftSection).toContain("`draftRunId` to that run's `$ONTOMATO_RUN_ID`");
     expect(draftSection).toContain("For a draft written in a later run, build a new link using that run's ID.");
+    expect(draftSection).toContain("In your reply, give the reader a Markdown link to the page address you just built");
+    expect(draftSection).toContain("Use the draft file path only inside `draftPath`. A standalone file link opens a JSON file card.");
     expect(markdown).not.toContain("fixture-platform-service");
     expect(markdown).not.toContain("fixture-owner");
     expect(markdown).not.toContain(panel.content.html);
