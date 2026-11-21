@@ -590,7 +590,8 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
                 .contentType(MediaType.APPLICATION_JSON).content("""
                     {"section":"create","target":{"kind":"draft","id":"app-translated"},
                      "values":{"declaration":{"names":{"en":"App","zh-CN":"应用","ko-KR":"앱"},
-                                              "descriptions":{"zh-CN":"应用说明"},"icon":"pages","groups":[],"permissions":[]},
+                                              "descriptions":{"zh-CN":"应用说明"},"icon":"pages",
+                                              "groups":[{"key":"tools","names":{"en":"Tools","zh-CN":"工具"},"sort":7}],"permissions":[]},
                                "entry":{"path":"/applications/app-translated","renderer":"panels"},
                                "entryAccess":["domain-member"],"panelUses":[]}}
                     """))
@@ -604,6 +605,15 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.fields[0].control.fields[1].label").value("说明"))
             .andExpect(jsonPath("$.data.fields[0].control.fields[1].control.multiline").value(true))
             .andExpect(jsonPath("$.data.fields[0].control.fields[2].label").value("图标"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[2].control.kind").value("application-icon"))
+            .andExpect(jsonPath("$.data.values.declaration.icon").value("pages"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[3].control.kind").value("object-array"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[3].control.itemFields[0].path").value("/key"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[3].control.itemFields[1].control.kind").value("localized-text"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[3].control.itemFields[1].control.primaryLocale").value("zh-CN"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[3].control.itemFields[2].control.kind").value("number"))
+            .andExpect(jsonPath("$.data.values.declaration.groups[0].names['zh-CN']").value("工具"))
+            .andExpect(jsonPath("$.data.values.declaration.groups[0].sort").value(7))
             .andExpect(jsonPath("$.data.values.declaration.names['ko-KR']").value("앱"))
             .andExpect(jsonPath("$.data.values.declaration.descriptions['zh-CN']").value("应用说明"));
     }

@@ -20,6 +20,7 @@ final class ApplicationCatalogueForm {
     private static final String DOMAIN_MEMBER = ApplicationCatalog.DOMAIN_MEMBER_ENTRY;
     private static final JSONObject STRING = PanelFormFields.schema("string");
     private static final JSONObject OBJECT = PanelFormFields.schema("object");
+    private static final JSONObject INTEGER = PanelFormFields.schema("integer");
     private static final JSONObject STRING_MAP = JSONObject.of("type", "object", "additionalProperties", STRING);
     private static final JSONObject OBJECT_ARRAY = PanelFormFields.arraySchema(OBJECT);
     private static final JSONObject STRING_ARRAY = PanelFormFields.arraySchema(STRING);
@@ -34,8 +35,10 @@ final class ApplicationCatalogueForm {
         objectSchema(JSONObject.of("kind", JSONObject.of("const", "preset"), "agentKind", STRING), List.of("kind", "agentKind"))));
     private static final JSONObject IDENTITY_SCHEMA = objectSchema(JSONObject.of(
         "names", STRING_MAP, "descriptions", STRING_MAP, "icon", STRING), List.of("names", "descriptions", "icon"));
+    private static final JSONObject GROUPS_SCHEMA = PanelFormFields.arraySchema(objectSchema(
+        JSONObject.of("key", STRING, "names", STRING_MAP, "sort", INTEGER), List.of("key", "names", "sort")));
     private static final JSONObject DECLARATION_SCHEMA = objectSchema(JSONObject.of(
-        "names", STRING_MAP, "descriptions", STRING_MAP, "icon", STRING, "groups", OBJECT_ARRAY, "permissions", OBJECT_ARRAY),
+        "names", STRING_MAP, "descriptions", STRING_MAP, "icon", STRING, "groups", GROUPS_SCHEMA, "permissions", OBJECT_ARRAY),
         List.of("names", "descriptions", "icon", "groups", "permissions"));
     private static final JSONObject ENTRY_SCHEMA = objectSchema(JSONObject.of(
         "path", STRING, "renderer", JSONObject.of("const", "panels")), List.of("path", "renderer"));
@@ -89,7 +92,7 @@ final class ApplicationCatalogueForm {
             "entryAccess", List.of(DOMAIN_MEMBER), "panelUses", List.of()) : draft;
         var fields = entryFields(id);
         var metadata = identityFields();
-        metadata.add(field("/groups", "groups", PanelFormFields.code("json"), OBJECT_ARRAY, true));
+        metadata.add(groupsField());
         metadata.add(field("/permissions", "permissions", PanelFormFields.code("json"), OBJECT_ARRAY, true));
         fields.addFirst(field("/declaration", "identity", PanelFormFields.object(metadata, null), DECLARATION_SCHEMA, true));
         fields.add(field("/entryAccess", "applicationAccess", PanelFormFields.stringArray(), STRING_ARRAY, true));
@@ -101,7 +104,16 @@ final class ApplicationCatalogueForm {
         return JSONArray.of(
             field("/names", "name", localizedText(List.of("en"), false), STRING_MAP, true, "name.help"),
             field("/descriptions", "description", localizedText(List.of(), true), STRING_MAP, true, "description.help"),
-            field("/icon", "icon", PanelFormFields.text(false), STRING, true, "icon.help"));
+            field("/icon", "icon", JSONObject.of("kind", "application-icon"), STRING, true, "icon.help"));
+    }
+
+    private JSONObject groupsField() {
+        var fields = JSONArray.of(
+            field("/key", "groupKey", PanelFormFields.text(false), STRING, true),
+            field("/names", "name", localizedText(List.of("en"), false), STRING_MAP, true),
+            field("/sort", "groupSort", JSONObject.of("kind", "number"), INTEGER, true));
+        var empty = JSONObject.of("key", "", "names", JSONObject.of("en", ""), "sort", 0);
+        return field("/groups", "groups", PanelFormFields.objectArray(fields, empty, null), GROUPS_SCHEMA, true);
     }
 
     private JSONObject localizedText(List<String> requiredLocales, boolean multiline) {
