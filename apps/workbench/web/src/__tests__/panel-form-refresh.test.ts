@@ -20,7 +20,7 @@ const formProjection = projections["projection-schedules-form"]!;
 const panel = panelRecord("panel-schedules-form", "Task form", definePanel({
   state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
   members: { form: { target: { projectionId: formProjection.id }, inputs: { task: { state: "selectedTask" } } } },
-  events: {},
+  commands: {},
 }));
 const use = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", panel.id, "/applications/app-panels-trial-a/tasks");
 const taskPath = `/api/data-query/platform/scheduled-tasks/${task.id}`;

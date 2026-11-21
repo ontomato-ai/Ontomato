@@ -28,7 +28,7 @@ const x = productProjectionResponseSchema.parse(answered).projection;
 const q = panelRecord("panel-schedules-summary", "Task summary (trial)", definePanel({
   state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
   members: { summary: { target: { projectionId: x.id }, inputs: { task: { state: "selectedTask" } } } },
-  events: {},
+  commands: {},
 }));
 const use = panelUse("use-trial-b-summary", "panels-trial-b-summary", q.id, `/applications/${application}/summary`);
 function answer(request: Sent) {

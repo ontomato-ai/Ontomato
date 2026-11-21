@@ -27,7 +27,7 @@ import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer,
  * the panel route, and an entry opened for a reader its access does not admit.
  */
 
-const panel = panelRecord("builtin-components", "Base components", definePanel({ state: {}, members: {}, events: {} }));
+const panel = panelRecord("builtin-components", "Base components", definePanel({ state: {}, members: {}, commands: {} }));
 const components: ApplicationPanelUse = {
   id: "use-components", pageKey: "ontology-components", panelId: panel.id, path: "/ontology/components",
   access: { permissionCode: "ontology-modeling" }, names: { en: "Base components" },
@@ -144,7 +144,7 @@ it.each([
         selected: { type: { kind: "object", objectType: AGENT_DEFINITION }, deepLink: true },
         mode: { type: { kind: "scalar", type: "string" }, deepLink: true },
       },
-      members: {}, events: {},
+      members: {}, commands: {},
     })),
     visibility: "platform" as const, domainId: null, ownerId: null, editable: false as const,
   };

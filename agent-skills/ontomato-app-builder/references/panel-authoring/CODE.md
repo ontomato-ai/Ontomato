@@ -44,7 +44,7 @@ Run `node "$SKILL/ontomato.mjs" panel uses <destination-app-id>` to get the dest
 Use its path with the encoded state on `usePanelContext().navigate`, captured during setup. The
 [generated capability-map address example](RUNTIME.md#state-in-an-address) opens the type view at a selected class.
 Give `URLSearchParams` raw JSON once. For a browser link in the workbench shell, put the same route after `#`.
-See [open events and navigation](RUNTIME.md#open-events-and-navigation) when wiring a button to an entry.
+See [header commands and navigation](RUNTIME.md#header-commands-and-navigation) when wiring a button to an entry.
 
 ## Read declared data
 

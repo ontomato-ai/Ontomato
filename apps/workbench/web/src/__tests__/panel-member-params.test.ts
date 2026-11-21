@@ -38,7 +38,7 @@ const manifest = definePanel({
     list: { target: { projectionId: knowledge.id }, inputs: { search: { state: "q" } }, outputs: { selected: { state: "picked" } } },
     other: { target: { projectionId: knowledge.id } },
   },
-  events: {},
+  commands: {},
 });
 
 it("sends what the panel's state binds as the author's input and what the member keeps as its own run-time value", async () => {

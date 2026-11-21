@@ -154,15 +154,17 @@ updating the editor or announcing a successful write.
   show success. On `refusal` or `failure`, keep the edits and show the owner's message and any named field errors.
 - A null or `unknown` outcome leaves the result unconfirmed. A batch receipt reports one outcome per item.
 
-## Open events and navigation
+## Header commands and navigation
 
-A `manifest.events` event with `labelKey` and no `on` is a page-header operation. An event with `on` runs from that member's output.
+Each `manifest.commands` entry is a page-header command with a required `labelKey`; at most one is `primary: true`, the
+header's main button. `manifest.commands` is required and may be `{}`. A command's values are literals or state fields.
+A `do.set` field must be a `deepLink: true` state field, so the changed address reproduces the page.
 `do.open` with `mode: "entry"` describes a `platform:ApplicationPanelUse` reference and optional destination state inputs.
-In the current direct runtime, an open event reports that the SDK opens no entry or member from an event.
+In the current direct runtime, an open command reports that the SDK opens no entry or member from a command.
 For a browser button or component output that should navigate, call `usePanelContext().navigate` with the registered path
 from `panel uses <application-id>` and, when needed, the destination's deep-linkable state.
 
-For the assistant, the generated page skill's Panel events section describes how to repeat each shortcut.
+For the assistant, the generated page skill's Panel commands section describes how to repeat each shortcut.
 `do.set` opens the current entry with the changed deep-linkable fields in `state`. `do.invoke` calls the listed
 owner operation. `do.open` follows the indicated destination address. Use a declared operation ID for `/operate`.
 

@@ -29,7 +29,7 @@ export function codePanelRecord(id: string, members: Record<string, string>): Pr
   const manifest = definePanel({
     state: {},
     members: Object.fromEntries(Object.entries(members).map(([member, projectionId]) => [member, { target: { projectionId } }])),
-    events: {},
+    commands: {},
   });
   return productPanelSchema.parse({
     ...current, id, name: id, description: id, content: { html: '<div id="app"></div>', module: "" }, manifest,

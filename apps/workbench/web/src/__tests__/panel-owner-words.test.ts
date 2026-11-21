@@ -50,7 +50,7 @@ it("draws the owner's field names, button name and run message in a directly ren
       summary: { target: { projectionId: summary.id }, inputs: { task: { state: "selectedTask" } } },
       run: { target: { projectionId: run.id }, inputs: { task: { state: "selectedTask" } } },
     },
-    events: {},
+    commands: {},
   };
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: selected },
@@ -91,7 +91,7 @@ it("names a task's fields in a code panel's frame by the owner's words, in the r
   const q = panelRecord("panel-schedules-summary", "Task summary (trial)", definePanel({
     state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
     members: { summary: { target: { projectionId: summary.id }, inputs: { task: { state: "selectedTask" } } } },
-    events: {},
+    commands: {},
   }));
   const use = panelUse("use-trial-b-summary", "panels-trial-b-summary", q.id, `/applications/${application}/summary`);
   installPlatform((request: Sent) => {

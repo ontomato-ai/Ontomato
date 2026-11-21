@@ -1,6 +1,6 @@
 /*
  * The four-layer platform capability map panel's declaration (M3, overall design section 5): the state one instance
- * keeps, the projections it composes as members, and its explicit state events. `material.mjs` writes both the
+ * keeps, the projections it composes as members, and its header commands. `material.mjs` writes both the
  * workspace candidate (`panel.json`) and the registered panel input from this single source.
  *
  * Layer filter, expanded instance nodes, dragged positions and canvas viewport are internal view state of
@@ -61,7 +61,7 @@ export default {
       },
     },
   },
-  events: {
+  commands: {
     showTypeMode: {
       labelKey: "capMap.modeType",
       do: { set: { fields: { mode: { literal: "type" } } } },

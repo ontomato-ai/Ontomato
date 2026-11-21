@@ -141,7 +141,7 @@ export function managementPanel(type, checks, typeTable, {
     "});",
     "",
   ].join("\n") : 'import { mountPanel } from "@ontomato/sdk/panel";\n\nawait mountPanel({});\n';
-  const manifest = { state, members, events: {} };
+  const manifest = { state, members, commands: {} };
   checks.panelAuthoringManifestSchema.parse(manifest);
   const entry = `/applications/${id}`;
   const material = {

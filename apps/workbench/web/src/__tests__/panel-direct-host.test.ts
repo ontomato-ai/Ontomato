@@ -49,7 +49,7 @@ await mountPanel({
       form: { target: { projectionId: "task-form" }, inputs: { task: { state: "selectedTask" } } },
       run: { target: { projectionId: "task-run" }, inputs: { task: { state: "selectedTask" } } },
     },
-    events: {},
+    commands: {},
   },
 };
 const projections: Record<string, DirectProjection> = {

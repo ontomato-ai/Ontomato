@@ -107,7 +107,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       module: 'import {mountPanel} from "@ontomato/sdk/panel"; await mountPanel({});',
       messages: { en: { "settings.title": "Settings for {name}" } },
     },
-    manifest: { members: {}, state: {}, events: {} },
+    manifest: { members: {}, state: {}, commands: {} },
   };
   const source = {
     kind: "candidate", workspace: { id: workspaceId, ref }, panel,
@@ -407,7 +407,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     })), error => error.stderr.includes("409 Revision conflict"));
     assert.deepEqual(requests.splice(0).filter(([method]) => method === "PUT").map(([, url]) => url), [panelPath]);
 
-    const manifest = { members: { tasks: { target: { projectionId: "tasks" } } }, state: {}, events: {} };
+    const manifest = { members: { tasks: { target: { projectionId: "tasks" } } }, state: {}, commands: {} };
     await writeFile(join(directory, "panel.json"), JSON.stringify({ manifest }));
     const layout = join(directory, "panel.html");
     const tasksTemplate = '<div id="app"><projection slot="tasks"></projection></div>';
@@ -690,7 +690,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     const chartPanel = JSON.stringify({ manifest: {
       state: { window: { type: { kind: "scalar", type: "string" } } },
       members: { chart: { component: "MetricChart", sourceCard: chartSource, state: { range: "window" } } },
-      events: {},
+      commands: {},
     } });
     await writeFile(descriptor, chartPanel);
     await writeFile(layout, '<div id="app"><projection slot="chart"></projection></div>');
