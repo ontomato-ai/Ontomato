@@ -61,6 +61,8 @@ const props = withDefaults(
      * absent, the owner's own subtitle for the record is shown, if it gives one.
      */
     subtitleField?: string;
+    /** Maximum number of visible lines in a compact summary. Omit it to show the whole summary. */
+    subtitleLines?: number;
     /** How many items a page holds when the owner's read pages (a query's cursor, or page numbers); 20 by default. */
     pageSize?: number;
     /**
@@ -684,7 +686,12 @@ watch(someVisibleChecked, () => {
                 :data-tone="row.tones?.[statusField] ?? 'default'"
               >{{ row.fields[statusField] }}</span>
             </span>
-            <span v-if="fieldValue(row, summaryKey)" class="sdk-object-list-item-sub">
+            <span
+              v-if="fieldValue(row, summaryKey)"
+              class="sdk-object-list-item-sub"
+              :class="{ 'sdk-object-list-item-sub-clamped': subtitleLines !== undefined }"
+              :style="{ WebkitLineClamp: subtitleLines }"
+            >
               <template v-for="(part, index) in textHighlightSegments(fieldValue(row, summaryKey), row.highlights?.[summaryKey])" :key="index">
                 <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
               </template>
@@ -876,6 +883,12 @@ watch(someVisibleChecked, () => {
 .sdk-object-list-item-sub {
   color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
+}
+.sdk-object-list-item-sub-clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: var(--leading-xs);
 }
 .sdk-object-list-items {
   display: flex;

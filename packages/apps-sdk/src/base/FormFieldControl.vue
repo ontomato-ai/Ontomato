@@ -13,6 +13,7 @@ import { agentAvatar, avatarIconOptions, darkAvatarColorOptions, lightAvatarColo
 import { useDarkMode } from "@ontomato/foundation-ui/theme";
 import { useFormControls } from "./form-controls";
 import FormCodeField from "./FormCodeField.vue";
+import FormLocalizedText from "./FormLocalizedText.vue";
 
 /**
  * One field of an owner form, drawn by the control its owner names, at its current absolute JSON Pointer. An object's
@@ -142,6 +143,7 @@ const addObject = () => set(control.value.kind === "object" ? control.value.defa
       @update:model-value="setNumber"
     ></el-input>
     <form-code-field v-else-if="control.kind === 'code'" :field="field" :path="path" :disabled="off"></form-code-field>
+    <form-localized-text v-else-if="control.kind === 'localized-text'" :field="field" :path="path" :disabled="off"></form-localized-text>
     <div v-else-if="control.kind === 'string-array'" class="sdk-form-rows">
       <div v-for="(row, index) in rows" :key="index" class="sdk-form-string-row">
         <el-input :model-value="typeof row === 'string' ? row : ''" :disabled="off" @update:model-value="setString(index, $event)"></el-input>
