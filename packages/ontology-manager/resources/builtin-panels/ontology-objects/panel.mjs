@@ -39,7 +39,6 @@ await mountPanel({
     const attributeError = ref("");
     const busy = ref("");
 
-    const attributeOpen = computed(() => Boolean(selected.value && selectedAttribute.value));
     const view = computed(() => (creating.value ? "create" : selected.value ? "detail" : "catalog"));
 
     // The search keyword is public, deep-linkable state, so the assistant and the address see the same filter.
@@ -210,7 +209,7 @@ await mountPanel({
     })}`;
 
     return {
-      t, view, attributeOpen, search, catalog, filteredRows, catalogCount, relationCount, labels, detail, record, attributes, attributeRows, relations, relationRows,
+      t, view, search, catalog, filteredRows, catalogCount, relationCount, labels, detail, record, attributes, attributeRows, relations, relationRows,
       summary, primaryKeyStatus, selected, selectedAttribute, editingAttribute, isPrimaryKey, attributeMode, attributeError, busy,
       deleteObjectOp, setPrimaryKeyOp, deleteAttributeOp,
       openClass, backToCatalog, objectSaved, formDiscarded, openAttribute, startCreateAttribute, closeAttribute,
