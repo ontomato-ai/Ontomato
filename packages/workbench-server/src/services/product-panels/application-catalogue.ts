@@ -32,8 +32,10 @@ const querySchema = z.object({
 }).strict();
 
 export function applicationCatalogueClient(viewer: AssistantCredentials) {
+  // A refusal names its fields in the body; keep the whole body so each reason reaches its row.
   const options = () => ({
     headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers), retries: 1,
+    errorDetailLimit: 16384,
   });
   const url = (path: string) => config.dataQuery.baseUrl + path;
   const entryPath = (id: string) => `${applicationPath}/${encodeURIComponent(id)}`;
