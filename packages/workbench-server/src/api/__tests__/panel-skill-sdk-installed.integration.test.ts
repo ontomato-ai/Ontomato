@@ -198,7 +198,7 @@ it("catalogue diagnostics isolate an admitted broken projection across list, poi
     expect(refs).toContainEqual(goodRef);
     expect(refs).not.toContainEqual(member.ref);
     expect(catalogue.diagnostics).toEqual({ sourceUnavailable: false, items: [
-      { skill: member.ref, resourceId: projection, field: "componentId", reason: "invalid_definition" },
+      { skill: member.ref, resourceId: projection, field: "componentId", reason: "invalid_definition", title: "panel-business-knowledge" },
     ] });
     expect(JSON.stringify(catalogue)).not.toContain(privateText);
   }
