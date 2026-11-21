@@ -218,6 +218,7 @@ function deleteImpact(
 export const ontologyModelServerOperations = [
   {
     handlerRef: `${OBJECT_TYPE}.save`,
+    labelKey: "panels.ontologyModel.operations.saveObjectType",
     kind: "form.save",
     binding: { kind: "PlatformObjectType", id: OBJECT_TYPE },
     effect: "write",
@@ -271,6 +272,7 @@ export const ontologyModelServerOperations = [
   },
   {
     handlerRef: `${ATTRIBUTE}.save`,
+    labelKey: "panels.ontologyModel.operations.saveAttribute",
     kind: "form.save",
     binding: { kind: "PlatformObjectType", id: ATTRIBUTE },
     effect: "write",
@@ -347,6 +349,7 @@ export const ontologyModelServerOperations = [
   },
   {
     handlerRef: `${RELATIONSHIP}.save`,
+    labelKey: "panels.ontologyModel.operations.saveRelationship",
     kind: "form.save",
     binding: { kind: "PlatformObjectType", id: RELATIONSHIP },
     effect: "write",
