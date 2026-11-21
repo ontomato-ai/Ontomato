@@ -26,7 +26,7 @@ import { loadedPageSkillVersion, readAssistantSkillView, resolvePageSkillSource,
 import type { AssistantOwner } from "../assistant/store";
 import { restoreAgentCaller, readAgentSessionActor } from "../agent-host/caller";
 import { readCurrentPanelRecord } from "./current";
-import { declaredDirectOperation, type PlacedOperationTarget } from "./direct-operations";
+import { declaredDirectOperation, rejectStandalonePanelEvent, type PlacedOperationTarget } from "./direct-operations";
 import { requirePanelUse } from "./application-use";
 import {
   panelResultProjection, type PanelBatchCalls, type PanelOperationInvocation,
@@ -55,6 +55,15 @@ export async function requirePanelSkillForRun(owner: AssistantOwner, credentials
   if (!skill || !loadedPageSkillVersion(skill, run.resolvedSkills))
     throw new HttpError(403,"This run does not have this panel's skill","FORBIDDEN");
   return { use, view };
+}
+
+export async function rejectPanelEventForRun(owner: AssistantOwner, credentials: AssistantCredentials, runId: string, ref: PanelOperationRef) {
+  const run = await runForOwner(owner, runId);
+  if (!run.channel || run.status !== "running")
+    throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
+  const { use } = await requirePanelSkillForRun(owner, credentials, run, ref);
+  const panel = await readCurrentPanelRecord(owner, credentials, use.panelId);
+  rejectStandalonePanelEvent(panel, ref.operationId);
 }
 
 async function admitted(owner: AssistantOwner, credentials: AssistantCredentials, run: PanelRun,

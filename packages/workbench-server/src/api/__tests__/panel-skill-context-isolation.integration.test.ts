@@ -18,6 +18,7 @@ import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-
 import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
+import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { ensureAgentExecutionSchema } from "../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
 import { installWorkbenchIdentity } from "../../identity/installed";
@@ -90,6 +91,7 @@ beforeAll(async () => {
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
   await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
+  await ensurePanelOperationsSchema(state.pool);
   await ensureAssistantSchema(state.pool);
   await ensureAgentExecutionSchema(state.pool);
 
@@ -295,6 +297,45 @@ async function readLibrary(dataName: string, inputs: Record<string, string> = {}
   expect(response.status, JSON.stringify(body)).toBe(200);
   return productPanelReadResponseSchema.parse(body);
 }
+
+it("guides a run to the page skill when it sends a panel event to operate", async () => {
+  const entry = page("local-event");
+  entries = [...entries, entry];
+  await register("product-panels", entry.panelId, {
+    name: "Graph mode", description: "", visibility: "domain", content: vuePanelContent(),
+    manifest: {
+      state: { mode: { type: { kind: "scalar", type: "string" }, deepLink: true, default: "type" } },
+      members: {},
+      events: { instance: { labelKey: "mode.instance", do: { set: { fields: { mode: { literal: "instance" } } } } } },
+    },
+  });
+  const runId = randomUUID();
+  state.runForOwner.mockResolvedValue({
+    status: "running", sessionId: randomUUID(),
+    channel: { agent: { providerId: "workbench", agentId: "graph-agent" }, authority: { executionKind: "live" } },
+    resolvedSkills: [{ skill: skillRef(entry), digest: "a".repeat(64) }],
+  });
+  state.credentialsForRun.mockClear();
+  const { callbackCredential } = await import("../../services/agent-runtime/callback-credential");
+  const pathPrefix = `/api/assistant/executions/${runId}/`;
+  const credential = callbackCredential({ pathPrefix, runId, expiresAt: Date.now() + 60_000, token: "reader", apiKey: "" });
+  const send = (operationId: string, invocation: Record<string, unknown>) => fetch(state.base + pathPrefix + "panels/operate", {
+    method: "POST", headers: {
+      "Content-Type": "application/json", "X-Ontomato-Callback-Credential": credential.value, "X-Ontomato-Run-Id": runId,
+    },
+    body: JSON.stringify({ applicationId, useId: entry.useId, operationId, intentId: randomUUID(), ...invocation }),
+  });
+  for (const invocation of [{}, { call: { target: { kind: "draft" }, input: {} } }]) {
+    const response = await send("instance", invocation);
+    const body = await response.json();
+    expect(response.status, JSON.stringify(body)).toBe(422);
+    expect(body).toMatchObject({ error: { code: "PANEL_EVENT_REQUIRES_PAGE_SKILL", message: expect.stringContaining("page skill") } });
+  }
+  const unknown = await send("missing", {});
+  expect(unknown.status).toBe(400);
+  expect(await unknown.json()).toMatchObject({ error: { code: "INVALID_REQUEST" } });
+  expect(state.credentialsForRun).not.toHaveBeenCalled();
+});
 
 it("derives SDK catalogue reads from the page and serves them through the run's executor", async () => {
   entries = [...entries, library];

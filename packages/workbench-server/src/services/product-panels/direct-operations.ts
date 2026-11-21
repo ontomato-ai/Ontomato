@@ -26,6 +26,20 @@ function unavailable(id: string): never {
   throw new HttpError(422, `The panel member does not declare operation '${id}'`, "OPERATION_UNAVAILABLE");
 }
 
+function eventRequiresPageSkill(id: string): never {
+  throw new HttpError(422,
+    `Follow the page skill's instructions for panel event '${id}'. The /operate endpoint accepts declared operations.`,
+    "PANEL_EVENT_REQUIRES_PAGE_SKILL");
+}
+
+export function rejectStandalonePanelEvent(panel: Pick<ProductPanel, "manifest">, id: string) {
+  const separator = id.lastIndexOf(".");
+  if (Object.hasOwn(panel.manifest.events, id) &&
+      (separator < 1 || !Object.hasOwn(panel.manifest.members, id.slice(0, separator)))) {
+    eventRequiresPageSkill(id);
+  }
+}
+
 function placedObject({ className, primaryKey }: ReturnType<typeof panelObjectRefSchema.parse>): PanelRecordTarget {
   return { kind: "object", objectType: className, primaryKey };
 }
@@ -132,12 +146,16 @@ export async function declaredDirectOperation(
   owner: ProductOwner, credentials: AssistantCredentials, use: ApplicationPanelUse, panel: ProductPanel, id: string,
   target?: PanelOperationTarget | null,
 ) {
+  rejectStandalonePanelEvent(panel, id);
   const separator = id.lastIndexOf(".");
   if (separator < 1) return unavailable(id);
   const slot = id.slice(0, separator);
   const { member, projection } = await requireDirectPanelMember(owner, credentials, panel, slot);
   const bound = boundProjectionOperations(projection).find(({ name }) => name === id.slice(separator + 1));
-  if (!bound) return unavailable(id);
+  if (!bound) {
+    if (Object.hasOwn(panel.manifest.events, id)) eventRequiresPageSkill(id);
+    return unavailable(id);
+  }
   const current = await admitBoundOperation({ owner, credentials }, { panel, projection, member, slot }, bound, () => target);
   if (!current) throw new HttpError(400, `Select an eligible target for operation '${id}'`, "PANEL_SELECTION_REQUIRED");
   if (current.effect === "read") return current;
