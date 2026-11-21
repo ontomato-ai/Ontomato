@@ -26,6 +26,7 @@ const SDK_MANIFEST = {
   stylesheet: "styles/sdk.css",
   components: "catalogue/components.json",
   check: "node/panel-check.mjs",
+  packageComponents: "node/package-components.mjs",
   libraries: {},
   docs: "docs/index.md",
 };

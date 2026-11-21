@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { installedPackageClosure } from "./package-components-release.mjs";
 
 /*
  * The component catalogue an SDK release ships (design 6, "需要的数据"): `components.json` declares, beside each public
@@ -68,8 +69,67 @@ test("the built SDK's components.json is the catalogue its contract declares", (
   const written = JSON.parse(readFileSync(join(out, version, "components.json"), "utf8"));
   // The release's own Node modules are where the platform reads this shape from; the check module carries the schema.
   return import(pathToFileURL(join(out, version, "node/panel-check.mjs")).href).then(async ({
-    applicationIconKeys, appsSdkComponentCatalogSchema, panelModuleImports,
+    applicationIconKeys, appsSdkComponentCatalogSchema, appsSdkReleaseManifestSchema, panelModuleImports,
   }) => {
+    await t.test("an external Vue author can generate a package catalogue and check a panel with this release", (authorTest) => {
+      const author = mkdtempSync(join(tmpdir(), "external-component-author-"));
+      authorTest.after(() => rmSync(author, { recursive: true, force: true }));
+      const sdk = join(out, version);
+      const { packageComponents } = appsSdkReleaseManifestSchema.parse(JSON.parse(readFileSync(join(sdk, "sdk.json"), "utf8")));
+      const generator = join(author, "package-components.mjs");
+      // The author only needs the advertised executable, and their own Vue dependency.
+      cpSync(join(sdk, packageComponents), generator);
+      for (const [name, manifest] of installedPackageClosure(["vue"]))
+        cpSync(dirname(manifest), join(author, "node_modules", name), { recursive: true, dereference: true });
+
+      const pkg = "@example/author-tools";
+      const write = (file, content) => {
+        const path = join(author, file);
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, content);
+      };
+      const json = (file, value) => write(file, JSON.stringify(value));
+      json("package.json", {
+        name: pkg, version: "1.0.0", author: "Example",
+        ontomato: { components: "components.json", entries: { [pkg]: "dist/entry.mjs" } },
+      });
+      json("tsconfig.json", { compilerOptions: { target: "ES2022", module: "ESNext",
+        moduleResolution: "Bundler", strict: true, noEmit: true }, include: ["src/**/*"] });
+      write("src/Badge.vue", '<script setup lang="ts">defineProps<{ caption: string }>();</script>\n<template>{{ caption }}</template>');
+      write("src/entry.ts", 'export { default as Badge } from "./Badge.vue";');
+      write("src/catalogue.ts", `
+        import { defineComponentMeta } from "@ontomato/sdk/panel";
+        export const components = [defineComponentMeta({
+          componentId: "Badge", module: ${JSON.stringify(pkg)}, exportName: "Badge",
+          role: "presentation", meaning: "Shows one caption.",
+          data: { rows: { results: ["panelRecordList"], required: true } },
+        })];
+      `);
+      write("dist/entry.mjs", "export const Badge = {};");
+      const env = { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" };
+      const exec = args => execFileSync(process.execPath, args, { cwd: author, env, encoding: "utf8", stdio: "pipe" });
+      exec([generator, ".", "--catalogue", "src/catalogue.ts", "--tsconfig", "tsconfig.json", "--source", pkg + "=src/entry.ts"]);
+      const [badge] = JSON.parse(readFileSync(join(author, "components.json"), "utf8"));
+      assert.equal(badge.componentId, pkg + ":Badge");
+      assert.ok(badge.ports.props.some(prop => prop.name === "caption" && prop.required && prop.type === "string"));
+
+      json("panel/registration.json", { panels: [{ id: "example", mode: "create",
+        input: { name: "Badge", description: "", visibility: "domain" } }] });
+      const objectType = "platform:ScheduledTask";
+      json("panel/panel.json", { manifest: { state: {}, commands: {},
+        members: { badge: { component: badge.componentId, type: objectType,
+          data: { rows: "list" }, config: { caption: "Ready" } } } } });
+      write("panel/panel.html", '<div id="app"><projection slot="badge"></projection></div>');
+      write("panel/panel.mjs", 'import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});\n');
+      json("types.json", { objectTypes: {
+        [objectType]: { reads: { list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" } },
+          operations: [] },
+      }, resultSchemas: { panelRecordList: { type: "array" } } });
+      const cli = join(HERE, "../../agent-skills/ontomato-app-builder/ontomato.mjs");
+      const checked = exec([cli, "panel", "check", "panel", "--sdk-dir", sdk, "--component-package", author, "--type-table", "types.json"]);
+      assert.deepEqual(JSON.parse(checked), { status: "valid", version, unchecked: [] });
+    });
+
     await t.test("the offline checker requires an explicit form for a draft read before writing any IDs", () => {
       const workspace = join(out, "builtin-panel");
       mkdirSync(workspace);

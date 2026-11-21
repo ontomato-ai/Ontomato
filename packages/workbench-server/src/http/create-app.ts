@@ -2,6 +2,9 @@ import { governanceWindowsRouter, assistantInternalRouter } from "../api/routes/
 import { agentChannelRouter } from "../api/routes/agent-channel";
 import { createHealthRouter } from "../api/routes/health";
 import { appBuilderRouter } from "../api/routes/app-builder";
+import { COMPONENT_PACKAGES_PATH } from "@ontomato/contracts/component-packages";
+import { createComponentPackagesRouter, mountComponentPackageAssets } from "../api/routes/component-packages";
+import { checkComponentPackageUpgrade } from "../services/component-packages/upgrade";
 import { workspacePreviewRouter, workspaceRouter, mountHostedStatic } from "../api/routes/workspaces";
 import { startModelMigration, stopModelMigration } from "../platform/agent-runtime/model-migration";
 import assistantRouter, { assistantQualityRouter } from "../api/routes/assistant";
@@ -183,6 +186,7 @@ export function createWorkbenchApp(): Express {
   });
 
   mountHostedStatic(app);
+  mountComponentPackageAssets(app);
   app.use("/api/workspaces", workspacePreviewRouter);
   app.use(unwrapCallbackCredential);
   app.use(["/api/observe/logs", "/api/observe/runtime-logs"], serviceLogAuthResponse);
@@ -209,6 +213,7 @@ export function createWorkbenchApp(): Express {
 
   app.use("/api/assistant/sessions", governanceWindowsRouter);
   app.use("/api", appBuilderRouter);
+  app.use(COMPONENT_PACKAGES_PATH, createComponentPackagesRouter(identity.requireDeploymentMaintenance, checkComponentPackageUpgrade));
   app.use("/api/workspaces", workspaceRouter);
   app.use("/api/analysis-tasks", analysisTasksRouter);
   app.use("/api/assistant/executions", assistantExecutionRouter);

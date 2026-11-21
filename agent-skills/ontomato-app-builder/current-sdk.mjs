@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -22,7 +22,21 @@ export function currentSdkClient({ workbenchUrl, headers }) {
     return get(url);
   }
 
+  const packages = new Map();
   return {
+    componentPackage(name, checks) {
+      if (!checks.componentPackageNameSchema) throw new Error("This SDK release does not declare component packages");
+      const packageName = checks.componentPackageNameSchema.parse(name);
+      if (!packages.has(packageName)) {
+        const url = `${workbenchUrl}${checks.COMPONENT_PACKAGES_PATH}/${encodeURIComponent(packageName)}`;
+        packages.set(packageName, get(url).then(response => response.json()).then(value => {
+          const declaration = checks.componentPackageResponseSchema.parse(value);
+          if (declaration.name !== packageName) throw new Error(`Expected component package '${packageName}'`);
+          return declaration;
+        }));
+      }
+      return packages.get(packageName);
+    },
     async current() {
       return (await get(`${workbenchUrl}/api/apps-sdk/current`)).json();
     },
@@ -54,4 +68,32 @@ export async function installedPanelSdk(directory) {
     readFile(releaseFile(manifest.components), "utf8"),
   ]);
   return { checks, catalogue: JSON.parse(components), version: manifest.version };
+}
+
+export async function readLocalComponentPackages(directories, checks) {
+  const packages = new Map();
+  if (directories.length && !checks.componentPackageManifestSchema) {
+    throw new Error("This SDK release does not declare component packages");
+  }
+  for (const directory of directories) {
+    const root = await realpath(directory);
+    const read = async file => {
+      const location = await realpath(resolve(root, file));
+      const prefix = root.endsWith(sep) ? root : root + sep;
+      if (!location.startsWith(prefix)) throw new Error(`Declaration is outside the package: ${file}`);
+      return JSON.parse(await readFile(location, "utf8"));
+    };
+    try {
+      const { ontomato, ...identity } = checks.componentPackageManifestSchema.parse(await read("package.json"));
+      const { components, ...modules } = ontomato;
+      const declaration = checks.componentPackageDeclarationSchema.parse({
+        ...identity, ...modules, components: await read(components),
+      });
+      if (packages.has(declaration.name)) throw new Error(`Supply one release of package '${declaration.name}'`);
+      packages.set(declaration.name, declaration);
+    } catch (error) {
+      throw new Error(`${root}: ${error.message}`, { cause: error });
+    }
+  }
+  return packages;
 }
