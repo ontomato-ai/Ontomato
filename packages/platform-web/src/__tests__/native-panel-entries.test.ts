@@ -28,7 +28,8 @@ it("stands a built-in application's named entry where its menu table lists the a
 
   const catalog = catalogFixture().map((app) => app.id !== "ontology" ? app : {
     ...app,
-    panelUses: [{
+    // Added to the entries the application already declares.
+    panelUses: [...app.panelUses ?? [], {
       id: "use-knowledge", pageKey: "ontology-knowledge", panelId: "builtin-knowledge", path: "/ontology/knowledge",
       access: { permissionCode: "business-knowledge" }, names: { en: "Business knowledge" },
     }],

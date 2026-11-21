@@ -158,7 +158,8 @@ export function platformPanelHost(
     async current() {
       return names(await panelUsesOf(applicationId));
     },
-    ...(relations ? { admitted: relations.then(names) } : {}),
+    // Java's answer not coming is not admitting the page: the route that asked for it says why where the page would be.
+    ...(relations ? { admitted: relations.then(names, () => false) } : {}),
     // The page's check of its definitions, when it is shown again or comes back to the foreground, is read for this page
     // too: the page skill it reaches is confirmed again with it, since what it may reach can have changed meanwhile.
     async snapshot(panelId) {
