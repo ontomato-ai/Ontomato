@@ -18,6 +18,7 @@ import {
 import { APPLICATION, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import { HttpError } from "../../utils/errors";
 import { BackendResponseError } from "../../utils/backend-client";
+import { createLogger } from "../../logging/logger";
 import { changeProductGrant } from "../product-governance/grants";
 import { defaultAgentSchema } from "@ontomato/contracts/default-agent";
 import { applicationCatalogueClient, applicationDraftIdSchema } from "./application-catalogue";
@@ -41,22 +42,37 @@ function writeInput<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, input: unkno
   return result.data;
 }
 
-/** A Java owner's refusal that names form fields keeps them, as every other owner write does. */
-function ownerFieldRefusal(error: BackendResponseError) {
+const logger = createLogger("product-catalog-operations");
+
+/**
+ * A Java owner's refusal keeps the fields it names, at the panel form's own paths. A refusal body that cannot be read as
+ * the owner's refusal is reported as such, with the raw body logged, rather than passing for an ordinary refusal.
+ */
+function ownerRefusal(error: BackendResponseError): Extract<SinglePanelOperationOutcome, { kind: "refusal" }> {
+  const plain = { kind: "refusal" as const, code: error.code ?? "PRODUCT_WRITE_REFUSED", message: error.message };
   let body: unknown;
-  try { body = JSON.parse(error.detail); } catch { return undefined; }
-  if (typeof body !== "object" || body === null || !("errors" in body)) return undefined;
+  try { body = JSON.parse(error.detail); } catch { return unreadable(error); }
+  if (typeof body !== "object" || body === null) return unreadable(error);
+  if (!("errors" in body)) return plain;
   const envelope = ownerEnvelopeSchema.safeParse({ ...body, success: false });
-  if (!envelope.success) return undefined;
+  if (!envelope.success) return unreadable(error);
   try {
     const outcome = ownerWriteFailure(envelope.data, "PRODUCT_WRITE_REFUSED", error.message);
-    if (outcome.kind !== "refusal" || !outcome.errors) return undefined;
+    if (outcome.kind !== "refusal") return unreadable(error);
+    if (!outcome.errors) return outcome;
     // The owner names a field under its form values (/values/...); the panel form addresses the field itself.
     const errors = outcome.errors.map(item => ({ ...item, field: item.field.replace(/^\/values(?=\/)/, "") }));
     return { ...outcome, errors };
   } catch {
-    return undefined;
+    return unreadable(error);
   }
+}
+
+function unreadable(error: BackendResponseError): Extract<SinglePanelOperationOutcome, { kind: "refusal" }> {
+  logger.warn("An application owner refused a write with a body that is not its refusal", {
+    status: error.status, code: error.code, body: error.detail.slice(0, 4096),
+  });
+  return { kind: "refusal", code: "OWNER_REFUSAL_UNREADABLE", message: error.message };
 }
 
 /** A refusal decided before the owner is called, already naming its fields. */
@@ -87,10 +103,9 @@ async function write(type: string, run: () => Promise<{ primaryKey: string; data
     return { kind: "success", data, affected: { objects: [{ objectType: type, primaryKey }], objectTypes: [type] } };
   } catch (error) {
     if (error instanceof FieldRefusal) return error.outcome;
-    if (error instanceof HttpError && error.status >= 400 && error.status < 500) {
-      const fields = error instanceof BackendResponseError ? ownerFieldRefusal(error) : undefined;
-      return fields ?? { kind: "refusal", code: error.code ?? "PRODUCT_WRITE_REFUSED", message: error.message };
-    }
+    if (error instanceof BackendResponseError && error.status >= 400 && error.status < 500) return ownerRefusal(error);
+    if (error instanceof HttpError && error.status >= 400 && error.status < 500)
+      return { kind: "refusal", code: error.code ?? "PRODUCT_WRITE_REFUSED", message: error.message };
     throw error;
   }
 }
