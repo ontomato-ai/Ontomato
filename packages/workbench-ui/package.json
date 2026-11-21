@@ -20,7 +20,8 @@
     "./locales/*": "./src/locales/*.ts",
     "./permission-data": "./src/features/agents/permission-data.ts",
     "./styles/*": "./src/styles/*",
-    "./utils/auth": "./src/utils/auth.ts"
+    "./utils/auth": "./src/utils/auth.ts",
+    "./utils/relative-time": "./src/utils/relative-time.ts"
   },
   "scripts": {
     "typecheck": "vue-tsc --noEmit",

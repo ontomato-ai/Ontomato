@@ -51,7 +51,7 @@ describe("a draft the platform cannot read", () => {
     expect(host.querySelector(".panel-host-error")).toBeNull();
     await vi.waitFor(() => expect(host.querySelector('[data-member="form"]')).not.toBeNull(), { timeout: 8000 });
 
-    host.querySelector<HTMLElement>(".panel-host-draft .el-alert__close-btn")!.click();
+    host.querySelector<HTMLElement>(".panel-host-draft-close")!.click();
     await vi.waitFor(() => expect(router.currentRoute.value.query).not.toHaveProperty("draftPath"));
     await vi.waitFor(() => expect(host.querySelector(".panel-host-draft")).toBeNull());
     expect(host.querySelector(".panel-host-error")).toBeNull();
