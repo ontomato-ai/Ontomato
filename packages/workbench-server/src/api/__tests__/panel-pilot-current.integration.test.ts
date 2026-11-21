@@ -1,6 +1,6 @@
 import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
@@ -18,6 +18,7 @@ import { scheduledTaskPanelMessages, scheduledTaskPanelTextZhCn } from "@ontomat
 import examples from "../../../../contracts/examples/platform-schedules.json";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { installContentLayout } from "../../content/layout";
+import { workbenchApplications } from "../../services/applications/builtins";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
@@ -173,11 +174,20 @@ beforeAll(async () => {
   });
   app.post("/product-governance/check", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
-    res.json({ allowed: resourceIds.has(req.body.id) });
+    res.json({ allowed: resourceIds.has(req.body.id) || (req.body.verb === "use" && req.body.id.startsWith("builtin-product-")) });
   });
   app.post("/product-governance/resources", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ ids: [...resourceIds] });
+  });
+  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+    if (req.query.applicationId !== "schedules") { next(); return; }
+    expect(req.header("tk")).toBe("pilot-reader");
+    const uses = workbenchApplications.find(app => app.id === "schedules")!.declaration.panelUses!;
+    res.json({ success: true, data: {
+      applicationId: "schedules", menu: { groups: [], panelUses: uses },
+      use: uses.find(use => use.id === req.query.useId),
+    } });
   });
   app.get("/platform/applications/resolve-entry", (req, res, next) => {
     if (req.query.applicationId !== "app-schedules") { next(); return; }
@@ -515,6 +525,36 @@ function request(method: string, resource: string, body?: object, locale = "zh-C
     method, headers: { "Content-Type": "application/json", "Accept-Language": locale }, body: JSON.stringify(body),
   });
 }
+
+it("registers the packaged schedules panel at startup with the owner form and credential operation", async () => {
+  const { registerBuiltinProducts } = await import("../../services/product-panels/builtin-products");
+  const bundle = await mkdtemp(path.join(os.tmpdir(), "schedules-panel-bundle-"));
+  try {
+    const material = fileURLToPath(new URL("../../../../platform-schedules/resources/builtin-panels/schedules", import.meta.url));
+    await symlink(material, path.join(bundle, "schedules"));
+    await writeFile(path.join(bundle, "index.json"), JSON.stringify(["schedules"]));
+    await registerBuiltinProducts(bundle);
+    const registered = await request("GET", "product-panels/builtin-product-scheduled-tasks");
+    const receipt = await registered.json();
+    expect(registered.status, JSON.stringify(receipt)).toBe(200);
+    expect(receipt).toMatchObject({
+      panel: {
+        id: "builtin-product-scheduled-tasks",
+        manifest: { commands: { create: { primary: true } }, members: { newForm: {}, renew: {} } },
+      },
+    });
+    const source = { kind: "registered", applicationId: "schedules", useId: "schedules-tasks" };
+    const applicationRef = { className: "platform:Application", primaryKey: "schedules" };
+    const operations = await request("POST", "product-panels/read", {
+      source, memberPath: [{ member: "renew" }], operations: true, inputs: { application: applicationRef },
+    });
+    expect(await operations.json()).toMatchObject({
+      status: "ready", value: { renewCredential: { kind: "action", effect: "write" } },
+    });
+  } finally {
+    await rm(bundle, { recursive: true, force: true });
+  }
+});
 
 it("reads back stable member keys and named data, and leaves the record intact after a rejected update", async () => {
   const projectionPath = `product-projections/${projectionId}`;
