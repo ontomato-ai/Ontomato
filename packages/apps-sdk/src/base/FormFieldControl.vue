@@ -59,7 +59,8 @@ function chooseObject(chosen: number | "" | number[] | undefined) {
   const { options } = control.value;
   if (Array.isArray(chosen)) {
     const retired = rows.value.filter((held) => optionIndex(held) === RETIRED);
-    set(chosen.flatMap((index) => (index === RETIRED ? [] : [options[index]!.value])).concat(chosen.includes(RETIRED) ? retired : []));
+    const offered: RuntimeJsonValue[] = chosen.flatMap((index) => (index === RETIRED ? [] : [options[index]!.value as RuntimeJsonValue]));
+    set([...offered, ...(chosen.includes(RETIRED) ? retired : [])]);
   } else if (chosen === "" || chosen === undefined) controls.remove(props.path);
   else if (chosen !== RETIRED) set(options[chosen]!.value);
 }
