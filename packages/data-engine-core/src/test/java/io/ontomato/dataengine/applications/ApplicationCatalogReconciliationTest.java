@@ -605,7 +605,9 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
                     {"section":"create","target":{"kind":"draft","id":"app-translated"},
                      "values":{"declaration":{"names":{"en":"App","zh-CN":"应用","ko-KR":"앱"},
                                               "descriptions":{"zh-CN":"应用说明"},"icon":"pages",
-                                              "groups":[{"key":"tools","names":{"en":"Tools","zh-CN":"工具"},"sort":7}],"permissions":[]},
+                                              "groups":[{"key":"tools","names":{"en":"Tools","zh-CN":"工具"},"sort":7}],
+                                              "permissions":[{"code":"app:app-translated:read","names":{"en":"Read","zh-CN":"查看"},
+                                                              "groupKey":"tools","sort":3}]},
                                "entry":{"path":"/applications/app-translated","renderer":"panels"},
                                "entryAccess":["domain-member"],"panelUses":[]}}
                     """))
@@ -628,6 +630,20 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.fields[0].control.fields[3].control.itemFields[2].control.kind").value("number"))
             .andExpect(jsonPath("$.data.values.declaration.groups[0].names['zh-CN']").value("工具"))
             .andExpect(jsonPath("$.data.values.declaration.groups[0].sort").value(7))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].label").value("菜单权限"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.kind").value("object-array"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemKeyPath").doesNotHaveJsonPath())
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.defaultItem.code").value("app:app-translated:"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[0].label").value("权限码"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[1].control.kind").value("localized-text"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[1].control.requiredLocales[0]").value("en"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[2].path").value("/groupKey"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[3].control.kind").value("number"))
+            .andExpect(jsonPath("$.data.values.declaration.permissions[0].names['zh-CN']").value("查看"))
+            .andExpect(jsonPath("$.data.fields[1].path").value("/entry/path"))
+            .andExpect(jsonPath("$.data.fields[1].label").value("应用地址"))
+            .andExpect(jsonPath("$.data.fields[1].control.kind").value("text"))
+            .andExpect(jsonPath("$.data.values.entry.renderer").value("panels"))
             .andExpect(jsonPath("$.data.values.declaration.names['ko-KR']").value("앱"))
             .andExpect(jsonPath("$.data.values.declaration.descriptions['zh-CN']").value("应用说明"));
     }
@@ -655,9 +671,18 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.errors[0].field").value("/declaration/groups"))
             .andExpect(jsonPath("$.data.save.path").value(saved));
-        declaration.put("groups", List.of());
+        declaration.put("groups", List.of(JSONObject.of("key", "tools", "names", JSONObject.of("en", "Tools"), "sort", 0)));
+        var permission = JSONObject.of("code", ApplicationCatalog.permissionPrefix(id) + "read",
+            "names", JSONObject.of("en", ""), "groupKey", "tools", "sort", 3);
+        declaration.put("permissions", List.of(permission));
+        http.perform(post(CATALOGUE + "/form").contentType(MediaType.APPLICATION_JSON)
+                .content(JSONObject.of("section", "create", "target", JSONObject.of("kind", "draft", "id", id), "values", values).toJSONString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.errors[0].field").value("/declaration/permissions/0/names/en"));
+        permission.getJSONObject("names").put("en", "Read");
         http.perform(put(saved).contentType(MediaType.APPLICATION_JSON).content(values.toJSONString()))
             .andExpect(status().isOk());
+        assertEquals(permission, catalog.require(id).getJSONArray("permissions").getJSONObject(0));
         var before = records();
         http.perform(put(saved).contentType(MediaType.APPLICATION_JSON).content(values.toJSONString()))
             .andExpect(status().isConflict());
