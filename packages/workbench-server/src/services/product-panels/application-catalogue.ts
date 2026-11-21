@@ -4,7 +4,8 @@ import {
   applicationCatalogueRecordSchema, applicationEntriesUpdateSchema, applicationIdentityUpdateSchema,
   type ApplicationCatalogueFormRequest,
 } from "@ontomato/contracts/application-catalogue";
-import { panelFormDescriptionSchema } from "@ontomato/contracts/panel-projection";
+import type { PanelFormOption } from "@ontomato/contracts/form-fields";
+import { panelFormDescriptionSchema, type PanelFormDescription, type PanelFormField } from "@ontomato/contracts/panel-projection";
 import { APPLICATION } from "@ontomato/contracts/platform-object-types";
 import { applicationCatalogueScopeSchema } from "@ontomato/contracts/product-catalog-query";
 import { config } from "../../config/application";
@@ -12,6 +13,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { backendDelete, backendGet, backendPost, backendPut, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
+import { listDefaultAgentOptions } from "../assistant/default-agents";
 
 const applicationPath = "/platform/applications";
 const cataloguePath = `${applicationPath}/catalogue`;
@@ -74,8 +76,30 @@ export function applicationCatalogueClient(viewer: AssistantCredentials) {
   };
 }
 
-export function createApplicationReadAdapter(_owner: ProductOwner, viewer: AssistantCredentials) {
-  const { query, record, form } = applicationCatalogueClient(viewer);
+/** The default agents an entry may name: the agent owner's list for this domain, in the reader's language. */
+export async function defaultAgentChoices(domainId: string, locale?: string): Promise<PanelFormOption[]> {
+  return (await listDefaultAgentOptions(domainId, locale))
+    .map(({ value, label }) => ({ value, label, description: null, disabled: false, disabledReason: null }));
+}
+
+/** The application owner declares each entry's default agent as a select without options; its options are the agent owner's. */
+async function withDefaultAgentChoices(description: PanelFormDescription, choices: () => Promise<PanelFormOption[]>) {
+  const entries = description.fields.find(field => field.path === "/panelUses");
+  if (entries?.control.kind !== "object-array") return description;
+  const control = entries.control;
+  const isAgent = (field: PanelFormField) => field.path === "/defaultAgent" && field.control.kind === "select";
+  if (!control.itemFields.some(isAgent)) return description;
+  const options = await choices();
+  const itemFields = control.itemFields.map((field): PanelFormField =>
+    isAgent(field) && field.control.kind === "select" ? { ...field, control: { ...field.control, options } } : field);
+  return { ...description, fields: description.fields.map(field => field === entries ? { ...entries, control: { ...control, itemFields } } : field) };
+}
+
+export function createApplicationReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
+  const client = applicationCatalogueClient(viewer);
+  const { query, record } = client;
+  const form = async (input: ApplicationCatalogueFormRequest) =>
+    withDefaultAgentChoices(await client.form(input), () => defaultAgentChoices(owner.domainId, viewer.locale));
   return {
     query, record,
     async form(primaryKey: string, { section, values, changedField = null }: EditFormParams) {

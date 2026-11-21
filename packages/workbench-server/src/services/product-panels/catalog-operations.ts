@@ -19,7 +19,8 @@ import { APPLICATION, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contra
 import { HttpError } from "../../utils/errors";
 import { BackendResponseError } from "../../utils/backend-client";
 import { changeProductGrant } from "../product-governance/grants";
-import { applicationCatalogueClient, applicationDraftIdSchema } from "./application-catalogue";
+import { panelFormObjectSelectError } from "@ontomato/contracts/form-fields";
+import { applicationCatalogueClient, applicationDraftIdSchema, defaultAgentChoices } from "./application-catalogue";
 import {
   changeCurrentProductDomainGrant, changeCurrentProductGrant, copyCurrentProduct, deleteCurrentProduct,
 } from "./catalog";
@@ -58,11 +59,31 @@ function ownerFieldRefusal(error: BackendResponseError) {
   }
 }
 
+/** A refusal decided before the owner is called, already naming its fields. */
+class FieldRefusal extends Error {
+  constructor(readonly outcome: Extract<SinglePanelOperationOutcome, { kind: "refusal" }>) { super(outcome.message); }
+}
+
+/**
+ * Each entry's default agent is one of the agent owner's choices, as the form offered them; leaving it out keeps the
+ * general assistant. Checked on the values as sent, so a wrong shape is named at its field rather than as a bad request.
+ */
+async function checkDefaultAgents(domainId: string, locale: string | undefined, values: Record<string, unknown>) {
+  const uses = Array.isArray(values.panelUses) ? values.panelUses : [];
+  const chosen = uses.map(use => (use !== null && typeof use === "object" ? (use as Record<string, RuntimeJsonValue>).defaultAgent : undefined));
+  if (chosen.every(value => value === undefined)) return;
+  const options = await defaultAgentChoices(domainId, locale);
+  const errors = chosen.flatMap((value, index) =>
+    panelFormObjectSelectError(`/panelUses/${index}/defaultAgent`, value, { required: false, options }) ?? []);
+  if (errors.length) throw new FieldRefusal({ kind: "refusal", code: "APPLICATION_ENTRY_INVALID", message: errors[0]!.message, errors });
+}
+
 async function write(type: string, run: () => Promise<{ primaryKey: string; data: OutcomeData }>): Promise<SinglePanelOperationOutcome> {
   try {
     const { primaryKey, data } = await run();
     return { kind: "success", data, affected: { objects: [{ objectType: type, primaryKey }], objectTypes: [type] } };
   } catch (error) {
+    if (error instanceof FieldRefusal) return error.outcome;
     if (error instanceof HttpError && error.status >= 400 && error.status < 500) {
       const fields = error instanceof BackendResponseError ? ownerFieldRefusal(error) : undefined;
       return fields ?? { kind: "refusal", code: error.code ?? "PRODUCT_WRITE_REFUSED", message: error.message };
@@ -195,12 +216,13 @@ const applicationSave: PanelWriteServerOperation = {
     draftValues: values => panelFormValuesSchema.parse(values),
     createdObject: data => ({ objectType: APPLICATION, primaryKey: savedId.parse(data).id }),
   },
-  async execute({ executor: { credentials } }, target, input) {
+  async execute({ executor: { owner, credentials } }, target, input) {
     return write(APPLICATION, async () => {
       const { values, submittedFields } = writeInput(panelFormSaveInputSchema, input);
       const java = applicationCatalogueClient(credentials);
       if (target.kind === "draft") {
         const { id: formId, ...formValues } = values;
+        await checkDefaultAgents(owner.domainId, credentials.locale, formValues);
         const body = writeInput(applicationCatalogueCreateSchema, formValues);
         const id = writeInput(applicationDraftIdSchema,
           target.id ?? formId ?? writeInput(applicationDraftPath, body.entry.path).slice("/applications/".length));
@@ -216,8 +238,10 @@ const applicationSave: PanelWriteServerOperation = {
       const body = submittedFields === undefined ? values : applySubmittedFields(
         (await java.form({ section, target, changedField: null })).values, values, submittedFields,
       );
-      if (entries) await java.saveEntries(id, writeInput(applicationEntriesUpdateSchema, body));
-      else await java.saveIdentity(id, writeInput(applicationIdentityUpdateSchema, body));
+      if (entries) {
+        await checkDefaultAgents(owner.domainId, credentials.locale, body);
+        await java.saveEntries(id, writeInput(applicationEntriesUpdateSchema, body));
+      } else await java.saveIdentity(id, writeInput(applicationIdentityUpdateSchema, body));
       return { primaryKey: id, data: { id } };
     });
   },
