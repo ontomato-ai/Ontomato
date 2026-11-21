@@ -6,6 +6,6 @@ A content read uses the same application-use query for the record and snapshot. 
 
 During the same read, the server uses the initiator's credentials to verify the actual application, use and entrance through their existing owner. The owner's admission decision establishes access. The server compares the resolved use's panel ID with the `panel.id` of the record it reads solely to tie the context to that snapshot. If the use now points to another panel, return the verified entrance's member context with `member: null`.
 
-An application frame record uses `GET /api/product-panels/:id?applicationId=…&useId=…&source=frame`. The entry must resolve to this frame and the reader must have use access to it. The response is `{ panel }`. For member reads, nested placements and personal state in that frame, use `{kind:"frame",applicationId,useId}` as the source.
+An application frame uses `GET /api/product-panels/:id?applicationId=…&useId=…&source=frame` and the same query on `GET /api/product-panels/:id/snapshot`. For both, the entry must resolve to this frame and the reader must have use access to it. The record returns `{ panel }`, and the snapshot returns the frame and its fixed member revisions. Neither response includes the content panel's page skill. For member reads, nested placements and personal state in that frame, use `{kind:"frame",applicationId,useId}` as the source.
 
 Human operation requests use the same flat operation reference with `root:"frame"`. Preparation freezes the frame ID and dispatch rechecks the entry, frame and operation.
