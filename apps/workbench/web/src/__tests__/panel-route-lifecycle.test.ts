@@ -43,6 +43,8 @@ function answer(request: Sent) {
     id, kind: "product", names: { en: id }, descriptions: {}, icon: "schedules",
     rail: "apps", category: "business", sort: 0, entry: { path: `/${id.slice(4)}`, renderer: "panels" },
     entryAccess: ["domain-member"], scheduleAdapter: null, releaseId: null,
+    // The navigation catalogue lists the reader's entries, as Java answers it: where the application's own address starts.
+    panelUses: [id === appA ? useP : useQ],
   })) });
   const applicationId = [appA, appB].find(id => request.path === `/api/data-query/platform/applications/${id}/panel-uses`);
   if (applicationId) return Response.json({ data: {

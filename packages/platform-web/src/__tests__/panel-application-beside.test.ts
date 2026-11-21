@@ -36,7 +36,15 @@ const uses: ApplicationPanelUse[] = [
     access: { kind: "domain-member" },
   },
 ];
-vi.mock("../panel-host", () => ({ panelUsesOf: async () => uses, platformPanelHost: (_applicationId: string, use: ApplicationPanelUse) => ({ use }) }));
+vi.mock("../panel-host", () => ({
+  // Java's resolve-entry, answered from the test's use relations: the one at the asked address, with the menu.
+  resolveApplicationEntry: async ({ path }: { path: string }) => {
+    const use = uses.find((candidate) => candidate.path.replace(/^#/, "") === path || candidate.path === path);
+    if (!use) throw new Error(`No entry at ${path}`);
+    return { applicationId: path.split("/")[2], use, menu: { groups: [], panelUses: uses } };
+  },
+  platformPanelHost: (_applicationId: string, use: ApplicationPanelUse) => ({ use }),
+}));
 
 /** Every panel instance mounted, with the state it opened at. */
 const instances: { initial: Record<string, unknown>; report: () => void; dirty: (value: boolean) => void }[] = [];

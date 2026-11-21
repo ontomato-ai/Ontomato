@@ -284,11 +284,20 @@ export type ApplicationPanelUse = z.infer<typeof applicationPanelUseSchema>;
 /** An entry shipped by the platform must point to a panel shipped by the platform. */
 export const builtinApplicationPanelUseSchema = applicationPanelUseSchema.extend({ panelId: builtinProductIdSchema });
 
-export const applicationEntryResolutionQuerySchema = z.object({ path: applicationPanelUsePathSchema }).strict();
+export const panelUseRefSchema = z.object({ applicationId: id, useId: id }).strict();
+export type PanelUseRef = z.infer<typeof panelUseRefSchema>;
+
+export const applicationEntryResolutionQuerySchema = z.union([
+  z.object({ path: applicationPanelUsePathSchema }).strict(),
+  panelUseRefSchema,
+]);
+export type ApplicationEntryResolutionQuery = z.infer<typeof applicationEntryResolutionQuerySchema>;
 export const applicationEntryMenuSchema = z.object({
   groups: applicationMetadataSchema.shape.groups,
   panelUses: z.array(applicationPanelUseSchema),
 }).strict();
+export type ApplicationEntryMenu = z.infer<typeof applicationEntryMenuSchema>;
+
 export const applicationEntryResolutionSchema = z.object({
   applicationId: id,
   use: applicationPanelUseSchema,
@@ -297,6 +306,29 @@ export const applicationEntryResolutionSchema = z.object({
   menu: applicationEntryMenuSchema,
 }).strict();
 export type ApplicationEntryResolution = z.infer<typeof applicationEntryResolutionSchema>;
+
+/** Only the host hands this context to an application's frame. */
+export const currentApplicationEntrySchema = panelUseRefSchema.extend({
+  pageKey: applicationPanelUseSchema.shape.pageKey,
+  panelId: applicationPanelUseSchema.shape.panelId,
+  path: applicationPanelUsePathSchema,
+}).readonly();
+export type CurrentApplicationEntry = z.infer<typeof currentApplicationEntrySchema>;
+
+export const applicationFrameContextSchema = z.object({
+  currentEntry: currentApplicationEntrySchema,
+  menu: applicationEntryMenuSchema,
+}).strict().readonly();
+export type ApplicationFrameContext = z.infer<typeof applicationFrameContextSchema>;
+
+export function applicationFrameContextOf({ applicationId, use, menu }: ApplicationEntryResolution): ApplicationFrameContext {
+  const { id: useId, pageKey, panelId, path } = use;
+  return applicationFrameContextSchema.parse({ currentEntry: { applicationId, useId, pageKey, panelId, path }, menu });
+}
+
+/** Origin of reads on a frame's own members. Resolve the granted frame from the application use. */
+export const applicationFrameSourceSchema = panelUseRefSchema.extend({ kind: z.literal("frame") });
+export type ApplicationFrameSource = z.infer<typeof applicationFrameSourceSchema>;
 
 export const applicationDeliverySchema = z.object({
   panels: z.array(id),
@@ -321,12 +353,10 @@ export const applicationPanelReferencesRequestSchema = z.object({
   icon: domainApplicationIconSchema.optional(),
   framePanelId: id.optional(),
   uses: z.array(applicationPanelUseSchema.pick({ id: true, panelId: true, inputs: true, defaultAgent: true })),
+  theme: applicationEntrySettings.theme,
   delivery: applicationDeliverySchema.pick({ panels: true, projections: true }),
 }).strict();
 export type ApplicationPanelReferencesRequest = z.infer<typeof applicationPanelReferencesRequestSchema>;
-
-export const panelUseRefSchema = z.object({ applicationId: id, useId: id }).strict();
-export type PanelUseRef = z.infer<typeof panelUseRefSchema>;
 
 /** Java exposes registered entry facts to the authenticated provider service. */
 export const panelSkillSourceSchema = panelUseRefSchema.extend({

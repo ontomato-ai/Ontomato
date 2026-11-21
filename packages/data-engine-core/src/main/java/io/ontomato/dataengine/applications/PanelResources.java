@@ -30,14 +30,14 @@ public class PanelResources {
     private record DeliveryReferences(List<String> panels, List<String> projections) {}
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private record References(String domainId, String framePanelId, List<UseReference> uses, DeliveryReferences delivery,
-                              String icon) {}
+                              JsonNode theme, String icon) {}
 
     public void requireCurrent(String domain, String framePanelId, List<ApplicationPanelUse> uses,
-                               ApplicationCatalog.Delivery delivery, String icon) {
+                               ApplicationCatalog.Delivery delivery, JsonNode theme, String icon) {
         var references = new References(domain, framePanelId,
             uses.stream().map(use -> new UseReference(use.id(), use.panelId(), use.inputs(), use.defaultAgent())).toList(),
             delivery == null ? new DeliveryReferences(List.of(), List.of())
-                : new DeliveryReferences(delivery.panels(), delivery.projections()), icon);
+                : new DeliveryReferences(delivery.panels(), delivery.projections()), theme, icon);
         try {
             http.post().uri("/internal/product-panels/validate-references").contentType(MediaType.APPLICATION_JSON)
                 .body(references).retrieve().toBodilessEntity();
