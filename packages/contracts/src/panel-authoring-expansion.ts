@@ -31,7 +31,7 @@ export function expandPanelAuthoringMember(
     components: readonly AppsSdkComponentCatalogEntry[];
     typeTable: Pick<PlatformTypeTableResponse, "objectTypes" | "unavailableActions">;
   },
-): { projection: DirectProjectionPorts; placement: Pick<PanelMember, "inputs" | "outputs" | "readOperationInputs"> } {
+): { projection: DirectProjectionPorts; placement: Pick<PanelMember, "inputs" | "outputs" | "readOperationInputs" | "formField"> } {
   const fail = (field: string, message: string): never => {
     throw new Error(`Member '${key}', field '${field}': ${message}`);
   };
@@ -232,6 +232,7 @@ export function expandPanelAuthoringMember(
       ...(inputBindings.size && { inputs: Object.fromEntries(inputBindings) }),
       ...(outputBindings.size && { outputs: Object.fromEntries(outputBindings) }),
       ...(readOperationInputs && { readOperationInputs }),
+      ...(member.formField && { formField: member.formField }),
     },
   };
 }

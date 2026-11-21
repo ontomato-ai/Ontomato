@@ -57,6 +57,7 @@ function dispatchResourceError(el: HTMLElement, attrs?: Record<string, string>) 
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   while (trackedCleanup.length > 0) {
     trackedCleanup.pop()?.();
   }
@@ -91,9 +92,13 @@ describe("stale entry script recovery", () => {
       new Response('<!doctype html><script type="module" src="./assets/index-200.js"></script>', { status: 200 }),
     );
 
-    // Case A: static chunk preload error or module graph failure triggers on window load with empty #app.
+    // Case A: static chunk preload error or module graph failure leaves #app empty past the grace after window load.
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
     const cleanupFirst = installRecoveryScript();
     window.dispatchEvent(new Event("load"));
+    vi.advanceTimersByTime(9_000);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1_000);
 
     await vi.waitFor(() => {
       expect(fetchSpy).toHaveBeenCalledTimes(1);
@@ -106,10 +111,52 @@ describe("stale entry script recovery", () => {
     reloadSpy.mockClear();
     installRecoveryScript();
     window.dispatchEvent(new Event("load"));
+    vi.advanceTimersByTime(10_000);
+    vi.useRealTimers();
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(reloadSpy).not.toHaveBeenCalled();
     expect(document.querySelector("#app")?.textContent).toContain("页面版本已更新，请刷新");
+  });
+
+  it("takes an app Vue mounted with only a placeholder as mounted, and leaves no prompt or retry marker behind", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    const reloadSpy = vi.spyOn(window.location, "reload").mockImplementation(() => {});
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    // A marker left by an earlier recovery in this tab.
+    sessionStorage.setItem("ontomato_stale_entry_reload", "1");
+
+    installRecoveryScript();
+    // Vue has mounted #app; its root renders a comment until the router resolves.
+    const root = document.getElementById("app")!;
+    root.setAttribute("data-v-app", "");
+    root.appendChild(document.createComment(""));
+    window.dispatchEvent(new Event("load"));
+    vi.advanceTimersByTime(10_000);
+    vi.useRealTimers();
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(reloadSpy).not.toHaveBeenCalled();
+    expect(document.getElementById("ontomato-stale-entry-notice")).toBeNull();
+    expect(sessionStorage.getItem("ontomato_stale_entry_reload")).toBeNull();
+  });
+
+  it("takes the prompt away, with its button, once the app mounts after it was shown", async () => {
+    vi.spyOn(window.location, "reload").mockImplementation(() => {});
+    sessionStorage.setItem("ontomato_stale_entry_reload", "1");
+    installRecoveryScript();
+    const script = document.createElement("script");
+    script.type = "module";
+    dispatchResourceError(script, { src: "./assets/index-old.js" });
+    expect(document.querySelector("#ontomato-stale-entry-notice button")).not.toBeNull();
+
+    // The app mounts after all: nothing of the prompt is left for focus to reach.
+    const root = document.getElementById("app")!;
+    root.setAttribute("data-v-app", "");
+    root.insertAdjacentHTML("afterbegin", "<div class=\"platform-shell\"></div>");
+    await vi.waitFor(() => expect(document.getElementById("ontomato-stale-entry-notice")).toBeNull());
+    expect(document.querySelectorAll("#app button")).toHaveLength(0);
+    expect(sessionStorage.getItem("ontomato_stale_entry_reload")).toBeNull();
   });
 
   it("shows a visible update notice instead of looping when entry still fails after the retry", async () => {

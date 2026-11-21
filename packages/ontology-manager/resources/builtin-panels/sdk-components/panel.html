@@ -21,6 +21,13 @@
     border-radius: var(--radius-md);
     background: var(--el-bg-color);
   }
+  .sdk-catalogue-list .sdk-object-list-item-sub {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    line-height: var(--leading-xs);
+  }
   .sdk-catalogue-detail {
     display: flex;
     flex-direction: column;
@@ -108,6 +115,22 @@
   .sdk-table td {
     color: var(--el-text-color-primary);
     word-break: break-word;
+  }
+  .sdk-config-table-scroll {
+    min-inline-size: 0;
+    overflow-x: auto;
+    border: 1px solid var(--ui-divider);
+    border-radius: var(--radius-md);
+  }
+  .sdk-config-table thead {
+    background: var(--ui-fill-tertiary);
+  }
+  .sdk-config-table th {
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
+  .sdk-config-table tbody tr:last-child td {
+    border-bottom: 0;
   }
   .sdk-tag {
     display: inline-block;
@@ -214,26 +237,29 @@
           </section-group>
 
           <section-group :title="t('components.section.config')" :description="t('components.section.configHint')">
-            <table v-if="configRows.length" class="sdk-table">
-              <thead>
-                <tr>
-                  <th>{{ t('components.table.name') }}</th>
-                  <th>{{ t('components.table.type') }}</th>
-                  <th>{{ t('components.table.required') }}</th>
-                  <th>{{ t('components.table.default') }}</th>
-                  <th>{{ t('components.table.description') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in configRows" :key="row.name">
-                  <td><code>{{ row.name }}</code></td>
-                  <td><code>{{ row.type }}</code></td>
-                  <td>{{ row.required ? t('components.yes') : t('components.no') }}</td>
-                  <td class="sdk-default"><code v-if="row.hasDefault">{{ row.default }}</code><span v-else class="sdk-muted-cell">—</span></td>
-                  <td>{{ row.description }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <div v-if="configRows.length" class="sdk-config-table-scroll" role="region"
+              :aria-label="t('components.section.config')" tabindex="0">
+              <table class="sdk-table sdk-config-table">
+                <thead>
+                  <tr>
+                    <th>{{ t('components.table.name') }}</th>
+                    <th>{{ t('components.table.type') }}</th>
+                    <th>{{ t('components.table.required') }}</th>
+                    <th>{{ t('components.table.default') }}</th>
+                    <th>{{ t('components.table.description') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in configRows" :key="row.name">
+                    <td><code>{{ row.name }}</code></td>
+                    <td><code>{{ row.type }}</code></td>
+                    <td>{{ row.required ? t('components.yes') : t('components.no') }}</td>
+                    <td class="sdk-default"><code v-if="row.hasDefault">{{ row.default }}</code><span v-else class="sdk-muted-cell">—</span></td>
+                    <td>{{ row.description }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
             <p v-else class="sdk-empty">{{ t('components.config.none') }}</p>
           </section-group>
 

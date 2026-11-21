@@ -68,6 +68,82 @@
           "type": "danger"
         },
         "id": "builtin-product-8a1b2e98-239b-4c0b-878a-5cfa141eeed1"
+      },
+      "model": {
+        "component": "ReferencePicker",
+        "type": "platform:ModelOption",
+        "data": {
+          "options": "options",
+          "selected": "resolve"
+        },
+        "formField": {
+          "slot": "form",
+          "path": "/modelSelection/modelId"
+        },
+        "id": "builtin-product-cc37f7cd-0a61-4b15-a2a1-64b2d571dc08"
+      },
+      "skills": {
+        "component": "ReferencePicker",
+        "type": "platform:Skill",
+        "data": {
+          "options": "options",
+          "selected": "resolve"
+        },
+        "formField": {
+          "slot": "form",
+          "path": "/skills"
+        },
+        "id": "builtin-product-b79c7ca3-8287-4fd7-97d5-94c27a818455"
+      },
+      "tools": {
+        "component": "ReferencePicker",
+        "type": "platform:McpServiceOption",
+        "data": {
+          "options": "options",
+          "selected": "resolve"
+        },
+        "formField": {
+          "slot": "form",
+          "path": "/enabledMcpServiceIds"
+        },
+        "id": "builtin-product-733252d6-8534-4654-944a-a1f5f8ce0a27"
+      },
+      "executor": {
+        "component": "ReferencePicker",
+        "type": "platform:User",
+        "data": {
+          "options": "options",
+          "selected": "resolve"
+        },
+        "formField": {
+          "slot": "form",
+          "path": "/executionUserId"
+        },
+        "id": "builtin-product-cddb5180-ef56-46cc-a1b1-f933d08f904a"
+      },
+      "scope": {
+        "component": "ObjectGraph",
+        "data": {
+          "nodes": {
+            "type": "platform:ObjectType",
+            "read": "list"
+          },
+          "edges": {
+            "type": "platform:Relationship",
+            "read": "list"
+          }
+        },
+        "config": {
+          "edgeEnds": {
+            "source": "/fromclass",
+            "target": "/toclass"
+          }
+        },
+        "formField": {
+          "slot": "form",
+          "path": "/classNames"
+        },
+        "id": "builtin-product-4476e525-bcc6-47a8-9cfa-ae78ecabb8d6"
       }
     },
     "events": {}
