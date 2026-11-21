@@ -187,9 +187,12 @@ async function readPanelWorkspace(directory, checks, materialPath, loadAuthoring
   return { material, panel, ...await workspaceDefinition(directory, files, checks, panel, loadAuthoring) };
 }
 
-function storedProjectionDefinition({ id: _id, domainId: _domainId, ownerId: _ownerId, editable: _editable,
-  revision: _revision, createdAt: _createdAt, updatedAt: _updatedAt, ...definition }) {
-  return definition;
+const projectionRecordMetadata = new Set([
+  "id", "domainId", "ownerId", "editable", "revision", "createdAt", "updatedAt",
+]);
+
+function storedProjectionDefinition(record) {
+  return Object.fromEntries(Object.entries(record).filter(([key]) => !projectionRecordMetadata.has(key)));
 }
 
 async function workspaceRegistration({ panel, inline, material, definition }, client, checks) {
