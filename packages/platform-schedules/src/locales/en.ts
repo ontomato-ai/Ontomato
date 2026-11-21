@@ -47,17 +47,7 @@ export default {
       minutes: "{m} min {s} s",
       hours: "{h} h {m} min",
     },
-    frequency: {
-      every: {
-        minute: "Every minute | Every {n} minutes",
-        hour: "Every hour | Every {n} hours",
-        day: "Every day | Every {n} days",
-      },
-      daily: "Every day at {time}",
-      weekly: "Every {weekday} at {time}",
-      monthly: "Day {day} of every month at {time}",
-      cron: "Cron {expression}",
-    },
+    frequency: schedulePanelText.frequency,
     card: {
       switch: "Run “{title}” on its schedule",
       paused: "Paused: {reason}",

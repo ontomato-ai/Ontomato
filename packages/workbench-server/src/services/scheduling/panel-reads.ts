@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { applicationCatalogSchema } from "@ontomato/contracts/platform-identity";
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
 import {
   platformScheduleApplicationsSchema,
@@ -11,9 +13,11 @@ import {
 } from "@ontomato/contracts/platform-schedules";
 import { createScheduledTaskReads } from "@ontomato/platform-schedules/panel-reads";
 import { config } from "../../config/application";
-import { tForLocale } from "../../i18n";
+import { resolveLocale, tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
+
+const applicationCatalogResponse = z.object({ success: z.literal(true), data: applicationCatalogSchema });
 
 export function createScheduledTaskReadAdapter(viewer: AssistantCredentials, signal?: AbortSignal) {
   const options = {
@@ -22,6 +26,8 @@ export function createScheduledTaskReadAdapter(viewer: AssistantCredentials, sig
   };
   const base = config.dataQuery.baseUrl.replace(/\/$/, "") + platformSchedulesPath.slice(DATA_QUERY_GATEWAY.length);
   const taskPath = (id: string) => `${base}/${encodeURIComponent(id)}`;
+  const locale = resolveLocale(viewer.locale);
+  const catalogPath = `${config.dataQuery.baseUrl.replace(/\/$/, "")}/platform/applications?purpose=schedules`;
   return createScheduledTaskReads({
     async list() {
       const response = await backendGet("scheduled-task-list", base, options);
@@ -41,8 +47,18 @@ export function createScheduledTaskReadAdapter(viewer: AssistantCredentials, sig
       return platformTaskRunSchema.parse(JSON.parse(response.text));
     },
     async applications() {
-      const response = await backendGet("scheduled-task-applications", `${base}/applications`, options);
-      return platformScheduleApplicationsSchema.parse(JSON.parse(response.text));
+      const [response, catalog] = await Promise.all([
+        backendGet("scheduled-task-applications", `${base}/applications`, options),
+        backendGet("scheduled-task-application-names", catalogPath, options),
+      ]);
+      const { applications } = platformScheduleApplicationsSchema.parse(JSON.parse(response.text));
+      const { data } = applicationCatalogResponse.parse(JSON.parse(catalog.text));
+      const names = new Map(data.map(({ id, names }) => [id, names[locale] ?? names.en!]));
+      return applications.map(app => {
+        const name = names.get(app.id);
+        if (name === undefined) throw new Error(`The application catalog has no scheduled application '${app.id}'`);
+        return { ...app, name };
+      });
     },
     async form(appId, request) {
       const response = await backendPost(
@@ -51,5 +67,5 @@ export function createScheduledTaskReadAdapter(viewer: AssistantCredentials, sig
       );
       return platformScheduleFormSchema.parse(JSON.parse(response.text));
     },
-  }, key => tForLocale(viewer.locale, key));
+  }, locale, (key, values) => tForLocale(locale, key, values));
 }

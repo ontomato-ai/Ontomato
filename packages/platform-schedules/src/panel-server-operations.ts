@@ -3,7 +3,9 @@ import { panelFormTargetSchema, type PanelOperationCall } from "@ontomato/contra
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { platformTaskEnabledSchema, platformTaskRunSchema, platformTaskSchema, platformTaskUpdateSchema } from "@ontomato/contracts/platform-schedules";
 import { RUN_NOW } from "@ontomato/contracts/panel-client-requests";
-import { CREATE_SCHEDULED_TASK, DELETE_SCHEDULED_TASK, SCHEDULED_TASK, SET_SCHEDULED_TASK_ENABLED } from "@ontomato/contracts/platform-object-types";
+import {
+  APPLICATION, CREATE_SCHEDULED_TASK, DELETE_SCHEDULED_TASK, RENEW_SCHEDULED_TASK_CREDENTIAL, SCHEDULED_TASK, SET_SCHEDULED_TASK_ENABLED,
+} from "@ontomato/contracts/platform-object-types";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import type { PlatformSchedulesHost } from "./host";
 import { createSchedulesApi, ScheduleRequestError } from "./api";
@@ -35,13 +37,16 @@ function panelFieldPath(field: string): string {
 }
 
 /** The owner interprets its own structured refusal; uncertain transport errors remain the coordinator's outcome. */
-async function outcome(call: () => Promise<{ data: unknown; taskId: string; message?: string }>): Promise<Exclude<PanelOperationOutcome, { kind: "batch" }>> {
+async function outcome(call: () => Promise<{ data: unknown; taskId?: string; message?: string }>): Promise<Exclude<PanelOperationOutcome, { kind: "batch" }>> {
   try {
     const { data, taskId, message } = await call();
     return {
       kind: "success", data: JSON.parse(JSON.stringify(data)),
       ...(message && { message }),
-      affected: { objects: [{ objectType: SCHEDULED_TASK, primaryKey: taskId }], objectTypes: [SCHEDULED_TASK] },
+      affected: {
+        objects: taskId ? [{ objectType: SCHEDULED_TASK, primaryKey: taskId }] : [],
+        objectTypes: [SCHEDULED_TASK],
+      },
     };
   } catch (error) {
     if (!(error instanceof ScheduleRequestError) || !error.refusal) throw error;
@@ -163,10 +168,39 @@ export function createScheduledTaskServerOperations(translate: (locale: string |
     },
   } as const;
   return [
-    scheduledTaskSaveOperation,
+    {
+      ...scheduledTaskSaveOperation,
+      async execute(...[host, target, input, intentId]: Parameters<typeof scheduledTaskSaveOperation.execute>) {
+        const result = await scheduledTaskSaveOperation.execute(host, target, input, intentId);
+        if (result.kind !== "refusal" || result.code !== "REVISION_CONFLICT") return result;
+        return { kind: "refusal", code: result.code, message: translate(host.locale, "platformSchedules.panelErrors.revisionConflict") } as const;
+      },
+    },
     runNow,
     scheduledTaskCreate,
     scheduledTaskSetEnabled,
+    {
+      handlerRef: RENEW_SCHEDULED_TASK_CREDENTIAL,
+      labelKey: "platformSchedules.panelManagement.renewCredential",
+      kind: "action",
+      binding: { kind: "PlatformOperation", id: RENEW_SCHEDULED_TASK_CREDENTIAL },
+      effect: "write",
+      batch: false,
+      targetType: APPLICATION,
+      targetInput: "application",
+      targetSchema: z.object({
+        kind: z.literal("object"), objectType: z.literal(APPLICATION), primaryKey: z.literal("schedules"),
+      }).strict(),
+      inputSchema: z.object({}).strict(),
+      resultSchema: z.object({}).strict(),
+      targetLabel: (host: Host) => Promise.resolve(translate(host.locale, "platformOntology.types.scheduledTask")),
+      execute(host: Host) {
+        return outcome(async () => {
+          await scheduledTaskPanelOperations(host).renewCredential();
+          return { data: {} };
+        });
+      },
+    },
     {
       handlerRef: DELETE_SCHEDULED_TASK,
       labelKey: "platformSchedules.panelManagement.delete",

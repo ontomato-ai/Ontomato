@@ -1,6 +1,5 @@
 <style>
   [v-cloak] { display: none; }
-  .agent-settings-aside { display: flex; flex-direction: column; gap: var(--spacing-sm); }
   .agent-settings-button {
     min-height: var(--control-height-sm);
     width: fit-content;
@@ -14,12 +13,6 @@
   }
   .agent-settings-button:hover { background: var(--ui-fill-tertiary); color: var(--el-text-color-primary); }
   .agent-settings-button:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-  .agent-settings-button.primary {
-    background: var(--el-color-primary);
-    color: var(--on-primary);
-    font-weight: var(--font-medium);
-  }
-  .agent-settings-button.primary:hover { background: var(--brand-primary-hover); color: var(--on-primary); }
   .agent-settings-empty { color: var(--el-text-color-secondary); margin: 0; }
   .agent-settings-detail { display: flex; flex-direction: column; gap: var(--page-content-gap); }
   .agent-settings-head {
@@ -37,10 +30,7 @@
   <two-pane-layout v-else-if="rows.status !== 'loading'">
     <template #aside>
       <section-group :title="t('agents.title')">
-        <div class="agent-settings-aside">
-          <button type="button" class="agent-settings-button primary" @click="create">{{ t('agents.new') }}</button>
-          <projection slot="list"></projection>
-        </div>
+        <projection slot="list"></projection>
       </section-group>
     </template>
     <p v-if="mode === 'list'" class="agent-settings-empty">{{ t('agents.choose') }}</p>
@@ -54,14 +44,15 @@
         </div>
       </div>
       <section-group :title="mode === 'create' ? t('agents.creating') : t('agents.definition')">
-        <projection slot="form"></projection>
-        <template v-if="mode !== 'list'">
-          <projection slot="model"></projection>
-          <projection slot="skills"></projection>
-          <projection slot="tools"></projection>
-          <projection slot="executor"></projection>
-          <projection slot="scope"></projection>
-        </template>
+        <projection slot="form">
+          <template #after-fields>
+            <projection slot="model"></projection>
+            <projection slot="skills"></projection>
+            <projection slot="tools"></projection>
+            <projection slot="executor"></projection>
+            <projection slot="scope"></projection>
+          </template>
+        </projection>
       </section-group>
     </div>
   </two-pane-layout>
