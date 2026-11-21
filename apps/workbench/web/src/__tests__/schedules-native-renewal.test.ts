@@ -7,7 +7,7 @@ import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { platformObjectTypes } from "@ontomato/contracts/platform-object-types";
-import type { PlatformTypeTableResponse } from "@ontomato/contracts/platform-type-table";
+import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { components } from "../../../../../packages/apps-sdk/src/catalogue";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
@@ -23,28 +23,28 @@ const use = application.panelUses![0]!;
 const id = "00000000-0000-4000-8000-000000000001";
 const operationId = "renew.renewCredential";
 const target = { kind: "object", objectType: "platform:Application", primaryKey: "schedules" };
-type TypeTable = PlatformTypeTableResponse["objectTypes"];
-const objectTypes: TypeTable = Object.fromEntries(Object.entries(platformObjectTypes).map(([type, entry]) => [
+const objectTypes = Object.fromEntries(Object.entries(platformObjectTypes).map(([type, entry]) => [
   type,
-  { ...entry, operations: entry.operations?.map(id => {
+  platformTypeTableEntrySchema.parse({ ...entry, operations: entry.operations?.map(id => {
     const form = id === "platform:ScheduledTask.save" || id === "platform:ScheduledTask.create";
     return {
       id, kind: form ? "form.save" : "action", effect: "write", batch: false, inputSchema: {},
       target: form ? { source: "draft" } : { source: "input", input: type === "platform:Application" ? "application" : "task" },
     };
-  }) },
+  }) }),
 ]));
 const { members: authoring, ...manifest } = panelAuthoringManifestSchema.parse(source.manifest);
+const catalogue = components.map(component => ({ ...component, ports: { props: [], events: [], slots: [] } }));
 const projections = new Map<string, ProductProjection>();
 const members = Object.fromEntries(Object.entries(authoring).map(([name, definition]) => {
   if (!("component" in definition)) throw new Error(`Expected an authored projection for ${name}`);
-  const { projection, placement } = expandPanelAuthoringMember(name, definition, { state: manifest.state, typeTable: { objectTypes }, components });
+  const { projection, placement } = expandPanelAuthoringMember(name, definition, { state: manifest.state, typeTable: { objectTypes }, components: catalogue });
   projections.set(definition.id!, {
     ...projection, id: definition.id!, name, description: name, visibility: "platform",
     domainId: null, ownerId: null, editable: false, revision: 1,
     createdAt: "2026-11-21T00:00:00Z", updatedAt: "2026-11-21T00:00:00Z",
   });
-  return [name, { ...placement, target: { projectionId: definition.id } }];
+  return [name, { ...placement, target: { projectionId: definition.id! } }];
 }));
 const panel = {
   ...panelRecord(use.panelId, "Scheduled tasks", definePanel({ ...manifest, members })),
