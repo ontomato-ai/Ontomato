@@ -90,6 +90,11 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
         return path.equals(root) || path.startsWith(root.equals("/") ? root : root + "/");
     }
 
+    // Match the shared contract's String.trim() without changing the text we store.
+    static boolean blankDescription(String text) {
+        return text.codePoints().allMatch(code -> code >= '\t' && code <= '\r' || Character.isSpaceChar(code) || code == 0xfeff);
+    }
+
     public static void validate(List<ApplicationPanelUse> uses) {
         var ids = new HashSet<String>();
         var pages = new HashSet<String>();
@@ -107,7 +112,7 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
                 || use.names().values().stream().anyMatch(name -> name == null || name.isEmpty())))
                 throw ApplicationCatalog.bad("A panel use's names require a nonblank English name and nonempty translations");
             if (use.descriptions() != null && (!use.descriptions().containsKey("en")
-                || use.descriptions().values().stream().anyMatch(text -> text == null || text.isBlank())))
+                || use.descriptions().values().stream().anyMatch(text -> text == null || blankDescription(text))))
                 throw ApplicationCatalog.bad("Panel entry " + use.pageKey() + " descriptions require nonblank English text and translations");
             if (use.inputs() != null) {
                 for (var input : use.inputs().entrySet()) {

@@ -212,7 +212,10 @@ final class ApplicationCatalogueForm {
                 var descriptions = errors.requiredObject(use, "descriptions", pointer);
                 if (descriptions != null) {
                     if (!descriptions.containsKey("en")) errors.required(pointer + "/en", "English description is required");
-                    validateTranslations(descriptions, pointer, true, errors);
+                    for (var description : descriptions.entrySet()) {
+                        if (!(description.getValue() instanceof String text) || ApplicationPanelUse.blankDescription(text))
+                            errors.invalidObject(pointer + "/" + PanelFormFields.pointer(description.getKey()), "Expected a nonblank description");
+                    }
                 }
             }
             validatePath(use, path + "/path", root, errors);

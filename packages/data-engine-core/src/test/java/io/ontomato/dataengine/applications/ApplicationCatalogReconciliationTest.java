@@ -220,7 +220,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             """)).andExpect(status().isOk())
             .andExpect(jsonPath("$.data.values.panelUses[0].descriptions.en").value("Read it here."));
         for (var invalid : List.of("null", "{}", "{\"fr\":\"Explication\"}", "{\"en\":\"   \"}",
-                "{\"en\":\"Read it.\",\"fr\":\"  \"}", "{\"en\":42}", "{\"en\":null}"))
+                "{\"en\":\"Read it.\",\"fr\":\"  \"}", "{\"en\":42}", "{\"en\":null}", "{\"en\":\"\u00a0\ufeff\"}"))
             http.perform(put(writer).contentType(MediaType.APPLICATION_JSON)
                 .content(registrationWithEntryDescriptions(invalid))).andExpect(status().isBadRequest());
 
