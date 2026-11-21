@@ -27,6 +27,14 @@ function registeredResults() {
     + "console.log(JSON.stringify(Object.keys(panelReadResultSchemas)));";
   return JSON.parse(execFileSync(process.execPath, ["--import", loader, "--input-type=module", "-e", source], { encoding: "utf8" }));
 }
+/** Every parameter name an owner's read declares, platform or customer ontology. */
+function declaredReadParameters() {
+  const loader = join(HERE, "../contracts/node_modules/tsx/dist/loader.mjs");
+  const source = `import { platformObjectTypes, customerOntologyReads, customerRelationReads } from ${JSON.stringify(join(HERE, "../contracts/src/platform-object-types.ts"))};`
+    + "const reads = [...Object.values(platformObjectTypes).flatMap((type) => Object.values(type.reads ?? {})), ...Object.values(customerOntologyReads), ...Object.values(customerRelationReads)];"
+    + "console.log(JSON.stringify([...new Set(reads.flatMap((read) => Object.keys(read.params ?? {})))]));";
+  return JSON.parse(execFileSync(process.execPath, ["--import", loader, "--input-type=module", "-e", source], { encoding: "utf8" }));
+}
 const EDITION = join(HERE, "../../apps/workbench/web/src/sdk-edition.ts");
 
 /** Every directly rendered component's data names, and the read results each may hold. */
@@ -114,6 +122,9 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     const given = new Set(catalogue.components.filter(({ componentId }) => componentId !== panelData.componentId)
       .flatMap((component) => Object.values(component.data ?? {}).flatMap((datum) => datum.runtimeParams ?? [])));
     for (const param of given) assert.ok(panelData.data["*"].runtimeParams.includes(param), `PanelData takes ${param}`);
+    // The page's own code gives any parameter an owner's read declares: a datum read for a class (`className`) takes the
+    // class whether the panel's code or another component supplies it.
+    for (const param of declaredReadParameters()) assert.ok(panelData.data["*"].runtimeParams.includes(param), `PanelData takes ${param}`);
     // A placement binds a component's outputs to the panel's state by type; an object of the projection's own type is
     // `@binding`, which registration resolves, and a signal with no state stays an event.
     assert.deepEqual(declared.get("ObjectList").outputs, {

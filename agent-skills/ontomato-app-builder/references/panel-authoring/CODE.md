@@ -61,6 +61,23 @@ before any `await`. Use the return states
 to show loading, missing inputs, empty data, denied access or an error in the view. Read each ready value
 according to the type table's result shape.
 
+For an assistant's named read, pass the member and datum separately. For the `detail` member's
+`data.record`, send `memberPath: [{member: "detail"}]` and `dataName: "record"`. Use the entry source
+and declared inputs shown in the page skill. The Vue equivalent is `usePanelData("detail", "record")`.
+
+## Bind read parameters and listen to component events
+
+Use the component's Data and Events sections in `sdk read docs/components.md`. Use
+`panel type <type-id> --read <name>` for the chosen owner's parameter names, types and required inputs.
+Explicit `data.<name>.params` map read parameters to `{state: "fieldName"}` or `{literal: value}`.
+A short member can also bind a named read parameter through its `state` map. The component supplies its
+catalogued runtime parameters when the author leaves them unbound. With `PanelData`, provide supported
+run-time values such as a cursor through [the SDK read hook](RUNTIME.md#usepaneldata).
+
+Listen on the placed `<projection>` using Vue's event binding. For the `ObjectList` event `navigate`,
+for example, wire `<projection slot="list" @navigate="openReference"></projection>` to the Vue handler
+returned from setup. Bind component output values through the member's `state` map.
+
 ## Connect a graph and its relations
 
 Run `node "$SKILL/ontomato.mjs" sdk read docs/components.md` and use the `OntologyGraph` and `ObjectRelations`
@@ -85,18 +102,18 @@ returns the report's questions, so the selected child's key identifies the row t
 ## Invoke declared owner operations
 
 Use the owner's full operation ID in the member declaration. Bind the target to the selected object or to a
-checked list for an operation that supports batches. The official button uses the owner's label. For a custom
-control, call the [SDK operation hook](RUNTIME.md#usepaneloperation) in synchronous setup and supply the fields from its admitted
-`inputSchema`. The operation result comes through the same platform flow as the page header and assistant. For writes such
-as save or delete, use only the platform's confirmation and impact details required by the owner.
-For agent dispatch and custom editors, see [operation IDs and write results](RUNTIME.md#operation-ids-and-write-results).
+checked list for an operation that supports batches. The official button uses the owner's label. From Vue code,
+call [`usePanelOperation`](RUNTIME.md#usepaneloperation) in synchronous setup and invoke its `run` method
+with the input the owner's description admits. The hook takes the target from the member's binding. The
+platform handles the request, impact details and confirmation. For agent calls and write receipts, see
+[operation IDs and write results](RUNTIME.md#operation-ids-and-write-results).
 
 ## Save a form or hand off a draft
 
 An `ObjectForm` projection binds one owner operation whose kind is `form.save`. The component sends `call.input`
 with `values`, the `revision` from the owner form when present, and `submittedFields` as JSON Pointer strings.
 Fields omitted from `submittedFields` remain unchanged.
-A custom save control passes the same current form values through the [SDK operation hook](RUNTIME.md#usepaneloperation).
+A custom save button calls [`usePanelOperation(...).run()`](RUNTIME.md#usepaneloperation) on the mounted form's save operation to submit the values it holds.
 
 A populated object input edits that record. An empty input opens creation when the owner supports it and the
 projection has the same type's `createForm` read. The successful create selects the returned object.

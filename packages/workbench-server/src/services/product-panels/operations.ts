@@ -20,6 +20,7 @@ import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
 import { assistantService } from "../assistant/service";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { HttpError } from "../../utils/errors";
+import { requireFormFieldNames } from "../../utils/form-field-names";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { credentialsForRun, runForOwner } from "../assistant/execution";
 import { loadedPageSkillVersion, readAssistantSkillView, resolvePageSkillSource, type AssistantSkillView } from "../assistant/skills";
@@ -111,6 +112,7 @@ function validateCall(handler: PanelWriteServerOperation, call: PanelOperationCa
   const target = handler.targetSchema.parse(call.target);
   if (fixedTarget !== undefined && !isDeepStrictEqual(target, fixedTarget))
     throw new HttpError(400, "Operation target does not match this panel member", "TARGET_ID_MISMATCH");
+  if (handler.kind === "form.save") requireFormFieldNames(call.input.values, "values");
   handler.inputSchema.parse(call.input);
   if (handler.kind === "form.save") handler.draftInput(call.input, target);
   if (call.draft && (handler.kind !== "form.save" || !handler.create || target.kind !== "draft"))

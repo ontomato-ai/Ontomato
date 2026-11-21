@@ -48,6 +48,7 @@ import { agentTasksSnapshotSchema, type AgentTasksSnapshot } from "@ontomato/con
 import { citedDatasetPaths } from "./cited-datasets";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
+import { requireFormFieldNames } from "../../utils/form-field-names";
 import { createLogger } from "../../logging/logger";
 const db = () => getPostgresPool(),
   logger = createLogger("assistant"),
@@ -526,6 +527,7 @@ export const assistantService = {
     const draft = pageDraftSchema.parse(
       JSON.parse((await this.content(sessionId, artifact.id, owner)).toString("utf-8")),
     );
+    requireFormFieldNames(draft.form, "form");
     if (draft.target.id !== undefined) return draft;
     const created = await db().query(
       `SELECT created_id FROM ${table("assistant_page_draft_creations")} WHERE session_id=$1 AND run_id=$2 AND path=$3`,

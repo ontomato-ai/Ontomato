@@ -359,6 +359,7 @@ function describeDraft(forms: readonly OperationDescription[]): string {
     JSON.stringify({ pageKey: "<current page context pageKey>", operation: owners[0]!.update, target: { id: "<object id>" }, form: {} }, null, 2),
     "```",
     ...owners.map(owner => `- ${owner.id} uses \`${owner.update}\` for an existing object.${owner.create ? ` Use \`${owner.create}\` with an empty target for creation.` : ""}`),
+    "Use field names and nested JSON in `form`. Field paths such as `/className` locate values but are not keys in the draft.",
     "Put the selected object's ID in `target.id` when editing an existing object.",
     "An owner's revision, when required, is part of the operation input.",
     "Each run has its own artifact area. Use a distinct path for each draft written in the same run.",
