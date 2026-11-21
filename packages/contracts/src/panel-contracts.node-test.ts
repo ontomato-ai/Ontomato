@@ -463,7 +463,10 @@ test("feedback, governance records and the skill library read through their owne
     passages: {
       source: object(KNOWLEDGE_GOVERNANCE_RECORD), read: "sourcePage", params: { source: { literal: "source-1" }, cursor: { literal: "c" } },
     },
-  }), { record: "panelRecord", issues: "panelRecordList", sources: "panelRecordList", passages: "panelRecordQuery" });
+    cited: { source: object(KNOWLEDGE_GOVERNANCE_RECORD), read: "issueSources", params: { issue: { literal: "issue-1" } } },
+  }), {
+    record: "panelRecord", issues: "panelRecordList", sources: "panelRecordList", passages: "panelRecordQuery", cited: "panelRecordList",
+  });
 
   assert.deepEqual(result({
     rows: { source: { type: platformType(SKILL) }, read: "query", params: { search: { literal: "report" } } },
@@ -478,6 +481,7 @@ test("feedback, governance records and the skill library read through their owne
   };
   assert.deepEqual(required(FEEDBACK_RECORD, "counts"), ["by"]);
   assert.deepEqual(required(KNOWLEDGE_GOVERNANCE_RECORD, "sourcePage"), ["source"]);
+  assert.deepEqual(required(KNOWLEDGE_GOVERNANCE_RECORD, "issueSources"), ["issue"]);
   assert.deepEqual(required(SKILL, "file"), ["path"]);
   assert.deepEqual(platformObjectTypes[SKILL].operations, [DELETE_SKILL, EXPORT_SKILL]);
   assert.deepEqual(platformObjectTypes[FEEDBACK_RECORD].operations, [EXPORT_FEEDBACK]);
