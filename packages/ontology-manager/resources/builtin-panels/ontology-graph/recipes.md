@@ -1,19 +1,21 @@
-# 本体图谱（Ontology graph）
+# 本体图谱页的常见做法
 
-这一页用本域属主的对象类型和关系画一张有方向的本体图谱，读者在左栏搜索和筛选、在画布上选中、在右栏看详情和路径。
+这一页用平台的共用图谱画布画属主的对象类型（点）和关系类型（边），人在图上浏览、选中、找路径，选中一个就能看它的属性和关系。画布工具在画布右上角：适应画布、重新布局、下载 PNG；放大缩小用滚轮。
 
-## 页面公开的状态（读者看到的就是这些）
+## 看页面上是什么
 
-- `objectType`：当前选中的对象类型（`platform:ObjectType`，键是类名，如 `Order`）。
-- `relation`：当前选中的关系类型（`platform:Relationship`，键是关系名，如 `order_has_item`）。它和 `objectType` 一次只有一个。
-- `search`：搜索词；同时匹配对象类型的类名、显示名、描述、属性名，和关系的关系名、描述、两端。
-- `filter`：`all`、`objects`、`relations` 之一。
+- `search` 是页面顶部的搜索词：命中的对象类型和关系类型在图上标出来，其余的淡出；搜索不动选中。
+- `objectType` 是选中的对象类型（主键是类的 API 名），`relation` 是选中的关系类型（主键是关系名）。地址里带 `state={"objectType":{"className":"platform:ObjectType","primaryKey":"<类>"}}` 就是直接打开并选中那个类。
+- `highlightedNodes`、`highlightedEdges` 是页面上被标出来的对象和关系（搜索命中，或找到的路径）；只是画面，不是选中。
+- 回答“这页现在是什么样”时，先说选中了什么（没有就说没有），再说搜索词和是否在展示一条路径；要某个类的字段，用 `objectTypes` 的 `rows` 找它那一行，`attributes` 的 `rows` 里 `className` 等于这个类的就是它的属性，`relations` 的 `rows` 里两端任一是这个类的就是它的关系。
 
-页面的地址带着这四项，读者的消息里就带着选中的那个对象和这些值。
+## 找路径
 
-## 可以替读者做的事
+页面上方选起点和终点对象类型，点「查找路径」：页面按关系方向找最短的一条，把经过的点和边标出来。这个计算在页面里做，不走属主；属主只提供三份列表。
 
-- 问页面在讲什么、选中的是哪个对象类型或关系、搜索词和筛选是什么：照状态回答，别猜。
-- 某个对象类型有哪些属性、和谁有哪种方向的关系：用属主的读（`platform:ObjectType`、`platform:Attribute`、`platform:Relationship`）现场读，不要凭状态拼。
-- 想知道两个类型之间怎么走：按关系方向找最短的那条链，说明有几跳经过哪些关系；图上读者自己按「查找路径」也会高亮同一条。
-- 要改建模：给出可视化建模的地址 `/ontology/visual-modeling?focus=object&id=<类名>`（关系用 `focus=relation&id=<关系名>`），读者在那里改。
+## 跳转
+
+- 选中一个类或一条关系后可「去建模」：打开可视化建模并定位到它（`/ontology/visual-modeling?focus=object|relation&id=<主键>&back=playground`）。
+- 要看关系类型的详情用关系类型页 `/ontology/relations`，`state` 里带 `selected`。
+
+写操作：这一页只读，没有要读者确认的操作。
