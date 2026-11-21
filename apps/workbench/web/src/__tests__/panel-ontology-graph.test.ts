@@ -618,7 +618,7 @@ it("fits the view when the canvas first appears, so a graph shown after an empty
         outputs: { selectedNode: { state: "selected" } },
       },
     },
-    events: {},
+    commands: {},
   });
   const panel = panelRecord("panel-cap-single", "Capability Map", manifest);
   panel.content.html = `<div id="app"><Projection slot="graph"></Projection></div>`;
