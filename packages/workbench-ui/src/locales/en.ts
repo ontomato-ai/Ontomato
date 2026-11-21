@@ -86,6 +86,8 @@ export default {
     "daysAgo": "1 day ago | {n} days ago",
     "weeksAgo": "1 week ago | {n} weeks ago",
     "monthsAgo": "1 month ago | {n} months ago",
+    "todayAt": "Today {time}",
+    "yesterdayAt": "Yesterday {time}",
     "disabled": "Disabled",
     "basicInfo": "Basic Info",
     "sort": "Sort",
