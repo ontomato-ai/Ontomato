@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-scheduled-tasks",
+      "input": {
+        "name": "定时任务",
+        "description": "配置各应用的定时任务，查看执行记录与结果"
+      }
+    }
+  ]
+}

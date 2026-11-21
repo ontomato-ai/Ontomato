@@ -229,7 +229,9 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       runs: (selection, params) => schedules.runs(selection.primaryKey!, panelReadParameterSchemas.cursor.optional().parse(params.cursor)),
       run: (selection, params) => schedules.run(selection.primaryKey!, panelReadParameterSchemas.scheduledRunId.parse(params.runId)),
       form: (selection, params) => schedules.form(selection.primaryKey!, formParams(params)),
-      createForm: (_selection, params) => schedules.createForm(formParams(params)),
+      createForm: (_selection, params) => schedules.createForm({
+        ...formParams(params), defaultAppId: panelReadParameterSchemas.keyword.optional().parse(params.defaultAppId),
+      }),
     },
     [BUSINESS_KNOWLEDGE]: {
       query: (_selection, params) => knowledge.query(params),

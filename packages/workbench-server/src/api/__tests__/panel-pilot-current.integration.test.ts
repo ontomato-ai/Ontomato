@@ -1,6 +1,6 @@
 import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
@@ -20,6 +20,7 @@ import { scheduledTaskPanelMessages, scheduledTaskPanelTextZhCn } from "@ontomat
 import examples from "../../../../contracts/examples/platform-schedules.json";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { installContentLayout } from "../../content/layout";
+import { workbenchApplications } from "../../services/applications/builtins";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
@@ -71,6 +72,11 @@ const taskForm = platformScheduleFormSchema.parse(examples.forms.find(item => it
 const taskRun = platformTaskRunSchema.parse({
   ...examples.runs.find(item => item.name === "agents-running")!.response, taskId: task.id,
 });
+const lastRun = {
+  id: taskRun.id, taskId: task.id, trigger: taskRun.trigger, status: taskRun.status,
+  scheduledAt: taskRun.scheduledAt, startedAt: taskRun.startedAt, finishedAt: taskRun.finishedAt,
+  error: taskRun.error, resultSummary: "Last schedule summary", resultLink: taskRun.resultLink, spendTime: taskRun.spendTime,
+};
 const createdTaskId = "10000000-0000-4000-8000-000000000011";
 const ownerWrites: string[] = [];
 let ownerTasks: typeof task[] = [];
@@ -102,18 +108,20 @@ const projection = {
 const runIdType = { kind: "scalar", type: "string" } as const;
 const panel = {
   name: "Schedules", description: "", visibility: "domain",
-  content: vuePanelContent("summary", "tasks", "form", "run", "create", "history", "manage"),
+  content: vuePanelContent("summary", "tasks", "form", "run", "create", "history", "manage", "renew"),
   manifest: {
     state: {
       selectedTask: { type: taskType, deepLink: true, external: true, personal: false, default: null },
       selectedRunId: { type: runIdType },
+      app: { type: runIdType },
     },
     members: {
       summary: { target: { projectionId }, inputs: { task: { state: "selectedTask" } } },
       tasks: { target: { projectionId: "projection-pilot-list" } },
       form: { target: { projectionId: "projection-pilot-form" }, inputs: { task: { state: "selectedTask" } } },
       run: { target: { projectionId: "projection-pilot-run" }, inputs: { task: { state: "selectedTask" } } },
-      create: { target: { projectionId: "projection-pilot-create-task" } },
+      create: { target: { projectionId: "projection-pilot-create-task" }, inputs: { defaultAppId: { state: "app" } } },
+      renew: { target: { projectionId: "projection-pilot-renew-credential" } },
       history: {
         target: { projectionId: "projection-pilot-task-history" },
         inputs: { task: { state: "selectedTask" }, runId: { state: "selectedRunId" } },
@@ -168,11 +176,20 @@ beforeAll(async () => {
   });
   app.post("/product-governance/check", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
-    res.json({ allowed: resourceIds.has(req.body.id) });
+    res.json({ allowed: resourceIds.has(req.body.id) || (req.body.verb === "use" && req.body.id.startsWith("builtin-product-")) });
   });
   app.post("/product-governance/resources", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ ids: [...resourceIds] });
+  });
+  app.get("/platform/applications/resolve-entry", (req, res, next) => {
+    if (req.query.applicationId !== "schedules") { next(); return; }
+    expect(req.header("tk")).toBe("pilot-reader");
+    const uses = workbenchApplications.find(app => app.id === "schedules")!.declaration.panelUses!;
+    res.json({ success: true, data: {
+      applicationId: "schedules", menu: { groups: [], panelUses: uses },
+      use: uses.find(use => use.id === req.query.useId),
+    } });
   });
   app.get("/platform/applications/resolve-entry", (req, res, next) => {
     if (req.query.applicationId !== "app-schedules") { next(); return; }
@@ -406,6 +423,23 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ tasks: ownerTasks, timeZone: task.timeZone });
   });
+  app.get("/platform/applications", (req, res, next) => {
+    if (req.query.purpose !== "schedules") { next(); return; }
+    expect(req.header("tk")).toBe("pilot-reader");
+    res.json({
+      success: true,
+      data: examples.applications.response.applications.map(({ id }) => ({
+        id, kind: "native", names: { en: id, "zh-CN": id === task.appId ? "应用名称" : id },
+        descriptions: {}, icon: "apps", rail: "apps", category: "business", sort: 0,
+        entry: { path: `/${id}` }, entryAccess: ["domain-member"], scheduleAdapter: `java:${id}`, releaseId: null,
+      })),
+    });
+  });
+  app.post("/platform/scheduled-tasks/credential/renew", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    ownerWrites.push("renew");
+    res.sendStatus(204);
+  });
   app.get("/platform/scheduled-tasks/applications", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     res.json(examples.applications.response);
@@ -418,7 +452,12 @@ beforeAll(async () => {
   app.post("/platform/scheduled-tasks/applications/:appId/form", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.params.appId).toBe(task.appId);
-    expect(req.body).toMatchObject({ values: task.content, changedField: null });
+    expect(req.body.changedField).toBeNull();
+    if (req.body.taskId === null && Object.keys(req.body.values).length === 0) {
+      res.json(taskForm);
+      return;
+    }
+    expect(req.body.values).toEqual(task.content);
     expect([task.id, null]).toContain(req.body.taskId);
     res.json(taskForm);
   });
@@ -458,7 +497,10 @@ beforeAll(async () => {
   app.put("/platform/scheduled-tasks/:taskId", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.params.taskId).toBe(task.id);
-    expect(req.body.revision).toBe(task.revision);
+    if (req.body.revision !== task.revision) {
+      res.status(409).json({ correlationId: "pilot-conflict", error: { code: "REVISION_CONFLICT", message: "The task changed; reload before editing" } });
+      return;
+    }
     expect(req.body.content).toEqual(task.content);
     ownerWrites.push("save");
     res.json({ ...task, revision: task.revision + 1 });
@@ -496,6 +538,36 @@ function request(method: string, resource: string, body?: object, locale = "zh-C
   });
 }
 
+it("registers the packaged schedules panel at startup with the owner form and credential operation", async () => {
+  const { registerBuiltinProducts } = await import("../../services/product-panels/builtin-products");
+  const bundle = await mkdtemp(path.join(os.tmpdir(), "schedules-panel-bundle-"));
+  try {
+    const material = fileURLToPath(new URL("../../../../platform-schedules/resources/builtin-panels/schedules", import.meta.url));
+    await symlink(material, path.join(bundle, "schedules"));
+    await writeFile(path.join(bundle, "index.json"), JSON.stringify(["schedules"]));
+    await registerBuiltinProducts(bundle);
+    const registered = await request("GET", "product-panels/builtin-product-scheduled-tasks");
+    const receipt = await registered.json();
+    expect(registered.status, JSON.stringify(receipt)).toBe(200);
+    expect(receipt).toMatchObject({
+      panel: {
+        id: "builtin-product-scheduled-tasks",
+        manifest: { commands: { create: { primary: true } }, members: { newForm: {}, renew: {} } },
+      },
+    });
+    const source = { kind: "registered", applicationId: "schedules", useId: "schedules-tasks" };
+    const applicationRef = { className: "platform:Application", primaryKey: "schedules" };
+    const operations = await request("POST", "product-panels/read", {
+      source, memberPath: [{ member: "renew" }], operations: true, inputs: { application: applicationRef },
+    });
+    expect(await operations.json()).toMatchObject({
+      status: "ready", value: { renewCredential: { kind: "action", effect: "write" } },
+    });
+  } finally {
+    await rm(bundle, { recursive: true, force: true });
+  }
+});
+
 it("reads back stable member keys and named data, and leaves the record intact after a rejected update", async () => {
   const projectionPath = `product-projections/${projectionId}`;
   const panelPath = `product-panels/${panelId}`;
@@ -524,11 +596,20 @@ it("reads back stable member keys and named data, and leaves the record intact a
   const operationRef = (id: string) => ({ kind: "PlatformOperation", id });
   for (const [id, input] of Object.entries({
     "projection-pilot-create-task": {
-      ...projection, componentId: "@ontomato/sdk:ObjectForm", inputs: {}, config: {},
+      ...projection, componentId: "@ontomato/sdk:ObjectForm", inputs: { defaultAppId: runIdType }, config: {},
       data: { createForm: {
-        source: { type: { kind: "PlatformObjectType", id: taskType.objectType } }, read: "createForm", params: {},
+        source: { type: { kind: "PlatformObjectType", id: taskType.objectType } }, read: "createForm", params: { defaultAppId: { input: "defaultAppId" } },
       } },
       operations: { create: { operation: operationRef("platform:ScheduledTask.create") } },
+    },
+    "projection-pilot-renew-credential": {
+      ...projection, componentId: "@ontomato/sdk:PanelData", inputs: {}, config: {}, data: {},
+      operations: {
+        renewCredential: {
+          operation: operationRef("schedules.renewCredential"),
+          target: { literal: { className: "platform:Application", primaryKey: "schedules" } },
+        },
+      },
     },
     "projection-pilot-task-history": {
       ...projection, componentId: "@ontomato/sdk:PanelData", config: {}, inputs: { ...projection.inputs, runId: runIdType },
@@ -575,9 +656,15 @@ it("reads back stable member keys and named data, and leaves the record intact a
     status: "ready", value: { primaryKey: task.id, fieldLabels: { application: "Application", state: "Status" } },
   });
   expect(await (await read("tasks", "rows", {})).json()).toEqual({ status: "empty" });
-  ownerTasks = [task];
+  ownerTasks = [{ ...task, lastRun, activeRunId: lastRun.id }];
   const rows = await (await read("tasks", "rows", {})).json();
-  expect(rows).toMatchObject({ status: "ready", value: [{ primaryKey: task.id, fieldLabels }] });
+  expect(rows).toMatchObject({
+    status: "ready",
+    value: [{ primaryKey: task.id, fieldLabels, fields: {
+      frequency: "每星期一 09:00", lastRunAt: lastRun.startedAt, lastRunSummary: lastRun.resultSummary,
+    } }],
+  });
+  ownerTasks = [task];
   expect(await (await read("related", "record", { task: taskRef })).json()).toEqual({ status: "forbidden" });
   expect(await (await read("summary", "record", { task: { ...taskRef, primaryKey: "removed" } })).json()).toEqual({
     status: "error", message: "Task no longer exists",
@@ -587,6 +674,16 @@ it("reads back stable member keys and named data, and leaves the record intact a
   });
   expect(await (await read("create", "createForm", {})).json()).toMatchObject({
     status: "ready", value: { values: { task: { appId: "", timeZone: task.timeZone } }, save: { draftOperation: "platform:ScheduledTask.create" } },
+  });
+  expect(await (await read("create", "createForm", { defaultAppId: task.appId })).json()).toMatchObject({
+    status: "ready", value: {
+      values: { task: { appId: task.appId } },
+      fields: expect.arrayContaining([expect.objectContaining({
+        path: "/task/appId", readOnly: false, control: {
+          kind: "select", options: expect.arrayContaining([expect.objectContaining({ value: task.appId, label: "应用名称" })]),
+        },
+      })]),
+    },
   });
   expect(await (await read("history", "runs", { task: taskRef })).json()).toEqual({
     status: "ready", value: { runs: [taskRun], nextCursor: "next-page" },
@@ -641,7 +738,17 @@ it("reads back stable member keys and named data, and leaves the record intact a
   }, "none")).toMatchObject({ outcome: { kind: "success", data: { id: createdTaskId, enabled: false } } });
   expect(await dispatchManagement("manage.delete", target, { revision: task.revision }, "impact"))
     .toMatchObject({ outcome: { kind: "success", data: { id: task.id } } });
-  expect(ownerWrites).toEqual(["save", "runNow", "create", "setEnabled", "delete"]);
+  await expect(dispatchManagement("form.save", target, {
+    values: task.content, revision: task.revision + 1,
+  }, "none")).resolves.toMatchObject({
+    outcome: { kind: "refusal", code: "REVISION_CONFLICT", message: "任务已变更，请重新加载后再编辑。" },
+  });
+  await expect(dispatchManagement("renew.renewCredential", {
+    kind: "object", objectType: "platform:Application", primaryKey: "schedules",
+  }, {}, "none")).resolves.toMatchObject({
+    outcome: { kind: "success", affected: { objects: [], objectTypes: [taskType.objectType] } },
+  });
+  expect(ownerWrites).toEqual(["save", "runNow", "create", "setEnabled", "delete", "renew"]);
 
   const evidence = process.env.SCHEDULED_TASK_PANEL_HTTP_EVIDENCE;
   if (evidence) {

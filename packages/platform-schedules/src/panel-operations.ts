@@ -90,6 +90,7 @@ export function scheduledTaskPanelOperations(host: Pick<PlatformSchedulesHost, "
         revision,
       });
     },
+    renewCredential: api.renewCredential,
     setEnabled: api.setEnabled,
     remove: api.remove,
     runNow: (id: string, intentId: string) => api.runNow(id, intentId),
