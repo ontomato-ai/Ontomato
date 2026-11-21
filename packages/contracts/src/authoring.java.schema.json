@@ -1804,12 +1804,19 @@
         "target": {
           "type": "object",
           "properties": {
+            "objectType": {
+              "type": "string",
+              "minLength": 1
+            },
             "id": {
               "type": "string",
               "minLength": 1,
               "maxLength": 200
             }
           },
+          "required": [
+            "objectType"
+          ],
           "additionalProperties": false
         },
         "form": {

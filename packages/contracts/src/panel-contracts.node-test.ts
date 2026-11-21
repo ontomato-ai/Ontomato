@@ -1156,7 +1156,7 @@ test("frequency uses the scheduled-task value and keeps time zone in a separate 
 test("submitted field pointers stay separate from draft values and their presence", () => {
   const omitted = { steps: [{ actionId: "review" }] };
   const explicitNull = { ...omitted, runContract: null };
-  const draft = { pageKey: "workflows", operation: "workflow.update", target: { id: "example" } };
+  const draft = { pageKey: "workflows", operation: "workflow.update", target: { objectType: "platform:Workflow", id: "example" } };
   assert.deepEqual(pageDraftSchema.parse({ ...draft, form: omitted }).form, omitted);
   assert.deepEqual(pageDraftSchema.parse({ ...draft, form: explicitNull }).form, explicitNull);
 
