@@ -214,7 +214,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     export const builtinProductIdSchema = { safeParse: id => id?.startsWith(BUILTIN_PRODUCT_ID_PREFIX)
       ? ok(id) : invalid([{ message: "Expected a platform product ID with prefix builtin-product-" }]) };
     export const appsSdkComponentCatalogSchema = { parse };
-    export const applicationIconKeys = ["settings", "ontology"];
+    export const domainApplicationIconKeys = ["app-window", "folder", "calendar"];
     export const applicationCatalogueRecordSchema = { parse };
     export const applicationIdentityUpdateSchema = { parse, partial: () => ({ parse }) };
     export async function panelModuleImports(source) {
@@ -405,14 +405,21 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       applications: [{ id: "acceptance", mode: "create", input: application }],
     })), error => error.stderr.includes("Application ID must start with app-"));
     assert.deepEqual(requests, []);
+    const renamed = { applications: [{ id: "app-acceptance", mode: "update", input: {
+      ...application, declaration: { names: { en: "Renamed" } },
+    } }] };
+    await run("panel", "register", JSON.stringify(renamed));
+    assert.deepEqual(requests.splice(0).filter(([, url]) => url === identityPath), [
+      ["PUT", identityPath, { names: { en: "Renamed" }, descriptions: { en: "Keep the description" }, icon: "settings" }, "author-key"],
+    ]);
     const identityMaterial = { applications: [{ id: "app-acceptance", mode: "update", input: {
-      ...application, declaration: { names: { en: "Updated" }, icon: "ontology" },
+      ...application, declaration: { names: { en: "Updated" }, icon: "folder" },
     } }] };
     await run("panel", "register", JSON.stringify(identityMaterial));
     assert.deepEqual(requests.splice(0).slice(2).map(([method, url, body]) => [method, url, body]), [
       ["GET", applicationRecordPath, undefined],
       ["PUT", usesPath, application],
-      ["PUT", identityPath, { names: { en: "Updated" }, descriptions: { en: "Keep the description" }, icon: "ontology" }],
+      ["PUT", identityPath, { names: { en: "Updated" }, descriptions: { en: "Keep the description" }, icon: "folder" }],
     ]);
     await run("panel", "register", JSON.stringify(identityMaterial));
     assert.deepEqual(requests.splice(0).slice(2).map(([method, url]) => [method, url]), [
@@ -532,6 +539,13 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       error.stderr.includes("application app-acceptance: declaration.icon 'graph' is not available"));
     await assert.rejects(run("panel", "register", JSON.stringify(badIcon)), error =>
       error.stderr.includes("application app-acceptance: declaration.icon 'graph' is not available"));
+    badIcon.applications[0].mode = "create";
+    badIcon.applications[0].input.declaration.icon = "settings";
+    await writeFile(badIconFile, JSON.stringify(badIcon));
+    await assert.rejects(run("panel", "check", directory, "--material", badIconFile), error =>
+      error.stderr.includes("application app-acceptance: declaration.icon 'settings' is not available for a domain application"));
+    const icons = await run("sdk", "icons");
+    assert.deepEqual(JSON.parse(icons.stdout), ["app-window", "folder", "calendar"]);
     assert.equal(requests.splice(0).some(([method]) => method !== "GET"), false);
     await rm(moduleFile);
     await assert.rejects(run("panel", "check", directory), error => error.stderr.includes("panel.mjs: required Vue module is missing"));

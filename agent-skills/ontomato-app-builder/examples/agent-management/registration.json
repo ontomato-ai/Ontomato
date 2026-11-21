@@ -29,7 +29,7 @@
           "descriptions": {
             "en": "Manage Agent Definition"
           },
-          "icon": "settings",
+          "icon": "app-window",
           "groups": [],
           "permissions": []
         },

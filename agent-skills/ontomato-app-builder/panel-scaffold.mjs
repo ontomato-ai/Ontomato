@@ -150,7 +150,7 @@ export function managementPanel(type, checks, typeTable, {
       id, mode: "create", input: {
         entry: { path: entry, renderer: "panels" },
         entryAccess: ["domain-member"],
-        declaration: { names: { en: title }, descriptions: { en: `Manage ${title}` }, icon: "settings", groups: [], permissions: [] },
+        declaration: { names: { en: title }, descriptions: { en: `Manage ${title}` }, icon: "app-window", groups: [], permissions: [] },
         panelUses: [{ id: `${id}-use`, pageKey: id, panelId: id, path: `${entry}/manage`, access: { kind: "domain-member" }, names: { en: title } }],
       },
     }],

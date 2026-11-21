@@ -54,16 +54,24 @@ function registrationIssues(issues) {
   });
 }
 
+export function domainApplicationIconChoices(checks) {
+  const choices = checks.domainApplicationIconKeys;
+  if (!choices) throw new Error("The current SDK does not declare domain application icons");
+  return choices;
+}
+
 export function panelRegistrationRecords({ projections = [], panels = [], applications = [] }, checks) {
   for (const { id, mode, input } of applications) {
     if (input.declaration === undefined) continue;
     try {
-      const { icon } = mode === "update"
-        ? checks.applicationIdentityUpdateSchema.partial().parse(input.declaration)
-        : input.declaration;
-      if (icon !== undefined && !checks.applicationIconKeys.includes(icon)) {
-        throw new Error(`declaration.icon '${icon}' is not available. Choose one of ${checks.applicationIconKeys.join(", ")}`);
+      const { icon } = input.declaration;
+      if (icon !== undefined) {
+        const choices = domainApplicationIconChoices(checks);
+        if (!choices.includes(icon)) {
+          throw new Error(`declaration.icon '${icon}' is not available for a domain application. Choose one of ${choices.join(", ")}`);
+        }
       }
+      if (mode === "update") checks.applicationIdentityUpdateSchema.partial().parse(input.declaration);
     } catch (error) {
       throw new Error(`application ${id}: ${error.message}`, { cause: error });
     }
