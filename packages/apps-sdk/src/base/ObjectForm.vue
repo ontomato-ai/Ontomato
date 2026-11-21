@@ -16,6 +16,7 @@ import { useMember } from "../panel/member";
 import { editedInput, memberFormSource, MemberDataUnavailable, type FormSource } from "../panel/member-forms";
 import { formControlsKey, rowControlKey, rowControlsOf } from "./form-controls";
 import FormFieldControl from "./FormFieldControl.vue";
+import FormAdvancedSection from "./FormAdvancedSection.vue";
 import { useDataStateLabels } from "./data-state-labels";
 
 /**
@@ -153,6 +154,9 @@ const drawnElsewhere = (path: string) => Object.values(panel.manifest.members).s
  */
 const drawn = computed(() => fields.value.filter((field) =>
   field.control.kind !== "hidden" && !(field.control.kind === "reference" && drawnElsewhere(field.path))));
+/** Of those, the owner's advanced ones, drawn after the others in one section. */
+const advanced = computed(() => drawn.value.filter((field) => field.advanced === true));
+const plain = computed(() => drawn.value.filter((field) => field.advanced !== true));
 /** Changed values, or text a reader typed that is no value yet (JSON that does not parse): either is unsaved. */
 const dirty = computed(() => opened.value !== null
   && (JSON.stringify(values.value) !== JSON.stringify(opened.value.values) || Object.keys(invalid.value).length > 0));
@@ -552,7 +556,10 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
          submit handler runs: the reader's save is the button's own click. -->
     <el-form label-position="top">
       <p v-for="reason in sharedReadOnlyReasons" :key="reason" class="sdk-owner-form-readonly" role="note">{{ reason }}</p>
-      <form-field-control v-for="field in drawn" :key="field.path" :field="field" :path="field.path"></form-field-control>
+      <form-field-control v-for="field in plain" :key="field.path" :field="field" :path="field.path"></form-field-control>
+      <form-advanced-section v-if="advanced.length" :paths="advanced.map((field) => field.path)">
+        <form-field-control v-for="field in advanced" :key="field.path" :field="field" :path="field.path"></form-field-control>
+      </form-advanced-section>
       <slot name="after-fields"></slot>
       <p v-if="changed.size" class="sdk-owner-form-changed" role="status">
         {{ t("platform.panelDraftChanged", { fields: changedLabels }) }}

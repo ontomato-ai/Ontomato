@@ -253,6 +253,7 @@ export default {
     "relationsIncoming": "Incoming",
     "relationsLoading": "Loading relations...",
     "formAdd": "Add",
+    "formAdvanced": "Advanced",
     "formRemove": "Remove",
     "formMoveUp": "Move up",
     "formMoveDown": "Move down",
