@@ -1,4 +1,6 @@
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
+import { panelAddress } from "@ontomato/contracts/panel-host";
+import { OBJECT_TYPE } from "@ontomato/contracts/platform-object-types";
 import { AgentModelsPage, ontologyAgentModelPages, ontologyAgentModelSource } from "@ontomato/platform-shell";
 import { defineAsyncComponent, defineComponent, h, ref, type PropType } from "vue";
 import { useRoute, useRouter, type RouteRecordRaw } from "vue-router";
@@ -6,13 +8,10 @@ import type { ObjectReference } from "@ontomato/contracts/object-views";
 import { useManagerClient, useManagerCounts } from "./context";
 import ManagerFrame from "./ManagerFrame.vue";
 import OntologyAssetCatalog from "./components/OntologyAssetCatalog.vue";
-import OntologyModelCatalog from "./components/OntologyModelCatalog.vue";
-import OntologyObjectCreateDialog from "./components/OntologyObjectCreateDialog.vue";
-import OntologyObjectDetail from "./components/OntologyObjectDetail.vue";
 import WorkflowCatalog from "./components/WorkflowCatalog.vue";
 import TriggerCatalog from "./components/TriggerCatalog.vue";
 import { managerPaths } from "./navigation";
-import type { AssetTab, ModelResource } from "./workspace";
+import type { AssetTab } from "./workspace";
 
 /*
  * Heavy pages load when first entered, so their graph, chart and Markdown libraries stay out of the entry script:
@@ -58,64 +57,16 @@ const ObjectViewEditorRoute = defineComponent({
       className: String(route.params.className),
       initialPrimaryKey: String(route.query.key ?? ""),
       onOpen: (reference: ObjectReference) => void router.push(objectViewLocation(reference)),
-      onBack: () => void router.push({ name: routes.object.name, params: { className: route.params.className } }),
+      // Back goes to the object types panel with this class selected: the page that class's detail address opens.
+      onBack: () => void router.push(panelAddress(managerPaths.objects, {
+        selected: { className: OBJECT_TYPE, primaryKey: String(route.params.className) },
+      })),
     });
   },
 });
 
 const assetDetails = { metrics: routes.metric };
 const ASSET_KINDS: readonly AssetTab[] = ["metrics"];
-
-const ModelCatalogPage = defineComponent({
-  name: "ManagerModelCatalogPage",
-  props: { resource: { type: String as PropType<ModelResource>, required: true } },
-  setup(props) {
-    const router = useRouter();
-    const counts = useManagerCounts();
-    const creating = ref(false);
-    return () =>
-      h("section", { class: "model-surface" }, [
-        h(OntologyModelCatalog, {
-          resource: props.resource,
-          onCreateObject: () => (creating.value = true),
-          onEditObject: (className: string) => void router.push({ name: "manager-object", params: { className } }),
-        }),
-        h(OntologyObjectCreateDialog, {
-          modelValue: creating.value,
-          "onUpdate:modelValue": (open: boolean) => (creating.value = open),
-          onCreated: (className: string) => {
-            void counts.refresh();
-            void router.push({ name: "manager-object", params: { className } });
-          },
-        }),
-      ]);
-  },
-});
-
-const ObjectDetailPage = defineComponent({
-  name: "ManagerObjectDetailPage",
-  props: { className: { type: String, required: true } },
-  setup(props) {
-    const router = useRouter();
-    const counts = useManagerCounts();
-    return () =>
-      h("section", { class: "model-surface" }, [
-        h(OntologyObjectDetail, {
-          className: props.className,
-          onBack: () => {
-            void router.push(managerPaths.objects);
-            void counts.refresh();
-          },
-          onUpdated: () => void counts.refresh(),
-          onConfigureView: () => void router.push({ name: routes.objectViewEditor.name, params: { className: props.className } }),
-          onBrowse: (className: string) => void router.push({ name: "manager-data", params: { className } }),
-          // The relation types panel selects the relationship its detail address names.
-          onRelation: (relationship: string) =>
-            void router.push(`${managerPaths.relations}/${encodeURIComponent(relationship)}`),
-        }),
-      ]);
-  },
-});
 
 /** Where the data browser last was, kept per router so that the navigation entry returns to that object type. */
 interface DataBrowserMemory {
@@ -250,18 +201,6 @@ export function managerRoutes(): RouteRecordRaw[] {
         { ...routes.objectView, component: ObjectViewRoute, meta: { page: managerPaths.dataBrowser, ownHeader: true } },
         { ...routes.objectViewEditor, component: ObjectViewEditorRoute, meta: { page: managerPaths.objects } },
         { path: "/views/:className", redirect: (to) => ({ name: to.query.edit === "true" ? routes.objectViewEditor.name : routes.objectView.name, params: to.params, query: to.query }) },
-        ...(["objects", "attributes"] as const).map((resource) => ({
-          ...routes[resource],
-          component: ModelCatalogPage,
-          props: { resource },
-          meta: { page: managerPaths[resource] },
-        })),
-        {
-          ...routes.object,
-          component: ObjectDetailPage,
-          props: stringParam("className"),
-          meta: { page: managerPaths.objects },
-        },
         {
           ...routes.data,
           component: dataBrowserPage(dataBrowser),

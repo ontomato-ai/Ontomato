@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
-import { ACTION, AGENT_DEFINITION, FUNCTION } from "@ontomato/contracts/platform-object-types";
+import { ACTION, AGENT_DEFINITION, FUNCTION, OBJECT_TYPE } from "@ontomato/contracts/platform-object-types";
 import { DETAIL_SELECTIONS, detailSelectionAddress } from "../detail-selection";
 
 /*
@@ -35,6 +35,15 @@ it("opens a function's detail address as the functions panel with the function s
   expect(open("/ontology/assets/functions")).toBeNull();
 });
 
+
+it("opens a class's detail address as the object types panel with that class selected, and leaves the page's own address alone", () => {
+  expect(open("/ontology/objects/Order?back=catalog")).toEqual({
+    path: "/ontology/objects", state: { selected: { className: OBJECT_TYPE, primaryKey: "Order" } },
+  });
+  expect(open("/ontology/objects")).toBeNull();
+  // A page deeper than the class's own is not a detail address of this page.
+  expect(open("/ontology/objects/Order/view")).toBeNull();
+});
 
 it.each(["/ontology/agents", "/agents/settings"])("routes the settings detail at %s to the shared panel state", (prefix) => {
   expect(open(`${prefix}/new`)).toEqual({ path: prefix, state: { mode: "create" } });
