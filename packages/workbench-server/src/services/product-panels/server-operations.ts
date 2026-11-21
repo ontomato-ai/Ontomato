@@ -87,6 +87,7 @@ type ReadResult = z.infer<typeof panelReadOperationJsonResultSchema> | ({ kind: 
 export interface PanelReadServerOperation {
   handlerRef: string;
   binding: OntologyElementRef;
+  labelKey?: string;
   kind: "action";
   effect: "read";
   batch: false;
