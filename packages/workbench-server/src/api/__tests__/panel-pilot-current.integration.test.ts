@@ -931,6 +931,12 @@ it("reads agent settings and reference options with the panel viewer", async () 
     await setEnabled(false);
   }
   const form = panelFormDescriptionSchema.parse(await ready("definition", "form", { agent }));
+  const createForm = panelFormDescriptionSchema.parse(await ready("definition", "createForm"));
+  for (const answer of [form, createForm]) {
+    for (const path of ["/skills", "/enabledMcpServiceIds"]) {
+      expect(answer.fields.find(field => field.path === path)?.required).toBe(false);
+    }
+  }
   expect(form.values).toMatchObject({ name: "Inventory analyst", enabled: false, skills: [] });
   expect(form.fields.find(field => field.path === "/executionUserId")?.readOnly).toBe(true);
   expect(panelFormDescriptionSchema.parse(await ready("definition", "createForm")).values).toMatchObject({
