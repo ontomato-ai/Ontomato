@@ -10,6 +10,7 @@ import {
 } from "@ontomato/contracts/product-subscriptions";
 import {
   candidatePanelSourceSchema, PANEL_NESTED_READ_PATH, productPanelNestedReadResponseSchema, productPanelReadResponseSchema,
+  type ProductPanelNestedReadRequest,
   type CandidatePanelSource, type DirectPanelHostSource, type PanelHostSource, type PanelAuthorDefinitions, type PanelDefinitionMode,
   type ProductPanelReadRequest, type ProductPanelReadResponse,
 } from "@ontomato/contracts/panel-host";
@@ -260,9 +261,9 @@ function withNested(options: OwnPanelOptions, source: PanelReadSource): DirectPa
  * it. A panel whose CSS reaches outside it does not mount here: the block it was placed in says why.
  */
 async function mountNested(
-  outer: OwnPanelOptions, source: PanelReadSource, memberPath: PanelMemberPath, run: DirectPanelRun,
+  outer: OwnPanelOptions, source: PanelReadSource, memberPath: ProductPanelNestedReadRequest["memberPath"], run: DirectPanelRun,
 ): Promise<{ element: HTMLElement; mount: PanelRunMount }> {
-  const path = [...(outer.memberPath ?? []), ...memberPath];
+  const path: ProductPanelNestedReadRequest["memberPath"] = [...(outer.memberPath ?? []), ...memberPath] as ProductPanelNestedReadRequest["memberPath"];
   // A placement the reader may not use, or one whose record is gone or not among its candidates, is that block's own
   // state, said where the panel would be; any other failure is said as it is.
   const answer = await json(`/api${PANEL_NESTED_READ_PATH}`, { method: "POST", body: JSON.stringify({ source, memberPath: path }) })
@@ -272,18 +273,29 @@ async function mountNested(
       throw failure;
     });
   const { panel } = productPanelNestedReadResponseSchema.parse(answer);
+  // An object's detail panel is Node's to name: the placement asked by the object alone, and the panel Node answered
+  // with completes it, so the placed panel's own reads and operations name the panel they were admitted for.
+  const placedAt: PanelMemberPath = [...path.slice(0, -1) as PanelMemberPath, resolvedSegment(path.at(-1)!, panel.id)];
   const instance = newPanelInstanceName();
   const { element, template, css } = codedPanelTarget(panel.content.html);
   element.dataset.panelInstance = instance;
   const dropStyle = css ? adoptPanelStyle(scopedPanelStyle(css, instance)) : undefined;
   try {
-    const inner = withNested({ ...outer, manifest: panel.manifest, messages: panel.content.messages ?? {}, run, memberPath: path }, source);
+    const inner = withNested({ ...outer, manifest: panel.manifest, messages: panel.content.messages ?? {}, run, memberPath: placedAt }, source);
     const mount = await mountCoded(inner, { element, template }, panel.content.module);
     return { element, mount: { ...mount, dispose() { mount.dispose(); dropStyle?.(); } } };
   } catch (failure) {
     dropStyle?.();
     throw failure;
   }
+}
+
+/** A placement's segment, completed with the panel Node answered when it was asked by the selected object alone. */
+function resolvedSegment(segment: ProductPanelNestedReadRequest["memberPath"][number], panelId: string): PanelMemberPath[number] {
+  const { selection } = segment;
+  if (selection && "stateValue" in selection && !("target" in selection))
+    return { ...segment, selection: { stateValue: selection.stateValue, target: { panelId } } };
+  return segment as PanelMemberPath[number];
 }
 
 /**
