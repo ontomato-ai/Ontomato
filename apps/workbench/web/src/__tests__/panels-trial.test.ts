@@ -18,7 +18,7 @@ import {
 import { panelContextKey } from "../../../../../packages/apps-sdk/src/panel/context";
 import Projection from "../../../../../packages/apps-sdk/src/panel/Projection.vue";
 
-import { noOperations, projections } from "./panel-frame";
+import { noOperations, pagePlacement, projections } from "./panel-frame";
 /*
  * The trial's panel, as the SDK sees it: a declaration and projections, and nothing written per panel. These are the
  * mistakes the trial exists to rule out — a panel that has to wire its own reads, drafts or buttons; one instance's
@@ -244,6 +244,8 @@ describe("a panel's module", () => {
       expandPageComposer: async () => {},
       // A member's operations are read through the platform; its data, here, through this release's modules.
       navigate: async () => { throw new Error("This test opens no address"); },
+      notify: () => { throw new Error("This test tells the reader nothing"); },
+      placement: pagePlacement,
       readPanelData: async (request) => {
         if (request.operations) return { status: "ready", value: {} };
         throw new Error("This test reads no member data through the platform");

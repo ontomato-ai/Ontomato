@@ -185,6 +185,8 @@ export async function readRegisteredPanelPageSkillContext(
   } catch (error) {
     if (!(error instanceof SkillSourceRecordError)) throw error;
     const { resourceId, field, reason } = error.detail;
+    // The direct host checks each member against the current release and can still render the other members.
+    if (reason === "component_missing") return absent;
     const resource = resourceId === loadedPanel.id ? "panel" : "projection";
     const location = `${resource} '${resourceId}'${field ? `, field '${field}'` : ""}`;
     throw new HttpError(502, `Panel '${loadedPanel.id}' skill is unavailable: ${location}: ${reason.replaceAll("_", " ")}`,

@@ -11,7 +11,7 @@ import Projection from "../../../../../packages/apps-sdk/src/panel/Projection.vu
 import { panelContextKey } from "../../../../../packages/apps-sdk/src/panel/context";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 
-import { noOperations, projections, SCHEDULED_TASK } from "./panel-frame";
+import { noOperations, pagePlacement, projections, SCHEDULED_TASK } from "./panel-frame";
 /*
  * A panel declares its state and places its projections, and the SDK does the rest: it reads each projection by ID,
  * draws the component the catalogue names, derives the projection's ports from the record and the catalogue, and runs an
@@ -222,7 +222,7 @@ describe("a panel's module", () => {
       t: (key: string) => key,
       resources: async () => {},
       expandPageComposer: async () => {},
-      readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); },
+      notify: () => { throw new Error("This test tells the reader nothing"); }, placement: pagePlacement, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); },
     });
     app.mount(element);
     await nextTick();

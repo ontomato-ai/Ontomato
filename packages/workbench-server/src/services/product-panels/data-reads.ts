@@ -90,6 +90,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     form: (selection, params) => adapter.form(selection.primaryKey!, formParams(params)),
     createForm: (_selection, params) => adapter.createForm(formParams(params)),
     usedBy: selection => adapter.usedBy(selection.primaryKey!),
+    grants: selection => adapter.grants(selection.primaryKey!),
   });
   const definitions = async () => {
     const { createAgentDefinitionReadAdapter } = await import("../assistant/panel-reads");
@@ -209,11 +210,10 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       query: (_selection, params) => applications.query(params),
       record: selection => applications.record(selection.primaryKey!),
       entries: selection => applications.entries(selection.primaryKey!),
-      form: (_selection, params) => applications.form({
-        ...formParams(params),
-        section: panelReadParameterSchemas.applicationFormSection.parse(params.section),
-        target: panelReadParameterSchemas.applicationFormTarget.parse(params.target),
+      form: (selection, params) => applications.form(selection.primaryKey!, {
+        ...formParams(params), section: panelReadParameterSchemas.applicationFormSection.parse(params.section),
       }),
+      createForm: (_selection, params) => applications.createForm(formParams(params)),
     },
     [ONTOLOGY_TYPE]: {
       schema: async () => (await ontology()).schema(),
@@ -225,10 +225,10 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [SCHEDULED_TASK]: {
       list: () => schedules.list(),
       record: selection => schedules.record(selection.primaryKey!),
-      form: (selection, params) => schedules.form(selection.primaryKey!, {
-        values: panelReadParameterSchemas.formValues.optional().parse(params.values),
-        changedField: panelReadParameterSchemas.changedField.optional().parse(params.changedField),
-      }),
+      runs: (selection, params) => schedules.runs(selection.primaryKey!, panelReadParameterSchemas.cursor.optional().parse(params.cursor)),
+      run: (selection, params) => schedules.run(selection.primaryKey!, panelReadParameterSchemas.scheduledRunId.parse(params.runId)),
+      form: (selection, params) => schedules.form(selection.primaryKey!, formParams(params)),
+      createForm: (_selection, params) => schedules.createForm(formParams(params)),
     },
     [BUSINESS_KNOWLEDGE]: {
       query: (_selection, params) => knowledge.query(params),

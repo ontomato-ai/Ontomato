@@ -16,6 +16,11 @@ function identityKey(value) {
   return value && typeof value === "object" ? `${value.className}\u0000${value.primaryKey}` : "";
 }
 
+const modeOptions = [
+  { value: "type", labelKey: "capMap.modeType" },
+  { value: "instance", labelKey: "capMap.modeInstance" },
+];
+
 const CapabilityMap = {
   setup() {
     const { instance } = usePanelContext();
@@ -62,6 +67,10 @@ const CapabilityMap = {
       }
     });
 
+    function setMode(value) {
+      state.set("mode", value === "type" ? "type" : "instance");
+    }
+
     function onQueryInput(event) {
       const text = event.target?.value ?? "";
       state.set("query", text || null);
@@ -88,6 +97,8 @@ const CapabilityMap = {
 
     return {
       mode,
+      modeOptions,
+      setMode,
       query,
       showUserPicker,
       hasCustomStart,

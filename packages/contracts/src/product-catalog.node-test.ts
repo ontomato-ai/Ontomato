@@ -114,3 +114,41 @@ test("accepts a legacy hosted application entry without widening the panel regis
   assert.deepEqual(applicationCatalogueEntriesSchema.parse(entries), entries);
   assert.equal(applicationPanelUsesResponseSchema.safeParse(entries).success, false);
 });
+
+test("declares application creation and editing forms from their actual sources", async () => {
+  const { APPLICATION, platformObjectTypes } = await import("./platform-object-types");
+  const { missingRequiredReadParameters } = await import("./panel-projection");
+  const { productProjectionInputSchema } = await import("./product-panels");
+  const projection = {
+    name: "Application forms", description: "", visibility: "private", componentId: "@ontomato/sdk:PanelData",
+    inputs: { application: { kind: "object", objectType: APPLICATION } }, outputs: {}, config: {},
+  };
+  const draft = { source: { type: { kind: "PlatformObjectType", id: APPLICATION } }, read: "createForm", params: {} };
+  const edit = (section: string) => ({
+    source: { object: { input: "application" } }, read: "form", params: { section: { literal: section } },
+  });
+
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...projection, data: { draft, identity: edit("identity"), entries: edit("entries") },
+  }).success, true);
+  assert.equal(productProjectionInputSchema.safeParse({ ...projection, data: { wrong: edit("create") } }).success, false);
+  assert.deepEqual(missingRequiredReadParameters(platformObjectTypes[APPLICATION].reads!.form, {}), ["section"]);
+});
+
+test("declares grant reads for both resource classes and a panel-only template filter", async () => {
+  const { PRODUCT_PANEL, PRODUCT_PROJECTION, platformObjectTypes } = await import("./platform-object-types");
+  const { panelReadResultSchemas } = await import("./panel-operations");
+  const { panelReadParameterSchemas } = await import("./panel-projection");
+
+  for (const type of [PRODUCT_PANEL, PRODUCT_PROJECTION]) {
+    assert.deepEqual(platformObjectTypes[type].reads?.grants,
+      { source: "object", parameterMode: "fixed", params: {}, result: "productCatalogueGrants" });
+  }
+  assert.deepEqual(panelReadResultSchemas.productCatalogueGrants.parse({ grants: [], shared: false }), { grants: [], shared: false });
+  const panelQuery = platformObjectTypes[PRODUCT_PANEL].reads?.query;
+  assert.equal(panelQuery?.parameterMode === "fixed" && panelQuery.params.template, "productTemplate");
+  assert.equal(panelReadParameterSchemas.productTemplate.safeParse(true).success, true);
+  assert.equal(panelReadParameterSchemas.productTemplate.safeParse("true").success, false);
+  const projectionQuery = platformObjectTypes[PRODUCT_PROJECTION].reads?.query;
+  assert.equal(projectionQuery?.parameterMode === "fixed" && Object.hasOwn(projectionQuery.params, "template"), false);
+});

@@ -19,7 +19,7 @@ import PanelMember from "./PanelMember.vue";
  * member's data through the host's one read port.
  */
 
-export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions, "read" | "confirmOperation" | "translate" | "expandPageComposer" | "navigate"> {
+export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions, "read" | "confirmOperation" | "translate" | "expandPageComposer" | "navigate" | "placement"> {
   manifest: PanelManifest;
   run: DirectPanelRun;
   /** The platform's request path, as the reader: drafts, projection records and the coordinator's operations. */
@@ -53,13 +53,14 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       confirmOperation: options.confirmOperation,
       expandPageComposer: options.expandPageComposer,
       navigate: options.navigate,
+      placement: options.placement,
       translate: options.translate,
       // A draft the panel cannot take fails it where it would have been, as in a frame.
       reportDraftError: run.failed,
       text: createPanelText(options.messages, options.locale, options.defaultLocale),
       operations: panelHumanOperations(options.use, requests),
       recordDraftCreated: (link, id) => recordDraftCreated(requests, link, id),
-      readProjection: async (id) => directProjectionSchema.parse(await readProjectionRecord(requests, id)),
+      readProjection: async (id) => directProjectionSchema.parse(await readProjectionRecord(requests, id, true)),
       pageKey: run.pageKey,
       url: () => address.value,
       label: run.label,
