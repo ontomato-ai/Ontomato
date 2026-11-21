@@ -44,8 +44,15 @@ await mountPanel({
     const editing = computed(() => creating.value || (Boolean(selectedKey.value) && detail.value.status === "ready"));
     const title = computed(() => {
       if (creating.value) return "新建关系类型";
-      if (!selectedKey.value) return "关系类型";
       return detail.value.status === "ready" ? detail.value.value.label || selectedKey.value : selectedKey.value;
+    });
+    // With nothing selected the column says what it is for, in agreement with what the list shows: nothing while the
+    // list is still reading or failed (the list says so), and no "pick one on the left" when the left has nothing.
+    const idleNote = computed(() => {
+      if (catalogue.value.status !== "ready") return "";
+      if (!allRows.value.length) return "新建一条关系类型后，在这里查看两端对象、修改说明和关联字段。";
+      if (!rows.value.length) return "没有可选的关系类型：清空或换个搜索词后，再从左侧选一条。";
+      return "从左侧选一条关系类型，在这里查看两端对象、修改说明和关联字段。";
     });
 
     function open(row) {
@@ -96,7 +103,7 @@ await mountPanel({
     }, { immediate: true });
 
     return {
-      catalogue, detail, types, allRows, rows, countText, selectedKey, search, creating, editing, title,
+      catalogue, detail, types, allRows, rows, countText, selectedKey, search, creating, editing, title, idleNote,
       typeLabel, open, startCreate, cancelCreate, onSaved, onDiscarded, openType,
     };
   },
