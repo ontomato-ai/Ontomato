@@ -1,6 +1,13 @@
 {
   "manifest": {
     "state": {
+      "creating": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "deepLink": true
+      },
       "selected": {
         "type": {
           "kind": "object",
@@ -144,7 +151,24 @@
         }
       }
     },
-    "commands": {}
+    "commands": {
+      "create": {
+        "labelKey": "action.create",
+        "primary": true,
+        "do": {
+          "set": {
+            "fields": {
+              "selected": {
+                "literal": null
+              },
+              "creating": {
+                "literal": true
+              }
+            }
+          }
+        }
+      }
+    }
   },
   "content": {
     "messages": {
@@ -190,7 +214,6 @@
         "action.shareOn": "Share in the domain",
         "action.shareOff": "Stop sharing in the domain",
         "action.allApplications": "All applications",
-        "action.refresh": "Read again",
         "action.inspect": "Open",
         "detail.empty": "Choose a panel on the left, or create one.",
         "detail.readonly": "You have no edit grant on this panel: it opens read-only.",
@@ -322,7 +345,6 @@
         "action.shareOn": "开启域内共享",
         "action.shareOff": "关闭域内共享",
         "action.allApplications": "全部应用",
-        "action.refresh": "重新读取",
         "action.inspect": "打开",
         "detail.empty": "在左侧选择一个面板，或新建一个。",
         "detail.readonly": "你没有这个面板的编辑权，按只读显示。",
