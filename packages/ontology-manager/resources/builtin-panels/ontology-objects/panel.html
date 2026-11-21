@@ -6,7 +6,7 @@
   .ot-toolbar .el-input { width: 16rem; max-width: 100%; }
   .ot-spacer { flex: 1; }
   .ot-count { font-size: var(--text-sm); color: var(--el-text-color-secondary); }
-  .ot-table { border: 1px solid var(--ui-border); border-radius: var(--radius-md); background: var(--el-bg-color); overflow: auto; }
+  .ot-table { max-width: 100%; border: 1px solid var(--ui-border); border-radius: var(--radius-md); background: var(--el-bg-color); overflow: auto; }
   .ot-row { display: grid; align-items: center; column-gap: var(--spacing-md); width: 100%; box-sizing: border-box;
     padding: var(--spacing-sm) var(--spacing-md); border: 0; border-bottom: 1px solid var(--ui-divider);
     background: var(--el-bg-color); color: var(--el-text-color-regular); font: inherit; font-size: var(--text-sm); text-align: left; }
@@ -39,7 +39,8 @@
   /* A narrow detail card keeps the table readable: it scrolls sideways inside the card rather than losing its last column. */
   .ot-detail-main { min-width: 0; }
   .ot-detail-main .ot-table { overflow-x: auto; }
-  @container (max-width: 56rem) { .ot-detail { grid-template-columns: minmax(0, 1fr); } }
+  /* Under this width the detail is one column: a side card and a table beside it would each be too narrow to read. */
+  @container (max-width: 72rem) { .ot-detail { grid-template-columns: minmax(0, 1fr); } }
   /* The class's tables keep every column: in a narrow card they scroll sideways instead of losing one, and the
      description wraps rather than being cut. */
   .ot-attr-grid { min-width: 30rem; }
