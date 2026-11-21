@@ -60,6 +60,10 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
 
     public String locator() { return PageSkills.locator(access.permissionCode(), access.kind(), pageKey); }
 
+    ApplicationPanelUse withoutInputs() {
+        return new ApplicationPanelUse(id, pageKey, panelId, path, access, defaultAgent, names, descriptions, null, groupKey);
+    }
+
     static List<ApplicationPanelUse> canonical(List<ApplicationPanelUse> uses) {
         var normalized = uses.stream().map(use -> new ApplicationPanelUse(use.id, use.pageKey, use.panelId,
             canonicalPath(use.path), use.access, use.defaultAgent, use.names, use.descriptions, use.inputs, use.groupKey)).toList();
