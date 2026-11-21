@@ -10,7 +10,9 @@
 ## 起草新增或修改
 
 - 先读本类 `form`（按 `selected` 的目标）或 `createForm`，用表单返回的 `save.draftOperation` 作为起草操作，`form` 里只放要改的字段。
-- 修改现有条目时 `target` 给 `{"id": "<选中条目的 primaryKey>"}`；新增时 `target` 给 `{}`。
+- `target` 必须写明对象类型：修改现有条目时 `{"objectType": "platform:BusinessKnowledge", "id": "<选中条目的 primaryKey>"}`；新增时只给 `{"objectType": "platform:BusinessKnowledge"}`，不带 `id`。
+- **新增的条目一律待审核**：新增草稿的 `form` 里 `status` 写 `0`，不要留给读者或自己判断，也不要写 `1`。修改草稿保留条目原来的 `status`。
+- `form` 里不写 `knowledgeID`：修改改哪一条由 `target.id` 决定，新增没有 id。
 - `pageKey` 用当前页面上下文里的 `pageKey`。
 - 把 draft 作为产物发布，给用户一个回到本页入口地址并带 `draftSessionId`/`draftRunId`/`draftPath` 的链接；由人在页面上过目后再保存。
 

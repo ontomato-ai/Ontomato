@@ -3,6 +3,7 @@ import { computed, inject } from "vue";
 import { artifactPath } from "@ontomato/contracts/agent-artifact-markdown";
 import { plainText, type InlineMarkdownNode } from "../artifacts";
 import { messageContextKey, shellContextKey } from "../context";
+import { absoluteDraftAddress } from "../page-draft-link";
 import ArtifactCard from "./ArtifactCard.vue";
 
 /** markstream link node: outputs/ files become side-panel cards; web links stay links. */
@@ -13,9 +14,11 @@ const message = inject(messageContextKey)!;
 const shell = inject(shellContextKey)!;
 const path = computed(() => (props.node.loading ? null : artifactPath(props.node.href)));
 const label = computed(() => plainText(props.node.children));
-/** Relative app addresses the host recognises open their page beside the conversation. */
-const openPage = computed(() => (props.node.loading || path.value ? null : shell.pageLink(props.node.href)));
-const safeHref = computed(() => (/^(https?:|mailto:)/i.test(props.node.href) ? props.node.href : null));
+const draftAddress = computed(() => absoluteDraftAddress(props.node.href));
+const pageHref = computed(() => draftAddress.value === undefined ? props.node.href : draftAddress.value);
+/** Only a page the host recognises can open a draft. */
+const openPage = computed(() => (props.node.loading || path.value || pageHref.value === null ? null : shell.pageLink(pageHref.value)));
+const safeHref = computed(() => (draftAddress.value === undefined && /^(https?:|mailto:)/i.test(props.node.href) ? props.node.href : null));
 </script>
 
 <template>
@@ -27,10 +30,11 @@ const safeHref = computed(() => (/^(https?:|mailto:)/i.test(props.node.href) ? p
     :path="path"
     :title="label"
   />
-  <a v-else-if="openPage" :href="node.href" class="page-link" @click.prevent="openPage()">{{ node.text }}</a>
+  <a v-else-if="openPage" :href="pageHref ?? undefined" class="page-link" @click.prevent="openPage()">{{ node.text }}</a>
   <a v-else-if="safeHref" :href="safeHref" :title="node.title ?? undefined" target="_blank" rel="noopener noreferrer">{{
     node.text
   }}</a>
+  <span v-else-if="draftAddress !== undefined">{{ node.text }} ({{ shell.labels.value.unavailable }})</span>
   <span v-else>{{ node.text }}</span>
 </template>
 
