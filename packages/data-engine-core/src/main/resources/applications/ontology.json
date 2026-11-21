@@ -68,6 +68,10 @@
       "id": "use-ontology-applications", "pageKey": "ontology-applications", "panelId": "builtin-product-ontology-applications",
       "path": "/ontology/applications", "access": {"permissionCode": "ontology-modeling"},
       "names": {"en": "Applications","zh-CN": "应用"}, "groupKey": "products"
+    }, {
+      "id": "ontology-functions", "pageKey": "ontology-functions", "panelId": "builtin-product-ontology-functions",
+      "path": "/ontology/assets/functions", "access": {"permissionCode": "ontology-modeling"},
+      "names": {"en": "Functions", "zh-CN": "函数"}
     }]
   }
 }

@@ -1,0 +1,78 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Function"
+        },
+        "deepLink": true
+      },
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      }
+    },
+    "members": {
+      "list": {
+        "component": "ObjectList",
+        "type": "platform:Function",
+        "data": {
+          "rows": "query"
+        },
+        "state": {
+          "selected": "selected",
+          "search": "search"
+        },
+        "config": {
+          "statusField": "operation",
+          "fallbackToFirst": true
+        },
+        "name": "函数目录",
+        "description": "按名称和说明搜索的函数列表，每条显示名称、说明和操作类型。",
+        "id": "builtin-product-81ef1a93-e1ac-4ce7-af21-953f8d714bc3"
+      },
+      "form": {
+        "component": "ObjectForm",
+        "target": "selected",
+        "data": {
+          "form": "form",
+          "createForm": "createForm"
+        },
+        "operation": "platform:Function.save",
+        "name": "函数详情与编辑",
+        "description": "属主给出的读/写函数字段；读函数有查询逻辑包和列标签，写函数有参数、返回类和代码，保存走 platform:Function.save。",
+        "id": "builtin-product-c13d625c-cb14-45d3-8d6c-2765c8616a11"
+      },
+      "remove": {
+        "component": "OperationButton",
+        "operation": "functions.delete",
+        "target": "selected",
+        "config": {
+          "type": "danger"
+        },
+        "name": "删除函数",
+        "description": "删除选中的函数，平台先请读者确认；被指标、动作或写任务引用的函数由属主拒绝。",
+        "id": "builtin-product-6c49c425-f3cc-4d7c-a623-19134c7b92a0"
+      }
+    },
+    "events": {}
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "hint": "Read functions keep a query package and column labels; write functions keep parameters and Python code. A name is edited once, here.",
+        "newFunction": "New function",
+        "choose": "Choose a function on the left to read or change it, or create one."
+      },
+      "zh-CN": {
+        "hint": "读函数维护查询逻辑包和列标签，写函数维护参数和 Python 代码；名称只在这里编辑一次。",
+        "newFunction": "新建函数",
+        "choose": "选择左侧的一个函数查看或修改，也可以新建一个。"
+      }
+    }
+  }
+}
