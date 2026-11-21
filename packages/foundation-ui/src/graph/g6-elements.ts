@@ -15,6 +15,9 @@ export const G6_LABEL_SIZE = 12;
 export const G6_READABLE_ZOOM = 10 / G6_LABEL_SIZE;
 /** The widest a node's name is drawn unless its caller says otherwise: about 24 Latin or 13 Chinese characters. */
 export const G6_LABEL_WIDTH = 160;
+/** How far a node's first loop reaches above it, and how much further each next loop does. */
+export const G6_LOOP_DIST = 60;
+export const G6_LOOP_STEP = 28;
 /** From this size on a graph is drawn without arrowheads: at that density they only add noise and drawing time. */
 const LARGE_NODES = 1000;
 const LARGE_EDGES = 2000;
@@ -111,7 +114,7 @@ export function g6Edges(edges: readonly GraphCanvasEdge[], nodes: ReadonlyMap<st
     const place = pair.indexOf(index);
     const offset = (place - (pair.length - 1) / 2) * 36;
     const geometry = edge.source === edge.target
-      ? { type: "cubic", style: { loop: true, loopPlacement: "top" as const, loopDist: (nodes.get(edge.source)!.anchor?.radius ?? 0) + 60 + place * 28 } }
+      ? { type: "cubic", style: { loop: true, loopPlacement: "top" as const, loopDist: (nodes.get(edge.source)!.anchor?.radius ?? 0) + G6_LOOP_DIST + place * G6_LOOP_STEP } }
       : { type: pair.length > 1 ? "quadratic" : "line", style: { curveOffset: edge.source < edge.target ? offset : -offset } };
     const dashed = edge.line === "dashed";
     return {
