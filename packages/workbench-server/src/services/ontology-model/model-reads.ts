@@ -225,7 +225,8 @@ export function createOntologyModelReadAdapter(
       // A mid-edit refresh describes the form around the draft without refusing it, so options that depend on
       // other values (a relationship's join fields follow its end classes) match what was submitted.
       const around = await ownerForm(formPath, { target, values, changedField: errors[0]!.field });
-      return { ...around, values, errors };
+      // The owner fills the fields the draft left out with its defaults; the reader's own values stay as submitted.
+      return { ...around, values: { ...around.values, ...values }, errors };
     }
   }
 
