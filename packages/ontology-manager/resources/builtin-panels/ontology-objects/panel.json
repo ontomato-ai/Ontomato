@@ -207,7 +207,8 @@
         "ot.done": "已完成",
         "ot.deleteFailed": "操作没有完成",
         "ot.closeAttributeToEdit": "收起属性编辑后可修改基本信息",
-        "ot.command.create": "新建对象类型"
+        "ot.command.create": "新建对象类型",
+        "ot.create": "新建对象类型"
       },
       "en": {
         "panel.name": "Object types",
@@ -254,7 +255,8 @@
         "ot.done": "Done",
         "ot.deleteFailed": "The operation did not complete",
         "ot.closeAttributeToEdit": "Close the attribute editor to edit the basic information",
-        "ot.command.create": "New object type"
+        "ot.command.create": "New object type",
+        "ot.create": "New object type"
       }
     }
   }
