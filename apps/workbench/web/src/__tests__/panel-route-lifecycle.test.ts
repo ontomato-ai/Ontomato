@@ -197,6 +197,7 @@ it("shares one definition stream across author panels, restores a changed collec
     notStarted: "Panel has not started",
     failures: { fileUnavailable: "File unavailable", scriptThrew: "Script threw", scriptRejected: "Script rejected" },
     content: { styleOutside: "Style outside" },
+    draft: { toAgent: "To agent", toAgentText: "Unused: {reason}" },
     refresh: "Refresh",
   };
   const portA = platformPanelHost(appA, useP, ignoreChanges, mode);

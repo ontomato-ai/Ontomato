@@ -31,6 +31,7 @@ const labels: PanelHostLabels = {
   notStarted: "Not started",
   failures: { fileUnavailable: "Could not load {file}", scriptThrew: "Script failed", scriptRejected: "Script rejected" },
     content: { styleOutside: "Style outside" },
+    draft: { toAgent: "To agent", toAgentText: "Unused: {reason}" },
     refresh: "Refresh",
 };
 
@@ -494,6 +495,41 @@ describe("the panel host", () => {
     expect(instance.addresses).toEqual([settled]);
     instance.run.state(selected, settled);
     expect(a.address.value).toBe(settled);
+    scope.stop();
+  });
+
+  it("keeps the panel running when its linked draft cannot be used, says why, and leaves the draft on the reader's word", async () => {
+    const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
+    const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
+    const draft = { sessionId: "6f1c2d3e-4b5a-4c6d-8e7f-a0b1c2d3e4f5", runId: "1b2c3d4e-5f6a-4b7c-9d8e-f9a0b1c2d3e4", path: "outputs/drafts/task.page-draft.json" };
+    const query = new URLSearchParams({ tab: "runs", draftSessionId: draft.sessionId, draftRunId: draft.runId, draftPath: draft.path });
+    const selected = { selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" } };
+    const scope = effectScope();
+    const a = scope.run(() => usePanelInstance(port.port("use-a"), { labels,
+      label: (source) => source.kind === "registered" ? source.panel.name : "",
+      address: () => `/applications/app-a/a/schedules?${query}`,
+      initial: () => selected,
+    }))!;
+    await a.ready;
+    const instance = port.started("use-a");
+
+    // An old-shape draft the panel could not read: the panel stays, and the reason is said above it.
+    instance.run.draftRefused("The draft is in an old shape");
+    expect(a.error.value).toBe("");
+    expect(a.direct.value).not.toBeNull();
+    expect(a.draftRefusal.value).toBe("The draft is in an old shape");
+    // Closed, the notice goes and the address still links the draft.
+    a.dismissDraftRefusal();
+    expect(a.draftRefusal.value).toBe("");
+    expect(a.address.value).toContain("draftRunId=");
+
+    // Leaving the draft: its three parameters go, the page's own and its state stay, and the instance hears it.
+    instance.run.draftRefused("No form takes it");
+    a.leaveDraft();
+    const left = panelAddress("/applications/app-a/a/schedules?tab=runs", selected);
+    expect(a.draftRefusal.value).toBe("");
+    expect(a.address.value).toBe(left);
+    expect(instance.addresses).toEqual([left]);
     scope.stop();
   });
 

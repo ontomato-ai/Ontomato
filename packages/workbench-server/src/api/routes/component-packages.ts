@@ -41,7 +41,9 @@ export function createComponentPackagesRouter(requireMaintainer: RequestHandler,
     const { release, files: assets } = await inspectComponentPackage(input.data);
     const caller = req as AuthenticatedRequest;
     const { userId, userName, domainId, roles, loginCode, domainName } = caller;
-    const actor = { userId, userName, domainId, roles, loginCode, domainName, credentials: credentialsFromRequest(caller) };
+    // Only this route sets deployment scope, after the installed edition's maintenance guard succeeds.
+    const actor = { userId, userName, domainId, roles, loginCode, domainName,
+      credentials: credentialsFromRequest(caller), diagnosticsScope: "deployment" as const };
     if (input.data.mode === "inspect") {
       await requireCompatibleComponentPackage(await readComponentPackage(release.name), release, actor, checkUpgrade);
       res.json(release);

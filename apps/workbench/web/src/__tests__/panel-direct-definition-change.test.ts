@@ -71,7 +71,7 @@ it("keeps the reader's unsaved input when the member's definition changes, and d
     manifest,
     run: {
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: task },
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, failed: (reason) => { throw reason; },
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, failed: (reason) => { throw reason; },
     },
     requests, use: { applicationId: "app-tasks", useId: "tasks" }, messages: {}, locale: ref("en"), defaultLocale: "en",
     expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,

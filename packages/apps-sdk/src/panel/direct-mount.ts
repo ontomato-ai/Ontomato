@@ -10,6 +10,7 @@ import type { PlatformRequests } from "./platform-objects";
 import { readComponentPackage, readPageDraft, readProjectionRecord, recordDraftCreated } from "./platform-requests";
 import type { ComponentPackageResponse } from "@ontomato/contracts/component-packages";
 import { createPanelText } from "./text";
+import { draftRefusalText } from "./draft-refusal";
 import PanelMember from "./PanelMember.vue";
 
 /*
@@ -65,6 +66,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
   return scope.run(() => {
     const address = ref(run.url());
     const { requests } = options;
+    const translate = options.translate ?? ((key: string) => key);
     const instance = createDirectPanelInstance(options.manifest, {
       read: options.read,
       confirmOperation: options.confirmOperation,
@@ -74,8 +76,8 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       ...(run.currentEntry ? { currentEntry: run.currentEntry } : {}),
       ...(options.memberPath ? { memberPath: options.memberPath } : {}),
       translate: options.translate,
-      // A draft the panel cannot take fails it where it would have been, as in a frame.
-      reportDraftError: run.failed,
+      // A draft a form could not take is the draft's problem: the reader is told, the panel goes on.
+      reportDraftError: (reason) => run.draftRefused(translate("platform.draftFailed", { reason: reason instanceof Error ? reason.message : String(reason) })),
       text: createPanelText(options.messages, options.locale, options.defaultLocale),
       operations: panelHumanOperations(options.use, requests),
       recordDraftCreated: (link, id) => recordDraftCreated(requests, link, id),
@@ -102,12 +104,12 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       readPageDraft: (sessionId, runId, path) => readPageDraft(requests, sessionId, runId, path),
       projectionChanged: (id, revision) => instance.projectionChanged(id, revision),
       refreshObject: (target) => (target ? instance.refresh({ objects: [target], objectTypes: [] }) : instance.refreshAll()),
-      reports: run,
+      reports: { ...run, draftRefused: (refusal) => run.draftRefused(draftRefusalText(refusal, translate)) },
     });
     // A draft that none of this panel's forms performs is not this panel's: once every member has registered and none
-    // takes it, the panel fails with that, rather than waiting for a form that will never come.
+    // takes it, the reader is told so, rather than waiting for a form that will never come; the panel goes on.
     watch(instance.unclaimedDraft, (unclaimed) => {
-      if (unclaimed !== null) run.failed(new Error((options.translate ?? String)("platform.panelDraftUnclaimed", { ...unclaimed })));
+      if (unclaimed !== null) run.draftRefused(translate("platform.panelDraftUnclaimed", { ...unclaimed }));
     });
     // Every member the panel declares is held from the start, drawn or not: its operations are listed, a draft is offered
     // to it, and the panel's own code reads its data, whether or not a layout or a template places it.

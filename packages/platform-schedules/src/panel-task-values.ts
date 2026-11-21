@@ -14,13 +14,24 @@ const settingsSchema = z.object({
 
 export type ScheduledTaskPanelSettings = z.infer<typeof settingsSchema>;
 
+const panelValuesSchema = z.object({
+  task: settingsSchema.partial(),
+  parameters: formValuesSchema,
+});
+
 /** The task settings are grouped separately from the application's own text fields. */
-export function scheduledTaskPanelValues(values: Readonly<PanelFormValues>) {
+function groupPanelValues(values: Readonly<PanelFormValues>) {
   const { task, ...parameters } = values;
-  return {
-    settings: settingsSchema.partial().parse(task ?? {}),
-    parameters: formValuesSchema.parse(parameters),
-  };
+  return { task: task ?? {}, parameters };
+}
+
+export function parseScheduledTaskPanelDraft(values: Readonly<PanelFormValues>) {
+  return panelValuesSchema.safeParse(groupPanelValues(values));
+}
+
+export function scheduledTaskPanelValues(values: Readonly<PanelFormValues>) {
+  const { task: settings, parameters } = panelValuesSchema.parse(groupPanelValues(values));
+  return { settings, parameters };
 }
 
 export function scheduledTaskPanelSettings(task: PlatformTask | undefined, timeZone: string): ScheduledTaskPanelSettings {

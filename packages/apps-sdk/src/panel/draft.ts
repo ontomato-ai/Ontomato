@@ -2,6 +2,7 @@ import { shallowReactive, shallowRef, type Ref } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormField, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import type { PageDraft, PageDraftObjectRef } from "@ontomato/contracts/page-draft";
+import { PanelDraftUnusable } from "./draft-refusal";
 import { pageDraftLink, withoutPageDraftQuery, type PageDraftLink } from "@ontomato/contracts/page-draft";
 
 /*
@@ -191,6 +192,6 @@ export async function receivePanelDraft(
 ): Promise<void> {
   const draft = await source.readPageDraft(link.sessionId, link.runId, link.path);
   if (!current()) return;
-  if (draft.pageKey !== pageKey) throw new Error(`Draft belongs to page ${draft.pageKey}, not ${pageKey}`);
+  if (draft.pageKey !== pageKey) throw new PanelDraftUnusable(link.path, { kind: "otherPage", pageKey: draft.pageKey });
   adapters.hold(draft, link, taken, current);
 }

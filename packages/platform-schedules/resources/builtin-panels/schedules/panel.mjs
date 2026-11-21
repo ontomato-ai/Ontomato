@@ -55,16 +55,13 @@ await mountPanel({
 
     // Page-local state.
     const search = ref("");
-    // Writing a new task is public state (`compose: "new"`), so an address — an agent's create draft too — opens it;
-    // only one of the two owner forms is mounted at a time, so a draft reaches the form that performs it.
-    const editing = ref(false);
+    // Draft links use the page state to open the owner's form before it checks the draft.
     const mode = computed(() => {
       if (values.value.compose === "new") return appsProblem.value ? "view" : "create";
-      return editing.value ? "edit" : "view";
+      return values.value.compose === "edit" && selected.value ? "edit" : "view";
     });
     function setMode(next) {
-      editing.value = next === "edit";
-      const compose = next === "create" ? "new" : null;
+      const compose = next === "create" ? "new" : next === "edit" ? "edit" : null;
       if ((values.value.compose ?? null) !== compose) instance.state.set("compose", compose);
     }
     const busy = ref(new Set());
@@ -391,7 +388,6 @@ await mountPanel({
       notify({ kind: "success", text: t("message.saved") });
     }
     function created(object) {
-      editing.value = false;
       const id = object?.primaryKey;
       instance.state.setState({ compose: null, newTask: null, ...(id ? { selectedTask: { className: TASK, primaryKey: id }, runId: null } : {}) });
       notify({ kind: "success", text: t("message.created") });

@@ -197,8 +197,11 @@ async function download() {
 </template>
 
 <style scoped>
+/* The canvas fills the box its member is placed in (a flex item stretched to the panel's space, or a fixed height): how
+   tall that box is is the panel's, filling it is the canvas's own — G6 draws nothing in a box it measures at 0. */
 .sdk-object-graph-canvas {
   position: relative;
+  height: 100%;
   min-height: 0;
 }
 .sdk-object-graph-canvas-error {

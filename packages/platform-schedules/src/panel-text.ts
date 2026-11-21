@@ -17,7 +17,7 @@ export interface ScheduledTaskPanelText {
   action: { runNow: string };
   panelFields: { settings: string; state: string; nextRun: string; lastRun: string; lastRunAt: string; lastRunSummary: string; latestResultPath: string };
   frequency: { every: Record<"minute" | "hour" | "day", string>; daily: string; weekly: string; monthly: string; cron: string };
-  panelErrors: { revisionConflict: string };
+  panelErrors: { revisionConflict: string; invalidDraftField: string; invalidDraftParameter: string };
   panelSettings: { title: string; frequency: string; timeZone: string; notifyEmail: string };
   panelManagement: { save: string; create: string; setEnabled: string; delete: string; deleteImpact: string; renewCredential: string };
   panelRunStarted: string;
@@ -31,6 +31,8 @@ export function scheduledTaskPanelMessages(text: ScheduledTaskPanelText): Record
     "platformSchedules.action.runNow": text.action.runNow,
     "platformSchedules.panelRunStarted": text.panelRunStarted,
     "platformSchedules.panelErrors.revisionConflict": text.panelErrors.revisionConflict,
+    "platformSchedules.panelErrors.invalidDraftField": text.panelErrors.invalidDraftField,
+    "platformSchedules.panelErrors.invalidDraftParameter": text.panelErrors.invalidDraftParameter,
     ...Object.fromEntries(Object.entries(text.frequency.every).map(([key, value]) => [`platformSchedules.frequency.every.${key}`, value])),
     ...Object.fromEntries(Object.entries(text.frequency).filter(([key]) => key !== "every")
       .map(([key, value]) => [`platformSchedules.frequency.${key}`, String(value)])),
@@ -56,7 +58,11 @@ export const scheduledTaskPanelTextEn = {
     monthly: "Day {day} of every month at {time}",
     cron: "Cron {expression}",
   },
-  panelErrors: { revisionConflict: "This task changed. Reload it before editing." },
+  panelErrors: {
+    revisionConflict: "This task changed. Reload it before editing.",
+    invalidDraftField: "The draft has an invalid value for {field}. Use the fields and values shown in the task form.",
+    invalidDraftParameter: "The draft field {field} must be text. Fill in each application field separately.",
+  },
   panelSettings: { title: "Title", frequency: "Frequency", timeZone: "Time zone", notifyEmail: "Notification email" },
   panelManagement: {
     save: "Save task", create: "Create task", setEnabled: "Change task status", delete: "Delete task",
@@ -87,7 +93,11 @@ export const scheduledTaskPanelTextZhCn = {
     monthly: "每月 {day} 日 {time}",
     cron: "Cron {expression}",
   },
-  panelErrors: { revisionConflict: "任务已变更，请重新加载后再编辑。" },
+  panelErrors: {
+    revisionConflict: "任务已变更，请重新加载后再编辑。",
+    invalidDraftField: "草稿中的 {field} 无效。请按任务表单显示的字段填写。",
+    invalidDraftParameter: "草稿中的 {field} 必须是文本。请分别填写应用表单中的各个字段。",
+  },
   panelSettings: { title: "标题", frequency: "频率", timeZone: "时区", notifyEmail: "通知邮箱" },
   panelManagement: {
     save: "保存任务", create: "新建任务", setEnabled: "更改任务状态", delete: "删除任务",

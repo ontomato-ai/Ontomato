@@ -1,4 +1,4 @@
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 
 /*
  * An application's external link (big main's ruling, 2026-11-21): the entry's own address with `standalone=1`. Opened in
@@ -35,8 +35,41 @@ export function externalLinkOf(address: string, location: Pick<Location, "origin
   return `${location.origin}${location.pathname}#${path}?${query}`;
 }
 
-/** Copies an entry's external link and says so. */
-export async function copyExternalLink(address: string, copied: string) {
-  await navigator.clipboard.writeText(externalLinkOf(address));
-  ElMessage.success(copied);
+/**
+ * Puts text on the clipboard: through the clipboard API where the page may use it, else through a selected text field,
+ * which a deployment served over plain HTTP (where the API is absent) still allows. False when neither took it.
+ */
+export async function writeClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Refused (no permission, the page not focused): the field below may still copy it.
+  }
+  const field = document.createElement("textarea");
+  field.value = text;
+  field.setAttribute("readonly", "");
+  field.style.position = "fixed";
+  field.style.opacity = "0";
+  document.body.append(field);
+  field.select();
+  try {
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    field.remove();
+  }
+}
+
+/**
+ * Copies an entry's external link and says so. Where the browser copies nothing, the link is shown for the reader to copy
+ * by hand, so the action never ends in silence.
+ */
+export async function copyExternalLink(address: string, labels: { copied: string; title: string }) {
+  const link = externalLinkOf(address);
+  if (await writeClipboard(link)) ElMessage.success(labels.copied);
+  else await ElMessageBox.alert(link, labels.title).catch(() => undefined);
 }

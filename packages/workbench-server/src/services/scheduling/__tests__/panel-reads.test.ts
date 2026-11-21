@@ -141,6 +141,16 @@ it("checks a partial draft against the task's stored application values", async 
     values: { ...agentTask.content, instruction },
     errors: [],
   });
+  const refused = await createScheduledTaskReadAdapter(viewer).form(agentTask.id, {
+    values: { content: { instruction } }, changedField: null,
+  });
+  expect(panelReadResultSchemas.panelFormDescription.parse(refused)).toMatchObject({
+    values: agentTask.content,
+    errors: [{
+      field: "/content", code: "invalid_format",
+      message: "The draft field /content must be text. Fill in each application field separately.",
+    }],
+  });
 });
 
 it("keeps an unavailable choice and its owner error in the form", async () => {

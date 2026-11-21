@@ -104,7 +104,7 @@ const activeApp = computed(() => props.apps.find((app) => app.id === activeAppId
 /** The header's "more": the entry's external link, when the page shown is an entry of an application. */
 const moreActions = computed(() => props.shownPage?.externalLink
   ? [{ id: "copy-external-link", label: props.labels.copyExternalLink, icon: Link,
-    onClick: () => void copyExternalLink(props.shownPage!.externalLink!, props.labels.externalLinkCopied) }]
+    onClick: () => void copyExternalLink(props.shownPage!.externalLink!, { copied: props.labels.externalLinkCopied, title: props.labels.copyExternalLink }) }]
   : []);
 const externalTab = ref(externalLinkTab());
 watch(() => route.query.standalone, (flag) => {

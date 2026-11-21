@@ -42,6 +42,8 @@ const save = {
   inputSchema: {}, resultSchema: {}, batch: false,
 };
 
+const i18n = createI18n({ legacy: false, locale: "en", messages: { en: publicEn } });
+
 afterEach(() => {
   document.body.innerHTML = "";
 });
@@ -52,7 +54,7 @@ it("says the owner's refusal of a draft on its form, and does not fail the panel
     manifest,
     run: {
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
       failed: (reason) => failed.push(reason),
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",
@@ -88,7 +90,7 @@ it("says on its form an owner's failure to check a draft's values, and does not 
     manifest,
     run: {
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
       failed: (reason) => failed.push(reason),
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",
@@ -115,6 +117,53 @@ it("says on its form an owner's failure to check a draft's values, and does not 
   // The form still shows the task as its owner holds it.
   expect(element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.value).toBe("t-1");
   expect(failed).toEqual([]);
+  app.unmount();
+  mount.dispose();
+});
+
+/*
+ * A draft the page cannot use — the platform could not read it (an old shape, a field missing), it was written for
+ * another page, or no form here takes it — is that draft's problem, not the panel's (panelisation lead, 2026-11-22: an
+ * old draft replaced the whole schedules page with a red line). The panel opens as it is, and the host is handed one
+ * sentence in the reader's words naming the file and what it lacks, the field's own name kept beside it.
+ */
+it("opens the panel as it is when its draft cannot be read, and says why in the reader's words", async () => {
+  const failed: unknown[] = [];
+  const refused: string[] = [];
+  const draftPath = "outputs/drafts/e2e-b2-title-draft.page-draft.json";
+  const query = new URLSearchParams({ draftSessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", draftRunId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", draftPath });
+  const mount = mountDirectPanel({
+    manifest,
+    run: {
+      pageKey: "tasks", url: () => `/tasks?${query}`, label: () => "Tasks", initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
+      failed: (reason) => failed.push(reason), draftRefused: (text) => refused.push(text),
+    },
+    messages: {}, locale: ref("en"), defaultLocale: "en", translate: (key, params) => i18n.global.t(key, params ?? {}),
+    requests: {
+      request: async (path) => {
+        if (!path.includes("/page-draft")) return Response.json({ projection: taskForm });
+        // As the platform's request port throws an owner's 400: its words, and its body as the payload.
+        throw Object.assign(new Error(`Page draft '${draftPath}' in run '7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02': target.objectType: Required`), {
+          status: 400,
+          payload: { success: false, error: "Page draft …", code: "INVALID_REQUEST", details: { path: draftPath, issues: [{ path: ["target", "objectType"], message: "Required" }] } },
+        });
+      },
+    },
+    use: { applicationId: "app-tasks", useId: "tasks" },
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
+    confirmOperation: noOperations.confirmOperation,
+    read: async (request): Promise<ProductPanelReadResponse> => ({ status: "ready", value: (request.operations ? { save } : form) as never }),
+  });
+  const element = document.createElement("div");
+  document.body.append(element);
+  const app = createApp({ render: () => mount.member("form") });
+  app.use(i18n).use(ElementPlus).mount(element);
+  await vi.waitFor(() => expect(refused).toHaveLength(1));
+  expect(refused[0]).toBe(`The draft ${draftPath} cannot be used: it lacks or gets wrong the type of the object it is for (target.objectType). The page opens without it.`);
+  expect(failed).toEqual([]);
+  // The panel is there, as it is without a draft.
+  await vi.waitFor(() => expect(element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.value).toBe("t-1"));
   app.unmount();
   mount.dispose();
 });

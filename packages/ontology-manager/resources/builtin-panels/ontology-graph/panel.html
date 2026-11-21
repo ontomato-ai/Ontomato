@@ -95,6 +95,8 @@
   }
   .og-canvas > [data-member] > * {
     flex: 1 1 auto;
+    /* The canvas measures its frame from this box: a flex item with automatic height collapses to nothing. */
+    height: 100%;
     min-height: 0;
   }
   .og-inspector {

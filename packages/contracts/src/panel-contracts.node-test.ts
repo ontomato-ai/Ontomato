@@ -62,6 +62,7 @@ import {
 import {
   applicationPanelUseSchema, applicationPanelUsePathSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema,
   chartSourceInUseErrorSchema, ontologyElementRefSchema, productPanelContentSchema, productPanelReadQuerySchema, productPanelResponseSchema,
+  productPanelSnapshotQuerySchema,
   productProjectionInputSchema, productProjectionResponseSchema,
   registerChartProjectionRequestSchema, registerChartProjectionResponseSchema, registerProductProjectionRequestSchema,
   updateChartProjectionSourceRequestSchema,
@@ -1204,13 +1205,18 @@ test("list column headers come from owner fields or from panel message keys", ()
   assert.equal(panelObjectListColumnSchema.safeParse({ ...panelColumn, empty: "No notes" }).success, false);
 });
 
-test("current panel reads take no context or a complete use and one entrance", () => {
+test("panel records and snapshots share the content and frame query", () => {
+  assert.equal(productPanelSnapshotQuerySchema, productPanelReadQuerySchema);
   const use = { applicationId: "ontology", useId: "ontology-agent-settings" };
   const pageKey = "agent-settings";
   const menu = { ...use, pageKey, permissionCode: "analysis-agent" };
   const member = { ...use, pageKey, access: "domain-member" };
-  for (const query of [{}, menu, member]) assert.deepEqual(productPanelReadQuerySchema.parse(query), query);
-  for (const query of [use, { pageKey }, { ...use, pageKey }, { ...menu, useId: undefined }, { ...menu, access: member.access }]) {
+  const frame = { ...use, source: "frame" };
+  for (const query of [{}, menu, member, frame]) assert.deepEqual(productPanelReadQuerySchema.parse(query), query);
+  for (const query of [
+    use, { pageKey }, { ...use, pageKey }, { ...menu, useId: undefined }, { ...menu, access: member.access },
+    { source: "frame" }, { ...frame, useId: undefined }, { ...menu, source: "frame" },
+  ]) {
     assert.equal(productPanelReadQuerySchema.safeParse(query).success, false);
   }
 });
@@ -2215,10 +2221,11 @@ test("a refused component package upgrade reports the changed shape and its affe
     component: "@acme/widgets:SaveButton", field: "inputs.task",
     before: { kind: "object", objectType: SCHEDULED_TASK },
     projectionIds: ["save-task"], panelIds: ["manage-tasks"],
+    projections: [{ id: "save-task", domainId: "domain" }], panels: [{ id: "manage-tasks", domainId: "domain" }],
   };
   const response = {
     success: false, error: "The task input is still in use", code: COMPONENT_PACKAGE_INCOMPATIBLE,
-    details: { package: "@acme/widgets", changes: [change] },
+    details: { package: "@acme/widgets", scope: "deployment", changes: [change] },
   };
   assert.deepEqual(componentPackageUpgradeErrorSchema.parse(response), response);
   assert.equal(componentPackageUpgradeErrorSchema.safeParse({

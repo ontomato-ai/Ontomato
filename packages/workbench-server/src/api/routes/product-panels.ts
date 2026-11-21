@@ -21,7 +21,7 @@ import { z } from "zod";
 import {
   applicationPanelReferencesRequestSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema, METRIC_CHART_COMPONENT,
   PROJECTION_REUSE_PANEL_HEADER,
-  productCurrentIdParamsSchema, productPanelReadQuerySchema, productPanelSnapshotQuerySchema,
+  productCurrentIdParamsSchema, productPanelReadQuerySchema, type ProductPanelReadQuery,
   registerChartProjectionRequestSchema, registerChartProjectionResponseSchema,
   registerProductPanelRequestSchema,
   registerProductProjectionRequestSchema, updateChartProjectionSourceRequestSchema,
@@ -42,13 +42,21 @@ import { readProductPanelData } from "../../services/product-panels/data-reads";
 import { validateProjectionComponent } from "../../services/product-panels/component-catalogue";
 import { readNestedPanel, requireRegisteredPanelRoot } from "../../services/product-panels/member-path";
 import { productDefinitionStreamRequestSchema, type ProductDefinitionStreamFrame } from "@ontomato/contracts/product-subscriptions";
-import { authorizeDefinitionStream, requirePanelDefinitions } from "../../services/product-panels/definition-stream";
+import { authorizeDefinitionStream, requirePanelDefinitions, snapshotPanelDefinitions } from "../../services/product-panels/definition-stream";
 import type { createChartProjectionService } from "../../services/product-panels/chart-sources";
 import { panelSkillProvider } from "../../services/product-panels/skill-provider";
 import { readRegisteredPanelPageSkillContext } from "../../services/skills/view";
 
+type FrameRead = Extract<ProductPanelReadQuery, { source: "frame" }>;
+type ContentEntryRead = Exclude<Extract<ProductPanelReadQuery, { applicationId: string }>, FrameRead>;
+
+function requireFrameForRead({ applicationId, useId }: FrameRead, caller: ReturnType<typeof context>, id: string) {
+  return requireRegisteredPanelRoot(caller.owner, caller.credentials,
+    { kind: "frame", applicationId, useId }, { expectedPanelId: id });
+}
+
 function pageSkillContextFor(
-  query: Extract<z.infer<typeof productPanelSnapshotQuerySchema>, { applicationId: string }>,
+  query: ContentEntryRead,
   caller: ReturnType<typeof context>,
   panel: { id: string },
 ) {
@@ -102,7 +110,12 @@ productPanelsRouter.post("/read", wrap(async (req, res) => {
 productPanelsRouter.get("/:id/snapshot", wrap(async (req, res) => {
   res.set("Cache-Control", "no-store");
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
-  const query = productPanelSnapshotQuerySchema.parse(req.query);
+  const query = productPanelReadQuerySchema.parse(req.query);
+  if ("source" in query) {
+    const { panel } = await requireFrameForRead(query, c, id);
+    res.json(await snapshotPanelDefinitions(c.owner, c.credentials, panel));
+    return;
+  }
   const readContext = "applicationId" in query ? (panel: { id: string }) => pageSkillContextFor(query, c, panel) : undefined;
   res.json(await requirePanelDefinitions(c.owner, c.credentials, id, readContext));
 }));
@@ -124,9 +137,7 @@ productPanelsRouter.get("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
   const query = productPanelReadQuerySchema.parse(req.query);
   if ("source" in query) {
-    const { applicationId, useId } = query;
-    const { panel } = await requireRegisteredPanelRoot(c.owner, c.credentials,
-      { kind: query.source, applicationId, useId }, { expectedPanelId: id });
+    const { panel } = await requireFrameForRead(query, c, id);
     res.json({ panel });
     return;
   }

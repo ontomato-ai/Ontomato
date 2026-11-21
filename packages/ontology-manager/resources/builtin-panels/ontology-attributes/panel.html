@@ -31,15 +31,8 @@
   .attrs-actions { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); }
   /* The panel is also shown in a narrow column beside a conversation: its layout follows its own width, not the window's. */
   @container (max-width: 62rem) { .attrs-body { grid-template-columns: minmax(0, 1fr); } }
-  /* A narrow list drops the columns a reader can live without, and never the key columns. */
-  @container (max-width: 46rem) {
-    .attrs-row { grid-template-columns: minmax(110px, 1fr) minmax(70px, .7fr) 56px 56px; }
-    .attrs-row > :nth-child(3) { display: none; }
-  }
-  @container (max-width: 34rem) {
-    .attrs-row { grid-template-columns: minmax(90px, 1fr) 48px 48px; }
-    .attrs-row > :nth-child(2) { display: none; }
-  }
+  /* The list keeps every column at a readable width and scrolls sideways inside its own frame, rather than cutting one. */
+  .attrs-row { min-width: 34rem; }
 </style>
 <div id="app">
   <section class="attrs">

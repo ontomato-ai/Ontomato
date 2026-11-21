@@ -16,7 +16,7 @@ import { framePanelHost, platformPanelHost, resolveApplicationEntry, type PanelO
 import EntryUnit from "./EntryUnit.vue";
 import { copyExternalLink } from "../external-link";
 import { Link } from "lucide-vue-next";
-import { hostThemeMode } from "../app-host";
+import { expandDeclaredComposer, hostThemeMode } from "../app-host";
 import { useApplicationCatalog } from "../catalog";
 
 /**
@@ -266,8 +266,31 @@ const labels = computed<PanelHostLabels>(() => ({
     scriptRejected: t("platform.panelScriptRejected"),
   },
   content: { styleOutside: t("platform.panelStyleOutside") },
+  draft: {
+    toAgent: t("platform.panelDraftToAgent"),
+    // The host puts the reason where `{reason}` stands.
+    toAgentText: t("platform.panelDraftToAgentText", { reason: "{reason}" }),
+  },
   refresh: t("common.refresh"),
 }));
+
+/**
+ * Hands why the linked draft could not be used back to the agent: the page's composer (beside a conversation, the
+ * conversation's) opens on the page's agent with the sentence, for the reader to send or change.
+ */
+function draftToAgent(text: string) {
+  expandDeclaredComposer({ target: { kind: "page-default" }, prefill: text });
+}
+
+/**
+ * The reader closed the notice of a draft the shown page cannot use: the page opens as it does without the draft — its
+ * entry's own address, the panel's defaults, no form left half open — as its menu row does. A frame keeps its own state.
+ */
+function leaveDraft() {
+  const page = shownPage.value;
+  if (!page) return;
+  reportAddress({ kind: "state", address: applicationPanelAddress(panelUsePath(page.use.path), { frame: frameState.value }) });
+}
 
 /**
  * The composer at the foot of the page at its own address (big main's ruling, 2026-11-21): what a message written here
@@ -412,7 +435,7 @@ const heading = computed<PlatformPageHeading | null>(() => {
 /** The "more" of the header the frame holds: the same external link the platform's header offers. */
 const entryMore = computed(() => heading.value?.externalLink ? [{
   id: "copy-external-link", label: t("platform.copyExternalLink"), icon: Link,
-  onClick: () => void copyExternalLink(heading.value!.externalLink!, t("platform.externalLinkCopied")),
+  onClick: () => void copyExternalLink(heading.value!.externalLink!, { copied: t("platform.externalLinkCopied"), title: t("platform.copyExternalLink") }),
 }] : []);
 if (!props.navigate) usePageHeading(() => (framed.value ? null : heading.value));
 function goBack() {
@@ -529,6 +552,8 @@ function reportDirty(page: KeptPage, dirty: boolean) {
       :wired="Object.keys(page.use.inputs ?? {})"
       :address="addressOf(page)"
       :initial="stateOf(page)"
+      :draft-to-agent="draftToAgent"
+      :leave-draft="leaveDraft"
       @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"
       @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
       @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"
@@ -552,6 +577,8 @@ function reportDirty(page: KeptPage, dirty: boolean) {
       :wired="Object.keys(page.use.inputs ?? {})"
       :address="addressOf(page)"
       :initial="stateOf(page)"
+      :draft-to-agent="draftToAgent"
+      :leave-draft="leaveDraft"
       @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"
       @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
       @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"
