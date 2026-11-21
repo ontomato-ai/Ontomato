@@ -29,7 +29,7 @@ import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/sr
  *   with zero static options; ObjectList inferring search, cursor paging and checkboxes from read signatures and member
  *   bindings, with flattened `status` input, escaped UTF-16 highlights, fallback-to-first (never re-selecting once cleared
  *   to null), and ObjectSummary reading `record` with highlights and pre-wrap body text.
- * - Multi-column table labelKey/emptyKey resolution via `panel.t`, fallback to owner `fieldLabels`, and state events.
+ * - Multi-column table labelKey/emptyKey resolution via `panel.t`, fallback to owner `fieldLabels`, and header commands.
  * - Server-side cursor pagination (`runtimeParams: { cursor, size }`), unbound runtime search (`runtimeParams.search`),
  *   and automatic reset to page 1 on search or filter change without double reads.
  * - Single-binding two-way search via `outputs.search` on scalar deepLink panel state (restore, type, clear to null,
@@ -191,7 +191,7 @@ it("pairs zero-config SegmentedControl ordered counts with ObjectList flat statu
         inputs: { item: { state: "selectedKnowledge" }, search: { state: "keyword" } },
       },
     },
-    events: {},
+    commands: {},
   });
 
   const entries = [
@@ -335,17 +335,11 @@ it("keeps SegmentedControl interactive with static fallback options when its cou
   const manifest = definePanel({
     state: {
       status: { type: { kind: "scalar", type: "string" }, default: "all" },
-      cleared: { type: { kind: "scalar", type: "boolean" }, default: false },
     },
     members: {
       tabs: { target: { projectionId: "status-tabs" }, outputs: { value: { state: "status" } } },
     },
-    events: {
-      onStatusChange: {
-        on: { member: "tabs", output: "value" },
-        do: { set: { fields: { cleared: { literal: true } } } },
-      },
-    },
+    commands: {},
   });
 
   const { instance, element } = mountDirect(
@@ -360,7 +354,6 @@ it("keeps SegmentedControl interactive with static fallback options when its cou
 
   element.querySelectorAll<HTMLButtonElement>('[role="radio"]')[1]!.click();
   await vi.waitFor(() => expect(instance.state.values.value.status).toBe("pending"));
-  expect(instance.state.values.value.cleared).toBe(true);
 });
 
 it("resolves column labelKey/emptyKey via panel.t, falls back to owner fieldLabels, and resolves state event labelKey", async () => {
@@ -404,7 +397,7 @@ it("resolves column labelKey/emptyKey via panel.t, falls back to owner fieldLabe
       list: { target: { projectionId: "labeled-list" }, outputs: { selected: { state: "selectedTask" } } },
       summary: { target: { projectionId: "labeled-summary" }, inputs: { item: { state: "selectedTask" } } },
     },
-    events: {
+    commands: {
       clearSelection: {
         labelKey: "ops.clear",
         do: { set: { fields: { selectedTask: { literal: null } } } },
@@ -476,7 +469,7 @@ it("infers cursor pagination and runtime search from query signature, resetting 
     members: {
       list: { target: { projectionId: "knowledge-table" }, outputs: { selected: { state: "selectedKnowledge" } } },
     },
-    events: {},
+    commands: {},
   });
 
   const allItems = [
@@ -568,7 +561,7 @@ it("single-binds ObjectList search via outputs.search to deepLink panel state wi
         outputs: { selected: { state: "selectedKnowledge" }, search: { state: "keyword" } },
       },
     },
-    events: {},
+    commands: {},
   });
 
   const { instance, element, reads } = mountDirect(
@@ -648,12 +641,7 @@ it("infers checkboxes from outputs.checked, freezes visible rows on select-all, 
         outputs: { selected: { state: "selectedKnowledge" }, checked: { state: "checkedKnowledge" } },
       },
     },
-    events: {
-      clearChecked: {
-        labelKey: "ops.clearChecked",
-        do: { set: { fields: { checkedKnowledge: { literal: [] } } } },
-      },
-    },
+    commands: {},
   });
 
   const allItems = [
@@ -704,8 +692,8 @@ it("infers checkboxes from outputs.checked, freezes visible rows on select-all, 
   await nextTick();
   expect(instance.state.values.value.checkedKnowledge).toEqual([knowledge("k-1"), knowledge("k-2"), knowledge("k-3")]);
 
-  // Event clearing checkedKnowledge to [] syncs checkboxes back to unchecked.
-  await instance.invoke("clearChecked");
+  // The panel clearing checkedKnowledge to [] syncs checkboxes back to unchecked.
+  instance.state.set("checkedKnowledge", []);
   await nextTick();
   expect(instance.state.values.value.checkedKnowledge).toEqual([]);
   expect([...element.querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]')].every((box) => !box.checked)).toBe(true);
@@ -721,7 +709,7 @@ it("infers checkboxes from outputs.checked, freezes visible rows on select-all, 
   expect(() => instance.state.set("checkedKnowledge", [{ className: SCHEDULED_TASK, primaryKey: "t-1" }])).toThrow(TypeError);
 });
 
-it("clears declared list state via panel event when ObjectList emits selected, and supports explicit toggleable: true", async () => {
+it("selects a row without touching the checked list, and supports explicit toggleable: true", async () => {
   const projections: Record<string, DirectProjection> = {
     "clearing-list": {
       ...meta,
@@ -754,12 +742,7 @@ it("clears declared list state via panel event when ObjectList emits selected, a
         outputs: { selected: { state: "selectedKnowledge" }, checked: { state: "checkedKnowledge" } },
       },
     },
-    events: {
-      clearOnSelect: {
-        on: { member: "list", output: "selected" },
-        do: { set: { fields: { checkedKnowledge: { literal: [] } } } },
-      },
-    },
+    commands: {},
   });
 
   const { instance, element } = mountDirect(
@@ -779,7 +762,7 @@ it("clears declared list state via panel event when ObjectList emits selected, a
   element.querySelectorAll<HTMLButtonElement>(".sdk-object-list-item-btn")[1]!.click();
   await vi.waitFor(() => expect(instance.state.values.value).toEqual({
     selectedKnowledge: knowledge("k-2"),
-    checkedKnowledge: [],
+    checkedKnowledge: [knowledge("k-1"), knowledge("k-2")],
   }));
 
   // With toggleable: true, clicking the already-selected row clears selection to null.
@@ -817,7 +800,7 @@ it("supports dynamic type queries via data.objects (panelOntologyObjects) with s
         outputs: { selected: { state: "start" } },
       },
     },
-    events: {},
+    commands: {},
   });
 
   const { instance, element, reads } = mountDirect(
@@ -977,7 +960,7 @@ it("draws a declared ObjectList with data.objects in a frame via <Projection> an
         outputs: { selected: { state: "selectedNode" } },
       },
     },
-    events: {},
+    commands: {},
   });
   const instance = createPanelInstance(manifest, {
     text: (key) => key,

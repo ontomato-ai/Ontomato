@@ -19,7 +19,7 @@ A workspace is the application source tree. Business definitions remain in Java;
 For a management page, start with the [complete example and wiring recipes](references/management-pages.md) or run `panel scaffold`.
 
 1. Use `panel type <type-id>` for the owner's reads and operations. Use `sdk read docs/components.md` for each component's data, configuration, outputs and events in the current SDK. Inspect existing projections and application uses. Reuse existing records and ask the owner for any missing business capability or named read.
-2. Write the Vue panel source. Declare its projections and public typed state in `panel.json` as `{manifest, content?}`. Use `recipes.md` for the assistant's common tasks and optional `content.messages` for translations. Use Vue's own state and events for local interactions.
+2. Write the Vue panel source. Declare its projections and public typed state in `panel.json` as `{manifest, content?}`. Use `recipes.md` for the assistant's common tasks and optional `content.messages` for translations. Give page-header actions a named entry in `manifest.commands`. Use Vue state and event handlers for component-driven interactions.
 3. Run `panel check <workspace directory>` to validate the panel source, declarations and references.
 4. Submit the selected projections, panels and application uses with `panel register`, then open the application's declared entry. Use an application ID and route you control.
 

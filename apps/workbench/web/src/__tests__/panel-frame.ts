@@ -176,14 +176,14 @@ export const manifestP = definePanel({
     form: slot("projection-schedules-form", "task"),
     run: slot("projection-schedules-run", "task"),
   },
-  events: {},
+  commands: {},
 });
 
 /** Panel Q's declaration (`q/declaration.mjs`): the summary and nothing of P. */
 export const manifestQ = definePanel({
   state: selectedTask,
   members: { summary: slot("projection-schedules-summary", "task") },
-  events: {},
+  commands: {},
 });
 
 /** The old workspace sample version used by tests that still exercise that input. */
@@ -505,7 +505,7 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
   const panel = panelRecord(
     "panel-schedules-form",
     "Task form (trial)",
-    definePanel({ state: selectedTask, members: { form: slot(formProjection.id, "task") }, events: {} }),
+    definePanel({ state: selectedTask, members: { form: slot(formProjection.id, "task") }, commands: {} }),
   );
   const use = panelUse("use-trial-a-form", "panels-trial-a-form", panel.id, "/applications/app-panels-trial-a/form");
   // The operations application's form for the task, with a second case set to choose from.

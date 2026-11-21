@@ -1,6 +1,6 @@
 /*
  * The agent settings panel's declaration (design 2.1): the state one instance keeps, the projections it places as
- * members, and its events. The candidate's `panel.json` and the registered panel record carry exactly this;
+ * members, and its header commands. The candidate's `panel.json` and the registered panel record carry exactly this;
  * `material.mjs` writes both from it.
  *
  * `selectedAgent` is the agent shown; `mode` says whether the instance is choosing one (`list`), creating one (`create`)
@@ -27,7 +27,7 @@ export default {
     scope: { target: { projectionId: "agent-data-scope" }, formField: field("/classNames") },
   },
   // Creating an agent is a change of this instance's own state; the form's owner then supplies the new agent's defaults.
-  events: {
+  commands: {
     newAgent: {
       labelKey: "agents.creating",
       do: { set: { fields: { selectedAgent: { literal: null }, mode: { literal: "create" } } } },

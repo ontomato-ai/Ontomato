@@ -29,7 +29,7 @@ const projection: DirectProjection = {
 const manifest: DirectPanelManifest = {
   state: { fn: { type: { kind: "object", objectType: FUNCTION }, personal: false, deepLink: true, external: false } },
   members: { form: { target: { projectionId: projection.id }, inputs: { fn: { state: "fn" } } } },
-  events: {},
+  commands: {},
 };
 const USED = "A function an action uses cannot be changed or deleted";
 const field = (path: string, label: string, control: Record<string, unknown>, more: Record<string, unknown> = {}) =>

@@ -73,7 +73,7 @@ const content = {
   html: '<div id="app"><p>Test panel</p></div>',
   module: 'import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});',
 };
-const manifest = { state: {}, members: {}, events: {} };
+const manifest = { state: {}, members: {}, commands: {} };
 
 beforeAll(async () => {
   configureI18n({
@@ -285,6 +285,35 @@ async function readCatalogue(dataName: string, inputs: Record<string, unknown> =
 
 it("dispatches catalogue query through the real panel HTTP path to PostgreSQL", async () => {
   expect(await readCatalogue("listing")).toMatchObject({ items: [{ id: "one" }], nextCursor: expect.any(String) });
+});
+
+it("reports an unreadable panel beside healthy results without losing its stored references", async () => {
+  const id = "legacy-directory";
+  await state.pool!.query(`INSERT INTO "${state.schema}".product_panels (domain_id,id,owner_id,definition)
+    VALUES ($1,$2,$3,$4)`, [owner.domainId, id, owner.userId, {
+    name: "A legacy directory", description: "", visibility: "private", content,
+    manifest: { state: {}, events: {}, members: { child: { target: { panelId: "one" } } } },
+  }]);
+  state.use.push(id);
+  try {
+    const { registerBuiltinProducts } = await import("../../services/product-panels/builtin-products");
+    await registerBuiltinProducts();
+    const response = await fetch(`${base}/api/product-panels?q=directory&sort=name&limit=1`);
+    expect(response.status).toBe(200);
+    const first = await response.json();
+    expect(first).toMatchObject({ items: [], unavailableItems: [{ id, reason: expect.stringContaining("manifest.commands") }] });
+    expect(first.nextCursor).toBeTruthy();
+    const next = await fetch(`${base}/api/product-panels?q=directory&sort=name&limit=1&cursor=${first.nextCursor}`);
+    expect(await next.json()).toMatchObject({ items: [{ id: "one" }] });
+    expect(await readCatalogue("listing")).toMatchObject({
+      items: [], unavailableItems: [{ id, reason: expect.stringContaining("manifest.commands") }],
+    });
+    const { findPanelUsers } = await import("../../services/product-panels/references");
+    expect(await findPanelUsers(owner.domainId, "panel", "one")).toEqual([{ id, name: "A legacy directory" }]);
+  } finally {
+    state.use.splice(state.use.indexOf(id), 1);
+    await state.pool!.query(`DELETE FROM "${state.schema}".product_panels WHERE id=$1`, [id]);
+  }
 });
 
 it("dispatches application reads from current PostgreSQL records and preserves the complete table when an executor changes it", async () => {

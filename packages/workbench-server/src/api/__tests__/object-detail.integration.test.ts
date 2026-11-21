@@ -49,7 +49,7 @@ const panel = {
     module: `import { mountPanel } from "@ontomato/sdk/panel";
 await mountPanel({});`,
   },
-  manifest: { state: {}, members: {}, events: {} },
+  manifest: { state: {}, members: {}, commands: {} },
 };
 
 beforeAll(async () => {
@@ -223,7 +223,7 @@ it("rejects a remapping that closes a panel cycle without changing the old mappi
       state: { selected: { type: { kind: "object", objectType: "Customer" },
         deepLink: false, external: false, personal: false, default: null } },
       members: { detail: { target: { fromState: "selected", candidates: { rule: "objectDetail" } } } },
-      events: {},
+      commands: {},
     },
   });
   await addPanel("loop", {

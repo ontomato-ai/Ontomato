@@ -11,7 +11,7 @@ import {
 
 /*
  * A panel page's commands in the header it is shown under (big main's ruling, 2026-11-21): the host's refresh, then the
- * panel's named shortcuts — its events with a label and no trigger. A member's operations (the run button, the form's
+ * panel's declared commands. A member's operations (the run button, the form's
  * save) stay where the panel draws them, and the header never shows them.
  *
  * What this rules out: a header left empty while the panel draws its own row of page commands; a header filled with every
@@ -23,7 +23,7 @@ const at = (path: string) => `/applications/${app}/${path}`;
 const panel = {
   ...panelRecord("panel-header-commands", "Tasks", {
     ...manifestP,
-    events: {
+    commands: {
       clear: { labelKey: "tasks.clear", do: { set: { fields: { selectedTask: { literal: null } } } } },
       create: { labelKey: "tasks.create", primary: true, do: { set: { fields: { selectedTask: { literal: null } } } } },
     },

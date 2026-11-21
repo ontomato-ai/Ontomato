@@ -410,10 +410,9 @@ it("validates every projection and the capability-map panel input against contra
   const enMessages = panel.content.messages?.en ?? {};
   const zhMessages = panel.content.messages?.["zh-CN"] ?? {};
   expect(Object.keys(zhMessages).sort()).toEqual(Object.keys(enMessages).sort());
-  for (const event of Object.values(panel.manifest.events)) {
-    if (!event.labelKey) continue;
-    expect(enMessages[event.labelKey]).toBeTruthy();
-    expect(zhMessages[event.labelKey]).toBeTruthy();
+  for (const command of Object.values(panel.manifest.commands)) {
+    expect(enMessages[command.labelKey]).toBeTruthy();
+    expect(zhMessages[command.labelKey]).toBeTruthy();
   }
 });
 

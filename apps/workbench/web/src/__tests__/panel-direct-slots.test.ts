@@ -35,7 +35,7 @@ const manifest: DirectPanelManifest = {
     list: { target: { projectionId: "list" }, outputs: { checked: { state: "checked" } } },
     ask: { target: { projectionId: "ask" } },
   },
-  events: {},
+  commands: {},
 };
 
 afterEach(() => {

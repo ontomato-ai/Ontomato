@@ -226,7 +226,7 @@ it("draws direct ObjectGraph in a direct panel via PanelMember with member.formF
       definition: { target: { projectionId: "agent-form" }, inputs: { agent: { state: "selectedAgent" } } },
       scope: { target: { projectionId: "agent-data-scope" }, formField: { slot: "definition", path: "/classNames" } },
     },
-    events: {},
+    commands: {},
   };
 
   const { instance, element, reads } = mountDirect(
@@ -356,7 +356,7 @@ it("draws direct ObjectGraph in a frame via frameMemberData and edits the paired
       definition: { target: { projectionId: "agent-form" }, inputs: { agent: { state: "selectedAgent" } } },
       scope: { target: { projectionId: "agent-data-scope" }, inputs: {}, formField: { slot: "definition", path: "/classNames" } },
     },
-    events: {},
+    commands: {},
   });
 
   const instance = createPanelInstance(panel, {
@@ -440,7 +440,7 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
       definition: { target: { projectionId: "agent-form" }, inputs: {} },
       scope: { target: { projectionId: "agent-data-scope" }, inputs: {}, formField: { slot: "definition", path: "/classNames" } },
     },
-    events: {},
+    commands: {},
   });
   const instance = createPanelInstance(panel, {
     text: (key) => key,
@@ -589,7 +589,7 @@ it("drives direct OntologyGraph in type and instance modes through member reads 
         },
       },
     },
-    events: {},
+    commands: {},
   };
 
   const actionNode = { className: ACTION, primaryKey: "act-1", label: "Approve Order", layer: "capability" as const };
@@ -726,7 +726,7 @@ it("surfaces forbidden and error host read states on direct OntologyGraph withou
     members: {
       graph: { target: { projectionId: "capability-graph" }, inputs: { mode: { state: "mode" } } },
     },
-    events: {},
+    commands: {},
   };
 
   let response: ProductPanelReadResponse = { status: "forbidden" };
@@ -772,7 +772,7 @@ it("drives direct ObjectRelations through useMemberData with complete identities
         outputs: { selected: { state: "selected" } },
       },
     },
-    events: {},
+    commands: {},
   };
 
   const actionNode = { className: ACTION, primaryKey: "act-1", label: "Approve Order", layer: "capability" as const };
@@ -876,7 +876,7 @@ it("marks truncated customer Relationship neighbors (panelRelationNeighbors) on 
         inputs: { selected: { state: "selected" } },
       },
     },
-    events: {},
+    commands: {},
   };
   const { element } = mountDirect(
     manifest,
@@ -985,7 +985,6 @@ it("draws direct OntologyGraph and ObjectRelations in a frame via frameMemberDat
   const panel = definePanel({
     state: {
       selected: { type: { kind: "object-union", layers: allLayers }, deepLink: true },
-      lastSource: { type: { kind: "scalar", type: "string" }, deepLink: false },
     },
     members: {
       graph: {
@@ -999,16 +998,7 @@ it("draws direct OntologyGraph and ObjectRelations in a frame via frameMemberDat
         outputs: { selected: { state: "selected" } },
       },
     },
-    events: {
-      graphSelected: {
-        on: { member: "graph", output: "selectedNode" },
-        do: { set: { fields: { lastSource: { literal: "graph" } } } },
-      },
-      relationSelected: {
-        on: { member: "relations", output: "selected" },
-        do: { set: { fields: { lastSource: { literal: "relations" } } } },
-      },
-    },
+    commands: {},
   });
 
   const instance = createPanelInstance(panel, {
@@ -1054,17 +1044,15 @@ it("draws direct OntologyGraph and ObjectRelations in a frame via frameMemberDat
   await vi.waitFor(() => expect(canvasRecorder.nodes).toHaveLength(2));
   expect(element.querySelector(".sdk-object-relations-prompt")).not.toBeNull();
 
-  // Selecting the action node in the graph updates panel state, runs its declared event, and feeds ObjectRelations.
+  // Selecting the action node in the graph updates panel state and feeds ObjectRelations.
   canvasRecorder.emitSelect?.([encodeGraphNodeId(actionNode)]);
   await vi.waitFor(() => expect(element.querySelector(".sdk-object-relations-peer-name")?.textContent).toBe("Alice"));
-  expect(instance.state.values.value.lastSource).toBe("graph");
   expect(requests).toContain("GET /platform-ontology/start");
   expect(requests).toContain("POST /platform-ontology/neighbors");
 
-  // Clicking a peer in ObjectRelations moves selection and runs the declared relations output event.
+  // Clicking a peer in ObjectRelations moves selection.
   element.querySelector<HTMLButtonElement>(".sdk-object-relations-peer")!.click();
   await vi.waitFor(() => expect(instance.state.values.value.selected).toEqual({ className: USER, primaryKey: "u-1" }));
-  expect(instance.state.values.value.lastSource).toBe("relations");
 });
 
 it("keeps newly discovered layers visible when OntologyGraph expands without declared layers", async () => {
@@ -1099,7 +1087,7 @@ it("keeps newly discovered layers visible when OntologyGraph expands without dec
         outputs: { selectedNode: { state: "selected" } },
       },
     },
-    events: {},
+    commands: {},
   };
 
   const alice = { className: USER, primaryKey: "u-alice", label: "Alice", layer: "governance" };
@@ -1171,7 +1159,7 @@ it("draws only the relation kinds the panel's state holds, in type and instance 
     members: {
       graph: { target: { projectionId: "kinds-graph" }, inputs: { mode: { state: "mode" } }, outputs: { visibleRelationKinds: { state: "kinds" } } },
     },
-    events: {},
+    commands: {},
   };
   const actionNode = { className: ACTION, primaryKey: "act-1", label: "Approve Order", layer: "capability" as const };
   const workflowNode = { className: WORKFLOW, primaryKey: "wf-1", label: "Order Pipeline", layer: "capability" as const };

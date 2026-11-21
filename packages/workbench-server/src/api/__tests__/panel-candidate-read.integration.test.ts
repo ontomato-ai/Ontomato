@@ -72,7 +72,7 @@ beforeAll(async () => {
     "panel.html": '<projection slot="result" />',
     "panel.mjs": 'throw new Error("Definition loading never runs the module");',
     "panel.json": JSON.stringify({ manifest: {
-      state: {}, members: { result: { target: { projectionId } } }, events: {},
+      state: {}, members: { result: { target: { projectionId } } }, commands: {},
     } }),
   };
   runtime.get("/", (_req, res) => res.json({ id: workspaceId }));

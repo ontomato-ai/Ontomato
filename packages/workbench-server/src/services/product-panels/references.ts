@@ -1,14 +1,15 @@
+import { z } from "zod";
 import { missingEntryMessageKeys } from "@ontomato/contracts/panel-conversation-entry";
 import { appsSdkComponentDatum } from "@ontomato/contracts/apps-sdk";
 import {
-  matchesDirectPanelValue, matchesObjectType, panelPlacementSchema, panelPortAccepts, type PanelManifest, type PanelMember,
+  matchesDirectPanelValue, matchesObjectType, panelManifestSchema, panelPlacementSchema, panelPortAccepts, type PanelMember,
   type PanelPlacement,
 } from "@ontomato/contracts/panel-manifest";
 import {
   authoredReadParameterSource, directReadDeclaration, missingRequiredReadParameters, panelReadInputMatches, panelReadParameterId,
 } from "@ontomato/contracts/panel-projection";
 import {
-  builtinProductPanelInputSchema, builtinProductProjectionInputSchema, productPanelInputSchema, productProjectionInputSchema,
+  builtinProductProjectionInputSchema, productPanelInputSchema, productProjectionInputSchema,
   type BuiltinProductPanelInput, type BuiltinProductProjectionInput, type ProductPanelInput, type ProductProjectionInput,
 } from "@ontomato/contracts/product-panels";
 import type { PoolClient } from "pg";
@@ -25,7 +26,12 @@ import { panelStateDomainPrefix, panelStateKeyNamespace } from "./personal-state
 import type { panelOperationTargetCheck } from "./type-table";
 
 type QueryClient = Pick<PoolClient, "query">;
-type PanelDefinition = ProductPanelInput | BuiltinProductPanelInput;
+/** Reference checks need the stored bindings, even when a panel cannot be opened. */
+export const panelReferenceDefinitionSchema = productPanelInputSchema.pick({ name: true }).extend({
+  manifest: panelManifestSchema.innerType().pick({ state: true, members: true }).strip(),
+}).strip();
+type PanelDefinition = z.infer<typeof panelReferenceDefinitionSchema>;
+type ReferenceManifest = PanelDefinition["manifest"];
 type ProjectionDefinition = ProductProjectionInput | BuiltinProductProjectionInput;
 type Target = { kind: CurrentProductKind; id: string };
 type Wiring = Pick<PanelMember, "inputs" | "outputs" | "readOperationInputs">;
@@ -95,9 +101,7 @@ async function loadPanels(domainId: string, client: QueryClient) {
     `SELECT id,definition FROM ${currentProductRows("panel")} AS definitions
      WHERE domain_id=$1 OR domain_id IS NULL ORDER BY id`, [domainId],
   );
-  return new Map(rows.map(({ id, definition }) => [
-    id, (isBuiltinProductId(id) ? builtinProductPanelInputSchema : productPanelInputSchema).parse(definition),
-  ]));
+  return new Map(rows.map(({ id, definition }) => [id, panelReferenceDefinitionSchema.parse(definition)]));
 }
 
 async function loadDetails(domainId: string, client: QueryClient) {
@@ -169,7 +173,7 @@ function ports(definition: PanelDefinition | ProjectionDefinition) {
 }
 
 async function incompatiblePort(
-  source: PanelManifest, { key, wiring }: Reference, definition: PanelDefinition | ProjectionDefinition,
+  source: ReferenceManifest, { wiring }: Reference, definition: PanelDefinition | ProjectionDefinition,
   readCatalogue = readPanelComponentCatalogue,
 ) {
   const target = ports(definition);
@@ -207,14 +211,6 @@ async function incompatiblePort(
     if (!type || !field || !panelPortAccepts(field.type, type))
       return `output '${name}' does not match its connected field`;
   }
-  for (const { on, do: action } of Object.values(source.events)) {
-    if (on?.member !== key) continue;
-    const type = target.outputs[on.output];
-    if (!type) return `output '${on.output}' does not exist`;
-    if ("set" in action && Object.entries(action.set.fields)
-      .some(([field, value]) => "event" in value && !panelPortAccepts(source.state[field].type, type)))
-      return `output '${on.output}' does not match its event's state fields`;
-  }
   if ("data" in definition) {
     for (const { name, datum, declaration } of reads) {
       if (!missingRequiredReadParameters(declaration, datum.params, undefined, wiring).length) continue;
@@ -249,7 +245,7 @@ export async function validateCurrentProductReferences(
     const issue = await checkOperationTarget(input);
     if (issue) throw new HttpError(400, `Projection '${id}': ${issue}`, "PANEL_OPERATION_TARGET_MISMATCH");
   }
-  const checkMember = async (manifest: PanelManifest, reference: Reference, definition: PanelDefinition | ProjectionDefinition) => {
+  const checkMember = async (manifest: ReferenceManifest, reference: Reference, definition: PanelDefinition | ProjectionDefinition) => {
     if ("componentId" in definition && definition.operations) {
       checkOperationTarget ??= (await import("./type-table")).panelOperationTargetCheck(owner, credentials);
       const issue = await checkOperationTarget(definition, reference.wiring);

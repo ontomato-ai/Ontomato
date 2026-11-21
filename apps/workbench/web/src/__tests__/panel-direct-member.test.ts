@@ -47,7 +47,7 @@ const manifest: DirectPanelManifest = {
     form: { target: { projectionId: "task-form" }, inputs: { task: { state: "selectedTask" } } },
     run: { target: { projectionId: "task-run" }, inputs: { task: { state: "selectedTask" } } },
   },
-  events: {},
+  commands: {},
 };
 const field = (path: string, label: string) => ({ path, label, control: { kind: "text" as const }, valueSchema: {}, required: false, readOnly: false });
 const form = (name: string, revision = 3) => ({

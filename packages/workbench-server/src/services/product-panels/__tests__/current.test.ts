@@ -24,7 +24,7 @@ const projection = () => registerProductProjectionRequestSchema.parse({ name: "T
 const panel = () => registerProductPanelRequestSchema.parse({ name: "Tasks", description: "", visibility: "domain", revision: 0,
   content: { html: "<main></main>", module: "throw new Error('Node must never execute this module')", recipes: "Choose a test task." },
   manifest: { state: { selectedTask: { type: { kind: "object", objectType: "platform:ScheduledTask" } } },
-    members: { summary: { target: { projectionId: "x" }, inputs: { task: { state: "selectedTask" } } } }, events: {} } });
+    members: { summary: { target: { projectionId: "x" }, inputs: { task: { state: "selectedTask" } } } }, commands: {} } });
 async function seedProjection() {
   return saveCurrentProjection(owner, credentials, "x", projection());
 }
