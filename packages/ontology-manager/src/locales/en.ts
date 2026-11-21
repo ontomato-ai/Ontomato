@@ -127,7 +127,6 @@ export default {
     update: "Update",
   },
   nav: {
-    actionManagement: "Actions",
     workflowManagement: "Workflows",
     triggerManagement: "Triggers",
     capabilityMap: "Capability Map",
