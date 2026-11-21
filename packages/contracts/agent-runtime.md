@@ -127,11 +127,12 @@ secret values live only for the admitted run. Persist no raw request body.
 Continuation must supply fresh values. Unknown environment variables are allowed
 for third-party standard skills; there is no runtime business-variable registry.
 
-Runtime-owned variables: `ONTOMATO_SESSION_ID`, `ONTOMATO_RUN_ID`,
+Runtime-owned variables: `ONTOMATO_SKILL_SCENARIO`, `ONTOMATO_SESSION_ID`, `ONTOMATO_RUN_ID`,
 `ONTOMATO_CORRELATION_ID`, `ONTOMATO_LANGUAGE`, `ONTOMATO_WORKSPACE`,
 `ONTOMATO_SOURCE_DIR`, `ONTOMATO_OUTPUT_DIR`, `ONTOMATO_AGENT_COMMAND_URL`,
-`ONTOMATO_AGENT_CALLBACK`. The first two refer to this session and run, never a model
-argument. Tool-call identity belongs to event metadata; scripts do not need an
+`ONTOMATO_AGENT_CALLBACK`. The first three are owned solely by the runtime (hosts
+never supply them); `ONTOMATO_SESSION_ID` and `ONTOMATO_RUN_ID` refer to this session
+and run, never a model argument. Tool-call identity belongs to event metadata; scripts do not need an
 invocation/tool-call envelope. All sandbox worker runs receive
 `ONTOMATO_SKILL_SCENARIO=platform`; runs with a native `agent` channel and a
 script worker also receive `ONTOMATO_AGENT_COMMAND_URL` and a per-run secret

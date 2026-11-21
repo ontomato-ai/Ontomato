@@ -13,7 +13,6 @@ import { mkdir, chmod, readFile, writeFile, rename } from "node:fs/promises";
 import { CodeExecutor } from "./code";
 import { signalUid, assertWorkerPolicy, type WorkerPolicy } from "./worker";
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import type { AddressInfo } from "node:net";
 import {productTools} from './product-tools';
 import path from "node:path";
 import { normalizeContext, type Message } from "@earendil-works/pi-ai";
@@ -127,6 +126,7 @@ export interface RuntimeOptions {
   worker?: WorkerPolicy;
   root: string;
   hosts: RuntimeHost[];
+  channelCommandBaseUrl: string;
   modelRuntimeToken?: string;
   modelSeed?: { baseUrl?: string; apiKey?: string; modelName?: string };
   eventBufferSize?: number;
@@ -173,7 +173,6 @@ export class AgentRuntime {
   private locks = new Map<string, Promise<unknown>>();
   private waiters = new Map<string, Set<() => void>>();
   private sessionRunSubscribers = new Map<string, Set<SessionRunSubscriber>>();
-  private httpAddress?: () => AddressInfo | string | null;
   constructor(readonly options: RuntimeOptions) {
     modelKeySealKey(options.modelRuntimeToken);
     this.store = options.store;
@@ -387,21 +386,8 @@ export class AgentRuntime {
   }
   seal(scope: Scope, runId: string) { this.active.get(key(scope, runId))!.sealed = true; }
   acceptsInput(scope: Scope, runId: string) { const active=this.active.get(key(scope,runId));return !!active && !active.sealed; }
-  setHttpAddress(reader: () => AddressInfo | string | null) {
-    this.httpAddress = reader;
-  }
-  private channelCommandUrl(scope: Scope, runId: string): string | undefined {
-    const address = this.httpAddress?.();
-    if (!address || typeof address !== "object") return undefined;
-    const host =
-      address.address === "0.0.0.0" || address.address === ""
-        ? "127.0.0.1"
-        : address.address === "::" || address.address === "::0"
-          ? "[::1]"
-          : address.address.includes(":") && !address.address.startsWith("[")
-            ? `[${address.address}]`
-            : address.address;
-    return `http://${host}:${address.port}/v1/channel/hosts/${encodeURIComponent(scope.hostId)}/domains/${encodeURIComponent(scope.domainId)}/runs/${encodeURIComponent(runId)}/commands`;
+  private channelCommandUrl(scope: Scope, runId: string): string {
+    return `${this.options.channelCommandBaseUrl.replace(/\/$/, "")}/v1/channel/hosts/${encodeURIComponent(scope.hostId)}/domains/${encodeURIComponent(scope.domainId)}/runs/${encodeURIComponent(runId)}/commands`;
   }
   async runChannelCommand(
     scope: Scope,
@@ -666,11 +652,11 @@ export class AgentRuntime {
         active.outputBaseline.set(file.path, file.sha256);
       let channelEnv: { commandUrl: string; callbackSecret: string } | undefined;
       if (request.definition.toolSurface !== "product" && run.channel) {
-        const commandUrl = this.channelCommandUrl(scope, run.id);
-        if (commandUrl) {
-          active.channelSecret = randomBytes(32).toString("base64url");
-          channelEnv = { commandUrl, callbackSecret: active.channelSecret };
-        }
+        active.channelSecret = randomBytes(32).toString("base64url");
+        channelEnv = {
+          commandUrl: this.channelCommandUrl(scope, run.id),
+          callbackSecret: active.channelSecret,
+        };
       }
       const tools = request.definition.toolSurface==='product'?[]:await sandbox.start(
         uid,

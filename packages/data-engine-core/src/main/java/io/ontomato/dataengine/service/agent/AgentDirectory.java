@@ -20,7 +20,7 @@ public class AgentDirectory {
     var agents=new JSONArray();
     try {
       callers.requireQueryUser(executor);
-      agents.add(JSONObject.of("ref",OntologyAgentStore.retrieverRef(),"name","Data retrieval","description","Answer data questions with binding and retrieval results"));
+      agents.add(JSONObject.of("ref",OntologyAgentStore.retrieverRef(),"name","Data retrieval","description","Answer data questions with retrieval results"));
       try { actions.authorize(executionOwner);agents.add(JSONObject.of("ref",JSONObject.of("providerId","ontology","agentId",ActionCreationService.AGENT),"name","Action creation","description","Draft and test an action")); }
       catch(org.springframework.web.server.ResponseStatusException denied) { if(denied.getStatusCode().value()!=403) throw denied; }
     } catch(org.springframework.web.server.ResponseStatusException denied) { if(denied.getStatusCode().value()!=403) throw denied; }

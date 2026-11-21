@@ -680,7 +680,10 @@ it("enforces run-scoped channel command authentication, rejection order, build-t
     }],
   ]);
   const runtime = Object.assign(Object.create(AgentRuntime.prototype), {
-    options: { hosts: [{ id: scope.hostId, token: "fixture-host-token", providers: [context.agent.providerId] }] },
+    options: {
+      hosts: [{ id: scope.hostId, token: "fixture-host-token", providers: [context.agent.providerId] }],
+      channelCommandBaseUrl: "http://127.0.0.1:3001",
+    },
     channel: port,
     active: activeMap,
   }) as AgentRuntime;
@@ -786,12 +789,10 @@ it("enforces run-scoped channel command authentication, rejection order, build-t
     activeMap.delete(canonical([scope.hostId, scope.domainId, runId]));
     expect((await post(commandUrl(scope.hostId, scope.domainId, runId), { "X-Ontomato-Callback-Credential": secret, "X-Ontomato-Run-Id": runId })).status).toBe(409);
 
-    // 9. Wildcard listen addresses resolve to local loopback URLs
-    const channelCommandUrl = (AgentRuntime.prototype as unknown as { channelCommandUrl: (s: typeof scope, r: string) => string | undefined }).channelCommandUrl;
-    expect(channelCommandUrl.call({ httpAddress: () => ({ address: "0.0.0.0", family: "IPv4", port: 3001 }) }, scope, runId))
+    // 9. Command URL builds from the configured base URL
+    const channelCommandUrl = (AgentRuntime.prototype as unknown as { channelCommandUrl: (s: typeof scope, r: string) => string }).channelCommandUrl;
+    expect(channelCommandUrl.call(runtime, scope, runId))
       .toBe(`http://127.0.0.1:3001/v1/channel/hosts/${scope.hostId}/domains/${scope.domainId}/runs/${runId}/commands`);
-    expect(channelCommandUrl.call({ httpAddress: () => ({ address: "::", family: "IPv6", port: 3001 }) }, scope, runId))
-      .toBe(`http://[::1]:3001/v1/channel/hosts/${scope.hostId}/domains/${scope.domainId}/runs/${runId}/commands`);
   } finally {
     server.closeAllConnections();
     await new Promise<void>((done) => server.close(() => done()));

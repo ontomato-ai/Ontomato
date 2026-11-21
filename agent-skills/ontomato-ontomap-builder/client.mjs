@@ -349,17 +349,14 @@ export async function sendAgentCommand(command, { cfg = {}, headers = {} } = {})
     const callback = process.env.ONTOMATO_AGENT_CALLBACK;
     if (!url || !callback)
       throw new Error("Platform agent commands require ONTOMATO_AGENT_COMMAND_URL and ONTOMATO_AGENT_CALLBACK");
-    const supplied = await commandHeaders(headers);
-    const executionContext = supplied["X-Ontomato-Execution-Context"] ?? supplied["x-ontomato-execution-context"];
     const response = await fetch(url, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "Accept-Language": process.env.ONTOMATO_LANGUAGE ?? "en",
         "X-Ontomato-Callback-Credential": callback,
-        ...(process.env.ONTOMATO_RUN_ID ? { "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID } : {}),
+        "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID,
         ...(process.env.ONTOMATO_CORRELATION_ID ? { "X-Correlation-Id": process.env.ONTOMATO_CORRELATION_ID } : {}),
-        ...(executionContext !== undefined ? { "X-Ontomato-Execution-Context": executionContext } : {}),
       },
       body: JSON.stringify(command),
       redirect: "error",
@@ -394,7 +391,7 @@ export async function agentChannelCommand(cfg,argv,headers={}) {
   if((follow || files) && op!=="read") throw new Error("--follow and --files belong to agent read");
   if(platform && follow) throw new Error("平台内不支持 read --follow：交付或提问会通知本会话，等待时结束本轮");
   if(platform) {
-    console.log(JSON.stringify(await sendAgentCommand(command,{headers}),null,2));
+    console.log(JSON.stringify(await sendAgentCommand(command),null,2));
     return;
   }
   const ontology=(cfg.ontologyUrl || `${cfg.envUrl}/api/data-query`).replace(/\/$/u,"");

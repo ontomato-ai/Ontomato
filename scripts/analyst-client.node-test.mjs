@@ -52,17 +52,12 @@ test("the shared channel preserves references, streams snapshots and downloads o
   }
 });
 
-test("sendAgentCommand routes platform calls directly with callback secret and forwards build-test header if supplied", async () => {
+test("sendAgentCommand routes platform calls directly with callback secret and run ID", async () => {
   const received = [];
   const server = createServer(async (req, res) => {
     let text = "";
     for await (const chunk of req) text += chunk;
     received.push({ url: req.url, headers: req.headers, body: JSON.parse(text) });
-    if (req.headers["x-ontomato-execution-context"]) {
-      res.writeHead(422, { "content-type": "application/json" });
-      res.end(JSON.stringify({ error: { code: "BUILD_TEST_UNSUPPORTED", message: "The agent channel is not available in a build-test execution" } }));
-      return;
-    }
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ taskId: "task-1", status: "starting" }));
   });
@@ -81,13 +76,13 @@ test("sendAgentCommand routes platform calls directly with callback secret and f
   process.env.ONTOMATO_RUN_ID = runId;
   process.env.ONTOMATO_EXECUTION_CALLBACK = "business-callback";
   try {
-    const result = await sendAgentCommand({ op: "start", agent: { providerId: "ontology", agentId: "retriever" }, message: "Sales?" });
+    const result = await sendAgentCommand({ op: "start", agent: { providerId: "ontology", agentId: "retriever" }, message: "Sales?" }, {
+      headers: { "X-Ontomato-Execution-Context": JSON.stringify({ kind: "build-test" }) },
+    });
     assert.deepEqual(result, { taskId: "task-1", status: "starting" });
     assert.equal(received[0].headers["x-ontomato-callback-credential"], "per-run-secret");
-    await assert.rejects(
-      sendAgentCommand({ op: "list" }, { headers: { "X-Ontomato-Execution-Context": JSON.stringify({ kind: "build-test" }) } }),
-      (error) => error.status === 422 && error.code === "BUILD_TEST_UNSUPPORTED",
-    );
+    assert.equal(received[0].headers["x-ontomato-run-id"], runId);
+    assert.equal(received[0].headers["x-ontomato-execution-context"], undefined);
   } finally {
     for (const [k, v] of Object.entries(saved)) {
       if (v === undefined) delete process.env[k];

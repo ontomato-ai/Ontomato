@@ -2,7 +2,9 @@ package io.ontomato.dataengine.service;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import io.ontomato.dataengine.service.agent.AgentRuntimeClient;
 import io.ontomato.dataengine.service.agent.AgentRuntimeClient.SkillVersion;
+import io.ontomato.dataengine.service.agent.OntologyAgentStore;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,9 +27,9 @@ public class RuntimeCodeClient {
           Map.of("kind", "provider", "provider", "ontology"),
           "name",
           "ontomato-analyst-assistant");
-  private final io.ontomato.dataengine.service.agent.AgentRuntimeClient runtime;
+  private final AgentRuntimeClient runtime;
 
-  public RuntimeCodeClient(io.ontomato.dataengine.service.agent.AgentRuntimeClient runtime) {
+  public RuntimeCodeClient(AgentRuntimeClient runtime) {
     this.runtime = runtime;
   }
 
@@ -120,7 +122,7 @@ public class RuntimeCodeClient {
             "path",
             "retriever-ref.json",
             "content",
-            io.ontomato.dataengine.service.agent.OntologyAgentStore.retrieverRef().toJSONString()));
+            OntologyAgentStore.retrieverRef().toJSONString()));
     return runtime.publishSkill("ontology-assistant-skill-registration", ASSISTANT_SKILL, files);
   }
 

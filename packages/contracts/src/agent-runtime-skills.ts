@@ -66,6 +66,7 @@ export const runtimeRegisterSkillRequestSchema = z
       });
   });
 export const runtimeIdentityEnvironment = [
+  "ONTOMATO_SKILL_SCENARIO",
   "ONTOMATO_SESSION_ID",
   "ONTOMATO_RUN_ID",
   "ONTOMATO_CORRELATION_ID",

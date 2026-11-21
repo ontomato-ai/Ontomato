@@ -46,12 +46,6 @@ function readEventSubscription(query: Request["query"]) {
 
 export function createRuntimeHttp(runtime: AgentRuntime) {
   const app = express();
-  const originalListen = app.listen.bind(app);
-  app.listen = ((...args: unknown[]) => {
-    const server = (originalListen as (...a: unknown[]) => import("node:http").Server)(...args);
-    runtime.setHttpAddress?.(() => server.address());
-    return server;
-  }) as typeof app.listen;
   app.disable("x-powered-by");
   app.use((req, res, next) => {
     const context = { correlationId: correlationId(req.header("X-Correlation-Id")) };

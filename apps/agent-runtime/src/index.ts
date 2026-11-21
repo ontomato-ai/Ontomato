@@ -1,5 +1,6 @@
 import { runtimeLogger } from "@ontomato/agent-runtime/logging";
 import "dotenv/config";
+import { createServer, type AddressInfo } from "node:net";
 import path from "node:path";
 import { databaseUrl } from "./database.js";
 import { z } from "zod";
@@ -36,6 +37,24 @@ const store = new RuntimeStore(
   databaseUrl(process.env),
   process.env.AGENT_RUNTIME_SCHEMA || "agent_runtime",
 );
+const listenHost = process.env.AGENT_RUNTIME_HOST || "127.0.0.1";
+const listenPort = Number(process.env.AGENT_RUNTIME_PORT || 3001);
+const port = listenPort || await new Promise<number>((resolve, reject) => {
+  const probe = createServer();
+  probe.once("error", reject);
+  probe.listen(0, listenHost, () => {
+    const assigned = (probe.address() as AddressInfo).port;
+    probe.close((error) => (error ? reject(error) : resolve(assigned)));
+  });
+});
+const commandHost =
+  listenHost === "0.0.0.0" || listenHost === ""
+    ? "127.0.0.1"
+    : listenHost === "::" || listenHost === "::0"
+      ? "[::1]"
+      : listenHost.includes(":") && !listenHost.startsWith("[")
+        ? `[${listenHost}]`
+        : listenHost;
 const runtime = new AgentRuntime({
   worker: {
     development:
@@ -44,6 +63,7 @@ const runtime = new AgentRuntime({
   },
   store,
   hosts,
+  channelCommandBaseUrl: `http://${commandHost}:${port}`,
   root: path.resolve(process.env.AGENT_RUNTIME_ROOT || "data/agent-runtime"),
   modelRuntimeToken: process.env.ONTOMATO_MODEL_RUNTIME_TOKEN,
   modelSeed: { baseUrl: process.env.LLM_BASE_URL, apiKey: process.env.LLM_API_KEY, modelName: process.env.LLM_MODEL },
@@ -62,8 +82,8 @@ if (runtime.worker.development)
     "Agent runtime development mode: worker UID isolation and per-worker process-count limits are disabled; Darwin lacks address-space rlimits and Windows lacks POSIX rlimits. This is not production isolation.\n",
   );
 const server = createRuntimeHttp(runtime).listen(
-  Number(process.env.AGENT_RUNTIME_PORT || 3001),
-  process.env.AGENT_RUNTIME_HOST || "127.0.0.1",
+  port,
+  listenHost,
   () => {
     runtimeLogger.info(
       `Agent runtime listening on ${JSON.stringify(server.address())}\n`,
