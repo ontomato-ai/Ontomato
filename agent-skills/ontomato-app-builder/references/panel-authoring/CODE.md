@@ -8,6 +8,8 @@ Panel CSS positions member containers. Design variables style components inside 
 Declare projections using the [member fields](FIELDS.md) and declare public typed state in `panel.json`.
 Keep page-local state in Vue. An object state
 such as `selected` stores `{className, primaryKey}`. Enable `deepLink` when the address should restore the selection.
+For a page-header event with a `labelKey`, set `deepLink: true` on every state field the event changes so the
+assistant can open the same state by address.
 Use `recipes.md` for tasks the assistant needs to know how to do.
 
 Use the required `panel.mjs` to mount the Vue page as in the [agent directory module](../../examples/vue-agent-directory/panel.mjs).
