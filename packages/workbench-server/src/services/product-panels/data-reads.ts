@@ -333,7 +333,10 @@ export async function readProductPanelData(
         { panel, projection, member, slot: request.memberPath.at(-1)!.member }, inputs);
       return { status: "ready", value };
     }
-    if (!Object.hasOwn(projection.data, request.dataName)) return { status: "forbidden" };
+    if (!Object.hasOwn(projection.data, request.dataName)) return {
+      status: "error",
+      message: `Member ${JSON.stringify(request.memberPath.at(-1)!.member)} does not declare dataName ${JSON.stringify(request.dataName)}. Declared data names: ${JSON.stringify(Object.keys(projection.data))}.`,
+    };
     const data = projection.data[request.dataName];
     const declaration = directReadDeclaration(projection, data)!;
     const params = await readParameters(projection, member, request.dataName, data, declaration, inputs, request.runtimeParams);

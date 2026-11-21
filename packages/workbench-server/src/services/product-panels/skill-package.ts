@@ -205,6 +205,7 @@ function describePanel(
     }];
   });
   const operations = projections.flatMap(projection => projection.operations);
+  const hasPlacedMembers = Object.values(manifest.members).some(({ target }) => !("projectionId" in target));
   return {
     name: panel.name,
     description: panel.description,
@@ -215,8 +216,8 @@ function describePanel(
     projections,
     operations,
     forms: operations.filter(operation => operation.owner?.handler.kind === "form.save"),
-    reads: describeReads(projections.flatMap(projection => projection.reads),
-      Object.values(manifest.members).some(({ target }) => !("projectionId" in target))),
+    hasPlacedMembers,
+    reads: describeReads(projections.flatMap(projection => projection.reads), hasPlacedMembers),
   };
 }
 
@@ -264,7 +265,7 @@ function describePanelEvent(event: PanelEvent, state: PanelManifest["state"], me
   return `Find the admitted entry for ${panel} in \`GET /api/data-query/platform/applications/<current applicationId>/panel-uses\`. Open that entry's \`path\` when available. Use the current panel's canonical address for embedded content.${carryState}`;
 }
 
-function describeSkill({ name, description, content, state, members, events, projections, operations, forms, reads }: PanelDescription): string {
+function describeSkill({ name, description, content, state, members, events, projections, operations, forms, reads, hasPlacedMembers }: PanelDescription): string {
   const { recipes, messages } = content;
   const resolveLabel = (key: string) => messages?.[getDefaultLocale()]?.[key] ?? key;
   const declaredEvents = Object.entries(events).map(([id, event]) => {
@@ -294,12 +295,16 @@ function describeSkill({ name, description, content, state, members, events, pro
     [
       "### Declared operations",
       ...operations.map(describeOperation),
-      ...(operations.length ? [] : ["No operations."]),
+      ...(operations.length ? [] : [hasPlacedMembers ? "No operations directly on this panel." : "No operations."]),
       "Call the declared operation with POST `$ONTOMATO_PANEL_OPERATIONS_URL/operate`, JSON `{intentId:<new UUID>,applicationId,useId,operationId,call:{target,input}}`. Send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. Never call a write owner endpoint directly from a platform panel skill.",
       ...(operations.some(operation => operation.owner?.declaration.batch) ? [
         "For an operation marked as batch-capable, use `calls:[{target,input},...]` in place of `call`. Submit all concrete targets and their inputs under one intent for one confirmation. A batch result reports the owner's outcome for each item when available.",
       ] : []),
-      "Use the applicationId and useId from the current page context and the operationId declared above. If the host did not provide a current use, ask the reader to open the panel before attempting a panel operation.",
+      "Use the applicationId and useId from the current page context. For a local operation, use the operationId listed above. If the host did not provide a current use, ask the reader to open the panel before attempting a panel operation.",
+      ...(hasPlacedMembers ? [
+        "For an operation in a mounted child, use the root entry and the full `memberPath` ending at the projection that declares the operation. To get its local operation names and descriptions, send the corresponding `/read` request with `operations:true` in place of `dataName`.",
+        "Send that `memberPath` in `/operate`. Build `operationId` by joining each segment's `member` and then the local operation name with dots. With `memberPath: [previewSegment,{member:\"approve\"}]`, where previewSegment has member preview and its actual selection, the local operation approve gives `operationId: \"preview.approve.approve\"`.",
+      ] : []),
       "Default form.save returns an unsaved page-draft envelope: write it to the draft artifact and link the reader to review/save. Session automatic mode allows the same declared save to execute directly. Only the authenticated session owner changes that setting.",
       "An action can return confirmation-required with intentId. End this tool call immediately; do not wait or poll. Continue independent work or finish the round. A genuine user agent-answer is delivered back to this conversation and can wake a later run. Then POST `{}` to `$ONTOMATO_PANEL_OPERATIONS_URL/intents/<intentId>/dispatch` using THAT RUN's callback and run ID. Node verifies the real selected option and the current executor. Free text, defaults, parent answers, questionId or a different toolCallId never authorize execution. Changed parameters/target/executor require a new intent and confirmation.",
       "A dispatched result is final for that intent, including failure/unknown; never retry the owner call under another toolCallId. Read the intent at `/api/panel-operation-intents/<intentId>` through ONTOMATO_WORKBENCH_URL when needed; this read does not execute it.",
@@ -327,14 +332,14 @@ function describeReads(reads: readonly { member: string; dataName: string; read:
     "### Read current data",
     "Before answering what is on this page or what is selected, read the relevant named data below and answer from the result. Use the page context to identify the entry and selected object, then read its current data.",
     "POST to `$ONTOMATO_PANEL_OPERATIONS_URL/read` with `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. This calls the same named read as the panel.",
-    "Send JSON `{source:{kind:\"registered\",applicationId,useId},memberPath:[{member}],dataName,inputs}`. Use the registered application and use from the page context. Supply the projection's declared inputs from that context or the requested selection. Use an empty object when no inputs are needed.",
-    "A ready result carries the current owner data in `value`. Respect forbidden and error results.",
+    "Send JSON `{source:{kind:\"registered\",applicationId,useId},memberPath:[{member}],dataName,inputs}`. Use the registered application and use from the page context. Use the exact key under the projection's Named data as `dataName`, without a member prefix. Supply the projection's declared inputs from that context or the requested selection. Use an empty object when no inputs are needed.",
+    "A ready result carries the current owner data in `value`. If the result is forbidden, check the current entry and member path. For an error, use its message to correct the request.",
     ...(hasPlacedMembers ? [
       "A selection's `memberPath` identifies the child panel that supplied it. To inspect the mounted child's declared state and members, POST `{source,memberPath}` to `$ONTOMATO_PANEL_OPERATIONS_URL/nested` with the same callback headers.",
-      "For a child member's datum, append its segment to that path for the read. Carry the actual selection on any segment that has one. For a nested operation, send its full operation ID and the same memberPath ending at its publishing projection.",
+      "Append the child projection's member to that path. Keep the actual selection on each segment that has one. For example, if previewSegment has member preview and its selection, read the child detail projection with `memberPath: [previewSegment,{member:\"detail\"}]` and `dataName: \"record\"`.",
     ] : []),
     ...reads.map(({ member, dataName, read, result }) =>
-      `- \`${member}.${dataName}\` — ${read} returns \`${result}\`.`),
+      `- Member \`${member}\`, dataName \`${dataName}\` — ${read} returns \`${result}\`.`),
   ].join("\n");
 }
 
