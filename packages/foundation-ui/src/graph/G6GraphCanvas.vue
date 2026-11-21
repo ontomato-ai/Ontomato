@@ -49,8 +49,8 @@ const props = withDefaults(
     /** The widest a node's name is drawn, in graph units; a longer one ends in an ellipsis. 160 when absent. */
     labelWidth?: number;
     /**
-     * Keeps names readable however far the reader zooms out: a node's and an edge's name stay their size on screen, and
-     * a name that would then overlap another is hidden until there is room for it again.
+     * Keeps names readable however far the reader zooms: a node's and an edge's name stay their size on screen, and a
+     * name that would then overlap another is hidden until there is room for it again.
      */
     readableLabels?: boolean;
     /**
@@ -244,8 +244,10 @@ async function create(width: number, height: number) {
       { type: "drag-element", enable: (event: any) => !(props.editable && event.shiftKey) },
       ...(props.readableLabels ? [
         {
-          type: "fix-element-size", key: "readable-labels", state: "", enable: (event: any) => event.data.scale < 1,
-          node: [{ shape: "label", fields: ["fontSize", "lineHeight"] }], edge: [{ shape: "label", fields: ["fontSize", "lineHeight"] }],
+          // The whole name, at every zoom: G6 5.1 scales a label's own `fontSize` without its text, and a name held only
+          // below zoom 1 stays enlarged once the reader zooms back in.
+          type: "fix-element-size", key: "readable-labels", state: "", enable: true,
+          node: [{ shape: "label" }], edge: [{ shape: "label" }],
         },
         { type: "auto-adapt-label", key: "label-room", throttle: 100, padding: 2 },
       ] : []),
@@ -404,8 +406,11 @@ defineExpose({
       }
       await target.fitCenter(false);
     }),
-  /** Zooms by `ratio` about the middle of the view. */
-  zoomBy: (ratio: number) => afterChanges((target) => target.zoomBy(ratio, false)),
+  /**
+   * Zooms by `ratio` about the middle of the view, as a zoom to the level it reaches: G6 reports a relative zoom by its
+   * step, and what follows the zoom (names kept readable) would take the step for the level.
+   */
+  zoomBy: (ratio: number) => afterChanges((target) => target.zoomTo(target.getZoom() * ratio, false)),
   /** Zooms to `zoom` about the middle of the view. */
   zoomTo: (zoom: number) => afterChanges((target) => target.zoomTo(zoom, false)),
   /** Brings a node to the middle of the view. */

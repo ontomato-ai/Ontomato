@@ -236,9 +236,10 @@ it("keeps a node's name readable when the reader zooms out, and hides only names
   await flushPromises();
   const behaviors = view.options.behaviors as any[];
   const fixed = behaviors.find((behavior) => behavior.type === "fix-element-size");
-  expect(fixed).toMatchObject({ state: "", node: [{ shape: "label", fields: ["fontSize", "lineHeight"] }] });
-  expect(fixed.enable({ data: { scale: 0.5 } })).toBe(true);
-  expect(fixed.enable({ data: { scale: 1.2 } })).toBe(false);
+  // The whole name is held at its size, at every zoom: G6 5.1 scales a label's own `fontSize` without its text (checked
+  // in a browser, 2026-11-22), and a rule that held names only below zoom 1 left them enlarged when the reader zoomed in.
+  expect(fixed).toMatchObject({ state: "", enable: true, node: [{ shape: "label" }], edge: [{ shape: "label" }] });
+  expect(fixed.node[0]).not.toHaveProperty("fields");
   expect(behaviors.some((behavior) => behavior.type === "auto-adapt-label")).toBe(true);
   wrapper.unmount();
 });
@@ -257,5 +258,15 @@ it("shows a graph too large to read whole from its own edge, around the node it 
   // Centring "a" would leave it where it is; the view moves on until the graph's own corner — a's position less its
   // name's half width and its node's half size — sits at the view's corner: a ends up 320 right and 284 down of centre.
   expect(translate).toEqual([-320, -284]);
+  wrapper.unmount();
+});
+
+it("zooms by a step as a zoom to the level it reaches, so what reads the zoom sees where it is, not the step", async () => {
+  const wrapper = mount(G6GraphCanvas, { props: { label: "Graph", nodes: placed(2), layout: { type: "preset" } } });
+  await flushPromises();
+  view.zoom = 0.8;
+  calls.length = 0;
+  await (wrapper.vm as unknown as { zoomBy(ratio: number): Promise<void> }).zoomBy(0.8);
+  expect(of("zoomTo")).toEqual([expect.closeTo(0.64)]);
   wrapper.unmount();
 });
