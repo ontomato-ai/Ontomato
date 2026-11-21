@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
@@ -16,7 +16,7 @@ import {
 import { panelOperationDescriptorResponseSchema } from "@ontomato/contracts/panel-agent";
 import { platformTypeTableResponseSchema } from "@ontomato/contracts/platform-type-table";
 import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
-import { panelManifestSchema } from "@ontomato/contracts/panel-manifest";
+import { panelManifestSchema, type PanelManifest } from "@ontomato/contracts/panel-manifest";
 import {
   panelDefinitionSnapshotSchema, productDefinitionStreamFrameSchema, productDefinitionStreamRequestSchema,
   type ProductDefinitionRevision,
@@ -304,6 +304,45 @@ it("reconciles the released built-in authoring sources and exposes the same read
   expect((await request("GET", "product-panels/" + builtinPanelId)).status).toBe(404);
   expect((await request("GET", "product-projections/" + builtinProjectionId)).status).toBe(404);
 }, 20_000);
+
+it("registers the shipped ontology catalogues and expands their previews and application forms", async () => {
+  const { registerBuiltinProducts } = await import("../../services/product-panels/builtin-products");
+  const bundle = path.join(contentRoot, "ontology-catalogues");
+  const catalogues = ["projections", "panels", "applications"];
+  await mkdir(bundle);
+  await writeFile(path.join(bundle, "index.json"), JSON.stringify(catalogues));
+  const sources = new URL("../../../../ontology-manager/resources/builtin-panels/", import.meta.url);
+  for (const catalogue of catalogues) {
+    await symlink(fileURLToPath(new URL(catalogue, sources)), path.join(bundle, catalogue));
+  }
+  await registerBuiltinProducts(bundle);
+  const definitions = new Map<string, PanelManifest["members"]>();
+  for (const catalogue of catalogues) {
+    const response = await request("GET", `product-panels/builtin-product-ontology-${catalogue}`);
+    expect(response.status).toBe(200);
+    const { panel } = productPanelResponseSchema.parse(await response.json());
+    expect(panel).toMatchObject({ visibility: "platform", ownerId: null, editable: false });
+    definitions.set(catalogue, panel.manifest.members);
+  }
+  for (const catalogue of ["projections", "panels"]) {
+    expect(definitions.get(catalogue)?.preview?.target).toEqual({ fromState: "selected", candidates: { rule: "usable" } });
+  }
+  const application = definitions.get("applications")!;
+  const readForm = async (member: string) => {
+    const target = application[member]!.target;
+    if (!("projectionId" in target)) throw new Error(`Expected a projection in slot '${member}'`);
+    const response = await request("GET", `product-projections/${target.projectionId}`);
+    expect(response.status).toBe(200);
+    return productProjectionResponseSchema.parse(await response.json()).projection.data;
+  };
+  expect(await readForm("save")).toMatchObject({
+    createForm: { read: "createForm" },
+    form: { read: "form", params: { section: { literal: "identity" } } },
+  });
+  expect(await readForm("entriesForm")).toMatchObject({
+    form: { read: "form", params: { section: { literal: "entries" } } },
+  });
+});
 
 it("reads the authoritative operation type table while isolating stale published actions", async () => {
   const response = await request("GET", "app-builder/type-table");
