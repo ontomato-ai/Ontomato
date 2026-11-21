@@ -393,7 +393,7 @@ class PanelApplicationsTest {
     @Test void readsPanelUsesThroughTheirOwnMenuAndUseAccessWithoutInventingMappings() {
         var allowed = use("member", null); var denied = use("menu", "menu");
         var application = app("app-panel-a", "panels", List.of(allowed, denied));
-        doReturn(application).when(catalog).require("app-panel-a");
+        doReturn(List.of(application)).when(catalog).all();
         when(access.canEnter(application, user)).thenReturn(true);
         when(access.panelUses(List.of(allowed, denied), user)).thenReturn(List.of(allowed));
         assertEquals(List.of(allowed), catalog.panelUses("app-panel-a", user).getList("panelUses", ApplicationPanelUse.class));
