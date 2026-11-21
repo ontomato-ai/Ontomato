@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Graph, type EdgeData, type NodeData } from "@antv/g6";
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { G6_LABEL_WIDTH, G6_NODE_SIZE, g6Edges, g6Node, g6NodeStyle, readG6Colors, type G6Colors } from "./g6-elements";
+import { G6_LABEL_WIDTH, G6_LOOP_DIST, G6_LOOP_STEP, G6_NODE_SIZE, g6Edges, g6Node, g6NodeStyle, readG6Colors, type G6Colors } from "./g6-elements";
 import { MARGIN, NODE_HEIGHT, NODE_WIDTH, placeNodes } from "./layout";
 import type {
   GraphCanvasEdge,
@@ -358,13 +358,18 @@ const REACH = { x: () => props.labelWidth / 2, top: G6_NODE_SIZE / 2, bottom: G6
  * view inside the graph, so a reader never looks at empty canvas beside a graph that runs on the other way.
  */
 async function showAround(target: Graph, zoom: number, around: string | undefined, padding: number | [number, number, number, number] = 0) {
-  const points = target.getNodeData().filter((node) => !node.data?.anchor).map((node) => ({ x: Number(node.style!.x), y: Number(node.style!.y) }));
+  // A node with loops reaches as far above it as its outermost loop.
+  const loops = new Map<string, number>();
+  for (const edge of target.getEdgeData()) if (edge.source === edge.target) loops.set(String(edge.source), (loops.get(String(edge.source)) ?? 0) + 1);
+  const above = (id: string) => (loops.has(id) ? REACH.top + G6_LOOP_DIST + (loops.get(id)! - 1) * G6_LOOP_STEP : REACH.top);
+  const nodes = target.getNodeData().filter((node) => !node.data?.anchor);
+  const points = nodes.map((node) => ({ x: Number(node.style!.x), y: Number(node.style!.y), top: above(String(node.id)) }));
   if (!points.length) return;
   const [top, right, bottom, left] = typeof padding === "number" ? [padding, padding, padding, padding] : padding;
   const { width, height } = frame.value!.getBoundingClientRect();
   const bounds = {
     minX: Math.min(...points.map(({ x }) => x)) - REACH.x(), maxX: Math.max(...points.map(({ x }) => x)) + REACH.x(),
-    minY: Math.min(...points.map(({ y }) => y)) - REACH.top, maxY: Math.max(...points.map(({ y }) => y)) + REACH.bottom,
+    minY: Math.min(...points.map(({ y, top }) => y - top)), maxY: Math.max(...points.map(({ y }) => y)) + REACH.bottom,
   };
   const focus = around === undefined ? undefined : target.getNodeData().find((node) => String(node.id) === around);
   const wanted = focus
