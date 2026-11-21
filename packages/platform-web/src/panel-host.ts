@@ -282,9 +282,8 @@ async function mountNested(
   const { element, template, css } = codedPanelTarget(panel.content.html);
   element.dataset.panelInstance = instance;
   const dropStyle = css ? adoptPanelStyle(scopedPanelStyle(css, instance)) : undefined;
-  // This placement's theme on the placed panel's element; the panel's own theme goes under it once the nested read
-  // carries it (default → … → the panel → this placement).
-  const dropTheme = applyTheme(element, () => composeThemes(run.theme), hostThemeMode);
+  // The placed panel's own theme with this placement's laid over it (default → … → the panel → this placement).
+  const dropTheme = applyTheme(element, () => composeThemes(panel.theme, run.theme), hostThemeMode);
   try {
     const inner = withNested({ ...outer, manifest: panel.manifest, messages: panel.content.messages ?? {}, run, memberPath: placedAt }, source);
     const mount = await mountCoded(inner, { element, template }, panel.content.module);
