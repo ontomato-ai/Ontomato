@@ -51,8 +51,12 @@ async function readCurrentRecord(
     await assertAppBuilderAccess(credentials);
     throw new HttpError(404, `${kind === "panel" ? "Panel" : "Projection"} '${id}' does not exist`, "PRODUCT_UNAVAILABLE");
   }
-  if (reportMissingToAuthor) await requireProductGrant(id, "use", credentials);
-  return currentProductRecord(row, row.domainId !== null && (await grantedProductIds("edit", credentials)).includes(id));
+  const managePanel = reportMissingToAuthor && kind === "panel";
+  if (reportMissingToAuthor && !managePanel) await requireProductGrant(id, "use", credentials);
+  const editable = row.domainId !== null && (await grantedProductIds("edit", credentials)).includes(id);
+  if (managePanel && row.ownerId !== owner.userId && !editable)
+    await requireProductGrant(id, "use", credentials);
+  return currentProductRecord(row, editable);
 }
 export async function readCurrentProjection(owner: ProductOwner, credentials: AssistantCredentials, id: string, reportMissingToAuthor = false) {
   return productProjectionSchema.parse(await readCurrentRecord(owner, credentials, "projection", id, reportMissingToAuthor));
