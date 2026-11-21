@@ -35,6 +35,8 @@ const canvas = {
   zooms: [] as unknown[],
   categories: [] as readonly string[],
   readableLabels: false,
+  /** Whether the canvas's next fit holds the whole graph. */
+  fitsWhole: true,
 };
 vi.mock("@ontomato/foundation-ui/graph/g6", async () => {
   const actual = await vi.importActual<typeof import("@ontomato/foundation-ui/graph/g6")>("@ontomato/foundation-ui/graph/g6");
@@ -54,7 +56,7 @@ vi.mock("@ontomato/foundation-ui/graph/g6", async () => {
         zoomBy: async (ratio: number) => void canvas.zooms.push(["by", ratio]),
         zoomTo: async (zoom: number) => void canvas.zooms.push(["to", zoom]),
         focus: async (id: string) => void canvas.zooms.push(["focus", id]),
-        fit: async (options: unknown) => void canvas.fits.push(options), relayout: async () => {}, exportImage: async () => new Blob(["png"], { type: "image/png" }) });
+        fit: async (options: unknown) => { canvas.fits.push(options); return canvas.fitsWhole; }, relayout: async () => {}, exportImage: async () => new Blob(["png"], { type: "image/png" }) });
       return () => {
         canvas.nodes = props.nodes as never;
         canvas.edges = props.edges as never;
@@ -128,7 +130,7 @@ const mounted: { unmount(): void }[] = [];
 afterEach(() => {
   for (const app of mounted.splice(0)) app.unmount();
   document.body.innerHTML = "";
-  Object.assign(canvas, { nodes: [], edges: [], selected: [], selectedEdges: [], editable: false, emit: null, fits: [], zooms: [], categories: [] });
+  Object.assign(canvas, { nodes: [], edges: [], selected: [], selectedEdges: [], editable: false, emit: null, fits: [], zooms: [], categories: [], fitsWhole: true });
 });
 
 function mount(editable: boolean, initial: Record<string, unknown> = {}) {
@@ -275,4 +277,24 @@ it("colours each class by the category its record names, in the order the projec
   await vi.waitFor(() => expect(canvas.nodes).toHaveLength(2));
   expect(canvas.categories).toEqual(["fact", "capability"]);
   expect(canvas.nodes.map(({ id, category }) => [id, category])).toEqual([["org", "fact"], ["person", "capability"]]);
+});
+
+// A graph larger than the canvas at a readable size is shown in part (panelisation lead, 2026-11-22: never shrunk until its
+// names cannot be read): a light line says so, and once the reader moves the view it steps back, never a pop-up.
+it("says when the graph is larger than the canvas, and steps back once the reader moves the view", async () => {
+  canvas.fitsWhole = false;
+  const { element } = mount(false);
+  const hint = () => element.querySelector<HTMLElement>("[data-graph-hint]");
+  await vi.waitFor(() => expect(hint()?.textContent?.trim()).toBe("The graph is larger than the canvas: drag to see the rest"));
+  expect(hint()!.classList.contains("quiet")).toBe(false);
+  canvas.emit!("viewport", { x: 40, y: 0, width: 800, height: 600, zoom: 0.83 });
+  await nextTick();
+  expect(hint()!.classList.contains("quiet")).toBe(true);
+});
+
+it("says nothing when the whole graph is in view", async () => {
+  const { element } = mount(false);
+  await vi.waitFor(() => expect(canvas.fits).toHaveLength(1));
+  await nextTick();
+  expect(element.querySelector("[data-graph-hint]")).toBeNull();
 });

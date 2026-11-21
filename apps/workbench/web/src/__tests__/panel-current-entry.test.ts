@@ -7,7 +7,7 @@ import type { ApplicationEntryMenu, CurrentApplicationEntry } from "@ontomato/co
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import type { DirectPanelRun } from "@ontomato/platform-shell";
 import { panelModuleFor, type DirectPanelMount } from "../../../../../packages/apps-sdk/src/direct";
-import { noOperations } from "./panel-frame";
+import { noOperations, directRun } from "./panel-frame";
 
 /*
  * An application's own frame (product-layer standard, the frame): the frame panel declares where the entry the reader
@@ -39,11 +39,10 @@ async function run(template: string, currentEntry?: DirectPanelRun["currentEntry
     mounted, element, template,
     install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
     manifest: frame(template),
-    run: {
-      pageKey: "frame", url: () => "/applications/app-school/orders", label: () => "School", initial: {},
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, failed,
+    run: directRun({
+      pageKey: "frame", url: () => "/applications/app-school/orders", label: () => "School", initial: {}, failed,
       ...(currentEntry ? { currentEntry } : {}),
-    },
+    }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({}) },
     use: { applicationId: "app-school", useId: "frame" },

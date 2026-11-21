@@ -267,6 +267,7 @@ const labels = computed<PanelHostLabels>(() => ({
   },
   content: { styleOutside: t("platform.panelStyleOutside") },
   draft: {
+    opening: t("platform.panelDraftOpening"),
     toAgent: t("platform.panelDraftToAgent"),
     // The host puts the reason where `{reason}` stands.
     toAgentText: t("platform.panelDraftToAgentText", { reason: "{reason}" }),

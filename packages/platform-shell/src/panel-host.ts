@@ -129,6 +129,11 @@ export interface DirectPanelRun {
    * and the host shows the sentence above it for the reader to dismiss, to leave the draft or to hand back to the agent.
    */
   draftRefused(text: string): void;
+  /**
+   * The draft the address links is in its form — or changes nothing there: the page is now what the draft opens. Until
+   * this, or \`draftRefused\`, the host shows that the draft is being opened rather than a page that is about to change.
+   */
+  draftOpened(): void;
   /** The panel cannot run, and why. */
   failed(reason: unknown): void;
   /**
@@ -194,6 +199,11 @@ export interface PanelInstanceView {
   readonly instance: string;
   /** What the panel's author should know without the panel failing: its CSS reached outside it and applies nowhere. */
   readonly notice: Readonly<ShallowRef<string>>;
+  /**
+   * Whether the draft the address links is still being opened: read, and placed in its form. The panel runs meanwhile, out
+   * of sight, so the reader never sees a page that is about to turn into the draft's.
+   */
+  readonly draftOpening: Readonly<ShallowRef<boolean>>;
   /** Why the draft the address links cannot be used here; empty when there is none, or the reader closed the notice. */
   readonly draftRefusal: Readonly<ShallowRef<string>>;
   /** The notice goes; what the address links is left to the caller. */
@@ -239,10 +249,10 @@ export interface PanelHostLabels {
   /** What a panel tells its author: its CSS reached outside it. */
   content: { styleOutside: string };
   /**
-   * The notice above a panel whose linked draft it cannot take: handing the reason back to the agent, and the sentence the
-   * composer is filled with (`{reason}` stands for the panel's sentence).
+   * The words about a linked draft: shown while it is being opened, and, for one the panel cannot take, handing the reason
+   * back to the agent and the sentence the composer is filled with (`{reason}` stands for the panel's sentence).
    */
-  draft: { toAgent: string; toAgentText: string };
+  draft: { opening: string; toAgent: string; toAgentText: string };
   /** The page command that reads the panel's shown data again. */
   refresh: string;
 }
@@ -335,6 +345,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const instance = newPanelInstanceName();
   const notice = shallowRef("");
   const draftRefusal = shallowRef("");
+  const draftOpening = shallowRef(false);
   /** Takes the drawn panel's CSS away again. */
   let dropStyle: (() => void) | undefined;
   const pageContext = shallowRef<PageContext | null>(null);
@@ -505,6 +516,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
 
   /** What an instance in this document reports to its host, as a frame would in its messages. */
   function directRun(next: HostedPanelSource, requested: PanelHostState): DirectPanelRun {
+    // A run that starts at an address linking a draft opens that draft first.
+    draftOpening.value = draftLinkOf(address.value) !== null;
     return {
       pageKey: port.pageKey,
       url: () => address.value,
@@ -515,7 +528,11 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       operations: offered => (operations.value = offered),
       dirty: reportDirty,
       draftSettled: settleDraft,
-      draftRefused: text => (draftRefusal.value = text),
+      draftRefused: (text) => {
+        draftOpening.value = false;
+        draftRefusal.value = text;
+      },
+      draftOpened: () => (draftOpening.value = false),
       failed: reason => reportFrameFailure({ code: PANEL_LOAD_ERROR_CODES.scriptThrew, message: failureText(reason) }),
       ...(options.currentEntry ? { currentEntry: options.currentEntry } : {}),
     };
@@ -528,6 +545,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     dropStyle = undefined;
     notice.value = "";
     draftRefusal.value = "";
+    draftOpening.value = false;
   }
 
   /** What decides how a source is drawn: its content and declaration, not its revision or identity. */
@@ -772,8 +790,12 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
 
   /** The instance's address changed outside it: the frame hears it as a message, a direct instance as a call. */
   function tellAddress(next: string) {
-    // What was said about a draft belongs to that draft: an address that no longer names it takes the line away.
-    if (JSON.stringify(draftLinkOf(next)) !== JSON.stringify(draftLinkOf(address.value))) draftRefusal.value = "";
+    // What was said about a draft belongs to that draft: an address that no longer names it takes the line away, and an
+    // address naming another draft opens that one first.
+    if (JSON.stringify(draftLinkOf(next)) !== JSON.stringify(draftLinkOf(address.value))) {
+      draftRefusal.value = "";
+      draftOpening.value = direct.value !== null && draftLinkOf(next) !== null;
+    }
     frameAddress = next;
     address.value = next;
     if (direct.value) direct.value.mount.address(next);
@@ -834,6 +856,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     instance,
     notice,
     draftRefusal,
+    draftOpening,
     dismissDraftRefusal: () => (draftRefusal.value = ""),
     leaveDraft() {
       draftRefusal.value = "";
