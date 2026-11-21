@@ -261,10 +261,11 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       record: { ...catalogueRecord, result: "applicationRecord" },
       entries: { ...catalogueRecord, result: "applicationEntries" },
       form: {
-        source: "type", parameterMode: "fixed",
-        params: { ...definitionFormParams, section: "applicationFormSection", target: "applicationFormTarget" },
-        requiredParams: ["section", "target"], result: "panelFormDescription",
+        ...modelReads.form,
+        params: { ...definitionFormParams, section: "applicationFormSection" },
+        requiredParams: ["section"],
       },
+      createForm: modelReads.createForm,
     },
     operations: [
       `${APPLICATION}.save`, "applications.delete", "applications.addEntry", "applications.updateEntry",
