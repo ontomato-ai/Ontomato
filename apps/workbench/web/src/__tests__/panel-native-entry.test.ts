@@ -255,3 +255,38 @@ it("explains the missing owner permission to a reader admitted to the ontology s
     app.unmount();
   }
 });
+
+it("opens another built-in application's entry from an entry, and back, without the page being loaded again", { timeout: 20000 }, async () => {
+  const catalog = catalogFixture();
+  const ontology = catalog.find(app => app.id === "ontology")!;
+  const agents = catalog.find(app => app.id === "agents")!;
+  const ontologyUse = ontology.panelUses!.find(entry => entry.path === "/ontology/agents")!;
+  const agentsUse = agents.panelUses!.find(entry => entry.path === "/agents/settings")!;
+  const panel = {
+    ...panelRecord(ontologyUse.panelId, "Agent settings", definePanel({ state: {}, members: {}, commands: {} })),
+    visibility: "platform" as const, domainId: null, ownerId: null, editable: false as const,
+  };
+  installPlatform(request => {
+    for (const [application, use] of [[ontology, ontologyUse], [agents, agentsUse]] as const)
+      if (request.path === `/api/data-query/platform/applications/${application.id}/panel-uses`)
+        return Response.json({ data: { applicationId: application.id, entry: application.entry, panelUses: [use] } });
+    if (request.path === `/api/product-panels/${panel.id}`) return panelAnswer(panel, request);
+    if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel, {}, request);
+    return nothingAt(request);
+  });
+  useApplicationCatalog().applications.value = catalog;
+  const { router, app, element } = await open("/ontology/agents");
+  try {
+    await vi.waitFor(() => expect(element.querySelector(".panel-host-coded")).not.toBeNull());
+    // Another application's entry, by the address alone (a link, the address bar): its panel is drawn too.
+    await router.push("/agents/settings");
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe("/agents/settings"));
+    await vi.waitFor(() => expect(element.querySelectorAll(".panel-host-coded").length).toBe(1), { timeout: 5000 });
+    // And back again.
+    await router.push("/ontology/agents");
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe("/ontology/agents"));
+    await vi.waitFor(() => expect(element.querySelectorAll(".panel-host-coded").length).toBe(1), { timeout: 5000 });
+  } finally {
+    app.unmount();
+  }
+});

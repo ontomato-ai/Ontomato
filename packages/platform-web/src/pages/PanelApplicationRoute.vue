@@ -144,12 +144,14 @@ const entryPath = computed(() => {
   return first ? panelUsePath(first.path) : null;
 });
 
-// Another application is another set of pages: the kept ones of the application left are dropped.
+// Another application is another set of pages: the kept ones of the application left are dropped. At once, as the
+// route's application changes: the same route instance serves the next application's entry (one panel route serves
+// every built-in application's entries), and the page it opens must not be dropped with the old ones.
 watch(() => props.applicationId, () => {
   kept.value = [];
   failure.value = "";
   emit("display-loaded", { status: "loading" });
-}, { immediate: true });
+}, { immediate: true, flush: "sync" });
 
 watch([() => props.applicationId, entryPath, rereads], ([applicationId, path], _, onCleanup) => {
   let current = true;
