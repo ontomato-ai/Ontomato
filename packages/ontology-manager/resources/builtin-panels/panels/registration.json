@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ontology-panels",
+      "input": {
+        "name": "面板",
+        "description": "本域可用的面板：列表、源码、成员引用、使用方、授权与预览。"
+      }
+    }
+  ]
+}
