@@ -29,25 +29,6 @@ const projection = (id, name, description, component, ports) => ({
 
 export default [
   projection(
-    "capability-map-mode",
-    "Graph mode switcher",
-    "Switches the capability map between type overview and instance exploration modes.",
-    "SegmentedControl",
-    {
-      outputs: {
-        value: text,
-      },
-      data: {},
-      config: {
-        options: [
-          { value: "type", labelKey: "capMap.modeType" },
-          { value: "instance", labelKey: "capMap.modeInstance" },
-        ],
-        ariaLabelKey: "capMap.modeLabel",
-      },
-    },
-  ),
-  projection(
     "capability-map-graph",
     "Four-layer capability graph",
     "Interactive platform ontology graph across fact, capability, governance and product layers in type or instance mode.",
