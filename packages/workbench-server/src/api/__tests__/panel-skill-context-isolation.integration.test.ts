@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -13,6 +13,8 @@ import { appsSdkComponentCatalogSchema } from "@ontomato/contracts/apps-sdk";
 import { SDK_COMPONENT, SKILL } from "@ontomato/contracts/platform-object-types";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { protectedSkillRef } from "../../core/skills/providers";
+import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
+import { panelSkillRef } from "../../services/product-panels/skill-identity";
 import { installContentLayout } from "../../content/layout";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
@@ -59,6 +61,10 @@ function page(name: string) {
     entrance: { permissionCode: "panel-menu", pageKey: name } };
 }
 const good = page("good"), broken = page("broken"), library = page("library"), changing = page("changing");
+const componentsPage = {
+  applicationId: "ontology", useId: "ontology-components", panelId: "builtin-product-sdk-components", path: "/ontology/components",
+  entrance: { permissionCode: "ontology-modeling", pageKey: "ontology-components" },
+};
 const brokenProjection = "projection-broken";
 const privateOperation = "private-stored-operation-body";
 const skillRef = (entry: typeof good) => protectedSkillRef("product-panels", domainId, entry.panelId);
@@ -67,6 +73,7 @@ let entries = [good, broken];
 let listSources = async () => entries;
 let denied: string | undefined;
 let executorDenied: string | undefined;
+let deniedEntrance: string | undefined;
 let root: string;
 let cataloguePath: string;
 let server: Server;
@@ -111,7 +118,8 @@ beforeAll(async () => {
   });
   app.post("/product-governance/check", (req, res) => {
     const token = req.header("tk");
-    res.json({ allowed: registered.has(req.body.id) && (token === "reader"
+    const known = registered.has(req.body.id) || (req.body.verb === "use" && isBuiltinProductId(req.body.id));
+    res.json({ allowed: known && (token === "reader"
       ? denied !== req.body.id : token === "executor" && executorDenied !== req.body.id) });
   });
   app.post("/product-governance/resources", (req, res) => {
@@ -120,8 +128,12 @@ beforeAll(async () => {
   });
   app.get("/platform/applications/resolve-entry", (req, res) => {
     expect(["reader", "executor"]).toContain(req.header("tk"));
-    const entry = [...entries, library].find(({ useId, applicationId }) => req.query.useId === useId && req.query.applicationId === applicationId)!;
-    res.json({ success: true, data: { applicationId, menu: { groups: [], panelUses: [] },
+    const entry = [...entries, library].find(({ useId, applicationId }) => req.query.useId === useId && req.query.applicationId === applicationId);
+    if (!entry || (req.header("tk") === "reader" && entry.useId === deniedEntrance)) {
+      res.sendStatus(403);
+      return;
+    }
+    res.json({ success: true, data: { applicationId: entry.applicationId, menu: { groups: [], panelUses: [] },
       use: { id: entry.useId, panelId: entry.panelId, path: entry.path, pageKey: entry.entrance.pageKey,
         access: { permissionCode: entry.entrance.permissionCode } } } });
   });
@@ -132,8 +144,9 @@ beforeAll(async () => {
   });
   app.get("/platform/page-skills", (req, res) => {
     expect(req.header("tk")).toBe("reader");
-    res.json({ success: true, data: { pageSkills: [{ permissionCode: good.entrance.permissionCode }], registeredSkills: [],
-      admittedEntrances: entries.map(entry => entry.entrance) } });
+    const admitted = entries.filter(entry => entry.useId !== deniedEntrance);
+    const pageSkills = [...new Set(admitted.map(entry => entry.entrance.permissionCode))].map(permissionCode => ({ permissionCode }));
+    res.json({ success: true, data: { pageSkills, registeredSkills: [], admittedEntrances: admitted.map(entry => entry.entrance) } });
   });
   app.post("/internal/agent-execution/validate-setting", (_req, res) => res.sendStatus(204));
   app.use("/api", (req, _res, next) => {
@@ -208,6 +221,7 @@ beforeEach(() => {
   listSources = async () => entries;
   denied = undefined;
   executorDenied = undefined;
+  deniedEntrance = undefined;
 });
 
 function read(entry: typeof good, route: string) {
@@ -340,6 +354,61 @@ it("derives SDK catalogue reads from the page and serves them through the run's 
   state.credentialsForRun.mockClear();
   const deniedRun = await readFromRun("components");
   expect(deniedRun.status).toBe(403);
+  expect(state.credentialsForRun).not.toHaveBeenCalled();
+});
+
+it("reads detail.definition on the real builtin component entry through the authenticated run callback", async () => {
+  const bundle = path.join(root, "native-components");
+  await cp(path.resolve("../ontology-manager/resources/builtin-panels/sdk-components"), path.join(bundle, "sdk-components"),
+    { recursive: true });
+  await writeFile(path.join(bundle, "index.json"), JSON.stringify(["sdk-components"]));
+  const { registerBuiltinProducts } = await import("../../services/product-panels/builtin-products");
+  await registerBuiltinProducts(bundle);
+  entries = [...entries, componentsPage];
+
+  const ref = panelSkillRef(domainId, componentsPage.panelId);
+  expect(ref.namespace).toEqual({ kind: "provider", provider: "workbench" });
+  const panelResponse = await read(componentsPage, "");
+  expect(panelResponse.status).toBe(200);
+  expect(await panelResponse.json()).toMatchObject({
+    panel: { id: componentsPage.panelId },
+    pageSkillContext: { locator: componentsPage.entrance, member: { ref } },
+  });
+  const { panelSkillProvider } = await import("../../services/product-panels/skill-provider");
+  const offering = await panelSkillProvider.findByUse(domainId, componentsPage, { token: "reader" });
+  if (!offering || !("kind" in offering)) throw new Error("Expected an admitted platform panel offering");
+  const skill = (await offering.provide(ref)).files[0]!.content;
+  expect(skill).toContain("`detail.definition` — definition returns `sdkComponentDefinition`");
+  expect(skill).not.toContain(componentsPage.useId);
+
+  const runId = randomUUID();
+  const run = { status: "running", sessionId: randomUUID(), channel: { authority: { executionKind: "live" } },
+    resolvedSkills: [{ skill: ref, digest: "a".repeat(64) }] };
+  state.runForOwner.mockResolvedValue(run);
+  state.credentialsForRun.mockResolvedValue({ executionUserId: "second-user", credentials: { token: "executor", locale: "en" } });
+  const { callbackCredential } = await import("../../services/agent-runtime/callback-credential");
+  const pathPrefix = `/api/assistant/executions/${runId}/`;
+  const credential = callbackCredential({ pathPrefix, runId, expiresAt: Date.now() + 60_000, token: "reader", apiKey: "" });
+  const readDefinition = () => fetch(state.base + pathPrefix + "panels/read", {
+    method: "POST", headers: { "Content-Type": "application/json", "X-Ontomato-Callback-Credential": credential.value,
+      "X-Ontomato-Run-Id": runId },
+    body: JSON.stringify({
+      source: { kind: "registered", applicationId: componentsPage.applicationId, useId: componentsPage.useId },
+      memberPath: [{ member: "detail" }], dataName: "definition",
+      inputs: { target: { className: SDK_COMPONENT, primaryKey: "@ontomato/sdk:ObjectList" } },
+    }),
+  });
+  const response = await readDefinition();
+  const body = await response.json();
+  expect(response.status, JSON.stringify(body)).toBe(200);
+  expect(body).toMatchObject({ status: "ready", value: { componentId: "ObjectList" } });
+  expect(state.credentialsForRun).toHaveBeenCalledWith(
+    { domainId, userId: "reader" }, runId, expect.objectContaining({ token: "reader" }), run.sessionId,
+  );
+
+  deniedEntrance = componentsPage.useId;
+  state.credentialsForRun.mockClear();
+  expect((await readDefinition()).status).toBe(403);
   expect(state.credentialsForRun).not.toHaveBeenCalled();
 });
 
