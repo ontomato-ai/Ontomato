@@ -441,7 +441,7 @@ export const components: readonly ComponentMetadata[] = [
         // What another component gives itself, and every parameter an owner's read declares in a fixed signature: the
         // page's own code may give any of them (a datum read for a class takes `className`).
         runtimeParams: [
-          "by", "changedField", "className", "cursor", "keyword", "layers", "limit", "node", "page", "path", "rating", "relationKinds",
+          "by", "changedField", "className", "cursor", "defaultAppId", "keyword", "layers", "limit", "node", "page", "path", "rating", "relationKinds",
           "runId", "scope", "search", "section", "size", "sort", "source", "sourceType", "status", "template", "type", "values",
         ],
       },
