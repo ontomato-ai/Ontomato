@@ -228,7 +228,11 @@ const nav = useAgentNav({
   setAgentId: (id) => (agentId.value = id),
   sessionId: () => conversationId.value,
   setSessionId: (id) => (conversationId.value = id),
-  onLeaveConversation: () => void display.close(),
+  // Choosing a conversation closes the page open beside the one left, except the page a link is placing a message from:
+  // that page is the message's, and drawing it again would only read it again.
+  onLeaveConversation: () => {
+    if (placingFrom === null || display.page.value?.address.split("?")[0] !== placingFrom) void display.close();
+  },
 });
 // The one list notice stream of this page: every conversation it lists follows its run, whichever one is open.
 useSessionRunFeed({
@@ -285,6 +289,16 @@ const bottomEntry = computed<ShellBottomEntry | null>(() =>
  */
 let consumedLink: string | null = null;
 let pendingLink: string | null = null;
+/** The page a link's message comes from while the link chooses its conversation; that page stays open. */
+let placingFrom: string | null = null;
+/**
+ * The link's message could not be sent here: it waits in the composer for the reader, who has been told why. The same
+ * address arriving again is the reader trying again.
+ */
+function giveBack(prompt: string | null) {
+  pendingLink = null;
+  if (prompt) void nextTick(() => shell.value?.fill(prompt));
+}
 /**
  * The conversation knows the page beside it: the page has said which skill a message written beside it reaches (a
  * native page declares it; a panel reports it with its read, before it has loaded), and the agents offered on that page
@@ -337,17 +351,15 @@ async function openRequestedAgent() {
   // The page the message was written on is beside the conversation from the start: the agent is one of those offered on
   // it, and the message carries its skill, once the conversation knows it. Its agents not read, the message ends here,
   // unsent; the same address arriving again is the reader trying again.
-  if (page && !(await pageKnown())) {
-    pendingLink = null;
-    return;
-  }
+  if (page && !(await pageKnown())) return giveBack(prompt);
   if (!nav.agents.value.some((agent) => agent.id === id && agent.enabled)) {
     ElMessage.error(t("assistant.agentUnavailable"));
-    return;
+    return giveBack(prompt);
   }
   agentId.value = id;
   // Switching agents starts a new conversation in the navigation; what the link names comes after that.
   await nextTick();
+  placingFrom = page?.split("?")[0] ?? null;
   if (session) {
     nav.selectSession(session);
   } else {
@@ -360,17 +372,13 @@ async function openRequestedAgent() {
     if (continuing) nav.selectSession(held);
     else nav.startNew();
   }
-  // Choosing a conversation closes whatever page was open beside the old one; the page this message came from opens
-  // beside the conversation it was written for.
+  placingFrom = null;
+  // The page this message came from stays beside the conversation it was written for, or opens there when it was not
+  // shown; opened anew, it says again which skill it reaches once drawn, and the message carries that.
   if (page) {
     await display.navigate(page, { view: "side", history: "replace" });
-    // Opened again, it is another instance of the page: once drawn it says again which skill it reaches, and the message
-    // carries that.
     await nextTick();
-    if (!(await pageKnown())) {
-      pendingLink = null;
-      return;
-    }
+    if (!(await pageKnown())) return giveBack(prompt);
   }
   if (prompt) {
     await nextTick();
