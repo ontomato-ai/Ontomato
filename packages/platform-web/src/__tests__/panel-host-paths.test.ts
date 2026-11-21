@@ -47,7 +47,8 @@ const current = {
 const manifest = {
   version: "1.1.0", product: "workbench", executionContext: 1, hostTransport: 1, messageBridge: 2,
   entries: { vue: "vue.js", "@ontomato/sdk/panel": "panel.js" }, stylesheet: "styles/sdk.css", components: "components.json",
-  check: "node/panel-check.mjs", libraries: { vue: "3.5.0" }, docs: "docs/index.md",
+  check: "node/panel-check.mjs",
+  packageComponents: "node/package-components.mjs", libraries: { vue: "3.5.0" }, docs: "docs/index.md",
 };
 
 beforeEach(() => {

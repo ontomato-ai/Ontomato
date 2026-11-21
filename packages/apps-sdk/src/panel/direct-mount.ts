@@ -8,7 +8,8 @@ import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
 import { directProjectionSchema, type PanelMessages } from "@ontomato/contracts/product-panels";
 import { panelHumanOperations } from "./human-operations";
 import type { PlatformRequests } from "./platform-objects";
-import { readPageDraft, readProjectionRecord, recordDraftCreated } from "./platform-requests";
+import { readComponentPackage, readPageDraft, readProjectionRecord, recordDraftCreated } from "./platform-requests";
+import type { ComponentPackageResponse } from "@ontomato/contracts/component-packages";
 import { createPanelText } from "./text";
 import PanelMember from "./PanelMember.vue";
 
@@ -79,6 +80,14 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       operations: panelHumanOperations(options.use, requests),
       recordDraftCreated: (link, id) => recordDraftCreated(requests, link, id),
       readProjection: async (id) => directProjectionSchema.parse(await readProjectionRecord(requests, id, true)),
+      // Each package is read once for this run: a deployment selects one release of it at a time.
+      readComponentPackage: (() => {
+        const read = new Map<string, Promise<ComponentPackageResponse>>();
+        return (name: string) => {
+          if (!read.has(name)) read.set(name, readComponentPackage(requests, name));
+          return read.get(name)!;
+        };
+      })(),
       pageKey: run.pageKey,
       url: () => address.value,
       label: run.label,
