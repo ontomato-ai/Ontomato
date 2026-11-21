@@ -67,6 +67,8 @@ const libraryVersion = (name) => JSON.parse(readFileSync(require.resolve(`${name
 
 /** What a check of panel sources needs from the release: the platform's own parsers and declarations, by these names. */
 const CHECK_EXPORTS = [
+  "APPS_SDK_PACKAGE_COMPONENTS_PATH", "appsSdkReleaseManifestSchema",
+  "componentPackageComponentsSchema", "componentPackageManifestSchema",
   "panelManifestSchema", "panelDefinitionContentSchema", "productProjectionInputSchema",
   "registerProductPanelRequestSchema", "registerProductProjectionRequestSchema", "directReadDeclaration", "platformObjectTypes",
   "panelReadParameterSchemas", "panelReadResultSchemas", "appsSdkComponentCatalogSchema",

@@ -1,7 +1,10 @@
 /** Node release entry for checking the same panel sources accepted by the platform. */
 export { applicationCatalogueRecordSchema, applicationIdentityUpdateSchema } from "./application-catalogue";
 export { applicationIconKeys } from "./application-icons";
-export { appsSdkComponentCatalogSchema, appsSdkComponentDatum } from "./apps-sdk";
+export {
+  APPS_SDK_PACKAGE_COMPONENTS_PATH, appsSdkComponentCatalogSchema, appsSdkComponentDatum, appsSdkReleaseManifestSchema,
+} from "./apps-sdk";
+export { componentPackageComponentsSchema, componentPackageManifestSchema } from "./component-packages";
 export { panelAuthoringManifestSchema, panelAuthoringMemberSchema } from "./panel-authoring";
 export { bindPanelAuthoringChart, expandPanelAuthoringMember } from "./panel-authoring-expansion";
 export { panelManifestSchema, panelPortAccepts } from "./panel-manifest";

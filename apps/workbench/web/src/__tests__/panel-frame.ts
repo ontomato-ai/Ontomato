@@ -210,6 +210,7 @@ export const sdkManifest: AppsSdkReleaseManifest = {
   stylesheet: "styles/sdk.css",
   components: "components.json",
   check: "node/panel-check.mjs",
+  packageComponents: "node/package-components.mjs",
   libraries: { vue: "3.5.0" },
   docs: "docs/index.md",
 };
