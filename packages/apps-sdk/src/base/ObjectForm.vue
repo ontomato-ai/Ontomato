@@ -392,7 +392,15 @@ useProjectionForm({
     // A create draft saved once addresses the object it created from then on.
     const into: PanelFormTarget = draft.created ? { kind: "object", objectType, primaryKey: draft.created.id } : named;
     const baseline = targetKey(into) === targetKey(named) ? namedForm : await forms.describe({ target: into, changedField: null });
-    const checked = await forms.describe({ target: into, values: draft.form as PanelFormValues, changedField: null });
+    // The draft is this form's from here on: an owner that cannot check its values at all (a value it cannot read) has
+    // not taken it either, and that is said on this form, as a refusal is; the rest of the panel goes on.
+    let checked: PanelFormDescription;
+    try {
+      checked = await forms.describe({ target: into, values: draft.form as PanelFormValues, changedField: null });
+    } catch (reason) {
+      showRefusal(reason);
+      return new Set();
+    }
     // A draft the owner does not accept is refused whole, with the fields and the reasons — said here, on this form, and
     // nothing of it taken; it is this form's to say, so the rest of the panel goes on as it was.
     if (checked.errors.length) {

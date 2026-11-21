@@ -21,6 +21,8 @@
 
 ## 起草改动
 
+草稿怎么写见本页生成的技能。
+
 读函数的 `queryPackage` 要写整份查询逻辑包（含 `manifest` 和 `files`）；写函数的 `parameters` 是
 `[{name, type, description, sample, classNames}]` 的数组，`type` 只能是 `TYPE_STRING`、`TYPE_NUMBER`、`TYPE_TIME`、
 `TYPE_STRING_ARRAY`、`TYPE_NUMBER_ARRAY`、`TYPE_TIME_ARRAY`。`returnDef` 里读函数用 `columnLabels`，写函数用

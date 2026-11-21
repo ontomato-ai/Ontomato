@@ -79,6 +79,12 @@ function addressed(draft: PageDraft<Record<string, unknown>>): PageDraftObjectRe
   return id === undefined ? { objectType: draft.target.objectType } : { objectType: draft.target.objectType, id };
 }
 
+/** A draft no form of a page takes: the type of the object it is for and the operation it asks for, as the reader is told. */
+export interface UnclaimedDraft {
+  objectType: string;
+  operation: string;
+}
+
 /** What a held draft is handed to once its form takes it: the draft as that form shows it. */
 type DraftTaken = (draft: ReceivedPanelDraft<Record<string, unknown>>) => void;
 
@@ -117,11 +123,12 @@ export class PanelFormAdapters {
     this.#offerNext();
   }
 
-  /** The type of the object a held draft is for, once every one of these form slots declined it: no form here binds it. */
-  unclaimed(formSlots: readonly string[]): string | null {
+  /** What a held draft is for — its object's type and its operation — once every one of these form slots declined it. */
+  unclaimed(formSlots: readonly string[]): UnclaimedDraft | null {
     void this.#declines.value;
     const held = this.#held.value;
-    return held !== null && formSlots.every((slot) => held.declined.has(slot)) ? held.draft.target.objectType : null;
+    return held !== null && formSlots.every((slot) => held.declined.has(slot))
+      ? { objectType: held.draft.target.objectType, operation: held.draft.operation } : null;
   }
 
   #offerNext() {

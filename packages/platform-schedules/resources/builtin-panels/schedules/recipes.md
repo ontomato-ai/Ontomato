@@ -21,17 +21,13 @@
 
 ## 起草（默认交给人保存）
 
-**编辑**：先读该任务的 `form`（`editForm` 成员），取它的 `save.draftOperation`（`platform:ScheduledTask.save`）。草稿只放要改的字段：任务设置放在 `task` 下（`title`、`appId`、`frequency`、`timeZone`、`notifyEmail`），应用自己的参数放在根上，键名用表单字段路径里的名字。例如：
+**编辑**：先读该任务的 `form`（`editForm` 成员）。`task` 下是标题、应用、频率、时区和通知邮箱，根上是该应用自己的参数。编辑草稿的入口状态用 `selectedTask` 定位任务。
 
-```json
-{"pageKey":"schedules","operation":"platform:ScheduledTask.save","target":{"id":"<任务ID>"},"form":{"task":{"title":"新标题","frequency":{"kind":"daily","time":"08:30"}}}}
-```
-
-**新建**：读 `createForm`（`newForm` 成员）。先定 `task.appId`，再按这个应用返回的字段填参数（换应用或改了带 `refreshOnChange` 的选项后，字段会变，按新表单填）。`target` 留空，`operation` 用 `platform:ScheduledTask.create`。新建的任务保存后直接启用。不可用的应用（选项 `disabled`）不要选，把 `disabledReason` 告诉用户。
+**新建**：读 `createForm`（`newForm` 成员）。先定 `task.appId`，再按这个应用返回的字段填参数（换应用或改了带 `refreshOnChange` 的选项后，字段会变，按新表单填）。用页面状态 `compose: "new"` 打开新建表单。新建的任务保存后直接启用。不可用的应用（选项 `disabled`）不要选，把 `disabledReason` 告诉用户。
 
 频率五种写法：`{"kind":"interval","every":2,"unit":"hour"}`（unit 为 minute/hour/day）、`{"kind":"daily","time":"09:00"}`、`{"kind":"weekly","weekday":1,"time":"09:00"}`（1=周一…7=周日）、`{"kind":"monthly","day":1,"time":"09:00"}`（没有这天的月份在最后一天运行）、`{"kind":"cron","expression":"0 30 2 * * *"}`（六段，秒在最前）。时区用 IANA 名称，如 `Asia/Shanghai`。通知邮箱可留空。
 
-把草稿写到 `outputs/drafts/<名字>.page-draft.json`，给用户可点击的链接（`draftPath` 是相对路径 `outputs/drafts/...`，不带开头的 `/`）：`#/schedules?state=<状态JSON>&draftSessionId=<会话>&draftRunId=<本轮>&draftPath=<路径>`。状态 JSON：编辑草稿用 `{"selectedTask":{"className":"platform:ScheduledTask","primaryKey":"<任务ID>"}}`；新建草稿**必须**用 `{"compose":"new"}`，否则新建表单不会挂上、草稿无处落。由用户在表单里核对后保存。保存被拒绝时表单保留输入并显示原因；修订号冲突时请用户在表单里点“放弃”载入最新内容，核对后再保存。
+草稿格式和链接用本页技能的起草说明。由用户在表单里核对后保存。保存被拒绝时表单保留输入并显示原因；修订号冲突时请用户在表单里点“放弃”载入最新内容，核对后再保存。
 
 ## 执行操作（走确认）
 
