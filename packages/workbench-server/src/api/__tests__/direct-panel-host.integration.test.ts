@@ -837,7 +837,7 @@ it("preserves a code panel's ID and revision rules and describes its member oper
   expect((await unreachable.json()).error.message).toContain("unreachable");
 });
 
-it("uses the authorized frame root for its record, member reads, nested content and personal state", async () => {
+it("uses the authorized frame root for its record, snapshot, member reads, nested content and personal state", async () => {
   const projectionId = "frame-host-components";
   const brokenId = "frame-host-invalid-sibling";
   const projection = {
@@ -866,13 +866,10 @@ it("uses the authorized frame root for its record, member reads, nested content 
     },
   });
   expect(frame.status, await frame.text()).toBe(200);
-  await state.pool!.query(
-    `UPDATE "${state.schema}".product_projections SET definition = definition || '{"obsolete":true}' WHERE id=$1`, [brokenId],
-  );
-
   const source = { kind: "frame", applicationId: "app-frame-host", useId: "framed" };
-  const getFrame = (id = frameHostPanelId, useId = source.useId) => request("GET", `product-panels/${id}?` +
+  const getFrame = (id = frameHostPanelId, useId = source.useId, suffix = "") => request("GET", `product-panels/${id}${suffix}?` +
     new URLSearchParams({ applicationId: source.applicationId, useId, source: "frame" }));
+  const getSnapshot = (id = frameHostPanelId, useId = source.useId) => getFrame(id, useId, "/snapshot");
   const get = await getFrame();
   expect(get.status, await get.clone().text()).toBe(200);
   expect(get.headers.get("cache-control")).toBe("no-store");
@@ -883,6 +880,24 @@ it("uses the authorized frame root for its record, member reads, nested content 
   expect((await getFrame(frameHostPanelId, "native")).status).toBe(404);
   expect((await getFrame(frameHostPanelId, "hidden")).status).toBe(403);
 
+  const snapshot = await getSnapshot();
+  expect(snapshot.status, await snapshot.clone().text()).toBe(200);
+  expect(snapshot.headers.get("cache-control")).toBe("no-store");
+  const payload = panelDefinitionSnapshotSchema.parse(await snapshot.json());
+  expect(payload.panel).toEqual({ id: frameHostPanelId, revision: 1 });
+  expect(payload.members).toHaveLength(2);
+  expect(payload.members).toContainEqual({
+    status: "ready", memberPath: [{ member: "components" }], target: { kind: "projection", id: projectionId }, revision: 1,
+  });
+  expect(payload.projections).toEqual(expect.arrayContaining([{ id: projectionId, revision: 1 }, { id: brokenId, revision: 1 }]));
+  expect(payload.pageSkillContext).toBeUndefined();
+  expect((await getSnapshot(frameHostContentId)).status).toBe(404);
+  expect((await getSnapshot(frameHostPanelId, "native")).status).toBe(404);
+  expect((await getSnapshot(frameHostPanelId, "hidden")).status).toBe(403);
+
+  await state.pool!.query(
+    `UPDATE "${state.schema}".product_projections SET definition = definition || '{"obsolete":true}' WHERE id=$1`, [brokenId],
+  );
   const read = (member: string) => request("POST", "product-panels/read", {
     source, memberPath: [{ member }], dataName: "rows", inputs: {},
   });
@@ -901,6 +916,7 @@ it("uses the authorized frame root for its record, member reads, nested content 
 
   grants.delete(frameHostPanelId);
   expect((await getFrame()).status).toBe(403);
+  expect((await getSnapshot()).status).toBe(403);
   expect(await (await read("components")).json()).toEqual({ status: "forbidden" });
 });
 
