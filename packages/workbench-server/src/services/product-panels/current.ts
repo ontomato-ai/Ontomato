@@ -20,7 +20,7 @@ import { notifyProductDefinitionChanged } from "./definition-stream";
 import { assistantStore } from "../assistant/store";
 import { configuredAssistantSkills } from "../assistant/skill-selection";
 import { panelSkillRef } from "./skill-identity";
-import { validateCurrentProductReferences } from "./references";
+import { findPanelUsers, validateCurrentProductReferences } from "./references";
 import { validateProjectionComponent } from "./component-catalogue";
 
 type CurrentDefinition = ProductPanelInput | ProductProjectionInput;
@@ -101,10 +101,15 @@ export async function insertCurrentProduct(client: PoolClient, owner: ProductOwn
 }
 
 async function save(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string,
-  input: CurrentDefinition, revision: number) {
+  input: CurrentDefinition, revision: number, solePanelId?: string) {
   if (revision !== 0 && "componentId" in input) await validateProjectionComponent(id, input);
   const row = await transaction(async client => {
     await lockProducts(client, owner);
+    if (solePanelId !== undefined) {
+      const users = await findPanelUsers(owner.domainId, "projection", id, client);
+      if (users.length !== 1 || users[0]!.id !== solePanelId)
+        throw new HttpError(409, "The projection's referencing panels changed. Register again to check its current uses.", "PROJECTION_REUSE_CONFLICT");
+    }
     await validateCurrentProductReferences(owner, credentials, kind, id, input, client);
     if (revision === 0) return insertCurrentProduct(client, owner, credentials, kind, id, input);
     const result = await client.query(`UPDATE ${t(currentProductTables[kind])} SET definition=$3::jsonb,revision=revision+1,updated_at=now() WHERE domain_id=$1 AND id=$2 AND revision=$4 RETURNING ${currentProductColumns}`, [owner.domainId, id, JSON.stringify(input), revision]);
@@ -115,7 +120,7 @@ async function save(owner: ProductOwner, credentials: AssistantCredentials, kind
   return currentProductRecord(row, true);
 }
 export async function saveCurrentProjection(
-  owner: ProductOwner, credentials: AssistantCredentials, id: string, request: RegisterProductProjectionRequest,
+  owner: ProductOwner, credentials: AssistantCredentials, id: string, request: RegisterProductProjectionRequest, solePanelId?: string,
 ) {
   const existing = await currentForSave(owner, credentials, "projection", id, request.revision);
   if (!("data" in request)) {
@@ -126,13 +131,13 @@ export async function saveCurrentProjection(
     const { id: _id, domainId: _domainId, ownerId: _ownerId, revision: _revision, editable: _editable,
       createdAt: _createdAt, updatedAt: _updatedAt, ...definition } = current;
     return productProjectionSchema.parse(await save(owner, credentials, "projection", id,
-      { ...definition, name, description, visibility }, revision));
+      { ...definition, name, description, visibility }, revision, solePanelId));
   }
   if (existing?.definition.componentId === METRIC_CHART_COMPONENT)
     throw new HttpError(400, "A registered chart cannot change its component, metric or source", "CHART_SOURCE_IMMUTABLE");
   const { revision, ...input } = request;
   requireOrdinaryProjection(input);
-  return productProjectionSchema.parse(await save(owner, credentials, "projection", id, input, revision));
+  return productProjectionSchema.parse(await save(owner, credentials, "projection", id, input, revision, solePanelId));
 }
 
 export async function saveCurrentPanel(owner: ProductOwner, credentials: AssistantCredentials, id: string, input: ProductPanelInput, revision: number) {

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { panelRegistrationRecords, requireApplicationId, requireDomainProductId } from "./panel-registration.mjs";
 
 function parseJson(file, source) {
@@ -186,32 +187,59 @@ async function readPanelWorkspace(directory, checks, materialPath, loadAuthoring
   return { material, panel, ...await workspaceDefinition(directory, files, checks, panel, loadAuthoring) };
 }
 
-async function workspaceRegistration({ panel, inline, material, definition }, currentRecord) {
+function storedProjectionDefinition({ id: _id, domainId: _domainId, ownerId: _ownerId, editable: _editable,
+  revision: _revision, createdAt: _createdAt, updatedAt: _updatedAt, ...definition }) {
+  return definition;
+}
+
+async function workspaceRegistration({ panel, inline, material, definition }, client, checks) {
   if (!panel) throw new Error("Workspace registration requires exactly one panel in the registration material");
   const input = panel.input;
   if (Object.hasOwn(input, "manifest") || Object.hasOwn(input, "content")) {
     throw new Error(`Panel ${panel.id}: write manifest and content in the workspace sources`);
   }
-  const previous = currentRecord ? await currentRecord("panel", panel.id) : undefined;
-  if (currentRecord && panel.mode === "update" && previous?.revision !== panel.revision) throw new Error(`Panel ${panel.id}: revision conflict`);
+  const previous = await client?.currentRecord("panel", panel.id);
+  if (client && panel.mode === "update" && previous?.revision !== panel.revision) throw new Error(`Panel ${panel.id}: revision conflict`);
   if (panel.mode === "create" && previous) throw new Error(`Panel ${panel.id}: already exists`);
   const projections = [...(material.projections ?? [])];
-  for (const { member, id, needsId, input: projection } of inline) {
-    if (projections.some(record => record.id === id)) throw new Error(`Member ${member}: projection ${id} already has a definition in this registration`);
-    const record = needsId ? undefined : await currentRecord?.("projection", id);
-    projections.push({
-      id, ...(record ? { mode: "update", revision: record.revision } : { mode: "create" }),
-      input: { ...projection, name: projection.name ?? record?.name ?? member,
-        description: projection.description ?? record?.description ?? member,
-        visibility: record?.visibility ?? input.visibility },
-    });
+  const ids = new Set(projections.map(record => record.id));
+  for (const entry of inline) {
+    const { member, needsId, input: projection } = entry;
+    const savedId = needsId && Object.hasOwn(previous?.manifest?.members ?? {}, member)
+      ? previous.manifest.members[member].target.projectionId : undefined;
+    const id = savedId ?? entry.id;
+    if (ids.has(id)) throw new Error(`Member ${member}: projection ${id} already has a definition in this registration`);
+    ids.add(id);
+    const record = !needsId || savedId !== undefined ? await client?.currentRecord("projection", id) : undefined;
+    const next = { ...projection, name: projection.name ?? record?.name ?? member,
+      description: projection.description ?? record?.description ?? member, visibility: record?.visibility ?? input.visibility };
+    if (savedId !== undefined) {
+      if (!record) throw new Error(`Member '${member}' references unavailable projection '${id}'.`);
+      entry.id = id;
+      definition.manifest.members[member].target = { projectionId: id };
+      if (!record.editable)
+        throw new Error(`Member '${member}' has no edit Grant for projection '${id}'. Rename the member to create a new projection.`);
+      if (isDeepStrictEqual(next, storedProjectionDefinition(record))) {
+        entry.reusedWithoutWrite = true;
+        continue;
+      }
+      const { panels, hiddenCount } = await client.projectionUsedBy(id, checks);
+      const others = panels.filter(user => user.id !== panel.id);
+      if (others.length || hiddenCount) {
+        const users = others.map(user => `${user.name} (${user.id})`);
+        if (hiddenCount) users.push(`${hiddenCount} panel(s) you cannot view`);
+        throw new Error(`Member '${member}' would change shared projection '${id}', also used by ${users.join(", ")}. Set id: "${id}" to update the shared definition, or rename the member to create its own projection.`);
+      }
+      entry.recoveredUpdate = true;
+    }
+    projections.push({ id, ...(record ? { mode: "update", revision: record.revision } : { mode: "create" }), input: next });
   }
   return { ...material, projections, panels: [{ ...panel, input: { ...input, ...definition } }] };
 }
 
 export async function registerPanelWorkspace(directory, materialPath, checks, client, onRegistered, loadAuthoring) {
   const workspace = await readPanelWorkspace(directory, checks, materialPath, loadAuthoring);
-  const material = await workspaceRegistration(workspace, client.currentRecord);
+  const material = await workspaceRegistration(workspace, client, checks);
   const { document, descriptorFile, source, inline, charts } = workspace;
   if (charts.size) {
     for (const { id, mode } of material.applications ?? []) {
@@ -225,15 +253,22 @@ export async function registerPanelWorkspace(directory, materialPath, checks, cl
       await onRegistered("projection", projection.id);
     }
   }
-  const unassigned = new Map(inline.filter(({ needsId }) => needsId).map(({ id, member }) => [id, member]));
-  return client.register(material, async (kind, id) => {
-    const member = kind === "projection" && unassigned.get(id);
-    if (member) {
-      document.manifest.members[member].id = id;
+  const unassigned = new Map(inline.filter(({ needsId }) => needsId).map(entry => [entry.id, entry]));
+  const recoveredProjectionPanels = new Map(inline.filter(entry => entry.recoveredUpdate).map(entry => [entry.id, workspace.panel.id]));
+  const result = await client.register(material, async (kind, id) => {
+    const entry = kind === "projection" && unassigned.get(id);
+    if (entry) {
+      document.manifest.members[entry.member].id = id;
       await writePanelDescriptor(descriptorFile, document, source);
     }
-    return onRegistered(kind, id);
-  }, checks);
+    return onRegistered(kind, id, { recoveredUpdate: Boolean(entry && entry.recoveredUpdate) });
+  }, checks, recoveredProjectionPanels);
+  const reused = inline.filter(entry => entry.reusedWithoutWrite);
+  if (reused.length) {
+    for (const { member, id } of reused) document.manifest.members[member].id = id;
+    await writePanelDescriptor(descriptorFile, document, source);
+  }
+  return result;
 }
 
 export async function checkPanelWorkspace(directory, { checks, catalogue, version, digest, typeTable, lookup, findChartSource, materialPath }) {

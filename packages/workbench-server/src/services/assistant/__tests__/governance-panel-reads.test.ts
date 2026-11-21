@@ -149,6 +149,29 @@ it("forwards viewer credentials and projects governance work record, issues, and
   }
 });
 
+it("lists only the sources one issue cites, in the order it cites them", async () => {
+  const source = (id: string, title: string) => ({ id, kind: "knowledge" as const, target: `k-${id}`, title, excerpt: `${title} text` });
+  const issue = (id: string, sourceIds: string[]) => ({
+    id, title: id, category: "knowledge" as const, status: "proposed" as const,
+    problem: "Problem", before: "Before", after: "After", basis: "Basis", sourceIds,
+  });
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+    revision: 1,
+    work: {
+      summary: "", notes: "", reviewedKnowledgeIds: [], knowledgeTotal: null,
+      issues: [issue("iss-1", ["src-3", "src-1"]), issue("iss-2", [])],
+      sources: [source("src-1", "Cutoff rule"), source("src-2", "Return rule"), source("src-3", "Holiday rule")],
+    },
+  })));
+  const reads = createKnowledgeGovernanceReadAdapter(viewer);
+
+  const cited = panelReadResultSchemas.panelRecordList.parse(await reads.issueSources(recordId, { issue: "iss-1" }));
+  expect(cited.map(row => [row.primaryKey, row.label])).toEqual([["src-3", "Holiday rule"], ["src-1", "Cutoff rule"]]);
+  expect(cited[0]!.fields).toEqual({ kind: "Business knowledge", target: "k-src-3", excerpt: "Holiday rule text" });
+  expect(await reads.issueSources(recordId, { issue: "iss-2" })).toEqual([]);
+  await expect(reads.issueSources(recordId, { issue: "iss-none" })).rejects.toMatchObject({ status: 404, code: "NOT_FOUND" });
+});
+
 it("falls back to localized report title when summary is empty and omits total when knowledgeTotal is null", async () => {
   const emptyWork = {
     revision: 0,
