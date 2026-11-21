@@ -379,7 +379,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         actualCatalog.putPanelUses("app-local", registration, second);
         assertEquals("builtin-product-browser",
             actualCatalog.require("app-local").getList("panelUses", ApplicationPanelUse.class).getFirst().panelId());
-        verify(panels).requireCurrent("domain-two", null, List.of(localUse), null);
+        verify(panels).requireCurrent("domain-two", null, List.of(localUse), null, "pages");
     }
 
     private ApplicationCatalog.Builtin builtInBrowser(String panelId) {
@@ -664,11 +664,48 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
 
         http.perform(post(CATALOGUE + "/form").contentType(MediaType.APPLICATION_JSON).content("""
             {"section":"identity","target":{"kind":"object","objectType":"platform:Application","primaryKey":"%s"},
-             "values":{"names":{"en":"Example"},"descriptions":{},"icon":"bad icon"},"changedField":"/icon"}
+             "values":{"names":{"en":"Example"},"descriptions":{},"icon":42},"changedField":"/icon"}
             """.formatted(id))).andExpect(status().isOk())
             .andExpect(jsonPath("$.data.errors[0].field").value("/icon"))
             .andExpect(jsonPath("$.data.save.path").value("/platform/applications/" + id + "/identity"));
         assertEquals(before, records());
+    }
+
+    @Test void validatesOnlyNewAndChangedIconsWhilePreservingLegacyIcons() throws Exception {
+        var owner = new QueryAccessService.GrantUser("owner", "domain");
+        when(identity.getCurrentUser()).thenReturn(owner);
+        when(access.canMaintain(any(), eq(owner))).thenReturn(true);
+        var path = "/platform/applications/app-icon-proof/panel-uses";
+        var registration = JSON.parseObject("""
+            {"entry":{"path":"/applications/app-icon-proof","renderer":"panels"},"entryAccess":["domain-member"],
+             "declaration":{"names":{"en":"Original"},"descriptions":{},"icon":"pages","groups":[],"permissions":[]},
+             "panelUses":[]}
+            """);
+        http.perform(put(path).contentType(MediaType.APPLICATION_JSON).content(registration.toJSONString()))
+            .andExpect(status().isOk());
+        verify(panels).requireCurrent("domain", null, List.of(), null, "pages");
+        jdbc.update("UPDATE sys_application SET icon=? WHERE id=?", "ontology", "app-icon-proof");
+        var declaration = registration.getJSONObject("declaration");
+        declaration.put("icon", "ontology");
+        declaration.put("names", JSONObject.of("en", "Renamed"));
+        clearInvocations(panels);
+        http.perform(put(path).contentType(MediaType.APPLICATION_JSON).content(registration.toJSONString()))
+            .andExpect(status().isOk());
+        verify(panels).requireCurrent("domain", null, List.of(), null, null);
+
+        var identityPath = "/platform/applications/app-icon-proof/identity";
+        var update = JSONObject.of("names", JSONObject.of("en", "Renamed again"), "descriptions", new JSONObject(), "icon", "ontology");
+        clearInvocations(panels);
+        http.perform(put(identityPath).contentType(MediaType.APPLICATION_JSON).content(update.toJSONString()))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.icon").value("ontology"));
+        verifyNoInteractions(panels);
+
+        doThrow(ApplicationCatalog.bad("Icon is reserved")).when(panels)
+            .requireCurrent("domain", null, List.of(), null, "settings");
+        update.put("icon", "settings");
+        http.perform(put(identityPath).contentType(MediaType.APPLICATION_JSON).content(update.toJSONString()))
+            .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("Icon is reserved"));
+        assertEquals("ontology", catalog.require("app-icon-proof").getString("icon"));
     }
 
     @Test void referencePreflightForwardsConfiguredDefaultsAndOmitsUnsetDefaults() throws Exception {
@@ -694,7 +731,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
                 new ApplicationPanelUse("plan", "plan", "panel-plan", "/example/plan", member,
                     new DefaultAgentTarget("id", "planner", null), null),
                 new ApplicationPanelUse("ordinary", "ordinary", "panel-ordinary", "/example/ordinary", member, null, null)
-            ), null);
+            ), null, null);
 
             assertEquals("test-service", serviceHeader.get());
             var uses = requests.get().getJSONArray("uses");
