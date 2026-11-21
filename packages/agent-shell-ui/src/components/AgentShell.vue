@@ -455,7 +455,11 @@ watch(
  * Hosts call `reloadAgents` after editing agent definitions; the column reads the same state. `send` sends a message in
  * the open conversation as the composer does, for a host that was handed the first question (a link from elsewhere).
  */
-defineExpose({ reloadAgents: () => nav.loadAgents().catch(report), send });
+/** Holds a message for the reader in the composer, opened with it; nothing is sent. */
+function fill(text: string) {
+  showEntry(text);
+}
+defineExpose({ reloadAgents: () => nav.loadAgents().catch(report), send, fill });
 
 onMounted(() => {
   // An address that names both a conversation and a paired page reopens them side by side.
