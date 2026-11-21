@@ -39,21 +39,9 @@
 
 ## 智能体怎么起草
 
-要改一个面板，先读它的表单（概览页签上的字段就是所有者表单的字段），再写一份草稿产物，只放要改的字段：
-
-```json
-{
-  "pageKey": "ontology-panels",
-  "operation": "panel.update",
-  "target": { "id": "<面板 ID>" },
-  "form": { "description": "新的说明" }
-}
-```
-
-新建面板用同一份草稿、把 `target` 留空，`operation` 用 `panel.create`，`form` 里至少给 `name`、`content.html`、
-`content.module` 和 `manifest`（`{state, members, events}`）。把草稿存成 `outputs/drafts/*.page-draft.json`，再用
-这一页的地址加 `?draftSessionId=&draftRunId=&draftPath=` 打开：表单会按草稿填好、标出改过的字段，等人保存。
-没保存就什么都没写。
+要改一个面板，先读它的表单（概览页签上的字段就是所有者表单的字段），草稿只放要改的字段。新建面板至少给 `name`、
+`content.html`、`content.module` 和 `manifest`（`{state, members, events}`）。读者打开草稿后表单按草稿填好、标出改过
+的字段，等人保存；没保存就什么都没写。
 
 ## 智能体怎么执行操作
 
