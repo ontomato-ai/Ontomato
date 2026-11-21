@@ -8,6 +8,7 @@ import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-
 import { builtinProductIdSchema } from "@ontomato/contracts/product-record-id";
 import {
   builtinProductPanelInputSchema, builtinProductProjectionInputSchema,
+  productPanelInputSchema,
   type BuiltinProductPanelInput, type BuiltinProductProjectionInput,
 } from "@ontomato/contracts/product-panels";
 import { runtimeRoot } from "../../content/layout";
@@ -21,7 +22,7 @@ import { platformTypeEntries } from "./type-table";
 const workspaceIdentity = z.object({
   panels: z.array(z.object({
     id: builtinProductIdSchema,
-    input: builtinProductPanelInputSchema.pick({ name: true, description: true }).strip(),
+    input: productPanelInputSchema.pick({ name: true, description: true }).strip(),
   })).length(1),
 });
 const indexSchema = z.array(z.string().min(1).refine(directory =>
@@ -60,9 +61,9 @@ async function readBuiltinProducts(root: string) {
       const { panels: [identity] } = workspaceIdentity.parse(JSON.parse(registration));
       const { content, manifest, ...metadata } = z.object({
         manifest: panelAuthoringManifestSchema,
-        content: builtinProductPanelInputSchema.shape.content.pick({ messages: true }).strict().optional(),
-        template: builtinProductPanelInputSchema.shape.template,
-        theme: builtinProductPanelInputSchema.shape.theme,
+        content: productPanelInputSchema.shape.content.pick({ messages: true }).strict().optional(),
+        template: productPanelInputSchema.shape.template,
+        theme: productPanelInputSchema.shape.theme,
       }).strict().parse(JSON.parse(descriptor));
       const { state, members, ...declaration } = manifest;
       await panelModuleImports(module);
