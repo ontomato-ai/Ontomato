@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import { analystCommand } from "./client.mjs";
 import { authenticate } from "./identity.mjs";
-import { panelRegistrationClient } from "./panel-registration.mjs";
+import { domainApplicationIconChoices, panelRegistrationClient } from "./panel-registration.mjs";
 import { currentSdkClient, installedPanelSdk } from "./current-sdk.mjs";
 import { checkBuiltinPanelSource, checkPanelWorkspace, registerPanelWorkspace } from "./panel-check.mjs";
 import { managementPanel, writeManagementPanel } from "./panel-scaffold.mjs";
@@ -307,7 +307,10 @@ const print = value => console.log(JSON.stringify(value, null, 2));
 async function sdkCommand(api, args) {
   const sdk = currentSdkClient({ workbenchUrl: api.envUrl, headers: headers(api) });
   if (args[0] === "current" && args.length === 1) return print(await sdk.current());
-  if (args[0] !== "read" || args.length !== 2) die("sdk requires current or read <relative path>");
+  if (args[0] === "icons" && args.length === 1) {
+    return print(domainApplicationIconChoices(await sdk.check(await sdk.current())));
+  }
+  if (args[0] !== "read" || args.length !== 2) die("sdk requires current, icons, or read <relative path>");
   console.log(await (await sdk.read(await sdk.current(), args[1])).text());
 }
 
@@ -522,6 +525,7 @@ function usage() {
   die(`usage: ontomato.mjs [--lang <tag>] <command>
   test start|status|stop [--workspace <id>] [--sample test-data/sample.json]
   sdk current
+  sdk icons
   sdk read <relative path, e.g. docs/components.md>
   panel applications
   panel type <id> [--read <name>]

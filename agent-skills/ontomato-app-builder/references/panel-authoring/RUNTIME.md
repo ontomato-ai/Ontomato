@@ -5,7 +5,8 @@
 
 Direct panel modules can import `vue`, `@ontomato/sdk/panel`.
 
-The supported application icon IDs are `app-window`, `users`, `microscope`, `presentation`, `graduation-cap`, `briefcase`, `shopping-cart`, `package`, `clipboard-list`, `chart`, `wallet`, `heart-pulse`, `building`, `globe`, `calendar`, `book`, `folder`, `workflow`, `database`, `shield`, `home`, `agents`, `diagnosis`, `knowledge`, `objects`, `ontology`, `schedule`, `dashboards`, `permissions`, `settings`, `governance`, `builder`, `pages`, `gallery`, `agent-builder`.
+For a domain application, choose `declaration.icon` from `node "$SKILL/ontomato.mjs" sdk icons`.
+The built-in icons identify the platform's own entries.
 To show an application by its icon key, draw `<component :is="appIcon(key)" :size="16" />` with `appIcon` from
 `@ontomato/sdk/panel`: it is the platform's own icon for the key, and an unknown key draws the platform's fallback.
 
