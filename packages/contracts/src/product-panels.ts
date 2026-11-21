@@ -434,6 +434,8 @@ export const productProjectionUsedBySchema = z.object({
   panels: z.array(z.object({ id, name: editableDefinitionFields.name }).strict()),
   hiddenCount: z.number().int().nonnegative(),
 }).strict();
+/** A guarded update is allowed only while this panel is the projection's sole user. */
+export const PROJECTION_REUSE_PANEL_HEADER = "X-Ontomato-Projection-Reuse-Panel";
 export const productPanelUsedBySchema = productProjectionUsedBySchema.extend({
   applicationEntries: z.array(z.object({
     applicationId: id,

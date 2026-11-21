@@ -170,7 +170,10 @@ test("the checker accepts short data and operation members with reusable project
       ...list, data: { rows: { read: "query", params: { search: { state: "search" }, status: { literal: "pending" } } } },
     } },
   }).success, true);
-  for (const member of [{ ...list, inputs: {} }, { ...list, id: "not-a-uuid" }, { component: "ObjectList" }]) {
+  assert.equal(panelAuthoringManifestSchema.safeParse({
+    ...manifest, members: { list: { ...list, id: "previously-registered-list" } },
+  }).success, true);
+  for (const member of [{ ...list, inputs: {} }, { ...list, id: "" }, { component: "ObjectList" }]) {
     assert.equal(panelAuthoringManifestSchema.safeParse({ ...manifest, members: { list: member } }).success, false);
   }
 });
