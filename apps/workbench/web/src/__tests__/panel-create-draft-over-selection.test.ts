@@ -47,7 +47,7 @@ async function openOn(saved: string) {
     manifest,
     run: {
       pageKey: "entries", url: () => "/entries", label: () => "Entries", initial: { formTarget: { className: FUNCTION, primaryKey: "saved-1" } },
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => { throw reason; },
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",

@@ -98,8 +98,20 @@ const canvas = ref<InstanceType<typeof G6GraphCanvas> | null>(null);
 /** The whole graph, or — where it would be too small to read — the part around the chosen node, else the most connected. */
 function fit() {
   const chosen = selectedNodes.value.find((id) => layout.value.positions.has(id));
-  void canvas.value!.fit({ maxZoom: 1.15, minZoom: G6_READABLE_ZOOM, padding: 36, around: chosen ?? layout.value.root });
+  void canvas.value!.fit({ maxZoom: 1.15, minZoom: G6_READABLE_ZOOM, padding: 36, around: chosen ?? layout.value.root })
+    .then((whole) => {
+      partial.value = !whole;
+      moved.value = false;
+      fitted = true;
+    });
 }
+/**
+ * A graph larger than the canvas at a size its names can be read at is shown in part, and a light line says so; once the
+ * reader moves the view (they found the rest) it steps back.
+ */
+const partial = ref(false);
+const moved = ref(false);
+let fitted = false;
 // The view a reader opens the graph on.
 watch(canvas, (drawn) => drawn && fit(), { flush: "post" });
 /** The part a reader chose, in the middle of the view. */
@@ -117,6 +129,7 @@ onBeforeUnmount(() => clearTimeout(settling));
 /** The zoom the canvas shows, as the page reads it (`zoom`), to two decimals; and the zoom the page sets, shown. */
 let shownZoom: number | null = null;
 function viewed(viewport: GraphCanvasViewport) {
+  if (fitted && partial.value) moved.value = true;
   shownZoom = Math.round(viewport.zoom * 100) / 100;
   if (zoom.value.value !== shownZoom) zoom.set(shownZoom);
 }
@@ -160,6 +173,9 @@ async function download() {
         @viewport="viewed"
         @resized="resized"
       />
+      <p v-if="partial" class="sdk-object-graph-canvas-hint" :class="{ quiet: moved }" role="status" data-graph-hint>
+        {{ t("platform.graphLargerThanCanvas") }}
+      </p>
       <div class="sdk-object-graph-canvas-tools" data-graph-toolbar>
         <button type="button" data-graph-action="zoom-in" :title="t('platform.graphZoomIn')" :aria-label="t('platform.graphZoomIn')" @click="canvas?.zoomBy(ZOOM_STEP)">
           <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -208,6 +224,22 @@ async function download() {
   margin: 0;
   color: var(--el-color-danger-text);
   font-size: var(--text-sm);
+}
+.sdk-object-graph-canvas-hint {
+  position: absolute;
+  inset-block-end: var(--spacing-sm);
+  inset-inline-start: var(--spacing-sm);
+  margin: 0;
+  padding: calc(var(--spacing-xs) / 2) var(--spacing-sm);
+  border-radius: var(--radius-md);
+  background: var(--el-bg-color-overlay);
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  pointer-events: none;
+  transition: opacity 200ms ease-out;
+}
+.sdk-object-graph-canvas-hint.quiet {
+  opacity: 0.55;
 }
 .sdk-object-graph-canvas-tools {
   position: absolute;
