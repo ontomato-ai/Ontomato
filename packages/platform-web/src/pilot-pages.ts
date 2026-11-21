@@ -4,14 +4,15 @@ import AgentSettingsRoute from "./pages/AgentSettingsRoute.vue";
 import DashboardsPage from "./pages/DashboardsRoute.vue";
 import PanelApplicationRoute from "./pages/PanelApplicationRoute.vue";
 import { DETAIL_SELECTIONS, detailSelectionAddress, type DetailSelection } from "./detail-selection";
+import { panelEntryApplication } from "./catalog";
 
 /**
  * The pages this assembly mounts beside a conversation (DESIGN.md "Applications and shells"). A page's own address is
  * what the conversation beside it carries (`?page=`), and the resolver turns that address into the props the page's own
  * component takes: the page keeps one component and one address, and the page beside the chat is that page.
  *
- * The pages here are the dashboards, the agents' settings and a panel application's page, which is shown by the
- * same page the platform shows it with, so one address has one page and one panel instance.
+ * The pages here are the dashboards, the agents' settings, a panel application's page and a built-in application's panel
+ * entry, each shown by the same page the platform shows it with, so one address has one page and one panel instance.
  *
  * A page's own navigation (another board, another agent, the list, a saved draft's handoff) is the callback it is given
  * here. The callback changes the parameter the conversation carries, never the browser's address, so the conversation
@@ -27,6 +28,17 @@ export function pilotPageResolver(
     const address = detailSelectionAddress(selections, asked) ?? asked;
     const [path, search = ""] = address.split("?");
     const query = new URLSearchParams(search);
+    // A built-in application's panel entry at its own address (`/ontology/components`), as the reader's catalog lists it:
+    // the same page that shows it full, as that application's page. A declared entry is the page at its address.
+    const entry = panelEntryApplication(path);
+    if (entry) {
+      return {
+        id: "panel-application",
+        component: PanelApplicationRoute,
+        instance: path,
+        props: { applicationId: entry, address, navigate: setPage },
+      } satisfies PilotPage;
+    }
     // The agents' settings at the agent platform's own prefix: the address an answer and a draft link name.
     if (path === platformRoutes.agents.path || path.startsWith(`${platformRoutes.agents.path}/`)) {
       return {

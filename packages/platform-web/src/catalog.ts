@@ -1,5 +1,6 @@
 import { shallowRef } from "vue";
-import { applicationCatalogSchema, type CatalogApplication } from "@ontomato/contracts/platform-identity";
+import { applicationCatalogSchema, isPanelApplication, type CatalogApplication } from "@ontomato/contracts/platform-identity";
+import { panelUsePath } from "@ontomato/contracts/panel-host";
 import { nodeApiRequest } from "@ontomato/workbench-ui";
 const applications = shallowRef<CatalogApplication[]>([]);
 const error = shallowRef<string | null>(null);
@@ -28,4 +29,14 @@ export function useApplicationCatalog() {
       loading.value = false;
     }
   } };
+}
+
+/**
+ * The built-in application that declares a panel entry at this address and lets this reader open it, as the catalog the
+ * shell read lists it (big main's ruling, 2026-11-21: an entry keeps its original address, whatever its prefix); null when
+ * none does, or until the catalog is read. It reads the catalog's state, so what calls it again once the catalog arrives.
+ */
+export function panelEntryApplication(path: string): string | null {
+  return applications.value.find((app) => !isPanelApplication(app)
+    && (app.panelUses ?? []).some((use) => panelUsePath(use.path) === path))?.id ?? null;
 }
