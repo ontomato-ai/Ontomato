@@ -249,7 +249,7 @@ beforeAll(async () => {
   }
   const saved = await request("PUT", `product-panels/${panelId}`, {
     name: "Ontology model", description: "", visibility: "domain", revision: 0, content: vuePanelContent(...Object.keys(members).filter(member => member !== "attributeLookup")),
-    manifest: { state: {}, events: {}, members: Object.fromEntries(Object.entries(members).map(([key, member]) =>
+    manifest: { state: {}, commands: {}, members: Object.fromEntries(Object.entries(members).map(([key, member]) =>
       [key, { target: { projectionId: `ontology-model-${key}` }, ...member }])) },
   });
   expect(saved.status, await saved.text()).toBe(200);

@@ -111,7 +111,7 @@ export async function startPanelSkillEntryServer(options: {
     await pool.query(`INSERT INTO ${store.table("product_panels")} (id,domain_id,owner_id,definition)
       VALUES($1,$2,'editor',$3)`, [id, domainId, {
       name: id, description: "", visibility: "domain", content: vuePanelContent("records"),
-      manifest: { state: {}, members: { records: { target: { projectionId: "records" } } }, events: {} },
+      manifest: { state: {}, members: { records: { target: { projectionId: "records" } } }, commands: {} },
     }]);
   }
 

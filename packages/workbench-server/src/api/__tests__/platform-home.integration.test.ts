@@ -93,7 +93,7 @@ it("stores only the caller's home panel choice and checks current use when savin
   );
   const definition = productPanelInputSchema.parse({
     name: "Shared home", description: "", visibility: "domain", content: vuePanelContent(),
-    manifest: { state: {}, members: {}, events: {} },
+    manifest: { state: {}, members: {}, commands: {} },
   });
   await state.pool!.query(
     `INSERT INTO ${table("product_panels")} (domain_id,id,owner_id,definition)
