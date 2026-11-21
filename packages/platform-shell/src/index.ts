@@ -23,6 +23,7 @@ export {
   type PlatformPageDraft,
 } from "./page-actions";
 export { providePageHeading, usePageHeading, type PlatformPageHeading } from "./page-heading";
+export { themeProperties, useAppTheme, type ThemeMode } from "./app-theme";
 export {
   agentModelLabelsKey,
   useAgentModelLabels,
