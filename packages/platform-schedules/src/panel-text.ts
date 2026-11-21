@@ -14,7 +14,7 @@ export interface ScheduledTaskPanelText {
   action: { runNow: string };
   panelFields: { settings: string; state: string; nextRun: string; lastRun: string };
   panelSettings: { title: string; frequency: string; timeZone: string; notifyEmail: string };
-  panelManagement: { create: string; setEnabled: string; delete: string; deleteImpact: string };
+  panelManagement: { save: string; create: string; setEnabled: string; delete: string; deleteImpact: string };
   panelRunStarted: string;
   runStatus: { running: string; completed: string; failed: string; skipped: string };
 }
@@ -38,7 +38,7 @@ export const scheduledTaskPanelTextEn = {
   panelFields: { settings: "Settings", state: "Status", nextRun: "Next run", lastRun: "Last run" },
   panelSettings: { title: "Title", frequency: "Frequency", timeZone: "Time zone", notifyEmail: "Notification email" },
   panelManagement: {
-    create: "Create task", setEnabled: "Change task status", delete: "Delete task",
+    save: "Save task", create: "Create task", setEnabled: "Change task status", delete: "Delete task",
     deleteImpact: "This deletes the task and its execution history.",
   },
   panelRunStarted: "The run has started.",
@@ -56,7 +56,7 @@ export const scheduledTaskPanelTextZhCn = {
   panelFields: { settings: "配置", state: "状态", nextRun: "下次运行", lastRun: "上次运行" },
   panelSettings: { title: "标题", frequency: "频率", timeZone: "时区", notifyEmail: "通知邮箱" },
   panelManagement: {
-    create: "新建任务", setEnabled: "更改任务状态", delete: "删除任务",
+    save: "保存任务", create: "新建任务", setEnabled: "更改任务状态", delete: "删除任务",
     deleteImpact: "将删除任务和它的执行记录。",
   },
   panelRunStarted: "已开始运行。",
