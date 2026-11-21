@@ -171,6 +171,7 @@ const operation = (id: string, input?: string) => ({ operation: { kind: "Platfor
 const projections: Record<string, object> = {
   types: { componentId: "@ontomato/sdk:ObjectList", data: { rows: type(OBJECT_TYPE, "list") } },
   attributes: { componentId: "@ontomato/sdk:ObjectList", data: { rows: type(ATTRIBUTE, "list", { className: { literal: "warehouse" } }) } },
+  attributeLookup: { componentId: "@ontomato/sdk:PanelData", data: { rows: type(ATTRIBUTE, "list") } },
   relationships: { componentId: "@ontomato/sdk:ObjectList", data: { rows: type(RELATIONSHIP, "list", { className: { literal: "item" } }) } },
   summary: {
     componentId: "@ontomato/sdk:ObjectSummary", inputs: { objectType: { kind: "object", objectType: OBJECT_TYPE } },
@@ -192,7 +193,7 @@ const projections: Record<string, object> = {
 const warehouse = { className: OBJECT_TYPE, primaryKey: "warehouse" };
 const joinAttribute = { className: ATTRIBUTE, primaryKey: JSON.stringify(["warehouse", "code"]) };
 const members = {
-  types: {}, attributes: {}, relationships: {},
+  types: {}, attributes: {}, attributeLookup: {}, relationships: {},
   summary: { inputs: { objectType: { literal: warehouse } } },
   create: {},
   removeType: { inputs: { objectType: { literal: warehouse } } },
@@ -247,7 +248,7 @@ beforeAll(async () => {
     expect(saved.status, await saved.text()).toBe(200);
   }
   const saved = await request("PUT", `product-panels/${panelId}`, {
-    name: "Ontology model", description: "", visibility: "domain", revision: 0, content: vuePanelContent(...Object.keys(members)),
+    name: "Ontology model", description: "", visibility: "domain", revision: 0, content: vuePanelContent(...Object.keys(members).filter(member => member !== "attributeLookup")),
     manifest: { state: {}, events: {}, members: Object.fromEntries(Object.entries(members).map(([key, member]) =>
       [key, { target: { projectionId: `ontology-model-${key}` }, ...member }])) },
   });
@@ -331,6 +332,40 @@ it("serves the ontology model's catalog reads to a panel viewer through the owne
     "GET /ontology/model/attributes?className=warehouse", "GET /ontology/model/relationships?className=item",
   ]));
   expect(ownerCalls.filter(call => !call.startsWith("GET ")).every(call => call === "POST /ontology/model/object-type/form")).toBe(true);
+});
+
+it("passes a class filter to the owner for a declared data member outside the template", async () => {
+  seed();
+  ownerCalls.length = 0;
+  const response = await request("POST", "product-panels/read", {
+    source: use, memberPath: [{ member: "attributeLookup" }], dataName: "rows",
+    inputs: {}, runtimeParams: { className: "warehouse" },
+  });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ status: "ready", value: [
+    { primaryKey: '["warehouse","id"]' }, { primaryKey: '["warehouse","code"]' },
+  ] });
+  expect(ownerCalls).toContain("GET /ontology/model/attributes?className=warehouse");
+});
+
+it("rejects form value keys written as pointers before requesting the model owner", async () => {
+  seed();
+  ownerCalls.length = 0;
+  const values = { "/className": "bin" };
+  const form = await request("POST", "product-panels/read", {
+    source: use, memberPath: [{ member: "create" }], dataName: "form", inputs: {},
+    runtimeParams: { values, changedField: null },
+  });
+  expect(await form.json()).toMatchObject({ status: "error", message: expect.stringContaining('values key "/className"') });
+  const save = await request("POST", "panel-operations/intents", {
+    applicationId: use.applicationId, useId: use.useId, operationId: "create.save",
+    call: { target: { kind: "draft" }, input: { values } },
+  });
+  expect(save.status).toBe(400);
+  expect(await save.json()).toMatchObject({
+    error: { code: "INVALID_REQUEST", message: expect.stringContaining('values key "/className"') },
+  });
+  expect(ownerCalls).toEqual([]);
 });
 
 it("creates, refuses and deletes model objects through the panel coordinator against the owner", async () => {

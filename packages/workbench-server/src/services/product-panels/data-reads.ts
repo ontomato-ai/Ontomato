@@ -18,6 +18,7 @@ import { assertPermission } from "../../identity/installed";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
+import { requireFormFieldNames } from "../../utils/form-field-names";
 import type { ProductOwner } from "../product-governance/grants";
 
 import { createDashboardCardReadAdapter } from "../dashboard/chart-sources";
@@ -69,10 +70,14 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   const metrics = createMetricReadAdapter(owner, viewer, callerUserName);
   const functions = createFunctionReadAdapter(owner, viewer, callerUserName);
   const cards = createDashboardCardReadAdapter(owner, viewer);
-  const formParams = (params: Record<string, unknown>) => ({
-    values: panelReadParameterSchemas.panelFormValues.optional().parse(params.values),
-    changedField: panelReadParameterSchemas.changedField.optional().parse(params.changedField) ?? null,
-  });
+  const formParams = (params: Record<string, unknown>) => {
+    const values = panelReadParameterSchemas.panelFormValues.optional().parse(params.values);
+    requireFormFieldNames(values, "values");
+    return {
+      values,
+      changedField: panelReadParameterSchemas.changedField.optional().parse(params.changedField) ?? null,
+    };
+  };
   const modelReads: Record<string, ReadAdapter> = {
     list: (selection, params) => model.list(selection.typeId, {
       className: panelReadParameterSchemas.className.optional().parse(params.className),

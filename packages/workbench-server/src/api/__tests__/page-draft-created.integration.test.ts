@@ -51,7 +51,7 @@ installWorkbenchIdentity({
 } as unknown as WorkbenchIdentity);
 
 const DRAFT = "outputs/drafts/agent.page-draft.json";
-const sessionId = randomUUID(), runId = randomUUID(), updateRunId = randomUUID();
+const sessionId = randomUUID(), runId = randomUUID(), updateRunId = randomUUID(), invalidRunId = randomUUID();
 const createDraft = { pageKey: "agent-settings", operation: "agent.create", target: {}, form: { name: "New analyst" } };
 const updateDraft = { pageKey: "agent-settings", operation: "agent.update", target: { id: randomUUID() }, form: { name: "Renamed" } };
 let server: Server, base = "";
@@ -63,10 +63,14 @@ beforeAll(async () => {
   await ensureAssistantSchema(state.pool);
   await ensureAssistantPageDraftCreationsSchema(state.pool);
   await state.pool.query(`INSERT INTO "${state.schema}".assistant_sessions (id,domain_id,owner_id,agent_id) VALUES ($1,'domain','alice',$2)`, [sessionId, randomUUID()]);
-  for (const [seq, run] of [runId, updateRunId].entries())
+  for (const [seq, run] of [runId, updateRunId, invalidRunId].entries())
     await state.pool.query(`INSERT INTO "${state.schema}".assistant_turns (id,session_id,request_seq,input_hash) VALUES ($1,$2,$3,'hash')`, [run, sessionId, seq]);
   state.files.push({ id: randomUUID(), sessionId, runId, path: DRAFT, draft: createDraft });
   state.files.push({ id: randomUUID(), sessionId, runId: updateRunId, path: DRAFT, draft: updateDraft });
+
+  state.files.push({ id: randomUUID(), sessionId, runId: invalidRunId, path: DRAFT,
+    draft: { pageKey: "ontology", operation: "objectType.create", target: {}, form: { "/className": "bin" } },
+  });
 
   // The router reads the public skills' place when it loads, so the layout is installed first.
   const runtimeRoot = mkdtempSync(nodePath.join(os.tmpdir(), "page-draft-created-"));
@@ -125,6 +129,15 @@ describe("what a create draft created", () => {
     expect((await record(runId, "agent-1", "bob")).status).toBe(404);
     expect((await record(runId, "agent-4", "bob")).status).toBe(404);
     expect((await rows()).filter((row) => row.run_id === runId).map((row) => row.created_id)).toEqual(["agent-1"]);
+  });
+
+  it("rejects a pointer used as a draft form key before the page receives it", async () => {
+    const response = await read(invalidRunId);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: { code: "INVALID_REQUEST", message: expect.stringContaining('form key "/className"') },
+    });
+    expect((await rows()).filter(row => row.run_id === invalidRunId)).toEqual([]);
   });
 
   it("goes with its conversation", async () => {
