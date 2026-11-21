@@ -1,0 +1,153 @@
+{
+  "manifest": {
+    "state": {
+      "record": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:KnowledgeGovernanceRecord"
+        },
+        "deepLink": true
+      },
+      "issue": {
+        "type": {
+          "kind": "child-object",
+          "parentType": "platform:KnowledgeGovernanceRecord",
+          "collection": "issues"
+        },
+        "deepLink": true
+      },
+      "issueId": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "activeSource": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "activeAnchor": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      }
+    },
+    "members": {
+      "report": {
+        "component": "PanelData",
+        "type": "platform:KnowledgeGovernanceRecord",
+        "target": "record",
+        "data": {
+          "record": "record",
+          "issues": "issues"
+        },
+        "id": "builtin-product-c9ac271b-6a20-49ba-981a-998f1b0afc39"
+      },
+      "issueReader": {
+        "component": "ObjectTextReader",
+        "type": "platform:KnowledgeGovernanceRecord",
+        "target": "record",
+        "data": {
+          "sources": {
+            "read": "issueSources",
+            "params": {
+              "issue": {
+                "state": "issueId"
+              }
+            }
+          },
+          "page": "sourcePage"
+        },
+        "state": {
+          "activeSourceId": "activeSource",
+          "activeAnchor": "activeAnchor"
+        },
+        "config": {
+          "anchor": "issue",
+          "moreLabel": "panel.more",
+          "closeLabel": "panel.close",
+          "emptyText": "panel.sourceEmpty"
+        },
+        "id": "builtin-product-7ebe1f42-46f3-458c-a24c-af2f0a5ffacf"
+      },
+      "allReader": {
+        "component": "ObjectTextReader",
+        "type": "platform:KnowledgeGovernanceRecord",
+        "target": "record",
+        "data": {
+          "sources": "sources",
+          "page": "sourcePage"
+        },
+        "state": {
+          "activeSourceId": "activeSource",
+          "activeAnchor": "activeAnchor"
+        },
+        "config": {
+          "anchor": "all",
+          "moreLabel": "panel.more",
+          "closeLabel": "panel.close",
+          "emptyText": "panel.sourceEmpty"
+        },
+        "id": "builtin-product-eacac67a-44e3-46da-847d-b895d7253ac2"
+      }
+    },
+    "events": {}
+  },
+  "content": {
+    "messages": {
+      "zh-CN": {
+        "panel.name": "治理报告",
+        "panel.noRecord": "从治理会话中的报告链接打开一条治理记录。",
+        "panel.loading": "加载中…",
+        "panel.readError": "读取失败：{message}",
+        "panel.forbidden": "当前账号不能读取这条治理记录。",
+        "panel.empty": "这条治理记录还没有报告内容。",
+        "panel.reportHint": "以下为由人确认后执行的修改建议，确认不会修改知识、本体或数据。",
+        "panel.noIssues": "评审过程中发现的问题会显示在这里。",
+        "panel.sources": "来源",
+        "panel.noSources": "引用的材料会显示在这里。",
+        "panel.problem": "问题",
+        "panel.before": "现状",
+        "panel.after": "建议改法",
+        "panel.basis": "依据",
+        "panel.more": "更多",
+        "panel.close": "关闭",
+        "panel.sourceEmpty": "原文暂不可读，请先核对问题再处理。",
+        "panel.category.ontology": "本体治理",
+        "panel.category.knowledge": "知识组织",
+        "panel.category.data": "数据缺陷",
+        "panel.status.proposed": "修改建议",
+        "panel.status.pending": "待澄清",
+        "panel.status.confirmed": "已确认含义"
+      },
+      "en": {
+        "panel.name": "Governance report",
+        "panel.noRecord": "Open a governance record through its report link from a governance conversation.",
+        "panel.loading": "Loading…",
+        "panel.readError": "Read failed: {message}",
+        "panel.forbidden": "This account cannot read this governance record.",
+        "panel.empty": "This governance record has no report content yet.",
+        "panel.reportHint": "These are proposed changes for people to apply. Confirmation does not modify knowledge, ontology or data.",
+        "panel.noIssues": "Findings will appear here as the review progresses.",
+        "panel.sources": "Sources",
+        "panel.noSources": "Referenced materials will appear here.",
+        "panel.problem": "Problem",
+        "panel.before": "Current description or state",
+        "panel.after": "Proposed change",
+        "panel.basis": "Basis",
+        "panel.more": "Read the next part",
+        "panel.close": "Close",
+        "panel.sourceEmpty": "The original is no longer available. Review the finding before acting.",
+        "panel.category.ontology": "Ontology governance",
+        "panel.category.knowledge": "Knowledge organization",
+        "panel.category.data": "Data defects",
+        "panel.status.proposed": "Proposed",
+        "panel.status.pending": "Pending clarification",
+        "panel.status.confirmed": "Meaning confirmed"
+      }
+    }
+  }
+}

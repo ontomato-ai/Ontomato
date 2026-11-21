@@ -1,0 +1,176 @@
+<style>
+  .report {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    font-size: var(--text-sm, 13px);
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+  .report-state {
+    display: flex;
+    min-height: 200px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 32px 16px;
+    color: var(--el-text-color-secondary);
+    text-align: center;
+  }
+  .report-summary {
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--el-border-color);
+  }
+  .report-summary p { margin: 0 0 8px; }
+  .report-hint, .report-muted { color: var(--el-text-color-secondary); }
+  .report-summary dl {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 4px 12px;
+    margin: 0;
+  }
+  .report-summary dt { color: var(--el-text-color-secondary); }
+  .report-summary dd { margin: 0; white-space: pre-wrap; }
+  .report-sources h2 {
+    margin: 0 0 6px;
+    font-size: var(--text-base, 14px);
+    font-weight: 600;
+  }
+  .issue { padding: 12px 0; border-bottom: 1px solid var(--el-border-color); }
+  .issue-head {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    width: 100%;
+    padding: 8px;
+    margin: 0 0 8px -8px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+  .issue-head:hover { background: var(--el-fill-color-light); }
+  .issue-head:focus-visible { outline: 2px solid var(--el-color-primary); }
+  .issue.selected .issue-head { background: var(--el-color-primary-light-9); }
+  .issue-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    padding: 0 8px;
+    border-radius: 4px;
+    background: var(--el-fill-color);
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+    line-height: 20px;
+  }
+  .tag.pending { background: var(--el-color-warning-light-9); color: var(--el-color-warning); }
+  .tag.confirmed { background: var(--el-color-success-light-9); color: var(--el-color-success); }
+  .issue-title {
+    font-size: var(--text-base, 14px);
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+  }
+  .issue-fields {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 6px 16px;
+    margin: 0;
+  }
+  .issue-fields dt { color: var(--el-text-color-secondary); }
+  .issue-fields dd { margin: 0; white-space: pre-wrap; }
+  .source-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .chip {
+    max-width: 100%;
+    padding: 2px 10px;
+    border: 1px solid var(--el-border-color);
+    border-radius: 6px;
+    background: var(--el-bg-color);
+    color: var(--el-text-color-regular);
+    font: inherit;
+    font-size: 12px;
+    line-height: 20px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .chip:hover {
+    border-color: var(--el-color-primary-light-5);
+    color: var(--brand-link, var(--el-color-primary));
+  }
+  .issue-reader { margin-top: 10px; }
+  @media (max-width: 560px) {
+    .issue-fields { grid-template-columns: 1fr; gap: 2px; }
+    .issue-fields dd { margin-bottom: 8px; }
+    .report-summary dl { grid-template-columns: 1fr; gap: 2px; }
+    .report-summary dd { margin-bottom: 8px; }
+  }
+</style>
+<div id="app">
+  <div class="report">
+    <div v-if="!record" class="report-state">{{ t("panel.noRecord") }}</div>
+    <template v-else>
+      <section class="report-summary">
+        <p class="report-hint">{{ t("panel.reportHint") }}</p>
+        <p v-if="rec.status === 'loading'" class="report-muted">{{ t("panel.loading") }}</p>
+        <p v-else-if="rec.status === 'forbidden'" class="report-muted">{{ t("panel.forbidden") }}</p>
+        <p v-else-if="rec.status === 'error'" class="report-muted">{{ t("panel.readError", { message: rec.message }) }}</p>
+        <dl v-else-if="rec.status === 'ready'">
+          <template v-for="(value, key) in recFields" :key="key">
+            <dt>{{ recValue.fieldLabels?.[key] ?? key }}</dt><dd>{{ value }}</dd>
+          </template>
+        </dl>
+      </section>
+
+      <section class="report-issues">
+        <p v-if="issueRows.length === 0 && rec.status === 'ready'" class="report-muted">{{ t("panel.noIssues") }}</p>
+        <article
+          v-for="row in issueRows"
+          :key="row.primaryKey"
+          class="issue"
+          :class="{ selected: issue?.primaryKey === row.primaryKey }"
+        >
+          <button type="button" class="issue-head" :aria-pressed="issue?.primaryKey === row.primaryKey" @click="toggleIssue(row)">
+            <span class="issue-tags">
+              <span v-if="row.fields?.category" class="tag">{{ tagText("category", row.fields.category) }}</span>
+              <span v-if="row.fields?.status" class="tag" :class="statusClass(row.fields.status)">{{ tagText("status", row.fields.status) }}</span>
+            </span>
+            <span class="issue-title">{{ row.label }}</span>
+          </button>
+          <dl class="issue-fields">
+            <dt>{{ t("panel.problem") }}</dt><dd>{{ row.fields?.problem }}</dd>
+            <template v-if="row.fields?.before"><dt>{{ t("panel.before") }}</dt><dd>{{ row.fields.before }}</dd></template>
+            <dt>{{ t("panel.after") }}</dt><dd>{{ row.fields?.after }}</dd>
+            <dt>{{ t("panel.basis") }}</dt><dd>{{ row.fields?.basis }}</dd>
+          </dl>
+          <div v-if="anchored === row.primaryKey" class="issue-reader">
+            <projection slot="issueReader"></projection>
+          </div>
+          <div v-else-if="sourceIdList(row).length" class="source-chips">
+            <button
+              v-for="sid in sourceIdList(row)"
+              :key="sid"
+              type="button"
+              class="chip"
+              @click="openIssueSource(row, sid)"
+            >{{ sourceTitle(sid) }}</button>
+          </div>
+        </article>
+      </section>
+
+      <section class="report-sources">
+        <h2>{{ t("panel.sources") }}</h2>
+        <p v-if="sourceRows.length === 0 && rec.status === 'ready'" class="report-muted">{{ t("panel.noSources") }}</p>
+        <projection slot="allReader"></projection>
+      </section>
+    </template>
+  </div>
+</div>

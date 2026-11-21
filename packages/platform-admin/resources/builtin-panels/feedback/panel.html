@@ -1,0 +1,37 @@
+<style>
+  .feedback { display: flex; flex-direction: column; gap: 1rem; min-height: 0; }
+  .feedback-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
+  .feedback-filters { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
+  .feedback-actions { margin-inline-start: auto; display: flex; align-items: center; gap: .5rem; }
+  .feedback-error { margin: 0; color: var(--el-color-danger, #f56c6c); font-size: .85rem; }
+  .feedback-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem); gap: 1rem; align-items: start; }
+  .feedback-detail { min-width: 0; }
+  .feedback-hint { margin: 0; color: var(--el-text-color-secondary, #909399); font-size: .85rem; }
+  @media (max-width: 56rem) { .feedback-body { grid-template-columns: minmax(0, 1fr); } }
+</style>
+<div id="app">
+  <section class="feedback">
+    <div class="feedback-toolbar">
+      <div class="feedback-filters">
+        <projection slot="source"></projection>
+        <projection slot="rating"></projection>
+      </div>
+      <div class="feedback-actions">
+        <button type="button" @click="refresh">{{ t("panel.refresh") }}</button>
+        <button type="button" :disabled="exporting" @click="runExport">
+          {{ exporting ? t("panel.exporting") : t("panel.export") }}
+        </button>
+      </div>
+    </div>
+    <p v-if="exportError" class="feedback-error" role="alert">
+      {{ t("panel.exportFailed") }}: {{ exportError }}
+    </p>
+    <div class="feedback-body">
+      <projection slot="list"></projection>
+      <div class="feedback-detail">
+        <projection v-if="selected" slot="detail"></projection>
+        <p v-else class="feedback-hint">{{ t("panel.selectHint") }}</p>
+      </div>
+    </div>
+  </section>
+</div>

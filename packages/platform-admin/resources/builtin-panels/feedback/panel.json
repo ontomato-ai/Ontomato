@@ -1,0 +1,181 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:FeedbackRecord"
+        },
+        "deepLink": true
+      },
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "sourceType": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "default": "all",
+        "deepLink": true
+      },
+      "rating": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "default": "all",
+        "deepLink": true
+      }
+    },
+    "members": {
+      "source": {
+        "component": "SegmentedControl",
+        "type": "platform:FeedbackRecord",
+        "data": {
+          "counts": {
+            "read": "counts",
+            "params": {
+              "by": {
+                "literal": "sourceType"
+              }
+            }
+          }
+        },
+        "state": {
+          "value": "sourceType",
+          "search": "search",
+          "rating": "rating"
+        },
+        "config": {
+          "ariaLabelKey": "panel.filterSource",
+          "defaultValue": "all"
+        },
+        "name": "Feedback source filter",
+        "description": "Filter feedback records by source type",
+        "id": "builtin-product-39e50e61-fbee-4176-b517-cd8eda49262e"
+      },
+      "rating": {
+        "component": "SegmentedControl",
+        "type": "platform:FeedbackRecord",
+        "data": {
+          "counts": {
+            "read": "counts",
+            "params": {
+              "by": {
+                "literal": "rating"
+              }
+            }
+          }
+        },
+        "state": {
+          "value": "rating",
+          "search": "search",
+          "sourceType": "sourceType"
+        },
+        "config": {
+          "ariaLabelKey": "panel.filterRating",
+          "defaultValue": "all"
+        },
+        "name": "Feedback rating filter",
+        "description": "Filter feedback records by rating",
+        "id": "builtin-product-59c4c4c3-fb91-4f95-b7ff-f3cdd145c1ef"
+      },
+      "list": {
+        "component": "ObjectList",
+        "type": "platform:FeedbackRecord",
+        "data": {
+          "rows": "query"
+        },
+        "state": {
+          "selected": "selected",
+          "search": "search",
+          "sourceType": "sourceType",
+          "rating": "rating"
+        },
+        "config": {
+          "pageSize": 20,
+          "columns": [
+            {
+              "key": "createdAt"
+            },
+            {
+              "key": "sourceType"
+            },
+            {
+              "key": "rating",
+              "kind": "tag"
+            },
+            {
+              "key": "userId"
+            },
+            {
+              "key": "turnKey"
+            },
+            {
+              "key": "userInput"
+            },
+            {
+              "key": "assistantOutput"
+            },
+            {
+              "key": "feedbackText"
+            }
+          ]
+        },
+        "name": "Feedback records",
+        "description": "Server-paged list of user feedback records with keyword search",
+        "id": "builtin-product-7e7cfb2c-21fd-4811-a538-086ab691c190"
+      },
+      "detail": {
+        "component": "ObjectSummary",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "name": "Feedback detail",
+        "description": "Full content of the selected feedback record",
+        "id": "builtin-product-0696fd21-f950-4fe2-bb40-394a1e986755"
+      },
+      "exportCsv": {
+        "component": "PanelData",
+        "type": "platform:FeedbackRecord",
+        "operation": "feedback.export",
+        "name": "Export feedback CSV",
+        "description": "Export every feedback record matching the current filters as a CSV file",
+        "id": "builtin-product-3af8a57a-c5f5-4dee-b787-ebe81f95bbc3"
+      }
+    },
+    "events": {}
+  },
+  "content": {
+    "messages": {
+      "zh-CN": {
+        "panel.name": "用户反馈",
+        "panel.filterSource": "来源",
+        "panel.filterRating": "评价",
+        "panel.refresh": "刷新",
+        "panel.export": "导出 CSV",
+        "panel.exporting": "正在导出…",
+        "panel.exportDone": "反馈记录已导出",
+        "panel.exportFailed": "导出失败",
+        "panel.selectHint": "在列表中选择一条反馈查看完整内容"
+      },
+      "en": {
+        "panel.name": "User feedback",
+        "panel.filterSource": "Source",
+        "panel.filterRating": "Rating",
+        "panel.refresh": "Refresh",
+        "panel.export": "Export CSV",
+        "panel.exporting": "Exporting…",
+        "panel.exportDone": "Feedback records exported",
+        "panel.exportFailed": "Export failed",
+        "panel.selectHint": "Select a feedback record in the list to read it"
+      }
+    }
+  }
+}

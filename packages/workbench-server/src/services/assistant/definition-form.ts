@@ -2,7 +2,7 @@ import { z } from "zod";
 import { assistantAgentInputSchema, assistantAgentPanelValuesSchema as inputSchema, type AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
 import type { PanelFormDescription, PanelFormField, PanelFormRequest } from "@ontomato/contracts/panel-projection";
 import type { FormFieldError } from "@ontomato/contracts/form-fields";
-import { AGENT_DEFINITION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SKILL, USER } from "@ontomato/contracts/panel-client-requests";
+import { AGENT_DEFINITION, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SKILL, USER } from "@ontomato/contracts/panel-client-requests";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
@@ -33,7 +33,7 @@ const fields = [
   { key: "skills", path: "/skills", schema: inputSchema.shape.skills, control: reference(SKILL, true) },
   { key: "classNames", path: "/classNames", schema: inputSchema.shape.classNames,
     control: { kind: "reference", objectType: OBJECT_TYPE, multiple: true, relatedObjectTypes: [RELATIONSHIP] } },
-  { key: "enabledMcpServiceIds", path: "/enabledMcpServiceIds", schema: inputSchema.shape.enabledMcpServiceIds, control: { kind: "hidden" } },
+  { key: "enabledMcpServiceIds", path: "/enabledMcpServiceIds", schema: inputSchema.shape.enabledMcpServiceIds, control: reference(MCP_SERVICE_OPTION, true) },
   { key: "executionUserId", path: "/executionUserId", schema: inputSchema.shape.executionUserId, control: reference(USER) },
 ] satisfies { key: keyof typeof initialValues; path: string; schema: z.ZodTypeAny; control: Control }[];
 
@@ -73,10 +73,12 @@ export async function describeAgentDefinitionForm(
   let errors: FormFieldError[] = [];
   if (checkDraft) {
     try {
-      const input = target.kind === "draft"
-        ? parseAgentDefinitionForm(submittedValues)
-        : parseAgentDefinitionUpdateForm(submittedValues);
-      const checked = await checkedDefinition(input, owner, credentials, current.executionUserId, current.skills,
+      // Preserve skill selections the draft did not submit. The reader sees only their visible projection below.
+      const { skills, ...stored } = current;
+      const input = definition
+        ? parseAgentDefinitionUpdateForm({ ...stored, ...submittedValues })
+        : parseAgentDefinitionForm(submittedValues);
+      const checked = await checkedDefinition(input, owner, credentials, current.executionUserId, skills,
         skillView && { credentials, view: skillView });
       values = { ...input, ...checked };
       if (definition && input.skills === undefined) {

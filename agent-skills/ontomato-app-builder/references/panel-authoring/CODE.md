@@ -15,7 +15,8 @@ Use `recipes.md` for tasks the assistant needs to know how to do.
 
 Use the required `panel.mjs` to mount the Vue page as in the [agent directory module](../../examples/vue-agent-directory/panel.mjs).
 The platform runs panels directly. Read [runtime imports and setup](RUNTIME.md#imports-and-application-icons)
-and the current SDK guide with `node "$SKILL/ontomato.mjs" sdk read docs/index.md`. The repository's
+and the current SDK guide with `node "$SKILL/ontomato.mjs" sdk read docs/index.md`. For component behavior,
+configuration and ports, use `sdk read docs/components.md`. The repository's
 `packages/apps-sdk/src/panel/mount.ts` implements the legacy iframe runtime.
 
 Use the platform’s interface components directly in the template: `<markdown-view>`, `<code-editor readonly>`
@@ -39,6 +40,7 @@ Run `node "$SKILL/ontomato.mjs" panel uses <destination-app-id>` to get the dest
 Use its path with the encoded state on `usePanelContext().navigate`, captured during setup. The
 [generated capability-map address example](RUNTIME.md#state-in-an-address) opens the type view at a selected class.
 Give `URLSearchParams` raw JSON once. For a browser link in the workbench shell, put the same route after `#`.
+See [open events and navigation](RUNTIME.md#open-events-and-navigation) when wiring a button to an entry.
 
 ## Read declared data
 
@@ -95,7 +97,7 @@ A populated object input edits that record. An empty input opens creation when t
 projection has the same type's `createForm` read. The successful create selects the returned object.
 
 For child creation, use `ObjectForm.config.fixedFields` as shown in the current SDK guide
-(`sdk read docs/index.md`). The owner validates these read-only field values at each save.
+(`sdk read docs/components.md`). The owner validates these read-only field values at each save.
 
 Keep the form mounted with `v-show` so it can receive drafts while the detail is open. The example watches
 `instance.draft` to open the editor once its form has accepted a draft. Switch back to view mode on `saved` or
@@ -130,7 +132,8 @@ const query = new URLSearchParams({
 const draftRoute = `#${usePath}?${query}`;
 ```
 
-Pass the raw artifact path once to `URLSearchParams`. Opening the link fills the owner form for the reader to save.
+Use the session and run that wrote the draft, and pass the raw artifact path once to `URLSearchParams`.
+See [draft links and instance state](RUNTIME.md#draft-links-and-instance-state) for when a form takes the draft.
 
 For a chart from a dashboard card, declare `component: "MetricChart"` and `sourceCard: {dashboardId, cardId}`.
 Connect the chart inputs in `state`. If the owner has not registered that card, `panel check` lists its inputs as
@@ -167,6 +170,33 @@ panel and projection dependencies from registered uses.
 Use the [agent directory example](../../examples/vue-agent-directory/panel.html) for the complete layout and owner
 form wiring. Give your own panel and use their own IDs. The example opens at `/applications/app-example-vue-agent-directory/manage`.
 Exercise the page and run the [assistant check](SKILL.md#check-the-assistant-from-the-page).
+
+## When a panel looks wrong
+
+Open the same registered entry without draft or state query parameters first. In the browser, keep the
+Network log while reloading and read the first relevant failure and its response. Use the console's first
+error for a Vue or module failure. Keep the browser's storage and cookies intact.
+
+- **Blank panel or `panel-host-error`.** Start with the alert, console, the panel's
+  `GET /api/product-panels/<id>` (or `/snapshot` on a recheck), and the SDK asset requests. Use
+  `panel uses <app-id>` to verify the path and bound panel, `panel get <panel-id>` for its manifest and revision,
+  and `panel projection <id>` for a member's registered definition. Compare with the workspace and run
+  `panel check <directory>`. If the definition loads and the module fails, check the import rules, Vue template
+  and member slots.
+- **List is empty or waiting.** Find that member's `POST /api/product-panels/read` by `memberPath` and `dataName`.
+  Compare `inputs` and `runtimeParams` with `panel type <type-id> --read <name>`. Missing required inputs can
+  leave it awaiting with no request. If the owner returns no rows, check the selection, filters and reader's
+  data access. If it returns rows, check the slot and the component's accepted result shape.
+- **Draft does not fill or shows `Required`.** Inspect `GET /api/assistant/sessions/<session-id>/runs/<run-id>/page-draft?path=…`,
+  then the form's `POST /api/product-panels/read`. Match the producing run and artifact, the entry's
+  `pageKey`, and the target owner's `save.draftOperation`. A successful draft read confirms that the artifact
+  loaded. Follow the form read's response to see whether the owner accepted the proposal. Keep the form
+  mounted while waiting for `instance.draft`.
+
+A field or path named by `panel check` points to the material to fix. For a rejected request, use its response
+to distinguish missing records, denied access and invalid values. If the registered material matches the
+current SDK and owner contract but a conforming request still fails, report the first failing response or console
+error, entry and member IDs, panel revision and the release from `sdk current` to the platform or owner team.
 
 ## What the assistant receives
 

@@ -660,7 +660,9 @@ const ontologyEn = {
   workflowStepInvocation: "Invocation",
   workflowStepActorPolicy: "Actor policy",
   invocation_manual: "Manual",
-  invocation_automatic: "Automatic (reserved)",
+  invocation_automatic: "Automatic",
+  invocation_fixed: "Fixed logic",
+  workflowCaseScopedShort: "case-scoped",
   actorPolicy_none: "None (role pool)",
   actorPolicy_rule: "Rule (deterministic)",
   actorPolicy_agent: "Agent (decision)",
@@ -726,10 +728,14 @@ const ontologyEn = {
   workflowColumnGrants: "Authority",
   workflowGrantsSummary: "{capabilities} capabilities to {roles} roles",
   workflowNoGrants: "No authority",
+  workflowCaseScopedGrantsSummary: "{steps} steps use case-scoped authority",
   workflowGrantsTitle: "Authority in force",
   workflowGrantsDesc:
     "What this process's active revision actually lets roles run. The executor asks only whether a subject may run an action, so this is the only place that records what an activation approved.",
   workflowGrantsInForce: "In force (revision v{version})",
+  workflowGrantsCaseScoped: "Case-scoped steps",
+  workflowGrantsCaseScopedHint:
+    "These steps are authorized per Run for the current assignee. Activation intentionally writes no role-level grant.",
   workflowGrantsSuperseded: "Stored but no longer granted",
   workflowGrantsSupersededHint:
     "Left by an earlier revision. The executor accepts only the revision in force, so these rows convey no authority.",
