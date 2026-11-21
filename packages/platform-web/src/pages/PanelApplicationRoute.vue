@@ -2,7 +2,7 @@
 import { computed, inject, markRaw, ref, toRaw, watch, type Ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { PanelHost, panelUnavailable, useUnsavedChanges, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
+import { PanelHost, panelUnavailable, usePageHeading, useUnsavedChanges, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
 import { panelAddress, panelAddressState, panelUsePath } from "@ontomato/contracts/panel-host";
 import { applicationRootPath } from "@ontomato/contracts/platform-identity";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
@@ -269,6 +269,24 @@ watch(use, (next, previous) => {
 // controller asks instead, from the page's dirty report.
 if (!props.navigate)
   useUnsavedChanges({ dirty: () => shownPage.value?.dirty ?? false, paths: () => use.value ? [panelUsePath(use.value.path)] : [] });
+
+/**
+ * The page's title and way back at its own address (big main's ruling, 2026-11-21): the panel draws neither. The title is
+ * what a message names the page by — the entry's menu name, else its panel's own name — so the two never differ; a page
+ * the application's menu does not reach (an entry with no menu name) also gets the way back to where the reader came
+ * from, or to the application's root when the page was opened directly. Beside a conversation, the conversation draws both.
+ */
+if (!props.navigate) {
+  usePageHeading(() => {
+    const title = shownPage.value?.context?.label || pageName.value;
+    if (!title) return null;
+    return use.value?.names ? { title } : { title, back: goBack };
+  });
+}
+function goBack() {
+  if (typeof router.options.history.state.back === "string") router.back();
+  else void router.push(applicationRootPath(props.applicationId));
+}
 
 /** When a kept page shown again may ask for its objects again: the first of the two points its switch is measured at. */
 function markReopened(page: KeptPage) {

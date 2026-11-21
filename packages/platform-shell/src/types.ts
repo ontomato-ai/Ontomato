@@ -81,6 +81,8 @@ export interface PlatformBrand {
 }
 
 export interface PlatformShellLabels {
+  /** The way back on a page the reader reached from elsewhere. */
+  back: string;
   /** Name of the control that expands the rail. */
   expandRail: string;
   /** Name of the control that collapses the rail. */
