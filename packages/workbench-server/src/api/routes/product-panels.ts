@@ -34,10 +34,9 @@ import { context, wrap } from "../utils/agent-host";
 import { buildAttachmentContentDisposition } from "../utils/http";
 import { platformService } from "../middleware/platform-service";
 import {
-  PageDefaultAgentUnavailableError, readCurrentPanelRecord, readCurrentProjectionRecord, saveCurrentPanel, saveCurrentProjection,
+  readCurrentPanelRecord, readCurrentProjectionRecord, saveCurrentPanel, saveCurrentProjection,
   validateApplicationPanelReferences,
 } from "../../services/product-panels/current";
-import { getRequestId } from "../../logging/log-context";
 import { HttpError } from "../../utils/errors";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { readProductPanelData } from "../../services/product-panels/data-reads";
@@ -207,16 +206,7 @@ export const productPanelsInternalRouter = Router();
 productPanelsInternalRouter.use(platformService);
 productPanelsInternalRouter.post("/validate-references", wrap(async (req, res) => {
   const request = parseRegistration(applicationPanelReferencesRequestSchema, req.body, "Application registration");
-  try {
-    await validateApplicationPanelReferences(request);
-  } catch (error) {
-    if (!(error instanceof PageDefaultAgentUnavailableError)) throw error;
-    res.status(error.status).json({
-      error: { code: error.code, message: error.message, useId: error.useId },
-      correlationId: getRequestId() ?? "assistant",
-    });
-    return;
-  }
+  await validateApplicationPanelReferences(request);
   res.sendStatus(204);
 }));
 
