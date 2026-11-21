@@ -447,13 +447,13 @@ it.each([
   expect(mocks.notify).not.toHaveBeenCalled();
 });
 
-it("inspects the actual agent delete using the initiator's definition read", async () => {
+it("uses the agent deletion label and inspects its target as the initiator", async () => {
   const objectType = "platform:AgentDefinition", primaryKey = uuid(9);
   const panel = await mocks.panel();
   panel.manifest.state.task.type.objectType = objectType;
   panel.manifest.members.run.inputs = { agent: { state: "task" } };
   mocks.projection.mockResolvedValue({
-    id: "run", componentId: "run", name: "Delete agent", binding: { kind: "PlatformOperation", id: "agents.delete" },
+    id: "run", componentId: "run", name: "remove", binding: { kind: "PlatformOperation", id: "agents.delete" },
     inputs: { agent: { kind: "object", objectType } },
   });
   const read = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
@@ -475,6 +475,10 @@ it("inspects the actual agent delete using the initiator's definition read", asy
   });
   expect(read).toHaveBeenCalledTimes(1);
   expect(intents.size).toBe(0);
+  const preparation = await prepareHumanPanelOperation(owner, credentials, input);
+  expect(preparation).toMatchObject({ label: "Delete agent", confirmation: { kind: "impact" } });
+  expect(await projectPanelOperationIntent(owner, preparation.intentId, { applicationId: "A", useId: "tasks" }, credentials))
+    .toMatchObject({ label: "Delete agent" });
 });
 
 function installBatchOwner() {
