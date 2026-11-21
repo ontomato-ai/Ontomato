@@ -7,6 +7,8 @@ import { inject, onBeforeUnmount, provide, shallowRef, watch, type InjectionKey,
  */
 export interface PlatformPageHeading {
   title: string;
+  /** The line under the title, as a native page's header has it: the entry's description in the reader's language. */
+  description?: string;
   /** Present for a page the application's menu does not reach. */
   back?: () => void;
 }

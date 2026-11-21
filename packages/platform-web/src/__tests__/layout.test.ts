@@ -177,7 +177,7 @@ describe("the platform layout", () => {
     expect(mounts).toBe(1);
   });
 
-  it("heads a page that names itself with its own title, and its way back when it has one", async () => {
+  it("heads a page that names itself with its own title, its description and its way back when it has them", async () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [{ path: "/", component: { render: () => h(RouterView) }, children: [{ path: "/applications/app-a/report", component: { render: () => h("p") } }] }],
@@ -204,6 +204,11 @@ describe("the platform layout", () => {
     await wrapper.setProps({ shownPage: { title: "Business knowledge", named: true } });
     expect(wrapper.find(".platform-page-header .page-title").text()).toBe("Business knowledge");
     expect(wrapper.find(".platform-page-header .page-back").exists()).toBe(false);
+    expect(wrapper.find(".platform-page-header .page-description").exists()).toBe(false);
+
+    // Its entry's description stands under the title, where a native page's does.
+    await wrapper.setProps({ shownPage: { title: "Business knowledge", named: true, description: "Review and maintain knowledge" } });
+    expect(wrapper.find(".platform-page-header .page-description").text()).toBe("Review and maintain knowledge");
   });
 
   it("marks the current application by the address, keeping it marked on a detail address", async () => {

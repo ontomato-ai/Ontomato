@@ -18,6 +18,23 @@ async function agentHeaders(cfg,headers) {
   const credential=supplied.tk || supplied["X-API-Key"] ? {} : process.env.ONTOMATO_API_KEY ? {"X-API-Key":process.env.ONTOMATO_API_KEY} : process.env.ONTOMATO_TK || cfg.tk ? {tk:process.env.ONTOMATO_TK || cfg.tk} : {};
   return {"Accept-Language":process.env.ONTOMATO_LANGUAGE ?? "en",...credential,...supplied};
 }
+async function readJsonResponse(response) {
+  const result = await response.json();
+  if (!response.ok || result.success === false || result.error) {
+    const message =
+      typeof result.error === "string"
+        ? result.error
+        : (result.error?.message ??
+          result.message ??
+          `HTTP ${response.status}`);
+    const error = new Error(message);
+    error.status = response.status;
+    const code = result.error?.code ?? (typeof result.code === "string" ? result.code : undefined);
+    if (code) error.code = code;
+    throw error;
+  }
+  return result;
+}
 async function json(url, headers, body) {
   const response = await fetch(url, {
     method: body === undefined ? "GET" : "POST",
@@ -30,16 +47,7 @@ async function json(url, headers, body) {
     body: body === undefined ? undefined : JSON.stringify(body),
     redirect: "error",
   });
-  const result = await response.json();
-  if (!response.ok || result.success === false || result.error)
-    throw new Error(
-      typeof result.error === "string"
-        ? result.error
-        : (result.error?.message ??
-          result.message ??
-          `HTTP ${response.status}`),
-    );
-  return result;
+  return readJsonResponse(response);
 }
 function take(args, key) {
   const i = args.indexOf(key);
@@ -334,9 +342,33 @@ async function followAgentTask(ontology,headers,taskId,files) {
     }
   } finally { await reader.cancel(); }
 }
-/** The sole transport for native-channel commands in every standalone skill package. */
+/** Send one AgentChannelCommand through the platform run channel or the standalone ontology endpoint. */
+export async function sendAgentCommand(command, { cfg = {}, headers = {} } = {}) {
+  if (process.env.ONTOMATO_SKILL_SCENARIO === "platform") {
+    const url = process.env.ONTOMATO_AGENT_COMMAND_URL;
+    const callback = process.env.ONTOMATO_AGENT_CALLBACK;
+    if (!url || !callback)
+      throw new Error("Platform agent commands require ONTOMATO_AGENT_COMMAND_URL and ONTOMATO_AGENT_CALLBACK");
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "Accept-Language": process.env.ONTOMATO_LANGUAGE ?? "en",
+        "X-Ontomato-Callback-Credential": callback,
+        "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID,
+        ...(process.env.ONTOMATO_CORRELATION_ID ? { "X-Correlation-Id": process.env.ONTOMATO_CORRELATION_ID } : {}),
+      },
+      body: JSON.stringify(command),
+      redirect: "error",
+    });
+    return readJsonResponse(response);
+  }
+  const ontology = (cfg.ontologyUrl || `${cfg.envUrl}/api/data-query`).replace(/\/$/u, "");
+  return json(`${ontology}/platform/agent-channel/commands`, await agentHeaders(cfg, headers), command);
+}
+/** CLI transport for agent-channel commands in platform worker runs and standalone skill packages. */
 export async function agentChannelCommand(cfg,argv,headers={}) {
-  if(process.env.ONTOMATO_SKILL_SCENARIO === "platform") throw new Error("平台内请用原生 agent 工具（agent），这些命令只用于独立分发包");
+  const platform=process.env.ONTOMATO_SKILL_SCENARIO==="platform";
   const [op,...args]=argv;
   let command;
   const follow=flag(args,"--follow"),files=flag(args,"--files");
@@ -357,9 +389,14 @@ export async function agentChannelCommand(cfg,argv,headers={}) {
   if(op!=="list" && args.length) throw new Error(`Unexpected agent arguments: ${args.join(" ")}`);
   if((op==="read" || op==="cancel") && !command.taskId) throw new Error("A task ID is required");
   if((follow || files) && op!=="read") throw new Error("--follow and --files belong to agent read");
+  if(platform && follow) throw new Error("平台内不支持 read --follow：交付或提问会通知本会话，等待时结束本轮");
+  if(platform) {
+    console.log(JSON.stringify(await sendAgentCommand(command),null,2));
+    return;
+  }
   const ontology=(cfg.ontologyUrl || `${cfg.envUrl}/api/data-query`).replace(/\/$/u,"");
-  headers=await agentHeaders(cfg,headers);
-  if(follow) return followAgentTask(ontology,headers,command.taskId,files);
-  const result=await json(`${ontology}/platform/agent-channel/commands`,headers,command);
-  console.log(JSON.stringify(op==="read" && files ? await downloadAgentFiles(ontology,headers,result) : result,null,2));
+  const resolved=await agentHeaders(cfg,headers);
+  if(follow) return followAgentTask(ontology,resolved,command.taskId,files);
+  const result=await sendAgentCommand(command,{cfg,headers:resolved});
+  console.log(JSON.stringify(op==="read" && files ? await downloadAgentFiles(ontology,resolved,result) : result,null,2));
 }

@@ -13,7 +13,7 @@
 <style>
   [v-cloak] { display: none; }
   .fn { display: flex; flex-direction: column; gap: var(--spacing-md); }
-  .fn-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--spacing-sm); }
+  .fn-toolbar { display: flex; justify-content: flex-end; }
   .fn-hint { margin: 0; color: var(--el-text-color-secondary); font-size: var(--text-sm); line-height: 1.6; }
   .fn-detail { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; }
   .fn-detail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--spacing-sm); }
@@ -21,7 +21,6 @@
 <div id="app" v-cloak>
   <section class="fn">
     <div class="fn-toolbar">
-      <p class="fn-hint">{{ t("hint") }}</p>
       <el-button type="primary" @click="newFunction">{{ t("newFunction") }}</el-button>
     </div>
 

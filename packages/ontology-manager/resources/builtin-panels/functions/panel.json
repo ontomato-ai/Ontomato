@@ -64,12 +64,10 @@
   "content": {
     "messages": {
       "en": {
-        "hint": "Read functions keep a query package and column labels; write functions keep parameters and Python code. A name is edited once, here.",
         "newFunction": "New function",
         "choose": "Choose a function on the left to read or change it, or create one."
       },
       "zh-CN": {
-        "hint": "读函数维护查询逻辑包和列标签，写函数维护参数和 Python 代码；名称只在这里编辑一次。",
         "newFunction": "新建函数",
         "choose": "选择左侧的一个函数查看或修改，也可以新建一个。"
       }

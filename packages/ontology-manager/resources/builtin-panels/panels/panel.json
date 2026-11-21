@@ -149,8 +149,6 @@
   "content": {
     "messages": {
       "en": {
-        "title": "Panels",
-        "description": "The panels this domain grants you: name, owner, sharing scope and template use; each panel's source, style, members, usage and grants.",
         "list.search": "Search name or description",
         "list.scope": "Sharing scope",
         "list.sort": "Order",
@@ -282,8 +280,6 @@
         "visibility.platform": "Built in"
       },
       "zh-CN": {
-        "title": "面板",
-        "description": "本域授予你使用的面板：名称、所属人、共享范围与模板用途，以及每个面板的源码、样式、成员、引用与授权。",
         "list.search": "搜索名称或说明",
         "list.scope": "共享范围",
         "list.sort": "排序",

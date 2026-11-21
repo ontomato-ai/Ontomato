@@ -5,27 +5,11 @@
     gap: var(--spacing-md);
     min-width: 0;
   }
-  .ontology-graph-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--spacing-md);
-  }
-  .ontology-graph-head h1 {
-    margin: 0;
-    color: var(--el-text-color-primary);
-    font-size: var(--text-title);
-    line-height: var(--leading-reading);
-  }
-  .ontology-graph-head p {
-    margin: calc(var(--spacing-xs) / 2) 0 0;
-    color: var(--el-text-color-secondary);
-    font-size: var(--text-sm);
-  }
   .ontology-graph-actions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
+    justify-content: flex-end;
     gap: var(--spacing-lg);
     color: var(--el-text-color-secondary);
     font-size: var(--text-sm);
@@ -381,18 +365,12 @@
 </style>
 <div id="app">
   <section class="ontology-graph">
-    <header class="ontology-graph-head">
-      <div>
-        <h1>本体图谱</h1>
-        <p>用属主的对象类型和关系画图，浏览、选择并进入建模。</p>
-      </div>
-      <div class="ontology-graph-actions">
-        <span><strong>{{ objects.length }}</strong> 对象类型</span>
-        <span><strong>{{ attributes.length }}</strong> 属性</span>
-        <span><strong>{{ relations.length }}</strong> 关系类型</span>
-        <el-button :loading="loading" @click="refresh">刷新</el-button>
-      </div>
-    </header>
+    <div class="ontology-graph-actions">
+      <span><strong>{{ objects.length }}</strong> 对象类型</span>
+      <span><strong>{{ attributes.length }}</strong> 属性</span>
+      <span><strong>{{ relations.length }}</strong> 关系类型</span>
+      <el-button :loading="loading" @click="refresh">刷新</el-button>
+    </div>
 
     <el-alert
       v-for="message in readErrors"

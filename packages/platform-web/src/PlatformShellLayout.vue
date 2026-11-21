@@ -92,7 +92,7 @@ const shownPage = computed<PlatformShownPage | null>(() => {
   if (heading.value) {
     return {
       title: heading.value.title,
-      description: page?.descriptionKey ? t(page.descriptionKey) : null,
+      description: heading.value.description ?? (page?.descriptionKey ? t(page.descriptionKey) : null),
       named: true,
       back: heading.value.back,
     };

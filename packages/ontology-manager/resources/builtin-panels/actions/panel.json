@@ -109,8 +109,6 @@
   "content": {
     "messages": {
       "en": {
-        "title": "Actions",
-        "subtitle": "Every action of this domain: its definition, the definition its code derives, the explanation of that code, status and deletion.",
         "keyword": "Filter",
         "keywordPlaceholder": "Filter by name or description",
         "count": "{n} actions",
@@ -173,8 +171,6 @@
         "newActionPrefill": "Help me create an action: "
       },
       "zh-CN": {
-        "title": "动作",
-        "subtitle": "本域的全部动作：定义、由代码推导的定义、代码解释，以及状态和删除。",
         "keyword": "筛选",
         "keywordPlaceholder": "按名称或描述筛选",
         "count": "共 {n} 个动作",

@@ -102,6 +102,7 @@ export class SessionSandbox {
     correlationId: string,
     request: RuntimeStartRunRequest,
     skills: InstalledSkill[],
+    channelEnv?: { commandUrl: string; callbackSecret: string },
   ): Promise<AgentTool[]> {
     const libraries = skills.map((s) =>
       path.join(this.workspace, "skills", s.skill.name, "python"),
@@ -119,6 +120,7 @@ export class SessionSandbox {
       OMP_NUM_THREADS: "1",
       ...request.environment.values,
       ...request.environment.secrets,
+      ONTOMATO_SKILL_SCENARIO: "platform",
       ONTOMATO_SESSION_ID: this.sessionId,
       ONTOMATO_RUN_ID: runId,
       ONTOMATO_CORRELATION_ID: correlationId,
@@ -126,6 +128,12 @@ export class SessionSandbox {
       ONTOMATO_WORKSPACE: this.workspace,
       ONTOMATO_SOURCE_DIR: path.join(this.workspace, "work"),
       ONTOMATO_OUTPUT_DIR: path.join(this.workspace, "outputs"),
+      ...(channelEnv
+        ? {
+            ONTOMATO_AGENT_COMMAND_URL: channelEnv.commandUrl,
+            ONTOMATO_AGENT_CALLBACK: channelEnv.callbackSecret,
+          }
+        : {}),
     };
     const child = (this.child = spawnWorker(
       this.policy,

@@ -39,7 +39,7 @@ final class ApplicationCatalogueForm {
         "path", STRING, "renderer", JSONObject.of("const", "panels")), List.of("path", "renderer"));
     private static final JSONObject USE_SCHEMA = objectSchema(JSONObject.of(
         "id", STRING, "pageKey", STRING, "panelId", STRING, "path", STRING, "access", ACCESS,
-        "names", STRING_MAP, "groupKey", STRING, "inputs", INPUTS, "defaultAgent", DEFAULT_AGENT),
+        "names", STRING_MAP, "descriptions", STRING_MAP, "groupKey", STRING, "inputs", INPUTS, "defaultAgent", DEFAULT_AGENT),
         List.of("id", "pageKey", "panelId", "path", "access"));
 
     private ApplicationCatalogueForm() {}
@@ -101,6 +101,7 @@ final class ApplicationCatalogueForm {
             field("/panelId", "Panel ID", PanelFormFields.text(false), STRING, true),
             field("/inputs", "Inputs", PanelFormFields.code("json"), INPUTS, false),
             field("/names", "Menu names by language", PanelFormFields.code("json"), STRING_MAP, false),
+            field("/descriptions", "Entry descriptions by language", PanelFormFields.code("json"), STRING_MAP, false),
             field("/groupKey", "Menu group", PanelFormFields.text(false), STRING, false),
             field("/access", "Entry access", PanelFormFields.code("json"), ACCESS, true),
             field("/defaultAgent", "Default agent", PanelFormFields.code("json"), DEFAULT_AGENT, false));
@@ -206,6 +207,17 @@ final class ApplicationCatalogueForm {
                 errors.requiredString(use, key, path + "/" + key);
             var pageKey = errors.requiredString(use, "pageKey", path + "/pageKey");
             if (pageKey != null) validatePageKey(pageKey, path + "/pageKey", conflicts, errors);
+            if (use.containsKey("descriptions")) {
+                var pointer = path + "/descriptions";
+                var descriptions = errors.requiredObject(use, "descriptions", pointer);
+                if (descriptions != null) {
+                    if (!descriptions.containsKey("en")) errors.required(pointer + "/en", "English description is required");
+                    for (var description : descriptions.entrySet()) {
+                        if (!(description.getValue() instanceof String text) || ApplicationPanelUse.blankDescription(text))
+                            errors.invalidObject(pointer + "/" + PanelFormFields.pointer(description.getKey()), "Expected a nonblank description");
+                    }
+                }
+            }
             validatePath(use, path + "/path", root, errors);
             var access = errors.requiredObject(use, "access", path + "/access");
             if (access != null && (access.size() != 1 || !(DOMAIN_MEMBER.equals(access.get("kind"))

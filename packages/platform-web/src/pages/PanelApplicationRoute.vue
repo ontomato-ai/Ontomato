@@ -232,6 +232,8 @@ const requestedState = computed(() => panelAddressState(opened.value));
  * one is named by what its panel reports.
  */
 const pageName = computed(() => use.value?.names?.[locale.value] ?? use.value?.names?.en ?? "");
+/** The line under the page's title, as a native page's header has it: the entry's description in the reader's language. */
+const pageDescription = computed(() => use.value?.descriptions?.[locale.value] ?? use.value?.descriptions?.en);
 
 const shownPage = computed(() => kept.value.find((page) => page.use.id === use.value?.id) ?? null);
 
@@ -285,7 +287,8 @@ if (!props.navigate)
   useUnsavedChanges({ dirty: () => shownPage.value?.dirty ?? false, paths: () => use.value ? [panelUsePath(use.value.path)] : [] });
 
 /**
- * The page's title and way back at its own address (big main's ruling, 2026-11-21): the panel draws neither. The title is
+ * The page's title, description and way back at its own address (big main's rulings, 2026-11-21): the panel draws none
+ * of them, and the description is the entry's own, under the title as on a native page. The title is
  * what a message names the page by — the entry's menu name, else its panel's own name — so the two never differ; a page
  * the application's menu does not reach (an entry with no menu name) also gets the way back to where the reader came
  * from, or to the application's root when the page was opened directly. Beside a conversation, the conversation draws both.
@@ -294,7 +297,8 @@ if (!props.navigate) {
   usePageHeading(() => {
     const title = shownPage.value?.context?.label || pageName.value;
     if (!title) return null;
-    return use.value?.names ? { title } : { title, back: goBack };
+    const description = pageDescription.value;
+    return { title, ...description ? { description } : {}, ...use.value?.names ? {} : { back: goBack } };
   });
 }
 function goBack() {
