@@ -5,7 +5,8 @@ import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
-import { panelEntryGuard } from "../../../../../packages/platform-web/src/panel-entries";
+import { panelEntryGuard, unknownAddressRoute } from "../../../../../packages/platform-web/src/panel-entries";
+import { startPage } from "../../../../../packages/platform-web/src/shell";
 import { catalogFixture } from "../../../../../packages/platform-web/src/__tests__/fixtures";
 import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot, type Sent } from "./panel-frame";
 
@@ -43,8 +44,9 @@ function answer(request: Sent) {
 /** The platform's router as far as entries go: its layout, a page of its own, and the catch-all. */
 async function open(address: string) {
   const router = createRouter({ history: createMemoryHistory(), routes: [
-    { ...platformRoutes.layout, component: RouterView, children: [{ path: "/home", component: { render: () => h("p", { class: "home" }, "Home") } }] },
-    { ...platformRoutes.unknown, redirect: "/home" },
+    // The root lands where the deployment's start page says, as the platform's layout route does.
+    { ...platformRoutes.layout, component: RouterView, redirect: () => startPage(), children: [{ path: "/home", component: { render: () => h("p", { class: "home" }, "Home") } }] },
+    unknownAddressRoute,
   ] });
   router.beforeEach(panelEntryGuard(router));
   await router.push(address);
@@ -54,6 +56,7 @@ async function open(address: string) {
 afterEach(() => {
   leaveFrame();
   useApplicationCatalog().applications.value = [];
+  window.__APP_CONFIG__ = {};
 });
 
 it("opens a built-in application's entry at its original address, through the panel route", async () => {
@@ -78,5 +81,26 @@ it("goes where an address no page serves goes for a reader the entry does not ad
     expect(element.querySelector(".home")).not.toBeNull();
   } finally {
     app.unmount();
+  }
+});
+
+it("lands at a start page a panel has taken over, and home for a reader that entry does not admit, never in a loop", async () => {
+  installPlatform(answer);
+  // A deployment whose start page is an address a panel now serves (an old Manager's default landing).
+  window.__APP_CONFIG__ = { INITIAL_ROUTE: "/ontology/components" };
+  useApplicationCatalog().applications.value = catalogWith([components]);
+  const admitted = await open("/");
+  try {
+    expect(admitted.router.currentRoute.value.path).toBe("/ontology/components");
+  } finally {
+    admitted.app.unmount();
+  }
+
+  useApplicationCatalog().applications.value = catalogWith([]);
+  const refused = await open("/");
+  try {
+    expect(refused.router.currentRoute.value.path).toBe("/home");
+  } finally {
+    refused.app.unmount();
   }
 });

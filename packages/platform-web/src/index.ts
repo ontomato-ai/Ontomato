@@ -4,6 +4,7 @@ export type { PlatformShownPage } from "./PlatformLayout.vue";
 export { appAt, railApp, type PlatformAppDeclaration, type PlatformAppFrame } from "./apps";
 export { appDeclarations, type AppPartition } from "./partition";
 export { startWorkbenchWeb, type WorkbenchWebOptions } from "./start";
+export { unknownAddressRoute } from "./panel-entries";
 export { platformLayoutRoute } from "./layout-route";
 export {
   discardLegacyLaunchCredential,

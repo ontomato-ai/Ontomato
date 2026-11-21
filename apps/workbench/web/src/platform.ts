@@ -18,12 +18,11 @@ import {
   workbenchPages,
 } from "@ontomato/platform-web";
 import { ossBrand } from "@ontomato/design-tokens/oss";
-import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { anonymousAuthHost } from "./auth";
 import { ossLanguage } from "./language";
 import { workbenchContent } from "./workbench-content";
 
-import { normalizeManagerEntry, reloadOnStaleBuild, startPage } from "@ontomato/platform-web";
+import { normalizeManagerEntry, reloadOnStaleBuild, unknownAddressRoute } from "@ontomato/platform-web";
 import { ossServicePages } from "./manager/platform";
 
 /**
@@ -66,8 +65,8 @@ export function startPlatform() {
         ...ossServicePages(app, router),
       ], OssPlatformShell),
       ...legacyAdminRoutes,
-      // An unknown address lands where the root does.
-      { ...platformRoutes.unknown, redirect: () => startPage() },
+      // An address no page serves: the platform's panel entry guard opens the entry declared there, else the landing.
+      unknownAddressRoute,
     ],
   });
 }
