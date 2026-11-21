@@ -14,6 +14,7 @@ import { useDarkMode } from "@ontomato/foundation-ui/theme";
 import { useFormControls } from "./form-controls";
 import FormCodeField from "./FormCodeField.vue";
 import FormLocalizedText from "./FormLocalizedText.vue";
+import { ApplicationIconPicker } from "@ontomato/platform-shell";
 import { ScheduleFrequency, frequencyDraft, frequencyOf, type FrequencyDraft } from "@ontomato/platform-schedules/frequency-control";
 import type { PlatformTaskFrequency } from "@ontomato/contracts/platform-schedules";
 
@@ -28,7 +29,7 @@ import type { PlatformTaskFrequency } from "@ontomato/contracts/platform-schedul
  */
 const props = withDefaults(defineProps<{ field: PanelFormField; path: string; disabled?: boolean }>(), { disabled: false });
 const controls = useFormControls();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 const value = computed(() => valueAt(controls.values.value, props.path));
 const off = computed(() => props.disabled || props.field.readOnly || controls.busy.value);
@@ -162,6 +163,14 @@ function setFrequency(next: FrequencyDraft) {
     ></el-input>
     <form-code-field v-else-if="control.kind === 'code'" :field="field" :path="path" :disabled="off"></form-code-field>
     <form-localized-text v-else-if="control.kind === 'localized-text'" :field="field" :path="path" :disabled="off"></form-localized-text>
+    <application-icon-picker
+      v-else-if="control.kind === 'application-icon'"
+      :model-value="text"
+      :locale="locale"
+      :disabled="off"
+      :heading="false"
+      @update:model-value="set($event)"
+    ></application-icon-picker>
     <schedule-frequency
       v-else-if="control.kind === 'frequency'"
       :model-value="frequency"

@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import {computed,ref} from 'vue';
+import {ElButton} from 'element-plus/es/components/button/index';
+import {ElInput} from 'element-plus/es/components/input/index';
 import {applicationIconKeys,recommendApplicationIcon} from '@ontomato/contracts/application-icons';
 import {appIcon} from './icons';
 const model=defineModel<string>({required:true});
-const props=defineProps<{name:string;locale?:string;disabled?:boolean}>();
+/** `name` lets the picker recommend an icon for the application's name; without it there is nothing to recommend from. */
+/** `heading` false leaves the label to a form that already names the field; the current icon is still shown. */
+const props=withDefaults(defineProps<{name?:string;locale?:string;disabled?:boolean;heading?:boolean}>(),{heading:true});
 const search=ref('');
 const zh=computed(()=>props.locale?.startsWith('zh'));
 const names:Record<string,string>={'app-window':'应用窗口',users:'人员团队',microscope:'科研实验',presentation:'交流演讲','graduation-cap':'教育学生',briefcase:'业务公文','shopping-cart':'采购订单',package:'库存物流','clipboard-list':'项目任务',chart:'统计分析',wallet:'财务预算','heart-pulse':'医疗健康',building:'机构建筑',globe:'全球网络',calendar:'日历',book:'书籍知识',folder:'文件夹',workflow:'工作流',database:'数据库',shield:'安全',home:'个人工作台',agents:'智能体',diagnosis:'诊断',knowledge:'知识',objects:'对象',ontology:'本体',schedule:'定时任务',dashboards:'仪表盘',permissions:'权限',settings:'设置',governance:'数据治理',builder:'应用构建',pages:'表格',gallery:'应用广场','agent-builder':'智能体构建'};
@@ -11,7 +15,7 @@ const options=computed(()=>applicationIconKeys.filter(key=>(key+' '+names[key]).
 </script>
 <template>
  <section class="application-icon-picker">
-  <div class="icon-heading"><span>{{zh?'应用图标':'Application icon'}}</span><el-button text :disabled="disabled" @click="model=recommendApplicationIcon(name)">{{zh?'自动推荐':'Recommend'}}</el-button><component :is="appIcon(model)" :size="20"/></div>
+  <div class="icon-heading"><span>{{heading?(zh?'应用图标':'Application icon'):''}}</span><el-button v-if="name!==undefined" text :disabled="disabled" @click="model=recommendApplicationIcon(name)">{{zh?'自动推荐':'Recommend'}}</el-button><component :is="appIcon(model)" :size="20"/></div>
   <el-input v-model="search" :disabled="disabled" :placeholder="zh?'搜索系统图标（名称或英文关键词）':'Search system icons'" :aria-label="zh?'搜索系统图标':'Search system icons'" clearable/>
   <div class="icon-options" role="group" :aria-label="zh?'系统图标库':'System icon library'"><button v-for="key in options" :key="key" type="button" :disabled="disabled" :title="zh?names[key]:key" :aria-label="zh?names[key]:key" :aria-pressed="model===key" @click="model=key"><component :is="appIcon(key)" :size="20"/></button></div>
  </section>
