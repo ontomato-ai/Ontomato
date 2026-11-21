@@ -98,3 +98,21 @@ it("assigns a theme to a host-mounted element until it is taken away, and gives 
   drop();
   expect(element.style.getPropertyValue("--el-color-primary")).toBe("");
 });
+
+it("themes a pop-up the library added before its trigger named it, once the trigger in the area opens it", async () => {
+  mountArea(ref("light"), ref(theme));
+  await nextTick();
+  // The layer exists first, named by nothing (a date picker renders it before it opens).
+  const layer = document.createElement("div");
+  layer.innerHTML = `<div id="picker-later" class="el-popper">…</div>`;
+  document.body.append(layer);
+  await new Promise((resolve) => setTimeout(resolve));
+  const popup = document.getElementById("picker-later")!;
+  expect(popup.style.getPropertyValue("--el-color-primary")).toBe("");
+  // Opening it, the trigger inside the area names it.
+  const trigger = document.querySelector<HTMLElement>(".picker")!;
+  trigger.setAttribute("aria-controls", "picker-later");
+  trigger.setAttribute("aria-expanded", "true");
+  await new Promise((resolve) => setTimeout(resolve));
+  expect(popup.style.getPropertyValue("--el-color-primary")).toBe("#0f7b6c");
+});
