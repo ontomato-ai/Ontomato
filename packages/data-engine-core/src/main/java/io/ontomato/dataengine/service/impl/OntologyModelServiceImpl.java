@@ -1170,6 +1170,11 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	}
 
 	private void validateClassName(DataAdapter adapter, String className, List<ObjectNode> errors, String lang) {
+		// A class name is a domain-level name, not only what one data source happens to accept: the same rule the page shows.
+		if (!className.matches(NAME_PATTERN)) {
+			errors.add(field("className", "invalid_format", langService.get(lang, "Admin.class.formatError")));
+			return;
+		}
 		try {
 			adapter.validateClassNameFormat(className);
 		} catch (Exception error) {
