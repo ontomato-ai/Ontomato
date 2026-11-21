@@ -278,6 +278,8 @@ export async function startWorkbench(
   await syncRuntimeDefaultResources();
   syncDefaultPrompts();
   await initializeConnection();
+  const { registerBuiltinProducts } = await import("../services/product-panels/builtin-products");
+  await registerBuiltinProducts();
   // Production images carry the apps SDK next to the web pages; development serves neither from a build.
   startModelMigration();
   getWorkbenchLogStore();
