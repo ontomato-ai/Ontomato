@@ -10,6 +10,7 @@ import {
   samePageAddress,
   writtenText,
   type PageContext,
+  type PageSelection,
 } from "../page-context";
 
 /*
@@ -128,4 +129,25 @@ it("shows the reader's message without the line it carries for the agent", () =>
   expect(writtenText(`${asked}\n\n${prompts.closed}`, prompts)).toBe(asked);
   // A message that carries nothing is shown whole, its own last paragraph included.
   expect(writtenText(asked, prompts)).toBe(asked);
+});
+
+it("gives a selection made in a placed panel with that placement's path, as the panel's reads and operations take it", () => {
+  const memberPath: NonNullable<PageSelection["memberPath"]> = [
+    { member: "preview", selection: { stateValue: { className: "platform:ProductPanel", primaryKey: "knowledge" }, target: { panelId: "knowledge" } } },
+  ];
+  const line = pageContextLine({
+    url: "/ontology/panels",
+    label: "Panels",
+    selection: [
+      { kind: "platform:ProductPanel", id: "knowledge", label: "Business knowledge" },
+      { kind: "platform:BusinessKnowledge", id: "k-1", label: "Staff filter", memberPath },
+    ],
+  }, lines, true);
+  expect(line).toBe(
+    `Current page: Panels (/ontology/panels)；Selected: Business knowledge；Selected: Staff filter memberPath=${JSON.stringify(memberPath)}`,
+  );
+  // The page is still read back, and the reader's own words still stand without the line.
+  expect(pageLineAddress(line, lines)).toBe("/ontology/panels");
+  const prompts = { ...lines, file: (file: { label: string; path: string }) => `Current file: ${file.label} (${file.path})`, closed: "The page was closed." };
+  expect(writtenText(`Approve it.\n\n${line}`, prompts)).toBe("Approve it.");
 });
