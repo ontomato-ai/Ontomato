@@ -1,7 +1,7 @@
 import type { Router } from "express";
 import {
   copyProductCurrentRequestSchema, deleteProductCurrentQuerySchema, deleteProductCurrentResponseSchema,
-  deleteProductPanelResponseSchema,
+  deleteProductPanelQuerySchema, deleteProductPanelResponseSchema,
   productCatalogQuerySchema, productCurrentIdParamsSchema,
   productPanelListResponseSchema, productPanelResponseSchema, productPanelUsedBySchema,
   productProjectionListResponseSchema, productProjectionResponseSchema, productProjectionUsedBySchema,
@@ -37,9 +37,10 @@ export function mountProductCatalog(router: Router, kind: CurrentProductKind) {
   }));
   router.delete("/:id", validateParams(productCurrentIdParamsSchema), asyncHandler(async (req, res) => {
     const { owner, credentials } = context(req);
-    const query = deleteProductCurrentQuerySchema.safeParse(req.query);
+    const query = (kind === "panel" ? deleteProductPanelQuerySchema : deleteProductCurrentQuerySchema).safeParse(req.query);
     if (!query.success)
-      throw new HttpError(400, "A current revision is required", "INVALID_REQUEST", { issues: query.error.issues });
+      throw new HttpError(400, kind === "panel" ? "Invalid panel delete query" : "A current revision is required",
+        "INVALID_REQUEST", { issues: query.error.issues });
     const result = await deleteCurrentProduct(owner, credentials, kind, req.params.id, query.data.revision);
     const schema = kind === "panel" ? deleteProductPanelResponseSchema : deleteProductCurrentResponseSchema;
     res.json(schema.parse(result));

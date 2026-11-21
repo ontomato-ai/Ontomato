@@ -199,7 +199,10 @@
             <td><span class="pd-tag" :class="{ on: row.template }">{{ row.template ? t('template.yes') : t('template.no') }}</span></td>
           </tr>
           <tr v-for="row in unavailableRows" :key="row.id">
-            <td colspan="4"><span class="pd-error">{{ row.id }} · {{ row.reason }}</span></td>
+            <td colspan="4">
+              <button type="button" class="pd-btn small" @click="pick(row)">{{ row.id }}</button>
+              <span class="pd-error">{{ row.reason }}</span>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -230,6 +233,15 @@
       <!-- the chosen panel, or a copy / template step -->
       <div v-if="mode !== 'create' && mode !== 'edit'" class="pd-cards">
         <p v-if="!selected" class="pd-note">{{ t('detail.empty') }}</p>
+        <div v-else-if="unavailableSelection" class="pd-header">
+          <div>
+            <h2>{{ unavailableSelection.id }}</h2>
+            <p class="pd-error">{{ unavailableSelection.reason }}</p>
+          </div>
+          <button v-if="unavailableSelection.revision" type="button" class="pd-btn danger" :disabled="busy"
+            @click="remove">{{ t('action.delete') }}</button>
+        </div>
+        <p v-else-if="recordState.status === 'error'" class="pd-error">{{ recordState.message }}</p>
         <p v-else-if="recordState.status === 'empty'" class="pd-note">{{ t('detail.missing') }}</p>
         <p v-else-if="!record" class="pd-note">{{ t('busy') }}</p>
 
@@ -284,8 +296,8 @@
               <dt>{{ t('field.template') }}</dt><dd>{{ record.template ? t('template.yes') : t('template.no') }}</dd>
               <dt>{{ t('field.editable') }}</dt><dd>{{ record.editable ? t('editable.yes') : t('editable.no') }}</dd>
               <dt>{{ t('field.revision') }}</dt><dd>{{ record.revision }}</dd>
-              <dt>{{ t('field.updated') }}</dt><dd>{{ formatTime(record.updatedAt) }}</dd>
-              <dt>{{ t('field.created') }}</dt><dd>{{ formatTime(record.createdAt) }}</dd>
+              <dt>{{ t('field.updated') }}</dt><dd><time :datetime="record.updatedAt">{{ formatTimestamp(record.updatedAt) }}</time></dd>
+              <dt>{{ t('field.created') }}</dt><dd><time :datetime="record.createdAt">{{ formatTimestamp(record.createdAt) }}</time></dd>
               <dt>{{ t('field.class') }}</dt>
               <dd><code>platform:ProductPanel</code><br /><span class="pd-note">{{ t('class.hint') }}</span></dd>
             </dl>

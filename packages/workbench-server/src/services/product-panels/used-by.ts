@@ -13,9 +13,9 @@ import { classesUsingDetailPanel } from "./object-detail";
 import { findPanelUsers } from "./references";
 
 async function panelsUsingTarget(
-  domainId: string, kind: CurrentProductKind, id: string, credentials: AssistantCredentials, client?: Pick<PoolClient, "query">,
+  domainId: string, kind: CurrentProductKind, id: string, credentials: AssistantCredentials, client?: Pick<PoolClient, "query">, excluding?: string,
 ) {
-  const rows = await findPanelUsers(domainId, kind, id, client);
+  const rows = await findPanelUsers(domainId, kind, id, client, excluding);
   if (!rows.length) return { panels: [], hiddenCount: 0 };
   const visible = new Set(await grantedProductIds("use", credentials));
   const panels = rows.filter(panel => isBuiltinProductId(panel.id) || visible.has(panel.id));
@@ -29,10 +29,10 @@ export function panelsUsingProjection(
 }
 
 export async function panelUsers(
-  domainId: string, id: string, credentials: AssistantCredentials, client?: Pick<PoolClient, "query">,
+  domainId: string, id: string, credentials: AssistantCredentials, client?: Pick<PoolClient, "query">, excluding?: string,
 ) {
   const [panels, entries, classNames] = await Promise.all([
-    panelsUsingTarget(domainId, "panel", id, credentials, client),
+    panelsUsingTarget(domainId, "panel", id, credentials, client, excluding),
     applicationEntriesUsingPanel(domainId, id, credentials.locale),
     classesUsingDetailPanel(domainId, id, client),
   ]);

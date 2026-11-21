@@ -37,8 +37,9 @@
   .apps-sheet { border-color: var(--ui-border); box-shadow: var(--elevation-panel); }
   .apps-confirm { border-color: var(--el-color-danger-light-5); }
   .apps-list-icon { display: inline-flex; vertical-align: middle; color: var(--el-text-color-regular); }
-  .apps-list .el-table__cell { padding-inline: var(--spacing-xs) !important; }
-  .apps-list .cell { padding-inline: var(--spacing-xs); }
+  .apps-list .el-table__cell, .apps-entry-table .el-table__cell { padding-inline: var(--spacing-xs) !important; }
+  .apps-list .cell, .apps-entry-table .cell { padding-inline: var(--spacing-xs); }
+  .apps-entry-panel-id { display: block; max-inline-size: 100%; overflow: hidden; text-align: start; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
   .apps-list .el-tag { padding-inline: var(--spacing-xs); }
 </style>
 <div id="app" v-cloak>
@@ -190,32 +191,32 @@
             </span>
           </div>
           <p class="apps-hint" v-if="!app.canMaintain">你只能看到自己有权限进的入口，属主已经把其余的裁掉了。</p>
-          <el-table :data="app.panelUses" row-key="id" size="small">
-            <el-table-column label="菜单名" min-width="160">
+          <el-table class="apps-entry-table" :data="app.panelUses" row-key="id" size="small" scrollbar-always-on>
+            <el-table-column label="菜单名" min-width="120">
               <template #default="{ row }">{{ localizedText(row.names) || row.pageKey }}</template>
             </el-table-column>
-            <el-table-column label="地址" min-width="220">
+            <el-table-column label="地址" min-width="135">
               <template #default="{ row }"><span class="apps-mono">{{ row.path }}</span></template>
             </el-table-column>
-            <el-table-column label="面板" min-width="190">
+            <el-table-column label="面板" min-width="140">
               <template #default="{ row }">
-                <el-button size="small" text class="apps-link apps-mono" @click="inspectPanel(row.panelId)">{{ row.panelId }}</el-button>
+                <el-button size="small" text class="apps-link apps-entry-panel-id" :title="row.panelId" @click="inspectPanel(row.panelId)">{{ row.panelId }}</el-button>
                 <el-button size="small" text @click="openPanelCatalogue(row.panelId)">面板目录</el-button>
               </template>
             </el-table-column>
-            <el-table-column label="传入值" min-width="140">
+            <el-table-column label="传入值" min-width="92">
               <template #default="{ row }"><span class="apps-mono">{{ inputsText(row.inputs) }}</span></template>
             </el-table-column>
-            <el-table-column label="组与顺序" min-width="130">
+            <el-table-column label="组与顺序" min-width="86">
               <template #default="{ row }">{{ groupText(row.groupKey) }}</template>
             </el-table-column>
-            <el-table-column label="准入" min-width="130">
+            <el-table-column label="准入" min-width="106">
               <template #default="{ row }">{{ accessText(row.access) }}</template>
             </el-table-column>
-            <el-table-column label="默认智能体" min-width="140">
+            <el-table-column label="默认智能体" min-width="102">
               <template #default="{ row }">{{ agentText(row.defaultAgent) }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="150" v-if="app.canEditEntries">
+            <el-table-column label="操作" width="90" v-if="app.canEditEntries">
               <template #default="{ row }">
                 <span class="apps-inline-actions">
                   <el-button size="small" text @click.stop="startEditEntry(row)">编辑</el-button>

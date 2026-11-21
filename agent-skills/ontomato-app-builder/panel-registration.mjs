@@ -119,8 +119,7 @@ export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workben
       return { success: true };
     },
     async deletePanel(id) {
-      const revision = await currentRevision("panel", id);
-      return call(workbenchUrl, "DELETE", `${productPath("panel", id)}?${new URLSearchParams({ revision })}`);
+      return call(workbenchUrl, "DELETE", productPath("panel", id));
     },
     async findChartSource(sourceCard, checks) {
       const endpoint = `/api${checks.CHART_PROJECTION_SOURCES_PATH}?${new URLSearchParams(sourceCard)}`;
