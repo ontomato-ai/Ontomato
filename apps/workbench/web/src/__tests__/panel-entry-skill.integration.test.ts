@@ -63,7 +63,7 @@ beforeAll(async () => {
   vi.stubGlobal("fetch", async (...[input, init]: Parameters<typeof fetch>) => {
     const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url, server.origin);
     const response = await passOn(typeof input === "string" || input instanceof URL ? url : input, init);
-    const noted = /^\/api\/product-panels\/[^/]+$/.test(url.pathname) || url.pathname === "/api/assistant/agents"
+    const noted = /^\/api\/product-panels\/[^/]+(\/page-skill-context)?$/.test(url.pathname) || url.pathname === "/api/assistant/agents"
       || /^\/api\/assistant\/sessions\/[^/]+\/runs$/.test(url.pathname);
     if (noted) {
       const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
