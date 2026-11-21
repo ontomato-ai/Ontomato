@@ -390,6 +390,12 @@ it("keeps the package and recipes for a panel independent of its entrance", asyn
     expect(readSection).toContain("`form.form` — form returns `panelFormDescription`");
     expect(readSection).toContain("X-Ontomato-Callback-Credential");
     expect(readSection).not.toContain("/platform/scheduled-tasks");
+    const draftSection = markdown.split("### Draft a change")[1]!.split(/\n### /)[0];
+    expect(draftSection).toContain("Follow that form-save operation's drafting instructions under Declared operations");
+    expect(draftSection).not.toContain("validate the complete values");
+    expect(draftSection).toContain("Each run has its own artifact area. Use a distinct path for each draft written in the same run.");
+    expect(draftSection).toContain("`draftRunId` to that run's `$ONTOMATO_RUN_ID`");
+    expect(draftSection).toContain("For a draft written in a later run, build a new link using that run's ID.");
     expect(markdown).not.toContain("fixture-platform-service");
     expect(markdown).not.toContain("fixture-owner");
     expect(markdown).not.toContain(panel.content.html);
