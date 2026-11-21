@@ -209,6 +209,8 @@ export interface PanelHostLabels {
   failures: { fileUnavailable: string; scriptThrew: string; scriptRejected: string };
   /** What a panel tells its author: its CSS reached outside it. */
   content: { styleOutside: string };
+  /** The page command that reads the panel's shown data again. */
+  refresh: string;
 }
 
 /** A running panel: the element its own component is mounted in, which the host places in the page, and its instance. */
