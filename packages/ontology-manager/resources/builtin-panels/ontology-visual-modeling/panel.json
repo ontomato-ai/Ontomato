@@ -1,0 +1,302 @@
+{
+  "manifest": {
+    "state": {
+      "selectedNode": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        },
+        "deepLink": true
+      },
+      "selectedEdge": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Relationship"
+        },
+        "deepLink": true
+      },
+      "selectedAttribute": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Attribute"
+        },
+        "deepLink": true
+      },
+      "className": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "dialog": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "positions": {
+        "type": {
+          "kind": "node-positions"
+        },
+        "personal": true
+      },
+      "connectFrom": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "connectTo": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      }
+    },
+    "members": {
+      "graph": {
+        "component": "ObjectGraph",
+        "type": "platform:ObjectType",
+        "data": {
+          "nodes": {
+            "read": "list"
+          },
+          "edges": {
+            "read": "list",
+            "type": "platform:Relationship"
+          }
+        },
+        "config": {
+          "edgeEnds": {
+            "source": "/fromclass",
+            "target": "/toclass"
+          },
+          "editable": true
+        },
+        "state": {
+          "selectedNode": "selectedNode",
+          "selectedEdge": "selectedEdge",
+          "positions": "positions",
+          "connectFrom": "connectFrom",
+          "connectTo": "connectTo"
+        },
+        "id": "builtin-product-9f791898-9396-433e-bd01-dd692f4265df"
+      },
+      "classForm": {
+        "component": "ObjectForm",
+        "type": "platform:ObjectType",
+        "target": "selectedNode",
+        "data": {
+          "form": "form"
+        },
+        "operation": "platform:ObjectType.save",
+        "id": "builtin-product-d3d2e0f4-bbad-45f4-b553-e25b7a6f5099"
+      },
+      "classCreate": {
+        "component": "ObjectForm",
+        "type": "platform:ObjectType",
+        "data": {
+          "createForm": "createForm"
+        },
+        "operation": "platform:ObjectType.save",
+        "id": "builtin-product-6fc45bd0-7783-4605-ba1a-6ec05ec8892b"
+      },
+      "classDelete": {
+        "component": "OperationButton",
+        "type": "platform:ObjectType",
+        "target": "selectedNode",
+        "operation": "objectTypes.delete",
+        "config": {
+          "type": "danger"
+        },
+        "id": "builtin-product-f468a8a2-3343-4689-9351-13a9fe80a12e"
+      },
+      "relationForm": {
+        "component": "ObjectForm",
+        "type": "platform:Relationship",
+        "target": "selectedEdge",
+        "data": {
+          "form": "form"
+        },
+        "operation": "platform:Relationship.save",
+        "id": "builtin-product-bfc58e22-3ac3-4248-a02e-20e80cc548d8"
+      },
+      "relationCreate": {
+        "component": "ObjectForm",
+        "type": "platform:Relationship",
+        "data": {
+          "createForm": "createForm"
+        },
+        "operation": "platform:Relationship.save",
+        "config": {
+          "fixedFields": {
+            "/fromclass": {
+              "state": "connectFrom"
+            },
+            "/toclass": {
+              "state": "connectTo"
+            }
+          }
+        },
+        "id": "builtin-product-4b77257a-e329-40c6-a852-2169892f0b76"
+      },
+      "relationDelete": {
+        "component": "OperationButton",
+        "type": "platform:Relationship",
+        "target": "selectedEdge",
+        "operation": "relationships.delete",
+        "config": {
+          "type": "danger"
+        },
+        "id": "builtin-product-cc7d0e26-7c05-4fb1-bf80-21b9d3ade8a3"
+      },
+      "attributes": {
+        "component": "PanelData",
+        "type": "platform:Attribute",
+        "data": {
+          "rows": {
+            "read": "list",
+            "params": {
+              "className": {
+                "state": "className"
+              }
+            }
+          }
+        },
+        "id": "builtin-product-7f166790-0c94-4ff8-b0c4-4495a0a18149"
+      },
+      "attributeForm": {
+        "component": "ObjectForm",
+        "type": "platform:Attribute",
+        "target": "selectedAttribute",
+        "data": {
+          "form": "form",
+          "createForm": "createForm"
+        },
+        "operation": "platform:Attribute.save",
+        "config": {
+          "fixedFields": {
+            "/className": {
+              "state": "selectedNode",
+              "path": "/primaryKey"
+            }
+          }
+        },
+        "id": "builtin-product-b98efdcd-7768-45b5-bed2-722db3ac17f1"
+      },
+      "attributeDelete": {
+        "component": "OperationButton",
+        "type": "platform:Attribute",
+        "target": "selectedAttribute",
+        "operation": "attributes.delete",
+        "config": {
+          "type": "danger"
+        },
+        "id": "builtin-product-b2e3db01-f770-4033-9fd6-9bc4fe918092"
+      },
+      "attributePrimaryKey": {
+        "component": "OperationButton",
+        "type": "platform:Attribute",
+        "target": "selectedAttribute",
+        "operation": "attributes.setPrimaryKey",
+        "config": {},
+        "id": "builtin-product-bea3ba82-f7da-4b78-99c3-3e56ec5f9c85"
+      }
+    },
+    "commands": {
+      "addObjectType": {
+        "labelKey": "visualModeling.addObjectType",
+        "primary": true,
+        "do": {
+          "set": {
+            "fields": {
+              "dialog": {
+                "literal": "class"
+              }
+            }
+          }
+        }
+      },
+      "addRelation": {
+        "labelKey": "visualModeling.addRelation",
+        "do": {
+          "set": {
+            "fields": {
+              "dialog": {
+                "literal": "relation"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "zh-CN": {
+        "panel.name": "可视化建模",
+        "visualModeling.addObjectType": "添加对象类型",
+        "visualModeling.addRelation": "添加关系类型",
+        "visualModeling.hint": "拖动节点摆放位置，滚轮缩放，点节点或关系查看详情；Shift 从一个节点拖到另一个节点可直接新建关系。",
+        "visualModeling.selectedType": "已选对象类型：{name}",
+        "visualModeling.selectedRelation": "已选关系类型：{name}",
+        "visualModeling.noSelection": "未选择节点",
+        "visualModeling.detail": "对象类型详情",
+        "visualModeling.relationDetail": "关系类型详情",
+        "visualModeling.attributes": "属性",
+        "visualModeling.attributeCount": "共 {count} 项",
+        "visualModeling.noAttributes": "这个对象类型还没有属性。",
+        "visualModeling.newAttribute": "新建属性",
+        "visualModeling.editAttribute": "属性详情",
+        "visualModeling.close": "关闭",
+        "visualModeling.delete": "删除",
+        "visualModeling.edit": "编辑",
+        "visualModeling.loadingAttributes": "正在读取属性…",
+        "visualModeling.noAttributesPermission": "没有读取这个对象类型属性的权限。",
+        "visualModeling.attributesFailed": "读取属性失败：{message}",
+        "visualModeling.attributeName": "名称",
+        "visualModeling.attributeType": "类型",
+        "visualModeling.attributePrimaryKey": "主键",
+        "visualModeling.attributeYes": "是",
+        "visualModeling.attributeNo": "否",
+        "visualModeling.createClassTitle": "添加对象类型",
+        "visualModeling.createRelationTitle": "添加关系类型",
+        "visualModeling.emptyGraph": "还没有对象类型。用“添加对象类型”开始建模。",
+        "visualModeling.openData": "浏览数据"
+      },
+      "en": {
+        "panel.name": "Visual modeling",
+        "visualModeling.addObjectType": "Add object type",
+        "visualModeling.addRelation": "Add relation type",
+        "visualModeling.hint": "Drag nodes to place them, scroll to zoom, click a node or a relation for its details; hold Shift and drag from one node to another to create a relation.",
+        "visualModeling.selectedType": "Selected object type: {name}",
+        "visualModeling.selectedRelation": "Selected relation type: {name}",
+        "visualModeling.noSelection": "No node selected",
+        "visualModeling.detail": "Object type details",
+        "visualModeling.relationDetail": "Relation type details",
+        "visualModeling.attributes": "Attributes",
+        "visualModeling.attributeCount": "{count} in total",
+        "visualModeling.noAttributes": "This object type has no attributes yet.",
+        "visualModeling.newAttribute": "New attribute",
+        "visualModeling.editAttribute": "Attribute details",
+        "visualModeling.close": "Close",
+        "visualModeling.delete": "Delete",
+        "visualModeling.edit": "Edit",
+        "visualModeling.loadingAttributes": "Reading attributes…",
+        "visualModeling.noAttributesPermission": "You cannot read this object type's attributes.",
+        "visualModeling.attributesFailed": "Reading attributes failed: {message}",
+        "visualModeling.attributeName": "Name",
+        "visualModeling.attributeType": "Type",
+        "visualModeling.attributePrimaryKey": "Primary key",
+        "visualModeling.attributeYes": "Yes",
+        "visualModeling.attributeNo": "No",
+        "visualModeling.createClassTitle": "Add object type",
+        "visualModeling.createRelationTitle": "Add relation type",
+        "visualModeling.emptyGraph": "There are no object types yet. Start modeling with “Add object type”.",
+        "visualModeling.openData": "Browse data"
+      }
+    }
+  }
+}

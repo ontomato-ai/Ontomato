@@ -19,7 +19,6 @@ import type { AssetTab } from "./workspace";
  * bring Markdown and code highlighting.
  */
 const DataBrowser = defineAsyncComponent(() => import("./data-browser/DataBrowser.vue"));
-const VisualModeling = defineAsyncComponent(() => import("./visual-modeling/VisualModeling.vue"));
 const OntologyAssetDetail = defineAsyncComponent(() => import("./components/OntologyAssetDetail.vue"));
 const ObjectViewPage = defineAsyncComponent(() => import("./object-views/ObjectViewPage.vue"));
 const ObjectViewBuilder = defineAsyncComponent(() => import("./object-views/ObjectViewBuilder.vue"));
@@ -151,24 +150,6 @@ const TriggerPage = defineComponent({
   },
 });
 
-const VisualModelingPage = defineComponent({
-  name: "ManagerVisualModelingPage",
-  setup() {
-    const router = useRouter();
-    const route = useRoute();
-    const query = (key: string) => (typeof route.query[key] === "string" ? (route.query[key] as string) : "");
-    return () =>
-      h("section", { class: "visual-content" }, [
-        h(VisualModeling, {
-          focus: query("focus"),
-          focusId: query("id"),
-          backToPlayground: query("back") === "playground",
-          onBack: () => void router.push(managerPaths.graph),
-        }),
-      ]);
-  },
-});
-
 /** The ontology manager's models: the modeling agents', at the foot of its menu, over the Manager's own requests. */
 const OntologyModelsPage = defineComponent({
   name: "ManagerOntologyModelsPage",
@@ -222,7 +203,6 @@ export function managerRoutes(): RouteRecordRaw[] {
         ]),
         { ...routes.workflows, component: WorkflowPage, meta: { page: managerPaths.workflows } },
         { ...routes.triggers, component: TriggerPage, meta: { page: managerPaths.triggers } },
-        { ...routes.modeling, component: VisualModelingPage, meta: { page: managerPaths.visualModeling } },
         { ...routes.ontologyModels, component: OntologyModelsPage, meta: { page: routes.ontologyModels.path } },
       ],
     },

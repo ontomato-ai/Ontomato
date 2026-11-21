@@ -51,6 +51,18 @@ export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
     use: platformRoutes.relations.path,
     state: ({ relationship }) => ({ selected: { className: RELATIONSHIP, primaryKey: relationship! } }),
   },
+  // The visual modeling page: the graph's "go to modeling" carries the class or relation to select.
+  {
+    path: platformRoutes.modeling.path,
+    use: platformRoutes.modeling.path,
+    state: (_params, query): Record<string, PanelStateValue> => {
+      const id = query.get("id");
+      if (!id) return {};
+      return query.get("focus") === "relation"
+        ? { selectedEdge: { className: RELATIONSHIP, primaryKey: id } }
+        : { selectedNode: { className: OBJECT_TYPE, primaryKey: id } };
+    },
+  },
   // The object types page: a class's detail address opens the catalog with that class selected.
   {
     path: platformRoutes.object.path,

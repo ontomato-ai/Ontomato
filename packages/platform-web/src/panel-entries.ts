@@ -5,6 +5,33 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useApplicationCatalog } from "./catalog";
 import { startPage } from "./shell";
 
+/** The paths one router has already opened an entry route for. */
+const servedEntries = new WeakMap<Router, Set<string>>();
+
+/**
+ * Opens every entry the catalog now lists that has no route yet. A page that asks to open another page's address (the
+ * graph's modeling page, say) asks before either address has been visited, so it is opened on that ask too rather than
+ * answered "no such page" (M4, 2026-11-22).
+ */
+export function servePanelEntries(router: Router): void {
+  const catalog = useApplicationCatalog();
+  const served = servedEntries.get(router) ?? new Set<string>();
+  servedEntries.set(router, served);
+  for (const app of catalog.applications.value) {
+    if (isPanelApplication(app)) continue;
+    for (const use of app.panelUses ?? []) {
+      const path = panelUsePath(use.path);
+      if (served.has(path)) continue;
+      served.add(path);
+      router.addRoute(platformRoutes.layout.name, {
+        path,
+        component: () => import("./pages/PanelApplicationRoute.vue"),
+        props: { applicationId: app.id },
+      });
+    }
+  }
+}
+
 /**
  * The platform's last route: an address no page of its own serves. It draws nothing and redirects nowhere by itself —
  * `panelEntryGuard` decides where such an address goes, so a landing that is itself such an address (a deployment's
@@ -24,34 +51,17 @@ export const unknownAddressRoute: RouteRecordRaw = { ...platformRoutes.unknown, 
  */
 export function panelEntryGuard(router: Router): NavigationGuard {
   const catalog = useApplicationCatalog();
-  const served = new Set<string>();
   const unknown = (address: string) => router.resolve(address).name === platformRoutes.unknown.name;
-  /** Opens every entry the catalog now lists that has no route yet. */
-  function serveEntries() {
-    for (const app of catalog.applications.value) {
-      if (isPanelApplication(app)) continue;
-      for (const use of app.panelUses ?? []) {
-        const path = panelUsePath(use.path);
-        if (served.has(path)) continue;
-        served.add(path);
-        router.addRoute(platformRoutes.layout.name, {
-          path,
-          component: () => import("./pages/PanelApplicationRoute.vue"),
-          props: { applicationId: app.id },
-        });
-      }
-    }
-  }
   /** This start of the platform's own read of the catalog: one read before the first unknown address is decided. */
   let read: Promise<void> | null = null;
   return async (to) => {
     if (to.name !== platformRoutes.unknown.name) return true;
     await (read ??= catalog.refresh());
-    serveEntries();
+    servePanelEntries(router);
     // A grant since that read may not be listed yet: read it again once.
     if (unknown(to.fullPath)) {
       await catalog.refresh();
-      serveEntries();
+      servePanelEntries(router);
     }
     return unknown(to.fullPath) ? true : to.fullPath;
   };

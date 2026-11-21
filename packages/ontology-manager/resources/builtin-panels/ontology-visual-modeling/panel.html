@@ -1,0 +1,315 @@
+<style>
+  .visual-modeling {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    height: 100%;
+    min-height: 0;
+  }
+  .vm-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+    font-size: var(--text-sm);
+    color: var(--el-text-color-secondary);
+  }
+  .vm-toolbar .vm-hint {
+    flex: 1 1 16rem;
+    min-width: 0;
+  }
+  .vm-selection {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+  }
+  /* A steady canvas height: the details column scrolls inside it instead of changing the drawing's size. */
+  .vm-body {
+    display: flex;
+    flex: 0 0 auto;
+    height: clamp(22rem, 62vh, 42rem);
+    min-height: 22rem;
+    gap: var(--spacing-md);
+    align-items: stretch;
+  }
+  .vm-canvas {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  /*
+   * The graph member is placed out of the flow over the canvas box, so the canvas's own resize
+   * handling cannot grow the box it sits in; the grid row gives the component a definite height.
+   */
+  .vm-canvas > [data-member] {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-rows: 100%;
+    grid-template-columns: 100%;
+    overflow: hidden;
+  }
+  .vm-side {
+    flex: 0 0 22rem;
+    width: 22rem;
+    min-width: 0;
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+    overflow-y: auto;
+  }
+  .vm-side-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    color: var(--el-text-color-primary);
+  }
+  .vm-side-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+  }
+  .vm-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    font-size: var(--text-xs);
+    font-weight: var(--font-semibold);
+    color: var(--el-text-color-secondary);
+  }
+  .vm-attribute-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+  }
+  .vm-attribute {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-sm);
+    border: 1px solid var(--ui-divider);
+    border-radius: var(--radius-sm);
+    background: var(--ui-fill-tertiary);
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+  }
+  .vm-attribute.is-selected {
+    border-color: var(--brand-link);
+  }
+  .vm-attribute-label {
+    display: flex;
+    align-items: baseline;
+    gap: var(--spacing-xs);
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    color: var(--el-text-color-primary);
+  }
+  .vm-attribute-label code {
+    font-family: var(--text-mono);
+    font-size: var(--text-xs);
+    font-weight: 400;
+    color: var(--el-text-color-secondary);
+  }
+  .vm-attribute-subtitle {
+    font-size: var(--text-xs);
+    color: var(--el-text-color-secondary);
+  }
+  .vm-attribute-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs) var(--spacing-sm);
+    font-size: var(--text-xs);
+    color: var(--el-text-color-regular);
+  }
+  .vm-attribute-fields .vm-field-label {
+    color: var(--el-text-color-secondary);
+  }
+  .vm-state {
+    font-size: var(--text-sm);
+    color: var(--el-text-color-secondary);
+    margin: 0;
+  }
+  .vm-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--el-overlay-color-lighter);
+  }
+  .vm-modal-card {
+    width: min(34rem, calc(100vw - 2rem));
+    max-height: calc(100vh - 4rem);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--spacing-lg);
+    border-radius: var(--radius-lg);
+    background: var(--el-bg-color-overlay, var(--el-bg-color));
+    box-shadow: var(--el-box-shadow);
+    overflow: hidden;
+  }
+  .vm-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    font-size: var(--text-base);
+    font-weight: var(--font-semibold);
+    color: var(--el-text-color-primary);
+  }
+  .vm-modal-body {
+    overflow-y: auto;
+    min-height: 0;
+  }
+  @media (max-width: 64rem) {
+    .vm-body {
+      flex-direction: column;
+    }
+    .vm-side {
+      flex: 0 0 auto;
+      width: auto;
+      max-height: 22rem;
+    }
+  }
+</style>
+
+<div id="app" class="visual-modeling">
+  <div class="vm-toolbar">
+    <span class="vm-hint">{{ t("visualModeling.hint") }}</span>
+    <div class="vm-selection">
+      <el-tag v-if="selectedNode" type="primary" size="small" disable-transitions>
+        {{ t("visualModeling.selectedType", { name: selectedNode.primaryKey }) }}
+      </el-tag>
+      <el-tag v-else-if="selectedEdge" type="success" size="small" disable-transitions>
+        {{ t("visualModeling.selectedRelation", { name: selectedEdge.primaryKey }) }}
+      </el-tag>
+      <span v-else class="vm-state">{{ t("visualModeling.noSelection") }}</span>
+      <el-button v-if="selectedNode || selectedEdge" text size="small" @click="clearSelection">
+        {{ t("visualModeling.close") }}
+      </el-button>
+    </div>
+  </div>
+
+  <div class="vm-body">
+    <div class="vm-canvas">
+      <projection slot="graph"></projection>
+    </div>
+
+    <aside v-if="selectedNode || selectedEdge" class="vm-side">
+      <template v-if="selectedEdge">
+        <div class="vm-side-title">
+          <span>{{ t("visualModeling.relationDetail") }}</span>
+          <el-button text size="small" @click="clearSelection">{{ t("visualModeling.close") }}</el-button>
+        </div>
+        <projection slot="relationForm"></projection>
+        <div class="vm-side-section">
+          <projection slot="relationDelete"></projection>
+        </div>
+      </template>
+
+      <template v-else>
+        <div class="vm-side-title">
+          <span :title="selectedNode.primaryKey">{{ selectedNode.primaryKey }}</span>
+          <el-button text size="small" @click="clearSelection">{{ t("visualModeling.close") }}</el-button>
+        </div>
+        <projection slot="classForm"></projection>
+        <div class="vm-side-section">
+          <el-button size="small" @click="browseData">{{ t("visualModeling.openData") }}</el-button>
+          <projection slot="classDelete"></projection>
+        </div>
+
+        <div class="vm-side-section">
+          <div class="vm-section-head">
+            <span>
+              {{ t("visualModeling.attributes") }}
+              <template v-if="attributes.status === 'ready'">
+                · {{ t("visualModeling.attributeCount", { count: attributes.value.length }) }}
+              </template>
+            </span>
+            <el-button text size="small" @click="newAttribute">{{ t("visualModeling.newAttribute") }}</el-button>
+          </div>
+
+          <p v-if="attributes.status === 'loading'" class="vm-state">{{ t("visualModeling.loadingAttributes") }}</p>
+          <p v-else-if="attributes.status === 'forbidden'" class="vm-state">{{ t("visualModeling.noAttributesPermission") }}</p>
+          <p v-else-if="attributes.status === 'error'" class="vm-state" role="alert">
+            {{ t("visualModeling.attributesFailed", { message: attributes.message }) }}
+          </p>
+          <p v-else-if="attributes.status === 'ready' && attributes.value.length === 0" class="vm-state">
+            {{ t("visualModeling.noAttributes") }}
+          </p>
+          <div v-else-if="attributes.status === 'ready'" class="vm-attribute-list">
+            <button v-for="row in attributes.value" :key="row.primaryKey" type="button" class="vm-attribute"
+              :class="{ 'is-selected': selectedAttribute && selectedAttribute.primaryKey === row.primaryKey }"
+              @click="pickAttribute(row)">
+              <span class="vm-attribute-label">
+                <span>{{ row.label }}</span>
+                <code v-if="row.subtitle">{{ row.subtitle }}</code>
+              </span>
+              <span v-if="row.subtitle" class="vm-attribute-subtitle">{{ row.subtitle }}</span>
+              <span v-if="fieldEntries(row).length" class="vm-attribute-fields">
+                <span v-for="entry in fieldEntries(row)" :key="entry.key">
+                  <span class="vm-field-label">{{ entry.label }}</span>
+                  {{ entry.value }}
+                </span>
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <div class="vm-side-section">
+          <div class="vm-section-head">
+            <span>{{ selectedAttribute ? t("visualModeling.editAttribute") : t("visualModeling.newAttribute") }}</span>
+          </div>
+          <projection slot="attributeForm"></projection>
+          <div v-if="selectedAttribute" class="vm-selection">
+            <projection slot="attributePrimaryKey"></projection>
+            <projection slot="attributeDelete"></projection>
+          </div>
+        </div>
+      </template>
+    </aside>
+  </div>
+
+  <div v-show="dialog === 'class'" class="vm-modal" role="dialog" aria-modal="true">
+    <div class="vm-modal-card">
+      <div class="vm-modal-head">
+        <span>{{ t("visualModeling.createClassTitle") }}</span>
+        <el-button text size="small" @click="closeDialog">{{ t("visualModeling.close") }}</el-button>
+      </div>
+      <div class="vm-modal-body">
+        <projection slot="classCreate" @saved="closeDialog"></projection>
+      </div>
+    </div>
+  </div>
+
+  <div v-show="dialog === 'relation'" class="vm-modal" role="dialog" aria-modal="true">
+    <div class="vm-modal-card">
+      <div class="vm-modal-head">
+        <span>{{ t("visualModeling.createRelationTitle") }}</span>
+        <el-button text size="small" @click="closeDialog">{{ t("visualModeling.close") }}</el-button>
+      </div>
+      <div class="vm-modal-body">
+        <projection slot="relationCreate" @saved="closeDialog"></projection>
+      </div>
+    </div>
+  </div>
+</div>

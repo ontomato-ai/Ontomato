@@ -2,6 +2,7 @@ import { ElMessage } from "element-plus";
 import type { Router } from "vue-router";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { workbenchI18n } from "@ontomato/workbench-ui/i18n";
+import { servePanelEntries } from "./panel-entries";
 
 /**
  * Where a panel's code goes when it asks to open an address (big main's ruling, 2026-11-21): a page of the platform,
@@ -15,8 +16,10 @@ import { workbenchI18n } from "@ontomato/workbench-ui/i18n";
  */
 export function panelNavigator(router: Router, beside?: (address: string) => void) {
   return async (address: string): Promise<void> => {
-    const known = address.startsWith("/") && !address.startsWith("//") && router.resolve(address).name !== platformRoutes.unknown.name;
-    if (!known) {
+    const served = () => address.startsWith("/") && !address.startsWith("//") && router.resolve(address).name !== platformRoutes.unknown.name;
+    // A panel entry's route opens on the first address that asks for it, so another page's entry is opened here too.
+    if (!served()) servePanelEntries(router);
+    if (!served()) {
       const reason = new Error(workbenchI18n().global.t("platform.panelAddressUnavailable", { address }));
       ElMessage.error(reason.message);
       throw reason;

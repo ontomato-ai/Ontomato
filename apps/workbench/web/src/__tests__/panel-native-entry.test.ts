@@ -10,6 +10,7 @@ import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import { addressLandingGuard, panelEntryGuard, unknownAddressRoute } from "../../../../../packages/platform-web/src/panel-entries";
+import { panelNavigator } from "../../../../../packages/platform-web/src/panel-navigate";
 import { DETAIL_SELECTIONS, detailSelectionGuard } from "../../../../../packages/platform-web/src/detail-selection";
 import { startPage } from "../../../../../packages/platform-web/src/shell";
 import { catalogFixture } from "../../../../../packages/platform-web/src/__tests__/fixtures";
@@ -168,6 +169,23 @@ it("hands a draft linked at a built-in entry's original address to its panel, pa
     expect(plain.element.querySelector(".panel-host-draft")).toBeNull();
   } finally {
     plain.app.unmount();
+  }
+});
+
+it("lets a page open another page's entry before either has been visited", async () => {
+  // The ontology graph's "go to modeling": a panel asks for the address of an entry the reader has not opened yet.
+  installPlatform(answer);
+  useApplicationCatalog().applications.value = catalogWith([components]);
+  const { router, app } = await open("/home");
+  try {
+    await vi.waitFor(async () => {
+      await panelNavigator(router)("/ontology/components");
+      expect(router.currentRoute.value.path).toBe("/ontology/components");
+    });
+    // An address no entry serves is still refused, with the reader told.
+    await expect(panelNavigator(router)("/ontology/nothing")).rejects.toThrow(/nothing/);
+  } finally {
+    app.unmount();
   }
 });
 
