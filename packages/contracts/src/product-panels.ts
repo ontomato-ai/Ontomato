@@ -127,7 +127,9 @@ function validateBuiltinProjection(projection: DirectProjectionPorts, ctx: z.Ref
       const scopedType = (parameter === "className" || parameter === "ontologyType")
         && typeof value.literal === "string" && !Object.hasOwn(platformObjectTypes, value.literal);
       const scopedIdentity = parameter !== undefined && domainIdentityParameters.has(parameter);
-      if (scopedType || scopedIdentity || containsObjectIdentity(value.literal)) reject(["data", name, "params", param, "literal"]);
+      const heldChoices = parameter === "optionValues" && Array.isArray(value.literal) && value.literal.length > 0;
+      if (scopedType || scopedIdentity || heldChoices || containsObjectIdentity(value.literal))
+        reject(["data", name, "params", param, "literal"]);
     }
   }
   for (const [name, binding] of Object.entries(projection.operations ?? {})) {

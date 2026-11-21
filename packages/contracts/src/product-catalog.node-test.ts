@@ -122,6 +122,8 @@ test("platform projections bind declared types and runtime state instead of stor
     [{ conversationEntry: { target: { kind: "id", id: "domain-agent" } } }, "conversationEntry.target.id"],
     [{ data: { record: { source: { object: { literal: object } }, read: "record", params: {} } } }, "data.record.source.object.literal"],
     [{ data: { rows: { source: { type: { kind: "ObjectType", id: "Account" } }, read: "query", params: {} } } }, "data.rows.source.type"],
+    [{ data: { selected: { source: { type: { kind: "PlatformObjectType", id: "platform:User" } },
+      read: "resolve", params: { values: { literal: ["domain-user"] } } } } }, "data.selected.params.values.literal"],
     [{ operations: { run: { ...platformOperation, target: { literal: object } } } }, "operations.run.target.literal"],
     [{ operations: { run: { operation: { kind: "Action", id: "domain-action" }, target: { input: "task" } } } }, "operations.run.operation.id"],
   ] as const) {
