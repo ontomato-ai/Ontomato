@@ -409,12 +409,6 @@ await mountPanel({
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
-    function refresh() {
-      resetPath();
-      navigationError.value = "";
-      instance.refreshAll();
-    }
-
     async function openModeling() {
       navigationError.value = "";
       const target = selectedObject.value
@@ -494,7 +488,6 @@ await mountPanel({
       fitGraph,
       relayout,
       exportPng,
-      refresh,
       openModeling,
     };
   },

@@ -14,6 +14,13 @@
           "type": "string"
         },
         "deepLink": true
+      },
+      "creating": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "deepLink": true
       }
     },
     "members": {
@@ -61,6 +68,33 @@
         "id": "builtin-product-655a5639-5fd3-4e29-9192-096597b6a77d"
       }
     },
-    "commands": {}
+    "commands": {
+      "create": {
+        "labelKey": "relations.command.create",
+        "primary": true,
+        "do": {
+          "set": {
+            "fields": {
+              "creating": {
+                "literal": true
+              },
+              "selected": {
+                "literal": null
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "zh-CN": {
+        "relations.command.create": "新建关系类型"
+      },
+      "en": {
+        "relations.command.create": "New relation type"
+      }
+    }
   }
 }

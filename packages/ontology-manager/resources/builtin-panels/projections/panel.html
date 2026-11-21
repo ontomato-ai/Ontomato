@@ -1,7 +1,6 @@
 <style>
   [v-cloak] { display: none; }
   .projections { display: flex; flex-direction: column; gap: var(--spacing-md); min-height: 0; padding-block-end: var(--spacing-4xl); }
-  .projections-head-actions { display: flex; gap: var(--spacing-sm); flex-wrap: wrap; justify-content: flex-end; }
   .projections-toolbar { display: flex; align-items: center; gap: var(--spacing-sm); flex-wrap: wrap; }
   .projections-search { width: 240px; }
   .projections-sort { width: 132px; }
@@ -62,10 +61,6 @@
         <el-option label="名称" value="name" />
       </el-select>
       <span class="projections-count" role="status">{{ listStatusText }}</span>
-      <div class="projections-head-actions">
-        <el-button type="primary" @click="startCreate">新建投影</el-button>
-        <el-button @click="refreshAll">刷新</el-button>
-      </div>
     </div>
 
     <el-alert v-if="notice" :title="notice.text" :type="notice.type || notice.tone" show-icon :closable="true"

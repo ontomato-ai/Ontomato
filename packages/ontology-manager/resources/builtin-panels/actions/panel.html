@@ -36,6 +36,8 @@
   .ac-table tbody tr[data-selected="true"] { background: var(--ui-fill-secondary); }
   .ac-table td.ac-check { width: 2rem; cursor: default; }
   .ac-name { color: var(--el-text-color-primary); font-weight: var(--font-medium); }
+  /* The name column keeps a readable width; in a narrow host the table scrolls sideways instead of squeezing it. */
+  .ac-table td.ac-main { min-width: 14rem; }
   .ac-sub { color: var(--el-text-color-secondary); font-size: var(--text-xs); line-height: 1.6; word-break: break-word; }
   .ac-nowrap { white-space: nowrap; }
   .ac-hint { margin: 0; color: var(--el-text-color-secondary); font-size: var(--text-sm); line-height: 1.6; }
@@ -144,7 +146,7 @@
                 <td class="ac-check" @click.stop>
                   <input type="checkbox" :checked="isChecked(row)" :aria-label="row.label" @change="toggleChecked(row)">
                 </td>
-                <td>
+                <td class="ac-main">
                   <div class="ac-name">{{ row.label }}</div>
                   <div class="ac-sub">{{ row.subtitle }}</div>
                 </td>
