@@ -19,8 +19,8 @@ import { APPLICATION, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contra
 import { HttpError } from "../../utils/errors";
 import { BackendResponseError } from "../../utils/backend-client";
 import { changeProductGrant } from "../product-governance/grants";
-import { panelFormObjectSelectError } from "@ontomato/contracts/form-fields";
-import { applicationCatalogueClient, applicationDraftIdSchema, defaultAgentChoices } from "./application-catalogue";
+import { defaultAgentSchema } from "@ontomato/contracts/default-agent";
+import { applicationCatalogueClient, applicationDraftIdSchema } from "./application-catalogue";
 import {
   changeCurrentProductDomainGrant, changeCurrentProductGrant, copyCurrentProduct, deleteCurrentProduct,
 } from "./catalog";
@@ -65,16 +65,19 @@ class FieldRefusal extends Error {
 }
 
 /**
- * Each entry's default agent is one of the agent owner's choices, as the form offered them; leaving it out keeps the
- * general assistant. Checked on the values as sent, so a wrong shape is named at its field rather than as a bad request.
+ * An entry's default agent is checked here only for its shape, on the values as sent, so a wrong one is named at its
+ * field rather than as a bad request. Whether it exists, is enabled and serves the entry's panel is the owners' check
+ * on save (Java asks the agent owner's preflight), which answers at the same row; leaving it out keeps the general
+ * assistant.
  */
-async function checkDefaultAgents(domainId: string, locale: string | undefined, values: Record<string, unknown>) {
+function checkDefaultAgentShapes(values: Record<string, unknown>) {
   const uses = Array.isArray(values.panelUses) ? values.panelUses : [];
-  const chosen = uses.map(use => (use !== null && typeof use === "object" ? (use as Record<string, RuntimeJsonValue>).defaultAgent : undefined));
-  if (chosen.every(value => value === undefined)) return;
-  const options = await defaultAgentChoices(domainId, locale);
-  const errors = chosen.flatMap((value, index) =>
-    panelFormObjectSelectError(`/panelUses/${index}/defaultAgent`, value, { required: false, options }) ?? []);
+  const errors = uses.flatMap((use, index) => {
+    const value = use !== null && typeof use === "object" ? (use as Record<string, unknown>).defaultAgent : undefined;
+    if (value === undefined || defaultAgentSchema.safeParse(value).success) return [];
+    const field = `/panelUses/${index}/defaultAgent`;
+    return [{ field, code: "invalid_object" as const, message: `Field '${field}' expects a default agent, received ${JSON.stringify(value)}` }];
+  });
   if (errors.length) throw new FieldRefusal({ kind: "refusal", code: "APPLICATION_ENTRY_INVALID", message: errors[0]!.message, errors });
 }
 
@@ -216,13 +219,13 @@ const applicationSave: PanelWriteServerOperation = {
     draftValues: values => panelFormValuesSchema.parse(values),
     createdObject: data => ({ objectType: APPLICATION, primaryKey: savedId.parse(data).id }),
   },
-  async execute({ executor: { owner, credentials } }, target, input) {
+  async execute({ executor: { credentials } }, target, input) {
     return write(APPLICATION, async () => {
       const { values, submittedFields } = writeInput(panelFormSaveInputSchema, input);
       const java = applicationCatalogueClient(credentials);
       if (target.kind === "draft") {
         const { id: formId, ...formValues } = values;
-        await checkDefaultAgents(owner.domainId, credentials.locale, formValues);
+        checkDefaultAgentShapes(formValues);
         const body = writeInput(applicationCatalogueCreateSchema, formValues);
         const id = writeInput(applicationDraftIdSchema,
           target.id ?? formId ?? writeInput(applicationDraftPath, body.entry.path).slice("/applications/".length));
@@ -239,7 +242,7 @@ const applicationSave: PanelWriteServerOperation = {
         (await java.form({ section, target, changedField: null })).values, values, submittedFields,
       );
       if (entries) {
-        await checkDefaultAgents(owner.domainId, credentials.locale, body);
+        checkDefaultAgentShapes(body);
         await java.saveEntries(id, writeInput(applicationEntriesUpdateSchema, body));
       } else await java.saveIdentity(id, writeInput(applicationIdentityUpdateSchema, body));
       return { primaryKey: id, data: { id } };

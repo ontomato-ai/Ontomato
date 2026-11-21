@@ -59,23 +59,21 @@ it("leaves a default agent the owner does not declare as a select as it is", asy
 });
 
 it.each([
-  ["an agent the list does not offer", { kind: "id", id: "agent-gone" }, "invalid_option"],
-  ["the general assistant, which is left out instead", { kind: "preset", agentKind: "regular" }, "invalid_option"],
-  ["a value that is not an option object", "agent-analyst", "invalid_object"],
-])("refuses %s at its field, before the owner is called", async (_case, defaultAgent, code) => {
+  ["a value that is not a default agent object", "agent-analyst"],
+  ["an object of another shape", { kind: "id" }],
+])("refuses %s at its field, before the owner is called", async (_case, defaultAgent) => {
   const outcome = await saveEntries(defaultAgent);
   expect(outcome).toMatchObject({ kind: "refusal", code: "APPLICATION_ENTRY_INVALID",
-    errors: [{ field: "/panelUses/0/defaultAgent", code, message: expect.stringContaining(JSON.stringify(defaultAgent)) }] });
+    errors: [{ field: "/panelUses/0/defaultAgent", code: "invalid_object", message: expect.stringContaining(JSON.stringify(defaultAgent)) }] });
   expect(java.saveEntries).not.toHaveBeenCalled();
 });
 
-it("refuses any choice when the list is empty", async () => {
-  agents.list.mockResolvedValue([]);
-  expect(await saveEntries(analyst)).toMatchObject({ kind: "refusal", errors: [{ field: "/panelUses/0/defaultAgent", code: "invalid_option" }] });
-});
-
-it.each([["an offered agent", analyst], ["no default agent", undefined]])("saves %s", async (_case, defaultAgent) => {
+it.each([
+  ["an offered agent", analyst],
+  ["an agent the current list no longer offers, which the owners judge", { kind: "id", id: "agent-disabled" }],
+  ["no default agent", undefined],
+])("hands %s to the owner without reading the list", async (_case, defaultAgent) => {
   expect(await saveEntries(defaultAgent)).toMatchObject({ kind: "success" });
   expect(java.saveEntries).toHaveBeenCalledWith("app-one", values(defaultAgent));
-  if (defaultAgent === undefined) expect(agents.list).not.toHaveBeenCalled();
+  expect(agents.list).not.toHaveBeenCalled();
 });

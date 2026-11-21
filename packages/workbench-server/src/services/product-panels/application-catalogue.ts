@@ -77,7 +77,7 @@ export function applicationCatalogueClient(viewer: AssistantCredentials) {
 }
 
 /** The default agents an entry may name: the agent owner's list for this domain, in the reader's language. */
-export async function defaultAgentChoices(domainId: string, locale?: string): Promise<PanelFormOption[]> {
+async function defaultAgentChoices(domainId: string, locale?: string): Promise<PanelFormOption[]> {
   return (await listDefaultAgentOptions(domainId, locale))
     .map(({ value, label }) => ({ value, label, description: null, disabled: false, disabledReason: null }));
 }
