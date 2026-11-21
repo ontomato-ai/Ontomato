@@ -9,7 +9,7 @@ import pg from "pg";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { panelOptionListSchema, panelRecordQuerySchema } from "@ontomato/contracts/panel-projection";
 import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
-import { SKILL } from "@ontomato/contracts/platform-object-types";
+import { SDK_COMPONENT, SKILL } from "@ontomato/contracts/platform-object-types";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { protectedSkillRef } from "../../core/skills/providers";
 import { installContentLayout } from "../../content/layout";
@@ -24,14 +24,20 @@ import type { WorkbenchIdentity } from "../../identity/types";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
 
-const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "" }));
+const state = vi.hoisted(() => ({
+  pool: undefined as pg.Pool | undefined, schema: "", base: "", runForOwner: vi.fn(), credentialsForRun: vi.fn(),
+}));
+vi.mock("../../services/assistant/execution", async original => ({
+  ...await original<typeof import("../../services/assistant/execution")>(),
+  runForOwner: state.runForOwner, credentialsForRun: state.credentialsForRun,
+}));
 vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
 }));
 vi.mock("../../config/application", () => ({ config: { dataQuery: { get baseUrl() { return state.base; } } } }));
 vi.mock("../../config/environment", () => ({ environment: {
-  agentRuntime: () => ({ queryServiceToken: "fixture-service" }), publicBasePath: () => "",
+  agentRuntime: () => ({ queryServiceToken: "fixture-service", token: "fixture-callback-secret" }), publicBasePath: () => "",
   queryBase: () => state.base, queryTimeout: () => 30000,
 } }));
 vi.mock("../../utils/request-identity", async original => ({
@@ -59,6 +65,7 @@ const registered = new Set<string>();
 let entries = [good, broken];
 let listSources = async () => entries;
 let denied: string | undefined;
+let executorDenied: string | undefined;
 let root: string;
 let server: Server;
 
@@ -87,25 +94,30 @@ beforeAll(async () => {
   const requirePermission: WorkbenchIdentity["requirePermission"] = () => (_req, _res, next) => next();
   installWorkbenchIdentity({ requireDomainId: () => domainId, requirePermission } as unknown as WorkbenchIdentity);
   const { default: assistantRouter } = await import("../routes/assistant");
+  const { assistantExecutionRouter } = await import("../routes/assistant-execution");
+  const { unwrapCallbackCredential } = await import("../../services/agent-runtime/callback-credential");
   const { productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const { registerPanelSkillProvider } = await import("../../services/product-panels/skill-provider");
   registerPanelSkillProvider();
   const app = express();
   app.use(express.json());
+  app.use(unwrapCallbackCredential);
   app.post("/product-governance/register", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     registered.add(req.body.id);
     res.json({ success: true });
   });
   app.post("/product-governance/check", (req, res) => {
-    res.json({ allowed: req.header("tk") === "reader" && registered.has(req.body.id) && denied !== req.body.id });
+    const token = req.header("tk");
+    res.json({ allowed: registered.has(req.body.id) && (token === "reader"
+      ? denied !== req.body.id : token === "executor" && executorDenied !== req.body.id) });
   });
   app.post("/product-governance/resources", (req, res) => {
     expect(req.header("tk")).toBe("reader");
     res.json({ ids: [...registered].filter(id => id !== denied) });
   });
   app.get("/platform/applications/resolve-entry", (req, res) => {
-    expect(req.header("tk")).toBe("reader");
+    expect(["reader", "executor"]).toContain(req.header("tk"));
     const entry = [...entries, library].find(({ useId, applicationId }) => req.query.useId === useId && req.query.applicationId === applicationId)!;
     res.json({ success: true, data: { applicationId, menu: { groups: [], panelUses: [] },
       use: { id: entry.useId, panelId: entry.panelId, path: entry.path, pageKey: entry.entrance.pageKey,
@@ -123,12 +135,13 @@ beforeAll(async () => {
   });
   app.post("/internal/agent-execution/validate-setting", (_req, res) => res.sendStatus(204));
   app.use("/api", (req, _res, next) => {
-    Object.assign(req, { domainId, userId: "reader", token: "reader", locale: "en" });
+    Object.assign(req, { domainId, userId: "reader", token: req.header("tk") ?? "reader", locale: "en" });
     next();
   });
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
   app.use("/api/assistant", assistantRouter);
+  app.use("/api/assistant/executions", assistantExecutionRouter);
   server = app.listen(0, "127.0.0.1");
   await new Promise<void>(resolve => server.once("listening", resolve));
   state.base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -159,6 +172,11 @@ beforeAll(async () => {
       options: { source: skillType, read: "options", params: {} },
       rows: { source: skillType, read: "query", params: { search: { input: "search" } } },
       record: { source: { object: { literal: { className: SKILL, primaryKey: skillRef(broken).name } } }, read: "record", params: {} },
+      components: { source: { type: { kind: "PlatformObjectType", id: SDK_COMPONENT } }, read: "catalogue", params: {} },
+      componentDefinition: {
+        source: { object: { literal: { className: SDK_COMPONENT, primaryKey: "@ontomato/sdk:ObjectList" } } },
+        read: "definition", params: {},
+      },
     },
   });
   await register("product-panels", library.panelId, {
@@ -187,6 +205,7 @@ beforeEach(() => {
   entries = [good, broken];
   listSources = async () => entries;
   denied = undefined;
+  executorDenied = undefined;
 });
 
 function read(entry: typeof good, route: string) {
@@ -207,6 +226,76 @@ async function readLibrary(dataName: string, inputs: Record<string, string> = {}
   expect(response.status, JSON.stringify(body)).toBe(200);
   return productPanelReadResponseSchema.parse(body);
 }
+
+it("derives SDK catalogue reads from the page and serves them through the run's executor", async () => {
+  entries = [...entries, library];
+  const ref = skillRef(library);
+  const { panelSkillProvider } = await import("../../services/product-panels/skill-provider");
+  const offering = await panelSkillProvider.findByUse(domainId, library);
+  if (!offering || !("kind" in offering)) throw new Error("Expected a registered catalogue panel");
+  const skill = (await offering.provide(ref)).files[0]!.content;
+  expect(skill).toContain("POST to `$ONTOMATO_PANEL_OPERATIONS_URL/read`");
+  expect(skill).toContain("`catalogue.components` — catalogue returns `panelRecordList`");
+  expect(skill).toContain("`catalogue.componentDefinition` — definition returns `sdkComponentDefinition`");
+  expect(skill).not.toContain("/apps-sdk/current/components.json");
+
+  const runId = randomUUID();
+  const run = { status: "running", sessionId: randomUUID(), channel: { authority: { executionKind: "live" } },
+    resolvedSkills: [{ skill: ref, digest: "a".repeat(64) }] };
+  state.runForOwner.mockResolvedValue(run);
+  state.credentialsForRun.mockResolvedValue({ executionUserId: "second-user", credentials: { token: "executor", locale: "en" } });
+  const { callbackCredential } = await import("../../services/agent-runtime/callback-credential");
+  const pathPrefix = `/api/assistant/executions/${runId}/`;
+  const credential = callbackCredential({ pathPrefix, runId, expiresAt: Date.now() + 60_000, token: "reader", apiKey: "" });
+  const readFromRun = (dataName: string) => fetch(state.base + pathPrefix + "panels/read", {
+    method: "POST", headers: { "Content-Type": "application/json", "X-Ontomato-Callback-Credential": credential.value,
+      "X-Ontomato-Run-Id": runId },
+    body: JSON.stringify({ source: { kind: "registered", applicationId, useId: library.useId },
+      memberPath: [{ member: "catalogue" }], dataName, inputs: {} }),
+  });
+  for (const datum of ["components", "componentDefinition"]) {
+    const response = await readFromRun(datum);
+    const body = await response.json();
+    expect(response.status, JSON.stringify(body)).toBe(200);
+    expect(body.status).toBe("ready");
+    expect(body).toEqual(await readLibrary(datum));
+  }
+  expect(state.credentialsForRun).toHaveBeenCalledWith(
+    { domainId, userId: "reader" }, runId, expect.objectContaining({ token: "reader" }), run.sessionId,
+  );
+
+  executorDenied = "projection-skill-library";
+  expect(await (await readFromRun("components")).json()).toEqual({ status: "forbidden" });
+
+  state.runForOwner.mockResolvedValue({ ...run, resolvedSkills: [] });
+  state.credentialsForRun.mockClear();
+  const deniedRun = await readFromRun("components");
+  expect(deniedRun.status).toBe(403);
+  expect(state.credentialsForRun).not.toHaveBeenCalled();
+});
+
+it("serves current panel records and snapshots without browser storage", async () => {
+  const id = "panel-cache-policy";
+  const definition = { name: "Before", description: "", visibility: "domain",
+    content: vuePanelContent(), manifest: { state: {}, members: {}, events: {} } };
+  await register("product-panels", id, definition);
+  const url = `${state.base}/api/product-panels/${id}`;
+  const urls = [url, url + "/snapshot"];
+  for (const route of urls) {
+    const response = await fetch(route);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toMatchObject({ panel: { revision: 1, ...(route === url && { name: "Before" }) } });
+  }
+  const updated = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...definition, name: "After", revision: 1 }) });
+  expect(updated.status).toBe(200);
+  for (const route of urls) {
+    const response = await fetch(route);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toMatchObject({ panel: { revision: 2, ...(route === url && { name: "After" }) } });
+  }
+});
 
 it("lists healthy skills and only admitted diagnostics through the panel's real reads", async () => {
   const options = await readLibrary("options");

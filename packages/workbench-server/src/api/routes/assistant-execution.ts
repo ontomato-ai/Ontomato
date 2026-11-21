@@ -1,6 +1,8 @@
 import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { createPanelOperationIntentRequestSchema, dispatchPanelOperationIntentRequestSchema } from "@ontomato/contracts/panel-agent";
-import { operatePanel, dispatchPanel } from "../../services/product-panels/operations";
+import { operatePanel, dispatchPanel, requirePanelSkillForRun } from "../../services/product-panels/operations";
+import { productPanelReadRequestSchema } from "@ontomato/contracts/panel-host";
+import { readProductPanelData } from "../../services/product-panels/data-reads";
 import { Router, type Request } from "express";
 import { AGENT_DEFINITION, SKILL, MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE, ONTOLOGY_TYPE, bindingKey, chartProjectionLookupRead, chartProjectionSourceRead, panelClientReads, scheduledTaskReads } from "@ontomato/contracts/panel-client-requests";
 import type {AssistantCredentials} from "../../platform/agent-runtime/runtime";
@@ -97,6 +99,24 @@ assistantExecutionRouter.post("/:runId/panels/intents/:intentId/dispatch",wrap(a
   dispatchPanelOperationIntentRequestSchema.parse(req.body);
   const {owner,credentials}=context(req);
   res.json(await dispatchPanel(owner,credentials,runId,intentId));
+}));
+
+assistantExecutionRouter.post("/:runId/panels/read", wrap(async (req, res) => {
+  const runId = callbackRun(req, res.locals.runtimeCallback);
+  const input = productPanelReadRequestSchema.parse(req.body);
+  if (input.source.kind !== "registered")
+    throw new HttpError(400, "A page skill reads a registered application entry", "INVALID_REQUEST");
+  const { owner, credentials } = context(req);
+  const run = await runForOwner(owner, runId);
+  if (!run.channel || run.status !== "running")
+    throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
+  if (run.channel.authority.executionKind !== "live")
+    throw new HttpError(422, "Page skill reads do not support test data", "BUILD_TEST_UNSUPPORTED");
+  await requirePanelSkillForRun(owner, credentials, run, input.source);
+  const executor = await credentialsForRun(owner, runId, credentials, run.sessionId);
+  const reader = { ...owner, userId: executor.executionUserId ?? owner.userId };
+  const userName = executor.executionUserId === null ? (req as AuthenticatedRequest).userName : undefined;
+  res.json(await readProductPanelData(reader, executor.credentials, input, userName));
 }));
 
 assistantExecutionRouter.post("/:runId/retrieval",wrap(async(req,res)=>{

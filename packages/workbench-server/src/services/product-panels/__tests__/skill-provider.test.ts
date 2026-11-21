@@ -350,31 +350,15 @@ it("keeps the package and recipes for a panel independent of its entrance", asyn
     expect(markdown).toContain(await readFile(new URL("p/recipes.md", example), "utf8"));
     expect(markdown).not.toContain("/applications/app-panels-trial-a/tasks");
     expect(markdown).not.toContain("/applications/app-panels-trial-b/tasks");
-    expect(markdown).toContain("PlatformObjectType:platform:ScheduledTask");
+    expect(markdown).toContain('"objectType":"platform:ScheduledTask"');
     expect(markdown).toContain("platform:ScheduledTask.save");
     expect(markdown).toContain("handlerRef schedules.runNow");
     expect(markdown).toContain('"state":"selectedTask"');
-    expect(markdown).toContain("POST /platform/scheduled-tasks/applications/:appId/form");
-    expect(markdown).toContain("for `PlatformObjectType:platform:ScheduledTask`.");
-    expect(markdown).toContain("POST JSON with `values`, `changedField`, `taskId`, and `timeZone`.");
     const readSection = markdown.split("### Read current data")[1]!.split("### Open the panel")[0]!;
-    expect(readSection).toContain("`ONTOMATO_TK` is set, send `tk: $ONTOMATO_TK`");
-    expect(readSection).toContain("`ONTOMATO_API_KEY` is set, send `X-API-Key: $ONTOMATO_API_KEY`");
-    expect(readSection).toContain("/api/assistant/executions/<runId>/ontology");
-    expect(readSection).toContain("Never send callback headers to a direct Java URL");
-    expect(readSection).toContain("An anonymous direct Java URL needs no authentication header");
-    expect(markdown).toContain('"pageKey": "<current page context pageKey>"');
-    expect(markdown).toContain('"form": {}');
-    const draftSection = markdown.split("### Draft a change")[1]!.split("### Declared operations")[0]!;
-    expect(draftSection).toContain("Use the owner-described values in `form`.");
-    const { registeredPanelOperation } = await import("../server-operations");
-    const save = registeredPanelOperation("platform:ScheduledTask.save")?.handler;
-    assert.equal(save?.kind, "form.save");
-    expect(markdown.split("### Declared operations")[1]!).toContain(save.formInstructions);
-    expect(markdown).toContain('"required":["values","revision"]');
-    expect(markdown).toContain("$ONTOMATO_PANEL_OPERATIONS_URL/operate");
-    expect(markdown).toContain("/intents/<intentId>/dispatch");
-    expect(markdown).toContain("End this tool call immediately; do not wait or poll.");
+    expect(readSection).toContain("POST to `$ONTOMATO_PANEL_OPERATIONS_URL/read`");
+    expect(readSection).toContain("`form.form` — form returns `panelFormDescription`");
+    expect(readSection).toContain("X-Ontomato-Callback-Credential");
+    expect(readSection).not.toContain("/platform/scheduled-tasks");
     expect(markdown).not.toContain("fixture-platform-service");
     expect(markdown).not.toContain("fixture-owner");
     expect(markdown).not.toContain(panel.content.html);
@@ -416,7 +400,7 @@ it("advertises a declared operation without promising a draft when there is no f
   expect(markdown).not.toContain("### Read current data");
 });
 
-it("describes both graph bindings and their single metadata read", async () => {
+it("describes both named reads of the model graph", async () => {
   javaSources([uses[0]!]);
   extraProjections.set("graph-fixture", {
     name: "Data scope", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectGraph",
@@ -431,10 +415,11 @@ it("describes both graph bindings and their single metadata read", async () => {
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
   expect(markdown).toContain('"id":"platform:ObjectType"');
   expect(markdown).toContain('"edgeEnds":{"source":"/fromclass","target":"/toclass"}');
-  expect(markdown.match(/POST \/admin\/getMetas/gu)).toHaveLength(1);
+  expect(markdown).toContain("`graph.nodes` — list returns `panelRecordList`");
+  expect(markdown).toContain("`graph.edges` — list returns `panelRecordList`");
 });
 
-it("describes the platform ontology's five workbench reads once across both graph bindings", async () => {
+it("documents only the platform ontology reads declared on the projection", async () => {
   javaSources([uses[0]!]);
   const source = { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } };
   extraProjections.set("ontology-graph", {
@@ -450,12 +435,9 @@ it("describes the platform ontology's five workbench reads once across both grap
   const [offering] = await panelSkillProvider.list({ domainId, reportSourceFailure });
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
   const reads = markdown.split("### Read current data")[1]!.split("### Open the panel")[0]!;
-  for (const [method, name] of [
-    ["GET", "schema"], ["GET", "counts"], ["GET", "start"], ["POST", "neighbors"], ["POST", "objects"],
-  ]) {
-    const command = "`" + method + " /api/platform-ontology/" + name + "` on `ONTOMATO_WORKBENCH_URL`";
-    expect(reads.split(command)).toHaveLength(2);
-  }
-  expect(reads).toContain("relationKinds?");
-  expect(reads).toContain("keyword?");
+  expect(reads).toContain("`graph.schema` — schema returns `panelGraphSchema`");
+  expect(reads).toContain("`graph.neighbors` — neighbors returns `panelGraphNeighbors`");
+  expect(reads).toContain("`graph.objects` — objects returns `panelOntologyObjects`");
+  expect(reads).not.toContain("graph.counts");
+  expect(reads).not.toContain("graph.start");
 });
