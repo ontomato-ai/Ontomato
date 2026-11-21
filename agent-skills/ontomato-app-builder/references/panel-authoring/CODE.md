@@ -27,6 +27,10 @@ use `<el-alert>`.
 For translations, put flat message keys under locale tags in `panel.json`'s `content.messages`. For example,
 `{"en":{"panel.greeting":"Hello, {name}"}}` is a message table. Use `t("panel.greeting", { name })` in the
 template and `usePanelContext().t` in `setup()`. The direct runtime supplies the template function.
+Use the flat `panel.name` key for the panel title, for example
+`{"zh-CN":{"panel.name":"治理报告"},"en":{"panel.name":"Governance report"}}`. The host uses an entry's menu name
+when present. Otherwise it uses the panel name in the reader's locale, then the platform's default locale and the
+name in `registration.json`. Keep the entry's menu metadata for entries that belong in the menu.
 
 ## Open a panel at a specific state
 
