@@ -242,6 +242,7 @@ export interface WorkflowStepRecord {
     instruction?: string;
   };
   invocationMode?: "manual" | "automatic";
+  caseScoped?: boolean;
   description?: string;
 }
 
