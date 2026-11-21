@@ -18,6 +18,8 @@ export function javaBuiltinApplications(sources) {
 }
 
 export async function stageBuiltinPanels({ directory, members, applications, checks, checkSource }) {
+  const builtinEntryIds = new Set(applications.flatMap(({ declaration }) =>
+    (declaration?.panelUses ?? []).map(use => use.id)));
   const panels = new Map();
   for (const member of members) {
     const source = join(member.absolute, "resources/builtin-panels");
@@ -25,7 +27,7 @@ export async function stageBuiltinPanels({ directory, members, applications, che
     for (const entry of readdirSync(source, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const folder = join(source, entry.name);
-      const { panelId } = await checkSource(folder, checks);
+      const { panelId } = await checkSource(folder, checks, { builtinEntryIds });
       if (panels.has(panelId)) throw new Error(`Duplicate platform panel ${panelId}: ${panels.get(panelId).folder} and ${folder}`);
       const files = existsSync(join(folder, "recipes.md")) ? [...sourceFiles, "recipes.md"] : sourceFiles;
       panels.set(panelId, { folder, relative: `${member.name}/${entry.name}`, files });
