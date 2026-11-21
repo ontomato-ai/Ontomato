@@ -47,17 +47,16 @@ describe("default assistant prompts", () => {
     expect(effectiveSystemPrompt({kind,system_prompt:customized})).toBe(customized);
   });
 
-  it("the product analyst skill delegates natively, reuses a fitting metric and rests while the retriever works", () => {
+  it("the product analyst skill starts retrieval and metric recall concurrently, reuses a fitting metric and rests while the retriever works", () => {
     const skill=readFileSync(path.resolve("../../agent-skills/ontomato-analyst-assistant/SKILL.md"),"utf8");
-    expect(skill).toContain('op: "list"');expect(skill).toContain('op: "start"');expect(skill).toContain('op: "read"');
+    expect(skill).toContain('op: "read"');expect(skill).toContain('op: "send"');
     expect(skill).toContain("notification");
     for(const command of ["dataset-desc","classes","schema <class>...","relationships <class>...","knowledge <question>",
-      "recall-metrics \"<complete question>\"","run-metric <id> --revision"])
+      "start-retrieval \"<complete question>\"","run-metric <id> --revision"])
       expect(skill).toContain(command);
-    // The old substring lookup is gone; the retriever and the metric recall start in the same step.
-    expect(skill).not.toMatch(/`metrics <question>/);
-    expect(skill).toMatch(/In the same step, start the retriever[\s\S]*then run `recall-metrics/);
-    expect(skill).toMatch(/end this turn\. Do not read, poll or sleep/);
+    expect(skill).not.toMatch(/`metrics <question>|recall-metrics|op: "list"|op: "start"/);
+    expect(skill).toMatch(/Run `start-retrieval[^`]*` once with the complete question[\s\S]*starts the\s+retriever and recalls published metrics concurrently/);
+    expect(skill).toMatch(/end\s+this turn\. Do not read, poll or sleep/);
     expect(skill).not.toMatch(/progress check|binding result|Both branches/i);
     expect(skill).toMatch(/Cite every dataset the conclusion relies\s+on/);
     expect(skill).toContain("The host supplies ONTOMATO_ONTOLOGY_URL");

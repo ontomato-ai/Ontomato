@@ -115,6 +115,12 @@ public class RuntimeCodeClient {
     for (String file : List.of("client.mjs", "application.yml"))
       files.add(
           Map.of("path", file, "content", skillResource("ontology-skills/ontomato-analyst/" + file)));
+    files.add(
+        Map.of(
+            "path",
+            "retriever-ref.json",
+            "content",
+            io.ontomato.dataengine.service.agent.OntologyAgentStore.retrieverRef().toJSONString()));
     return runtime.publishSkill("ontology-assistant-skill-registration", ASSISTANT_SKILL, files);
   }
 
