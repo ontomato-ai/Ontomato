@@ -1,4 +1,4 @@
-import { pageDraftSchema, pageDraftPathSchema } from "@ontomato/contracts/page-draft";
+import { draftTarget, pageDraftSchema, pageDraftPathSchema } from "@ontomato/contracts/page-draft";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
 import { once } from "node:events";
@@ -63,6 +63,10 @@ it("platform knowledge import emits separate original-page forms and never calls
     {pageKey:"business-knowledge",operation:"knowledge.update",target:{objectType:"platform:BusinessKnowledge",id:"existing"},form:{knowledgeID:"existing",knowledgeTitle:"Changed",knowledgeText:"Changed text",knowledgeTags:["retained"],status:1}},
   ]);
   expect(new Set(result.drafts.map((entry:{path:string})=>entry.path)).size).toBe(2);
+  // The draft decides create or update before it exists; its own operation and target must agree with what a page
+  // derives from the draft it reads, so changing either side alone breaks here.
+  const kinds=drafts.map((draft)=>({derived:draftTarget(draft).kind,operation:draft.operation}));
+  expect(kinds).toEqual([{derived:"create",operation:"knowledge.create"},{derived:"update",operation:"knowledge.update"}]);
 });
 
 it("platform import uses the execution callback for its business-page read without a long user key",async()=>{
