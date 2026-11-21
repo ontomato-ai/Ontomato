@@ -49,9 +49,10 @@ const listedActionSchema = storedObjectActionSchema.pick({ id: true }).extend({
 });
 const listedTargetSchema = storedObjectActionSchema.shape.target.unwrap().pick({ className: true });
 
-/** One object Action for an author's type table: the object type it runs on and its static declaration. */
+/** One object Action for an author's type table: the object type it runs on, its stored name and its static declaration. */
 export interface ObjectActionEntry {
   className: string;
+  name: string;
   declaration: PanelOperationDeclaration;
 }
 
@@ -171,7 +172,10 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
         }
         const action = stored.data;
         if (action.target !== null)
-          actions.push({ className: action.target.className, declaration: objectActionDeclaration({ ...action, target: action.target }) });
+          actions.push({
+            className: action.target.className, name: action.name,
+            declaration: objectActionDeclaration({ ...action, target: action.target }),
+          });
       }
       return { actions, unavailableActions };
     },

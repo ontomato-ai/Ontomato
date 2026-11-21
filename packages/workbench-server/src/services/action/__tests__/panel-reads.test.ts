@@ -159,7 +159,7 @@ describe("action catalog reads", () => {
     expect([(failed as HttpError).status, (failed as HttpError).code]).toEqual([500, "ACTION_READ_FAILED"]);
   });
 
-  it("declares the published object Actions for an author's type table, by the object type each stored target names", async () => {
+  it("declares the published object Actions for an author's type table, by the object type each stored target names, under their stored names", async () => {
     const objectAction = (id: string, className: string) => ({
       ...approve, id, codeHash: `hash-${id}`, target: { className, keyParameter: "key" },
       function: { name: id, parameters: [{ name: "key", type: "TYPE_STRING" }, { name: "note", type: "TYPE_STRING" }] },
@@ -170,20 +170,22 @@ describe("action catalog reads", () => {
       "/action/queryList": ok([
         approveOrder, { ...objectAction("import-orders", "Order"), target: null },
         { ...objectAction("broken-invoice", "Invoice"), function: { parameters: [{ name: null, type: "TYPE_STRING" }] } },
-        closeInvoice,
+        { ...objectAction("unnamed-invoice", "Invoice"), name: "  " },
+        { ...closeInvoice, name: "Close invoice" },
       ]),
     });
     const adapter = createActionReadAdapter(owner, viewer);
 
     const { actions, unavailableActions } = await adapter.objectActions();
     expect(actions).toEqual([
-      { className: "Order", declaration: objectActionDeclaration(approveOrder) },
-      { className: "Invoice", declaration: objectActionDeclaration(closeInvoice) },
+      { className: "Order", name: "Approve order", declaration: objectActionDeclaration(approveOrder) },
+      { className: "Invoice", name: "Close invoice", declaration: objectActionDeclaration(closeInvoice) },
     ]);
-    expect(unavailableActions).toEqual([{
-      id: "broken-invoice", objectType: "Invoice",
-      reason: expect.stringContaining("function.parameters.0.name"),
-    }]);
+    // An action a person and an agent could not call by name is unavailable, said item by item like any invalid one.
+    expect(unavailableActions).toEqual([
+      { id: "broken-invoice", objectType: "Invoice", reason: expect.stringContaining("function.parameters.0.name") },
+      { id: "unnamed-invoice", objectType: "Invoice", reason: "Invalid stored action field 'name': The action has no name" },
+    ]);
     for (const { declaration } of actions) expect(panelOperationDeclarationSchema.parse(declaration)).toEqual(declaration);
     const invoices = await adapter.objectActions("Invoice");
     expect(invoices.actions.map(entry => entry.declaration.id)).toEqual(["close-invoice"]);

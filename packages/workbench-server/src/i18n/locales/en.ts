@@ -139,6 +139,7 @@ export const en = {
   "panels.metricView.fields.modified": "Updated",
   "panels.function.fields.operation": "Operation",
   "panels.action.fields.updatedAt": "Updated",
+  "panels.action.operations.save": "Save",
   "panels.action.operations.setStatus": "Change status",
   "panels.action.operations.delete": "Delete",
   "panels.ontologyModel.operations.saveObjectType": "Save object type",
