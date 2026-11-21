@@ -14,6 +14,7 @@
   .apps-name-text strong { font-weight: 600; }
   .apps-name-text small { color: var(--el-text-color-secondary); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .apps-icon { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 22px; padding: 0 6px; border-radius: var(--radius-sm, 4px); background: var(--el-fill-color-light); color: var(--el-text-color-regular); font-size: 12px; font-family: var(--font-mono, monospace); flex: none; }
+  .apps-list-icon { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
   .apps-hint { margin: 0; color: var(--el-text-color-secondary); font-size: 13px; line-height: 1.6; }
   .apps-error { margin: 0; color: var(--el-color-danger); font-size: 13px; line-height: 1.6; }
   .apps-ok { margin: 0; color: var(--el-color-success); font-size: 13px; line-height: 1.6; }
@@ -68,10 +69,10 @@
       <p class="apps-error" v-if="listError" role="alert">{{ listError }}</p>
 
       <el-table v-loading="catalogue.status === 'loading'" :data="rows" row-key="id" @row-click="openRow">
-        <el-table-column label="图标" width="140">
-          <template #default="{ row }"><span class="apps-icon">{{ row.icon }}</span></template>
+        <el-table-column label="图标" min-width="76">
+          <template #default="{ row }"><span class="apps-icon apps-list-icon" :title="row.icon">{{ row.icon }}</span></template>
         </el-table-column>
-        <el-table-column label="名称" min-width="260">
+        <el-table-column label="名称" min-width="110">
           <template #default="{ row }">
             <span class="apps-name-text">
               <strong>{{ primaryName(row.names) }}</strong>
@@ -79,15 +80,15 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="来源" width="100">
+        <el-table-column label="来源" width="54">
           <template #default="{ row }">
             <el-tag size="small" :type="row.source === 'builtin' ? 'info' : 'primary'">{{ row.source === 'builtin' ? '内置' : '域内' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="我能不能维护" width="130">
+        <el-table-column label="维护权限" width="72">
           <template #default="{ row }">{{ row.canMaintain ? '能维护' : '只读' }}</template>
         </el-table-column>
-        <el-table-column label="入口数" width="90">
+        <el-table-column label="入口数" width="62">
           <template #default="{ row }">{{ row.entryCount }}</template>
         </el-table-column>
         <template #empty>

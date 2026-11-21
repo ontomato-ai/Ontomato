@@ -76,6 +76,10 @@
     white-space: nowrap;
   }
   .pd-table td { padding: 6px 8px; border-bottom: 1px solid var(--el-border-color-lighter); vertical-align: top; }
+  .pd-list-table { table-layout: fixed; }
+  .pd-list-table th:first-child { width: 44%; }
+  .pd-list-table th, .pd-list-table td { padding-inline: var(--spacing-xs); overflow-wrap: anywhere; white-space: normal; }
+  .pd-list-table .pd-tag { white-space: normal; }
   .pd-table tr.pd-row { cursor: pointer; }
   .pd-table tr.pd-row:hover td { background: var(--el-fill-color-light); }
   .pd-table tr.pd-row.chosen td { background: var(--el-color-primary-light-9); }
@@ -171,7 +175,7 @@
       <p v-if="rowsError" class="pd-error">{{ t('error', { message: rowsError }) }}</p>
       <p v-if="loading" class="pd-note">{{ t('busy') }}</p>
       <p v-else-if="!visibleRows.length" class="pd-note">{{ t('list.empty') }}</p>
-      <table v-else class="pd-table">
+      <table v-else class="pd-table pd-list-table">
         <thead>
           <tr>
             <th>{{ t('list.name') }}</th>
@@ -189,8 +193,8 @@
             @click="pick(row)"
           >
             <td>
-              <span class="pd-name">{{ row.name }}</span>
-              <span v-if="row.description" class="pd-sub">{{ row.description }}</span>
+              <span class="pd-name" :title="row.name">{{ row.name }}</span>
+              <span v-if="row.description" class="pd-sub" :title="row.description">{{ row.description }}</span>
             </td>
             <td>{{ ownerName(row.ownerId) }}</td>
             <td><span class="pd-tag" :class="{ on: row.visibility === 'domain' }">{{ visibilityLabel(row.visibility) }}</span></td>
