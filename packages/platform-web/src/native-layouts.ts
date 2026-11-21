@@ -3,7 +3,7 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { panelUsePath } from "@ontomato/contracts/panel-host";
 import { applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
 import type { AppPartition } from "./partition";
-export type NativeLayout = Pick<AppPartition, "sections" | "foot" | "frame" | "home" | "homePage" | "entryHome" | "open" | "descriptionKey">;
+export type NativeLayout = Pick<AppPartition, "sections" | "foot" | "frame" | "home" | "homePage" | "homePermission" | "entryHome" | "open" | "descriptionKey">;
 const layouts: readonly (NativeLayout & { renderer: string })[] = [
   { renderer: "personal-workspace", sections: [] },
   // The platform's home draws its own page: no column, no header of the shell's.
@@ -78,7 +78,10 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
   },
   {
     renderer: "operations",
-    // A reader with user feedback alone opens on it; it is an entry with no menu name, so the menu does not list it.
+    // Observers enter on turn evidence (its routes live in ObserveLayout rather than PlatformNavigation); a reader with
+    // user feedback alone opens on it, and since it has no menu name the menu does not list it.
+    home: platformRoutes.turn.path,
+    homePermission: "observer",
     entryHome: platformRoutes.feedback.path,
     sections: [
       {

@@ -90,14 +90,10 @@ it("lists only named panel uses in declared order and gives one named use no men
 
 describe("the operations application's user feedback", () => {
   // The entry operations declares for user feedback (big main's ruling, 2026-11-21): no menu name, so no menu place.
-  const catalog = catalogFixture().map((app) => app.id !== "operations" ? app : {
-    ...app,
-    panelUses: [{ id: "user-feedback", pageKey: "user-feedback", panelId: "builtin-product-feedback", path: "/ops/feedback",
-      access: { permissionCode: "user-feedback" } }],
-  });
-  const turn = { path: "/ops/turn", titleKey: "ops.turns", permissions: ["observer"], group: "operations", ownHeader: true };
-  const navigation = { ...generatedNavigation(), groups: [...generatedNavigation().groups, { key: "operations", titleKey: "platform.operations" }],
-    pages: [...generatedNavigation().pages, turn] };
+  // Production navigation does not list /ops/turn (ObserveLayout owns those routes), so test against real generatedNavigation().
+  const catalog = catalogFixture();
+  const withoutFeedback = catalog.map((app) => app.id !== "operations" ? app : { ...app, panelUses: [] });
+  const navigation = generatedNavigation();
   const operations = (granted: string[], apps = catalog) =>
     appDeclarations(navigation, closedAccess(granted), catalogPartition(apps, "en"), t).find((app) => app.id === "operations")!;
 
@@ -112,6 +108,6 @@ describe("the operations application's user feedback", () => {
   });
 
   it("does not open on user feedback for a reader the catalogue gives no such entry", () => {
-    expect(operations(["user-feedback"], catalogFixture()).home).not.toBe("/ops/feedback");
+    expect(operations(["user-feedback"], withoutFeedback).home).not.toBe("/ops/feedback");
   });
 });
