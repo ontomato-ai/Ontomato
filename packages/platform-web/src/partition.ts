@@ -32,7 +32,7 @@ export interface AppPartition extends Omit<PlatformAppDeclaration, "groups" | "l
   /** The page at the foot of the application's column (its models), listed apart from the groups. */
   foot?: string;
   /**
-   * The built-in applications' panel entries the reader may open, by address, named by their use relations: where its menu
+   * A native application's panel entries the reader may open, by address, named by their use relations: where its menu
    * table lists one of these addresses, the entry stands there instead of a native page (big main's ruling, 2026-11-21).
    */
   entries?: ReadonlyMap<string, PlatformPanelPage>;
