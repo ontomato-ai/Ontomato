@@ -160,6 +160,8 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
       draftSettled: (draft) => send({ kind: "draft-settled", draft }),
       // A panel in a frame has no way to tell its host of a refused draft beside the panel; it fails as it did.
       draftRefused: (refusal) => failed(refusal),
+      // A frame's host shows its page as it runs: nothing waits for the draft there.
+      draftOpened: () => {},
       failed,
     },
   });

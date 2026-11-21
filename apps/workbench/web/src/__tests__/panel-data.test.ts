@@ -8,7 +8,7 @@ import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { BUSINESS_KNOWLEDGE, SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import { panelModuleFor, type DirectPanelMount } from "../../../../../packages/apps-sdk/src/direct";
 import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
-import { noOperations } from "./panel-frame";
+import { noOperations, directRun } from "./panel-frame";
 
 /*
  * Data a panel's own code draws (big main's ruling, 2026-11-20): a member whose projection is a `PanelData` one is never
@@ -57,11 +57,10 @@ it("reads a member's datum for the panel's own code, as its projection declares,
     template: `<p class="task">{{ shown }}</p>`,
     install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
     manifest,
-    run: {
+    run: directRun({
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
       failed: (reason) => { throw reason; },
-    },
+    }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({ projection: taskData }) },
     use: { applicationId: "app-tasks", useId: "tasks" },
@@ -112,11 +111,10 @@ it("says so when the projection declares no such datum", async () => {
     mounted, element, template: `<p class="task">{{ shown }}</p>`,
     install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
     manifest,
-    run: {
+    run: directRun({
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: chosen("t-1") },
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
       failed: (reason) => { throw reason; },
-    },
+    }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({ projection: taskData }) },
     use: { applicationId: "app-tasks", useId: "tasks" },
@@ -150,11 +148,10 @@ it("keeps a member whose projection cannot be read to itself: the rest of the pa
     mounted, element, template: `<p class="task">{{ shown }}</p><Projection slot="hidden"/>`,
     install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
     manifest: twoMembers,
-    run: {
+    run: directRun({
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: chosen("t-1") },
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
       failed: (reason) => failed.push(reason),
-    },
+    }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
     // The reader may not use the hidden member's projection; the platform says so.
     requests: { request: async (path: string) => (path.endsWith("/hidden")
@@ -187,11 +184,10 @@ it("says where to call it when it is called outside a component's setup", async 
     mounted: () => {}, element, template: "<p></p>",
     install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
     manifest,
-    run: {
+    run: directRun({
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
       failed: (reason) => { throw reason; },
-    },
+    }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({ projection: taskData }) },
     use: { applicationId: "app-tasks", useId: "tasks" },
@@ -222,11 +218,10 @@ it("reads a list and its counts again when an operation reports their type chang
     mounted, element, template: `<p class="counts">{{ pendingCount }}</p><p class="rows">{{ rowCount }}</p>`,
     install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
     manifest: definePanel({ state: {}, members: { board: { target: { projectionId: counted.id } } }, commands: {} }),
-    run: {
+    run: directRun({
       pageKey: "board", url: () => "/board", label: () => "Board", initial: {},
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
       failed: (reason) => { throw reason; },
-    },
+    }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({ projection: counted }) },
     use: { applicationId: "app-board", useId: "board" },
@@ -277,11 +272,10 @@ it("runs a member's operation from the panel's own code, found by the member and
     mounted, element, template: `<button class="run" :disabled="!runNow.operation.value">{{ runNow.operation.value?.label ?? "none" }}</button>`,
     install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
     manifest,
-    run: {
+    run: directRun({
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
       failed: (reason) => { throw reason; },
-    },
+    }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async (path: string, init?: { body?: unknown }) => {
       if (path === "/panel-operations/intents") {
@@ -335,11 +329,10 @@ it("opens a platform address from the panel's own code through the host, and hea
     mounted, element, template: "<p></p>",
     install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
     manifest,
-    run: {
+    run: directRun({
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
       failed: (reason) => { throw reason; },
-    },
+    }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({ projection: taskData }) },
     use: { applicationId: "app-tasks", useId: "tasks" },
@@ -369,11 +362,10 @@ it("draws a document as the product's Markdown, a file as code, and tells the re
     template: `<markdown-view :content="doc"></markdown-view><code-editor :model-value="code" language="javascript" readonly></code-editor>`,
     install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
     manifest,
-    run: {
+    run: directRun({
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
       failed: (reason) => { throw reason; },
-    },
+    }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({ projection: taskData }) },
     use: { applicationId: "app-tasks", useId: "tasks" },
@@ -400,11 +392,10 @@ it("shows a read the platform could not answer as the datum's failure, with the 
     mounted, element, template: `<p class="task">{{ shown }}</p>`,
     install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
     manifest,
-    run: {
+    run: directRun({
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: chosen("t-1") },
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
       failed: (reason) => { throw reason; },
-    },
+    }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({ projection: taskData }) },
     use: { applicationId: "app-tasks", useId: "tasks" },

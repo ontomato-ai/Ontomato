@@ -233,14 +233,21 @@ function fail(reason: unknown) {
 onMounted(() => load(target.value));
 let pendingRefresh = false;
 /**
+ * The form is moving itself to show a draft it just took: what it held before is that earlier draft's, not the reader's,
+ * so only changes the reader made themselves are asked about.
+ */
+let movingForDraft = false;
+/**
  * The panel moved the form to another object (or to a new one) while it held the reader's unsaved changes: the reader is
  * asked first, as the platform asks before leaving a page. Keeping them puts the panel back on the object being edited;
  * discarding them is the form's own discard, and the form then shows where the panel moved.
  */
 watch(target, async (next, previous) => {
   pendingRefresh = false;
+  const forDraft = movingForDraft;
+  movingForDraft = false;
   if (targetKey(next) === loaded) return;
-  if (canSettle.value && !saving.value && previous !== null && targetKey(previous) === loaded) {
+  if ((forDraft ? dirty.value : canSettle.value) && !saving.value && previous !== null && targetKey(previous) === loaded) {
     const leave = await ElMessageBox.confirm(t("platform.formLeaveUnsaved"), t("platform.unsavedChanges"), {
       confirmButtonText: t("platform.discard"), cancelButtonText: t("platform.keepEditing"), type: "warning",
     }).then(() => true, () => false);
@@ -413,7 +420,10 @@ useProjectionForm({
     // A draft is held for what it changed and for what it wrote: one that writes a field as it already is still submits it.
     held = marked.size || written.size ? { target: targetKey(into), baseline, checked, changed: marked, submitted: written } : null;
     if (targetKey(target.value) === targetKey(into)) load(into);
-    else moveTo(into);
+    else {
+      movingForDraft = true;
+      moveTo(into);
+    }
     return marked;
   },
   submit: () => write(),

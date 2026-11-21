@@ -178,10 +178,14 @@ defineExpose({ ...view, operations, commands });
         <ElButton size="small" @click="toAgent">{{ labels.draft.toAgent }}</ElButton>
       </div>
     </ElAlert>
+    <!-- A linked draft is opened before the page is shown: never a page that is about to turn into the draft's. -->
+    <p v-if="!view.error.value && view.draftOpening.value && view.admitted.value" role="status" class="panel-host-draft-opening">
+      {{ labels.draft.opening }}
+    </p>
     <!-- Drawn while Java's answer is coming, so its members read at once; shown only once that answer names the page. -->
     <div
       v-if="!view.error.value && view.direct.value"
-      v-show="view.admitted.value"
+      v-show="view.admitted.value && !view.draftOpening.value"
       class="panel-host-direct"
       :data-panel-instance="view.instance"
     >
@@ -220,6 +224,11 @@ defineExpose({ ...view, operations, commands });
   margin: 0 0 var(--spacing-sm, 8px);
   color: var(--el-color-warning);
   font-size: 12px;
+}
+.panel-host-draft-opening {
+  margin: 0;
+  padding: var(--spacing-md, 12px);
+  color: var(--el-text-color-secondary);
 }
 .panel-host-draft {
   flex-shrink: 0;

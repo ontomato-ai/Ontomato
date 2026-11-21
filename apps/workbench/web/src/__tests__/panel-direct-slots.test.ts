@@ -8,7 +8,7 @@ import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { BUSINESS_KNOWLEDGE } from "@ontomato/contracts/platform-object-types";
 import type { DirectPanelMount } from "../../../../../packages/apps-sdk/src/panel/direct-mount";
 import { panelModuleFor } from "../../../../../packages/apps-sdk/src/panel/direct-run";
-import { noOperations } from "./panel-frame";
+import { noOperations, directRun } from "./panel-frame";
 
 /*
  * What a panel's template places in a member's slots reaches the member's component (M7's business knowledge page,
@@ -52,11 +52,10 @@ it("draws another member placed in a member's slot, where the component puts tha
     template: `<projection slot="list"><template #batch-actions="{ checked }"><span class="checked">{{ checked.length }}</span><projection slot="ask"></projection></template></projection>`,
     install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
     manifest,
-    run: {
+    run: directRun({
       pageKey: "knowledge", url: () => "/knowledge", label: () => "Knowledge", initial: { checked: [item("k-1")] } as never,
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
       failed: (reason) => { throw reason; },
-    },
+    }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async (path: string) => Response.json({ projection: projections[path.split("/").at(-1)!] }) },
     use: { applicationId: "app-knowledge", useId: "knowledge" },
