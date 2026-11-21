@@ -113,8 +113,10 @@ function selectMenuPage(path:string){
  */
 const headerTitle = computed(() =>
   (props.shownPage?.named || menu.value ? props.shownPage?.title : activeApp.value?.label) ?? props.shownPage?.title ?? "");
+// A page that names itself with a description of its own (a panel entry's) says it, as the page it names.
 const headerDescription = computed(() =>
-  (menu.value ? props.shownPage?.description : activeApp.value?.description) ?? props.shownPage?.description ?? null,
+  (menu.value || (props.shownPage?.named && props.shownPage.description) ? props.shownPage?.description : activeApp.value?.description)
+    ?? props.shownPage?.description ?? null,
 );
 const headerShown = computed(() => !props.blocked && props.shownPage !== null && !props.shownPage.ownHeader);
 const headerLabels = computed(() => ({

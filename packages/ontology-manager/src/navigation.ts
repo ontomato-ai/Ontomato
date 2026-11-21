@@ -2,13 +2,17 @@ import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import type { Component } from "vue";
 import {
   AlarmClock,
+  AppWindow,
   BookOpen,
   Bot,
   Boxes,
   ChartColumn,
+  Component as ComponentIcon,
+  Layers,
   Link2,
   MousePointerClick,
   Network,
+  PanelsTopLeft,
   Share2,
   SquareFunction,
   Table2,
@@ -111,13 +115,18 @@ const pages = [
 ];
 
 /**
- * The rows of the panel entries whose native pages are gone, with those pages' icons. An entry at an address the Manager
- * still lists a page for (the graph, the relation types) takes that page's icon and count.
+ * The rows of the panel entries whose native pages are gone, with those pages' icons, and of the product layer's entries,
+ * which never had a native page, with icons of their own. An entry at an address the Manager still lists a page for (the
+ * graph, the relation types) takes that page's icon and count.
  */
 const entries: readonly { path: string; icon: Component; count?: keyof OntologyResourceCounts }[] = [
   { path: managerPaths.functions, icon: SquareFunction },
   { path: managerPaths.actions, icon: MousePointerClick },
   { path: managerPaths.capabilityMap, icon: Share2 },
+  { path: "/ontology/components", icon: ComponentIcon },
+  { path: "/ontology/projections", icon: Layers },
+  { path: "/ontology/panels", icon: PanelsTopLeft },
+  { path: "/ontology/applications", icon: AppWindow },
   { path: routes.ontologyAgents.path, icon: Bot },
 ];
 
