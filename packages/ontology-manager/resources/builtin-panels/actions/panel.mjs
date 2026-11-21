@@ -167,8 +167,11 @@ const ActionsCatalog = {
     watch(() => rowsRead.value, (read) => {
       if (read.status !== "ready" && read.status !== "empty") return;
       const key = selectedKey.value;
-      if (key && !(read.status === "ready" ? read.value ?? [] : []).some((row) => row.primaryKey === key)) back();
-    });
+      // The list read may be handed as rows, or as a page of them; a page that left some out cannot say the action is gone.
+      const listed = read.status === "empty" ? [] : Array.isArray(read.value) ? read.value : read.value?.rows;
+      if (!key || !Array.isArray(listed) || (read.value?.truncation && read.value.truncation.omitted > 0)) return;
+      if (!listed.some((row) => row.primaryKey === key)) back();
+    }, { immediate: true });
 
     const record = computed(() => (recordRead.value.status === "ready" ? recordRead.value.value : null));
     /** The selected catalog row: the owner's name, status and origin, shown until the record arrives instead of an id. */
