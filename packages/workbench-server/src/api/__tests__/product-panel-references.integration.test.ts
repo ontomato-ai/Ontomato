@@ -8,7 +8,7 @@ import type { AddressInfo } from "node:net";
 import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
+import { AGENT_DEFINITION, DELETE_AGENT, PRODUCT_PANEL, PRODUCT_PROJECTION, SCHEDULED_TASK, SDK_COMPONENT } from "@ontomato/contracts/platform-object-types";
 import {
   PROJECTION_REUSE_PANEL_HEADER, productPanelInUseErrorSchema, productPanelResponseSchema, productPanelUsedBySchema,
   productProjectionInUseErrorSchema, productProjectionResponseSchema,
@@ -16,6 +16,7 @@ import {
 } from "@ontomato/contracts/product-panels";
 import {
   panelPersonalStateReadRequestSchema, panelPersonalStateResponseSchema, panelPersonalStateWriteRequestSchema,
+  productPanelNestedReadResponseSchema,
 } from "@ontomato/contracts/panel-host";
 import { panelDefinitionSnapshotSchema } from "@ontomato/contracts/product-subscriptions";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
@@ -23,8 +24,11 @@ import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/
 import { installContentLayout } from "../../content/layout";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
+import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
 import { panelStateKey } from "../../services/product-panels/personal-state-key";
 import { errorHandler } from "../middleware/error-handler";
+import { configureI18n } from "../../i18n";
+import { en, enLocaleMeta } from "../../i18n/locales/en";
 
 const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "" }));
 vi.mock("../../infrastructure/postgres", () => ({
@@ -33,7 +37,7 @@ vi.mock("../../infrastructure/postgres", () => ({
 }));
 vi.mock("../../config/application", () => ({ config: { dataQuery: { get baseUrl() { return state.base; } } } }));
 vi.mock("../../config/environment", () => ({ environment: {
-  agentRuntime: () => ({ queryServiceToken: "fixture-service" }),
+  agentRuntime: () => ({ queryServiceToken: "fixture-service", callbackUrl: state.base }),
   publicBasePath: () => "",
 } }));
 vi.mock("../../utils/request-identity", async original => ({
@@ -49,6 +53,9 @@ const panelId = "panel-referencing";
 const personalPanelId = "panel-personal";
 const personalChildId = "panel-personal-child";
 const snapshotPanelId = "panel-snapshot-test";
+const nestedRootId = "nested-root-fixture";
+const nestedAgentId = "51e55fe0-352a-4958-87a2-2d348d470758";
+const nestedDeletes: string[] = [];
 const grants = new Map<string, string>();
 const shared = new Set<string>();
 let server: Server | undefined;
@@ -68,17 +75,20 @@ const projectionInput = {
 };
 
 beforeAll(async () => {
+  configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
+    packs: { en: { messages: en, ...enLocaleMeta } } });
   state.schema = `product_panel_references_${randomUUID().replaceAll("-", "")}`;
   state.pool = new pg.Pool({ connectionString: database });
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
   await ensureAssistantSchema(state.pool);
   await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
+  await ensurePanelOperationsSchema(state.pool);
 
   contentRoot = await mkdtemp(join(tmpdir(), "product-panel-references-"));
   await writeBundledAppSdkFixture(contentRoot);
   installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
-  const { productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
+  const { panelOperationsRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const app = express();
   app.use(express.json());
   const granted = (token: string | undefined, id: string, verb: "use" | "edit") => {
@@ -122,6 +132,15 @@ beforeAll(async () => {
     res.json({ success: true, data: [] });
   });
   app.get("/platform/applications/resolve-entry", (req, res) => {
+    if (req.query.applicationId === "app-nested") {
+      expect(req.query.useId).toBe("main");
+      res.json({ success: true, data: {
+        applicationId: "app-nested", menu: { groups: [], panelUses: [] },
+        use: { id: "main", pageKey: "main", path: "/applications/app-nested/main",
+          panelId: nestedRootId, access: { kind: "domain-member" } },
+      } });
+      return;
+    }
     expect(req.query).toEqual({ applicationId: "app-personal", useId: "main" });
     res.json({ success: true, data: {
       applicationId: "app-personal", menu: { groups: [], panelUses: [] },
@@ -136,6 +155,18 @@ beforeAll(async () => {
   });
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
+  app.use("/api", panelOperationsRouter);
+  app.get("/api/assistant/agent-definitions/:id", (req, res) => {
+    expect(req.get("tk")).toBe("author");
+    expect(req.params.id).toBe(nestedAgentId);
+    res.json({ id: nestedAgentId, name: "Nested analyst", description: "", icon: null, enabled: true,
+      executionUserId: null, modelSelection: { modelId: null }, skills: [], systemPrompt: "" });
+  });
+  app.delete("/api/assistant/agent-definitions/:id", (req, res) => {
+    expect(req.get("tk")).toBe("author");
+    nestedDeletes.push(req.params.id);
+    res.sendStatus(204);
+  });
   app.use(errorHandler);
   server = await new Promise<Server>(resolve => {
     const started = app.listen(0, "127.0.0.1", () => resolve(started));
@@ -177,6 +208,103 @@ function request(method: string, resource: string, user: string, body?: object, 
     method, headers: { "Content-Type": "application/json", "X-Test-User": user, ...headers }, body: JSON.stringify(body),
   });
 }
+
+it("reads a selected nested panel or projection and freezes its actual publisher through confirmation", async () => {
+  const child = "nested-child-fixture", alternate = "nested-alternate-fixture";
+  const list = "nested-list-fixture", remove = "nested-remove-fixture";
+  const record = { name: "Nested record", description: "", visibility: "domain" };
+  const source = { kind: "registered", applicationId: "app-nested", useId: "main" };
+  const use = { applicationId: source.applicationId, useId: source.useId };
+  const save = async (resource: string, body: object, revision = 0) => {
+    const response = await request("PUT", resource, "author", { ...record, ...body, revision });
+    expect(response.status, await response.text()).toBe(200);
+  };
+  await save(`product-projections/${list}`, {
+    componentId: "@ontomato/sdk:PanelData", inputs: {}, outputs: {}, config: {},
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: SDK_COMPONENT } }, read: "catalogue", params: {} } },
+  });
+  const agentPort = { kind: "object", objectType: AGENT_DEFINITION };
+  await save(`product-projections/${remove}`, {
+    componentId: "@ontomato/sdk:OperationButton", inputs: { agent: agentPort }, outputs: {}, config: { operation: "remove" },
+    data: {}, operations: { remove: { operation: { kind: "PlatformOperation", id: DELETE_AGENT }, target: { input: "agent" } } },
+  });
+  for (const id of [child, alternate]) {
+    await save(`product-panels/${id}`, {
+      content: vuePanelContent("components", "approve"), manifest: { state: { agent: { type: agentPort } }, members: {
+        components: { target: { projectionId: list } },
+        approve: { target: { projectionId: remove }, inputs: { agent: { state: "agent" } } },
+      }, events: {} },
+    });
+  }
+  const root = {
+    content: vuePanelContent("detail", "fixed", "choice"),
+    manifest: { state: {
+      selectedPanel: { type: { kind: "object", objectType: PRODUCT_PANEL } },
+      selectedProjection: { type: { kind: "object", objectType: PRODUCT_PROJECTION } },
+    }, members: {
+      detail: { target: { fromState: "selectedPanel", candidates: { rule: "usable" } } },
+      fixed: { target: { panelId: child } },
+      choice: { target: { fromState: "selectedProjection", candidates: { projectionIds: [list] } } },
+    }, events: {} },
+  };
+  await save(`product-panels/${nestedRootId}`, root);
+  for (const id of [nestedRootId, child, list, remove]) shared.add(id);
+
+  const selectedPanel = (panelId: string) => ({ member: "detail", selection: {
+    stateValue: { className: PRODUCT_PANEL, primaryKey: panelId }, target: { panelId },
+  } });
+  const detail = selectedPanel(child);
+  const nested = await request("POST", "product-panels/nested", "nested-reader", { source, memberPath: [detail] });
+  expect(nested.status).toBe(200);
+  expect(productPanelNestedReadResponseSchema.parse(await nested.json()).panel).toMatchObject({ id: child, revision: 1 });
+  expect((await request("POST", "product-panels/nested", "nested-reader",
+    { source, memberPath: [selectedPanel(alternate)] })).status).toBe(403);
+
+  const componentChoice = { member: "choice", selection: {
+    stateValue: { className: PRODUCT_PROJECTION, primaryKey: list }, target: { projectionId: list },
+  } };
+  for (const memberPath of [[detail, { member: "components" }], [componentChoice]]) {
+    const datum = await request("POST", "product-panels/read", "nested-reader", { source, memberPath, dataName: "rows", inputs: {} });
+    expect(await datum.json()).toMatchObject({ status: "ready", value: expect.arrayContaining([
+      expect.objectContaining({ primaryKey: "@ontomato/sdk:ObjectList" }),
+    ]) });
+  }
+  const outside = await request("POST", "product-panels/read", "nested-reader", { source, memberPath: [{
+    ...componentChoice, selection: { stateValue: { className: PRODUCT_PROJECTION, primaryKey: remove }, target: { projectionId: remove } },
+  }], dataName: "rows", inputs: {} });
+  expect(await outside.json()).toMatchObject({ status: "error", message: expect.stringContaining("outside this member's candidates") });
+
+  const memberPath = [detail, { member: "approve" }];
+  const query = new URLSearchParams({ ...use, operationId: "detail.approve.remove", memberPath: JSON.stringify(memberPath) });
+  const descriptor = await request("GET", `panel-operations/descriptor?${query}`, "author");
+  expect(await descriptor.json()).toMatchObject({ handlerRef: DELETE_AGENT, target: { source: "input", input: "agent" } });
+  query.set("operationId", "fixed.approve.remove");
+  const wrongPath = await request("GET", `panel-operations/descriptor?${query}`, "author");
+  expect(wrongPath.status).toBe(422);
+  expect(await wrongPath.json()).toMatchObject({ error: { code: "OPERATION_UNAVAILABLE" } });
+
+  const call = { target: { kind: "object", objectType: AGENT_DEFINITION, primaryKey: nestedAgentId }, input: {} };
+  async function prepare(operationId: string, path: object[]) {
+    const response = await request("POST", "panel-operations/intents", "author", { ...use, operationId, memberPath: path, call });
+    const body = await response.json();
+    expect(response.status, JSON.stringify(body)).toBe(200);
+    expect(body.confirmation).toMatchObject({ kind: "impact", impact: { total: 1 } });
+    return body.intentId as string;
+  }
+  const valid = await prepare("detail.approve.remove", memberPath);
+  const stale = await prepare("fixed.approve.remove", [{ member: "fixed" }, { member: "approve" }]);
+  expect(nestedDeletes).toEqual([]);
+  await save(`product-panels/${nestedRootId}`, { ...root, manifest: { ...root.manifest, members: {
+    ...root.manifest.members, fixed: { target: { panelId: alternate } },
+  } } }, 1);
+  const refused = await request("POST", `panel-operations/intents/${stale}/dispatch`, "author", {});
+  expect(refused.status).toBe(409);
+  expect(await refused.json()).toMatchObject({ error: { code: "INTENT_CHANGED" } });
+  expect(nestedDeletes).toEqual([]);
+  const dispatched = await request("POST", `panel-operations/intents/${valid}/dispatch`, "author", {});
+  expect(await dispatched.json()).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
+  expect(nestedDeletes).toEqual([nestedAgentId]);
+});
 
 it("counts a direct member in projection used-by and keeps the hidden panel's identity private", async () => {
   const resource = `product-projections/${projectionId}/used-by`;
@@ -308,7 +436,7 @@ it("shares editable default placements and reports the defaults the caller canno
   const editable = "share-default-editable", restricted = "share-default-restricted", id = "share-default-panel";
   await saveProjection(editable);
   await saveProjection(restricted, "projection-owner");
-  const type = { kind: "placement", candidates: { rule: "catalogSelection" } };
+  const type = { kind: "placement", candidates: { rule: "usable" } };
   const field = (projectionId: string) => ({ type, default: { id: "placed", target: { projectionId } } });
   const saved = await savePanel(id, {
     state: { editable: field(editable), restricted: field(restricted) }, members: {}, events: {},
@@ -353,7 +481,7 @@ it("cleans up a panel's default placement and preserves projections used by othe
   const usedByDefault = "cleanup-used-by-default", usedPersonally = "cleanup-used-personally";
   const id = "cleanup-placement-panel", otherId = "cleanup-other-panel";
   for (const projectionId of [defaultId, personalId, usedByDefault, usedPersonally]) await saveProjection(projectionId);
-  const type = { kind: "placement", candidates: { rule: "catalogSelection" } };
+  const type = { kind: "placement", candidates: { rule: "usable" } };
   const placement = (projectionId: string) => ({ id: "placed", target: { projectionId } });
   const saved = await savePanel(id, {
     state: { defaultSlot: { type, default: placement(defaultId) }, personalSlot: { type, personal: true } },

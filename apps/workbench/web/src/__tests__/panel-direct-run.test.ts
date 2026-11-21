@@ -73,7 +73,7 @@ function run(template: string) {
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests, use: { applicationId: "app-tasks", useId: "tasks" },
-    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
     confirmOperation: noOperations.confirmOperation,
     read: async (request): Promise<ProductPanelReadResponse> => {
       reads.push(request);

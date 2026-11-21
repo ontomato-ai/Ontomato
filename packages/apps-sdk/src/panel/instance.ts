@@ -1,7 +1,10 @@
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import { computed, readonly, shallowReactive, shallowRef, type ComputedRef, type DeepReadonly, type Ref } from "vue";
 import type { PageContext } from "@ontomato/contracts/page-context";
-import { panelOpenRequestSchema, panelOperationId, type PanelDeepLinkStateValue, type PanelManifest, type PanelOperationCall, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import {
+  panelOpenRequestSchema, panelOperationId, type PanelDeepLinkStateValue, type PanelManifest, type PanelMemberPath, type PanelOperationCall,
+  type PanelStateValue,
+} from "@ontomato/contracts/panel-manifest";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { createPanelEvents } from "./events";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
@@ -48,12 +51,31 @@ export interface PanelInstanceOptions {
   /** The host's confirmation and single dispatch of a prepared write. */
   confirmOperation: ConfirmPanelOperation;
   reportDraftError?: (reason: unknown) => void;
+  /**
+   * Where this instance sits in the panel the reader opened (a panel placed from another's state), or nothing for the
+   * opened panel itself: every member path, operation ID and page-context selection of this instance starts with it.
+   */
+  memberPath?: PanelMemberPath;
+  /** A member's segment of a path: its key, with the selection that placed it where the panel's state chose it. */
+  segmentOf?: (member: string) => PanelMemberPath[number];
+}
+
+/** A path that names at least one member: a nested publisher's, as the platform finds its operations by. */
+export type PublisherPath = [PanelMemberPath[number], ...PanelMemberPath];
+
+/** What a panel placed in one of an instance's members publishes into it: its operations, its unsaved changes. */
+export interface NestedPublisher {
+  readonly operations: readonly PanelOperationBinding[];
+  dirty(): boolean;
+  readonly context: PageContext | null;
 }
 
 export interface PanelInstance {
   readonly manifest: PanelManifest;
   readonly state: PanelStateStore;
-  readonly pageContext: DeepReadonly<Ref<PageContext>>;
+  // A computed context, read only at its top: a deep read-only type of it recurses through the member paths' JSON values
+  // (a nested panel's selection) without end.
+  readonly pageContext: ComputedRef<PageContext>;
   /** Computed afresh from the registered projections; a reader never changes it. */
   readonly operations: Readonly<Ref<readonly PanelOperationBinding[]>>;
   /**
@@ -117,8 +139,16 @@ export interface PanelInstance {
   nameObjects(objectType: string, objects: readonly { primaryKey: string; label: string }[]): void;
   /** Keeps owner labels for child objects read under a parent identity and declared collection. */
   nameChildObjects(parent: PanelObjectIdentity, collection: string, objects: readonly { primaryKey: string; label: string }[]): void;
-  /** Whether this instance holds unsaved changes: a received draft, or a form the reader edited. */
+  /** Whether this instance holds unsaved changes: a received draft, a form the reader edited, or a panel placed in it. */
   dirty(): boolean;
+  /** A member's path in the panel the reader opened: this instance's own, then the member's segment. */
+  memberPathOf(member: string): PublisherPath;
+  /** The ID a member's operation is published under: its path's member keys, then the operation's name. */
+  operationIdOf(member: string, name: string): string;
+  /** The path of the member that publishes an operation, which the platform finds it by; the opened panel's own need none. */
+  operationPath(operationId: string): PanelMemberPath | undefined;
+  /** A panel placed in one of this instance's members publishes into it, until the returned function ends that. */
+  publish(member: string, publisher: Readonly<Ref<NestedPublisher>>): () => void;
   /** The state an address or an open request may carry, for this instance. */
   deepLink(): Record<string, PanelDeepLinkStateValue>;
 }
@@ -147,21 +177,44 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   const registrations = shallowRef<readonly PanelProjectionRegistration[]>([]);
   /** Each member's own parameter values: those its component set and no panel state holds. */
   const own = shallowRef<Readonly<Record<string, Readonly<Record<string, RuntimeJsonValue>>>>>({});
+  const prefix = options.memberPath ?? [];
+  const segmentOf = options.segmentOf ?? ((member: string) => ({ member }));
+  const memberPathOf = (member: string): PublisherPath => {
+    const segment = segmentOf(member);
+    const [first, ...rest] = prefix;
+    return first ? [first, ...rest, segment] : [segment];
+  };
+  const operationIdOf = (member: string, name: string) => panelOperationId(memberPathOf(member).map((segment) => segment.member), name);
+  /** A member's path as the platform needs it to find its operation: none for a fixed member of the opened panel. */
+  const publisherPath = (member: string): PublisherPath | undefined => {
+    const path = memberPathOf(member);
+    return prefix.length || path.at(-1)!.selection ? path : undefined;
+  };
+  /** The panels placed in this instance's members, publishing into it. */
+  const publishers = shallowReactive(new Map<string, Readonly<Ref<NestedPublisher>>>());
+  function operationPath(operationId: string): PanelMemberPath | undefined {
+    return operations.value.find((operation) => operation.id === operationId)?.memberPath;
+  }
   async function writeOperation(operationId: string, invocation: PanelWriteInvocation) {
     // What the owner reports the write changed reaches the instance through the host's one refresh port, as an agent's
     // write does, and is read again from there; the receipt itself rereads nothing.
-    const preparation = await options.operations.prepare(operationId, invocation);
+    const preparation = await options.operations.prepare(operationId, invocation, operationPath(operationId));
     return { ...await options.confirmOperation(preparation), named: namedTargets(preparation.confirmation) };
   }
   const events = createPanelEvents(manifest, {
     state,
-    invokeMember: (member, operation, input) => invoke(panelOperationId(member, operation), input),
+    invokeMember: (member, operation, input) => invoke(operationIdOf(member, operation), input),
     // Another member placed in a mode and an application entry are a later stage's; this release opens neither.
     open: (request) => Promise.reject(new Error(`This SDK release opens no ${request.mode === "entry" ? "application entry" : "member"} from an event`)),
     text: options.text,
   });
-  const operations = computed(() => panelOperations(manifest, registrations.value, state, forms, events, writeOperation,
-    (operationId, call) => options.operations.read(operationId, call)));
+  const operations = computed<PanelOperationBinding[]>(() => [
+    ...panelOperations(manifest, registrations.value, state, forms, events, writeOperation,
+      (operationId, call) => options.operations.read(operationId, call, operationPath(operationId)),
+      (member, name) => ({ id: operationIdOf(member, name), memberPath: publisherPath(member) })),
+    // A placed panel's operations are published under their own full paths and run by that panel.
+    ...[...publishers.values()].flatMap((publisher) => publisher.value.operations),
+  ]);
   /** A member's output: the state it binds takes the value, then the events on it run. */
   async function output(member: string, name: string, value: RuntimeJsonValue, item?: RuntimeJsonValue) {
     const declaration = manifest.members[member];
@@ -183,7 +236,12 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     pageKey: options.pageKey,
     url: options.url(),
     label: options.label(),
-    selection: panelSelection(manifest, state.values.value, names, translate),
+    selection: [
+      // A placed panel's own selections say which placed panel they are, by its path.
+      ...panelSelection(manifest, state.values.value, names, translate)
+        .map((selected) => (prefix.length ? { ...selected, memberPath: prefix as PublisherPath } : selected)),
+      ...[...publishers.values()].flatMap((publisher) => publisher.value.context?.selection ?? []),
+    ],
   }));
   return {
     manifest,
@@ -257,8 +315,8 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       if (call.target?.kind === "object") objectChanged(call.target);
       return result;
     },
-    describeOperation: (operationId) => options.operations.describe(operationId),
-    readOperation: (operationId, call) => options.operations.read(operationId, call),
+    describeOperation: (operationId) => options.operations.describe(operationId, operationPath(operationId)),
+    readOperation: (operationId, call) => options.operations.read(operationId, call, operationPath(operationId)),
     writeOperation,
     objectChanged,
     refreshObjects: () => objectChanged(null),
@@ -273,7 +331,16 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     nameChildObjects(parent, collection, objects) {
       for (const { primaryKey, label } of objects) names.set(childObjectNameKey(parent, collection, primaryKey), label);
     },
-    dirty: () => draft.value !== null || forms.dirty(),
+    dirty: () => draft.value !== null || forms.dirty() || [...publishers.values()].some((publisher) => publisher.value.dirty()),
+    memberPathOf,
+    operationIdOf,
+    operationPath,
+    publish(member, publisher) {
+      publishers.set(member, publisher);
+      return () => {
+        if (publishers.get(member) === publisher) publishers.delete(member);
+      };
+    },
     deepLink: () => state.deepLinkable(),
   };
 }

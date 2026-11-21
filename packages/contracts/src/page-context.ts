@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { panelChildObjectIdentitySchema } from "./panel-manifest";
+import { panelChildObjectIdentitySchema, panelMemberPathSchema } from "./panel-manifest";
 import { platformHasChildCollection } from "./platform-object-types";
 
 /*
@@ -32,6 +32,8 @@ const pageSelection = z
     id: z.string().min(1).max(1000),
     label: z.string().min(1).max(500),
     url: z.string().max(2000).optional(),
+    /** The child panel whose public state supplied this selection. */
+    memberPath: z.lazy(() => panelMemberPathSchema.nonempty()).optional(),
   })
   .strict();
 

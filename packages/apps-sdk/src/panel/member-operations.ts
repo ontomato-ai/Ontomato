@@ -4,6 +4,7 @@ import {
 } from "@ontomato/contracts/panel-host";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
+import type { PublisherPath } from "./instance";
 import type { MemberInputs, PanelReadPort } from "./direct";
 
 /*
@@ -33,10 +34,10 @@ function operationInputs(projection: DirectProjection, inputs: MemberInputs): Me
 }
 
 /** Reads a member's admitted operations once; a projection that names none has none, and nothing is asked. */
-export async function readMemberOperations(read: PanelReadPort, projection: DirectProjection, member: string, inputs: MemberInputs) {
+export async function readMemberOperations(read: PanelReadPort, projection: DirectProjection, memberPath: PublisherPath, inputs: MemberInputs) {
   if (!projection.operations || Object.keys(projection.operations).length === 0) return { status: "ready", value: {} } as const;
   return productPanelOperationsReadResponseSchema.parse(
-    await read({ memberPath: [{ member }], operations: true, inputs: operationInputs(projection, inputs) }));
+    await read({ memberPath, operations: true, inputs: operationInputs(projection, inputs) }));
 }
 
 /**
@@ -45,7 +46,7 @@ export async function readMemberOperations(read: PanelReadPort, projection: Dire
  * later ones were asked for; one already shown stays until its new answer arrives.
  */
 export function watchMemberOperations(
-  read: PanelReadPort, projection: DirectProjection, member: string, inputs: () => MemberInputs, active: () => boolean = () => true,
+  read: PanelReadPort, projection: DirectProjection, memberPath: () => PublisherPath, inputs: () => MemberInputs, active: () => boolean = () => true,
 ): { state: ComputedRef<MemberOperationsState>; reread(): void } {
   const state = shallowRef<MemberOperationsState>({ status: "loading" });
   let sequence = 0;
@@ -53,7 +54,7 @@ export function watchMemberOperations(
     if (!active()) return;
     const reading = ++sequence;
     // A read that fails is the member's to show, as a datum's is: its buttons say why there is nothing to press.
-    void readMemberOperations(read, projection, member, inputs()).then(
+    void readMemberOperations(read, projection, memberPath(), inputs()).then(
       (result) => { if (reading === sequence) state.value = result; },
       (reason: unknown) => { if (reading === sequence) state.value = { status: "error", message: reason instanceof Error ? reason.message : String(reason) }; },
     );

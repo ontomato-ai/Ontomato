@@ -1,4 +1,4 @@
-import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
+import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import { projectionOperation } from "@ontomato/contracts/panel-projection";
 import { operationCall, operationInvocation, type PanelProjectionRegistration } from "./ports";
 import type { PanelOperationBinding } from "./types";
@@ -27,11 +27,14 @@ export function panelOperations(
   events: PanelEvents,
   write: (operationId: string, invocation: PanelWriteInvocation) => Promise<unknown>,
   read: (operationId: string, call: PanelReadCall) => Promise<unknown>,
+  /** Where a member's operation is published: its ID, and the path the platform finds a nested publisher by. */
+  place: (member: string, name: string) => { id: string; memberPath?: [PanelMemberPath[number], ...PanelMemberPath] },
 ): PanelOperationBinding[] {
   return [
     ...registrations.flatMap((registration) =>
       Object.entries(registration.operations).map(([name, descriptor]) => {
-        const operation = projectionOperation(manifest, registration.slot, name, descriptor);
+        const { id, memberPath } = place(registration.slot, name);
+        const operation = { ...projectionOperation(manifest, registration.slot, name, descriptor), id, ...(memberPath ? { memberPath } : {}) };
         return {
           ...operation,
           // The target is read here, from the instance's state at the moment of the call: the object the reader has

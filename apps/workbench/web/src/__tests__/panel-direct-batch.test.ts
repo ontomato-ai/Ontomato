@@ -57,7 +57,7 @@ function open() {
       },
     },
     // The owner deletes the first item and refuses the second.
-    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
     confirmOperation: async ({ intentId }) => ({ decision: "confirm", response: { kind: "dispatched", intentId, outcome: {
       kind: "batch",
       items: [

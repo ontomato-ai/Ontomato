@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, provide, shallowRef, type Component } from "vue";
+import { computed, onMounted, provide, ref, shallowRef, watch, type Component } from "vue";
 import { useI18n } from "vue-i18n";
 import { DataState } from "@ontomato/foundation-ui/data-state";
 import { componentFor } from "../catalogue-components";
 import { panelContextKey, projectionKey, type ProjectionSlot } from "./context";
-import { directPanelContext, type DirectPanelInstance } from "./direct";
+import { directPanelContext, PanelMemberUnavailable, type DirectPanelInstance } from "./direct";
 import { memberComponentId } from "./projection-element";
 import { panelMemberKey, type PanelMemberContext } from "./member";
 
@@ -13,6 +13,10 @@ import { panelMemberKey, type PanelMemberContext } from "./member";
  * the instance, names its component and its data; the component gets the member's inputs as its placement fills them
  * now, its configuration, and its data through the instance. Its typed outputs write the panel's state as the member
  * declares, and its operations are the projection's, registered with the instance under the member's key.
+ *
+ * A member placed from the panel's state draws what the state chose: a projection, as any member's; a panel, run by the
+ * host in an element of its own, which is placed here; nothing chosen yet, which asks for a choice. What the reader may
+ * not use, or what is not available there, is said in this member's place alone.
  */
 const props = defineProps<{
   instance: DirectPanelInstance;
@@ -25,13 +29,35 @@ const declaration = props.instance.direct.members[props.member];
 if (!declaration) throw new Error(`The panel declares no member '${props.member}'`);
 const failure = shallowRef<Error | null>(null);
 const loaded = shallowRef<{ component: Component; slot: ProjectionSlot; member: PanelMemberContext } | null>(null);
+/** A panel the member places, run by the host: its element, placed in this member's container once both are there. */
+const nested = shallowRef<{ element: HTMLElement; failure: Readonly<{ value: Error | null }> } | null>(null);
+const awaiting = ref(false);
+const container = ref<HTMLElement | null>(null);
 
 // The member as the instance holds it — read, registered and kept current there, drawn here.
-void props.instance.memberContext(props.member).then(async (member) => {
-  const component = await componentFor(memberComponentId(member.projection));
-  loaded.value = { component, slot: { slot: props.member, projection: member.projection, get inputs() { return member.inputs.value; } }, member };
+void props.instance.placing(props.member).then(async (placing) => {
+  if (placing.kind === "awaiting") awaiting.value = true;
+  else if (placing.kind === "panel") nested.value = placing;
+  else {
+    const member = placing.context;
+    const component = await componentFor(memberComponentId(member.projection));
+    loaded.value = { component, slot: { slot: props.member, projection: member.projection, get inputs() { return member.inputs.value; } }, member };
+  }
 }).catch((reason: unknown) => {
   failure.value = reason instanceof Error ? reason : new Error(String(reason));
+});
+function placeNested() {
+  if (nested.value && container.value && nested.value.element.parentElement !== container.value) container.value.append(nested.value.element);
+}
+onMounted(placeNested);
+watch([nested, container], placeNested, { flush: "post" });
+/** What this member says in its place instead: the reader may not use what was chosen, or it is not available there. */
+const refused = computed(() => {
+  const reason = failure.value ?? nested.value?.failure.value ?? null;
+  if (!reason) return null;
+  if (reason instanceof PanelMemberUnavailable)
+    return reason.status === 403 ? { status: "forbidden" as const } : { status: "error" as const, message: t("platform.memberUnavailable") };
+  return { status: "error" as const, message: reason.message };
 });
 
 provide(panelContextKey, directPanelContext(props.instance));
@@ -52,7 +78,9 @@ const labels = computed(() => ({ empty: t("platform.dataEmpty"), forbidden: t("p
 </script>
 
 <template>
-  <data-state v-if="failure" :result="{ status: 'error', message: failure.message }" :labels="labels"></data-state>
+  <data-state v-if="refused" :result="refused" :labels="labels"></data-state>
+  <data-state v-else-if="awaiting" :result="{ status: 'awaiting' }" :labels="labels"></data-state>
+  <div v-else-if="nested" ref="container" class="sdk-panel-member-nested"></div>
   <data-state v-else-if="!loaded" :result="{ status: 'loading' }" :labels="labels"></data-state>
   <component :is="loaded.component" v-else v-bind="bound"></component>
 </template>

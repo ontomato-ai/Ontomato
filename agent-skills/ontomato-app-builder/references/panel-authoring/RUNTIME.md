@@ -47,7 +47,9 @@ interface PanelContext {
 ```ts
 interface PanelInstance {
   readonly state: PanelStateStore;
-  readonly pageContext: DeepReadonly<Ref<PageContext>>;
+  // A computed context, read only at its top: a deep read-only type of it recurses through the member paths' JSON values
+  // (a nested panel's selection) without end.
+  readonly pageContext: ComputedRef<PageContext>;
   refreshObjects(): void;
   onObjectChanged(listener: (object: PanelObjectIdentity | null) => void): () => void;
 }

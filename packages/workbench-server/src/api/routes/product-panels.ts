@@ -7,7 +7,10 @@ import {
 import { panelDownloadFileSchema } from "@ontomato/contracts/panel-download";
 import { agentSessionRefSchema } from "@ontomato/contracts/agent-channel";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
-import { PANEL_MEMBER_RENDER_HEADER, productPanelReadRequestSchema } from "@ontomato/contracts/panel-host";
+import {
+  PANEL_MEMBER_RENDER_HEADER, PANEL_NESTED_READ_PATH, productPanelNestedReadRequestSchema, productPanelNestedReadResponseSchema,
+  productPanelReadRequestSchema,
+} from "@ontomato/contracts/panel-host";
 import {
   dispatchHumanPanelOperation, inspectPanelOperationImpact, ownPanelSettings, prepareHumanPanelOperation,
   projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor,
@@ -38,6 +41,7 @@ import { HttpError } from "../../utils/errors";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { readProductPanelData } from "../../services/product-panels/data-reads";
 import { validateProjectionComponent } from "../../services/product-panels/component-catalogue";
+import { readNestedPanel } from "../../services/product-panels/member-path";
 import { productDefinitionStreamRequestSchema, type ProductDefinitionStreamFrame } from "@ontomato/contracts/product-subscriptions";
 import { authorizeDefinitionStream, requirePanelDefinitions } from "../../services/product-panels/definition-stream";
 import type { createChartProjectionService } from "../../services/product-panels/chart-sources";
@@ -82,6 +86,12 @@ function parseRegistration<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, body:
 export const productPanelsRouter = Router();
 mountProductCatalog(productPanelsRouter, "panel");
 mountPanelPersonalState(productPanelsRouter);
+productPanelsRouter.post(PANEL_NESTED_READ_PATH.slice("/product-panels".length), wrap(async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const { owner, credentials } = context(req);
+  const request = productPanelNestedReadRequestSchema.parse(req.body);
+  res.json(productPanelNestedReadResponseSchema.parse(await readNestedPanel(owner, credentials, request)));
+}));
 productPanelsRouter.post("/read", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
   const request = productPanelReadRequestSchema.parse(req.body);
@@ -184,7 +194,13 @@ productPanelsInternalRouter.post("/validate-references", wrap(async (req, res) =
 export const panelOperationsRouter = Router();
 panelOperationsRouter.get("/panel-operations/descriptor", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
-  const query = panelOperationRefSchema.parse(req.query);
+  const { memberPath, ...scope } = req.query;
+  let path: unknown = memberPath;
+  if (typeof memberPath === "string") {
+    try { path = JSON.parse(memberPath); }
+    catch { throw new HttpError(400, "Invalid member path JSON", "INVALID_REQUEST"); }
+  }
+  const query = panelOperationRefSchema.parse({ ...scope, memberPath: path });
   res.json(panelOperationDescriptorResponseSchema.parse(await readPanelOperationDescriptor(owner, credentials, query)));
 }));
 panelOperationsRouter.post("/panel-operations/read", wrap(async (req, res) => {

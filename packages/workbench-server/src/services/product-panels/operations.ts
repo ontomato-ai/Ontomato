@@ -58,19 +58,19 @@ export async function requirePanelSkillForRun(owner: AssistantOwner, credentials
 }
 
 async function admitted(owner: AssistantOwner, credentials: AssistantCredentials, run: PanelRun,
-  ref: PanelUseRef, operationId: string, target: PanelOperationCall["target"] | undefined) {
+  ref: PanelOperationRef, target: PanelOperationCall["target"] | undefined) {
   const { use, view } = await requirePanelSkillForRun(owner, credentials, run, ref);
-  return { ...writeOperation(await declaredOperation(owner, credentials, use, operationId, target)), view };
+  return { ...writeOperation(await declaredOperation(owner, credentials, use, ref, target)), view };
 }
 
 async function declaredOperation(owner: AssistantOwner, credentials: AssistantCredentials, use: ApplicationPanelUse,
-  operationId: string, target?: PanelOperationCall["target"]) {
+  ref: PanelOperationRef, target?: PanelOperationCall["target"]) {
   const panel = await readCurrentPanelRecord(owner, credentials, use.panelId);
-  return declaredDirectOperation(owner, credentials, use, panel, operationId, target);
+  return declaredDirectOperation(owner, credentials, use, panel, ref.operationId, target, ref.memberPath);
 }
 
 async function operationForUse(owner: AssistantOwner, credentials: AssistantCredentials, ref: PanelOperationRef, target?: PanelOperationCall["target"]) {
-  return declaredOperation(owner, credentials, await requirePanelUse(credentials, ref), ref.operationId, target);
+  return declaredOperation(owner, credentials, await requirePanelUse(credentials, ref), ref, target);
 }
 
 function invocationTarget(input: PanelOperationInvocation) {
@@ -143,6 +143,7 @@ function sourceMatches(intent: ReadableAgentIntent, session: AgentSessionRef) {
 function matchingInvocation(intent: ReadableAgentIntent, request: CreatePanelOperationIntentRequest, session: AgentSessionRef, executionUserId: string | null) {
   sourceMatches(intent, session);
   if (!isDeepStrictEqual(intent.use,{applicationId:request.applicationId,useId:request.useId}) || intent.operation.id !== request.operationId ||
+    !isDeepStrictEqual(intent.operation.memberPath, request.memberPath) ||
     !isDeepStrictEqual(invocationOf(intent),invocationOf(request)) || intent.executionUserId !== executionUserId)
     throw new HttpError(409,"Changed call or executor requires a new intent","INTENT_CHANGED");
 }
@@ -271,7 +272,7 @@ export async function dispatchHumanPanelOperation(owner: AssistantOwner, credent
   const { intent } = record;
   if (intent.dispatched) return replay(record, owner, credentials);
   const current = writeOperation(await operationForUse(owner, credentials,
-    { ...intent.use, operationId: intent.operation.id }, invocationTarget(intent)));
+    { ...intent.use, operationId: intent.operation.id, memberPath: intent.operation.memberPath }, invocationTarget(intent)));
   requireFrozenOperation(intent, current);
   const prepared = validateInvocation(current.handler, intent, current.fixedTarget);
   const view = current.handler.projectResult && await readAssistantSkillView(owner.domainId, credentials);
@@ -314,7 +315,7 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
     matchingInvocation(record.intent, input, source.session, run.executionUserId ?? null);
     return replay(record, owner, credentials);
   }
-  const current = await admitted(owner,credentials,run,input,input.operationId,invocationTarget(input));
+  const current = await admitted(owner,credentials,run,input,invocationTarget(input));
   const executor = await credentialsForRun(owner,runId,credentials,run.sessionId);
   const root = rootOf(run);
   if (!root) throw new HttpError(409,"Execution has no authenticated human session","USER_SESSION_UNAVAILABLE");
@@ -377,7 +378,8 @@ export async function dispatchPanel(owner: AssistantOwner, credentials: Assistan
   const executor = await credentialsForRun(owner,runId,credentials,intent.source.session.sessionId);
   if (executor.executionUserId !== intent.executionUserId) throw new HttpError(409,"Executor changed; create a new intent","INTENT_CHANGED");
   if (run.channel!.authority.executionKind !== "live") throw new HttpError(422,"Management operations do not support test data","BUILD_TEST_UNSUPPORTED");
-  const current = await admitted(owner,credentials,run,intent.use,intent.operation.id,invocationTarget(intent));
+  const current = await admitted(owner, credentials, run,
+    { ...intent.use, operationId: intent.operation.id, memberPath: intent.operation.memberPath }, invocationTarget(intent));
   requireFrozenOperation(intent, current);
   const client = new RuntimeClient(owner.domainId,undefined,owner.userId);
   if (intent.confirmation === "required") {
