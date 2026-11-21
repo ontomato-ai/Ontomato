@@ -72,10 +72,17 @@ export function addressLandingGuard(router: Router): NavigationGuard {
   return async (to) => {
     if (to.name === platformRoutes.ontology.name) {
       // Every page guard left this reader at `/ontology` because they have no native page in the navigation:
-      // land on the first panel entry the ontology application admits for them (for example business knowledge or feedback).
+      // land on the first permission-gated panel entry they hold — ontology first (for example business knowledge),
+      // then another native application (for example operations' user feedback).
       await (read ??= catalog.refresh());
-      const ontology = catalog.applications.value.find((app) => app.id === "ontology" && !isPanelApplication(app));
-      const first = ontology?.panelUses?.[0];
+      const nativeApps = catalog.applications.value.filter((app) => !isPanelApplication(app));
+      const ordered = [
+        ...nativeApps.filter((app) => app.id === "ontology"),
+        ...nativeApps.filter((app) => app.id !== "ontology"),
+      ];
+      const first = ordered
+        .flatMap((app) => app.panelUses ?? [])
+        .find((use) => "permissionCode" in use.access);
       if (first) return panelUsePath(first.path);
       return true;
     }

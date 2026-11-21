@@ -107,10 +107,14 @@ jobs:
       - name: Install Python HTTP helper dependency
         run: python3 -m pip install requests==2.32.5
 
-      - name: Test the Java contract and boundary group
+      - name: Test the Java contract and boundary group and verify the ontology wire response
+        env:
+          ONTOLOGY_HOST_CONTRACT_OUTPUT: ${{ runner.temp }}/ontology-host-contract.json
         run: |
           maven_repo_url=$(cat .github/maven-wrapper-repo-url)
           MVNW_REPOURL="$maven_repo_url" ./mvnw -B -ntp -s .github/maven-settings.xml -Pcontract test
+
+          pnpm --filter @ontomato/workbench-server exec vitest run src/services/assistant/__tests__/ontology-wire.integration.test.ts
 
       # Match docker/workbench/Dockerfile and the public branch image build facts.
       - name: Build the apps SDK

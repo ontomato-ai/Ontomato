@@ -87,3 +87,27 @@ it("lists only named panel uses in declared order and gives one named use no men
   expect(single.frame).toBeUndefined();
   expect(single.groups).toEqual([]);
 });
+
+describe("the operations application's user feedback", () => {
+  // The entry operations declares for user feedback (big main's ruling, 2026-11-21): no menu name, so no menu place.
+  // Production navigation does not list /ops/turn (ObserveLayout owns those routes), so test against real generatedNavigation().
+  const catalog = catalogFixture();
+  const withoutFeedback = catalog.map((app) => app.id !== "operations" ? app : { ...app, panelUses: [] });
+  const navigation = generatedNavigation();
+  const operations = (granted: string[], apps = catalog) =>
+    appDeclarations(navigation, closedAccess(granted), catalogPartition(apps, "en"), t).find((app) => app.id === "operations")!;
+
+  it("opens on user feedback for a reader who may open none of its listed pages but has the entry", () => {
+    expect(operations(["user-feedback"]).home).toBe("/ops/feedback");
+  });
+
+  it("keeps opening on turn evidence for an observer, and lists no feedback in its menu", () => {
+    const observer = operations(["observer", "user-feedback"]);
+    expect(observer.home).toBe("/ops/turn");
+    expect(observer.groups!.flatMap((group) => group.pages.map((page) => page.id))).not.toContain("/ops/feedback");
+  });
+
+  it("does not open on user feedback for a reader the catalogue gives no such entry", () => {
+    expect(operations(["user-feedback"], withoutFeedback).home).not.toBe("/ops/feedback");
+  });
+});

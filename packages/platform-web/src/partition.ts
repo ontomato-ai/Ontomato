@@ -26,6 +26,13 @@ export interface AppPartition extends Omit<PlatformAppDeclaration, "groups" | "l
   home?: string;
   /** The existing navigation page whose permission also governs this home route. */
   homePage?: string;
+  /** The permission code that governs this home route when the route is not in PlatformNavigation (operations' /ops/turn). */
+  homePermission?: string;
+  /**
+   * An entry of the application its rail row opens when the reader may open none of the pages its menu lists (the
+   * operations application's user feedback, for a reader who holds only that): set only when the reader has the entry.
+   */
+  entryHome?: string;
   /** The pages this application lists, in display order: one group per entry; a group without a title has no heading. */
   sections: readonly ({ key: string; titleKey?: string; paths: readonly string[] }
     | { key: string; pages: readonly PlatformPanelPage[] })[];
@@ -87,7 +94,11 @@ export function appDeclarations(
     const firstSection = app.sections[0];
     const firstPath = firstSection && "paths" in firstSection ? firstSection.paths[0] : undefined;
 
-    const home = app.home && (!app.homePage || byPath.has(app.homePage)) ? app.home : undefined;
+    const home = app.home
+      && (!app.homePage || byPath.has(app.homePage))
+      && (!app.homePermission || access.can(app.homePermission))
+      ? app.home
+      : undefined;
     return {
       id: app.id,
       label: app.label ?? t(app.labelKey!),
@@ -103,7 +114,7 @@ export function appDeclarations(
       // The rail row opens the application's own first page. A declaration that names its entry keeps it (the agent
       // platform is entered at the conversation); otherwise the first page the account may open decides, so a row never
       // opens an address no route serves.
-      home: base(home ?? groups[0]?.pages[0]?.id ?? footPage?.path ?? firstPath ?? app.prefix),
+      home: base(home ?? groups[0]?.pages[0]?.id ?? footPage?.path ?? app.entryHome ?? firstPath ?? app.prefix),
       groups,
       foot: footPage ? panelPage(footPage) : null,
     };

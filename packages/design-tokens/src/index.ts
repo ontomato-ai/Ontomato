@@ -2,6 +2,7 @@ import { contrastRatio, literalRgbTriplet, mix, rgbTriplet } from "./color";
 
 /** Colour arithmetic for consumers that derive further shades from a brand source (chart gradients, ramps). */
 export { contrastRatio, mix, rgbTriplet } from "./color";
+export { rootComposites } from "./root-composites";
 
 /*
  * @ontomato/design-tokens: the design foundation and the brand layer of docs/design/DESIGN.md as code, free of

@@ -1,12 +1,47 @@
 <style>
-  .bk { display: flex; flex-direction: column; gap: var(--spacing-md); min-height: 0; height: 100%; }
+  .bk { display: flex; flex-direction: column; gap: var(--spacing-md); min-height: 0; }
   .bk-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-md); }
   .bk-head-spacer { flex: 1; }
-  .bk-body { display: grid; grid-template-columns: minmax(17.5rem, 24rem) minmax(0, 1fr); min-height: 0; flex: 1; overflow: hidden; border: 1px solid var(--ui-border); border-radius: var(--radius-md); }
-  .bk-list { min-width: 0; overflow-y: auto; border-right: 1px solid var(--ui-border); }
-  .bk-detail { display: flex; min-width: 0; flex-direction: column; gap: var(--spacing-md); overflow-y: auto; padding: var(--spacing-lg); }
+  .bk-body {
+    display: grid;
+    grid-template-columns: clamp(26rem, 42%, 29rem) minmax(0, 1fr);
+    height: max(24rem, calc(100vh - 15rem));
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid var(--ui-divider);
+    border-radius: var(--radius-md);
+    background: var(--el-bg-color);
+  }
+  .bk-list {
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--spacing-md);
+    border-right: 1px solid var(--ui-divider);
+  }
+  .bk-detail {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    overflow-y: auto;
+    padding: var(--spacing-lg) var(--spacing-lg) 0;
+  }
   .bk-back { display: none; }
-  .bk-detail-actions, .bk-form-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--spacing-sm); margin-top: auto; }
+  .bk-detail-actions, .bk-form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: flex-end;
+    gap: var(--spacing-sm);
+    flex-shrink: 0;
+    position: sticky;
+    bottom: 0;
+    padding: var(--spacing-sm) 0 var(--spacing-lg);
+    border-top: 1px solid var(--ui-divider);
+    background: var(--el-bg-color);
+  }
   .bk.narrow .bk-body { grid-template-columns: minmax(0, 1fr); }
   .bk.narrow .bk-list { border-right: 0; }
   .bk.narrow.detail-open .bk-list { display: none; }

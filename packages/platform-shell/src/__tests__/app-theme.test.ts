@@ -131,3 +131,37 @@ it("declares the shades of a colour the theme recolours in the area and its pop-
   await nextTick();
   expect(area().style.getPropertyValue("--el-color-primary-light-3")).toBe("");
 });
+
+// A theme rule the page's stylesheets work out on the root from the brand's colours (the enterprise edition's focus ring,
+// 2026-11-21) is worked out there once and inherited as it came out: the area declares it again, as it is written, so it
+// is worked out from the area's own colours — in the mode the page is in, and through every rule that leads to it.
+it("declares again in the area every root rule that is worked out from a colour the area recolours", async () => {
+  const style = document.createElement("style");
+  style.textContent = [
+    ":root { --brand-primary-tint: #e8f0ff; --unrelated: 4px; --control-focus-ring: 0 0 0 1px blue; }",
+    "html:root { --control-focus-ring: 0 0 0 2px var(--brand-primary-tint); --control-ring: var(--control-focus-ring); --error-ring: 0 0 0 2px var(--el-color-danger-light-9); }",
+    "html.dark { --control-focus-ring: 0 0 0 3px var(--brand-primary-tint); }",
+  ].join("\n");
+  document.head.append(style);
+  try {
+    const mode = ref<ThemeMode>("light");
+    const assigned = ref<PanelThemeOverrides | null>(theme);
+    const area = mountArea(mode, assigned);
+    await nextTick();
+    // The more specific root rule, as written; and the rule that reads it.
+    expect(area().style.getPropertyValue("--control-focus-ring")).toBe("0 0 0 2px var(--brand-primary-tint)");
+    expect(area().style.getPropertyValue("--control-ring")).toBe("var(--control-focus-ring)");
+    // A rule from no colour the theme recolours stays the root's.
+    expect(area().style.getPropertyValue("--unrelated")).toBe("");
+    expect(area().style.getPropertyValue("--error-ring")).toBe("");
+    // In dark mode, the dark rule.
+    document.documentElement.classList.add("dark");
+    mode.value = "dark";
+    await nextTick();
+    await nextTick();
+    expect(area().style.getPropertyValue("--control-focus-ring")).toBe("0 0 0 3px var(--brand-primary-tint)");
+  } finally {
+    document.documentElement.classList.remove("dark");
+    style.remove();
+  }
+});

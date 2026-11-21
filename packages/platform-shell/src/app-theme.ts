@@ -1,6 +1,6 @@
 import { inject, onBeforeUnmount, provide, shallowRef, watch, type InjectionKey, type Ref } from "vue";
 import type { PanelThemeOverrides } from "@ontomato/contracts/panel-manifest";
-import { themeDerivedProperties } from "@ontomato/design-tokens";
+import { rootComposites, themeDerivedProperties } from "@ontomato/design-tokens";
 
 /*
  * An application's theme (product-layer standard, parts one and two; design §三 and §六, big main's ruling 2026-11-21):
@@ -23,6 +23,16 @@ export function themeProperties(theme: PanelThemeOverrides | null | undefined, m
   const values = theme?.[mode] ?? {};
   const assigned = Object.fromEntries(Object.entries(values).map(([name, value]) => [name.startsWith("--") ? name : `--${name}`, value]));
   return { ...themeDerivedProperties(assigned), ...assigned };
+}
+
+/**
+ * What an area declares for a theme: what it assigns and the shades worked out from it, and every rule the page's
+ * stylesheets compose on the root from those (an edition's focus ring of the brand's soft fill), as written, so that it
+ * too is worked out from the area's own colours. Read as the page is now, in the mode it is in.
+ */
+function areaProperties(theme: PanelThemeOverrides | null | undefined, mode: ThemeMode): Record<string, string> {
+  const properties = themeProperties(theme, mode);
+  return Object.keys(properties).length ? { ...rootComposites(Object.keys(properties)), ...properties } : properties;
 }
 
 /** The themed areas shown now, by their element: what a pop-up opened inside one of them takes. */
@@ -110,15 +120,16 @@ export function composeThemes(...layers: (PanelThemeOverrides | null | undefined
  */
 export function applyTheme(element: HTMLElement, theme: () => PanelThemeOverrides | null | undefined, mode: () => ThemeMode) {
   let shown: Record<string, string> = {};
+  // After the page's own updates, so a mode switch has set the root's class the stylesheets read.
   const stop = watch([() => JSON.stringify(theme() ?? null), mode], () => {
-    const properties = themeProperties(theme(), mode());
+    const properties = areaProperties(theme(), mode());
     assign(element, properties, shown);
     shown = properties;
     if (Object.keys(properties).length) {
       areas.set(element, properties);
       followPopups();
     } else areas.delete(element);
-  }, { immediate: true });
+  }, { immediate: true, flush: "post" });
   return () => {
     stop();
     assign(element, {}, shown);
@@ -140,7 +151,7 @@ export function useAppTheme(area: Ref<HTMLElement | null | undefined>, theme: ()
     shown = null;
   };
   watch([area, () => JSON.stringify(theme() ?? null), mode], ([element]) => {
-    const properties = themeProperties(theme(), mode());
+    const properties = areaProperties(theme(), mode());
     if (shown && shown.element !== element) clear();
     if (!element || !Object.keys(properties).length) {
       clear();
