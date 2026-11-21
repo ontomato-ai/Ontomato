@@ -14,6 +14,7 @@ import { qualifiedTable as t } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { lockProducts } from "../../infrastructure/product-write-lock";
 import { HttpError } from "../../utils/errors";
+import { tForLocale } from "../../i18n";
 import type { ProductOwner } from "../product-governance/grants";
 import { grantedProductIds, registerProductResource, requireProductGrant } from "../product-governance/grants";
 import { assertAppBuilderAccess } from "../app-builder/access";
@@ -160,7 +161,7 @@ export async function saveCurrentPanel(owner: ProductOwner, credentials: Assista
 }
 
 /** Java authorizes the registrant. This service call checks the current definitions used by the declaration. */
-export async function validateApplicationPanelReferences(request: ApplicationPanelReferencesRequest) {
+export async function validateApplicationPanelReferences(request: ApplicationPanelReferencesRequest, locale?: string) {
   const { domainId, framePanelId, uses, delivery, theme } = request;
   if (theme) {
     const [issue] = themeOverrideProblems(theme);
@@ -204,16 +205,23 @@ export async function validateApplicationPanelReferences(request: ApplicationPan
     const { defaultAgent } = use;
     if (!defaultAgent) continue;
     definitions ??= await assistantStore.agents(domainId);
-    const selection = defaultAgent.kind === "id" ? `'${defaultAgent.id}'` : `preset '${defaultAgent.agentKind}'`;
-    const unavailable = (reason: string) =>
-      new HttpError(409, `Entry '${use.id}' default agent ${selection} ${reason}`, "PAGE_DEFAULT_AGENT_UNAVAILABLE", { useId: use.id });
+    const unavailable = (reason: "missing" | "disabled" | "missingSkill") => {
+      const selection = defaultAgent.kind === "id" ? `'${defaultAgent.id}'`
+        : tForLocale(locale, "panels.productCatalog.defaultAgent.preset", { agentKind: defaultAgent.agentKind });
+      return new HttpError(
+        409,
+        tForLocale(locale, `panels.productCatalog.defaultAgent.${reason}`, { useId: use.id, selection, panelId: use.panelId }),
+        "PAGE_DEFAULT_AGENT_UNAVAILABLE",
+        { useId: use.id },
+      );
+    };
     const choice = resolveDefaultAgent(definitions, defaultAgent);
     if ("reason" in choice) throw unavailable(choice.reason);
 
     const ref = panelSkillRef(domainId, use.panelId);
     const key = runtimeSkillKey(ref);
     if (!configuredAssistantSkills(choice.agent, [ref]).some(skill => runtimeSkillKey(skill) === key))
-      throw unavailable(`does not select the skill for panel '${use.panelId}'.`);
+      throw unavailable("missingSkill");
   }
   for (const id of delivery.panels)
     if (!panels.has(id)) throw new HttpError(400, `Panel '${id}' is not reachable from the application`, "INVALID_PANEL_DELIVERY");

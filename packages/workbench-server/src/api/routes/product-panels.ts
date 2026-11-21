@@ -32,6 +32,7 @@ import { domainProductIdParamsSchema, domainProductIdSchema } from "@ontomato/co
 import { mountProductCatalog } from "./product-catalog";
 import { mountPanelPersonalState } from "./panel-personal-state";
 import { context, wrap } from "../utils/agent-host";
+import { getLocaleFromRequest } from "../utils/request";
 import { buildAttachmentContentDisposition } from "../utils/http";
 import { platformService } from "../middleware/platform-service";
 import {
@@ -214,7 +215,7 @@ export const productPanelsInternalRouter = Router();
 productPanelsInternalRouter.use(platformService);
 productPanelsInternalRouter.post("/validate-references", wrap(async (req, res) => {
   const request = parseRegistration(applicationPanelReferencesRequestSchema, req.body, "Application registration");
-  await validateApplicationPanelReferences(request);
+  await validateApplicationPanelReferences(request, getLocaleFromRequest(req));
   res.sendStatus(204);
 }));
 

@@ -91,7 +91,14 @@ let builtinUses: (typeof builtinUse)[] = [];
 beforeAll(async () => {
   configureI18n({
     defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
-    packs: { en: { ...enLocaleMeta, messages: en } },
+    packs: {
+      en: { ...enLocaleMeta, messages: en },
+      "zh-CN": { ...enLocaleMeta, messages: {
+        "panels.productCatalog.defaultAgent.preset": "预设 {agentKind}",
+        "panels.productCatalog.defaultAgent.missing": "{useId} 所选智能体 {selection} 不存在。",
+        "panels.productCatalog.defaultAgent.disabled": "{useId} 所选智能体 {selection} 已停用。",
+      } },
+    },
   });
   state.schema = `direct_panel_host_${randomUUID().replaceAll("-", "")}`;
   state.pool = new pg.Pool({ connectionString: database });
@@ -1066,9 +1073,14 @@ it("rejects an unavailable default agent before accepting a proposed application
   await assistant(governanceId, "knowledge-governance", [anotherDomain]);
   await assistant(randomUUID(), "regular", []);
 
-  const proposed = (defaultAgent?: { kind: "preset"; agentKind: string } | { kind: "id"; id: string }, useId = "manage") =>
+  const proposed = (
+    defaultAgent?: { kind: "preset"; agentKind: string } | { kind: "id"; id: string }, useId = "manage", locale?: string,
+  ) =>
     fetch(state.base + APPLICATION_PANEL_REFERENCES_PATH, {
-      method: "POST", headers: { "Content-Type": "application/json", "X-Ontomato-Query-Service-Token": "fixture-service" },
+      method: "POST", headers: {
+        "Content-Type": "application/json", "X-Ontomato-Query-Service-Token": "fixture-service",
+        ...(locale && { "Accept-Language": locale }),
+      },
       body: JSON.stringify({
         domainId: "pilot", uses: [{ id: useId, panelId, defaultAgent }], delivery: { panels: [], projections: [] },
       }),
@@ -1090,12 +1102,21 @@ it("rejects an unavailable default agent before accepting a proposed application
   expect((await proposed()).status).toBe(204);
 
   await state.pool!.query(`UPDATE "${state.schema}".assistant_agents SET enabled=false WHERE id=$1`, [governanceId]);
-  const disabled = await proposed({ kind: "id", id: governanceId }, "review-entry");
+  const disabled = await proposed({ kind: "id", id: governanceId }, "review-entry", "zh-CN, en;q=0.8");
   expect(disabled.status).toBe(409);
   const disabledBody = await disabled.json();
   expect(disabledBody.error).toEqual({
     code: "PAGE_DEFAULT_AGENT_UNAVAILABLE",
-    message: `Entry 'review-entry' default agent '${governanceId}' is disabled.`,
+    message: `review-entry 所选智能体 '${governanceId}' 已停用。`,
   });
   expect(disabledBody.details).toEqual({ useId: "review-entry" });
+
+  const missing = await proposed({ kind: "preset", agentKind: "missing-preset" }, "new-entry", "zh-CN");
+  expect(missing.status).toBe(409);
+  const missingBody = await missing.json();
+  expect(missingBody.error).toEqual({
+    code: "PAGE_DEFAULT_AGENT_UNAVAILABLE",
+    message: "new-entry 所选智能体 预设 missing-preset 不存在。",
+  });
+  expect(missingBody.details).toEqual({ useId: "new-entry" });
 });
