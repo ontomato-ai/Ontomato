@@ -285,9 +285,11 @@ async function openWithDraft(form: PanelFormValues, envelope: { operation: strin
   return { ...(await mountPanel(panelOf(...formMembers))), failed, settled, sent, draft };
 }
 
-it("refuses a draft the owner refuses, whole, naming the field and the reason, and marks nothing", async () => {
+// The owner refusing the draft is the form's to say (panelisation lead, 2026-11-21): on the form, the panel going on.
+it("refuses a draft the owner refuses, whole, naming the reason on the form, and marks nothing", async () => {
   const { context, failed, sent, draft } = await openWithDraft({ ...stored, executionUserId: "user-2" });
-  await vi.waitFor(() => expect(failed).toEqual(["You may not change who the agent runs as"]), { timeout: 5000 });
+  await vi.waitFor(() => expect(document.querySelector("#app .sdk-owner-form-refusal")?.textContent).toContain("You may not change who the agent runs as"), { timeout: 5000 });
+  expect(failed).toEqual([]);
   // The whole draft went to the owner for its check, as the agent wrote it.
   expect(sent.find((request) => (request.body as { values?: unknown } | null)?.values)?.body)
     .toEqual({ target: { kind: "object", objectType: AGENT_DEFINITION, primaryKey: AGENT }, values: draft.form, changedField: null });
