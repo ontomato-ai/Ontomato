@@ -20,11 +20,16 @@ beforeEach(() => {
   java.form.mockResolvedValue({ values: identity });
 });
 
-it("keeps the fields a Java owner's refusal names, so the form shows the reason on them", async () => {
-  const errors = [{ field: "/values/icon", code: "target_unavailable", message: "This icon is not offered here." }];
-  java.saveIdentity.mockRejectedValue(new BackendResponseError(409,
-    JSON.stringify({ message: "The icon is not available", code: "APPLICATION_ICON_UNAVAILABLE", errors })));
-  expect(await run()).toEqual({ kind: "refusal", code: "APPLICATION_ICON_UNAVAILABLE", message: "The icon is not available", errors });
+it("keeps the fields a Java owner's refusal names, at the paths the panel form addresses", async () => {
+  const unavailable = (field: string) => ({ field, code: "target_unavailable", message: "Not offered here." });
+  java.saveIdentity.mockRejectedValue(new BackendResponseError(409, JSON.stringify({
+    message: "Entry 'one' default agent is disabled.", code: "PAGE_DEFAULT_AGENT_UNAVAILABLE",
+    errors: [unavailable("/values/panelUses/1/defaultAgent"), unavailable("/values/icon")],
+  })));
+  expect(await run()).toEqual({
+    kind: "refusal", code: "PAGE_DEFAULT_AGENT_UNAVAILABLE", message: "Entry 'one' default agent is disabled.",
+    errors: [unavailable("/panelUses/1/defaultAgent"), unavailable("/icon")],
+  });
 });
 
 it("keeps any other owner refusal as its code and message", async () => {
