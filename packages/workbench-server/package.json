@@ -21,6 +21,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
     "@ontomato/contracts": "workspace:*",
+    "@ontomato/design-tokens": "workspace:*",
     "@ontomato/platform-schedules": "workspace:*",
     "@ontomato/markdown": "workspace:*",
     "adm-zip": "0.5.17",
