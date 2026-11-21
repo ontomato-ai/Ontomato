@@ -422,6 +422,8 @@ const openEntry = z.object({
 export const panelEventSchema = z.object({
   on: z.object({ member: key, output: key }).strict().optional(),
   labelKey: panelMessageKeySchema.optional(),
+  /** The primary button among this panel's named header events. */
+  primary: z.literal(true).optional(),
   do: z.union([
     z.object({ set: z.object({ fields: eventInputs.refine(fields => Object.keys(fields).length > 0, "Set at least one state field") }).strict() }).strict(),
     z.object({ invoke: z.object({ member: key, operation: key, inputs: eventInputs }).strict() }).strict(),
@@ -430,10 +432,25 @@ export const panelEventSchema = z.object({
 }).strict();
 export type PanelEvent = z.infer<typeof panelEventSchema>;
 
+const panelEventsSchema = z.record(key, panelEventSchema).superRefine((events, ctx) => {
+  let primary: string | undefined;
+  for (const [name, event] of Object.entries(events)) {
+    if (!event.primary) continue;
+    const path = [name, "primary"];
+    if (event.on || !event.labelKey) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: "Only a named header event without an output trigger can be primary" });
+    } else if (primary !== undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: `Event '${primary}' is already primary` });
+    } else {
+      primary = name;
+    }
+  }
+});
+
 export const panelManifestSchema = z.object({
   state: panelStateSchema,
   members: z.record(key, panelMemberSchema),
-  events: z.record(key, panelEventSchema),
+  events: panelEventsSchema,
 }).strict().superRefine(({ state, members, events }, ctx) => {
   function issue(path: string[], message: string) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
