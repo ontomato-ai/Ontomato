@@ -87,6 +87,7 @@ const PanelsDirectory = {
     const rows = computed(() => (rowsState.value.status === "ready" ? rowsState.value.value.items ?? [] : []));
     const unavailableRows = computed(() => rowsState.value.status === "ready"
       ? rowsState.value.value.unavailableItems ?? [] : []);
+    const unavailableSelection = computed(() => unavailableRows.value.find(row => row.id === selected.value?.primaryKey));
     const recordState = usePanelData("detail", "record");
     const usedByState = usePanelData("detail", "usedBy");
     const membersState = usePanelData("detail", "members");
@@ -358,8 +359,8 @@ const PanelsDirectory = {
     }
 
     async function remove() {
-      const current = record.value;
-      if (!current) return;
+      const current = record.value ?? unavailableSelection.value;
+      if (!current?.revision) return;
       if (!deleteArmed.value) {
         deleteArmed.value = true;
         failure.value = "";
@@ -480,7 +481,7 @@ const PanelsDirectory = {
       grantRows, grantsShared, grantsError, grantKindLabel, verbLabel, revokeGrant,
       ownerName, visibilityLabel, formatTime, messagesText,
       memberRows, projectionId, projectionRecord, inspectProjection,
-      record, recordState,
+      record, recordState, unavailableSelection,
       applicationEntries, usingPanels, classNames, hiddenCount,
       onSearchInput, onScope, onSort,
       nextPage, previousPage,

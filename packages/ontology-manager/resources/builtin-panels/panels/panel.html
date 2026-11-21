@@ -199,7 +199,10 @@
             <td><span class="pd-tag" :class="{ on: row.template }">{{ row.template ? t('template.yes') : t('template.no') }}</span></td>
           </tr>
           <tr v-for="row in unavailableRows" :key="row.id">
-            <td colspan="4"><span class="pd-error">{{ row.id }} · {{ row.reason }}</span></td>
+            <td colspan="4">
+              <button type="button" class="pd-btn small" @click="pick(row)">{{ row.id }}</button>
+              <span class="pd-error">{{ row.reason }}</span>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -230,6 +233,15 @@
       <!-- the chosen panel, or a copy / template step -->
       <div v-if="mode !== 'create' && mode !== 'edit'" class="pd-cards">
         <p v-if="!selected" class="pd-note">{{ t('detail.empty') }}</p>
+        <div v-else-if="unavailableSelection" class="pd-header">
+          <div>
+            <h2>{{ unavailableSelection.id }}</h2>
+            <p class="pd-error">{{ unavailableSelection.reason }}</p>
+          </div>
+          <button v-if="unavailableSelection.revision" type="button" class="pd-btn danger" :disabled="busy"
+            @click="remove">{{ t('action.delete') }}</button>
+        </div>
+        <p v-else-if="recordState.status === 'error'" class="pd-error">{{ recordState.message }}</p>
         <p v-else-if="recordState.status === 'empty'" class="pd-note">{{ t('detail.missing') }}</p>
         <p v-else-if="!record" class="pd-note">{{ t('busy') }}</p>
 
