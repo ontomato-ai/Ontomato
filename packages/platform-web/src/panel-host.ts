@@ -276,7 +276,7 @@ function directOptions(
     manifest: source.panel.manifest,
     run,
     requests: platformRequests,
-    use: root ? { ...use, root } as PanelUseRef : use,
+    use: root ? { ...use, root } : use,
     read: request => readPanelData({ source: readSource, ...request }),
     confirmOperation: preparation => confirmPanelIntent(use, preparation.intentId, changed),
     expandPageComposer: expandDeclaredComposer,
