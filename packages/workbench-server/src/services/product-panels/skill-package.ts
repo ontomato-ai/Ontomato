@@ -291,6 +291,7 @@ function describeSkill({ name, description, content, state, members, commands, p
     reads,
     [
       "### Open the panel",
+      "Write every platform page link in your reply as a site-relative path starting with one slash. Never put a scheme, hostname, or port in a platform page link. Do not use `http://`, `https://`, `//host`, or `localhost`.",
       "Use the canonical path from the current page context. To restore a selection, set the `state` query parameter to URL-encoded JSON containing only fields marked deepLink. Object references carry className and primaryKey.",
     ].join("\n"),
     describeDraft(forms),
@@ -385,6 +386,7 @@ function describeDraft(forms: readonly OperationDescription[]): string {
     `Use the current page context's canonical path as a site-relative address starting with a single \`/\` (for example, \`/ontology/assets/actions\`) and preserve the entry's existing query parameters. Do not prefix it with \`$ONTOMATO_BASE_URL\`, a hostname, or a URL scheme. Set \`${sessionKey}\` to the producing run's \`$ONTOMATO_SESSION_ID\` and \`${runKey}\` to that run's \`$ONTOMATO_RUN_ID\`. For a draft written in a later run, build a new link using that run's ID.`,
     `The raw value of \`${pathKey}\` is the draft file's path relative to the producing run's artifact area. It starts with \`outputs/drafts/\` and has no leading \`/\`. URL-encode that value exactly once when adding it to the query.`,
     `Use \`?${sessionKey}=SESSION_ID&${runKey}=RUN_ID&${pathKey}=outputs%2Fdrafts%2Fedit.page-draft.json\` for an \`edit.page-draft.json\` draft. Replace \`SESSION_ID\` and \`RUN_ID\` with the producing run's actual session and run IDs. The panel fills the form for the reader to review and save.`,
-    "In your reply, give the reader a Markdown link to the page address you just built so they can open the prefilled form. Use the draft file path only inside `draftPath`. A standalone file link opens a JSON file card.",
+    "In your final reply, the draft link must be a Markdown link with a destination that starts with a single slash. Never put a scheme, hostname, port, or `localhost` in the draft link. Use the draft file path only inside `draftPath`. A standalone file link opens a JSON file card.",
+    `Example reply: [Open the draft](/ontology/applications?${sessionKey}=SESSION_ID&${runKey}=RUN_ID&${pathKey}=outputs%2Fdrafts%2Fedit.page-draft.json). Use your current entry path and the producing run's IDs, and preserve its existing query parameters.`,
   ].join("\n");
 }
