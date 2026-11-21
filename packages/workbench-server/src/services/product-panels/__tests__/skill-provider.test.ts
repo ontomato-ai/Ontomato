@@ -69,7 +69,7 @@ function codeTasksPanel(projections: Record<string, { projectionId: string; inpu
       state: { selectedTask },
       members: Object.fromEntries(Object.entries(projections).map(([key, { projectionId, inputs }]) =>
         [key, { target: { projectionId }, inputs }])),
-      events: {},
+      commands: {},
     },
   };
   panels.set(id, panel);
@@ -167,15 +167,15 @@ it("provides a single protected source for all uses of the same panel and lists 
     { headers: { "X-Ontomato-Query-Service-Token": "fixture-platform-service" }, retries: 1 });
 });
 
-it("describes events as addresses or declared operations in the generated skill", async () => {
+it("describes panel commands as addresses or declared operations in the generated skill", async () => {
   const use = uses[0]!;
   const panel = codeTasksPanel({ run: { projectionId: "projection-schedules-run", inputs: taskInputBinding } });
   panels.set(use.panelId, { ...panel, manifest: {
     ...panel.manifest,
     state: { ...panel.manifest.state, mode: { type: { kind: "scalar", type: "string" }, deepLink: true } },
     members: { ...panel.manifest.members, details: { target: { panelId: "panel-task-details" } } },
-    events: {
-      reset: { labelKey: "task.reset", do: { set: { fields: { mode: { literal: "instance" }, selectedTask: { literal: null } } } } },
+    commands: {
+      reset: { labelKey: "task.reset", primary: true, do: { set: { fields: { mode: { literal: "instance" }, selectedTask: { literal: null } } } } },
       runSelected: { labelKey: "task.run", do: { invoke: { member: "run", operation: "runNow",
         inputs: { task: { state: "selectedTask" } } } } },
       openOverview: { labelKey: "task.overview", do: { open: { mode: "entry",
@@ -194,15 +194,15 @@ it("describes events as addresses or declared operations in the generated skill"
   expect(operations).toContain("operations:true");
   expect(operations).toContain('memberPath: [previewSegment,{member:"approve"}]');
   expect(operations).toContain('operationId: "preview.approve.approve"');
-  const events = content.split("### Panel events\n")[1]!.split("\n\n### Declared operations")[0];
-  expect(events).toContain("The names below identify panel events. The `/operate` endpoint accepts only IDs from Declared operations.");
-  expect(events).toContain('(reset). Open the current panel\'s canonical address. Set `mode` = `"instance"`, `selectedTask` = `null`');
-  expect(events).toContain("(runSelected). Invoke `run.runNow` as specified under Declared operations.");
-  expect(events).toContain("`task` = the current value of state field `selectedTask`");
-  expect(events).toContain('"primaryKey":"overview"');
-  expect(events).toContain("Open the returned `data.use.path`.");
-  expect(events).toContain("Find the admitted entry for panel `panel-task-details`");
-  expect(events).not.toContain(uses[1]!.path);
+  const commands = content.split("### Panel commands\n")[1]!.split("\n\n### Declared operations")[0];
+  expect(commands).toContain("The `/operate` endpoint accepts only IDs from Declared operations.");
+  expect(commands).toContain('(reset). Open the current panel\'s canonical address. Set `mode` = `"instance"`, `selectedTask` = `null`');
+  expect(commands).toContain("(runSelected). Invoke `run.runNow` as specified under Declared operations.");
+  expect(commands).toContain("`task` = the current value of state field `selectedTask`");
+  expect(commands).toContain('"primaryKey":"overview"');
+  expect(commands).toContain("Open the returned `data.use.path`.");
+  expect(commands).toContain("Find the admitted entry for panel `panel-task-details`");
+  expect(commands).not.toContain(uses[1]!.path);
 });
 
 it.each(["record_missing", "invalid_definition"] as const)("reports %s without offering the affected panel", async reason => {
@@ -294,7 +294,7 @@ it("propagates a broken SDK release as an overall failure rather than an unavail
   expect(reportSourceFailure).not.toHaveBeenCalled();
 });
 
-it("uses the panel's default-locale text for declared state operation labels", async () => {
+it("uses the panel's default-locale text for panel command labels", async () => {
   const source = uses[2]!;
   const id = source.panelId;
   const panel = panels.get(id)!;
@@ -306,7 +306,7 @@ it("uses the panel's default-locale text for declared state operation labels", a
       ...panel,
       manifest: {
         ...panelManifestSchema.parse(panel.manifest),
-        events: {
+        commands: {
           review: { labelKey: "actions.review", do: { set: { fields: { selectedTask: { literal: null } } } } },
           reset: { labelKey: "actions.reset", do: { set: { fields: { selectedTask: { literal: null } } } } },
         },
