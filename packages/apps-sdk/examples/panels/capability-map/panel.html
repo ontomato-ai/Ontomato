@@ -122,7 +122,12 @@
 <div id="app" v-cloak>
   <div class="cap-map-shell">
     <header class="cap-map-toolbar">
-      <projection slot="mode"></projection>
+      <segmented-control
+        :options="modeOptions"
+        :model-value="mode"
+        aria-label-key="capMap.modeLabel"
+        @update:model-value="setMode"
+      ></segmented-control>
 
       <div class="cap-map-search">
         <input
