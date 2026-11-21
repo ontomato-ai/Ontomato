@@ -347,6 +347,15 @@ const simpleControls = [
     kind: z.literal("text"), multiline: z.boolean().optional(),
     placeholder: z.string().nullish(), maxLength: z.number().int().positive().optional(),
   }).strict(),
+  /** Each locale edits a string keyed by locale code in the owner's JSON object. */
+  z.object({
+    kind: z.literal("localized-text"),
+    primaryLocale: z.string().min(1),
+    locales: z.array(z.object({ code: z.string().min(1), label: z.string().min(1) }).strict()),
+    requiredLocales: z.array(z.string().min(1)).default([]),
+    multiline: z.boolean().optional(),
+    maxLength: positiveInteger.optional(),
+  }).strict(),
   z.object({
     kind: z.literal("select"),
     options: z.array(panelFormOptionSchema),
@@ -410,7 +419,7 @@ export type PanelFormField = z.infer<typeof fieldShape> & {
     | (z.infer<typeof objectControl> & { fields: PanelFormField[] });
 };
 
-const childFields = z.array(z.lazy((): z.ZodType<PanelFormField> => panelFormFieldSchema));
+const childFields = z.array(z.lazy((): z.ZodType<PanelFormField, z.ZodTypeDef, unknown> => panelFormFieldSchema));
 const controlSchema = z.discriminatedUnion("kind", [
   ...simpleControls,
   // Row paths are relative. Edits, refreshes and errors address the current absolute paths.
