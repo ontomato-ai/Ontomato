@@ -7,7 +7,7 @@ import {
 import { panelDownloadFileSchema } from "@ontomato/contracts/panel-download";
 import { agentSessionRefSchema } from "@ontomato/contracts/agent-channel";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
-import { productPanelReadRequestSchema } from "@ontomato/contracts/panel-host";
+import { PANEL_MEMBER_RENDER_HEADER, productPanelReadRequestSchema } from "@ontomato/contracts/panel-host";
 import {
   dispatchHumanPanelOperation, inspectPanelOperationImpact, ownPanelSettings, prepareHumanPanelOperation,
   projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor,
@@ -35,6 +35,7 @@ import {
 import { HttpError } from "../../utils/errors";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { readProductPanelData } from "../../services/product-panels/data-reads";
+import { validateProjectionComponent } from "../../services/product-panels/component-catalogue";
 import { productDefinitionStreamRequestSchema, type ProductDefinitionStreamFrame } from "@ontomato/contracts/product-subscriptions";
 import { authorizeDefinitionStream, requirePanelDefinitions } from "../../services/product-panels/definition-stream";
 import type { createChartProjectionService } from "../../services/product-panels/chart-sources";
@@ -156,8 +157,12 @@ export function createChartProjectionsRouter(service: ReturnType<typeof createCh
 }
 
 productProjectionsRouter.get("/:id", wrap(async (req, res) => {
+  res.set("Cache-Control", "no-store");
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
-  res.json({ projection: await readCurrentProjectionRecord(c.owner, c.credentials, id, true) });
+  const rendering = req.header(PANEL_MEMBER_RENDER_HEADER) === "1";
+  const projection = await readCurrentProjectionRecord(c.owner, c.credentials, id, !rendering);
+  if (rendering) await validateProjectionComponent(id, projection);
+  res.json({ projection });
 }));
 productProjectionsRouter.put("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);

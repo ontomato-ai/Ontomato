@@ -78,11 +78,14 @@ function answer(request: PanelMemberReadRequest, none: boolean): ProductPanelRea
   throw new Error(`Nothing answers ${request.dataName}`);
 }
 
-function open(members: string[], none = false) {
+function open(members: string[], none = false, incompatible?: string) {
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "p", url: () => "/p", label: () => "P", initial: { agent },
     text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
-    readProjection: async (id) => projections[id]!,
+    readProjection: async (id) => {
+      if (id === incompatible) throw new Error("field 'data.form' is not declared by the current SDK component");
+      return projections[id]!;
+    },
     read: async (request) => answer(request, none),
   });
   const element = document.createElement("div");
@@ -100,6 +103,12 @@ it("shows a list's diagnostics beside the rows that did come back", async () => 
   const { element } = open(["list"]);
   await vi.waitFor(() => expect(element.textContent).toContain("SQL"));
   expect(element.textContent).toContain("The vendor skill source did not answer.");
+});
+
+it("names the incompatible member and field beside a working member", async () => {
+  const { element } = open(["list", "form"], false, "agent-form");
+  await vi.waitFor(() => expect(element.textContent).toContain("SQL"));
+  expect(element.textContent).toContain("Member 'form': field 'data.form'");
 });
 
 it("shows the catalogue's diagnostics beside the choices, and not the held values' read's", async () => {

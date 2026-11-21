@@ -1,7 +1,7 @@
 import { pageDraftReadSchema } from "@ontomato/contracts/page-draft";
 import type { PageDraftLink } from "@ontomato/contracts/page-draft";
 import type { PlatformRequests } from "./platform-objects";
-import { productPanelReadResponseSchema, type ProductPanelReadRequest, type ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
+import { PANEL_MEMBER_RENDER_HEADER, productPanelReadResponseSchema, type ProductPanelReadRequest, type ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 
 /*
  * The platform requests a panel instance makes for itself, as the reader, whether it runs in a frame (over the bridge)
@@ -46,8 +46,10 @@ export async function readPanelData(requests: PlatformRequests, request: Omit<Pr
 }
 
 /** Reads a projection's current record by ID; the caller checks it as the record it expects. */
-export async function readProjectionRecord(requests: PlatformRequests, id: string): Promise<unknown> {
-  const response = await requests.request(`/product-projections/${encodeURIComponent(id)}`, {}, "");
+export async function readProjectionRecord(requests: PlatformRequests, id: string, rendering = false): Promise<unknown> {
+  const response = await requests.request(`/product-projections/${encodeURIComponent(id)}`, {
+    ...(rendering && { headers: { [PANEL_MEMBER_RENDER_HEADER]: "1" } }),
+  }, "");
   const body = await response.json();
   if (!response.ok) throw new Error(body.error?.message ?? `Projection ${id} is unavailable`);
   return body.projection;
