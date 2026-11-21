@@ -465,6 +465,36 @@ it("lets the panel's registered owner clean it up after retiring a same-ID trial
   expect(await deleted.json()).toMatchObject({ success: true, deletedProjectionIds: projections });
 });
 
+it("lets an owner delete an unreadable panel by ID once its real references are retired", async () => {
+  const id = "legacy-events-panel", resource = `product-panels/${id}`;
+  expect((await savePanel(id, { state: {}, members: {}, commands: {} })).status).toBe(200);
+  await state.pool!.query(
+    `UPDATE "${state.schema}".product_panels SET definition =
+      jsonb_set(definition #- '{manifest,commands}', '{manifest,events}', '{}'::jsonb)
+      WHERE id=$1`, [id],
+  );
+  trialApplications.add(id);
+  expect((await request("DELETE", resource, "author")).status).toBe(409);
+  const read = await request("GET", resource, "author");
+  expect(read.status).toBe(422);
+  expect(await read.json()).toMatchObject({ error: {
+    code: "PRODUCT_DEFINITION_INVALID", message: expect.stringContaining(`Panel '${id}': Unrecognized field 'manifest.events'`),
+  } });
+  const listed = await request("GET", `product-panels?q=${id}`, "author");
+  expect(await listed.json()).toMatchObject({ items: [], unavailableItems: [
+    { id, revision: 1, reason: expect.stringContaining("manifest.events") },
+  ] });
+  const retired = await fetch(`${state.base}/platform/applications/${id}`, { method: "DELETE", headers: { tk: "author" } });
+  expect(retired.status).toBe(204);
+  expect((await request("DELETE", resource, "unrelated-reader")).status).toBe(403);
+  expect((await request("DELETE", `${resource}?revision=2`, "author")).status).toBe(409);
+  const removed = await request("DELETE", resource, "author");
+  expect(removed.status).toBe(200);
+  expect(await removed.json()).toMatchObject({ success: true });
+  const stored = await state.pool!.query(`SELECT id FROM "${state.schema}".product_panels WHERE id=$1`, [id]);
+  expect(stored.rows).toEqual([]);
+});
+
 it("exposes a panel to an editor without a use Grant for management", async () => {
   const id = "editor-without-use";
   expect((await savePanel(id, { state: {}, commands: {}, members: {} })).status).toBe(200);

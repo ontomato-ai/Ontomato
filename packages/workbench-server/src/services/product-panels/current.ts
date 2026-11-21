@@ -1,3 +1,4 @@
+import type { ZodError } from "zod";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import {
   METRIC_CHART_COMPONENT, builtinProductPanelInputSchema, chartProjectionSchema, productPanelInputSchema, productPanelSchema, productProjectionSchema,
@@ -61,8 +62,31 @@ async function readCurrentRecord(
 export async function readCurrentProjection(owner: ProductOwner, credentials: AssistantCredentials, id: string, reportMissingToAuthor = false) {
   return productProjectionSchema.parse(await readCurrentRecord(owner, credentials, "projection", id, reportMissingToAuthor));
 }
+export function panelDefinitionProblem(error: ZodError): string {
+  const unknownFields = error.issues.flatMap(issue => issue.code === "unrecognized_keys"
+    ? issue.keys.map(key => [...issue.path, key].join(".")) : []);
+  if (unknownFields.length) {
+    const missing = error.issues.flatMap(issue => issue.code === "invalid_type" && issue.received === "undefined"
+      ? [`Field '${issue.path.join(".")}' is required.`] : []);
+    return [...unknownFields.map(field => `Unrecognized field '${field}'.`), ...missing].join(" ");
+  }
+  const issue = error.issues[0]!;
+  const field = issue.path.length ? `Field '${issue.path.join(".")}'` : "Panel definition";
+  return issue.code === "invalid_type" && issue.received === "undefined"
+    ? `${field} is required.` : `${field} does not match the current panel contract.`;
+}
+
 export async function readCurrentPanel(owner: ProductOwner, credentials: AssistantCredentials, id: string, reportMissingToAuthor = false) {
-  return productPanelSchema.parse(await readCurrentRecord(owner, credentials, "panel", id, reportMissingToAuthor));
+  const parsed = productPanelSchema.safeParse(await readCurrentRecord(owner, credentials, "panel", id, reportMissingToAuthor));
+  if (!parsed.success)
+    throw new HttpError(422, `Panel '${id}': ${panelDefinitionProblem(parsed.error)}`, "PRODUCT_DEFINITION_INVALID");
+  return parsed.data;
+}
+
+export async function readCurrentPanelLabel(owner: ProductOwner, credentials: AssistantCredentials, id: string) {
+  const record = await readCurrentRecord(owner, credentials, "panel", id, true);
+  const parsed = productPanelInputSchema.pick({ name: true }).safeParse(record);
+  return parsed.success ? parsed.data.name : id;
 }
 export const readCurrentProjectionRecord = readCurrentProjection;
 export const readCurrentPanelRecord = readCurrentPanel;

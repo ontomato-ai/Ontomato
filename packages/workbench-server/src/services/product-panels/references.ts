@@ -96,12 +96,12 @@ function collectReferences(
   return references;
 }
 
-async function loadPanels(domainId: string, client: QueryClient) {
+async function loadPanels(domainId: string, client: QueryClient, excluding?: string) {
   const { rows } = await client.query<{ id: string; definition: unknown }>(
     `SELECT id,definition FROM ${currentProductRows("panel")} AS definitions
      WHERE domain_id=$1 OR domain_id IS NULL ORDER BY id`, [domainId],
   );
-  return new Map(rows.map(({ id, definition }) => [id, panelReferenceDefinitionSchema.parse(definition)]));
+  return new Map(rows.filter(row => row.id !== excluding).map(({ id, definition }) => [id, panelReferenceDefinitionSchema.parse(definition)]));
 }
 
 async function loadDetails(domainId: string, client: QueryClient) {
@@ -128,8 +128,8 @@ async function loadSavedPlacements(domainId: string, panels: ReadonlyMap<string,
   return placements;
 }
 
-export async function findPanelUsers(domainId: string, kind: CurrentProductKind, id: string, client: QueryClient = getPostgresPool()) {
-  const [panels, details] = await Promise.all([loadPanels(domainId, client), loadDetails(domainId, client)]);
+export async function findPanelUsers(domainId: string, kind: CurrentProductKind, id: string, client: QueryClient = getPostgresPool(), excluding?: string) {
+  const [panels, details] = await Promise.all([loadPanels(domainId, client, excluding), loadDetails(domainId, client)]);
   const saved = await loadSavedPlacements(domainId, panels, client);
   return Array.from(panels, ([parentId, panel]) => ({ id: parentId, panel }))
     .filter(parent => collectReferences(parent.panel, details, saved.get(parent.id)).some(({ target }) => target.kind === kind && target.id === id))
