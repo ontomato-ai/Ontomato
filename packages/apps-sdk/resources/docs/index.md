@@ -159,6 +159,13 @@ To open another of the platform's pages, call `usePanelContext().navigate(addres
 `/agents/chat?agentId=…`; when the platform cannot open it, the page says why and the call rejects with that reason.
 Never call the platform's business endpoints from the page.
 
+Draw a document the page read (a skill's `SKILL.md`, a report body) with `<markdown-view :content="text">`, the
+product Markdown every platform page uses, and a file as code with `<code-editor :model-value="text" language="javascript"
+readonly>` (JSON, Markdown, HTML, Python or plain text too; without `readonly` it edits through `v-model`). Never draw
+either as plain text. To tell the reader how something the page did went ("Exported", why a call failed), call
+`usePanelContext().notify({ kind: "success" | "info" | "warning" | "error", text })`: the platform's own message, which
+fades by itself. A note that stays on the page is `<el-alert>`.
+
 Run the App Builder skill's `ontomato panel check` on the workspace directory. It uses the current release's
 declarations. Register the requested projections, panel and application uses through their owners, then open the
 application's declared entry.

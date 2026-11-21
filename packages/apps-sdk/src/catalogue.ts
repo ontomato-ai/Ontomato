@@ -356,6 +356,22 @@ export const components: readonly ComponentMetadata[] = [
       "Arranges a flat list of slash-separated paths into a folder-first, name-sorted, default-expanded tree; clicking a folder only collapses or expands it, while clicking a file emits its key and highlights the active row. It reads nothing and carries no business rules.",
   }),
   defineComponentMeta({
+    componentId: "MarkdownView",
+    module: "@ontomato/sdk/base",
+    exportName: "MarkdownView",
+    role: "presentation",
+    meaning:
+      "Draws a text in the product Markdown, as every platform page does: GFM, a single newline is a line break, raw HTML shows as written, code blocks in the page's light or dark theme. A page that shows a document it read (a skill's SKILL.md, a report body) draws it with this. It reads nothing and binds nothing.",
+  }),
+  defineComponentMeta({
+    componentId: "CodeEditor",
+    module: "@ontomato/sdk/base",
+    exportName: "CodeEditor",
+    role: "control",
+    meaning:
+      "Shows a text as code with highlighting (JavaScript, JSON, Markdown, HTML, Python or plain text), with search and copy; `readonly` makes it a viewer, as for a skill's script file, and without it the reader edits the text through `v-model`. It reads nothing and binds nothing.",
+  }),
+  defineComponentMeta({
     componentId: "SegmentedTextReader",
     module: "@ontomato/sdk/base",
     exportName: "SegmentedTextReader",

@@ -357,6 +357,38 @@ it("opens a platform address from the panel's own code through the host, and hea
   (await mount).dispose();
 });
 
+it("draws a document as the product's Markdown, a file as code, and tells the reader in the platform's message", async () => {
+  const element = document.createElement("div");
+  document.body.append(element);
+  let mounted!: (mount: DirectPanelMount) => void;
+  const mount = new Promise<DirectPanelMount>((resolve) => { mounted = resolve; });
+  const module = panelModuleFor({
+    mounted, element,
+    template: `<markdown-view :content="doc"></markdown-view><code-editor :model-value="code" language="javascript" readonly></code-editor>`,
+    install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
+    manifest,
+    run: {
+      pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
+      failed: (reason) => { throw reason; },
+    },
+    messages: {}, locale: ref("en"), defaultLocale: "en",
+    requests: { request: async () => Response.json({ projection: taskData }) },
+    use: { applicationId: "app-tasks", useId: "tasks" },
+    expandPageComposer: noOperations.expandPageComposer, confirmOperation: noOperations.confirmOperation,
+    navigate: noOperations.navigate,
+    read: async (): Promise<ProductPanelReadResponse> => ({ status: "ready", value: {} as never }),
+  });
+  const { context } = await module.mountPanel({ setup: () => ({ doc: "# Review\n\nChecks **every** change.", code: "export const answer = 42;" }) });
+  await vi.waitFor(() => expect(element.querySelector("h1")?.textContent).toBe("Review"));
+  expect(element.querySelector("strong")?.textContent).toBe("every");
+  await vi.waitFor(() => expect(element.querySelector(".cm-content")?.textContent).toBe("export const answer = 42;"));
+  expect(element.querySelector(".cm-content")?.getAttribute("contenteditable")).toBe("false");
+  context.notify({ kind: "success", text: "Exported" });
+  await vi.waitFor(() => expect(document.querySelector(".el-message--success")?.textContent).toContain("Exported"));
+  (await mount).dispose();
+});
+
 it("shows a read the platform could not answer as the datum's failure, with the platform's reason", async () => {
   const element = document.createElement("div");
   document.body.append(element);

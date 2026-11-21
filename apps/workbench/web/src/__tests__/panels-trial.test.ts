@@ -244,6 +244,7 @@ describe("a panel's module", () => {
       expandPageComposer: async () => {},
       // A member's operations are read through the platform; its data, here, through this release's modules.
       navigate: async () => { throw new Error("This test opens no address"); },
+      notify: () => { throw new Error("This test tells the reader nothing"); },
       readPanelData: async (request) => {
         if (request.operations) return { status: "ready", value: {} };
         throw new Error("This test reads no member data through the platform");

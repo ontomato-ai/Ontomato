@@ -13,6 +13,8 @@ export const baseComponents = {
   ReferencePicker: () => import("./base/ReferencePicker.vue").then(module => module.default),
   ObjectGraph: () => import("./base/ObjectGraph.vue").then(module => module.default),
   PathTree: () => import("@ontomato/foundation-ui/tree").then(module => module.PathTree),
+  MarkdownView: () => import("@ontomato/foundation-ui/markdown").then(module => module.MarkdownView),
+  CodeEditor: () => import("@ontomato/foundation-ui/code").then(module => module.CodeEditor),
   SegmentedTextReader: () => import("@ontomato/foundation-ui/reader").then(module => module.SegmentedTextReader),
   ObjectTree: () => import("./base/ObjectTree.vue").then(module => module.default),
   ObjectTextReader: () => import("./base/ObjectTextReader.vue").then(module => module.default),
