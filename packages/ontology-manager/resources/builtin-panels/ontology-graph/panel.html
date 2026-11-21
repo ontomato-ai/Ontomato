@@ -70,8 +70,10 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     flex: 1 1 auto;
-    /* The frame fills the page where the host gives the panel its height, and keeps a readable height where it does not. */
-    min-height: clamp(420px, calc(100vh - 360px), 760px);
+    /* The frame takes a height from the page and keeps it: the inspector's lists scroll inside it, so choosing a class
+       with many attributes never stretches the page (and never moves the canvas out from under the view). */
+    height: clamp(420px, calc(100vh - 360px), 760px);
+    min-height: 0;
     border: 1px solid var(--ui-border);
     border-radius: var(--radius-sm);
     overflow: hidden;
@@ -100,6 +102,7 @@
     min-height: 0;
   }
   .og-inspector {
+    min-height: 0;
     position: absolute;
     top: 0;
     right: 0;
