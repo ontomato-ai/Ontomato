@@ -62,6 +62,7 @@ import {
 import {
   applicationPanelUseSchema, applicationPanelUsePathSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema,
   chartSourceInUseErrorSchema, ontologyElementRefSchema, productPanelContentSchema, productPanelReadQuerySchema, productPanelResponseSchema,
+  productPanelSnapshotQuerySchema,
   productProjectionInputSchema, productProjectionResponseSchema,
   registerChartProjectionRequestSchema, registerChartProjectionResponseSchema, registerProductProjectionRequestSchema,
   updateChartProjectionSourceRequestSchema,
@@ -1204,14 +1205,18 @@ test("list column headers come from owner fields or from panel message keys", ()
   assert.equal(panelObjectListColumnSchema.safeParse({ ...panelColumn, empty: "No notes" }).success, false);
 });
 
-test("current panel reads take no context or a complete use and one entrance", () => {
+test("current panel records and snapshots share entry and frame query validation", () => {
   const use = { applicationId: "ontology", useId: "ontology-agent-settings" };
   const pageKey = "agent-settings";
   const menu = { ...use, pageKey, permissionCode: "analysis-agent" };
   const member = { ...use, pageKey, access: "domain-member" };
-  for (const query of [{}, menu, member]) assert.deepEqual(productPanelReadQuerySchema.parse(query), query);
-  for (const query of [use, { pageKey }, { ...use, pageKey }, { ...menu, useId: undefined }, { ...menu, access: member.access }]) {
-    assert.equal(productPanelReadQuerySchema.safeParse(query).success, false);
+  const frame = { ...use, source: "frame" };
+  for (const schema of [productPanelReadQuerySchema, productPanelSnapshotQuerySchema]) {
+    for (const query of [{}, menu, member, frame]) assert.deepEqual(schema.parse(query), query);
+    for (const query of [use, { pageKey }, { ...use, pageKey }, { ...menu, useId: undefined },
+      { ...menu, access: member.access }, { ...frame, useId: undefined }, { ...frame, pageKey }, { ...frame, source: "other" }]) {
+      assert.equal(schema.safeParse(query).success, false);
+    }
   }
 });
 

@@ -376,15 +376,15 @@ export const panelApplicationEntrySchema = z.object({
 export type PanelApplicationEntry = z.infer<typeof panelApplicationEntrySchema>;
 
 const [menuEntrance, domainMemberEntrance] = pageSkillEntranceSchema.options;
-/** A snapshot describes the content panel and, when requested, its page skill. */
-export const productPanelSnapshotQuerySchema = z.union([
+export const applicationFrameReadQuerySchema = panelUseRefSchema.extend({ source: applicationFrameSourceSchema.shape.kind });
+/** Records and snapshots use the same entry context. Only the content entry carries page-skill context. */
+export const productPanelReadQuerySchema = z.union([
   z.object({}).strict(),
   panelUseRefSchema.merge(menuEntrance),
   panelUseRefSchema.merge(domainMemberEntrance),
+  applicationFrameReadQuerySchema,
 ]);
-export const applicationFrameReadQuerySchema = panelUseRefSchema.extend({ source: applicationFrameSourceSchema.shape.kind });
-/** A frame record is read through a granted entry without the content panel's page-skill context. */
-export const productPanelReadQuerySchema = z.union([...productPanelSnapshotQuerySchema.options, applicationFrameReadQuerySchema]);
+export const productPanelSnapshotQuerySchema = productPanelReadQuerySchema;
 export type ProductPanelReadQuery = z.infer<typeof productPanelReadQuerySchema>;
 
 /** The source card owner creates chart projections; ordinary updates may only edit chart metadata. */
