@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
+import { copyExternalLink, externalLinkTab, rememberExternalLinkTab } from "./external-link";
 import { useRoute, useRouter, RouterView, RouterLink } from "vue-router";
-import { House } from "lucide-vue-next";
+import { Link } from "lucide-vue-next";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import type { PanelThemeOverrides } from "@ontomato/contracts/panel-manifest";
 import {
@@ -34,6 +35,8 @@ export interface PlatformShownPage {
   named?: boolean;
   /** Back to where the reader came from, for a page the application's menu does not reach. */
   back?: () => void;
+  /** The entry's external link (its address with its state), which the header's "more" offers to copy. */
+  externalLink?: string;
 }
 
 const props = defineProps<{
@@ -80,12 +83,8 @@ const route = useRoute();
 const router = useRouter();
 // Keep the workspace directly accessible while its navigation entry is temporarily hidden.
 const railApps = computed(() => applicationShortcuts(props.apps??[],props.dynamicAppIds??[],props.pinnedAppIds??[],activeAppId.value).map(app => {
-  const entry = railApp(app, () => emit('selectApp', app.id));
-  if (app.built && app.home) {
-    const target = router.resolve(app.home);
-    return { ...entry, href: router.resolve({ path: target.path, query: { ...target.query, standalone: '1' }, hash: target.hash }).href };
-  }
-  return entry;
+  // An application the reader opens from the rail opens in the platform; its external link is copied from its header.
+  return railApp(app, () => emit('selectApp', app.id));
 }));
 const navigationContext=computed(()=>{
   if(route.query.navigationContext!=='ontology')return null;
@@ -95,13 +94,24 @@ const navigationContext=computed(()=>{
 });
 const activeAppId = computed(() => navigationContext.value?.id??appFor(route.path)?.id ?? null);
 const activeApp = computed(() => props.apps.find((app) => app.id === activeAppId.value) ?? null);
-const standalone = computed(() => route.query.standalone === '1' &&
-  (typeof route.params.applicationId === 'string' ||
-   (typeof route.params.productAssetId === 'string' && typeof route.query.applicationId === 'string')));
-const publishedApp = computed(() => props.apps.find(app => app.id === (route.params.applicationId ?? route.query.applicationId)));
-const publishedPages = computed(() => publishedApp.value?.groups?.flatMap(group => group.pages) ?? []);
-const activePublishedPage = computed(() => publishedPages.value.find(page => page.id === route.path) ??
-  (!route.params.panelPath ? publishedPages.value[0] : undefined));
+/**
+ * An external link's tab (big main's ruling, 2026-11-21): an address the reader opened with `standalone=1` shows the
+ * application without the platform's rail (and so without its account area); everything else - the menu or the
+ * application's frame, the page header with its commands, the content, the composer - is drawn as in the platform. The
+ * tab stays so as the reader goes to another entry, another application or a conversation; each entry is admitted as
+ * ever.
+ */
+/** The header's "more": the entry's external link, when the page shown is an entry of an application. */
+const moreActions = computed(() => props.shownPage?.externalLink
+  ? [{ id: "copy-external-link", label: props.labels.copyExternalLink, icon: Link,
+    onClick: () => void copyExternalLink(props.shownPage!.externalLink!, props.labels.externalLinkCopied) }]
+  : []);
+const externalTab = ref(externalLinkTab());
+watch(() => route.query.standalone, (flag) => {
+  if (flag !== '1' || externalTab.value) return;
+  externalTab.value = true;
+  rememberExternalLinkTab();
+}, { immediate: true });
 const browserWorkspace = computed(() => route.path === "/browser/data" || route.path.startsWith("/browser/data/"));
 
 /**
@@ -139,7 +149,7 @@ const headerLabels = computed(() => ({
 <template>
   <PlatformShell
     :loading="loading"
-    :hide-rail="standalone"
+    :hide-rail="externalTab"
     :class="{ 'object-browser-layout': browserWorkspace }"
     :apps="blocked ? [] : railApps"
     :active-app-id="activeAppId"
@@ -155,8 +165,8 @@ const headerLabels = computed(() => ({
       ontology manager) is inserted beside the page, never around it. Which application has a menu is known only when the
       catalog arrives, after the page has been drawn; a page area per case would mount the page a second time then.
     -->
-    <div ref="appBody" class="platform-app-body" :class="{ 'has-menu': !standalone && menu !== null && !blocked, 'standalone-app': standalone }">
-      <aside v-if="!standalone && menu && !blocked" class="platform-app-menu" :aria-label="labels.pages">
+    <div ref="appBody" class="platform-app-body" :class="{ 'has-menu': menu !== null && !blocked }">
+      <aside v-if="menu && !blocked" class="platform-app-menu" :aria-label="labels.pages">
         <h2 class="app-menu-title">{{ menu.label }}</h2>
         <select class="mobile-page-select" :aria-label="labels.pages" :value="activePageId" @change="selectMenuPage(($event.target as HTMLSelectElement).value)"><optgroup v-for="group in menu.groups??[]" :key="group.key" :label="group.label||menu.label"><option v-for="page in group.pages" :key="page.id" :value="page.id" :disabled="!!page.unavailableHint">{{page.label}}</option></optgroup><option v-if="menu.foot" :value="menu.foot.id">{{menu.foot.label}}</option></select>
         <AppPanelPages
@@ -169,33 +179,19 @@ const headerLabels = computed(() => ({
       </aside>
       <div class="platform-app-page">
         <PlatformPageHeader
-          v-if="standalone"
-          class="standalone-header"
-          :title="publishedApp?.label ?? labels.applications"
-          :description="!blocked && publishedPages.length === 0 ? publishedApp?.description : undefined"
-        >
-          <template #actions>
-            <RouterLink class="workspace-return" :to="platformRoutes.home.path">
-              <House :size="16" aria-hidden="true" /><span>{{ labels.home ?? labels.brand }}</span>
-            </RouterLink>
-          </template>
-        </PlatformPageHeader>
-        <PlatformPageHeader
-          v-else-if="headerShown"
+          v-if="headerShown"
           :title="headerTitle"
           :description="headerDescription"
           :actions="pageActions?.actions"
           :draft="pageActions?.draft ?? null"
           :labels="headerLabels"
           :back-label="shownPage?.back ? labels.back : undefined"
+          :more="moreActions"
+          :more-label="labels.more"
           @back="shownPage?.back?.()"
           @save="pageActions?.draft?.save()"
           @discard="pageActions?.draft?.discard()"
         />
-        <nav v-if="standalone && !blocked && publishedPages.length > 1" class="published-page-nav platform-page-gutter" :aria-label="labels.pages">
-          <RouterLink v-for="page in publishedPages" :key="page.id" :to="{ path: page.id, query: { standalone: '1' } }"
-            :aria-current="activePublishedPage?.id === page.id ? 'page' : undefined">{{ page.label }}</RouterLink>
-        </nav>
         <div v-if="blocked" class="platform-blocked" role="alert">{{ blocked.message }}</div>
         <!--
           A page that draws its own header carries its own gutter; every other page gets it here, once, with the header's.
@@ -203,7 +199,7 @@ const headerLabels = computed(() => ({
         <div
           v-else
           class="platform-page-body platform-page-gutter"
-          :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': standalone || shownPage === null || appFramed, 'browser-workspace': browserWorkspace }"
+          :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null || appFramed, 'browser-workspace': browserWorkspace }"
         >
           <RouterView />
         </div>
@@ -289,47 +285,6 @@ const headerLabels = computed(() => ({
   min-width: 0;
   min-height: 0;
 }
-.standalone-header.compact {
-  padding-block: var(--spacing-sm);
-  background: var(--el-bg-color);
-}
-.standalone-header :deep(.header-row) {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--spacing-sm);
-}
-.standalone-header :deep(.header-text) {
-  display: grid;
-  gap: var(--spacing-xs);
-}
-.standalone-header :deep(.page-description) { max-inline-size: 72ch; }
-.standalone-app .platform-page-body { min-width: 0; }
-.workspace-return, .published-page-nav a {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  min-height: var(--control-height-sm);
-  border-radius: var(--radius-sm);
-  color: var(--el-text-color-secondary);
-  text-decoration: none;
-  overflow-wrap: anywhere;
-}
-.workspace-return svg { flex: none; }
-.workspace-return span { min-width: 0; }
-.workspace-return { max-inline-size: min(12rem, 40vw); }
-.workspace-return:hover, .published-page-nav a:hover { background: var(--el-fill-color-light); color: var(--el-text-color-primary); }
-.published-page-nav {
-  display: flex;
-  flex-shrink: 0;
-  min-width: 0;
-  overflow-x: auto;
-  gap: var(--spacing-xs);
-  padding-block: var(--spacing-sm);
-  border-bottom: 1px solid var(--el-border-color);
-}
-.published-page-nav a { flex: none; max-inline-size: 100%; }
-.published-page-nav a[aria-current="page"] { background: var(--el-fill-color-light); color: var(--el-text-color-primary); font-weight: var(--font-semibold); }
 .platform-blocked {
   display: flex;
   flex: 1;

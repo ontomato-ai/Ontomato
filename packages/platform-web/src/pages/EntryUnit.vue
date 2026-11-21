@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { PlatformPageHeader, providePageActions, type PlatformPageHeading } from "@ontomato/platform-shell";
+import { PlatformPageHeader, providePageActions, type PlatformPageAction, type PlatformPageHeading } from "@ontomato/platform-shell";
 
 /**
  * One entry's page as an application's frame holds it (big main's ruling, 2026-11-21): the platform's page header — the
@@ -12,6 +12,9 @@ defineProps<{
   /** The header's own words: its Save, Discard and unsaved marker, and the way back. */
   labels: { save: string; discard: string; unsavedChanges: string };
   backLabel: string;
+  /** The header's "more": the entry's external link. */
+  more?: readonly PlatformPageAction[];
+  moreLabel?: string;
 }>();
 
 const actions = providePageActions();
@@ -27,6 +30,8 @@ const actions = providePageActions();
       :draft="actions?.draft ?? null"
       :labels="labels"
       :back-label="heading.back ? backLabel : undefined"
+      :more="more ?? []"
+      :more-label="moreLabel ?? ''"
       @back="heading.back?.()"
       @save="actions?.draft?.save()"
       @discard="actions?.draft?.discard()"

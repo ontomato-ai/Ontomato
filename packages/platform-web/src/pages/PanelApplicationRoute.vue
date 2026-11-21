@@ -14,6 +14,8 @@ import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import { framePanelHost, platformPanelHost, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
 import EntryUnit from "./EntryUnit.vue";
+import { copyExternalLink } from "../external-link";
+import { Link } from "lucide-vue-next";
 import { hostThemeMode } from "../app-host";
 import { useApplicationCatalog } from "../catalog";
 
@@ -404,8 +406,14 @@ const heading = computed<PlatformPageHeading | null>(() => {
   const title = shownPage.value?.context?.label || pageName.value;
   if (!title) return null;
   const description = pageDescription.value;
-  return { title, ...description ? { description } : {}, ...use.value?.names ? {} : { back: goBack } };
+  // Every entry offers its external link: its address as the reader is on it, state and all (big main's ruling, 2026-11-21).
+  return { title, ...description ? { description } : {}, ...use.value?.names ? {} : { back: goBack }, externalLink: opened.value };
 });
+/** The "more" of the header the frame holds: the same external link the platform's header offers. */
+const entryMore = computed(() => heading.value?.externalLink ? [{
+  id: "copy-external-link", label: t("platform.copyExternalLink"), icon: Link,
+  onClick: () => void copyExternalLink(heading.value!.externalLink!, t("platform.externalLinkCopied")),
+}] : []);
 if (!props.navigate) usePageHeading(() => (framed.value ? null : heading.value));
 function goBack() {
   if (typeof router.options.history.state.back === "string") router.back();
@@ -507,7 +515,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
       @display-address="reportFrameAddress"
     />
     <div v-if="framePort" ref="holder" class="panel-entry-holder">
-      <EntryUnit ref="unit" :heading="heading" :labels="headerLabels" :back-label="t('common.back')">
+      <EntryUnit ref="unit" :heading="heading" :labels="headerLabels" :back-label="t('common.back')" :more="entryMore" :more-label="t('common.more')">
     <PanelHost
       v-for="page in kept"
       v-show="page === shownPage"

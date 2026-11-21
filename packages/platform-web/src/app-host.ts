@@ -515,9 +515,8 @@ export function installAppHost(options: {
         if(asset.document.kind!=='object-projection')throw new Error('Instance navigation requires an ObjectView');
         state=validatePageState({selected:{kind:'object',objectType:asset.document.renders.id}},{selected:target.object});
       }
-      const route = options.router.currentRoute.value;
-      const standalone = route.query.standalone === '1' && (route.params.applicationId ?? route.query.applicationId) === applicationId;
-      await options.router.push({path:'/products/'+encodeURIComponent(targetId),query:{applicationId,state:JSON.stringify(state),...(standalone?{standalone:'1'}:{})}});
+      // An external link's tab stays so by itself (see external-link.ts): the address carries no flag of its own.
+      await options.router.push({path:'/products/'+encodeURIComponent(targetId),query:{applicationId,state:JSON.stringify(state)}});
     },
     onAuthFailure: options.onAuthFailure,
     setPageContext(source, context) {

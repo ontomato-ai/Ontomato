@@ -83,6 +83,11 @@ export interface PlatformBrand {
 export interface PlatformShellLabels {
   /** The way back on a page the reader reached from elsewhere. */
   back: string;
+  /** The page header's "more" button. */
+  more: string;
+  /** The header's item that copies the entry's external link, and what it says once copied. */
+  copyExternalLink: string;
+  externalLinkCopied: string;
   /** Name of the control that expands the rail. */
   expandRail: string;
   /** Name of the control that collapses the rail. */

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { PlatformPageAction, PlatformPageDraft } from "./page-actions";
 import { ElTooltip } from "element-plus";
-import { ArrowLeft, LoaderCircle } from "lucide-vue-next";
+import { ref } from "vue";
+import { ArrowLeft, LoaderCircle, MoreHorizontal } from "lucide-vue-next";
 import { actionTooltipProps } from "@ontomato/foundation-ui/overlay";
 
 /**
@@ -27,6 +28,10 @@ withDefaults(
     labels?: { save: string; discard: string; unsavedChanges: string };
     /** The way back, named, for a page the reader reached from elsewhere; absent for a page its menu reaches. */
     backLabel?: string;
+    /** What the header's "more" holds (the entry's external link): items of the host's, behind one button. */
+    more?: readonly PlatformPageAction[];
+    /** The "more" button's accessible name. */
+    moreLabel?: string;
   }>(),
   {
     title: "",
@@ -36,15 +41,22 @@ withDefaults(
     draft: null,
     labels: () => ({ save: "", discard: "", unsavedChanges: "" }),
     backLabel: undefined,
+    more: () => [],
+    moreLabel: "",
   },
 );
 
 const emit = defineEmits<{ back: []; discard: []; save: [] }>();
+const moreOpen = ref(false);
+function pick(action: PlatformPageAction) {
+  moreOpen.value = false;
+  action.onClick();
+}
 </script>
 
 <template>
   <header class="platform-page-header platform-page-gutter" :class="{ compact }">
-    <div v-if="title || description || actions?.length || draft || $slots.actions" class="header-row">
+    <div v-if="title || description || actions?.length || draft || more.length || $slots.actions" class="header-row">
       <div class="header-text">
         <!-- What stands for the page's subject before its name (an agent's avatar). -->
         <span v-if="$slots.leading" class="header-leading"><slot name="leading" /></span>
@@ -54,7 +66,7 @@ const emit = defineEmits<{ back: []; discard: []; save: [] }>();
         <h1 v-if="title" class="page-title">{{ title }}</h1>
         <p v-if="description" class="page-description">{{ description }}</p>
       </div>
-      <div v-if="actions?.length || draft || $slots.actions" class="page-actions">
+      <div v-if="actions?.length || draft || more.length || $slots.actions" class="page-actions">
         <span v-if="draft?.dirty" class="unsaved" role="status">{{ labels.unsavedChanges }}</span>
         <!-- A page's own buttons, when it hands over markup rather than a list of actions. -->
         <slot name="actions" />
@@ -84,6 +96,18 @@ const emit = defineEmits<{ back: []; discard: []; save: [] }>();
             <span>{{ action.label }}</span>
           </button>
         </template>
+        <div v-if="more.length" class="page-more" @keydown.escape="moreOpen = false">
+          <button type="button" class="action secondary icon-action" :aria-label="moreLabel" :title="moreLabel"
+            aria-haspopup="menu" :aria-expanded="moreOpen" @click="moreOpen = !moreOpen">
+            <MoreHorizontal :size="16" aria-hidden="true" />
+          </button>
+          <div v-if="moreOpen" class="page-more-menu" role="menu">
+            <button v-for="action in more" :key="action.id" type="button" role="menuitem" class="page-more-item" @click="pick(action)">
+              <component :is="action.icon" v-if="action.icon" :size="16" aria-hidden="true" />
+              <span>{{ action.label }}</span>
+            </button>
+          </div>
+        </div>
         <button
           v-if="draft?.dirty"
           type="button"
@@ -110,6 +134,34 @@ const emit = defineEmits<{ back: []; discard: []; save: [] }>();
 </template>
 
 <style scoped>
+.page-more { position: relative; }
+.page-more-menu {
+  position: absolute;
+  inset-block-start: calc(100% + 4px);
+  inset-inline-end: 0;
+  z-index: 10;
+  min-inline-size: 180px;
+  padding: 4px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: var(--radius-md);
+  background: var(--el-bg-color-overlay, var(--el-bg-color));
+  box-shadow: var(--el-box-shadow-light);
+}
+.page-more-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  inline-size: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--el-text-color-primary);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.page-more-item:hover, .page-more-item:focus-visible { background: var(--el-fill-color-light); }
 /*
  * One header for every page: the title and its description in one block, actions at the right (DESIGN.md "Page
  * architecture"). Its side padding is the page gutter (`platform-page-gutter`), the one the content

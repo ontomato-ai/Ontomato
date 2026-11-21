@@ -97,6 +97,7 @@ const shownPage = computed<PlatformShownPage | null>(() => {
       description: heading.value.description ?? (page?.descriptionKey ? t(page.descriptionKey) : null),
       named: true,
       back: heading.value.back,
+      externalLink: heading.value.externalLink,
     };
   }
   if (!page) return null;
@@ -120,6 +121,9 @@ const preferences = computed(() => ({
 
 const labels = computed(() => ({
   back: t("common.back"),
+  more: t("common.more"),
+  copyExternalLink: t("platform.copyExternalLink"),
+  externalLinkCopied: t("platform.externalLinkCopied"),
   expandRail: t("platform.expandRail"),
   collapseRail: t("platform.collapseRail"),
   applications: t("platform.apps"),
