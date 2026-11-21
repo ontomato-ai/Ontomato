@@ -59,8 +59,8 @@ it("platform knowledge import emits separate original-page forms and never calls
     return pageDraftSchema.parse(JSON.parse(await readFile(path.join(directory,entry.path),"utf8")));
   }));
   expect(drafts).toEqual([
-    {pageKey:"business-knowledge",operation:"knowledge.create",target:{},form:{knowledgeID:"",knowledgeTitle:"New",knowledgeText:"New text",knowledgeTags:["new-tag"],status:0}},
-    {pageKey:"business-knowledge",operation:"knowledge.update",target:{id:"existing"},form:{knowledgeID:"existing",knowledgeTitle:"Changed",knowledgeText:"Changed text",knowledgeTags:["retained"],status:1}},
+    {pageKey:"business-knowledge",operation:"knowledge.create",target:{objectType:"platform:BusinessKnowledge"},form:{knowledgeID:"",knowledgeTitle:"New",knowledgeText:"New text",knowledgeTags:["new-tag"],status:0}},
+    {pageKey:"business-knowledge",operation:"knowledge.update",target:{objectType:"platform:BusinessKnowledge",id:"existing"},form:{knowledgeID:"existing",knowledgeTitle:"Changed",knowledgeText:"Changed text",knowledgeTags:["retained"],status:1}},
   ]);
   expect(new Set(result.drafts.map((entry:{path:string})=>entry.path)).size).toBe(2);
 });
