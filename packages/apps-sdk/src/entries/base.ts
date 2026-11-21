@@ -22,8 +22,6 @@ export { default as ObjectTextReader } from "../base/ObjectTextReader.vue";
 export { default as ConversationEntry } from "../base/ConversationEntry.vue";
 export { default as PanelData } from "../base/PanelData.vue";
 export { default as MetricChart } from "../base/MetricChart.vue";
-export { MarkdownView } from "@ontomato/foundation-ui/markdown";
-export { CodeEditor } from "@ontomato/foundation-ui/code";
 export {
   PathTree,
   buildPathTree,

@@ -27,6 +27,10 @@ release there: every page and panel runs on the release of the platform that sho
 
 ## Modules
 
+These are the imports of an application page outside a panel. A panel's module imports only `vue` and
+`@ontomato/sdk/panel`; the platform's interface components below are template tags in a panel, written without an
+import (see "Compose a panel").
+
 | Import | Content |
 | --- | --- |
 | `vue` | Vue, the build with the template compiler; the only Vue of the page |
@@ -159,10 +163,12 @@ To open another of the platform's pages, call `usePanelContext().navigate(addres
 `/agents/chat?agentId=…`; when the platform cannot open it, the page says why and the call rejects with that reason.
 Never call the platform's business endpoints from the page.
 
-Draw a document the page read (a skill's `SKILL.md`, a report body) with `<markdown-view :content="text">`, the
-product Markdown every platform page uses, and a file as code with `<code-editor :model-value="text" language="javascript"
-readonly>` (JSON, Markdown, HTML, Python or plain text too; without `readonly` it edits through `v-model`). Never draw
-either as plain text. To tell the reader how something the page did went ("Exported", why a call failed), call
+The platform's interface components are template tags in a panel, with no import (the panel's module imports only
+`vue` and `@ontomato/sdk/panel`): `<markdown-view>`, `<code-editor>`, `<e-chart>`, `<table-preview>`, `<html-preview>`
+and `<form-fields>`, with the attributes their sections below give. Draw a document the page read (a skill's
+`SKILL.md`, a report body) with `<markdown-view :content="text">`, the product Markdown every platform page uses, and a
+file as code with `<code-editor :model-value="text" language="javascript" readonly>` (JSON, Markdown, HTML, Python or
+plain text too; without `readonly` it edits through `v-model`). Never draw either as plain text. To tell the reader how something the page did went ("Exported", why a call failed), call
 `usePanelContext().notify({ kind: "success" | "info" | "warning" | "error", text })`: the platform's own message, which
 fades by itself. A note that stays on the page is `<el-alert>`.
 
@@ -450,6 +456,7 @@ light and dark themes by itself.
 ```
 
 ```js
+// An application page outside a panel imports it; a panel writes the tag alone.
 import { MarkdownView } from "@ontomato/sdk/markdown";
 ```
 
@@ -468,6 +475,7 @@ with Ctrl/Cmd-F and copied. It follows the light and dark themes by itself.
 ```
 
 ```js
+// An application page outside a panel imports it; a panel writes the tag alone.
 import { CodeEditor } from "@ontomato/sdk/code";
 ```
 

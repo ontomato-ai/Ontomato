@@ -13,8 +13,13 @@ export const baseComponents = {
   ReferencePicker: () => import("./base/ReferencePicker.vue").then(module => module.default),
   ObjectGraph: () => import("./base/ObjectGraph.vue").then(module => module.default),
   PathTree: () => import("@ontomato/foundation-ui/tree").then(module => module.PathTree),
+  // The platform's interface components a panel draws its own parts with, as template tags (never imported by a panel).
   MarkdownView: () => import("@ontomato/foundation-ui/markdown").then(module => module.MarkdownView),
   CodeEditor: () => import("@ontomato/foundation-ui/code").then(module => module.CodeEditor),
+  EChart: () => import("@ontomato/foundation-ui/chart").then(module => module.EChart),
+  FormFields: () => import("@ontomato/foundation-ui/form").then(module => module.FormFields),
+  TablePreview: () => import("@ontomato/foundation-ui/preview").then(module => module.TablePreview),
+  HtmlPreview: () => import("@ontomato/foundation-ui/preview").then(module => module.HtmlPreview),
   SegmentedTextReader: () => import("@ontomato/foundation-ui/reader").then(module => module.SegmentedTextReader),
   ObjectTree: () => import("./base/ObjectTree.vue").then(module => module.default),
   ObjectTextReader: () => import("./base/ObjectTextReader.vue").then(module => module.default),
