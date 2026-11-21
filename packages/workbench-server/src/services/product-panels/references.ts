@@ -1,3 +1,4 @@
+import { missingEntryMessageKeys } from "@ontomato/contracts/panel-conversation-entry";
 import { appsSdkComponentDatum } from "@ontomato/contracts/apps-sdk";
 import {
   matchesDirectPanelValue, matchesObjectType, panelPlacementSchema, panelPortAccepts, type PanelManifest,
@@ -346,6 +347,11 @@ export async function validateBuiltinProductReferences(
       const issue = "componentId" in definition ? await checkOperationTarget(definition, reference.wiring) : undefined;
       const incompatible = issue ?? await incompatiblePort(panel.manifest, reference, definition, readCatalogue);
       if (incompatible) throw new Error(`Platform panel '${id}', member '${key}': ${incompatible}`);
+      // A platform panel ships to every language: the opening sentence its entry names by key is in each one it declares.
+      if ("componentId" in definition) {
+        const [missing] = missingEntryMessageKeys([definition.conversationEntry], panel.content.messages);
+        if (missing) throw new Error(`Platform panel '${id}', member '${key}': prefillKey '${missing.key}' is not in content.messages (${missing.locale ?? "any locale"})`);
+      }
     }
   }
 }

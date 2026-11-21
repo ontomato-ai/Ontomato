@@ -193,6 +193,26 @@ beforeAll(async () => {
   state.base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 
+it("refuses a platform panel whose entry names an opening sentence one of its languages lacks", async () => {
+  const { registerBuiltinProducts } = await import("../../services/product-panels/builtin-products");
+  const bundle = path.join(contentRoot, "platform-panel-entry-key");
+  const directory = path.join(bundle, "actions");
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(bundle, "index.json"), JSON.stringify(["actions"]));
+  await writeFile(path.join(directory, "registration.json"), JSON.stringify({
+    panels: [{ id: "builtin-product-entry-key-panel", mode: "create", input: { name: "Actions", description: "", visibility: "domain" } }],
+  }));
+  const member = { id: "builtin-product-entry-key-entry", component: "ConversationEntry", agent: "page-default", prefillKey: "actions.newPrefill" };
+  const descriptor = (messages: Record<string, Record<string, string>>) => JSON.stringify({
+    manifest: { state: {}, members: { create: member }, events: {} }, content: { messages },
+  });
+  const { html, module } = vuePanelContent("create");
+  await writeFile(path.join(directory, "panel.html"), html);
+  await writeFile(path.join(directory, "panel.mjs"), module);
+  await writeFile(path.join(directory, "panel.json"), descriptor({ en: { "actions.newPrefill": "Help me create an action:" }, "zh-CN": {} }));
+  await expect(registerBuiltinProducts(bundle)).rejects.toThrow("prefillKey 'actions.newPrefill' is not in content.messages (zh-CN)");
+});
+
 it("reconciles the released built-in authoring sources and exposes the same read-only product in each domain", async () => {
   const { registerBuiltinProducts } = await import("../../services/product-panels/builtin-products");
   const bundle = path.join(contentRoot, "platform-panel-test");

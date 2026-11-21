@@ -39,6 +39,15 @@ export async function checkBuiltinPanelSource(directory, checks, { assignIds = f
   const document = parseJson(file, source);
   const parsed = checks.panelAuthoringManifestSchema.safeParse(document?.manifest);
   if (!parsed.success) throw new Error(`${file}: ${parsed.error.message}`);
+  // A platform panel ships to every language: an entry's opening sentence named by key is in each language it declares.
+  for (const [member, declaration] of Object.entries(parsed.data.members)) {
+    if (declaration.prefillKey === undefined) continue;
+    const missing = checks.missingEntryMessageKeys([{ prefillKey: declaration.prefillKey }], document.content?.messages);
+    if (missing.length) {
+      const where = missing.map(({ locale }) => locale ?? "any locale").join(", ");
+      throw new Error(`${file}: member ${member} prefillKey '${declaration.prefillKey}' is not in content.messages (${where})`);
+    }
+  }
 
   const files = await readdir(directory);
   const trialPath = "/applications/app-";
