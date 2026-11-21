@@ -29,6 +29,26 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { analystCommand } from "../agent-skills/ontomato-analyst/client.mjs";
+import { panelRegistrationClient } from "../agent-skills/ontomato-app-builder/panel-registration.mjs";
+
+test("deletes a panel by ID without loading its obsolete definition", async () => {
+  const received = [];
+  const server = createServer((request, response) => {
+    received.push([request.method, request.url]);
+    response.setHeader("content-type", "application/json");
+    response.statusCode = request.method === "DELETE" ? 200 : 422;
+    response.end(JSON.stringify(request.method === "DELETE" ? { success: true } : { error: "Old manifest" }));
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const client = panelRegistrationClient({ workbenchUrl: `http://127.0.0.1:${server.address().port}` });
+    assert.deepEqual(await client.deletePanel("old-panel"), { success: true });
+    assert.deepEqual(received, [["DELETE", "/api/product-panels/old-panel"]]);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
 
 test("shared analyst numeric options reject invalid values before HTTP", async () => {
   for (const command of [["distinct-values", "person", "id"], ["metrics", "question"], ["knowledge", "question"]])

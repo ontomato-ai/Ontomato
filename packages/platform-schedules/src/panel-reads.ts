@@ -10,10 +10,14 @@ import {
 import type { SchedulesApi } from "./api";
 import { scheduledTaskCreateDescription, scheduledTaskSaveDescription } from "./panel-operations";
 import { scheduledTaskRunNowOperation } from "./panel-server-operations";
-import { scheduledTaskFieldLabels } from "./panel-text";
+import { scheduledTaskFieldLabels, scheduledTaskFrequencyText } from "./panel-text";
 import { scheduledTaskPanelSettings, scheduledTaskPanelValues, type ScheduledTaskPanelSettings } from "./panel-task-values";
 
-type TaskReadApi = Pick<SchedulesApi, "list" | "task" | "form" | "applications" | "runs" | "run">;
+type NamedApplication = PlatformScheduleApplication & { name: string };
+type TaskReadApi = Pick<SchedulesApi, "list" | "task" | "form" | "runs" | "run"> & {
+  applications(): Promise<NamedApplication[]>;
+};
+type Translate = (key: string, values?: Record<string, string | number>) => string;
 const taskFieldPath = (key: string) => formFieldPointer("/", key);
 
 interface TaskFormParams {
@@ -21,17 +25,33 @@ interface TaskFormParams {
   changedField?: string | null;
 }
 
-function taskRecord(task: PlatformTask, fieldLabels: Record<string, string>): PanelRecord {
+interface TaskCreateFormParams extends TaskFormParams {
+  defaultAppId?: string;
+}
+
+function taskRecord(task: PlatformTask, locale: string, translate: Translate): PanelRecord {
   return {
     primaryKey: task.id,
     label: task.title,
-    fieldLabels,
+    fieldLabels: {
+      ...scheduledTaskFieldLabels(translate),
+      frequency: translate("platformSchedules.panelSettings.frequency"),
+      timeZone: translate("platformSchedules.panelSettings.timeZone"),
+      lastRunAt: translate("platformSchedules.panelFields.lastRunAt"),
+      lastRunSummary: translate("platformSchedules.panelFields.lastRunSummary"),
+      latestResultPath: translate("platformSchedules.panelFields.latestResultPath"),
+    },
     fields: {
       application: task.appId,
       settings: task.summary.map(item => `${item.label}: ${item.value}`).join("; "),
       state: task.enabled ? (task.pause === null ? "on" : `paused: ${task.pause.message}`) : "off",
       nextRun: task.nextRunAt ?? "",
       lastRun: task.lastRun?.status ?? "",
+      frequency: scheduledTaskFrequencyText(task.frequency, locale, translate),
+      timeZone: task.timeZone,
+      lastRunAt: task.lastRun?.startedAt ?? "",
+      lastRunSummary: task.lastRun?.error?.message ?? task.lastRun?.resultSummary ?? "",
+      latestResultPath: task.latestResult?.link.path ?? "",
     },
   };
 }
@@ -92,7 +112,7 @@ async function checkDraft(readForm: FormReader, savedValues: FormValues, draft: 
 const taskFrequencyValueSchema = runtimeJsonObjectSchema.parse(zodToJsonSchema(platformTaskFrequencySchema));
 
 function settingsFields(
-  applications: readonly PlatformScheduleApplication[], translate: (key: string) => string,
+  applications: readonly NamedApplication[], translate: Translate,
 ): PanelFormField[] {
   const field = (key: keyof ScheduledTaskPanelSettings, required = true) => ({
     path: formFieldPointer("/task/", key), label: translate(key === "appId" ? "platformSchedules.form.app" : `platformSchedules.panelSettings.${key}`), required,
@@ -105,7 +125,7 @@ function settingsFields(
       control: {
         kind: "select",
         options: applications.map(app => ({
-          value: app.id, label: app.description ?? app.id, description: null, disabled: !app.available,
+          value: app.id, label: app.name, description: app.description, disabled: !app.available,
           disabledReason: app.unavailableReason,
         })),
       },
@@ -116,10 +136,17 @@ function settingsFields(
   ];
 }
 
-export function createScheduledTaskReads(api: TaskReadApi, translate: (key: string) => string) {
-  async function describe(task: PlatformTask | undefined, serviceZone: string, params: TaskFormParams): Promise<PanelFormDescription> {
+export function createScheduledTaskReads(api: TaskReadApi, locale: string, translate: Translate) {
+  async function describe(
+    task: PlatformTask | undefined, serviceZone: string, params: TaskCreateFormParams,
+  ): Promise<PanelFormDescription> {
     const current = scheduledTaskPanelSettings(task, serviceZone);
     const { settings: provided, parameters } = scheduledTaskPanelValues(params.values ?? {});
+    const applicationList = api.applications();
+    if (!task && provided.appId === undefined && params.defaultAppId) {
+      const initial = (await applicationList).find(app => app.id === params.defaultAppId && app.available);
+      if (initial) current.appId = initial.id;
+    }
     const settings = { ...current, ...provided };
     const field = params.changedField;
     const changedApplication = field === "/task/appId";
@@ -138,7 +165,7 @@ export function createScheduledTaskReads(api: TaskReadApi, translate: (key: stri
       const changedKey = field == null || field.startsWith("/task/") ? null : formFieldKey(field, "/");
       return readForm(changedApplication ? {} : params.values === undefined ? stored : parameters, changedKey);
     };
-    const [{ applications }, form] = await Promise.all([api.applications(), readApplicationForm()]);
+    const [applications, form] = await Promise.all([applicationList, readApplicationForm()]);
     return {
       fields: [...settingsFields(applications, translate), ...(form?.fields.map(typedField) ?? [])],
       values: { ...form?.values, task: settings },
@@ -153,17 +180,16 @@ export function createScheduledTaskReads(api: TaskReadApi, translate: (key: stri
 
   return {
     async list() {
-      const fieldLabels = scheduledTaskFieldLabels(translate);
-      return (await api.list()).tasks.map(task => taskRecord(task, fieldLabels));
+      return (await api.list()).tasks.map(task => taskRecord(task, locale, translate));
     },
     async record(primaryKey: string) {
-      return taskRecord(await api.task(primaryKey), scheduledTaskFieldLabels(translate));
+      return taskRecord(await api.task(primaryKey), locale, translate);
     },
     async form(primaryKey: string, params: TaskFormParams) {
       const task = await api.task(primaryKey);
       return describe(task, task.timeZone, params);
     },
-    async createForm(params: TaskFormParams) {
+    async createForm(params: TaskCreateFormParams) {
       return describe(undefined, (await api.list()).timeZone, params);
     },
     runs: api.runs,

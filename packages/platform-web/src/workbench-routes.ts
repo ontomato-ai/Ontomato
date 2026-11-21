@@ -4,7 +4,6 @@ import type {
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { observeRoutes } from "./observe-routes";
 import DashboardsPage from "./pages/DashboardsRoute.vue";
-import PlatformSchedulesPage from "./pages/PlatformSchedulesRoute.vue";
 
 type PageComponent = NonNullable<RouteRecordSingleView["component"]>;
 
@@ -71,16 +70,8 @@ export function workbenchPages(
   ];
 }
 
-/**
- * The platform's scheduled tasks: one page for every task of every application.
- *
- * The page is marked as a platform page (`meta.service`), which is what an edition's router guard reads to decide that
- * it needs a signed-in account: every other application's pages carry the mark through `installPlatformPages`.
- */
+/** The agent platform's old schedules address opens the application filter on the platform's panel. */
 export const schedulePages = (): RouteRecordRaw[] => [
-  { ...routes.schedules, component: PlatformSchedulesPage, meta: { service: true } },
-  // The agent platform's own scheduled tasks are the platform's list narrowed to that application. The list is filtered
-  // by application only, so an old link's agent is dropped.
   { path: routes.agentSchedules.path, redirect: { path: routes.schedules.path, query: { app: "agents" } } },
 ];
 
