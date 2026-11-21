@@ -80,9 +80,8 @@ const CHECK_EXPORTS = [
   "BUILTIN_PRODUCT_ID_PREFIX", "builtinProductIdSchema", "domainProductIdSchema", "isBuiltinProductId",
   "builtinApplicationPanelUseSchema", "builtinProductPanelInputSchema", "builtinProductProjectionInputSchema",
   "panelModuleImports", "applicationIconKeys", "applicationCatalogueRecordSchema", "applicationIdentityUpdateSchema", "draftReadOperationIds",
-  "COMPONENT_PACKAGES_PATH", "componentPackageNameSchema", "componentPackageManifestSchema",
+  "COMPONENT_PACKAGES_PATH", "componentPackageNameSchema",
   "componentPackageDeclarationSchema", "componentPackageResponseSchema",
-  "componentPackageComponentsSchema", "appsSdkReleaseManifestSchema", "APPS_SDK_PACKAGE_COMPONENTS_PATH",
 ];
 
 /** Only the draft requirement of registered platform operations is needed by the offline checker. */
@@ -238,7 +237,7 @@ async function main() {
     libraries: Object.fromEntries(LIBRARIES.map((name) => [name, libraryVersion(name)])),
     docs: "docs/index.md",
   }), null, 2)}\n`);
-  const finalVersion = finalizeSdk(outRoot, base, facts.release);
+  const finalVersion = finalizeSdk(outRoot, base, facts.release, packageComponents);
   console.log(`[apps-sdk] ${facts.product} ${finalVersion} -> ${outRoot}`);
 }
 

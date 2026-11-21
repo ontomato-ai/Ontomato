@@ -4,7 +4,6 @@ export { applicationIconKeys } from "./application-icons";
 export {
   APPS_SDK_PACKAGE_COMPONENTS_PATH, appsSdkComponentCatalogSchema, appsSdkComponentDatum, appsSdkReleaseManifestSchema,
 } from "./apps-sdk";
-export { componentPackageComponentsSchema, componentPackageManifestSchema } from "./component-packages";
 export { panelAuthoringManifestSchema, panelAuthoringMemberSchema } from "./panel-authoring";
 export { bindPanelAuthoringChart, expandPanelAuthoringMember } from "./panel-authoring-expansion";
 export { panelManifestSchema, panelPortAccepts } from "./panel-manifest";
@@ -33,5 +32,5 @@ export {
 } from "./product-panels";
 export {
   COMPONENT_PACKAGES_PATH, componentPackageNameSchema, componentPackageManifestSchema,
-  componentPackageDeclarationSchema, componentPackageResponseSchema,
+  componentPackageComponentsSchema, componentPackageDeclarationSchema, componentPackageResponseSchema,
 } from "./component-packages";

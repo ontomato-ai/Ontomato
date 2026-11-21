@@ -101,7 +101,8 @@ test("the built SDK's components.json is the catalogue its contract declares", (
         import { defineComponentMeta } from "@ontomato/sdk/panel";
         export const components = [defineComponentMeta({
           componentId: "Badge", module: ${JSON.stringify(pkg)}, exportName: "Badge",
-          role: "presentation", meaning: "Shows one caption.", data: {},
+          role: "presentation", meaning: "Shows one caption.",
+          data: { rows: { results: ["panelRecordList"], required: true } },
         })];
       `);
       write("dist/entry.mjs", "export const Badge = {};");
@@ -114,12 +115,18 @@ test("the built SDK's components.json is the catalogue its contract declares", (
 
       json("panel/registration.json", { panels: [{ id: "example", mode: "create",
         input: { name: "Badge", description: "", visibility: "domain" } }] });
+      const objectType = "platform:ScheduledTask";
       json("panel/panel.json", { manifest: { state: {}, commands: {},
-        members: { badge: { component: badge.componentId, config: { caption: "Ready" } } } } });
+        members: { badge: { component: badge.componentId, type: objectType,
+          data: { rows: "list" }, config: { caption: "Ready" } } } } });
       write("panel/panel.html", '<div id="app"><projection slot="badge"></projection></div>');
       write("panel/panel.mjs", 'import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});\n');
+      json("types.json", { objectTypes: {
+        [objectType]: { reads: { list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" } },
+          operations: [] },
+      }, resultSchemas: { panelRecordList: { type: "array" } } });
       const cli = join(HERE, "../../agent-skills/ontomato-app-builder/ontomato.mjs");
-      const checked = exec([cli, "panel", "check", "panel", "--sdk-dir", sdk, "--component-package", author]);
+      const checked = exec([cli, "panel", "check", "panel", "--sdk-dir", sdk, "--component-package", author, "--type-table", "types.json"]);
       assert.deepEqual(JSON.parse(checked), { status: "valid", version, unchecked: [] });
     });
 
