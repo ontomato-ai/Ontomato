@@ -13,7 +13,6 @@ import {
   Tags,
   Workflow as WorkflowIcon,
   GitBranch,
-  Share2,
   Shapes,
 } from "lucide-vue-next";
 import type { ManagerCounts } from "./context";
@@ -91,7 +90,6 @@ const pages = [
   page(managerPaths.actions, "nav.actionManagement", MousePointerClick, "ontology", ["action-management"], "actions"),
   page(managerPaths.workflows, "nav.workflowManagement", GitBranch, "ontology", ["action-management"]),
   page(managerPaths.triggers, "nav.triggerManagement", AlarmClock, "ontology", ["action-management"]),
-  page(managerPaths.capabilityMap, "nav.capabilityMap", Share2, "ontology", ["action-management"]),
   page(managerPaths.visualModeling, "nav.visualModeling", WorkflowIcon, "ontology", MODELING),
   // A page of the object browser: the platform draws the application's header above it and the page gutter around it.
   { ...page(managerPaths.dataBrowser, "nav.dataBrowser", Table2, "ontology", ["data-browser"]), ownHeader: false },

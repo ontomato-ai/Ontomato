@@ -287,19 +287,6 @@ export interface CapabilityGrantRecord {
   stepNo?: number | null;
 }
 
-/**
- * One role and the platform operations it may call.
- *
- * `apiPermissions` is empty for a management role: it holds every enabled operation by rule rather
- * than by listed rows, and expanding that list here would go stale as endpoints are added.
- */
-export interface PlatformAccessRecord {
-  roleId?: string | null;
-  roleCode?: string | null;
-  apiPermissions?: string[];
-  managementRole?: boolean;
-}
-
 /** One subject of the domain and the roles in effect for them here. */
 export interface SubjectRecord {
   id: string;
@@ -801,13 +788,6 @@ export function createManagerClient(
     return source as CapabilityGrantRecord[];
   }
 
-  /** Which roles hold which platform operations, as the request interceptor enforces them. */
-  async function loadPlatformAccess(): Promise<PlatformAccessRecord[]> {
-    const response = await post("/workflow/platform-access", {});
-    const source = Array.isArray(response.data) ? response.data : [];
-    return source as PlatformAccessRecord[];
-  }
-
   /** The domain's subjects with their effective roles; provenance ids resolve to names through this. */
   async function loadSubjects(): Promise<SubjectRecord[]> {
     const response = await post("/workflow/subjects", {});
@@ -918,7 +898,6 @@ export function createManagerClient(
     saveTrigger,
     deleteTrigger,
     setTriggerStatus,
-    loadPlatformAccess,
     loadSubjects,
   };
 }

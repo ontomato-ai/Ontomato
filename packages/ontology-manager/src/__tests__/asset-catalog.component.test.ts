@@ -1,15 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, h, nextTick, ref, type App } from "vue";
-import CapabilityMap from "../components/CapabilityMap.vue";
 import TriggerCatalog from "../components/TriggerCatalog.vue";
-import { G6_LABEL_SIZE } from "@ontomato/foundation-ui/graph/g6";
-import { buildCapabilityMap } from "../components/capability-map-model";
-import {
-  CAPABILITY_LABEL_WIDTH,
-  capabilityKinds,
-  capabilityMapLayout,
-  type CapabilityNode,
-} from "../components/capability-map-rendering";
 import ActionDefinitionView from "../components/actionCreation/ActionDefinitionView.vue";
 import OntologyAssetCatalog from "../components/OntologyAssetCatalog.vue";
 import { installObjectViewHost } from "./object-view-host";
@@ -103,93 +94,6 @@ it("shows an action's stored field comparisons and keeps message-only conditions
   expect(rows[1].textContent).toContain("AND");
   expect(rows[1].textContent).toContain("execution_count = 0");
   expect(rows[2].textContent?.trim()).toBe("Review is required");
-});
-
-it("exposes both relations when one member created and published the same action", async () => {
-  // The claim is about the model, not about the canvas: one member who both created and published an action is two
-  // facts, so two edges. It is asserted on the pure builder because the graph now draws to a canvas, and jsdom lays
-  // nothing out — a canvas element reports a zero rect, so there is no rendered node to click here.
-  const model = buildCapabilityMap(
-    {
-      subjects: [{ id: "member", loginCode: "member", displayName: "Kim", roleIds: [] }],
-      workflows: [],
-      actions: [{ id: "a", name: "Approve", createdBy: "member", reviewedBy: "member" }],
-      metrics: [],
-      functions: [],
-      skills: [],
-      triggers: [],
-      grants: [],
-      platformAccess: [],
-    },
-    (key) => key,
-  );
-  const relations = model.edges.filter((edge) => edge.from === "subject:member" && edge.to === "action:a");
-  expect(relations).toHaveLength(2);
-  // Two different facts, so two different labels — not the same line drawn twice.
-  expect(new Set(relations.map((edge) => edge.label)).size).toBe(2);
-  expect(model.nodes.map((node) => node.label)).toEqual(expect.arrayContaining(["Kim", "Approve"]));
-
-  // The page still mounts and states its counts, which is what the canvas cannot show in this environment.
-  const root = document.body.appendChild(document.createElement("div"));
-  vi.stubGlobal("fetch", async (url: string) => {
-    const data = url.endsWith("/workflow/subjects") ? [{ id: "member", displayName: "Kim", roles: [] }]
-      : url.endsWith("/action/queryList") ? [{ id: "a", name: "Approve", createdBy: "member", reviewedBy: "member" }]
-      : [];
-    return new Response(JSON.stringify({ success: true, data }), { headers: { "content-type": "application/json" } });
-  });
-  app = createApp({ setup() {
-    provideManagerFeedback(ref(root));
-    return () => h(CapabilityMap);
-  } });
-  installObjectViewHost(app);
-  app.mount(root);
-  await flush();
-  // The legend counts the kinds actually present: one subject and one action, and the six kinds with none are still
-  // listed at zero — a legend that hides empty kinds would make an unreadable graph look complete.
-  const legend = [...root.querySelectorAll(".legend-item")].map((item) => item.textContent?.replace(/\s+/g, " ").trim());
-  expect(legend).toContain("Subject 1");
-  expect(legend).toContain("Action 1");
-  expect(legend).toContain("Process 0");
-  expect(legend.some((item) => item?.includes("NaN"))).toBe(false);
-});
-
-it("opens the capability map with every name readable and none overlapping, small domain or large", () => {
-  const domain = (counts: Partial<Record<CapabilityNode["kind"], number>>): CapabilityNode[] =>
-    capabilityKinds.flatMap((kind) =>
-      Array.from({ length: counts[kind] ?? 0 }, (_, index) => ({
-        id: `${kind}:${index}`,
-        kind,
-        layer: kind === "subject" || kind === "role" ? ("governance" as const) : ("capability" as const),
-        label: `${kind} ${index}`,
-        detail: "",
-      })),
-    );
-  // The canvases the page gives the map in a 1440×900 window: the open-source domain, and the internal one with ninety
-  // objects that a fitted ring drew at two pixels a name.
-  const small = capabilityMapLayout(domain({ action: 3, metric: 5, function: 8, skill: 6 }), { width: 946, height: 627 });
-  const large = capabilityMapLayout(
-    domain({ subject: 19, role: 7, action: 8, workflow: 2, trigger: 2, metric: 20, function: 26, skill: 6 }),
-    { width: 946, height: 734 },
-  );
-
-  // The small one is drawn whole, at natural size.
-  expect(small.zoom).toBe(1);
-  expect(small.offset.x).toBeGreaterThanOrEqual(0);
-  expect(small.offset.x + small.width * small.zoom).toBeLessThanOrEqual(946);
-  expect(small.offset.y + small.height * small.zoom).toBeLessThanOrEqual(627);
-  // The large one does not fit at a readable size, so it opens readable at its start and runs on to the right.
-  expect(large.zoom * G6_LABEL_SIZE).toBeGreaterThanOrEqual(11);
-  expect(large.offset.y + large.height * large.zoom).toBeLessThanOrEqual(734);
-
-  for (const layout of [small, large]) {
-    const points = Object.values(layout.positions);
-    // Two names collide when they sit within a label's width side by side and within a node and its label one above
-    // the other.
-    const collisions = points.flatMap((a, i) =>
-      points.slice(i + 1).filter((b) => Math.abs(a.x - b.x) < CAPABILITY_LABEL_WIDTH && Math.abs(a.y - b.y) < 56),
-    );
-    expect(collisions).toEqual([]);
-  }
 });
 
 it("names what a trigger starts, its condition and its cadence in the reader's words, not the stored values", async () => {

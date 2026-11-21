@@ -13,7 +13,6 @@ import OntologyObjectDetail from "./components/OntologyObjectDetail.vue";
 import OntologyRelationDetail from "./components/OntologyRelationDetail.vue";
 import WorkflowCatalog from "./components/WorkflowCatalog.vue";
 import TriggerCatalog from "./components/TriggerCatalog.vue";
-import CapabilityMap from "./components/CapabilityMap.vue";
 import { managerPaths } from "./navigation";
 import type { AssetTab, ModelResource } from "./workspace";
 
@@ -251,13 +250,6 @@ const TriggerPage = defineComponent({
   },
 });
 
-const CapabilityMapPage = defineComponent({
-  name: "ManagerCapabilityMapPage",
-  setup() {
-    return () => h("section", { class: "asset-surface" }, [h(CapabilityMap)]);
-  },
-});
-
 const VisualModelingPage = defineComponent({
   name: "ManagerVisualModelingPage",
   setup() {
@@ -402,7 +394,6 @@ export function managerRoutes(): RouteRecordRaw[] {
         ]),
         { ...routes.workflows, component: WorkflowPage, meta: { page: managerPaths.workflows } },
         { ...routes.triggers, component: TriggerPage, meta: { page: managerPaths.triggers } },
-        { ...routes.capabilityMap, component: CapabilityMapPage, meta: { page: managerPaths.capabilityMap } },
         { ...routes.modeling, component: VisualModelingPage, meta: { page: managerPaths.visualModeling } },
         { ...routes.knowledge, component: KnowledgePage, meta: { page: managerPaths.knowledge } },
         { ...routes.ontologyModels, component: OntologyModelsPage, meta: { page: routes.ontologyModels.path } },
