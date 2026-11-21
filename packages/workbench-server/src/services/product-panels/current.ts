@@ -159,12 +159,6 @@ export async function saveCurrentPanel(owner: ProductOwner, credentials: Assista
   return productPanelSchema.parse(await save(owner, credentials, "panel", id, input, revision));
 }
 
-export class PageDefaultAgentUnavailableError extends HttpError {
-  constructor(readonly useId: string, selection: string, reason: string) {
-    super(409, `Entry '${useId}' default agent ${selection} ${reason}`, "PAGE_DEFAULT_AGENT_UNAVAILABLE");
-  }
-}
-
 /** Java authorizes the registrant. This service call checks the current definitions used by the declaration. */
 export async function validateApplicationPanelReferences(request: ApplicationPanelReferencesRequest) {
   const { domainId, framePanelId, uses, delivery, theme } = request;
@@ -211,13 +205,15 @@ export async function validateApplicationPanelReferences(request: ApplicationPan
     if (!defaultAgent) continue;
     definitions ??= await assistantStore.agents(domainId);
     const selection = defaultAgent.kind === "id" ? `'${defaultAgent.id}'` : `preset '${defaultAgent.agentKind}'`;
+    const unavailable = (reason: string) =>
+      new HttpError(409, `Entry '${use.id}' default agent ${selection} ${reason}`, "PAGE_DEFAULT_AGENT_UNAVAILABLE", { useId: use.id });
     const choice = resolveDefaultAgent(definitions, defaultAgent);
-    if ("reason" in choice) throw new PageDefaultAgentUnavailableError(use.id, selection, choice.reason);
+    if ("reason" in choice) throw unavailable(choice.reason);
 
     const ref = panelSkillRef(domainId, use.panelId);
     const key = runtimeSkillKey(ref);
     if (!configuredAssistantSkills(choice.agent, [ref]).some(skill => runtimeSkillKey(skill) === key))
-      throw new PageDefaultAgentUnavailableError(use.id, selection, `does not select the skill for panel '${use.panelId}'.`);
+      throw unavailable(`does not select the skill for panel '${use.panelId}'.`);
   }
   for (const id of delivery.panels)
     if (!panels.has(id)) throw new HttpError(400, `Panel '${id}' is not reachable from the application`, "INVALID_PANEL_DELIVERY");
