@@ -227,10 +227,23 @@ await mountPanel({
     const revoke = usePanelOperation("revokeOp", "revoke");
     const share = usePanelOperation("shareOp", "share");
 
-    const mode = ref("view");
+    const creating = computed(() => values.value.creating === true);
+    const editing = ref(false);
+    const mode = computed(() => creating.value || (editing.value && selected.value !== null) ? "edit" : "view");
     const showDetail = computed(() => selected.value !== null || mode.value === "edit");
+    function closeForm() {
+      editing.value = false;
+      if (creating.value) instance.state.set("creating", null);
+    }
+    watch(creating, active => { if (active) editing.value = false; });
     watch(instance.draft, (draft) => {
-      if (draft) mode.value = "edit";
+      if (!draft) return;
+      if (draft.target.id) {
+        closeForm();
+        editing.value = true;
+      } else {
+        instance.state.set("creating", true);
+      }
     }, { immediate: true });
 
     const current = computed(() => (record.value.status === "ready" ? record.value.value : null));
@@ -270,28 +283,21 @@ await mountPanel({
 
     function choose(row) {
       if (!row) return;
-      mode.value = "view";
+      closeForm();
       instance.state.set("selected", { className: TYPE, primaryKey: row.id });
-    }
-
-    function startCreate() {
-      mode.value = "edit";
-      instance.state.set("selected", null);
     }
 
     function startEdit() {
       if (!current.value?.editable) return;
-      mode.value = "edit";
+      editing.value = true;
     }
 
     function onSaved(saved) {
-      mode.value = "view";
+      closeForm();
       if (saved && saved.primaryKey)
         instance.state.set("selected", { className: saved.className ?? TYPE, primaryKey: saved.primaryKey });
       say("success", "已保存");
     }
-
-    const onDiscarded = () => { mode.value = "view"; };
 
     const copyDialog = ref(false);
     const copyForm = reactive({ id: "", name: "" });
@@ -333,7 +339,7 @@ await mountPanel({
           return;
         }
         deleteDialog.value = false;
-        mode.value = "view";
+        closeForm();
         instance.state.set("selected", null);
         say("success", "已删除");
       } catch (reason) {
@@ -375,18 +381,15 @@ await mountPanel({
       navigate(`${PANELS_PAGE}?${new globalThis.URLSearchParams({ state })}`).catch(report);
     };
 
-    const refreshAll = () => instance.refreshObjects();
-
-
     return {
       selected, selectedKey, searchDraft, scope, sort, pageNumber, pageSize, nextCursor,
       list, rows, listStatusText, record, usedBy, usedPanels, hiddenCount, usedByCountText, current, ownerName, showDetail,
       dataRows, operationRows, inputRows, outputRows,
       copy, remove, grant, revoke, share, canGrant,
-      mode, choose, startCreate, startEdit, onSaved, onDiscarded, nextPage, previousPage,
+      mode, choose, startEdit, onSaved, onDiscarded: closeForm, nextPage, previousPage,
       setScope, setSort, setPageSize, copyDialog, copyForm, openCopy, submitCopy,
       deleteDialog, openDelete, submitDelete, grantForm, submitGrant, submitShare,
-      openClass, openPanel, refreshAll, notice,
+      openClass, openPanel, notice,
       componentLabel, scopeLabel, formatDate, formatTime, jsonText, isChart,
     };
   },

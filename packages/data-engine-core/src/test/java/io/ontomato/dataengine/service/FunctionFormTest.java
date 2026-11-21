@@ -107,20 +107,41 @@ class FunctionFormTest {
   }
 
   @Test
-  void deleteRefusesSystemProductAndReferencedFunctions() {
+  void deleteRefusesSystemProductAndReferencedFunctionsAndTellsTheSameReasonBeforehand() {
     Function system = readFunction();
     system.setOrigin(Function.ORIGIN_SYSTEM);
     when(functionDao.queryById("f1")).thenReturn(system);
-    assertRefusal("FUNCTION_SYSTEM", () -> service.delete("f1", "en"));
+    assertRefusal("FUNCTION_SYSTEM", () -> service.delete("f1", "domain-a", "en"));
+    assertEquals("Function.cannotDeleteSystem", service.deleteRefusal("f1", "domain-a", "en"));
 
     Function product = readFunction();
     product.setOperation(Function.OPERATION_PRODUCT);
     when(functionDao.queryById("f1")).thenReturn(product);
-    assertRefusal("FUNCTION_PRODUCT_IMMUTABLE", () -> service.delete("f1", "en"));
+    assertRefusal("FUNCTION_PRODUCT_IMMUTABLE", () -> service.delete("f1", "domain-a", "en"));
+    assertEquals("Function.cannotDeleteProduct", service.deleteRefusal("f1", "domain-a", "en"));
 
     when(functionDao.queryById("f1")).thenReturn(readFunction());
     when(metricViewDao.referencedFunctionIds()).thenReturn(Set.of("f1"));
-    assertRefusal("FUNCTION_REFERENCED", () -> service.delete("f1", "en"));
+    assertRefusal("FUNCTION_REFERENCED", () -> service.delete("f1", "domain-a", "en"));
+    assertEquals("Function.referencedByMetricView", service.deleteRefusal("f1", "domain-a", "en"));
+    verify(functionDao, never()).delete(anyString());
+
+    // The reason is the reader's: the owner looks it up in the language the request names.
+    service.deleteRefusal("f1", "domain-a", "zh-CN");
+    verify(langService).get("zh-CN", "Function.referencedByMetricView");
+
+    when(metricViewDao.referencedFunctionIds()).thenReturn(Set.of());
+    assertNull(service.deleteRefusal("f1", "domain-a", "en"));
+  }
+
+  @Test
+  void aFunctionOutsideThisDomainIsNeitherDeletedNorDescribed() throws Exception {
+    when(functionDao.queryById("f1")).thenReturn(readFunction());
+
+    service.delete("f1", "domain-b", "en");
+    verify(functionDao, never()).delete(anyString());
+    assertRefusal("FUNCTION_NOT_FOUND", () -> service.deleteRefusal("f1", "domain-b", "en"));
+    assertRefusal("FUNCTION_NOT_FOUND", () -> service.deleteRefusal("missing", "domain-a", "en"));
   }
 
   @Test

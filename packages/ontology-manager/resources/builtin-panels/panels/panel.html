@@ -167,10 +167,6 @@
           <option value="template">{{ t('template.only') }}</option>
           <option value="ordinary">{{ t('template.ordinary') }}</option>
         </select>
-        <div class="pd-actions">
-          <button type="button" class="pd-btn primary" @click="startCreate">{{ t('action.create') }}</button>
-          <button type="button" class="pd-btn" :disabled="loading" @click="reload">{{ t('action.refresh') }}</button>
-        </div>
       </div>
       <p v-if="!showDetail && failure" class="pd-error">{{ t('error', { message: failure }) }}</p>
       <p v-if="!showDetail && message" class="pd-note">{{ message }}</p>

@@ -247,7 +247,8 @@ public class ApplicationCatalog {
             .anyMatch(value -> value instanceof String text && text.toLowerCase(Locale.ROOT).contains(keyword));
     }
 
-    public JSONObject catalogueForm(ApplicationController.CatalogueFormRequest request, User user) {
+    public JSONObject catalogueForm(ApplicationController.CatalogueFormRequest request, User user, Locale locale) {
+        var form = new ApplicationCatalogueForm(locale);
         var target = request.target();
         if (target == null || request.section() == null) throw bad("A catalogue form section and target are required");
         if ("create".equals(request.section())) {
@@ -256,7 +257,7 @@ public class ApplicationCatalog {
             validateId(id);
             if (!id.startsWith("app-")) throw bad("A domain application requires an app- ID");
             var pageKeys = new BuiltinPageKeys(all());
-            return ApplicationCatalogueForm.create(id, request.values(), key -> pageKeys.conflict(key, user.getDomainId(), id));
+            return form.create(id, request.values(), key -> pageKeys.conflict(key, user.getDomainId(), id));
         }
 
         if (!"object".equals(target.kind()) || !"platform:Application".equals(target.objectType()))
@@ -266,11 +267,11 @@ public class ApplicationCatalog {
         var app = require(apps, target.primaryKey());
         requireDomainMaintainer(app, user);
         return switch (request.section()) {
-            case "identity" -> ApplicationCatalogueForm.identity(app, request.values());
+            case "identity" -> form.identity(app, request.values());
             case "entries" -> {
                 if (!panelManaged(app)) throw bad("Only panel applications can edit their entry table");
                 var pageKeys = new BuiltinPageKeys(apps);
-                yield ApplicationCatalogueForm.entries(app, request.values(),
+                yield form.entries(app, request.values(),
                     key -> pageKeys.conflict(key, user.getDomainId(), app.getString("id")));
             }
             default -> throw bad("Unknown application catalogue form section");

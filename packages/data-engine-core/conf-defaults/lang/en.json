@@ -536,6 +536,10 @@
     "value": "System function cannot be deleted"
   },
   {
+    "key": "Function.cannotDeleteProduct",
+    "value": "A published product function is kept by its release records and cannot be deleted"
+  },
+  {
     "key": "Function.domainMismatch",
     "value": "Function domain mismatch"
   },
@@ -922,5 +926,9 @@
   {
     "key": "Authoring.businessTestRequired",
     "value": "The exact source and parameters must pass a business test"
+  },
+  {
+    "key": "Action.functionMissing",
+    "value": "This action's function no longer exists, so it cannot run"
   }
 ]

@@ -1,4 +1,4 @@
-import { computed, ref, watch } from "vue";
+import { computed, watch } from "vue";
 import { mountPanel, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
 
 const TYPE = "platform:Relationship";
@@ -32,13 +32,17 @@ await mountPanel({
           typeLabel(row.fields.fromclass), typeLabel(row.fields.toclass)]
           .filter(Boolean).join(" ").toLowerCase().includes(term));
     });
+    // The count waits for the owner's answer: while reading, or when the read failed, there is no number to show.
     const countText = computed(() => {
+      if (catalogue.value.status !== "ready") return "";
       const shown = rows.value.length;
       const total = allRows.value.length;
       return search.value.trim() && shown !== total ? `${shown} / ${total} 条` : `${total} 条`;
     });
 
-    const creating = ref(false);
+    // A new relation is being made: set by the header's "新建关系类型" command, so an address can open the empty form.
+    const creating = computed(() => instance.state.values.value.creating === true);
+    const setCreating = (value) => instance.state.set("creating", value);
     // The form is drawn while a new relation is being made, or for a relation the owner actually returned: a missing or
     // unreadable relation shows the empty state alone, without a form that could only fail.
     const editing = computed(() => creating.value || (Boolean(selectedKey.value) && detail.value.status === "ready"));
@@ -56,23 +60,19 @@ await mountPanel({
     });
 
     function open(row) {
-      creating.value = false;
+      setCreating(false);
       instance.state.set("selected", { className: TYPE, primaryKey: row.primaryKey });
     }
-    function startCreate() {
-      creating.value = true;
-      instance.state.set("selected", null);
-    }
     function cancelCreate() {
-      creating.value = false;
+      setCreating(false);
       instance.state.set("selected", null);
     }
     function onSaved(saved) {
-      creating.value = false;
+      setCreating(false);
       instance.state.set("selected", { className: saved.className || TYPE, primaryKey: saved.primaryKey });
     }
     function onDiscarded() {
-      creating.value = false;
+      setCreating(false);
     }
     function openType(className) {
       if (className) void navigate(`/ontology/objects/${encodeURIComponent(className)}`);
@@ -82,10 +82,10 @@ await mountPanel({
     watch(instance.draft, (draft) => {
       if (!draft) return;
       if (draft.target && draft.target.id) {
-        creating.value = false;
+        setCreating(false);
         if (draft.target.id !== selectedKey.value) instance.state.set("selected", { className: TYPE, primaryKey: draft.target.id });
       } else {
-        creating.value = true;
+        setCreating(true);
         instance.state.set("selected", null);
       }
     }, { immediate: true });
@@ -104,7 +104,7 @@ await mountPanel({
 
     return {
       catalogue, detail, types, allRows, rows, countText, selectedKey, search, creating, editing, title, idleNote,
-      typeLabel, open, startCreate, cancelCreate, onSaved, onDiscarded, openType,
+      typeLabel, open, cancelCreate, onSaved, onDiscarded, openType,
     };
   },
 });

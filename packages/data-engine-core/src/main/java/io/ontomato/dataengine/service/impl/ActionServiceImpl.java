@@ -622,9 +622,12 @@ public class ActionServiceImpl implements ActionService {
   private void requireExecutable(Action action, String lang, User user) {
     if (action == null)
       throw new OwnerRefusal("ACTION_NOT_FOUND", langService.get(lang, "Action.notFound"));
-    if (!user.getDomainId().equals(action.getDomainId()) || action.getFunction() == null ||
-        !user.getDomainId().equals(action.getFunction().getDomainId()))
+    if (!user.getDomainId().equals(action.getDomainId()) ||
+        action.getFunction() != null && !user.getDomainId().equals(action.getFunction().getDomainId()))
       throw new OwnerRefusal("ACTION_NOT_FOUND", "Action is outside the current domain");
+    // A stored action whose function row no longer exists keeps no program to run; saving never produces one.
+    if (action.getFunction() == null)
+      throw new OwnerRefusal("ACTION_NOT_EXECUTABLE", langService.get(lang, "Action.functionMissing"));
     if (!Action.STATUS_PUBLISHED.equals(action.getStatus()))
       throw new OwnerRefusal("ACTION_NOT_EXECUTABLE", langService.get(lang, "Action.notPublished"));
     try {

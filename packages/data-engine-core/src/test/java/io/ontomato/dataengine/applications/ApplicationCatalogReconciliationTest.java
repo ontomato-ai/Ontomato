@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
@@ -592,6 +593,32 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.panelUses.length()").value(1))
             .andExpect(jsonPath("$.data.entryAccess").doesNotHaveJsonPath());
         http.perform(get(CATALOGUE + "/app-private-foreign")).andExpect(status().isNotFound());
+    }
+
+    @Test void applicationDraftUsesTheReadersLanguageAndKeepsTranslationMaps() throws Exception {
+        var owner = new QueryAccessService.GrantUser("owner", "domain");
+        when(identity.getCurrentUser()).thenReturn(owner);
+
+        http.perform(post(CATALOGUE + "/form").locale(Locale.SIMPLIFIED_CHINESE)
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                    {"section":"create","target":{"kind":"draft","id":"app-translated"},
+                     "values":{"declaration":{"names":{"en":"App","zh-CN":"应用","ko-KR":"앱"},
+                                              "descriptions":{"zh-CN":"应用说明"},"icon":"pages","groups":[],"permissions":[]},
+                               "entry":{"path":"/applications/app-translated","renderer":"panels"},
+                               "entryAccess":["domain-member"],"panelUses":[]}}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.fields[0].label").value("应用身份"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[0].label").value("名称"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[0].help").isNotEmpty())
+            .andExpect(jsonPath("$.data.fields[0].control.fields[0].control.kind").value("localized-text"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[0].control.primaryLocale").value("zh-CN"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[0].control.requiredLocales[0]").value("en"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[1].label").value("说明"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[1].control.multiline").value(true))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[2].label").value("图标"))
+            .andExpect(jsonPath("$.data.values.declaration.names['ko-KR']").value("앱"))
+            .andExpect(jsonPath("$.data.values.declaration.descriptions['zh-CN']").value("应用说明"));
     }
 
     @Test void typedFormsReportFieldErrorsAndDraftCreationNeverOverwritesARegisteredApplication() throws Exception {

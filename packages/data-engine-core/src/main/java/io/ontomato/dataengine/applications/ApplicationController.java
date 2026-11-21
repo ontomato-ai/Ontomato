@@ -7,6 +7,7 @@ import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -58,8 +59,8 @@ public class ApplicationController {
     }
 
     @PostMapping("/platform/applications/catalogue/form")
-    public R<JSONObject> catalogueForm(@RequestBody CatalogueFormRequest body) {
-        return R.of(catalog.catalogueForm(body, current()));
+    public R<JSONObject> catalogueForm(@RequestBody CatalogueFormRequest body, Locale locale) {
+        return R.of(catalog.catalogueForm(body, current(), locale));
     }
 
     @PutMapping("/platform/applications/{id}/identity")

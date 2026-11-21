@@ -1,6 +1,13 @@
 {
   "manifest": {
     "state": {
+      "creating": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "deepLink": true
+      },
       "selected": {
         "type": {
           "kind": "object",
@@ -135,6 +142,33 @@
         "id": "builtin-product-26d57225-7954-412d-a58d-329a3702354e"
       }
     },
-    "commands": {}
+    "commands": {
+      "create": {
+        "labelKey": "action.create",
+        "primary": true,
+        "do": {
+          "set": {
+            "fields": {
+              "selected": {
+                "literal": null
+              },
+              "creating": {
+                "literal": true
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "action.create": "New projection"
+      },
+      "zh-CN": {
+        "action.create": "新建投影"
+      }
+    }
   }
 }
