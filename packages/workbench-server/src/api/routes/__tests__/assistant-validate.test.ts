@@ -6,6 +6,7 @@ import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import type { WorkbenchIdentity } from "../../../identity/types";
 import { installWorkbenchIdentity } from "../../../identity/installed";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
+import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import { buildTestAccess } from "../../build-test-access";
 import { errorHandler } from "../../middleware/error-handler";
 import { HttpError } from "../../../utils/errors";
@@ -47,6 +48,7 @@ installWorkbenchIdentity({
     next();
   },
 } as unknown as WorkbenchIdentity);
+const createDraftTarget = { objectType: AGENT_DEFINITION };
 const form = { name: "Agent", description: "", icon: null, enabled: true, systemPrompt: "Prompt", skills: [] };
 async function app() {
   const router = express();
@@ -70,7 +72,7 @@ async function app() {
 it("validates the full creation form without preparing a Key or touching storage", async () => {
   mocks.references.mockReturnValue([]);
   const request = await app();
-  expect((await request({ target: {}, form })).status).toBe(204);
+  expect((await request({ target: createDraftTarget, form })).status).toBe(204);
   expect(mocks.setting).toHaveBeenCalledWith({ domainId: "domain", userId: "alice" }, null, null,
     expect.objectContaining({ token: "original" }));
   expect(mocks.model).toHaveBeenCalledWith("domain", { modelId: null });
@@ -81,7 +83,7 @@ it("validates the full creation form without preparing a Key or touching storage
 it("loads the actual stored reference and preserves it when the update omits the field", async () => {
   mocks.agent.mockResolvedValue({ kind: "custom", execution_user_id: "selected", skills: [] });
   const request = await app();
-  expect((await request({ target: { id: "8f5df4a4-e30b-48cb-831a-33b759144f76" }, form })).status).toBe(204);
+  expect((await request({ target: { ...createDraftTarget, id: "8f5df4a4-e30b-48cb-831a-33b759144f76" }, form })).status).toBe(204);
   expect(mocks.setting).toHaveBeenCalledWith(expect.anything(), "selected", "selected", expect.anything());
   expect(mocks.prepare).not.toHaveBeenCalled();
 });
@@ -89,15 +91,15 @@ it("cannot forge the old reference or bypass a setting rejection", async () => {
   mocks.agent.mockResolvedValue({ kind: "custom", execution_user_id: "selected", skills: [] });
   mocks.setting.mockRejectedValue(new HttpError(403, "Denied", "FORBIDDEN"));
   const request = await app();
-  expect((await request({ target: { id: "8f5df4a4-e30b-48cb-831a-33b759144f76" }, form: { ...form, executionUserId: "other" } })).status).toBe(403);
+  expect((await request({ target: { ...createDraftTarget, id: "8f5df4a4-e30b-48cb-831a-33b759144f76" }, form: { ...form, executionUserId: "other" } })).status).toBe(403);
   expect(mocks.setting).toHaveBeenCalledWith(expect.anything(), "selected", "other", expect.anything());
   expect(mocks.prepare).not.toHaveBeenCalled();
   expect(mocks.pool).not.toHaveBeenCalled();
-  expect((await request({ target: {}, form, oldExecutionUserId: "other" })).status).toBe(400);
+  expect((await request({ target: createDraftTarget, form, oldExecutionUserId: "other" })).status).toBe(400);
 });
 it("requires the same analysis-agent permission as a save", async () => {
   const request = await app();
-  expect((await request({ target: {}, form }, "bob")).status).toBe(403);
+  expect((await request({ target: createDraftTarget, form }, "bob")).status).toBe(403);
   expect(mocks.model).not.toHaveBeenCalled();
   expect(mocks.setting).not.toHaveBeenCalled();
 });
@@ -225,8 +227,8 @@ it("fills a partial edit draft from the stored definition without treating omitt
   expect((await incompleteCreate.json()).errors).toContainEqual(expect.objectContaining({ field: "/name", code: "required" }));
   expect(mocks.pool).not.toHaveBeenCalled();
   expect(described.save.bodySchema.required).not.toContain("skills");
-  expect((await request({ target: { id }, form: update })).status).toBe(204);
-  expect((await request({ target: {}, form: update })).status).toBe(400);
+  expect((await request({ target: { ...createDraftTarget, id }, form: update })).status).toBe(204);
+  expect((await request({ target: createDraftTarget, form: update })).status).toBe(400);
   expect(mocks.skills).not.toHaveBeenCalled();
 });
 

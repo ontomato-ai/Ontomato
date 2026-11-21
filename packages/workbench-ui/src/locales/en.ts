@@ -188,7 +188,7 @@ export default {
     "panelScriptRejected": "The panel's script failed",
     "panelStyleOutside": "This panel's CSS reaches outside the panel, so none of it applies. A panel's CSS styles only its own panel.",
     "panelAddressUnavailable": "{address} is not a page you can open: it does not exist, or you may not open it.",
-    "panelDraftUnclaimed": "This draft belongs to no form of this panel",
+    "panelDraftUnclaimed": "This page has no form that takes this draft for {objectType} ({operation})",
     "panelDraftChanged": "Changed: {fields}",
     "graphIncludeAdjacent": "Include adjacent ({count})",
     "listSearchPlaceholder": "Search",
@@ -256,6 +256,7 @@ export default {
     "dataForbidden": "You do not have access to this",
     "dataAwaiting": "Select an item first",
     "dataUnreachable": "The data could not be read. Try again.",
+    "currentEntryOutsideFrame": "The entry you open is shown here when this panel is an application's frame.",
     "memberUnavailable": "This is not available here"
   },
   "nav": {

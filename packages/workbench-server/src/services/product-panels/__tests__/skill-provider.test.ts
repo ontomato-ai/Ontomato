@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { vuePanelContent } from "../../../__tests__/fixtures/vue-panel";
-import { APPLICATION_PANEL_USE, EXPORT_SKILL, ONTOLOGY_TYPE } from "@ontomato/contracts/platform-object-types";
+import { APPLICATION_PANEL_USE, EXPORT_SKILL, ONTOLOGY_TYPE, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import { appsSdkReleaseManifestSchema } from "@ontomato/contracts/apps-sdk";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -435,8 +435,15 @@ it("binds the current SDK digest to the supplied panel bytes for the lifetime of
 it("keeps the package and recipes for a panel independent of its entrance", async () => {
   extraProjections.set("legacy-form", trialProjections.get("projection-schedules-form")!);
   extraProjections.set("legacy-run", runProjection);
+  extraProjections.set("projection-editor", {
+    name: "Projection editor", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectForm",
+    inputs: {}, outputs: {}, config: {},
+    data: { createForm: { source: { type: { kind: "PlatformObjectType", id: PRODUCT_PROJECTION } }, read: "createForm", params: {} } },
+    operations: { save: { operation: { kind: "PlatformOperation", id: `${PRODUCT_PROJECTION}.save` } } },
+  });
   const panel = codeTasksPanel({
     form: { projectionId: "legacy-form", inputs: taskInputBinding },
+    catalogue: { projectionId: "projection-editor", inputs: {} },
     run: { projectionId: "legacy-run", inputs: taskInputBinding },
   });
   const ref = taskRef;
@@ -471,6 +478,14 @@ it("keeps the package and recipes for a panel independent of its entrance", asyn
     expect(readSection).not.toContain("/platform/scheduled-tasks");
     const draftSection = markdown.split("### Draft a change")[1]!.split(/\n### /)[0];
     expect(draftSection).toContain("Follow that form-save operation's drafting instructions under Declared operations");
+    const [, draftExample] = draftSection.match(/```json\n([\s\S]*?)\n```/) ?? [];
+    expect(JSON.parse(draftExample!)).toMatchObject({ target: { objectType: taskInput.objectType, id: "<owner object id>" } });
+    const scheduledForm = draftSection.split("\n").find(line => line.startsWith("- Form `form.save`."))!;
+    expect(scheduledForm).toContain('"target":{"objectType":"platform:ScheduledTask","id":"<owner object id>"}');
+    expect(scheduledForm).not.toContain("For creation");
+    const projectionForm = draftSection.split("\n").find(line => line.startsWith("- Form `catalogue.save`."))!;
+    expect(projectionForm).toContain(`"operation":"projection.update","target":{"objectType":"${PRODUCT_PROJECTION}","id":"<owner object id>"}`);
+    expect(projectionForm).toContain(`"operation":"projection.create","target":{"objectType":"${PRODUCT_PROJECTION}"}`);
     expect(draftSection).not.toContain("validate the complete values");
     expect(draftSection).toContain("Each run has its own artifact area. Use a distinct path for each draft written in the same run.");
     expect(draftSection).toContain("`draftRunId` to that run's `$ONTOMATO_RUN_ID`");

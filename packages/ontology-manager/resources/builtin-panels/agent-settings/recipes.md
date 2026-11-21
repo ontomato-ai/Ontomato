@@ -10,8 +10,8 @@ address. Opening with no state selects the first agent, as the original page's b
 
 ## Drafting a change
 
-An update draft names operation `agent.update` and the agent's id in `target`; a create draft names
-`agent.create` and an empty target. Read the owner's form for the intended target first — `save.draftOperation`
+For the agent definition form, follow the page skill's draft format. Use `agent.update` for an existing agent and
+`agent.create` for a new one. Read the owner's form for the intended target first — `save.draftOperation`
 says the same operation. Publish the draft as a run artifact and hand the reader the draft link on this page's
 address. The reader opens it and saves.
 

@@ -1,4 +1,4 @@
-import { pageDraftSchema, pageDraftPathSchema } from "@ontomato/contracts/page-draft";
+import { draftTarget, pageDraftSchema, pageDraftPathSchema } from "@ontomato/contracts/page-draft";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
 import { once } from "node:events";
@@ -59,10 +59,21 @@ it("platform knowledge import emits separate original-page forms and never calls
     return pageDraftSchema.parse(JSON.parse(await readFile(path.join(directory,entry.path),"utf8")));
   }));
   expect(drafts).toEqual([
-    {pageKey:"business-knowledge",operation:"knowledge.create",target:{},form:{knowledgeID:"",knowledgeTitle:"New",knowledgeText:"New text",knowledgeTags:["new-tag"],status:0}},
-    {pageKey:"business-knowledge",operation:"knowledge.update",target:{id:"existing"},form:{knowledgeID:"existing",knowledgeTitle:"Changed",knowledgeText:"Changed text",knowledgeTags:["retained"],status:1}},
+    {pageKey:"business-knowledge",operation:"knowledge.create",target:{objectType:"platform:BusinessKnowledge"},form:{knowledgeTitle:"New",knowledgeText:"New text",knowledgeTags:["new-tag"],status:0}},
+    {pageKey:"business-knowledge",operation:"knowledge.update",target:{objectType:"platform:BusinessKnowledge",id:"existing"},form:{knowledgeTitle:"Changed",knowledgeText:"Changed text",knowledgeTags:["retained"],status:1}},
   ]);
   expect(new Set(result.drafts.map((entry:{path:string})=>entry.path)).size).toBe(2);
+  // The draft decides create or update before it exists; its own operation and target must agree with what a page
+  // derives from the draft it reads, so changing either side alone breaks here.
+  // A drafted new item stays pending for review, and names no id in its form: the target says it is a create.
+  const created=drafts.find((draft)=>draftTarget(draft).kind==="create")!;
+  expect((created.form as Record<string,unknown>).status).toBe(0);
+  expect("knowledgeID" in (created.form as Record<string,unknown>)).toBe(false);
+  const targets=drafts.map((draft)=>({target:draftTarget(draft),operation:draft.operation}));
+  expect(targets).toEqual([
+    {target:{kind:"create",objectType:"platform:BusinessKnowledge"},operation:"knowledge.create"},
+    {target:{kind:"update",objectType:"platform:BusinessKnowledge",id:"existing"},operation:"knowledge.update"},
+  ]);
 });
 
 it("platform import uses the execution callback for its business-page read without a long user key",async()=>{

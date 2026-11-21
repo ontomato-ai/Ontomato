@@ -117,8 +117,9 @@ for drafting, and never calls Java import. New forms use an empty knowledgeID an
 updates target the current knowledgeID and preserve its status and any omitted tags.
 External imports still call Java. Java has no standalone side-effect-free knowledge
 validation endpoint; none was added. The page batch owns reading/filling/saving these forms.
-PageDraft target.id now accepts an opaque nonempty knowledge ID; non-UUID updates are
-covered by the same contract test as creates. The ontology declaration maps the governance
+A knowledge draft's target names its type, `platform:BusinessKnowledge`, and an opaque
+nonempty knowledge ID for updates; non-UUID updates are covered by the same contract test
+as creates. The ontology declaration maps the governance
 report page to the knowledge-governance preset; business-knowledge keeps the ordinary default.
 New and existing domains lazily receive their own stable governance preset.
 PLATFORM_DRAFT_RULE remains later host work and is not duplicated in skill instructions.

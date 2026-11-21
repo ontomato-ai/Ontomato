@@ -35,8 +35,14 @@ const board: DashboardDetail = {
 };
 
 const identity = () => boardIdentity(board);
-const draft = (operation: string, form: unknown, target: { id?: string } = { id: "d1" }): PageDraft<Record<string, unknown>> =>
+const draft = (operation: string, form: unknown, target: PageDraft<unknown>["target"] = { objectType: "platform:Dashboard", id: "d1" }): PageDraft<Record<string, unknown>> =>
   ({ pageKey: "dashboard", operation, target, form: form as Record<string, unknown> });
+
+// A draft names the object it is for, type and all: one for another type of object is not this page's.
+it("rejects a draft for an object that is not a dashboard", () => {
+  expect(() => acceptDraft(draft("dashboard.rename", { id: "d1", name: "Revenue" }, { objectType: "platform:Function", id: "d1" }), identity()))
+    .toThrow(/platform:Function, not a dashboard/);
+});
 
 describe("dashboard.rename", () => {
   it("accepts a board's own name, addresses the board, and shows both names", () => {
@@ -150,7 +156,7 @@ describe("the draft envelope", () => {
   it("is not filled for another page, an unknown action, or two different boards", () => {
     expect(() => acceptDraft({ ...draft("dashboard.rename", { id: "d1", name: "Revenue" }), pageKey: "agent-settings" }, identity())).toThrow(/not dashboard/);
     expect(() => acceptDraft(draft("assistant.delete", { id: "d1" }), identity())).toThrow(/Unknown dashboard action/);
-    expect(() => acceptDraft(draft("dashboard.rename", { id: "d1", name: "Revenue" }, { id: "d2" }), identity())).toThrow(/two different dashboards/);
-    expect(() => acceptDraft(draft("dashboard.rename", { id: "d2", name: "Revenue" }, {}), identity())).toThrow(/another dashboard/);
+    expect(() => acceptDraft(draft("dashboard.rename", { id: "d1", name: "Revenue" }, { objectType: "platform:Dashboard", id: "d2" }), identity())).toThrow(/two different dashboards/);
+    expect(() => acceptDraft(draft("dashboard.rename", { id: "d2", name: "Revenue" }, { objectType: "platform:Dashboard" }), identity())).toThrow(/another dashboard/);
   });
 });

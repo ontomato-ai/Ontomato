@@ -4,9 +4,8 @@ import type { ProductPanelNestedReadRequest } from "@ontomato/contracts/panel-ho
 import type { DirectPanelMount as HostDirectPanelMount, DirectPanelRun } from "@ontomato/platform-shell";
 import { createDirectPanelInstance, type DirectPanelInstance, type DirectPanelInstanceOptions } from "./direct";
 import { runPanel } from "./lifecycle";
-import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
 import { directProjectionSchema, type PanelMessages } from "@ontomato/contracts/product-panels";
-import { panelHumanOperations } from "./human-operations";
+import { panelHumanOperations, type PanelOperationUse } from "./human-operations";
 import type { PlatformRequests } from "./platform-objects";
 import { readComponentPackage, readPageDraft, readProjectionRecord, recordDraftCreated } from "./platform-requests";
 import type { ComponentPackageResponse } from "@ontomato/contracts/component-packages";
@@ -26,8 +25,8 @@ export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions
   run: DirectPanelRun;
   /** The platform's request path, as the reader: drafts, projection records and the coordinator's operations. */
   requests: PlatformRequests;
-  /** The application use the panel runs as; a candidate preview runs as none and runs no operation. */
-  use: PanelUseRef | null;
+  /** The application use the panel runs as (with `root: "frame"` for the frame); a preview runs as none and runs no operation. */
+  use: PanelOperationUse | null;
   /** The panel's own words (its content's messages), in the platform's language with the deployment's default behind. */
   messages: PanelMessages;
   locale: Readonly<Ref<string>>;
@@ -72,6 +71,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       expandPageComposer: options.expandPageComposer,
       navigate: options.navigate,
       nested: options.nested,
+      ...(run.currentEntry ? { currentEntry: run.currentEntry } : {}),
       ...(options.memberPath ? { memberPath: options.memberPath } : {}),
       translate: options.translate,
       // A draft the panel cannot take fails it where it would have been, as in a frame.
@@ -107,7 +107,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
     // A draft that none of this panel's forms performs is not this panel's: once every member has registered and none
     // takes it, the panel fails with that, rather than waiting for a form that will never come.
     watch(instance.unclaimedDraft, (unclaimed) => {
-      if (unclaimed) run.failed(new Error((options.translate ?? String)("platform.panelDraftUnclaimed")));
+      if (unclaimed !== null) run.failed(new Error((options.translate ?? String)("platform.panelDraftUnclaimed", { ...unclaimed })));
     });
     // Every member the panel declares is held from the start, drawn or not: its operations are listed, a draft is offered
     // to it, and the panel's own code reads its data, whether or not a layout or a template places it.

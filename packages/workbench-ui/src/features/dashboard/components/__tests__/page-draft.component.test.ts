@@ -121,7 +121,7 @@ describe("a dashboard draft", () => {
     const wrapper = await openDraft({
       pageKey: "dashboard",
       operation: "dashboard.chart.rename",
-      target: { id: "d1" },
+      target: { objectType: "platform:Dashboard", id: "d1" },
       form: { id: "d1", chartId: "c1", resultSetName: "Revenue by province" },
     });
     expect(wrapper.text()).toContain(t("dashboard.draft.title"));
@@ -141,7 +141,7 @@ describe("a dashboard draft", () => {
     const wrapper = await openDraft({
       pageKey: "dashboard",
       operation: "dashboard.layout",
-      target: { id: "d1" },
+      target: { objectType: "platform:Dashboard", id: "d1" },
       form: {
         id: "d1",
         groups: [{ id: "g1", title: "Sales", charts: [{ id: "c1", name: "Revenue by region", chartFile: draftFile }], metrics: [{ id: "n1" }] }],
@@ -164,7 +164,7 @@ describe("a dashboard draft", () => {
     const wrapper = await openDraft({
       pageKey: "dashboard",
       operation: "dashboard.layout",
-      target: { id: "d1" },
+      target: { objectType: "platform:Dashboard", id: "d1" },
       form: { id: "d1", groups: [{ id: "g1", title: "Revenue", charts: [{ id: "c1" }], metrics: [{ id: "n1" }] }] },
     });
     expect(wrapper.find(".draft-bar__text span").text()).toBe(t("dashboard.draft.groups", { n: 1 }, 1));
@@ -175,7 +175,7 @@ describe("a dashboard draft", () => {
     const wrapper = await openDraft({
       pageKey: "dashboard",
       operation: "dashboard.card.parameters",
-      target: { id: "d1" },
+      target: { objectType: "platform:Dashboard", id: "d1" },
       form: { dashboardId: "d1", cardId: "c1", revision: "r1", values: { year: "2024" } },
     });
     await flushPromises();
@@ -189,7 +189,7 @@ describe("a dashboard draft", () => {
     const wrapper = await openDraft({
       pageKey: "dashboard",
       operation: "dashboard.rename",
-      target: { id: "d1" },
+      target: { objectType: "platform:Dashboard", id: "d1" },
       form: { id: "d1", name: "Revenue board" },
     });
     expect(wrapper.find(".draft-bar__board").text()).toBe(t("dashboard.draft.boardWas", { from: "Sales", to: "Revenue board" }));
@@ -205,7 +205,7 @@ describe("a dashboard draft", () => {
     const wrapper = await openDraft({
       pageKey: "dashboard",
       operation: "dashboard.card.parameters",
-      target: { id: "d1" },
+      target: { objectType: "platform:Dashboard", id: "d1" },
       form: { dashboardId: "d1", cardId: "n1", revision: "r1", values: { year: "2024" } },
     });
     await flushPromises();
@@ -220,7 +220,7 @@ describe("a dashboard draft", () => {
     const draft = {
       pageKey: "dashboard",
       operation: "dashboard.chart.rename",
-      target: { id: "d1" },
+      target: { objectType: "platform:Dashboard", id: "d1" },
       form: { id: "d1", chartId: "c1", resultSetName: "Revenue by province" },
     };
     api.pageDraft = draft;
@@ -245,7 +245,7 @@ describe("a dashboard draft", () => {
     const wrapper = await openDraft({
       pageKey: "dashboard",
       operation: "dashboard.chart.rename",
-      target: { id: "d1" },
+      target: { objectType: "platform:Dashboard", id: "d1" },
       form: { id: "d1", chartId: "c1", resultSetName: "Revenue by province" },
     });
     await wrapper.find(".draft-bar__actions .el-button:not(.el-button--primary)").trigger("click");
@@ -259,14 +259,14 @@ describe("a dashboard draft", () => {
 
   // Drafts that would save only what the board already holds, as one the reader saved and opens again.
   const savedDrafts = [
-    { pageKey: "dashboard", operation: "dashboard.layout", target: { id: "d1" }, form: {
+    { pageKey: "dashboard", operation: "dashboard.layout", target: { objectType: "platform:Dashboard", id: "d1" }, form: {
       id: "d1",
       groups: [{ id: "g1", title: "Sales", charts: [{ id: "c1", name: "Revenue by region", layout: { colSpan: 12, rowSpan: 1 }, chartFile: { name: "province.chart.json", content: { ontomato: {}, series: file.content.series, dataset: file.content.dataset } } }], metrics: [{ id: "n1", name: "Total revenue" }] }],
     } },
-    { pageKey: "dashboard", operation: "dashboard.chart.rename", target: { id: "d1" }, form: { id: "d1", chartId: "c1", resultSetName: "Revenue by region" } },
-    { pageKey: "dashboard", operation: "dashboard.group.rename", target: { id: "d1" }, form: { id: "d1", groupId: "g1", dimensionName: "Sales" } },
-    { pageKey: "dashboard", operation: "dashboard.rename", target: { id: "d1" }, form: { id: "d1", name: "Sales" } },
-    { pageKey: "dashboard", operation: "dashboard.card.parameters", target: { id: "d1" }, form: { dashboardId: "d1", cardId: "c1", revision: "r1", values: { year: "2026" } } },
+    { pageKey: "dashboard", operation: "dashboard.chart.rename", target: { objectType: "platform:Dashboard", id: "d1" }, form: { id: "d1", chartId: "c1", resultSetName: "Revenue by region" } },
+    { pageKey: "dashboard", operation: "dashboard.group.rename", target: { objectType: "platform:Dashboard", id: "d1" }, form: { id: "d1", groupId: "g1", dimensionName: "Sales" } },
+    { pageKey: "dashboard", operation: "dashboard.rename", target: { objectType: "platform:Dashboard", id: "d1" }, form: { id: "d1", name: "Sales" } },
+    { pageKey: "dashboard", operation: "dashboard.card.parameters", target: { objectType: "platform:Dashboard", id: "d1" }, form: { dashboardId: "d1", cardId: "c1", revision: "r1", values: { year: "2026" } } },
   ];
 
   it("opens as the board itself when the draft would save what the board already holds", async () => {
@@ -307,10 +307,10 @@ describe("a dashboard draft", () => {
 
   it("is not filled when it is for another page, another board, or an object this board does not have", async () => {
     for (const draft of [
-      { pageKey: "agent-settings", operation: "dashboard.chart.rename", target: { id: "d1" }, form: { id: "d1", chartId: "c1", resultSetName: "x" } },
-      { pageKey: "dashboard", operation: "assistant.delete", target: { id: "d1" }, form: { id: "d1" } },
+      { pageKey: "agent-settings", operation: "dashboard.chart.rename", target: { objectType: "platform:Dashboard", id: "d1" }, form: { id: "d1", chartId: "c1", resultSetName: "x" } },
+      { pageKey: "dashboard", operation: "assistant.delete", target: { objectType: "platform:Dashboard", id: "d1" }, form: { id: "d1" } },
       { pageKey: "dashboard", operation: "dashboard.chart.rename", target: { id: "d2" }, form: { id: "d2", chartId: "c1", resultSetName: "x" } },
-      { pageKey: "dashboard", operation: "dashboard.chart.rename", target: { id: "d1" }, form: { id: "d1", chartId: "gone", resultSetName: "x" } },
+      { pageKey: "dashboard", operation: "dashboard.chart.rename", target: { objectType: "platform:Dashboard", id: "d1" }, form: { id: "d1", chartId: "gone", resultSetName: "x" } },
     ]) {
       const wrapper = await openDraft(draft);
       expect(wrapper.find(".draft-failure").exists()).toBe(true);

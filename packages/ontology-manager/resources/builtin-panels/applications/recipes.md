@@ -24,11 +24,9 @@
 先读属主表单。新建读 `save` 成员的 `createForm`，属主会分配一个 `app-` ID；刷新表单沿用已分配的原 ID。改身份读
 `save` 成员的对象 `form`，改入口读 `entriesForm` 成员的对象 `form`。两张编辑表单都从 `selected` 取得应用。
 
-页面草稿的 `pageKey` 是 `ontology-applications`，`operation` 取对应表单的 `save.draftOperation`
-（`create`、`saveIdentity` 或 `saveEntries`）。新建的 `target` 是 `{}`，编辑用 `{"id":"<应用 ID>"}`。
-`form` 只填要改的字段，字段和值以属主表单的 `fields` 为准。把 `draftSessionId`、`draftRunId` 和 `draftPath`
-放进 `/ontology/applications` 链接交给读者。读者打开后核对并保存。新建只建，同一 ID 已存在时属主拒绝；
-编辑入口时，属主保留未提交的应用设置和入口。
+草稿只填要改的字段，字段和值以属主表单的 `fields` 为准。读者打开后核对并保存。新建只建，同一 ID 已存在时属主拒绝；
+编辑入口时，属主保留未提交的应用设置和入口。编辑草稿的入口状态用 `selected` 定位应用，新建草稿用 `creating: true` 打开
+新建表单。草稿格式和链接用本页技能的起草说明。
 
 ## 操作
 

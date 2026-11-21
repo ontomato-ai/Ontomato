@@ -27,6 +27,13 @@ interface PanelContext {
   /** This instance: its state, page context, projections and operations. */
   readonly instance: PanelInstance;
   /**
+   * In an application's frame: the entry the reader opened (it follows the reader to another entry of the application),
+   * and the menu the same resolution gave, to draw the frame's menu with and mark the entry. Null in any other panel.
+   * Neither is the panel's state: they are the platform's, read only.
+   */
+  readonly currentEntry: ComputedRef<CurrentApplicationEntry | null>;
+  readonly entryMenu: ComputedRef<ApplicationEntryMenu | null>;
+  /**
    * The panel's own words (its content's `messages`) in the platform's current language: the current language, else
    * the deployment's default, else the key. The panel's HTML reads the same function as `t(key, params)`.
    */
@@ -191,10 +198,12 @@ A raw `draftPath` of `/outputs/drafts/edit.page-draft.json` starts with a slash 
 The encoded query value `draftPath=%2Foutputs%2Fdrafts%2Fedit.page-draft.json` still starts with that slash after decoding.
 
 The SDK reads the artifact, verifies it was written for the entry's `pageKey`, and offers it to the mounted forms.
-A form asks its owner for the target's description, matches `save.draftOperation`, then gives the owner's form read
-the proposed field values to check. If the owner accepts changed fields, the SDK fills the form and sets `instance.draft`.
+The target identifies the object type and, for an edit, the owner's object ID. A form of that type matches
+`save.draftOperation` and gives the owner's form read the proposed field values to check. If the owner accepts
+changed fields, the SDK fills the form and sets `instance.draft`.
 Keep the form projection mounted with `v-show` so it can receive the draft before the editor is visible.
 Watch `instance.draft` to reveal the editor. It is null while waiting or when the draft changes nothing.
+Use [`draftTarget(draft)`](CODE.md#save-a-form-or-hand-off-a-draft) to get the accepted draft's effective create or update target.
 The reader saves or discards the proposed change in the form.
 
 ## List paging

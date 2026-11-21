@@ -46,12 +46,12 @@ A draft is one JSON file at `outputs/drafts/<name>.page-draft.json`:
 {
   "pageKey": "agents-agent-settings",
   "operation": "agent.update",
-  "target": {"id": "<agent id>"},
+  "target": {"objectType": "platform:AgentDefinition", "id": "<agent id>"},
   "form": { "...": "AssistantAgentInput" }
 }
 ```
 
-`agent.create` has `"target": {}`; `agent.update` has the definition ID. There are no other operations on this page. The form is the whole definition, as for a save: `get` the agent, bring every other field back as it was, and remove `id`. Only `skills` may be left out on update to keep the agent's stored skills; naming the array, `[]` included, replaces the whole selection. Leaving out a defaulted field such as `classNames` stores the default, not the stored value.
+`agent.create` has `"target": {"objectType": "platform:AgentDefinition"}`; `agent.update` adds the definition ID as `target.id`. There are no other operations on this page. The form is the whole definition, as for a save: `get` the agent, bring every other field back as it was, and remove `id`. Only `skills` may be left out on update to keep the agent's stored skills; naming the array, `[]` included, replaces the whole selection. Leaving out a defaulted field such as `classNames` stores the default, not the stored value.
 
 ```sh
 node skills/ontomato-agent-builder/scripts/page.mjs draft create @work/agent.json
@@ -60,7 +60,7 @@ node skills/ontomato-agent-builder/scripts/page.mjs validate-draft @outputs/draf
 node skills/ontomato-agent-builder/scripts/page.mjs draft-link @outputs/drafts/agent.page-draft.json
 ```
 
-`draft` writes the file (default `outputs/drafts/agent.page-draft.json`) and prints its path. `validate-draft` sends `{target, form}` to `POST /api/assistant/agent-definitions/validate`: the owner loads the target definition (an empty target on creation), then runs the same form, model, skill and execution-setting checks as a save without writing anything or preparing a key. It prints `ok` or the error. `draft-link` prints the page link for this run:
+`draft` writes the file (default `outputs/drafts/agent.page-draft.json`) and prints its path. `validate-draft` sends `{target, form}` to `POST /api/assistant/agent-definitions/validate`: the owner loads the target definition (a target with only the object type on creation), then runs the same form, model, skill and execution-setting checks as a save without writing anything or preparing a key. It prints `ok` or the error. `draft-link` prints the page link for this run:
 
 ```text
 #/agents/settings/<id or new>?draftSessionId=<session>&draftRunId=<run>&draftPath=outputs%2Fdrafts%2Fagent.page-draft.json

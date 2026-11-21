@@ -25,5 +25,6 @@ export const baseComponents = {
   ObjectTextReader: () => import("./base/ObjectTextReader.vue").then(module => module.default),
   ConversationEntry: () => import("./base/ConversationEntry.vue").then(module => module.default),
   PanelData: () => import("./base/PanelData.vue").then(module => module.default),
+  CurrentEntry: () => import("./base/CurrentEntry.vue").then(module => module.default),
   MetricChart: () => import("./base/MetricChart.vue").then(module => module.default),
 };

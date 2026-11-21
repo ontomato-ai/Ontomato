@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createApp, defineComponent, h, nextTick, ref, shallowRef } from "vue";
+import { computed, createApp, defineComponent, h, nextTick, ref, shallowRef } from "vue";
 import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
@@ -185,7 +185,7 @@ describe("a panel instance", () => {
           readPageDraft: async () => ({
             pageKey: "panels-trial-a-tasks",
             operation: "platform:ScheduledTask.save",
-            target: { id: "task-1" },
+            target: { objectType: SCHEDULED_TASK, id: "task-1" },
             form: { operation: "inspection", instruction: "look at tonight's failures" },
           }),
         },
@@ -196,7 +196,7 @@ describe("a panel instance", () => {
     // The draft is unsaved: it is what the form now holds, and the fields it changed are marked.
     expect(received.slot).toBe("form");
     expect([...received.changed].sort()).toEqual(["/instruction", "/operation"]);
-    expect(adapters.unclaimed(["other", "form"])).toBe(false);
+    expect(adapters.unclaimed(["other", "form"])).toBeNull();
   });
 });
 
@@ -245,6 +245,7 @@ describe("a panel's module", () => {
       // A member's operations are read through the platform; its data, here, through this release's modules.
       navigate: async () => { throw new Error("This test opens no address"); },
       notify: () => { throw new Error("This test tells the reader nothing"); },
+      currentEntry: computed(() => null), entryMenu: computed(() => null),
       readPanelData: async (request) => {
         if (request.operations) return { status: "ready", value: {} };
         throw new Error("This test reads no member data through the platform");

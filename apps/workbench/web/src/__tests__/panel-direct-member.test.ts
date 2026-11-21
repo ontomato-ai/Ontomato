@@ -229,7 +229,7 @@ it("refuses a draft whole on its form when the owner's check of it names fields 
   await vi.waitFor(() => expect(input(element, "/name")?.value).toBe("t-1"));
   const link = { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/drafts/task.page-draft.json" };
   await receivePanelDraft("tasks", instance.forms, {
-    readPageDraft: async () => ({ pageKey: "tasks", operation: `${SCHEDULED_TASK}.save`, target: { id: "t-1" }, form: { name: "t-1", note: "x" } }),
+    readPageDraft: async () => ({ pageKey: "tasks", operation: `${SCHEDULED_TASK}.save`, target: { objectType: SCHEDULED_TASK, id: "t-1" }, form: { name: "t-1", note: "x" } }),
   }, link, instance.receiveDraft);
   // The refusal is the form's to say, at its top and beside the field it names; the panel itself has not failed, and its
   // other member is drawn as it was.

@@ -10,7 +10,7 @@ import {
 } from "./panel-manifest";
 import { panelOwnerOperationDescriptorSchema } from "./panel-operations";
 import { panelLocalOperationNameSchema } from "./panel-projection";
-import { applicationPanelUsePathSchema, applicationPanelUseSchema, panelDefinitionContentSchema, productPanelSchema } from "./product-panels";
+import { applicationFrameSourceSchema, applicationPanelUsePathSchema, applicationPanelUseSchema, panelDefinitionContentSchema, productPanelSchema } from "./product-panels";
 import { productCurrentIdParamsSchema } from "./product-record-id";
 import { definitionRevisionSchema, type ProductDefinitionRevision, type ProductDefinitionTarget } from "./product-subscriptions";
 import { workspaceDiffSchema, workspaceIdSchema } from "./workspaces";
@@ -51,8 +51,10 @@ export type CandidatePanelSource = z.infer<typeof candidatePanelSourceSchema>;
 export const directPanelHostSourceSchema = panelHostSourceSchema;
 export type DirectPanelHostSource = PanelHostSource;
 
+const registeredPanelReadSourceSchema = panelUseRefSchema.extend({ kind: z.literal("registered") });
 export const productPanelReadSourceSchema = z.discriminatedUnion("kind", [
-  panelUseRefSchema.extend({ kind: z.literal("registered") }),
+  registeredPanelReadSourceSchema,
+  applicationFrameSourceSchema,
   candidatePanelSourceSchema.pick({ kind: true, workspace: true }),
 ]);
 export type ProductPanelReadSource = z.infer<typeof productPanelReadSourceSchema>;
@@ -115,7 +117,7 @@ export const productPanelReadRequestSchema = z.union([
 export type ProductPanelReadRequest = z.infer<typeof productPanelReadRequestSchema>;
 
 const panelPersonalStateScopeSchema = z.object({
-  source: productPanelReadSourceSchema.options[0],
+  source: z.discriminatedUnion("kind", [registeredPanelReadSourceSchema, applicationFrameSourceSchema]),
   memberPath: panelMemberPathSchema,
 }).strict();
 export const PANEL_PERSONAL_STATE_PATH = "/product-panels/personal-state";

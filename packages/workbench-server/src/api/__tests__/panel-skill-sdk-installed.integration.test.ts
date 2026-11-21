@@ -60,6 +60,15 @@ it("lists a code panel's protected skill from the bundled current SDK and saves 
   expect(result.rows).toEqual([{ name: "Renamed", skills: [skill] }]);
 });
 
+it("validates a typed agent draft that includes the installed panel skill", async () => {
+  const form = { name: "Renamed", description: "", icon: null, enabled: true, systemPrompt: "", skills: [skill] };
+  const validate = (target: object) => fetch(base + "/agent-definitions/validate", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ form, target }),
+  });
+  expect((await validate({ objectType: "platform:AgentDefinition", id: agentId })).status).toBe(204);
+  expect((await validate({ id: agentId })).status).toBe(400);
+});
+
 it("publishes the panel skill for the authorized entry's wired state fields", async () => {
   const { pageSkillMemberContext, prepareAssistantSkills, readAssistantSkillView } = await import("../../services/assistant/skills");
   const credentials = { token: "editor", locale: "en" };

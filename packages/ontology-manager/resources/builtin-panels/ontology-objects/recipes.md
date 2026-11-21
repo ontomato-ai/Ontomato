@@ -15,7 +15,7 @@
 起草前先读对应属主的表单，用它的 `save.draftOperation` 作为草稿的 `operation`，`form` 里只放要改的字段，字段路径以属主表单为准。把草稿链接交给读者，由读者在表单里检查并保存；不要替读者保存。
 
 - 新建对象类型：表单 `objectForm`，`target` 为空，链接里不带 `selected`。字段是 API 名、主键名、显示名、业务描述。格式和重名由属主校验，原因显示在字段旁。
-- 修改对象类型：表单 `objectForm`，`target.id` 为类的 API 名，链接 `state` 只带 `selected`，不要带 `selectedAttribute`（打开属性时类表单会收起）。只有显示名和业务描述可改，API 名只读。
+- 修改对象类型：表单 `objectForm`，`target` 是 `{"objectType":"platform:ObjectType","id":"<类的 API 名>"}`，链接 `state` 带 `selected`（属性编辑区开着也不用管，草稿按类型给到对应的表单）。只有显示名和业务描述可改，API 名只读。
 - 新建属性：表单 `attributeForm`，`target` 为空；链接里必须在 `state` 带上 `selected`（所属类），所属对象类型由页面固定为当前类，读者不能改。
 - 修改属性：表单 `attributeForm`，`target.id` 为属性主键 `["<类>","<属性>"]`，链接 `state` 带上 `selected` 和 `selectedAttribute`。可改显示名、描述、启用、业务键；主键不在表单里改。
 

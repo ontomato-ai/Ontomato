@@ -125,7 +125,7 @@ assistantExecutionRouter.post("/:runId/panels/intents/:intentId/dispatch",wrap(a
 }));
 
 async function panelReader(req: Request, runId: string, source: ProductPanelReadSource, memberPath: DirectPanelMemberPath) {
-  if (source.kind !== "registered")
+  if (source.kind === "candidate")
     throw new HttpError(400, "A page skill reads a registered application entry", "INVALID_REQUEST");
   const { owner, credentials } = context(req);
   const run = await runForOwner(owner, runId);
@@ -133,7 +133,8 @@ async function panelReader(req: Request, runId: string, source: ProductPanelRead
     throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
   if (run.channel.authority.executionKind !== "live")
     throw new HttpError(422, "Page skill reads do not support test data", "BUILD_TEST_UNSUPPORTED");
-  const { use } = await requirePanelSkillForRun(owner, credentials, run, source);
+  const { use } = await requirePanelSkillForRun(owner, credentials, run,
+    source.kind === "frame" ? { ...source, root: "frame" } : source);
   const executor = await credentialsForRun(owner, runId, credentials, run.sessionId);
   if (executor.executionUserId !== null) {
     // The execution account may read owner data only through a placement the initiator could actually open.

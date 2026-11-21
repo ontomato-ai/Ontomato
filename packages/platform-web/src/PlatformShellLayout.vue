@@ -9,6 +9,7 @@ import {
   platformApplicationNameKey,
   pilotPageKey,
   platformPageAccessKey,
+  provideApplicationFrame,
   provideApplicationTheme,
   providePageActions,
   providePageHeading,
@@ -167,6 +168,8 @@ const localeNames = computed(() =>
 const pageActions = providePageActions();
 /** What the shown entry's application assigns in its area, written by the application's page. */
 const appTheme = provideApplicationTheme();
+/** Whether the shown application draws its own frame in its area (its page writes it). */
+const appFramed = provideApplicationFrame();
 
 /**
  * The pages the platform's assembly can mount beside a conversation: the conversation application asks for one by
@@ -265,6 +268,7 @@ const blocked = computed(() => {
     :brand="shellBrand"
     :page-actions="pageActions"
     :app-theme="appTheme"
+    :app-framed="appFramed"
     :blocked="catalog.error.value ? { reason: 'no-pages', message: catalog.error.value } : blocked"
     @select-app="selectRailApp"
   />

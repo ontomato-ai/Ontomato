@@ -26,6 +26,7 @@ import {
   type AssistantSkillView,
 } from "./skills";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import { draftTarget } from "@ontomato/contracts/page-draft";
 import { tForLocale } from "../../i18n";
 import { withDomainSkills } from "../skills/operations";
 import { effectiveSystemPrompt, storedSystemPrompt } from "./prompts";
@@ -141,7 +142,8 @@ export async function validateAgentDefinition(
   owner: AssistantOwner,
   credentials: AssistantCredentials,
 ) {
-  const old = "id" in draft.target ? await editableAgent(draft.target.id, owner) : null;
+  const target = draftTarget(draft);
+  const old = target.kind === "update" ? await editableAgent(target.id, owner) : null;
   await checkedDefinition(draft.form, owner, credentials, old?.execution_user_id ?? null, old?.skills ?? []);
 }
 export async function saveAgentDefinition(

@@ -1,4 +1,5 @@
 import { changedFields, type PageDraft } from "@ontomato/contracts/page-draft";
+import { DASHBOARD } from "@ontomato/contracts/platform-object-types";
 import {
   dashboardAuthoring,
   dashboardOperationSchema,
@@ -104,6 +105,7 @@ export type AcceptedDraft = {
  */
 export function acceptDraft(draft: PageDraft<Record<string, unknown>>, board: BoardIdentity): AcceptedDraft {
   if (draft.pageKey !== DASHBOARD_PAGE_KEY) throw new DraftRejected(`This draft is for ${draft.pageKey}, not ${DASHBOARD_PAGE_KEY}`);
+  if (draft.target.objectType !== DASHBOARD) throw new DraftRejected(`This draft is for ${draft.target.objectType}, not a dashboard`);
   const known = dashboardOperationSchema.safeParse(draft.operation);
   if (!known.success) throw new DraftRejected(`Unknown dashboard action: ${draft.operation}`);
   const operation = known.data;
