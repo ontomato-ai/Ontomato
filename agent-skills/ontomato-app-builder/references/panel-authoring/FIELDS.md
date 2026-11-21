@@ -15,6 +15,7 @@ Use these fields for a new member inside `manifest.members` in `panel.json`.
 | `config` | No | Component configuration from the released SDK catalogue. |
 | `agent` | No | Required for ConversationEntry. Use "page-default", {kind:"id", id}, or {kind:"preset", agentKind}. |
 | `prefill` | No | ConversationEntry text placed in the page composer without sending it. |
+| `prefillKey` | No | ConversationEntry opening sentence as a key in this panel's content.messages, read in the reader's language. Use it instead of prefill in a panel shipped to several languages. |
 | `sourceCard` | No | Required for MetricChart. Use {dashboardId, cardId}; the source owner registers the chart and assigns its projection ID. |
 | `name` | No | Projection display name. Defaults to the member name. |
 | `description` | No | Projection description. Defaults to the member name. |

@@ -1962,3 +1962,20 @@ test("the direct panel import policy accepts only the host's literal module name
   await assert.rejects(panelModuleImports('await import("element-plus");'), /imports element-plus/);
   await assert.rejects(panelModuleImports('await import(moduleName);'), /imports a computed module/);
 });
+
+test("a conversation entry names its opening sentence by a key of the panel's messages, or writes it out, not both", async () => {
+  const { panelConversationEntrySchema, missingEntryMessageKeys } = await import("./panel-conversation-entry");
+  const target = { kind: "page-default" as const };
+  assert.deepEqual(panelConversationEntrySchema.parse({ target, prefillKey: "actions.create" }), { target, prefillKey: "actions.create" });
+  assert.equal(panelConversationEntrySchema.safeParse({ target, prefill: "Help me", prefillKey: "actions.create" }).success, false);
+  const messages = { en: { "actions.create": "Help me create an action:" }, "zh-CN": {} };
+  assert.deepEqual(missingEntryMessageKeys([{ target, prefillKey: "actions.create" }, { target, prefill: "Written" }, undefined], messages),
+    [{ key: "actions.create", locale: "zh-CN" }]);
+  assert.deepEqual(missingEntryMessageKeys([{ target, prefillKey: "actions.create" }], undefined), [{ key: "actions.create", locale: null }]);
+  // A name every object inherits is no key of the panel's.
+  assert.deepEqual(missingEntryMessageKeys([{ target, prefillKey: "toString" }], { en: {} }), [{ key: "toString", locale: "en" }]);
+  // A frame's request to open the composer carries the sentence written out, as it always did.
+  const { appBridgeExpandPageComposerSchema } = await import("./app-bridge");
+  assert.equal(appBridgeExpandPageComposerSchema.safeParse({ slot: "entry", target, prefill: "Help me" }).success, true);
+  assert.equal(appBridgeExpandPageComposerSchema.safeParse({ slot: "entry", target, prefillKey: "actions.create" }).success, false);
+});
