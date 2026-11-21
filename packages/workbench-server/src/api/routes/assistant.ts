@@ -31,6 +31,7 @@ import {
   assistantFeedbackWriteSchema,
 } from "@ontomato/contracts/assistant-chat";
 import { assistantService } from "../../services/assistant/service";
+import { invalidPageDraft } from "../../services/assistant/draft-errors";
 import { agentTasksFrameSchema } from "@ontomato/contracts/agent-tasks";
 import { pageDraftCreatedSchema, pageDraftPathSchema } from "@ontomato/contracts/page-draft";
 import { authoringKindSchema, authoringTestRecordSchema } from "@ontomato/contracts/authoring";
@@ -77,9 +78,11 @@ router.get("/agents", wrap(async (req, res) => {
 router.use(createAgentHostRouter(assistantService, true));
 /** The page draft a run wrote, at the run's own path: only the drafts directory, parsed as the shared envelope. */
 router.get("/sessions/:sessionId/runs/:runId/page-draft", wrap(async (req, res) => {
-  const path = pageDraftPathSchema.parse(req.query.path);
+  const runId = id(req, "runId");
+  const path = pageDraftPathSchema.safeParse(req.query.path);
+  if (!path.success) throw invalidPageDraft(runId, undefined, [{ path: ["path"], message: path.error.issues[0]!.message }]);
   const { owner, credentials } = context(req);
-  res.json(await assistantService.acceptPageDraft(id(req, "sessionId"), id(req, "runId"), path, owner, credentials));
+  res.json(await assistantService.acceptPageDraft(id(req, "sessionId"), runId, path.data, owner, credentials));
 }));
 router.get("/sessions/:sessionId/runs/:runId/authoring/:kind/tests/:executionId", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
@@ -90,8 +93,13 @@ router.get("/sessions/:sessionId/runs/:runId/authoring/:kind/tests/:executionId"
 }));
 /** What a create draft's first save created, recorded by the page that saved it; the same reader who may read the draft. */
 router.post("/sessions/:sessionId/runs/:runId/page-draft/created", wrap(async (req, res) => {
-  const created = pageDraftCreatedSchema.parse(req.body);
-  await assistantService.recordPageDraftCreated(id(req, "sessionId"), id(req, "runId"), created.path, created.id, context(req).owner);
+  const runId = id(req, "runId");
+  const created = pageDraftCreatedSchema.safeParse(req.body);
+  if (!created.success) {
+    const path = pageDraftPathSchema.safeParse(req.body?.path);
+    throw invalidPageDraft(runId, path.success ? path.data : undefined, created.error.issues);
+  }
+  await assistantService.recordPageDraftCreated(id(req, "sessionId"), runId, created.data.path, created.data.id, context(req).owner);
   res.sendStatus(204);
 }));
 router.get("/sessions/:sessionId/artifacts/:artifactId/drilldown", wrap(async (req, res) => {

@@ -19,7 +19,7 @@ the complete selectable skill catalogue and per-run package preparation.
 | GET `/agent-definitions/:agentId` | — | `AssistantAgentDefinition` |
 | POST `/agent-definitions` | `AssistantAgentInput`, UUID Idempotency-Key | 201 `AssistantAgentDefinition` |
 | POST `/agent-definitions/form` | `PanelFormRequest` | `PanelFormDescription`, reads or checks a settings draft without writing |
-| POST `/agent-definitions/validate` | `{target,form}`; use `{id: UUID}` with `AssistantAgentUpdateInput` when editing or `{}` with `AssistantAgentInput` when creating | 204; no writes or Key preparation |
+| POST `/agent-definitions/validate` | `{target,form}`; require `target.objectType: "platform:AgentDefinition"`; supply `target.id: UUID` with `AssistantAgentUpdateInput` when editing or omit it with `AssistantAgentInput` when creating | 204; no writes or Key preparation |
 | PUT `/agent-definitions/:agentId` | `AssistantAgentUpdateInput` | `AssistantAgentDefinition` |
 | DELETE `/agent-definitions/:agentId` | — | 204; existing history remains readable |
 | POST `S/export/ppt` | `{}` | PPTX from runtime history and accepted datasets |

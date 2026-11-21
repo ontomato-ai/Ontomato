@@ -69,8 +69,11 @@ it("platform knowledge import emits separate original-page forms and never calls
   const created=drafts.find((draft)=>draftTarget(draft).kind==="create")!;
   expect((created.form as Record<string,unknown>).status).toBe(0);
   expect("knowledgeID" in (created.form as Record<string,unknown>)).toBe(false);
-  const kinds=drafts.map((draft)=>({derived:draftTarget(draft).kind,operation:draft.operation}));
-  expect(kinds).toEqual([{derived:"create",operation:"knowledge.create"},{derived:"update",operation:"knowledge.update"}]);
+  const targets=drafts.map((draft)=>({target:draftTarget(draft),operation:draft.operation}));
+  expect(targets).toEqual([
+    {target:{kind:"create",objectType:"platform:BusinessKnowledge"},operation:"knowledge.create"},
+    {target:{kind:"update",objectType:"platform:BusinessKnowledge",id:"existing"},operation:"knowledge.update"},
+  ]);
 });
 
 it("platform import uses the execution callback for its business-page read without a long user key",async()=>{

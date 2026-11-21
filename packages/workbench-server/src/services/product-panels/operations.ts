@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { pageDraftSchema } from "@ontomato/contracts/page-draft";
+import { draftTarget, pageDraftSchema } from "@ontomato/contracts/page-draft";
 import type { AgentSessionRef } from "@ontomato/contracts/agent-channel";
 import { agentQuestionAnswerReceiptSchema, agentUserQuestionReceiptSchema } from "@ontomato/contracts/agent-user-questions";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
@@ -123,7 +123,8 @@ async function verifyCreationDraft(intent: SingleIntent, handler: PanelWriteServ
   const link = intent.call.draft;
   if (!link || handler.kind !== "form.save" || !handler.create || intent.call.target?.kind !== "draft") return;
   const draft = await assistantService.pageDraft(link.sessionId, link.runId, link.path, intent.initiator);
-  if (draft.created || draft.target.id !== undefined || draft.pageKey !== pageKey ||
+  const target = draftTarget(draft);
+  if (target.kind !== "create" || target.objectType !== handler.targetType || draft.pageKey !== pageKey ||
     draft.operation !== handler.draftOperation(intent.call.target) ||
     !isDeepStrictEqual(
       handler.create.draftValues(draft.form, intent.initiator.domainId),
@@ -345,7 +346,7 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
   if (handler.kind === "form.save" && "call" in prepared) return {kind:"draft",intentId:intent.intentId,
     draft:pageDraftSchema.parse({
       pageKey: current.use.pageKey, operation: handler.draftOperation(prepared.target),
-      target: prepared.target.kind === "object" ? { id: prepared.target.primaryKey } : {},
+      target: { objectType: handler.targetType, ...(prepared.target.kind === "object" && { id: prepared.target.primaryKey }) },
       form: handler.draftInput(prepared.call.input, prepared.target),
     })};
   const host = operationHost({ owner, credentials });

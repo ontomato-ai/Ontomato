@@ -73,23 +73,31 @@ function draftPath(value) {
   return value;
 }
 
+const draftObjectType = "platform:AgentDefinition";
+
 async function readDraft(argument) {
   const file = draftPath(required(argument, "The draft file, e.g. @outputs/drafts/agent.page-draft.json").replace(/^@/, ""));
   const value = JSON.parse(await readFile(file, "utf8"));
   if (value.pageKey !== "agents-agent-settings" || !["agent.create", "agent.update"].includes(value.operation)
-    || !value.target || typeof value.target !== "object" || (value.target.id !== undefined && typeof value.target.id !== "string")
     || !value.form || typeof value.form !== "object" || Array.isArray(value.form))
     throw new Error(`${file} is not an agent-settings page draft`);
+  const target = value.target;
+  if (target?.objectType !== draftObjectType)
+    throw new Error(`${file}: target.objectType must be ${draftObjectType}`);
+  const id = target.id;
+  if (value.operation === "agent.create" ? id !== undefined : typeof id !== "string" || !id.length || id.length > 200)
+    throw new Error(`${file}: target.id must be omitted on create and supplied on update`);
   return { file, value };
 }
 
 async function draftCommand(args) {
   const [kind, ...rest] = args;
-  let target = {}, formArgument, file;
+  const target = { objectType: draftObjectType };
+  let formArgument, file;
   if (kind === "create") [formArgument, file] = rest;
   else if (kind === "update") {
     const [id, next, nextFile] = rest;
-    target = { id: required(id, "The agent id for draft update") };
+    target.id = required(id, "The agent id for draft update");
     [formArgument, file] = [next, nextFile];
   } else throw new Error("draft requires create or update");
   const value = { pageKey: "agents-agent-settings", operation: `agent.${kind}`, target, form: await form(formArgument) };

@@ -257,7 +257,7 @@ describe("agent definitions on PostgreSQL", () => {
     expect((await state.pool!.query(`SELECT * FROM "${state.schema}".assistant_agents WHERE id=$1`, [id])).rows[0]).toEqual(before);
     expect(state.prepare).not.toHaveBeenCalled();
     const { executionUserId: _omitted, ...otherFields } = input;
-    await validateAgentDefinition({ target: { id }, form: otherFields }, owner, { token: "original" });
+    await validateAgentDefinition({ target: { objectType: AGENT_DEFINITION, id }, form: otherFields }, owner, { token: "original" });
     expect(state.prepare).not.toHaveBeenCalled();
     state.setting.mockReset();
   });

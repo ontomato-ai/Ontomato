@@ -1,5 +1,7 @@
 import { closeGovernanceWindow } from "./governance";
 import { adoptAuthoringDefinition, authoringDraftKind, closeAuthoringRun } from "./authoring";
+import { invalidPageDraft } from "./draft-errors";
+import { ACTION, METRIC_VIEW } from "@ontomato/contracts/platform-object-types";
 import { executionSkillEnvironment } from "./execution-callback";
 import { pageSkillContextSchema } from "@ontomato/contracts/page-skills";
 import { agentHostSendResultSchema, type AgentHostSendRequest } from "@ontomato/contracts/agent-host";
@@ -30,7 +32,7 @@ import {
 import {
   storedDataset,
 } from "@ontomato/contracts/data-retrieval";
-import { pageDraftSchema, type PageDraft } from "@ontomato/contracts/page-draft";
+import { draftTarget, pageDraftSchema, type PageDraft } from "@ontomato/contracts/page-draft";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { withDomainSkills } from "../skills/operations";
 import {
@@ -524,11 +526,24 @@ export const assistantService = {
     if (!artifact || artifact.runId !== runId || artifact.sessionId !== sessionId) {
       throw new HttpError(404, "Page draft not found");
     }
-    const draft = pageDraftSchema.parse(
-      JSON.parse((await this.content(sessionId, artifact.id, owner)).toString("utf-8")),
-    );
-    requireFormFieldNames(draft.form, "form");
-    if (draft.target.id !== undefined) return draft;
+    const bytes = await this.content(sessionId, artifact.id, owner);
+    let value: unknown;
+    try {
+      value = JSON.parse(bytes.toString("utf-8"));
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+      throw invalidPageDraft(runId, path, [{ path: [], message: "Expected a JSON object" }]);
+    }
+    const parsed = pageDraftSchema.safeParse(value);
+    if (!parsed.success) throw invalidPageDraft(runId, path, parsed.error.issues);
+    const draft = parsed.data;
+    try {
+      requireFormFieldNames(draft.form, "form");
+    } catch (error) {
+      if (!(error instanceof HttpError)) throw error;
+      throw invalidPageDraft(runId, path, [{ path: ["form"], message: error.message }]);
+    }
+    if (draftTarget(draft).kind === "update") return draft;
     const created = await db().query(
       `SELECT created_id FROM ${table("assistant_page_draft_creations")} WHERE session_id=$1 AND run_id=$2 AND path=$3`,
       [sessionId, runId, path],
@@ -539,10 +554,16 @@ export const assistantService = {
     const draft = await this.pageDraft(sessionId, runId, path, owner);
     const kind = authoringDraftKind(draft.operation);
     if (!kind) return draft;
-    if (draft.form.id !== undefined && draft.form.id !== draft.target.id) {
-      throw new HttpError(400, "The definition does not match the draft target", "INVALID_REQUEST");
+    const target = draftTarget(draft);
+    const objectType = kind === "action" ? ACTION : METRIC_VIEW;
+    if (target.objectType !== objectType) {
+      throw invalidPageDraft(runId, path, [{ path: ["target", "objectType"], message: `Expected ${objectType} for ${draft.operation}` }]);
     }
-    const definition = draft.target.id === undefined ? draft.form : { ...draft.form, id: draft.target.id };
+    const targetId = target.kind === "update" ? target.id : undefined;
+    if (draft.form.id !== undefined && draft.form.id !== targetId) {
+      throw invalidPageDraft(runId, path, [{ path: ["form", "id"], message: "The definition does not match the draft target" }]);
+    }
+    const definition = targetId === undefined ? draft.form : { ...draft.form, id: targetId };
     const accepted = await adoptAuthoringDefinition(owner, credentials, { sessionId, runId, kind, definition });
     return { ...draft, form: accepted.definition };
   },
@@ -558,7 +579,7 @@ export const assistantService = {
     owner: AssistantOwner,
   ) {
     const draft = await this.pageDraft(sessionId, runId, path, owner);
-    if (draft.target.id !== undefined)
+    if (!draft.created && draftTarget(draft).kind === "update")
       throw new HttpError(409, "Only a create draft records the object it created", "PAGE_DRAFT_NOT_CREATE");
     const recorded = await db().query(
       `INSERT INTO ${table("assistant_page_draft_creations")} AS c (session_id,run_id,path,created_id) VALUES ($1,$2,$3,$4)
