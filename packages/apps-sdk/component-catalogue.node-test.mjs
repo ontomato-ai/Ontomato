@@ -147,7 +147,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     for (const withdrawn of ["FileUploadControl"])
       assert.equal(declared.get(withdrawn), undefined, `${withdrawn} is not offered`);
     // Configuration is the props a projection sets, kept apart from the running inputs a placement supplies.
-    const subtitleLines = declared.get("ObjectList").config.find(prop => prop.name === "subtitleLines");
+    const subtitleLines = declared.get("ObjectList").config.find(prop => prop.name === "subtitle-lines");
     assert.equal(subtitleLines?.required, false);
     assert.match(subtitleLines?.type ?? "", /number/);
     assert.match(subtitleLines?.description ?? "", /visible lines in a compact summary/);
