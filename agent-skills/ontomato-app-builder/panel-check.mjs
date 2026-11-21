@@ -39,6 +39,20 @@ export async function checkBuiltinPanelSource(directory, checks, { assignIds = f
   const document = parseJson(file, source);
   const parsed = checks.panelAuthoringManifestSchema.safeParse(document?.manifest);
   if (!parsed.success) throw new Error(`${file}: ${parsed.error.message}`);
+
+  const files = await readdir(directory);
+  const trialPath = "/applications/app-";
+  for (const name of ["panel.html", "panel.mjs", "recipes.md"]) {
+    if (!files.includes(name)) continue;
+    const path = resolve(directory, name);
+    const text = await readFile(path, "utf8");
+    const offset = text.indexOf(trialPath);
+    if (offset === -1) continue;
+    const lines = text.slice(0, offset).split(/\r\n|[\r\n]/u);
+    const column = lines.at(-1).length + 1;
+    throw new Error(`${path}:${lines.length}:${column}: Replace the domain application address (${trialPath}…) with a built-in entry address.`);
+  }
+
   const assigned = new Map();
   for (const [member, declaration] of Object.entries(parsed.data.members)) {
     if (!("component" in declaration)) continue;
