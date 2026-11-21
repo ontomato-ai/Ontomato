@@ -169,7 +169,7 @@
       </div>
       <p v-if="rowsError" class="pd-error">{{ t('error', { message: rowsError }) }}</p>
       <p v-if="loading" class="pd-note">{{ t('busy') }}</p>
-      <p v-else-if="!visibleRows.length" class="pd-note">{{ t('list.empty') }}</p>
+      <p v-else-if="!visibleRows.length && !unavailableRows.length" class="pd-note">{{ t('list.empty') }}</p>
       <table v-else class="pd-table pd-list-table">
         <thead>
           <tr>
@@ -195,10 +195,13 @@
             <td><span class="pd-tag" :class="{ on: row.visibility === 'domain' }">{{ visibilityLabel(row.visibility) }}</span></td>
             <td><span class="pd-tag" :class="{ on: row.template }">{{ row.template ? t('template.yes') : t('template.no') }}</span></td>
           </tr>
+          <tr v-for="row in unavailableRows" :key="row.id">
+            <td colspan="4"><span class="pd-error">{{ row.id }} · {{ row.reason }}</span></td>
+          </tr>
         </tbody>
       </table>
       <div class="pd-bar">
-        <span class="pd-note">{{ t('list.count', { count: rows.length }) }} · {{ t('list.paging', { page: page }) }}</span>
+        <span class="pd-note">{{ t('list.count', { count: rows.length + unavailableRows.length }) }} · {{ t('list.paging', { page: page }) }}</span>
         <button type="button" class="pd-btn small" :disabled="page <= 1 || loading" @click="previousPage">{{ t('list.prev') }}</button>
         <button type="button" class="pd-btn small" :disabled="!nextCursor || loading" @click="nextPage">{{ t('list.next') }}</button>
       </div>

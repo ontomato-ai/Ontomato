@@ -74,6 +74,8 @@ const PanelsDirectory = {
         : templateFilter.value === "ordinary" ? { template: false } : {}),
     }));
     const rows = computed(() => (rowsState.value.status === "ready" ? rowsState.value.value.items ?? [] : []));
+    const unavailableRows = computed(() => rowsState.value.status === "ready"
+      ? rowsState.value.value.unavailableItems ?? [] : []);
     const ownerIdsExtra = ref([]);
     const ownerIds = computed(() => [...new Set([
       ...rows.value.map(row => row.ownerId),
@@ -465,7 +467,7 @@ const PanelsDirectory = {
       t,
       selected, search: searchText, searchText, scope, sort,
       mode, tab, tabs, busy, failure, message, receipt,
-      rows, visibleRows, loading, rowsError, page, nextCursor,
+      rows, visibleRows, unavailableRows, loading, rowsError, page, nextCursor,
       templateFilter, onTemplateFilter,
       grantRows, grantsShared, grantsError, grantKindLabel, verbLabel, revokeGrant,
       ownerName, visibilityLabel, formatTime, messagesText,
