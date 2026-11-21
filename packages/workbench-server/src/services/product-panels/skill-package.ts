@@ -351,5 +351,6 @@ function describeDraft(forms: readonly OperationDescription[]): string {
     "An owner's revision, when required, is part of the operation input.",
     "Each run has its own artifact area. Use a distinct path for each draft written in the same run.",
     `Link to the canonical path from the current page context. Set \`${sessionKey}\` to the producing run's \`$ONTOMATO_SESSION_ID\`, \`${runKey}\` to that run's \`$ONTOMATO_RUN_ID\`, and \`${pathKey}\` to the encoded path of its draft file. For a draft written in a later run, build a new link using that run's ID. The panel fills the form for the reader to review and save.`,
+    "In your reply, give the reader a Markdown link to the page address you just built so they can open the prefilled form. Use the draft file path only inside `draftPath`. A standalone file link opens a JSON file card.",
   ].join("\n");
 }

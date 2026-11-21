@@ -23,11 +23,12 @@ class ProductSourceFunctionsTest {
     @Test void ordinaryFunctionAuthoringCannotReplaceOrDeleteAPublishedBrowserArtifact(){
         var dao=mock(io.ontomato.dataengine.dao.FunctionDao.class);var service=new io.ontomato.dataengine.service.impl.FunctionServiceImpl();
         org.springframework.test.util.ReflectionTestUtils.setField(service,"functionDao",dao);
+        var lang=mock(LangService.class);when(lang.get(anyString(),anyString())).thenAnswer(call->call.getArgument(1));org.springframework.test.util.ReflectionTestUtils.setField(service,"langService",lang);
         var published=new io.ontomato.dataengine.bean.function.Function();published.setId("artifact");published.setOperation(io.ontomato.dataengine.bean.function.Function.OPERATION_PRODUCT);published.setDomainId("domain");
         when(dao.queryById("artifact")).thenReturn(published);
         var replacement=new io.ontomato.dataengine.bean.function.Function();replacement.setId("artifact");replacement.setOperation(io.ontomato.dataengine.bean.function.Function.OPERATION_WRITE);replacement.setDomainId("domain");
         assertEquals("FUNCTION_PRODUCT_IMMUTABLE",assertThrows(OwnerRefusal.class,()->service.save(replacement,"en")).code());
-        assertEquals("FUNCTION_PRODUCT_IMMUTABLE",assertThrows(OwnerRefusal.class,()->service.delete("artifact","en")).code());
+        assertEquals("FUNCTION_PRODUCT_IMMUTABLE",assertThrows(OwnerRefusal.class,()->service.delete("artifact","domain","en")).code());
         verify(dao,never()).save(any(),anyString());verify(dao,never()).delete(anyString());
     }
     @Test void retryingTheSameArtifactResolvesItsOriginalIdentity(){
