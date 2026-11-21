@@ -772,6 +772,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
 
   /** The instance's address changed outside it: the frame hears it as a message, a direct instance as a call. */
   function tellAddress(next: string) {
+    // What was said about a draft belongs to that draft: an address that no longer names it takes the line away.
+    if (JSON.stringify(draftLinkOf(next)) !== JSON.stringify(draftLinkOf(address.value))) draftRefusal.value = "";
     frameAddress = next;
     address.value = next;
     if (direct.value) direct.value.mount.address(next);
