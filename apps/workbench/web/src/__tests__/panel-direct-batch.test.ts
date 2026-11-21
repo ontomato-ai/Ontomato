@@ -50,11 +50,14 @@ function open() {
       ...noOperations.operations,
       prepare: async (operationId, invocation): Promise<PanelHumanOperationPreparation> => {
         prepared.push([operationId, invocation]);
-        return { intentId: "5f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d07", operationId, label: "Delete", confirmation: { kind: "none" } };
+        // The owner names the targets it is asked to delete, as the confirmation shows them; it leaves one unnamed.
+        return { intentId: "5f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d07", operationId, label: "Delete", confirmation: {
+          kind: "batch", targets: { total: 2, objects: [{ target: { objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-1" }, label: "Refund policy" }] },
+        } };
       },
     },
     // The owner deletes the first item and refuses the second.
-    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, placement: noOperations.placement,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate,
     confirmOperation: async ({ intentId }) => ({ decision: "confirm", response: { kind: "dispatched", intentId, outcome: {
       kind: "batch",
       items: [
@@ -96,6 +99,9 @@ it("deletes the checked items as one batch from the button, and keeps checked wh
 
   button.click();
   await vi.waitFor(() => expect(element.querySelector(".sdk-operation-batch")?.textContent).toContain("1 of 2"));
+  // Each result by the name the owner gave it, and by its key where it gave none.
+  expect([...element.querySelectorAll(".sdk-operation-batch li")].map((row) => row.textContent?.trim()))
+    .toEqual([`Refund policy: ${publicEn.platform.operationDone}`, "k-2: Still cited"]);
   expect(prepared).toEqual([["removeAll.delete", batch]]);
   expect(instance.state.values.value.checked).toEqual([item("k-2")]);
   unmount();

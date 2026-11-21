@@ -1,12 +1,16 @@
 # Write a Vue panel
 
 Write the Vue template and scoped panel styles in `panel.html`. Put the template inside `<div id="app">`. Place a
-declared member with `<projection slot="detail"></projection>`. Use Vue attributes, events, `v-if` and `v-for` for
-interactions. Panel CSS positions member containers. Design variables style components inside them.
+declared member with `<projection slot="detail"></projection>`. The slot names the key in `manifest.members`.
+Use Vue attributes, events, `v-if` and `v-for` for
+interactions. Adapt the layout to the container width. The host draws the page title and back control.
+Panel CSS positions member containers. Design variables style components inside them.
 
 Declare projections using the [member fields](FIELDS.md) and declare public typed state in `panel.json`.
 Keep page-local state in Vue. An object state
 such as `selected` stores `{className, primaryKey}`. Enable `deepLink` when the address should restore the selection.
+For a page-header event with a `labelKey`, set `deepLink: true` on every state field the event changes so the
+assistant can open the same state by address.
 Use `recipes.md` for tasks the assistant needs to know how to do.
 
 Use the required `panel.mjs` to mount the Vue page as in the [agent directory module](../../examples/vue-agent-directory/panel.mjs).
@@ -14,9 +18,19 @@ The platform runs panels directly. Read [runtime imports and setup](RUNTIME.md#i
 and the current SDK guide with `node "$SKILL/ontomato.mjs" sdk read docs/index.md`. The repository's
 `packages/apps-sdk/src/panel/mount.ts` implements the legacy iframe runtime.
 
+Use the platform’s interface components directly in the template: `<markdown-view>`, `<code-editor readonly>`
+for code viewing, `<e-chart>`, `<table-preview>`, `<html-preview>` and `<form-fields>`. Import only `vue` and
+`@ontomato/sdk/panel` in the module. For feedback after an operation, call
+`usePanelContext().notify({ kind, text })` via the context captured in setup. For a message that stays on the page,
+use `<el-alert>`.
+
 For translations, put flat message keys under locale tags in `panel.json`'s `content.messages`. For example,
 `{"en":{"panel.greeting":"Hello, {name}"}}` is a message table. Use `t("panel.greeting", { name })` in the
 template and `usePanelContext().t` in `setup()`. The direct runtime supplies the template function.
+Use the flat `panel.name` key for the panel title, for example
+`{"zh-CN":{"panel.name":"治理报告"},"en":{"panel.name":"Governance report"}}`. The host uses an entry's menu name
+when present. Otherwise it uses the panel name in the reader's locale, then the platform's default locale and the
+name in `registration.json`. Keep the entry's menu metadata for entries that belong in the menu.
 
 ## Open a panel at a specific state
 
@@ -28,10 +42,10 @@ Give `URLSearchParams` raw JSON once. For a browser link in the workbench shell,
 
 ## Read declared data
 
-Before designing the view, run `node "$SKILL/ontomato.mjs" panel type <type-id>`. For the component catalogue,
-run `panel type platform:SDKComponent`. Its `reads.definition.result` is `sdkComponentDefinition`, so
-`resultSchemas.sdkComponentDefinition` shows the value shape. Use `params` and `requiredParams` for input
-names, and the operation declaration for its effect, target, batch support and input schema.
+Before designing a view, inspect its read with `panel type <type-id> --read <name>`. For example, run
+`node "$SKILL/ontomato.mjs" panel type platform:Action --read definition` for `actionDefinition`. Read its
+`resultSchema` next to `result`, and use `params` and `requiredParams` for inputs. Omit `--read` to list the
+type's reads and the operations with their effect, target, batch support and input schema.
 
 Use the [generated member fields](FIELDS.md) to connect each component's named datum to an owner read and
 its parameters. Bind an output by its port name in the short member's `state` map, with the declared panel
@@ -40,6 +54,18 @@ and consume each datum with [the SDK read hooks](RUNTIME.md#reads-and-operations
 before any `await`. Use the return states
 to show loading, missing inputs, empty data, denied access or an error in the view. Read each ready value
 according to the type table's result shape.
+
+## Connect a graph and its relations
+
+Run `node "$SKILL/ontomato.mjs" sdk read docs/components.md` and use the `OntologyGraph` and `ObjectRelations`
+sections for each component's datum names, accepted result types, `config`, outputs and events. Inspect named
+reads with `panel type <type-id> --read <name>`. Declare the shared [graph selection type](RUNTIME.md#graph-selection)
+in `manifest.state`. In new members, map component ports to that field using the member's `state` map. For example,
+`OntologyGraph` can write `selectedNode` and `ObjectRelations` can write `selected` to the same state field.
+
+Mount the graph and list as `<projection slot="graph"></projection>` and
+`<projection slot="relations"></projection>` when those are the member keys. Use the
+[Vue setup reference](RUNTIME.md#vue-setup) for reads or actions added in page code.
 
 ## Select a child record and read from its parent
 
@@ -55,8 +81,8 @@ returns the report's questions, so the selected child's key identifies the row t
 Use the owner's full operation ID in the member declaration. Bind the target to the selected object or to a
 checked list for an operation that supports batches. The official button uses the owner's label. For a custom
 control, call the [SDK operation hook](RUNTIME.md#usepaneloperation) in synchronous setup and supply the fields from its admitted
-`inputSchema`. The operation result and any confirmation come through the same platform flow as the page
-header and assistant.
+`inputSchema`. The operation result comes through the same platform flow as the page header and assistant. For writes such
+as save or delete, use only the platform's confirmation and impact details required by the owner.
 
 ## Save a form or hand off a draft
 
@@ -143,9 +169,6 @@ form wiring. Give your own panel and use their own IDs. The example opens at `/a
 Exercise the page and run the [assistant check](SKILL.md#check-the-assistant-from-the-page).
 
 ## What the assistant receives
-
-Use the host's read-only `placement` only to hide a title or back control the host already drew.
-Keep layout responsive to container width and keep data, operations and default selection the same in either placement.
 
 The platform builds page context from the registered entry's title and address and the current object and
 child-object selections in declared panel state. A selection supplies the type and ID, including a child's

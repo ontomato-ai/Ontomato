@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { PlatformPageAction, PlatformPageDraft } from "./page-actions";
 import { ElTooltip } from "element-plus";
-import { LoaderCircle } from "lucide-vue-next";
+import { ArrowLeft, LoaderCircle } from "lucide-vue-next";
 import { actionTooltipProps } from "@ontomato/foundation-ui/overlay";
 
 /**
@@ -25,6 +25,8 @@ withDefaults(
     draft?: PlatformPageDraft | null;
     /** The header's own words, from the host's i18n; read only by the draft's Save and its unsaved marker. */
     labels?: { save: string; discard: string; unsavedChanges: string };
+    /** The way back, named, for a page the reader reached from elsewhere; absent for a page its menu reaches. */
+    backLabel?: string;
   }>(),
   {
     title: "",
@@ -33,10 +35,11 @@ withDefaults(
     actions: undefined,
     draft: null,
     labels: () => ({ save: "", discard: "", unsavedChanges: "" }),
+    backLabel: undefined,
   },
 );
 
-const emit = defineEmits<{ discard: []; save: [] }>();
+const emit = defineEmits<{ back: []; discard: []; save: [] }>();
 </script>
 
 <template>
@@ -45,6 +48,9 @@ const emit = defineEmits<{ discard: []; save: [] }>();
       <div class="header-text">
         <!-- What stands for the page's subject before its name (an agent's avatar). -->
         <span v-if="$slots.leading" class="header-leading"><slot name="leading" /></span>
+        <button v-if="backLabel" type="button" class="page-back" @click="emit('back')">
+          <ArrowLeft :size="16" aria-hidden="true" /><span>{{ backLabel }}</span>
+        </button>
         <h1 v-if="title" class="page-title">{{ title }}</h1>
         <p v-if="description" class="page-description">{{ description }}</p>
       </div>
@@ -147,6 +153,24 @@ const emit = defineEmits<{ discard: []; save: [] }>();
   display: inline-flex;
   align-self: center;
   flex-shrink: 0;
+}
+/* The way back sits before the title it leads away from, as quiet as a link. */
+.page-back {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  flex-shrink: 0;
+  gap: var(--spacing-xs, 4px);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--el-text-color-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+.page-back:hover,
+.page-back:focus-visible {
+  color: var(--el-color-primary);
 }
 .page-actions {
   display: flex;

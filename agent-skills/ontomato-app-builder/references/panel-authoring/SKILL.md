@@ -8,12 +8,13 @@ description: Build and register an Ontomato panel from its owner's reads and ope
 Use the original page to list what people can see and do. For each read, form and action, find the owner type and its
 declared read or operation. Keep business rules, confirmation and permissions with that owner.
 
-1. Before writing, run `node "$SKILL/ontomato.mjs" panel type <type-id>`. Use the selected read's `result` key
-   to find its value shape in `resultSchemas`. Run `node "$SKILL/ontomato.mjs" sdk read docs/components.md`
+1. Before writing, run `node "$SKILL/ontomato.mjs" panel type <type-id> --read <name>` to see the read's
+   signature and `resultSchema`. Omit `--read` to find the available reads and operations.
+   Run `node "$SKILL/ontomato.mjs" sdk read docs/components.md`
    for that deployment's component data, configuration, outputs and events.
 2. Use the [member field reference](FIELDS.md) to declare projections in `panel.json`. Choose an official
    display component or use [PanelData](CODE.md#read-declared-data) for custom Vue. Use `target.projectionId`
-   to reuse an existing projection.
+   to reuse an existing projection. For graph pages, start with [graph wiring and selection](CODE.md#connect-a-graph-and-its-relations).
 3. Write the template and interactions in Vue. Follow the [direct runtime and import rules](CODE.md#write-a-vue-panel)
    and declare the [state that travels in an address](CODE.md#open-a-panel-at-a-specific-state).
 4. Check and register the workspace, then open the registered entry. Use the page's input box

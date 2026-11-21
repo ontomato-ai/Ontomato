@@ -20,6 +20,8 @@ import {
   platformOntologyCountsResponseSchema, platformOntologyNeighborsResponseSchema, platformOntologyObjectsResponseSchema,
   platformOntologyStartResponseSchema,
 } from "./platform-ontology-data";
+import { platformTaskRunPageSchema, platformTaskRunSchema } from "./platform-schedules";
+import { productCatalogueGrantsSchema } from "./product-governance";
 import type { PanelReadResultId } from "./platform-object-types";
 
 const inputTarget = z.object({ source: z.literal("input"), input: runtimeKeySchema }).strict();
@@ -96,10 +98,13 @@ export const panelReadResultSchemas = {
   productProjectionUsedBy: productProjectionUsedBySchema,
   productPanelUsedBy: productPanelUsedBySchema,
   productPanelMembers: panelManifestSchema.innerType().shape.members,
+  productCatalogueGrants: productCatalogueGrantsSchema,
   applicationCatalogue: applicationCatalogueQueryResultSchema,
   applicationRecord: applicationCatalogueRecordSchema,
   applicationEntries: applicationCatalogueEntriesSchema,
   panelFormDescription: panelFormDescriptionSchema,
+  scheduledTaskRunPage: platformTaskRunPageSchema,
+  scheduledTaskRun: platformTaskRunSchema,
   panelOperationDescriptor: panelOwnerOperationDescriptorSchema,
   panelOptionList: panelOptionListSchema,
   // The graph schema also describes the reads registered here. Resolve its validators on access.

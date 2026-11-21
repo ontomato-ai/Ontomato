@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { runtimeIdSchema, runtimeTimestampSchema } from "./agent-runtime-values";
+import { currentPanelRecordSchema } from "./product-panels";
+import { productCurrentIdParamsSchema } from "./product-record-id";
 
 /**
  * The platform home's personal state: what a user pinned, which of their dashboards the home shows, when they last
@@ -42,6 +44,16 @@ export const homeStateSchema = z
   })
   .strict();
 export type HomeState = z.infer<typeof homeStateSchema>;
+
+/** Null clears the caller's home panel preference for the current domain. */
+export const homePanelPreferenceSchema = z.object({
+  homePanelId: productCurrentIdParamsSchema.shape.id.nullable(),
+}).strict();
+
+/** Null means the caller uses the platform home rather than a chosen panel. */
+export const homePanelResponseSchema = z.object({
+  panel: currentPanelRecordSchema.nullable(),
+}).strict();
 
 export const homeApplicationOpenedSchema = z
   .object({ applicationId: z.string().min(1), lastOpenedAt: runtimeTimestampSchema })

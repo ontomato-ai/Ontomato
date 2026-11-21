@@ -27,6 +27,7 @@ import {
   registerProductProjectionRequestSchema, updateChartProjectionSourceRequestSchema,
 } from "@ontomato/contracts/product-panels";
 import { CHART_PROJECTION_SOURCES_PATH, chartProjectionSourceRead } from "@ontomato/contracts/panel-client-requests";
+import { domainProductIdParamsSchema } from "@ontomato/contracts/product-record-id";
 import { mountProductCatalog } from "./product-catalog";
 import { mountPanelPersonalState } from "./panel-personal-state";
 import { context, wrap } from "../utils/agent-host";
@@ -127,7 +128,7 @@ productPanelsRouter.get("/:id", wrap(async (req, res) => {
   res.json({ panel, ...(pageSkillContext && { pageSkillContext }) });
 }));
 productPanelsRouter.put("/:id", wrap(async (req, res) => {
-  const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
+  const c = context(req), { id } = domainProductIdParamsSchema.parse(req.params);
   const { revision, ...input } = parseRegistration(registerProductPanelRequestSchema, req.body, `Panel '${id}'`);
   const panel = await saveCurrentPanel(c.owner, c.credentials, id, input, revision);
   res.json({ panel });
@@ -175,7 +176,7 @@ productProjectionsRouter.get("/:id", wrap(async (req, res) => {
   res.json({ projection });
 }));
 productProjectionsRouter.put("/:id", wrap(async (req, res) => {
-  const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
+  const c = context(req), { id } = domainProductIdParamsSchema.parse(req.params);
   const branch = req.body?.componentId === METRIC_CHART_COMPONENT ? 1 : 0;
   const request = parseRegistration(registerProductProjectionRequestSchema, req.body, `Projection '${id}'`, branch);
   const projection = await saveCurrentProjection(c.owner, c.credentials, id, request);

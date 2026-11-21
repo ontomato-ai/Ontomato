@@ -313,12 +313,12 @@ describe("platform-ontology composite query", () => {
 
     const projection = byId.get(PRODUCT_PROJECTION);
     expect(projection?.definition).toBe(platformTypeDetails[PRODUCT_PROJECTION]?.definition);
-    expect(Object.keys(projection?.reads ?? {}).sort()).toEqual(["createForm", "form", "query", "record", "usedBy"]);
+    expect(Object.keys(projection?.reads ?? {}).sort()).toEqual(["createForm", "form", "grants", "query", "record", "usedBy"]);
     expect(projection?.operations?.map((op) => op.id)).toContain(`${PRODUCT_PROJECTION}.save`);
 
     const panel = byId.get(PRODUCT_PANEL);
     expect(panel?.definition).toBe(platformTypeDetails[PRODUCT_PANEL]?.definition);
-    expect(Object.keys(panel?.reads ?? {}).sort()).toEqual(["createForm", "form", "members", "query", "record", "usedBy"]);
+    expect(Object.keys(panel?.reads ?? {}).sort()).toEqual(["createForm", "form", "grants", "members", "query", "record", "usedBy"]);
     expect(panel?.operations?.map((op) => op.id)).toContain(`${PRODUCT_PANEL}.save`);
 
     const sdkComponent = byId.get(SDK_COMPONENT);
@@ -571,7 +571,7 @@ describe("platform-ontology composite query", () => {
       "proj-kb-approve-only",
       "proj-order-actions",
       "proj-chart",
-      "proj-unlayered",
+      "proj-tasks",
       "panel-main",
       "panel-child",
       "panel-order-detail",
@@ -683,7 +683,7 @@ describe("platform-ontology composite query", () => {
         },
       },
       {
-        id: "proj-unlayered",
+        id: "proj-tasks",
         definition: {
           name: "Task List",
           description: "",
@@ -915,7 +915,7 @@ describe("platform-ontology composite query", () => {
       ]),
     );
 
-    // 5. MetricChart points to MetricView and skips unlayered DashboardCard; ScheduledTask projection skips unlayered type
+    // 5. MetricChart skips the unlayered DashboardCard, and Task List binds its declared capability type.
     const chartNeighbors = await readPlatformOntologyNeighbors(owner, credentials, {
       node: { className: "platform:ProductProjection", primaryKey: "proj-chart" },
       relationKinds: ["projection.binds-target"],
@@ -924,11 +924,15 @@ describe("platform-ontology composite query", () => {
     expect(chartNeighbors.edges[0]).toMatchObject({
       to: { className: "platform:MetricView", primaryKey: "metric-1" },
     });
-    const unlayeredNeighbors = await readPlatformOntologyNeighbors(owner, credentials, {
-      node: { className: "platform:ProductProjection", primaryKey: "proj-unlayered" },
+    const taskNeighbors = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: "platform:ProductProjection", primaryKey: "proj-tasks" },
       relationKinds: ["projection.binds-target"],
     });
-    expect(unlayeredNeighbors.edges).toHaveLength(0);
+    expect(taskNeighbors.edges).toHaveLength(1);
+    expect(taskNeighbors.edges[0]).toMatchObject({
+      to: { className: ONTOLOGY_TYPE, primaryKey: SCHEDULED_TASK },
+      binding: { reads: ["list"] },
+    });
 
     // 6. Expanding incoming from platform:OntologyType(platform:BusinessKnowledge) works with declared layer
     const incomingFromType = platformOntologyNeighborsResponseSchema.parse(

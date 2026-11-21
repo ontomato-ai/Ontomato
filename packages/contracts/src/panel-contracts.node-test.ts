@@ -22,6 +22,7 @@ import { defaultAgentSchema } from "./default-agent";
 import { pageSkillSchema } from "./page-skills";
 import assert from "node:assert/strict";
 import test from "node:test";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import { dashboardCardPrimaryKey } from "./dashboard";
 import { DASHBOARD_CARD } from "./platform-object-types";
 import {
@@ -1434,7 +1435,7 @@ test("a read-only trial carries the current draft and parameters without a write
 });
 
 test("the author type table and live descriptions share operation declarations", async () => {
-  const { panelOperationDeclarationSchema, describePanelOperationFromDeclaration } = await import("./panel-operations");
+  const { panelOperationDeclarationSchema, describePanelOperationFromDeclaration, panelReadResultSchemas } = await import("./panel-operations");
   const { platformTypeTableResponseSchema } = await import("./platform-type-table");
   const run = panelOperationDeclarationSchema.parse({
     id: RUN_NOW, kind: "action", effect: "write", batch: false, target: { source: "input", input: "task" }, inputSchema: { type: "object" },
@@ -1442,11 +1443,13 @@ test("the author type table and live descriptions share operation declarations",
   const save = panelOperationDeclarationSchema.parse({
     id: SCHEDULED_TASK + ".save", kind: "form.save", effect: "write", batch: false, target: { source: "draft" }, inputSchema: { type: "object" },
   });
-  const table = {
-    objectTypes: { [SCHEDULED_TASK]: { reads: platformObjectTypes[SCHEDULED_TASK].reads, operations: [run, save] } },
-    resultSchemas: { panelRecordList: { type: "array" }, panelRecord: { type: "object" }, panelFormDescription: { type: "object" } },
-  };
+  const reads = platformObjectTypes[SCHEDULED_TASK].reads!;
+  const resultIds = new Set(Object.values(reads).map(read => read.result));
+  const resultSchemas = Object.fromEntries([...resultIds].map(id => [id, zodToJsonSchema(panelReadResultSchemas[id])]));
+  const table = { objectTypes: { [SCHEDULED_TASK]: { reads, operations: [run, save] } }, resultSchemas };
   assert.deepEqual(platformTypeTableResponseSchema.parse(table), table);
+  const { panelFormDescription: _form, ...incomplete } = resultSchemas;
+  assert.equal(platformTypeTableResponseSchema.safeParse({ ...table, resultSchemas: incomplete }).success, false);
   assert.equal(panelOperationDeclarationSchema.safeParse({ ...run, label: "Run now" }).success, false);
 
   const { id, ...staticFields } = run;
@@ -1903,6 +1906,21 @@ test("a state placement selects a product's kind and carries the complete nested
   const nestedRequest = { source: { kind: "registered", ...use }, memberPath: [memberPath[0]] };
   assert.deepEqual(productPanelNestedReadRequestSchema.parse(nestedRequest), nestedRequest);
   assert.equal(productPanelNestedReadRequestSchema.safeParse({ ...nestedRequest, memberPath: [] }).success, false);
+  const unresolvedDetail = {
+    member: "objectDetails",
+    selection: { stateValue: { className: "platform:ScheduledTask", primaryKey: "task-1" } },
+  };
+  const unresolved = { ...nestedRequest, memberPath: [memberPath[0], unresolvedDetail] };
+  assert.deepEqual(productPanelNestedReadRequestSchema.parse(unresolved), unresolved);
+  for (const invalidPath of [
+    [unresolvedDetail, memberPath[0]],
+    [{ ...unresolvedDetail, selection: { stateValue: "task-1" } }],
+  ]) {
+    assert.equal(productPanelNestedReadRequestSchema.safeParse({ ...nestedRequest, memberPath: invalidPath }).success, false);
+  }
+  const { productPanelReadRequestSchema } = await import("./panel-host");
+  assert.equal(productPanelReadRequestSchema.safeParse({ ...unresolved, dataName: "record", inputs: {} }).success, false);
+  assert.equal(panelOperationRefSchema.safeParse({ ...use, operationId, memberPath: unresolved.memberPath }).success, false);
   const nested = {
     panel: {
       id: "detail-panel", revision: 1, content: { html: "", module: "" },
