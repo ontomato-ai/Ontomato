@@ -246,6 +246,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       record: async selection => (await governance()).record(selection.primaryKey!),
       issues: async selection => (await governance()).issues(selection.primaryKey!),
       sources: async selection => (await governance()).sources(selection.primaryKey!),
+      issueSources: async (selection, params) => (await governance()).issueSources(selection.primaryKey!, params),
       sourcePage: async (selection, params) => (await governance()).sourcePage(selection.primaryKey!, params),
     },
   };

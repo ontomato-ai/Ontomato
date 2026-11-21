@@ -204,6 +204,8 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     export const chartProjectionLookupResponseSchema = { parse };
     export const registerChartProjectionResponseSchema = { parse };
     export const productProjectionResponseSchema = { parse };
+    export const productProjectionUsedBySchema = { parse };
+    export const PROJECTION_REUSE_PANEL_HEADER = "X-Ontomato-Projection-Reuse-Panel";
     export function bindPanelAuthoringChart(key, member, { state, projection }) {
       if (projection.componentId !== "@ontomato/sdk:MetricChart" || !state[member.state.range]) {
         throw new Error("member " + key + ": cannot connect chart range");
@@ -274,6 +276,8 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
   const chartQuery = chartPath + "?" + new URLSearchParams(chartSource);
   let registeredChart = false;
   const inlineRecords = new Map();
+  const projectionReuseGuards = [];
+  let projectionUsage = { panels: [{ id: "inline-panel", name: "Inline" }], hiddenCount: 0 };
   let rejectInlinePanel = false;
   let panelInUse = true;
   const deletedPanel = {
@@ -284,6 +288,9 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     for await (const chunk of request) content += chunk;
     const body = content ? JSON.parse(content) : undefined;
     requests.push([request.method, request.url, body, request.headers["x-api-key"]]);
+    if (request.headers["x-ontomato-projection-reuse-panel"]) {
+      projectionReuseGuards.push(request.headers["x-ontomato-projection-reuse-panel"]);
+    }
     response.setHeader("content-type", "application/json");
     if (request.url === "/api/apps-sdk/current") response.end(JSON.stringify(release));
     else if (request.url === "/api/app-builder/type-table") response.end(JSON.stringify(typeTable));
@@ -311,11 +318,13 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
         response.statusCode = 409;
         response.end(JSON.stringify({ error: { code: "PRODUCT_IN_USE", message: "Panel is still in use" } }));
       } else response.end(JSON.stringify(deletedPanel));
+    } else if (request.url.startsWith("/api/product-projections/") && request.url.endsWith("/used-by")) {
+      response.end(JSON.stringify(projectionUsage));
     } else if (request.url === inlinePanelPath || request.url.startsWith("/api/product-projections/")) {
       const kind = request.url === inlinePanelPath ? "panel" : "projection";
       const existing = inlineRecords.get(request.url);
       if (request.method === "PUT" && !(kind === "panel" && rejectInlinePanel) && body.revision === (existing?.revision ?? 0)) {
-        const record = { ...body, revision: body.revision + 1 };
+        const record = { ...body, revision: body.revision + 1, editable: true };
         inlineRecords.set(request.url, record);
         response.end(JSON.stringify({ [kind]: record }));
       } else if (request.method === "GET" && existing) response.end(JSON.stringify({ [kind]: existing }));
@@ -634,6 +643,49 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.equal(inlineRecords.get(inlineProjectionPath).name, "Renamed");
     assert.deepEqual(inlineRecords.get(inlinePanelPath).manifest.members.renamedTasks.target, { projectionId: inlineProjectionId });
     assert.equal(inlineRecords.size, 2);
+
+    const member = savedSource.manifest.members.renamedTasks;
+    const forgetId = async () => {
+      delete member.id;
+      await writeFile(descriptor, JSON.stringify(savedSource));
+      await writeFile(registration, JSON.stringify({
+        panels: [{ ...item, mode: "update", revision: inlineRecords.get(inlinePanelPath).revision }],
+      }));
+    };
+    await forgetId();
+    await run("panel", "register", directory);
+    assert.equal(JSON.parse(await readFile(descriptor, "utf8")).manifest.members.renamedTasks.id, inlineProjectionId);
+    assert.deepEqual(requests.splice(0).filter(([method]) => method === "PUT").map(([, url]) => url), [inlinePanelPath]);
+    assert.equal(inlineRecords.get(inlineProjectionPath).revision, 5);
+
+    member.description = "Updated list";
+    await forgetId();
+    const edited = await run("panel", "register", directory);
+    assert.ok(edited.stdout.includes(`Updated projection ${inlineProjectionId}`));
+    assert.equal(JSON.parse(await readFile(descriptor, "utf8")).manifest.members.renamedTasks.id, inlineProjectionId);
+    assert.deepEqual(requests.splice(0).filter(([method]) => method === "PUT").map(([, url, body]) => [url, body.revision]), [
+      [inlineProjectionPath, 5], [inlinePanelPath, 3],
+    ]);
+    assert.deepEqual(projectionReuseGuards, ["inline-panel"]);
+
+    member.description = "Local changes to a shared list";
+    await forgetId();
+    projectionUsage = { panels: [...projectionUsage.panels, { id: "another-panel", name: "Another page" }], hiddenCount: 1 };
+    await assert.rejects(run("panel", "register", directory), error =>
+      error.stderr.includes("renamedTasks") && error.stderr.includes(`shared projection '${inlineProjectionId}'`) &&
+      error.stderr.includes("Another page (another-panel)") && error.stderr.includes("1 panel(s) you cannot view") &&
+      error.stderr.includes(`id: "${inlineProjectionId}"`) && error.stderr.includes("rename"));
+    assert.equal(requests.splice(0).some(([method]) => method === "PUT"), false);
+    assert.equal(JSON.parse(await readFile(descriptor, "utf8")).manifest.members.renamedTasks.id, undefined);
+
+    const editable = inlineRecords.get(inlineProjectionPath);
+    inlineRecords.set(inlineProjectionPath, { ...editable, editable: false });
+    await assert.rejects(run("panel", "register", directory), error =>
+      error.stderr.includes("renamedTasks") && error.stderr.includes(`no edit Grant for projection '${inlineProjectionId}'`) &&
+      error.stderr.includes("Rename the member"));
+    assert.equal(requests.splice(0).some(([method]) => method === "PUT"), false);
+    inlineRecords.set(inlineProjectionPath, editable);
+
 
     const chartPanel = JSON.stringify({ manifest: {
       state: { window: { type: { kind: "scalar", type: "string" } } },
