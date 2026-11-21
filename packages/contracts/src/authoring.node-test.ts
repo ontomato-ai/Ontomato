@@ -77,7 +77,7 @@ test("test rereads preserve the same evidence and Action drafts retain the exist
   const definition = { name: "Action", explanationRef: runId };
   assert.deepEqual(authoringAdoptionResponseSchema.parse({ definition, ...evidence }), { definition, ...evidence });
 
-  const draft = { pageKey: "actions", operation: "action.create", target: {}, form: definition };
+  const draft = { pageKey: "actions", operation: "action.create", target: { objectType: "platform:Action" }, form: definition };
   assert.deepEqual(actionAuthoringPageDraftSchema.parse(draft), pageDraftSchema.parse(draft));
   assert.equal(actionAuthoringPageDraftSchema.safeParse({ ...draft, ...evidence }).success, false);
 });
