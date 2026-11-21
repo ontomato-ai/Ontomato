@@ -16,6 +16,7 @@ export {
   managerGroups,
   managerNavigation,
   managerPaths,
+  type ManagerEntryRow,
   type ManagerNavigationGroup,
   type ManagerNavigationPage,
 } from "./navigation";

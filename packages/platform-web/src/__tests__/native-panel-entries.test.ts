@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { BookOpen, Network } from "lucide-vue-next";
 import { appDeclarations } from "../partition";
 import { catalogPartition } from "../native-layouts";
 import { catalogFixture, closedAccess, generatedNavigation } from "./fixtures";
@@ -39,4 +40,26 @@ it("stands a built-in application's named entry where its menu table lists the a
   expect(after.map((page) => page.id)).toEqual(before.map((page) => page.id));
   expect(after[knowledgeAt]).toEqual({ id: "/ontology/knowledge", label: "Business knowledge" });
   expect(after.filter((_, index) => index !== knowledgeAt)).toEqual(before.filter((_, index) => index !== knowledgeAt));
+});
+
+it("draws an entry's row with the look of the native page it replaced: the listed page's, else its navigation row's", () => {
+  const catalog = catalogFixture().map((app) => app.id !== "ontology" ? app : {
+    ...app,
+    panelUses: [...app.panelUses ?? [], {
+      id: "use-knowledge", pageKey: "ontology-knowledge", panelId: "builtin-knowledge", path: "/ontology/knowledge",
+      access: { permissionCode: "business-knowledge" }, names: { en: "Business knowledge" },
+    }],
+  });
+  const row = (navigation: ReturnType<typeof generatedNavigation>) => appDeclarations(navigation, access, catalogPartition(catalog, "en"), t)
+    .find((app) => app.id === "ontology")!.groups!.flatMap((group) => group.pages).find((page) => page.id === "/ontology/knowledge")!;
+  const navigation = generatedNavigation();
+  const pageGone = { ...navigation, pages: navigation.pages.filter((page) => page.path !== "/ontology/knowledge") };
+
+  // The navigation still lists the page there: its icon (and count) stay on the row.
+  expect(row({ ...navigation, pages: navigation.pages.map((page) => page.path === "/ontology/knowledge" ? { ...page, count: () => 3 } : page) }))
+    .toMatchObject({ label: "Business knowledge", icon: BookOpen, count: 3 });
+  // The page is gone: the row the navigation declares for the entry.
+  expect(row({ ...pageGone, entries: [{ path: "/ontology/knowledge", icon: Network, count: () => 7 }] }))
+    .toMatchObject({ icon: Network, count: 7 });
+  expect(row(pageGone)).toMatchObject({ icon: "pages", count: null });
 });
