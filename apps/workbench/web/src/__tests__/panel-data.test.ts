@@ -65,7 +65,7 @@ it("reads a member's datum for the panel's own code, as its projection declares,
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({ projection: taskData }) },
     use: { applicationId: "app-tasks", useId: "tasks" },
-    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
     confirmOperation: noOperations.confirmOperation,
     read: async (request): Promise<ProductPanelReadResponse> => {
       reads.push(request);
@@ -120,7 +120,7 @@ it("says so when the projection declares no such datum", async () => {
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({ projection: taskData }) },
     use: { applicationId: "app-tasks", useId: "tasks" },
-    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
     confirmOperation: noOperations.confirmOperation,
     read: async (request): Promise<ProductPanelReadResponse> =>
       ({ status: "ready", value: (request.operations ? {} : record("t-1")) as never }),
@@ -161,7 +161,7 @@ it("keeps a member whose projection cannot be read to itself: the rest of the pa
       ? Response.json({ error: { message: "Product use Grant required" } }, { status: 403 })
       : Response.json({ projection: taskData })) },
     use: { applicationId: "app-tasks", useId: "tasks" },
-    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
     confirmOperation: noOperations.confirmOperation,
     read: async (request): Promise<ProductPanelReadResponse> =>
       ({ status: "ready", value: (request.operations ? { runNow } : record("t-1")) as never }),
@@ -172,9 +172,10 @@ it("keeps a member whose projection cannot be read to itself: the rest of the pa
       return { shown: computed(() => (task.value.status === "ready" ? (task.value.value as { label: string }).label : task.value.status)) };
     },
   });
-  // The readable member reads and is shown; the other says why where it is placed; the panel itself has not failed.
+  // The readable member reads and is shown; the other says, where it is placed, that the reader may not use it; the panel
+  // itself has not failed.
   await vi.waitFor(() => expect(element.querySelector(".task")?.textContent).toBe("Task t-1"));
-  await vi.waitFor(() => expect(element.querySelector('[data-member="hidden"]')?.textContent).toContain("Product use Grant required"));
+  await vi.waitFor(() => expect(element.querySelector('[data-member="hidden"]')?.textContent).toContain(publicEn.platform.dataForbidden));
   expect(failed).toEqual([]);
   (await mount).dispose();
 });
@@ -194,7 +195,7 @@ it("says where to call it when it is called outside a component's setup", async 
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({ projection: taskData }) },
     use: { applicationId: "app-tasks", useId: "tasks" },
-    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
     confirmOperation: noOperations.confirmOperation,
     read: async (): Promise<ProductPanelReadResponse> => ({ status: "ready", value: {} as never }),
   });
@@ -229,7 +230,7 @@ it("reads a list and its counts again when an operation reports their type chang
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({ projection: counted }) },
     use: { applicationId: "app-board", useId: "board" },
-    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
     confirmOperation: noOperations.confirmOperation,
     read: async (request): Promise<ProductPanelReadResponse> => {
       reads.push(request);
@@ -290,7 +291,7 @@ it("runs a member's operation from the panel's own code, found by the member and
       return Response.json({ projection: taskData });
     } },
     use: { applicationId: "app-tasks", useId: "tasks" },
-    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
     confirmOperation: async ({ intentId }) => {
       confirmed.push(intentId);
       return { decision: "confirm", response: { kind: "dispatched", intentId, outcome: { kind: "success", data: {} } } };
@@ -343,6 +344,7 @@ it("opens a platform address from the panel's own code through the host, and hea
     requests: { request: async () => Response.json({ projection: taskData }) },
     use: { applicationId: "app-tasks", useId: "tasks" },
     expandPageComposer: noOperations.expandPageComposer, confirmOperation: noOperations.confirmOperation,
+    nested: noOperations.nested,
     // The host opens what it can, and says why it cannot otherwise.
     navigate: async (address) => {
       opened.push(address);
@@ -376,7 +378,7 @@ it("draws a document as the product's Markdown, a file as code, and tells the re
     requests: { request: async () => Response.json({ projection: taskData }) },
     use: { applicationId: "app-tasks", useId: "tasks" },
     expandPageComposer: noOperations.expandPageComposer, confirmOperation: noOperations.confirmOperation,
-    navigate: noOperations.navigate,
+    navigate: noOperations.navigate, nested: noOperations.nested,
     read: async (): Promise<ProductPanelReadResponse> => ({ status: "ready", value: {} as never }),
   });
   const { context } = await module.mountPanel({ setup: () => ({ doc: "# Review\n\nChecks **every** change.", code: "export const answer = 42;" }) });
@@ -407,7 +409,7 @@ it("shows a read the platform could not answer as the datum's failure, with the 
     requests: { request: async () => Response.json({ projection: taskData }) },
     use: { applicationId: "app-tasks", useId: "tasks" },
     expandPageComposer: noOperations.expandPageComposer, confirmOperation: noOperations.confirmOperation,
-    navigate: noOperations.navigate,
+    navigate: noOperations.navigate, nested: noOperations.nested,
     // The platform's read entry is unavailable: the port rejects rather than answering one of the four states.
     read: async (request): Promise<ProductPanelReadResponse> => {
       if (request.operations) return { status: "ready", value: {} as never };

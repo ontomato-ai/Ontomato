@@ -248,7 +248,8 @@ export default {
     "operationDownloaded": "Downloaded {name}",
     "dataEmpty": "Nothing to show",
     "dataForbidden": "You do not have access to this",
-    "dataAwaiting": "Select an item first"
+    "dataAwaiting": "Select an item first",
+    "memberUnavailable": "This is not available here"
   },
   "nav": {
     "agentsAndSkills": "Agents and Skills",

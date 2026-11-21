@@ -65,7 +65,7 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
     // A type this release has no resource module for is read where a directly rendered panel reads it: through the
     // platform's read entry, from its owner's one adapter. A type moves there when its page does and its module goes.
     if (type !== undefined && !registeredPlatformObjects().includes(type))
-      return readMemberDatum(read, projection, slot, placement, name, values, ownRun);
+      return readMemberDatum(read, projection, [{ member: slot }], placement, name, values, ownRun);
     let value: unknown;
     switch (declaration.result) {
       case "panelRecordList":

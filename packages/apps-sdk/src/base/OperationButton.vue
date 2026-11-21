@@ -2,7 +2,7 @@
 import { computed, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
-import { panelOperationId, type PanelObjectIdentity, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import type { PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
 import type { PanelOwnerOperationDescriptor, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import { slotInputState, usePanelContext, useProjectionSlot } from "../panel/context";
@@ -63,7 +63,7 @@ const read = shallowRef<PanelReadOperationResult | null>(null);
 const receipt = shallowRef<PanelHumanOperationDispatchResponse | null>(null);
 /** The targets the owner named when it prepared the last write. */
 const named = shallowRef<PanelWriteResult["named"]>([]);
-const operationId = computed(() => panelOperationId(slot.slot, props.operation));
+const operationId = computed(() => panel.instance.operationIdOf(slot.slot, props.operation));
 /**
  * The button shows only once its description is read, so the owner's name, in the reader's language, is there. A batch
  * button also says how many objects it acts on, so it never reads as the single one beside it.

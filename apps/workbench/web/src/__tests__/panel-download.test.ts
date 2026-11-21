@@ -117,6 +117,6 @@ it("runs a read operation the panel offers as a read, never as a write intent", 
   });
   await nextTick();
   expect(await instance.invoke("list.export", { status: "open" })).toEqual({ kind: "file", name: "tasks.csv", mime: "text/csv" });
-  expect(read).toHaveBeenCalledWith("list.export", { target: null, input: { status: "open" } });
+  expect(read).toHaveBeenCalledWith("list.export", { target: null, input: { status: "open" } }, undefined);
   expect(prepare).not.toHaveBeenCalled();
 });

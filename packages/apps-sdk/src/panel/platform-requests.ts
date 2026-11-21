@@ -1,3 +1,4 @@
+import { PanelMemberUnavailable } from "./direct";
 import { pageDraftReadSchema } from "@ontomato/contracts/page-draft";
 import type { PageDraftLink } from "@ontomato/contracts/page-draft";
 import type { PlatformRequests } from "./platform-objects";
@@ -51,6 +52,11 @@ export async function readProjectionRecord(requests: PlatformRequests, id: strin
     ...(rendering && { headers: { [PANEL_MEMBER_RENDER_HEADER]: "1" } }),
   }, "");
   const body = await response.json();
-  if (!response.ok) throw new Error(body.error?.message ?? `Projection ${id} is unavailable`);
+  if (!response.ok) {
+    const message = body.error?.message ?? `Projection ${id} is unavailable`;
+    // The reader may not use it, or it is not there: the member that places it says so in its own place.
+    if (response.status === 403 || response.status === 404) throw new PanelMemberUnavailable(response.status, message);
+    throw new Error(message);
+  }
   return body.projection;
 }

@@ -67,7 +67,7 @@ function start(revision = 0) {
     operationsScope?.stop();
     operationsScope = effectScope();
     const { state: operations } = operationsScope.run(() =>
-      watchMemberOperations(panel!.readPanelData, projection, props.slot, () => memberInputs.value))!;
+      watchMemberOperations(panel!.readPanelData, projection, () => [{ member: props.slot }], () => memberInputs.value))!;
     registered = panel!.instance.register({
       slot: props.slot,
       projectionId: projection.id,
