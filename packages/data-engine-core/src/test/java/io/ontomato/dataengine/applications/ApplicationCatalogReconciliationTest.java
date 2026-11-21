@@ -424,7 +424,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             {"entry":{"path":"/applications/app-school","renderer":"panels"},"entryAccess":["domain-member"],
              "declaration":{"names":{"en":"School"},"descriptions":{},"icon":"school",
                "groups":[{"key":"school","names":{"en":"School"},"sort":1}],
-               "permissions":[{"code":"app:app-school:private","names":{"en":"Private"},"groupKey":"school","sort":1}]},
+               "permissions":[{"code":"app:app-school:private","names":{"en":"Private","zh-CN":"仅限内部"},"groupKey":"school","sort":1}]},
              "framePanelId":"panel-frame","theme":{"light":{"--el-color-primary":"#123456"}},
              "delivery":{"panels":["panel-frame","panel-school"],"projections":["projection-school"],"packages":[],"agents":[],"skills":[]},
              "panelUses":[
@@ -459,6 +459,18 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             assertEquals(List.of("en"), control.getList("requiredLocales", String.class));
             assertFalse(field.getBooleanValue("required"));
         }
+        var accessField = rowFields.stream().filter(item -> "/access".equals(item.getString("path"))).findFirst().orElseThrow();
+        var accessControl = accessField.getJSONObject("control");
+        assertTrue(accessField.getBooleanValue("required"));
+        assertEquals("select", accessControl.getString("kind"));
+        var options = accessControl.getJSONArray("options");
+        assertEquals(JSONObject.of("kind", "domain-member"), options.getJSONObject(0).getJSONObject("value"));
+        assertEquals("本域成员", options.getJSONObject(0).getString("label"));
+        assertEquals(JSONObject.of("permissionCode", "app:app-school:private"), options.getJSONObject(1).getJSONObject("value"));
+        assertEquals("仅限内部", options.getJSONObject(1).getString("label"));
+        var defaultAgent = rowFields.stream().filter(item -> "/defaultAgent".equals(item.getString("path"))).findFirst().orElseThrow();
+        assertFalse(defaultAgent.getBooleanValue("required"));
+        assertEquals(JSONObject.of("kind", "select", "options", List.of()), defaultAgent.getJSONObject("control"));
         when(identity.getCurrentUser()).thenReturn(viewer);
         http.perform(get(path).param("purpose", "management")).andExpect(status().isForbidden());
         http.perform(get(path)).andExpect(status().isOk()).andExpect(jsonPath("$.data.panelUses.length()").value(1));
