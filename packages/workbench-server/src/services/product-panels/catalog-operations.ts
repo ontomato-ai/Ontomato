@@ -19,6 +19,7 @@ import { APPLICATION, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contra
 import { HttpError } from "../../utils/errors";
 import { BackendResponseError } from "../../utils/backend-client";
 import { changeProductGrant } from "../product-governance/grants";
+import { defaultAgentSchema } from "@ontomato/contracts/default-agent";
 import { applicationCatalogueClient, applicationDraftIdSchema } from "./application-catalogue";
 import {
   changeCurrentProductDomainGrant, changeCurrentProductGrant, copyCurrentProduct, deleteCurrentProduct,
@@ -58,11 +59,34 @@ function ownerFieldRefusal(error: BackendResponseError) {
   }
 }
 
+/** A refusal decided before the owner is called, already naming its fields. */
+class FieldRefusal extends Error {
+  constructor(readonly outcome: Extract<SinglePanelOperationOutcome, { kind: "refusal" }>) { super(outcome.message); }
+}
+
+/**
+ * An entry's default agent is checked here only for its shape, on the values as sent, so a wrong one is named at its
+ * field rather than as a bad request. Whether it exists, is enabled and serves the entry's panel is the owners' check
+ * on save (Java asks the agent owner's preflight), which answers at the same row; leaving it out keeps the general
+ * assistant.
+ */
+function checkDefaultAgentShapes(values: Record<string, unknown>) {
+  const uses = Array.isArray(values.panelUses) ? values.panelUses : [];
+  const errors = uses.flatMap((use, index) => {
+    const value = use !== null && typeof use === "object" ? (use as Record<string, unknown>).defaultAgent : undefined;
+    if (value === undefined || defaultAgentSchema.safeParse(value).success) return [];
+    const field = `/panelUses/${index}/defaultAgent`;
+    return [{ field, code: "invalid_object" as const, message: `Field '${field}' expects a default agent, received ${JSON.stringify(value)}` }];
+  });
+  if (errors.length) throw new FieldRefusal({ kind: "refusal", code: "APPLICATION_ENTRY_INVALID", message: errors[0]!.message, errors });
+}
+
 async function write(type: string, run: () => Promise<{ primaryKey: string; data: OutcomeData }>): Promise<SinglePanelOperationOutcome> {
   try {
     const { primaryKey, data } = await run();
     return { kind: "success", data, affected: { objects: [{ objectType: type, primaryKey }], objectTypes: [type] } };
   } catch (error) {
+    if (error instanceof FieldRefusal) return error.outcome;
     if (error instanceof HttpError && error.status >= 400 && error.status < 500) {
       const fields = error instanceof BackendResponseError ? ownerFieldRefusal(error) : undefined;
       return fields ?? { kind: "refusal", code: error.code ?? "PRODUCT_WRITE_REFUSED", message: error.message };
@@ -201,6 +225,7 @@ const applicationSave: PanelWriteServerOperation = {
       const java = applicationCatalogueClient(credentials);
       if (target.kind === "draft") {
         const { id: formId, ...formValues } = values;
+        checkDefaultAgentShapes(formValues);
         const body = writeInput(applicationCatalogueCreateSchema, formValues);
         const id = writeInput(applicationDraftIdSchema,
           target.id ?? formId ?? writeInput(applicationDraftPath, body.entry.path).slice("/applications/".length));
@@ -216,8 +241,10 @@ const applicationSave: PanelWriteServerOperation = {
       const body = submittedFields === undefined ? values : applySubmittedFields(
         (await java.form({ section, target, changedField: null })).values, values, submittedFields,
       );
-      if (entries) await java.saveEntries(id, writeInput(applicationEntriesUpdateSchema, body));
-      else await java.saveIdentity(id, writeInput(applicationIdentityUpdateSchema, body));
+      if (entries) {
+        checkDefaultAgentShapes(body);
+        await java.saveEntries(id, writeInput(applicationEntriesUpdateSchema, body));
+      } else await java.saveIdentity(id, writeInput(applicationIdentityUpdateSchema, body));
       return { primaryKey: id, data: { id } };
     });
   },
