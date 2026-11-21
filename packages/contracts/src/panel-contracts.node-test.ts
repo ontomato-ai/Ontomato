@@ -1010,9 +1010,8 @@ test("localized text keeps the owner's language map and language-level field poi
   const values = { names: { en: "", "zh-CN": "应用", fr: "Application" } };
   const errors = [{ field: "/names/en", code: "required", message: "填写英文名称" }];
   const form = { fields: [field], values, errors, save: ownerSave };
-  assert.deepEqual(panelFormDescriptionSchema.parse(form), {
-    ...form, fields: [{ ...field, control: { ...control, requiredLocales: [] } }],
-  });
+  // Omitted, no language is required; the description keeps it omitted, so its input and output types are one.
+  assert.deepEqual(panelFormDescriptionSchema.parse(form), form);
 
   const requiredControl = { ...control, requiredLocales: ["en"] };
   const nested = { ...form, fields: [{

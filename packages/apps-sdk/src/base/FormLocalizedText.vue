@@ -29,7 +29,7 @@ const texts = computed<Record<string, string>>(() => {
 });
 /** Languages the reader added in this form and has not filled or removed yet. */
 const added = ref<string[]>([]);
-const required = computed(() => new Set(control.value.requiredLocales));
+const required = computed(() => new Set(control.value.requiredLocales ?? []));
 const errorOf = (code: string) => controls.errors.value[`${props.path}/${code}`];
 const labelOf = (code: string) => control.value.locales.find((locale) => locale.code === code)?.label ?? code;
 
