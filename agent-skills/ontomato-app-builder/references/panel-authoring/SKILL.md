@@ -33,7 +33,9 @@ node "$SKILL/ontomato.mjs" panel check "$WORKSPACE"
 node "$SKILL/ontomato.mjs" panel register "$WORKSPACE"
 ```
 
-Use a fresh application ID starting with `app-` and a path under `/applications/<application-id>/`. In `registration.json`, provide
+To ship a tested trial at the original platform address, follow [Replace a built-in page](../../GUIDE.md#replace-a-built-in-page).
+
+For a trial application, use a fresh ID starting with `app-` and a path under `/applications/<application-id>/`. In `registration.json`, provide
 one panel item with `id`, `mode` and `input` containing its name, description and visibility. Create omits
 `revision`. Application creation supplies `entry`, `declaration`, `entryAccess` and `panelUses`. Each use
 supplies its domain-unique `pageKey`, `panelId`, `path` and `access`. See [entry settings and page

@@ -74,18 +74,38 @@ For workspace registration, keep the panel definition in `panel.json`, `panel.ht
 
 The command submits projections, panels and uses in that order. It prints each completed item and exits nonzero at the first failure. On a stale revision, compare the owner's current definition with the requested change before preparing a new update.
 
-### Package a built-in panel
+### Replace a built-in page
 
-Put the panel's source files in its owning package under `resources/builtin-panels/<directory>`. Use
-the reserved platform prefix for its panel ID in `registration.json`. Allocate missing projection IDs
-locally with the installed SDK release:
+1. **Move the panel source.** Put `panel.json`, `panel.html`, `panel.mjs` and any `recipes.md` from the tested
+   trial in the original page's owning package under `resources/builtin-panels/<directory>`. Keep one panel
+   item in `registration.json` with a stable `builtin-product-` ID and its `input.name` and
+   `input.description`. Application entries belong in the owning application's declaration.
+   Remove trial projection IDs from inline members in the copied `panel.json` so the checker can allocate
+   platform IDs. For reused projections, use a packaged projection ID or supply an inline definition
+   backed by platform types and owner reads. Pass domain objects through the panel's runtime state.
+2. **Assign the projection IDs.** Point `SDK_RELEASE` to the installed SDK version directory containing
+   `sdk.json`, and run the local check with the copied panel directory as `PANEL_DIR`:
 
-```bash
-node "$SKILL/ontomato.mjs" panel check <directory> --builtin --sdk-dir <sdk-release-directory>
-```
+   ```sh
+   node "$SKILL/ontomato.mjs" panel check "$PANEL_DIR" --builtin --sdk-dir "$SDK_RELEASE"
+   ```
 
-Commit the IDs written to `panel.json` with the source. The Workbench image build checks the built-in
-application entries against the bundled panels. The platform registers this bundle on startup.
+   Commit the IDs written to `panel.json`. Preserve those IDs on later edits. The Workbench image build
+   checks the built-in application entries against the bundled panels. Node registers the platform records
+   from the bundle on startup.
+3. **Switch the original entry and remove the old page in one change.** Add the use to
+   `declaration.panelUses` in the owning app's declaration. Find Java-owned apps in the Java package's
+   `src/main/resources/applications/` directory and Workbench-owned apps in
+   `packages/workbench-server/src/services/applications/builtins.ts`. Keep the original `path` and
+   `access.permissionCode`. Give the use its stable `id` and `pageKey`, and set `panelId` to the packaged panel ID.
+   Carry over its menu name and default agent where present. Remove the old route registration, renderer
+   and any page component and imports with no remaining callers. The panel use serves the original address.
+   Keep the owner reads, operations and permissions used by the panel or by other entries.
+4. **Verify and clean up the trial.** On 128 after deployment, open the original address with its existing
+   permission and verify that the panel and its page skill work. With an account lacking the original
+   permission, check that the entry denies access and that the owners deny reads and operations when the
+   panel is used from another entry the account can open. Then delete the exact trial application and its
+   trial panel using the commands below.
 
 ### Delete a trial application or panel
 
