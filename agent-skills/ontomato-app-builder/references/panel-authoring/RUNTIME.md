@@ -171,13 +171,16 @@ is `primary: true`, the header's main button. `manifest.commands` is required; u
 header commands. A command's values are literals or state fields. A `do.set` field must be a `deepLink: true` state
 field, so the changed address reproduces the page. Handle component-driven interactions (a selection, an output) in Vue.
 `do.open` with `mode: "entry"` describes a `platform:ApplicationPanelUse` reference and optional destination state inputs.
-In the current direct runtime, an open command reports that the SDK opens no entry or member from a command.
+Use `do.open: { mode: "conversationEntry", member: "<member key>" }` to open the page composer for a declared
+`ConversationEntry` member. Declare the agent and opening sentence on the member. Include the member in the Vue
+template only when the panel body should also show its button.
 For a browser button or component output that should navigate, call `usePanelContext().navigate` with the registered path
 from `panel uses <application-id>` and, when needed, the destination's deep-linkable state.
 
 The generated page skill's Panel commands section gives the assistant the address or operation for each command.
 `do.set` opens the current entry with the changed deep-linkable fields in `state`. `do.invoke` calls the listed
-owner operation. `do.open` follows the indicated destination address. Use a declared operation ID for `/operate`.
+owner operation. Entry commands follow the indicated address. Conversation commands open the composer for the
+reader. Use a declared operation ID for `/operate`.
 
 ## Draft links and instance state
 

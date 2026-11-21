@@ -432,10 +432,9 @@ export const panelMemberSchema = z.object({
 export type PanelMember = z.infer<typeof panelMemberSchema>;
 
 const commandInputs = z.record(key, panelMemberInputSchema);
-const openMember = z.object({
-  mode: z.enum(["replace", "drawer", "dialog"]),
+const openConversationEntry = z.object({
+  mode: z.literal("conversationEntry"),
   member: key,
-  inputs: commandInputs.optional(),
 }).strict();
 const openEntry = z.object({
   mode: z.literal("entry"),
@@ -452,7 +451,7 @@ export const panelCommandSchema = z.object({
   do: z.union([
     z.object({ set: z.object({ fields: commandInputs.refine(fields => Object.keys(fields).length > 0, "Set at least one state field") }).strict() }).strict(),
     z.object({ invoke: z.object({ member: key, operation: key, inputs: commandInputs }).strict() }).strict(),
-    z.object({ open: z.union([openMember, openEntry]) }).strict(),
+    z.object({ open: z.discriminatedUnion("mode", [openEntry, openConversationEntry]) }).strict(),
   ]),
 }).strict();
 export type PanelCommand = z.infer<typeof panelCommandSchema>;
@@ -553,12 +552,20 @@ export const panelManifestSchema = z.object({
     const action = command.do;
     const [operation, values] = "set" in action ? ["set", action.set.fields] as const
       : "invoke" in action ? ["invoke", action.invoke.inputs] as const
-      : ["open", action.open.inputs ?? {}] as const;
+      : ["open", action.open.mode === "entry" ? action.open.inputs ?? {} : {}] as const;
     if ("invoke" in action) requireName(members, action.invoke.member, [...path, "do", "invoke", "member"]);
-    if ("open" in action && "member" in action.open) requireName(members, action.open.member, [...path, "do", "open", "member"]);
-    if ("open" in action && action.open.mode === "entry") {
-      const entry = action.open.entry;
-      if ("state" in entry) requireName(state, entry.state, [...path, "do", "open", "entry", "state"]);
+    if ("open" in action) {
+      if (action.open.mode === "conversationEntry") {
+        const { member } = action.open;
+        const memberPath = [...path, "do", "open", "member"];
+        if (!Object.hasOwn(members, member)) requireName(members, member, memberPath);
+        else if (!("projectionId" in members[member].target)) {
+          issue(memberPath, `Member '${member}' must place a ConversationEntry projection`);
+        }
+      } else {
+        const { entry } = action.open;
+        if ("state" in entry) requireName(state, entry.state, [...path, "do", "open", "entry", "state"]);
+      }
     }
     for (const [field, value] of Object.entries(values)) {
       const valuePath = [...path, "do", operation, operation === "set" ? "fields" : "inputs", field];

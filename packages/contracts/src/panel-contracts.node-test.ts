@@ -571,6 +571,33 @@ test("a panel manifest validates commands, state and placements", () => {
   }).success, false);
 });
 
+test("a header command opens a declared ConversationEntry using only the member key", () => {
+  const open = { mode: "conversationEntry", member: "createEntry" };
+  const manifest = {
+    state: {},
+    members: { createEntry: { target: { projectionId: "create-entry" } }, detail: { target: { panelId: "detail" } } },
+    commands: { create: { labelKey: "actions.create", primary: true, do: { open } } },
+  };
+  assert.deepEqual(panelManifestSchema.parse(manifest).commands.create, manifest.commands.create);
+
+  for (const member of ["missing", "detail"]) {
+    const result = panelManifestSchema.safeParse({
+      ...manifest, commands: { create: { ...manifest.commands.create, do: { open: { ...open, member } } } },
+    });
+    assert.equal(result.success, false);
+    if (!result.success) assert.deepEqual(result.error.issues[0].path, ["commands", "create", "do", "open", "member"]);
+  }
+  for (const invalid of [
+    { ...open, prefill: "Create an action" },
+    { ...open, inputs: {} },
+    ...["replace", "drawer", "dialog"].map(mode => ({ ...open, mode })),
+  ]) {
+    assert.equal(panelManifestSchema.safeParse({
+      ...manifest, commands: { create: { ...manifest.commands.create, do: { open: invalid } } },
+    }).success, false);
+  }
+});
+
 test("one named header command can be primary in saved and authoring manifests", async () => {
   const { panelAuthoringManifestSchema } = await import("./panel-authoring");
   const manifest = {
