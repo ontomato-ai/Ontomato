@@ -10,6 +10,7 @@ import {
   pilotPageKey,
   platformPageAccessKey,
   providePageActions,
+  providePageHeading,
   provideUnsavedChanges,
   type AgentModelLabels,
 } from "@ontomato/platform-shell";
@@ -83,8 +84,19 @@ function pageAt(path: string): PlatformPage | undefined {
     host.navigation.value.pages.find((page) => page.path === path);
 }
 
+/** What a page the navigation does not name says of itself: a panel application's entry, its name and its way back. */
+const heading = providePageHeading();
+
 const shownPage = computed<PlatformShownPage | null>(() => {
   const page = pageAt(route.path);
+  if (heading.value) {
+    return {
+      title: heading.value.title,
+      description: page?.descriptionKey ? t(page.descriptionKey) : null,
+      named: true,
+      back: heading.value.back,
+    };
+  }
   if (!page) return null;
   return {
     title: t(page.titleKey),
@@ -105,6 +117,7 @@ const preferences = computed(() => ({
 }));
 
 const labels = computed(() => ({
+  back: t("common.back"),
   expandRail: t("platform.expandRail"),
   collapseRail: t("platform.collapseRail"),
   applications: t("platform.apps"),

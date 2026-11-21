@@ -33,7 +33,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "EChart",
     role: "presentation",
     meaning:
-      "Draws one ECharts option in the platform's chart theme, following its light and dark modes; it computes no value and reads nothing itself.",
+      "Draws one ECharts option in the platform's chart theme, following its light and dark modes; it computes no value and reads nothing itself. In a panel, write `<e-chart>` in the template, without an import; the import is for an application page outside a panel.",
     bindsElement: ["MetricView:*", "Definition:*"],
   }),
   defineComponentMeta({
@@ -42,7 +42,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "FormFields",
     role: "control",
     meaning:
-      "Draws a form exactly as its owner declares it — a choice as a select whose unavailable options stay listed with the reason, a text as an input or a large text box — in the owner's order and limits.",
+      "Draws a form exactly as its owner declares it — a choice as a select whose unavailable options stay listed with the reason, a text as an input or a large text box — in the owner's order and limits. In a panel, write `<form-fields>` in the template, without an import; the import is for an application page outside a panel.",
     bindsElement: ["Action:*"],
   }),
   defineComponentMeta({
@@ -50,28 +50,28 @@ export const components: readonly ComponentMetadata[] = [
     module: "@ontomato/sdk/code",
     exportName: "CodeEditor",
     role: "control",
-    meaning: "Edits code or structured text such as JSON, in the page's light or dark theme; it validates nothing.",
+    meaning: "Edits code or structured text such as JSON, in the page's light or dark theme; it validates nothing. In a panel, write `<code-editor>` in the template, without an import; the import is for an application page outside a panel.",
   }),
   defineComponentMeta({
     componentId: "MarkdownView",
     module: "@ontomato/sdk/markdown",
     exportName: "MarkdownView",
     role: "presentation",
-    meaning: "Draws a text as the platform reads Markdown, in the page's light or dark theme.",
+    meaning: "Draws a text as the platform reads Markdown, in the page's light or dark theme. In a panel, write `<markdown-view>` in the template, without an import; the import is for an application page outside a panel.",
   }),
   defineComponentMeta({
     componentId: "TablePreview",
     module: "@ontomato/sdk/preview",
     exportName: "TablePreview",
     role: "presentation",
-    meaning: "Draws text cells as a table with paging; it reads no business meaning out of them.",
+    meaning: "Draws text cells as a table with paging; it reads no business meaning out of them. In a panel, write `<table-preview>` in the template, without an import; the import is for an application page outside a panel.",
   }),
   defineComponentMeta({
     componentId: "HtmlPreview",
     module: "@ontomato/sdk/preview",
     exportName: "HtmlPreview",
     role: "presentation",
-    meaning: "Draws a whole HTML document in a sandboxed frame; the document runs nothing outside that frame.",
+    meaning: "Draws a whole HTML document in a sandboxed frame; the document runs nothing outside that frame. In a panel, write `<html-preview>` in the template, without an import; the import is for an application page outside a panel.",
   }),
   defineComponentMeta({
     componentId: "AgentChatPanel",
@@ -381,7 +381,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectTextReader",
     role: "presentation",
     meaning:
-      "Shows an object's text read only, through its owner's reads. Sources read page by page: `sources` lists them as chips (one owner record per source), and `page` reads the chosen source's text one page at a time (an owner's query whose rows are the text's segments, `fields.text`, with `nextCursor` for the next page); the reader opens one source at a time and \"More\" reads the next page. One object's whole text: `record` reads it and the field `textField` names (`content` by default) is shown with its line breaks. Several readers on a page can share `activeAnchor` / `activeSourceId` so that only one is open.",
+      "Shows an object's text read only, through its owner's reads. Sources read page by page: `sources` lists them as chips (one owner record per source), and `page` reads the chosen source's text one page at a time (an owner's query whose rows are the text's segments, `fields.text`, with `nextCursor` for the next page); the reader opens one source at a time and \"More\" reads the next page. One object's whole text: `record` reads it and the field `textField` names (`content` by default) is shown with its line breaks. Its outputs `activeSourceId` and `activeAnchor`, bound to the panel's state, are read as well as written: the page opens a source by writing it (and, for a reader with an `anchor`, that anchor), and readers sharing them on one page have only one open. Which sources it lists is the `sources` read's: an owner read of one issue's cited sources lists only those.",
     effects: "Reads the owner's sources, pages and records as the reader; it writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*"],
     data: {
@@ -421,13 +421,14 @@ export const components: readonly ComponentMetadata[] = [
         results: [
           "panelRecordList", "panelRecord", "panelRecordQuery", "panelGroupCounts", "panelApplicationMenu",
           "productProjectionList", "productPanelList", "productProjectionRecord", "productPanelRecord", "productProjectionUsedBy",
-          "productPanelUsedBy", "productPanelMembers", "applicationCatalogue", "applicationRecord", "applicationEntries",
+          "productPanelUsedBy", "productPanelMembers", "productCatalogueGrants", "applicationCatalogue", "applicationRecord", "applicationEntries",
           "panelFormDescription", "panelOperationDescriptor", "panelOptionList", "panelGraphSchema", "panelGraphCounts",
           "panelGraphStart", "panelGraphNeighbors", "panelOntologyObjects", "panelRelationNeighbors", "chartTemplate", "metricOutput",
           "sdkComponentDefinition", "actionDefinition", "actionExplanation",
+          "scheduledTaskRunPage", "scheduledTaskRun",
         ],
         required: false,
-        runtimeParams: ["changedField", "cursor", "keyword", "layers", "node", "page", "relationKinds", "search", "size", "source", "values"],
+        runtimeParams: ["changedField", "cursor", "keyword", "layers", "node", "page", "relationKinds", "search", "size", "source", "template", "values"],
       },
     },
   }),

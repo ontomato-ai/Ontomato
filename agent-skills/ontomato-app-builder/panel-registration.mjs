@@ -5,7 +5,7 @@ const productPath = (kind, id) => `/api/product-${kind}s/${encodeURIComponent(id
 
 async function readAnswer(response, method, path) {
   const text = await response.text();
-  const answer = response.headers.get("content-type")?.includes("json") ? JSON.parse(text) : undefined;
+  const answer = text && response.headers.get("content-type")?.includes("json") ? JSON.parse(text) : undefined;
   if (!response.ok || answer?.success === false || answer?.error) {
     const code = answer?.error?.code ?? answer?.code;
     const reason = answer?.error?.message ?? answer?.message ?? (typeof answer?.error === "string" ? answer.error : text);
@@ -16,6 +16,12 @@ async function readAnswer(response, method, path) {
 
 export function requireApplicationId(id) {
   if (!id.startsWith("app-")) throw new Error("Application ID must start with app-");
+}
+
+export function requireDomainProductId(label, id, checks) {
+  // Older installed SDK releases predate platform-owned records.
+  const result = checks.domainProductIdSchema?.safeParse(id);
+  if (result?.success === false) throw new Error(`${label}: ${result.error.issues[0].message}`);
 }
 
 function requireMode(mode) {
@@ -68,6 +74,7 @@ export function panelRegistrationRecords({ projections = [], panels = [], applic
   ].map(([kind, records, schema]) => [
     kind,
     records.map(item => {
+      requireDomainProductId(`${kind} ${item.id}`, item.id, checks);
       const result = schema.safeParse(productBody(item));
       if (!result.success) {
         throw new Error(`${kind} ${item.id}: ${registrationIssues(result.error.issues).join("\n")}`);
@@ -92,8 +99,24 @@ export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workben
     return response.status === 404 ? null : (await readAnswer(response, "GET", path))[kind];
   }
 
+  async function currentRevision(kind, id) {
+    const answer = await call(workbenchUrl, "GET", productPath(kind, id));
+    const revision = answer[kind].revision;
+    if (!Number.isSafeInteger(revision) || revision <= 0) throw new Error(`Owner response for ${kind} ${id} has no current revision`);
+    return revision;
+  }
+
   return {
     currentRecord,
+    currentRevision,
+    async deleteApplication(id) {
+      await call(ontologyUrl, "DELETE", `/platform/applications/${encodeURIComponent(id)}`);
+      return { success: true };
+    },
+    async deletePanel(id) {
+      const revision = await currentRevision("panel", id);
+      return call(workbenchUrl, "DELETE", `${productPath("panel", id)}?${new URLSearchParams({ revision })}`);
+    },
     async findChartSource(sourceCard, checks) {
       const endpoint = `/api${checks.CHART_PROJECTION_SOURCES_PATH}?${new URLSearchParams(sourceCard)}`;
       const { projectionId } = checks.chartProjectionLookupResponseSchema.parse(await call(workbenchUrl, "GET", endpoint));
@@ -104,12 +127,6 @@ export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workben
     async registerChartSource(sourceCard, checks) {
       const result = await call(workbenchUrl, "POST", `/api${checks.CHART_PROJECTION_SOURCES_PATH}`, sourceCard);
       return checks.registerChartProjectionResponseSchema.parse(result).projection;
-    },
-    async currentRevision(kind, id) {
-      const answer = await call(workbenchUrl, "GET", productPath(kind, id));
-      const revision = answer[kind].revision;
-      if (!Number.isSafeInteger(revision) || revision <= 0) throw new Error(`${kind} ${id}: owner response has no current revision`);
-      return revision;
     },
     async register(material, onRegistered, checks) {
       const { projections = [], panels = [], applications = [], ...unknown } = material;

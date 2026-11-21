@@ -24,6 +24,7 @@ export {
   type PlatformPageActions,
   type PlatformPageDraft,
 } from "./page-actions";
+export { providePageHeading, usePageHeading, type PlatformPageHeading } from "./page-heading";
 export {
   agentModelLabelsKey,
   useAgentModelLabels,

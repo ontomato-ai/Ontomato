@@ -44,6 +44,9 @@ declares both the form read and a `form.save` operation.
 | Highlight search hits | Connect `state.search` on the detail when its record read declares `search`. The owner returns highlight ranges that ObjectList and ObjectSummary render. |
 | Carry state in the address | Mark the state fields to restore with `deepLink: true` in the manifest. |
 
+For server-side paging, choose a paginated read from `panel type` for the `ObjectList.rows` datum and let
+the list supply the paging inputs. See the [generated paging configuration](panel-authoring/RUNTIME.md#list-paging).
+
 Use a read object `{read, params}` for explicit state or literal bindings. Components supply their own runtime
 parameters. For example, ObjectForm supplies `values` and `changedField` to the owner form read.
 

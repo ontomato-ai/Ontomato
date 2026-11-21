@@ -1,6 +1,7 @@
 import {
   homeDashboardsSchema,
   homeFavoritesSchema,
+  homePanelPreferenceSchema,
   type HomeState,
 } from "@ontomato/contracts/platform-home";
 import {
@@ -27,6 +28,21 @@ function usageRow(row: {
 }
 
 export const platformHomeStore = {
+  async homePanelId(owner: PlatformHomeOwner): Promise<string | null> {
+    const { rows } = await db().query<{ homePanelId: string | null }>(
+      `SELECT home_panel_id AS "homePanelId" FROM ${table("platform_home_preferences")} WHERE domain_id=$1 AND user_id=$2`,
+      [owner.domainId, owner.userId],
+    );
+    return homePanelPreferenceSchema.shape.homePanelId.parse(rows[0]?.homePanelId ?? null);
+  },
+  async saveHomePanelId(owner: PlatformHomeOwner, homePanelId: string | null): Promise<void> {
+    await db().query(
+      `INSERT INTO ${table("platform_home_preferences")} (domain_id, user_id, home_panel_id)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (domain_id, user_id) DO UPDATE SET home_panel_id=EXCLUDED.home_panel_id`,
+      [owner.domainId, owner.userId, homePanelId],
+    );
+  },
   /** Missing preferences are an empty selection; only a first save creates the row. */
   async preferences(
     owner: PlatformHomeOwner,

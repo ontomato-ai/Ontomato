@@ -10,6 +10,18 @@ import { platformHomeStore, type PlatformHomeOwner } from "./store";
 import { personalHome, saveHomeWorkspace,readProductOverlay } from "../product-assets/store";
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {defaultPersonalWorkspace} from '@ontomato/contracts/personal-workspace';
+import { readCurrentPanel, requireCurrentProduct } from "../product-panels/current";
+
+export async function readHomePanel(owner: PlatformHomeOwner, credentials: AssistantCredentials) {
+  const homePanelId = await platformHomeStore.homePanelId(owner);
+  return homePanelId === null ? null : readCurrentPanel(owner, credentials, homePanelId);
+}
+
+export async function saveHomePanel(owner: PlatformHomeOwner, credentials: AssistantCredentials, homePanelId: string | null) {
+  if (homePanelId !== null)
+    await requireCurrentProduct(owner, credentials, "panel", homePanelId, "use");
+  await platformHomeStore.saveHomePanelId(owner, homePanelId);
+}
 
 export async function readHome(owner: PlatformHomeOwner,credentials:AssistantCredentials={}): Promise<HomeState> {
   const [preferences, recentApplications, recentConversations] = await Promise.all([

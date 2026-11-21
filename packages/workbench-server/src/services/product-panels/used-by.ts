@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { applicationMetadataSchema } from "@ontomato/contracts/application-metadata";
 import { productPanelUsedBySchema } from "@ontomato/contracts/product-panels";
+import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import type { PoolClient } from "pg";
 import { config } from "../../config/application";
 import { environment } from "../../config/environment";
@@ -17,7 +18,7 @@ async function panelsUsingTarget(
   const rows = await findPanelUsers(domainId, kind, id, client);
   if (!rows.length) return { panels: [], hiddenCount: 0 };
   const visible = new Set(await grantedProductIds("use", credentials));
-  const panels = rows.filter(panel => visible.has(panel.id));
+  const panels = rows.filter(panel => isBuiltinProductId(panel.id) || visible.has(panel.id));
   return { panels, hiddenCount: rows.length - panels.length };
 }
 
