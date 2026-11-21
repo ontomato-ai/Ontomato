@@ -325,7 +325,7 @@ it("reconciles the released built-in authoring sources and exposes the same read
   expect((await request("GET", "product-projections/" + builtinProjectionId)).status).toBe(404);
 }, 20_000);
 
-it("registers the shipped ontology catalogues and expands their previews and application forms", async () => {
+it("registers the shipped ontology catalogues with addressable creation, previews and application forms", async () => {
   const { registerBuiltinProducts } = await import("../../services/product-panels/builtin-products");
   const bundle = path.join(contentRoot, "ontology-catalogues");
   const catalogues = ["projections", "panels", "applications"];
@@ -383,6 +383,12 @@ it("registers the shipped ontology catalogues and expands their previews and app
     expect(response.status).toBe(200);
     const { panel } = productPanelResponseSchema.parse(await response.json());
     expect(panel).toMatchObject({ visibility: "platform", ownerId: null, editable: false });
+    expect(panel.manifest.state.creating).toMatchObject({ type: { kind: "scalar", type: "boolean" }, deepLink: true });
+    expect(panel.manifest.commands.create).toEqual({
+      labelKey: "action.create", primary: true, do: { set: { fields: {
+        selected: { literal: null }, creating: { literal: true },
+      } } },
+    });
     definitions.set(catalogue, panel.manifest.members);
   }
   for (const catalogue of ["projections", "panels"]) {

@@ -159,6 +159,16 @@ const ActionsCatalog = {
       instance.state.set("selected", null);
       activeTab.value = "definition";
     }
+    /*
+     * A selected action the catalog no longer lists is gone (deleted here or elsewhere), so the page goes back to the
+     * catalog as the original page did after a delete. Only a fresh catalog read decides it, never a change of selection:
+     * a save that selects a new action brings the catalog read that lists it.
+     */
+    watch(() => rowsRead.value, (read) => {
+      if (read.status !== "ready" && read.status !== "empty") return;
+      const key = selectedKey.value;
+      if (key && !(read.status === "ready" ? read.value ?? [] : []).some((row) => row.primaryKey === key)) back();
+    });
 
     const record = computed(() => (recordRead.value.status === "ready" ? recordRead.value.value : null));
     /** The selected catalog row: the owner's name, status and origin, shown until the record arrives instead of an id. */

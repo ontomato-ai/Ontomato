@@ -447,7 +447,6 @@
       <span :aria-busy="counts.objects === null"><strong>{{ counts.objects ?? "–" }}</strong> 对象类型</span>
       <span :aria-busy="counts.attributes === null"><strong>{{ counts.attributes ?? "–" }}</strong> 属性</span>
       <span :aria-busy="counts.relations === null"><strong>{{ counts.relations ?? "–" }}</strong> 关系类型</span>
-      <el-button :loading="loading" @click="refresh">刷新</el-button>
     </div>
 
     <el-alert
