@@ -28,11 +28,6 @@
     "icon": "ontology",
     "groups": [],
     "permissions": [],
-    "panelUses": [{
-      "id": "ontology-functions", "pageKey": "functions", "panelId": "builtin-product-ontology-functions",
-      "path": "/ontology/assets/functions", "access": {"permissionCode": "ontology-modeling"},
-      "names": {"en": "Functions", "zh-CN": "\u51fd\u6570"}
-    }],
     "pageSkills": [{
       "permissionCode": "business-knowledge",
       "skill": {"namespace": {"kind": "provider", "provider": "ontology"}, "name": "knowledge-governance"},
@@ -49,6 +44,10 @@
       "id": "ontology-relations", "pageKey": "ontology-relations", "panelId": "builtin-product-ontology-relations",
       "path": "/ontology/relations", "access": {"permissionCode": "ontology-modeling"},
       "names": {"en": "Relation types", "zh-CN": "关系类型"}
+    }, {
+      "id": "ontology-functions", "pageKey": "ontology-functions", "panelId": "builtin-product-ontology-functions",
+      "path": "/ontology/assets/functions", "access": {"permissionCode": "ontology-modeling"},
+      "names": {"en": "Functions", "zh-CN": "函数"}
     }]
   }
 }

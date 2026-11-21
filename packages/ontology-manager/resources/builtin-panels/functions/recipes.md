@@ -28,7 +28,7 @@
 
 ```json
 {
-  "pageKey": "functions-maintenance",
+  "pageKey": "ontology-functions",
   "operation": "function.update",
   "target": {"id": "<选中函数的 id>"},
   "form": { "description": "按单位类别统计在职教职工人数" }
