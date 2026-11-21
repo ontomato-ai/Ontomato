@@ -30,14 +30,34 @@ an operation); this adds what the page does not show.
   `businessMeaning.negativeEffect` what can go wrong. `definition` is what the owner derives from the same code:
   effects, parameters and submission conditions.
 
+## Running a definition in the owner's sandbox
+
+The owner adopts a draft that changes the code or the parameters only when the run that wrote the draft executed the
+same code and parameters in the owner's sandbox and the owner accepted it. This run reaches the owner's authoring
+endpoints under `$ONTOMATO_AUTHORING_URL`; send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and
+`X-Ontomato-Run-Id: $ONTOMATO_RUN_ID` with each call, and JSON bodies.
+
+1. `GET $ONTOMATO_AUTHORING_URL/action/context`: the Python protocol and helpers the owner runs. Write the code by it.
+2. `POST $ONTOMATO_AUTHORING_URL/action/prepare` with the sample the run executes against:
+   `{"objDatas":[{"className":"<technical class>","rows":[{…}]}],"relDatas":[],"vectorDatas":[]}`. Each row carries
+   its primary key and the attributes the code reads or writes, by the technical class and field names. Nothing is
+   taken from live data.
+3. `POST $ONTOMATO_AUTHORING_URL/action/reset` with `{}`.
+4. `POST $ONTOMATO_AUTHORING_URL/action/test` with `{"code":"<function.code>","parameterDefs":<function.parameters>}`,
+   each parameter carrying the sample value it runs with in `value`. A non-empty `result.error` is the owner's answer:
+   fix the code or the sample and repeat from step 3.
+5. `POST $ONTOMATO_AUTHORING_URL/action/explain-draft` with the same `code` and `parameterDefs`, and keep its
+   `explanationRef` for the draft.
+
+Run these in the same run that writes the draft, and draft exactly the code and parameters that passed. When a step is
+refused (for example the run is not allowed to author here), do not draft; say which step stopped and quote the owner.
+
 ## Editing an action: draft it, the reader saves
 
 1. Read the action's `form` first. Use only the owner's field paths and current values; do not invent field names.
-2. When the change touches the code or the parameters, write the full changed definition and run it with
-   `action generate --sample <sample row>` without `--save`, so the owner executes it in its own sandbox. Fix what the
-   owner reports until it accepts the run. The owner adopts a draft only against a passing run of the same code and
-   parameters. A change to the name, description, status or target alone needs no run: the owner compares the code
-   and parameters with the saved ones.
+2. When the change touches the code or the parameters, run the changed definition in the owner's sandbox (above)
+   before drafting. A change to the name, description, status or target alone needs no run: the owner compares the
+   code and parameters with the saved ones.
 3. Write the page draft `outputs/drafts/<name>.page-draft.json`:
 
 ```json
@@ -49,32 +69,35 @@ an operation); this adds what the page does not show.
 }
 ```
 
-4. Put only the changed fields in the draft's `form`. The owner checks the whole form and shows a refusal beside the
-   field it concerns.
+4. Put only the changed fields in the draft's `form`, plus `explanationRef` when you ran the code. The owner checks the
+   whole form and shows a refusal beside the field it concerns.
 5. Hand the reader the draft link with the draft path and the current `sessionId` and `runId` (`draftSessionId`,
    `draftRunId`, `draftPath`). Opening it fills the form and marks the changed fields; the reader saves. You never save.
 
-When a draft changes `function/code`, say so: on save the owner explains the code again, and the derived definition and
-code explanation follow. A published action's code cannot change (the owner refuses at `/function/code`); stop using
-it or create another action instead.
+When a draft changes `function/code`, say so: on save the owner explains the new code, and the derived definition and
+code explanation follow it. A
+published action's code cannot change (the owner refuses at `/function/code`); stop using it or create another action
+instead.
 
 ## Creating an action: the only way
 
 The page has no blank manual creation. The new-action button above the catalog only opens this page's input with an
 opening line; the reader sends the message. The action starts with you:
 
-1. Write the action by the App Builder skill: target object type and key parameter, parameters, return, Python code
-   and logic. Run it with `action generate --sample <sample row>` without `--save` so the owner executes it in its own
-   sandbox. When it fails, fix what the owner reports until it accepts the run. When no build-test context lets it run,
-   do not draft the creation; say which step stopped and quote the owner.
-2. Read `createForm` once for the new action form's fields and defaults (the draft operation is `action.create` and the
+1. Write the action: its target object type and key parameter (a `TYPE_STRING` parameter carrying the object's primary
+   key), and `function` with `operation: "OPERATION_WRITE"`, a `name`, typed `parameters`, `returnDef`, `logic` and
+   the Python `code` by the owner's protocol.
+2. Run it in the owner's sandbox (above) until the owner accepts the run.
+3. Read `createForm` once for the new action form's fields and defaults (the draft operation is `action.create` and the
    status defaults to `PENDING_REVIEW`).
-3. Put the definition the owner accepted into the form as it is: `name`, `description`, `target` (`className` and
-   `keyParameter`, omitted when there is no target) and `function` (`name`, `parameters`, `returnDef`, `logic`,
-   `code`). Do not rewrite a parameter or a line of code.
-4. Write it as a page draft with an empty target (`{}`) and the `action.create` operation, and hand the reader the link.
-   The reader checks and saves it, and the action appears in the catalog.
-5. The owner writes the code explanation when it saves; never write `codeSegments` or the business meaning yourself.
+4. Put the definition that passed into the form as it is: `name`, `description`, `target` (`className` and
+   `keyParameter`, omitted when there is no target), `function` (`name`, `operation`, `parameters`, `returnDef`,
+   `logic`, `code`) and `explanationRef`. Do not rewrite a parameter or a line of code after the run.
+5. Write it as the page draft with `"operation": "action.create"` and an empty `"target": {}`, and hand the reader the
+   link. The reader checks and saves it, and the action appears in the catalog. If you call this page's form save
+   through `/operate` instead, its call target for a new action is `{"kind": "draft"}`, never `{}`; it answers with the
+   same draft envelope to write.
+6. Never write `codeSegments` or the business meaning yourself; they come from the owner's explanation.
 
 ## Changing status (batch)
 

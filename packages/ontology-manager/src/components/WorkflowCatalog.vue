@@ -14,7 +14,7 @@ import {
   ElTag,
   vLoading,
 } from "element-plus";
-import { ArrowDownUp, Pause, Play, Plus, RefreshCw, Trash2 } from "lucide-vue-next";
+import { Eye, Pause, Play, Plus, RefreshCw, Trash2 } from "lucide-vue-next";
 import ManagerIconButton from "./ManagerIconButton.vue";
 import { PlatformPageHeader } from "@ontomato/platform-shell";
 import type {
@@ -63,6 +63,7 @@ const loading = ref(false);
 const saving = ref(false);
 const editing = ref(false);
 const form = reactive<WorkflowRecord>({ name: "", description: "", steps: [] });
+const readOnly = computed(() => form.id != null);
 
 /**
  * Status is only a projection of the newest event, so the wording names what the process may do now:
@@ -160,7 +161,7 @@ async function openGrants(workflow: WorkflowRecord) {
   await refreshGrants();
 }
 
-function openEdit(workflow: WorkflowRecord) {
+function openView(workflow: WorkflowRecord) {
   Object.assign(form, {
     id: workflow.id,
     name: workflow.name,
@@ -574,9 +575,9 @@ function grantSummary(workflow: WorkflowRecord) {
         <el-table-column :label="ot('workflowColumnOps')" min-width="308" fixed="right">
           <template #default="{ row }">
             <div class="workflow-operations">
-              <el-button link type="primary" @click="openEdit(row)">
-                <ArrowDownUp :size="14" />
-                <span>{{ ot("workflowEdit") }}</span>
+              <el-button link type="primary" @click="openView(row)">
+                <Eye :size="14" />
+                <span>{{ ot("workflowView") }}</span>
               </el-button>
               <el-button v-if="row.status !== 'ACTIVE' || row.hasDraft" link type="success" @click="activate(row)">
                 <Play :size="14" />
@@ -596,16 +597,16 @@ function grantSummary(workflow: WorkflowRecord) {
       </el-table>
     </div>
 
-    <el-dialog v-model="editing" :lock-scroll="false" :title="form.id ? ot('workflowEdit') : ot('workflowCreate')" width="min(860px, 94cqw)">
-      <el-form label-position="top" class="workflow-form">
+    <el-dialog v-model="editing" :lock-scroll="false" :title="form.id ? ot('workflowView') : ot('workflowCreate')" width="min(860px, 94cqw)">
+      <el-form label-position="top" class="workflow-form" :disabled="readOnly">
         <el-form-item :label="ot('workflowColumnName')">
           <el-input v-model="form.name" :placeholder="ot('workflowNamePlaceholder')" />
         </el-form-item>
         <el-form-item :label="ot('workflowColumnDesc')">
           <el-input v-model="form.description" type="textarea" :rows="2" />
         </el-form-item>
-        <el-button v-if="!form.runContract" @click="form.runContract = { className: form.runClassName ?? '', statusOpen: [] }">{{ ot("workflowContractAdd") }}</el-button>
-        <template v-else>
+        <el-button v-if="!readOnly && !form.runContract" @click="form.runContract = { className: form.runClassName ?? '', statusOpen: [] }">{{ ot("workflowContractAdd") }}</el-button>
+        <template v-else-if="form.runContract">
           <h4>{{ ot("workflowContract") }}</h4>
           <el-form-item v-for="field in contractFields" :key="field" :label="ot(`contract_${field}`)">
             <el-input v-model="form.runContract[field]" />
@@ -613,13 +614,13 @@ function grantSummary(workflow: WorkflowRecord) {
           <el-form-item :label="ot('contract_statusOpen')">
             <el-select v-model="form.runContract.statusOpen" multiple filterable allow-create default-first-option />
           </el-form-item>
-          <el-button link @click="form.runContract = null">{{ ot("workflowContractRemove") }}</el-button>
+          <el-button v-if="!readOnly" link @click="form.runContract = null">{{ ot("workflowContractRemove") }}</el-button>
         </template>
 
         <div class="workflow-steps-editor">
           <div class="workflow-steps-editor__header">
             <span>{{ ot("workflowColumnSteps") }}</span>
-            <el-button link type="primary" @click="addStep">
+            <el-button v-if="!readOnly" link type="primary" @click="addStep">
               <Plus :size="14" />
               <span>{{ ot("workflowAddStep") }}</span>
             </el-button>
@@ -778,7 +779,7 @@ function grantSummary(workflow: WorkflowRecord) {
                 {{ ot("workflowAutomaticReserved") }}
               </div>
             </div>
-            <el-button link type="danger" :aria-label="ot('workflowDelete')" @click="removeStep(index)">
+            <el-button v-if="!readOnly" link type="danger" :aria-label="ot('workflowDelete')" @click="removeStep(index)">
               <Trash2 :size="14" />
             </el-button>
           </div>
@@ -786,8 +787,8 @@ function grantSummary(workflow: WorkflowRecord) {
       </el-form>
 
       <template #footer>
-        <el-button @click="editing = false">{{ ot("workflowCancel") }}</el-button>
-        <el-button type="primary" :loading="saving" @click="save">{{ ot("workflowSave") }}</el-button>
+        <el-button @click="editing = false">{{ ot(readOnly ? "workflowClose" : "workflowCancel") }}</el-button>
+        <el-button v-if="!readOnly" type="primary" :loading="saving" @click="save">{{ ot("workflowSave") }}</el-button>
       </template>
     </el-dialog>
 

@@ -15,7 +15,7 @@
  * 端点：ONTOMATO_ONTOLOGY_URL（平台注入）或 OA_BASE（默认 http://localhost:8080/api/data-query）
  *       OA_AUTH（用户名+密码模式，默认 http://localhost:8080/api/auth）
  *
- * 所有写命令都支持 --dry-run：只打印将发送的方法/路径/请求体，不登录、不落库。
+ * 所有写命令都支持 --dry-run：只在本地打印方法/路径/请求体，不登录、不访问服务端、不落库。
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -477,20 +477,23 @@ if (cmd === 'login') {
   console.log(JSON.stringify({ ok: true }));
 } else if (cmd === 'verify') {
   const workflowId = requireArg(args, 0, 'verify <workflowId>');
-  const [workflow, grants, subjects] = await Promise.all([
+  const [workflow, grants, subjects, roles] = await Promise.all([
     post('/workflow/query', { id: workflowId, status: 'ACTIVE' }),
     post('/workflow/grants', {}),
     post('/workflow/subjects', {}),
+    post('/role/getRoleInfoPage', page),
   ]);
   const roleIdsByCode = new Map();
-  for (const g of grants || []) {
-    if (!g.inForce) continue;
-    const code = String(g.roleCode || '').toUpperCase();
-    if (!code || !g.roleId) continue;
+  for (const role of rowsOf(roles)) {
+    const code = String(role.roleName || '').toUpperCase();
+    if (!code || !role.id) continue;
     if (!roleIdsByCode.has(code)) roleIdsByCode.set(code, new Set());
-    roleIdsByCode.get(code).add(g.roleId);
+    roleIdsByCode.get(code).add(role.id);
   }
   const subjectRoleIds = new Set((subjects || []).flatMap((s) => s.roleIds || []));
+  const inForceRoleCodes = new Set(
+    (grants || []).filter((grant) => grant.inForce).map((grant) => String(grant.roleCode || '').toUpperCase()).filter(Boolean)
+  );
   const checks = [];
   checks.push({ check: 'status=ACTIVE', ok: workflow?.status === 'ACTIVE', value: workflow?.status });
   checks.push({ check: 'version>=1', ok: Number(workflow?.version) >= 1, value: workflow?.version });
@@ -502,6 +505,32 @@ if (cmd === 'login') {
     const members = [...subjectRoleIds].filter((id) => roleIds.has(id)).length;
     checks.push({ check: `step ${step.stepNo} role ${step.roleCode} has members`, ok: Boolean(code) && members > 0, value: members });
     checks.push({ check: `step ${step.stepNo} actionId`, ok: Boolean(step.actionId), value: step.actionId });
+    const invocation = step.invocationMode || 'manual';
+    checks.push({
+      check: `step ${step.stepNo} invocationMode`,
+      ok: invocation === 'manual',
+      value: invocation === 'automatic' ? 'automatic is reserved and not implemented yet' : invocation,
+    });
+    const policy = step.actorPolicy || { mode: 'none' };
+    const policyMode = policy.mode || 'none';
+    checks.push({ check: `step ${step.stepNo} actorPolicy mode`, ok: ['none', 'rule', 'agent'].includes(policyMode), value: policyMode });
+    if (policyMode === 'rule') {
+      checks.push({
+        check: `step ${step.stepNo} rule MetricView`,
+        ok: Boolean(policy.metricViewId && policy.metricRevision),
+        value: { metricViewId: policy.metricViewId, metricRevision: policy.metricRevision },
+      });
+    }
+    if (policyMode === 'agent') {
+      checks.push({ check: `step ${step.stepNo} agentId`, ok: Boolean(policy.agentId), value: policy.agentId });
+    }
+    if (step.caseScoped === true && (policyMode === 'rule' || policyMode === 'agent')) {
+      checks.push({
+        check: `step ${step.stepNo} role ${step.roleCode} has in-force grant for actor resolution`,
+        ok: inForceRoleCodes.has(code),
+        value: inForceRoleCodes.has(code) ? 'resolvable' : 'caseScoped steps write no grant; add an in-force ordinary grant for this role',
+      });
+    }
   }
   console.log(JSON.stringify({ workflowId, hasDraft: workflow?.hasDraft ?? false, ok: checks.every((c) => c.ok), checks }, null, 2));
 } else {
@@ -514,7 +543,7 @@ if (cmd === 'login') {
   优先级：--token > --api-key > 用户名+密码；也可用 --user/--password/--domain。
 
 环境变量：ONTOMATO_ONTOLOGY_URL 或 OA_BASE / OA_AUTH
-写命令都支持 --dry-run（只打印请求，不登录、不落库）。
+写命令都支持 --dry-run（纯本地，不登录、不访问服务端、不落库）。
 
 身份与环境
   login [--token <tk> | --api-key <key> | <code> <pass> [domainId]]

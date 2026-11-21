@@ -89,6 +89,7 @@ checked list for an operation that supports batches. The official button uses th
 control, call the [SDK operation hook](RUNTIME.md#usepaneloperation) in synchronous setup and supply the fields from its admitted
 `inputSchema`. The operation result comes through the same platform flow as the page header and assistant. For writes such
 as save or delete, use only the platform's confirmation and impact details required by the owner.
+For agent dispatch and custom editors, see [operation IDs and write results](RUNTIME.md#operation-ids-and-write-results).
 
 ## Save a form or hand off a draft
 
