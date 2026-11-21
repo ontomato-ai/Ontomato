@@ -115,12 +115,12 @@ const deleteFunctionImpact: PanelImpactInspector = {
 };
 
 /*
- * The two read-only trials of a metric's unsaved definition. Both read the draft the metric panel's definition form
- * holds, with the parameter values the reader chose, and save nothing. The test answers in Markdown and reads the
+ * The two read-only trials of a metric's unsaved definition. Both read the draft held by the form member the placing
+ * panel names for them (its `readOperationInputs.<operation>.draft`), with the parameter values the reader chose, and
+ * save nothing. The test answers in Markdown and reads the
  * parameter values from the function's own parameter definitions; the test-and-return-JSON takes them beside the
  * draft, and an optional saved binding, and its owner checks that the metric may run.
  */
-const METRIC_FORM_SLOT = "definition";
 const metricTrialTarget = metricSaveTarget.optional();
 const parameterDefinitionsSchema = z.array(z.object({ name: z.string() }).passthrough());
 const trialDraftSchema = z.object({
@@ -176,6 +176,7 @@ const formInstructions = "Read the form for the intended target. Use its fields,
 export const m5ServerOperations = [
   {
     handlerRef: `${METRIC_VIEW}.save`,
+    labelKey: "panels.metricView.operations.save",
     kind: "form.save",
     binding: { kind: "PlatformObjectType", id: METRIC_VIEW },
     effect: "write",
@@ -201,6 +202,7 @@ export const m5ServerOperations = [
   },
   {
     handlerRef: DELETE_METRIC_VIEW,
+    labelKey: "panels.metricView.operations.delete",
     kind: "action",
     binding: { kind: "PlatformOperation", id: DELETE_METRIC_VIEW },
     effect: "write",
@@ -219,6 +221,7 @@ export const m5ServerOperations = [
   },
   {
     handlerRef: SET_METRIC_VIEW_STATUS,
+    labelKey: "panels.metricView.operations.setStatus",
     kind: "action",
     binding: { kind: "PlatformOperation", id: SET_METRIC_VIEW_STATUS },
     effect: "write",
@@ -262,6 +265,7 @@ export const m5ServerOperations = [
   },
   {
     handlerRef: `${FUNCTION}.save`,
+    labelKey: "panels.function.operations.save",
     kind: "form.save",
     binding: { kind: "PlatformObjectType", id: FUNCTION },
     effect: "write",
@@ -287,6 +291,7 @@ export const m5ServerOperations = [
   },
   {
     handlerRef: DELETE_FUNCTION,
+    labelKey: "panels.function.operations.delete",
     kind: "action",
     binding: { kind: "PlatformOperation", id: DELETE_FUNCTION },
     effect: "write",
@@ -305,11 +310,12 @@ export const m5ServerOperations = [
   },
   {
     handlerRef: TEST_METRIC_VIEW,
+    labelKey: "panels.metricView.operations.test",
     binding: { kind: "PlatformOperation", id: TEST_METRIC_VIEW },
     kind: "action",
     effect: "read",
     batch: false,
-    target: { source: "draft", slot: METRIC_FORM_SLOT },
+    target: { source: "draft" },
     targetSchema: metricTrialTarget,
     inputSchema: panelReadOperationInputSchema,
     resultSchema: markdownResultSchema,
@@ -321,11 +327,12 @@ export const m5ServerOperations = [
   },
   {
     handlerRef: TEST_EXECUTE_METRIC_VIEW,
+    labelKey: "panels.metricView.operations.testExecute",
     binding: { kind: "PlatformOperation", id: TEST_EXECUTE_METRIC_VIEW },
     kind: "action",
     effect: "read",
     batch: false,
-    target: { source: "draft", slot: METRIC_FORM_SLOT },
+    target: { source: "draft" },
     targetSchema: metricTrialTarget,
     inputSchema: panelReadOperationInputSchema,
     resultSchema: jsonResultSchema,
