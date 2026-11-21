@@ -794,8 +794,9 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     @Test void registrationReportsARefusedDefaultAgentOnItsSubmittedEntryRow() throws Exception {
         var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         var reason = "Entry 'history' default agent preset 'knowledge-governance' does not select the skill for panel 'panel-overview'.";
-        var payload = JSONObject.of("error", JSONObject.of(
-            "code", "PAGE_DEFAULT_AGENT_UNAVAILABLE", "message", reason, "useId", "history"));
+        var payload = JSONObject.of(
+            "error", JSONObject.of("code", "PAGE_DEFAULT_AGENT_UNAVAILABLE", "message", reason),
+            "details", JSONObject.of("useId", "history"));
         server.createContext("/internal/product-panels/validate-references", exchange -> {
             try {
                 var body = payload.toJSONString().getBytes(StandardCharsets.UTF_8);
