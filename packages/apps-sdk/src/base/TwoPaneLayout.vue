@@ -29,12 +29,12 @@ defineSlots<{
 .sdk-two-pane-block {
   display: grid;
   grid-template-columns: var(--shell-list-panel) minmax(0, 1fr);
-  border: 1px solid var(--el-border-color-lighter);
+  border: 1px solid var(--ui-divider);
   border-radius: var(--radius-md);
   background: var(--el-bg-color);
 }
 .sdk-two-pane-aside {
-  border-inline-end: 1px solid var(--el-border-color-lighter);
+  border-inline-end: 1px solid var(--ui-divider);
   min-width: 0;
   padding: var(--spacing-md);
 }
@@ -48,7 +48,7 @@ defineSlots<{
   }
   .sdk-two-pane-aside {
     border-inline-end: 0;
-    border-block-end: 1px solid var(--el-border-color-lighter);
+    border-block-end: 1px solid var(--ui-divider);
   }
 }
 </style>

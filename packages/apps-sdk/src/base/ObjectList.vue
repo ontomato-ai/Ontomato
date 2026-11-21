@@ -727,80 +727,99 @@ watch(someVisibleChecked, () => {
 </template>
 
 <style scoped>
+/* The platform's design roles only (DESIGN.md): neutral fills for hover and selection, link colour for links, the
+   shared spacing, type, radius and control scales. No value is written here. */
 .sdk-object-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--spacing-sm);
 }
 .sdk-object-list-toolbar {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--spacing-sm);
 }
 .sdk-object-list-search {
   background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color);
-  border-radius: 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px var(--ui-divider) inset;
+  box-sizing: border-box;
   color: var(--el-text-color-primary);
   flex: 1 1 160px;
-  font-size: var(--el-font-size-base, 13px);
-  min-height: 30px;
+  font-size: var(--text-sm);
+  height: var(--control-height);
   min-width: 120px;
-  padding: 4px 8px;
+  padding: 0 var(--spacing-md);
+  transition: box-shadow var(--transition-fast);
 }
+.sdk-object-list-search::placeholder {
+  color: var(--el-text-color-placeholder);
+}
+.sdk-object-list-search:hover {
+  box-shadow: 0 0 0 1px var(--ui-border) inset;
+}
+.sdk-object-list-search:focus-visible {
+  box-shadow: 0 0 0 1px var(--brand-link) inset, var(--focus-ring);
+  outline: none;
+}
+/* Paging is a secondary command: neutral outline, quiet fill on hover and press. */
 .sdk-object-list-btn {
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color);
-  border-radius: 4px;
+  background: transparent;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
   color: var(--el-text-color-primary);
   cursor: pointer;
-  font-size: var(--el-font-size-small, 12px);
-  min-height: 30px;
-  padding: 4px 10px;
+  font-size: var(--text-sm);
+  height: var(--control-height-sm);
+  padding: 0 var(--spacing-md);
+  transition: background-color var(--transition-fast);
 }
 .sdk-object-list-btn:hover:not(:disabled) {
-  border-color: var(--el-color-primary);
-  color: var(--el-color-primary);
+  background: var(--ui-fill-tertiary);
+}
+.sdk-object-list-btn:active:not(:disabled) {
+  background: var(--ui-fill-quaternary);
 }
 .sdk-object-list-btn:disabled {
+  color: var(--el-disabled-text-color);
   cursor: not-allowed;
-  opacity: 0.5;
 }
 .sdk-object-list-count,
 .sdk-object-list-selected-count,
 .sdk-object-list-page-info {
   color: var(--el-text-color-secondary);
-  font-size: var(--el-font-size-small, 12px);
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
 }
 .sdk-object-list-selection-bar {
   align-items: center;
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  border-bottom: 1px solid var(--ui-divider);
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 4px 2px 6px;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) 0 var(--spacing-sm);
 }
 .sdk-object-list-select-all {
   align-items: center;
   cursor: pointer;
   display: inline-flex;
-  font-size: var(--el-font-size-small, 12px);
-  gap: 6px;
+  font-size: var(--text-xs);
+  gap: var(--spacing-xs);
 }
 .sdk-object-list-batch-actions {
   align-items: center;
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--spacing-xs);
   margin-left: auto;
 }
 .sdk-object-list-link-btn,
 .sdk-object-ref-link {
   background: none;
   border: 0;
-  color: var(--el-color-primary);
+  color: var(--brand-link);
   cursor: pointer;
   font-size: inherit;
   padding: 0;
@@ -815,47 +834,53 @@ watch(someVisibleChecked, () => {
 }
 .sdk-object-list-table {
   border-collapse: collapse;
-  font-size: var(--el-font-size-base, 13px);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
   width: 100%;
 }
 .sdk-object-list-table th,
 .sdk-object-list-table td {
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  padding: 8px 10px;
+  border-bottom: 1px solid var(--ui-divider);
+  padding: var(--spacing-sm) var(--spacing-md);
   text-align: left;
   vertical-align: middle;
 }
 .sdk-object-list-table th {
   color: var(--el-text-color-secondary);
-  font-size: var(--el-font-size-small, 12px);
-  font-weight: 500;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  height: var(--table-head-height);
+}
+.sdk-object-list-table td {
+  height: var(--table-row-height);
 }
 .sdk-object-list-table tbody tr {
   cursor: pointer;
+  transition: background-color var(--transition-fast);
 }
 .sdk-object-list-table tbody tr:hover {
-  background: var(--el-fill-color-light);
+  background: var(--ui-fill-tertiary);
 }
 .sdk-object-list-table tbody tr.chosen {
-  background: var(--el-color-primary-light-9);
+  background: var(--ui-fill-secondary);
 }
 .sdk-object-list-check-col {
-  width: 32px;
+  width: var(--control-height);
 }
 .sdk-object-list-cell {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: calc(var(--spacing-xs) / 2);
 }
 .sdk-object-list-cell-sub,
 .sdk-object-list-item-sub {
   color: var(--el-text-color-secondary);
-  font-size: var(--el-font-size-small, 12px);
+  font-size: var(--text-xs);
 }
 .sdk-object-list-items {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: calc(var(--spacing-xs) / 2);
   list-style: none;
   margin: 0;
   padding: 0;
@@ -863,108 +888,111 @@ watch(someVisibleChecked, () => {
 .sdk-object-list-row {
   align-items: flex-start;
   display: flex;
-  gap: 6px;
+  gap: var(--spacing-xs);
 }
 .sdk-object-list-row-check {
-  margin-top: 9px;
+  margin-top: var(--spacing-sm);
 }
 .sdk-object-list-item-btn {
   background: none;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--el-text-color-primary);
   cursor: pointer;
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px 8px;
+  font-size: var(--text-sm);
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
   text-align: left;
+  transition: background-color var(--transition-fast);
   width: 100%;
 }
 .sdk-object-list-item-btn:hover {
-  background: var(--el-fill-color-light);
+  background: var(--ui-fill-tertiary);
 }
 .sdk-object-list-item-btn.chosen {
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
+  background: var(--ui-fill-secondary);
+  font-weight: var(--font-medium);
 }
 .sdk-object-list-item-head {
   align-items: center;
   display: flex;
-  gap: 8px;
+  gap: var(--spacing-sm);
   justify-content: space-between;
   width: 100%;
 }
 .sdk-object-list-item-tags {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--spacing-xs);
 }
+/* Tags are light fills: neutral, or a status's soft fill with its readable text colour. */
 .sdk-object-list-tag {
-  background: var(--el-fill-color-light);
-  border-radius: 4px;
+  background: var(--ui-fill-tertiary);
+  border-radius: var(--radius-xs);
   color: var(--el-text-color-regular);
   display: inline-block;
-  font-size: 11px;
-  line-height: 1.4;
-  padding: 1px 6px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  padding: 0 var(--spacing-xs);
   white-space: nowrap;
 }
 .sdk-object-list-tag[data-tone="info"] {
   background: var(--el-color-info-light-9);
-  color: var(--el-color-info);
+  color: var(--el-color-info-text);
 }
 .sdk-object-list-tag[data-tone="success"] {
   background: var(--el-color-success-light-9);
-  color: var(--el-color-success);
+  color: var(--el-color-success-text);
 }
 .sdk-object-list-tag[data-tone="warning"] {
   background: var(--el-color-warning-light-9);
-  color: var(--el-color-warning);
+  color: var(--el-color-warning-text);
 }
 .sdk-object-list-tag[data-tone="danger"] {
   background: var(--el-color-danger-light-9);
-  color: var(--el-color-danger);
+  color: var(--el-color-danger-text);
 }
 .sdk-object-list-pagination {
   align-items: center;
   display: flex;
-  gap: 8px;
+  gap: var(--spacing-sm);
   justify-content: flex-end;
-  padding-top: 4px;
+  padding-top: var(--spacing-xs);
 }
 .sdk-object-list-diagnostics {
-  color: var(--el-color-warning);
-  font-size: var(--el-font-size-small, 12px);
-  line-height: 1.5;
+  color: var(--el-color-warning-text);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
   list-style: none;
   margin: 0;
-  padding: 0 4px;
+  padding: 0 var(--spacing-xs);
 }
 .sdk-object-list-status {
   align-items: center;
   color: var(--el-text-color-secondary);
   display: flex;
   flex-wrap: wrap;
-  font-size: var(--el-font-size-small, 12px);
-  gap: 6px;
+  font-size: var(--text-xs);
+  gap: var(--spacing-xs);
   margin: 0;
-  padding: 12px 4px;
+  padding: var(--spacing-md) var(--spacing-xs);
 }
 .sdk-object-list-status[data-status="refused"] {
-  color: var(--el-color-warning);
+  color: var(--el-color-warning-text);
 }
 .sdk-object-list-status[data-status="failed"] {
-  color: var(--el-color-danger);
+  color: var(--el-color-danger-text);
 }
 .sdk-object-list-status-reason {
   color: var(--el-text-color-secondary);
 }
 mark {
-  background: var(--el-color-warning-light-7, #f8e3c5);
-  border-radius: 2px;
+  background: var(--el-color-warning-light-7);
+  border-radius: var(--radius-xs);
   color: inherit;
-  padding: 0 1px;
+  padding: 0 calc(var(--spacing-xs) / 4);
 }
 </style>

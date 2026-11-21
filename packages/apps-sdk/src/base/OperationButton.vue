@@ -181,13 +181,13 @@ const done = computed(() => items.value.filter((item) => item.outcome.kind === "
 
 <style scoped>
 .sdk-operation-batch ul {
-  margin: 4px 0 0;
-  padding-inline-start: 18px;
+  margin: var(--spacing-xs) 0 0;
+  padding-inline-start: var(--spacing-lg);
 }
 .sdk-operation-batch li[data-outcome="success"] {
   color: var(--el-text-color-secondary);
 }
 .sdk-operation-batch li:not([data-outcome="success"]) {
-  color: var(--el-color-danger);
+  color: var(--el-color-danger-text);
 }
 </style>

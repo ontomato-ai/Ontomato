@@ -138,6 +138,20 @@
   --el-component-size-large: var(--control-height-lg);
   --el-border-radius-small: var(--radius-xs);
   --el-border-radius-base: var(--radius-sm);
+
+  /*
+   * ---- Neutral interaction roles ----
+   * Hover, press and selection take a neutral fill, never the action colour; edges take a quiet line. An edition's
+   * appearance sets its own (the enterprise edition's translucent fills, installed after this sheet); these defaults
+   * follow the brand's own fills and lines, so a component writes the role and never a value.
+   */
+  --ui-canvas: var(--el-bg-color-page);
+  --ui-border: var(--el-border-color);
+  --ui-divider: var(--el-border-color-lighter);
+  --ui-fill: var(--el-fill-color-dark); /* strongest neutral fill: a pressed toggle */
+  --ui-fill-secondary: var(--el-fill-color); /* selected row, active segment */
+  --ui-fill-tertiary: var(--el-fill-color-light); /* hover */
+  --ui-fill-quaternary: var(--el-fill-color-lighter); /* press, quiet tile */
 }
 
 /* Manager pages keep breathing room around dense controls and tables. */
