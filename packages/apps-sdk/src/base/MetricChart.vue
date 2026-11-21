@@ -5,6 +5,7 @@ import type { chartProjectionTemplateSchema, DashboardMetricOutput } from "@onto
 import { MetricChart as ChartView } from "@ontomato/foundation-ui/chart";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMemberData } from "../panel/member";
+import { useDataStateLabels } from "./data-state-labels";
 
 /**
  * One chart, drawn as its source card draws it: the card's chart file (the member's `template`) filled with a
@@ -39,11 +40,7 @@ const chart = computed<DataStateResult<ChartDrawing>>(() => {
     value: { file: chartFile.content, metric: { columns, rows, ...(truncation ? { truncation: { truncationHint: truncation.truncationHint } } : {}) } },
   };
 });
-const labels = computed(() => ({
-  empty: t("ontology.ovNoChartData"),
-  forbidden: t("platform.dataForbidden"),
-  awaiting: t("platform.dataAwaiting"),
-}));
+const labels = useDataStateLabels(() => t("ontology.ovNoChartData"));
 </script>
 
 <template>

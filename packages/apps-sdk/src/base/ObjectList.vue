@@ -22,6 +22,7 @@ import { projectionElement } from "../panel/projection-element";
 import { stateChildObject, stateObject, stateObjects, type PanelFieldValue } from "../panel/state";
 import type { ObjectListColumn, ObjectListRef } from "./object-list-types";
 import { textHighlightSegments } from "./text-highlight";
+import { useDataStateLabels } from "./data-state-labels";
 
 type ObjectListSelection = ObjectListRef | PanelChildObjectIdentity;
 
@@ -343,11 +344,7 @@ const listResult = computed<DataStateResult<readonly PlatformObjectRecord[]>>(()
   return { status: "ready", value: rows.value };
 });
 
-const dataStateLabels = computed(() => ({
-  empty: props.emptyText ? panel.t(props.emptyText) : t("platform.dataEmpty"),
-  forbidden: t("platform.dataForbidden"),
-  awaiting: t("platform.dataAwaiting"),
-}));
+const dataStateLabels = useDataStateLabels(() => (props.emptyText ? panel.t(props.emptyText) : t("platform.dataEmpty")));
 
 const ownerFieldLabels = computed<Readonly<Record<string, string>>>(() => rows.value[0]?.fieldLabels ?? {});
 

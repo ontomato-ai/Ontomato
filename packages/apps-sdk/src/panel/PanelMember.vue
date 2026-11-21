@@ -7,6 +7,7 @@ import { panelContextKey, projectionKey, type ProjectionSlot } from "./context";
 import { directPanelContext, PanelMemberUnavailable, type DirectPanelInstance } from "./direct";
 import { memberComponentId } from "./projection-element";
 import { panelMemberKey, type PanelMemberContext } from "./member";
+import { useDataStateLabels } from "../base/data-state-labels";
 
 /**
  * One member of a directly rendered panel, drawn in the platform's own document: the member's projection, read once for
@@ -74,7 +75,7 @@ const bound = computed(() => {
   const declared = new Set(Array.isArray(options.props) ? options.props : Object.keys(options.props ?? {}));
   return Object.fromEntries(Object.entries({ ...slot.projection.config, ...member.inputs.value }).filter(([name]) => declared.has(name)));
 });
-const labels = computed(() => ({ empty: t("platform.dataEmpty"), forbidden: t("platform.dataForbidden"), awaiting: t("platform.dataAwaiting") }));
+const labels = useDataStateLabels();
 </script>
 
 <template>

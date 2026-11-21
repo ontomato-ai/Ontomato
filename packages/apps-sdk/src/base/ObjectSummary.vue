@@ -7,6 +7,7 @@ import { usePanelContext, useProjectionSlot } from "../panel/context";
 import { useMemberData } from "../panel/member";
 import type { PlatformFieldReference, PlatformObjectRecord } from "../panel/platform-objects";
 import { textHighlightSegments } from "./text-highlight";
+import { useDataStateLabels } from "./data-state-labels";
 
 /**
  * One platform object as a few facts a reader recognises it by: the member's `record` datum, which the instance reads
@@ -47,11 +48,7 @@ const shown = computed(() => {
 });
 
 const result = computed(() => recordData.value as DataStateResult<PlatformObjectRecord>);
-const labels = computed(() => ({
-  empty: t("platform.dataEmpty"),
-  forbidden: t("platform.dataForbidden"),
-  awaiting: t("platform.dataAwaiting"),
-}));
+const labels = useDataStateLabels();
 
 watch(record, (found) => {
   if (found) panel.instance.nameObjects(found.className ?? objectType, [found]);

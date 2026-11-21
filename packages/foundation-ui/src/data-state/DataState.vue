@@ -1,4 +1,5 @@
 <script setup lang="ts" generic="T">
+import { ElButton } from "element-plus/es/components/button/index";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
 import type { DataStateLabels, DataStateResult } from "./types";
 
@@ -22,7 +23,10 @@ defineSlots<{
   <div v-else-if="result.status === 'loading'" class="fui-data-state" aria-busy="true">
     <el-skeleton :rows="3" animated></el-skeleton>
   </div>
-  <p v-else-if="result.status === 'error'" class="fui-data-state fui-data-state-error" role="alert">{{ result.message }}</p>
+  <p v-else-if="result.status === 'error'" class="fui-data-state fui-data-state-error" role="alert">
+    {{ result.message }}
+    <el-button v-if="result.retry" text type="primary" size="small" @click="result.retry()">{{ labels.retry }}</el-button>
+  </p>
   <p v-else class="fui-data-state" :data-state="result.status" role="status">{{ labels[result.status] }}</p>
 </template>
 
