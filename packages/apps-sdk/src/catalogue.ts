@@ -302,6 +302,14 @@ export const components: readonly ComponentMetadata[] = [
       // The node the reader expands, and the layers and relation kinds the graph shows now.
       neighbors: { results: ["panelGraphNeighbors"], required: true, runtimeParams: ["node", "layers", "relationKinds"] },
     },
+    // What a placement hands the graph: how it draws, where instance mode starts, what is selected and what to highlight.
+    inputs: {
+      mode: { kind: "scalar", type: "string" },
+      start: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
+      selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
+      selectedType: { kind: "scalar", type: "string" },
+      query: { kind: "scalar", type: "string" },
+    },
     outputs: {
       selectedNode: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
       selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
