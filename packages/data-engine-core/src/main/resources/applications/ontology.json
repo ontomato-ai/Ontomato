@@ -60,6 +60,10 @@
       "id": "ontology-relations", "pageKey": "ontology-relations", "panelId": "builtin-product-ontology-relations",
       "path": "/ontology/relations", "access": {"permissionCode": "ontology-modeling"},
       "names": {"en": "Relation types", "zh-CN": "关系类型"}
+    }, {
+      "id": "ontology-actions", "pageKey": "actions", "panelId": "builtin-product-ontology-actions",
+      "path": "/ontology/assets/actions", "access": {"permissionCode": "action-management"},
+      "names": {"en": "Actions", "zh-CN": "动作"}
     }]
   }
 }
