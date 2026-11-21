@@ -43,7 +43,8 @@ Choose the target fields marked `deepLink` and use the [address and child-state 
 Run `node "$SKILL/ontomato.mjs" panel uses <destination-app-id>` to get the destination use's registered `path`.
 Use its path with the encoded state on `usePanelContext().navigate`, captured during setup. The
 [generated capability-map address example](RUNTIME.md#state-in-an-address) opens the type view at a selected class.
-Give `URLSearchParams` raw JSON once. For a browser link in the workbench shell, put the same route after `#`.
+Give `URLSearchParams` raw JSON once. Give readers page and draft links as site-relative paths beginning with
+a single `/`. Include any needed query parameters and omit the scheme and hostname.
 See [header commands and navigation](RUNTIME.md#header-commands-and-navigation) when wiring a button to an entry.
 
 ## Read declared data
@@ -168,7 +169,7 @@ The helper returns `{kind: "create", objectType}` before creation and `{kind: "u
 Reopening a saved creation draft also returns `update` with the ID the first save created.
 
 Publish the draft as a run artifact, such as `outputs/drafts/edit.page-draft.json`.
-Keep the registered entry path's initial slash in the `#/...` route. Pass only the run-relative artifact path
+Build the reader's link from the registered entry path and query. Pass the run-relative artifact path
 to `draftPath`, starting at `outputs/drafts/` with no leading slash.
 
 ```js
@@ -176,7 +177,7 @@ const entry = new URL(usePath, window.location.origin);
 entry.searchParams.set("draftSessionId", sessionId);
 entry.searchParams.set("draftRunId", runId);
 entry.searchParams.set("draftPath", "outputs/drafts/edit.page-draft.json");
-const draftRoute = `#${entry.pathname}${entry.search}`;
+const draftLink = `${entry.pathname}${entry.search}`;
 ```
 
 Use the session and run that wrote the draft. For each newly generated draft, set `draftRunId` to the run ID of

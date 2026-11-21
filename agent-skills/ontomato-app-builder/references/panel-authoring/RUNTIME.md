@@ -188,9 +188,9 @@ owner operation. `do.open` follows the indicated destination address. Use a decl
 
 ## Draft links and instance state
 
-Copy the registered entry path, including its initial slash, and keep any existing entry parameters.
-Every draft link in a reply is a site-relative Markdown destination. Put one slash first and omit the scheme,
-hostname and port, including `localhost`. Neither `http://`, `https://`, nor `//host` belongs in the destination.
+Give readers a site-relative Markdown draft link. Use the registered entry path with its initial slash and keep
+any existing query parameters. Omit the scheme, hostname and port, including `localhost`. The destination
+starts with one slash and contains no `http://`, `https://`, or `//host` prefix.
 Use the producing session and run IDs. Give `draftPath` only the run-relative artifact path
 `outputs/drafts/<name>.page-draft.json`. Encode that value once.
 
