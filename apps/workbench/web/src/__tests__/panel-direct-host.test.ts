@@ -94,7 +94,7 @@ function answer(request: Sent) {
     return Response.json({ status: "ready", value: form(inputs.values?.name ?? `Task ${inputs.task!.primaryKey}`) });
   }
   if (request.path === "/api/assistant/sessions/session-1/runs/run-1/page-draft")
-    return Response.json({ pageKey: use.pageKey, operation: `${SCHEDULED_TASK}.save`, target: { id: "t-1" }, form: { name: "Drafted by an agent" } });
+    return Response.json({ pageKey: use.pageKey, operation: `${SCHEDULED_TASK}.save`, target: { objectType: SCHEDULED_TASK, id: "t-1" }, form: { name: "Drafted by an agent" } });
   if (request.path === "/api/panel-operations/intents")
     return Response.json({ intentId: INTENT, operationId: "run.runNow", label: "Run now", confirmation: { kind: "none" } });
   if (request.path === `/api/panel-operation-intents/${INTENT}`)

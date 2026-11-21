@@ -107,7 +107,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
     // A draft that none of this panel's forms performs is not this panel's: once every member has registered and none
     // takes it, the panel fails with that, rather than waiting for a form that will never come.
     watch(instance.unclaimedDraft, (unclaimed) => {
-      if (unclaimed) run.failed(new Error((options.translate ?? String)("platform.panelDraftUnclaimed")));
+      if (unclaimed !== null) run.failed(new Error((options.translate ?? String)("platform.panelDraftUnclaimed", { ...unclaimed })));
     });
     // Every member the panel declares is held from the start, drawn or not: its operations are listed, a draft is offered
     // to it, and the panel's own code reads its data, whether or not a layout or a template places it.

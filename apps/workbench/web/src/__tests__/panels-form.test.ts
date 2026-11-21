@@ -184,7 +184,7 @@ describe("the form a panel shows", () => {
       {
         pageKey: "panels-trial-a-tasks",
         operation: `${SCHEDULED_TASK}.save`,
-        target: { id: "task-1" },
+        target: { objectType: SCHEDULED_TASK, id: "task-1" },
         form: { operation: "inspection", instruction: "look at tonight's failures" },
       },
       { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/drafts/a.page-draft.json" },

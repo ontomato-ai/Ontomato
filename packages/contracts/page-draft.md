@@ -10,15 +10,15 @@ conversation no longer uses. The one fact kept beside it is the object a create 
 type PageDraft<Form> = {
   pageKey: string;          // the page's registration key, e.g. agent-settings
   operation: string;        // the page's own form action, e.g. agent.update
-  target: { id?: string };  // the owner's opaque id, 1-200 characters; a create leaves it out
+  target: { objectType: string; id?: string }; // the type and, for an edit, the owner's opaque id
   form: Form;               // the page's save request body
   created?: { id: string }; // read only: the object a create draft's first save created
 };
 ```
 
 `pageKey`, `operation` and `target` belong to the page; `form` is the owner's own save input, so only the page checks
-its structure. The envelope does not fix the id's format either: the page and the object's owner check it, e.g. the
-agent settings page expects a UUID while a business knowledge id is any stable string. Each page's form types stay with
+its structure. The page checks the target type before choosing a form. The page and object owner check the id format,
+for example, a UUID for an agent definition or a stable string for business knowledge. Each page's form types stay with
 their API owner; the shared envelope carries the page key the page compares before filling anything.
 
 ## Writing and reading
@@ -43,15 +43,15 @@ page still reads the object and saves through the owner's own endpoints, which d
 
 ## A create draft's object
 
-A create draft is one whose `target` names no id. It has no real object until its first save, so the page that saves
+A create draft names an object type and omits `target.id`. It has no real object until its first save, so the page that saves
 it records the id that save created with `POST .../page-draft/created`, as the reader who may read the draft. The
 record is written once: the same id again is accepted, another id is `409 PAGE_DRAFT_CREATED_CONFLICT`, and a draft
 that names its target is `409 PAGE_DRAFT_NOT_CREATE`. The agent's file is never rewritten, and the file cannot carry
 `created` itself: only the read adds it, from the record. The record lives in `assistant_page_draft_creations`, keyed
 by the conversation, the run and the draft's path, and goes with its conversation.
 
-Every page decides which real object a draft addresses with `draftTarget(draft)`: `{ kind: "update", id }` for a
-draft that names its target or carries `created`, `{ kind: "create" }` otherwise. A create draft saved once is from
+The shared `draftTarget(draft)` returns `{ kind: "update", objectType, id }` for an edit or a draft that
+carries `created`, and `{ kind: "create", objectType }` for a new object. A create draft saved once is from
 then on an update of the object it created, so its link opens that object and, unchanged, opens it as it is. If that
 object has since been deleted, the page reports it missing as it would any missing object; it never offers the create
 again.

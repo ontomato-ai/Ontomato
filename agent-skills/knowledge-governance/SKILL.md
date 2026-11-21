@@ -43,8 +43,9 @@ business knowledge, including a definition not yet recorded, use `import-knowled
 In platform runs it writes one `outputs/drafts/*.page-draft.json` file per item and prints its
 business-knowledge page link; include that link in your reply. A recommendation in the report
 is not a knowledge draft.
-It reads existing knowledge to select create/update; creates use an empty knowledgeID and pending
-status, while updates keep the existing ID and status. Outside the platform it calls Java import
+It reads existing knowledge to select create/update; the entry an update changes is named in the
+draft's target, never repeated in the form. A new item is written as pending; an update keeps the
+entry's status. Outside the platform it calls Java import
 with your credential. Report imported knowledge only after that interface confirms it.
 
 In platform replies, keep the link targets in each draft's `link` (`#/ontology/knowledge?draft...`)

@@ -121,7 +121,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
       // never come.
       const { t } = useI18n();
       watch(instance.unclaimedDraft, (unclaimed) => {
-        if (unclaimed) failed(t("platform.panelDraftUnclaimed"));
+        if (unclaimed !== null) failed(t("platform.panelDraftUnclaimed", { ...unclaimed }));
       });
       return () => h(panelComponent);
     },

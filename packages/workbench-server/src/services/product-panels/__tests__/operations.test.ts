@@ -195,7 +195,7 @@ it("requires the actual initiating user, not another human receipt",async()=>{
  expect(await dispatchPanel(owner,credentials,current.id,uuid(5))).toMatchObject({code:"NOT_APPROVED"});expect(ownerWrites()).toHaveLength(0);
 });
 it("default form save is an unsaved draft that dispatch cannot redeem",async()=>{
- expect(await operatePanel(owner,credentials,current.id,save())).toMatchObject({kind:"draft",draft:{operation:"platform:ScheduledTask.save",form:{title:"draft"}}});
+ expect(await operatePanel(owner,credentials,current.id,save())).toMatchObject({kind:"draft",draft:{operation:"platform:ScheduledTask.save",target:{objectType:"platform:ScheduledTask",id:uuid(9)},form:{title:"draft"}}});
  expect(await dispatchPanel(owner,credentials,current.id,uuid(5))).toMatchObject({code:"DRAFT_REQUIRES_SAVE"});expect(ownerWrites()).toHaveLength(0);expect(mocks.request).not.toHaveBeenCalled();
 });
 it.each(["save","runNow"])("automatic %s calls the same owner client, preserving the form revision",async operation=>{
@@ -316,7 +316,7 @@ it("reuses the original creation artifact as the initiator and saves as the exec
     systemPrompt: "", skills: [{ name: "report", namespace: { kind: "domain", domainId: owner.domainId } }],
     classNames: ["Customer"], modelSelection: { modelId: null }, enabledMcpServiceIds: [] };
   const link = { sessionId: session.sessionId, runId: current.id, path: "outputs/drafts/new.page-draft.json" };
-  const form = { pageKey: use.pageKey, operation: "agent.create", target: {},
+  const form = { pageKey: use.pageKey, operation: "agent.create", target: { objectType },
     form: { ...values, skills: [{ name: "report", namespace: { kind: "domain" } }] } };
   mocks.projection.mockResolvedValue({
     id: "form", name: "Agent form", componentId: "form", binding: { kind: "PlatformObjectType", id: objectType }, inputs: {},

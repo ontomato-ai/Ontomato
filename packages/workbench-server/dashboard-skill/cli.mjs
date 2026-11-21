@@ -5,6 +5,7 @@ import path from "node:path";
 import {dashboardAuthoring,dashboardOperationSchema,dashboardCardRequestSchema} from "../../contracts/src/dashboard.ts";
 import {pageDraftSchema,pageDraftPathSchema} from "../../contracts/src/page-draft.ts";
 import {runtimeIdSchema} from "../../contracts/src/agent-runtime-values.ts";
+import {DASHBOARD} from "../../contracts/src/platform-object-types.ts";
 
 const {values,positionals}=parseArgs({allowPositionals:true,options:{
   "dashboard-id":{type:"string"},"card-id":{type:"string"},operation:{type:"string"},form:{type:"string"},out:{type:"string"},
@@ -51,7 +52,7 @@ async function run(){
   if(command==="save")return call(action.path,form);
   const out=pageDraftPathSchema.parse(values.out);
   const sessionId=runtimeIdSchema.parse(env.ONTOMATO_SESSION_ID),runId=runtimeIdSchema.parse(env.ONTOMATO_RUN_ID);
-  const draft=pageDraftSchema.parse({pageKey:"dashboard",operation,target:{id:"dashboardId" in form?form.dashboardId:form.id},form});
+  const draft=pageDraftSchema.parse({pageKey:"dashboard",operation,target:{objectType:DASHBOARD,id:"dashboardId" in form?form.dashboardId:form.id},form});
   await mkdir(path.dirname(out),{recursive:true});
   await writeFile(out,JSON.stringify(draft,null,2)+"\n");
   const query=new URLSearchParams({draftSessionId:sessionId,draftRunId:runId,draftPath:out});

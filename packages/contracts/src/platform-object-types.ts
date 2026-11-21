@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+export const DASHBOARD = "platform:Dashboard";
 export const DASHBOARD_CARD = "platform:DashboardCard";
 export const EXECUTE_OBJECT_ACTION = "actions.execute";
 export const SCHEDULED_TASK = "platform:ScheduledTask";

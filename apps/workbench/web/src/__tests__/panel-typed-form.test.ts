@@ -261,7 +261,7 @@ it("creates with the owner's defaults, and moves the panel onto the agent the ow
 const link = { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/drafts/agent.page-draft.json" };
 const draftAt = `/api/assistant/sessions/${link.sessionId}/runs/${link.runId}/page-draft`;
 
-async function openWithDraft(form: PanelFormValues, envelope: { operation: string; target: { id?: string }; created?: { id: string } } = { operation: "agent.update", target: { id: AGENT } }) {
+async function openWithDraft(form: PanelFormValues, envelope: { operation: string; target: { objectType: string; id?: string }; created?: { id: string } } = { operation: "agent.update", target: { objectType: AGENT_DEFINITION, id: AGENT } }) {
   const query = new URLSearchParams({ draftSessionId: link.sessionId, draftRunId: link.runId, draftPath: link.path });
   const draft = { pageKey: use.pageKey, ...envelope, form };
   const answer = ownerForInstance();
@@ -285,9 +285,11 @@ async function openWithDraft(form: PanelFormValues, envelope: { operation: strin
   return { ...(await mountPanel(panelOf(...formMembers))), failed, settled, sent, draft };
 }
 
-it("refuses a draft the owner refuses, whole, naming the field and the reason, and marks nothing", async () => {
+// The owner refusing the draft is the form's to say (panelisation lead, 2026-11-21): on the form, the panel going on.
+it("refuses a draft the owner refuses, whole, naming the reason on the form, and marks nothing", async () => {
   const { context, failed, sent, draft } = await openWithDraft({ ...stored, executionUserId: "user-2" });
-  await vi.waitFor(() => expect(failed).toEqual(["You may not change who the agent runs as"]), { timeout: 5000 });
+  await vi.waitFor(() => expect(document.querySelector("#app .sdk-owner-form-refusal")?.textContent).toContain("You may not change who the agent runs as"), { timeout: 5000 });
+  expect(failed).toEqual([]);
   // The whole draft went to the owner for its check, as the agent wrote it.
   expect(sent.find((request) => (request.body as { values?: unknown } | null)?.values)?.body)
     .toEqual({ target: { kind: "object", objectType: AGENT_DEFINITION, primaryKey: AGENT }, values: draft.form, changedField: null });
@@ -322,7 +324,7 @@ it("opens a draft that changes nothing as the agent is, with nothing unsaved", a
 });
 
 it("reopens a saved create draft on the agent it created, and creates nothing again", async () => {
-  const { context, sent } = await openWithDraft(stored, { operation: "agent.create", target: {}, created: { id: AGENT } });
+  const { context, sent } = await openWithDraft(stored, { operation: "agent.create", target: { objectType: AGENT_DEFINITION }, created: { id: AGENT } });
   // The owner checked the draft against the agent it created.
   await vi.waitFor(() => expect(sent.some((request) => (request.body as { values?: unknown } | null)?.values)).toBe(true), { timeout: 5000 });
   await vi.waitFor(() => expect(context.instance.state.values.value.selectedAgent).toEqual({ className: AGENT_DEFINITION, primaryKey: AGENT }));
@@ -373,7 +375,7 @@ it("tells the host the draft is settled once the reader discarded it, and writes
 });
 
 it("records what a saved create draft created before it tells the host the draft is settled", async () => {
-  const { context, settled, sent } = await openWithDraft({ ...defaults, name: "Planner" }, { operation: "agent.create", target: {} });
+  const { context, settled, sent } = await openWithDraft({ ...defaults, name: "Planner" }, { operation: "agent.create", target: { objectType: AGENT_DEFINITION } });
   await vi.waitFor(() => expect(context.draft.value?.changed).toEqual(new Set(["/name"])), { timeout: 5000 });
   expect(context.instance.state.values.value.selectedAgent).toBeNull();
   await context.instance.invoke("definition.save");
