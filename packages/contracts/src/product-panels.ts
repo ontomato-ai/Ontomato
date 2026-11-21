@@ -12,6 +12,7 @@ import {
 } from "./panel-projection";
 import { platformObjectTypes } from "./platform-object-types";
 import { applicationMetadataSchema } from "./application-metadata";
+import { domainApplicationIconSchema } from "./application-icons";
 import { pageSkillContextSchema, pageSkillEntranceSchema } from "./page-skills";
 import { runtimeJsonValueSchema, type RuntimeJsonValue } from "./agent-runtime-values";
 import { dashboardCardRequestSchema, dashboardChartFileSchema } from "./dashboard";
@@ -316,6 +317,8 @@ export const APPLICATION_PANEL_REFERENCES_PATH = "/internal/product-panels/valid
 /** The platform service authenticates this request. Node validates the public inputs and the fixed closure. */
 export const applicationPanelReferencesRequestSchema = z.object({
   domainId: id,
+  /** Submit on creation or when the icon changes. Unchanged stored values are not checked here. */
+  icon: domainApplicationIconSchema.optional(),
   framePanelId: id.optional(),
   uses: z.array(applicationPanelUseSchema.pick({ id: true, panelId: true, inputs: true, defaultAgent: true })),
   delivery: applicationDeliverySchema.pick({ panels: true, projections: true }),
