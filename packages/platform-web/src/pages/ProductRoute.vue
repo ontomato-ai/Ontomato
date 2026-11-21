@@ -8,13 +8,11 @@ import {ManagerFrame,ProductAssetRuntime,useProductText} from "@ontomato/ontolog
 import PersonalWorkspace from "./PersonalWorkspaceRoute.vue";
 import {ElAlert,ElButton} from 'element-plus';
 import {useI18n} from 'vue-i18n';
-import { PlatformTabs } from '@ontomato/platform-shell';
 const props=defineProps<{productAssetId:string;embedded?:boolean;applicationId?:string}>();
 const {t}=useI18n();
 const productText=useProductText();
 const router=useRouter(),asset=ref<ProductAsset|null>(null),children=ref<ProductAsset[]>([]),error=ref("");
 const route=useRoute();
-const standalone = computed(() => !props.embedded && !!props.applicationId && route.query.standalone === '1');
 const unavailableAssets=ref<string[]>([]);
 const rootUnavailable=computed(()=>unavailableAssets.value.includes(props.productAssetId));
 const stateError=ref('');
@@ -27,10 +25,6 @@ const pageState=computed(()=>{
 });
 watch(()=>[route.query.state,asset.value,selectedPage.value],()=>{stateError.value='';if(asset.value&&typeof route.query.state==='string')try{validatePageState(stateSignature.value,JSON.parse(route.query.state));}catch(reason){stateError.value=reason instanceof Error?reason.message:'Invalid page state';}},{immediate:true});
 const applicationNavigation=computed(()=>{const root=asset.value?.document;return root?.kind==='application'?children.value.find(child=>child.id===root.navigationId):undefined;});
-const applicationTabs = computed(() => {
-  const navigation = applicationNavigation.value?.document;
-  return navigation?.kind === 'navigation' ? navigation.nodes.map(node => ({ id: node.pageId, label: node.label })) : [];
-});
 const publishedChildren=computed(()=>props.applicationId?children.value:undefined);
 function navigate(id:string){
   if(props.applicationId){try{validateProductNavigation(children.value,id);navigationPage.value=id;}catch(reason){error.value=reason instanceof Error?reason.message:String(reason);}}
@@ -65,25 +59,20 @@ watch(()=>[props.productAssetId,props.applicationId,route.query.navigationPath],
   <el-alert v-else-if="rootUnavailable" :title="t('ontology.productReleaseContractChanged')" type="error" :closable="false"/>
   <ManagerFrame v-else-if="!error&&asset?.document.kind==='object-projection'"><ProductAssetRuntime :asset="asset" :page-state="pageState"/></ManagerFrame>
   <section v-else-if="!error && asset?.document.kind === 'application' && applicationNavigation" class="product-application">
-    <div v-if="standalone && applicationTabs.length > 1" class="product-tabs platform-page-gutter">
-      <PlatformTabs variant="segmented" :tabs="applicationTabs" :active-id="navigationPage" :label="t('platform.pages')" @select="navigate" />
-    </div>
-    <ManagerFrame v-else-if="!standalone" class="product-navigation"><ProductAssetRuntime :asset="applicationNavigation" @navigate="navigate" /></ManagerFrame>
+    <ManagerFrame class="product-navigation"><ProductAssetRuntime :asset="applicationNavigation" @navigate="navigate" /></ManagerFrame>
     <div class="product-application-content" :class="{ 'owns-scroll': embedded }">
       <PersonalWorkspace v-if="selectedPage" :key="selectedPage.id" :product-asset-id="selectedPage.id" :pinned-assets="publishedChildren"
-        :unavailable-assets="unavailableAssets" :embedded="embedded" :hide-page-header="standalone" :page-state="pageState" />
+        :unavailable-assets="unavailableAssets" :embedded="embedded" :page-state="pageState" />
     </div>
   </section>
-  <PersonalWorkspace v-else-if="!error&&asset?.document.kind==='page'" :product-asset-id="productAssetId" :pinned-assets="applicationId?children:undefined" :embedded="embedded" :hide-page-header="standalone" :page-state="pageState" :unavailable-assets="unavailableAssets"/>
-   <section v-else class="product-page" :class="{'is-embedded':embedded, 'is-standalone': standalone}"><el-alert v-if="error" :title="error" type="error" :closable="false"/><template v-if="asset&&!error"><h1 v-if="!embedded && !standalone">{{productText(asset.name)}}</h1><p v-if="!embedded && !standalone">{{productText(asset.description)}}</p><el-alert v-if="directChildren.some(child=>unavailableAssets.includes(child.id))" :title="t('ontology.productProjectionContractChanged')" type="error" :closable="false"/><ManagerFrame><ProductAssetRuntime :asset="asset" @navigate="navigate"/><section v-for="child in visibleDirectChildren" :key="child.id"><el-button v-if="child.document.kind==='page'" @click="navigate(child.id)">{{productText(child.name)}}</el-button><ProductAssetRuntime v-else :asset="child" @navigate="navigate"/></section></ManagerFrame><PersonalWorkspace v-if="selectedPage" :key="selectedPage.id" :product-asset-id="selectedPage.id" :pinned-assets="publishedChildren" :unavailable-assets="unavailableAssets" :embedded="embedded" :hide-page-header="standalone"/></template></section>
+  <PersonalWorkspace v-else-if="!error&&asset?.document.kind==='page'" :product-asset-id="productAssetId" :pinned-assets="applicationId?children:undefined" :embedded="embedded" :page-state="pageState" :unavailable-assets="unavailableAssets"/>
+   <section v-else class="product-page" :class="{'is-embedded':embedded}"><el-alert v-if="error" :title="error" type="error" :closable="false"/><template v-if="asset&&!error"><h1 v-if="!embedded">{{productText(asset.name)}}</h1><p v-if="!embedded">{{productText(asset.description)}}</p><el-alert v-if="directChildren.some(child=>unavailableAssets.includes(child.id))" :title="t('ontology.productProjectionContractChanged')" type="error" :closable="false"/><ManagerFrame><ProductAssetRuntime :asset="asset" @navigate="navigate"/><section v-for="child in visibleDirectChildren" :key="child.id"><el-button v-if="child.document.kind==='page'" @click="navigate(child.id)">{{productText(child.name)}}</el-button><ProductAssetRuntime v-else :asset="child" @navigate="navigate"/></section></ManagerFrame><PersonalWorkspace v-if="selectedPage" :key="selectedPage.id" :product-asset-id="selectedPage.id" :pinned-assets="publishedChildren" :unavailable-assets="unavailableAssets" :embedded="embedded"/></template></section>
 </template>
 <style scoped>
 .product-application{display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden}
 .product-navigation{flex:0 0 auto;height:auto;container-type:inline-size;contain:none;border-bottom:1px solid var(--el-border-color-light)}
 .product-navigation :deep(.ontology-manager-shell){height:auto;overflow:visible;padding:8px 16px}
-.product-tabs { flex-shrink: 0; min-inline-size: 0; padding-block-start: var(--spacing-sm); }
 .product-application-content{display:flex;flex-direction:column;flex:1;min-height:0}
 .product-application-content.owns-scroll{overflow:auto}
-.product-page.is-standalone { margin: 0; max-width: none; padding: var(--page-content-gap) var(--page-gutter); }
 </style>
 <style scoped>.product-page{padding:24px;max-width:1280px;width:100%;box-sizing:border-box;margin:auto}.product-page section{margin:20px 0}.product-page.is-embedded{padding:0;max-width:none}.product-page>:deep(.ontology-manager){height:auto;container-type:inline-size;contain:none}.product-page :deep(.ontology-manager-shell){height:auto;overflow:visible}</style>
