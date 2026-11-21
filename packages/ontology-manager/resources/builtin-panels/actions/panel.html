@@ -172,7 +172,6 @@
           <el-tag v-if="recordOrigin" size="small" type="info">{{ recordOrigin }}</el-tag>
         </div>
         <div class="ac-detail-actions" v-if="selected && !systemAction">
-          <span class="ac-hint">{{ t("deleteHint") }}</span>
           <projection slot="remove"></projection>
         </div>
       </div>
