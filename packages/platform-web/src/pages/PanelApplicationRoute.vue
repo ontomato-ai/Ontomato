@@ -206,12 +206,27 @@ watch(missing, (message) => {
  * rides in the address's \`frame\` segment, beside the content's \`state\`; beside a conversation no frame is drawn, but
  * the same segment gives the content the values the frame shares.
  */
-const frameState = computed(() => {
+/**
+ * The frame's state as the frame last reported it, for the frame panel that reported it: going from entry to entry the
+ * frame stays, and so does its state (design §三: another entry of the application takes the frame's public context
+ * along), whether or not the address the reader went to names it.
+ */
+type FrameState = ReturnType<typeof parseApplicationPanelAddress>["frame"];
+const lastFrame = shallowRef<{ framePanelId: string; state: FrameState } | null>(null);
+/** The address's `frame` segment, or — for an address without one while the same frame stands — the frame's own state. */
+const frameState = computed((): FrameState => {
+  let named: FrameState;
+  let hasSegment: boolean;
   try {
-    return parseApplicationPanelAddress(opened.value).frame;
+    hasSegment = new URLSearchParams(opened.value.split("?")[1] ?? "").has("frame");
+    named = parseApplicationPanelAddress(opened.value).frame;
   } catch {
     return {};
   }
+  // An address that names the frame's state is read as it is: the frame's own reports reach it through the address.
+  if (hasSegment) return named;
+  // While the next entry's answer is coming, the frame that stands is still the one that reported.
+  return lastFrame.value?.state ?? named;
 });
 const framed = computed(() => !props.navigate && Boolean(resolution.value?.framePanelId));
 useApplicationFrame(() => framed.value);
@@ -250,10 +265,23 @@ const frameAddress = computed(() => panelAddress(openedPath.value, {}));
 /** The frame reported its state: the address carries it as \`frame\`, and the content's state stays as it is. */
 function reportFrameAddress(input: DisplayPageAddressInput) {
   const reported = panelAddressState(input.address);
+  const framePanelId = resolution.value?.framePanelId;
+  if (framePanelId) lastFrame.value = { framePanelId, state: reported as FrameState };
   const { path, state, query } = parseApplicationPanelAddress(opened.value);
   const next = applicationPanelAddress(path, { frame: reported as never, state, query });
   if (next !== opened.value) void router.replace(next);
 }
+/** An entry opened without the frame's segment while the frame stands: its address takes the frame's state back. */
+watch([opened, () => resolution.value?.framePanelId], () => {
+  const kept = lastFrame.value;
+  const framePanelId = resolution.value?.framePanelId;
+  // Another frame, or none, answers for this application now: the state kept was another frame's.
+  if (kept && resolution.value && kept.framePanelId !== framePanelId) lastFrame.value = null;
+  if (!framed.value || !kept || kept.framePanelId !== framePanelId || !Object.keys(kept.state).length) return;
+  if (new URLSearchParams(opened.value.split("?")[1] ?? "").has("frame")) return;
+  const { path, state, query } = parseApplicationPanelAddress(opened.value);
+  void router.replace(applicationPanelAddress(path, { frame: kept.state, state, query }));
+});
 const headerLabels = computed(() => ({ save: t("platform.save"), discard: t("platform.discard"), unsavedChanges: t("platform.unsavedChanges") }));
 
 /** What the panel host says to the reader, in the platform's language. */

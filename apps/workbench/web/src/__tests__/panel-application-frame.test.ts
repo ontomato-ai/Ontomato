@@ -107,6 +107,12 @@ it("holds the entry's page, header and content, in the frame; shares the frame's
     await vi.waitFor(() => expect(frameRoot.querySelector(".current")?.textContent).toBe("framed-autumn"));
     expect(element.querySelector(".panel-application-frame")).toBe(frameRoot);
     await vi.waitFor(() => expect(frameRoot.querySelector(".panel-entry-unit .page-title")?.textContent).toBe("autumn"));
+
+    // An entry opened at its bare address — the frame's own menu, a link — keeps the frame's term, and its address says so.
+    await router.push(at("spring"));
+    await vi.waitFor(() => expect(frameRoot.querySelector(".current")?.textContent).toBe("framed-spring"));
+    await vi.waitFor(() => expect(parseApplicationPanelAddress(router.currentRoute.value.fullPath).frame).toEqual({ term: "B" }));
+    expect(frameRoot.querySelector(".panel-entry-unit .term")?.textContent).toBe("B");
   } finally {
     mounted.unmount();
   }
