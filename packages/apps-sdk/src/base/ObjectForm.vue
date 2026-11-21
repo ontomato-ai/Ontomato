@@ -318,18 +318,47 @@ function edit(path: string, next: PanelFormValues) {
   const described = fields.value.find((item) => path === item.path || path.startsWith(`${item.path}/`));
   if (described) submitted.value = new Set([...submitted.value, described.path]);
   values.value = next;
+  editedAt.set(path, ++edits);
   const field = fieldAt(fields.value, path);
-  if (!field?.refreshOnChange) return;
+  if (field?.refreshOnChange) askOwner(path);
+}
+
+/** How many edits the reader has made, and when each path was last edited, counted in them. */
+let edits = 0;
+const editedAt = new Map<string, number>();
+/** A question to the owner on its way, and the field changed since that the next question is about. */
+let asking = false;
+let askNext: string | null = null;
+/**
+ * Asks the owner for its form again for the values as they are now, `changedField` the field that set it off. One
+ * question at a time: edits made while one is on its way wait for its answer and set off one more, for the values then.
+ * An answer is for the values it was asked with, so what the reader edited after asking stays as they left it.
+ */
+function askOwner(changedField: string) {
+  if (asking) {
+    askNext = changedField;
+    return;
+  }
+  asking = true;
   const asked = target.value!;
   const askedKey = targetKey(asked);
+  const askedAt = edits;
   // The owner changes the fields for these edits; the opened reading, its revision and the discard baseline stay.
-  void forms.describe({ target: asked, values: values.value, changedField: path }).then((answer) => {
+  void forms.describe({ target: asked, values: values.value, changedField }).then((answer) => {
     if (loaded !== askedKey) return;
     ownerShown.value = answer;
     description.value = fixDescription(answer);
-    values.value = description.value.values;
+    values.value = [...editedAt].filter(([, at]) => at > askedAt).reduce((all, [edited]) => {
+      const kept = valueAt(values.value, edited);
+      return kept === undefined ? withoutValueAt(all, edited) : withValueAt(all, edited, kept);
+    }, description.value.values);
     errors.value = fieldMessages(answer.errors);
-  }, fail);
+  }, fail).finally(() => {
+    asking = false;
+    const again = askNext;
+    askNext = null;
+    if (again !== null && loaded === askedKey) askOwner(again);
+  });
 }
 
 /**

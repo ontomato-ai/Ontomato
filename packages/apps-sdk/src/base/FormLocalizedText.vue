@@ -45,7 +45,9 @@ function write(code: string, text: string) {
   const next = { ...texts.value };
   if (text === "" && !required.value.has(code)) delete next[code];
   else next[code] = text;
-  controls.set(props.path, next);
+  // An optional text with no language left is not given at all, as an optional choice cleared.
+  if (!Object.keys(next).length && !props.field.required) controls.remove(props.path);
+  else controls.set(props.path, next);
 }
 function add(code: string) {
   added.value = [...added.value, code];
