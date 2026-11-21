@@ -347,7 +347,7 @@ export const en = {
   "api.backendExecutionTimeout": "Backend execution timeout",
   "api.backendNotConfigured": "Backend not configured (DATA_QUERY_BASE_URL)",
   "api.feedbackSubmitted": "Feedback submitted",
-  "api.feedbackExport.columns.time": "Time",
+  "api.feedbackExport.columns.updatedAt": "Last updated",
   "api.feedbackExport.columns.source": "Source",
   "api.feedbackExport.columns.rating": "Rating",
   "api.feedbackExport.columns.user": "User",

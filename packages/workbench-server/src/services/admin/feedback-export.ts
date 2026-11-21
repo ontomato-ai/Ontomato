@@ -18,7 +18,7 @@ export function feedbackCsv(
   const column = (key: string) => tForLocale(locale, `api.feedbackExport.${key}`);
   const label = (key: string) => tForLocale(locale, `api.feedback.${key}`);
   const headers = [
-    column("columns.time"),
+    column("columns.updatedAt"),
     column("columns.source"),
     column("columns.rating"),
     column("columns.user"),
@@ -29,7 +29,7 @@ export function feedbackCsv(
   ];
   const lines = records.map((record) =>
     [
-      new Date(record.createdAt).toLocaleString(locale, { timeZone }),
+      new Date(record.updatedAt).toLocaleString(locale, { timeZone }),
       label(`sources.${record.sourceType}`),
       label(`ratings.${record.rating}`),
       record.userName || record.userId,

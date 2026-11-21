@@ -101,7 +101,8 @@
           "pageSize": 20,
           "columns": [
             {
-              "key": "createdAt"
+              "key": "updatedAt",
+              "kind": "time"
             },
             {
               "key": "sourceType"

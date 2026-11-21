@@ -34,7 +34,7 @@ const record = {
   assistantOutput: "Within 7 days.",
   feedbackText: "Thanks",
   turnKey: "turn.11111111-1111-4111-8111-111111111111.3",
-  createdAt: Date.UTC(2026, 10, 19, 8, 0, 0),
+  updatedAt: Date.UTC(2026, 10, 19, 8, 0, 0),
 };
 
 let server: Server;
@@ -90,7 +90,7 @@ it("exports the filtered records as a BOM CSV attachment with the admin page's c
   const bytes = new Uint8Array(await response.arrayBuffer());
   expect([...bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
   const [header, row] = new TextDecoder().decode(bytes).split("\n");
-  expect(header).toBe('"Time","Source","Rating","User","Turn key","Question","Answer","Comment"');
+  expect(header).toBe('"Last updated","Source","Rating","User","Turn key","Question","Answer","Comment"');
   expect(row).toContain('"11/19/2026, 3:00:00 AM"');
   expect(row).toContain('"Query"');
   expect(row).toContain('"Like"');
@@ -117,7 +117,7 @@ it("keeps the list's admission and sends no filter it was not given", async () =
     locale: "en",
   });
   expect(new TextDecoder().decode(new Uint8Array(await response.arrayBuffer()))).toBe(
-    '"Time","Source","Rating","User","Turn key","Question","Answer","Comment"',
+    '"Last updated","Source","Rating","User","Turn key","Question","Answer","Comment"',
   );
 });
 

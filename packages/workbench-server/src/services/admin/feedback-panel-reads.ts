@@ -49,7 +49,7 @@ function feedbackRow(record: FeedbackRecord, fieldLabels: Record<string, string>
       assistantOutput: record.assistantOutput ?? "",
       feedbackText: record.feedbackText ?? "",
       turnKey: record.turnKey,
-      createdAt: new Date(record.createdAt).toISOString(),
+      updatedAt: new Date(record.updatedAt).toISOString(),
     },
   };
 }
@@ -64,7 +64,7 @@ export function createFeedbackReadAdapter(owner: ProductOwner, viewer: Assistant
     assistantOutput: t("api.feedbackExport.columns.output"),
     feedbackText: t("api.feedbackExport.columns.feedback"),
     turnKey: t("api.feedbackExport.columns.turnKey"),
-    createdAt: t("api.feedbackExport.columns.time"),
+    updatedAt: t("api.feedbackExport.columns.updatedAt"),
   });
   const requireAccess = () => assertPermission(viewer, ["user-feedback"]);
 

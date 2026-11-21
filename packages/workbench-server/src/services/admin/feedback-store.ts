@@ -114,7 +114,7 @@ export async function listFeedback(
         threadId: row.session_id,
         requestSeq: row.request_seq,
       }),
-      createdAt: new Date(row.updated_at).getTime(),
+      updatedAt: new Date(row.updated_at).getTime(),
     });
   }
   return {
