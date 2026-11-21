@@ -18,6 +18,10 @@ withDefaults(defineProps<{
   edgeEnds?: EdgeEndsConfig;
   /** On the page's canvas, a line drawn with Shift from one node to another hands the panel its two ends. */
   editable?: boolean;
+  /** On the page's canvas, the categories in a fixed order: the n-th takes the platform palette's n-th colour. */
+  categories?: readonly string[];
+  /** On the page's canvas, a JSON Pointer into each node record's `fields` naming its category; one colour when absent. */
+  nodeCategory?: string;
 }>(), { editable: undefined });
 
 const panel = usePanelContext();
@@ -27,5 +31,5 @@ const choosesField = computed(() => panel.manifest.members[member.key]?.formFiel
 
 <template>
   <ObjectGraphField v-if="choosesField" :edge-ends="edgeEnds"></ObjectGraphField>
-  <ObjectGraphCanvas v-else :edge-ends="edgeEnds" :editable="editable"></ObjectGraphCanvas>
+  <ObjectGraphCanvas v-else :edge-ends="edgeEnds" :editable="editable" :categories="categories" :node-category="nodeCategory"></ObjectGraphCanvas>
 </template>
