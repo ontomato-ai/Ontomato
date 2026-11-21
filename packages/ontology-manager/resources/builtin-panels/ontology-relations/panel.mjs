@@ -32,7 +32,9 @@ await mountPanel({
           typeLabel(row.fields.fromclass), typeLabel(row.fields.toclass)]
           .filter(Boolean).join(" ").toLowerCase().includes(term));
     });
+    // The count waits for the owner's answer: while reading, or when the read failed, there is no number to show.
     const countText = computed(() => {
+      if (catalogue.value.status !== "ready") return "";
       const shown = rows.value.length;
       const total = allRows.value.length;
       return search.value.trim() && shown !== total ? `${shown} / ${total} 条` : `${total} 条`;
