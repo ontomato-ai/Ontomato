@@ -127,7 +127,11 @@ async function workspaceDefinition(directory, files, checks, panel, loadAuthorin
     const position = issue.params?.line === undefined
       ? issue.path.join(".")
       : `${issue.params.line}:${issue.params.column}`;
-    return `${file}${position ? `:${position}` : ""}: ${issue.message}`;
+    const details = issue.params;
+    const message = details?.reason === "header_event_state_not_deep_linked"
+      ? `Header event '${details.event}' changes state '${details.field}', which the assistant cannot set by address. Set manifest.state.${details.field}.deepLink to true.`
+      : issue.message;
+    return `${file}${position ? `:${position}` : ""}: ${message}`;
   });
   throw new Error(diagnostics.join("\n"));
 }

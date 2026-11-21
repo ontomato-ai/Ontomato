@@ -252,6 +252,11 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     export const panelDefinitionContentSchema = {
       parse,
       safeParse(value) {
+        if (value.manifest.events.instance?.labelKey && !value.manifest.state.mode?.deepLink) {
+          return invalid([{ path: ["manifest", "events", "instance", "do", "set", "fields", "mode"],
+            message: "The state is not available by address",
+            params: { reason: "header_event_state_not_deep_linked", event: "instance", field: "mode" } }]);
+        }
         return typeof value.content.module === "string"
           ? ok(value)
           : invalid([{ path: ["content", "module"], message: "Required" }]);
@@ -405,6 +410,15 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await writeFile(layout, tasksTemplate);
     const moduleFile = join(directory, "panel.mjs");
     await writeFile(moduleFile, panel.content.module);
+    const invalidHeaderEvent = { ...manifest, state: { mode: { type: { kind: "scalar", type: "string" } } },
+      events: { instance: { labelKey: "show-instance", do: { set: { fields: { mode: { literal: "instance" } } } } } } };
+    await writeFile(join(directory, "panel.json"), JSON.stringify({ manifest: invalidHeaderEvent }));
+    await assert.rejects(run("panel", "check", directory), error =>
+      error.stderr.includes("panel.json:manifest.events.instance.do.set.fields.mode") &&
+      error.stderr.includes("Header event 'instance' changes state 'mode'") &&
+      error.stderr.includes("Set manifest.state.mode.deepLink to true"));
+    assert.equal(requests.splice(0).some(([method]) => method !== "GET"), false);
+    await writeFile(join(directory, "panel.json"), JSON.stringify({ manifest }));
     const offlineSdk = join(directory, "sdk");
     await mkdir(offlineSdk);
     await writeFile(join(offlineSdk, "sdk.json"), JSON.stringify({ version: sdkVersion, check: "check.mjs", components: "components.json" }));

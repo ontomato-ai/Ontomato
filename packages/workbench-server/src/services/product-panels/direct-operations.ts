@@ -28,7 +28,7 @@ function unavailable(id: string): never {
 
 function eventRequiresPageSkill(id: string): never {
   throw new HttpError(422,
-    `Follow the page skill's instructions for panel event '${id}'. The /operate endpoint accepts declared operations.`,
+    `'${id}' identifies a panel event. Follow the page skill's instructions for this event. The /operate endpoint accepts declared operations.`,
     "PANEL_EVENT_REQUIRES_PAGE_SKILL");
 }
 
