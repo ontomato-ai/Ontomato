@@ -132,9 +132,11 @@ Keep the form mounted with `v-show` so it can receive drafts while the detail is
   @saved="mode = 'view'" @discarded="mode = 'view'"></projection>
 ```
 
-For an assistant draft, read the owner form first and copy `save.draftOperation` into the artifact's `operation`.
-Use the entry's `pageKey` and the owner's object type. For an edit, include the opaque ID returned by the owner.
-Put only the changed field values in `form`.
+Keep `recipes.md` for page-specific business guidance. Use this section as the single reference for the draft format.
+
+For an assistant draft, look up the form's `objectType` in the entry's generated page skill. Read the owner form
+and copy `save.draftOperation` into the artifact's `operation`. Use the entry's `pageKey`. For an edit, include
+the opaque ID returned by the owner and put only the changed field values in `form`.
 
 ```json
 {
