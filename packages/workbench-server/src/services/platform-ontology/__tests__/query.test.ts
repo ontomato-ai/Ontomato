@@ -712,7 +712,7 @@ describe("platform-ontology composite query", () => {
               selectedOrder: { type: { kind: "object", objectType: "Order" } },
               activeTab: { type: { kind: "object", objectType: PRODUCT_PANEL } },
               customSlot: {
-                type: { kind: "placement", candidates: { rule: "catalogSelection" } },
+                type: { kind: "placement", candidates: { rule: "usable" } },
                 default: { id: "slot-1", target: { projectionId: "proj-order-actions" } },
               },
               panelPickerSlot: {

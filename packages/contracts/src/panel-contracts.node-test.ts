@@ -543,7 +543,7 @@ test("a panel manifest validates events, state and placements", () => {
       agents: { type: { kind: "list", items: agent }, personal: true, default: [] },
       agent: { type: agent, default: null, deepLink: true, external: true },
       mode: { type: { kind: "scalar", type: "string" } },
-      preview: { type: { kind: "placement", candidates: { rule: "catalogSelection" } } },
+      preview: { type: { kind: "placement", candidates: { rule: "usable" } } },
     },
     members: {
       row: { target: { panelId: "agent-detail" }, inputs: { agent: { item: true } } },
@@ -1869,6 +1869,53 @@ test("page candidate directories can identify the offered agents by preset", asy
   assert.deepEqual(assistantAgentListSchema.parse({ agents }), { agents });
   assert.equal(assistantAgentListSchema.safeParse({ agents, presetAgentIds: { "": id } }).success, false);
   assert.equal(assistantAgentListSchema.safeParse({ agents, presetAgentIds: { regular: "not-an-id" } }).success, false);
+});
+
+test("a state placement selects a product's kind and carries the complete nested operation path", async () => {
+  const { panelManifestSchema, panelMemberPathSchema, panelOperationId } = await import("./panel-manifest");
+  const { productPanelNestedReadRequestSchema, productPanelNestedReadResponseSchema } = await import("./panel-host");
+  const { pageContextSchema } = await import("./page-context");
+  const selected = { type: { kind: "object", objectType: "platform:ProductProjection" } };
+  const manifest = (candidates: object, state = selected) => ({
+    state: { selected: state }, members: { detail: { target: { fromState: "selected", candidates } } }, events: {},
+  });
+  assert.equal(panelManifestSchema.safeParse(manifest({ projectionIds: ["approve-card"] })).success, true);
+  assert.equal(panelManifestSchema.safeParse(manifest({ rule: "usable" })).success, true);
+  assert.equal(panelManifestSchema.safeParse(manifest({ panelIds: ["approve-card"] })).success, false);
+  assert.equal(panelManifestSchema.safeParse(manifest({ rule: "catalogSelection" })).success, false);
+  const panelState = { type: { kind: "object", objectType: "platform:ProductPanel" } };
+  assert.equal(panelManifestSchema.safeParse(manifest({ panelIds: ["detail-panel"] }, panelState)).success, true);
+  assert.equal(panelManifestSchema.safeParse(manifest({ rule: "usable" }, panelState)).success, true);
+
+  const memberPath = [
+    { member: "detail", selection: {
+      stateValue: { className: "platform:ProductPanel", primaryKey: "detail-panel" }, target: { panelId: "detail-panel" },
+    } },
+    { member: "approve", selection: {
+      stateValue: { className: "platform:ProductProjection", primaryKey: "approve-card" }, target: { projectionId: "approve-card" },
+    } },
+  ];
+  assert.deepEqual(panelMemberPathSchema.parse(memberPath), memberPath);
+  const operationId = panelOperationId(memberPath.map(({ member }) => member), "run");
+  assert.equal(operationId, "detail.approve.run");
+  const use = { applicationId: "app-example", useId: "home" };
+  assert.deepEqual(panelOperationRefSchema.parse({ ...use, operationId, memberPath }), { ...use, operationId, memberPath });
+  const nestedRequest = { source: { kind: "registered", ...use }, memberPath: [memberPath[0]] };
+  assert.deepEqual(productPanelNestedReadRequestSchema.parse(nestedRequest), nestedRequest);
+  assert.equal(productPanelNestedReadRequestSchema.safeParse({ ...nestedRequest, memberPath: [] }).success, false);
+  const nested = {
+    panel: {
+      id: "detail-panel", revision: 1, content: { html: "", module: "" },
+      manifest: { state: {}, members: {}, events: {} },
+    },
+  };
+  assert.deepEqual(productPanelNestedReadResponseSchema.parse(nested), nested);
+  const context = {
+    label: "Example", url: "/home", selection: [{
+      kind: "platform:ProductPanel", id: "detail-panel", label: "Selected panel", memberPath: [memberPath[0]],
+    }],
+  };
+  assert.deepEqual(pageContextSchema.parse(context), context);
 });
 
 test("only the host can send frame activity messages", () => {

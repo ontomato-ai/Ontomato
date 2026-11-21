@@ -277,7 +277,7 @@ it("shares editable default placements and reports the defaults the caller canno
   const editable = "share-default-editable", restricted = "share-default-restricted", id = "share-default-panel";
   await saveProjection(editable);
   await saveProjection(restricted, "projection-owner");
-  const type = { kind: "placement", candidates: { rule: "catalogSelection" } };
+  const type = { kind: "placement", candidates: { rule: "usable" } };
   const field = (projectionId: string) => ({ type, default: { id: "placed", target: { projectionId } } });
   const saved = await savePanel(id, {
     state: { editable: field(editable), restricted: field(restricted) }, members: {}, events: {},
@@ -322,7 +322,7 @@ it("cleans up a panel's default placement and preserves projections used by othe
   const usedByDefault = "cleanup-used-by-default", usedPersonally = "cleanup-used-personally";
   const id = "cleanup-placement-panel", otherId = "cleanup-other-panel";
   for (const projectionId of [defaultId, personalId, usedByDefault, usedPersonally]) await saveProjection(projectionId);
-  const type = { kind: "placement", candidates: { rule: "catalogSelection" } };
+  const type = { kind: "placement", candidates: { rule: "usable" } };
   const placement = (projectionId: string) => ({ id: "placed", target: { projectionId } });
   const saved = await savePanel(id, {
     state: { defaultSlot: { type, default: placement(defaultId) }, personalSlot: { type, personal: true } },
