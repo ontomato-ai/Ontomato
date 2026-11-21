@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, inject, ref, type App } from "vue";
 import type { ManagerAuthFailureStatus, ManagerClient, ManagerCredential } from "../api";
 import { OBJECT_TYPE } from "@ontomato/contracts/platform-object-types";
+import { managerNavigation } from "../navigation";
 import { countedTypesChangedKey, createManager, useManagerClient, useManagerContext, useManagerCounts, type ManagerTheme } from "../context";
 
 let requests: { url: string; headers: Record<string, string> }[];
@@ -141,6 +142,17 @@ describe("the Manager installed in the page", () => {
     expect(reads).toBe(1);
     await counts.refresh();
     expect(requests.filter((r) => r.url.endsWith("/admin/getMetas")).length).toBeGreaterThan(reads);
+  });
+
+  it("the menu's counts are read by the menu itself, so a page load that opens no Manager page still shows them", async () => {
+    // A panel entry of the ontology manager opened directly: no Manager page mounts, only the menu reads its rows.
+    const page = mountPage();
+    const navigation = managerNavigation(page.counts());
+    const objects = navigation.pages.find((entry) => entry.count && entry.path === "/ontology/objects")!;
+    expect(objects.count!()).toBeNull();
+    await vi.waitFor(() => expect(objects.count!()).toBe(0));
+    navigation.pages.forEach((entry) => entry.count?.());
+    expect(requests.filter((r) => r.url.endsWith("/admin/getMetas"))).toHaveLength(1);
   });
 
   it("reads the counts again for a write that changed a type they count, once per write, and not for another", async () => {

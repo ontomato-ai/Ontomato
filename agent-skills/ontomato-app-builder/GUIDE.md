@@ -180,6 +180,11 @@ A definition without an ID creates an asset; with an ID it updates that asset. U
 
 `metric-view execute <id> [<parameter JSON>] [--binding <id>]` reads data. `action execute <id> [<parameter JSON>] [--file <path> ...]` performs the business write; execute only within the authorized scope. Supply parameter values by the names in `function.parameters`. A binding supplies its saved values. Action files use multipart uploads. A vector parameter uses `{className, attrName, text, fileId, uploadFile}` as applicable; `uploadFile` is the zero-based file position. Vector writes use the platform's vector operations, not ordinary object insert/update.
 
+## Agent delegation
+
+In a platform conversation, use the native `agent` tool or `node "$SKILL/ontomato.mjs" agent <command>`.
+The script uses the current run's authority, with the same build-test restrictions as the native tool.
+
 ## Build-test vector operations
 
 `vector-upload <class> <attribute> <objectId> [--file <path>] --text <text or @file>` and `vector-delete <class> <attribute> <objectId> <path>` operate on an existing object's resources. Keep these writes within the requested business scope. Agent delegation and retrieval are unavailable in build tests.
