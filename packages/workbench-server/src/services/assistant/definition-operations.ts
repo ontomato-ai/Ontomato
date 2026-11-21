@@ -73,6 +73,7 @@ const deleteImpact: PanelImpactInspector = {
 export const agentDefinitionOperations = [
   {
     handlerRef: `${AGENT_DEFINITION}.save`,
+    labelKey: "panels.agentDefinition.save",
     kind: "form.save",
     binding: { kind: "PlatformObjectType", id: AGENT_DEFINITION },
     effect: "write",
