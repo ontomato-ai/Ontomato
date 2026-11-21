@@ -6,7 +6,6 @@ import {
   Boxes,
   ChartColumn,
   Link2,
-  MousePointerClick,
   Network,
   SquareFunction,
   Table2,
@@ -67,7 +66,8 @@ export const managerGroups = {
 /*
  * Permission codes: the menu permissions the platform registers for its ontology group. The graph, the model pages,
  * visual modeling and the smart assets follow `ontology-modeling` (the code the workbench used for the Manager and its
- * asset pages); actions, the data browser and business knowledge have codes of their own.
+ * asset pages); workflows and triggers (`action-management`), the data browser and business knowledge have codes of
+ * their own.
  */
 const MODELING = ["ontology-modeling"];
 
@@ -87,7 +87,6 @@ const pages = [
   page(managerPaths.objects, "nav.objectTypes", Boxes, "ontology", MODELING, "objects"),
   page(managerPaths.attributes, "nav.ontologyAttributes", Tags, "ontology", MODELING, "attributes"),
   page(managerPaths.relations, "nav.relationTypes", Link2, "ontology", MODELING, "relations"),
-  page(managerPaths.actions, "nav.actionManagement", MousePointerClick, "ontology", ["action-management"], "actions"),
   page(managerPaths.workflows, "nav.workflowManagement", GitBranch, "ontology", ["action-management"]),
   page(managerPaths.triggers, "nav.triggerManagement", AlarmClock, "ontology", ["action-management"]),
   page(managerPaths.visualModeling, "nav.visualModeling", WorkflowIcon, "ontology", MODELING),

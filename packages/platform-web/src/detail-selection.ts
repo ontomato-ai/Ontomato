@@ -2,7 +2,7 @@ import type { RouteLocation } from "vue-router";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import { PAGE_DRAFT_QUERY_KEYS } from "@ontomato/contracts/page-draft";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
-import { RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
+import { ACTION, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 
 /*
@@ -37,6 +37,14 @@ export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
     path: platformRoutes.relation.path,
     use: platformRoutes.relations.path,
     state: ({ relationship }) => ({ selected: { className: RELATIONSHIP, primaryKey: relationship! } }),
+  },
+  // The actions page: an action's detail selects it; the old page's `new` (its creation dialog) opens the catalog, since
+  // an action is created by asking the page's agent.
+  {
+    path: platformRoutes.action.path,
+    use: platformRoutes.actions.path,
+    state: ({ id }): Record<string, PanelStateValue> =>
+      id === "new" ? {} : { selected: { className: ACTION, primaryKey: id! } },
   },
 ];
 

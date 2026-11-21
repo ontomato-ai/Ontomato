@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, h, nextTick, ref, type App } from "vue";
 import TriggerCatalog from "../components/TriggerCatalog.vue";
-import ActionDefinitionView from "../components/actionCreation/ActionDefinitionView.vue";
 import OntologyAssetCatalog from "../components/OntologyAssetCatalog.vue";
 import { installObjectViewHost } from "./object-view-host";
 import { provideManagerFeedback } from "../feedback";
@@ -21,7 +20,6 @@ async function flush() {
 }
 
 describe.each([
-  { kind: "actions", status: "PUBLISHED", initial: "PENDING_REVIEW", button: "Update status" },
   { kind: "metrics", status: "PUBLISHED", initial: "PENDING_REVIEW", button: "Update status" },
 ] as const)("$kind batch status $status", ({ kind, status, initial, button }) => {
   it("selects filtered records, preserves full details, and retains only failures for retry", async () => {
@@ -75,25 +73,6 @@ describe.each([
     expect(root.querySelectorAll(".resource-table-entry input:checked")).toHaveLength(0);
     expect(records[2].status).toBe("UNUSED");
   });
-});
-
-it("shows an action's stored field comparisons and keeps message-only conditions readable", async () => {
-  const root = document.body.appendChild(document.createElement("div"));
-  const action = { definition: { submissionCriteria: { operator: "AND", conditions: [
-    { className: "Expense", field: "status", operator: "=", value: "pending", message: "Not pending" },
-    { field: "execution_count", operator: "=", value: 0 },
-    { message: "Review is required" },
-  ] } } };
-  app = createApp({ render: () => h(ActionDefinitionView, { action }) });
-  installObjectViewHost(app);
-  app.mount(root);
-  const rows = root.querySelectorAll(".criteria-row");
-  expect(rows[0].textContent).toContain("Expense.status");
-  expect(rows[0].textContent).toContain("pending");
-  expect(rows[0].textContent).not.toContain("AND");
-  expect(rows[1].textContent).toContain("AND");
-  expect(rows[1].textContent).toContain("execution_count = 0");
-  expect(rows[2].textContent?.trim()).toBe("Review is required");
 });
 
 it("names what a trigger starts, its condition and its cadence in the reader's words, not the stored values", async () => {
