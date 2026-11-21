@@ -15,7 +15,8 @@
   .agent-settings-actions { display: flex; align-items: center; gap: var(--spacing-sm); flex: 0 0 auto; }
 </style>
 <div id="app" v-cloak>
-  <two-pane-layout>
+  <p v-if="rows.status === 'forbidden'" class="agent-settings-empty" role="alert">{{ t('agents.accessDenied') }}</p>
+  <two-pane-layout v-else-if="rows.status !== 'loading'">
     <template #aside>
       <section-group :title="t('agents.title')">
         <div class="agent-settings-aside">

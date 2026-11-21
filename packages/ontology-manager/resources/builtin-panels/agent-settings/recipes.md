@@ -1,7 +1,6 @@
 # Agent settings: how this panel works
 
-The domain's agents: pick one on the left and change its definition, or create one with "New agent" (the panel's
-`newAgent` event does the same). The definition is the definitions service's one form: name, description, whether
+The domain's agents: pick one on the left and change its definition, or create one with "New agent". The definition is the definitions service's one form: name, description, whether
 it is on, its avatar, instructions, model, skills, execution identity, data scope and external MCP tools.
 
 ## State in the address

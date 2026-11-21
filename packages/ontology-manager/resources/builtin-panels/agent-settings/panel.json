@@ -70,23 +70,7 @@
         "id": "builtin-product-8a1b2e98-239b-4c0b-878a-5cfa141eeed1"
       }
     },
-    "events": {
-      "newAgent": {
-        "labelKey": "agents.new",
-        "do": {
-          "set": {
-            "fields": {
-              "selected": {
-                "literal": null
-              },
-              "mode": {
-                "literal": "create"
-              }
-            }
-          }
-        }
-      }
-    }
+    "events": {}
   },
   "content": {
     "messages": {
@@ -98,7 +82,8 @@
         "agents.empty": "No agents yet.",
         "agents.creating": "New agent",
         "agents.definition": "Agent definition",
-        "agents.viewType": "View class"
+        "agents.viewType": "View class",
+        "agents.accessDenied": "Reading and changing agent definitions requires the analysis-agent permission."
       },
       "zh-CN": {
         "panel.name": "智能体设置",
@@ -108,7 +93,8 @@
         "agents.empty": "还没有智能体。",
         "agents.creating": "新建智能体",
         "agents.definition": "智能体定义",
-        "agents.viewType": "查看所属类"
+        "agents.viewType": "查看所属类",
+        "agents.accessDenied": "读取和修改智能体定义需要 analysis-agent（业务智能体）权限。"
       }
     }
   }

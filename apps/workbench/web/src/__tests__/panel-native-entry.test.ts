@@ -1,7 +1,10 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
-import { definePanel } from "@ontomato/contracts/panel-manifest";
+import { definePanel, panelManifestSchema } from "@ontomato/contracts/panel-manifest";
+import settingsHtml from "../../../../../packages/ontology-manager/resources/builtin-panels/agent-settings/panel.html?raw";
+import settingsModule from "../../../../../packages/ontology-manager/resources/builtin-panels/agent-settings/panel.mjs?raw";
+import settingsSource from "../../../../../packages/ontology-manager/resources/builtin-panels/agent-settings/panel.json";
 import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
@@ -160,6 +163,53 @@ it.each([
     const query = new URLSearchParams(sent.find(request => request.path === `/api/product-panels/${panel.id}`)?.search);
     expect(query.get("applicationId")).toBe(applicationId);
     expect(query.get("useId")).toBe(use?.id);
+  } finally {
+    app.unmount();
+  }
+});
+
+
+it("explains the missing owner permission to a reader admitted to the ontology settings entry", async () => {
+  const catalog = catalogFixture();
+  const application = catalog.find(app => app.id === "ontology")!;
+  const use = application.panelUses!.find(entry => entry.path === "/ontology/agents")!;
+  const { members, ...manifest } = settingsSource.manifest;
+  const panel = {
+    ...panelRecord(use.panelId, "Agent settings", panelManifestSchema.parse({
+      ...manifest,
+      members: Object.fromEntries(Object.entries(members).map(([key, { id }]) => [key, { target: { projectionId: id } }])),
+    })),
+    content: { html: settingsHtml, module: settingsModule, messages: settingsSource.content.messages },
+    visibility: "platform" as const, domainId: null, ownerId: null, editable: false as const,
+  };
+  const list = {
+    id: members.list.id, name: "Agent list", description: "", visibility: "platform", domainId: null, ownerId: null,
+    editable: false, revision: 1, createdAt: panel.createdAt, updatedAt: panel.updatedAt,
+    componentId: "@ontomato/sdk:ObjectList", inputs: {}, outputs: {}, config: {},
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: AGENT_DEFINITION } }, read: "list", params: {} } },
+  };
+  const revisions = Object.fromEntries(Object.values(members).map(({ id }) => [id, { revision: 1 }]));
+  const sent = installPlatform(request => {
+    if (request.path === "/api/data-query/platform/applications/ontology/panel-uses")
+      return Response.json({ data: { applicationId: application.id, entry: application.entry, panelUses: [use] } });
+    if (request.path === `/api/product-panels/${panel.id}`) return panelAnswer(panel, request);
+    if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel, revisions, request);
+    if (request.path === `/api/product-projections/${list.id}`) return Response.json({ projection: list });
+    if (request.path === "/api/product-panels/read") return Response.json({ status: "forbidden" });
+    return nothingAt(request);
+  });
+  useApplicationCatalog().applications.value = catalog.map(app => app.id === "agents" ? { ...app, panelUses: [] } : app);
+  const { router, app, element } = await open(use.path);
+  try {
+    expect(router.currentRoute.value.path).toBe("/ontology/agents");
+    await vi.waitFor(() => expect(element.querySelector('[role="alert"]')?.textContent).toContain("analysis-agent"));
+    expect(sent).toContainEqual(expect.objectContaining({
+      path: "/api/product-panels/read", body: expect.objectContaining({
+        source: { kind: "registered", applicationId: "ontology", useId: use.id },
+        memberPath: [{ member: "list" }], dataName: "rows",
+      }),
+    }));
+    expect(element.textContent).not.toContain("New agent");
   } finally {
     app.unmount();
   }

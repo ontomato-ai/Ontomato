@@ -46,6 +46,6 @@ await mountPanel({
       void navigate(address);
     }
 
-    return { mode, create, viewType };
+    return { mode, rows, create, viewType };
   },
 });
