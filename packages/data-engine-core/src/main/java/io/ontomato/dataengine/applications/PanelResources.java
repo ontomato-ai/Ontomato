@@ -65,7 +65,7 @@ public class PanelResources {
                 if (body != null) {
                     var error = body.path("error");
                     if (DEFAULT_AGENT_UNAVAILABLE.equals(error.path("code").asText())) {
-                        var useId = body.path("details").path("useId").textValue();
+                        var useId = error.path("useId").textValue();
                         for (int i = 0; i < uses.size(); i++)
                             if (uses.get(i).id().equals(useId))
                                 throw new DefaultAgentRefusal(i, error.path("message").asText(), failure);
