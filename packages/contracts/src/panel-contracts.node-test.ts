@@ -963,6 +963,37 @@ test("code, number, time and line array controls retain the owner's JSON values 
   });
 });
 
+test("localized text keeps the owner's language map and language-level field pointers", () => {
+  const control = {
+    kind: "localized-text", primaryLocale: "zh-CN",
+    locales: [{ code: "zh-CN", label: "中文" }, { code: "en", label: "英语" }],
+    multiline: true, maxLength: 120,
+  };
+  const field = {
+    ...editableField, path: "/names", label: "名称", control, valueSchema: { type: "object" },
+  };
+  const values = { names: { en: "", "zh-CN": "应用", fr: "Application" } };
+  const errors = [{ field: "/names/en", code: "required", message: "填写英文名称" }];
+  const form = { fields: [field], values, errors, save: ownerSave };
+  assert.deepEqual(panelFormDescriptionSchema.parse(form), {
+    ...form, fields: [{ ...field, control: { ...control, requiredLocales: [] } }],
+  });
+
+  const requiredControl = { ...control, requiredLocales: ["en"] };
+  const nested = { ...form, fields: [{
+    ...editableField, path: "/identity", label: "Identity", valueSchema: { type: "object" },
+    control: { kind: "object", fields: [{ ...field, control: requiredControl }] },
+  }] };
+  assert.deepEqual(panelFormDescriptionSchema.parse(nested), nested);
+
+  for (const invalid of [
+    { ...control, maxLength: 0 }, { ...control, maxLength: 1.2 }, { ...control, requiredLocales: null },
+    { ...control, locales: [{ code: "en", label: "英语", selected: true }] }, { ...control, custom: true },
+  ]) assert.equal(panelFormDescriptionSchema.safeParse({ ...form, fields: [{ ...field, control: invalid }] }).success, false);
+  const input = { values, submittedFields: ["/names/en"] };
+  assert.deepEqual(panelFormSaveInputSchema.parse(input), input);
+});
+
 test("nested controls keep relative field metadata and the existing absolute reference port", () => {
   const fields = [
     {
