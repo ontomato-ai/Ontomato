@@ -155,13 +155,17 @@ const projections = {
   "proj-governance-summary": productProjectionInputSchema.parse({
     name: "Governance record", description: "", visibility: "domain",
     componentId: "@ontomato/sdk:PanelData",
-    inputs: { record: governanceRefType, source: { kind: "scalar", type: "string" }, cursor: { kind: "scalar", type: "string" } },
+    inputs: {
+      record: governanceRefType, issue: { kind: "scalar", type: "string" },
+      source: { kind: "scalar", type: "string" }, cursor: { kind: "scalar", type: "string" },
+    },
     outputs: {},
     config: {},
     data: {
       record: { source: { object: { input: "record" } }, read: "record", params: {} },
       issues: { source: { object: { input: "record" } }, read: "issues", params: {} },
       sources: { source: { object: { input: "record" } }, read: "sources", params: {} },
+      issueSources: { source: { object: { input: "record" } }, read: "issueSources", params: { issue: { input: "issue" } } },
       sourcePage: {
         source: { object: { input: "record" } },
         read: "sourcePage",
@@ -674,6 +678,10 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
     value: [{ primaryKey: "issue-1", label: "Missing order cutoff" }],
   });
   expect(await read("governanceDetail", "sources", { record: govRef })).toMatchObject({
+    status: "ready",
+    value: [{ primaryKey: "src-1", label: "Fulfillment policy" }],
+  });
+  expect(await read("governanceDetail", "issueSources", { record: govRef, issue: "issue-1" })).toMatchObject({
     status: "ready",
     value: [{ primaryKey: "src-1", label: "Fulfillment policy" }],
   });

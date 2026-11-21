@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
+import { pathToFileURL } from "node:url";
 import yaml from "yaml";
 import { app } from "./build.mjs";
 import { productionGraph } from "../../scripts/workbench/production-graph.mjs";
@@ -166,6 +167,7 @@ syncBuiltinESMExports();
       ),
     );
   }
+  await import(pathToFileURL(join(context, "tools/workbench/stage-app.mjs")).href);
 });
 
 test("runtime production closure keeps only the runtime application and no enterprise package", () => {

@@ -14,12 +14,15 @@ import { config } from "../../config/application";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendGet, buildBackendHeaders } from "../../utils/backend-client";
+import { HttpError } from "../../utils/errors";
 
 /*
  * The knowledge governance owner's named reads, forwarded to Java with the viewer's credentials: the work summary
  * record, its issues and sources child lists, and one source's segmented passages encoded by character offset in the
  * cursor.
  */
+
+const issueSourcesInputSchema = z.object({ issue: panelReadParameterSchemas.governanceIssue }).strict();
 
 const sourcePageInputSchema = z.object({
   source: panelReadParameterSchemas.governanceSource,
@@ -62,6 +65,14 @@ export function createKnowledgeGovernanceReadAdapter(viewer: AssistantCredential
         basis: issue.basis,
         sourceIds: issue.sourceIds.join(", "),
       },
+    };
+  }
+
+  function sourceFieldLabels() {
+    return {
+      kind: t("panels.governance.fields.kind"),
+      target: t("panels.governance.fields.target"),
+      excerpt: t("panels.governance.fields.excerpt"),
     };
   }
 
@@ -123,12 +134,18 @@ export function createKnowledgeGovernanceReadAdapter(viewer: AssistantCredential
 
     async sources(primaryKey: string): Promise<PanelRecord[]> {
       const { work } = await workRecord(primaryKey);
-      const fieldLabels = {
-        kind: t("panels.governance.fields.kind"),
-        target: t("panels.governance.fields.target"),
-        excerpt: t("panels.governance.fields.excerpt"),
-      };
+      const fieldLabels = sourceFieldLabels();
       return work.sources.map(source => sourceRow(source, fieldLabels));
+    },
+
+    async issueSources(primaryKey: string, params: Record<string, unknown>): Promise<PanelRecord[]> {
+      const { issue: issueId } = issueSourcesInputSchema.parse(params);
+      const { work } = await workRecord(primaryKey);
+      const issue = work.issues.find(item => item.id === issueId);
+      if (!issue) throw new HttpError(404, `Issue ${issueId} is not in this governance record`, "NOT_FOUND");
+      const sources = new Map(work.sources.map(source => [source.id, source]));
+      const fieldLabels = sourceFieldLabels();
+      return issue.sourceIds.map(id => sourceRow(sources.get(id)!, fieldLabels));
     },
 
     async sourcePage(primaryKey: string, params: Record<string, unknown>): Promise<PanelRecordQuery> {

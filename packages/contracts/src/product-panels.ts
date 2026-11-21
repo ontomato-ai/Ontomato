@@ -103,7 +103,7 @@ function containsObjectIdentity(value: RuntimeJsonValue): boolean {
 
 const domainProjectionBinding = (field: string) => `Platform-supplied projections cannot bind a domain object: ${field}`;
 /** Read parameters whose literal is the identity of an existing object within its owner. */
-const domainIdentityParameters: ReadonlySet<string> = new Set(["governanceSource", "scheduledRunId"]);
+const domainIdentityParameters: ReadonlySet<string> = new Set(["governanceSource", "governanceIssue", "scheduledRunId"]);
 
 function validateBuiltinProjection(projection: DirectProjectionPorts, ctx: z.RefinementCtx) {
   validateDirectProjection(projection, ctx);
@@ -455,6 +455,8 @@ export const productProjectionUsedBySchema = z.object({
   panels: z.array(z.object({ id, name: editableDefinitionFields.name }).strict()),
   hiddenCount: z.number().int().nonnegative(),
 }).strict();
+/** A guarded update is allowed only while this panel is the projection's sole user. */
+export const PROJECTION_REUSE_PANEL_HEADER = "X-Ontomato-Projection-Reuse-Panel";
 export const productPanelUsedBySchema = productProjectionUsedBySchema.extend({
   applicationEntries: z.array(z.object({
     applicationId: id,
