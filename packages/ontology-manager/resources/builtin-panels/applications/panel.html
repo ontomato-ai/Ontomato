@@ -36,6 +36,7 @@
   .apps-link { color: var(--brand-link); font-size: var(--text-xs); }
   .apps-sheet { border-color: var(--ui-border); box-shadow: var(--elevation-panel); }
   .apps-confirm { border-color: var(--el-color-danger-light-5); }
+  .apps-list-icon { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
 </style>
 <div id="app" v-cloak>
   <section class="apps shell-dock-room">
@@ -68,10 +69,10 @@
       <p class="apps-error" v-if="listError" role="alert">{{ listError }}</p>
 
       <el-table v-loading="catalogue.status === 'loading'" :data="rows" row-key="id" @row-click="openRow">
-        <el-table-column label="图标" width="140">
-          <template #default="{ row }"><span class="apps-icon">{{ row.icon }}</span></template>
+        <el-table-column label="图标" min-width="76">
+          <template #default="{ row }"><span class="apps-icon apps-list-icon" :title="row.icon">{{ row.icon }}</span></template>
         </el-table-column>
-        <el-table-column label="名称" min-width="260">
+        <el-table-column label="名称" min-width="110">
           <template #default="{ row }">
             <span class="apps-name-text">
               <strong>{{ primaryName(row.names) }}</strong>
@@ -79,15 +80,15 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="来源" width="100">
+        <el-table-column label="来源" width="54">
           <template #default="{ row }">
             <el-tag size="small" :type="row.source === 'builtin' ? 'info' : 'primary'">{{ row.source === 'builtin' ? '内置' : '域内' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="我能不能维护" width="130">
+        <el-table-column label="维护权限" width="72">
           <template #default="{ row }">{{ row.canMaintain ? '能维护' : '只读' }}</template>
         </el-table-column>
-        <el-table-column label="入口数" width="90">
+        <el-table-column label="入口数" width="62">
           <template #default="{ row }">{{ row.entryCount }}</template>
         </el-table-column>
         <template #empty>

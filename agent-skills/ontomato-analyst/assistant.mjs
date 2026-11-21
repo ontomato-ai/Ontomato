@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 // The main assistant's entry point. Published into the ontomato-analyst-assistant package together with the analyst
-// package's client.mjs and application.yml, so the retriever, the app builder and the ontomap builder never see these
-// commands. `recall-metrics` reads published definitions; `run-metric` opens one formal retrieval run and delivers one
-// table, so the assistant cites a stored dataset instead of a response it stitched together itself.
+// package's client.mjs, application.yml and retriever-ref.json, so the retriever, the app builder and the ontomap builder
+// never see these commands. `start-retrieval` starts the retriever and recalls published metrics concurrently;
+// `run-metric` opens one formal retrieval run and delivers one table, so the assistant cites a stored dataset instead of
+// a response it stitched together itself.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { analystCommand, readJson } from "./client.mjs";
+import { analystCommand, readJson, sendAgentCommand } from "./client.mjs";
 
 const dir = path.dirname(fileURLToPath(import.meta.url)),
   cfg = {};
@@ -58,9 +59,16 @@ async function request(url, body, extra = {}) {
   });
   if (response.status === 204) return null;
   const result = await response.json();
-  if (!response.ok || result?.error)
-    throw new Error(typeof result?.error === "string" ? result.error
-      : (result?.error?.message ?? result?.message ?? `HTTP ${response.status}`));
+  if (!response.ok || result?.error) {
+    const message = typeof result?.error === "string"
+      ? result.error
+      : (result?.error?.message ?? result?.message ?? `HTTP ${response.status}`);
+    const error = new Error(message);
+    error.status = response.status;
+    const code = result?.error?.code ?? (typeof result?.code === "string" ? result.code : undefined);
+    if (code) error.code = code;
+    throw error;
+  }
   return result;
 }
 async function originalBytes(url, extra = {}) {
@@ -110,13 +118,32 @@ async function runMetric(selector, question) {
   return { key, dataset: state.dataset, bytes };
 }
 
-async function metricCommand(_cfg, argv) {
-  const [command, ...args] = argv;
-  if (command === "recall-metrics") {
-    if (!args.length) throw new Error("recall-metrics requires the complete question");
-    console.log(JSON.stringify(await recallMetrics(args.join(" ")), null, 2));
-    return;
-  }
+function errorValue(error) {
+  return {
+    error: {
+      message: error instanceof Error ? error.message : String(error),
+      ...(error?.status !== undefined ? { status: error.status } : {}),
+      ...(error?.code !== undefined ? { code: error.code } : {}),
+    },
+  };
+}
+
+async function startRetrieval(args) {
+  const question = args.join(" ");
+  if (!question.trim()) throw new Error("start-retrieval requires the complete question");
+  const retrieverRef = JSON.parse(fs.readFileSync(path.join(dir, "retriever-ref.json"), "utf8"));
+  const [retrieverResult, recallResult] = await Promise.allSettled([
+    sendAgentCommand({ op: "start", agent: retrieverRef, message: question }, { cfg, headers }),
+    recallMetrics(question),
+  ]);
+  console.log(JSON.stringify({
+    retriever: retrieverResult.status === "fulfilled" ? retrieverResult.value : errorValue(retrieverResult.reason),
+    recall: recallResult.status === "fulfilled" ? recallResult.value : errorValue(recallResult.reason),
+  }));
+  if (retrieverResult.status === "rejected" || recallResult.status === "rejected") process.exitCode = 1;
+}
+
+async function runMetricCommand(args) {
   const revision = option(args, "--revision"), question = option(args, "--question"),
     bindingId = option(args, "--binding"), params = option(args, "--params");
   if (args.length !== 1) throw new Error("run-metric requires one metric id");
@@ -134,13 +161,15 @@ async function metricCommand(_cfg, argv) {
     receiptId: dataset.execution.receiptId }));
 }
 
-// Data questions go to the retriever through the native agent tool; this entry only reads definitions and reuses metrics.
+// Data questions start the retriever and recall metrics concurrently through `start-retrieval`; follow-ups, reads and
+// cancellation use the native agent tool.
 const metadata = ["dataset-desc", "classes", "schema", "relationships", "knowledge"];
-const [command] = process.argv.slice(2);
-const run = command === "recall-metrics" || command === "run-metric" ? metricCommand
-  : metadata.includes(command) ? analystCommand
-  : () => { throw new Error(`Commands: ${metadata.join(", ")}, recall-metrics, run-metric`); };
-Promise.resolve().then(() => run(cfg, process.argv.slice(2), headers)).catch((error) => {
+const [command, ...commandArgs] = process.argv.slice(2);
+const run = command === "start-retrieval" ? () => startRetrieval(commandArgs)
+  : command === "run-metric" ? () => runMetricCommand(commandArgs)
+  : metadata.includes(command) ? () => analystCommand(cfg, process.argv.slice(2), headers)
+  : () => { throw new Error(`Commands: ${metadata.join(", ")}, start-retrieval, run-metric`); };
+Promise.resolve().then(run).catch((error) => {
   console.error(error.message);
   process.exitCode = 1;
 });

@@ -127,13 +127,20 @@ secret values live only for the admitted run. Persist no raw request body.
 Continuation must supply fresh values. Unknown environment variables are allowed
 for third-party standard skills; there is no runtime business-variable registry.
 
-Runtime-owned variables: `ONTOMATO_SESSION_ID`, `ONTOMATO_RUN_ID`,
+Runtime-owned variables: `ONTOMATO_SKILL_SCENARIO`, `ONTOMATO_SESSION_ID`, `ONTOMATO_RUN_ID`,
 `ONTOMATO_CORRELATION_ID`, `ONTOMATO_LANGUAGE`, `ONTOMATO_WORKSPACE`,
-`ONTOMATO_OUTPUT_DIR`. The first two refer to this session and run, never a model
-argument. Tool-call identity belongs to event metadata; scripts do not need an
-invocation/tool-call envelope. Host skill variables and their exact meaning are
-specified in the retrieval contract and governance design, and repeated in each
-skill's user documentation. File references are relative to the workspace.
+`ONTOMATO_SOURCE_DIR`, `ONTOMATO_OUTPUT_DIR`, `ONTOMATO_AGENT_COMMAND_URL`,
+`ONTOMATO_AGENT_CALLBACK`. The first three are owned solely by the runtime (hosts
+never supply them); `ONTOMATO_SESSION_ID` and `ONTOMATO_RUN_ID` refer to this session
+and run, never a model argument. Tool-call identity belongs to event metadata; scripts do not need an
+invocation/tool-call envelope. All sandbox worker runs receive
+`ONTOMATO_SKILL_SCENARIO=platform`; runs with a native `agent` channel and a
+script worker also receive `ONTOMATO_AGENT_COMMAND_URL` and a per-run secret
+`ONTOMATO_AGENT_CALLBACK` kept only in active runtime memory (never persisted or
+exposed to auxiliary/product-surface runs without a worker or channel). Host
+skill variables and their exact meaning are specified in the retrieval contract
+and governance design, and repeated in each skill's user documentation. File
+references are relative to the workspace.
 
 A session receives its workspace and UID on first run and reuses both across
 rounds and service restarts. Workspace contents persist; environment and worker
@@ -369,7 +376,15 @@ Migration 6 upgrades the existing version 5 schema: persisted event names and me
 consumption sequences change together before the runtime opens its service. Fixed server configuration maps providers to host credentials and
 callback URLs. Models cannot supply identity, domain, credentials or callback addresses.
 
-The native `agent` tool is installed by the runtime for provider-prepared runs with an actor reference. Retrieval, Action creation and ontology model generation all enter through provider prepare. `start` creates a child session; `send` is
+The native `agent` tool is installed by the runtime for provider-prepared runs with an actor reference.
+In addition, when a run has both a native channel and a script worker, `POST /v1/channel/hosts/:hostId/domains/:domainId/runs/:runId/commands`
+accepts the same `AgentChannelCommand` body from worker scripts carrying `X-Ontomato-Callback-Credential`
+(the per-run secret in `ONTOMATO_AGENT_CALLBACK`) and matching `X-Ontomato-Run-Id`. Missing credentials or
+mismatched run headers fail with 401; targets no longer in `active` fail with 409 `RUN_CLOSED`;
+mismatched credentials on an active run fail with 401; sealed, aborted or stopped active runs fail
+with 409 `RUN_CLOSED`. Valid active requests run `channel.execute(active.scope, active.run, command)`
+with the real `RuntimeRun` so `requestedBy`, `root`, `actor`, `authority`, `userRecipient` and
+execution identity match a native tool call. Retrieval, Action creation and ontology model generation all enter through provider prepare. `start` creates a child session; `send` is
 restricted to the creator and created children. Inputs have one stable message ID and sequence
 assigned on receipt, with a null runId until consumed. Notifications retain their role through
 history and UI; only the model boundary presents them as explicitly attributed context.
@@ -418,17 +433,23 @@ records its outgoing question in its own read/events; it does not fabricate a pa
 POST `/platform/agent-channel/commands` accepts the five verbs from agent-channel.ts. The Java
 boundary authenticates tk/API Key and derives the domain; the runtime uses the same execute
 path as the native tool, with an explicit external caller rather than a synthetic RuntimeRun.
+Only this endpoint uses the explicit external caller (empty `requestedBy`, independent `root`).
 Reads and cancellation resolve an existing task's actor only after checking its canonical user
 and domain. GET `/platform/agent-channel/tasks/:taskId/events` registers the subscription before
 reading a task_snapshot and pushes changes. The files endpoint rechecks exact-run delivery
-ownership. Native read(files:true) copies delivered bytes into the caller's inputs/agents;
-standalone CLI read --files downloads the same bytes to outputs. CLI --follow consumes SSE.
+ownership. Both native `read(files:true)` and platform-worker script `read --files` copy delivered
+bytes into the caller's `outputs/agents/`; standalone CLI `read --files` downloads the same bytes
+to `outputs`. Standalone CLI `--follow` consumes SSE; platform-worker `read --follow` refuses before
+sending any request because deliveries and questions notify the caller session.
 No external provider registration endpoint is introduced.
 
-Channel commands, task events/files and provider callbacks have no BuildTestAccess declaration
-or Node build-test route registration. Requests carrying an execution-context header are refused
-with 422 before side effects. Native agent commands also refuse build-test authority. Existing
-host prepare restrictions remain in force; no test context becomes live delegation.
+Both channel command routes (`/v1/channel/commands` and
+`/v1/channel/hosts/:hostId/domains/:domainId/runs/:runId/commands`), task events/files and
+provider callbacks have no BuildTestAccess declaration or Node build-test route registration.
+Requests carrying an execution-context header (`X-Ontomato-Execution-Context`) are refused with
+422 `BUILD_TEST_UNSUPPORTED` before side effects. Native agent commands and run-scoped script
+commands also refuse build-test authority (`422 BUILD_TEST_UNSUPPORTED`). Existing host prepare
+restrictions remain in force; no test context becomes live delegation.
 Node auxiliary one-shot model calls are not registered conversational agents and expose no agent tool.
 
 Failed preparations are projected from the existing admission intent in `preparationFailures`.

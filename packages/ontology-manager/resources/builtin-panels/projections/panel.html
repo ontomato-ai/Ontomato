@@ -12,7 +12,7 @@
   .projections-body { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: var(--spacing-md); align-items: start; }
   @media (max-width: 62rem) { .projections-body { grid-template-columns: minmax(0, 1fr); } }
   .projections-list { display: flex; flex-direction: column; gap: var(--spacing-sm); min-width: 0; }
-  .projections-pager { display: flex; align-items: center; gap: var(--spacing-sm); justify-content: flex-end; }
+  .projections-pager { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); justify-content: flex-end; }
   .projections-pager .page-size { width: 104px; }
   .cell-name { font-weight: var(--font-semibold); }
   .cell-desc { color: var(--el-text-color-secondary); font-size: var(--el-font-size-extra-small); line-height: 1.35; }
@@ -40,6 +40,7 @@
   .json { margin: 0; max-height: 16rem; overflow: auto; padding: var(--spacing-sm) var(--spacing-sm); border: 1px solid var(--ui-divider);
     border-radius: var(--radius-xs); background: var(--ui-fill-tertiary); font-size: var(--el-font-size-extra-small); line-height: 1.5;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
+  .projections-list time { word-break: normal; }
 </style>
 <div id="app" v-cloak>
   <section class="projections">
@@ -75,21 +76,23 @@
       <div class="projections-list">
         <el-table :data="rows" size="small" highlight-current-row border :current-row-key="selectedKey" row-key="id"
           @row-click="choose" empty-text="没有符合条件的投影">
-          <el-table-column label="名称" min-width="180">
+          <el-table-column label="名称" min-width="98">
             <template #default="scope">
               <div class="cell-name">{{ scope.row.name }}</div>
               <div class="cell-desc" v-if="scope.row.description">{{ scope.row.description }}</div>
             </template>
           </el-table-column>
-          <el-table-column label="所用组件" width="126">
+          <el-table-column label="所用组件" min-width="78">
             <template #default="scope">{{ componentLabel(scope.row.componentId) }}</template>
           </el-table-column>
-          <el-table-column label="所属人" width="88" prop="ownerId" />
-          <el-table-column label="共享范围" width="100">
+          <el-table-column label="所属人" width="58" prop="ownerId" />
+          <el-table-column label="共享范围" width="72">
             <template #default="scope">{{ scopeLabel(scope.row.visibility) }}</template>
           </el-table-column>
-          <el-table-column label="更新时间" width="132">
-            <template #default="scope">{{ formatTime(scope.row.updatedAt) }}</template>
+          <el-table-column label="更新时间" width="92">
+            <template #default="scope">
+              <time :datetime="scope.row.updatedAt">{{ formatTime(scope.row.updatedAt) }}</time>
+            </template>
           </el-table-column>
         </el-table>
         <div class="projections-pager">

@@ -132,7 +132,7 @@ beforeAll(async () => {
       appDraft: { source: { type: { kind: "PlatformObjectType", id: APPLICATION } }, read: "createForm",
         params: { values: { input: "values" }, changedField: { input: "changedField" } } },
       appForm: { source: { object: { input: "application" } }, read: "form",
-        params: { section: { input: "section" } } },
+        params: { section: { input: "section" }, values: { input: "values" }, changedField: { input: "changedField" } } },
     },
   }]);
 
@@ -175,7 +175,7 @@ beforeAll(async () => {
     expect(req.body.target.kind).toBe(draft ? "draft" : "object");
     formReads.push(req.body);
     res.json({ success: true, data: {
-      fields: [], values: draft ? req.body.values ?? draftValues : identity ? identityValues : entryValues, errors: [],
+      fields: [], values: req.body.values ?? (draft ? draftValues : identity ? identityValues : entryValues), errors: [],
       save: { method: "PUT",
         path: `/platform/applications/${draft ? draftId : applicationId}/${identity ? "identity" : "panel-uses"}${draft ? "?create=true" : ""}`,
         bodySchema: {}, draftOperation: draft ? "create" : identity ? "saveIdentity" : "saveEntries" },
@@ -424,6 +424,21 @@ it("reads both edit forms for the selected application and accepts only the subm
   expect(await readCatalogueResult("appForm", { application, section: "create" }, "executor"))
     .toMatchObject({ status: "error" });
   expect(formReads).toHaveLength(reads);
+});
+
+it("checks partial application drafts against Java's current identity and entry table without writing", async () => {
+  const application = { className: APPLICATION, primaryKey: applicationId };
+  const writesBefore = writes.length;
+  const cases = [
+    { section: "identity", values: { icon: "folder" }, expected: { ...identityValues, icon: "folder" } },
+    { section: "entries", values: { panelUses: [hiddenUse] }, expected: { ...entryValues, panelUses: [hiddenUse] } },
+  ];
+  for (const { section, values, expected } of cases) {
+    const checked = await readCatalogue("appForm", { application, section, values }, "executor");
+    expect(formReads.at(-1)).toMatchObject({ section, values: expected });
+    expect(checked).toMatchObject({ values: expected, errors: [] });
+  }
+  expect(writes).toHaveLength(writesBefore);
 });
 
 it("requires edit for grant reads and derives domain sharing from the owner Grants", async () => {

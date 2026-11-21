@@ -66,6 +66,7 @@ export const runtimeRegisterSkillRequestSchema = z
       });
   });
 export const runtimeIdentityEnvironment = [
+  "ONTOMATO_SKILL_SCENARIO",
   "ONTOMATO_SESSION_ID",
   "ONTOMATO_RUN_ID",
   "ONTOMATO_CORRELATION_ID",
@@ -73,6 +74,8 @@ export const runtimeIdentityEnvironment = [
   "ONTOMATO_WORKSPACE",
   "ONTOMATO_SOURCE_DIR",
   "ONTOMATO_OUTPUT_DIR",
+  "ONTOMATO_AGENT_COMMAND_URL",
+  "ONTOMATO_AGENT_CALLBACK",
 ] as const;
 const variable = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/);
 export const runtimeEnvironmentSchema = z

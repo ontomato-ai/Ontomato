@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { analystCommand } from "../agent-skills/ontomato-analyst/client.mjs";
+import { analystCommand, sendAgentCommand } from "../agent-skills/ontomato-analyst/client.mjs";
 
 test("the shared channel preserves references, streams snapshots and downloads original bytes", async () => {
   const received=[],logs=[],taskId=randomUUID(),sessionId=randomUUID(),questionId=randomUUID(),fileId=randomUUID();
@@ -49,6 +49,47 @@ test("the shared channel preserves references, streams snapshots and downloads o
     console.log=print;
     if(oldOutput===undefined) delete process.env.ONTOMATO_OUTPUT_DIR;else process.env.ONTOMATO_OUTPUT_DIR=oldOutput;
     server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await rm(directory,{recursive:true,force:true});
+  }
+});
+
+test("sendAgentCommand routes platform calls directly with callback secret and run ID", async () => {
+  const received = [];
+  const server = createServer(async (req, res) => {
+    let text = "";
+    for await (const chunk of req) text += chunk;
+    received.push({ url: req.url, headers: req.headers, body: JSON.parse(text) });
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ taskId: "task-1", status: "starting" }));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const saved = {
+    ONTOMATO_SKILL_SCENARIO: process.env.ONTOMATO_SKILL_SCENARIO,
+    ONTOMATO_AGENT_COMMAND_URL: process.env.ONTOMATO_AGENT_COMMAND_URL,
+    ONTOMATO_AGENT_CALLBACK: process.env.ONTOMATO_AGENT_CALLBACK,
+    ONTOMATO_RUN_ID: process.env.ONTOMATO_RUN_ID,
+    ONTOMATO_EXECUTION_CALLBACK: process.env.ONTOMATO_EXECUTION_CALLBACK,
+  };
+  const runId = randomUUID();
+  process.env.ONTOMATO_SKILL_SCENARIO = "platform";
+  process.env.ONTOMATO_AGENT_COMMAND_URL = `http://127.0.0.1:${server.address().port}/v1/channel/hosts/h/domains/d/runs/${runId}/commands`;
+  process.env.ONTOMATO_AGENT_CALLBACK = "per-run-secret";
+  process.env.ONTOMATO_RUN_ID = runId;
+  process.env.ONTOMATO_EXECUTION_CALLBACK = "business-callback";
+  try {
+    const result = await sendAgentCommand({ op: "start", agent: { providerId: "ontology", agentId: "retriever" }, message: "Sales?" }, {
+      headers: { "X-Ontomato-Execution-Context": JSON.stringify({ kind: "build-test" }) },
+    });
+    assert.deepEqual(result, { taskId: "task-1", status: "starting" });
+    assert.equal(received[0].headers["x-ontomato-callback-credential"], "per-run-secret");
+    assert.equal(received[0].headers["x-ontomato-run-id"], runId);
+    assert.equal(received[0].headers["x-ontomato-execution-context"], undefined);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
   }
 });
 

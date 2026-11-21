@@ -24,7 +24,8 @@ import {
   runtimeSessionStatusesRequestSchema,
   runtimeRunStatusQuerySchema,
 } from "@ontomato/contracts/agent-runtime";
-import { runtimeIdSchema } from "@ontomato/contracts/agent-runtime-values";
+import { runtimeIdSchema, runtimeKeySchema } from "@ontomato/contracts/agent-runtime-values";
+import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import type {
   RuntimeSessionRunFrame,
   RuntimeStreamFrame,
@@ -350,6 +351,27 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     if(runtimeIdSchema.parse(req.query.actorId)!==entry.intent.channel.actor.id) throw new RuntimeError(403,"FORBIDDEN","Task authorization does not match");
     return {ctx,entry};
   }
+  app.post("/v1/channel/hosts/:hostId/domains/:domainId/runs/:runId/commands", route(async (req, res) => {
+    const commandScope = {
+      hostId: runtimeKeySchema.parse(req.params.hostId),
+      domainId: runtimeKeySchema.parse(req.params.domainId),
+    };
+    const runId = runtimeIdSchema.parse(req.params.runId);
+    const sessionHeader = serviceLogIdentitySchema.safeParse(req.header("X-Ontomato-Session-Id"));
+    updateServiceLogContext({
+      domainId: commandScope.domainId,
+      runId,
+      sessionId: sessionHeader.success ? sessionHeader.data : null,
+    });
+    res.json(await runtime.runChannelCommand(
+      commandScope,
+      runId,
+      req.header("X-Ontomato-Callback-Credential"),
+      req.header("X-Ontomato-Run-Id"),
+      req.header(BUILD_TEST_HEADER),
+      req.body,
+    ));
+  }));
   app.post("/v1/channel/commands",route(async(req,res)=>{
     const ctx=gateway(req),body=z.object({command:agentChannelCommandSchema,actor:agentActorRefSchema,authority:agentAuthoritySchema,language:z.string().min(1),credential:agentCredentialSchema}).strict().parse(req.body);
     if(body.actor.domainId!==ctx.scope.domainId) throw new RuntimeError(403,"CROSS_DOMAIN","Actor belongs to another domain");

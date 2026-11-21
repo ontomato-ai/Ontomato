@@ -159,6 +159,76 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         assertEquals("ontology-modeling", components.access().permissionCode());
     }
 
+    @Test void builtinDescriptionsRoundTripWithoutAddingANamelessEntryToTheMenu() throws Exception {
+        var source = new ByteArrayResource("""
+            {"id":"descriptions-test","kind":"native","rail":"apps","category":"build","sort":100,
+             "entry":{"path":"/descriptions-test","renderer":"descriptions"},"entryAccess":["domain-member"],
+             "declaration":{"names":{"en":"Descriptions"},"descriptions":{},"icon":"pages","groups":[],"permissions":[],
+               "panelUses":[
+                 {"id":"info","pageKey":"descriptions-info","path":"/descriptions-test/info","panelId":"builtin-product-info",
+                  "access":{"kind":"domain-member"},"descriptions":{"en":"  Keep the original text.  ","zh-CN":"入口说明"}},
+                 {"id":"plain","pageKey":"descriptions-plain","path":"/descriptions-test/plain","panelId":"builtin-product-info",
+                  "access":{"kind":"domain-member"}}]}}
+            """.getBytes(StandardCharsets.UTF_8), "applications/descriptions-test.json");
+        var viewer = new QueryAccessService.GrantUser("viewer", "domain");
+        when(identity.getCurrentUser()).thenReturn(viewer);
+        when(access.canEnter(any(), eq(viewer))).thenReturn(true);
+        when(access.panelUses(anyList(), eq(viewer))).thenAnswer(call -> call.getArgument(0));
+        when(grants.allowed("builtin-product-info", "use")).thenReturn(true);
+
+        catalog.builtins("data-engine", List.of(ApplicationCatalogUpgrade.Builtins.readDeclaration(source)));
+
+        http.perform(get("/platform/applications/resolve-entry").param("path", "/descriptions-test/info"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.use.descriptions.en").value("  Keep the original text.  "))
+            .andExpect(jsonPath("$.data.use.descriptions['zh-CN']").value("入口说明"))
+            .andExpect(jsonPath("$.data.use.names").doesNotHaveJsonPath())
+            .andExpect(jsonPath("$.data.menu.panelUses.length()").value(0));
+        http.perform(get("/platform/applications/catalogue/descriptions-test"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.panelUses[0].descriptions.en").value("  Keep the original text.  "))
+            .andExpect(jsonPath("$.data.panelUses[1].descriptions").doesNotHaveJsonPath());
+    }
+
+    private static String registrationWithEntryDescriptions(String descriptions) {
+        return """
+            {"entry":{"path":"/applications/app-descriptions","renderer":"panels"},
+             "declaration":{"names":{"en":"Descriptions"},"descriptions":{},"icon":"pages","groups":[],"permissions":[]},
+             "entryAccess":["domain-member"],
+             "panelUses":[{"id":"info","pageKey":"app-descriptions-info","path":"/applications/app-descriptions/info",
+               "panelId":"info-panel","access":{"kind":"domain-member"},"descriptions":%s}]}
+            """.formatted(descriptions);
+    }
+
+    @Test void domainEntryDescriptionsRoundTripAndRejectInvalidValues() throws Exception {
+        var viewer = new QueryAccessService.GrantUser("owner", "domain");
+        when(identity.getCurrentUser()).thenReturn(viewer);
+        when(access.canEnter(any(), eq(viewer))).thenReturn(true);
+        when(access.canMaintain(any(), eq(viewer))).thenReturn(true);
+        when(access.panelUses(anyList(), eq(viewer))).thenAnswer(call -> call.getArgument(0));
+        when(grants.allowed("info-panel", "use")).thenReturn(true);
+
+        var writer = "/platform/applications/app-descriptions/panel-uses";
+        http.perform(put(writer).contentType(MediaType.APPLICATION_JSON)
+                .content(registrationWithEntryDescriptions("""
+                    {"en":"Read it here.","fr-CA":"Consultez la fiche."}
+                    """)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.panelUses[0].descriptions['fr-CA']").value("Consultez la fiche."));
+        http.perform(post("/platform/applications/catalogue/form").contentType(MediaType.APPLICATION_JSON).content("""
+            {"section":"entries","target":{"kind":"object","objectType":"platform:Application","primaryKey":"app-descriptions"}}
+            """)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.values.panelUses[0].descriptions.en").value("Read it here."));
+        for (var invalid : List.of("null", "{}", "{\"fr\":\"Explication\"}", "{\"en\":\"   \"}",
+                "{\"en\":\"Read it.\",\"fr\":\"  \"}", "{\"en\":42}", "{\"en\":null}", "{\"en\":\"\u00a0\ufeff\"}"))
+            http.perform(put(writer).contentType(MediaType.APPLICATION_JSON)
+                .content(registrationWithEntryDescriptions(invalid))).andExpect(status().isBadRequest());
+
+        http.perform(get("/platform/applications/resolve-entry").param("applicationId", "app-descriptions").param("useId", "info"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.use.descriptions.en").value("Read it here."));
+    }
+
     @Test void builtinDeclarationsCannotPointToDomainPanels() {
         var before = records();
         var privatePanel = builtInBrowser("domain-panel");

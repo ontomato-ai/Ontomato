@@ -78,8 +78,14 @@ export function createApplicationReadAdapter(_owner: ProductOwner, viewer: Assis
   const { query, record, form } = applicationCatalogueClient(viewer);
   return {
     query, record,
-    form(primaryKey: string, { section, values, changedField = null }: EditFormParams) {
-      return form({ section, target: { kind: "object", objectType: APPLICATION, primaryKey }, values, changedField });
+    async form(primaryKey: string, { section, values, changedField = null }: EditFormParams) {
+      const target = { kind: "object", objectType: APPLICATION, primaryKey } as const;
+      const schema = section === "identity" ? applicationIdentityUpdateSchema : applicationEntriesUpdateSchema;
+      if (values !== undefined && !schema.safeParse(values).success) {
+        const current = await form({ section, target, changedField: null });
+        values = { ...current.values, ...values };
+      }
+      return form({ section, target, values, changedField });
     },
     async createForm({ values, changedField = null }: FormParams) {
       const { id, ...formValues } = values ?? {};
