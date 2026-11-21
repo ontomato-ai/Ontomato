@@ -25,21 +25,6 @@
     },
     "icon": "knowledge",
     "groups": [],
-    "permissions": [],
-    "panelUses": [
-      {
-        "id": "governance-feedback",
-        "pageKey": "governance-feedback",
-        "panelId": "builtin-product-feedback",
-        "path": "/governance/feedback",
-        "access": {
-          "permissionCode": "user-feedback"
-        },
-        "names": {
-          "en": "User feedback",
-          "zh-CN": "用户反馈"
-        }
-      }
-    ]
+    "permissions": []
   }
 }
