@@ -8,7 +8,7 @@ import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversat
 import { panelOperationAffectedSchema, panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
-import type { PanelDataState, ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
+import type { PanelDataState, ProductPanelNestedReadRequest, ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { createPanelInstance, type PanelInstance, type PanelInstanceOptions, type PublisherPath } from "./instance";
 import { stateObject, type PanelFieldValue } from "./state";
 import type { PanelText } from "./text";
@@ -59,7 +59,7 @@ export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "
    * Runs the panel a member places from the panel's state (see the mount's options): `memberPath` is that member's
    * segment with the selection, relative to this instance; `run` is how the placed panel reports to this one.
    */
-  nested(memberPath: PanelMemberPath, run: DirectPanelRun): Promise<{ element: HTMLElement; mount: NestedPanelMount }>;
+  nested(memberPath: ProductPanelNestedReadRequest["memberPath"], run: DirectPanelRun): Promise<{ element: HTMLElement; mount: NestedPanelMount }>;
 }
 
 /** What this instance needs of a placed panel's run: its own instance, and how the host drives and ends it. */
@@ -91,13 +91,18 @@ export type MemberPlacing =
   | { kind: "panel"; element: HTMLElement; failure: Readonly<Ref<Error | null>> }
   | { kind: "awaiting" };
 
-/** The target a state value chooses for a member placed from it: the panel or projection it names. */
-function chosenTarget(direct: PanelManifest, member: string, value: unknown): { panelId: string } | { projectionId: string } | null {
+/**
+ * The target a state value chooses for a member placed from it: the panel or projection it names. A member that places
+ * the chosen object's detail panel has no target of its own here: the platform finds the panel by the object's type.
+ */
+function chosenTarget(direct: PanelManifest, member: string, value: unknown): { panelId: string } | { projectionId: string } | "objectDetail" | null {
   const chosen = stateObject(value as PanelFieldValue);
   if (chosen === null) return null;
+  const { target } = direct.members[member]!;
+  if ("fromState" in target && "rule" in target.candidates && target.candidates.rule === "objectDetail") return "objectDetail";
   if (chosen.className === PRODUCT_PANEL) return { panelId: chosen.primaryKey };
   if (chosen.className === PRODUCT_PROJECTION) return { projectionId: chosen.primaryKey };
-  throw new Error(`Member '${member}' is placed from ${chosen.className}, which this SDK release does not place (only a panel or a projection)`);
+  throw new Error(`Member '${member}' is placed from ${chosen.className}, which names neither a panel nor a projection`);
 }
 
 /** One member's data: the shown data by name, and a read the component asks for with run inputs of its own. */
@@ -276,7 +281,16 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     if (!target || !("fromState" in target)) return { member };
     const stateValue = (instance.state.values.value[target.fromState] ?? null) as RuntimeJsonValue;
     const chosen = chosenTarget(direct, member, stateValue);
-    return chosen ? { member, selection: { stateValue, target: chosen } } : { member };
+    // A detail panel's member reads and operates nothing of its own: what it places is found by the object, below.
+    return chosen && chosen !== "objectDetail" ? { member, selection: { stateValue, target: chosen } } : { member };
+  };
+  /** The segment the host reads a placed panel at: the member's, or for an object's detail the object alone. */
+  const nestedSegment = (member: string): ProductPanelNestedReadRequest["memberPath"][number] => {
+    const target = direct.members[member]!.target;
+    const stateValue = "fromState" in target ? instance.state.values.value[target.fromState] ?? null : null;
+    return chosenTarget(direct, member, stateValue) === "objectDetail"
+      ? { member, selection: { stateValue: stateObject(stateValue as PanelFieldValue)! } }
+      : segmentOf(member);
   };
   const instance = createPanelInstance(direct, {
     ...options,
@@ -343,7 +357,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
       failed: (reason) => { failure.value = reason instanceof Error ? reason : new Error(String(reason)); },
     };
-    const { element, mount } = await options.nested([segmentOf(member)], run);
+    const { element, mount } = await options.nested([nestedSegment(member)], run);
     scope.run(() => {
       nestedMounts.add(mount);
       const placed = mount.instance;
@@ -396,10 +410,11 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       if (held) return held.placing;
       if (!Object.hasOwn(direct.members, member)) throw new Error(`The panel declares no member '${member}'`);
       const scope = membersScope.run(() => effectScope())!;
-      const segment = segmentOf(member);
-      const placing: Promise<MemberPlacing> = "fromState" in direct.members[member]!.target && !segment.selection
+      const { target } = direct.members[member]!;
+      const chosen = "fromState" in target ? chosenTarget(direct, member, instance.state.values.value[target.fromState] ?? null) : undefined;
+      const placing: Promise<MemberPlacing> = chosen === null
         ? Promise.resolve({ kind: "awaiting" })
-        : segment.selection && "target" in segment.selection && "panelId" in segment.selection.target
+        : chosen === "objectDetail" || (chosen !== undefined && "panelId" in chosen)
           ? placePanel(member, scope)
           : placeProjection(member, scope);
       members.set(member, { scope, placing });
