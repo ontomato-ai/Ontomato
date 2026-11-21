@@ -25,9 +25,7 @@ import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
 import {
   AGENT_SETTINGS_PAGE_ID,
   DASHBOARDS_PAGE_ID,
-  GOVERNANCE_REPORT_PAGE_ID,
   PANEL_APPLICATION_PAGE_ID,
-  governanceReportPageFeature,
   panelApplicationPageFeature,
   workbenchFeatures,
 } from "../features";
@@ -140,7 +138,6 @@ const pilotPage = computed(() => (display.page.value ? pilot(display.page.value.
 const pageAddress = computed(() => display.page.value?.address ?? null);
 const inDashboards = computed(() => display.page.value?.featureId === DASHBOARDS_PAGE_ID);
 const inAgentSettings = computed(() => display.page.value?.featureId === AGENT_SETTINGS_PAGE_ID);
-const inGovernanceReport = computed(() => display.page.value?.featureId === GOVERNANCE_REPORT_PAGE_ID);
 const inPanelApplication = computed(() => display.page.value?.featureId === PANEL_APPLICATION_PAGE_ID);
 
 /**
@@ -159,9 +156,8 @@ watch(
 const shell = ref<InstanceType<typeof AgentShell> | null>(null);
 
 /**
- * An answer may link a page of the platform (`/governance/reports/<id>`, `/ontology/knowledge?...`); the shell asks here
- * rather than importing another application's routes. The pages the display opens beside the conversation never reach
- * here.
+ * An answer may link a page of the platform (`/ontology/knowledge?...`); the shell asks here rather than importing
+ * another application's routes. The pages the display opens beside the conversation never reach here.
  *
  * Any other page of the platform that the router can resolve opens at its real address, its query kept as it was
  * written, so a draft handoff's parameters travel with it; an address the router does not resolve is no page and stays
@@ -194,21 +190,16 @@ watch(conversationId, (id) => {
  */
 function pageLabel(id: string, reported: PageContext | null): string {
   if (id === DASHBOARDS_PAGE_ID) return t("assistant.featureDashboards");
-  if (id === GOVERNANCE_REPORT_PAGE_ID) return t("assistant.featureGovernanceReport");
   if (id === AGENT_SETTINGS_PAGE_ID) return t("agents.title");
   return reported?.label ?? "";
 }
 
 /**
- * What the reader has selected in the page. The report page carries the finding its address names; a dashboard's address
- * names the board and the card; a panel reports its own selection once it has one.
+ * What the reader has selected in the page. A dashboard's address names the board and the card; a panel reports its
+ * own selection once it has one.
  */
 function selectionIn(page: DisplayPage, reported: PageContext | null): readonly PageSelection[] {
   const query = new URLSearchParams(page.address.split("?")[1] ?? "");
-  if (page.featureId === GOVERNANCE_REPORT_PAGE_ID) {
-    const issue = query.get("issue");
-    return issue ? [{ kind: "issue", id: issue, label: `${t("assistant.governanceFinding")} ${issue}` }] : [];
-  }
   if (page.featureId === DASHBOARDS_PAGE_ID) return dashboardSelectionFrom(Object.fromEntries(query));
   if (page.featureId === PANEL_APPLICATION_PAGE_ID) return reported?.selection ?? [];
   return [];
@@ -226,9 +217,6 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
       agents: inAgentSettings.value ? pageAddress.value! : routes.agents.path,
       dashboards: inDashboards.value ? pageAddress.value! : routes.dashboards.path,
     },
-    inGovernanceReport.value
-      ? governanceReportPageFeature(t("assistant.featureGovernanceReport"), pageAddress.value!)
-      : null,
     inPanelApplication.value
       ? panelApplicationPageFeature(display.pageContext.value?.label || pageAddress.value!, pageAddress.value!)
       : null,

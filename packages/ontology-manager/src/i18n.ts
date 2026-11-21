@@ -1,7 +1,6 @@
 import sharedEn from "./locales/en";
 import { objectViewEn } from "./object-views/messages";
 import {productEn} from './products/messages';
-import { englishGovernance, type GovernanceMessages } from "./knowledge-governance/messages";
 
 export type TextParams = Record<string, string | number>;
 
@@ -730,23 +729,22 @@ export type SharedKey = {
   [Group in keyof typeof sharedEn]: `${Group}.${keyof (typeof sharedEn)[Group] & string}`;
 }[keyof typeof sharedEn];
 
-/** One locale's Manager messages: its own, the ones worded like the workbench, and knowledge governance. */
+/** One locale's Manager messages: its own and the ones worded like the workbench. */
 export interface ManagerMessages {
   readonly ontology: OntologyMessages;
   readonly shared: SharedMessages;
-  readonly governance: GovernanceMessages;
 }
 
-export const englishMessages: ManagerMessages = { ontology: ontologyEn, shared: sharedEn, governance: englishGovernance };
+export const englishMessages: ManagerMessages = { ontology: ontologyEn, shared: sharedEn };
 
 /** vue-i18n message tree of one locale's Manager messages. */
 export type ManagerMessageTree = { readonly [key: string]: string | object };
 
 /**
  * One locale's Manager messages as entries of the page's single vue-i18n tree: the Manager's own words under
- * `ontology`, knowledge governance under `governance`, and the workbench-worded groups (`common`, `nav`, ...) at the top
- * level, where they sit next to the platform pages' groups of the same name.
+ * `ontology`, and the workbench-worded groups (`common`, `nav`, ...) at the top level, where they sit next to the
+ * platform pages' groups of the same name.
  */
 export function managerMessageTree(messages: ManagerMessages): ManagerMessageTree {
-  return { ...messages.shared, ontology: messages.ontology, governance: messages.governance };
+  return { ...messages.shared, ontology: messages.ontology };
 }

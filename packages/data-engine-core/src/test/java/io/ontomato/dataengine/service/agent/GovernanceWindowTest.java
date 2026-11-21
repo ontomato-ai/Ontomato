@@ -152,7 +152,7 @@ class GovernanceWindowTest extends PostgresTestDatabase {
     var work=governance.work(record,owner).getJSONObject("work");
     assertFalse(work.toJSONString().contains("Original user material"));
     assertEquals("history",work.getJSONArray("sources").getJSONObject(0).getString("kind"));
-    assertTrue(governance.readSource(record,input.getString("sourceId"),0,owner).toString().contains("Original user material"));
+    assertEquals(input.getString("sourceId"),work.getJSONArray("sources").getJSONObject(0).getString("id"));
   }
   @Test void chineseRequestRegistersTheCurrentMessageWithAChineseSourceTitle() throws Exception {
     when(language.get("zh-CN","KnowledgeGovernance.source.currentMessage")).thenReturn("当前用户消息");

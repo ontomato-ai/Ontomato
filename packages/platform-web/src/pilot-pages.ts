@@ -2,7 +2,6 @@ import type { PilotPage, PilotPageResolver } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import AgentSettingsRoute from "./pages/AgentSettingsRoute.vue";
 import DashboardsPage from "./pages/DashboardsRoute.vue";
-import GovernanceReportRoute from "./pages/GovernanceReportRoute.vue";
 import PanelApplicationRoute from "./pages/PanelApplicationRoute.vue";
 import { DETAIL_SELECTIONS, detailSelectionAddress, type DetailSelection } from "./detail-selection";
 
@@ -11,8 +10,8 @@ import { DETAIL_SELECTIONS, detailSelectionAddress, type DetailSelection } from 
  * what the conversation beside it carries (`?page=`), and the resolver turns that address into the props the page's own
  * component takes: the page keeps one component and one address, and the page beside the chat is that page.
  *
- * The pages here are the dashboards, the agents' settings, one governance record's report and a panel application's
- * page, which is shown by the same page the platform shows it with, so one address has one page and one panel instance.
+ * The pages here are the dashboards, the agents' settings and a panel application's page, which is shown by the
+ * same page the platform shows it with, so one address has one page and one panel instance.
  *
  * A page's own navigation (another board, another agent, the list, a saved draft's handoff) is the callback it is given
  * here. The callback changes the parameter the conversation carries, never the browser's address, so the conversation
@@ -40,25 +39,6 @@ export function pilotPageResolver(
           navigate: setPage,
         },
       };
-    }
-    const report = /^\/governance\/reports\/([^/]+)$/.exec(path);
-    if (report) {
-      const recordId = decodeURIComponent(report[1]!);
-      return {
-        id: "governance-report",
-        component: GovernanceReportRoute,
-        props: {
-          paired: true,
-          recordId,
-          issueId: query.get("issue") ?? undefined,
-          navigate: (next: { issue?: string }) => {
-            const target = new URLSearchParams(search);
-            if (next.issue) target.set("issue", next.issue);
-            else target.delete("issue");
-            setPage(`/governance/reports/${encodeURIComponent(recordId)}${target.size ? `?${target}` : ""}`);
-          },
-        },
-      } satisfies PilotPage;
     }
     // A panel application's page: a use relation's full path under `/applications/<application>`, shown by the same
     // component that shows it full. It opens at the state its address names and reports selections to the display

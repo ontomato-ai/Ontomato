@@ -240,9 +240,3 @@ export function usePlatformText() {
   const { t: translate } = useI18n();
   return { pt: (key: "platform.operations" | "platform.governance") => translate(key) };
 }
-
-/** Knowledge governance text from the `governance` entries of the page's vue-i18n tree. */
-export function useGovernanceText() {
-  const { t: translate } = useI18n();
-  return { t: (key: string, params: TextParams = {}) => translate(`governance.text.${key}`, params) };
-}

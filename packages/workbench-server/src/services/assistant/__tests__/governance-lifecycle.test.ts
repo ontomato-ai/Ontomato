@@ -110,16 +110,13 @@ it("closes the Java gate before asking the runtime to stop",async()=>{
   expect(mocks.close).toHaveBeenCalledWith(runId,owner);
   expect(mocks.closeAuthoring).toHaveBeenCalledWith(runId,sessionId,owner,"cancelled");
 });
-it("provider and scheduled results share the run's saved governance report",async()=>{
+it("provider and scheduled results link to the conversation instead of a governance report page",async()=>{
   mocks.record.mockImplementation(async id=>id===runId?agentId:null);mocks.run.mockResolvedValue({run:{id:runId,sessionId,status:"running",stopReason:null},messages:[],artifacts:[]});
   const result=await agentChannelService.read({actor:{id:runId,domainId:"domain"},execution:{session:{providerId:"workbench",sessionId},runId}},"domain");
-  expect(result).toMatchObject({process:{mode:"page",href:`/governance/reports/${agentId}`},results:[{href:`/governance/reports/${agentId}`} ]});
+  expect(result).toMatchObject({process:{mode:"inline",runtimeSessionId:sessionId,runtimeRunId:runId},results:[]});
   mocks.status.mockResolvedValue({id:runId,sessionId,status:"stopped",stopReason:"stop"});
   const input={taskId:agentId,runId,owner,handle:{sessionId}};
-  expect((await assistantScheduleApplication.status(input)).resultLink).toEqual({appId:"agents",path:`/governance/reports/${agentId}`});
-  mocks.record.mockResolvedValue(null);
   expect((await assistantScheduleApplication.status(input)).resultLink).toEqual({appId:"agents",path:`/agents/chat?sessionId=${sessionId}`});
-
 });
 
 it("steering a governance-only run does not turn its registered caller scope into query preparation",async()=>{

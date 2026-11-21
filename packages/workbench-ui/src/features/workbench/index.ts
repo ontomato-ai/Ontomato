@@ -8,10 +8,7 @@ export {
   AGENT_SETTINGS_PAGE_ID,
   DASHBOARDS_PAGE_ID,
   DASHBOARDS_PAGE_SKILL,
-  GOVERNANCE_REPORT_PAGE_ID,
-  GOVERNANCE_REPORT_PAGE_SKILL,
   dashboardsPageFeature,
-  governanceReportPageFeature,
   workbenchFeatures,
 } from "./features";
 export { readRememberedAgent, readRememberedSession } from "./remembered-agent";

@@ -18,7 +18,6 @@ export const METRIC_VIEW = "platform:MetricView";
 export const FUNCTION = "platform:Function";
 
 export const BUSINESS_KNOWLEDGE = "platform:BusinessKnowledge";
-export const KNOWLEDGE_GOVERNANCE_RECORD = "platform:KnowledgeGovernanceRecord";
 export const FEEDBACK_RECORD = "platform:FeedbackRecord";
 
 export const ACTION = "platform:Action";
@@ -305,25 +304,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
   },
   [ONTOLOGY_RELATION_KIND]: describeType("ontologyRelationKind"),
-  [KNOWLEDGE_GOVERNANCE_RECORD]: {
-    ...describeType("knowledgeGovernanceRecord"),
-    childCollections: ["issues", "sources"],
-    reads: {
-      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
-      issues: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
-      sources: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
-      // The sources one issue cites, in the order it cites them, as the same rows as `sources`.
-      issueSources: {
-        source: "object", parameterMode: "fixed", params: { issue: "governanceIssue" }, requiredParams: ["issue"],
-        result: "panelRecordList",
-      },
-      // One registered source, read in segments: each row is a passage and the owner encodes its position in the cursor.
-      sourcePage: {
-        source: "object", parameterMode: "fixed", params: { source: "governanceSource", cursor: "cursor" },
-        requiredParams: ["source"], result: "panelRecordQuery",
-      },
-    },
-  },
   [FEEDBACK_RECORD]: {
     ...describeType("feedbackRecord"),
     reads: {

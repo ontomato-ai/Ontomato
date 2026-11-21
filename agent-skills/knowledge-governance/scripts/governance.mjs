@@ -150,8 +150,4 @@ const result = await call(
     "X-Ontomato-Run-Id": state.runId,
   },
 );
-console.log(JSON.stringify(
-  platform ? { ...result, reportLink: markdownLink("Governance report", `#/governance/reports/${state.id}`) } : result,
-  null,
-  2,
-));
+console.log(JSON.stringify(result, null, 2));

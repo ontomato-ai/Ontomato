@@ -146,18 +146,18 @@ test("platform projections bind declared types and runtime state instead of stor
   }
 });
 
-test("platform projections take a governance issue from state, never as a stored literal", () => {
-  const recordType = "platform:KnowledgeGovernanceRecord";
-  const projection = (issue: object) => ({
-    name: "Cited sources", description: "", visibility: "platform", componentId: "@ontomato/sdk:ObjectTextReader",
-    inputs: { record: { kind: "object", objectType: recordType }, issue: { kind: "scalar", type: "string" } },
+test("platform projections take a domain run identity from state, never as a stored literal", () => {
+  const taskType = "platform:ScheduledTask";
+  const projection = (runId: object) => ({
+    name: "Task run", description: "", visibility: "platform", componentId: "@ontomato/sdk:PanelData",
+    inputs: { task: { kind: "object", objectType: taskType }, runId: { kind: "scalar", type: "string" } },
     outputs: {}, config: {},
-    data: { sources: { source: { object: { input: "record" } }, read: "issueSources", params: { issue } } },
+    data: { run: { source: { object: { input: "task" } }, read: "run", params: { runId } } },
   });
-  assert.equal(builtinProductProjectionInputSchema.safeParse(projection({ input: "issue" })).success, true);
-  const pinned = builtinProductProjectionInputSchema.safeParse(projection({ literal: "issue-1" }));
+  assert.equal(builtinProductProjectionInputSchema.safeParse(projection({ input: "runId" })).success, true);
+  const pinned = builtinProductProjectionInputSchema.safeParse(projection({ literal: "run-1" }));
   assert(!pinned.success);
-  assert(pinned.error.issues.some(issue => issue.path.join(".") === "data.sources.params.issue.literal"));
+  assert(pinned.error.issues.some(issue => issue.path.join(".") === "data.run.params.runId.literal"));
 });
 
 test("platform panels place only packaged products and do not pin domain object inputs", () => {

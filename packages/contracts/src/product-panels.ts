@@ -103,7 +103,7 @@ function containsObjectIdentity(value: RuntimeJsonValue): boolean {
 
 const domainProjectionBinding = (field: string) => `Platform-supplied projections cannot bind a domain object: ${field}`;
 /** Read parameters whose literal is the identity of an existing object within its owner. */
-const domainIdentityParameters: ReadonlySet<string> = new Set(["governanceSource", "governanceIssue", "scheduledRunId"]);
+const domainIdentityParameters: ReadonlySet<string> = new Set(["scheduledRunId"]);
 
 function validateBuiltinProjection(projection: DirectProjectionPorts, ctx: z.RefinementCtx) {
   validateDirectProjection(projection, ctx);

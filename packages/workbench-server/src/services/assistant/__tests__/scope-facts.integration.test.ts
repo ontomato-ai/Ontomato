@@ -35,6 +35,7 @@ it("keeps old references and records new retrieval/governance references only wh
 it("seeds a stable governance preset in both existing and new domains",async()=>{
   const first=(await assistantStore.agents(owner.domainId)).find(agent=>agent.kind==="knowledge-governance")!;
   expect(first.enabled).toBe(true);expect(first.skills).toContainEqual({namespace:{kind:"provider",provider:"ontology"},name:"knowledge-governance"});
+  expect(first.skills).toContainEqual({namespace:{kind:"provider",provider:"workbench"},name:"assistant-report"});
   expect((await assistantStore.agents(owner.domainId)).find(agent=>agent.kind==="knowledge-governance")?.id).toBe(first.id);
   const second=(await assistantStore.agents("new-domain")).find(agent=>agent.kind==="knowledge-governance")!;
   expect(second.domain_id).toBe("new-domain");expect(second.id).not.toBe(first.id);

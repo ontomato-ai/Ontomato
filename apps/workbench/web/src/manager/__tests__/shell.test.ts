@@ -22,15 +22,6 @@ vi.mock("../../../../../../packages/ontology-manager/src/data-browser/DataBrowse
   }),
 }));
 
-vi.mock("../../../../../../packages/ontology-manager/src/knowledge-governance/GovernancePage.vue", () => ({
-  __esModule: true,
-  default: defineComponent({
-    name: "GovernanceDouble",
-    props: { recordId: String },
-    setup: (props) => () => h("p", { class: "page-double" }, `governance ${props.recordId}`),
-  }),
-}));
-
 // Model configuration reads a structured settings response; its own package tests it.
 vi.mock("../../../../../../packages/platform-admin/src/pages/ModelConfigPage.vue", () => ({
   __esModule: true,
@@ -140,13 +131,6 @@ describe("open-source Ontology Service page", () => {
     expect(requests.some((request) => request.url.includes("/assistant/sessions/session-1/runs/run-1/page-draft"))).toBe(true);
     expect(document.querySelector<HTMLInputElement>(".knowledge-form .el-input__inner")?.value).toBe("e2e 测试口径");
     expect([...document.querySelectorAll(".knowledge-form .draft-changed")].length).toBeGreaterThan(0);
-  });
-
-  it("a governance record's report is a page of the platform, at the record's own address", async () => {
-    await start("/#/governance/reports/record-1");
-    expect(document.querySelector(".page-double")?.textContent).toBe("governance record-1");
-    expect(document.querySelector(".platform-shell")).not.toBeNull();
-    expect(document.querySelector(".rail-row.active")?.getAttribute("aria-label")).toBe(appName("governance"));
   });
 
   it("requests go anonymously to the configured API root, and an old launch link loses its credential", async () => {

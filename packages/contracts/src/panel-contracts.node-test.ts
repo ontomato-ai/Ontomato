@@ -3,7 +3,7 @@ import { appsSdkBuildSchema, appsSdkCurrentSchema } from "./apps-sdk";
 import { panelModuleImports } from "./panel-module";
 import {
   APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL, EXPORT_FEEDBACK, EXPORT_SKILL,
-  FEEDBACK_RECORD, IMPORT_SKILL, KNOWLEDGE_GOVERNANCE_RECORD, SKILL,
+  FEEDBACK_RECORD, IMPORT_SKILL, SKILL,
 } from "./panel-client-requests";
 import {
   createPanelHumanOperationIntentRequestSchema, createPanelOperationIntentRequestSchema,
@@ -457,18 +457,6 @@ test("feedback, governance records and the skill library read through their owne
   }).success, false);
 
   assert.deepEqual(result({
-    record: { source: object(KNOWLEDGE_GOVERNANCE_RECORD), read: "record", params: {} },
-    issues: { source: object(KNOWLEDGE_GOVERNANCE_RECORD), read: "issues", params: {} },
-    sources: { source: object(KNOWLEDGE_GOVERNANCE_RECORD), read: "sources", params: {} },
-    passages: {
-      source: object(KNOWLEDGE_GOVERNANCE_RECORD), read: "sourcePage", params: { source: { literal: "source-1" }, cursor: { literal: "c" } },
-    },
-    cited: { source: object(KNOWLEDGE_GOVERNANCE_RECORD), read: "issueSources", params: { issue: { literal: "issue-1" } } },
-  }), {
-    record: "panelRecord", issues: "panelRecordList", sources: "panelRecordList", passages: "panelRecordQuery", cited: "panelRecordList",
-  });
-
-  assert.deepEqual(result({
     rows: { source: { type: platformType(SKILL) }, read: "query", params: { search: { literal: "report" } } },
     record: { source: object(SKILL), read: "record", params: {} },
     files: { source: object(SKILL), read: "files", params: {} },
@@ -480,8 +468,6 @@ test("feedback, governance records and the skill library read through their owne
     return declaration?.parameterMode === "fixed" ? declaration.requiredParams : undefined;
   };
   assert.deepEqual(required(FEEDBACK_RECORD, "counts"), ["by"]);
-  assert.deepEqual(required(KNOWLEDGE_GOVERNANCE_RECORD, "sourcePage"), ["source"]);
-  assert.deepEqual(required(KNOWLEDGE_GOVERNANCE_RECORD, "issueSources"), ["issue"]);
   assert.deepEqual(required(SKILL, "file"), ["path"]);
   assert.deepEqual(platformObjectTypes[SKILL].operations, [DELETE_SKILL, EXPORT_SKILL]);
   assert.deepEqual(platformObjectTypes[FEEDBACK_RECORD].operations, [EXPORT_FEEDBACK]);
@@ -1494,12 +1480,10 @@ test("owner select options preserve integer status and customizable string tags"
   assert.equal(formOptionSchema.safeParse({ ...option, value: 0, label: "Pending" }).success, false);
 });
 
-test("knowledge, governance, feedback and skill reads stay at their declared owners", () => {
+test("knowledge, feedback and skill reads stay at their declared owners", () => {
   for (const [resource, method, service, path] of [
     [BUSINESS_KNOWLEDGE, "POST", "/data-query", "/admin/getBussinessKnowledge"],
     [BUSINESS_KNOWLEDGE, "POST", "/data-query", "/admin/bussinessKnowledge/form"],
-    [KNOWLEDGE_GOVERNANCE_RECORD, "GET", "/data-query", "/ontology/ai/knowledge-governance/record/work"],
-    [KNOWLEDGE_GOVERNANCE_RECORD, "GET", "/data-query", "/ontology/ai/knowledge-governance/record/sources/evidence?offset=20"],
     [FEEDBACK_RECORD, "GET", "", "/feedback?rating=like&limit=20"],
     [FEEDBACK_RECORD, "GET", "", "/feedback/12a207b7-e868-45e5-a52d-e15f85447447"],
     [SKILL, "GET", "", "/skills/skill/file?path=references%2Fguide.md"],
@@ -1525,8 +1509,6 @@ test("knowledge, governance, feedback and skill reads stay at their declared own
   assert.ok(!clientSends([binding(SKILL)], "GET", "", "/skills/skill/export"));
   assert.ok(!clientSends([binding(FEEDBACK_RECORD)], "GET", "", "/feedback/export"));
   assert.ok(!clientSends([binding(FEEDBACK_RECORD)], "GET", "", "/feedback/state"));
-  assert.ok(!clientSends([binding(KNOWLEDGE_GOVERNANCE_RECORD)], "POST", "/data-query",
-    "/ontology/ai/knowledge-governance/record/runs/run/actions/approve"));
 });
 
 test("a child key is meaningful with its parent identity", () => {
@@ -1554,17 +1536,6 @@ test("a declared child collection carries its parent-scoped selection across pan
   };
   assert.deepEqual(pageSelectionSchema.parse(selection), selection);
   assert.equal(pageSelectionSchema.safeParse({ kind: selection.kind, id: selection.id, label: selection.label }).success, false);
-});
-
-test("governance issues and sources use separate collection queries under one parent", () => {
-  const parent = { objectType: KNOWLEDGE_GOVERNANCE_RECORD, primaryKey: "report-a" };
-  for (const collection of ["issues", "sources"]) {
-    const query = { parent, collection };
-    assert.deepEqual(panelChildCollectionQuerySchema.parse(query), query);
-  }
-  assert.equal(panelChildCollectionQuerySchema.safeParse({ parent, collection: "files" }).success, false);
-  const unconverted = { className: parent.objectType, primaryKey: parent.primaryKey };
-  assert.equal(panelChildCollectionQuerySchema.safeParse({ parent: unconverted, collection: "sources" }).success, false);
 });
 
 test("checked object collections are typed ports and never become deep-link state", () => {

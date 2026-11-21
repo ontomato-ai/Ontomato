@@ -29,10 +29,6 @@ vi.mock("../../../../../../packages/ontology-manager/src/visual-modeling/VisualM
   __esModule: true,
   default: { name: "VisualModelingDouble", template: '<p class="page-double">visual modeling</p>' },
 }));
-vi.mock("../../../../../../packages/ontology-manager/src/knowledge-governance/GovernancePage.vue", () => ({
-  __esModule: true,
-  default: { name: "GovernanceDouble", template: '<p class="page-double">governance</p>' },
-}));
 // The service status draws only from a full status report of the data engine; its own page reads it.
 vi.mock("../../../../../../packages/platform-admin/src/pages/SystemMonitorPage.vue", () => ({
   __esModule: true,

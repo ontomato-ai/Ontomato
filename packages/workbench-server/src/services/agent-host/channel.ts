@@ -1,6 +1,4 @@
 import {needsRetrievalScope} from "../assistant/skills";
-import { governanceReportHref } from "../assistant/governance-report";
-import { tForLocale } from "../../i18n";
 import { recentUserMessages } from "../assistant/user-quotes";
 import { OntologyRetrievalClient } from "../assistant/ontology-retrieval";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
@@ -98,7 +96,7 @@ export const agentChannelService = {
     return { accepted: true };
   },
   async read(raw: unknown, domain: string, _supplied: AssistantCredentials = {}) {
-    const { body, service, owner, credentials } = await this.execution(raw, domain);
+    const { body, service, owner } = await this.execution(raw, domain);
     if(body.fileId) {
       const artifact=await service.artifact(body.execution.session.sessionId,body.fileId,owner);
       if(artifact.runId!==body.execution.runId || !artifact.path.startsWith("outputs/")) throw new HttpError(404,"File was not delivered by this execution","NOT_FOUND");
@@ -106,13 +104,12 @@ export const agentChannelService = {
     }
     const snapshot = await service.readRun(body.execution.session.sessionId, body.execution.runId, owner);
     const status = snapshot.run.status === "running" ? "running" : snapshot.run.stopReason === "stop" ? "completed" : snapshot.run.stopReason === "aborted" ? "cancelled" : "failed";
-    const href = body.execution.session.providerId === "workbench" ? await governanceReportHref(body.execution.runId,owner) : null;
     // A reply holds its credential chain until the checks of the datasets it cited and their candidates have ended.
     const settled = status !== "running" && (body.execution.session.providerId !== "workbench"
       || await assistantService.qualitySettled(body.execution.runId, owner));
     return { settled, status, summary: answerText(snapshot) || snapshot.run.errorMessage || status,
-      process: href ? { mode: "page", href } : { mode: "inline", runtimeSessionId: snapshot.run.sessionId, runtimeRunId: snapshot.run.id },
-      results: href ? [{ kind: "page", href, title: tForLocale(credentials.locale,"assistant.governance.report.title") }] : [],
+      process: { mode: "inline", runtimeSessionId: snapshot.run.sessionId, runtimeRunId: snapshot.run.id },
+      results: [],
       files:snapshot.artifacts.filter(file=>file.runId===snapshot.run.id && file.path.startsWith("outputs/")).map(file=>({id:file.id,name:path.posix.basename(file.path),mediaType:file.mediaType,href:`/platform/agent-channel/tasks/${snapshot.run.id}/files/${file.id}`})) };
   },
 };
