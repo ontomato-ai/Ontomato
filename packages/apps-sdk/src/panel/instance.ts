@@ -12,7 +12,7 @@ import { childObjectNameKey, createPanelState, objectNameKey, panelSelection, ty
 import type { PanelText } from "./text";
 import { panelOperations } from "./operations";
 import type { PanelProjectionRegistration } from "./ports";
-import { PanelFormAdapters, type PageDraftLink, type ReceivedPanelDraft } from "./draft";
+import { PanelFormAdapters, type PageDraftLink, type ReceivedPanelDraft, type UnclaimedDraft } from "./draft";
 import { handlerFor } from "./handlers";
 import { pageDraftLink } from "@ontomato/contracts/page-draft";
 import type { PanelOperationBinding } from "./types";
@@ -102,11 +102,12 @@ export interface PanelInstance {
   /** Hears each draft that ended, by its link; the returned function stops it. */
   onDraftSettled(listener: (link: PageDraftLink) => void): () => void;
   /**
-   * The type of the object a draft this instance holds is for, when none of its forms binds that type: every slot its
-   * declaration names has registered its projection, and every form among them declined the draft. Null otherwise, and
-   * while a slot is still to register, since that may be the form that takes the draft.
+   * What a draft this instance holds is for — its object's type and its operation — when none of its forms takes it:
+   * every slot its declaration names has registered its projection, and every form among them declined the draft (none
+   * binds the type, or none of that type performs the operation). Null otherwise, and while a slot is still to register,
+   * since that may be the form that takes the draft.
    */
-  readonly unclaimedDraft: Readonly<Ref<string | null>>;
+  readonly unclaimedDraft: Readonly<Ref<UnclaimedDraft | null>>;
   register(registration: PanelProjectionRegistration): () => void;
   /** Runs one described operation here, with the reader's own credential. */
   invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
