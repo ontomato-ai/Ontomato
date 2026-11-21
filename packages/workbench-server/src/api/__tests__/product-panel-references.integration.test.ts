@@ -58,6 +58,8 @@ const nestedAgentId = "51e55fe0-352a-4958-87a2-2d348d470758";
 const nestedDeletes: string[] = [];
 const grants = new Map<string, string>();
 const shared = new Set<string>();
+const trialApplications = new Set<string>();
+const editOnlyPanels = new Set<string>();
 let server: Server | undefined;
 let contentRoot: string;
 let revision: number;
@@ -93,7 +95,7 @@ beforeAll(async () => {
   app.use(express.json());
   const granted = (token: string | undefined, id: string, verb: "use" | "edit") => {
     const owner = grants.get(id);
-    return owner !== undefined && (owner === token || (verb === "use" && (
+    return owner !== undefined && ((owner === token && (verb === "edit" || !editOnlyPanels.has(id))) || (verb === "use" && (
       token === "author" || shared.has(id) || id === personalPanelId || id === personalChildId ||
       id === snapshotPanelId || id === "visible-projection" ||
       (token === "hidden-panel-owner" && id === "cascade-in-use")
@@ -129,7 +131,19 @@ beforeAll(async () => {
   app.get("/platform/applications/panel-uses/by-panel", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     expect(req.query.domainId).toBe("test-domain");
-    res.json({ success: true, data: [] });
+    const id = String(req.query.panelId);
+    const data = trialApplications.has(id) ? [{
+      applicationId: id, names: { en: "Trial application" }, useId: "trial", path: `/applications/${id}/trial`,
+    }] : [];
+    res.json({ success: true, data });
+  });
+  app.delete("/platform/applications/:id", (req, res) => {
+    expect(req.get("tk")).toBe("author");
+    expect(trialApplications.delete(req.params.id)).toBe(true);
+    // Enterprise application retirement removes the Java Grant indexed by this same domain and ID.
+    grants.delete(req.params.id);
+    shared.delete(req.params.id);
+    res.sendStatus(204);
   });
   app.get("/platform/applications/resolve-entry", (req, res) => {
     if (req.query.applicationId === "app-nested") {
@@ -410,6 +424,50 @@ async function saveProjection(id: string, user = "author") {
 function projectionMembers(...ids: string[]) {
   return Object.fromEntries(ids.map((projectionId, index) => [`member${index}`, { target: { projectionId } }]));
 }
+
+it("lets the panel's registered owner clean it up after retiring a same-ID trial application", async () => {
+  const id = "app-orphaned-panel", projections = ["orphan-summary-one", "orphan-summary-two"];
+  for (const projection of projections) await saveProjection(projection);
+  const manifest = { state: {}, events: {}, members: projectionMembers(...projections) };
+  expect((await savePanel(id, manifest)).status).toBe(200);
+  trialApplications.add(id);
+  const resource = `product-panels/${id}`;
+  const inUse = await request("DELETE", `${resource}?revision=1`, "author");
+  expect(inUse.status).toBe(409);
+  expect(productPanelInUseErrorSchema.parse(await inUse.json()).details.applicationEntries)
+    .toEqual([{ applicationId: id, applicationName: "Trial application", entryId: "trial", path: `/applications/${id}/trial` }]);
+
+  const retired = await fetch(`${state.base}/platform/applications/${id}`, { method: "DELETE", headers: { tk: "author" } });
+  expect(retired.status).toBe(204);
+  const record = await request("GET", resource, "author");
+  expect(record.status).toBe(200);
+  expect(productPanelResponseSchema.parse(await record.json()).panel).toMatchObject({ id, ownerId: "author", revision: 1, editable: false });
+  const rows = await request("GET", `product-panels?scope=mine&q=${id}`, "author");
+  expect(await rows.json()).toMatchObject({ items: [{ id, revision: 1 }] });
+  expect((await request("GET", resource, "unrelated-reader")).status).toBe(403);
+  const entry = new URLSearchParams({ applicationId: id, useId: "trial", access: "domain-member", pageKey: "trial" });
+  expect((await request("GET", `${resource}?${entry}`, "author")).status).toBe(403);
+  expect((await request("DELETE", `${resource}?revision=1`, "unrelated-reader")).status).toBe(403);
+
+  const deleted = await request("DELETE", `${resource}?revision=1`, "author");
+  expect(deleted.status).toBe(200);
+  expect(await deleted.json()).toMatchObject({ success: true, deletedProjectionIds: projections });
+});
+
+it("exposes a panel to an editor without a use Grant for management", async () => {
+  const id = "editor-without-use";
+  expect((await savePanel(id, { state: {}, events: {}, members: {} })).status).toBe(200);
+  grants.set(id, "editor");
+  editOnlyPanels.add(id);
+  const resource = `product-panels/${id}`;
+  const record = await request("GET", resource, "editor");
+  expect(record.status).toBe(200);
+  expect(productPanelResponseSchema.parse(await record.json()).panel).toMatchObject({ id, ownerId: "author", editable: true });
+  expect(await (await request("GET", `product-panels?q=${id}`, "editor")).json()).toMatchObject({ items: [{ id, editable: true }] });
+  const entry = new URLSearchParams({ applicationId: "editor-fixture", useId: "edit", access: "domain-member", pageKey: "edit" });
+  expect((await request("GET", `${resource}?${entry}`, "editor")).status).toBe(403);
+  expect((await request("DELETE", `${resource}?revision=1`, "editor")).status).toBe(200);
+});
 
 it("only accepts a recovered projection update while the original panel is its sole user", async () => {
   const id = "recovered-projection", originalPanel = "recovery-original", laterPanel = "recovery-later";
