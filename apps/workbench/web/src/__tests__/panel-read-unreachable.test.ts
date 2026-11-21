@@ -11,7 +11,7 @@ import { panelModuleFor, type DirectPanelMount } from "../../../../../packages/a
 import { createDirectPanelInstance } from "../../../../../packages/apps-sdk/src/panel/direct";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
-import { noOperations } from "./panel-frame";
+import { noOperations, directRun } from "./panel-frame";
 
 /*
  * A read the platform never answered (the page reached nothing: the network dropped, the service was being replaced —
@@ -79,11 +79,10 @@ it("hands a panel's own code the same words and a way to read again", async () =
     template: `<p class="shown">{{ shown }}</p><button class="again" @click="again">again</button>`,
     install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
     manifest,
-    run: {
+    run: directRun({
       pageKey: "relations", url: () => "/relations", label: () => "Relations", initial: {},
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => { throw reason; },
-    },
+    }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async (path: string) => Response.json({ projection: path.endsWith(relations.id) ? relations : relationData }) },
     use: { applicationId: "app-relations", useId: "relations" },

@@ -9,7 +9,7 @@ import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import { mountDirectPanel, type DirectPanelMount } from "../../../../../packages/apps-sdk/src/panel/direct-mount";
-import { noOperations } from "./panel-frame";
+import { noOperations, directRun } from "./panel-frame";
 import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 
 /*
@@ -53,11 +53,10 @@ function open() {
   };
   const mount: DirectPanelMount = mountDirectPanel({
     manifest,
-    run: {
+    run: directRun({
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
-      state: (state) => reports.state.push(state), context: (context) => reports.context.push(context),
-      operations: () => {}, dirty: (dirty) => reports.dirty.push(dirty), draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {}, failed: (reason) => { throw reason; },
-    },
+      state: (state) => reports.state.push(state), context: (context) => reports.context.push(context), dirty: (dirty) => reports.dirty.push(dirty), failed: (reason) => { throw reason; },
+    }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests, use: { applicationId: "app-tasks", useId: "tasks" },
     expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,

@@ -9,7 +9,7 @@ import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { ATTRIBUTE, FUNCTION, OBJECT_TYPE } from "@ontomato/contracts/platform-object-types";
 import { mountDirectPanel } from "../../../../../packages/apps-sdk/src/panel/direct-mount";
 import { receivePanelDraft } from "../../../../../packages/apps-sdk/src/panel/draft";
-import { noOperations } from "./panel-frame";
+import { noOperations, directRun } from "./panel-frame";
 
 /*
  * Two forms on one page — the object type page's class form and attribute form (M4, 2026-11-21) — and a draft for one of
@@ -52,11 +52,10 @@ function mountForms(forms: readonly FormMember[], initial: Record<string, unknow
   };
   const mount = mountDirectPanel({
     manifest,
-    run: {
+    run: directRun({
       pageKey: "page", url: () => "/page", label: () => "Page", initial: initial as never,
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => failed.push(reason),
-    },
+    }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async (path) => Response.json({ projection: [...projections.values()].find((projection) => path.endsWith(projection.id)) }) },
     use: { applicationId: "app", useId: "page" },

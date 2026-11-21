@@ -7,7 +7,7 @@ import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import { panelModuleFor, type DirectPanelMount, type DirectPanelModuleExports } from "../../../../../packages/apps-sdk/src/direct";
-import { noOperations } from "./panel-frame";
+import { noOperations, directRun } from "./panel-frame";
 import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 
 /*
@@ -66,11 +66,10 @@ function run(template: string) {
     // The platform's words; Element Plus's components the run registers itself, as a frame does.
     install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
     manifest,
-    run: {
+    run: directRun({
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => { throw reason; },
-    },
+    }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests, use: { applicationId: "app-tasks", useId: "tasks" },
     expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
