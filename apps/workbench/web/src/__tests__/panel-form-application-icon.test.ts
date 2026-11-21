@@ -13,7 +13,7 @@ import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text
 import { noOperations } from "./panel-frame";
 
 /*
- * An application's icon in its owner's form (2026-11-21 acceptance L-02): the reader sees the platform's icons and picks
+ * An application's icon in its owner's form (2026-11-21 acceptance L-02): the reader sees the allowed domain application icons and picks
  * one, as the platform's own application settings do, and the owner keeps its string key; a key an older release wrote
  * stays until the reader picks another.
  */
@@ -45,7 +45,7 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-it("shows the platform's icons for an application's icon and keeps the key the reader picks", async () => {
+it("shows the icons available to a domain application and keeps the key the reader picks", async () => {
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "applications", url: () => "/applications", label: () => "Applications", initial: { app: target },
     text: createPanelText({}, ref("en"), "en"), ...noOperations, recordDraftCreated: async () => {},
@@ -65,10 +65,10 @@ it("shows the platform's icons for an application's icon and keeps the key the r
   const values = () => instance.forms.handle("form")!.values.value.icon;
   // The key an older release wrote is kept, though the platform no longer offers it.
   expect(values()).toBe("retired-key");
-  const ontology = field.querySelector<HTMLButtonElement>('button[aria-label="ontology"]');
-  expect(ontology).not.toBeNull();
-  ontology!.click();
+  const users = field.querySelector<HTMLButtonElement>('button[aria-label="users"]');
+  expect(users).not.toBeNull();
+  users!.click();
   await nextTick();
-  expect(values()).toBe("ontology");
-  expect(field.querySelector('button[aria-label="ontology"]')?.getAttribute("aria-pressed")).toBe("true");
+  expect(values()).toBe("users");
+  expect(field.querySelector('button[aria-label="users"]')?.getAttribute("aria-pressed")).toBe("true");
 });
