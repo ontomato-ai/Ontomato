@@ -263,7 +263,10 @@ export async function readMemberDatum(read: PanelReadPort, projection: DirectPro
     memberPath, dataName: name, inputs: authored,
     ...(Object.keys(runtime).length ? { runtimeParams: runtime } : {}),
   }).catch((reason: unknown) => ({
-    status: "error" as const, message: reason instanceof Error ? reason.message : String(reason), unreachable: true as const,
+    status: "error" as const, message: reason instanceof Error ? reason.message : String(reason),
+    // No answer at all: the request reached nothing (the browser's network failure) or what came back was no answer of
+    // the platform's (a gateway's page while a service is replaced). A failure the platform states keeps its words.
+    ...(reason instanceof TypeError || reason instanceof SyntaxError ? { unreachable: true as const } : {}),
   }));
   if (result.status !== "ready") return result;
   // The host's answer is checked against the result the owner registered for this read.

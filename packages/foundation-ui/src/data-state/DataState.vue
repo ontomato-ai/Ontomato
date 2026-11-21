@@ -23,10 +23,10 @@ defineSlots<{
   <div v-else-if="result.status === 'loading'" class="fui-data-state" aria-busy="true">
     <el-skeleton :rows="3" animated></el-skeleton>
   </div>
-  <p v-else-if="result.status === 'error'" class="fui-data-state fui-data-state-error" role="alert">
-    {{ result.message }}
+  <div v-else-if="result.status === 'error'" class="fui-data-state fui-data-state-error">
+    <p role="alert">{{ result.message }}</p>
     <el-button v-if="result.retry" text type="primary" size="small" @click="result.retry()">{{ labels.retry }}</el-button>
-  </p>
+  </div>
   <p v-else class="fui-data-state" :data-state="result.status" role="status">{{ labels[result.status] }}</p>
 </template>
 
@@ -38,6 +38,13 @@ defineSlots<{
   padding: 12px 0;
 }
 .fui-data-state-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm, 8px);
   color: var(--el-color-danger);
+}
+.fui-data-state-error p {
+  margin: 0;
 }
 </style>
