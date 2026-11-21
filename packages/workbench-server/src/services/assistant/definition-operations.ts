@@ -115,6 +115,7 @@ export const agentDefinitionOperations = [
   },
   {
     handlerRef: DELETE_AGENT,
+    labelKey: "panels.agentDefinition.delete",
     kind: "action",
     binding: { kind: "PlatformOperation", id: DELETE_AGENT },
     effect: "write",
