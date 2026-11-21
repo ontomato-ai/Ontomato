@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import com.alibaba.fastjson2.TypeReference;
 import io.ontomato.dataengine.core.bean.User;
+import io.ontomato.dataengine.service.BuiltinProductIds;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import org.springframework.beans.factory.annotation.Value;
@@ -286,6 +287,9 @@ public class ApplicationCatalog {
                 var old = all().stream().filter(a -> d.id().equals(a.getString("id"))).findFirst();
                 if (old.isPresent() && (!service.equals(old.get().getString("ownerService")) || old.get().getString("domainId") != null))
                     throw denied();
+                for (var use : declaration.panelUses())
+                    if (!BuiltinProductIds.isValid(use.panelId()))
+                        throw bad("Built-in application entry " + use.pageKey() + " must reference a platform panel: " + use.panelId());
                 var root = builtinPanelRoot(d.entry());
                 if ((root != null && inAssignedSpace(root)) || declaration.panelUses().stream().anyMatch(use -> inAssignedSpace(use.path())))
                     throw bad("Built-in applications cannot occupy the assigned application space");
