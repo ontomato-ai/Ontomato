@@ -36,6 +36,8 @@
   .apps-sheet { border-color: var(--ui-border); box-shadow: var(--elevation-panel); }
   .apps-confirm { border-color: var(--el-color-danger-light-5); }
   .apps-list-icon { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+  .apps-list .el-table__cell { padding-inline: var(--spacing-xs) !important; }
+  .apps-list .cell { padding-inline: var(--spacing-xs); }
 </style>
 <div id="app" v-cloak>
   <section class="apps shell-dock-room">
@@ -61,8 +63,8 @@
 
       <p class="apps-error" v-if="listError" role="alert">{{ listError }}</p>
 
-      <el-table v-loading="catalogue.status === 'loading'" :data="rows" row-key="id" @row-click="openRow">
-        <el-table-column label="图标" min-width="76">
+      <el-table class="apps-list" v-loading="catalogue.status === 'loading'" :data="rows" row-key="id" @row-click="openRow">
+        <el-table-column label="图标" width="92">
           <template #default="{ row }"><span class="apps-icon apps-list-icon" :title="row.icon">{{ row.icon }}</span></template>
         </el-table-column>
         <el-table-column label="名称" min-width="110">
