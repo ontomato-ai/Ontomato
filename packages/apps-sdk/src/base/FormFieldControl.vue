@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElFormItem } from "element-plus/es/components/form/index";
@@ -14,6 +14,8 @@ import { useDarkMode } from "@ontomato/foundation-ui/theme";
 import { useFormControls } from "./form-controls";
 import FormCodeField from "./FormCodeField.vue";
 import FormLocalizedText from "./FormLocalizedText.vue";
+import { ScheduleFrequency, frequencyDraft, frequencyOf, type FrequencyDraft } from "@ontomato/platform-schedules/frequency-control";
+import type { PlatformTaskFrequency } from "@ontomato/contracts/platform-schedules";
 
 /**
  * One field of an owner form, drawn by the control its owner names, at its current absolute JSON Pointer. An object's
@@ -80,6 +82,22 @@ const setAvatar = (next: { key?: string; swatch?: number }) => set(storedAgentAv
 /** A hidden field is the owner's and is drawn by no control. */
 const drawn = (fields: readonly PanelFormField[]) => fields.filter((child) => child.control.kind !== "hidden");
 const addObject = () => set(control.value.kind === "object" ? control.value.defaultObject ?? {} : {});
+/**
+ * A frequency, edited as the scheduled task page edits it: the editor keeps every kind's own values while the reader
+ * switches kinds, and the owner's value is the chosen kind's alone. A new value from the owner (a draft, a refresh)
+ * starts the editor again from it.
+ */
+const frequency = shallowRef<FrequencyDraft>(frequencyDraft());
+watch(value, (next) => {
+  if (control.value.kind !== "frequency") return;
+  const owned = next as PlatformTaskFrequency | null | undefined;
+  if (JSON.stringify(owned ?? null) !== JSON.stringify(frequencyOf(frequency.value)))
+    frequency.value = frequencyDraft(owned ?? undefined);
+}, { immediate: true });
+function setFrequency(next: FrequencyDraft) {
+  frequency.value = next;
+  set(frequencyOf(next) as unknown as RuntimeJsonValue);
+}
 </script>
 
 <template>
@@ -144,6 +162,12 @@ const addObject = () => set(control.value.kind === "object" ? control.value.defa
     ></el-input>
     <form-code-field v-else-if="control.kind === 'code'" :field="field" :path="path" :disabled="off"></form-code-field>
     <form-localized-text v-else-if="control.kind === 'localized-text'" :field="field" :path="path" :disabled="off"></form-localized-text>
+    <schedule-frequency
+      v-else-if="control.kind === 'frequency'"
+      :model-value="frequency"
+      :disabled="off"
+      @update:model-value="setFrequency"
+    ></schedule-frequency>
     <div v-else-if="control.kind === 'string-array'" class="sdk-form-rows">
       <div v-for="(row, index) in rows" :key="index" class="sdk-form-string-row">
         <el-input :model-value="typeof row === 'string' ? row : ''" :disabled="off" @update:model-value="setString(index, $event)"></el-input>
