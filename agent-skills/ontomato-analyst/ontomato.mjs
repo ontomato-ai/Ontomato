@@ -3,9 +3,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { analystCommand } from "./client.mjs";
+const argv = process.argv.slice(2);
+const platformAgent = argv[0] === "agent" && process.env.ONTOMATO_SKILL_SCENARIO === "platform";
 const dir = path.dirname(fileURLToPath(import.meta.url)),
   cfg = {};
-try {
+if (!platformAgent) try {
   for (const line of fs
     .readFileSync(path.join(dir, "application.yml"), "utf8")
     .split(/\r?\n/)) {
@@ -18,14 +20,14 @@ try {
 } catch (error) {
   if (error.code !== "ENOENT") throw error;
 }
-for (const [env, key] of Object.entries({
+if (!platformAgent) for (const [env, key] of Object.entries({
   ONTOMATO_URL: "envUrl",
   ONTOMATO_ONTOLOGY_URL: "ontologyUrl",
   ONTOMATO_TK: "tk",
 }))
   if (process.env[env] !== undefined) cfg[key] = process.env[env];
 const token = cfg.tk;
-const headers = {
+const headers = platformAgent ? {} : {
   ...(process.env.ONTOMATO_EXECUTION_CALLBACK ? { "X-Ontomato-Callback-Credential": process.env.ONTOMATO_EXECUTION_CALLBACK, "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID } : {}),
   ...(process.env.ONTOMATO_SESSION_ID ? { "X-Ontomato-Session-Id": process.env.ONTOMATO_SESSION_ID } : {}),
   ...(process.env.ONTOMATO_RETRIEVAL_CALLER_ID ? { "X-Ontomato-Retrieval-Caller-Id": process.env.ONTOMATO_RETRIEVAL_CALLER_ID } : {}),
@@ -39,7 +41,7 @@ const headers = {
     ? { "X-Correlation-Id": process.env.ONTOMATO_CORRELATION_ID }
     : {}),
 };
-analystCommand(cfg, process.argv.slice(2), headers).catch((error) => {
+analystCommand(cfg, argv, headers).catch((error) => {
   console.error(error.message);
   process.exitCode = 1;
 });

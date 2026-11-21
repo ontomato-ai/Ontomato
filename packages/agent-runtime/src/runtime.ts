@@ -1,5 +1,6 @@
 import { AgentChannel, type AgentProvider } from "./channel";
-import { agentNotificationSchema, type AgentRunIntent } from "@ontomato/contracts/agent-channel";
+import { agentChannelCommandSchema, agentNotificationSchema, type AgentRunIntent } from "@ontomato/contracts/agent-channel";
+import { BUILD_TEST_UNSUPPORTED } from "@ontomato/contracts/build-tests";
 import { presentationResultSchema, type RuntimePresentationCallback } from "@ontomato/contracts/agent-presentation";
 import { Type } from "typebox";
 import { Workspaces } from "./workspaces";
@@ -11,7 +12,8 @@ import { SessionSandbox } from "./sandbox";
 import { mkdir, chmod, readFile, writeFile, rename } from "node:fs/promises";
 import { CodeExecutor } from "./code";
 import { signalUid, assertWorkerPolicy, type WorkerPolicy } from "./worker";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import type { AddressInfo } from "node:net";
 import {productTools} from './product-tools';
 import path from "node:path";
 import { normalizeContext, type Message } from "@earendil-works/pi-ai";
@@ -82,6 +84,7 @@ interface Active {
   // Arguments of the tool calls in progress: the end event does not carry them.
   toolArgs: Map<string, unknown>;
   sealed: boolean;
+  channelSecret?: string;
 }
 /** Aborts a run on its own behalf with the reason the stop notice reports. */
 class RunStop extends Error {}
@@ -170,6 +173,7 @@ export class AgentRuntime {
   private locks = new Map<string, Promise<unknown>>();
   private waiters = new Map<string, Set<() => void>>();
   private sessionRunSubscribers = new Map<string, Set<SessionRunSubscriber>>();
+  private httpAddress?: () => AddressInfo | string | null;
   constructor(readonly options: RuntimeOptions) {
     modelKeySealKey(options.modelRuntimeToken);
     this.store = options.store;
@@ -383,6 +387,45 @@ export class AgentRuntime {
   }
   seal(scope: Scope, runId: string) { this.active.get(key(scope, runId))!.sealed = true; }
   acceptsInput(scope: Scope, runId: string) { const active=this.active.get(key(scope,runId));return !!active && !active.sealed; }
+  setHttpAddress(reader: () => AddressInfo | string | null) {
+    this.httpAddress = reader;
+  }
+  private channelCommandUrl(scope: Scope, runId: string): string | undefined {
+    const address = this.httpAddress?.();
+    if (!address || typeof address !== "object") return undefined;
+    const host =
+      address.address === "0.0.0.0" || address.address === ""
+        ? "127.0.0.1"
+        : address.address === "::" || address.address === "::0"
+          ? "[::1]"
+          : address.address.includes(":") && !address.address.startsWith("[")
+            ? `[${address.address}]`
+            : address.address;
+    return `http://${host}:${address.port}/v1/channel/hosts/${encodeURIComponent(scope.hostId)}/domains/${encodeURIComponent(scope.domainId)}/runs/${encodeURIComponent(runId)}/commands`;
+  }
+  async runChannelCommand(
+    scope: Scope,
+    runId: string,
+    credential: string | undefined,
+    runHeader: string | undefined,
+    executionContextHeader: string | undefined,
+    body: unknown,
+  ) {
+    if (!credential || runHeader !== runId)
+      throw new RuntimeError(401, "UNAUTHENTICATED", "Valid run callback credential and run ID are required");
+    const active = this.active.get(key(scope, runId));
+    if (!active)
+      throw new RuntimeError(409, "RUN_CLOSED", "Run is closed");
+    const expected = active.channelSecret ? Buffer.from(active.channelSecret) : null;
+    const supplied = Buffer.from(credential);
+    if (!expected || expected.length !== supplied.length || !timingSafeEqual(expected, supplied))
+      throw new RuntimeError(401, "UNAUTHENTICATED", "Invalid run callback credential");
+    if (active.sealed || active.controller.signal.aborted || active.run.status !== "running")
+      throw new RuntimeError(409, "RUN_CLOSED", "Run is closed");
+    if (executionContextHeader !== undefined)
+      throw new RuntimeError(422, BUILD_TEST_UNSUPPORTED, "The agent channel is not available in a build-test execution");
+    return this.channel.execute(active.scope, active.run, agentChannelCommandSchema.parse(body));
+  }
   async questionsChanged(scope: Scope, sessionId: string) {
     await this.locked(scope,sessionId,async()=>{
       const session=await this.store.session(scope,sessionId);
@@ -621,12 +664,21 @@ export class AgentRuntime {
       active.sandbox = sandbox;
       for (const file of await this.files.scan(sandbox.workspace))
         active.outputBaseline.set(file.path, file.sha256);
+      let channelEnv: { commandUrl: string; callbackSecret: string } | undefined;
+      if (request.definition.toolSurface !== "product" && run.channel) {
+        const commandUrl = this.channelCommandUrl(scope, run.id);
+        if (commandUrl) {
+          active.channelSecret = randomBytes(32).toString("base64url");
+          channelEnv = { commandUrl, callbackSecret: active.channelSecret };
+        }
+      }
       const tools = request.definition.toolSurface==='product'?[]:await sandbox.start(
         uid,
         run.id,
         run.correlationId,
         request,
         skills,
+        channelEnv,
       );
       const mcp = await connectMcp(
         request.definition.toolSurface==='product'?[]:mcpConfigs,

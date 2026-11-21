@@ -37,6 +37,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
     modelCalls = 0,
     hold = false;
   const mcpCalls: string[] = [];
+  const prepareCalls: any[] = [];
   const schema = "standard_" + randomUUID().replaceAll("-", ""),
     token = "fixture-host",
     inputs: any[] = [];
@@ -256,6 +257,44 @@ describe("standard runtime real HTTP/PG/processes", () => {
         res.end(JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result }));
         return;
       }
+      if (req.url === "/list") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ agents: [{ ref: { providerId: "workbench", agentId: "fixture-agent" }, name: "Fixture Agent", description: "Fixture" }] }));
+        return;
+      }
+      if (req.url === "/prepare") {
+        const body = JSON.parse(raw);
+        prepareCalls.push(body);
+        res.writeHead(200, { "content-type": "application/json" });
+        if (body.requestedBy) {
+          res.end(JSON.stringify({
+            language: body.language,
+            input: body.input,
+            definition: {
+              systemPrompt: "Child",
+              modelId: null,
+              skills: [],
+              externalMcp: [],
+              sandbox: { limits: codeLimitsSchema.parse({ memoryBytes: codeExecutionVirtualAddressSpaceBytes, wallTimeMs: 15000 }) },
+              compaction: { systemPrompt: "COMPACT", summarizePrompt: "Summary", updatePrompt: "Update" },
+            },
+            environment: { values: {}, secrets: {} },
+          }));
+          return;
+        }
+        res.end(JSON.stringify(input(body.input.content)));
+        return;
+      }
+      if (req.url === "/read") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ settled: true, status: "completed", summary: "Done", process: { mode: "none" }, results: [], files: [] }));
+        return;
+      }
+      if (req.url === "/settle" || req.url === "/cancel") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ accepted: true }));
+        return;
+      }
       if (req.url !== "/v1/chat/completions") {
         res.end("ok");
         return;
@@ -300,6 +339,8 @@ describe("standard runtime real HTTP/PG/processes", () => {
             ? "sleep 60"
             : String(user.content).includes("loop")
               ? `printf ${modelCalls}`
+              : String(user.content).includes("channel-script")
+                ? "node -e 'import(\"node:fs/promises\").then(async({writeFile})=>{const r=await fetch(process.env.ONTOMATO_AGENT_COMMAND_URL,{method:\"POST\",headers:{\"content-type\":\"application/json\",\"X-Ontomato-Callback-Credential\":process.env.ONTOMATO_AGENT_CALLBACK,\"X-Ontomato-Run-Id\":process.env.ONTOMATO_RUN_ID},body:JSON.stringify({op:\"start\",agent:{providerId:\"workbench\",agentId:\"fixture-agent\"},message:\"Child question\"})});await writeFile(\"outputs/channel-env.json\",JSON.stringify({scenario:process.env.ONTOMATO_SKILL_SCENARIO,url:process.env.ONTOMATO_AGENT_COMMAND_URL,secret:process.env.ONTOMATO_AGENT_CALLBACK,runId:process.env.ONTOMATO_RUN_ID,status:r.status,body:await r.json()}));})'"
             : "node skills/fixture-skill/scripts/run.mjs";
         frame({
           role: "assistant",
@@ -756,5 +797,47 @@ describe("standard runtime real HTTP/PG/processes", () => {
     const output = await fetch(url + `/v1/code-executions/${id}/outputs/stdout`, { headers });
     expect(output.status).toBe(200);
     expect(await output.text()).toBe("first version\n");
+  });
+  it("injects per-run channel credentials into worker bash and rejects late calls with 409 RUN_CLOSED", async () => {
+    const sessionId = await session();
+    const runId = randomUUID();
+    const agent = { providerId: "workbench", agentId: "fixture-agent" };
+    const actor = { id: randomUUID(), domainId: "domain-a" };
+    const sessionRef = { providerId: agent.providerId, sessionId };
+    expect((await api(`/v1/channel/sessions/${sessionId}/bind`, { agent, actor })).status).toBe(200);
+    const admitted = await api(`/v1/channel/sessions/${sessionId}/runs`, {
+      channel: {
+        agent,
+        actor,
+        authority: { classNames: [], executionKind: "live" },
+        requestedBy: null,
+        root: { session: sessionRef, runId },
+      },
+      language: "en",
+      input: { role: "user", content: "channel-script", timestamp: Date.now() },
+      credential: { token: "fixture-tk", apiKey: null },
+    }, { "idempotency-key": runId });
+    expect(admitted.status).toBe(202);
+    const done = await settle(runId);
+    expect(done.run.stopReason, logs).toBe("stop");
+    const envArtifact = done.artifacts.find((a) => a.path === "outputs/channel-env.json")!;
+    const captured = await (await fetch(url + `/v1/artifacts/${envArtifact.id}/content`, { headers })).json();
+    expect(captured.scenario).toBe("platform");
+    expect(captured.status).toBe(200);
+    expect(captured.body.taskId).toBeTruthy();
+    const childPrepare = prepareCalls.find((call) => call.requestedBy?.runId === runId);
+    expect(childPrepare?.root).toEqual({ session: sessionRef, runId });
+    await settle(captured.body.taskId);
+    const late = await fetch(captured.url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Ontomato-Callback-Credential": captured.secret,
+        "X-Ontomato-Run-Id": captured.runId,
+      },
+      body: JSON.stringify({ op: "list" }),
+    });
+    expect(late.status).toBe(409);
+    expect(await late.json()).toMatchObject({ error: { code: "RUN_CLOSED" } });
   });
 });
