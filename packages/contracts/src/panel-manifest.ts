@@ -274,10 +274,12 @@ export const panelOpenRequestSchema = z
   .strict();
 export type PanelOpenRequest = z.infer<typeof panelOpenRequestSchema>;
 
-/** Theme variable names and values are validated by the deployment's token owner. */
+const themeOverridesByMode = z.record(key, z.string().trim());
+
+/** Applications, panels and placements override the same public design tokens. */
 export const panelThemeOverridesSchema = z.object({
-  light: z.record(z.string()).optional(),
-  dark: z.record(z.string()).optional(),
+  light: themeOverridesByMode.optional(),
+  dark: themeOverridesByMode.optional(),
 }).strict();
 export type PanelThemeOverrides = z.infer<typeof panelThemeOverridesSchema>;
 
@@ -294,10 +296,13 @@ const usableCandidates = z.object({ rule: z.literal("usable") }).strict();
 export const panelPlacementCandidatesSchema = z.union([
   panelIdCandidates, projectionIdCandidates, objectDetailCandidates, usableCandidates,
 ]);
+export const panelCurrentEntryTargetSchema = z.object({
+  fromPlatform: z.literal("currentEntry"), candidates: z.object({ rule: z.literal("applicationEntry") }).strict(),
+}).strict();
 export const panelMemberTargetSchema = z.union([
   panelFixedMemberTargetSchema,
   z.object({ fromState: key, candidates: panelPlacementCandidatesSchema }).strict(),
-  z.object({ fromPlatform: z.literal("currentEntry"), candidates: z.object({ rule: z.literal("applicationEntry") }).strict() }).strict(),
+  panelCurrentEntryTargetSchema,
 ]);
 export type PanelMemberTarget = z.infer<typeof panelMemberTargetSchema>;
 
@@ -517,6 +522,9 @@ export const panelManifestSchema = z.object({
           );
         if (!valid) issue(sourcePath, "The state type does not match this placement's candidates");
       }
+    }
+    if ("fromPlatform" in declaration.target && Object.keys(declaration.inputs ?? {}).length > 0) {
+      issue([...path, "inputs"], "The application entry supplies the inputs for this member");
     }
     for (const [name, input] of Object.entries(declaration.inputs ?? {}))
       if ("state" in input) requireName(state, input.state, [...path, "inputs", name, "state"]);
