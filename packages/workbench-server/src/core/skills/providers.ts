@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import { createHash } from "node:crypto";
-import type { SkillCatalogReason } from "@ontomato/contracts/skills";
+import type { SkillCatalogDiagnostics, SkillCatalogReason } from "@ontomato/contracts/skills";
 import { HttpError } from "../../utils/errors";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
 import type { AssistantCredentials } from "../../utils/assistant-credentials";
@@ -32,7 +32,7 @@ export interface SkillSourceFailure {
 
 /** A record failure with only the resource and structural field safe to disclose after admission. */
 export class SkillSourceRecordError extends HttpError {
-  constructor(readonly detail: { resourceId: string; field?: string; reason: SkillCatalogReason }) {
+  constructor(readonly detail: Omit<SkillCatalogDiagnostics["items"][number], "skill">) {
     super(502, [detail.resourceId, detail.field, detail.reason].filter(Boolean).join(": "), "SKILL_SOURCE_UNAVAILABLE");
   }
 }

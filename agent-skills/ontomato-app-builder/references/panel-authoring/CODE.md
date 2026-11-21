@@ -145,7 +145,8 @@ Use the application's `pageKey`, the owner's object ID and only the changed fiel
 ```
 
 Use an empty `target` for creation. Publish the draft as a run artifact, such as `outputs/drafts/edit.page-draft.json`.
-Append these query values to the panel's use path in the `#/...` portion of its address:
+Keep the registered entry path's initial slash in the `#/...` route. Pass only the run-relative artifact path
+to `draftPath`, starting at `outputs/drafts/` with no leading slash.
 
 ```js
 const entry = new URL(usePath, window.location.origin);
@@ -156,9 +157,8 @@ const draftRoute = `#${entry.pathname}${entry.search}`;
 ```
 
 Use the session and run that wrote the draft. For each newly generated draft, set `draftRunId` to the run ID of
-the turn that wrote it. Pass the raw run-relative artifact path, starting with `outputs/drafts/` and without a
-leading slash, to `searchParams.set` for one encoding pass. Preserve any entry parameters already in the address.
-See [the complete draft query and when the form takes the draft](RUNTIME.md#draft-links-and-instance-state).
+the turn that wrote it. Pass the raw value to `searchParams.set` for one encoding pass and keep any existing
+entry parameters. See [the complete reader link and invalid path example](RUNTIME.md#draft-links-and-instance-state).
 
 For a chart from a dashboard card, declare `component: "MetricChart"` and `sourceCard: {dashboardId, cardId}`.
 Connect the chart inputs in `state`. If the owner has not registered that card, `panel check` lists its inputs as
