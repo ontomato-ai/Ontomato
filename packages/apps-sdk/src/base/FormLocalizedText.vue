@@ -102,13 +102,17 @@ function remove(code: string) {
   gap: var(--spacing-sm);
   width: 100%;
 }
+/* A language's label, its text and its remove share a line while the text keeps at least 12rem; with less room the text
+   goes under its label at the field's whole width, so a narrow field never cuts the text down. */
 .sdk-form-locale {
-  display: grid;
-  grid-template-columns: minmax(5rem, max-content) minmax(0, 1fr) auto;
-  align-items: start;
-  gap: var(--spacing-sm);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--spacing-xs) var(--spacing-sm);
 }
 .sdk-form-locale-label {
+  flex: 0 0 auto;
+  min-width: 5rem;
   padding-block-start: var(--spacing-xs);
   color: var(--el-text-color-secondary);
   font-size: var(--text-sm);
@@ -117,7 +121,8 @@ function remove(code: string) {
   color: var(--el-color-danger-text);
 }
 .sdk-form-locale-value {
-  min-width: 0;
+  flex: 1 1 12rem;
+  min-width: min(100%, 12rem);
 }
 .sdk-form-locale-error {
   margin: var(--spacing-xs) 0 0;
