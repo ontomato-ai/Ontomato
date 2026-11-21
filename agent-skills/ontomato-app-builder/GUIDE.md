@@ -18,7 +18,7 @@ A workspace is the application source tree. Business definitions remain in Java;
 
 For a management page, start with the [complete example and wiring recipes](references/management-pages.md) or run `panel scaffold`.
 
-1. Use `panel type <type-id>` for the owner's reads and operations. Use `sdk read components.json` for official components, supported data and configuration. Inspect existing projections and application uses. Reuse existing records and ask the owner for any missing business capability or named read.
+1. Use `panel type <type-id>` for the owner's reads and operations. Use `sdk read docs/components.md` for each component's data, configuration, outputs and events in the current SDK. Inspect existing projections and application uses. Reuse existing records and ask the owner for any missing business capability or named read.
 2. Write the Vue panel source. Declare its projections and public typed state in `panel.json` as `{manifest, content?}`. Use `recipes.md` for the assistant's common tasks and optional `content.messages` for translations. Use Vue's own state and events for local interactions.
 3. Run `panel check <workspace directory>` to validate the panel source, declarations and references.
 4. Submit the selected projections, panels and application uses with `panel register`, then open the application's declared entry. Use an application ID and route you control.
@@ -29,7 +29,8 @@ Create short members from the reads listed by `panel type`. For customer ontolog
 
 | Command | Result |
 | --- | --- |
-| `sdk read components.json` | Official components and ports in the current SDK |
+| `sdk read docs/components.md` | Current SDK component guide with data, configuration, outputs and events |
+| `sdk read components.json` | The same current SDK's machine-readable component catalogue |
 | `panel type <type-id>` | The type's read parameters, required parameters, result schemas and operation declarations |
 | `panel projection <id>`, `panel get <id>` | Authorized current projection or panel, including its revision |
 | `panel applications`, `panel uses <applicationId>` | Java navigation catalog and visible use relations |

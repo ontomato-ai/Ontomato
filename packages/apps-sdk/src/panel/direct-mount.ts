@@ -60,7 +60,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       text: createPanelText(options.messages, options.locale, options.defaultLocale),
       operations: panelHumanOperations(options.use, requests),
       recordDraftCreated: (link, id) => recordDraftCreated(requests, link, id),
-      readProjection: async (id) => directProjectionSchema.parse(await readProjectionRecord(requests, id)),
+      readProjection: async (id) => directProjectionSchema.parse(await readProjectionRecord(requests, id, true)),
       pageKey: run.pageKey,
       url: () => address.value,
       label: run.label,

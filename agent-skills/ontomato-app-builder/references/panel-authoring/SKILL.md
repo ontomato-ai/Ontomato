@@ -8,25 +8,21 @@ description: Build and register an Ontomato panel from its owner's reads and ope
 Use the original page to list what people can see and do. For each read, form and action, find the owner type and its
 declared read or operation. Keep business rules, confirmation and permissions with that owner.
 
-1. Run `node "$SKILL/ontomato.mjs" panel type <type-id>` for read names, parameters, required parameters, result
-   schemas and operation declarations. Use `node "$SKILL/ontomato.mjs" sdk read components.json` for official components.
-2. Use the [member field reference](FIELDS.md) to write each new projection in `panel.json`. Specify the
-   component, named reads, configuration,
-   applicable operation and state connections. The tool derives ports from the owner and component declarations.
-   Use `target.projectionId` to reuse an existing projection. Choose an official display component or use
-   `PanelData` with `usePanelData` for a custom Vue view. Declare public state once.
-3. Write the template and interactions in Vue. The platform runs the panel directly from `panel.html` and
-   the required `panel.mjs`. The declared member keys connect the layout to the projections.
-   Add common page tasks in `recipes.md` when the assistant needs them.
-4. Check and register the workspace, then open the registered application entry. Use the page's input box
+1. Before writing, run `node "$SKILL/ontomato.mjs" panel type <type-id>`. Use the selected read's `result` key
+   to find its value shape in `resultSchemas`. Run `node "$SKILL/ontomato.mjs" sdk read docs/components.md`
+   for that deployment's component data, configuration, outputs and events.
+2. Use the [member field reference](FIELDS.md) to declare projections in `panel.json`. Choose an official
+   display component or use [PanelData](CODE.md#read-declared-data) for custom Vue. Use `target.projectionId`
+   to reuse an existing projection.
+3. Write the template and interactions in Vue. Follow the [direct runtime and import rules](CODE.md#write-a-vue-panel)
+   and declare the [state that travels in an address](CODE.md#open-a-panel-at-a-specific-state).
+4. Check and register the workspace, then open the registered entry. Use the page's input box
    for the [assistant check](#check-the-assistant-from-the-page).
 
 For stale data or code, inspect the network response and compare it with the current record's `revision`.
 Keep the shared browser's site data intact, including `localStorage`, `sessionStorage` and cookies.
 
-Page selection supplies an object reference and may include its display name. If a page task needs current fields
-such as status, expose the owner's `record` read that takes this reference. Use `recipes.md` for the owner's
-page-specific rules.
+See [what the assistant receives](CODE.md#what-the-assistant-receives) for page context and `recipes.md`.
 
 Use `ConversationEntry` when a page needs a button that opens the composer with a specific agent and an optional
 opening line. The reader still sends the message. Use the page's existing composer for general questions.
@@ -60,15 +56,18 @@ actual panel ID.
 
 ## Check the assistant from the page
 
-Open the registered application entry in the browser and select a known record. Send these requests from the
-page's input box. Choose any specific assistant through that input box's picker.
+Open the registered application entry in the browser and select a known test record. Choose a candidate from
+the page input box's picker and send the prompts there. Replace the bracketed text with fields and operations
+the page declares.
 
-1. Ask it to read the selected record and report a current field. Compare its answer with the page.
-2. Ask it to draft a small form edit. Open the draft link and check that the changed field is populated and
-   highlighted. Confirm that the stored record changes when the reader saves it.
-3. Ask it to run a declared operation on a suitable test record. Review and confirm the action in the conversation,
-   then check the result on the page.
+1. **Read.** “What page and record are selected? Read the current [field] on this record.” Compare the selected
+   identity and the field value with the page.
+2. **Draft.** “Draft a change to [field] on this record. Give me the draft link and leave it for me to save.”
+   Open the link and inspect the proposed change. Save as the reader, then verify the value.
+3. **Execute.** “Run [declared operation] on this test record, with confirmation when required.” Use the
+   confirmation in the conversation and verify the outcome on the page.
 
-Use this conversation and its visible results to verify the page skill and candidate availability.
+For a read-only page, verify the read and any declared read operations. Mark draft and write checks as not
+applicable. Candidate availability and page skill behavior are verified through the input box and its results.
 
 Use the [Vue authoring guide](CODE.md) for panel sources, owner operations, forms and draft links.
