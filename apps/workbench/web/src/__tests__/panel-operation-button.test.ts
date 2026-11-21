@@ -27,7 +27,7 @@ const entries = { kind: "list", items: entry } as const;
 const record = (id: string, inputs: ProductProjection["inputs"]): ProductProjection => ({
   domainId: "domain-1", ownerId: "owner-1", revision: 1, createdAt: "2026-11-19T00:00:00.000Z",
   updatedAt: "2026-11-19T00:00:00.000Z", editable: false, visibility: "domain",
-  id, name: id, description: "", componentId: "@ontomato/sdk:OperationButton", inputs, outputs: {}, config: { operation: "delete" },
+  id, name: id, description: "", componentId: "@ontomato/sdk:OperationButton", inputs, outputs: {}, config: { operation: "delete", type: "danger" },
   data: {},
   operations: { delete: { operation: { kind: "PlatformOperation", id: DELETE_KNOWLEDGE }, target: { input: "entry" } } },
 });
@@ -156,6 +156,9 @@ afterEach(() => {
 
 it("names what a delete removes in the host's dialog first, writes nothing on cancel, and dispatches once on confirm", async () => {
   const { sent, changed, hostChanges } = await open({ selectedKnowledge: { className: BUSINESS_KNOWLEDGE, primaryKey: "a" } }, "remove");
+  // A removal is a quiet danger button, as the platform's header draws one: its colour says what it does, not its weight.
+  await vi.waitFor(() => expect(buttonOf(0).querySelector("button")!.disabled).toBe(false));
+  expect([...buttonOf(0).querySelector("button")!.classList]).toEqual(expect.arrayContaining(["el-button--danger", "is-text"]));
   await click(0);
   let box = await dialog();
   expect(box.textContent).toContain(impact.summary);
