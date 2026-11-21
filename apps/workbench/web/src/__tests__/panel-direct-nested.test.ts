@@ -134,14 +134,14 @@ it("runs the panel the state chooses in place, publishing its operations and con
     // The host runs the placed panel at the outer path plus the member's segment, as its own instance.
     nested: async (path, run) => {
       const inner = createDirectPanelInstance(innerManifest, {
-        ...base(reads, { "tasks-a": list("tasks-a") }), initial: run.initial as never, memberPath: path, nested: noOperations.nested,
+        ...base(reads, { "tasks-a": list("tasks-a") }), initial: run.initial as never, memberPath: path as PanelMemberPath, nested: noOperations.nested,
       });
       void inner.placing("approve");
       const element = document.createElement("section");
       element.className = "inner-panel";
       element.textContent = `Panel ${(path[0]!.selection as { target: { panelId: string } }).target.panelId}`;
       const dispose = vi.fn();
-      placed.push({ path, initial: run.initial, inner, dispose });
+      placed.push({ path: path as PanelMemberPath, initial: run.initial, inner, dispose });
       return { element, mount: { instance: inner, refresh: vi.fn(), projectionsChanged: vi.fn(), activate: vi.fn(), dispose } };
     },
   });
@@ -169,4 +169,41 @@ it("runs the panel the state chooses in place, publishing its operations and con
   void outer.placing("detail");
   await vi.waitFor(() => expect(outer.operations.value.map(({ id, memberPath }) => [id, memberPath]))
     .toEqual([["detail.approve.runNow", [segment("p-2"), { member: "approve" }]]]));
+});
+
+it("asks for the chosen object's detail panel by the object alone, and the placed panel works under the panel the platform found", async () => {
+  const reads: PanelMemberReadRequest[] = [];
+  const outerManifest: DirectPanelManifest = {
+    state: { chosenTask: { type: taskType, personal: false, deepLink: true, external: false } },
+    members: { detail: { target: { fromState: "chosenTask", candidates: { rule: "objectDetail" } } } },
+    events: {},
+  };
+  const innerManifest: DirectPanelManifest = { state: {}, members: { approve: { target: { projectionId: "tasks-a" } } }, events: {} };
+  const asked: unknown[] = [];
+  const outer = createDirectPanelInstance(outerManifest, {
+    ...base(reads, { "tasks-a": list("tasks-a") }), initial: {},
+    // The host reads the object's detail panel, then runs it under the segment completed by the panel the platform found.
+    nested: async (path, run) => {
+      asked.push(path);
+      const found = { ...path[0]!, selection: { ...path[0]!.selection!, target: { panelId: "task-detail" } } } as PanelMemberPath[number];
+      const inner = createDirectPanelInstance(innerManifest, {
+        ...base(reads, { "tasks-a": list("tasks-a") }), initial: run.initial as never, memberPath: [found], nested: noOperations.nested,
+      });
+      void inner.placing("approve");
+      const element = document.createElement("section");
+      element.className = "inner-panel";
+      return { element, mount: { instance: inner, refresh: vi.fn(), projectionsChanged: vi.fn(), activate: vi.fn(), dispose: vi.fn() } };
+    },
+  });
+  const element = draw(outer, "detail");
+  await vi.waitFor(() => expect(element.textContent).toContain(publicEn.platform.dataAwaiting));
+  expect(asked).toEqual([]);
+
+  outer.state.set("chosenTask", task("t-9"));
+  await vi.waitFor(() => expect(element.querySelector(".inner-panel")).not.toBeNull());
+  expect(asked).toEqual([[{ member: "detail", selection: { stateValue: task("t-9") } }]]);
+  const found = { member: "detail", selection: { stateValue: task("t-9"), target: { panelId: "task-detail" } } };
+  await vi.waitFor(() => expect(outer.operations.value.map(({ id, memberPath }) => [id, memberPath]))
+    .toEqual([["detail.approve.runNow", [found, { member: "approve" }]]]));
+  expect(reads.find((read) => read.operations)!.memberPath).toEqual([found, { member: "approve" }]);
 });
