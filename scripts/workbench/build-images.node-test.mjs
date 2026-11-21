@@ -18,6 +18,7 @@ import { test } from "node:test";
 import { buildStamp, sampleSources } from "../build-support.mjs";
 import { buildWorkbenchImage, isFormalSdkRelease } from "./build-images.mjs";
 import { assembleAppStage, stageDirectory } from "./stage-app.mjs";
+import { javaBuiltinApplications, stageBuiltinPanels } from "./builtin-panels.mjs";
 
 const VERSION = "9.9.9-test";
 
@@ -263,6 +264,8 @@ test("buildWorkbenchImage builds the final image and tags deploy alias for publi
     "tools/workbench/install-runtime.mjs",
     "tools/workbench/runtime-layout.mjs",
     "tools/workbench/stage-app.mjs",
+    "tools/workbench/builtin-panels.mjs",
+    "tools/workbench/java-applications.json",
     "tools/build-support.mjs",
     "runtime-requirements.txt",
     "launch.sh",
@@ -495,4 +498,48 @@ test("only formal CI tags select the base SDK version", () => {
     { ...github, GITHUB_REF_TYPE: "branch" }, { ...github, GITHUB_WORKFLOW: "Checks" },
     { ...gitlab, CI_COMMIT_TAG: "" }, { ...gitlab, CI_COMMIT_TAG: "skills-v1.0.0" },
     { ...gitlab, PUBLISH_VERSION: "4.1.3" }]) assert.equal(isFormalSdkRelease(env), false);
+});
+
+test("the panel bundle contains the panels referenced by the built-in entry declarations", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "builtin-panel-bundle-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const owner = join(root, "packages/page-owner");
+  const panelFolder = join(owner, "resources/builtin-panels/catalogue");
+  const javaDirectory = join(root, "packages/data-engine-core/src/main/resources/applications");
+  mkdirSync(panelFolder, { recursive: true });
+  mkdirSync(javaDirectory, { recursive: true });
+  const panelId = "builtin-product-catalogue";
+  const registration = { panels: [{ id: panelId }] };
+  writeFileSync(join(panelFolder, "registration.json"), JSON.stringify(registration));
+  writeFileSync(join(panelFolder, "panel.json"), '{"manifest":{"state":{},"members":{}}}');
+  writeFileSync(join(panelFolder, "panel.html"), '<div id="app"></div>');
+  writeFileSync(join(panelFolder, "panel.mjs"), 'import { mountPanel } from "@ontomato/sdk/panel";');
+  writeFileSync(join(panelFolder, "recipes.md"), "Read the catalogue");
+  const java = { id: "ontology", declaration: { panelUses: [
+    { id: "catalogue", path: "/ontology/catalogue", panelId },
+  ] } };
+  writeFileSync(join(javaDirectory, "ontology.json"), JSON.stringify(java));
+  const applications = javaBuiltinApplications([{ root }]);
+  assert.deepEqual(applications, [java]);
+
+  const options = {
+    directory: join(root, "dist/builtin-panels"),
+    members: [{ name: "@ontomato/page-owner", absolute: owner }],
+    applications,
+    checks: { builtinApplicationPanelUseSchema: { safeParse: () => ({ success: true }) } },
+    checkSource: async folder => ({
+      panelId: JSON.parse(readFileSync(join(folder, "registration.json"), "utf8")).panels[0].id,
+    }),
+  };
+  await stageBuiltinPanels(options);
+  const [relative] = JSON.parse(readFileSync(join(options.directory, "index.json"), "utf8"));
+  assert.equal(relative, "@ontomato/page-owner/catalogue");
+  for (const file of ["registration.json", "panel.json", "panel.html", "panel.mjs", "recipes.md"]) {
+    assert.equal(readFileSync(join(options.directory, relative, file), "utf8"), readFileSync(join(panelFolder, file), "utf8"));
+  }
+  await assert.rejects(stageBuiltinPanels({
+    ...options, applications: [...applications, { id: "agents", declaration: {
+      panelUses: [{ id: "teams", path: "/agents/teams", panelId: "builtin-product-teams" }],
+    } }],
+  }), /Built-in application agents, entry teams \(\/agents\/teams\), panel builtin-product-teams: panel is missing from the release/u);
 });

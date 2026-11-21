@@ -18,6 +18,11 @@ export function requireApplicationId(id) {
   if (!id.startsWith("app-")) throw new Error("Application ID must start with app-");
 }
 
+export function requireDomainProductId(label, id, checks) {
+  const result = checks.domainProductIdSchema.safeParse(id);
+  if (!result.success) throw new Error(`${label}: ${result.error.issues[0].message}`);
+}
+
 function requireMode(mode) {
   if (mode !== "create" && mode !== "update") throw new Error("Expected mode create or update");
 }
@@ -68,6 +73,7 @@ export function panelRegistrationRecords({ projections = [], panels = [], applic
   ].map(([kind, records, schema]) => [
     kind,
     records.map(item => {
+      requireDomainProductId(`${kind} ${item.id}`, item.id, checks);
       const result = schema.safeParse(productBody(item));
       if (!result.success) {
         throw new Error(`${kind} ${item.id}: ${registrationIssues(result.error.issues).join("\n")}`);

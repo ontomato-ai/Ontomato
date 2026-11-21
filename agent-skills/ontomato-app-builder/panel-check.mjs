@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { panelRegistrationRecords, requireApplicationId } from "./panel-registration.mjs";
+import { panelRegistrationRecords, requireApplicationId, requireDomainProductId } from "./panel-registration.mjs";
 
 function parseJson(file, source) {
   try {
@@ -15,11 +15,52 @@ async function readJson(file) {
   return parseJson(file, await readFile(file, "utf8"));
 }
 
+function writePanelDescriptor(file, document, source) {
+  const indent = /^([ \t]+)"/mu.exec(source)?.[1];
+  const newline = source.endsWith("\n") ? "\n" : "";
+  return writeFile(file, JSON.stringify(document, null, indent) + newline);
+}
+
+export async function checkBuiltinPanelSource(directory, checks, { assignIds = false } = {}) {
+  const registrationFile = resolve(directory, "registration.json");
+  const { panels } = await readJson(registrationFile);
+  if (!Array.isArray(panels) || panels.length !== 1) throw new Error(`${registrationFile}: expected exactly one platform panel`);
+  const [panel] = panels;
+  function platformId(id, label) {
+    const result = checks.builtinProductIdSchema.safeParse(id);
+    if (!result.success) throw new Error(`${label}: ${result.error.issues[0].message}`);
+    return result.data;
+  }
+  const panelId = platformId(panel.id, `${registrationFile}: panel ID`);
+  const file = resolve(directory, "panel.json");
+  const source = await readFile(file, "utf8");
+  const document = parseJson(file, source);
+  const parsed = checks.panelAuthoringManifestSchema.safeParse(document?.manifest);
+  if (!parsed.success) throw new Error(`${file}: ${parsed.error.message}`);
+  const assigned = new Map();
+  for (const [member, declaration] of Object.entries(parsed.data.members)) {
+    if (!("component" in declaration)) continue;
+    if (declaration.id === undefined && assignIds) {
+      const id = checks.BUILTIN_PRODUCT_ID_PREFIX + randomUUID();
+      document.manifest.members[member].id = id;
+      assigned.set(member, id);
+    } else {
+      platformId(declaration.id, `${file}: manifest.members.${member}.id`);
+    }
+  }
+  if (assigned.size) await writePanelDescriptor(file, document, source);
+  return { panelId, assigned: Object.fromEntries(assigned) };
+}
+
 async function expandInlineProjections(manifest, panel, checks, loadAuthoring) {
-  const first = Object.entries(manifest?.members ?? {}).find(([, member]) => member?.component !== undefined);
-  if (!first) return { manifest, inline: [], charts: new Map() };
-  if (!panel) throw new Error(`Member ${first[0]}: a new projection needs a panel in the registration material`);
-  if (!loadAuthoring) throw new Error(`Member ${first[0]}: checking a new projection needs the online author type table`);
+  const declared = Object.entries(manifest?.members ?? {}).filter(([, member]) => member?.component !== undefined);
+  if (!declared.length) return { manifest, inline: [], charts: new Map() };
+  for (const [member, item] of declared) {
+    if (item.id !== undefined) requireDomainProductId(`Member ${member} id ${item.id}`, item.id, checks);
+  }
+  const [[first]] = declared;
+  if (!panel) throw new Error(`Member ${first}: a new projection needs a panel in the registration material`);
+  if (!loadAuthoring) throw new Error(`Member ${first}: checking a new projection needs the online author type table`);
 
   const { state, members, ...definition } = checks.panelAuthoringManifestSchema.parse(manifest);
   const { catalogue, typeTable } = await loadAuthoring();
@@ -135,9 +176,7 @@ async function readPanelWorkspace(directory, checks, materialPath, loadAuthoring
   const path = materialPath ?? (files.includes("registration.json") ? resolve(directory, "registration.json") : undefined);
   const material = path === undefined ? {} : await readJson(path);
   const panel = material.panels?.length === 1 ? material.panels[0] : undefined;
-  if (panel && (typeof panel.id !== "string" || panel.id.length === 0)) {
-    throw new Error(`${path}: panel ID is required`);
-  }
+  if (panel) requireDomainProductId(`${path}: panel ID ${panel.id ?? "(missing)"}`, panel.id, checks);
   return { material, panel, ...await workspaceDefinition(directory, files, checks, panel, loadAuthoring) };
 }
 
@@ -181,13 +220,11 @@ export async function registerPanelWorkspace(directory, materialPath, checks, cl
     }
   }
   const unassigned = new Map(inline.filter(({ needsId }) => needsId).map(({ id, member }) => [id, member]));
-  const indent = /^([ \t]+)"/mu.exec(source)?.[1];
-  const newline = source.endsWith("\n") ? "\n" : "";
   return client.register(material, async (kind, id) => {
     const member = kind === "projection" && unassigned.get(id);
     if (member) {
       document.manifest.members[member].id = id;
-      await writeFile(descriptorFile, JSON.stringify(document, null, indent) + newline);
+      await writePanelDescriptor(descriptorFile, document, source);
     }
     return onRegistered(kind, id);
   }, checks);
