@@ -1667,6 +1667,32 @@ test("mixed graphs declare selected node types separately from the read bindings
   assert.notDeepEqual(user, definition);
 });
 
+test("node positions form a personal layout outside addresses, commands and read parameters", async () => {
+  const { panelDeepLinkStateValueSchema, matchesDirectPanelValue, panelPortAccepts } = await import("./panel-manifest");
+  const { directProjectionInputAccepts, panelReadInputMatches } = await import("./panel-projection");
+  const type = { kind: "node-positions" } as const;
+  const layout = { "class:Employee": { x: -120.5, y: 0 } };
+  const field = { type, personal: true, default: layout };
+  assert.deepEqual(panelStateValueSchema.parse(layout), layout);
+  assert.equal(panelDeepLinkStateValueSchema.safeParse(layout).success, false);
+  assert.equal(panelStateFieldSchema.safeParse(field).success, true);
+  assert.equal(panelStateFieldSchema.safeParse({ ...field, personal: false }).success, false);
+  assert.equal(panelStateFieldSchema.safeParse({ ...field, deepLink: true }).success, false);
+  assert.equal(matchesDirectPanelValue(type, null), true);
+  for (const bad of [{ "": { x: 0, y: 0 } }, { a: { x: Infinity, y: 0 } }, { a: { x: 0, y: "0" } }, { a: { x: 0, y: 0, id: "a" } }]) {
+    assert.equal(matchesDirectPanelValue(type, bad), false);
+  }
+  assert.equal(panelPortAccepts(type, type), true);
+  assert.equal(directProjectionInputAccepts({ kind: "json" }, type), false);
+  assert.equal(panelReadInputMatches("ontologyParameter", type), false);
+  assert.equal(panelReadInputMatches("sort", type), false);
+  assert.equal(panelManifestSchema.safeParse({
+    state: { positions: field }, members: {}, commands: {
+      reset: { labelKey: "Reset", do: { set: { fields: { positions: { literal: null } } } } },
+    },
+  }).success, false);
+});
+
 test("object unions combine current layers and explicit types without duplicates", () => {
   const explicit = ontologyObjectUnionTypeSchema.parse({ kind: "object-union", objectTypes: [DEFINITION, ONTOLOGY_TYPE] });
   assert.deepEqual(objectUnionTypes(explicit), [DEFINITION, ONTOLOGY_TYPE]);

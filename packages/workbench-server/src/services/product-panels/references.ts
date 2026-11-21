@@ -6,7 +6,7 @@ import {
   type PanelPlacement,
 } from "@ontomato/contracts/panel-manifest";
 import {
-  authoredReadParameterSource, directReadDeclaration, missingRequiredReadParameters, panelReadInputMatches, panelReadParameterId,
+  authoredReadParameterSource, directProjectionInputAccepts, directReadDeclaration, missingRequiredReadParameters, panelReadInputMatches, panelReadParameterId,
 } from "@ontomato/contracts/panel-projection";
 import {
   builtinProductProjectionInputSchema, productPanelInputSchema, productProjectionInputSchema,
@@ -199,9 +199,8 @@ async function incompatiblePort(
     if ("item" in value) continue;
     const offered = "state" in value ? source.state[value.state]?.type : undefined;
     if (!("literal" in value) && offered === undefined) return `input '${name}' has no declared value source`;
-    if (type.kind === "json") continue;
-    const accepts = "literal" in value ? matchesDirectPanelValue(type, value.literal)
-      : offered !== undefined && panelPortAccepts(type, offered);
+    const accepts = "literal" in value ? type.kind === "json" || matchesDirectPanelValue(type, value.literal)
+      : offered !== undefined && directProjectionInputAccepts(type, offered);
     if (!accepts) return `input '${name}' does not accept its connected value`;
   }
   for (const [name, value] of Object.entries(wiring.outputs ?? {})) {
