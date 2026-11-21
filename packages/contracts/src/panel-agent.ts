@@ -2,7 +2,9 @@ import { z } from "zod";
 import { agentExecutionRefSchema, agentSessionRefSchema } from "./agent-channel";
 import { agentQuestionAnswerReceiptSchema, agentUserQuestionReceiptSchema } from "./agent-user-questions";
 import { formFieldErrorSchema } from "./form-fields";
-import { panelObjectIdentitySchema, panelOperationCallSchema, panelOperationSchema } from "./panel-manifest";
+import {
+  panelMemberPathSchema, panelObjectIdentitySchema, panelOperationCallSchema, panelOperationIdSchema, panelOperationSchema,
+} from "./panel-manifest";
 import {
   panelBatchInvocationSchema, panelOperationAffectedSchema, panelOperationImpactSchema, panelOwnerOperationDescriptorSchema,
   panelReadOperationCallSchema, panelSingleInvocationSchema,
@@ -29,17 +31,20 @@ export type PanelOperationSettings = z.infer<typeof panelOperationSettingsSchema
 export const updatePanelOperationSettingsRequestSchema = z.object({ confirmBeforeExecute: z.boolean() }).strict();
 export type UpdatePanelOperationSettingsRequest = z.infer<typeof updatePanelOperationSettingsRequestSchema>;
 
-/** Resolve the declared read under the caller's authority without creating a write intent. */
-export const readPanelOperationRequestSchema = panelUseRefSchema.extend({
-  operationId: key,
-  call: panelReadOperationCallSchema,
+/** Locate the published operation through its actual application use and any nested publisher. */
+export const panelOperationRefSchema = panelUseRefSchema.extend({
+  operationId: panelOperationIdSchema,
+  memberPath: z.lazy(() => panelMemberPathSchema.nonempty()).optional(),
 }).strict();
+export type PanelOperationRef = z.infer<typeof panelOperationRefSchema>;
+
+/** Resolve the declared read under the caller's authority without creating a write intent. */
+export const readPanelOperationRequestSchema = panelOperationRefSchema.extend({
+  call: panelReadOperationCallSchema,
+});
 export type ReadPanelOperationRequest = z.infer<typeof readPanelOperationRequestSchema>;
 export { panelReadOperationJsonResultSchema as readPanelOperationResponseSchema } from "./panel-operations";
 
-/** The descriptor GET query locates the published operation through its actual application use. */
-export const panelOperationRefSchema = panelUseRefSchema.extend({ operationId: key }).strict();
-export type PanelOperationRef = z.infer<typeof panelOperationRefSchema>;
 export { panelOwnerOperationDescriptorSchema as panelOperationDescriptorResponseSchema } from "./panel-operations";
 const panelIntentRequestScopeSchema = panelOperationRefSchema.extend({ intentId: runtimeIdSchema });
 
@@ -83,7 +88,7 @@ export type PanelHumanOperationConfirmation = z.infer<typeof panelHumanOperation
 /** Preparation returned by POST /panel-operations/intents and reread by the host before displaying confirmation. */
 export const panelHumanOperationPreparationSchema = z.object({
   intentId: runtimeIdSchema,
-  operationId: key,
+  operationId: panelOperationIdSchema,
   label: z.string().min(1).max(200),
   confirmation: panelHumanOperationConfirmationSchema,
 }).strict();

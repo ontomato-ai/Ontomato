@@ -8,6 +8,7 @@ import { panelMemberPathSchema, panelObjectIdentitySchema, panelOpenRequestSchem
 import { panelOwnerOperationDescriptorSchema } from "./panel-operations";
 import { panelLocalOperationNameSchema } from "./panel-projection";
 import { applicationPanelUseSchema, panelDefinitionContentSchema, productPanelSchema } from "./product-panels";
+import { productCurrentIdParamsSchema } from "./product-record-id";
 import { definitionRevisionSchema, type ProductDefinitionRevision, type ProductDefinitionTarget } from "./product-subscriptions";
 import { workspaceDiffSchema, workspaceIdSchema } from "./workspaces";
 
@@ -56,6 +57,22 @@ export type ProductPanelReadSource = z.infer<typeof productPanelReadSourceSchema
 /** Resolve each segment against its parent before reading the named datum at the last member. */
 export const directPanelMemberPathSchema = panelMemberPathSchema.nonempty();
 export type DirectPanelMemberPath = z.infer<typeof directPanelMemberPathSchema>;
+
+/** Read the current contents reached through an authorized placement. */
+export const PANEL_NESTED_READ_PATH = "/product-panels/nested";
+export const productPanelNestedReadRequestSchema = z.object({
+  source: productPanelReadSourceSchema,
+  memberPath: directPanelMemberPathSchema,
+}).strict();
+export type ProductPanelNestedReadRequest = z.infer<typeof productPanelNestedReadRequestSchema>;
+
+export const productPanelNestedReadResponseSchema = z.object({
+  panel: panelDefinitionContentSchema.pick({ content: true, manifest: true }).extend({
+    id: productCurrentIdParamsSchema.shape.id,
+    revision: definitionRevisionSchema.shape.revision,
+  }),
+}).strict();
+export type ProductPanelNestedReadResponse = z.infer<typeof productPanelNestedReadResponseSchema>;
 
 const panelMemberReadRequestSchema = z.object({
   source: productPanelReadSourceSchema,
