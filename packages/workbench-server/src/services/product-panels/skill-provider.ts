@@ -2,6 +2,7 @@ import { z } from "zod";
 import { panelSkillSourcesQuerySchema, panelSkillSourcesResponseSchema, type PanelUseRef } from "@ontomato/contracts/product-panels";
 import { environment } from "../../config/environment";
 import { config } from "../../config/application";
+import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { registerSkillProvider, type ProtectedSkillOffering, type SkillProvider, type SkillSourceFailure } from "../../core/skills/providers";
 import { backendGet } from "../../utils/backend-client";
 import { PANEL_SKILL_PROVIDER_ID } from "./skill-identity";
@@ -21,24 +22,24 @@ async function readSources(domainId: string) {
 }
 
 export const panelSkillProvider: SkillProvider<ProtectedSkillOffering> & {
-  findByUse(domainId: string, use: PanelUseRef): Promise<ProtectedSkillOffering | SkillSourceFailure | null>;
+  findByUse(domainId: string, use: PanelUseRef, reader: AssistantCredentials): Promise<ProtectedSkillOffering | SkillSourceFailure | null>;
 } = {
   id: PANEL_SKILL_PROVIDER_ID,
   name: "Panels",
-  async list({ domainId, reportSourceFailure }) {
+  async list({ domainId, reader, reportSourceFailure }) {
     const { panelSkillSources } = await import("./skill-package");
     const offerings: ProtectedSkillOffering[] = [];
-    for (const source of await panelSkillSources(domainId, await readSources(domainId))) {
+    for (const source of await panelSkillSources(domainId, await readSources(domainId), reader)) {
       if ("kind" in source) offerings.push(source);
       else reportSourceFailure(source);
     }
     return offerings;
   },
-  async findByUse(domainId, { applicationId, useId }) {
+  async findByUse(domainId, { applicationId, useId }, reader) {
     const source = (await readSources(domainId)).find(entry => entry.applicationId === applicationId && entry.useId === useId);
     if (!source) return null;
     const { panelSkillSources } = await import("./skill-package");
-    const [result] = await panelSkillSources(domainId, [source]);
+    const [result] = await panelSkillSources(domainId, [source], reader);
     return result!;
   },
 };

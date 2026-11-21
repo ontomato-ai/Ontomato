@@ -16,10 +16,13 @@ import {
 } from "@ontomato/contracts/product-panels";
 import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import { SkillSourceRecordError, type ProtectedSkillOffering, type SkillSourceFailure } from "../../core/skills/providers";
-import { getDefaultLocale } from "../../i18n";
+import { getDefaultLocale, getLocale, resolveLocale } from "../../i18n";
 import { findCurrentProduct, type CurrentProductRow } from "../../infrastructure/product-current";
+import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
+import { readObjectActions } from "../action/panel-reads";
 import { readPanelComponentCatalogue } from "./component-catalogue";
 import { allowsOperationDraft, boundProjectionOperations, type BoundProjectionOperation } from "./operation-bindings";
+import { panelServerOperationLabel } from "./server-operations";
 import { panelSkillScope } from "./skill-identity";
 
 type ComponentCatalogue = Awaited<ReturnType<typeof readPanelComponentCatalogue>>["components"];
@@ -79,7 +82,7 @@ const panelDependencies = z.object({
 
 /** Supply dependency facts before reading an admitted panel's package. */
 export async function panelSkillSources(
-  domainId: string, sources: readonly PanelSkillSource[],
+  domainId: string, sources: readonly PanelSkillSource[], reader: AssistantCredentials,
 ): Promise<(ProtectedSkillOffering | SkillSourceFailure)[]> {
   const panels = new Map<string, Map<string, PageSkillEntrance>>();
   for (const { panelId, entrance } of sources) {
@@ -97,6 +100,7 @@ export async function panelSkillSources(
     return read;
   }
   let release: ReturnType<typeof readPanelComponentCatalogue> | undefined;
+  let actionNames: Promise<ReadonlyMap<string, string>> | undefined;
   return Promise.all([...panels].map(async ([id, byEntrance]): Promise<ProtectedSkillOffering | SkillSourceFailure> => {
     const scope = panelSkillScope(id);
     const row = await findCurrentProduct(domainId, "panel", id);
@@ -123,10 +127,18 @@ export async function panelSkillSources(
         const schema = isBuiltinProductId(projectionId) ? builtinProductProjectionInputSchema : productProjectionInputSchema;
         return [projectionId, parseDefinition<ProjectionDefinition>(schema, rows[index], projectionId)] as const;
       });
-      const description = describePanel(panel, new Map(entries), sdk.components);
+      const locale = reader.locale ? resolveLocale(reader.locale) : getLocale();
+      const hasActions = entries.some(([, projection]) =>
+        Object.values(projection.operations ?? {}).some(({ operation }) => operation.kind === "Action"));
+      const names = hasActions
+        ? await (actionNames ??= readObjectActions(reader).then(({ actions }) =>
+          new Map(actions.map(({ declaration, name }) => [declaration.id, name]))))
+        : undefined;
+      const description = describePanel(panel, new Map(entries), sdk.components, locale, names);
+      const operationLabels = description.operations.map(({ id, label }) => [id, label]);
       return {
         description, markdown: describeSkill(description),
-        fingerprint: fingerprint([id, panel, entries, sdk.version, sdk.digest]),
+        fingerprint: fingerprint([id, panel, entries, sdk.version, sdk.digest, locale, operationLabels]),
       };
     }
     let snapshot: ReturnType<typeof buildSnapshot> | undefined;
@@ -155,6 +167,7 @@ type OperationDescription = BoundProjectionOperation & { id: string; label: stri
 
 function describePanel(
   panel: PanelDefinition, records: ReadonlyMap<string, ProjectionDefinition>, components: ComponentCatalogue,
+  locale: string, actionNames: ReadonlyMap<string, string> | undefined,
 ) {
   const { manifest } = panel;
   const projections = Object.entries(manifest.members).flatMap(([member, declaration]) => {
@@ -175,15 +188,19 @@ function describePanel(
     return [{
       text: `- ${member} — ${projection.name} (${projectionId}), ${projection.componentId}. ${projection.description} ${component.meaning} Inputs: ${JSON.stringify(declaration.inputs ?? {})}. Named data: ${JSON.stringify(data)}. Configuration: ${JSON.stringify(projection.config)}.`,
       reads: Object.entries(data).map(([dataName, { read, result }]) => ({ member, dataName, read, result })),
-      operations: boundProjectionOperations(projection).map(bound => {
+      operations: boundProjectionOperations(projection).flatMap(bound => {
         if (!bound.owner && bound.binding.operation.kind === "PlatformOperation") {
           const field = safeField(["operations", bound.name]);
           throw new SkillSourceRecordError({ resourceId: projectionId, field, reason: "operation_unregistered" });
         }
-        return {
-          ...bound, id: panelOperationId(member, bound.name), label: projection.name,
+        const label = bound.owner
+          ? panelServerOperationLabel(bound.owner.handler, locale)
+          : actionNames?.get(bound.binding.operation.id);
+        if (label === undefined) return [];
+        return [{
+          ...bound, id: panelOperationId(member, bound.name), label,
           draft: bound.owner !== undefined && allowsOperationDraft(projection, bound.owner.handler),
-        };
+        }];
       }),
     }];
   });

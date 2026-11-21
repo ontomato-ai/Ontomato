@@ -15,7 +15,7 @@ afterAll(async () => {
 
 it("lists the built-in graph as a public skill in every domain", async () => {
   for (const domain of ["first", "second"]) {
-    const registry = await manager.forDomain(domain);
+    const registry = await manager.forDomain(domain, undefined, {});
     expect(registry.getSkillById("network-graph")?.source.kind).toBe("public");
     expect(registry.getSkillByRef({ namespace: { kind: "provider", provider: "workbench" }, name: "network-graph" })?.source.kind).toBe("public");
     expect(registry.getSkills().some(entry => entry.skill.name === "network-graph")).toBe(true);

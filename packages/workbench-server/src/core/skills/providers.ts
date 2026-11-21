@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type { SkillCatalogReason } from "@ontomato/contracts/skills";
 import { HttpError } from "../../utils/errors";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
+import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import {
   runtimeRegisterSkillRequestSchema,
   type RuntimeSkillRef,
@@ -12,9 +13,10 @@ import {
 /** A standard skill package: the identity plus the exact files the runtime receives. */
 export type SkillPackage = z.infer<typeof runtimeRegisterSkillRequestSchema>;
 
-/** The verified domain the skill system is reading for. Providers cannot choose another one. */
+/** The verified domain and reader for provider-owned content. */
 export interface SkillSourceContext {
   readonly domainId: string;
+  readonly reader: AssistantCredentials;
   reportSourceFailure(failure: SkillSourceFailure): void;
 }
 
