@@ -154,8 +154,17 @@ function pagePart(page: { label: string; url: string }, prompts: PageLinePrompts
 export function pageContextLine(page: PageContext, prompts: PageLinePrompts, carriesPage: boolean): string {
   return [
     ...(carriesPage ? [pagePart(page, prompts)] : []),
-    ...page.selection.map((item) => prompts.selection(item.label)),
+    ...page.selection.map((item) => prompts.selection(selectionPart(item))),
   ].join(PART_SEPARATOR);
+}
+
+/**
+ * A selection as the line names it. One made in a panel placed inside the page also gives that placement's path, with
+ * the selection that chose it, exactly as the panel's reads and operations take it: the agent can reach the placed
+ * panel only by it, so it is written as given, not described.
+ */
+function selectionPart(item: PageSelection): string {
+  return item.memberPath ? `${item.label} memberPath=${JSON.stringify(item.memberPath)}` : item.label;
 }
 
 /** What the address stands between in the page prompt, once its other two parts are found. */
