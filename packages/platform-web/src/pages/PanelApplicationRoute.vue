@@ -179,6 +179,7 @@ const labels = computed<PanelHostLabels>(() => ({
     scriptRejected: t("platform.panelScriptRejected"),
   },
   content: { styleOutside: t("platform.panelStyleOutside") },
+  refresh: t("common.refresh"),
 }));
 
 /**

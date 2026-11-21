@@ -602,3 +602,52 @@ it("separates no-neighbors, owner-refused and read-failed states without collaps
   });
   expect(document.querySelector('[data-graph-state="no-neighbors"]')).toBeNull();
 });
+
+it("fits the view when the canvas first appears, so a graph shown after an empty view is centred, a single node too", async () => {
+  const projections = { "cap-graph": graphProjection("cap-graph") };
+  const manifest = definePanel({
+    state: {
+      mode: { type: { kind: "scalar", type: "string" }, deepLink: false },
+      start: { type: { kind: "object-union", layers: [...platformOntologyLayers] }, deepLink: false },
+      selected: { type: { kind: "object-union", layers: [...platformOntologyLayers] }, deepLink: false },
+    },
+    members: {
+      graph: {
+        target: { projectionId: "cap-graph" },
+        inputs: { mode: { state: "mode" }, start: { state: "start" }, selected: { state: "selected" } },
+        outputs: { selectedNode: { state: "selected" } },
+      },
+    },
+    events: {},
+  });
+  const panel = panelRecord("panel-cap-single", "Capability Map", manifest);
+  panel.content.html = `<div id="app"><Projection slot="graph"></Projection></div>`;
+  const use = panelUse("use-cap-single", "cap-map-single", panel.id, "/ontology/assets/capability-map");
+  installPlatform(hostWith(projections, (request) => {
+    if (request.path === "/api/platform-ontology/start")
+      return Response.json({ node: { className: USER, primaryKey: "u-oss", label: "admin", layer: "governance" } });
+    if (request.path === "/api/platform-ontology/neighbors") {
+      const { node } = request.body as { node: { className: string; primaryKey: string } };
+      return Response.json({
+        node: { className: node.className, primaryKey: node.primaryKey, label: "admin", layer: "governance" },
+        neighbors: [], edges: [], relations: [{ relationKind: "user.holds-role", status: "ok", edgeCount: 0 }],
+      });
+    }
+    return undefined;
+  }));
+  const frame = panelFrame();
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(registered("app-test", use, panel), use.path, { mode: "instance" });
+  inside(frame);
+  const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
+  await mountPanel({});
+  await vi.waitFor(() => expect(canvasRecorder.nodes.length).toBe(1));
+
+  // The reader hides the node's layer: nothing to draw, the canvas goes. Shown again, it is drawn anew and fitted.
+  document.querySelector<HTMLButtonElement>('[data-graph-layer="governance"]')!.click();
+  await vi.waitFor(() => expect(document.querySelector(".mock-g6-canvas")).toBeNull());
+  canvasRecorder.fitCalls = 0;
+  document.querySelector<HTMLButtonElement>('[data-graph-layer="governance"]')!.click();
+  await vi.waitFor(() => expect(document.querySelector(".mock-g6-canvas")).not.toBeNull());
+  await vi.waitFor(() => expect(canvasRecorder.fitCalls).toBeGreaterThan(0));
+});

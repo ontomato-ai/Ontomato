@@ -580,6 +580,9 @@ onMounted(() => {
       <template v-if="slots['page-header']" #header>
         <slot name="page-header" :feature-id="display.page.value.featureId" :view="display.view.value" />
       </template>
+      <template v-if="slots['page-actions']" #actions>
+        <slot name="page-actions" :view="display.view.value" />
+      </template>
       <template v-if="slots['composer-context']" #composer-context>
         <slot name="composer-context" :page-open="true" :inline="true" :unstarted="unstarted" />
       </template>
