@@ -55,7 +55,9 @@ function collectReferences(
       const candidates = target.candidates;
       if ("panelIds" in candidates) {
         for (const id of candidates.panelIds) add({ kind: "panel", id });
-      } else {
+      } else if ("projectionIds" in candidates) {
+        for (const id of candidates.projectionIds) add({ kind: "projection", id });
+      } else if (candidates.rule === "objectDetail") {
         const { type } = state[target.fromState];
         if (type.kind === "object" || type.kind === "object-union") {
           for (const [className, id] of details) {
@@ -70,6 +72,9 @@ function collectReferences(
     if ("panelIds" in type.candidates) {
       for (const id of type.candidates.panelIds)
         references.push({ key: `$state.${name}`, target: { kind: "panel", id }, wiring: {} });
+    } else if ("projectionIds" in type.candidates) {
+      for (const id of type.candidates.projectionIds)
+        references.push({ key: `$state.${name}`, target: { kind: "projection", id }, wiring: {} });
     }
     if (value != null) {
       const placement = panelPlacementSchema.parse(value);

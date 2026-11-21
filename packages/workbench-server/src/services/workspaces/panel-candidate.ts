@@ -7,7 +7,8 @@ import { HttpError } from "../../utils/errors";
 import { assertAppBuilderAccess } from "../app-builder/access";
 import { WorkspaceBuildTests } from "../app-builder/build-tests";
 import type { AssistantOwner } from "../assistant/store";
-import { readCurrentPanelRecord, readCurrentProjectionRecord, requireDirectPanelMember } from "../product-panels/current";
+import { readCurrentPanelRecord, readCurrentProjectionRecord } from "../product-panels/current";
+import { resolvePanelMemberPath } from "../product-panels/member-path";
 
 const descriptorSchema = z.object({
   manifest: panelManifestSchema,
@@ -60,17 +61,23 @@ export async function readPanelCandidate(
   return { kind: "candidate", workspace, panel, previewContext: { kind: "build-test", test } };
 }
 
+export async function resolvePanelCandidatePlacement(
+  owner: AssistantOwner, credentials: AssistantCredentials, workspace: CandidatePanelSource["workspace"],
+  memberPath: DirectPanelMemberPath,
+) {
+  const { panel, tests } = await loadWorkspacePanel(owner, credentials, workspace);
+  return { placement: await resolvePanelMemberPath(owner, credentials, panel, memberPath), tests };
+}
+
 export async function resolvePanelCandidateMember(
   owner: AssistantOwner, credentials: AssistantCredentials, workspace: CandidatePanelSource["workspace"],
   memberPath: DirectPanelMemberPath,
 ) {
-  const { member: key, selection, itemKey } = memberPath[0];
-  if (memberPath.length !== 1 || selection !== undefined || itemKey !== undefined)
-    throw new HttpError(422, "Only a fixed projection at the panel root can be read here", "PANEL_MEMBER_TARGET_UNSUPPORTED");
-  const { panel, tests } = await loadWorkspacePanel(owner, credentials, workspace);
-  const { member, projection } = await requireDirectPanelMember(owner, credentials, panel, key);
+  const { placement, tests } = await resolvePanelCandidatePlacement(owner, credentials, workspace, memberPath);
+  if (placement.kind !== "projection")
+    throw new HttpError(403, "The member path does not select a projection", "PANEL_MEMBER_FORBIDDEN");
   const previewContext: CandidatePanelSource["previewContext"] = { kind: "build-test", test: await tests.current() };
-  return { panel, member, projection, previewContext };
+  return { ...placement, previewContext };
 }
 
 export const panelCandidateQuerySchema = candidatePanelSourceSchema.shape.workspace.pick({ ref: true });

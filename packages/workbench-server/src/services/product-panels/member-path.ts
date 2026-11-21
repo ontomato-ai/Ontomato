@@ -9,6 +9,8 @@ import type { PoolClient } from "pg";
 import { getPostgresPool, qualifiedTable } from "../../infrastructure/postgres";
 import { currentProductRecord, findCurrentProduct, type CurrentProductKind } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
+import { PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
+import type { ProductPanelNestedReadRequest, ProductPanelNestedReadResponse } from "@ontomato/contracts/panel-host";
 import { HttpError } from "../../utils/errors";
 import { requireProductGrant, type ProductOwner } from "../product-governance/grants";
 import { requirePanelEntry } from "./application-use";
@@ -17,6 +19,7 @@ import { panelStateKey, type PanelStatePathKey } from "./personal-state-key";
 
 type QueryClient = Pick<PoolClient, "query">;
 type Target = { kind: CurrentProductKind; id: string };
+type PanelPathRoot = Pick<ProductPanel, "manifest"> & { id?: string };
 
 function unavailable(): never {
   throw new HttpError(403, "Panel member is unavailable on this path", "PANEL_MEMBER_FORBIDDEN");
@@ -38,7 +41,7 @@ export async function requireRegisteredPanelRoot(
 }
 
 async function declaredTarget(
-  owner: ProductOwner, panel: ProductPanel, target: PanelMemberTarget,
+  owner: ProductOwner, panel: PanelPathRoot, target: PanelMemberTarget,
   selection: PanelMemberPath[number]["selection"], entry?: ApplicationPanelUse, client?: QueryClient,
 ): Promise<Target> {
   if ("fromState" in target) {
@@ -46,14 +49,23 @@ async function declaredTarget(
     const { stateValue, target: requested } = selection;
     const { type } = panel.manifest.state[target.fromState];
     if (stateValue === null || !matchesDirectPanelValue(type, stateValue)) unavailable();
-    if ("panelIds" in target.candidates) {
-      if (stateValue !== requested.panelId || !target.candidates.panelIds.includes(requested.panelId)) unavailable();
-    } else {
-      const object = panelObjectRefSchema.parse(stateValue);
+    const object = panelObjectRefSchema.parse(stateValue);
+    if ("rule" in target.candidates && target.candidates.rule === "objectDetail") {
+      if (!("panelId" in requested)) unavailable();
       const panelId = await findObjectDetailPanelId(owner.domainId, object.className, client);
       if (panelId !== requested.panelId) unavailable();
+      return { kind: "panel", id: requested.panelId };
     }
-    return { kind: "panel", id: requested.panelId };
+    const kind = "panelId" in requested ? "panel" : "projection";
+    const id = "panelId" in requested ? requested.panelId : requested.projectionId;
+    if (object.className !== (kind === "panel" ? PRODUCT_PANEL : PRODUCT_PROJECTION) || object.primaryKey !== id) unavailable();
+    const allowed = "panelIds" in target.candidates
+      ? kind === "panel" && target.candidates.panelIds.includes(id)
+      : "projectionIds" in target.candidates
+        ? kind === "projection" && target.candidates.projectionIds.includes(id)
+        : target.candidates.rule === "usable";
+    if (!allowed) throw new HttpError(404, "The selected product is outside this member's candidates", "PANEL_MEMBER_UNAVAILABLE");
+    return { kind, id };
   }
   if (selection) unavailable();
   if ("panelId" in target) return { kind: "panel", id: target.panelId };
@@ -63,7 +75,7 @@ async function declaredTarget(
 }
 
 async function selectedPlacement(
-  owner: ProductOwner, root: ProductPanel, panel: ProductPanel, keys: PanelStatePathKey[],
+  owner: ProductOwner, root: PanelPathRoot, panel: PanelPathRoot, keys: PanelStatePathKey[],
   segment: PanelMemberPath[number], controlled: string[], client: QueryClient = getPostgresPool(),
 ): Promise<PanelPlacement> {
   const name = segment.member.slice("$state.".length);
@@ -72,7 +84,7 @@ async function selectedPlacement(
   const selection = segment.selection;
   if (!field || field.type.kind !== "placement" || !selection || !("placement" in selection)) unavailable();
   let value = field.default;
-  if (field.personal) {
+  if (field.personal && root.id !== undefined && panel.id !== undefined) {
     const key = panelStateKey(owner.domainId, root.id, keys, panel.id, name);
     const { rows } = await client.query<{ value: typeof value }>(
       `SELECT value FROM ${qualifiedTable("user_preferences")} WHERE user_id=$1 AND key=$2`,
@@ -97,19 +109,23 @@ function pathKey(segment: PanelMemberPath[number]): PanelStatePathKey {
 }
 
 /** Re-resolve the requested path from an authorized root. A denied member never supplies its definition. */
-export async function resolvePanelMemberPath(
-  owner: ProductOwner, viewer: AssistantCredentials, root: ProductPanel, memberPath: PanelMemberPath,
+export async function resolvePanelMemberPath<Root extends PanelPathRoot>(
+  owner: ProductOwner, viewer: AssistantCredentials, root: Root, memberPath: PanelMemberPath,
   entry?: ApplicationPanelUse, client?: QueryClient,
 ) {
-  let panel = root;
-  const ancestors = new Set([root.id]);
+  let panel: Root | ProductPanel = root;
+  const ancestors = new Set(root.id === undefined ? [] : [root.id]);
   const keys: PanelStatePathKey[] = [];
-  let controlled = Object.keys(root.id === entry?.panelId ? entry.inputs ?? {} : {});
+  let controlled = Object.keys(entry && root.id === entry.panelId ? entry.inputs ?? {} : {});
   for (const [index, segment] of memberPath.entries()) {
     const declared = panel.manifest.members[segment.member];
     const placement = segment.member.startsWith("$state.")
       ? await selectedPlacement(owner, root, panel, keys, segment, controlled, client) : undefined;
-    if (!declared && !placement) unavailable();
+    if (!declared && !placement) {
+      if (panel.id === undefined)
+        throw new HttpError(403, `Panel does not declare member '${segment.member}'`, "FORBIDDEN");
+      unavailable();
+    }
     const member = declared ?? placement!;
     const key = pathKey(segment);
     if (placement) keys.push([key[0], key[1], placement.id]);
@@ -127,4 +143,21 @@ export async function resolvePanelMemberPath(
     controlled = Object.keys("fromPlatform" in member.target ? entry?.inputs ?? {} : member.inputs ?? {});
   }
   return { kind: "panel" as const, panel, keys, controlled, ancestors };
+}
+
+export async function readNestedPanel(
+  owner: ProductOwner, credentials: AssistantCredentials, { source, memberPath }: ProductPanelNestedReadRequest,
+): Promise<ProductPanelNestedReadResponse> {
+  const placement = await (async () => {
+    if (source.kind === "candidate") {
+      const { resolvePanelCandidatePlacement } = await import("../workspaces/panel-candidate");
+      return (await resolvePanelCandidatePlacement(owner, credentials, source.workspace, memberPath)).placement;
+    }
+    const { panel, entry } = await requireRegisteredPanelRoot(owner, credentials, source);
+    return resolvePanelMemberPath(owner, credentials, panel, memberPath, entry);
+  })();
+  if (placement.kind !== "panel" || !("revision" in placement.panel))
+    throw new HttpError(404, "The member path does not select a panel", "PANEL_MEMBER_UNAVAILABLE");
+  const { id, revision, content, manifest } = placement.panel;
+  return { panel: { id, revision, content, manifest } };
 }
