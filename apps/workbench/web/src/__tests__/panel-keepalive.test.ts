@@ -172,6 +172,22 @@ it("shows a page kept within its application as it was left: its module not run 
   }
 });
 
+it("opens the shown page at its defaults when it is sent to its bare address, as its menu row does", async () => {
+  const { app, element, router } = await openApplication(panelAddress(at("tasks"), deepState));
+  try {
+    const tasks = await shownPanel(element);
+    await vi.waitFor(() => expect(summaryTitle(tasks)).toBe(task.title));
+
+    // The same page, no state: the selection goes, and the address and the page agree — no reload needed.
+    await router.push(at("tasks"));
+    await vi.waitFor(() => expect(summaryTitle(tasks)).toBeUndefined());
+    expect(panels(element)).toEqual([tasks]);
+    expect(router.currentRoute.value.fullPath).toBe(at("tasks"));
+  } finally {
+    app.unmount();
+  }
+});
+
 it("shows the new value of an object changed while its page was kept", async () => {
   const { app, element, router } = await openApplication(panelAddress(at("tasks"), deepState));
   try {
