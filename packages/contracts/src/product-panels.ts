@@ -272,6 +272,9 @@ export const applicationPanelUseSchema = z.object({
   ]),
   defaultAgent: defaultAgentSchema.optional(),
   names: applicationMetadataSchema.shape.names.optional(),
+  /** Optional page heading text, independent of whether the entry is in the menu. */
+  descriptions: z.record(z.string().refine(text => text.trim().length > 0, "Expected a nonblank description"))
+    .refine(text => Object.hasOwn(text, "en"), "An English description is required").optional(),
   inputs: applicationPanelInputsSchema.optional(),
   groupKey: applicationMetadataSchema.shape.groups.element.shape.key.optional(),
 }).strict();

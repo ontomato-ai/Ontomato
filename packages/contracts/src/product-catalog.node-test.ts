@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   BUILTIN_PRODUCT_ID_PREFIX,
+  applicationEntryResolutionSchema,
+  applicationPanelUseSchema,
+  registerApplicationPanelUsesRequestSchema,
   builtinApplicationPanelUseSchema,
   builtinProductIdSchema,
   builtinProductPanelInputSchema,
@@ -234,6 +237,28 @@ test("declares typed catalogue reads that reuse the current product records and 
   assert.equal(panelReadParameterSchemas.productScope.safeParse("mine").success, true);
   assert.equal(panelReadParameterSchemas.productScope.safeParse("maintainable").success, false);
   assert.equal(panelReadParameterSchemas.applicationScope.safeParse("maintainable").success, true);
+});
+
+test("panel entry descriptions round-trip without giving an unnamed entry a menu name", async () => {
+  const { applicationCatalogueEntriesSchema } = await import("./application-catalogue");
+  const applicationId = "app-reviews";
+  const entry = { path: "/applications/app-reviews", renderer: "panels" };
+  const base = {
+    id: "report", pageKey: "report", panelId: "review-report", path: entry.path + "/report",
+    access: { kind: "domain-member" },
+  };
+  const descriptions = { en: "Review the current report", "zh-CN": "查看当前报告" };
+  const use = { ...base, descriptions };
+  assert.deepEqual(applicationPanelUseSchema.parse(base), base);
+  for (const invalid of [null, {}, { "zh-CN": "查看当前报告" }, { en: " " }, { en: "Report", "zh-CN": "" }, { en: null }]) {
+    assert.equal(applicationPanelUseSchema.safeParse({ ...base, descriptions: invalid }).success, false);
+  }
+  const builtin = { ...use, panelId: BUILTIN_PRODUCT_ID_PREFIX + base.panelId };
+  assert.deepEqual(builtinApplicationPanelUseSchema.parse(builtin), builtin);
+  assert.deepEqual(registerApplicationPanelUsesRequestSchema.parse({ entry, panelUses: [use] }).panelUses, [use]);
+  assert.deepEqual(applicationCatalogueEntriesSchema.parse({ applicationId, entry, panelUses: [use] }).panelUses, [use]);
+  const resolution = { applicationId, use, menu: { groups: [], panelUses: [] } };
+  assert.deepEqual(applicationEntryResolutionSchema.parse(resolution), resolution);
 });
 
 test("accepts a legacy hosted application entry without widening the panel registration response", async () => {
