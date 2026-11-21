@@ -19,10 +19,6 @@ import {
 // Nothing here exercises a page's own behaviour: the heavy pages are doubled and the network answers only what a page
 // needs to draw, so a failure means the shell did not mount the page or the page broke while drawing.
 vi.hoisted(() => { window.__APP_CONFIG__ = { API_BASE: "/custom-base/api" }; });
-vi.mock("../../../../../../packages/ontology-manager/src/components/OntologyPlayground.vue", () => ({
-  __esModule: true,
-  default: { name: "GraphDouble", template: '<p class="page-double">graph</p>' },
-}));
 vi.mock("../../../../../../packages/ontology-manager/src/data-browser/DataBrowser.vue", () => ({
   __esModule: true,
   default: { name: "DataBrowserDouble", template: '<p class="page-double">data browser</p>' },
@@ -111,11 +107,19 @@ async function open(path: string) {
   const app = (document.querySelector("#app") as (Element & { __vue_app__?: App }) | null)?.__vue_app__;
   app!.config.errorHandler = (error) => drawErrors.push(error);
   await settle();
+  served = servedNow();
+}
+
+/**
+ * Every address the running router serves at this moment. A route pattern carries parameters (`/browser/data/:className?`);
+ * a rail row opens the address with them absent, so each pattern is recorded up to its first parameter. A built-in
+ * application's panel entries join the routes the first time one of them is opened.
+ */
+function servedNow() {
+  const app = (document.querySelector("#app") as (Element & { __vue_app__?: App }) | null)?.__vue_app__;
   type Router = { getRoutes(): { path: string }[] };
   const router = app?.config.globalProperties.$router as Router | undefined;
-  // A route pattern carries parameters (`/browser/data/:className?`); a rail row opens the address with them absent, so
-  // each pattern is recorded up to its first parameter.
-  served = new Set((router?.getRoutes() ?? []).map((route) => route.path.split("/:")[0]!).filter(Boolean));
+  return new Set((router?.getRoutes() ?? []).map((route) => route.path.split("/:")[0]!).filter(Boolean));
 }
 
 /** The address in the bar, without the query: that is what a rail row navigates to. */
@@ -276,7 +280,7 @@ describe("the open-source platform's rail", () => {
       // and lands on one this edition serves. A row aimed at an address with no route falls through to the catch-all and
       // stays where it was, which is how clicking 智能体平台 and 运维诊断 once did nothing.
       expect(landed, `the rail row ${name} did not leave ${before}`).not.toBe(before);
-      expect(served.has(landed), `the rail row ${name} opened ${landed}, which this edition does not serve`).toBe(true);
+      expect(servedNow().has(landed), `the rail row ${name} opened ${landed}, which this edition does not serve`).toBe(true);
       expect(document.querySelector(".platform-page-body")!.innerHTML.trim(), `empty main area after ${name}`).not.toBe("");
       previous = landed;
     }

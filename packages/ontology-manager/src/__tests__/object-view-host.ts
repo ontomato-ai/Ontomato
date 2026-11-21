@@ -12,7 +12,7 @@ export function installObjectViewHost(app: App, apiBase = "/api", token = "test-
     translate: (key, params) => i18n.global.t(key, params ?? {}),
     dataFallbacks: { noBusinessDescription: "", unnamedAsset: "" },
     knowledgeTagValues: { general: "", business: "", tech: "" },
-    presentation: { themeProperties: { light: {}, dark: {} }, nodePalette: { light: [], dark: [] }, edgeLabel: {}, maxFitZoom: null, dataBrowserDescription: () => "", compactDialogs: false },
+    presentation: { themeProperties: { light: {}, dark: {} }, nodePalette: { light: [], dark: [] }, maxFitZoom: null, dataBrowserDescription: () => "", compactDialogs: false },
     onAuthFailure: () => {},
   });
   manager.install(app);

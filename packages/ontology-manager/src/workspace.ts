@@ -1,5 +1,5 @@
 export type AssetTab = "metrics" | "actions" | "functions";
-export type ModelResource = "objects" | "attributes" | "relations";
+export type ModelResource = "objects" | "attributes";
 
 export interface OntologyResourceCounts {
   objects: number | null;
