@@ -48,7 +48,7 @@ public final class PanelFormFields {
     return control;
   }
 
-  public static JSONObject option(String value, String label) {
+  public static JSONObject option(Object value, String label) {
     JSONObject option = JSONObject.of("value", value, "label", label);
     option.put("description", null);
     option.put("disabled", false);

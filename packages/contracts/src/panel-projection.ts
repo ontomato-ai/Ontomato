@@ -23,7 +23,9 @@ export type PanelFormValues = z.infer<typeof panelFormValuesSchema>;
 export const panelObjectListColumnSchema = z.object({
   key: z.string().min(1),
   labelKey: panelMessageKeySchema.optional(),
-  kind: z.enum(["text", "tag", "tags", "reference"]).optional(),
+  kind: z.enum(["text", "tag", "tags", "reference", "time"]).optional().describe(
+    "A time column displays the owner's ISO time string in the reader's language and local time zone, with the full time in its title. Sorting and filtering use the original string.",
+  ),
   subtitleKey: z.string().min(1).optional(),
   emptyKey: panelMessageKeySchema.optional(),
   wrap: z.boolean().optional().describe("Allow text in this column to wrap onto multiple lines. Defaults to false."),

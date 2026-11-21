@@ -10,6 +10,7 @@ import {
 } from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
+import { formatRelativeTime } from "@ontomato/workbench-ui/utils/relative-time";
 import { slotOutputState, usePanelContext, useProjectionSlot } from "../panel/context";
 import { paramValues } from "../panel/direct";
 import { useMember, useMemberData, useMemberParam } from "../panel/member";
@@ -97,7 +98,7 @@ const emit = defineEmits<{
   navigate: [reference: PlatformFieldReference, columnKey: string];
 }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
 const member = useMember();
@@ -324,6 +325,21 @@ const columnFit = computed(() => new Map((props.columns ?? []).map((column) => [
   column.wrap ? "sdk-object-list-col-wrap"
     : (column.kind === undefined || column.kind === "text" || column.kind === "reference") && rows.value.some((row) => columnText(row, column).length > LONG_TEXT)
       ? "sdk-object-list-col-shrink" : ""])));
+/**
+ * A time column's owner value (an ISO time) as the platform shows a time, in the reader's language and time zone: a
+ * recent one as how long ago, an older one by its date. A value that is no time is shown as it is.
+ */
+function timeText(value: string): string {
+  return formatRelativeTime(value, { showYear: true }) || value;
+}
+/** The text a cell's title gives in full: a long text column's whole text, or a time column's whole local time. */
+function cellTitle(row: PlatformObjectRecord, column: ObjectListColumn): string | undefined {
+  if (column.kind === "time") {
+    const value = fieldValue(row, column.key);
+    return value && !Number.isNaN(Date.parse(value)) ? new Date(value).toLocaleString(locale.value) : undefined;
+  }
+  return columnFit.value.get(column.key) === "sdk-object-list-col-shrink" ? columnText(row, column) : undefined;
+}
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / effectivePageSize.value)));
 
 const showCount = computed(
@@ -621,7 +637,7 @@ watch(someVisibleChecked, () => {
                 v-for="column in columns"
                 :key="column.key"
                 :class="columnFit.get(column.key)"
-                :title="columnFit.get(column.key) === 'sdk-object-list-col-shrink' ? columnText(row, column) : undefined"
+                :title="cellTitle(row, column)"
               >
                 <button
                   v-if="(column.kind === 'reference' || row.references?.[column.key]) && row.references?.[column.key]"
@@ -642,6 +658,7 @@ watch(someVisibleChecked, () => {
                     <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                   </template>
                 </span>
+                <template v-else-if="column.kind === 'time'">{{ fieldValue(row, column.key) ? timeText(fieldValue(row, column.key)) : columnEmpty(column) }}</template>
                 <span v-else-if="column.kind === 'tags'" class="sdk-object-list-item-tags">
                   <span
                     v-for="tag in row.tags?.[column.key] ?? []"
