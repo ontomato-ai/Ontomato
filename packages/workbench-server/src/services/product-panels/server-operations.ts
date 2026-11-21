@@ -52,6 +52,8 @@ interface ServerOperation {
   labelKey?: string;
   effect: "write";
   inspectImpact?: PanelImpactInspector;
+  /** The current reader's display reason, only looked up for a concrete record on the operations read. */
+  unavailable?(host: PanelOperationHost, target: PanelRecordTarget): Promise<PanelOwnerOperationDescriptor["unavailable"]>;
   targetType: string;
   targetSchema: z.ZodType<PanelOperationTarget>;
   inputSchema: z.ZodType<Record<string, unknown>>;

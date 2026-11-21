@@ -99,7 +99,8 @@ const checkedObjects = computed(() => (checkedState.value === null ? [] : stateO
 const checkedTargets = computed(() =>
   checkedObjects.value.map(({ className, primaryKey }) => ({ kind: "object" as const, objectType: className, primaryKey })));
 const ready = computed(() => {
-  if (!descriptor.value || running.value) return false;
+  // The owner lists it but would refuse it now: the button is off, and says why beside it.
+  if (!descriptor.value || running.value || descriptor.value.unavailable) return false;
   if (checkedState.value !== null) return checkedTargets.value.length > 0;
   return descriptor.value.target.source !== "input" || target.value !== null;
 });
@@ -165,6 +166,7 @@ const done = computed(() => items.value.filter((item) => item.outcome.kind === "
     <!-- A removal is drawn quiet, as the platform's header draws one: danger in its colour, not a solid block; off, it
          is plainly off. The owner still decides what it does and confirms it. -->
     <el-button v-else :type="type" :text="type === 'danger'" :loading="running" :disabled="!ready" @click="run">{{ label }}</el-button>
+    <p v-if="!pending && descriptor?.unavailable" class="sdk-operation-unavailable">{{ descriptor.unavailable.reason }}</p>
     <p v-if="failure" role="alert">{{ failure.message }}</p>
     <operation-result v-if="read" :result="read"></operation-result>
     <template v-if="receipt">
@@ -186,6 +188,11 @@ const done = computed(() => items.value.filter((item) => item.outcome.kind === "
 </template>
 
 <style scoped>
+.sdk-operation-unavailable {
+  margin: var(--spacing-xs) 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+}
 .sdk-operation-batch ul {
   margin: var(--spacing-xs) 0 0;
   padding-inline-start: var(--spacing-lg);
