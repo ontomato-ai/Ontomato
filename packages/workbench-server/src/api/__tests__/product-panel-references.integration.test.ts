@@ -237,13 +237,15 @@ it("reads a selected nested panel or projection and freezes its actual publisher
     });
   }
   const root = {
-    content: vuePanelContent("detail", "fixed", "choice"),
+    content: vuePanelContent("detail", "fixed", "choice", "objectDetail"),
     manifest: { state: {
       selectedPanel: { type: { kind: "object", objectType: PRODUCT_PANEL } },
       selectedProjection: { type: { kind: "object", objectType: PRODUCT_PROJECTION } },
+      selectedAgent: { type: agentPort },
     }, members: {
       detail: { target: { fromState: "selectedPanel", candidates: { rule: "usable" } } },
       fixed: { target: { panelId: child } },
+      objectDetail: { target: { fromState: "selectedAgent", candidates: { rule: "objectDetail" } } },
       choice: { target: { fromState: "selectedProjection", candidates: { projectionIds: [list] } } },
     }, events: {} },
   };
@@ -263,12 +265,42 @@ it("reads a selected nested panel or projection and freezes its actual publisher
   const componentChoice = { member: "choice", selection: {
     stateValue: { className: PRODUCT_PROJECTION, primaryKey: list }, target: { projectionId: list },
   } };
-  for (const memberPath of [[detail, { member: "components" }], [componentChoice]]) {
+  const detailSelection = { stateValue: { className: AGENT_DEFINITION, primaryKey: nestedAgentId } };
+  const openDetail = { member: "objectDetail", selection: detailSelection };
+  const findDetail = (memberPath: object[]) =>
+    request("POST", "product-panels/nested", "nested-reader", { source, memberPath });
+  expect((await findDetail([openDetail])).status).toBe(404);
+  const setDetail = (panelId: string) => state.pool!.query(
+    `INSERT INTO "${state.schema}".product_object_details (domain_id, class_name, panel_id, updated_by) VALUES ($1,$2,$3,$4)
+     ON CONFLICT (domain_id, class_name) DO UPDATE SET panel_id=EXCLUDED.panel_id`,
+    ["test-domain", AGENT_DEFINITION, panelId, "author"],
+  );
+  await setDetail(alternate);
+  expect((await findDetail([openDetail])).status).toBe(403);
+  await setDetail(child);
+  const discovered = await findDetail([openDetail]);
+  expect(discovered.status).toBe(200);
+  const found = productPanelNestedReadResponseSchema.parse(await discovered.json()).panel;
+  expect(found).toMatchObject({ id: child, revision: 1 });
+
+  expect((await findDetail([{ member: "detail", selection: { stateValue: detail.selection.stateValue } }])).status).toBe(403);
+  expect((await findDetail([openDetail, { member: "components" }])).status).toBe(400);
+  expect((await request("POST", "product-panels/read", "nested-reader",
+    { source, memberPath: [openDetail, { member: "components" }], dataName: "rows", inputs: {} })).status).toBe(400);
+  const resolvedDetail = { ...openDetail, selection: { ...detailSelection, target: { panelId: found.id } } };
+
+  for (const memberPath of [[detail, { member: "components" }], [resolvedDetail, { member: "components" }], [componentChoice]]) {
     const datum = await request("POST", "product-panels/read", "nested-reader", { source, memberPath, dataName: "rows", inputs: {} });
     expect(await datum.json()).toMatchObject({ status: "ready", value: expect.arrayContaining([
       expect.objectContaining({ primaryKey: "@ontomato/sdk:ObjectList" }),
     ]) });
   }
+  await setDetail(alternate);
+  const oldDetail = await request("POST", "product-panels/read", "nested-reader", {
+    source, memberPath: [resolvedDetail, { member: "components" }], dataName: "rows", inputs: {},
+  });
+  expect(await oldDetail.json()).toEqual({ status: "forbidden" });
+
   const outside = await request("POST", "product-panels/read", "nested-reader", { source, memberPath: [{
     ...componentChoice, selection: { stateValue: { className: PRODUCT_PROJECTION, primaryKey: remove }, target: { projectionId: remove } },
   }], dataName: "rows", inputs: {} });

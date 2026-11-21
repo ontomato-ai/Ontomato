@@ -16,7 +16,7 @@ const descriptorSchema = z.object({
 }).strict();
 const treeSchema = z.object({ files: z.array(z.object({ path: z.string() })) });
 
-async function loadWorkspacePanel(
+export async function loadWorkspacePanel(
   owner: AssistantOwner, credentials: AssistantCredentials, { id, ref }: CandidatePanelSource["workspace"],
 ) {
   await assertAppBuilderAccess(credentials);
@@ -61,19 +61,12 @@ export async function readPanelCandidate(
   return { kind: "candidate", workspace, panel, previewContext: { kind: "build-test", test } };
 }
 
-export async function resolvePanelCandidatePlacement(
-  owner: AssistantOwner, credentials: AssistantCredentials, workspace: CandidatePanelSource["workspace"],
-  memberPath: DirectPanelMemberPath,
-) {
-  const { panel, tests } = await loadWorkspacePanel(owner, credentials, workspace);
-  return { placement: await resolvePanelMemberPath(owner, credentials, panel, memberPath), tests };
-}
-
 export async function resolvePanelCandidateMember(
   owner: AssistantOwner, credentials: AssistantCredentials, workspace: CandidatePanelSource["workspace"],
   memberPath: DirectPanelMemberPath,
 ) {
-  const { placement, tests } = await resolvePanelCandidatePlacement(owner, credentials, workspace, memberPath);
+  const { panel, tests } = await loadWorkspacePanel(owner, credentials, workspace);
+  const placement = await resolvePanelMemberPath(owner, credentials, panel, memberPath);
   if (placement.kind !== "projection")
     throw new HttpError(403, "The member path does not select a projection", "PANEL_MEMBER_FORBIDDEN");
   const previewContext: CandidatePanelSource["previewContext"] = { kind: "build-test", test: await tests.current() };
