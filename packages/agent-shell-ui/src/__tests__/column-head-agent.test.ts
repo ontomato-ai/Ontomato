@@ -593,12 +593,13 @@ it("fills a panel's entry into this conversation, or starts one with the agent i
   app.mount(root);
   await settle();
   display.skill(drawerSkill);
-  await settle();
+  await nextTick();
   const written = () => [...root.querySelectorAll<HTMLTextAreaElement>("textarea")].map((box) => box.value);
   expect(served).toHaveLength(1);
 
-  // The agent it names is this conversation's: the sentence waits here, and nothing else moves.
-  served.at(-1)!({ target: { kind: "id", id: assistant }, prefill: "About this order" });
+  // Made while the page's own agents are still being read, the entry waits for them: the preset it names is known only
+  // from the page's answer. It is this conversation's agent: the sentence waits here, and nothing else moves.
+  served.at(-1)!({ target: { kind: "preset", agentKind: "regular" }, prefill: "About this order" });
   await settle();
   expect(written()).toContain("About this order");
   expect(sessionId.value).toBe(existingSessionId);

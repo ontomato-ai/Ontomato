@@ -3,6 +3,7 @@ import { computed, inject, nextTick, onBeforeUnmount, onMounted, provide, ref, s
 import { PanelLeft, PanelRightOpen, X } from "lucide-vue-next";
 import { conversationQuestions, displayPlacementKey, shellContextKey, type ShellContext } from "../context";
 import { entryAgent, servePageComposerKey, type ComposerEntry, type PageComposerExpand } from "../page-composer-entry";
+import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import {
   CLOSED_TARGET,
   carriedTargetIn,
@@ -318,7 +319,13 @@ const entry = shallowRef<ComposerEntry | null>(null);
 function showEntry(text: string | null) {
   entry.value = { text, seq: (entry.value?.seq ?? 0) + 1 };
 }
+/** An entry that arrived while the page's agents were being read; it waits for them, the latest one counting. */
+let waitingEntry: PanelConversationEntry | null = null;
 const expandEntry: PageComposerExpand = (request) => {
+  if (nav.agentsState.value === "loading") {
+    waitingEntry = request;
+    return;
+  }
   const named = entryAgent(request.target, nav.agents.value, nav.pageAgents.value?.defaultAgentId, nav.pageAgents.value?.presetAgentIds);
   if (!named) return showEntry(null);
   if (named === agentId.value) return showEntry(request.prefill ?? null);
@@ -329,6 +336,13 @@ const expandEntry: PageComposerExpand = (request) => {
   nav.beginWith(named);
   void nextTick(() => showEntry(request.prefill ?? null));
 };
+watch(() => nav.agentsState.value, (state) => {
+  const asked = waitingEntry;
+  if (state === "loading" || !asked) return;
+  waitingEntry = null;
+  // Read: the entry takes effect among them. Failed: it ends here, the read's error shown where it failed.
+  if (state === "ready") expandEntry(asked);
+});
 const serveEntry = inject(servePageComposerKey, null);
 const withdrawEntry = serveEntry?.(expandEntry);
 onBeforeUnmount(() => withdrawEntry?.());

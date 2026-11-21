@@ -323,6 +323,7 @@ function describeReads(reads: readonly { member: string; dataName: string; read:
 
 function describeDraft(forms: readonly OperationDescription[]): string {
   if (!forms.length) return "";
+  const [sessionKey, runKey, pathKey] = PAGE_DRAFT_QUERY_KEYS;
   const owners = forms.map(form => {
     const owner = form.owner?.handler;
     if (owner?.kind !== "form.save") throw new Error(`Expected a form owner for ${form.id}`);
@@ -331,13 +332,14 @@ function describeDraft(forms: readonly OperationDescription[]): string {
   });
   return [
     "### Draft a change",
-    "Read the owner's form for the intended target and validate the complete values. Write `outputs/drafts/<name>.page-draft.json` with this page-draft envelope:",
+    "Read the owner's form for the intended target. Follow that form-save operation's drafting instructions under Declared operations to choose and validate the values in `form`. Write `outputs/drafts/<name>.page-draft.json` with this envelope.",
     "```json",
     JSON.stringify({ pageKey: "<current page context pageKey>", operation: owners[0]!.update, target: { id: "<object id>" }, form: {} }, null, 2),
     "```",
     ...owners.map(owner => `- ${owner.id} uses \`${owner.update}\` for an existing object.${owner.create ? ` Use \`${owner.create}\` with an empty target for creation.` : ""}`),
     "Put the selected object's ID in `target.id` when editing an existing object.",
-    "Use the owner-described values in `form`. An owner's revision, when required, is part of the operation input.",
-    `Link to the canonical path from the current page context with ${PAGE_DRAFT_QUERY_KEYS.map(key => `\`${key}\``).join(", ")} set to the current session ID, run ID, and encoded draft path. The panel fills the form and the reader reviews and saves it.`,
+    "An owner's revision, when required, is part of the operation input.",
+    "Each run has its own artifact area. Use a distinct path for each draft written in the same run.",
+    `Link to the canonical path from the current page context. Set \`${sessionKey}\` to the producing run's \`$ONTOMATO_SESSION_ID\`, \`${runKey}\` to that run's \`$ONTOMATO_RUN_ID\`, and \`${pathKey}\` to the encoded path of its draft file. For a draft written in a later run, build a new link using that run's ID. The panel fills the form for the reader to review and save.`,
   ].join("\n");
 }

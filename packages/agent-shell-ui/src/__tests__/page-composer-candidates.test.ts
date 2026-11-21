@@ -314,6 +314,41 @@ it("takes the preset an entry names when the page says which candidate it is, an
   expect(drawn.ask).not.toHaveBeenCalled();
 });
 
+it("holds an entry made while the page's candidates are being read, and applies it once they arrive", async () => {
+  let answer: (value: Awaited<ReturnType<PageCounter["pageAgents"]>>) => void = () => {};
+  const drawn = draw({ pageAgents: () => new Promise((resolve) => { answer = resolve; }) });
+  await settle();
+  // Still reading: the composer is not drawn yet, but it takes the page's entries.
+  expect(box(drawn.root)).toBeNull();
+  expect(drawn.served).toHaveLength(1);
+  drawn.served.at(-1)!({ target: { kind: "preset", agentKind: "knowledge-governance" }, prefill: "Review the pending knowledge" });
+  await settle();
+  expect(box(drawn.root)).toBeNull();
+
+  answer({
+    agents: [agent("assistant", "Assistant"), agent("governance", "Knowledge governance")],
+    defaultAgentId: "assistant",
+    presetAgentIds: { "knowledge-governance": "governance" },
+  });
+  await settle();
+  expect(drawn.shown().agentId).toBe("governance");
+  expect(box(drawn.root)!.value).toBe("Review the pending knowledge");
+  expect(drawn.ask).not.toHaveBeenCalled();
+});
+
+it("drops an entry that waited when the page's candidates could not be read", async () => {
+  let fail: (reason: Error) => void = () => {};
+  const drawn = draw({ pageAgents: () => new Promise((_, reject) => { fail = reject; }) });
+  await settle();
+  drawn.served.at(-1)!({ target: { kind: "page-default" }, prefill: "Not sent anywhere" });
+  fail(new Error("Failed to fetch"));
+  await settle();
+  // The page says why it has no composer; the entry does not come back later.
+  expect(drawn.errors).toEqual(["Failed to fetch"]);
+  expect(box(drawn.root)).toBeNull();
+  expect(drawn.served).toHaveLength(0);
+});
+
 it("serves entries only while it is drawn, and withdraws when the page goes", async () => {
   const none = draw({ pageSkill: unavailableMemberSkill });
   await settle();
