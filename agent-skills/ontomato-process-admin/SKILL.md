@@ -9,16 +9,23 @@ description: 以域管理员身份在 Ontomato 上把公司业务流程固化下
 
 它不负责发起一次运行，也不负责日常审批；那是 `ontomato-process-operator` 的事。
 
-平台里没有“流程引擎”。一条流程能不能跑通，靠的是四样东西同时成立：
+Ontomato 负责定义、发布和授权能力；Ontopraxis 把生效的 Workflow 编译成冻结的 RunTemplate，维护 Run/Step 状态并驱动固定步骤。两边要同时成立：
 
 | 要素 | 作用 | 不是 |
 | --- | --- | --- |
-| `Workflow` + 步骤 | **授权的发布单元**：激活时把“角色×动作”的授权一起落库 | 不是运行时 |
+| `Workflow` + 步骤 | **定义与授权的发布单元**：Praxis 用生效版本编译 RunTemplate，Ontomato 同时落“角色×动作”授权 | 不是业务事实类，也不是 Action 本身 |
 | 步骤里的 `Action` | 真正干活的 Python；谁能跑、什么时候能跑写在它自己身上 | 不是流程节点 |
 | 步骤里的 `roleCode` | 授权主体：激活时解析成域内角色 | 不是人名 |
 | `runContract` | 业务运行对象上的字段投影：单号/节点/状态/负责人 | 不是表结构 |
 
-运行时的“流转”是**主体拉式**的：轮到谁，谁自己来跑他那一步的动作；动作的 `submissionCriteria` 判定“现在是不是你的回合”。不要去找“下一步该派给谁”的接口，它不存在。
+运行时规则：
+
+- **固定逻辑步骤**：Praxis 按冻结模板自动调用 Ontomato Action；当前以 Run requester 作为执行主体。
+- **人工步骤**：Praxis 建 Run/Step 后等待办理。`actorPolicy.mode=none` 保持角色池；`rule/agent` 在进入 waiting 前确定一个具体承办人。
+- **承办人可改钉**：Praxis 提供 step assignment 接口；已钉住的步骤只有当前承办人、Run requester 或有管理角色的重指派管理员能改钉。
+- **业务前置条件仍在 Action**：Praxis 管运行账本和承办人，Action 的 `submissionCriteria` 继续判定业务对象是否真的处于可办理状态。
+
+当前工作流管理页对**已有流程只提供“查看”**。修改定义必须用本技能的 `wf-save` 客户端接口；不要把页面“编辑”当成可用的写入路径。
 
 ---
 
@@ -299,6 +306,21 @@ node client.mjs grant-save '{
 - 审批动作必须接受 `run_id`（业务对象 id）、`decision`（approved/rejected）、`comment`，并回写业务状态/当前节点/审批人。
 - `submissionCriteria` 是“现在是不是你的回合”的判定：状态、当前节点、负责人等。
 - `approvalMode`：`auto | human | twoKeys`。`twoKeys` 目前**没有双人实现**，只被编译成普通 human 步。
+- 创建型 Action 必须 `print(json.dumps({...}, ensure_ascii=False))`，返回 `targetClass` 和 `run_id`（或 `id`）。Praxis 用这两个字段自动绑定新业务对象；只返回 `{"completed":true}` 会导致后续 `$business.*` 派单和审批跑 ID 全部断链。
+- `function.parameters` 中声明的每个参数都是必填，脚本里的 `or 默认值` 不会让参数契约变成可选。人工 `decide` 无法临时补参数，因此页面流程需要由步骤输入预先绑定，或不要声明该参数、让脚本自行生成。
+
+### 4.1 申请单与任职历史必须分开
+
+岗位、职称、职务等“晋升确认”不能把待审批的目标状态直接写进历史事实表。历史事实表只记录**真实发生过**的任职；申请期间的目标和流程状态放在申请单。
+
+以本地“岗位等级晋升确认”为例：
+
+- `tech_gwdj` 是真实任职历史：只保留现任和历任等级，现任记录用 `last_flag=是`，历史记录用开始/结束日期封口。不要在发起时先造一条目标等级记录。
+- `tech_gwdj_apply` 是审批申请：至少保存 `person_id/current_hj_dj/target_hj_dj/current_step/workflow_status`，`runClassName` 指向这个申请类。
+- 发起 Action 接收 `person_id/target_level/comment`，读取该人员唯一现任 `tech_gwdj`，校验目标等级高于现任后创建申请；返回 `targetClass=tech_gwdj_apply` 和作为业务 `run_id` 的申请 id。
+- 学术委员会 Action 接收 `run_id/decision/comment` 并推进申请；规则派单应绑定申请字段，例如 `{"position_level":"$business.target_hj_dj"}`，不能依赖预先存在的目标等级历史。
+- 人事聘任 Action 接收 `run_id`。通过后关闭原现任历史，按申请的目标等级新增一条真实现任历史，并把申请置为已完成；生效日期默认取聘任完成日。
+- 这样允许“六级升五级”或“八级升七级”，也允许人员从未任过五级而直接晋升五级。要求“目标等级的现任记录已经存在”在业务上是错误的。
 
 命令：
 
@@ -315,14 +337,15 @@ node client.mjs action-reexplain '{"ids":["act_..."]}'
 
 ## 5. 阶段 3：Workflow（固定流程）
 
-### 5.1 先定六个决定
+### 5.1 先定七个决定
 
 1. **运行对象**：每次走一遍是什么？（如 `leave_request`）→ 事实层类 + 主键 + 业务属性。
 2. **runContract**：单号/当前节点/状态/负责人在类上的字段位置。
 3. **步骤序列**：谁先、谁后；每步是审批还是执行。
 4. **每步角色**：用域里已有的 `roleName`；步骤的 `roleCode` 就是它。
 5. **派单规则**：`all` / `self_organization` / `self_subtree` / `self_descendants` / `initiated_by_self` / `assigned_to_self`。
-6. **提交要件**：发起时必填什么；哪些字段由平台算、不许调用方传。
+6. **已分配步骤不能由同角色成员抢单**：只有当前承办人、Run 发起人或管理角色可以改钉；管理角色是平台的重指派管理员。
+7. **提交要件**：发起时必填什么；哪些字段由平台算、不许调用方传。
 
 ### 5.2 runContract
 
@@ -374,19 +397,36 @@ node client.mjs action-reexplain '{"ids":["act_..."]}'
       "actionId": "act_leave_approve",
       "actionType": "approve",
       "scope": "self_subtree",
+      "actorPolicy": {
+        "mode": "none"
+      },
+      "invocationMode": "manual",
       "description": "审批本部门子树内的申请"
     }
   ]
 }
 ```
 
-当前 `WorkflowStep` 的真实字段只有：`stepNo / name / roleCode / actionId / actionType / scope / description`。
+当前 `WorkflowStep` 的真实字段为：`stepNo / name / roleCode / actionId / actionType / scope / description / actorPolicy / invocationMode / inputBindings / locked / caseScoped`。
 平台**不会**返回步骤级 `input / executor / assignee / decider`；这些是运行时的输入，不是定义。
 
 - `name` 必须非空且互不重复（`WorkflowStep.requireDistinctNames`）。
 - `roleCode` 在**激活时**才解析成角色 id；名字写错会在激活时报 `The workflow names a role that does not exist in this domain: X`。
 - `actionType=approve` 会强制该步为 human，即使 Action 写 auto。
 - `scope` 是授权范围，不是“谁当前是负责人”。
+- `actorPolicy.mode=none` 是角色池自行领取。
+- `actorPolicy` 只对 human 步骤生效。fixed 步骤不会执行 rule/agent 派单，仍由 Praxis 按固定步骤执行。
+- `actorPolicy.mode=rule` 必须带 `metricViewId/metricRevision`；`principalField` 默认 `principal`，MetricView 的值可经 `valueMap` 映射后再校验是否属于当前步骤候选集。
+- `actorPolicy.executionPrincipalId` 可选，表示 Praxis 执行 MetricView/Agent 请求时使用的主体，可填域内用户 id 或 loginCode；留空时使用部署配置的 `ONTOPRAXIS_SYSTEM_PRINCIPAL`。它不是最终被选中办理 workflow 步骤的人。
+- `actorPolicy.parameterBindings` 可把当前 Run 的冻结信息传给 MetricView，格式为 `{"Metric参数名":"$上下文表达式"}`。支持 `$run.id`、`$run.templateRef`、`$run.requester`、`$step.id`、`$step.ref`、`$step.roleCode`、`$business.className`、`$business.id`、`$business.<字段>`；动态绑定覆盖同名静态 `parameters`。
+- `parameterBindings` 使用 `$business.*` 时，Run 必须已经绑定业务对象；创建型 Action 必须先返回 `targetClass + run_id/id`，否则规则会明确失败。
+- `actorPolicy.mode=agent` 必须带 `agentId` 和可选 `instruction`；Praxis AssignmentWorker 调用 Agent，并传入 `runId/stepId/candidates` 等 variables。Agent 定义自身的 `executionUserId` 仍独立控制 Agent 工具权限。
+- Agent 必须从 `candidates` 中选人，只返回 `{"assignedTo":"...","reason":"...","evidence":[...]}`；Praxis AssignmentWorker 异步把 step 从 `routing` 转为 `waiting`，Agent 不直接调用 assign。
+- 可用 `caseScoped=true` 的办理步骤，尤其是 `actorPolicy.mode=rule/agent` 或需要把 `assignedTo` 当作执行权限的步骤，必须配置 `caseScoped=true`。激活时不会写角色级 `role × action` 授权，Action 只能携带 Praxis 为当前 Run/承办主体签发的 Case 执行凭证调用；否则同角色成员可绕过 `assignedTo` 直接执行 Action。
+- 如果一个 Action 只出现在 ACTIVE 版本的 `caseScoped` 步骤中，普通 `/action/execute` 不会回退到平台级 Action 执行权限；直接调用应返回未授权。不要用补角色级授权的方法“修复”这个错误。
+- `inputBindings` 从 Case payload 取值写入 Action 参数；`locked` 中的字段总是以 Case 为准，调用方不能覆盖。Run 只有在临时流程或至少一个 `caseScoped` 步骤时才自动拥有 Case。
+- 当前 Praxis 的 `roleCode → roleId` 候选映射来自 in-force `/workflow/grants`。`caseScoped` 步骤本身不写角色授权，因此 rule/agent 步骤需要同一角色至少还有一条 in-force 普通授权才能解析出候选主体；`verify` 会对此单独检查。
+- `invocationMode=manual` 是本轮唯一可执行模式。`automatic` 可保存和编译，但人工步骤运行时仍会明确失败；固定步骤会忽略这个字段并照常执行，不能拿它把 fixed 改成自动派单。
 
 ### 5.4 存草稿、激活
 
@@ -398,6 +438,7 @@ node client.mjs wf-activate <workflowId>
 
 - 保存后是 `DRAFT`，**不授予任何权限**。
 - 激活是审批时刻：分配新版本号、冻结步骤、把每个“角色×动作”写进 `sys_role_capability`、追加 `Activated` 事件、生成两个查询。
+- `runContract.stepField` 与 `statusField` 必须是不同属性；`statusOpen` 至少有一个值，开放/完成/驳回三组状态值不能重复，所有声明的字段都必须存在于运行类。
 - 激活响应里的 `activationNotes` 是生成告警：为空表示两个查询都生成了；有内容说明某个没生成。**不要当普通成功忽略。**
 - 重复激活同一份未改步骤会 `version+1` 并重发授权行；不要用它“再试一次”。
 - 要换版本：改草稿再激活；不要删生效中的流程（删不掉，且撤权必须先失效留记录）。
@@ -474,6 +515,8 @@ node client.mjs trigger-save '{
   "executor":"<subjectId>",
   "enabled":true
 }'
+
+# workflow 效果还可带 effect.inputs 和 effect.goalText
 node client.mjs trigger-list
 node client.mjs trigger-status <triggerId> PUBLISHED true
 node client.mjs trigger-run <triggerId>       # 手动点火一次
@@ -481,7 +524,8 @@ node client.mjs trigger-run <triggerId>       # 手动点火一次
 
 - 频率支持 `interval / daily / weekly / monthly / cron`。
 - `trigger/save` 默认 `PENDING_REVIEW`；`trigger/status PUBLISHED` 才布防（enabled 自动为 true）。
-- `effect=workflow` 只调用 Praxis `POST /runs`，**不推进**；推进由 Praxis 的 engine 完成。
+- `effect=workflow` 只把启动请求交给 Praxis `POST /runs`，Ontomato 不复制步骤状态机；`/runs` 默认立即执行 engine tick，所以固定步骤可能在同一请求内完成，人工步骤则进入 routing/waiting。
+- Trigger 的主体是 `executor`，省略或 `requester` 都表示创建人。workflow 效果要求该主体具备可用的后台凭据；只有 executor 本人在交互登录后保存或发布触发器时才会准备这份凭据，否则点火会明确报凭据缺失/失效。
 - 幂等键是 `<triggerId>:<epochSecond>`；同一槽重复点火在账本侧 409，不会产生第二条 Run。
 - 调度器每秒取一次 due，先占槽再点火；崩溃最多丢一次，不会重复写业务。
 - 触发器只支持单副本；多副本需要数据库层抢占（当前没有）。
@@ -502,7 +546,7 @@ node client.mjs verify <workflowId>
 - `activationNotes` 为空
 - `runContract` 已声明
 - 每个步骤有 `roleCode`、`actionId`
-- 每个 `roleCode` 在本域至少有一个成员（通过 `subjects` + `grants` 的 roleId 映射）
+- 每个 `roleCode` 在本域角色表中存在，且至少有一个成员；`caseScoped` 步骤不依赖角色授权行
 
 任何一项失败都先修定义，不要进入运行验收。
 
@@ -554,7 +598,9 @@ node client.mjs trigger-run <triggerId>
 | `trigger-*` | 触发器 |
 | `verify` | 静态验收 |
 
-写命令都支持 `--dry-run`，只打印请求体，不登录、不落库。
+写命令都支持 `--dry-run`，只在本地打印请求体，不登录、不访问服务端、不落库。
+管理员客户端不提供 `run`；执行 Action 应使用 `ontomato-process-operator`。
+动作里的 `ValueError at program.py line N` 可能表示业务校验拒绝，需结合 `logic` 和现场数据判断。
 
 ---
 
@@ -572,8 +618,8 @@ node client.mjs trigger-run <triggerId>
 10. `Action` 发布后代码冻结；要改新建动作。
 11. `approvalMode=twoKeys` 没有双人实现，只编译成 human。
 12. `Workflow` 保存后是 DRAFT，不授权；必须激活。
-13. 步骤字段只有 `stepNo/name/roleCode/actionId/actionType/scope/description`；`input/executor/assignee` 不是定义字段。
-14. 激活时才校验 `roleCode` 是否存在；保存时不报错。
+13. 步骤字段为 `stepNo/name/roleCode/actionId/actionType/scope/description/actorPolicy/invocationMode/inputBindings/locked/caseScoped`；`actorPolicy.executionPrincipalId` 是策略调用主体，`input/executor/assignee/decider` 不是当前定义字段。
+14. 空 `roleCode` 在保存时就会拒绝；角色名称是否已在本域登记则在激活时解析，激活前不报错。
 15. `activationNotes` 非空说明待办/详情查询没生成；不要忽略。
 16. 重复激活未改步骤会 `version+1` 并重发授权；不要用它重试。
 17. 生效中的流程不能删；先 `wf-deactivate`。
@@ -584,6 +630,12 @@ node client.mjs trigger-run <triggerId>
 22. 组织授权的 `self_*` 按 recipient 的基组织解析，不填 targetId/userId。
 23. 跨源不能 JOIN；账本是 Praxis 的独立 schema，业务对象与账本两步查。
 24. 本技能不创建用户；成员必须是域内已有主体（`subjects`）。
+25. `actorPolicy.mode` 支持 `none/rule/agent`：`none` 是角色池，`rule` 引用 MetricView，`agent` 引用 Ontomato Agent。`invocationMode=automatic` 只在人工步骤被运行时拒绝，固定步骤会忽略它。
+26. 钉人、规则或 Agent 决策作为执行权限时，步骤必须设 `caseScoped=true`；否则角色级 Action 授权仍会被直接调用绕过 `assignedTo`。
+27. 审批中的目标状态写申请类，真实生效后才写历史事实类；禁止预造目标等级/职务历史来让流程通过。
+28. Case 专属 Action 不得靠角色级直接授权开放；只能在 Praxis 当前 `waiting` step 通过 `decide` 执行。
+29. 创建型 Action 没有返回 `targetClass + run_id/id` 时，Workflow 虽然可能显示第一步成功，但 Run 不会绑定业务对象；必须视为未完成并修复 Action 输出契约。
+30. `actorPolicy` 只作用于 human 步骤；fixed 步骤不会派单。rule/agent 的候选角色映射读取 in-force grants，caseScoped 本身不产生该映射。
 
 ---
 

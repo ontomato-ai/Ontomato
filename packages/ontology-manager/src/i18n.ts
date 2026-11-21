@@ -566,6 +566,8 @@ const ontologyEn = {
   workflowDeactivate: "Deactivate",
   workflowDelete: "Delete",
   workflowEdit: "Edit",
+  workflowView: "View",
+  workflowClose: "Close",
   workflowActive: "Active",
   workflowInactive: "Inactive",
   workflowDraft: "Draft",
