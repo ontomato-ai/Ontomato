@@ -4,6 +4,7 @@ import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/a
 import { productPanelDisplayName } from "@ontomato/contracts/product-panels";
 import { usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./panel-host";
 import { RefreshCw } from "lucide-vue-next";
+import { ElAlert, ElButton } from "element-plus";
 import { usePageActions, type PlatformPageAction } from "./page-actions";
 
 /**
@@ -47,7 +48,12 @@ const props = withDefaults(defineProps<{
   wired?: readonly string[];
   /** When this is an application's frame: the entry it shows, its menu and where that entry's page goes. */
   currentEntry?: import("./panel-host").DirectPanelRun["currentEntry"];
-}>(), { shown: true, wired: () => [], currentEntry: undefined });
+  /**
+   * Hands why the linked draft could not be used back to the agent, as the sentence for the page's composer. Absent where
+   * the page has no composer (an author's preview): the notice then offers only leaving the draft.
+   */
+  draftToAgent?: (text: string) => void;
+}>(), { shown: true, wired: () => [], currentEntry: undefined, draftToAgent: undefined });
 const emit = defineEmits<{
   /** What a message from this instance carries now. */
   context: [context: import("@ontomato/contracts/page-context").PageContext];
@@ -77,6 +83,12 @@ const view = usePanelInstance(props.port, {
 });
 const frame = ref<HTMLIFrameElement | null>(null);
 /** Where the panel goes in the page: the element its own component is mounted in, placed once. */
+/** Hands the reason back to the agent: the page's composer opens with it, for the reader to send or change. */
+function toAgent() {
+  props.draftToAgent?.(props.labels.draft.toAgentText.replace("{reason}", view.draftRefusal.value));
+  view.dismissDraftRefusal();
+}
+
 function placeCoded(place: unknown) {
   const shown = view.direct.value;
   if (place instanceof HTMLElement && shown && shown.element.parentElement !== place)
@@ -141,9 +153,24 @@ defineExpose({ ...view, operations, commands });
   <section class="panel-host">
     <header v-if="title" class="panel-host-title">{{ title }}</header>
     <p v-if="view.error.value" role="alert" class="panel-host-error">{{ view.error.value }}</p>
+    <!-- A draft the panel cannot take never fails it (owner refused, unreadable, no form takes it): said here, above it. -->
+    <ElAlert
+      v-else-if="view.draftRefusal.value && view.admitted.value"
+      class="panel-host-draft"
+      type="warning"
+      show-icon
+      :title="labels.draft.refused"
+      @close="view.dismissDraftRefusal()"
+    >
+      <p class="panel-host-draft-reason">{{ view.draftRefusal.value }}</p>
+      <div class="panel-host-draft-actions">
+        <ElButton size="small" @click="view.leaveDraft()">{{ labels.draft.leave }}</ElButton>
+        <ElButton v-if="draftToAgent" size="small" @click="toAgent">{{ labels.draft.toAgent }}</ElButton>
+      </div>
+    </ElAlert>
     <!-- Drawn while Java's answer is coming, so its members read at once; shown only once that answer names the page. -->
     <div
-      v-else-if="view.direct.value"
+      v-if="!view.error.value && view.direct.value"
       v-show="view.admitted.value"
       class="panel-host-direct"
       :data-panel-instance="view.instance"
@@ -152,7 +179,7 @@ defineExpose({ ...view, operations, commands });
       <div :ref="placeCoded" class="panel-host-coded" />
     </div>
     <iframe
-      v-else-if="view.document.value && view.admitted.value"
+      v-else-if="!view.error.value && view.document.value && view.admitted.value"
       ref="frame"
       class="panel-host-frame"
       :title="title ?? label"
@@ -183,6 +210,24 @@ defineExpose({ ...view, operations, commands });
   margin: 0 0 var(--spacing-sm, 8px);
   color: var(--el-color-warning);
   font-size: 12px;
+}
+.panel-host-draft {
+  flex-shrink: 0;
+  margin: var(--spacing-md, 12px) var(--spacing-md, 12px) 0;
+  width: auto;
+}
+.panel-host-draft-reason {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.panel-host-draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm, 8px);
+  margin-top: var(--spacing-sm, 8px);
+}
+.panel-host-draft-actions .el-button + .el-button {
+  margin-left: 0;
 }
 .panel-host-frame {
   border: 0;

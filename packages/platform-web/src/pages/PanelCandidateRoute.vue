@@ -41,6 +41,12 @@ const labels = computed<PanelHostLabels>(() => ({
     scriptRejected: t("platform.panelScriptRejected"),
   },
   content: { styleOutside: t("platform.panelStyleOutside") },
+  draft: {
+    refused: t("platform.panelDraftRefused"),
+    leave: t("platform.panelDraftLeave"),
+    toAgent: t("platform.panelDraftToAgent"),
+    toAgentText: t("platform.panelDraftToAgentText", { reason: "{reason}" }),
+  },
   refresh: t("common.refresh"),
 }));
 

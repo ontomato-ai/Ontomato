@@ -124,7 +124,13 @@ export interface DirectPanelRun {
   dirty(dirty: boolean): void;
   /** The reader saved or discarded the draft the address links. */
   draftSettled(draft: PageDraftLink): void;
-  /** The panel cannot run (a draft no form takes, a draft that could not be read), and why. */
+  /**
+   * The draft the address links is one this panel cannot take — the owner refused it, it could not be read, no form takes
+   * it — and why. The panel goes on as it is; the host says so above it, and the reader can leave the draft or hand the
+   * reason back to the agent (the rule that no owner's refusal ever fails the whole panel).
+   */
+  draftRefused(reason: unknown): void;
+  /** The panel cannot run, and why. */
   failed(reason: unknown): void;
   /**
    * The placement's theme, for a panel another panel places: the host lays it over the placed panel's own theme on the
@@ -189,6 +195,12 @@ export interface PanelInstanceView {
   readonly instance: string;
   /** What the panel's author should know without the panel failing: its CSS reached outside it and applies nowhere. */
   readonly notice: Readonly<ShallowRef<string>>;
+  /** Why the draft the address links cannot be used here; empty when there is none, or the reader closed the notice. */
+  readonly draftRefusal: Readonly<ShallowRef<string>>;
+  /** The reader closed the draft's notice: the panel stays as it is, the address still linking the draft. */
+  dismissDraftRefusal(): void;
+  /** The reader leaves the draft: the address drops its draft link and the notice goes. */
+  leaveDraft(): void;
   /** The reader's deep-linkable state, as the address carries it. */
   readonly state: Ref<PanelHostState>;
   /** The instance's address, with its state; never a credential or a form value. */
@@ -227,6 +239,11 @@ export interface PanelHostLabels {
   failures: { fileUnavailable: string; scriptThrew: string; scriptRejected: string };
   /** What a panel tells its author: its CSS reached outside it. */
   content: { styleOutside: string };
+  /**
+   * The notice above a panel whose linked draft it cannot take: its title, the way back to the page without the draft,
+   * handing the reason to the agent, and the sentence the composer is filled with (`{reason}` stands for the reason).
+   */
+  draft: { refused: string; leave: string; toAgent: string; toAgentText: string };
   /** The page command that reads the panel's shown data again. */
   refresh: string;
 }
@@ -318,6 +335,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const direct = shallowRef<DirectInstance | null>(null);
   const instance = newPanelInstanceName();
   const notice = shallowRef("");
+  const draftRefusal = shallowRef("");
   /** Takes the drawn panel's CSS away again. */
   let dropStyle: (() => void) | undefined;
   const pageContext = shallowRef<PageContext | null>(null);
@@ -498,6 +516,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       operations: offered => (operations.value = offered),
       dirty: reportDirty,
       draftSettled: settleDraft,
+      draftRefused: reason => (draftRefusal.value = failureText(reason)),
       failed: reason => reportFrameFailure({ code: PANEL_LOAD_ERROR_CODES.scriptThrew, message: failureText(reason) }),
       ...(options.currentEntry ? { currentEntry: options.currentEntry } : {}),
     };
@@ -509,6 +528,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     dropStyle?.();
     dropStyle = undefined;
     notice.value = "";
+    draftRefusal.value = "";
   }
 
   /** What decides how a source is drawn: its content and declaration, not its revision or identity. */
@@ -812,6 +832,13 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     direct,
     instance,
     notice,
+    draftRefusal,
+    dismissDraftRefusal: () => (draftRefusal.value = ""),
+    leaveDraft() {
+      draftRefusal.value = "";
+      const linked = draftLinkOf(address.value);
+      if (linked) settleDraft(linked);
+    },
     admitted,
     invoke(id, input) {
       if (direct.value) return direct.value.mount.invoke(id, input);
@@ -831,8 +858,13 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
 }
 
 /** Whether an address links exactly this draft. */
+/** The draft an address links, if any. */
+function draftLinkOf(address: string) {
+  return pageDraftLink(Object.fromEntries(new URLSearchParams(address.split("?")[1] ?? "")));
+}
+
 function linksDraft(address: string, draft: PageDraftLink) {
-  const linked = pageDraftLink(Object.fromEntries(new URLSearchParams(address.split("?")[1] ?? "")));
+  const linked = draftLinkOf(address);
   return linked?.sessionId === draft.sessionId && linked.runId === draft.runId && linked.path === draft.path;
 }
 

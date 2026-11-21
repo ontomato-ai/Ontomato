@@ -52,7 +52,7 @@ it("says the owner's refusal of a draft on its form, and does not fail the panel
     manifest,
     run: {
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
       failed: (reason) => failed.push(reason),
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",
@@ -88,7 +88,7 @@ it("says on its form an owner's failure to check a draft's values, and does not 
     manifest,
     run: {
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
       failed: (reason) => failed.push(reason),
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",
