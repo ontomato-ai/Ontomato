@@ -1028,6 +1028,20 @@ test("localized text keeps the owner's language map and language-level field poi
   assert.deepEqual(panelFormSaveInputSchema.parse(input), input);
 });
 
+test("an application icon control preserves the owner's existing icon key", () => {
+  const field = {
+    ...editableField, path: "/icon", label: "Application icon",
+    control: { kind: "application-icon" }, valueSchema: { type: "string" },
+  };
+  for (const icon of ["settings", "legacy-icon-key"]) {
+    const form = { fields: [field], values: { icon }, errors: [], save: ownerSave };
+    assert.deepEqual(panelFormDescriptionSchema.parse(form), form);
+    assert.equal(panelFormDescriptionSchema.safeParse({
+      ...form, fields: [{ ...field, control: { ...field.control, options: [] } }],
+    }).success, false);
+  }
+});
+
 test("nested controls keep relative field metadata and the existing absolute reference port", () => {
   const fields = [
     {
