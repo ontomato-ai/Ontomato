@@ -10,6 +10,12 @@ import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { appsSdkComponentCatalogSchema } from "@ontomato/contracts/apps-sdk";
 import { domainApplicationIconKeys } from "@ontomato/contracts/application-icons";
+import { COMPONENT_PACKAGES_PATH } from "@ontomato/contracts/component-packages";
+import { cataloguePath as installedPackagePath, componentId, release, upload } from "../../__tests__/fixtures/component-packages";
+import { createComponentPackagesRouter } from "../routes/component-packages";
+import { platformService } from "../middleware/platform-service";
+import { errorHandler } from "../middleware";
+import { checkComponentPackageUpgrade } from "../../services/component-packages/upgrade";
 import {
   APPLICATION_PANEL_REFERENCES_PATH, productPanelResponseSchema, productProjectionResponseSchema,
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
@@ -183,10 +189,12 @@ beforeAll(async () => {
       token: req.header("X-Test-Token") ?? "host-reader", locale: "en" });
     next();
   });
+  app.use(COMPONENT_PACKAGES_PATH, createComponentPackagesRouter(platformService, checkComponentPackageUpgrade));
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
   app.use("/api", panelOperationsRouter);
   app.use("/api", appBuilderRouter);
+  app.use(errorHandler);
   app.use("/internal/product-panels", productPanelsInternalRouter);
   server = await new Promise<Server>(resolve => {
     const started = app.listen(0, "127.0.0.1", () => resolve(started));
@@ -799,6 +807,65 @@ it("preserves a code panel's ID and revision rules and describes its member oper
   const unreachable = await validate({ ...application, delivery: { panels: [], projections: ["unreachable"] } });
   expect(unreachable.status).toBe(400);
   expect((await unreachable.json()).error.message).toContain("unreachable");
+});
+
+it("refuses package upgrades that remove a persisted input and identifies its panel users", async () => {
+  const value = { kind: "scalar", type: "string" };
+  const packageFiles = (version: string, inputs: Record<string, object>) => {
+    const files = release(version);
+    const [example] = JSON.parse(files["components.json"]);
+    return { ...files, "components.json": JSON.stringify([{ ...example, inputs }]) };
+  };
+  const packageRequest = (mode: "inspect" | "install", files: Record<string, string>) =>
+    fetch(state.base + COMPONENT_PACKAGES_PATH + "/install", {
+      method: "POST", headers: { "X-Ontomato-Query-Service-Token": "fixture-service" },
+      body: upload(files, mode, "directory"),
+    });
+  const initial = await packageRequest("install", packageFiles("1.0.0", { value, unused: value }));
+  expect(initial.status, await initial.clone().text()).toBe(200);
+  const installed = await initial.json();
+  const projectionId = "package-projection-used";
+  const panelId = "package-panel-using-projection";
+  const projection = await request("PUT", `product-projections/${projectionId}`, {
+    name: "Packaged projection", description: "", visibility: "domain", revision: 0,
+    componentId, config: {}, data: {}, inputs: { value }, outputs: {},
+  });
+  expect(projection.status, await projection.text()).toBe(200);
+  const panel = await request("PUT", `product-panels/${panelId}`, {
+    name: "Packaged panel", description: "", visibility: "domain", revision: 0, content: vuePanelContent(),
+    manifest: { state: {}, commands: {}, members: {
+      example: { target: { projectionId }, inputs: { value: { literal: "Hello" } } },
+    } },
+  });
+  expect(panel.status, await panel.text()).toBe(200);
+
+  // Other domains and damaged siblings still participate in the scan without disclosing their IDs.
+  await state.pool!.query(`INSERT INTO "${state.schema}".product_projections (domain_id,id,owner_id,definition,revision)
+    SELECT 'another-domain','secret-package-projection',owner_id,definition,revision
+    FROM "${state.schema}".product_projections WHERE domain_id='pilot' AND id=$1
+    UNION ALL SELECT 'another-domain','broken-package-projection','reader',$2::jsonb,1`,
+  [projectionId, JSON.stringify({ componentId, inputs: false })]);
+  await state.pool!.query(`INSERT INTO "${state.schema}".product_panels (domain_id,id,owner_id,definition,revision)
+    VALUES ('another-domain','broken-package-panel','reader','{"manifest":{"members":{"bad":false}}}',1)`);
+
+  for (const mode of ["inspect", "install"] as const) {
+    const refused = await packageRequest(mode, packageFiles("2.0.0", { unused: value }));
+    expect(refused.status, await refused.clone().text()).toBe(409);
+    expect(await refused.json()).toMatchObject({
+      code: "COMPONENT_PACKAGE_INCOMPATIBLE",
+      details: { changes: [{ component: componentId, field: "inputs.value", before: value,
+        projectionIds: [projectionId], panelIds: [panelId] }] },
+    });
+  }
+  const current = async () => (await fetch(state.base + installedPackagePath)).json();
+  expect(await current()).toEqual(installed);
+  const compatible = packageFiles("2.0.0", { value });
+  const preview = await packageRequest("inspect", compatible);
+  expect(preview.status, await preview.clone().text()).toBe(200);
+  expect(await current()).toEqual(installed);
+  const upgraded = await packageRequest("install", compatible);
+  expect(upgraded.status, await upgraded.clone().text()).toBe(200);
+  expect(await current()).toEqual(await upgraded.json());
 });
 
 it("rejects an unavailable default agent before accepting a proposed application use", async () => {

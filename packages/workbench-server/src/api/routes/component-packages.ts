@@ -9,7 +9,7 @@ import { credentialsFromRequest, type AuthenticatedRequest } from "../../utils/r
 import { HttpError } from "../../utils/errors";
 import { componentPackageAssetsPath, inspectComponentPackage } from "../../services/component-packages/release";
 import {
-  componentPackageArtifactDirectory, installComponentPackage, readComponentPackage, type CheckComponentPackageUpgrade,
+  componentPackageArtifactDirectory, installComponentPackage, readComponentPackage, requireCompatibleComponentPackage, type CheckComponentPackageUpgrade,
 } from "../../services/component-packages/store";
 import { asyncHandler } from "../utils/http";
 
@@ -39,16 +39,15 @@ export function createComponentPackagesRouter(requireMaintainer: RequestHandler,
     });
     if (!input.success) throw new HttpError(400, input.error.message, "INVALID_REQUEST");
     const { release, files: assets } = await inspectComponentPackage(input.data);
+    const caller = req as AuthenticatedRequest;
+    const { userId, userName, domainId, roles, loginCode, domainName } = caller;
+    const actor = { userId, userName, domainId, roles, loginCode, domainName, credentials: credentialsFromRequest(caller) };
     if (input.data.mode === "inspect") {
+      await requireCompatibleComponentPackage(await readComponentPackage(release.name), release, actor, checkUpgrade);
       res.json(release);
       return;
     }
-    const caller = req as AuthenticatedRequest;
-    const { userId, userName, domainId, roles, loginCode, domainName } = caller;
-    res.json(await installComponentPackage(release, assets, {
-      userId, userName, domainId, roles, loginCode, domainName,
-      credentials: credentialsFromRequest(caller),
-    }, checkUpgrade));
+    res.json(await installComponentPackage(release, assets, actor, checkUpgrade));
   }));
   router.get("/:name", asyncHandler(async (req, res) => {
     const params = componentPackageParamsSchema.safeParse(req.params);
