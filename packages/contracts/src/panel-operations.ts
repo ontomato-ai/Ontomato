@@ -20,6 +20,7 @@ import {
   platformOntologyCountsResponseSchema, platformOntologyNeighborsResponseSchema, platformOntologyObjectsResponseSchema,
   platformOntologyStartResponseSchema,
 } from "./platform-ontology-data";
+import { platformTaskRunPageSchema, platformTaskRunSchema } from "./platform-schedules";
 import { productCatalogueGrantsSchema } from "./product-governance";
 import type { PanelReadResultId } from "./platform-object-types";
 
@@ -102,6 +103,8 @@ export const panelReadResultSchemas = {
   applicationRecord: applicationCatalogueRecordSchema,
   applicationEntries: applicationCatalogueEntriesSchema,
   panelFormDescription: panelFormDescriptionSchema,
+  scheduledTaskRunPage: platformTaskRunPageSchema,
+  scheduledTaskRun: platformTaskRunSchema,
   panelOperationDescriptor: panelOwnerOperationDescriptorSchema,
   panelOptionList: panelOptionListSchema,
   // The graph schema also describes the reads registered here. Resolve its validators on access.
