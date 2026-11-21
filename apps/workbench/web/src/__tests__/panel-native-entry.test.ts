@@ -42,13 +42,13 @@ function answer(request: Sent) {
 }
 
 /** The platform's router as far as entries go: its layout, a page of its own, and the catch-all. */
-async function open(address: string) {
+async function open(address: string, landing = "/home") {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     // The root lands where the deployment's start page says, as the platform's layout route does.
     { ...platformRoutes.layout, component: RouterView, redirect: () => startPage(), children: [
       { path: "/home", component: { render: () => h("p", { class: "home" }, "Home") } },
       // Where the platform's page guard sends a reader whose landing they may not open: their first page, the home here.
-      { ...platformRoutes.ontology, redirect: "/home" },
+      { ...platformRoutes.ontology, redirect: landing },
     ] },
     unknownAddressRoute,
   ] });
@@ -106,5 +106,18 @@ it("lands at a start page a panel has taken over, and home for a reader that ent
     expect(refused.router.currentRoute.value.path).toBe("/home");
   } finally {
     refused.app.unmount();
+  }
+});
+
+it("goes home when the landing picks back the very address nothing serves for this reader, never round again", async () => {
+  installPlatform(answer);
+  window.__APP_CONFIG__ = { INITIAL_ROUTE: "/ontology/components" };
+  // The page guard's choice disagrees with the catalog: it lands the reader on the entry their catalog does not offer.
+  useApplicationCatalog().applications.value = catalogWith([]);
+  const { router, app } = await open("/ontology/components", "/ontology/components");
+  try {
+    expect(router.currentRoute.value.path).toBe("/home");
+  } finally {
+    app.unmount();
   }
 });

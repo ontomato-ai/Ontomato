@@ -26,10 +26,8 @@ export function panelEntryGuard(router: Router): NavigationGuard {
   const catalog = useApplicationCatalog();
   const served = new Set<string>();
   const unknown = (address: string) => router.resolve(address).name === platformRoutes.unknown.name;
-  return async (to) => {
-    if (to.name !== platformRoutes.unknown.name) return true;
-    // A deep link arrives before the shell has read the catalog.
-    if (catalog.applications.value.length === 0) await catalog.refresh();
+  /** Opens every entry the catalog now lists that has no route yet. */
+  function serveEntries() {
     for (const app of catalog.applications.value) {
       if (isPanelApplication(app)) continue;
       for (const use of app.panelUses ?? []) {
@@ -43,10 +41,31 @@ export function panelEntryGuard(router: Router): NavigationGuard {
         });
       }
     }
-    if (!unknown(to.fullPath)) return to.fullPath;
-    // The landing a reader may not open — a start page a panel took over, which this reader's catalog does not offer —
-    // is the platform's landing for such a reader: the first page their access opens, as for a native page they lack.
+  }
+  /** The address last sent to the landing because nothing served it for this reader. */
+  let sentToLanding: string | null = null;
+  return async (to) => {
+    if (to.name !== platformRoutes.unknown.name) return true;
+    serveEntries();
+    // A catalog read for another moment (before sign-in, before a grant) may not list the entry yet: read it again once.
+    if (unknown(to.fullPath)) {
+      await catalog.refresh();
+      serveEntries();
+    }
+    if (!unknown(to.fullPath)) {
+      sentToLanding = null;
+      return to.fullPath;
+    }
     const start = startPage();
-    return unknown(start) ? { name: platformRoutes.ontology.name } : start;
+    if (!unknown(start)) return start;
+    // The landing a reader may not open — a start page a panel took over that this reader's catalog does not offer — is
+    // the platform's landing for such a reader: the first page their access opens, as for a native page they lack. When
+    // that landing picks this same address again, nothing serves it for them: the home.
+    if (sentToLanding === to.fullPath) {
+      sentToLanding = null;
+      return platformRoutes.home.path;
+    }
+    sentToLanding = to.fullPath;
+    return { name: platformRoutes.ontology.name };
   };
 }
