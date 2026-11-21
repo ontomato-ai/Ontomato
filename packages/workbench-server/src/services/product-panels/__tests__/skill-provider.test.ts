@@ -187,6 +187,13 @@ it("describes events as addresses or declared operations in the generated skill"
   const offering = await panelSkillProvider.findByUse(domainId, use, skillReader);
   assert(offering && "provide" in offering);
   const { content } = (await offering.provide(taskRef)).files[0]!;
+  const reads = content.split("### Read current data\n")[1]!.split("\n### Open the panel")[0];
+  expect(reads).toContain('memberPath: [previewSegment,{member:"detail"}]');
+  expect(reads).toContain('dataName: "record"');
+  const operations = content.split("### Declared operations\n")[1]!.split("\n### ")[0];
+  expect(operations).toContain("operations:true");
+  expect(operations).toContain('memberPath: [previewSegment,{member:"approve"}]');
+  expect(operations).toContain('operationId: "preview.approve.approve"');
   const events = content.split("### Panel events\n")[1]!.split("\n\n### Declared operations")[0];
   expect(events).toContain("The names below identify panel events. The `/operate` endpoint accepts only IDs from Declared operations.");
   expect(events).toContain('(reset). Open the current panel\'s canonical address. Set `mode` = `"instance"`, `selectedTask` = `null`');
@@ -448,7 +455,7 @@ it("keeps the package and recipes for a panel independent of its entrance", asyn
     expect(markdown).toContain('"state":"selectedTask"');
     const readSection = markdown.split("### Read current data")[1]!.split("### Open the panel")[0]!;
     expect(readSection).toContain("POST to `$ONTOMATO_PANEL_OPERATIONS_URL/read`");
-    expect(readSection).toContain("`form.form` — form returns `panelFormDescription`");
+    expect(readSection).toContain("Member `form`, dataName `form` — form returns `panelFormDescription`");
     expect(readSection).toContain("X-Ontomato-Callback-Credential");
     expect(readSection).not.toContain("/platform/scheduled-tasks");
     const draftSection = markdown.split("### Draft a change")[1]!.split(/\n### /)[0];
@@ -513,8 +520,8 @@ it("describes both named reads of the model graph", async () => {
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
   expect(markdown).toContain('"id":"platform:ObjectType"');
   expect(markdown).toContain('"edgeEnds":{"source":"/fromclass","target":"/toclass"}');
-  expect(markdown).toContain("`graph.nodes` — list returns `panelRecordList`");
-  expect(markdown).toContain("`graph.edges` — list returns `panelRecordList`");
+  expect(markdown).toContain("Member `graph`, dataName `nodes` — list returns `panelRecordList`");
+  expect(markdown).toContain("Member `graph`, dataName `edges` — list returns `panelRecordList`");
 });
 
 it("documents only the platform ontology reads declared on the projection", async () => {
@@ -533,9 +540,9 @@ it("documents only the platform ontology reads declared on the projection", asyn
   const [offering] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
   const reads = markdown.split("### Read current data")[1]!.split("### Open the panel")[0]!;
-  expect(reads).toContain("`graph.schema` — schema returns `panelGraphSchema`");
-  expect(reads).toContain("`graph.neighbors` — neighbors returns `panelGraphNeighbors`");
-  expect(reads).toContain("`graph.objects` — objects returns `panelOntologyObjects`");
-  expect(reads).not.toContain("graph.counts");
-  expect(reads).not.toContain("graph.start");
+  expect(reads).toContain("Member `graph`, dataName `schema` — schema returns `panelGraphSchema`");
+  expect(reads).toContain("Member `graph`, dataName `neighbors` — neighbors returns `panelGraphNeighbors`");
+  expect(reads).toContain("Member `graph`, dataName `objects` — objects returns `panelOntologyObjects`");
+  expect(reads).not.toContain("dataName `counts`");
+  expect(reads).not.toContain("dataName `start`");
 });

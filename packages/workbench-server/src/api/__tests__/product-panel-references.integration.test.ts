@@ -309,6 +309,17 @@ it("reads a selected nested panel or projection and freezes its actual publisher
       expect.objectContaining({ primaryKey: "@ontomato/sdk:ObjectList" }),
     ]) });
   }
+  const unknownDatum = { source, memberPath: [detail, { member: "components" }], dataName: "components.rows", inputs: {} };
+  const unknown = await request("POST", "product-panels/read", "nested-reader", unknownDatum);
+  expect(await unknown.json()).toEqual({
+    status: "error", message: 'Member "components" does not declare dataName "components.rows". Declared data names: ["rows"].',
+  });
+
+  const unreadable = await request("POST", "product-panels/read", "nested-reader", {
+    ...unknownDatum, memberPath: [selectedPanel(alternate), { member: "components" }],
+  });
+  expect(await unreadable.json()).toEqual({ status: "forbidden" });
+
   await setDetail(alternate);
   const oldDetail = await request("POST", "product-panels/read", "nested-reader", {
     source, memberPath: [resolvedDetail, { member: "components" }], dataName: "rows", inputs: {},

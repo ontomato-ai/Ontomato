@@ -318,8 +318,8 @@ it("derives SDK catalogue reads from the page and serves them through the run's 
   if (!offering || !("kind" in offering)) throw new Error("Expected a registered catalogue panel");
   const skill = (await offering.provide(ref)).files[0]!.content;
   expect(skill).toContain("POST to `$ONTOMATO_PANEL_OPERATIONS_URL/read`");
-  expect(skill).toContain("`catalogue.components` — catalogue returns `panelRecordList`");
-  expect(skill).toContain("`catalogue.componentDefinition` — definition returns `sdkComponentDefinition`");
+  expect(skill).toContain("Member `catalogue`, dataName `components` — catalogue returns `panelRecordList`");
+  expect(skill).toContain("Member `catalogue`, dataName `componentDefinition` — definition returns `sdkComponentDefinition`");
   expect(skill).not.toContain("/apps-sdk/current/components.json");
 
   const runId = randomUUID();
@@ -378,7 +378,7 @@ it("reads detail.definition on the real builtin component entry through the auth
   const offering = await panelSkillProvider.findByUse(domainId, componentsPage, { token: "reader" });
   if (!offering || !("kind" in offering)) throw new Error("Expected an admitted platform panel offering");
   const skill = (await offering.provide(ref)).files[0]!.content;
-  expect(skill).toContain("`detail.definition` — definition returns `sdkComponentDefinition`");
+  expect(skill).toContain("Member `detail`, dataName `definition` — definition returns `sdkComponentDefinition`");
   expect(skill).not.toContain(componentsPage.useId);
 
   const runId = randomUUID();
