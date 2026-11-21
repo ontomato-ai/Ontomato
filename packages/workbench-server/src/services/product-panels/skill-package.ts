@@ -5,7 +5,7 @@ import { skillCatalogDiagnosticsSchema } from "@ontomato/contracts/skills";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { type RuntimeSkillRef, type StandardSkillFrontmatter } from "@ontomato/contracts/agent-runtime-skills";
 import {
-  panelManifestSchema, panelOperationId, type PanelCommand, type PanelManifest, type PanelMemberInput,
+  panelManifestSchema, panelOperationId, type PanelCommand, type PanelMemberInput,
 } from "@ontomato/contracts/panel-manifest";
 import { PAGE_DRAFT_QUERY_KEYS } from "@ontomato/contracts/page-draft";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
@@ -225,7 +225,7 @@ function describePanel(
   };
 }
 
-function describePanelCommand(command: PanelCommand, members: PanelManifest["members"]): string {
+function describePanelCommand(command: PanelCommand): string {
   const action = command.do;
   const value = (source: PanelMemberInput) => {
     if ("literal" in source) return `\`${JSON.stringify(source.literal)}\``;
@@ -245,24 +245,19 @@ function describePanelCommand(command: PanelCommand, members: PanelManifest["mem
   }
 
   const open = action.open;
+  // The reader's way into a conversation: an agent already in one has nothing to run for it.
+  if (open.mode === "conversationEntry")
+    return `A reader's button: it opens the page's composer with the conversation entry member \`${open.member}\` declares. Do not run it.`;
   const input = assignments(open.inputs ?? {});
   const carryState = input ? ` For the destination's deep-linkable fields, put these values in its URL-encoded JSON \`state\` parameter. ${input}.` : "";
-  if (open.mode === "entry") {
-    return `Resolve the entry reference using ${value(open.entry)}. Use its \`primaryKey\` as the use ID in \`GET /api/data-query/platform/applications/resolve-entry?applicationId=<current applicationId>&useId=<entry primaryKey>\`. Open the returned \`data.use.path\`.${carryState}`;
-  }
-  const target = members[open.member].target;
-  if ("projectionId" in target) return `Open the current panel's canonical address to reach its embedded member \`${open.member}\`.`;
-  const panel = "panelId" in target ? `panel \`${target.panelId}\``
-    : "fromState" in target ? `the panel selected for member \`${open.member}\` by state field \`${target.fromState}\``
-      : `the panel used by member \`${open.member}\``;
-  return `Find the admitted entry for ${panel} in \`GET /api/data-query/platform/applications/<current applicationId>/panel-uses\`. Open that entry's \`path\` when available. Use the current panel's canonical address for embedded content.${carryState}`;
+  return `Resolve the entry reference using ${value(open.entry)}. Use its \`primaryKey\` as the use ID in \`GET /api/data-query/platform/applications/resolve-entry?applicationId=<current applicationId>&useId=<entry primaryKey>\`. Open the returned \`data.use.path\`.${carryState}`;
 }
 
-function describeSkill({ name, description, content, state, members, commands, projections, operations, forms, reads, hasPlacedMembers }: PanelDescription): string {
+function describeSkill({ name, description, content, state, commands, projections, operations, forms, reads, hasPlacedMembers }: PanelDescription): string {
   const { recipes, messages } = content;
   const resolveLabel = (key: string) => messages?.[getDefaultLocale()]?.[key] ?? key;
   const declaredCommands = Object.entries(commands).map(([id, command]) =>
-    `- ${resolveLabel(command.labelKey)} (${id}). ${describePanelCommand(command, members)}`);
+    `- ${resolveLabel(command.labelKey)} (${id}). ${describePanelCommand(command)}`);
   return [
     `## ${name}`,
     description,

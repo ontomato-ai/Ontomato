@@ -38,9 +38,9 @@ const panel = definePanel({
       labelKey: "tasks.run",
       do: { invoke: { member: "runTask", operation: "run", inputs: { task: { state: "selectedTask" }, note: { literal: "now" } } } },
     },
-    openForm: {
+    askAgent: {
       labelKey: "tasks.form",
-      do: { open: { mode: "drawer", member: "taskForm", inputs: { task: { state: "selectedTask" }, keep: { literal: true } } } },
+      do: { open: { mode: "conversationEntry", member: "taskForm" } },
     },
     openApplication: {
       labelKey: "tasks.application",
@@ -69,7 +69,7 @@ describe("a panel's commands", () => {
   it("offers the header its commands, in declaration order", () => {
     const { commands } = panelCommands();
     expect(commands.operations().map(({ id, label }) => [id, label])).toEqual([
-      ["clear", "Clear"], ["runNow", "Run now"], ["openForm", "Details"], ["openApplication", "Open"], ["halfSet", "Half"],
+      ["clear", "Clear"], ["runNow", "Run now"], ["askAgent", "Details"], ["openApplication", "Open"], ["halfSet", "Half"],
     ]);
     expect(commands.operations()[0]).toEqual({ id: "clear", label: "Clear", kind: "state", inputSchema: {}, handlerRef: "panel.state.clear" });
   });
@@ -89,10 +89,10 @@ describe("a panel's commands", () => {
     expect(invokeMember.mock.calls).toEqual([["runTask", "run", { task, note: "now" }]]);
   });
 
-  it("hands the host an open with its mode, member and resolved inputs", async () => {
+  it("hands the host a conversation entry's open naming the member whose projection declares it", async () => {
     const { commands, open } = panelCommands({ selectedTask: task });
-    await commands.invoke("openForm");
-    expect(open.mock.calls).toEqual([[{ mode: "drawer", member: "taskForm", inputs: { task, keep: true } }]]);
+    await commands.invoke("askAgent");
+    expect(open.mock.calls).toEqual([[{ mode: "conversationEntry", member: "taskForm" }]]);
   });
 
   it("hands the host an entry open as the object it names", async () => {

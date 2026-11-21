@@ -2,6 +2,7 @@
 import { computed, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { usePanelContext, useProjectionSlot } from "../panel/context";
+import { composerEntry } from "../panel/conversation-entry";
 
 /**
  * Generic conversation entry button (U18): bound to a projection whose `conversationEntry` declares an agent target
@@ -58,15 +59,7 @@ async function openComposer() {
   }
   opening.value = true;
   try {
-    // The panel's text answers the key itself where neither the reader's language nor the default has words for it:
-    // the composer then opens with no sentence, never with the key.
-    const keyed = entry.prefillKey !== undefined ? panel.t(entry.prefillKey) : undefined;
-    const prefill = entry.prefillKey !== undefined ? (keyed === entry.prefillKey ? undefined : keyed) : entry.prefill;
-    await panel.expandPageComposer({
-      slot: slot.slot,
-      target: entry.target,
-      ...(prefill !== undefined ? { prefill } : {}),
-    });
+    await panel.expandPageComposer({ slot: slot.slot, ...composerEntry(entry, panel.t) });
     emit("expanded");
   } catch (reason: unknown) {
     const err = reason instanceof Error ? reason : new Error(String(reason));

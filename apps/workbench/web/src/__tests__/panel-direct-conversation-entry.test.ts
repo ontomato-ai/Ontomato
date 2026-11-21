@@ -100,3 +100,26 @@ it("opens the composer with the opening sentence its key names, in the reader's 
   // Words in neither the reader's language nor the default: the composer opens with no sentence, never with the key.
   expect(await opened("fr", { "zh-CN": { "actions.create": "帮我新建一个动作：" } })).toEqual({ target: governance.target });
 });
+
+/*
+ * A header command that opens a conversation entry (overall designer, 2026-11-21; M6's "new action" as the page's primary
+ * button): the command names a member whose projection declares the entry, and a click does what that member's own
+ * button does — the page's composer opens with the declared agent and sentence. The member needs no place in a layout.
+ */
+it("opens the page's composer from a header command with the entry its member's projection declares", async () => {
+  const keyed: ProductProjection = { ...projection, conversationEntry: { target: governance.target, prefillKey: "actions.create" } };
+  const expanded: PanelConversationEntry[] = [];
+  const instance = createDirectPanelInstance(definePanel({
+    state: {}, members: { createEntry: { target: { projectionId: keyed.id } } },
+    commands: { create: { labelKey: "actions.create", primary: true, do: { open: { mode: "conversationEntry", member: "createEntry" } } } },
+  }), {
+    pageKey: "actions", url: () => "/actions", label: () => "Actions", initial: {},
+    text: createPanelText({ en: { "actions.create": "Help me create an action:" } }, ref("en"), "en"), ...noOperations,
+    recordDraftCreated: async () => {}, expandPageComposer: (entry) => { expanded.push(entry); },
+    readProjection: async () => keyed,
+    read: async () => { throw new Error("A conversation entry reads nothing"); },
+  });
+  expect(instance.operations.value.map(({ id, label }) => [id, label])).toContainEqual(["create", "Help me create an action:"]);
+  await instance.invoke("create");
+  expect(expanded).toEqual([{ target: governance.target, prefill: "Help me create an action:" }]);
+});

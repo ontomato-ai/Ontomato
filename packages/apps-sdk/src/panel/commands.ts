@@ -5,8 +5,8 @@ import type { PanelFieldValue, PanelStateStore } from "./state";
 /*
  * What a panel's commands do (overall design 3.4, 5.1): a command is an operation the header offers and a person or an
  * agent invokes by name. It ends in one of three effects, declared beside the panel's state and members rather than
- * written into a script: set the panel's own state, invoke a member's published operation, or open another member or an
- * application entry.
+ * written into a script: set the panel's own state, invoke a member's published operation, or open the conversation entry
+ * a member's projection declares or an application entry.
  *
  * The values a command sends come from the declaration alone — a literal, or a state field read at the moment of the call
  * — so what a click or an agent's call sends is the same thing. A state change is written once, after every field is
@@ -18,14 +18,14 @@ export interface PanelCommandRuntime {
   readonly state: PanelStateStore;
   /** A member's published operation, by member key and operation name, with the resolved inputs. */
   invokeMember(member: string, operation: string, inputs: Readonly<Record<string, RuntimeJsonValue>>): Promise<unknown>;
-  /** An open the host carries out: another member in a mode, or an application entry. */
+  /** An open: the conversation entry a member's projection declares, or an application entry the host opens. */
   open(request: PanelCommandOpen): Promise<void>;
   /** The panel's own words for a labelKey. */
   text(key: string): string;
 }
 
 export type PanelCommandOpen =
-  | { mode: "replace" | "drawer" | "dialog"; member: string; inputs: Record<string, RuntimeJsonValue> }
+  | { mode: "conversationEntry"; member: string }
   | { mode: "entry"; entry: { className: string; primaryKey: string }; inputs: Record<string, RuntimeJsonValue> };
 
 export interface PanelCommands {
@@ -68,9 +68,8 @@ export function createPanelCommands(manifest: PanelManifest, runtime: PanelComma
       return;
     }
     const open = action.open;
-    const resolved = inputs(open.inputs ?? {}, "open.inputs");
-    if (open.mode === "entry") await runtime.open({ mode: "entry", entry: value(open.entry, "open.entry") as unknown as PanelEntryRef, inputs: resolved });
-    else await runtime.open({ mode: open.mode, member: open.member, inputs: resolved });
+    if (open.mode === "conversationEntry") await runtime.open({ mode: "conversationEntry", member: open.member });
+    else await runtime.open({ mode: "entry", entry: value(open.entry, "open.entry") as unknown as PanelEntryRef, inputs: inputs(open.inputs ?? {}, "open.inputs") });
   }
 
   return {

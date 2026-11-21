@@ -17,6 +17,7 @@ import { admittedOperations, watchMemberOperations, type MemberOperationsState }
 import type { PanelMemberContext } from "./member";
 import { portsOf, readsOwnerForm } from "./ports-of";
 import { slotInputValues } from "./ports";
+import { composerEntry } from "./conversation-entry";
 
 /*
  * A panel drawn directly in the platform's own document (design 4.2): the instance holds its state and its members'
@@ -308,6 +309,12 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   const instance = createPanelInstance(direct, {
     ...options,
     segmentOf,
+    // The member's projection is the platform's own record: its declared entry goes to the page's composer as it is.
+    openConversationEntry: async (member) => {
+      const { conversationEntry } = await directInstance.projectionOf(member);
+      if (!conversationEntry) throw new Error(`Member '${member}' places a projection that declares no conversation entry`);
+      options.expandPageComposer(composerEntry(conversationEntry, options.text));
+    },
     // The shared machinery reads no projection of a direct panel; its members are read here.
     readProjection: () => Promise.reject(new Error("A direct panel's members read their projections through the instance")),
   });

@@ -180,7 +180,7 @@ it("describes panel commands as addresses or declared operations in the generate
         inputs: { task: { state: "selectedTask" } } } } },
       openOverview: { labelKey: "task.overview", do: { open: { mode: "entry",
         entry: { literal: { className: APPLICATION_PANEL_USE, primaryKey: "overview" } } } } },
-      openDetails: { labelKey: "task.details", do: { open: { mode: "drawer", member: "details" } } },
+      askAgent: { labelKey: "task.details", do: { open: { mode: "conversationEntry", member: "run" } } },
     },
   } });
   javaSources(uses);
@@ -201,7 +201,8 @@ it("describes panel commands as addresses or declared operations in the generate
   expect(commands).toContain("`task` = the current value of state field `selectedTask`");
   expect(commands).toContain('"primaryKey":"overview"');
   expect(commands).toContain("Open the returned `data.use.path`.");
-  expect(commands).toContain("Find the admitted entry for panel `panel-task-details`");
+  // The reader's way into a conversation: an agent already in one runs nothing for it.
+  expect(commands).toContain("(askAgent). A reader's button: it opens the page's composer with the conversation entry member `run` declares. Do not run it.");
   expect(commands).not.toContain(uses[1]!.path);
 });
 

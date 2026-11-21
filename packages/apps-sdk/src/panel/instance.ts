@@ -58,6 +58,11 @@ export interface PanelInstanceOptions {
   memberPath?: PanelMemberPath;
   /** A member's segment of a path: its key, with the selection that placed it where the panel's state chose it. */
   segmentOf?: (member: string) => PanelMemberPath[number];
+  /**
+   * Opens the page's composer with the conversation entry a member's projection declares, as that member's button does:
+   * what a header command that opens a conversation entry does. A panel in a frame has none, and such a command rejects.
+   */
+  openConversationEntry?: (member: string) => Promise<void>;
 }
 
 /** A path that names at least one member: a nested publisher's, as the platform finds its operations by. */
@@ -201,8 +206,12 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   const commands = createPanelCommands(manifest, {
     state,
     invokeMember: (member, operation, input) => invoke(operationIdOf(member, operation), input),
-    // Another member placed in a mode and an application entry are a later stage's; this release opens neither.
-    open: (request) => Promise.reject(new Error(`This SDK release opens no ${request.mode === "entry" ? "application entry" : "member"} from a command`)),
+    // An application entry is a later stage's; this release opens none.
+    open: (request) => request.mode === "entry"
+      ? Promise.reject(new Error("This SDK release opens no application entry from a command"))
+      : options.openConversationEntry
+        ? options.openConversationEntry(request.member)
+        : Promise.reject(new Error("A panel in a frame opens no conversation entry from a command")),
     text: options.text,
   });
   const operations = computed<PanelOperationBinding[]>(() => [
