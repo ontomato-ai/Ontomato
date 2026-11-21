@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ontology-applications",
+      "input": {
+        "name": "应用",
+        "description": "本体管理器产品层的“应用”：本域可见的应用、它们的身份、入口、用到的面板与投影、维护与授权"
+      }
+    }
+  ]
+}

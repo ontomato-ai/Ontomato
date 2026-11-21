@@ -1,0 +1,455 @@
+<!--
+  The panel directory (product layer, "panels"): the panels this domain grants the reader — searched, scoped, sorted and
+  paged through the panel owner's own list read — beside the chosen one: its overview, source and copy, members, usage
+  and grants, with an inline preview of the selected panel.
+
+  Everything that reads or writes goes through the owner's declared reads and operations on `platform:ProductPanel`
+  (with `platform:User` for the owners' names, and `platform:ProductProjection` for one member's record). This file owns
+  the layout only.
+-->
+<style>
+  [v-cloak] { display: none; }
+  .pd {
+    display: grid;
+    grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr);
+    gap: var(--page-content-gap, 16px);
+    align-items: start;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--el-text-color-primary);
+  }
+  @media (max-width: 64rem) {
+    .pd { grid-template-columns: minmax(0, 1fr); }
+  }
+  .pd-pane {
+    min-width: 0;
+    border: 1px solid var(--el-border-color-light);
+    border-radius: 10px;
+    background: var(--el-bg-color);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .pd-header { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; }
+  .pd-header h1 { font-size: 18px; font-weight: 600; margin: 0; }
+  .pd-header h2 { font-size: 15px; font-weight: 600; margin: 0; }
+  .pd-header p { margin: 0; color: var(--el-text-color-secondary); flex: 1 1 18rem; min-width: 0; }
+  .pd-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-inline-start: auto; }
+  .pd-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .pd-bar > .pd-input { flex: 1 1 10rem; }
+  .pd-input, .pd-select {
+    height: 30px;
+    padding: 0 8px;
+    border: 1px solid var(--el-border-color);
+    border-radius: 6px;
+    background: var(--el-fill-color-blank);
+    color: var(--el-text-color-primary);
+    font: inherit;
+    min-width: 0;
+  }
+  .pd-select { max-width: 11rem; }
+  .pd-btn {
+    height: 30px;
+    padding: 0 10px;
+    border: 1px solid var(--el-border-color);
+    border-radius: 6px;
+    background: var(--el-fill-color-blank);
+    color: var(--el-text-color-primary);
+    font: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .pd-btn:hover:not(:disabled) { border-color: var(--el-color-primary); color: var(--el-color-primary); }
+  .pd-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .pd-btn.primary { background: var(--el-color-primary); border-color: var(--el-color-primary); color: #fff; }
+  .pd-btn.primary:hover:not(:disabled) { color: #fff; opacity: .9; }
+  .pd-btn.danger { color: var(--el-color-danger); border-color: var(--el-color-danger-light-5, var(--el-color-danger)); }
+  .pd-btn.small { height: 26px; padding: 0 8px; font-size: 12px; }
+  .pd-table { width: 100%; border-collapse: collapse; }
+  .pd-table th {
+    text-align: start;
+    font-weight: 500;
+    color: var(--el-text-color-secondary);
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--el-border-color-light);
+    white-space: nowrap;
+  }
+  .pd-table td { padding: 6px 8px; border-bottom: 1px solid var(--el-border-color-lighter); vertical-align: top; }
+  .pd-table tr.pd-row { cursor: pointer; }
+  .pd-table tr.pd-row:hover td { background: var(--el-fill-color-light); }
+  .pd-table tr.pd-row.chosen td { background: var(--el-color-primary-light-9); }
+  .pd-name { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pd-sub { display: block; color: var(--el-text-color-secondary); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pd-table td code { overflow-wrap: anywhere; }
+  .pd-tag {
+    display: inline-block;
+    padding: 0 6px;
+    border-radius: 4px;
+    background: var(--el-fill-color-light);
+    color: var(--el-text-color-regular);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .pd-tag.on { background: var(--el-color-primary-light-9); color: var(--el-color-primary); }
+  .pd-note { margin: 0; color: var(--el-text-color-secondary); font-size: 12px; }
+  .pd-error { margin: 0; padding: 6px 8px; border-radius: 6px; background: var(--el-color-danger-light-9); color: var(--el-color-danger); }
+  .pd-hint { margin: 0; padding: 6px 8px; border-radius: 6px; background: var(--el-color-warning-light-9); color: var(--el-color-warning-dark-2, var(--el-color-warning)); }
+  .pd-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--el-border-color-light); padding-bottom: 6px; }
+  .pd-tab {
+    height: 28px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--el-text-color-secondary);
+    font: inherit;
+    cursor: pointer;
+  }
+  .pd-tab.active { background: var(--el-color-primary-light-9); color: var(--el-color-primary); font-weight: 500; }
+  .pd-fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 0; }
+  .pd-fields dt { color: var(--el-text-color-secondary); }
+  .pd-fields dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  .pd-code {
+    margin: 0;
+    max-height: 22rem;
+    overflow: auto;
+    padding: 8px 10px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 6px;
+    background: var(--el-fill-color-light);
+    font-family: var(--el-font-family-mono, ui-monospace, monospace);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .pd-section { display: flex; flex-direction: column; gap: 6px; }
+  .pd-section > h3 { margin: 0; font-size: 13px; font-weight: 600; }
+  .pd-inline { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .pd-cards { display: flex; flex-direction: column; gap: 10px; }
+  .pd-form { display: flex; flex-direction: column; gap: 8px; }
+  .pd-form label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--el-text-color-secondary); }
+</style>
+<div id="app" v-cloak>
+  <section class="pd">
+    <aside class="pd-pane">
+      <div class="pd-header">
+        <h1>{{ t('title') }}</h1>
+      </div>
+      <p class="pd-note">{{ t('description') }}</p>
+      <div class="pd-bar">
+        <input
+          class="pd-input"
+          type="search"
+          :value="searchText"
+          :placeholder="t('list.search')"
+          :aria-label="t('list.search')"
+          @input="onSearchInput"
+        />
+      </div>
+      <div class="pd-bar">
+        <select class="pd-select" :value="scope" :aria-label="t('list.scope')" @change="onScope">
+          <option value="all">{{ t('scope.all') }}</option>
+          <option value="mine">{{ t('scope.mine') }}</option>
+          <option value="shared">{{ t('scope.shared') }}</option>
+        </select>
+        <select class="pd-select" :value="sort" :aria-label="t('list.sort')" @change="onSort">
+          <option value="updated">{{ t('sort.updated') }}</option>
+          <option value="name">{{ t('sort.name') }}</option>
+        </select>
+        <select class="pd-select" :value="templateFilter" :aria-label="t('list.template')" @change="onTemplateFilter">
+          <option value="all">{{ t('template.all') }}</option>
+          <option value="template">{{ t('template.only') }}</option>
+          <option value="ordinary">{{ t('template.ordinary') }}</option>
+        </select>
+      </div>
+      <div class="pd-bar">
+        <button type="button" class="pd-btn primary" @click="startCreate">{{ t('action.create') }}</button>
+        <button type="button" class="pd-btn" :disabled="loading" @click="reload">{{ t('action.refresh') }}</button>
+      </div>
+      <p v-if="rowsError" class="pd-error">{{ t('error', { message: rowsError }) }}</p>
+      <p v-if="loading" class="pd-note">{{ t('busy') }}</p>
+      <p v-else-if="!visibleRows.length" class="pd-note">{{ t('list.empty') }}</p>
+      <table v-else class="pd-table">
+        <thead>
+          <tr>
+            <th>{{ t('list.name') }}</th>
+            <th>{{ t('list.owner') }}</th>
+            <th>{{ t('list.visibility') }}</th>
+            <th>{{ t('list.template') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="row in visibleRows"
+            :key="row.id"
+            class="pd-row"
+            :class="{ chosen: selected && selected.primaryKey === row.id }"
+            @click="pick(row)"
+          >
+            <td>
+              <span class="pd-name">{{ row.name }}</span>
+              <span v-if="row.description" class="pd-sub">{{ row.description }}</span>
+            </td>
+            <td>{{ ownerName(row.ownerId) }}</td>
+            <td><span class="pd-tag" :class="{ on: row.visibility === 'domain' }">{{ visibilityLabel(row.visibility) }}</span></td>
+            <td><span class="pd-tag" :class="{ on: row.template }">{{ row.template ? t('template.yes') : t('template.no') }}</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="pd-bar">
+        <span class="pd-note">{{ t('list.count', { count: rows.length }) }} · {{ t('list.paging', { page: page }) }}</span>
+        <button type="button" class="pd-btn small" :disabled="page <= 1 || loading" @click="previousPage">{{ t('list.prev') }}</button>
+        <button type="button" class="pd-btn small" :disabled="!nextCursor || loading" @click="nextPage">{{ t('list.next') }}</button>
+      </div>
+    </aside>
+
+    <main class="pd-pane">
+      <p v-if="recordState.status === 'forbidden'" class="pd-error">{{ t('detail.forbidden') }}</p>
+      <p v-if="failure" class="pd-error">{{ t('error', { message: failure }) }}</p>
+      <p v-if="message" class="pd-note">{{ message }}</p>
+
+      <!-- the create and edit form: kept mounted so an agent's draft reaches it while the detail is open -->
+      <div v-show="mode === 'create' || mode === 'edit'" class="pd-cards">
+        <div class="pd-header">
+          <h2>{{ mode === 'create' ? t('form.new') : t('form.edit') }}</h2>
+          <div class="pd-actions">
+            <button type="button" class="pd-btn" @click="cancelMode">{{ t('action.cancel') }}</button>
+          </div>
+        </div>
+        <p v-if="mode === 'edit' && record && !record.editable" class="pd-hint">{{ t('detail.readonly') }}</p>
+        <projection slot="form" @saved="onSaved" @discarded="onDiscarded"></projection>
+      </div>
+
+      <!-- the chosen panel, or a copy / template step -->
+      <div v-if="mode !== 'create' && mode !== 'edit'" class="pd-cards">
+        <p v-if="!selected" class="pd-note">{{ t('detail.empty') }}</p>
+        <p v-else-if="recordState.status === 'empty'" class="pd-note">{{ t('detail.missing') }}</p>
+        <p v-else-if="!record" class="pd-note">{{ t('busy') }}</p>
+
+        <template v-else>
+          <div class="pd-header">
+            <h2>{{ record.name }}</h2>
+            <div class="pd-actions">
+              <button type="button" class="pd-btn" :disabled="!record.editable" @click="startEdit">{{ t('action.edit') }}</button>
+              <button type="button" class="pd-btn" :disabled="!record.editable" @click="startCopy">{{ t('action.copy') }}</button>
+              <button type="button" class="pd-btn" :disabled="!record.template" @click="startFromTemplate">{{ t('action.fromTemplate') }}</button>
+              <button type="button" class="pd-btn" :disabled="!record.editable" @click="startSaveAsTemplate">{{ t('action.saveAsTemplate') }}</button>
+              <button type="button" class="pd-btn danger" :disabled="!record.editable" @click="remove">{{ t('action.delete') }}</button>
+            </div>
+          </div>
+          <p v-if="!record.editable" class="pd-hint">{{ t('detail.readonly') }}</p>
+
+          <div v-if="mode === 'copy' || mode === 'saveAsTemplate'" class="pd-form">
+            <p class="pd-note">{{ t('copy.note') }}</p>
+            <label>{{ t('copy.newId') }}<input class="pd-input" v-model="draftId" /></label>
+            <label>{{ t('copy.newName') }}<input class="pd-input" v-model="draftName" /></label>
+            <div class="pd-inline">
+              <button type="button" class="pd-btn primary" :disabled="busy || !draftId || !draftName" @click="copyPanel(mode === 'saveAsTemplate')">
+                {{ mode === 'saveAsTemplate' ? t('action.saveAsTemplate') : t('action.copy') }}
+              </button>
+              <button type="button" class="pd-btn" @click="mode = 'view'">{{ t('action.cancel') }}</button>
+            </div>
+          </div>
+
+          <div v-if="mode === 'fromTemplate'" class="pd-form">
+            <p class="pd-note">{{ t('template.note') }}</p>
+            <label>{{ t('copy.newId') }}<input class="pd-input" v-model="draftId" /></label>
+            <label>{{ t('copy.newName') }}<input class="pd-input" v-model="draftName" /></label>
+            <div class="pd-inline">
+              <button type="button" class="pd-btn primary" :disabled="busy || !draftId || !draftName" @click="createFromTemplate">{{ t('action.fromTemplate') }}</button>
+              <button type="button" class="pd-btn" @click="mode = 'view'">{{ t('action.cancel') }}</button>
+            </div>
+          </div>
+
+          <nav class="pd-tabs">
+            <button v-for="item in tabs" :key="item.key" type="button" class="pd-tab" :class="{ active: tab === item.key }"
+              @click="tab = item.key">{{ t(item.label) }}</button>
+          </nav>
+
+          <!-- overview -->
+          <section v-if="tab === 'overview'" class="pd-section">
+            <dl class="pd-fields">
+              <dt>{{ t('field.id') }}</dt><dd><code>{{ record.id }}</code></dd>
+              <dt>{{ t('field.name') }}</dt><dd>{{ record.name }}</dd>
+              <dt>{{ t('field.description') }}</dt><dd>{{ record.description || '—' }}</dd>
+              <dt>{{ t('field.owner') }}</dt><dd>{{ ownerName(record.ownerId) }}</dd>
+              <dt>{{ t('field.visibility') }}</dt><dd>{{ visibilityLabel(record.visibility) }}</dd>
+              <dt>{{ t('field.template') }}</dt><dd>{{ record.template ? t('template.yes') : t('template.no') }}</dd>
+              <dt>{{ t('field.editable') }}</dt><dd>{{ record.editable ? t('editable.yes') : t('editable.no') }}</dd>
+              <dt>{{ t('field.revision') }}</dt><dd>{{ record.revision }}</dd>
+              <dt>{{ t('field.updated') }}</dt><dd>{{ formatTime(record.updatedAt) }}</dd>
+              <dt>{{ t('field.created') }}</dt><dd>{{ formatTime(record.createdAt) }}</dd>
+              <dt>{{ t('field.class') }}</dt>
+              <dd><code>platform:ProductPanel</code><br /><span class="pd-note">{{ t('class.hint') }}</span></dd>
+            </dl>
+          </section>
+
+          <!-- source -->
+          <section v-if="tab === 'source'" class="pd-section">
+            <h3>{{ t('source.html') }}</h3>
+            <pre class="pd-code">{{ record.content.html }}</pre>
+            <h3>{{ t('source.module') }}</h3>
+            <pre class="pd-code">{{ record.content.module }}</pre>
+            <h3>{{ t('source.style') }}</h3>
+            <pre class="pd-code">{{ record.content.style || t('source.none') }}</pre>
+            <h3>{{ t('source.recipes') }}</h3>
+            <pre class="pd-code">{{ record.content.recipes || t('source.none') }}</pre>
+            <h3>{{ t('source.messages') }}</h3>
+            <pre class="pd-code">{{ messagesText }}</pre>
+          </section>
+
+          <!-- members -->
+          <section v-if="tab === 'members'" class="pd-section">
+            <p v-if="!memberRows.length" class="pd-note">{{ t('members.empty') }}</p>
+            <table v-else class="pd-table">
+              <thead>
+                <tr>
+                  <th>{{ t('members.member') }}</th>
+                  <th>{{ t('members.target') }}</th>
+                  <th>{{ t('members.inputs') }}</th>
+                  <th>{{ t('members.outputs') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in memberRows" :key="row.key">
+                  <td><code>{{ row.key }}</code></td>
+                  <td>
+                    <span class="pd-tag">{{ t(row.targetLabel) }}</span>
+                    <span class="pd-sub"><code>{{ row.reference }}</code></span>
+                    <button v-if="row.projectionId" type="button" class="pd-btn small" style="margin-top:4px"
+                      @click="inspectProjection(row.projectionId)">{{ t('action.viewProjection') }}</button>
+                  </td>
+                  <td><span class="pd-sub">{{ row.inputs }}</span></td>
+                  <td><span class="pd-sub">{{ row.outputs }}</span></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="pd-section">
+              <h3>{{ t('members.projectionRecord') }}</h3>
+              <p v-if="!projectionId" class="pd-note">{{ t('members.projectionEmpty') }}</p>
+              <template v-else>
+                <dl v-if="projectionRecord" class="pd-fields">
+                  <dt>{{ t('field.id') }}</dt><dd><code>{{ projectionRecord.id }}</code></dd>
+                  <dt>{{ t('field.name') }}</dt><dd>{{ projectionRecord.name }}</dd>
+                  <dt>{{ t('field.description') }}</dt><dd>{{ projectionRecord.description || '—' }}</dd>
+                  <dt>{{ t('field.owner') }}</dt><dd>{{ ownerName(projectionRecord.ownerId) }}</dd>
+                  <dt>{{ t('members.target') }}</dt><dd><code>{{ projectionRecord.componentId }}</code></dd>
+                </dl>
+                <p v-else class="pd-note">{{ t('busy') }}</p>
+                <p class="pd-note">{{ t('members.directoryHint') }}</p>
+              </template>
+            </div>
+          </section>
+
+          <!-- usage -->
+          <section v-if="tab === 'usage'" class="pd-section">
+            <h3>{{ t('usage.entries') }}</h3>
+            <p v-if="!applicationEntries.length" class="pd-note">{{ t('usage.none') }}</p>
+            <table v-else class="pd-table">
+              <thead><tr><th>{{ t('list.name') }}</th><th>{{ t('members.target') }}</th></tr></thead>
+              <tbody>
+                <tr v-for="entry in applicationEntries" :key="entry.entryId">
+                  <td>{{ entry.applicationName }}</td>
+                  <td>
+                    <button type="button" class="pd-btn small" @click="openAddress(entry.path)">{{ t('action.inspect') }}</button>
+                    <span class="pd-sub"><code>{{ entry.path }}</code></span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="pd-inline">
+              <button type="button" class="pd-btn small" @click="openAddress('/applications')">{{ t('action.allApplications') }}</button>
+            </div>
+            <h3>{{ t('usage.panels') }}</h3>
+            <p v-if="!usingPanels.length" class="pd-note">{{ t('usage.none') }}</p>
+            <div v-else class="pd-inline">
+              <button v-for="panel in usingPanels" :key="panel.id" type="button" class="pd-btn small" @click="pickById(panel.id)">
+                {{ panel.name }}
+              </button>
+            </div>
+            <h3>{{ t('usage.classes') }}</h3>
+            <p v-if="!classNames.length" class="pd-note">{{ t('usage.none') }}</p>
+            <p v-else class="pd-note"><code v-for="name in classNames" :key="name" style="margin-inline-end:8px">{{ name }}</code></p>
+            <p v-if="hiddenCount" class="pd-hint">{{ t('usage.hidden', { count: hiddenCount }) }}</p>
+            <h3>{{ t('usage.skills') }}</h3>
+            <p v-for="entry in applicationEntries" :key="'skill-' + entry.entryId" class="pd-note">
+              {{ t('usage.skill', { pageKey: entry.path }) }}
+            </p>
+            <p v-if="!applicationEntries.length" class="pd-note">{{ t('usage.none') }}</p>
+          </section>
+
+          <!-- grants -->
+          <section v-if="tab === 'grants'" class="pd-section">
+            <h3>{{ t('grants.existing') }}</h3>
+            <p v-if="grantsError" class="pd-error">{{ t('error', { message: grantsError }) }}</p>
+            <p v-else-if="!grantRows.length" class="pd-note">{{ t('grants.none') }}</p>
+            <table v-else class="pd-table">
+              <thead>
+                <tr>
+                  <th>{{ t('grants.kind') }}</th>
+                  <th>{{ t('grants.principalId') }}</th>
+                  <th>{{ t('grants.verb') }}</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="grant in grantRows" :key="grant.kind + ':' + grant.principalId + ':' + grant.verb">
+                  <td>{{ grantKindLabel(grant.kind) }}</td>
+                  <td><code>{{ grant.principalId || '—' }}</code></td>
+                  <td>{{ verbLabel(grant.verb) }}</td>
+                  <td>
+                    <button v-if="grant.removable && record.editable" type="button" class="pd-btn small" :disabled="busy"
+                      @click="revokeGrant(grant)">{{ t('action.revoke') }}</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <h3>{{ t('grants.state') }}</h3>
+            <p class="pd-note">{{ grantsShared ? t('grants.shared') : t('grants.notShared') }} · {{ visibilityLabel(record.visibility) }}</p>
+            <div class="pd-inline">
+              <button type="button" class="pd-btn" :disabled="!record.editable || busy" @click="share(true)">{{ t('action.shareOn') }}</button>
+              <button type="button" class="pd-btn" :disabled="!record.editable || busy" @click="share(false)">{{ t('action.shareOff') }}</button>
+            </div>
+            <p class="pd-note">{{ t('grants.shareNote') }}</p>
+            <h3>{{ t('grants.grant') }}</h3>
+            <div class="pd-inline">
+              <select class="pd-select" v-model="grantKind" :aria-label="t('grants.kind')">
+                <option value="role">{{ t('grants.role') }}</option>
+                <option value="principal">{{ t('grants.principal') }}</option>
+              </select>
+              <input class="pd-input" v-model="grantId" :placeholder="t('grants.principalId')" :aria-label="t('grants.principalId')" />
+              <select class="pd-select" v-model="grantVerb" :aria-label="t('grants.verb')">
+                <option value="use">{{ t('grants.use') }}</option>
+                <option value="edit">{{ t('grants.edit') }}</option>
+              </select>
+              <button type="button" class="pd-btn primary" :disabled="!record.editable || busy || !grantId.trim()" @click="changeGrant(false)">{{ t('action.grant') }}</button>
+              <button type="button" class="pd-btn" :disabled="!record.editable || busy || !grantId.trim()" @click="changeGrant(true)">{{ t('action.revoke') }}</button>
+            </div>
+            <h3>{{ t('grants.receipt') }}</h3>
+            <pre class="pd-code">{{ receipt || t('grants.none') }}</pre>
+          </section>
+
+          <section v-if="tab === 'preview'" class="pd-section">
+            <h3>{{ t('preview.live') }}</h3>
+            <projection slot="preview"></projection>
+          </section>
+        </template>
+      </div>
+    </main>
+  </section>
+
+  <!-- members the page's own code drives; they draw nothing here -->
+  <div hidden>
+    <projection slot="listRows"></projection>
+    <projection slot="owners"></projection>
+    <projection slot="detail"></projection>
+    <projection slot="projectionRecord"></projection>
+    <projection slot="copyOp"></projection>
+    <projection slot="deleteOp"></projection>
+    <projection slot="grantOp"></projection>
+    <projection slot="revokeOp"></projection>
+    <projection slot="shareOp"></projection>
+  </div>
+</div>

@@ -94,6 +94,15 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       search: { kind: "scalar", type: "string" },
     });
     assert.equal(declared.get("ObjectSummary").outputs, undefined, "navigating is an event, not a state");
+    // A placement hands a graph its running inputs from the panel's state, which an inline member binds by these names.
+    const ontologyNode = { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] };
+    assert.deepEqual(declared.get("OntologyGraph").inputs, {
+      mode: { kind: "scalar", type: "string" },
+      start: ontologyNode,
+      selected: ontologyNode,
+      selectedType: { kind: "scalar", type: "string" },
+      query: { kind: "scalar", type: "string" },
+    });
     // Components that only ran in the old frame are not offered until each runs in the platform's page: an author never
     // places one that would not work there.
     for (const withdrawn of ["FileUploadControl"])
