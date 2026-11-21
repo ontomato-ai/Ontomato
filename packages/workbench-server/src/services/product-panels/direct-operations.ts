@@ -1,5 +1,5 @@
 import { panelWriteOperationSnapshotSchema } from "@ontomato/contracts/panel-agent";
-import { panelObjectRefSchema, panelOperationId, panelPortAccepts, type PanelMember } from "@ontomato/contracts/panel-manifest";
+import { panelObjectRefSchema, panelOperationId, panelPortAccepts, type PanelMember, type PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import { projectionOperationTargetMatches } from "@ontomato/contracts/panel-projection";
 import type { ApplicationPanelUse, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
@@ -9,6 +9,7 @@ import { HttpError } from "../../utils/errors";
 import { describeObjectAction, objectActionOperation, resolveObjectAction } from "../action/object-actions";
 import type { ProductOwner } from "../product-governance/grants";
 import { requireDirectPanelMember } from "./current";
+import { resolvePanelMemberPath } from "./member-path";
 import { allowsOperationDraft, boundProjectionOperations, type BoundProjectionOperation } from "./operation-bindings";
 import { operationHost } from "./operation-host";
 import { describeServerOperation, type PanelOperationActor, type PanelOperationTarget, type PanelRecordTarget, type PanelWriteServerOperation } from "./server-operations";
@@ -20,6 +21,7 @@ interface Placement {
   projection: ProductProjection;
   member: PanelMember;
   slot: string;
+  nested?: { memberPath: PanelMemberPath; publisherPanelId: string };
 }
 
 function unavailable(id: string): never {
@@ -77,7 +79,7 @@ async function admitBoundOperation(actor: PanelOperationActor, placement: Placem
   const { slot, projection } = placement;
   const { binding, owner } = bound;
   const { descriptor, fixed, selected } = resolveTarget(placement, bound, selection, actor.credentials.locale);
-  const id = panelOperationId(slot, bound.name);
+  const id = panelOperationId(placement.nested?.memberPath.map(segment => segment.member) ?? slot, bound.name);
   if (binding.operation.kind === "Action") {
     if (selected?.kind !== "object") return undefined;
     const { objectType, primaryKey } = selected;
@@ -85,7 +87,8 @@ async function admitBoundOperation(actor: PanelOperationActor, placement: Placem
     const handler: PanelWriteServerOperation = objectActionOperation(resolved);
     const described = { ...describeObjectAction(resolved), target: descriptor };
     const operation = panelWriteOperationSnapshotSchema.parse({
-      ...described, id, slot, action: { actionId: resolved.actionId, codeHash: resolved.codeHash, object: resolved.object },
+      ...described, ...placement.nested, id, slot,
+      action: { actionId: resolved.actionId, codeHash: resolved.codeHash, object: resolved.object },
     });
     return { effect: "write" as const, handler, operation, descriptor: described, fixedTarget: selected };
   }
@@ -104,7 +107,7 @@ async function admitBoundOperation(actor: PanelOperationActor, placement: Placem
   const draft = handler.kind === "form.save" && selected?.kind !== "object";
   if (draft && !allowsOperationDraft(projection, handler)) return undefined;
   const described = describeServerOperation(handler, label, slot, draft ? { source: "draft", slot } : descriptor);
-  const operation = panelWriteOperationSnapshotSchema.parse({ ...described, id, slot });
+  const operation = panelWriteOperationSnapshotSchema.parse({ ...described, ...placement.nested, id, slot });
   return { effect: "write" as const, handler, operation, descriptor: described,
     fixedTarget: draft ? { kind: "draft" as const } : fixed };
 }
@@ -130,16 +133,25 @@ export async function readAdmittedProjectionOperations(actor: PanelOperationActo
 
 export async function declaredDirectOperation(
   owner: ProductOwner, credentials: AssistantCredentials, use: ApplicationPanelUse, panel: ProductPanel, id: string,
-  target?: PanelOperationTarget | null,
+  target?: PanelOperationTarget | null, memberPath?: PanelMemberPath,
 ) {
   const separator = id.lastIndexOf(".");
   if (separator < 1) return unavailable(id);
-  const slot = id.slice(0, separator);
-  const { member, projection } = await requireDirectPanelMember(owner, credentials, panel, slot);
-  const bound = boundProjectionOperations(projection).find(({ name }) => name === id.slice(separator + 1));
+  const name = id.slice(separator + 1);
+  const slot = memberPath?.at(-1)?.member ?? id.slice(0, separator);
+  if (id !== panelOperationId(memberPath?.map(segment => segment.member) ?? slot, name)) return unavailable(id);
+  let placement: Placement;
+  if (memberPath) {
+    const resolved = await resolvePanelMemberPath(owner, credentials, panel, memberPath, use);
+    if (resolved.kind !== "projection") return unavailable(id);
+    placement = { ...resolved, slot, nested: { memberPath, publisherPanelId: resolved.panel.id } };
+  } else {
+    placement = { ...await requireDirectPanelMember(owner, credentials, panel, slot), panel, slot };
+  }
+  const bound = boundProjectionOperations(placement.projection).find(entry => entry.name === name);
   if (!bound) return unavailable(id);
-  const current = await admitBoundOperation({ owner, credentials }, { panel, projection, member, slot }, bound, () => target);
+  const current = await admitBoundOperation({ owner, credentials }, placement, bound, () => target);
   if (!current) throw new HttpError(400, `Select an eligible target for operation '${id}'`, "PANEL_SELECTION_REQUIRED");
   if (current.effect === "read") return current;
-  return { ...current, use, projection: { id: projection.id, binding: current.handler.binding } };
+  return { ...current, use, projection: { id: placement.projection.id, binding: current.handler.binding } };
 }

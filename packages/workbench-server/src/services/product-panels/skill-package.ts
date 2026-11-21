@@ -183,7 +183,8 @@ function describePanel(
     projections,
     operations,
     forms: operations.filter(operation => operation.owner?.handler.kind === "form.save"),
-    reads: describeReads(projections.flatMap(projection => projection.reads)),
+    reads: describeReads(projections.flatMap(projection => projection.reads),
+      Object.values(manifest.members).some(({ target }) => !("projectionId" in target))),
   };
 }
 
@@ -240,14 +241,18 @@ function describeOperation({ id, label, binding, owner, draft }: OperationDescri
   return `${summary} Call target schema ${schema(handler.targetSchema)}. Call input schema ${schema(handler.inputSchema)}. ${handler.formInstructions}${created}`;
 }
 
-function describeReads(reads: readonly { member: string; dataName: string; read: string; result: string }[]): string {
-  if (!reads.length) return "";
+function describeReads(reads: readonly { member: string; dataName: string; read: string; result: string }[], hasPlacedMembers: boolean): string {
+  if (!reads.length && !hasPlacedMembers) return "";
   return [
     "### Read current data",
     "Before answering what is on this page or what is selected, read the relevant named data below and answer from the result. Use the page context to identify the entry and selected object, then read its current data.",
     "POST to `$ONTOMATO_PANEL_OPERATIONS_URL/read` with `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. This calls the same named read as the panel.",
     "Send JSON `{source:{kind:\"registered\",applicationId,useId},memberPath:[{member}],dataName,inputs}`. Use the registered application and use from the page context. Supply the projection's declared inputs from that context or the requested selection. Use an empty object when no inputs are needed.",
     "A ready result carries the current owner data in `value`. Respect forbidden and error results.",
+    ...(hasPlacedMembers ? [
+      "A selection's `memberPath` identifies the child panel that supplied it. To inspect the mounted child's declared state and members, POST `{source,memberPath}` to `$ONTOMATO_PANEL_OPERATIONS_URL/nested` with the same callback headers.",
+      "For a child member's datum, append its segment to that path for the read. Carry the actual selection on any segment that has one. For a nested operation, send its full operation ID and the same memberPath ending at its publishing projection.",
+    ] : []),
     ...reads.map(({ member, dataName, read, result }) =>
       `- \`${member}.${dataName}\` — ${read} returns \`${result}\`.`),
   ].join("\n");

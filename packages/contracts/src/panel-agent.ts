@@ -143,9 +143,11 @@ export const panelObjectActionSnapshotSchema = z.object({
 export type PanelObjectActionSnapshot = z.infer<typeof panelObjectActionSnapshotSchema>;
 
 export const panelWriteOperationSnapshotSchema = panelOwnerOperationDescriptorSchema.extend({
-  id: key,
+  id: panelOperationIdSchema,
   kind: z.enum(["form.save", "action"]),
   slot: key,
+  memberPath: panelOperationRefSchema.shape.memberPath,
+  publisherPanelId: key.optional(),
   effect: z.literal("write"),
   action: panelObjectActionSnapshotSchema.optional(),
 }).superRefine((operation, ctx) => {
