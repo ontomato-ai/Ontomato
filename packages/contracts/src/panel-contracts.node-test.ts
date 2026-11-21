@@ -632,7 +632,7 @@ test("application addresses carry independent frame and entry state while preser
 
 test("the application reference check carries both theme modes as literal strings", async () => {
   const { applicationPanelReferencesRequestSchema } = await import("./product-panels");
-  const theme = { light: { "--el-color-primary": "#498" }, dark: { "--radius-md": "8px" } };
+  const theme = { light: { "--radius-md": "6px" }, dark: { "--radius-md": "8px" } };
   const reference = { domainId: "school", uses: [], delivery: { panels: [], projections: [] }, theme };
   assert.deepEqual(applicationPanelReferencesRequestSchema.parse(reference).theme, theme);
   const invalid = applicationPanelReferencesRequestSchema.safeParse({ ...reference, theme: { dark: { "--radius-md": 4 } } });
@@ -674,7 +674,7 @@ test("entry resolution and personal-state scope use the actual use and nested pa
     inputs: { term: { frameState: "term" }, role: { literal: null } },
   };
   const response = {
-    applicationId: "app-tasks", use, framePanelId: "site-frame", theme: { dark: { "--el-color-primary": "#0084ff" } },
+    applicationId: "app-tasks", use, framePanelId: "site-frame", theme: { dark: { "--radius-md": "10px" } },
     menu: { groups: [{ key: "plan", names: { en: "Plan" }, sort: 0 }], panelUses: [use] },
   };
   assert.deepEqual(applicationEntryResolutionSchema.parse(response), response);
