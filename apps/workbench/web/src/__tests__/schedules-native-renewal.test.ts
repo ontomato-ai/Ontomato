@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
+import { appsSdkComponentCatalogEntrySchema } from "@ontomato/contracts/apps-sdk";
 import { expandPanelAuthoringMember } from "@ontomato/contracts/panel-authoring-expansion";
 import { panelAuthoringManifestSchema } from "@ontomato/contracts/panel-authoring";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
@@ -34,7 +35,9 @@ const objectTypes = Object.fromEntries(Object.entries(platformObjectTypes).map((
   }) }),
 ]));
 const { members: authoring, ...manifest } = panelAuthoringManifestSchema.parse(source.manifest);
-const catalogue = components.map(component => ({ ...component, ports: { props: [], events: [], slots: [] } }));
+const catalogue = components.map(component => appsSdkComponentCatalogEntrySchema.parse({
+  ...component, ports: { props: [], events: [], slots: [] },
+}));
 const projections = new Map<string, ProductProjection>();
 const members = Object.fromEntries(Object.entries(authoring).map(([name, definition]) => {
   if (!("component" in definition)) throw new Error(`Expected an authored projection for ${name}`);
