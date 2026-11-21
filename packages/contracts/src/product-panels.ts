@@ -12,6 +12,7 @@ import {
 } from "./panel-projection";
 import { platformObjectTypes } from "./platform-object-types";
 import { applicationMetadataSchema } from "./application-metadata";
+import { domainApplicationIconSchema } from "./application-icons";
 import { pageSkillContextSchema, pageSkillEntranceSchema } from "./page-skills";
 import { runtimeJsonValueSchema, type RuntimeJsonValue } from "./agent-runtime-values";
 import { dashboardCardRequestSchema, dashboardChartFileSchema } from "./dashboard";
@@ -351,6 +352,8 @@ export const applicationPanelReferencesRequestSchema = z.object({
   framePanelId: id.optional(),
   uses: z.array(applicationPanelUseSchema.pick({ id: true, panelId: true, inputs: true, defaultAgent: true })),
   theme: applicationEntrySettings.theme,
+  /** Submit on creation or when the icon changes. Unchanged stored values are not checked here. */
+  icon: domainApplicationIconSchema.optional(),
   delivery: applicationDeliverySchema.pick({ panels: true, projections: true }),
 }).strict();
 export type ApplicationPanelReferencesRequest = z.infer<typeof applicationPanelReferencesRequestSchema>;

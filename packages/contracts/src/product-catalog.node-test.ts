@@ -261,6 +261,26 @@ test("panel entry descriptions round-trip without giving an unnamed entry a menu
   assert.deepEqual(applicationEntryResolutionSchema.parse(resolution), resolution);
 });
 
+test("new domain application icons use one catalogue while identity reads preserve old keys", async () => {
+  const { domainApplicationIconKeys } = await import("./panel-check");
+  const { applicationIconKeys, recommendApplicationIcon } = await import("./application-icons");
+  const { applicationPanelReferencesRequestSchema } = await import("./product-panels");
+  const { applicationIdentityUpdateSchema } = await import("./application-catalogue");
+  const request = { domainId: "test-domain", uses: [], delivery: { panels: [], projections: [] } };
+  for (const icon of ["settings", "ontology", "book", "not-a-platform-icon"]) {
+    assert.equal(domainApplicationIconKeys.some(key => key === icon), false);
+    assert.equal(applicationIdentityUpdateSchema.parse({ names: { en: "Legacy" }, descriptions: {}, icon }).icon, icon);
+    const invalid = applicationPanelReferencesRequestSchema.safeParse({ ...request, icon });
+    assert.equal(invalid.success, false);
+    if (!invalid.success) assert.match(invalid.error.issues[0]!.message, /Choose one of app-window/);
+  }
+  assert.ok(applicationIconKeys.includes("settings"));
+  const icon = recommendApplicationIcon("Knowledge");
+  assert.ok(domainApplicationIconKeys.includes(icon));
+  assert.equal(applicationPanelReferencesRequestSchema.parse({ ...request, icon }).icon, icon);
+  assert.equal(applicationPanelReferencesRequestSchema.safeParse(request).success, true);
+});
+
 test("accepts a legacy hosted application entry without widening the panel registration response", async () => {
   const { applicationCatalogueEntriesSchema, applicationCatalogueRecordSchema } = await import("./application-catalogue");
   const { applicationPanelUsesResponseSchema } = await import("./product-panels");
