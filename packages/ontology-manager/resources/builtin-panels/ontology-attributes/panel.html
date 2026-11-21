@@ -46,7 +46,7 @@
         <el-option v-for="type in types" :key="type.primaryKey" :value="type.primaryKey"
           :label="`${type.label} (${type.primaryKey})`"></el-option>
       </el-select>
-      <span class="attrs-count">{{ t("attr.count", { count: visibleRows.length }) }}</span>
+      <span v-if="countText !== null" class="attrs-count">{{ t("attr.count", { count: countText }) }}</span>
     </div>
     <div class="attrs-body" :class="{ single: !selected && !creating }">
       <div class="attrs-table">

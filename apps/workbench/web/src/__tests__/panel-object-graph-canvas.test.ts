@@ -7,7 +7,7 @@ import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { OBJECT_TYPE, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
-import type { GraphCanvasEdge, GraphCanvasNode, GraphCanvasPoint } from "@ontomato/foundation-ui/graph/g6";
+import { G6_READABLE_ZOOM, type GraphCanvasEdge, type GraphCanvasNode, type GraphCanvasPoint } from "@ontomato/foundation-ui/graph/g6";
 import { createDirectPanelInstance } from "../../../../../packages/apps-sdk/src/panel/direct";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
@@ -31,6 +31,7 @@ const canvas = {
   selectedEdges: [] as readonly string[],
   editable: false,
   emit: null as null | ((event: string, ...args: unknown[]) => void),
+  fits: [] as unknown[],
 };
 vi.mock("@ontomato/foundation-ui/graph/g6", async () => {
   const actual = await vi.importActual<typeof import("@ontomato/foundation-ui/graph/g6")>("@ontomato/foundation-ui/graph/g6");
@@ -45,7 +46,7 @@ vi.mock("@ontomato/foundation-ui/graph/g6", async () => {
     emits: ["update:selected", "update:selectedEdges", "blank", "connect", "move", "activate", "viewport"],
     setup(props, { emit, expose }) {
       canvas.emit = emit as never;
-      expose({ fit: async () => {}, relayout: async () => {}, exportImage: async () => new Blob(["png"], { type: "image/png" }) });
+      expose({ fit: async (options: unknown) => void canvas.fits.push(options), relayout: async () => {}, exportImage: async () => new Blob(["png"], { type: "image/png" }) });
       return () => {
         canvas.nodes = props.nodes as never;
         canvas.edges = props.edges as never;
@@ -62,7 +63,11 @@ vi.mock("@ontomato/foundation-ui/graph/g6", async () => {
 const record = { domainId: "d", ownerId: "o", revision: 1, createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "" };
 const graph = (editable: boolean): DirectProjection => ({
   ...record, id: editable ? "model-graph-editable" : "model-graph", name: "Model graph", componentId: "@ontomato/sdk:ObjectGraph",
-  inputs: {}, outputs: {
+  inputs: {
+    highlightedNodes: { kind: "list", items: { kind: "object", objectType: OBJECT_TYPE } },
+    highlightedEdges: { kind: "list", items: { kind: "object", objectType: RELATIONSHIP } },
+  },
+  outputs: {
     selectedNode: { kind: "object", objectType: OBJECT_TYPE }, selectedEdge: { kind: "object", objectType: RELATIONSHIP },
     connectFrom: { kind: "scalar", type: "string" }, connectTo: { kind: "scalar", type: "string" },
     positions: { kind: "node-positions" },
@@ -80,10 +85,13 @@ const manifest = (projectionId: string): DirectPanelManifest => ({
     connectFrom: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: false, external: false },
     connectTo: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: false, external: false },
     positions: { type: { kind: "node-positions" }, personal: true, deepLink: false, external: false },
+    pathClasses: { type: { kind: "list", items: { kind: "object", objectType: OBJECT_TYPE } }, personal: false, deepLink: false, external: false },
+    pathRelations: { type: { kind: "list", items: { kind: "object", objectType: RELATIONSHIP } }, personal: false, deepLink: false, external: false },
   },
   members: {
     graph: {
       target: { projectionId },
+      inputs: { highlightedNodes: { state: "pathClasses" }, highlightedEdges: { state: "pathRelations" } },
       outputs: {
         selectedNode: { state: "selectedClass" }, selectedEdge: { state: "selectedRelation" },
         connectFrom: { state: "connectFrom" }, connectTo: { state: "connectTo" }, positions: { state: "positions" },
@@ -92,18 +100,20 @@ const manifest = (projectionId: string): DirectPanelManifest => ({
   },
   commands: {},
 });
-const classes = [
+const twoClasses = [
   { primaryKey: "org", label: "Organization", fields: {} },
   { primaryKey: "person", label: "Person", fields: {} },
 ];
-const relations = [{ primaryKey: "works-in", label: "Works in", fields: { fromclass: "person", toclass: "org" } }];
+const oneRelation = [{ primaryKey: "works-in", label: "Works in", fields: { fromclass: "person", toclass: "org" } }];
+let classes = twoClasses;
+let relations = oneRelation;
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
 
 const mounted: { unmount(): void }[] = [];
 afterEach(() => {
   for (const app of mounted.splice(0)) app.unmount();
   document.body.innerHTML = "";
-  Object.assign(canvas, { nodes: [], edges: [], selected: [], selectedEdges: [], editable: false, emit: null });
+  Object.assign(canvas, { nodes: [], edges: [], selected: [], selectedEdges: [], editable: false, emit: null, fits: [] });
 });
 
 function mount(editable: boolean, initial: Record<string, unknown> = {}) {
@@ -159,4 +169,49 @@ it("hands the panel a new relationship's two ends only where it is editable, and
   canvas.emit!("move", "person", { x: 10, y: 20 } satisfies GraphCanvasPoint);
   await nextTick();
   expect(instance.state.values.value.positions).toEqual({ org: { x: 400, y: 120 }, person: { x: 10, y: 20 } });
+});
+
+it("places classes nobody placed by their relations, and opens on the chosen class, else the most connected, at a readable size", async () => {
+  classes = ["award", "org", "person", "title", "paper"].map((key) => ({ primaryKey: key, label: key, fields: {} }));
+  relations = [["person", "org"], ["person", "award"], ["person", "title"], ["paper", "award"]]
+    .map(([from, to]) => ({ primaryKey: `${from}-${to}`, label: `${from} to ${to}`, fields: { fromclass: from!, toclass: to! } }));
+  try {
+    mount(false);
+    await vi.waitFor(() => expect(canvas.nodes).toHaveLength(5));
+    const x = (id: string) => canvas.nodes.find((node) => node.id === id)!.x!;
+    // The most connected class first, those one relation away next to it, the one two away after them.
+    expect(x("org")).toBe(x("award"));
+    expect(x("title")).toBe(x("award"));
+    expect(x("person")).toBeLessThan(x("org"));
+    expect(x("paper")).toBeGreaterThan(x("award"));
+    // Each edge drawn with its relationship's name.
+    expect(canvas.edges.map(({ label }) => label)).toContain("person to org");
+    await vi.waitFor(() => expect(canvas.fits).toEqual([expect.objectContaining({ minZoom: G6_READABLE_ZOOM, around: "person" })]));
+
+    for (const app of mounted.splice(0)) app.unmount();
+    canvas.fits = [];
+    mount(false, { selectedClass: { className: OBJECT_TYPE, primaryKey: "paper" } });
+    await vi.waitFor(() => expect(canvas.fits).toEqual([expect.objectContaining({ minZoom: G6_READABLE_ZOOM, around: "paper" })]));
+  } finally {
+    classes = twoClasses;
+    relations = oneRelation;
+  }
+});
+
+it("draws what the panel highlights — a path, a search's hits — standing out and the rest faded, without choosing it", async () => {
+  const { instance } = mount(false);
+  await vi.waitFor(() => expect(canvas.nodes).toHaveLength(2));
+  expect(canvas.nodes.map(({ tone }) => tone ?? "default")).toEqual(["default", "default"]);
+
+  instance.state.set("pathClasses", [{ className: OBJECT_TYPE, primaryKey: "person" }] as never);
+  await vi.waitFor(() => expect(canvas.nodes.map(({ id, tone }) => [id, tone])).toEqual([["org", "muted"], ["person", "accent"]]));
+  expect(canvas.edges.map(({ tone }) => tone)).toEqual(["muted"]);
+  instance.state.set("pathRelations", [{ className: RELATIONSHIP, primaryKey: "works-in" }] as never);
+  await vi.waitFor(() => expect(canvas.edges.map(({ tone }) => tone)).toEqual(["accent"]));
+  expect(canvas.selected).toEqual([]);
+  expect(instance.state.values.value.selectedClass ?? null).toBeNull();
+
+  instance.state.set("pathClasses", [] as never);
+  instance.state.set("pathRelations", [] as never);
+  await vi.waitFor(() => expect(canvas.nodes.map(({ tone }) => tone ?? "default")).toEqual(["default", "default"]));
 });

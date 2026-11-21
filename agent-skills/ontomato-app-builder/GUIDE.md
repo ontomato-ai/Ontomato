@@ -31,6 +31,7 @@ Create short members from the reads listed by `panel type`. For customer ontolog
 | --- | --- |
 | `sdk read docs/components.md` | Current SDK component guide with data, configuration, outputs and events |
 | `sdk read components.json` | The same current SDK's machine-readable component catalogue |
+| `sdk icons` | Icon choices for domain applications from the current SDK |
 | `panel type <type-id> [--read <name>]` | Read signature with its result schema. With no filter, list the type's reads and operations. |
 | `panel delete application\|panel <id>` | Delete a trial application or panel through its owner |
 | `panel projection <id>`, `panel get <id>` | Authorized current projection or panel, including its revision |

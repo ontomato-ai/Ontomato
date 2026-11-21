@@ -171,6 +171,6 @@ export async function readNestedPanel(
   })();
   if (placement.kind !== "panel" || !("revision" in placement.panel))
     throw new HttpError(404, "The member path does not select a panel", "PANEL_MEMBER_UNAVAILABLE");
-  const { id, revision, content, manifest } = placement.panel;
-  return { panel: { id, revision, content, manifest } };
+  const { id, revision, content, manifest, theme } = placement.panel;
+  return { panel: { id, revision, content, manifest, ...(theme !== undefined && { theme }) } };
 }

@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import com.alibaba.fastjson2.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.BuiltinProductIds;
 import java.nio.charset.StandardCharsets;
@@ -22,14 +23,13 @@ public class ApplicationCatalog {
     private static final org.slf4j.Logger log = LoggerFactory.getLogger(ApplicationCatalog.class);
     public record PanelUseLocation(String applicationId, Map<String, String> names, String useId, String path) {}
     public record EntryMenu(List<Group> groups, List<ApplicationPanelUse> panelUses) {}
-    public record ThemeOverrides(Map<String, String> light, Map<String, String> dark) {}
     public record Delivery(List<String> panels, List<String> projections, List<String> packages, List<String> agents,
                            List<PageSkills.Skill> skills) {}
-    private record PanelSettings(String framePanelId, ThemeOverrides theme, Delivery delivery) {
+    private record PanelSettings(String framePanelId, JsonNode theme, Delivery delivery) {
         JSONObject json() {
             var result = new JSONObject();
             if (framePanelId != null) result.put("framePanelId", framePanelId);
-            if (theme != null) result.put("theme", theme);
+            if (theme != null) result.put("theme", JSON.parseObject(theme.toString()));
             if (delivery != null) result.put("delivery", delivery);
             return result;
         }
@@ -281,10 +281,12 @@ public class ApplicationCatalog {
     public ApplicationController.IdentityUpdate updateIdentity(String id, ApplicationController.IdentityUpdate update, User user) {
         return transactions.execute(tx -> {
             lockCatalog();
-            requireDomainMaintainer(require(id), user);
+            var current = require(id);
+            requireDomainMaintainer(current, user);
             var errors = ApplicationCatalogueForm.identityErrors(JSONObject.of(
                 "names", update.names(), "descriptions", update.descriptions(), "icon", update.icon()));
             if (!errors.isEmpty()) throw bad(errors.getFirst().get("message").asText());
+            requireIconChange(current, update.icon(), user);
             db.update("UPDATE sys_application SET names=?::jsonb,descriptions=?::jsonb,icon=?,updated_at=now() WHERE id=? AND domain_id=?",
                 JSON.toJSONString(update.names()), JSON.toJSONString(update.descriptions()), update.icon(), id, user.getDomainId());
             return update;
@@ -298,11 +300,24 @@ public class ApplicationCatalog {
         return inDomain(app,user) && access.canEnter(app,user);
     }
     public boolean canReconcileProducts(User user){return access.administrator(user)&&canEnter("app-builder",user);}
-    public void updateIcon(String id,String icon,User user){
-        var app=require(id);
-        if(app.getString("domainId")==null||!inDomain(app,user)||!access.canMaintain(app,user))throw denied();
-        if (!validIcon(icon)) throw bad("Invalid application icon");
-        db.update("UPDATE sys_application SET icon=?,updated_at=now() WHERE id=?",icon,id);
+    public void updateIcon(String id, String icon, User user) {
+        transactions.executeWithoutResult(tx -> {
+            lockCatalog();
+            var app = require(id);
+            requireDomainMaintainer(app, user);
+            if (icon == null) throw bad("An application icon is required");
+            requireIconChange(app, icon, user);
+            db.update("UPDATE sys_application SET icon=?,updated_at=now() WHERE id=?", icon, id);
+        });
+    }
+
+    private static String changedIcon(JSONObject application, String icon) {
+        return application != null && Objects.equals(application.getString("icon"), icon) ? null : icon;
+    }
+
+    private void requireIconChange(JSONObject application, String icon, User user) {
+        var changed = changedIcon(application, icon);
+        if (changed != null) panels.requireCurrent(user.getDomainId(), null, List.of(), null, null, changed);
     }
     public JSONObject view(JSONObject app, User user) {
         return view(app, user, new BuiltinPageKeys(all()));
@@ -420,6 +435,7 @@ public class ApplicationCatalog {
                 if (!kind.equals(a.getString("kind")) || !Objects.equals(user.getDomainId(),a.getString("domainId")) ||
                     !access.canMaintain(a,user)) throw denied();
             }
+            requireIconChange(old.orElse(null), declaration.icon(), user);
             String owner = old.isEmpty() ? user.getId() : old.get().getString("ownerUserId");
             String path=kind.equals("product")?"/products/"+id+"?applicationId="+id:"/apps/"+id+"/";
             save(id, user.getDomainId(), List.of("hosted","product").contains(kind) ? "workbench" : "data-engine", owner, kind, "apps", "business", 100,
@@ -666,11 +682,15 @@ public class ApplicationCatalog {
     }
 
     private static JSONObject entryResolution(JSONObject app, ApplicationPanelUse use, List<ApplicationPanelUse> allowed) {
-        var named = allowed.stream().filter(entry -> entry.names() != null).toList();
+        boolean panels = panelManaged(app);
+        var named = allowed.stream().filter(entry -> entry.names() != null)
+            .map(entry -> panels ? entry : entry.withoutInputs()).toList();
         var groupKeys = new HashSet<>(named.stream().map(ApplicationPanelUse::groupKey).toList());
         var groups = app.getList("groups", Group.class).stream().filter(group -> groupKeys.contains(group.key()))
             .sorted(Comparator.comparingInt(Group::sort)).toList();
-        var result = JSONObject.of("applicationId", app.getString("id"), "use", use, "menu", new EntryMenu(groups, named));
+        var result = JSONObject.of("applicationId", app.getString("id"), "use", panels ? use : use.withoutInputs(),
+            "menu", new EntryMenu(groups, named));
+        if (!panels) return result;
         var settings = app.getJSONObject("panelSettings");
         if (settings.containsKey("framePanelId")) result.put("framePanelId", settings.getString("framePanelId"));
         if (settings.containsKey("theme")) result.put("theme", settings.getJSONObject("theme"));
@@ -760,7 +780,6 @@ public class ApplicationCatalog {
         var ids = new HashSet<>(uses.stream().map(ApplicationPanelUse::panelId).toList());
         if (settings.framePanelId() != null) ids.add(settings.framePanelId());
         for (var panelId : ids) if (!grants.allowed(panelId, "use")) throw denied();
-        panels.requireCurrent(user.getDomainId(), settings.framePanelId(), uses, settings.delivery());
         return transactions.execute(tx -> {
             lockCatalog();
             var current = all().stream().filter(app -> id.equals(app.getString("id"))).findFirst();
@@ -781,6 +800,8 @@ public class ApplicationCatalog {
                 validateUseGroups(uses, supplied == null ? old.getList("groups", Group.class) : supplied.groups());
             var entry = JSONObject.of("path", entryPath, "renderer", "panels");
             validateMappings(id, user.getDomainId(), entry, List.of(), uses);
+            panels.requireCurrent(user.getDomainId(), settings.framePanelId(), uses, settings.delivery(), settings.theme(),
+                supplied == null ? null : changedIcon(old, supplied.icon()));
             if (old != null && supplied == null) {
                 db.update("UPDATE sys_application SET entry=?::jsonb,entry_path=?,entry_access=?::jsonb,panel_uses=?::jsonb,panel_settings=?::jsonb,page_skills='[]'::jsonb,updated_at=now() WHERE id=?",
                     entry.toJSONString(), entryPath, JSON.toJSONString(entryAccess), JSON.toJSONString(uses, JSONWriter.Feature.WriteMapNullValue),
@@ -804,10 +825,6 @@ public class ApplicationCatalog {
 
     private static ResponseStatusException applicationAlreadyExists(String id) {
         return new ResponseStatusException(HttpStatus.CONFLICT, "Application " + id + " already exists");
-    }
-
-    static boolean validIcon(String icon) {
-        return icon != null && icon.matches("[a-z][a-z0-9-]{0,63}");
     }
 
     static String assignedPanelRoot(String id) { return "/applications/" + id; }

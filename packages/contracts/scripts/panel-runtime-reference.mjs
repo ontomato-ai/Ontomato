@@ -6,7 +6,6 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { referenceMarkdown, componentMetadata } from "../../apps-sdk/reference.mjs";
 import { ENTRIES } from "../../apps-sdk/release-entries.mjs";
 import capabilityMap from "../../apps-sdk/examples/panels/capability-map/declaration.mjs";
-import { applicationIconKeys } from "../src/application-icons.ts";
 import { panelAddress, panelDataStateSchema } from "../src/panel-host.ts";
 import { directPanelPortTypeSchema, panelChildObjectIdentitySchema, panelStateFieldSchema } from "../src/panel-manifest.ts";
 import { panelModuleSpecifiers } from "../src/panel-module.ts";
@@ -113,7 +112,8 @@ const contents = [
   "",
   `Direct panel modules can import ${inline(Object.values(panelModuleSpecifiers))}.`,
   "",
-  `The supported application icon IDs are ${inline(applicationIconKeys)}.`,
+  'For a domain application, choose `declaration.icon` from `node "$SKILL/ontomato.mjs" sdk icons`.',
+  "The built-in icons identify the platform's own entries.",
   "To show an application by its icon key, draw `<component :is=\"appIcon(key)\" :size=\"16\" />` with `appIcon` from",
   "`@ontomato/sdk/panel`: it is the platform's own icon for the key, and an unknown key draws the platform's fallback.",
   "",

@@ -379,7 +379,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         actualCatalog.putPanelUses("app-local", registration, second);
         assertEquals("builtin-product-browser",
             actualCatalog.require("app-local").getList("panelUses", ApplicationPanelUse.class).getFirst().panelId());
-        verify(panels).requireCurrent("domain-two", null, List.of(localUse), null);
+        verify(panels).requireCurrent("domain-two", null, List.of(localUse), null, null, "pages");
     }
 
     private ApplicationCatalog.Builtin builtInBrowser(String panelId) {
@@ -448,6 +448,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.framePanelId").value("panel-frame"))
             .andExpect(jsonPath("$.data.theme.light['--el-color-primary']").value("#123456"))
             .andExpect(jsonPath("$.data.use.inputs.term.literal").hasJsonPath())
+            .andExpect(jsonPath("$.data.menu.panelUses[0].inputs.term.literal").hasJsonPath())
             .andExpect(jsonPath("$.data.delivery").doesNotHaveJsonPath()).andReturn().getResponse().getContentAsString();
         var byUse = http.perform(get(resolve).param("applicationId", "app-school").param("useId", "school"))
             .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
@@ -603,7 +604,10 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
                 .contentType(MediaType.APPLICATION_JSON).content("""
                     {"section":"create","target":{"kind":"draft","id":"app-translated"},
                      "values":{"declaration":{"names":{"en":"App","zh-CN":"应用","ko-KR":"앱"},
-                                              "descriptions":{"zh-CN":"应用说明"},"icon":"pages","groups":[],"permissions":[]},
+                                              "descriptions":{"zh-CN":"应用说明"},"icon":"pages",
+                                              "groups":[{"key":"tools","names":{"en":"Tools","zh-CN":"工具"},"sort":7}],
+                                              "permissions":[{"code":"app:app-translated:read","names":{"en":"Read","zh-CN":"查看"},
+                                                              "groupKey":"tools","sort":3}]},
                                "entry":{"path":"/applications/app-translated","renderer":"panels"},
                                "entryAccess":["domain-member"],"panelUses":[]}}
                     """))
@@ -617,6 +621,29 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.fields[0].control.fields[1].label").value("说明"))
             .andExpect(jsonPath("$.data.fields[0].control.fields[1].control.multiline").value(true))
             .andExpect(jsonPath("$.data.fields[0].control.fields[2].label").value("图标"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[2].control.kind").value("application-icon"))
+            .andExpect(jsonPath("$.data.values.declaration.icon").value("pages"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[3].control.kind").value("object-array"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[3].control.itemFields[0].path").value("/key"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[3].control.itemFields[1].control.kind").value("localized-text"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[3].control.itemFields[1].control.primaryLocale").value("zh-CN"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[3].control.itemFields[2].control.kind").value("number"))
+            .andExpect(jsonPath("$.data.values.declaration.groups[0].names['zh-CN']").value("工具"))
+            .andExpect(jsonPath("$.data.values.declaration.groups[0].sort").value(7))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].label").value("菜单权限"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.kind").value("object-array"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemKeyPath").doesNotHaveJsonPath())
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.defaultItem.code").value("app:app-translated:"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[0].label").value("权限码"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[1].control.kind").value("localized-text"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[1].control.requiredLocales[0]").value("en"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[2].path").value("/groupKey"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[3].control.kind").value("number"))
+            .andExpect(jsonPath("$.data.values.declaration.permissions[0].names['zh-CN']").value("查看"))
+            .andExpect(jsonPath("$.data.fields[1].path").value("/entry/path"))
+            .andExpect(jsonPath("$.data.fields[1].label").value("应用地址"))
+            .andExpect(jsonPath("$.data.fields[1].control.kind").value("text"))
+            .andExpect(jsonPath("$.data.values.entry.renderer").value("panels"))
             .andExpect(jsonPath("$.data.values.declaration.names['ko-KR']").value("앱"))
             .andExpect(jsonPath("$.data.values.declaration.descriptions['zh-CN']").value("应用说明"));
     }
@@ -644,9 +671,18 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.errors[0].field").value("/declaration/groups"))
             .andExpect(jsonPath("$.data.save.path").value(saved));
-        declaration.put("groups", List.of());
+        declaration.put("groups", List.of(JSONObject.of("key", "tools", "names", JSONObject.of("en", "Tools"), "sort", 0)));
+        var permission = JSONObject.of("code", ApplicationCatalog.permissionPrefix(id) + "read",
+            "names", JSONObject.of("en", ""), "groupKey", "tools", "sort", 3);
+        declaration.put("permissions", List.of(permission));
+        http.perform(post(CATALOGUE + "/form").contentType(MediaType.APPLICATION_JSON)
+                .content(JSONObject.of("section", "create", "target", JSONObject.of("kind", "draft", "id", id), "values", values).toJSONString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.errors[0].field").value("/declaration/permissions/0/names/en"));
+        permission.getJSONObject("names").put("en", "Read");
         http.perform(put(saved).contentType(MediaType.APPLICATION_JSON).content(values.toJSONString()))
             .andExpect(status().isOk());
+        assertEquals(permission, catalog.require(id).getJSONArray("permissions").getJSONObject(0));
         var before = records();
         http.perform(put(saved).contentType(MediaType.APPLICATION_JSON).content(values.toJSONString()))
             .andExpect(status().isConflict());
@@ -654,11 +690,149 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
 
         http.perform(post(CATALOGUE + "/form").contentType(MediaType.APPLICATION_JSON).content("""
             {"section":"identity","target":{"kind":"object","objectType":"platform:Application","primaryKey":"%s"},
-             "values":{"names":{"en":"Example"},"descriptions":{},"icon":"bad icon"},"changedField":"/icon"}
+             "values":{"names":{"en":"Example"},"descriptions":{},"icon":42},"changedField":"/icon"}
             """.formatted(id))).andExpect(status().isOk())
             .andExpect(jsonPath("$.data.errors[0].field").value("/icon"))
             .andExpect(jsonPath("$.data.save.path").value("/platform/applications/" + id + "/identity"));
         assertEquals(before, records());
+    }
+
+    @Test void resolvesNativePanelEntriesAndTheirMenusWithoutFrameThemeOrInputs() throws Exception {
+        var declared = builtin("native-frame-demo", "native");
+        var use = new ApplicationPanelUse("overview", "native-frame-demo-overview", "builtin-product-overview",
+            "/native-frame-demo/overview", new ApplicationPanelUse.Access(null, "domain-member"), null,
+            Map.of("en", "Overview"), Map.of("en", "Explain the overview"),
+            Map.of("term", Map.of("literal", "autumn")), "main");
+        var metadata = new ApplicationCatalog.Declaration(Map.of("en", "Native example"), Map.of(), "pages",
+            List.of(new ApplicationCatalog.Group("main", Map.of("en", "Main"), 1)), List.of(), List.of(), List.of(use));
+        catalog.builtins("data-engine", List.of(new ApplicationCatalog.Builtin(declared.id(), declared.kind(),
+            declared.rail(), declared.category(), declared.sort(), declared.entry(), declared.entryAccess(),
+            declared.scheduleAdapter(), metadata)));
+        jdbc.update("UPDATE sys_application SET panel_settings=?::jsonb WHERE id=?", """
+            {"framePanelId":"stale-frame","theme":{"light":{"--el-color-primary":"#123456"}}}
+            """, declared.id());
+        var viewer = new QueryAccessService.GrantUser("viewer", "domain");
+        when(identity.getCurrentUser()).thenReturn(viewer);
+        when(access.canEnter(any(), eq(viewer))).thenReturn(true);
+        when(access.panelUses(anyList(), eq(viewer))).thenAnswer(call -> call.getArgument(0));
+        when(grants.allowed(use.panelId(), "use")).thenReturn(true);
+
+        var route = "/platform/applications/resolve-entry";
+        var byPath = http.perform(get(route).param("path", use.path()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.framePanelId").doesNotHaveJsonPath())
+            .andExpect(jsonPath("$.data.theme").doesNotHaveJsonPath())
+            .andExpect(jsonPath("$.data.use.inputs").doesNotHaveJsonPath())
+            .andExpect(jsonPath("$.data.use.descriptions.en").value("Explain the overview"))
+            .andExpect(jsonPath("$.data.menu.groups[0].key").value("main"))
+            .andExpect(jsonPath("$.data.menu.panelUses[0].id").value("overview"))
+            .andExpect(jsonPath("$.data.menu.panelUses[0].inputs").doesNotHaveJsonPath())
+            .andReturn().getResponse().getContentAsString();
+        var byUse = http.perform(get(route).param("applicationId", declared.id()).param("useId", use.id()))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertEquals(JSON.parseObject(byPath), JSON.parseObject(byUse));
+        assertEquals(use, catalog.require(declared.id()).getList("panelUses", ApplicationPanelUse.class).getFirst());
+    }
+
+    @Test void validatesOnlyNewAndChangedIconsWhilePreservingLegacyIcons() throws Exception {
+        var owner = new QueryAccessService.GrantUser("owner", "domain");
+        when(identity.getCurrentUser()).thenReturn(owner);
+        when(access.canMaintain(any(), eq(owner))).thenReturn(true);
+        var path = "/platform/applications/app-icon-proof/panel-uses";
+        var registration = JSON.parseObject("""
+            {"entry":{"path":"/applications/app-icon-proof","renderer":"panels"},"entryAccess":["domain-member"],
+             "declaration":{"names":{"en":"Original"},"descriptions":{},"icon":"pages","groups":[],"permissions":[]},
+             "panelUses":[]}
+            """);
+        http.perform(put(path).contentType(MediaType.APPLICATION_JSON).content(registration.toJSONString()))
+            .andExpect(status().isOk());
+        verify(panels).requireCurrent("domain", null, List.of(), null, null, "pages");
+        jdbc.update("UPDATE sys_application SET icon=? WHERE id=?", "ontology", "app-icon-proof");
+        var declaration = registration.getJSONObject("declaration");
+        declaration.put("icon", "ontology");
+        declaration.put("names", JSONObject.of("en", "Renamed"));
+        clearInvocations(panels);
+        http.perform(put(path).contentType(MediaType.APPLICATION_JSON).content(registration.toJSONString()))
+            .andExpect(status().isOk());
+        verify(panels).requireCurrent("domain", null, List.of(), null, null, null);
+
+        var identityPath = "/platform/applications/app-icon-proof/identity";
+        var update = JSONObject.of("names", JSONObject.of("en", "Renamed again"), "descriptions", new JSONObject(), "icon", "ontology");
+        clearInvocations(panels);
+        http.perform(put(identityPath).contentType(MediaType.APPLICATION_JSON).content(update.toJSONString()))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.icon").value("ontology"));
+        verifyNoInteractions(panels);
+
+        doThrow(ApplicationCatalog.bad("Icon is reserved")).when(panels)
+            .requireCurrent("domain", null, List.of(), null, null, "settings");
+        update.put("icon", "settings");
+        http.perform(put(identityPath).contentType(MediaType.APPLICATION_JSON).content(update.toJSONString()))
+            .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("Icon is reserved"));
+        assertEquals("ontology", catalog.require("app-icon-proof").getString("icon"));
+    }
+
+    @Test void registrationForwardsRawThemeAndLeavesRefusedSettingsUnwritten() throws Exception {
+        var captured = new AtomicReference<JSONObject>();
+        var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        var refusal = """
+            {"error":{"code":"INVALID_PANEL_ENTRY_INPUT","message":"Entry 'overview' input 'term' references frame state 'term' without a frame panel"}}
+            """.strip();
+        server.createContext("/internal/product-panels/validate-references", exchange -> {
+            try {
+                captured.set(JSON.parseObject(exchange.getRequestBody().readAllBytes()));
+                var body = refusal.getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
+                exchange.sendResponseHeaders(400, body.length);
+                exchange.getResponseBody().write(body);
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        try {
+            var panelClient = new PanelResources("http://127.0.0.1:" + server.getAddress().getPort(), "test-service");
+            var remoteCatalog = new ApplicationCatalog(jdbc, new TransactionTemplate(new DataSourceTransactionManager(dataSource)),
+                access, "{}", panelClient, grants);
+            var mvc = MockMvcBuilders.standaloneSetup(new ApplicationController(remoteCatalog, identity,
+                    new WorkbenchServiceAuthentication("test-service")))
+                .setControllerAdvice(new ApplicationErrors())
+                .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+            when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser("owner", "domain"));
+            when(grants.allowed("panel-overview", "use")).thenReturn(true);
+
+            var body = """
+                {"entry":{"path":"/applications/app-native-settings","renderer":"panels"},"entryAccess":["domain-member"],
+                 "declaration":{"names":{"en":"Settings"},"descriptions":{},"icon":"pages","groups":[],"permissions":[]},
+                 "panelUses":[{"id":"overview","pageKey":"frame-demo-overview","panelId":"panel-overview",
+                   "path":"/applications/app-native-settings/overview","access":{"kind":"domain-member"},
+                   "inputs":{"term":{"frameState":"term"}}}]}
+                """;
+            var raw = JSON.parseObject(body);
+            var theme = JSON.parseObject("""
+                {"light":{"--el-color-primary":3},"unexpected":{"--el-color-primary":"#123456"}}
+                """);
+            raw.put("theme", theme);
+            mvc.perform(put("/platform/applications/app-native-settings/panel-uses").contentType(MediaType.APPLICATION_JSON)
+                    .content(raw.toJSONString())).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(refusal));
+            assertEquals(theme, captured.get().getJSONObject("theme"));
+            assertEquals("pages", captured.get().getString("icon"));
+            assertEquals("term", captured.get().getJSONArray("uses").getJSONObject(0).getJSONObject("inputs")
+                .getJSONObject("term").getString("frameState"));
+            assertFalse(captured.get().containsKey("framePanelId"));
+
+            mvc.perform(put("/platform/applications/app-native-settings/panel-uses").contentType(MediaType.APPLICATION_JSON)
+                    .content(body)).andExpect(status().isBadRequest());
+            assertFalse(captured.get().containsKey("theme"));
+
+            mvc.perform(put("/platform/applications/app-native-settings/panel-uses").contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"theme\":null," + body.strip().substring(1))).andExpect(status().isBadRequest());
+            assertTrue(captured.get().containsKey("theme"));
+            assertNull(captured.get().get("theme"));
+            assertTrue(records().isEmpty());
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test void referencePreflightForwardsConfiguredDefaultsAndOmitsUnsetDefaults() throws Exception {
@@ -684,7 +858,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
                 new ApplicationPanelUse("plan", "plan", "panel-plan", "/example/plan", member,
                     new DefaultAgentTarget("id", "planner", null), null),
                 new ApplicationPanelUse("ordinary", "ordinary", "panel-ordinary", "/example/ordinary", member, null, null)
-            ), null);
+            ), null, null, null);
 
             assertEquals("test-service", serviceHeader.get());
             var uses = requests.get().getJSONArray("uses");

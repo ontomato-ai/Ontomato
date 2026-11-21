@@ -93,10 +93,11 @@ describe("the panel host's addresses", () => {
   });
 
   it("sends each read to the address its owner serves", async () => {
-    const { candidatePanelHost, panelAuthorDefinitions, platformPanelHost, panelUsesOf } = await import("../panel-host");
+    const { candidatePanelHost, panelAuthorDefinitions, platformPanelHost, resolveApplicationEntry } = await import("../panel-host");
     const use = { id: "use-a", pageKey: "tasks", panelId: "panel-a", path: "/applications/app-a/tasks", access: { kind: "domain-member" as const } };
     const port = platformPanelHost("app-a", use, () => {});
-    await panelUsesOf("app-a");
+    // Java resolves the entry an address opens; what it answers is the stand-in's business here.
+    await resolveApplicationEntry({ path: "/applications/app-a/tasks" }).catch(() => {});
     // The record's contents are the stand-in's business, not this test's: what it asserts is the address each read went
     // to. A read that refuses is as good an observation as one that answers.
     await port.panel("panel-a").catch(() => {});
@@ -107,7 +108,7 @@ describe("the panel host's addresses", () => {
     await candidatePanelHost({ id: "7c9e6679-7425-40de-944b-e07fc1f90ae7", ref: "working", pageKey: "tasks" }).source().catch(() => {});
     await vi.waitFor(() => expect(requested.length).toBe(7));
     expect(requested.map((one) => `${one.method} ${one.url}`)).toEqual([
-      "GET /api/data-query/platform/applications/app-a/panel-uses",
+      "GET /api/data-query/platform/applications/resolve-entry?path=%2Fapplications%2Fapp-a%2Ftasks",
       "GET /api/product-panels/panel-a",
       "GET /api/apps-sdk/current",
       "GET /apps-sdk/current/sdk.json",

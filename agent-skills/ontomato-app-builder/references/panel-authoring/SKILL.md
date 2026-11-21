@@ -49,7 +49,7 @@ actual panel ID.
   "mode": "create",
   "input": {
     "entry": {"path": "/applications/app-my-management-page", "renderer": "panels"},
-    "declaration": {"names": {"en": "Management page"}, "descriptions": {"en": "Management example"}, "icon": "settings", "groups": [], "permissions": []},
+    "declaration": {"names": {"en": "Management page"}, "descriptions": {"en": "Management example"}, "icon": "app-window", "groups": [], "permissions": []},
     "entryAccess": ["domain-member"],
     "panelUses": [{"id": "my-use", "pageKey": "app-my-management-page-manage", "panelId": "my-panel", "path": "/applications/app-my-management-page/manage", "access": {"kind": "domain-member"}}]
   }

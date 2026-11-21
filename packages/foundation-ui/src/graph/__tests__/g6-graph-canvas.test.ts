@@ -13,6 +13,8 @@ import { g6Edges, type G6Colors } from "../g6-elements";
 const calls: Array<[string, unknown]> = [];
 const handlers: Record<string, (event: any) => void> = {};
 const nodeData = new Map<string, any>();
+/** The zoom G6 reports, and the zoom its fitView would choose for the whole graph. */
+const view = { zoom: 1, fitted: 1 };
 
 vi.mock("@antv/g6", () => ({
   Graph: class {
@@ -50,7 +52,24 @@ vi.mock("@antv/g6", () => ({
       return [nodeData.get(id).style.x + 5, nodeData.get(id).style.y + 7];
     }
     getZoom() {
-      return 1;
+      return view.zoom;
+    }
+    setOptions(options: unknown) {
+      calls.push(["options", options]);
+    }
+    async fitView() {
+      view.zoom = view.fitted;
+      calls.push(["fitView", view.zoom]);
+    }
+    async zoomTo(zoom: number) {
+      view.zoom = zoom;
+      calls.push(["zoomTo", zoom]);
+    }
+    async fitCenter() {
+      calls.push(["fitCenter", null]);
+    }
+    async focusElement(id: string) {
+      calls.push(["focus", id]);
     }
     getCanvasByViewport(point: number[]) {
       return point;
@@ -64,6 +83,7 @@ vi.mock("@antv/g6", () => ({
 const { default: G6GraphCanvas } = await import("../G6GraphCanvas.vue");
 
 beforeEach(() => {
+  Object.assign(view, { zoom: 1, fitted: 1 });
   calls.length = 0;
   nodeData.clear();
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
@@ -169,4 +189,33 @@ it("fans parallel edges into arcs, loops a self-relation round its anchor's grou
   expect(drawn.reviews!.style).toMatchObject({ lineDash: [5, 4], opacity: 0.15, lineWidth: 3.5 });
   expect(drawn.self!.style).toMatchObject({ loop: true, loopDist: 60 });
   expect(drawn.group!.style).toMatchObject({ loop: true, loopDist: 160 });
+});
+
+it("fits a graph no smaller than names stay readable at, and then shows the part around the node it is given", async () => {
+  const wrapper = mount(G6GraphCanvas, { props: { label: "Graph", nodes: placed(3), layout: { type: "preset" } } });
+  await flushPromises();
+  const fit = (options: object) => (wrapper.vm as unknown as { fit(options: object): Promise<void> }).fit(options);
+  const steps = () => calls.filter(([name]) => ["fitView", "zoomTo", "fitCenter", "focus"].includes(name));
+
+  // A graph that fits at a readable size is shown whole.
+  view.fitted = 0.9;
+  calls.length = 0;
+  await fit({ minZoom: 0.85, around: "n1" });
+  expect(steps()).toEqual([["fitView", 0.9], ["fitCenter", null]]);
+
+  // One that would shrink below it is shown at that size, around the node given.
+  view.fitted = 0.3;
+  calls.length = 0;
+  await fit({ minZoom: 0.85, around: "n1" });
+  expect(steps()).toEqual([["fitView", 0.3], ["zoomTo", 0.85], ["focus", "n1"]]);
+
+  // Without a node, around the middle of the graph; a small graph is not blown up past maxZoom.
+  calls.length = 0;
+  await fit({ minZoom: 0.85 });
+  expect(steps()).toEqual([["fitView", 0.3], ["zoomTo", 0.85], ["fitCenter", null]]);
+  view.fitted = 3;
+  calls.length = 0;
+  await fit({ maxZoom: 1.15, minZoom: 0.85 });
+  expect(steps()).toEqual([["fitView", 3], ["zoomTo", 1.15], ["fitCenter", null]]);
+  wrapper.unmount();
 });

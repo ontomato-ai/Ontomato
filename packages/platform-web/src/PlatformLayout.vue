@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useRoute, useRouter, RouterView, RouterLink } from "vue-router";
 import { House } from "lucide-vue-next";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
+import type { PanelThemeOverrides } from "@ontomato/contracts/panel-manifest";
 import {
   AppPanelPages,
   PlatformPageHeader,
   PlatformShell,
+  useAppTheme,
   type PlatformAccount,
   type PlatformBrand,
   type PlatformPageActions,
@@ -50,9 +52,15 @@ const props = defineProps<{
   brand?: PlatformBrand;
   /** What the shown page handed to its header: its own buttons and its draft's Save. */
   pageActions: PlatformPageActions | null;
+  /** The shown entry's application theme, assigned on the application's area: its menu and its page, never the rail. */
+  appTheme?: PanelThemeOverrides | null;
   /** The host shows no application at all (its licence is not in force, or the account holds no page). */
   blocked?: { reason: "licence" | "no-pages"; message: string } | null;
 }>();
+
+/** The application's area: its menu column and its page, beside the platform's rail and account area. */
+const appBody = ref<HTMLElement | null>(null);
+useAppTheme(appBody, () => props.appTheme, () => props.preferences.theme);
 
 const emit = defineEmits<{ selectApp: [id: string] }>();
 
@@ -145,7 +153,7 @@ const headerLabels = computed(() => ({
       ontology manager) is inserted beside the page, never around it. Which application has a menu is known only when the
       catalog arrives, after the page has been drawn; a page area per case would mount the page a second time then.
     -->
-    <div class="platform-app-body" :class="{ 'has-menu': !standalone && menu !== null && !blocked, 'standalone-app': standalone }">
+    <div ref="appBody" class="platform-app-body" :class="{ 'has-menu': !standalone && menu !== null && !blocked, 'standalone-app': standalone }">
       <aside v-if="!standalone && menu && !blocked" class="platform-app-menu" :aria-label="labels.pages">
         <h2 class="app-menu-title">{{ menu.label }}</h2>
         <select class="mobile-page-select" :aria-label="labels.pages" :value="activePageId" @change="selectMenuPage(($event.target as HTMLSelectElement).value)"><optgroup v-for="group in menu.groups??[]" :key="group.key" :label="group.label||menu.label"><option v-for="page in group.pages" :key="page.id" :value="page.id" :disabled="!!page.unavailableHint">{{page.label}}</option></optgroup><option v-if="menu.foot" :value="menu.foot.id">{{menu.foot.label}}</option></select>

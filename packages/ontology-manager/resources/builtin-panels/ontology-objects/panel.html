@@ -1,0 +1,196 @@
+<style>
+  .ot-root { container-type: inline-size; }
+  .ot { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; }
+  .ot-header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
+  .ot-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
+  .ot-toolbar .el-input { width: 16rem; max-width: 100%; }
+  .ot-spacer { flex: 1; }
+  .ot-count { font-size: var(--text-sm); color: var(--el-text-color-secondary); }
+  .ot-table { border: 1px solid var(--ui-border); border-radius: var(--radius-md); background: var(--el-bg-color); overflow: auto; }
+  .ot-row { display: grid; align-items: center; column-gap: var(--spacing-md); width: 100%; box-sizing: border-box;
+    padding: var(--spacing-sm) var(--spacing-md); border: 0; border-bottom: 1px solid var(--ui-divider);
+    background: var(--el-bg-color); color: var(--el-text-color-regular); font: inherit; font-size: var(--text-sm); text-align: left; }
+  .ot-row:last-child { border-bottom: 0; }
+  button.ot-row, a.ot-row { cursor: pointer; }
+  a.ot-row { text-decoration: none; }
+  button.ot-row:hover, a.ot-row:hover { background: var(--ui-fill-tertiary); }
+  .ot-row.is-active { background: var(--ui-fill-secondary); }
+  .ot-head { background: var(--ui-fill-tertiary); color: var(--el-text-color-secondary); font-size: var(--text-xs); font-weight: var(--font-semibold); }
+  .ot-catalog-grid { grid-template-columns: minmax(12rem, 1.4fr) minmax(12rem, 2fr) 5rem 5rem; }
+  .ot-attr-grid { grid-template-columns: minmax(10rem, 1.2fr) 6rem 5rem 5rem minmax(8rem, 1.3fr); }
+  .ot-rel-grid { grid-template-columns: minmax(8rem, 1.2fr) minmax(6rem, 1fr) minmax(6rem, 1fr) minmax(8rem, 1.2fr); }
+  .ot-name strong, .ot-name small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ot-name strong { color: var(--el-text-color-primary); font-weight: var(--font-semibold); }
+  .ot-name small { margin-top: var(--spacing-xs); color: var(--el-text-color-secondary); font-size: var(--text-xs); }
+  .ot-ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ot-status { padding: var(--spacing-lg); text-align: center; color: var(--el-text-color-secondary); font-size: var(--text-sm); }
+  .ot-detail { display: grid; grid-template-columns: minmax(18rem, 0.9fr) minmax(0, 1.5fr); gap: var(--spacing-md); align-items: start; }
+  .ot-detail-side, .ot-detail-main { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; }
+  .ot-card { padding: var(--spacing-md); border: 1px solid var(--ui-border); border-radius: var(--radius-md); background: var(--el-bg-color); min-width: 0; }
+  .ot-card-title { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); margin-bottom: var(--spacing-sm); }
+  .ot-card-title h3 { margin: 0; font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--el-text-color-primary); }
+  .ot-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--spacing-sm); margin-bottom: var(--spacing-sm); }
+  .ot-summary span { font-size: var(--text-xs); color: var(--el-text-color-secondary); }
+  .ot-summary strong { display: block; font-size: var(--text-lg); color: var(--el-text-color-primary); }
+  .ot-facts { margin: 0; display: grid; gap: var(--spacing-xs); font-size: var(--text-sm); }
+  .ot-facts dt { color: var(--el-text-color-secondary); }
+  .ot-facts dd { margin: 0 0 var(--spacing-sm); color: var(--el-text-color-primary); white-space: pre-wrap; }
+  .ot-facts .ot-hint { color: var(--el-text-color-secondary); font-size: var(--text-xs); }
+  .ot-editor { margin-top: var(--spacing-md); padding-top: var(--spacing-md); border-top: 1px solid var(--el-border-color-light); display: flex; flex-direction: column; gap: var(--spacing-sm); }
+  .ot-editor-actions { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); }
+  .ot-title { flex: 1; min-width: 8rem; font-weight: var(--font-semibold); color: var(--el-text-color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ot-detail.is-create { grid-template-columns: minmax(0, 1fr); }
+  @container (max-width: 56rem) { .ot-detail { grid-template-columns: minmax(0, 1fr); } }
+  @container (max-width: 36rem) {
+    .ot-catalog-grid { grid-template-columns: minmax(0, 1fr) 4rem; }
+    .ot-catalog-grid > :nth-child(2), .ot-catalog-grid > :nth-child(4) { display: none; }
+    .ot-attr-grid { grid-template-columns: minmax(0, 1fr) 5rem; }
+    .ot-attr-grid > :nth-child(n+3) { display: none; }
+    .ot-rel-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .ot-rel-grid > :nth-child(n+3) { display: none; }
+  }
+</style>
+<div id="app">
+  <section class="ot ot-root">
+    <!-- Catalog: the list of object types; selecting one opens its details in the same panel. -->
+    <template v-if="view === 'catalog'">
+      <div class="ot-toolbar">
+        <el-input v-model="search" :placeholder="t('ot.search')" clearable></el-input>
+        <span v-if="catalogCount !== null" class="ot-count">{{ t("ot.items", { count: catalogCount }) }}</span>
+        <span class="ot-spacer"></span>
+      </div>
+      <div class="ot-table">
+        <div class="ot-row ot-head ot-catalog-grid">
+          <span>{{ t("ot.colType") }}</span>
+          <span>{{ t("ot.colDescription") }}</span>
+          <span>{{ t("ot.colAttributes") }}</span>
+          <span>{{ t("ot.colBusinessKeys") }}</span>
+        </div>
+        <button v-for="row in filteredRows" :key="row.primaryKey" type="button" class="ot-row ot-catalog-grid"
+          @click="openClass(row.primaryKey)">
+          <span class="ot-name"><strong>{{ row.label }}</strong><small>{{ row.fields.className }}</small></span>
+          <span class="ot-ellipsis">{{ row.fields.classDesc }}</span>
+          <span>{{ row.fields.attributeCount }}</span>
+          <span>{{ row.fields.businessKeyCount }}</span>
+        </button>
+        <p v-if="catalog.status === 'loading'" class="ot-status" role="status">{{ t("ot.loading") }}</p>
+        <p v-else-if="catalog.status === 'forbidden'" class="ot-status">{{ t("ot.forbidden") }}</p>
+        <el-alert v-else-if="catalog.status === 'error'" type="error" :title="catalog.message" :closable="false"></el-alert>
+        <el-empty v-else-if="filteredRows.length === 0" :description="t('ot.empty')"></el-empty>
+      </div>
+    </template>
+
+    <!-- New object type and class details. The owner's object-type form is one member: with no class selected it is
+         the create form (a successful save selects the new class), with a class selected it edits its basic info. -->
+    <div v-show="view !== 'catalog'" class="ot">
+      <div class="ot-header">
+        <el-button text @click="backToCatalog">← {{ t("ot.back") }}</el-button>
+        <span class="ot-title">{{ view === "create" ? t("ot.create") : (record ? record.label : (selected ? selected.primaryKey : "")) }}</span>
+        <template v-if="view === 'detail' && record">
+          <el-button @click="configureView">{{ t("ot.configureView") }}</el-button>
+          <el-button @click="browseData">{{ t("ot.browseData") }}</el-button>
+          <el-button type="danger" plain :loading="busy === 'deleteObject'" :disabled="!deleteObjectOp.operation.value"
+            @click="removeObject">{{ deleteObjectOp.operation.value ? deleteObjectOp.operation.value.label : "…" }}</el-button>
+        </template>
+      </div>
+      <template v-if="view === 'detail'">
+        <p v-if="detail.status === 'loading'" class="ot-status" role="status">{{ t("ot.loading") }}</p>
+        <p v-else-if="detail.status === 'forbidden'" class="ot-status">{{ t("ot.forbidden") }}</p>
+        <el-alert v-else-if="detail.status === 'error'" type="error" :title="detail.message" :closable="false"></el-alert>
+        <el-empty v-else-if="detail.status === 'empty'" :description="t('ot.missing')"></el-empty>
+      </template>
+      <div v-show="view === 'create' || record" class="ot-detail" :class="{ 'is-create': view === 'create' }">
+        <div class="ot-detail-side">
+          <section class="ot-card">
+            <div v-if="view === 'detail'" class="ot-card-title"><h3>{{ t("ot.basicInfo") }}</h3></div>
+            <!-- While an attribute is open, the class form steps aside: a page draft for that attribute is then offered
+                 only to the attribute form (the SDK stops at the first form whose owner cannot describe the draft's
+                 target). Closing the attribute brings the class form back. -->
+            <projection v-if="!attributeOpen" slot="objectForm" @saved="objectSaved" @discarded="formDiscarded"></projection>
+            <dl v-else-if="record" class="ot-facts">
+              <dt>{{ record.fieldLabels && record.fieldLabels.showName || "showName" }}</dt><dd>{{ record.fields.showName }}</dd>
+              <dt>{{ record.fieldLabels && record.fieldLabels.className || "className" }}</dt><dd>{{ record.fields.className }}</dd>
+              <dt>{{ record.fieldLabels && record.fieldLabels.classDesc || "classDesc" }}</dt><dd>{{ record.fields.classDesc || "-" }}</dd>
+              <dd class="ot-hint">{{ t("ot.closeAttributeToEdit") }}</dd>
+            </dl>
+          </section>
+          <section v-if="view === 'detail' && record && summary" class="ot-card">
+            <div class="ot-summary">
+              <span><strong>{{ summary.attributeCount }}</strong>{{ t("ot.attributeCount") }}</span>
+              <span><strong>{{ summary.businessKeyCount }}</strong>{{ t("ot.businessKeyCount") }}</span>
+              <span><strong>{{ summary.relationshipCount }}</strong>{{ t("ot.relationCount") }}</span>
+            </div>
+            <el-alert v-if="primaryKeyStatus" :type="primaryKeyStatus.type" :title="primaryKeyStatus.text"
+              :closable="false" show-icon></el-alert>
+          </section>
+        </div>
+        <div v-show="view === 'detail'" class="ot-detail-main">
+          <section class="ot-card">
+            <div class="ot-card-title">
+              <h3>{{ t("ot.attributes") }}</h3>
+              <el-button size="small" @click="startCreateAttribute">{{ t("ot.createAttribute") }}</el-button>
+            </div>
+            <div class="ot-table">
+              <div class="ot-row ot-head ot-attr-grid">
+                <span>{{ t("ot.colAttribute") }}</span>
+                <span>{{ t("ot.colDataType") }}</span>
+                <span>{{ t("ot.colBusinessKey") }}</span>
+                <span>{{ t("ot.colPrimaryKey") }}</span>
+                <span>{{ t("ot.colAttrDescription") }}</span>
+              </div>
+              <button v-for="row in attributeRows" :key="row.primaryKey" type="button" class="ot-row ot-attr-grid"
+                :class="{ 'is-active': selectedAttribute && selectedAttribute.primaryKey === row.primaryKey }"
+                @click="openAttribute(row)">
+                <span class="ot-name"><strong>{{ row.label }}</strong><small>{{ row.fields.name }}</small></span>
+                <span class="ot-ellipsis">{{ row.fields.type }}</span>
+                <span>{{ row.fields.businessKey === "true" ? t("ot.yes") : "-" }}</span>
+                <span>{{ row.fields.primaryKey === "true" ? t("ot.yes") : "-" }}</span>
+                <span class="ot-ellipsis">{{ row.fields.attrDesc || "-" }}</span>
+              </button>
+              <p v-if="attributes.status === 'loading'" class="ot-status" role="status">{{ t("ot.loading") }}</p>
+              <el-alert v-else-if="attributes.status === 'error'" type="error" :title="attributes.message" :closable="false"></el-alert>
+              <p v-else-if="attributeRows.length === 0" class="ot-status">{{ t("ot.noAttributes") }}</p>
+            </div>
+            <!-- The attribute owner's form: edits the selected attribute, or creates one in this class (fixed). -->
+            <div v-show="attributeMode !== 'none'" class="ot-editor">
+              <div class="ot-card-title">
+                <h3>{{ attributeMode === "create" ? t("ot.attributeCreator") : t("ot.attributeEditor", { name: editingAttribute ? editingAttribute.label : "" }) }}</h3>
+                <el-button size="small" text @click="closeAttribute">{{ t("ot.closeEditor") }}</el-button>
+              </div>
+              <el-alert v-if="attributeError" type="error" :title="attributeError" :closable="false" show-icon></el-alert>
+              <div v-if="attributeMode === 'edit' && selectedAttribute" class="ot-editor-actions">
+                <el-button :loading="busy === 'setPrimaryKey'" :disabled="!setPrimaryKeyOp.operation.value || isPrimaryKey"
+                  @click="makePrimaryKey">{{ setPrimaryKeyOp.operation.value ? setPrimaryKeyOp.operation.value.label : "…" }}</el-button>
+                <el-button type="danger" plain :loading="busy === 'deleteAttribute'" :disabled="!deleteAttributeOp.operation.value"
+                  @click="removeAttribute">{{ deleteAttributeOp.operation.value ? deleteAttributeOp.operation.value.label : "…" }}</el-button>
+              </div>
+              <projection slot="attributeForm" @saved="attributeSaved" @discarded="closeAttribute"></projection>
+            </div>
+          </section>
+          <section class="ot-card">
+            <div class="ot-card-title">
+              <h3>{{ t("ot.relations") }}</h3>
+              <span v-if="relationCount !== null" class="ot-count">{{ t("ot.items", { count: relationCount }) }}</span>
+            </div>
+            <div v-if="relationRows.length" class="ot-table">
+              <div class="ot-row ot-head ot-rel-grid">
+                <span>{{ t("ot.colRelation") }}</span>
+                <span>{{ t("ot.colSource") }}</span>
+                <span>{{ t("ot.colTarget") }}</span>
+                <span>{{ t("ot.colAttrDescription") }}</span>
+              </div>
+              <a v-for="row in relationRows" :key="row.primaryKey" class="ot-row ot-rel-grid" :href="relationAddress(row)">
+                <span class="ot-name"><strong>{{ row.label }}</strong><small>{{ row.primaryKey }}</small></span>
+                <span class="ot-ellipsis">{{ labels[row.fields.fromclass] || row.fields.fromclass }}</span>
+                <span class="ot-ellipsis">{{ labels[row.fields.toclass] || row.fields.toclass }}</span>
+                <span class="ot-ellipsis">{{ row.fields.desc || "-" }}</span>
+              </a>
+            </div>
+            <p v-else-if="relations.status === 'loading'" class="ot-status" role="status">{{ t("ot.loading") }}</p>
+            <el-empty v-else :description="t('ot.noRelations')" :image-size="72"></el-empty>
+          </section>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>

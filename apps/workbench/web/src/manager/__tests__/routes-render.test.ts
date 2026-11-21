@@ -119,7 +119,10 @@ function servedNow() {
   const app = (document.querySelector("#app") as (Element & { __vue_app__?: App }) | null)?.__vue_app__;
   type Router = { getRoutes(): { path: string }[] };
   const router = app?.config.globalProperties.$router as Router | undefined;
-  return new Set((router?.getRoutes() ?? []).map((route) => route.path.split("/:")[0]!).filter(Boolean));
+  // A route serves its static address when what follows it is only optional parameters (\`/browser/data/:className?\`);
+  // a screen under a page (\`/ontology/objects/:className/view\`) does not serve that page's address.
+  return new Set((router?.getRoutes() ?? []).map((route) => route.path.replace(/(\/:[^/]+\?)+$/, ""))
+    .filter((path) => path && !path.includes("/:")));
 }
 
 /** The address in the bar, without the query: that is what a rail row navigates to. */

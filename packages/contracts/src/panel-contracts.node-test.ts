@@ -603,6 +603,67 @@ test("one named header command can be primary in saved and authoring manifests",
   }
 });
 
+test("application addresses carry independent frame and entry state while preserving draft parameters", async () => {
+  const { applicationPanelAddress, parseApplicationPanelAddress, validateApplicationPanelAddressState } = await import("./panel-host");
+  const path = "/applications/app-school/orders";
+  const query = new URLSearchParams([["draftPath", "outputs/drafts/秋季.json"], ["tag", "one"], ["tag", "two"]]);
+  const frame = { term: "秋季 & 春季" };
+  const state = { mode: "list", term: "ignored" };
+  const parsed = parseApplicationPanelAddress(applicationPanelAddress(path, { frame, state, query }));
+  assert.deepEqual(parsed, { path, frame, state, query });
+  assert.equal(applicationPanelAddress(path), path);
+  assert.throws(() => parseApplicationPanelAddress(path + "?frame=%7B"), /Invalid JSON.*frame/);
+  assert.throws(() => parseApplicationPanelAddress(path + "?state=%7B%7D&state=%7B%7D"), /state.*more than once/);
+
+  const manifest = panelManifestSchema.parse({
+    state: {
+      term: { type: { kind: "scalar", type: "string" }, deepLink: true },
+      mode: { type: { kind: "scalar", type: "string" }, deepLink: true },
+      privateSelection: { type: { kind: "scalar", type: "string" } },
+    },
+    members: {}, commands: {},
+  });
+  assert.deepEqual(validateApplicationPanelAddressState("frame", frame, manifest), frame);
+  assert.deepEqual(validateApplicationPanelAddressState("state", state, manifest, ["term"]), { mode: "list" });
+  assert.throws(() => validateApplicationPanelAddressState("frame", frame, undefined), /frame\.term/);
+  assert.throws(() => validateApplicationPanelAddressState("frame", { term: 1 }, manifest), /frame\.term.*declared type/);
+  assert.throws(() => validateApplicationPanelAddressState("state", { privateSelection: "x" }, manifest), /state\.privateSelection/);
+});
+
+test("the application reference check carries both theme modes as literal strings", async () => {
+  const { applicationPanelReferencesRequestSchema } = await import("./product-panels");
+  const theme = { light: { "--radius-md": "6px" }, dark: { "--radius-md": "8px" } };
+  const reference = { domainId: "school", uses: [], delivery: { panels: [], projections: [] }, theme };
+  assert.deepEqual(applicationPanelReferencesRequestSchema.parse(reference).theme, theme);
+  const invalid = applicationPanelReferencesRequestSchema.safeParse({ ...reference, theme: { dark: { "--radius-md": 4 } } });
+  assert.equal(invalid.success, false);
+  if (!invalid.success) assert.deepEqual(invalid.error.issues[0]?.path, ["theme", "dark", "--radius-md"]);
+});
+
+test("current entry is supplied from the resolved use and its slot cannot override inputs", async () => {
+  const { applicationEntryResolutionQuerySchema, applicationFrameContextOf, applicationFrameSourceSchema } = await import("./product-panels");
+  const applicationId = "app-school", useId = "orders";
+  const path = "/applications/app-school/orders";
+  assert.deepEqual(applicationEntryResolutionQuerySchema.parse({ path }), { path });
+  assert.deepEqual(applicationEntryResolutionQuerySchema.parse({ applicationId, useId }), { applicationId, useId });
+  assert.equal(applicationEntryResolutionQuerySchema.safeParse({ path, applicationId, useId }).success, false);
+  const use = {
+    id: useId, pageKey: "school.orders", panelId: "orders-panel", path,
+    access: { kind: "domain-member" as const }, inputs: { term: { literal: "A" } },
+  };
+  const menu = { groups: [], panelUses: [use] };
+  const frameContext = applicationFrameContextOf({ applicationId, use, menu });
+  assert.deepEqual(frameContext, { currentEntry: { applicationId, useId, pageKey: use.pageKey, panelId: use.panelId, path }, menu });
+  assert.equal(Object.isFrozen(frameContext.currentEntry), true);
+  assert.equal(applicationFrameSourceSchema.safeParse({ kind: "frame", applicationId, useId, panelId: "another" }).success, false);
+  const content = { target: { fromPlatform: "currentEntry", candidates: { rule: "applicationEntry" } } };
+  const manifest = { state: {}, members: { content }, commands: {} };
+  assert.deepEqual(panelManifestSchema.parse(manifest).members.content, content);
+  assert.equal(panelManifestSchema.safeParse({
+    ...manifest, members: { content: { ...content, inputs: { term: { literal: "B" } } } },
+  }).success, false);
+});
+
 test("entry resolution and personal-state scope use the actual use and nested path", async () => {
   const { applicationEntryResolutionSchema, applicationPanelReferencesRequestSchema } = await import("./product-panels");
   const { panelPersonalStateWriteRequestSchema } = await import("./panel-host");
@@ -613,7 +674,7 @@ test("entry resolution and personal-state scope use the actual use and nested pa
     inputs: { term: { frameState: "term" }, role: { literal: null } },
   };
   const response = {
-    applicationId: "app-tasks", use, framePanelId: "site-frame", theme: { dark: { "--test-accent": "#0084ff" } },
+    applicationId: "app-tasks", use, framePanelId: "site-frame", theme: { dark: { "--radius-md": "10px" } },
     menu: { groups: [{ key: "plan", names: { en: "Plan" }, sort: 0 }], panelUses: [use] },
   };
   assert.deepEqual(applicationEntryResolutionSchema.parse(response), response);
@@ -1026,6 +1087,20 @@ test("localized text keeps the owner's language map and language-level field poi
   ]) assert.equal(panelFormDescriptionSchema.safeParse({ ...form, fields: [{ ...field, control: invalid }] }).success, false);
   const input = { values, submittedFields: ["/names/en"] };
   assert.deepEqual(panelFormSaveInputSchema.parse(input), input);
+});
+
+test("an application icon control preserves the owner's existing icon key", () => {
+  const field = {
+    ...editableField, path: "/icon", label: "Application icon",
+    control: { kind: "application-icon" }, valueSchema: { type: "string" },
+  };
+  for (const icon of ["settings", "legacy-icon-key"]) {
+    const form = { fields: [field], values: { icon }, errors: [], save: ownerSave };
+    assert.deepEqual(panelFormDescriptionSchema.parse(form), form);
+    assert.equal(panelFormDescriptionSchema.safeParse({
+      ...form, fields: [{ ...field, control: { ...field.control, options: [] } }],
+    }).success, false);
+  }
 });
 
 test("nested controls keep relative field metadata and the existing absolute reference port", () => {

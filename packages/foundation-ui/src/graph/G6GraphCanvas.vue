@@ -339,12 +339,21 @@ async function afterChanges(task: (target: Graph) => Promise<void>) {
 }
 
 defineExpose({
-  /** Shows the whole graph, no larger than `maxZoom`, keeping `padding` pixels clear (one value, or top, right, bottom, left). */
-  fit: (options: { maxZoom?: number; padding?: number | [number, number, number, number] } = {}) =>
+  /**
+   * Shows the whole graph, no larger than `maxZoom`, keeping `padding` pixels clear (one value, or top, right, bottom,
+   * left). With `minZoom` it is never shown smaller: a graph that would be is shown at `minZoom` around the node
+   * `around` (its middle when absent), and the reader pans to the rest — names stay readable rather than all in view.
+   */
+  fit: (options: { maxZoom?: number; minZoom?: number; around?: string; padding?: number | [number, number, number, number] } = {}) =>
     afterChanges(async (target) => {
       if (options.padding !== undefined) target.setOptions({ padding: options.padding });
       await target.fitView({ when: "always", direction: "both" });
-      if (options.maxZoom !== undefined && target.getZoom() > options.maxZoom) await target.zoomTo(options.maxZoom, false);
+      const zoom = target.getZoom();
+      if (options.maxZoom !== undefined && zoom > options.maxZoom) await target.zoomTo(options.maxZoom, false);
+      else if (options.minZoom !== undefined && zoom < options.minZoom) {
+        await target.zoomTo(options.minZoom, false);
+        if (options.around !== undefined) return target.focusElement(options.around, false);
+      }
       await target.fitCenter(false);
     }),
   /** Zooms by `ratio` about the middle of the view. */

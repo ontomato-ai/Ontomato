@@ -7,7 +7,8 @@ import { createMemoryHistory, createRouter } from "vue-router";
 import { definePanel, type PanelManifest, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
 import type { PanelFormSaveInput } from "@ontomato/contracts/panel-projection";
-import type { PanelHostMessage } from "@ontomato/contracts/panel-host";
+import { panelUsePath, type PanelHostMessage } from "@ontomato/contracts/panel-host";
+import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import { appsSdkCurrentSchema, type AppsSdkReleaseManifest } from "@ontomato/contracts/apps-sdk";
 import type { PanelMemberSnapshot } from "@ontomato/contracts/product-subscriptions";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
@@ -344,9 +345,45 @@ export function installPlatform(answer: (request: Sent) => Response | Promise<Re
     };
     sent.push(request);
     if (request.path === SDK_MANIFEST_PATH) return Response.json(sdkManifest);
+    if (request.path === RESOLVE_ENTRY_PATH) return resolveEntryFrom(answer, request);
     return answer(request);
   });
   return sent;
+}
+
+const RESOLVE_ENTRY_PATH = "/api/data-query/platform/applications/resolve-entry";
+
+/**
+ * Java's \`resolve-entry\`, answered from the use relations a test declares for the application (its \`/panel-uses\`
+ * answer) — the one table Java resolves an entry from: the entry at the asked path or the asked use relation, admitted,
+ * and the application's menu of the entries that carry a name. An address no declared entry has is not found.
+ */
+async function resolveEntryFrom(answer: (request: Sent) => Response | Promise<Response>, request: Sent) {
+  const query = new URLSearchParams(request.search);
+  const path = query.get("path");
+  const ask = (asked: Omit<Sent, "method" | "credential" | "execution" | "body">) =>
+    answer({ ...request, method: "GET", body: null, ...asked });
+  let applicationId = query.get("applicationId") ?? path?.match(/^\/applications\/([^/]+)/)?.[1] ?? null;
+  if (!applicationId && path) {
+    // A built-in application's entry at its native address: the application whose entries the shell's catalog lists it.
+    applicationId = useApplicationCatalog().applications.value
+      .find((app) => app.panelUses?.some((use) => panelUsePath(use.path) === path))?.id ?? null;
+  }
+  const notFound = (message: string) => Response.json({ success: false, error: { message } }, { status: 404 });
+  if (!applicationId) return notFound(`No application has an entry at ${path}`);
+  const listed = await ask({ path: `/api/data-query/platform/applications/${encodeURIComponent(applicationId)}/panel-uses`, search: "" });
+  if (!listed.ok) return listed;
+  const body = await listed.json();
+  const uses = ((body.data ?? body).panelUses ?? []) as ApplicationPanelUse[];
+  const useId = query.get("useId");
+  const use = uses.find((candidate) => useId ? candidate.id === useId : panelUsePath(candidate.path) === path);
+  if (!use) return notFound(`No entry of ${applicationId} at ${path ?? useId}`);
+  // A \`panels\` application's frame panel and theme, where the test declares them beside its uses.
+  const { framePanelId, theme } = (body.data ?? body) as { framePanelId?: string; theme?: unknown };
+  return Response.json({ success: true, data: {
+    applicationId, use, menu: { groups: [], panelUses: uses.filter((one) => one.names) },
+    ...(framePanelId ? { framePanelId } : {}), ...(theme ? { theme } : {}),
+  } });
 }
 
 /** The answer a test gives for anything it did not expect. */
