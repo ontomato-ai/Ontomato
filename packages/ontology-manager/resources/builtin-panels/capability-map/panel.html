@@ -24,6 +24,7 @@
     background: var(--el-fill-color-blank); color: var(--el-text-color-regular); font-size: var(--text-sm); cursor: pointer;
   }
   .capmap-btn:hover:not(:disabled) { border-color: var(--el-color-primary); color: var(--brand-link); }
+  .capmap-btn.active { border-color: var(--el-color-primary); color: var(--brand-link); background: var(--ui-fill-secondary); }
   .capmap-btn:disabled { color: var(--el-disabled-text-color); cursor: not-allowed; }
   .capmap-hint { margin: 0; color: var(--el-text-color-secondary); font-size: var(--text-xs); line-height: 1.6; }
   .capmap-notice {
@@ -174,13 +175,9 @@
       </el-select>
       <span class="capmap-hint">{{ t('cm.edgeLegend') }}</span>
       <div v-if="mode === 'instance'" class="capmap-actions">
-        <button type="button" class="capmap-btn" :aria-expanded="showUserPicker" @click="toggleUserPicker">
-          {{ t('cm.switchUser') }}
-        </button>
         <button type="button" class="capmap-btn" :disabled="!canUseSelectedAsStart" @click="useSelectedAsStart">
           {{ t('cm.useSelectedAsStart') }}
         </button>
-        <button v-if="hasCustomStart" type="button" class="capmap-btn" @click="resetStart">{{ t('cm.resetStart') }}</button>
       </div>
     </header>
 
@@ -350,7 +347,13 @@
               {{ hasCustomStart ? (start.className + ' · ' + start.primaryKey) : t('cm.startCurrentUser') }}
             </p>
             <div class="capmap-actions" style="margin: 8px 0 0; justify-content: flex-start">
-              <button type="button" class="capmap-btn" :aria-expanded="showUserPicker" @click="toggleUserPicker">
+              <button
+                type="button"
+                class="capmap-btn"
+                :class="{ active: showUserPicker }"
+                :aria-expanded="showUserPicker"
+                @click="toggleUserPicker"
+              >
                 {{ t('cm.switchUser') }}
               </button>
               <button v-if="hasCustomStart" type="button" class="capmap-btn" @click="resetStart">{{ t('cm.resetStart') }}</button>

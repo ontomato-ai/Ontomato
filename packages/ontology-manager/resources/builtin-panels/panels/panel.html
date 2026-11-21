@@ -11,15 +11,16 @@
   [v-cloak] { display: none; }
   .pd {
     display: grid;
-    grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--page-content-gap);
     align-items: start;
     font-size: var(--text-sm);
     line-height: 1.55;
     color: var(--el-text-color-primary);
   }
-  @media (max-width: 64rem) {
-    .pd { grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 64rem) {
+    .pd.with-detail { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); }
+    .pd .pd-list-table th:first-child { width: 52%; }
   }
   .pd-pane {
     min-width: 0;
@@ -133,9 +134,15 @@
   .pd-list-table th:first-child { width: 40%; }
   .pd-list-table th, .pd-list-table td { padding-inline: var(--spacing-xs); overflow-wrap: anywhere; white-space: normal; }
   .pd-list-table .pd-tag { white-space: normal; }
+  .pd-list-table .pd-sub {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+  }
 </style>
 <div id="app" v-cloak>
-  <section class="pd">
+  <section class="pd" :class="{ 'with-detail': showDetail }">
     <aside class="pd-pane">
       <div class="pd-bar">
         <input
@@ -146,8 +153,6 @@
           :aria-label="t('list.search')"
           @input="onSearchInput"
         />
-      </div>
-      <div class="pd-bar">
         <select class="pd-select" :value="scope" :aria-label="t('list.scope')" @change="onScope">
           <option value="all">{{ t('scope.all') }}</option>
           <option value="mine">{{ t('scope.mine') }}</option>
@@ -162,14 +167,16 @@
           <option value="template">{{ t('template.only') }}</option>
           <option value="ordinary">{{ t('template.ordinary') }}</option>
         </select>
+        <div class="pd-actions">
+          <button type="button" class="pd-btn primary" @click="startCreate">{{ t('action.create') }}</button>
+          <button type="button" class="pd-btn" :disabled="loading" @click="reload">{{ t('action.refresh') }}</button>
+        </div>
       </div>
-      <div class="pd-bar">
-        <button type="button" class="pd-btn primary" @click="startCreate">{{ t('action.create') }}</button>
-        <button type="button" class="pd-btn" :disabled="loading" @click="reload">{{ t('action.refresh') }}</button>
-      </div>
-      <p v-if="rowsError" class="pd-error">{{ t('error', { message: rowsError }) }}</p>
+      <p v-if="!showDetail && failure" class="pd-error">{{ t('error', { message: failure }) }}</p>
+      <p v-if="!showDetail && message" class="pd-note">{{ message }}</p>
       <p v-if="loading" class="pd-note">{{ t('busy') }}</p>
-      <p v-else-if="!visibleRows.length" class="pd-note">{{ t('list.empty') }}</p>
+      <p v-else-if="rowsError" class="pd-error">{{ t('error', { message: rowsError }) }}</p>
+      <p v-else-if="!visibleRows.length" class="pd-note">{{ t(hasFilters ? 'list.filteredEmpty' : 'list.empty') }}</p>
       <table v-else class="pd-table pd-list-table">
         <thead>
           <tr>
@@ -204,7 +211,7 @@
       </div>
     </aside>
 
-    <main class="pd-pane">
+    <main v-show="showDetail" class="pd-pane">
       <p v-if="recordState.status === 'forbidden'" class="pd-error">{{ t('detail.forbidden') }}</p>
       <p v-if="failure" class="pd-error">{{ t('error', { message: failure }) }}</p>
       <p v-if="message" class="pd-note">{{ message }}</p>

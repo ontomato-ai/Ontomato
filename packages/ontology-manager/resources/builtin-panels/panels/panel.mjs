@@ -51,6 +51,7 @@ const PanelsDirectory = {
     const sort = computed(() => (typeof state.values.value.sort === "string" && state.values.value.sort ? state.values.value.sort : "updated"));
 
     const mode = ref("view");
+    const showDetail = computed(() => selected.value !== null || mode.value !== "view");
     const tab = ref("overview");
     const busy = ref(false);
     const failure = ref("");
@@ -58,6 +59,7 @@ const PanelsDirectory = {
     const receipt = ref("");
     const templateFilter = ref("all");
     const searchText = ref(search.value);
+    const hasFilters = computed(() => Boolean(searchText.value.trim()) || scope.value !== "all" || templateFilter.value !== "all");
     const deleteArmed = ref(false);
 
     // Paging: cursors the owner returned, one per page visited.
@@ -74,17 +76,17 @@ const PanelsDirectory = {
         : templateFilter.value === "ordinary" ? { template: false } : {}),
     }));
     const rows = computed(() => (rowsState.value.status === "ready" ? rowsState.value.value.items ?? [] : []));
-    const ownerIdsExtra = ref([]);
-    const ownerIds = computed(() => [...new Set([
-      ...rows.value.map(row => row.ownerId),
-      ...ownerIdsExtra.value,
-    ].filter(Boolean))]);
-    const ownersState = usePanelData("owners", "options", () => ({ values: ownerIds.value }));
     const recordState = usePanelData("detail", "record");
     const usedByState = usePanelData("detail", "usedBy");
     const membersState = usePanelData("detail", "members");
     const projectionState = usePanelData("projectionRecord", "record");
     const grantsState = usePanelData("grants", "grants");
+    const record = computed(() => (recordState.value.status === "ready" ? recordState.value.value : null));
+    const projectionRecord = computed(() => (projectionState.value.status === "ready" ? projectionState.value.value : null));
+    const ownerIds = computed(() => [...new Set([
+      ...rows.value.map(row => row.ownerId), record.value?.ownerId, projectionRecord.value?.ownerId,
+    ].filter(Boolean))]);
+    const ownersState = usePanelData("owners", "options", () => ({ values: ownerIds.value }));
 
     const copyOp = usePanelOperation("copyOp", "copy");
     const deleteOp = usePanelOperation("deleteOp", "delete");
@@ -102,11 +104,9 @@ const PanelsDirectory = {
       return Object.fromEntries(options.map(option => [option.primaryKey, option.label]));
     });
     function ownerName(id) {
-      return ownerLabels.value[id] ?? id ?? "—";
+      return ownerLabels.value[id] ?? "—";
     }
 
-    const record = computed(() => (recordState.value.status === "ready" ? recordState.value.value : null));
-    watch(() => record.value?.ownerId, id => { if (id) ownerIdsExtra.value = [id]; });
     const usedBy = computed(() => (usedByState.value.status === "ready" ? usedByState.value.value : null));
     const members = computed(() => (membersState.value.status === "ready" ? membersState.value.value ?? {} : {}));
     const applicationEntries = computed(() => usedBy.value?.applicationEntries ?? []);
@@ -181,7 +181,6 @@ const PanelsDirectory = {
     }));
 
     const projectionId = ref("");
-    const projectionRecord = computed(() => (projectionState.value.status === "ready" ? projectionState.value.value : null));
     function inspectProjection(id) {
       projectionId.value = id;
       state.set("memberProjection", { className: "platform:ProductProjection", primaryKey: id });
@@ -464,7 +463,7 @@ const PanelsDirectory = {
     return {
       t,
       selected, search: searchText, searchText, scope, sort,
-      mode, tab, tabs, busy, failure, message, receipt,
+      mode, showDetail, hasFilters, tab, tabs, busy, failure, message, receipt,
       rows, visibleRows, loading, rowsError, page, nextCursor,
       templateFilter, onTemplateFilter,
       grantRows, grantsShared, grantsError, grantKindLabel, verbLabel, revokeGrant,
