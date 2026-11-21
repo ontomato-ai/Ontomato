@@ -4,7 +4,11 @@ Write the Vue template and scoped panel styles in `panel.html`. Put the template
 declared member with `<projection slot="detail"></projection>`. The slot names the key in `manifest.members`.
 Use Vue attributes, events, `v-if` and `v-for` for
 interactions. Adapt the layout to the container width. The host draws the page title and back control.
-Panel CSS positions member containers. Design variables style components inside them.
+Panel CSS positions member containers. Set colors, font sizes, spacing and corner radii with the platform's
+design variables. Run `node "$SKILL/ontomato.mjs" sdk read styles/sdk.css` to find the released
+`--text-*`, `--spacing-*` and `--radius-*` variables. In the browser, inspect the page's computed styles for
+the active brand colors, such as `--el-bg-color` and `--el-text-color-primary`. The product design guide
+in `docs/design/DESIGN.md` explains which roles to use.
 
 Declare projections using the [member fields](FIELDS.md) and declare public typed state in `panel.json`.
 Keep page-local state in Vue. An object state
