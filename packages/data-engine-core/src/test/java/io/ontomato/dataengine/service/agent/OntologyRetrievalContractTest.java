@@ -265,6 +265,8 @@ class OntologyRetrievalContractTest {
         new JSONArray(),
         "pendingMessages",
         new JSONArray(),
+        "pendingQuestions",
+        new JSONArray(),
         "toolExecutions",
         new JSONArray(),
         "artifacts",

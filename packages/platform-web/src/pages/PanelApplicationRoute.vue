@@ -1,18 +1,21 @@
 <script setup lang="ts">
-import { computed, inject, markRaw, ref, shallowRef, toRaw, watch, type Ref } from "vue";
+import { computed, inject, markRaw, ref, shallowRef, toRaw, watch, watchEffect, type Ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { PanelHost, panelUnavailable, useApplicationTheme, useAppTheme, usePageHeading, useUnsavedChanges, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
+import { PanelHost, panelUnavailable, useApplicationFrame, useApplicationTheme, useAppTheme, usePageHeading, useUnsavedChanges, type DirectPanelRun, type PanelHostLabels, type PanelHostPort, type PanelInstanceView, type PlatformPageHeading } from "@ontomato/platform-shell";
 import { applicationPanelAddress, panelAddress, panelAddressState, panelUsePath, parseApplicationPanelAddress } from "@ontomato/contracts/panel-host";
 import type { PanelDeepLinkStateValue } from "@ontomato/contracts/panel-manifest";
 import { applicationRootPath } from "@ontomato/contracts/platform-identity";
-import type { ApplicationEntryResolution, ApplicationPanelUse } from "@ontomato/contracts/product-panels";
+import { applicationFrameContextOf, type ApplicationEntryResolution, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { PageComposer, type DisplayObjectRefresh } from "@ontomato/agent-shell-ui";
 import { countedTypesChangedKey } from "@ontomato/ontology-manager";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
-import { platformPanelHost, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
+import { framePanelHost, platformPanelHost, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
+import EntryUnit from "./EntryUnit.vue";
+import { copyExternalLink } from "../external-link";
+import { Link } from "lucide-vue-next";
 import { hostThemeMode } from "../app-host";
 import { useApplicationCatalog } from "../catalog";
 
@@ -195,6 +198,64 @@ watch(missing, (message) => {
   if (message) emit("display-loaded", panelUnavailable(new Error(message)));
 });
 
+/*
+ * An application's own frame (product-layer standard, part one; design §三, big main's rulings 2026-11-21): when Java's
+ * answer names a frame panel, that panel stands in the application's area at full page instead of the platform's
+ * application menu, and the entry's page — the platform's header and the content, one unit — stands where the frame's
+ * \`<current-entry>\` is. The frame stays while the reader goes from entry to entry; the unit's content changes. Its state
+ * rides in the address's \`frame\` segment, beside the content's \`state\`; beside a conversation no frame is drawn, but
+ * the same segment gives the content the values the frame shares.
+ */
+const frameState = computed(() => {
+  try {
+    return parseApplicationPanelAddress(opened.value).frame;
+  } catch {
+    return {};
+  }
+});
+const framed = computed(() => !props.navigate && Boolean(resolution.value?.framePanelId));
+useApplicationFrame(() => framed.value);
+let frameFor: { framePanelId: string; port: PanelHostPort } | null = null;
+const framePort = computed(() => {
+  const answer = resolution.value;
+  if (!framed.value || !answer?.framePanelId) return null;
+  if (frameFor?.framePanelId !== answer.framePanelId)
+    frameFor = { framePanelId: answer.framePanelId, port: markRaw(framePanelHost(props.applicationId, answer.use, answer.framePanelId, changed)) };
+  return frameFor.port;
+});
+const frameContext = computed(() => resolution.value ? applicationFrameContextOf(resolution.value) : null);
+/** Where the entry's page is while no frame holds it, and the unit itself. */
+const holder = ref<HTMLElement | null>(null);
+const unit = ref<{ $el: HTMLElement } | null>(null);
+const currentEntry: NonNullable<DirectPanelRun["currentEntry"]> = {
+  entry: computed(() => frameContext.value!.currentEntry),
+  menu: computed(() => frameContext.value!.menu),
+  place(element) {
+    // The unit the route holds is moved into the frame's place, never mounted again: the frame cannot replace it.
+    const stop = watchEffect(() => {
+      const el = unit.value?.$el;
+      if (el && el.parentElement !== element) element.appendChild(el);
+    });
+    return {
+      dispose() {
+        stop();
+        const el = unit.value?.$el;
+        if (el && holder.value && el.parentElement === element) holder.value.appendChild(el);
+      },
+    };
+  },
+};
+/** The frame's own address: the entry's path, with the frame's state in it as the instance reports state. */
+const frameAddress = computed(() => panelAddress(openedPath.value, {}));
+/** The frame reported its state: the address carries it as \`frame\`, and the content's state stays as it is. */
+function reportFrameAddress(input: DisplayPageAddressInput) {
+  const reported = panelAddressState(input.address);
+  const { path, state, query } = parseApplicationPanelAddress(opened.value);
+  const next = applicationPanelAddress(path, { frame: reported as never, state, query });
+  if (next !== opened.value) void router.replace(next);
+}
+const headerLabels = computed(() => ({ save: t("platform.save"), discard: t("platform.discard"), unsavedChanges: t("platform.unsavedChanges") }));
+
 /** What the panel host says to the reader, in the platform's language. */
 const labels = computed<PanelHostLabels>(() => ({
   notStarted: t("platform.panelNotStarted"),
@@ -260,7 +321,9 @@ function reportAddress(input: DisplayPageAddressInput) {
  */
 function entryInputs(use: ApplicationPanelUse): Record<string, PanelDeepLinkStateValue> {
   return Object.fromEntries(Object.entries(use.inputs ?? {}).flatMap(([field, input]) =>
-    "literal" in input ? [[field, input.literal as PanelDeepLinkStateValue]] : []));
+    "literal" in input ? [[field, input.literal as PanelDeepLinkStateValue]]
+      // A value the frame shares: its state as the address's \`frame\` segment carries it, framed or beside a conversation.
+      : Object.hasOwn(frameState.value, input.frameState) ? [[field, frameState.value[input.frameState]!]] : []));
 }
 /** An address without the state fields the entry wires: those are the entry's to give, not the address's. */
 function withoutEntryInputs(address: string, use: ApplicationPanelUse) {
@@ -339,14 +402,19 @@ if (!props.navigate)
  * the application's menu does not reach (an entry with no menu name) also gets the way back to where the reader came
  * from, or to the application's root when the page was opened directly. Beside a conversation, the conversation draws both.
  */
-if (!props.navigate) {
-  usePageHeading(() => {
-    const title = shownPage.value?.context?.label || pageName.value;
-    if (!title) return null;
-    const description = pageDescription.value;
-    return { title, ...description ? { description } : {}, ...use.value?.names ? {} : { back: goBack } };
-  });
-}
+const heading = computed<PlatformPageHeading | null>(() => {
+  const title = shownPage.value?.context?.label || pageName.value;
+  if (!title) return null;
+  const description = pageDescription.value;
+  // Every entry offers its external link: its address as the reader is on it, state and all (big main's ruling, 2026-11-21).
+  return { title, ...description ? { description } : {}, ...use.value?.names ? {} : { back: goBack }, externalLink: opened.value };
+});
+/** The "more" of the header the frame holds: the same external link the platform's header offers. */
+const entryMore = computed(() => heading.value?.externalLink ? [{
+  id: "copy-external-link", label: t("platform.copyExternalLink"), icon: Link,
+  onClick: () => void copyExternalLink(heading.value!.externalLink!, t("platform.externalLinkCopied")),
+}] : []);
+if (!props.navigate) usePageHeading(() => (framed.value ? null : heading.value));
 function goBack() {
   if (typeof router.options.history.state.back === "string") router.back();
   else void router.push(applicationRootPath(props.applicationId));
@@ -435,6 +503,20 @@ function reportDirty(page: KeptPage, dirty: boolean) {
   <p v-else-if="missing" role="alert">{{ missing }}</p>
   <template v-if="!failure">
     <PanelHost
+      v-if="framePort"
+      key="frame"
+      class="panel-host-page panel-application-frame"
+      :port="framePort"
+      :labels="labels"
+      :language="language"
+      :address="frameAddress"
+      :initial="frameState"
+      :current-entry="currentEntry"
+      @display-address="reportFrameAddress"
+    />
+    <div v-if="framePort" ref="holder" class="panel-entry-holder">
+      <EntryUnit ref="unit" :heading="heading" :labels="headerLabels" :back-label="t('common.back')" :more="entryMore" :more-label="t('common.more')">
+    <PanelHost
       v-for="page in kept"
       v-show="page === shownPage"
       :key="page.use.id"
@@ -454,6 +536,30 @@ function reportDirty(page: KeptPage, dirty: boolean) {
       @reopened="markReopened(page)"
       @withdrawn="withdraw(page)"
     />
+      </EntryUnit>
+    </div>
+    <template v-else>
+    <PanelHost
+      v-for="page in kept"
+      v-show="page === shownPage"
+      :key="page.use.id"
+      :class="{ 'panel-host-page': !props.navigate }"
+      :ref="(instance) => { if (page === shownPage) host = instance as ShownInstance | null; }"
+      :port="page.port"
+      :labels="labels"
+      :language="language"
+      :shown="page === shownPage"
+      :wired="Object.keys(page.use.inputs ?? {})"
+      :address="addressOf(page)"
+      :initial="stateOf(page)"
+      @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"
+      @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
+      @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"
+      @context="(context: PageContext) => reportContext(page, context)"
+      @reopened="markReopened(page)"
+      @withdrawn="withdraw(page)"
+    />
+    </template>
     <!-- Offered once the panel's read named the page's skill: the agents are the ones that skill reaches. -->
     <PageComposer
       v-if="!props.navigate && shownPage && shownSkill"
@@ -468,6 +574,13 @@ function reportDirty(page: KeptPage, dirty: boolean) {
 </template>
 
 <style scoped>
+/* Where the entry's page waits until the frame places it; once placed, it is in the frame and this holds nothing. */
+.panel-entry-holder {
+  display: none;
+}
+.panel-application-frame {
+  flex: 1;
+}
 /* The application's area beside a conversation, where its theme is assigned; it lays out nothing of its own. */
 .panel-application-area {
   display: contents;

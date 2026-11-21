@@ -13,6 +13,11 @@ import {
 /** A standard skill package: the identity plus the exact files the runtime receives. */
 export type SkillPackage = z.infer<typeof runtimeRegisterSkillRequestSchema>;
 
+/** Entry facts verified by the host for this publication. */
+export interface SkillPackageContext {
+  readonly entryInputKeys: readonly string[];
+}
+
 /** The verified domain and reader for provider-owned content. */
 export interface SkillSourceContext {
   readonly domainId: string;
@@ -52,7 +57,7 @@ export interface ProtectedSkillOffering {
   entrances: readonly PageSkillEntrance[];
   resourceIds: readonly string[];
   readManifest(skill: RuntimeSkillRef): Promise<StandardSkillFrontmatter>;
-  provide(skill: RuntimeSkillRef): Promise<SkillPackage>;
+  provide(skill: RuntimeSkillRef, context?: SkillPackageContext): Promise<SkillPackage>;
 }
 
 const PROTECTED_SKILL_NAME = /^pvt-[0-9a-f]{48}$/u;

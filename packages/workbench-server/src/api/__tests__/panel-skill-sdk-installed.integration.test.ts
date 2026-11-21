@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { pageSkillContextSchema } from "@ontomato/contracts/page-skills";
-import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
-import type { PanelSkillSource } from "@ontomato/contracts/product-panels";
+import { runtimeRegisterSkillRequestSchema, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import type { ApplicationPanelInputs, PanelSkillSource } from "@ontomato/contracts/product-panels";
 import { startPanelSkillEntryServer } from "../../__tests__/fixtures/panel-skill-entry-server";
 import { protectedSkillRef } from "../../core/skills/providers";
 import { getPostgresPool, qualifiedTable as table } from "../../infrastructure/postgres";
@@ -25,10 +25,12 @@ let base: string;
 let staticEntrances: PanelSkillSource["entrance"][] | undefined;
 let skill: RuntimeSkillRef;
 const published = vi.fn();
+const entryInputs = new Map<string, ApplicationPanelInputs>();
 
 beforeAll(async () => {
   server = await startPanelSkillEntryServer({
     entries: fixture.uses, grants: fixture.grants, onPublish: published,
+    entryInputs: entry => entryInputs.get(entry.useId),
     admittedEntrances: () => staticEntrances,
     nativeMapping: () => fixture.native ? { permissionCode: "business-knowledge", skill: governance,
       defaults: [{ pageKey: "other-settings", defaultAgent: governanceDefault }] } : undefined,
@@ -58,10 +60,25 @@ it("lists a code panel's protected skill from the bundled current SDK and saves 
   expect(result.rows).toEqual([{ name: "Renamed", skills: [skill] }]);
 });
 
-it("prepares the same exact panel version from both current uses and omits it when a dependency is unreadable", async () => {
+it("validates a typed agent draft that includes the installed panel skill", async () => {
+  const form = { name: "Renamed", description: "", icon: null, enabled: true, systemPrompt: "", skills: [skill] };
+  const validate = (target: object) => fetch(base + "/agent-definitions/validate", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ form, target }),
+  });
+  expect((await validate({ objectType: "platform:AgentDefinition", id: agentId })).status).toBe(204);
+  expect((await validate({ id: agentId })).status).toBe(400);
+});
+
+it("publishes the panel skill for the authorized entry's wired state fields", async () => {
   const { pageSkillMemberContext, prepareAssistantSkills, readAssistantSkillView } = await import("../../services/assistant/skills");
   const credentials = { token: "editor", locale: "en" };
   const agent = { kind: "regular", skills: [] };
+  await getPostgresPool().query(`UPDATE ${table("product_panels")}
+    SET definition = jsonb_set(definition, '{manifest}', (definition->'manifest') || $1::jsonb)
+    WHERE id=$2 AND domain_id=$3`, [{
+    state: { mode: { type: { kind: "scalar", type: "string" }, deepLink: true, external: true } },
+    commands: { changeMode: { labelKey: "mode.change", do: { set: { fields: { mode: { literal: "review" } } } } } },
+  }, fixture.panelId, fixture.domainId]);
   let digest: string | undefined;
   const view = await readAssistantSkillView(fixture.domainId, credentials);
   for (const { applicationId, useId, entrance, path } of fixture.uses) {
@@ -77,6 +94,28 @@ it("prepares the same exact panel version from both current uses and omits it wh
   }
   expect(published).toHaveBeenCalledTimes(2);
   expect(published.mock.calls[0]).toEqual(published.mock.calls[1]);
+  const shared = runtimeRegisterSkillRequestSchema.parse(published.mock.calls[0]![0]);
+  expect(shared.files[0]!.content).toContain("(changeMode).");
+  const [bound, unbound] = fixture.uses;
+  const prepareAt = async ({ applicationId, useId, entrance }: PanelSkillSource) => {
+    const context = await pageSkillMemberContext(view, entrance, { kind: "application-use", applicationId, useId }, { id: fixture.panelId });
+    return { context, prepared: await prepareAssistantSkills(fixture.domainId, agent, credentials, context) };
+  };
+  entryInputs.set(bound!.useId, { mode: { literal: "entry-specific-value" } });
+  try {
+    const { context, prepared } = await prepareAt(bound!);
+    expect(prepared.currentPage).toEqual({ entrance: bound!.entrance,
+      member: context.mode === "member" ? context.member : null, path: bound!.path });
+    expect(prepared.skills[0]!.skill).toEqual(skill);
+    expect(prepared.skills[0]!.digest).not.toBe(digest);
+    const scoped = runtimeRegisterSkillRequestSchema.parse(published.mock.calls.at(-1)![0]);
+    expect(scoped.files[0]!.content).not.toContain("(changeMode).");
+    expect(scoped.files[0]!.content).not.toContain("entry-specific-value");
+    expect((await prepareAt(unbound!)).prepared.skills).toEqual([{ skill, digest }]);
+    expect(published.mock.calls.at(-1)![0]).toEqual(shared);
+  } finally {
+    entryInputs.delete(bound!.useId);
+  }
   published.mockClear();
   fixture.grants.delete("records");
   const denied = await readAssistantSkillView(fixture.domainId, credentials);

@@ -15,7 +15,6 @@ withDefaults(
     title: string;
     description?: string | null;
     navigationHeader?: boolean;
-    hideHeader?: boolean;
     /** The page's own buttons at the right of the title row. */
     actions?: readonly PlatformPageAction[];
     /** The header's own words, from the host's i18n. */
@@ -27,7 +26,7 @@ withDefaults(
 
 <template>
   <div class="app-page">
-    <PlatformPageHeader v-if="!hideHeader" :class="{ 'app-navigation-header': navigationHeader }" :title="title" :description="description" :actions="actions" :labels="labels">
+    <PlatformPageHeader :class="{ 'app-navigation-header': navigationHeader }" :title="title" :description="description" :actions="actions" :labels="labels">
       <template v-if="$slots.actions" #actions><slot name="actions" /></template>
     </PlatformPageHeader>
     <div class="app-page-body platform-page-gutter">

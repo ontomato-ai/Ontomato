@@ -31,7 +31,7 @@ import WorkspaceResourceDetail, { type WorkspaceResource } from "./WorkspaceReso
 import { agentHostCreateSessionResponseSchema, agentHostSessionSnapshotSchema, type AgentHostAgent, type AgentHostSession } from "@ontomato/contracts/agent-host";
 const { locale, t } = useI18n();
 const productText = useProductText();
-const props=defineProps<{productAssetId?:string;platformWidgetAsset?:ProductAsset;preview?:boolean;pinnedAssets?:ProductAsset[];embedded?:boolean;hidePageHeader?:boolean;pageState?:Record<string,unknown>;unavailableAssets?:string[]}>();
+const props=defineProps<{productAssetId?:string;platformWidgetAsset?:ProductAsset;preview?:boolean;pinnedAssets?:ProductAsset[];embedded?:boolean;pageState?:Record<string,unknown>;unavailableAssets?:string[]}>();
 const personalHome=computed(()=>!props.productAssetId&&!props.platformWidgetAsset&&!props.embedded);
 const router = useRouter();
 const platformHost = inject(platformHostKey, null);
@@ -397,7 +397,7 @@ const actions = computed(() => [
 ]);
 </script>
 <template>
-  <component :is="props.platformWidgetAsset||props.embedded?'div':AppPage" :class="{'personal-home-page':personalHome,'platform-widget-host':props.platformWidgetAsset||props.embedded,'is-platform-widget':!!props.platformWidgetAsset}" :title="personalHome ? '' : homeAsset ? productText(homeAsset.name) : text.title" :description="personalHome ? undefined : productText(homeAsset?.description ?? '')" :navigation-header="personalHome" :hide-header="props.hidePageHeader" :actions="actions" :labels="{ save: text.save, discard: text.cancel, unsavedChanges: text.unsaved }">
+  <component :is="props.platformWidgetAsset||props.embedded?'div':AppPage" :class="{'personal-home-page':personalHome,'platform-widget-host':props.platformWidgetAsset||props.embedded,'is-platform-widget':!!props.platformWidgetAsset}" :title="personalHome ? '' : homeAsset ? productText(homeAsset.name) : text.title" :description="personalHome ? undefined : productText(homeAsset?.description ?? '')" :navigation-header="personalHome" :actions="actions" :labels="{ save: text.save, discard: text.cancel, unsavedChanges: text.unsaved }">
     <div v-if="errors.config" role="alert" class="workspace-error">{{ errors.config }} <el-button @click="readConfig">{{ text.retry }}</el-button></div>
     <WorkspaceSkeleton v-if="!ready && busy.config" :label="text.loading" :rows="6" />
     <el-alert v-if="analysisError" :title="analysisError" type="error" :closable="false" />

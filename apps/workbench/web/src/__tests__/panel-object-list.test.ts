@@ -1,6 +1,6 @@
 /* eslint-disable vue/one-component-per-file */
 import { afterEach, expect, it, vi } from "vitest";
-import { createApp, defineComponent, h, nextTick, provide, ref } from "vue";
+import { computed, createApp, defineComponent, h, nextTick, provide, ref } from "vue";
 import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
@@ -989,7 +989,7 @@ it("draws a declared ObjectList with data.objects in a frame via <Projection> an
         t: (key: string) => key,
         resources: async () => {},
         expandPageComposer: async () => {},
-        notify: () => { throw new Error("This test tells the reader nothing"); }, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); },
+        notify: () => { throw new Error("This test tells the reader nothing"); }, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); }, currentEntry: computed(() => null), entryMenu: computed(() => null),
       });
       return () => h(Projection, { slot: "picker" });
     },

@@ -10,7 +10,7 @@ import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import type { SkillCatalogDiagnostics } from "@ontomato/contracts/skills";
 import {
   isProtectedSkillName, protectedSourceSkillRef, SkillSourceRecordError,
-  type ProtectedSkillOffering, type SkillSourceFailure,
+  type ProtectedSkillOffering, type SkillPackageContext, type SkillSourceFailure,
 } from "../../core/skills/providers";
 import { skillRegistryManager, type ListedProtectedSkill, type ListedSourceFailure } from "../../core/skills/registry/manager";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -310,12 +310,15 @@ export async function readSkillView(domainId: string, initiatorCredentials: Assi
       if (memberPath.length) return null;
       let identity: SkillSourceIdentity;
       let path: string | undefined;
+      let packageContext: SkillPackageContext | undefined;
       if (source.kind === "application-use") {
         const actual = await currentApplicationPanel(caller, entrance, source);
         if (!actual || (loadedPanel && loadedPanel.id !== actual.use.panelId)) return null;
         identity = { providerId: PANEL_SKILL_PROVIDER_ID, sourceKey: actual.use.panelId };
         source = { kind: source.kind, applicationId: actual.applicationId, useId: actual.use.id };
         path = actual.use.path;
+        const entryInputKeys = Object.keys(actual.use.inputs ?? {});
+        if (entryInputKeys.length) packageContext = { entryInputKeys };
       } else {
         const resolved = await sourceOwners.get(source.kind)?.resolve({ ...caller, entrance, source });
         if (!resolved) return null;
@@ -328,7 +331,8 @@ export async function readSkillView(domainId: string, initiatorCredentials: Assi
       if (!pages.byEntrance.get(entranceKey(entrance))?.has(key)) return null;
       requireCertainStoredSkill(ref);
       requireReadableManifest(ref);
-      return { entrance, member: { source, memberPath: [], ref }, ...(path === undefined ? {} : { path }) };
+      return { entrance, member: { source, memberPath: [], ref }, ...(path === undefined ? {} : { path }),
+        ...(packageContext && { packageContext }) };
     },
   };
   return view;
@@ -340,6 +344,7 @@ export interface AuthorizedPageSkillMember {
   entrance: PageSkillEntrance;
   member: PageSkillMember;
   path?: string;
+  packageContext?: SkillPackageContext;
 }
 
 export async function resolvePageSkillSource(view: SkillView, entrance: PageSkillEntrance, source: PageSkillSource,

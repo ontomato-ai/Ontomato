@@ -18,6 +18,9 @@ const labels: PlatformShellLabels = {
   save: "Save",
   discard: "Discard",
   unsavedChanges: "Unsaved changes",
+  more: "More",
+  copyExternalLink: "Copy external link",
+  externalLinkCopied: "External link copied",
 };
 
 /** The enterprise rail in display order: the ontology applications, the business ones, the platform's own settings. */

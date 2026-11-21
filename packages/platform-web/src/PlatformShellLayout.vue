@@ -9,6 +9,7 @@ import {
   platformApplicationNameKey,
   pilotPageKey,
   platformPageAccessKey,
+  provideApplicationFrame,
   provideApplicationTheme,
   providePageActions,
   providePageHeading,
@@ -96,6 +97,7 @@ const shownPage = computed<PlatformShownPage | null>(() => {
       description: heading.value.description ?? (page?.descriptionKey ? t(page.descriptionKey) : null),
       named: true,
       back: heading.value.back,
+      externalLink: heading.value.externalLink,
     };
   }
   if (!page) return null;
@@ -119,6 +121,9 @@ const preferences = computed(() => ({
 
 const labels = computed(() => ({
   back: t("common.back"),
+  more: t("common.more"),
+  copyExternalLink: t("platform.copyExternalLink"),
+  externalLinkCopied: t("platform.externalLinkCopied"),
   expandRail: t("platform.expandRail"),
   collapseRail: t("platform.collapseRail"),
   applications: t("platform.apps"),
@@ -167,6 +172,8 @@ const localeNames = computed(() =>
 const pageActions = providePageActions();
 /** What the shown entry's application assigns in its area, written by the application's page. */
 const appTheme = provideApplicationTheme();
+/** Whether the shown application draws its own frame in its area (its page writes it). */
+const appFramed = provideApplicationFrame();
 
 /**
  * The pages the platform's assembly can mount beside a conversation: the conversation application asks for one by
@@ -265,6 +272,7 @@ const blocked = computed(() => {
     :brand="shellBrand"
     :page-actions="pageActions"
     :app-theme="appTheme"
+    :app-framed="appFramed"
     :blocked="catalog.error.value ? { reason: 'no-pages', message: catalog.error.value } : blocked"
     @select-app="selectRailApp"
   />

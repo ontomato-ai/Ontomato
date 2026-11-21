@@ -61,13 +61,28 @@ it("writes a draft that keeps the execution user and prints the page link", asyn
   const written = await run(["draft", "update", agentId, "@form.json"], env, cwd);
   expect(written.code).toBe(0);
   expect(JSON.parse(await readFile(path.join(cwd, "outputs/drafts/agent.page-draft.json"), "utf8"))).toEqual({
-    pageKey: "agents-agent-settings", operation: "agent.update", target: { id: agentId }, form,
+    pageKey: "agents-agent-settings", operation: "agent.update", target: { objectType: "platform:AgentDefinition", id: agentId }, form,
   });
   const linked = await run(["draft-link", "@outputs/drafts/agent.page-draft.json"], env, cwd);
   expect(linked.code).toBe(0);
   expect(linked.stdout.trim()).toBe(
     `#/agents/settings/${agentId}?draftSessionId=session&draftRunId=run&draftPath=outputs%2Fdrafts%2Fagent.page-draft.json`,
   );
+});
+
+it("writes an object type without an id for create and rejects a legacy target when linking", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-builder-typed-create-"));
+  await writeFile(path.join(cwd, "form.json"), JSON.stringify(form));
+  const env = { ONTOMATO_SKILL_SCENARIO: "platform", ONTOMATO_SESSION_ID: "session", ONTOMATO_RUN_ID: "run" };
+  expect((await run(["draft", "create", "@form.json"], env, cwd)).code).toBe(0);
+  const artifact = "outputs/drafts/agent.page-draft.json";
+  const draft = JSON.parse(await readFile(path.join(cwd, artifact), "utf8"));
+  expect(draft.target).toEqual({ objectType: "platform:AgentDefinition" });
+
+  await writeFile(path.join(cwd, artifact), JSON.stringify({ ...draft, target: {} }));
+  const refused = await run(["draft-link", "@" + artifact], env, cwd);
+  expect(refused.code).toBe(1);
+  expect(refused.stderr).toContain(artifact + ": target.objectType");
 });
 
 it("writes a draft with only the fields the agent gives it", async () => {
@@ -124,7 +139,7 @@ it("validates the draft's target and form together", async () => {
   const validated = await run(["validate-draft", "@outputs/drafts/agent.page-draft.json"], env, cwd);
   expect(validated.code).toBe(0);
   expect(validated.stdout.trim()).toBe("ok");
-  expect(seen).toEqual([{ url: "/api/assistant/agent-definitions/validate", body: { target: { id: agentId }, form } }]);
+  expect(seen).toEqual([{ url: "/api/assistant/agent-definitions/validate", body: { target: { objectType: "platform:AgentDefinition", id: agentId }, form } }]);
 });
 
 it("lists the users a governance administrator may choose, and reports when none may be set", async () => {

@@ -33,11 +33,14 @@ const loaded = shallowRef<{ component: Component; slot: ProjectionSlot; member: 
 /** A panel the member places, run by the host: its element, placed in this member's container once both are there. */
 const nested = shallowRef<{ element: HTMLElement; failure: Readonly<{ value: Error | null }> } | null>(null);
 const awaiting = ref(false);
+/** The platform's current entry, asked for outside an application's frame: the place says it shows nothing here. */
+const outsideFrame = ref(false);
 const container = ref<HTMLElement | null>(null);
 
 // The member as the instance holds it — read, registered and kept current there, drawn here.
 void props.instance.placing(props.member).then(async (placing) => {
   if (placing.kind === "awaiting") awaiting.value = true;
+  else if (placing.kind === "outsideFrame") outsideFrame.value = true;
   else if (placing.kind === "panel") nested.value = placing;
   else {
     const member = placing.context;
@@ -81,6 +84,7 @@ const labels = useDataStateLabels();
 <template>
   <data-state v-if="refused" :result="refused" :labels="labels"></data-state>
   <data-state v-else-if="awaiting" :result="{ status: 'awaiting' }" :labels="labels"></data-state>
+  <p v-else-if="outsideFrame" class="sdk-panel-member-outside-frame" role="status">{{ t("platform.currentEntryOutsideFrame") }}</p>
   <div v-else-if="nested" ref="container" class="sdk-panel-member-nested"></div>
   <data-state v-else-if="!loaded" :result="{ status: 'loading' }" :labels="labels"></data-state>
   <component :is="loaded.component" v-else v-bind="bound">

@@ -5,6 +5,7 @@ import nodePath from "node:path";
 import { createServer, type Server } from "node:http";
 import express from "express";
 import pg from "pg";
+import { draftTarget, pageDraftReadSchema } from "@ontomato/contracts/page-draft";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 /*
@@ -52,8 +53,15 @@ installWorkbenchIdentity({
 
 const DRAFT = "outputs/drafts/agent.page-draft.json";
 const sessionId = randomUUID(), runId = randomUUID(), updateRunId = randomUUID(), invalidRunId = randomUUID();
-const createDraft = { pageKey: "agent-settings", operation: "agent.create", target: {}, form: { name: "New analyst" } };
-const updateDraft = { pageKey: "agent-settings", operation: "agent.update", target: { id: randomUUID() }, form: { name: "Renamed" } };
+const createDraft = { pageKey: "agent-settings", operation: "agent.create", target: { objectType: "platform:AgentDefinition" }, form: { name: "New analyst" } };
+const updateDraft = { pageKey: "ontology", operation: "objectType.update",
+  target: { objectType: "platform:ObjectType", id: "owner:table/one" }, form: { displayName: "Renamed" } };
+const invalidTargets = [
+  { target: {}, field: "target.objectType" },
+  { target: { id: "legacy" }, field: "target.objectType" },
+  { target: { objectType: "" }, field: "target.objectType" },
+  { target: { objectType: "platform:ObjectType", id: null }, field: "target.id" },
+].map(item => ({ ...item, run: randomUUID() }));
 let server: Server, base = "";
 
 beforeAll(async () => {
@@ -63,13 +71,17 @@ beforeAll(async () => {
   await ensureAssistantSchema(state.pool);
   await ensureAssistantPageDraftCreationsSchema(state.pool);
   await state.pool.query(`INSERT INTO "${state.schema}".assistant_sessions (id,domain_id,owner_id,agent_id) VALUES ($1,'domain','alice',$2)`, [sessionId, randomUUID()]);
-  for (const [seq, run] of [runId, updateRunId, invalidRunId].entries())
+  for (const [seq, run] of [runId, updateRunId, invalidRunId, ...invalidTargets.map(item => item.run)].entries())
     await state.pool.query(`INSERT INTO "${state.schema}".assistant_turns (id,session_id,request_seq,input_hash) VALUES ($1,$2,$3,'hash')`, [run, sessionId, seq]);
   state.files.push({ id: randomUUID(), sessionId, runId, path: DRAFT, draft: createDraft });
   state.files.push({ id: randomUUID(), sessionId, runId: updateRunId, path: DRAFT, draft: updateDraft });
 
   state.files.push({ id: randomUUID(), sessionId, runId: invalidRunId, path: DRAFT,
-    draft: { pageKey: "ontology", operation: "objectType.create", target: {}, form: { "/className": "bin" } },
+    draft: { pageKey: "ontology", operation: "objectType.create", target: { objectType: "platform:ObjectType" }, form: { "/className": "bin" } },
+  });
+
+  for (const item of invalidTargets) state.files.push({
+    id: randomUUID(), sessionId, runId: item.run, path: DRAFT, draft: { ...createDraft, target: item.target },
   });
 
   // The router reads the public skills' place when it loads, so the layout is installed first.
@@ -107,7 +119,9 @@ describe("what a create draft created", () => {
     expect(await (await read(runId)).json()).toEqual(createDraft);
 
     expect((await record(runId, "agent-1")).status).toBe(204);
-    expect(await (await read(runId)).json()).toEqual({ ...createDraft, created: { id: "agent-1" } });
+    const recorded = pageDraftReadSchema.parse(await (await read(runId)).json());
+    expect(recorded).toEqual({ ...createDraft, created: { id: "agent-1" } });
+    expect(draftTarget(recorded)).toEqual({ kind: "update", objectType: "platform:AgentDefinition", id: "agent-1" });
     // The same save reported again is the same record.
     expect((await record(runId, "agent-1")).status).toBe(204);
     const other = await record(runId, "agent-2");
@@ -138,6 +152,18 @@ describe("what a create draft created", () => {
       error: { code: "INVALID_REQUEST", message: expect.stringContaining('form key "/className"') },
     });
     expect((await rows()).filter(row => row.run_id === invalidRunId)).toEqual([]);
+  });
+
+  it.each(invalidTargets)("rejects the stored draft's invalid $field on read and on its receipt", async ({ run, field }) => {
+    for (const response of [await read(run), await record(run, "new")]) {
+      expect(response.status).toBe(400);
+      const body = await response.json();
+      expect(body.error.code).toBe("INVALID_REQUEST");
+      expect(body.error.message).toContain(DRAFT);
+      expect(body.error.message).toContain(run);
+      expect(body.error.message).toContain(field);
+    }
+    expect((await rows()).filter(row => row.run_id === run)).toEqual([]);
   });
 
   it("goes with its conversation", async () => {

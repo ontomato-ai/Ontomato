@@ -37,7 +37,7 @@ test("draft returns only the page link for a combined card edit",async t=>{
   const result=JSON.parse((await invoke(dir,api.base,["draft","--operation","dashboard.layout","--form","form.json","--out",out])).stdout);
   assert.deepEqual(Object.keys(result),["link"]);
   const draft=JSON.parse(await readFile(path.join(dir,out),"utf8"));
-  assert.deepEqual(draft,{pageKey:"dashboard",operation:"dashboard.layout",target:{id:form.id},form});
+  assert.deepEqual(draft,{pageKey:"dashboard",operation:"dashboard.layout",target:{objectType:"platform:Dashboard",id:form.id},form});
   const href=result.link.match(/^\[[^\]]+\]\(([^)]+)\)$/)?.[1];
   assert.ok(href,"Draft output must include a clickable page link, not a file preview");
   const link=new URL(href,"http://page.test/");
@@ -73,7 +73,7 @@ test("parameter drafts keep text and address the dashboard from dashboardId",asy
   await writeFile(path.join(dir,"form.json"),JSON.stringify(form));
   await invoke(dir,api.base,["draft","--operation","dashboard.card.parameters","--form","form.json","--out","outputs/drafts/parameters.page-draft.json"]);
   const draft=JSON.parse(await readFile(path.join(dir,"outputs/drafts/parameters.page-draft.json"),"utf8"));
-  assert.deepEqual(draft.target,{id:"board"});assert.deepEqual(draft.form,form);assert.equal(api.calls.length,0);
+  assert.deepEqual(draft.target,{objectType:"platform:Dashboard",id:"board"});assert.deepEqual(draft.form,form);assert.equal(api.calls.length,0);
 });
 test("invalid forms fail before draft output or a save request",async t=>{
   const dir=await workspace(t),api=await server(t);

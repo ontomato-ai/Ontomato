@@ -8,10 +8,11 @@ import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeKeySchema, runtimeRela
 /** An object's id is opaque here; the page and the object's owner check its format (an agent id is a UUID, a knowledge id is not). */
 export const pageDraftObjectIdSchema = z.string().min(1).max(200);
 
-/** The object a draft changes; a create draft names none. */
+/** The draft's object type and, when editing, the owner's opaque id. */
 export const pageDraftTargetSchema = z
-  .object({ id: pageDraftObjectIdSchema.optional() })
+  .object({ objectType: runtimeKeySchema, id: pageDraftObjectIdSchema.optional() })
   .strict();
+export type PageDraftObjectRef = z.infer<typeof pageDraftTargetSchema>;
 
 export const pageDraftSchema = z
   .object({
@@ -36,8 +37,8 @@ export interface PageDraft<Form> {
   pageKey: string;
   /** The page's own form action, e.g. `agent.create` or `agent.update`. */
   operation: string;
-  /** The object changed, by its owner's opaque id; a create leaves the id out. */
-  target: { id?: string };
+  /** A create names its object type. An edit also names the owner's opaque id. */
+  target: PageDraftObjectRef;
   form: Form;
   /** A create draft once saved: the object its first save created, which the draft addresses from then on. */
   created?: { id: string };
@@ -104,8 +105,10 @@ export async function readPageDraft<Form, Operation extends string>(
   return { operation, target: draft.target, form: draft.form as Form, created: draft.created };
 }
 
-/** The real object a draft addresses: none for a create draft, or the object it changes. */
-export type PageDraftTarget = { kind: "create" } | { kind: "update"; id: string };
+/** The effective owner target, including the object a create draft has already created. */
+export type PageDraftTarget =
+  | { kind: "create"; objectType: string }
+  | { kind: "update"; objectType: string; id: string };
 
 /**
  * Which real object a page reads for a draft: an update draft's target, or the object a create draft's first save
@@ -114,8 +117,9 @@ export type PageDraftTarget = { kind: "create" } | { kind: "update"; id: string 
  * the create again.
  */
 export function draftTarget(draft: Pick<PageDraft<unknown>, "target" | "created">): PageDraftTarget {
+  const { objectType } = draft.target;
   const id = draft.target.id ?? draft.created?.id;
-  return id === undefined ? { kind: "create" } : { kind: "update", id };
+  return id === undefined ? { kind: "create", objectType } : { kind: "update", objectType, id };
 }
 
 /**

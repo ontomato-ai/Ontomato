@@ -76,12 +76,26 @@
     border-radius: var(--radius-sm);
     overflow: hidden;
   }
+  .og-body {
+    grid-template-rows: minmax(0, 1fr);
+  }
   .og-canvas {
     position: relative;
     min-width: 0;
     min-height: 0;
     height: 100%;
     background-color: var(--el-bg-color-page);
+  }
+  /* The host wraps a placed member in its own element: the canvas fills it, as the capability map's canvas does. */
+  .og-canvas > [data-member] {
+    display: flex;
+    height: 100%;
+    min-height: 0;
+    flex-direction: column;
+  }
+  .og-canvas > [data-member] > * {
+    flex: 1 1 auto;
+    min-height: 0;
   }
   .og-inspector {
     position: absolute;

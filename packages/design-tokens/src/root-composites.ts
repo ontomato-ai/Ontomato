@@ -18,6 +18,23 @@ function specificity(selector: string): Specificity {
 
 const higher = (a: Specificity, b: Specificity) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 
+/** The selectors of a list, cut at its own commas only: one inside `:is(…)`, `:not(…)` or `[…]` belongs to its selector. */
+function selectorsOf(list: string): string[] {
+  const parts: string[] = [];
+  let depth = 0, start = 0;
+  for (let at = 0; at < list.length; at += 1) {
+    const char = list[at];
+    if (char === "(" || char === "[") depth += 1;
+    else if (char === ")" || char === "]") depth -= 1;
+    else if (char === "," && depth === 0) {
+      parts.push(list.slice(start, at).trim());
+      start = at + 1;
+    }
+  }
+  parts.push(list.slice(start).trim());
+  return parts;
+}
+
 /** The rules a stylesheet applies now: its own, and those inside a group whose condition holds. */
 function* rulesOf(rules: CSSRuleList): Generator<CSSStyleRule> {
   for (const rule of Array.from(rules)) {
@@ -36,7 +53,7 @@ function rootDeclarations(doc: Document): Map<string, string> {
     // Another origin's stylesheet cannot be read (a web font's); it declares no rule of the platform's.
     if (sheet.href && new URL(sheet.href, doc.baseURI).origin !== new URL(doc.baseURI).origin) continue;
     for (const rule of rulesOf(sheet.cssRules)) {
-      const matched = rule.selectorText.split(",").map((part) => part.trim()).filter((part) => root.matches(part));
+      const matched = selectorsOf(rule.selectorText).filter((part) => root.matches(part));
       if (!matched.length) continue;
       const weight = matched.map(specificity).sort(higher).at(-1)!;
       for (const name of Array.from(rule.style)) {

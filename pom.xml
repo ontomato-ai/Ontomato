@@ -205,6 +205,12 @@
                                 <include>**/AnonymousAgentExecutionIdentityTest.java</include>
                                 <include>**/ParameterFormsTest.java</include>
                                 <include>**/VectorResourcePostgresBoundaryTest.java</include>
+                                <include>**/VectorSearchIndexPostgresBoundaryTest.java</include>
+                                <include>**/MetricRecallPostgresBoundaryTest.java</include>
+                                <include>**/RuntimeFunctionIntegrationTest.java</include>
+                                <include>**/ModelConfigurationMigrationTest.java</include>
+                                <include>**/GovernanceWindowTest.java</include>
+                                <include>**/OssGovernanceWindowAssemblyTest.java</include>
                                 <include>**/AssetLookupPostgresBoundaryTest.java</include>
                                 <include>**/KnowledgeDomainPostgresBoundaryTest.java</include>
                                 <include>**/BussinessKnowledgeFormBoundaryTest.java</include>

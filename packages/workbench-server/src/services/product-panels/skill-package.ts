@@ -7,7 +7,7 @@ import { type RuntimeSkillRef, type StandardSkillFrontmatter } from "@ontomato/c
 import {
   panelManifestSchema, panelOperationId, type PanelCommand, type PanelManifest, type PanelMemberInput,
 } from "@ontomato/contracts/panel-manifest";
-import { PAGE_DRAFT_QUERY_KEYS } from "@ontomato/contracts/page-draft";
+import { draftTarget, PAGE_DRAFT_QUERY_KEYS, type PageDraftObjectRef } from "@ontomato/contracts/page-draft";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
 import { directReadDeclaration } from "@ontomato/contracts/panel-projection";
 import {
@@ -162,9 +162,20 @@ export async function panelSkillSources(
         const { description, fingerprint } = await read();
         return panelSkillManifest(skill, description, fingerprint);
       },
-      async provide(skill) {
-        const { description, markdown, fingerprint } = await read();
-        const manifest = panelSkillManifest(skill, description, fingerprint);
+      async provide(skill, context) {
+        let { description, markdown, fingerprint: sourceFingerprint } = await read();
+        if (context) {
+          const bound = new Set(context.entryInputKeys);
+          const commands = Object.entries(description.commands);
+          const visible = commands.filter(([, { do: action }]) =>
+            !("set" in action && Object.keys(action.set.fields).some(field => bound.has(field))));
+          if (visible.length !== commands.length) {
+            description = { ...description, commands: Object.fromEntries(visible) };
+            markdown = describeSkill(description);
+            sourceFingerprint = fingerprint([sourceFingerprint, Object.keys(description.commands)]);
+          }
+        }
+        const manifest = panelSkillManifest(skill, description, sourceFingerprint);
         return { skill, files: [{ path: "SKILL.md", content: `---\n${stringify(manifest)}---\n\n${markdown}\n` }] };
       },
     };
@@ -342,21 +353,33 @@ function describeReads(reads: readonly { member: string; dataName: string; read:
 function describeDraft(forms: readonly OperationDescription[]): string {
   if (!forms.length) return "";
   const [sessionKey, runKey, pathKey] = PAGE_DRAFT_QUERY_KEYS;
-  const owners = forms.map(form => {
+  const examples = forms.map(form => {
     const owner = form.owner?.handler;
     if (owner?.kind !== "form.save") throw new Error(`Expected a form owner for ${form.id}`);
-    const target = { kind: "object" as const, objectType: owner.targetType, primaryKey: "<object id>" };
-    return { id: form.id, update: owner.draftOperation(target), create: form.draft && owner.draftOperation({ kind: "draft" }) };
+    const { targetType: objectType } = owner;
+    const example = (target: PageDraftObjectRef) => {
+      const effective = draftTarget({ target });
+      const operation = owner.draftOperation(effective.kind === "create"
+        ? { kind: "draft" }
+        : { kind: "object", objectType: effective.objectType, primaryKey: effective.id });
+      return { operation, target };
+    };
+    return {
+      id: form.id,
+      edit: example({ objectType, id: "<owner object id>" }),
+      create: form.draft ? example({ objectType }) : undefined,
+    };
   });
   return [
     "### Draft a change",
-    "Read the owner's form for the intended target. Follow that form-save operation's drafting instructions under Declared operations to choose and validate the values in `form`. Write `outputs/drafts/<name>.page-draft.json` with this envelope.",
+    "Read the owner's form for the intended target. Follow that form-save operation's drafting instructions under Declared operations to choose and validate the values in `form`. Write `outputs/drafts/<name>.page-draft.json` with this envelope, using the operation and target given for your form below.",
     "```json",
-    JSON.stringify({ pageKey: "<current page context pageKey>", operation: owners[0]!.update, target: { id: "<object id>" }, form: {} }, null, 2),
+    JSON.stringify({ pageKey: "<current page context pageKey>", ...examples[0]!.edit, form: {} }, null, 2),
     "```",
-    ...owners.map(owner => `- ${owner.id} uses \`${owner.update}\` for an existing object.${owner.create ? ` Use \`${owner.create}\` with an empty target for creation.` : ""}`),
+    ...examples.map(({ id, edit, create }) =>
+      `- Form \`${id}\`. For editing, use \`${JSON.stringify(edit)}\`.${create ? ` For creation, use \`${JSON.stringify(create)}\`.` : ""}`),
     "Use field names and nested JSON in `form`. Field paths such as `/className` locate values but are not keys in the draft.",
-    "Put the selected object's ID in `target.id` when editing an existing object.",
+    "For an edit, copy the selected object's opaque ID from its owner into `target.id`. For creation, `target` contains only `objectType`.",
     "An owner's revision, when required, is part of the operation input.",
     "Each run has its own artifact area. Use a distinct path for each draft written in the same run.",
     `Use the current page context's canonical path as a site-relative address starting with a single \`/\` (for example, \`/ontology/assets/actions\`) and preserve the entry's existing query parameters. Do not prefix it with \`$ONTOMATO_BASE_URL\`, a hostname, or a URL scheme. Set \`${sessionKey}\` to the producing run's \`$ONTOMATO_SESSION_ID\` and \`${runKey}\` to that run's \`$ONTOMATO_RUN_ID\`. For a draft written in a later run, build a new link using that run's ID.`,

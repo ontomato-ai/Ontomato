@@ -3,8 +3,7 @@ import { describe, expect, it } from "vitest";
 import { agentHostRunSnapshotSchema } from "@ontomato/contracts/agent-host";
 
 const fixture = process.env.ONTOLOGY_HOST_CONTRACT_OUTPUT;
-// This compares against a file the Java contract test writes, so it runs on demand
-// with that file rather than in the daily suite.
+// The Java contract test writes the HTTP response to this fixture before this check runs.
 if (!fixture)
   throw new Error(
     "Set ONTOLOGY_HOST_CONTRACT_OUTPUT to the file OntologyRetrievalContractTest writes",

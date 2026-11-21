@@ -1,7 +1,20 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick, ref, type Ref } from "vue";
 import type { PanelThemeOverrides } from "@ontomato/contracts/panel-manifest";
 import { applyTheme, composeThemes, useAppTheme, type ThemeMode } from "../app-theme";
+
+/** Whether reading the page's root rules fails, as it can on a stylesheet with a selector it cannot read. */
+const composites = vi.hoisted(() => ({ fail: false }));
+vi.mock("@ontomato/design-tokens", async (original) => {
+  const actual = await original<typeof import("@ontomato/design-tokens")>();
+  return {
+    ...actual,
+    rootComposites: (...args: Parameters<typeof actual.rootComposites>) => {
+      if (composites.fail) throw new SyntaxError("':-webkit-any(a' is not a valid selector");
+      return actual.rootComposites(...args);
+    },
+  };
+});
 
 /*
  * An application's theme assigned in its area only (product-layer standard; design §六): the area takes the values in the
@@ -163,5 +176,43 @@ it("declares again in the area every root rule that is worked out from a colour 
   } finally {
     document.documentElement.classList.remove("dark");
     style.remove();
+  }
+});
+
+// The deployment's stylesheet holds selectors with commas inside a function (Element Plus's colour picker,
+// `:not(:is(.is-disabled, .is-focused))`), 2026-11-22 on 128: a list is matched as the browser parses it, never cut at
+// every comma, so such a rule neither stops the theme nor counts as the root's.
+it("reads root rules past selectors whose functions hold commas, and still assigns the theme", async () => {
+  const style = document.createElement("style");
+  style.textContent = [
+    ".picker:hover:not(:is(.is-disabled, .is-focused)) .trigger { color: red; }",
+    ":root, .elsewhere:not(:is(.a, .b)) { --control-focus-ring: 0 0 0 2px var(--brand-primary-tint); }",
+  ].join("\n");
+  document.head.append(style);
+  try {
+    const area = mountArea(ref<ThemeMode>("light"), ref<PanelThemeOverrides | null>(theme));
+    await nextTick();
+    expect(area().style.getPropertyValue("--el-color-primary")).toBe("#0f7b6c");
+    expect(area().style.getPropertyValue("--control-focus-ring")).toBe("0 0 0 2px var(--brand-primary-tint)");
+  } finally {
+    style.remove();
+  }
+});
+
+it("still assigns the theme when the page's root rules cannot be read, and says so once", async () => {
+  composites.fail = true;
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    const mode = ref<ThemeMode>("light");
+    const area = mountArea(mode, ref(theme));
+    await nextTick();
+    expect(area().style.getPropertyValue("--el-color-primary")).toBe("#0f7b6c");
+    mode.value = "dark";
+    await nextTick();
+    expect(area().style.getPropertyValue("--el-color-primary")).toBe("#3cc4ad");
+    expect(warn).toHaveBeenCalledTimes(1);
+  } finally {
+    composites.fail = false;
+    warn.mockRestore();
   }
 });

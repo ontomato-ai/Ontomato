@@ -12,11 +12,19 @@ import { ensurePlatformEventCursorSchema } from "../../../infrastructure/postgre
 import { platformEventCursor } from "../platform-event-cursor";
 import { consumeAccountDeletions } from "../account-deletion-consumer";
 
-afterAll(async () => { if (state.pool) await state.pool.end(); });
+afterAll(async () => {
+  if (state.pool) {
+    await state.pool.query(`DROP SCHEMA IF EXISTS "${state.schema}" CASCADE`);
+    await state.pool.end();
+  }
+});
 
-it.skipIf(!process.env.BATCH2_TEST_PG_URL)("persists per-event progress across connections and restarts, including an offline backlog", async () => {
+const database = process.env.RUNTIME_TEST_DATABASE_URL;
+if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
+
+it("persists per-event progress across connections and restarts, including an offline backlog", async () => {
   state.schema = "node_identity_" + randomUUID().replaceAll("-", "");
-  const connect = () => new pg.Pool({ connectionString: process.env.BATCH2_TEST_PG_URL });
+  const connect = () => new pg.Pool({ connectionString: database });
   state.pool = connect();
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
   await ensurePlatformEventCursorSchema(state.pool);
