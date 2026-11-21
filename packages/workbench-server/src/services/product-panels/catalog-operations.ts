@@ -18,7 +18,7 @@ import {
 import { APPLICATION, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import { HttpError } from "../../utils/errors";
 import { changeProductGrant } from "../product-governance/grants";
-import { applicationCatalogueClient } from "./application-catalogue";
+import { applicationCatalogueClient, applicationDraftIdSchema } from "./application-catalogue";
 import {
   changeCurrentProductDomainGrant, changeCurrentProductGrant, copyCurrentProduct, deleteCurrentProduct,
 } from "./catalog";
@@ -175,8 +175,10 @@ const applicationSave: PanelWriteServerOperation = {
       const { values, submittedFields } = writeInput(panelFormSaveInputSchema, input);
       const java = applicationCatalogueClient(credentials);
       if (target.kind === "draft") {
-        const body = writeInput(applicationCatalogueCreateSchema, values);
-        const id = target.id ?? writeInput(applicationDraftPath, body.entry.path).slice("/applications/".length);
+        const { id: formId, ...formValues } = values;
+        const body = writeInput(applicationCatalogueCreateSchema, formValues);
+        const id = writeInput(applicationDraftIdSchema,
+          target.id ?? formId ?? writeInput(applicationDraftPath, body.entry.path).slice("/applications/".length));
         await java.create(id, body);
         return { primaryKey: id, data: { id } };
       }

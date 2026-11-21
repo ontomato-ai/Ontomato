@@ -74,6 +74,9 @@ export const productPanelNestedReadResponseSchema = z.object({
 }).strict();
 export type ProductPanelNestedReadResponse = z.infer<typeof productPanelNestedReadResponseSchema>;
 
+/** A projection definition requested for rendering in the deployment's current SDK. */
+export const PANEL_MEMBER_RENDER_HEADER = "X-Ontomato-Panel-Member-Render";
+
 const panelMemberReadRequestSchema = z.object({
   source: productPanelReadSourceSchema,
   memberPath: directPanelMemberPathSchema,

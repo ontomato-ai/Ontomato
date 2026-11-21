@@ -167,6 +167,30 @@ const deleteObjectTypeImpact: PanelImpactInspector = {
   },
 };
 
+/**
+ * The impact of making an attribute the primary key: the attribute itself and the class's current primary key, which
+ * stops being one. Both are named so the confirming human or agent sees which key moves.
+ */
+const setPrimaryKeyImpact: PanelImpactInspector = {
+  handlerRef: `${SET_PRIMARY_KEY}.inspect-impact`,
+  async inspect(host, calls) {
+    const target = calls[0]!.target as PanelRecordTarget;
+    const { className, name } = parseAttributePrimaryKey(target.primaryKey);
+    const response = await host.request(`${modelPath}/attributes?className=${encodeURIComponent(className)}`, {});
+    if (!response.ok) {
+      const { error } = modelErrorSchema.parse(await response.json());
+      throw new HttpError(response.status, error.message, error.code);
+    }
+    const attributes = z.array(attributeViewSchema).parse(await response.json());
+    const moved = attributes.filter(view => view.name === name || view.primaryKey);
+    return {
+      summary: tForLocale(host.locale, "panels.confirmation.setPrimaryKeyImpact"),
+      objects: moved.map(view => ({ target: attributeIdentity(view), label: view.showName || view.name })),
+      total: moved.length,
+    };
+  },
+};
+
 /** The impact a single delete shows its confirming human or agent: the one record, under its owner-read name. */
 function deleteImpact(
   handlerRef: string,
@@ -484,6 +508,7 @@ export const ontologyModelServerOperations = [
     targetSchema: recordTarget(ATTRIBUTE),
     inputSchema: z.object({}).strict(),
     resultSchema: setPrimaryKeyResultSchema,
+    inspectImpact: setPrimaryKeyImpact,
     targetLabel: attributeTargetLabel,
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const result = await postModelWrite(
