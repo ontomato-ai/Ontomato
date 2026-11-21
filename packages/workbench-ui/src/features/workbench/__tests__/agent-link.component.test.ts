@@ -20,6 +20,7 @@ const agents = vi.hoisted(() => [
 ]);
 const [sales, retired] = agents;
 const sent = vi.hoisted(() => [] as string[]);
+const filled = vi.hoisted(() => [] as string[]);
 
 vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => {
   const { defineComponent, h } = await import("vue");
@@ -29,7 +30,7 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => {
       name: "AgentShell",
       props: ["agentId", "sessionId"],
       setup(_props, { expose }) {
-        expose({ reloadAgents: async () => {}, send: async (text: string) => { sent.push(text); } });
+        expose({ reloadAgents: async () => {}, send: async (text: string) => { sent.push(text); }, fill: (text: string) => { filled.push(text); } });
         return () => h("div");
       },
     }),
@@ -66,6 +67,7 @@ afterEach(() => {
   wrappers.splice(0).forEach((wrapper) => wrapper.unmount());
   localStorage.clear();
   sent.splice(0);
+  filled.splice(0);
   vi.restoreAllMocks();
 });
 
@@ -126,6 +128,8 @@ describe("a link to one agent", () => {
     expect(error).toHaveBeenCalledWith(i18n.global.t("assistant.agentUnavailable"));
     expect(shell.props("agentId")).toBe(sales!.id);
     expect(sent).toEqual([]);
+    // The question is not lost: it waits in the composer for the reader.
+    expect(filled).toEqual(["Anyone there?"]);
     expect(router.currentRoute.value.query).toEqual({});
   });
 });

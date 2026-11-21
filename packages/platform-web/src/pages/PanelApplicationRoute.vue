@@ -16,7 +16,7 @@ import { framePanelHost, platformPanelHost, resolveApplicationEntry, type PanelO
 import EntryUnit from "./EntryUnit.vue";
 import { copyExternalLink } from "../external-link";
 import { Link } from "lucide-vue-next";
-import { hostThemeMode } from "../app-host";
+import { expandDeclaredComposer, hostThemeMode } from "../app-host";
 import { useApplicationCatalog } from "../catalog";
 
 /**
@@ -266,8 +266,22 @@ const labels = computed<PanelHostLabels>(() => ({
     scriptRejected: t("platform.panelScriptRejected"),
   },
   content: { styleOutside: t("platform.panelStyleOutside") },
+  draft: {
+    leave: t("platform.panelDraftLeave"),
+    toAgent: t("platform.panelDraftToAgent"),
+    // The host puts the reason where `{reason}` stands.
+    toAgentText: t("platform.panelDraftToAgentText", { reason: "{reason}" }),
+  },
   refresh: t("common.refresh"),
 }));
+
+/**
+ * Hands why the linked draft could not be used back to the agent: the page's composer (beside a conversation, the
+ * conversation's) opens on the page's agent with the sentence, for the reader to send or change.
+ */
+function draftToAgent(text: string) {
+  expandDeclaredComposer({ target: { kind: "page-default" }, prefill: text });
+}
 
 /**
  * The composer at the foot of the page at its own address (big main's ruling, 2026-11-21): what a message written here
@@ -529,6 +543,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
       :wired="Object.keys(page.use.inputs ?? {})"
       :address="addressOf(page)"
       :initial="stateOf(page)"
+      :draft-to-agent="draftToAgent"
       @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"
       @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
       @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"
@@ -552,6 +567,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
       :wired="Object.keys(page.use.inputs ?? {})"
       :address="addressOf(page)"
       :initial="stateOf(page)"
+      :draft-to-agent="draftToAgent"
       @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"
       @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
       @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"

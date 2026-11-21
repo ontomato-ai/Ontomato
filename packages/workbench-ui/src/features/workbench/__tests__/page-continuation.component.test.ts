@@ -1,6 +1,6 @@
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createMemoryHistory, createRouter } from "vue-router";
+import { createMemoryHistory, createRouter, type RouteLocationNormalized } from "vue-router";
 import { mount } from "@vue/test-utils";
 import ElementPlus from "element-plus";
 import { ref } from "vue";
@@ -31,6 +31,8 @@ const opened = vi.hoisted(() => [] as string[]);
 const hosted = vi.hoisted(() => ({ sessions: [] as string[], loads: 0, slowLoads: false }));
 /** What choosing a conversation did: the real navigation closes the page beside the conversation it leaves. */
 const left = vi.hoisted(() => [] as string[]);
+/** What the composer was handed to hold for the reader. */
+const filled = vi.hoisted(() => [] as string[]);
 /** Where the column's read of the agents is: read, still out, or failed with its error shown where it failed. */
 const agentsRead = ref<"loading" | "ready" | "error">("ready");
 
@@ -42,7 +44,7 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => {
       name: "AgentShell",
       props: ["agentId", "sessionId"],
       setup(_props, { expose }) {
-        expose({ reloadAgents: async () => {}, send: async (text: string) => { sent.push(text); } });
+        expose({ reloadAgents: async () => {}, send: async (text: string) => { sent.push(text); }, fill: (text: string) => { filled.push(text); } });
         return () => h("div");
       },
     }),
@@ -97,6 +99,7 @@ afterEach(() => {
   sessionStorage.clear();
   localStorage.clear();
   sent.splice(0);
+  filled.splice(0);
   started.splice(0);
   opened.splice(0);
   left.splice(0);
@@ -111,7 +114,7 @@ afterEach(() => {
  * A message written at a page's foot: the counter's address, with the page it was written on. The reader is on another
  * page, the counter pushes this address, and the application mounts on it — the arrival the platform really makes.
  */
-async function fromPage(agentId: string) {
+async function fromPage(agentId: string, watchChat?: (to: RouteLocationNormalized) => void) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -120,6 +123,8 @@ async function fromPage(agentId: string) {
     ],
   });
   await router.push({ path: platformRoutes.dashboards.path, query: { dashboardId: "board-a" } });
+  // Every address the conversation application moves to after the message arrived, for a test that follows them.
+  if (watchChat) router.afterEach((to) => { if (to.path === platformRoutes.chat.path) watchChat(to); });
   const arrival = router.push({
     path: platformRoutes.chat.path,
     query: { agentId, prompt: "e2e: only say received", page: "/dashboards?dashboardId=board-a" },
@@ -233,11 +238,27 @@ it("ends the page's message unsent when the agents for the page cannot be read, 
   expect(started).toEqual([]);
   expect(opened).toEqual([]);
   expect(sent).toEqual([]);
+  // Not lost: the message waits in the composer for the reader.
+  expect(filled).toEqual(["e2e: only say received"]);
 
   // Read again later, the agents do not bring the old message back.
   agentsRead.value = "ready";
   for (let index = 0; index < 8; index += 1) await new Promise((resolve) => setTimeout(resolve, 0));
   expect(sent).toEqual([]);
+});
+
+it("keeps the page it came from open while the conversation this tab holds is chosen, rather than drawing it again", async () => {
+  sessionStorage.setItem("ontomato.workbench.conversation", JSON.stringify({ agentId: assistant!.id, sessionId: held }));
+  hosted.sessions = [held];
+  const pages: unknown[] = [];
+  const { router } = await fromPage(assistant!.id, (next) => pages.push(next.query.page));
+
+  // The conversation was chosen and the message sent with the page beside it the whole time: it was never closed.
+  expect(left).toEqual([held]);
+  expect(sent).toEqual(["e2e: only say received"]);
+  expect(pages.length).toBeGreaterThan(0);
+  expect(pages.every((page) => page === "/dashboards?dashboardId=board-a")).toBe(true);
+  expect(router.currentRoute.value.query.page).toBe("/dashboards?dashboardId=board-a");
 });
 
 describe("a message from a page, into the conversation this tab holds", () => {
