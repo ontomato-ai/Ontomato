@@ -1,17 +1,17 @@
 <script setup lang="ts">
-import { computed, inject, markRaw, ref, toRaw, watch, type Ref } from "vue";
+import { computed, inject, markRaw, ref, shallowRef, toRaw, watch, type Ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { PanelHost, panelUnavailable, usePageHeading, useUnsavedChanges, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
 import { panelAddress, panelAddressState, panelUsePath } from "@ontomato/contracts/panel-host";
 import { applicationRootPath } from "@ontomato/contracts/platform-identity";
-import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
+import type { ApplicationEntryResolution, ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { PageComposer, type DisplayObjectRefresh } from "@ontomato/agent-shell-ui";
 import { countedTypesChangedKey } from "@ontomato/ontology-manager";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
-import { panelUsesOf, platformPanelHost, type PanelObjectChange } from "../panel-host";
+import { platformPanelHost, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
 import { useApplicationCatalog } from "../catalog";
 
 /**
@@ -61,8 +61,6 @@ const router = useRouter();
 const { t, locale, fallbackLocale } = useI18n();
 /** The language a panel's own name is given in: the reader's, else the deployment's default. */
 const language = computed(() => ({ locale: locale.value, fallback: String(fallbackLocale.value) }));
-/** The application's use relations, once Java has answered; until then the page names none and says nothing. */
-const uses = ref<readonly ApplicationPanelUse[] | null>(null);
 /** The shown page's instance, which the conversation's object signal reaches; kept pages are reconciled when shown again. */
 /** What the conversation's and an operation's changes reach: the shown page's instance. */
 type ShownInstance = Pick<PanelInstanceView, "refresh">;
@@ -117,54 +115,76 @@ let showings = 0;
 const failure = ref("");
 const catalog = useApplicationCatalog();
 /**
- * Java's answer for the application's use relations while a page opened from the shell's catalog waits on it: the
- * route's list and that page's check share this one read, so the page's own reads do not queue behind it.
+ * Java's answer for the entry the reader opened (\`resolve-entry\`): its use relation, admitted for this reader, with the
+ * application's frame panel and theme where its renderer is \`panels\`, and the menu of the entries the reader may see. The
+ * page starts from the shell's catalog while it is read, and shows nothing until it names the same page (the host's
+ * \`admitted\`); the opened page's admission and the route share this one read.
  */
-let relations: Promise<readonly ApplicationPanelUse[]> | null = null;
-/** Whether `uses` is Java's answer, not yet the shell's catalog. */
+const resolution = shallowRef<ApplicationEntryResolution | null>(null);
+let resolving: Promise<ApplicationEntryResolution> | null = null;
+/** Whether \`resolution\` is Java's answer for the address opened now, or why there is none. */
 const answered = ref(false);
-
-/** Reads the application's use relations, or says why it could not; `current` tells whether the answer is still wanted. */
-async function readUses(applicationId: string, current: () => boolean, read: Promise<readonly ApplicationPanelUse[]> = panelUsesOf(applicationId)) {
-  try {
-    const records = await read;
-    if (!current()) return;
-    uses.value = records;
-    answered.value = true;
-  } catch (reason) {
-    if (!current()) return;
-    failure.value = reason instanceof Error ? reason.message : String(reason);
-    emit("display-loaded", panelUnavailable(reason));
-  }
-}
-
-// Another application is another set of pages: the kept ones of the application left are dropped. The shell's catalog
-// already lists the reader's use relations, so the page starts from it while Java's answer is read, and the page shows
-// nothing until that answer names it (the host's `admitted`).
-watch(() => props.applicationId, (applicationId, _, onCleanup) => {
-  let current = true;
-  onCleanup(() => { current = false; });
-  relations = panelUsesOf(applicationId);
-  uses.value = catalog.applications.value.find((app) => app.id === applicationId)?.panelUses ?? null;
-  answered.value = false;
-  kept.value = [];
-  failure.value = "";
-  emit("display-loaded", { status: "loading" });
-  void readUses(applicationId, () => current, relations);
-}, { immediate: true });
+const entryFailure = ref("");
+/** Read again after a kept page's use relation was withdrawn. */
+const rereads = ref(0);
 
 /** The page's address as the reader is on it: the conversation's page parameter beside a chat, the router's full. */
 const opened = computed(() => props.address ?? route.fullPath);
 const openedPath = computed(() => opened.value.split("?")[0]!);
+/** The reader's use relations as the shell's catalog lists them: where a page starts before Java answers. */
+const listed = computed(() => catalog.applications.value.find((app) => app.id === props.applicationId)?.panelUses ?? []);
+/** The entry an address opens: its own path, or the application's first listed entry at the application's own address. */
+const entryPath = computed(() => {
+  if (openedPath.value !== applicationRootPath(props.applicationId)) return openedPath.value;
+  const first = resolution.value?.menu.panelUses[0] ?? listed.value[0];
+  return first ? panelUsePath(first.path) : null;
+});
 
-/** The use relation whose full path an address is, or the application's first when the address is the application's own. */
-function useAt(path: string): ApplicationPanelUse | null {
-  if (path === applicationRootPath(props.applicationId)) return uses.value?.[0] ?? null;
-  return uses.value?.find((candidate) => panelUsePath(candidate.path) === path) ?? null;
-}
-const use = computed(() => useAt(openedPath.value));
+// Another application is another set of pages: the kept ones of the application left are dropped.
+watch(() => props.applicationId, () => {
+  kept.value = [];
+  failure.value = "";
+  emit("display-loaded", { status: "loading" });
+}, { immediate: true });
+
+watch([() => props.applicationId, entryPath, rereads], ([applicationId, path], _, onCleanup) => {
+  let current = true;
+  onCleanup(() => { current = false; });
+  answered.value = false;
+  entryFailure.value = "";
+  if (!path) {
+    resolution.value = null;
+    answered.value = true;
+    return;
+  }
+  const read = resolving = resolveApplicationEntry({ path });
+  read.then((answer) => {
+    if (!current) return;
+    // An answer for another application is not this route's page.
+    resolution.value = answer.applicationId === applicationId ? answer : null;
+    answered.value = true;
+  }, (reason) => {
+    if (!current) return;
+    resolution.value = null;
+    entryFailure.value = reason instanceof Error ? reason.message : String(reason);
+    answered.value = true;
+  });
+}, { immediate: true });
+
+/**
+ * The use relation the opened address names: Java's, once it answered. Until then, a kept page's own relation — shown
+ * again at once, and checked again before it may ask for anything — else the catalog's, unadmitted.
+ */
+const use = computed<ApplicationPanelUse | null>(() => {
+  const path = entryPath.value;
+  if (!path) return null;
+  if (answered.value) return resolution.value && panelUsePath(resolution.value.use.path) === path ? resolution.value.use : null;
+  const at = (candidate: ApplicationPanelUse) => panelUsePath(candidate.path) === path;
+  return kept.value.find((page) => at(page.use))?.use ?? listed.value.find(at) ?? null;
+});
 /** An address that names no use relation the reader may open is a page that cannot load, and its receipt says so. */
-const missing = computed(() => answered.value && !use.value ? t("platform.panelNotInApplication", { path: openedPath.value }) : "");
+const missing = computed(() => answered.value && !use.value
+  ? entryFailure.value || t("platform.panelNotInApplication", { path: openedPath.value }) : "");
 watch(missing, (message) => {
   if (message) emit("display-loaded", panelUnavailable(new Error(message)));
 });
@@ -328,7 +348,7 @@ function openPage(use: ApplicationPanelUse): KeptPage {
     lastShown: ++showings,
   };
   page.port = markRaw(platformPanelHost(
-    props.applicationId, use, changed, undefined, answered.value ? undefined : relations!, (context) => reportPageSkill(page, context),
+    props.applicationId, use, changed, undefined, answered.value ? undefined : resolving ?? undefined, (context) => reportPageSkill(page, context),
     // Beside a conversation, an address the panel opens goes to the conversation's display; at full page, the router.
     props.navigate,
   ));
@@ -349,7 +369,7 @@ function reportPageSkill(page: KeptPage, context: PageSkillContext) {
 /** A kept page shown again whose use relation was withdrawn or bound elsewhere ends; the page opens from the current relations. */
 function withdraw(page: KeptPage) {
   kept.value = kept.value.filter((other) => other !== page);
-  void readUses(props.applicationId, () => true);
+  rereads.value += 1;
 }
 
 /**
