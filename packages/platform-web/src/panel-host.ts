@@ -25,7 +25,9 @@ import {
   type CodedPanelTarget, type DirectPanelMount, type DirectPanelRun, type PanelHostPort, type PanelSdkRelease,
 } from "@ontomato/platform-shell";
 import type { PanelMemberPath } from "@ontomato/contracts/panel-manifest";
-import { panelModuleFor, type DirectPanelMountOptions, type PlatformRequests } from "@ontomato/apps-sdk/direct";
+import {
+  panelModuleFor, type DirectPanelMount as PanelRunMount, type DirectPanelMountOptions, type PlatformRequests,
+} from "@ontomato/apps-sdk/direct";
 import { workbenchI18n, workbenchLanguage } from "@ontomato/workbench-ui/i18n";
 import * as Vue from "vue";
 import { provideGlobalConfig } from "element-plus";
@@ -221,7 +223,7 @@ const platformRequests: PlatformRequests = {
 /** What a panel of an application use runs on in this document: the SDK's instance with this platform's reads, requests and words. */
 function directOptions(
   source: DirectPanelHostSource, run: DirectPanelRun, use: PanelUseRef, changed: (change: PanelObjectChange) => void, beside?: (address: string) => void,
-): DirectPanelMountOptions {
+): OwnPanelOptions {
   const { global } = workbenchI18n();
   return {
     manifest: source.panel.manifest,
@@ -242,8 +244,11 @@ function directOptions(
 /** Where a panel's reads come from: its application use, or an author's candidate. */
 type PanelReadSource = ProductPanelReadRequest["source"];
 
+/** A panel's options in this document before the panels its state places inside it can be mounted. */
+type OwnPanelOptions = Omit<DirectPanelMountOptions, "nested">;
+
 /** A panel's options in this document, with which the panels its state places inside it are mounted too. */
-function withNested(options: DirectPanelMountOptions, source: PanelReadSource): DirectPanelMountOptions {
+function withNested(options: OwnPanelOptions, source: PanelReadSource): DirectPanelMountOptions {
   return { ...options, nested: (memberPath, run) => mountNested(options, source, memberPath, run) };
 }
 
@@ -255,8 +260,8 @@ function withNested(options: DirectPanelMountOptions, source: PanelReadSource): 
  * it. A panel whose CSS reaches outside it does not mount here: the block it was placed in says why.
  */
 async function mountNested(
-  outer: DirectPanelMountOptions, source: PanelReadSource, memberPath: PanelMemberPath, run: DirectPanelRun,
-): Promise<{ element: HTMLElement; mount: DirectPanelMount }> {
+  outer: OwnPanelOptions, source: PanelReadSource, memberPath: PanelMemberPath, run: DirectPanelRun,
+): Promise<{ element: HTMLElement; mount: PanelRunMount }> {
   const path = [...(outer.memberPath ?? []), ...memberPath];
   const { panel } = productPanelNestedReadResponseSchema.parse(
     await json(`/api${PANEL_NESTED_READ_PATH}`, { method: "POST", body: JSON.stringify({ source, memberPath: path }) }),
@@ -280,11 +285,11 @@ async function mountNested(
  * Vue and `@ontomato/sdk/panel` an SDK of this instance's own, whose `mountPanel` mounts the panel's component into the
  * host's element on `options`' instance, with the platform's words and Element Plus's in the reader's language.
  */
-async function mountCoded(options: DirectPanelMountOptions, target: CodedPanelTarget, module: string): Promise<DirectPanelMount> {
+async function mountCoded(options: DirectPanelMountOptions, target: CodedPanelTarget, module: string): Promise<PanelRunMount> {
   const { global } = workbenchI18n();
   const language = workbenchLanguage();
   await useTemplateCompiler();
-  let mounted: DirectPanelMount | undefined;
+  let mounted: PanelRunMount | undefined;
   await runPanelModule(module, {
     [panelModuleSpecifiers.vue]: Vue as unknown as Record<string, unknown>,
     [panelModuleSpecifiers.sdk]: panelModuleFor({
