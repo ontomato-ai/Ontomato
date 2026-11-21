@@ -163,12 +163,14 @@ final class ApplicationCatalogueForm {
     }
 
     private JSONArray entryFields(String id, JSONArray accessOptions) {
+        var inputs = field("/inputs", "inputs", PanelFormFields.code("json"), INPUTS, false);
+        inputs.put("advanced", true);
         var item = JSONArray.of(
             field("/id", "entryId", PanelFormFields.text(false), STRING, true),
             field("/pageKey", "pageKey", PanelFormFields.text(false), STRING, true),
             field("/path", "address", PanelFormFields.text(false), STRING, true),
             field("/panelId", "panelId", PanelFormFields.text(false), STRING, true),
-            field("/inputs", "inputs", PanelFormFields.code("json"), INPUTS, false),
+            inputs,
             field("/names", "menuNames", localizedText(List.of("en"), false), STRING_MAP, false),
             field("/descriptions", "entryDescriptions", localizedText(List.of("en"), true), STRING_MAP, false),
             field("/groupKey", "menuGroup", PanelFormFields.text(false), STRING, false),

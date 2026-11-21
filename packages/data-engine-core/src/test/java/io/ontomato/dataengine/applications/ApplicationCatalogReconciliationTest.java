@@ -459,6 +459,9 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             assertEquals(List.of("en"), control.getList("requiredLocales", String.class));
             assertFalse(field.getBooleanValue("required"));
         }
+        var inputsField = rowFields.stream().filter(item -> "/inputs".equals(item.getString("path"))).findFirst().orElseThrow();
+        assertTrue(inputsField.getBooleanValue("advanced"));
+        assertEquals("code", inputsField.getJSONObject("control").getString("kind"));
         var accessField = rowFields.stream().filter(item -> "/access".equals(item.getString("path"))).findFirst().orElseThrow();
         var accessControl = accessField.getJSONObject("control");
         assertTrue(accessField.getBooleanValue("required"));
