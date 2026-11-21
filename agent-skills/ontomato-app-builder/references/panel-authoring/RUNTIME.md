@@ -139,6 +139,10 @@ In the current direct runtime, an open event reports that the SDK opens no entry
 For a browser button or component output that should navigate, call `usePanelContext().navigate` with the registered path
 from `panel uses <application-id>` and, when needed, the destination's deep-linkable state.
 
+For the assistant, the generated page skill's Panel events section describes how to repeat each shortcut.
+`do.set` opens the current entry with the changed deep-linkable fields in `state`. `do.invoke` calls the listed
+owner operation. `do.open` follows the indicated destination address. Use a declared operation ID for `/operate`.
+
 ## Draft links and instance state
 
 A draft link uses the destination entry path and the query keys `draftSessionId`, `draftRunId`, `draftPath`.
