@@ -56,6 +56,14 @@
         "description": "本域内我能使用的投影，按检索词、范围和排序逐页读取。",
         "id": "builtin-product-38cd4fdd-1a92-4106-adbc-9c752d7b85dc"
       },
+      "owners": {
+        "component": "PanelData",
+        "type": "platform:User",
+        "data": {
+          "options": "resolve"
+        },
+        "id": "builtin-product-8fd563ec-e384-451d-b7e0-81b2c1bf74b8"
+      },
       "record": {
         "component": "PanelData",
         "target": "selected",

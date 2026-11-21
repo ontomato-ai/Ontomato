@@ -6,13 +6,19 @@
   .projections-search { width: 240px; }
   .projections-sort { width: 132px; }
   .projections-count { margin-inline-start: auto; color: var(--el-text-color-secondary); font-size: var(--el-font-size-small); }
-  .projections-body { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: var(--spacing-md); align-items: start; }
-  @media (max-width: 62rem) { .projections-body { grid-template-columns: minmax(0, 1fr); } }
+  .projections-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--spacing-md); align-items: start; }
+  @media (min-width: 62rem) {
+    .projections-body.with-detail { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
+  }
+  .selection-hint.el-empty { flex-direction: row; justify-content: flex-start; gap: var(--spacing-sm); padding: 0; }
+  .selection-hint .el-empty__image { width: var(--control-height-lg); }
+  .selection-hint .el-empty__description { margin: 0; }
   .projections-list { display: flex; flex-direction: column; gap: var(--spacing-sm); min-width: 0; }
   .projections-pager { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); justify-content: flex-end; }
   .projections-pager .page-size { width: 104px; }
   .cell-name { font-weight: var(--font-semibold); }
-  .cell-desc { color: var(--el-text-color-secondary); font-size: var(--el-font-size-extra-small); line-height: 1.35; }
+  .cell-desc { color: var(--el-text-color-secondary); font-size: var(--el-font-size-extra-small); line-height: var(--leading-sm); }
+  .cell-identity { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .projections-detail { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; }
   .detail-view { display: flex; flex-direction: column; gap: var(--spacing-md); }
   .detail-head { display: flex; gap: var(--spacing-md); justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
@@ -65,8 +71,9 @@
     <el-alert v-if="notice" :title="notice.text" :type="notice.type || notice.tone" show-icon :closable="true"
       @close="notice = null" />
 
-    <div class="projections-body">
+    <div class="projections-body" :class="{ 'with-detail': showDetail }">
       <div class="projections-list">
+        <el-empty v-if="!showDetail && rows.length" class="selection-hint" description="选择一条投影查看详情" />
         <el-table :data="rows" size="small" highlight-current-row border :current-row-key="selectedKey" row-key="id"
           @row-click="choose" empty-text="没有符合条件的投影">
           <el-table-column label="名称" min-width="98">
@@ -75,12 +82,16 @@
               <div class="cell-desc" v-if="scope.row.description">{{ scope.row.description }}</div>
             </template>
           </el-table-column>
-          <el-table-column label="所用组件" min-width="78">
+          <el-table-column label="所用组件" min-width="72">
             <template #default="scope">{{ componentLabel(scope.row.componentId) }}</template>
           </el-table-column>
-          <el-table-column label="所属人" width="58" prop="ownerId" />
-          <el-table-column label="共享范围" width="72">
-            <template #default="scope">{{ scopeLabel(scope.row.visibility) }}</template>
+          <el-table-column label="所属人" min-width="70">
+            <template #default="scope">
+              <span class="cell-identity" :title="ownerName(scope.row.ownerId)">{{ ownerName(scope.row.ownerId) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="共享范围" min-width="76">
+            <template #default="scope"><span class="cell-identity">{{ scopeLabel(scope.row.visibility) }}</span></template>
           </el-table-column>
           <el-table-column label="更新时间" min-width="92">
             <template #default="scope">
@@ -100,16 +111,14 @@
         </div>
       </div>
 
-      <div class="projections-detail">
+      <div v-show="showDetail" class="projections-detail">
         <section v-show="mode === 'edit'" class="detail-section">
           <h3>{{ selected ? '编辑投影' : '新建投影' }}<small>只改这次提交的字段</small></h3>
           <projection slot="form" @saved="onSaved" @discarded="onDiscarded"></projection>
         </section>
 
-        <div v-if="mode !== 'edit'" class="detail-view">
-          <el-empty v-if="!selected" description="请先选择一条投影，或新建一条" />
-
-          <template v-else-if="record.status === 'ready'">
+        <div v-if="mode !== 'edit' && selected" class="detail-view">
+          <template v-if="record.status === 'ready'">
             <header class="detail-head">
               <div>
                 <h2>{{ record.value.name }}</h2>
@@ -235,6 +244,7 @@
     </div>
 
     <projection slot="list"></projection>
+    <projection slot="owners"></projection>
     <projection slot="record"></projection>
     <projection slot="usedBy"></projection>
     <projection slot="copyOp"></projection>
