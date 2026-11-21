@@ -15,7 +15,7 @@ import { portsOf } from "../../../../../packages/apps-sdk/src/panel/ports-of";
 import { panelMemberKey, type PanelMemberContext } from "../../../../../packages/apps-sdk/src/panel/member";
 import ObjectForm from "../../../../../packages/apps-sdk/src/base/ObjectForm.vue";
 
-import { noOperations, projections, SCHEDULED_TASK } from "./panel-frame";
+import { noOperations, pagePlacement, projections, SCHEDULED_TASK } from "./panel-frame";
 /*
  * The form a panel shows (design 10.3, third and sixth checks): a draft an agent wrote opens in it with its values, its
  * changed fields marked and nothing written; the reader's save is one operation at the revision the form was read at, so
@@ -137,7 +137,7 @@ function mounted(save: (input: PanelFormSaveInput) => Promise<PanelOperationOutc
           t: (key: string) => key,
           resources: async () => {},
           expandPageComposer: async () => {},
-          readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); },
+          placement: pagePlacement, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); },
         });
         provide(projectionKey, slot);
         provide(panelMemberKey, () => member);

@@ -38,11 +38,19 @@ const items = computed<readonly PathTreeItem[]>(() =>
   records.value.map((record) => ({ key: record.primaryKey, path: record.fields[props.pathField] || record.primaryKey, label: record.label })));
 const selectedKey = computed(() => (typeof selected.value.value === "string" ? selected.value.value : null));
 
-// With nothing selected, the first file is, when the placement asks for it.
-watch(items, (next) => {
-  if (!props.fallbackToFirst || selectedKey.value !== null || next.length === 0) return;
-  const first = firstTreeFile(buildPathTree(next));
-  if (first) selected.set(first.key);
+/**
+ * Each time the owner answers with the files — the first time, and again when the tree's object changes (another skill
+ * chosen) — the selection is checked against them: a file still in the tree stays selected; one that is not (a file the
+ * new package does not have), or none, gives way to the first file when the placement asks for it, and to nothing
+ * otherwise. Only an answer counts: while the files are read, the selection (one from the address included) stays.
+ */
+const answered = computed(() => files.value.status === "ready" || files.value.status === "empty");
+watch([items, answered], ([next, isAnswered]) => {
+  if (!isAnswered) return;
+  const current = selectedKey.value;
+  if (current !== null && records.value.some((record) => record.primaryKey === current)) return;
+  const fallback = props.fallbackToFirst && next.length ? firstTreeFile(buildPathTree(next))?.key ?? null : null;
+  if (fallback !== current) selected.set(fallback);
 }, { immediate: true });
 
 function onSelect(key: string) {
