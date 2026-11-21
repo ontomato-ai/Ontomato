@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
@@ -15,6 +15,7 @@ import {
 } from "@ontomato/contracts/product-panels";
 import { panelOperationDescriptorResponseSchema } from "@ontomato/contracts/panel-agent";
 import { platformTypeTableResponseSchema } from "@ontomato/contracts/platform-type-table";
+import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import { panelManifestSchema } from "@ontomato/contracts/panel-manifest";
 import {
   panelDefinitionSnapshotSchema, productDefinitionStreamFrameSchema, productDefinitionStreamRequestSchema,
@@ -64,6 +65,8 @@ let contentRoot: string;
 let cataloguePath: string;
 const grants = new Set<string>();
 const codePanelId = "panel-schedules-mixed";
+const builtinPanelId = "builtin-product-host-fixture";
+const builtinProjectionId = "builtin-product-components-fixture";
 
 beforeAll(async () => {
   configureI18n({
@@ -91,7 +94,8 @@ beforeAll(async () => {
     res.json({ success: true });
   });
   app.post("/product-governance/check", (req, res) => {
-    res.json({ allowed: req.header("tk") === "host-reader" && grants.has(req.body.id) });
+    res.json({ allowed: req.header("tk") === "host-reader" &&
+      (isBuiltinProductId(req.body.id) ? req.body.verb === "use" : grants.has(req.body.id)) });
   });
   app.post("/product-governance/resources", (req, res) => {
     expect(req.header("tk")).toBe("host-reader");
@@ -134,6 +138,15 @@ beforeAll(async () => {
     ] });
   });
   app.get("/platform/applications/resolve-entry", (req, res, next) => {
+    if (req.query.applicationId === "app-builtin-fixture") {
+      expect(req.header("tk")).toBe("host-reader");
+      res.json({ success: true, data: {
+        applicationId: "app-builtin-fixture", menu: { groups: [], panelUses: [] },
+        use: { id: "catalogue", pageKey: "catalogue", path: "/applications/app-builtin-fixture/catalogue",
+          panelId: builtinPanelId, access: { kind: "domain-member" } },
+      } });
+      return;
+    }
     if (req.query.applicationId !== "app-mixed") { next(); return; }
     expect(req.header("tk")).toBe("host-reader");
     res.json({ success: true, data: {
@@ -143,7 +156,8 @@ beforeAll(async () => {
     } });
   });
   app.use("/api", (req, _res, next) => {
-    Object.assign(req, { domainId: "pilot", userId: "reader", token: req.header("X-Test-Token") ?? "host-reader", locale: "en" });
+    Object.assign(req, { domainId: req.header("X-Test-Domain") ?? "pilot", userId: "reader",
+      token: req.header("X-Test-Token") ?? "host-reader", locale: "en" });
     next();
   });
   app.use("/api/product-panels", productPanelsRouter);
@@ -155,6 +169,73 @@ beforeAll(async () => {
     const started = app.listen(0, "127.0.0.1", () => resolve(started));
   });
   state.base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+});
+
+it("reconciles the released built-in authoring sources and exposes the same read-only product in each domain", async () => {
+  const { registerBuiltinProducts } = await import("../../services/product-panels/builtin-products");
+  const bundle = path.join(contentRoot, "platform-panel-test");
+  const directory = path.join(bundle, "catalogue");
+  await mkdir(directory, { recursive: true });
+  const index = path.join(bundle, "index.json");
+  const registration = path.join(directory, "registration.json");
+  const writeIdentity = (name: string) => writeFile(registration, JSON.stringify({
+    panels: [{ id: builtinPanelId, mode: "create", input: { name, description: "", visibility: "domain" } }],
+  }));
+  const member = { id: builtinProjectionId, component: "PanelData", type: "platform:SDKComponent", data: { rows: "catalogue" } };
+  const manifest = { state: {}, members: { components: member }, events: {} };
+  const descriptor = path.join(directory, "panel.json");
+  await writeFile(index, JSON.stringify(["catalogue"]));
+  await writeIdentity("Components");
+  await writeFile(descriptor, JSON.stringify({ manifest }));
+  const { html, module } = vuePanelContent("components");
+  await writeFile(path.join(directory, "panel.html"), html);
+  await writeFile(path.join(directory, "panel.mjs"), module);
+
+  await registerBuiltinProducts(bundle);
+  await registerBuiltinProducts(bundle);
+  for (const domainId of ["pilot", "another-domain"]) {
+    const headers = { "X-Test-Domain": domainId };
+    const read = (resource: string) => fetch(`${state.base}/api/${resource}`, { headers });
+    const panelResponse = await read("product-panels/" + builtinPanelId);
+    expect(panelResponse.status).toBe(200);
+    expect(productPanelResponseSchema.parse(await panelResponse.json()).panel).toMatchObject({
+      id: builtinPanelId, domainId: null, ownerId: null, editable: false, visibility: "platform", revision: 1,
+      manifest: { members: { components: { target: { projectionId: builtinProjectionId } } } },
+    });
+    const projectionResponse = await read("product-projections/" + builtinProjectionId);
+    expect(projectionResponse.status).toBe(200);
+    expect(productProjectionResponseSchema.parse(await projectionResponse.json()).projection).toMatchObject({
+      id: builtinProjectionId, domainId: null, ownerId: null, editable: false, visibility: "platform",
+    });
+    const list = await read("product-panels");
+    expect(list.status).toBe(200);
+    expect((await list.json()).items).toContainEqual(expect.objectContaining({ id: builtinPanelId, editable: false, visibility: "platform" }));
+    const response = await fetch(state.base + "/api/product-panels/read", {
+      method: "POST", headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ source: { kind: "registered", applicationId: "app-builtin-fixture", useId: "catalogue" },
+        memberPath: [{ member: "components" }], dataName: "rows", inputs: {} }),
+    });
+    expect(await response.json()).toMatchObject({ status: "ready", value: expect.arrayContaining([
+      expect.objectContaining({ primaryKey: "@ontomato/sdk:ObjectList" }),
+    ]) });
+  }
+  const blockedSave = await request("PUT", "product-panels/" + builtinPanelId, {
+    name: "Shadow", description: "", visibility: "domain", revision: 0, content: { html, module }, manifest,
+  });
+  expect(blockedSave.status).toBe(400);
+
+  await writeIdentity("Components updated");
+  await registerBuiltinProducts(bundle);
+  await writeFile(descriptor, JSON.stringify({ manifest: { ...manifest, members: {
+    components: { target: { projectionId: "builtin-product-not-in-release" } },
+  } } }));
+  await expect(registerBuiltinProducts(bundle)).rejects.toThrow("builtin-product-not-in-release");
+  const snapshot = await request("GET", "product-panels/" + builtinPanelId + "/snapshot");
+  expect(panelDefinitionSnapshotSchema.parse(await snapshot.json()).panel.revision).toBe(2);
+  await writeFile(index, "[]");
+  await registerBuiltinProducts(bundle);
+  expect((await request("GET", "product-panels/" + builtinPanelId)).status).toBe(404);
+  expect((await request("GET", "product-projections/" + builtinProjectionId)).status).toBe(404);
 });
 
 it("reads the authoritative operation type table while isolating stale published actions", async () => {

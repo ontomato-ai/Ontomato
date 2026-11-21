@@ -2,7 +2,7 @@ import {
   applicationCatalogueScopeSchema, applicationFormSectionSchema, productCatalogQuerySchema, productPanelCatalogQuerySchema,
 } from "./product-catalog-query";
 import { z } from "zod";
-import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
+import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema, formValuesSchema, panelFormOptionSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
 import { directPanelPortTypeSchema, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelOperation, type PanelStateOperation, type PanelStateRef } from "./panel-manifest";
@@ -105,6 +105,7 @@ export const panelReadParameterSchemas = {
   ontologyParameter: runtimeJsonValueSchema,
   sort: runtimeJsonValueSchema,
   cursor: z.string(),
+  scheduledRunId: runtimeIdSchema,
   size: positiveInteger,
   knowledgeCountField: z.literal("status"),
   knowledgeStatus: z.enum(["all", "pending", "approved"]),
@@ -124,6 +125,7 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "ontologyType":
     case "className":
     case "cursor":
+    case "scheduledRunId":
     case "knowledgeCountField":
     case "knowledgeStatus":
     case "feedbackCountField":

@@ -5,7 +5,7 @@ Use these fields for a new member inside `manifest.members` in `panel.json`.
 
 | Field | Required on every member | Value |
 | --- | --- | --- |
-| `id` | No | Projection UUID written by registration. Keep it when renaming or moving the member. |
+| `id` | No | Stable projection ID written by registration or by the offline check for a packaged panel. Keep it when renaming or moving the member. |
 | `component` | Yes | Component name from the released SDK catalogue. Use its package-qualified ID if the name is ambiguous. |
 | `type` | No | Default owner type ID from the type table for this member's reads and operation. |
 | `target` | No | Panel state field holding the object for an object read or the object or object list targeted by an operation. |

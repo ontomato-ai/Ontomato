@@ -1,9 +1,10 @@
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import {
-  METRIC_CHART_COMPONENT, chartProjectionSchema, productPanelInputSchema, productPanelSchema, productProjectionSchema,
+  METRIC_CHART_COMPONENT, builtinProductPanelInputSchema, chartProjectionSchema, productPanelInputSchema, productPanelSchema, productProjectionSchema,
   type ApplicationPanelReferencesRequest, type ProductPanel,
   type ProductPanelInput, type ProductProjectionInput, type RegisterProductProjectionRequest,
 } from "@ontomato/contracts/product-panels";
+import { domainProductIdSchema } from "@ontomato/contracts/product-record-id";
 import { matchesDirectPanelValue, panelPortAccepts } from "@ontomato/contracts/panel-manifest";
 import type { PoolClient } from "pg";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -52,7 +53,7 @@ async function readCurrentRecord(
     throw new HttpError(404, `${kind === "panel" ? "Panel" : "Projection"} '${id}' does not exist`, "PRODUCT_UNAVAILABLE");
   }
   if (reportMissingToAuthor) await requireProductGrant(id, "use", credentials);
-  return currentProductRecord(row, (await grantedProductIds("edit", credentials)).includes(id));
+  return currentProductRecord(row, row.domainId !== null && (await grantedProductIds("edit", credentials)).includes(id));
 }
 export async function readCurrentProjection(owner: ProductOwner, credentials: AssistantCredentials, id: string, reportMissingToAuthor = false) {
   return productProjectionSchema.parse(await readCurrentRecord(owner, credentials, "projection", id, reportMissingToAuthor));
@@ -74,6 +75,7 @@ export async function requireDirectPanelMember(owner: ProductOwner, credentials:
 }
 
 async function currentForSave(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string, revision: number) {
+  domainProductIdSchema.parse(id);
   const existing = await findCurrentProduct(owner.domainId, kind, id);
   if (existing) await requireProductGrant(id, "edit", credentials);
   if ((existing?.revision ?? 0) !== revision) throw new HttpError(409, "Definition changed; reload before saving", "PRODUCT_CONFLICT");
@@ -82,6 +84,7 @@ async function currentForSave(owner: ProductOwner, credentials: AssistantCredent
 
 export async function insertCurrentProduct(client: PoolClient, owner: ProductOwner, credentials: AssistantCredentials,
   kind: CurrentProductKind, id: string, input: CurrentDefinition): Promise<CurrentProductRow> {
+  domainProductIdSchema.parse(id);
   const other = t(currentProductTables[kind === "panel" ? "projection" : "panel"]);
   const collision = await client.query(
     `SELECT id FROM ${other} WHERE domain_id=$1 AND id=$2
@@ -141,14 +144,14 @@ export async function saveCurrentPanel(owner: ProductOwner, credentials: Assista
 /** Java authorizes the registrant. This service call checks the current definitions used by the declaration. */
 export async function validateApplicationPanelReferences(request: ApplicationPanelReferencesRequest) {
   const { domainId, framePanelId, uses, delivery } = request;
-  const panels = new Map<string, ProductPanelInput>();
+  const panels = new Map<string, Pick<ProductPanel, "manifest">>();
   const projections = new Set<string>();
   const pending = new Set(uses.map(use => use.panelId));
   if (framePanelId !== undefined) pending.add(framePanelId);
   for (const panelId of pending) {
     const row = await findCurrentProduct(domainId, "panel", panelId);
     if (!row) throw new HttpError(400, `Panel '${panelId}' is not a current definition`, "INVALID_PANEL_REFERENCE");
-    const panel = productPanelInputSchema.parse(row.definition);
+    const panel = (row.domainId === null ? builtinProductPanelInputSchema : productPanelInputSchema).parse(row.definition);
     panels.set(panelId, panel);
     for (const { target } of Object.values(panel.manifest.members)) {
       if ("panelId" in target) pending.add(target.panelId);

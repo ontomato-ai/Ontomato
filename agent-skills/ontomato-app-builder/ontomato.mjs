@@ -4,7 +4,7 @@ import { analystCommand } from "./client.mjs";
 import { authenticate } from "./identity.mjs";
 import { panelRegistrationClient } from "./panel-registration.mjs";
 import { currentSdkClient, installedPanelSdk } from "./current-sdk.mjs";
-import { checkPanelWorkspace, registerPanelWorkspace } from "./panel-check.mjs";
+import { checkBuiltinPanelSource, checkPanelWorkspace, registerPanelWorkspace } from "./panel-check.mjs";
 import { managementPanel, writeManagementPanel } from "./panel-scaffold.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -529,6 +529,7 @@ function usage() {
   panel preview <working|commit> [--workspace <id>]
   panel scaffold <type> <new directory> [--id <application id>] [--operation <id>] [--batch <id>]
   panel check <directory> [--material <registration file>] [--sdk-dir <installed SDK release directory>]
+  panel check <platform panel directory> --builtin --sdk-dir <installed SDK release directory>
   panel register <directory> [--material <registration file>]
   panel register <json|@file>
   function list [<filter json|@file>]
@@ -580,11 +581,16 @@ async function main() {
   const cmd = argv[0];
   if (!cmd || cmd === "--help") return usage();
   const checkingPanel = cmd === "panel" && argv[1] === "check";
+  const builtin = checkingPanel && takeFlag(argv, "--builtin");
   const sdkDirectory = checkingPanel ? takeOption(argv, "--sdk-dir") : null;
   const materialPath = checkingPanel ? takeOption(argv, "--material") ?? undefined : undefined;
   if (checkingPanel && argv.length !== 3) die("panel check requires one workspace directory");
+  if (builtin && (sdkDirectory === null || materialPath !== undefined)) {
+    die("panel check <platform panel directory> --builtin --sdk-dir <installed SDK release directory>");
+  }
   if (sdkDirectory !== null) {
     const sdk = await installedPanelSdk(sdkDirectory);
+    if (builtin) return print(await checkBuiltinPanelSource(argv[2], sdk.checks, { assignIds: true }));
     return print(await checkPanelWorkspace(argv[2], { ...sdk, materialPath }));
   }
   const platformAuthoring = ["action", "metric-view"].includes(cmd) && ["context", "generate"].includes(argv[1])
