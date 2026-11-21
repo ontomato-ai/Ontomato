@@ -102,12 +102,9 @@ const operationTargetText = (target) => {
   return "—";
 };
 
-const formatDate = (value) => new Date(value).toLocaleDateString(document.documentElement.lang, {
-  year: "2-digit", month: "numeric", day: "numeric",
-});
-const formatTime = (value) => new Date(value).toLocaleTimeString(document.documentElement.lang, {
-  hour: "numeric", minute: "2-digit",
-});
+const formatTimestamp = (value) => new Date(value).toLocaleString(document.documentElement.lang, {
+  year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+}).replace(/^(\d{4})\/(\d{2})\/(\d{2}) /, "$1-$2-$3 ");
 
 const jsonText = (value) => JSON.stringify(value ?? {}, null, 2);
 
@@ -390,7 +387,7 @@ await mountPanel({
       setScope, setSort, setPageSize, copyDialog, copyForm, openCopy, submitCopy,
       deleteDialog, openDelete, submitDelete, grantForm, submitGrant, submitShare,
       openClass, openPanel, notice,
-      componentLabel, scopeLabel, formatDate, formatTime, jsonText, isChart,
+      componentLabel, scopeLabel, formatTimestamp, jsonText, isChart,
     };
   },
 });

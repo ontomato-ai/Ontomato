@@ -284,8 +284,8 @@
               <dt>{{ t('field.template') }}</dt><dd>{{ record.template ? t('template.yes') : t('template.no') }}</dd>
               <dt>{{ t('field.editable') }}</dt><dd>{{ record.editable ? t('editable.yes') : t('editable.no') }}</dd>
               <dt>{{ t('field.revision') }}</dt><dd>{{ record.revision }}</dd>
-              <dt>{{ t('field.updated') }}</dt><dd>{{ formatTime(record.updatedAt) }}</dd>
-              <dt>{{ t('field.created') }}</dt><dd>{{ formatTime(record.createdAt) }}</dd>
+              <dt>{{ t('field.updated') }}</dt><dd><time :datetime="record.updatedAt">{{ formatTimestamp(record.updatedAt) }}</time></dd>
+              <dt>{{ t('field.created') }}</dt><dd><time :datetime="record.createdAt">{{ formatTimestamp(record.createdAt) }}</time></dd>
               <dt>{{ t('field.class') }}</dt>
               <dd><code>platform:ProductPanel</code><br /><span class="pd-note">{{ t('class.hint') }}</span></dd>
             </dl>

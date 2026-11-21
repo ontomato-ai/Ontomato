@@ -11,6 +11,10 @@ import { mountPanel, usePanelContext, usePanelData, usePanelOperation } from "@o
 const PAGE_SIZE = 20;
 const PANEL_TYPE = "platform:ProductPanel";
 
+const formatTimestamp = (value) => new Date(value).toLocaleString(document.documentElement.lang, {
+  year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+}).replace(/^(\d{4})\/(\d{2})\/(\d{2}) /, "$1-$2-$3 ");
+
 /** What one write answered, however the host wrapped it. */
 function outcomeOf(result) {
   if (!result || typeof result !== "object") return { kind: "unknown" };
@@ -159,11 +163,6 @@ const PanelsDirectory = {
 
     function visibilityLabel(visibility) {
       return t(`visibility.${visibility}`);
-    }
-    function formatTime(value) {
-      if (!value) return "—";
-      const date = new Date(value);
-      return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
     }
     const messagesText = computed(() => {
       const messages = record.value?.content?.messages ?? {};
@@ -478,7 +477,7 @@ const PanelsDirectory = {
       rows, visibleRows, unavailableRows, loading, rowsError, page, nextCursor,
       templateFilter, onTemplateFilter,
       grantRows, grantsShared, grantsError, grantKindLabel, verbLabel, revokeGrant,
-      ownerName, visibilityLabel, formatTime, messagesText,
+      ownerName, visibilityLabel, formatTimestamp, messagesText,
       memberRows, projectionId, projectionRecord, inspectProjection,
       record, recordState,
       applicationEntries, usingPanels, classNames, hiddenCount,

@@ -44,7 +44,7 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
   .projections-list .el-table .el-table__cell { padding-inline: var(--spacing-xs) !important; }
   .projections-list .el-table .cell { padding-inline: var(--spacing-xs); }
-  .projections-list time span { display: inline-block; white-space: nowrap; }
+  .projections-list time { white-space: nowrap; }
 </style>
 <div id="app" v-cloak>
   <section class="projections">
@@ -77,20 +77,22 @@
               <div class="cell-desc" v-if="scope.row.description">{{ scope.row.description }}</div>
             </template>
           </el-table-column>
-          <el-table-column label="所用组件" min-width="72">
-            <template #default="scope">{{ componentLabel(scope.row.componentId) }}</template>
+          <el-table-column label="所用组件" min-width="88">
+            <template #default="scope">
+              <span class="cell-identity" :title="componentLabel(scope.row.componentId)">{{ componentLabel(scope.row.componentId) }}</span>
+            </template>
           </el-table-column>
-          <el-table-column label="所属人" min-width="70">
+          <el-table-column label="所属人" min-width="64">
             <template #default="scope">
               <span class="cell-identity" :title="ownerName(scope.row.ownerId)">{{ ownerName(scope.row.ownerId) }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="共享范围" min-width="76">
+          <el-table-column label="共享范围" min-width="74">
             <template #default="scope"><span class="cell-identity">{{ scopeLabel(scope.row.visibility) }}</span></template>
           </el-table-column>
-          <el-table-column label="更新时间" min-width="92">
+          <el-table-column label="更新时间" min-width="142">
             <template #default="scope">
-              <time :datetime="scope.row.updatedAt"><span>{{ formatDate(scope.row.updatedAt) }}</span> <span>{{ formatTime(scope.row.updatedAt) }}</span></time>
+              <time :datetime="scope.row.updatedAt">{{ formatTimestamp(scope.row.updatedAt) }}</time>
             </template>
           </el-table-column>
         </el-table>
