@@ -40,11 +40,39 @@ function areaOpening(popup: HTMLElement): Record<string, string> | undefined {
   return undefined;
 }
 
-/** Gives every pop-up layer added at the end of the document the theme of the area that opened it. */
+/** The theme of the area an element sits in, if any. */
+function areaOf(element: Element): Record<string, string> | undefined {
+  for (const [area, properties] of areas) if (area.contains(element)) return properties;
+  return undefined;
+}
+
+/** The pop-ups a trigger names as what it controls or is described by. */
+function namedBy(trigger: Element): HTMLElement[] {
+  const ids = [trigger.getAttribute("aria-controls"), trigger.getAttribute("aria-describedby")]
+    .flatMap((value) => value?.split(/\s+/) ?? []).filter(Boolean);
+  return ids.flatMap((id) => {
+    const found = document.getElementById(id);
+    return found ? [found] : [];
+  });
+}
+
+const LINK_ATTRIBUTES = ["aria-controls", "aria-describedby", "aria-expanded"];
+
+/**
+ * Gives every pop-up layer the theme of the area that opened it. A pop-up added at the end of the document takes it when
+ * a trigger already names it; a component library that adds the layer first and names it on its trigger only when it
+ * opens (a date picker) is followed through that trigger: when a trigger inside an area names a layer, the layer takes
+ * the area's theme.
+ */
 function followPopups() {
   if (observer || typeof MutationObserver !== "function") return;
   observer = new MutationObserver((records) => {
-    for (const record of records)
+    for (const record of records) {
+      if (record.type === "attributes" && record.target instanceof Element) {
+        const properties = areaOf(record.target);
+        if (properties) for (const popup of namedBy(record.target)) assign(popup, properties);
+        continue;
+      }
       for (const node of record.addedNodes) {
         if (!(node instanceof HTMLElement)) continue;
         const popups = node.matches("[id]") ? [node, ...node.querySelectorAll<HTMLElement>("[id]")] : [...node.querySelectorAll<HTMLElement>("[id]")];
@@ -53,8 +81,9 @@ function followPopups() {
           if (properties) assign(popup, properties);
         }
       }
+    }
   });
-  observer.observe(document.body, { childList: true, subtree: true });
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: LINK_ATTRIBUTES });
 }
 
 /**
