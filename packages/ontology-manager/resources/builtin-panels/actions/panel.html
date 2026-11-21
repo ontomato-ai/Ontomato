@@ -11,7 +11,8 @@
 <style>
   [v-cloak] { display: none; }
   .ac { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; }
-  .ac-head { display: flex; justify-content: flex-end; }
+  /* The page's one creation control sits at the right end of the filter row, not on a row of its own. */
+  .ac-create { margin-left: auto; }
   .ac-filter { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
   .ac-filter-input { max-width: 20rem; }
   .ac-count { color: var(--el-text-color-secondary); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
@@ -90,17 +91,14 @@
 </style>
 <div id="app" v-cloak>
   <section class="ac">
-    <div class="ac-head">
-      <!-- The one way to create: open this page's agent input; nothing is sent until the reader sends it. -->
-      <projection slot="newAction"></projection>
-    </div>
-
     <!-- Catalog: all actions of the domain, filtered by name or description; checked ones change status together. -->
     <section class="ac-section" v-show="!detailVisible">
       <div class="ac-filter">
         <el-input class="ac-filter-input" size="small" clearable v-model="keywordModel"
           :placeholder="t('keywordPlaceholder')" :aria-label="t('keyword')"></el-input>
         <span class="ac-count">{{ t("count", { n: visibleRows.length }) }}</span>
+        <!-- The one way to create: open this page's agent input; nothing is sent until the reader sends it. -->
+        <span class="ac-create"><projection slot="newAction"></projection></span>
       </div>
 
       <div class="ac-batch" v-show="checked.length > 0">
