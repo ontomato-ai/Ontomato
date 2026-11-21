@@ -105,7 +105,7 @@ export const checkComponentPackageUpgrade: CheckComponentPackageUpgrade = async 
   if (!affected.length) return [];
 
   const visible = new Set<string>();
-  if (caller.domainId && (caller.credentials.token || caller.credentials.apiKey)) {
+  if (caller.domainId) {
     try {
       for (const id of await grantedProductIds("use", caller.credentials)) visible.add(id);
     } catch (error) {

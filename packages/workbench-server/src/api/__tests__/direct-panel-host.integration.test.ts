@@ -118,7 +118,8 @@ beforeAll(async () => {
     res.json({ allowed });
   });
   app.post("/product-governance/resources", (req, res) => {
-    expect(req.header("tk")).toBe("host-reader");
+    if (req.header("tk") === undefined) expect(req.body).toEqual({ verb: "use" });
+    else expect(req.header("tk")).toBe("host-reader");
     res.json({ ids: [...grants] });
   });
   app.get("/platform/applications", (req, res) => {
@@ -818,7 +819,7 @@ it("refuses package upgrades that remove a persisted input and identifies its pa
   };
   const packageRequest = (mode: "inspect" | "install", files: Record<string, string>) =>
     fetch(state.base + COMPONENT_PACKAGES_PATH + "/install", {
-      method: "POST", headers: { "X-Ontomato-Query-Service-Token": "fixture-service" },
+      method: "POST", headers: { "X-Ontomato-Query-Service-Token": "fixture-service", "X-Test-Token": "" },
       body: upload(files, mode, "directory"),
     });
   const initial = await packageRequest("install", packageFiles("1.0.0", { value, unused: value }));
