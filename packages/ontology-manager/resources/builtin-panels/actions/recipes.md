@@ -49,8 +49,11 @@ endpoints under `$ONTOMATO_AUTHORING_URL`; send `X-Ontomato-Callback-Credential:
 5. `POST $ONTOMATO_AUTHORING_URL/action/explain-draft` with the same `code` and `parameterDefs`, and keep its
    `explanationRef` for the draft.
 
-Run these in the same run that writes the draft, and draft exactly the code and parameters that passed. When a step is
-refused (for example the run is not allowed to author here), do not draft; say which step stopped and quote the owner.
+Run these in the same run that writes the draft, and draft exactly the code and parameters that passed. Only a test of
+that exact code and those parameters with no `result.error` counts: a probe or another version passing does not, and
+the owner refuses the draft when the reader opens it. When a step is refused, do not draft; say which step stopped and
+quote the owner. A sample class "outside the authoring scope" is outside this conversation agent's data scope: tell the
+reader the action cannot be authored on that class from here.
 
 ## Editing an action: draft it, the reader saves
 
