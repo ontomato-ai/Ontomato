@@ -468,6 +468,9 @@ describe("ontology model read adapter", () => {
     expect(createResult.fields.map(field => field.path)).toContain("/primaryKeyName");
     // The form is re-described around the refused draft, not the empty opening form.
     expect(refreshes.at(-1)).toEqual({ target: { kind: "draft" }, values: createDraft, changedField: "/showName" });
+    // A partial draft keeps the owner's defaults for the fields it left out.
+    const partial = panelFormDescriptionSchema.parse(await adapter.createForm(OBJECT_TYPE, { values: { showName: "" } }));
+    expect(partial.values).toEqual({ ...objectTypeForm.values, showName: "" });
 
     const editDraft = { className: "Device", name: "site_id", showName: "", attrDesc: "", enable: true, businessKey: false, primaryKey: false };
     const editResult = panelFormDescriptionSchema.parse(
