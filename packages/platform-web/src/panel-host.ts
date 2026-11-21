@@ -26,7 +26,7 @@ import {
 } from "@ontomato/platform-shell";
 import type { PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import {
-  panelModuleFor, type DirectPanelMount as PanelRunMount, type DirectPanelMountOptions, type PlatformRequests,
+  panelModuleFor, PanelMemberUnavailable, type DirectPanelMount as PanelRunMount, type DirectPanelMountOptions, type PlatformRequests,
 } from "@ontomato/apps-sdk/direct";
 import { workbenchI18n, workbenchLanguage } from "@ontomato/workbench-ui/i18n";
 import * as Vue from "vue";
@@ -263,9 +263,15 @@ async function mountNested(
   outer: OwnPanelOptions, source: PanelReadSource, memberPath: PanelMemberPath, run: DirectPanelRun,
 ): Promise<{ element: HTMLElement; mount: PanelRunMount }> {
   const path = [...(outer.memberPath ?? []), ...memberPath];
-  const { panel } = productPanelNestedReadResponseSchema.parse(
-    await json(`/api${PANEL_NESTED_READ_PATH}`, { method: "POST", body: JSON.stringify({ source, memberPath: path }) }),
-  );
+  // A placement the reader may not use, or one whose record is gone or not among its candidates, is that block's own
+  // state, said where the panel would be; any other failure is said as it is.
+  const answer = await json(`/api${PANEL_NESTED_READ_PATH}`, { method: "POST", body: JSON.stringify({ source, memberPath: path }) })
+    .catch((failure: unknown) => {
+      if (failure instanceof ApiRequestError && (failure.status === 403 || failure.status === 404))
+        throw new PanelMemberUnavailable(failure.status, failure.message);
+      throw failure;
+    });
+  const { panel } = productPanelNestedReadResponseSchema.parse(answer);
   const instance = newPanelInstanceName();
   const { element, template, css } = codedPanelTarget(panel.content.html);
   element.dataset.panelInstance = instance;
