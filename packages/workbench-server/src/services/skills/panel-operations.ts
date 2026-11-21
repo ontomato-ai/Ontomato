@@ -120,8 +120,9 @@ export const skillServerOperations = [
   },
 ] satisfies readonly PanelServerOperation[];
 
-export const skillExportOperation: PanelReadServerOperation = {
+export const skillExportOperation = {
   handlerRef: EXPORT_SKILL,
+  labelKey: "panels.skill.export",
   kind: "action",
   binding: { kind: "PlatformOperation", id: EXPORT_SKILL },
   effect: "read",
@@ -137,4 +138,4 @@ export const skillExportOperation: PanelReadServerOperation = {
     const bytes = await skillManager.exportSkill(owner.domainId, primaryKey, credentials);
     return { kind: "file", bytes: new Uint8Array(bytes), suggestedName: `${primaryKey}.zip`, mime: "application/zip" };
   },
-};
+} satisfies PanelReadServerOperation & { labelKey: string };
