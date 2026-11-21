@@ -50,7 +50,16 @@ const PanelsDirectory = {
     const scope = computed(() => (typeof state.values.value.scope === "string" && state.values.value.scope ? state.values.value.scope : "all"));
     const sort = computed(() => (typeof state.values.value.sort === "string" && state.values.value.sort ? state.values.value.sort : "updated"));
 
-    const mode = ref("view");
+    const creating = computed(() => state.values.value.creating === true);
+    const detailMode = ref("view");
+    const mode = computed({
+      get: () => creating.value ? "create" : detailMode.value,
+      set(next) {
+        const create = next === "create";
+        detailMode.value = create ? "view" : next;
+        if (creating.value !== create) state.set("creating", create ? true : null);
+      },
+    });
     const showDetail = computed(() => selected.value !== null || mode.value !== "view");
     const tab = ref("overview");
     const busy = ref(false);
@@ -245,12 +254,6 @@ const PanelsDirectory = {
       clearNotices();
       mode.value = "view";
       state.set("selected", { className: PANEL_TYPE, primaryKey: id });
-    }
-    function startCreate() {
-      clearNotices();
-      state.set("selected", null);
-      tab.value = "overview";
-      mode.value = "create";
     }
     function startEdit() {
       clearNotices();
@@ -451,8 +454,14 @@ const PanelsDirectory = {
       void navigate(address).catch(() => undefined);
     }
 
+    watch(creating, active => {
+      if (!active) return;
+      detailMode.value = "view";
+      tab.value = "overview";
+      clearNotices();
+    }, { immediate: true });
     watch(instance.draft, draft => {
-      if (draft) mode.value = "edit";
+      if (draft) mode.value = draft.target.id ? "edit" : "create";
     }, { immediate: true });
     // What the reader chose decides the page; the notices belong to the last write, so they stay.
     watch(selected, () => {
@@ -474,9 +483,9 @@ const PanelsDirectory = {
       record, recordState,
       applicationEntries, usingPanels, classNames, hiddenCount,
       onSearchInput, onScope, onSort,
-      nextPage, previousPage, reload,
+      nextPage, previousPage,
       onSaved, onDiscarded,
-      pick, pickById, startCreate, startEdit, cancelMode, startCopy, startSaveAsTemplate, startFromTemplate,
+      pick, pickById, startEdit, cancelMode, startCopy, startSaveAsTemplate, startFromTemplate,
       draftId, draftName, copyPanel, createFromTemplate, templateSource,
       remove, grantKind, grantId, grantVerb, changeGrant, share, openAddress,
     };

@@ -7,7 +7,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.ontomato.dataengine.service.PanelFormErrors;
 import io.ontomato.dataengine.service.PanelFormFields;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.ResourceBundle;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.web.server.ResponseStatusException;
@@ -42,16 +44,26 @@ final class ApplicationCatalogueForm {
         "names", STRING_MAP, "descriptions", STRING_MAP, "groupKey", STRING, "inputs", INPUTS, "defaultAgent", DEFAULT_AGENT),
         List.of("id", "pageKey", "panelId", "path", "access"));
 
-    private ApplicationCatalogueForm() {}
+    private static final List<Locale> LOCALES = List.of("en", "zh-CN", "zh-TW", "ja", "fr", "de", "it", "ar")
+        .stream().map(Locale::forLanguageTag).toList();
+    private final Locale locale;
+    private final ResourceBundle copy;
 
-    static JSONObject identity(JSONObject app, JSONObject draft) {
+    ApplicationCatalogueForm(Locale requested) {
+        var language = Locale.forLanguageTag(requested.getLanguage());
+        locale = LOCALES.contains(requested) ? requested : LOCALES.contains(language) ? language : Locale.ENGLISH;
+        copy = ResourceBundle.getBundle("application_catalogue_form", locale,
+            ResourceBundle.Control.getNoFallbackControl(ResourceBundle.Control.FORMAT_PROPERTIES));
+    }
+
+    JSONObject identity(JSONObject app, JSONObject draft) {
         var values = draft == null ? JSONObject.of("names", app.getJSONObject("names"),
             "descriptions", app.getJSONObject("descriptions"), "icon", app.getString("icon")) : draft;
         return describe(identityFields(), values, draft == null ? List.of() : identityErrors(draft),
             APPLICATIONS + app.getString("id") + "/identity", "saveIdentity", IDENTITY_SCHEMA);
     }
 
-    static JSONObject entries(JSONObject app, JSONObject draft, Function<String, String> conflicts) {
+    JSONObject entries(JSONObject app, JSONObject draft, Function<String, String> conflicts) {
         var id = app.getString("id");
         var values = draft;
         List<ObjectNode> errors;
@@ -69,7 +81,7 @@ final class ApplicationCatalogueForm {
         return describe(entryFields(id), values, errors, APPLICATIONS + id + "/panel-uses", "saveEntries", registrationSchema(false));
     }
 
-    static JSONObject create(String id, JSONObject draft, Function<String, String> conflicts) {
+    JSONObject create(String id, JSONObject draft, Function<String, String> conflicts) {
         var values = draft == null ? JSONObject.of(
             "declaration", JSONObject.of("names", JSONObject.of("en", ""), "descriptions", new JSONObject(),
                 "icon", "pages", "groups", List.of(), "permissions", List.of()),
@@ -77,45 +89,58 @@ final class ApplicationCatalogueForm {
             "entryAccess", List.of(DOMAIN_MEMBER), "panelUses", List.of()) : draft;
         var fields = entryFields(id);
         var metadata = identityFields();
-        metadata.add(field("/groups", "Groups", PanelFormFields.code("json"), OBJECT_ARRAY, true));
-        metadata.add(field("/permissions", "Menu permissions", PanelFormFields.code("json"), OBJECT_ARRAY, true));
-        fields.addFirst(field("/declaration", "Application identity", PanelFormFields.object(metadata, null), DECLARATION_SCHEMA, true));
-        fields.add(field("/entryAccess", "Application access", PanelFormFields.stringArray(), STRING_ARRAY, true));
+        metadata.add(field("/groups", "groups", PanelFormFields.code("json"), OBJECT_ARRAY, true));
+        metadata.add(field("/permissions", "permissions", PanelFormFields.code("json"), OBJECT_ARRAY, true));
+        fields.addFirst(field("/declaration", "identity", PanelFormFields.object(metadata, null), DECLARATION_SCHEMA, true));
+        fields.add(field("/entryAccess", "applicationAccess", PanelFormFields.stringArray(), STRING_ARRAY, true));
         return describe(fields, values, draft == null ? List.of() : entryErrors(id, draft, null, conflicts),
             APPLICATIONS + id + "/panel-uses?create=true", "create", registrationSchema(true));
     }
 
-    private static JSONArray identityFields() {
+    private JSONArray identityFields() {
         return JSONArray.of(
-            field("/names", "Names by language", PanelFormFields.code("json"), STRING_MAP, true),
-            field("/descriptions", "Descriptions by language", PanelFormFields.code("json"), STRING_MAP, true),
-            field("/icon", "Icon", PanelFormFields.text(false), STRING, true));
+            field("/names", "name", localizedText(List.of("en"), false), STRING_MAP, true, "name.help"),
+            field("/descriptions", "description", localizedText(List.of(), true), STRING_MAP, true, "description.help"),
+            field("/icon", "icon", PanelFormFields.text(false), STRING, true, "icon.help"));
     }
 
-    private static JSONArray entryFields(String id) {
-        var path = field("/path", "Address", PanelFormFields.text(false), STRING, true);
+    private JSONObject localizedText(List<String> requiredLocales, boolean multiline) {
+        var languages = LOCALES.stream()
+            .map(language -> JSONObject.of("code", language.toLanguageTag(), "label", language.getDisplayName(locale)))
+            .toList();
+        return JSONObject.of("kind", "localized-text", "primaryLocale", locale.toLanguageTag(), "locales", languages,
+            "requiredLocales", requiredLocales, "multiline", multiline);
+    }
+
+    private JSONArray entryFields(String id) {
+        var path = field("/path", "address", PanelFormFields.text(false), STRING, true);
         var item = JSONArray.of(
-            field("/id", "Entry ID", PanelFormFields.text(false), STRING, true),
-            field("/pageKey", "Page key", PanelFormFields.text(false), STRING, true),
+            field("/id", "entryId", PanelFormFields.text(false), STRING, true),
+            field("/pageKey", "pageKey", PanelFormFields.text(false), STRING, true),
             path,
-            field("/panelId", "Panel ID", PanelFormFields.text(false), STRING, true),
-            field("/inputs", "Inputs", PanelFormFields.code("json"), INPUTS, false),
-            field("/names", "Menu names by language", PanelFormFields.code("json"), STRING_MAP, false),
-            field("/descriptions", "Entry descriptions by language", PanelFormFields.code("json"), STRING_MAP, false),
-            field("/groupKey", "Menu group", PanelFormFields.text(false), STRING, false),
-            field("/access", "Entry access", PanelFormFields.code("json"), ACCESS, true),
-            field("/defaultAgent", "Default agent", PanelFormFields.code("json"), DEFAULT_AGENT, false));
+            field("/panelId", "panelId", PanelFormFields.text(false), STRING, true),
+            field("/inputs", "inputs", PanelFormFields.code("json"), INPUTS, false),
+            field("/names", "menuNames", PanelFormFields.code("json"), STRING_MAP, false),
+            field("/descriptions", "entryDescriptions", PanelFormFields.code("json"), STRING_MAP, false),
+            field("/groupKey", "menuGroup", PanelFormFields.text(false), STRING, false),
+            field("/access", "entryAccess", PanelFormFields.code("json"), ACCESS, true),
+            field("/defaultAgent", "defaultAgent", PanelFormFields.code("json"), DEFAULT_AGENT, false));
         var root = ApplicationCatalog.assignedPanelRoot(id);
         return JSONArray.of(
-            field("/entry", "Application address", PanelFormFields.object(JSONArray.of(path), null), ENTRY_SCHEMA, true),
-            field("/panelUses", "Entries in display order", PanelFormFields.objectArray(item,
+            field("/entry", "applicationAddress", PanelFormFields.object(JSONArray.of(path), null), ENTRY_SCHEMA, true),
+            field("/panelUses", "entries", PanelFormFields.objectArray(item,
                 JSONObject.of("id", "", "pageKey", "", "panelId", "", "path", root + "/",
                     "access", JSONObject.of("kind", DOMAIN_MEMBER)), "/id"),
                 PanelFormFields.arraySchema(USE_SCHEMA), true));
     }
 
-    private static JSONObject field(String path, String label, JSONObject control, JSONObject schema, boolean required) {
-        return PanelFormFields.field(path, label, control, schema, required, false, null, null, false);
+    private JSONObject field(String path, String label, JSONObject control, JSONObject schema, boolean required) {
+        return field(path, label, control, schema, required, null);
+    }
+
+    private JSONObject field(String path, String label, JSONObject control, JSONObject schema, boolean required, String help) {
+        return PanelFormFields.field(path, copy.getString(label), control, schema, required, false,
+            null, help == null ? null : copy.getString(help), false);
     }
 
     private static JSONObject registrationSchema(boolean create) {

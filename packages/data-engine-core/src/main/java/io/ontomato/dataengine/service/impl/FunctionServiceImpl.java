@@ -202,7 +202,7 @@ public class FunctionServiceImpl implements FunctionService {
 		if (function.getId() != null) {
 			functionDao.lock(function.getId());
 			Function existFunction = functionDao.queryById(function.getId());
-			if(existFunction!=null&&Function.OPERATION_PRODUCT.equals(existFunction.getOperation()))throw new OwnerRefusal("FUNCTION_PRODUCT_IMMUTABLE", "Published product Function artifacts are immutable");
+			if(existFunction!=null&&Function.OPERATION_PRODUCT.equals(existFunction.getOperation()))throw new OwnerRefusal("FUNCTION_PRODUCT_IMMUTABLE", langService.get(lang, "PanelForm.readOnly.product"));
 			if (existFunction == null) {
 				throw new OwnerRefusal("FUNCTION_NOT_FOUND", langService.get(lang, "Function.notFound"));
 			} else {
@@ -235,20 +235,34 @@ public class FunctionServiceImpl implements FunctionService {
 		return null;
 	}
 
+  /** Why this Function cannot be deleted, or null when it can: a product, a system Function, or a referenced one. */
+	private OwnerRefusal deletionRefusal(Function function, String lang) {
+		if (Function.OPERATION_PRODUCT.equals(function.getOperation()))
+			return new OwnerRefusal("FUNCTION_PRODUCT_IMMUTABLE", langService.get(lang, "Function.cannotDeleteProduct"));
+		if (Function.ORIGIN_SYSTEM.equals(function.getOrigin()))
+			return new OwnerRefusal("FUNCTION_SYSTEM", langService.get(lang, "Function.cannotDeleteSystem"));
+		String reason = referenceReason(function.getId(), lang);
+		return reason == null ? null : new OwnerRefusal("FUNCTION_REFERENCED", reason);
+	}
+
   @Override
 	@Transactional(rollbackFor = Exception.class)
-	public void delete(String id, String lang) throws Exception {
+	public void delete(String id, String domainId, String lang) throws Exception {
 		functionDao.lock(id);
 		Function function = functionDao.queryById(id);
-		if (function != null) {
-			if(Function.OPERATION_PRODUCT.equals(function.getOperation()))throw new OwnerRefusal("FUNCTION_PRODUCT_IMMUTABLE", "Published product Function artifacts are retained by their release records");
-			if (Function.ORIGIN_SYSTEM.equals(function.getOrigin())) {
-				throw new OwnerRefusal("FUNCTION_SYSTEM", langService.get(lang, "Function.cannotDeleteSystem"));
-			}
-			// A referenced Function cannot be modified or deleted
-			isReferenced(function.getId(), lang);
-			functionDao.delete(id);
-		}
+		if (function == null || !domainId.equals(function.getDomainId())) return;
+		OwnerRefusal refusal = deletionRefusal(function, lang);
+		if (refusal != null) throw refusal;
+		functionDao.delete(id);
+	}
+
+  @Override
+	public String deleteRefusal(String id, String domainId, String lang) {
+		Function function = functionDao.queryById(id);
+		if (function == null || !domainId.equals(function.getDomainId()))
+			throw new OwnerRefusal("FUNCTION_NOT_FOUND", langService.get(lang, "Function.notFound"));
+		OwnerRefusal refusal = deletionRefusal(function, lang);
+		return refusal == null ? null : refusal.getMessage();
 	}
 
   @Override

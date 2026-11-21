@@ -6,6 +6,8 @@
 Direct panel modules can import `vue`, `@ontomato/sdk/panel`.
 
 The supported application icon IDs are `app-window`, `users`, `microscope`, `presentation`, `graduation-cap`, `briefcase`, `shopping-cart`, `package`, `clipboard-list`, `chart`, `wallet`, `heart-pulse`, `building`, `globe`, `calendar`, `book`, `folder`, `workflow`, `database`, `shield`, `home`, `agents`, `diagnosis`, `knowledge`, `objects`, `ontology`, `schedule`, `dashboards`, `permissions`, `settings`, `governance`, `builder`, `pages`, `gallery`, `agent-builder`.
+To show an application by its icon key, draw `<component :is="appIcon(key)" :size="16" />` with `appIcon` from
+`@ontomato/sdk/panel`: it is the platform's own icon for the key, and an unknown key draws the platform's fallback.
 
 ## Vue setup
 
@@ -171,8 +173,12 @@ owner operation. `do.open` follows the indicated destination address. Use a decl
 
 ## Draft links and instance state
 
-A draft link uses the destination entry path and the query keys `draftSessionId`, `draftRunId`, `draftPath`.
-Use the session and run that wrote the artifact and the original relative `outputs/drafts/<name>.page-draft.json` path.
+Append the draft query to the destination entry path and keep any existing entry parameters.
+Use the producing session and run IDs. Pass a path relative to that run, starting with `outputs/drafts/` and
+without a leading slash. Encode that raw path once. The complete draft query has this form:
+
+`?draftSessionId=SESSION_ID&draftRunId=RUN_ID&draftPath=outputs%2Fdrafts%2Fedit.page-draft.json`
+
 The SDK reads the artifact, verifies it was written for the entry's `pageKey`, and offers it to the mounted forms.
 A form asks its owner for the target's description, matches `save.draftOperation`, then gives the owner's form read
 the proposed field values to check. If the owner accepts changed fields, the SDK fills the form and sets `instance.draft`.

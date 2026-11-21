@@ -14,6 +14,14 @@
           "type": "string"
         },
         "deepLink": true
+      },
+      "creating": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "default": false,
+        "deepLink": true
       }
     },
     "members": {
@@ -59,7 +67,24 @@
         "id": "builtin-product-6c49c425-f3cc-4d7c-a623-19134c7b92a0"
       }
     },
-    "commands": {}
+    "commands": {
+      "newFunction": {
+        "labelKey": "newFunction",
+        "primary": true,
+        "do": {
+          "set": {
+            "fields": {
+              "selected": {
+                "literal": null
+              },
+              "creating": {
+                "literal": true
+              }
+            }
+          }
+        }
+      }
+    }
   },
   "content": {
     "messages": {
