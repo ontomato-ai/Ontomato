@@ -65,8 +65,8 @@ const ObjectViewEditorRoute = defineComponent({
   },
 });
 
-const assetDetails = { metrics: routes.metric, functions: routes.function };
-const ASSET_KINDS: readonly AssetTab[] = ["metrics", "functions"];
+const assetDetails = { metrics: routes.metric };
+const ASSET_KINDS: readonly AssetTab[] = ["metrics"];
 
 const ModelCatalogPage = defineComponent({
   name: "ManagerModelCatalogPage",

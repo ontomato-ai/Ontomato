@@ -72,12 +72,11 @@ function credentialHeaders(credential: ManagerCredential): Record<string, string
   }
 }
 
-export type SmartAssetKind = "metrics" | "actions" | "functions" | "tasks";
+export type SmartAssetKind = "metrics" | "actions" | "tasks";
 
 const smartAssetPaths: Record<SmartAssetKind, string> = {
   metrics: "/metricView",
   actions: "/action",
-  functions: "/function",
   tasks: "/writeTask",
 };
 

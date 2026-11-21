@@ -7,7 +7,6 @@ import {
   ChartColumn,
   Link2,
   Network,
-  SquareFunction,
   Table2,
   Tags,
   Workflow as WorkflowIcon,
@@ -93,7 +92,6 @@ const pages = [
   // A page of the object browser: the platform draws the application's header above it and the page gutter around it.
   { ...page(managerPaths.dataBrowser, "nav.dataBrowser", Table2, "ontology", ["data-browser"]), ownHeader: false },
   page(managerPaths.metrics, "nav.metrics", ChartColumn, "assets", MODELING, "metrics"),
-  page(managerPaths.functions, "nav.functionDefinitions", SquareFunction, "assets", MODELING, "functions"),
   page(managerPaths.products, "platform.productAssets", Shapes, "assets", MODELING, "products"),
   page(managerPaths.knowledge, "nav.businessKnowledge", BookOpen, "knowledge", ["business-knowledge"]),
 ];

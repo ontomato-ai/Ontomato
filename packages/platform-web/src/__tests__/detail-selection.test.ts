@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
-import { ACTION } from "@ontomato/contracts/platform-object-types";
+import { ACTION, FUNCTION } from "@ontomato/contracts/platform-object-types";
 import { DETAIL_SELECTIONS, detailSelectionAddress } from "../detail-selection";
 
 /*
@@ -25,4 +25,12 @@ it("opens an action's detail address as the actions panel with the action select
 it("opens the old creation address as the catalog, and leaves the page's own address alone", () => {
   expect(open("/ontology/assets/actions/new")).toEqual({ path: "/ontology/assets/actions", state: {} });
   expect(open("/ontology/assets/actions")).toBeNull();
+});
+
+it("opens a function's detail address as the functions panel with the function selected, and the old creation address as the catalog", () => {
+  expect(open("/ontology/assets/functions/fn%201?back=products")).toEqual({
+    path: "/ontology/assets/functions", state: { selected: { className: FUNCTION, primaryKey: "fn 1" } },
+  });
+  expect(open("/ontology/assets/functions/new")).toEqual({ path: "/ontology/assets/functions", state: {} });
+  expect(open("/ontology/assets/functions")).toBeNull();
 });

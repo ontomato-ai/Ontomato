@@ -96,16 +96,12 @@ const testJson = ref("");
 const meta = computed(() => {
   const titles = {
     metrics: ot("assetKindMetrics"),
-    functions: ot("assetKindFunctions"),
   };
   return { title: titles[props.kind] };
 });
 
 const canDelete = computed(() => Boolean(record.value?.id) && record.value?.origin !== "SYSTEM");
-const isFunction = computed(() => props.kind === "functions");
-const functionRecord = computed(() =>
-  props.kind === "functions" ? record.value : record.value?.function || null
-);
+const functionRecord = computed(() => record.value?.function || null);
 const readFunction = computed(() => functionRecord.value?.operation === "OPERATION_READ");
 function prepareQueryPackage(fn: AssetRecord) {
   if (fn?.operation !== "OPERATION_READ") return;
@@ -167,42 +163,30 @@ watch(
   }
 );
 
-function createRecord(kind: AssetTab): AssetRecord {
-  if (kind === "metrics") {
-    return {
-      name: "",
-      description: "",
-      origin: "USER",
-      bindings: [],
-      status: "PENDING_REVIEW",
-      matchQuestions: [],
-      function: {
-        name: "",
-        origin: "USER",
-        operation: "OPERATION_READ",
-        description: "",
-        parameters: [],
-        returnDef: { isVoid: false, outKeyRefs: [], value: {}, classNames: [] },
-        code: "",
-        logic: "",
-      },
-    };
-  }
+function createRecord(): AssetRecord {
   return {
     name: "",
     description: "",
     origin: "USER",
-    operation: "OPERATION_READ",
-    parameters: [],
-    returnDef: { isVoid: false, outKeyRefs: [], value: {}, classNames: [] },
-    code: "",
-    logic: "",
+    bindings: [],
+    status: "PENDING_REVIEW",
+    matchQuestions: [],
+    function: {
+      name: "",
+      origin: "USER",
+      operation: "OPERATION_READ",
+      description: "",
+      parameters: [],
+      returnDef: { isVoid: false, outKeyRefs: [], value: {}, classNames: [] },
+      code: "",
+      logic: "",
+    },
   };
 }
 
 async function loadDetail() {
   if (props.creating) {
-    record.value = createRecord(props.kind);
+    record.value = createRecord();
     return;
   }
   if (!props.asset?.id) {
@@ -423,7 +407,7 @@ onMounted(() => void loadDetail());
           <el-form-item :label="ot('description')">
             <el-input v-model="record.description" type="textarea" :rows="3" />
           </el-form-item>
-          <el-form-item v-if="!isFunction" :label="ot('status')">
+          <el-form-item :label="ot('status')">
             <el-select v-model="record.status">
               <el-option :label="ot('assetStatusPendingReview')" value="PENDING_REVIEW" />
               <el-option :label="ot('published')" value="PUBLISHED" />
@@ -437,12 +421,6 @@ onMounted(() => void loadDetail());
               :rows="3"
               :placeholder="ot('assetMatchQuestionsPlaceholder')"
             />
-          </el-form-item>
-          <el-form-item v-if="isFunction" :label="ot('assetOperationType')">
-            <el-radio-group v-model="record.operation" :disabled="Boolean(record.id)">
-              <el-radio value="OPERATION_READ">{{ ot("assetOperationRead") }}</el-radio>
-              <el-radio value="OPERATION_WRITE">{{ ot("assetOperationWrite") }}</el-radio>
-            </el-radio-group>
           </el-form-item>
         </el-form>
       </section>
@@ -545,22 +523,12 @@ onMounted(() => void loadDetail());
                 :placeholder="ot('assetReturnClassesPlaceholder')"
               />
             </el-form-item>
-            <template v-if="isFunction">
-              <el-form-item :label="ot('assetLogicDescription')">
-                <el-input v-model="record.logic" type="textarea" :rows="3" />
-              </el-form-item>
-              <el-form-item :label="ot('explainerCode')">
-                <CodeEditor v-model="record.code" class="asset-code" language="python" :min-height="300" />
-              </el-form-item>
-            </template>
-            <template v-else>
-              <el-form-item :label="ot('assetLogicDescription')">
-                <el-input v-model="functionRecord.logic" type="textarea" :rows="3" />
-              </el-form-item>
-              <el-form-item :label="ot('explainerCode')">
-                <CodeEditor v-model="functionRecord.code" class="asset-code" language="python" :min-height="300" />
-              </el-form-item>
-            </template>
+            <el-form-item :label="ot('assetLogicDescription')">
+              <el-input v-model="functionRecord.logic" type="textarea" :rows="3" />
+            </el-form-item>
+            <el-form-item :label="ot('explainerCode')">
+              <CodeEditor v-model="functionRecord.code" class="asset-code" language="python" :min-height="300" />
+            </el-form-item>
             </template>
           </template>
         </el-form>

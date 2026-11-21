@@ -6,7 +6,6 @@ import {
   ChevronRight,
   ListChecks,
   Search,
-  SquareFunction,
 } from "lucide-vue-next";
 import type { SmartAsset, SubjectRecord } from "../api";
 import { assetStatusLabel } from "../asset-status";
@@ -36,7 +35,6 @@ const query = ref("");
 const checked = ref<string[]>([]);
 const saving = ref(false);
 const targetStatus = ref("PUBLISHED");
-const canBatchUpdate = computed(() => props.kind !== "functions");
 const selectableAssets = computed(() => filteredAssets.value.filter((asset) => asset.id));
 const visibleCheckedCount = computed(() =>
   selectableAssets.value.filter((asset) => checked.value.includes(asset.id!)).length
@@ -57,7 +55,7 @@ function toggleAllVisible(value: boolean) {
 }
 
 async function updateCheckedStatus(status = targetStatus.value) {
-  if (saving.value || !canBatchUpdate.value || !checked.value.length) return;
+  if (saving.value || !checked.value.length) return;
   const kind = props.kind;
   const ids = [...checked.value];
   const failed: string[] = [];
@@ -101,12 +99,6 @@ const meta: Record<
     create: "createMetric",
     icon: ChartColumn,
   },
-  functions: {
-    title: "functionsTitle",
-    description: "functionsDesc",
-    create: "createFunction",
-    icon: SquareFunction,
-  },
 };
 
 const currentMeta = computed(() => {
@@ -118,13 +110,6 @@ const currentMeta = computed(() => {
     create: ot(item.create),
   };
 });
-function operationLabel(operation?: unknown) {
-  return operation === "OPERATION_WRITE"
-    ? ot("assetOperationWrite")
-    : operation === "OPERATION_READ"
-      ? ot("assetOperationRead")
-      : "-";
-}
 const filteredAssets = computed(() => {
   const keyword = query.value.trim().toLowerCase();
   if (!keyword) return assets.value;
@@ -201,7 +186,7 @@ onMounted(async () => {
           clearable
         />
         <span class="resource-count">{{ filteredAssets.length }} {{ ot("items") }}</span>
-        <template v-if="canBatchUpdate && checked.length">
+        <template v-if="checked.length">
           <span class="resource-count">{{ ot("assetChecked", { n: checked.length }) }}</span>
           <el-select v-model="targetStatus" class="batch-status" :aria-label="ot('status')">
             <el-option :label="ot('pendingReview')" value="PENDING_REVIEW" />
@@ -218,7 +203,6 @@ onMounted(async () => {
       <div class="resource-table">
         <div class="resource-table-heading">
           <el-checkbox
-            v-if="canBatchUpdate"
             class="resource-check"
             :model-value="allVisibleChecked"
             :indeterminate="visibleCheckedCount > 0 && !allVisibleChecked"
@@ -226,15 +210,14 @@ onMounted(async () => {
             :aria-label="ot('assetCheckAll')"
             @update:model-value="toggleAllVisible(Boolean($event))"
           />
-          <div :class="['resource-table-head', { 'function-grid': kind === 'functions' }]">
+          <div class="resource-table-head">
             <span>{{ currentMeta.title }}</span>
-            <span v-if="kind === 'functions'">{{ ot("assetOperationType") }}</span>
-            <span v-else>{{ ot("linkedFunction") }}</span>
-            <span v-if="kind !== 'functions'">{{ ot("source") }}</span>
-            <span v-if="kind !== 'functions'">{{ ot("status") }}</span>
-            <span v-if="kind !== 'functions'">{{ ot("createdBy") }}</span>
-            <span v-if="kind !== 'functions'">{{ ot("reviewedBy") }}</span>
-            <span v-if="kind !== 'functions'">{{ ot("lastUpdated") }}</span>
+            <span>{{ ot("linkedFunction") }}</span>
+            <span>{{ ot("source") }}</span>
+            <span>{{ ot("status") }}</span>
+            <span>{{ ot("createdBy") }}</span>
+            <span>{{ ot("reviewedBy") }}</span>
+            <span>{{ ot("lastUpdated") }}</span>
             <span></span>
           </div>
         </div>
@@ -244,7 +227,6 @@ onMounted(async () => {
           class="resource-table-entry"
         >
           <el-checkbox
-            v-if="canBatchUpdate"
             class="resource-check"
             :model-value="Boolean(asset.id && checked.includes(asset.id))"
             :disabled="!asset.id"
@@ -253,7 +235,7 @@ onMounted(async () => {
           />
           <button
             type="button"
-            :class="['resource-table-row', { 'function-grid': kind === 'functions' }]"
+            class="resource-table-row"
             @click="emit('select', asset)"
           >
             <span class="resource-name">
@@ -262,21 +244,20 @@ onMounted(async () => {
                 <small>{{ asset.description || ot("notFilledDescription") }}</small>
               </span>
             </span>
-            <span v-if="kind === 'functions'">{{ operationLabel(asset.operation) }}</span>
-            <span v-else>{{ asset.function?.name || "-" }}</span>
-            <span v-if="kind !== 'functions'">
+            <span>{{ asset.function?.name || "-" }}</span>
+            <span>
               {{
                 asset.origin === "SYSTEM" ? ot("system") : asset.origin === "USER" ? ot("user") : "-"
               }}
             </span>
-            <span v-if="kind !== 'functions'">
+            <span>
               <span :class="['status-pill', statusClass(asset.status)]">
                 {{ assetStatusLabel(asset.status, ot) }}
               </span>
             </span>
-            <span v-if="kind !== 'functions'">{{ subjectName(asset.createdBy) }}</span>
-            <span v-if="kind !== 'functions'">{{ subjectName(asset.reviewedBy) }}</span>
-            <span v-if="kind !== 'functions'">{{ formatTime(asset.modifyTimestamp) }}</span>
+            <span>{{ subjectName(asset.createdBy) }}</span>
+            <span>{{ subjectName(asset.reviewedBy) }}</span>
+            <span>{{ formatTime(asset.modifyTimestamp) }}</span>
             <ChevronRight :size="16" class="row-chevron" />
           </button>
         </div>
@@ -368,10 +349,6 @@ onMounted(async () => {
 }
 .resource-table-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .resource-table-row > .resource-name { white-space: normal; }
-.resource-table-head.function-grid,
-.resource-table-row.function-grid {
-  grid-template-columns: minmax(250px, 1.7fr) minmax(140px, 1fr) 20px;
-}
 .resource-table-head {
   min-height: var(--table-head-height);
   padding: 0 var(--spacing-md);
@@ -452,10 +429,6 @@ onMounted(async () => {
   .resource-table-row {
     grid-template-columns: minmax(0, 1fr) 90px 20px;
   }
-  .resource-table-head.function-grid,
-  .resource-table-row.function-grid {
-    grid-template-columns: minmax(0, 1fr) minmax(80px, 0.8fr) 20px;
-  }
   .resource-table-head span:nth-child(2),
   .resource-table-head span:nth-child(3),
   .resource-table-head span:nth-child(5),
@@ -467,10 +440,6 @@ onMounted(async () => {
   .resource-table-row > span:nth-child(6),
   .resource-table-row > span:nth-child(7) {
     display: none;
-  }
-  .resource-table-head.function-grid span:nth-child(2),
-  .resource-table-row.function-grid > span:nth-child(2) {
-    display: block;
   }
 }
 @container ontology-manager (max-width: 560px) {

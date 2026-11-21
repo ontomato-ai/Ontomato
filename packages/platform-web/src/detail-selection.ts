@@ -2,7 +2,7 @@ import type { RouteLocation } from "vue-router";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import { PAGE_DRAFT_QUERY_KEYS } from "@ontomato/contracts/page-draft";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
-import { ACTION, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
+import { ACTION, FUNCTION, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 
 /*
@@ -45,6 +45,14 @@ export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
     use: platformRoutes.actions.path,
     state: ({ id }): Record<string, PanelStateValue> =>
       id === "new" ? {} : { selected: { className: ACTION, primaryKey: id! } },
+  },
+  // The functions page: a function's detail selects it; the old page's `new` opens the catalog, whose own button starts a
+  // new function.
+  {
+    path: platformRoutes.function.path,
+    use: platformRoutes.functions.path,
+    state: ({ id }): Record<string, PanelStateValue> =>
+      id === "new" ? {} : { selected: { className: FUNCTION, primaryKey: id! } },
   },
 ];
 

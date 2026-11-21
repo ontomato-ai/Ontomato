@@ -34,7 +34,6 @@ let held: Map<string, { resolve: (response: Response) => void }[]>;
 let holdPaths: Set<string>;
 let statusFor: (path: string) => number;
 let metasFor: (url: string) => unknown;
-let functions: Record<string, unknown>[];
 let metricDetail: Record<string, unknown>;
 let dataAdapter: string;
 let instanceNodeCount: number;
@@ -189,7 +188,6 @@ function respond(url: string, body?: Record<string, unknown>, method = "POST"): 
   if (path === "/businessConfig/dataAdapters") {
     return json({ success: true, data: { currentType: dataAdapter, adapters: dataAdapters } });
   }
-  if (path === "/function/queryList") return json({ success: true, data: functions });
   if (path.endsWith("/queryList")) return json({ success: true, data: [] });
   return json({ success: true, data: {} });
 }
@@ -215,7 +213,6 @@ beforeEach(() => {
   objectTypeChanges = {};
   statusFor = () => 200;
   metasFor = () => metas(["Order", "Item"]);
-  functions = [];
   metricDetail = { id: "metric-1", name: "Revenue metric", status: "PUBLISHED", origin: "USER",
     function: { name: "Revenue", operation: "OPERATION_READ", parameters: [], returnDef: { classNames: [] } }, bindings: [] };
   dataAdapter = "mysql";
@@ -711,7 +708,6 @@ describe("Manager pages in the service router", () => {
       expect.arrayContaining([
         "/admin/getMetas",
         "/metricView/queryList",
-        "/function/queryList",
       ])
     );
     for (const request of requests) {
@@ -902,7 +898,7 @@ describe("Manager pages in the service router", () => {
 
   it("401/402 only notify the page; after 402 the credential is kept and later requests still carry it", async () => {
     statusFor = (path) =>
-      path === "/metricView/queryList" ? 402 : path === "/function/queryList" ? 401 : 200;
+      path === "/metricView/queryList" ? 402 : path.endsWith("/product-assets/counts") ? 401 : 200;
     const { host, failures } = mountHost(base);
     await settle();
     expect(failures.sort()).toEqual([401, 402]);
