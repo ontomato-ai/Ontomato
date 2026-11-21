@@ -439,6 +439,26 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.declaration.permissions[0].code").value("app:app-school:private"))
             .andExpect(jsonPath("$.data.framePanelId").value("panel-frame"))
             .andExpect(jsonPath("$.data.delivery.projections[0]").value("projection-school"));
+
+        var form = http.perform(post(CATALOGUE + "/form").locale(Locale.SIMPLIFIED_CHINESE)
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                    {"section":"entries","target":{"kind":"object","objectType":"platform:Application","primaryKey":"app-school"}}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.values.panelUses[0].names.en").value("School"))
+            .andExpect(jsonPath("$.data.values.panelUses[1].names").doesNotHaveJsonPath())
+            .andExpect(jsonPath("$.data.values.panelUses[1].descriptions").doesNotHaveJsonPath())
+            .andReturn().getResponse().getContentAsString();
+        var rowFields = JSON.parseObject(form).getJSONObject("data").getJSONArray("fields").getJSONObject(1)
+            .getJSONObject("control").getJSONArray("itemFields").toJavaList(JSONObject.class);
+        for (var fieldPath : List.of("/names", "/descriptions")) {
+            var field = rowFields.stream().filter(item -> fieldPath.equals(item.getString("path"))).findFirst().orElseThrow();
+            var control = field.getJSONObject("control");
+            assertEquals("localized-text", control.getString("kind"));
+            assertEquals("zh-CN", control.getString("primaryLocale"));
+            assertEquals(List.of("en"), control.getList("requiredLocales", String.class));
+            assertFalse(field.getBooleanValue("required"));
+        }
         when(identity.getCurrentUser()).thenReturn(viewer);
         http.perform(get(path).param("purpose", "management")).andExpect(status().isForbidden());
         http.perform(get(path)).andExpect(status().isOk()).andExpect(jsonPath("$.data.panelUses.length()").value(1));

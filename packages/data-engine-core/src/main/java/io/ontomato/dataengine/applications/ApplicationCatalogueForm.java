@@ -144,8 +144,8 @@ final class ApplicationCatalogueForm {
             field("/path", "address", PanelFormFields.text(false), STRING, true),
             field("/panelId", "panelId", PanelFormFields.text(false), STRING, true),
             field("/inputs", "inputs", PanelFormFields.code("json"), INPUTS, false),
-            field("/names", "menuNames", PanelFormFields.code("json"), STRING_MAP, false),
-            field("/descriptions", "entryDescriptions", PanelFormFields.code("json"), STRING_MAP, false),
+            field("/names", "menuNames", localizedText(List.of("en"), false), STRING_MAP, false),
+            field("/descriptions", "entryDescriptions", localizedText(List.of("en"), true), STRING_MAP, false),
             field("/groupKey", "menuGroup", PanelFormFields.text(false), STRING, false),
             field("/access", "entryAccess", PanelFormFields.code("json"), ACCESS, true),
             field("/defaultAgent", "defaultAgent", PanelFormFields.code("json"), DEFAULT_AGENT, false));
@@ -281,6 +281,7 @@ final class ApplicationCatalogueForm {
                 errors.requiredString(use, key, path + "/" + key);
             var pageKey = errors.requiredString(use, "pageKey", path + "/pageKey");
             if (pageKey != null) validatePageKey(pageKey, path + "/pageKey", conflicts, errors);
+            if (use.containsKey("names")) validateNames(use, path + "/names", errors);
             if (use.containsKey("descriptions")) {
                 var pointer = path + "/descriptions";
                 var descriptions = errors.requiredObject(use, "descriptions", pointer);
