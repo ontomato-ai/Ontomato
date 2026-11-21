@@ -21,7 +21,7 @@ import { getDefaultLocale, getLocale, resolveLocale } from "../../i18n";
 import { findCurrentProduct, type CurrentProductRow } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { readObjectActions } from "../action/panel-reads";
-import { readPanelComponentCatalogue } from "./component-catalogue";
+import { readPanelComponentCatalogue, readProjectionComponent } from "./component-catalogue";
 import { allowsOperationDraft, boundProjectionOperations, type BoundProjectionOperation } from "./operation-bindings";
 import { panelServerOperationLabel } from "./server-operations";
 import { panelSkillScope } from "./skill-identity";
@@ -138,11 +138,16 @@ export async function panelSkillSources(
         ? await (actionNames ??= readObjectActions(reader).then(({ actions }) =>
           new Map(actions.map(({ declaration, name }) => [declaration.id, name]))))
         : undefined;
-      const description = describePanel(panel, new Map(entries), sdk.components, locale, names);
+      const installedIds = [...new Set(entries.map(([, projection]) => projection.componentId))]
+        .filter(componentId => !sdk.components.has(componentId));
+      const installed = await Promise.all(installedIds.map(async id => [id, await readProjectionComponent(id, () => Promise.resolve(sdk))] as const));
+      const components = new Map(sdk.components);
+      for (const [id, component] of installed) if (component) components.set(id, component);
+      const description = describePanel(panel, new Map(entries), components, locale, names);
       const operationLabels = description.operations.map(({ id, label }) => [id, label]);
       return {
         description, markdown: describeSkill(description),
-        fingerprint: fingerprint([id, panel, entries, sdk.version, sdk.digest, locale, operationLabels]),
+        fingerprint: fingerprint([id, panel, entries, sdk.version, sdk.digest, locale, operationLabels, ...installed]),
       };
     }
     let snapshot: ReturnType<typeof buildSnapshot> | undefined;

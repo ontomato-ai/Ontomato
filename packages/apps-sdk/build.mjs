@@ -13,6 +13,7 @@ import { finalizeSdk, VERSION_PLACEHOLDER } from "./content-version.mjs";
 import { CHECK, ENTRIES, STYLESHEET } from "./release-entries.mjs";
 import { elementComponents } from "./element-components.mjs";
 import { panelAppearance } from "./panel-appearance.mjs";
+import { writePackageComponentsRelease } from "./package-components-release.mjs";
 import { sdkChunks } from "./sdk-chunks.mjs";
 import { catalogueMarkdown, checkCatalogue, componentMetadata, componentPorts, referenceMarkdown } from "./reference.mjs";
 
@@ -67,6 +68,8 @@ const libraryVersion = (name) => JSON.parse(readFileSync(require.resolve(`${name
 
 /** What a check of panel sources needs from the release: the platform's own parsers and declarations, by these names. */
 const CHECK_EXPORTS = [
+  "APPS_SDK_PACKAGE_COMPONENTS_PATH", "appsSdkReleaseManifestSchema",
+  "componentPackageComponentsSchema", "componentPackageManifestSchema",
   "panelManifestSchema", "panelDefinitionContentSchema", "productProjectionInputSchema",
   "registerProductPanelRequestSchema", "registerProductProjectionRequestSchema", "directReadDeclaration", "platformObjectTypes",
   "panelReadParameterSchemas", "panelReadResultSchemas", "appsSdkComponentCatalogSchema",
@@ -77,6 +80,8 @@ const CHECK_EXPORTS = [
   "BUILTIN_PRODUCT_ID_PREFIX", "builtinProductIdSchema", "domainProductIdSchema", "isBuiltinProductId",
   "builtinApplicationPanelUseSchema", "builtinProductPanelInputSchema", "builtinProductProjectionInputSchema",
   "panelModuleImports", "applicationIconKeys", "domainApplicationIconKeys", "applicationCatalogueRecordSchema", "applicationIdentityUpdateSchema", "draftReadOperationIds",
+  "COMPONENT_PACKAGES_PATH", "componentPackageNameSchema",
+  "componentPackageDeclarationSchema", "componentPackageResponseSchema",
 ];
 
 /** Only the draft requirement of registered platform operations is needed by the offline checker. */
@@ -182,6 +187,8 @@ async function main() {
   });
 
   const check = await buildCheck(outDir);
+  const packageComponents = check.APPS_SDK_PACKAGE_COMPONENTS_PATH;
+  writePackageComponentsRelease(outDir, packageComponents, CHECK);
   mkdirSync(join(outDir, "docs"), { recursive: true });
   writeFileSync(join(outDir, "docs/index.md"), render(readFileSync(join(HERE, "resources/docs/index.md"), "utf8"), version));
   const components = componentMetadata({ tsconfig: join(HERE, "tsconfig.json"), source: join(HERE, "src/catalogue.ts") });
@@ -216,7 +223,7 @@ async function main() {
   for (const name of readdirSync(join(HERE, "resources/examples")))
     writeFileSync(join(outDir, "examples", name), render(readFileSync(join(HERE, "resources/examples", name), "utf8"), version));
 
-  writeFileSync(join(outDir, "sdk.json"), `${JSON.stringify({
+  writeFileSync(join(outDir, "sdk.json"), `${JSON.stringify(check.appsSdkReleaseManifestSchema.parse({
     version,
     product: facts.product,
     executionContext: BUILD_TEST_SDK_CAPABILITY,
@@ -226,10 +233,11 @@ async function main() {
     stylesheet: STYLESHEET,
     components: "components.json",
     check: CHECK,
+    packageComponents,
     libraries: Object.fromEntries(LIBRARIES.map((name) => [name, libraryVersion(name)])),
     docs: "docs/index.md",
-  }, null, 2)}\n`);
-  const finalVersion = finalizeSdk(outRoot, base, facts.release);
+  }), null, 2)}\n`);
+  const finalVersion = finalizeSdk(outRoot, base, facts.release, packageComponents);
   console.log(`[apps-sdk] ${facts.product} ${finalVersion} -> ${outRoot}`);
 }
 
