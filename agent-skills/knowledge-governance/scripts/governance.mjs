@@ -60,7 +60,7 @@ if (platform && command === "import-knowledge") {
     const draft = {
       pageKey: "business-knowledge",
       operation: previous ? "knowledge.update" : "knowledge.create",
-      target: previous ? { id: previous.knowledgeID } : {},
+      target: { objectType: "platform:BusinessKnowledge", ...(previous ? { id: previous.knowledgeID } : {}) },
       form: {
         knowledgeID: previous ? previous.knowledgeID : "",
         knowledgeTitle: item.title, knowledgeText: item.text,
