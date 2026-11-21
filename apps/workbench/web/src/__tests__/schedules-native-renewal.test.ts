@@ -162,7 +162,7 @@ it("opens the edit form from a draft link even when the owner refuses the draft"
     if (path === "/api/product-panels/read") {
       const body = request.body as ProductPanelReadRequest;
       const member = body.memberPath[0].member;
-      if (body.operations) return Response.json({ status: "ready", value: member === "editForm" ? {
+      if ("operations" in body) return Response.json({ status: "ready", value: member === "editForm" ? {
         save: {
           kind: "form.save", label: "Save task", handlerRef: operation, effect: "write", batch: false,
           target: { source: "input", input: "target" }, inputSchema: {}, resultSchema: {},
