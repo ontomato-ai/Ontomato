@@ -54,7 +54,7 @@ export const platformRoutes = {
   opsModel: { name: "ObserveModel", path: "/ops/model" },
   /** 应用构建: the workspace in the address, the open conversation as `?sessionId=`. */
   appBuilder: { name: "AppBuilder", path: "/app-builder/:workspaceId?" },
-  feedback: { name: "Feedback", path: "/ontology/feedback" },
+  feedback: { name: "Feedback", path: "/ops/feedback" },
   data: { name: "manager-data", path: "/browser/data/:className?" },
   objectView: { name: "manager-object-view", path: "/browser/views/:className" },
   objectViewEditor: { name: "manager-object-view-editor", path: "/ontology/objects/:className/view" },
