@@ -1,3 +1,4 @@
+import { COMPONENT_PACKAGES_PATH, componentPackageResponseSchema, type ComponentPackageResponse } from "@ontomato/contracts/component-packages";
 import { PanelMemberUnavailable } from "./direct";
 import { pageDraftReadSchema } from "@ontomato/contracts/page-draft";
 import type { PageDraftLink } from "@ontomato/contracts/page-draft";
@@ -59,4 +60,12 @@ export async function readProjectionRecord(requests: PlatformRequests, id: strin
     throw new Error(message);
   }
   return body.projection;
+}
+
+/** An installed component package's current release and declarations, as the reader may read them. */
+export async function readComponentPackage(requests: PlatformRequests, name: string): Promise<ComponentPackageResponse> {
+  const response = await requests.request(`${COMPONENT_PACKAGES_PATH.replace(/^\/api/u, "")}/${encodeURIComponent(name)}`, {}, "");
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error?.message ?? `Component package ${name} is unavailable`);
+  return componentPackageResponseSchema.parse(body);
 }

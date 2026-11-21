@@ -246,7 +246,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectGraph",
     role: "control",
     meaning:
-      "Draws the records its `nodes` datum reads as a graph joined by the records its `edges` datum reads, each edge between the node keys its fields name at `edgeEnds`. Bound to a form field through `formField`, it chooses that field's list of node keys: a choice adds or removes a node, the nodes one edge away from a chosen one are marked, and one action adds them all. Otherwise it is the page's graph canvas on the platform's G6 canvas, shared by the ontology graph and visual modeling: a chosen node or edge is the panel's state of the type its datum reads (`selectedNode`, `selectedEdge`), a click on empty canvas lets both go, where the reader puts the nodes is kept per person (`positions`, a personal `node-positions` state) and drawn again from there, a node never placed is placed by its relations (the most connected first, each node one relation on in the next column) and nothing is written for it, and with `editable` a line drawn with Shift from one node to another hands the panel its two ends (`connectFrom`, `connectTo`) for the owner's new-edge form. Each edge is drawn with its record's label; edges between the same two nodes fan out. What the panel highlights (`highlightedNodes`, `highlightedEdges`: a path it found, a search's hits) stands out and the rest fades, without being chosen. The view opens on the chosen node, else the most connected, never smaller than names can be read at; a larger graph is panned. Fit, relayout (which lets the reader's places go) and a PNG of the view are on the canvas. It decides nothing about what the nodes stand for or who may read them.",
+      "Draws the records its `nodes` datum reads as a graph joined by the records its `edges` datum reads, each edge between the node keys its fields name at `edgeEnds`. Bound to a form field through `formField`, it chooses that field's list of node keys: a choice adds or removes a node, the nodes one edge away from a chosen one are marked, and one action adds them all. Otherwise it is the page's graph canvas on the platform's G6 canvas, shared by the ontology graph and visual modeling: a chosen node or edge is the panel's state of the type its datum reads (`selectedNode`, `selectedEdge`), a click on empty canvas lets both go, where the reader puts the nodes is kept per person (`positions`, a personal `node-positions` state) and drawn again from there, a node never placed is placed by its relations (the most connected first, each node one relation on in the next column) and nothing is written for it, and with `editable` a line drawn with Shift from one node to another hands the panel its two ends (`connectFrom`, `connectTo`) for the owner's new-edge form. Each edge is drawn with its record's label; edges between the same two nodes fan out. What the panel highlights (`highlightedNodes`, `highlightedEdges`: a path it found, a search's hits) stands out and the rest fades, without being chosen. The view opens on the chosen node, else the most connected, never smaller than names can be read at; a larger graph is panned. The canvas carries zoom in and out, fit, centring the chosen node, relayout (which lets the reader's places go) and a PNG of the view; names keep their size however far the reader zooms out, a name with no room being hidden until there is; the graph is fitted again once its container settles at a new size; and its zoom is a port (`zoom`), read and set by the page. Each node takes its category's colour of the platform palette when `nodeCategory` (a JSON Pointer into each node record's fields) and `categories` (the order of the colours) are configured. It decides nothing about what the nodes stand for or who may read them.",
     effects: "Reads the node and edge types' lists as the reader; it writes the form field its slot's field port names, or the panel state its outputs bind, never the owner.",
     bindsElement: ["PlatformObjectType:*"],
     data: {
@@ -257,6 +257,8 @@ export const components: readonly ComponentMetadata[] = [
     inputs: {
       highlightedNodes: { kind: "list", items: { kind: "object", objectType: "@data:nodes" } },
       highlightedEdges: { kind: "list", items: { kind: "object", objectType: "@data:edges" } },
+      // The zoom the page sets: the canvas zooms to it.
+      zoom: { kind: "scalar", type: "number" },
     },
     outputs: {
       selectedNode: { kind: "object", objectType: "@data:nodes" },
@@ -264,6 +266,8 @@ export const components: readonly ComponentMetadata[] = [
       connectFrom: { kind: "scalar", type: "string" },
       connectTo: { kind: "scalar", type: "string" },
       positions: { kind: "node-positions" },
+      // The zoom the canvas shows, to two decimals, as the reader zooms.
+      zoom: { kind: "scalar", type: "number" },
     },
   }),
   defineComponentMeta({

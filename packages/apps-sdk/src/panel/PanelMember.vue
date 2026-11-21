@@ -41,7 +41,7 @@ void props.instance.placing(props.member).then(async (placing) => {
   else if (placing.kind === "panel") nested.value = placing;
   else {
     const member = placing.context;
-    const component = await componentFor(memberComponentId(member.projection));
+    const component = await componentFor(memberComponentId(member.projection), props.instance.readComponentPackage);
     loaded.value = { component, slot: { slot: props.member, projection: member.projection, get inputs() { return member.inputs.value; } }, member };
   }
 }).catch((reason: unknown) => {

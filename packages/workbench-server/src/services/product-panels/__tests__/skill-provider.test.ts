@@ -104,6 +104,7 @@ beforeEach(async () => {
     stylesheet: "styles/sdk.css",
     components: "catalogue/metadata.json",
     check: "node/panel-check.mjs",
+    packageComponents: "node/package-components.mjs",
     libraries: {},
     docs: "docs/index.md",
   });

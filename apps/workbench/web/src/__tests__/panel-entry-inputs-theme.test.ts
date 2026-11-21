@@ -3,7 +3,7 @@ import { defineComponent, h, type Ref } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { PanelThemeOverrides } from "@ontomato/contracts/panel-manifest";
-import { provideApplicationTheme } from "@ontomato/platform-shell";
+import { provideApplicationTheme, providePageActions, type PlatformPageActions } from "@ontomato/platform-shell";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot, panelUse, projections, type Sent } from "./panel-frame";
 
@@ -21,11 +21,18 @@ import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer,
 const app = "app-entry-inputs";
 const at = (path: string) => `/applications/${app}/${path}`;
 const panel = panelRecord("panel-term", "Term", definePanel({
-  state: { term: { type: { kind: "scalar", type: "string" }, deepLink: true, external: true } },
+  state: {
+    term: { type: { kind: "scalar", type: "string" }, deepLink: true, external: true },
+    note: { type: { kind: "scalar", type: "string" }, deepLink: true },
+  },
   members: {},
-  commands: {},
+  // One command sets the term the entries fix, one does not: only the second does anything at these entries.
+  commands: {
+    toAutumn: { labelKey: "toAutumn", do: { set: { fields: { term: { literal: "2026 autumn" } } } } },
+    clearNote: { labelKey: "clearNote", do: { set: { fields: { note: { literal: "" } } } } },
+  },
 }));
-panel.content = { ...panel.content, module: `import { h } from "vue";
+panel.content = { ...panel.content, messages: { en: { toAutumn: "Switch to autumn", clearNote: "Clear the note" } }, module: `import { h } from "vue";
 import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
 await mountPanel({ setup() {
   const { instance } = usePanelContext();
@@ -61,9 +68,11 @@ it("gives each entry's content its own fixed value, keeps it out of the address,
   // An address asking for another term does not move the entry's.
   await router.push(`${at("spring")}?state=${encodeURIComponent(JSON.stringify({ term: "from the address" }))}`);
   let area!: Readonly<Ref<PanelThemeOverrides | null>>;
+  let header!: Readonly<Ref<PlatformPageActions | null>>;
   const { app: mounted } = mountPlatformPage(() => h(defineComponent({
     setup() {
       area = provideApplicationTheme();
+      header = providePageActions();
       return () => h(RouterView);
     },
   })), router);
@@ -71,6 +80,8 @@ it("gives each entry's content its own fixed value, keeps it out of the address,
     await vi.waitFor(() => expect(term()).toBe("2026 spring"));
     await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe(at("spring")));
     expect(area.value).toEqual(theme);
+    // The command that would set the term the entry fixes is not offered here; the other one is.
+    await vi.waitFor(() => expect(header.value?.actions?.map((action) => action.id)).toEqual(["clearNote"]));
 
     await router.push(at("autumn"));
     await vi.waitFor(() => expect(term()).toBe("2026 autumn"));

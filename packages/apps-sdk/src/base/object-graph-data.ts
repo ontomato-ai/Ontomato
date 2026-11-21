@@ -25,12 +25,20 @@ function endpoint(edge: string, fields: Readonly<Record<string, string>>, path: 
   return value;
 }
 
+/** The category a node record names at `pointer` (none when no pointer is given), or a visible failure. */
+function categoryOf(record: PanelRecord, pointer: string | undefined): { category?: string } {
+  if (pointer === undefined) return {};
+  const value = valueAt({ ...record.fields }, pointer);
+  if (typeof value !== "string") throw new Error(`Node '${record.primaryKey}' names no category at ${pointer}`);
+  return { category: value };
+}
+
 /**
  * The member's `nodes` and `edges` datums (`panelRecordList`) as a graph: a node per node record, an edge per edge
  * record between the node keys its fields name at `edgeEnds`. Either read still running is loading; a refusal or a
  * failure of either is the graph's.
  */
-export function useGraphRecords(edgeEnds?: EdgeEndsConfig): ComputedRef<GraphRecords> {
+export function useGraphRecords(edgeEnds?: EdgeEndsConfig, nodeCategory?: string): ComputedRef<GraphRecords> {
   const { t } = useI18n();
   const member = useMember();
   const ends = (() => {
@@ -53,7 +61,7 @@ export function useGraphRecords(edgeEnds?: EdgeEndsConfig): ComputedRef<GraphRec
     const edgeRecords = e.status === "ready" ? (e.value as unknown as readonly PanelRecord[]) : [];
     try {
       return {
-        nodes: nodeRecords.map((record) => ({ id: record.primaryKey, label: record.label })),
+        nodes: nodeRecords.map((record) => ({ id: record.primaryKey, label: record.label, ...categoryOf(record, nodeCategory) })),
         links: edgeRecords.map((record) => ({
           id: record.primaryKey,
           label: record.label,

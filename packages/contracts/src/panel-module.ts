@@ -12,10 +12,17 @@ function isPanelModuleSpecifier(specifier: string | undefined): specifier is Pan
   return Object.values(panelModuleSpecifiers).some(allowed => allowed === specifier);
 }
 
+/** Read import and export facts from an ES module without executing it. */
+export async function readModuleFacts(source: string, name?: string) {
+  await init;
+  const [imports, exports] = parse(source, name);
+  return { imports, exports };
+}
+
 /** Validate the imports and return the exact spans the direct host can replace with its module URLs. */
 export async function panelModuleImports(source: string) {
-  await init;
-  return parse(source)[0].flatMap(({ specifier, type, start, end }) => {
+  const { imports } = await readModuleFacts(source);
+  return imports.flatMap(({ specifier, type, start, end }) => {
     if (specifier === null) return [];
     if (!isPanelModuleSpecifier(specifier)) {
       throw new Error(`A panel's module imports ${specifier ?? "a computed module"}, which the platform does not give it`);

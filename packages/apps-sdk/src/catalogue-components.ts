@@ -2,6 +2,7 @@ import type { Component } from "vue";
 import { components } from "./catalogue";
 import type { ComponentMetadata } from "./components";
 import { baseComponents } from "./base-components";
+import { packageComponent, type ComponentPackageReader } from "./panel/component-packages";
 
 /*
  * The components of this SDK version, resolved by the `componentId` a projection record names: the metadata beside each
@@ -62,7 +63,16 @@ export function componentMeta(componentId: string): ComponentMetadata {
  * The component a projection record draws, fetched if this frame has not drawn it yet. A component this version does not
  * export fails here, visibly, rather than drawing something else.
  */
-export async function componentFor(componentId: string): Promise<Component> {
+export async function componentFor(componentId: string, readPackage?: ComponentPackageReader): Promise<Component> {
+  // `<package>:<component>`: a component the deployment installed from a package, drawn from the package's release.
+  if (componentId.includes(":")) {
+    if (!readPackage) throw new Error(`Component '${componentId}' is an installed package's: it is drawn only in a panel the platform runs`);
+    const known = fetched.get(componentId);
+    if (known) return known;
+    const component = await packageComponent(componentId, readPackage);
+    fetched.set(componentId, component);
+    return component;
+  }
   componentMeta(componentId);
   const already = fetched.get(componentId);
   if (already) return already;

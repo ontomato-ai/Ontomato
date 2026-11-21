@@ -114,16 +114,7 @@
               "key": "userId"
             },
             {
-              "key": "turnKey"
-            },
-            {
               "key": "userInput"
-            },
-            {
-              "key": "assistantOutput"
-            },
-            {
-              "key": "feedbackText"
             }
           ]
         },

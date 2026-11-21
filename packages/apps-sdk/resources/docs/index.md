@@ -19,6 +19,7 @@ release there: every page and panel runs on the release of the platform that sho
 | `docs/reference.md` | The API of every `@ontomato/sdk` module, generated from their sources |
 | `components.json`, `docs/components.md` | Base components and their ports for this exact SDK |
 | `node/panel-check.mjs` | The platform's own declarations of panel sources, as one Node module: a check of a panel's declaration and projections before it is registered runs these |
+| `node/package-components.mjs` | The standalone Node tool that generates a component package's catalogue from its declared components and Vue source |
 | `docs/element-plus.web-types.json` | Element Plus's own metadata for every component of the bundled version: attributes, events, slots |
 | `examples/basic.html` | Platform context, Element Plus, a chart in the platform's theme, a Markdown text, a CSV text in the code editor previewed as a table, and an HTML document in a sandboxed frame |
 | `examples/metric-action.html` | A published MetricView in a table and a chart, or its result as read-only JSON, the selected row as page context, then an Action through its form and a fresh read through the template ref of `<metric-view-data>` |
@@ -178,6 +179,18 @@ fades by itself. A note that stays on the page is `<el-alert>`.
 Run the App Builder skill's `ontomato panel check` on the workspace directory. It uses the current release's
 declarations. Register the requested projections, panel and application uses through their owners, then open the
 application's declared entry.
+
+### Generate a component package catalogue
+
+Download the file that `sdk.json` names in `packageComponents` and run this command from the author's Vue project.
+
+```sh
+node ./package-components.mjs . --catalogue src/catalogue.ts --tsconfig tsconfig.json --source @example/tools=src/index.ts
+```
+
+Supply one `--source` per public module you declare in `package.json`. The tool includes its own compiler and writes
+the declaration file named in `ontomato.components`. To check a panel that uses the result offline, pass the package's
+directory as `--component-package` and the same SDK release as `--sdk-dir` to `ontomato panel check`.
 
 ## Page skeleton
 

@@ -12,7 +12,6 @@
     "ontology-modeling",
     "action-management",
     "business-knowledge",
-    "user-feedback",
     "skill-management",
     "system-config"
   ],
@@ -94,11 +93,6 @@
       "path": "/ontology/knowledge", "access": {"permissionCode": "business-knowledge"},
       "descriptions": {"en": "Maintain business rules and terminology, and review pending knowledge", "zh-CN": "维护业务规则与术语，审核待确认的知识"},
       "names": {"en": "Business knowledge", "zh-CN": "业务知识"}
-    }, {
-      "id": "user-feedback", "pageKey": "user-feedback", "panelId": "builtin-product-feedback",
-      "path": "/ontology/feedback", "access": {"permissionCode": "user-feedback"},
-      "descriptions": {"en": "Ratings and comments users give on query and analysis results", "zh-CN": "用户对问答与分析结果的评价和留言"},
-      "names": {"en": "User feedback", "zh-CN": "用户反馈"}
     }]
   }
 }

@@ -1,5 +1,6 @@
 import { inject, onBeforeUnmount, provide, shallowRef, watch, type InjectionKey, type Ref } from "vue";
 import type { PanelThemeOverrides } from "@ontomato/contracts/panel-manifest";
+import { rootComposites, themeDerivedProperties } from "@ontomato/design-tokens";
 
 /*
  * An application's theme (product-layer standard, parts one and two; design §三 and §六, big main's ruling 2026-11-21):
@@ -14,10 +15,24 @@ import type { PanelThemeOverrides } from "@ontomato/contracts/panel-manifest";
 
 export type ThemeMode = "light" | "dark";
 
-/** The custom properties a theme assigns in one mode: each name as a CSS custom property, `--` included. */
+/**
+ * The custom properties a theme assigns in one mode — each name as a CSS custom property, `--` included — and the shades
+ * of each colour family it recolours, which the area declares again from its own colours (design tokens' rule).
+ */
 export function themeProperties(theme: PanelThemeOverrides | null | undefined, mode: ThemeMode): Record<string, string> {
   const values = theme?.[mode] ?? {};
-  return Object.fromEntries(Object.entries(values).map(([name, value]) => [name.startsWith("--") ? name : `--${name}`, value]));
+  const assigned = Object.fromEntries(Object.entries(values).map(([name, value]) => [name.startsWith("--") ? name : `--${name}`, value]));
+  return { ...themeDerivedProperties(assigned), ...assigned };
+}
+
+/**
+ * What an area declares for a theme: what it assigns and the shades worked out from it, and every rule the page's
+ * stylesheets compose on the root from those (an edition's focus ring of the brand's soft fill), as written, so that it
+ * too is worked out from the area's own colours. Read as the page is now, in the mode it is in.
+ */
+function areaProperties(theme: PanelThemeOverrides | null | undefined, mode: ThemeMode): Record<string, string> {
+  const properties = themeProperties(theme, mode);
+  return Object.keys(properties).length ? { ...rootComposites(Object.keys(properties)), ...properties } : properties;
 }
 
 /** The themed areas shown now, by their element: what a pop-up opened inside one of them takes. */
@@ -40,11 +55,39 @@ function areaOpening(popup: HTMLElement): Record<string, string> | undefined {
   return undefined;
 }
 
-/** Gives every pop-up layer added at the end of the document the theme of the area that opened it. */
+/** The theme of the area an element sits in, if any. */
+function areaOf(element: Element): Record<string, string> | undefined {
+  for (const [area, properties] of areas) if (area.contains(element)) return properties;
+  return undefined;
+}
+
+/** The pop-ups a trigger names as what it controls or is described by. */
+function namedBy(trigger: Element): HTMLElement[] {
+  const ids = [trigger.getAttribute("aria-controls"), trigger.getAttribute("aria-describedby")]
+    .flatMap((value) => value?.split(/\s+/) ?? []).filter(Boolean);
+  return ids.flatMap((id) => {
+    const found = document.getElementById(id);
+    return found ? [found] : [];
+  });
+}
+
+const LINK_ATTRIBUTES = ["aria-controls", "aria-describedby", "aria-expanded"];
+
+/**
+ * Gives every pop-up layer the theme of the area that opened it. A pop-up added at the end of the document takes it when
+ * a trigger already names it; a component library that adds the layer first and names it on its trigger only when it
+ * opens (a date picker) is followed through that trigger: when a trigger inside an area names a layer, the layer takes
+ * the area's theme.
+ */
 function followPopups() {
   if (observer || typeof MutationObserver !== "function") return;
   observer = new MutationObserver((records) => {
-    for (const record of records)
+    for (const record of records) {
+      if (record.type === "attributes" && record.target instanceof Element) {
+        const properties = areaOf(record.target);
+        if (properties) for (const popup of namedBy(record.target)) assign(popup, properties);
+        continue;
+      }
       for (const node of record.addedNodes) {
         if (!(node instanceof HTMLElement)) continue;
         const popups = node.matches("[id]") ? [node, ...node.querySelectorAll<HTMLElement>("[id]")] : [...node.querySelectorAll<HTMLElement>("[id]")];
@@ -53,8 +96,9 @@ function followPopups() {
           if (properties) assign(popup, properties);
         }
       }
+    }
   });
-  observer.observe(document.body, { childList: true, subtree: true });
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: LINK_ATTRIBUTES });
 }
 
 /**
@@ -76,15 +120,16 @@ export function composeThemes(...layers: (PanelThemeOverrides | null | undefined
  */
 export function applyTheme(element: HTMLElement, theme: () => PanelThemeOverrides | null | undefined, mode: () => ThemeMode) {
   let shown: Record<string, string> = {};
+  // After the page's own updates, so a mode switch has set the root's class the stylesheets read.
   const stop = watch([() => JSON.stringify(theme() ?? null), mode], () => {
-    const properties = themeProperties(theme(), mode());
+    const properties = areaProperties(theme(), mode());
     assign(element, properties, shown);
     shown = properties;
     if (Object.keys(properties).length) {
       areas.set(element, properties);
       followPopups();
     } else areas.delete(element);
-  }, { immediate: true });
+  }, { immediate: true, flush: "post" });
   return () => {
     stop();
     assign(element, {}, shown);
@@ -106,7 +151,7 @@ export function useAppTheme(area: Ref<HTMLElement | null | undefined>, theme: ()
     shown = null;
   };
   watch([area, () => JSON.stringify(theme() ?? null), mode], ([element]) => {
-    const properties = themeProperties(theme(), mode());
+    const properties = areaProperties(theme(), mode());
     if (shown && shown.element !== element) clear();
     if (!element || !Object.keys(properties).length) {
       clear();

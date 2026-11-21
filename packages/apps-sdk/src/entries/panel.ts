@@ -29,7 +29,7 @@ export { draftTarget, type PageDraftObjectRef, type PageDraftTarget } from "@ont
 export type { PanelOperationBinding } from "../panel/types";
 export type { PanelProjectionRegistration, ProjectionPorts } from "../panel/ports";
 export type { MemberOperations, MemberOperationsState } from "../panel/member-operations";
-export { useMemberOperations } from "../panel/member";
+export { useMember, useMemberData, useMemberOperations, useMemberParam, useMemberRead } from "../panel/member";
 export { usePanelData } from "../panel/panel-data";
 export { usePanelOperation, type PanelOperationHandle } from "../panel/panel-operation";
 export { savePanelFile, type PanelDownloadReceipt } from "../panel/save-file";
