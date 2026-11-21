@@ -139,7 +139,7 @@ function pageAuthorization(java: Awaited<ReturnType<typeof javaPageSkillProjecti
     }
     groups.set(key, { locator, skills: mapping.skill ? [mapping.skill] : [], defaults: mapping.defaults ?? [] });
   }
-  const admitted = new Set<string>();
+  const admitted = new Map<string, { source: SkillSourceIdentity; entrances: PageSkillEntrance[] }>();
   const admittedEntrances = new Set(java.admittedEntrances?.map(entranceKey));
   const current = new Set<string>();
   const byEntrance = new Map<string, Set<string>>();
@@ -171,7 +171,9 @@ function pageAuthorization(java: Awaited<ReturnType<typeof javaPageSkillProjecti
         continue;
       }
       if (!group.skills.some(skill => runtimeSkillKey(skill) === key)) group.skills.push(source.skill);
-      admitted.add(key);
+      const visible = admitted.get(key);
+      if (visible) visible.entrances.push(entrance);
+      else admitted.set(key, { source, entrances: [entrance] });
       allowedPageKeys.add(key);
     }
   }
@@ -267,7 +269,6 @@ export async function readSkillView(domainId: string, initiatorCredentials: Assi
     requireReadableManifest,
     requireCertainStoredSkill,
     checkUnresolvedInput,
-    requireCompletePageSelection() { if (sourceUnavailable) throw anonymousFailure(); },
     requireSkillById(id: string) {
       const entry = registry.getSkillById(id);
       if (entry) return entry;
@@ -277,6 +278,15 @@ export async function readSkillView(domainId: string, initiatorCredentials: Assi
       throw new HttpError(404, "Skill not found", "SKILL_NOT_FOUND");
     },
     pageSkills: [...pages.groups.values()],
+    admittedPageSkill(ref: RuntimeSkillRef) {
+      const visible = pages.admitted.get(runtimeSkillKey(ref));
+      if (!visible) return undefined;
+      const { source, entrances } = visible;
+      return {
+        ...(source.providerId === PANEL_SKILL_PROVIDER_ID && { panelId: source.sourceKey }),
+        entrances,
+      };
+    },
     publicPageSkill(locator: PageSkillLocator) {
       return pages.publicSkills.get(locatorKey(locator)) ?? null;
     },

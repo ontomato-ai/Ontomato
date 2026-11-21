@@ -4,9 +4,10 @@ import { GOVERNANCE_SKILL } from "./governance-definition";
 import { APP_BUILDER_SKILL } from "../app-builder/definition";
 import path from "node:path";
 import { runtimeSkillKey, type RuntimeSkillRef, type RuntimeSkillVersion } from "@ontomato/contracts/agent-runtime-skills";
-import type { PageSkillContext } from "@ontomato/contracts/page-skills";
-import type { SkillInfo } from "@ontomato/contracts/skills";
+import type { PageSkillContext, PageSkillLocator } from "@ontomato/contracts/page-skills";
+import type { SkillCatalogReason, SkillInfo } from "@ontomato/contracts/skills";
 import { assistantSkillCatalogSchema, type AssistantSkillOption } from "@ontomato/contracts/assistant-chat";
+import { SkillSourceRecordError } from "../../core/skills/providers";
 import { skillRegistryManager } from "../../core/skills/registry/manager";
 import { HttpError } from "../../utils/errors";
 import { skillManager } from "../skills/skill-manager";
@@ -175,6 +176,27 @@ function unavailableRunSkill() {
   return new HttpError(422, "A selected skill is not available", "SKILL_NOT_FOUND");
 }
 
+type PageSkillFailure = {
+  reason: SkillCatalogReason | "source_unavailable" | "invalid_package" | "publication_failed";
+  resourceId?: string;
+  field?: string;
+};
+
+type SkippedPageSkill = PageSkillFailure & {
+  skill: RuntimeSkillRef;
+  panelId?: string;
+  entrances: PageSkillLocator[];
+};
+
+function publicationFailure(error: unknown): PageSkillFailure {
+  const cause = error instanceof Error ? error.cause : undefined;
+  if (cause instanceof SkillSourceRecordError) return cause.detail;
+  if (error instanceof InvalidSkillPackageError) return { reason: "invalid_package" };
+  if (error instanceof Error && "code" in error && (error.code === "SKILL_SOURCE_UNAVAILABLE" || error.code === "SKILL_NOT_FOUND"))
+    return { reason: "source_unavailable" };
+  return { reason: "publication_failed" };
+}
+
 /** One initiator view binds this turn to the versions returned by the selected publishers. */
 export async function prepareAssistantSkills(domainId: string, agent: { kind: string; skills: readonly RuntimeSkillRef[] },
   initiatorCredentials: AssistantCredentials, pageSkillContext?: PageSkillContext,
@@ -191,10 +213,41 @@ export async function prepareAssistantSkills(domainId: string, agent: { kind: st
     if (!currentPage) throw new HttpError(403, "Page skill is unavailable", "PAGE_SKILL_FORBIDDEN");
   }
   const selected = effectiveAssistantSkills(agent, view);
-  checkSkillSelection(selected, view);
-  if (agent.kind === "regular") view.requireCompletePageSelection();
+  const required = new Set(agent.skills.map(runtimeSkillKey));
+  const currentRef = currentPage?.member.ref ??
+    (pageSkillContext?.mode === "public" ? view.publicPageSkill(pageSkillContext.locator) : null);
+  if (currentRef) required.add(runtimeSkillKey(currentRef));
+  const regular = agent.kind === "regular";
+  const optional = (ref: RuntimeSkillRef) => regular && !required.has(runtimeSkillKey(ref));
+  const skipped: SkippedPageSkill[] = [];
+  function skip(ref: RuntimeSkillRef, failure: PageSkillFailure) {
+    const page = view.admittedPageSkill(ref) ?? {
+      entrances: view.pageSkills.filter(group => group.skills.some(skill => runtimeSkillKey(skill) === runtimeSkillKey(ref)))
+        .map(group => group.locator),
+    };
+    skipped.push({ skill: ref, ...page, ...failure });
+  }
+  const available = selected.filter(ref => {
+    if (view.hasSkill(ref) || !optional(ref)) return true;
+    const failure = view.registry.failedManifests.get(runtimeSkillKey(ref));
+    skip(ref, failure
+      ? { reason: failure.reason, resourceId: failure.resourceId, field: failure.field }
+      : { reason: "source_unavailable" });
+    return false;
+  });
+  checkSkillSelection(available, view);
   const skills: RuntimeSkillVersion[] = [];
-  for (const ref of selected) skills.push(await publishSelectedSkill(domainId, ref, view));
-  return { skills, pageDrafts: selected.some(view.pageSkillIsAvailable),
-    currentPage: currentPage && loadedPageSkillVersion(currentPage.member.ref, skills) ? currentPage : null };
+  for (const ref of available) {
+    try {
+      skills.push(await publishSelectedSkill(domainId, ref, view));
+    } catch (error) {
+      if (!optional(ref)) throw error;
+      skip(ref, publicationFailure(error));
+    }
+  }
+  // Unknown dependencies do not authorize details about a source.
+  const sourceUnavailable = regular && (view.diagnostics?.sourceUnavailable ?? false);
+  return { skills, pageDrafts: skills.some(({ skill }) => view.pageSkillIsAvailable(skill)),
+    currentPage: currentPage && loadedPageSkillVersion(currentPage.member.ref, skills) ? currentPage : null,
+    ...((skipped.length > 0 || sourceUnavailable) && { skippedPageSkills: { items: skipped, sourceUnavailable } }) };
 }
