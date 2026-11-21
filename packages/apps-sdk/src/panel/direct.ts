@@ -1,4 +1,5 @@
 import { computed, effectScope, onScopeDispose, readonly, ref, shallowReactive, shallowRef, watch, type ComputedRef, type EffectScope } from "vue";
+import { ElMessage } from "element-plus/es/components/message/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
@@ -379,6 +380,7 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     // The member's projection is the platform's own record here: its declared entry goes to the page's composer as it is.
     expandPageComposer: async ({ slot: _member, ...entry }) => instance.expandPageComposer(entry),
     navigate: (address) => instance.navigate(address),
+    notify: ({ kind, text }) => { ElMessage({ type: kind, message: text, grouping: true }); },
     placement: readonly(ref(instance.placement)),
     // A member here reads through the instance's own port; nothing asks the context for it.
     readPanelData: frameOnly("Reading a member's data over the frame's request path"),

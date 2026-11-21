@@ -33,7 +33,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "EChart",
     role: "presentation",
     meaning:
-      "Draws one ECharts option in the platform's chart theme, following its light and dark modes; it computes no value and reads nothing itself.",
+      "Draws one ECharts option in the platform's chart theme, following its light and dark modes; it computes no value and reads nothing itself. In a panel, write `<e-chart>` in the template, without an import; the import is for an application page outside a panel.",
     bindsElement: ["MetricView:*", "Definition:*"],
   }),
   defineComponentMeta({
@@ -42,7 +42,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "FormFields",
     role: "control",
     meaning:
-      "Draws a form exactly as its owner declares it — a choice as a select whose unavailable options stay listed with the reason, a text as an input or a large text box — in the owner's order and limits.",
+      "Draws a form exactly as its owner declares it — a choice as a select whose unavailable options stay listed with the reason, a text as an input or a large text box — in the owner's order and limits. In a panel, write `<form-fields>` in the template, without an import; the import is for an application page outside a panel.",
     bindsElement: ["Action:*"],
   }),
   defineComponentMeta({
@@ -50,28 +50,28 @@ export const components: readonly ComponentMetadata[] = [
     module: "@ontomato/sdk/code",
     exportName: "CodeEditor",
     role: "control",
-    meaning: "Edits code or structured text such as JSON, in the page's light or dark theme; it validates nothing.",
+    meaning: "Edits code or structured text such as JSON, in the page's light or dark theme; it validates nothing. In a panel, write `<code-editor>` in the template, without an import; the import is for an application page outside a panel.",
   }),
   defineComponentMeta({
     componentId: "MarkdownView",
     module: "@ontomato/sdk/markdown",
     exportName: "MarkdownView",
     role: "presentation",
-    meaning: "Draws a text as the platform reads Markdown, in the page's light or dark theme.",
+    meaning: "Draws a text as the platform reads Markdown, in the page's light or dark theme. In a panel, write `<markdown-view>` in the template, without an import; the import is for an application page outside a panel.",
   }),
   defineComponentMeta({
     componentId: "TablePreview",
     module: "@ontomato/sdk/preview",
     exportName: "TablePreview",
     role: "presentation",
-    meaning: "Draws text cells as a table with paging; it reads no business meaning out of them.",
+    meaning: "Draws text cells as a table with paging; it reads no business meaning out of them. In a panel, write `<table-preview>` in the template, without an import; the import is for an application page outside a panel.",
   }),
   defineComponentMeta({
     componentId: "HtmlPreview",
     module: "@ontomato/sdk/preview",
     exportName: "HtmlPreview",
     role: "presentation",
-    meaning: "Draws a whole HTML document in a sandboxed frame; the document runs nothing outside that frame.",
+    meaning: "Draws a whole HTML document in a sandboxed frame; the document runs nothing outside that frame. In a panel, write `<html-preview>` in the template, without an import; the import is for an application page outside a panel.",
   }),
   defineComponentMeta({
     componentId: "AgentChatPanel",
