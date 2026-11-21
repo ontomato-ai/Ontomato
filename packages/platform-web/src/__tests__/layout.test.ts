@@ -23,6 +23,9 @@ const labels: PlatformShellLabels = {
   save: "Save",
   discard: "Discard",
   unsavedChanges: "Unsaved changes",
+  more: "More",
+  copyExternalLink: "Copy external link",
+  externalLinkCopied: "External link copied",
 };
 
 /** The column's words are message keys here; the layout translates them in production, the test reads them raw. */
