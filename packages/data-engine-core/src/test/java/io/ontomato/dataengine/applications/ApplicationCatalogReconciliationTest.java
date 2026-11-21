@@ -424,7 +424,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             {"entry":{"path":"/applications/app-school","renderer":"panels"},"entryAccess":["domain-member"],
              "declaration":{"names":{"en":"School"},"descriptions":{},"icon":"school",
                "groups":[{"key":"school","names":{"en":"School"},"sort":1}],
-               "permissions":[{"code":"app:app-school:private","names":{"en":"Private"},"groupKey":"school","sort":1}]},
+               "permissions":[{"code":"app:app-school:private","names":{"en":"Private","zh-CN":"仅限内部"},"groupKey":"school","sort":1}]},
              "framePanelId":"panel-frame","theme":{"light":{"--el-color-primary":"#123456"}},
              "delivery":{"panels":["panel-frame","panel-school"],"projections":["projection-school"],"packages":[],"agents":[],"skills":[]},
              "panelUses":[
@@ -439,14 +439,41 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.declaration.permissions[0].code").value("app:app-school:private"))
             .andExpect(jsonPath("$.data.framePanelId").value("panel-frame"))
             .andExpect(jsonPath("$.data.delivery.projections[0]").value("projection-school"));
-        var form = http.perform(post(CATALOGUE + "/form").contentType(MediaType.APPLICATION_JSON).content("""
-                {"section":"entries","target":{"kind":"object","objectType":"platform:Application","primaryKey":"app-school"}}
-                """)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        var entryFields = JSON.parseObject(form).getJSONObject("data").getJSONArray("fields").getJSONObject(1)
+
+        var form = http.perform(post(CATALOGUE + "/form").locale(Locale.SIMPLIFIED_CHINESE)
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                    {"section":"entries","target":{"kind":"object","objectType":"platform:Application","primaryKey":"app-school"}}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.values.panelUses[0].names.en").value("School"))
+            .andExpect(jsonPath("$.data.values.panelUses[1].names").doesNotHaveJsonPath())
+            .andExpect(jsonPath("$.data.values.panelUses[1].descriptions").doesNotHaveJsonPath())
+            .andReturn().getResponse().getContentAsString();
+        var rowFields = JSON.parseObject(form).getJSONObject("data").getJSONArray("fields").getJSONObject(1)
             .getJSONObject("control").getJSONArray("itemFields").toJavaList(JSONObject.class);
-        var agent = entryFields.stream().filter(field -> "/defaultAgent".equals(field.getString("path"))).findFirst().orElseThrow();
-        assertFalse(agent.getBooleanValue("required"));
-        assertEquals(JSONObject.of("kind", "select", "options", List.of()), agent.getJSONObject("control"));
+        for (var fieldPath : List.of("/names", "/descriptions")) {
+            var field = rowFields.stream().filter(item -> fieldPath.equals(item.getString("path"))).findFirst().orElseThrow();
+            var control = field.getJSONObject("control");
+            assertEquals("localized-text", control.getString("kind"));
+            assertEquals("zh-CN", control.getString("primaryLocale"));
+            assertEquals(List.of("en"), control.getList("requiredLocales", String.class));
+            assertFalse(field.getBooleanValue("required"));
+        }
+        var inputsField = rowFields.stream().filter(item -> "/inputs".equals(item.getString("path"))).findFirst().orElseThrow();
+        assertTrue(inputsField.getBooleanValue("advanced"));
+        assertEquals("code", inputsField.getJSONObject("control").getString("kind"));
+        var accessField = rowFields.stream().filter(item -> "/access".equals(item.getString("path"))).findFirst().orElseThrow();
+        var accessControl = accessField.getJSONObject("control");
+        assertTrue(accessField.getBooleanValue("required"));
+        assertEquals("select", accessControl.getString("kind"));
+        var options = accessControl.getJSONArray("options");
+        assertEquals(JSONObject.of("kind", "domain-member"), options.getJSONObject(0).getJSONObject("value"));
+        assertEquals("本域成员", options.getJSONObject(0).getString("label"));
+        assertEquals(JSONObject.of("permissionCode", "app:app-school:private"), options.getJSONObject(1).getJSONObject("value"));
+        assertEquals("仅限内部", options.getJSONObject(1).getString("label"));
+        var defaultAgent = rowFields.stream().filter(item -> "/defaultAgent".equals(item.getString("path"))).findFirst().orElseThrow();
+        assertFalse(defaultAgent.getBooleanValue("required"));
+        assertEquals(JSONObject.of("kind", "select", "options", List.of()), defaultAgent.getJSONObject("control"));
         when(identity.getCurrentUser()).thenReturn(viewer);
         http.perform(get(path).param("purpose", "management")).andExpect(status().isForbidden());
         http.perform(get(path)).andExpect(status().isOk()).andExpect(jsonPath("$.data.panelUses.length()").value(1));
@@ -639,6 +666,11 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.values.declaration.groups[0].names['zh-CN']").value("工具"))
             .andExpect(jsonPath("$.data.values.declaration.groups[0].sort").value(7))
             .andExpect(jsonPath("$.data.fields[0].control.fields[4].label").value("菜单权限"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].refreshOnChange").value(true))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[0].refreshOnChange").value(true))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[1].refreshOnChange").value(true))
+            .andExpect(jsonPath("$.data.fields[2].control.itemFields[8].control.options[1].value.permissionCode").value("app:app-translated:read"))
+            .andExpect(jsonPath("$.data.fields[2].control.itemFields[8].control.options[1].label").value("查看"))
             .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.kind").value("object-array"))
             .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemKeyPath").doesNotHaveJsonPath())
             .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.defaultItem.code").value("app:app-translated:"))
