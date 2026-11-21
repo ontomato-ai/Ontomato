@@ -49,7 +49,10 @@ function ownerFieldRefusal(error: BackendResponseError) {
   if (!envelope.success) return undefined;
   try {
     const outcome = ownerWriteFailure(envelope.data, "PRODUCT_WRITE_REFUSED", error.message);
-    return outcome.kind === "refusal" && outcome.errors ? outcome : undefined;
+    if (outcome.kind !== "refusal" || !outcome.errors) return undefined;
+    // The owner names a field under its form values (/values/...); the panel form addresses the field itself.
+    const errors = outcome.errors.map(item => ({ ...item, field: item.field.replace(/^\/values(?=\/)/, "") }));
+    return { ...outcome, errors };
   } catch {
     return undefined;
   }

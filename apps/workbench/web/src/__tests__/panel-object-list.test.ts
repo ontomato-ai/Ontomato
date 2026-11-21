@@ -1005,3 +1005,37 @@ it("draws a declared ObjectList with data.objects in a frame via <Projection> an
   await nextTick();
   expect(instance.state.values.value.selectedNode).toEqual({ className: ACTION, primaryKey: "act-1" });
 });
+
+// A list's columns (the feedback page, 2026-11-22): a short value never breaks onto two lines; a long one ends in an
+// ellipsis within the space the table has, its whole text kept as the cell's title; a table wider than its frame scrolls
+// inside it; and only a column the panel marks `wrap` runs onto several lines. No column is given a width.
+it("keeps short columns on one line, ends long text in an ellipsis, and wraps only a column marked to wrap", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "feedback-list": {
+      ...meta,
+      id: "feedback-list",
+      name: "Feedback",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK } },
+      config: { columns: [{ key: "source" }, { key: "question" }, { key: "answer", wrap: true }] },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
+    members: { list: { target: { projectionId: "feedback-list" }, outputs: { selected: { state: "selectedTask" } } } },
+    commands: {},
+  });
+  const question = "How many contract staff joined the faculty of engineering after the 2024 reorganisation?";
+  const record = { primaryKey: "f-1", label: "Feedback 1", fields: { source: "问答", question, answer: "A long answer the reader reads whole." } };
+  const { element } = mountDirect(manifest, projections, () => ready([record]));
+  await vi.waitFor(() => expect(element.querySelectorAll("tbody td")).toHaveLength(3));
+  const [source, long, answer] = [...element.querySelectorAll<HTMLElement>("tbody td")];
+  expect(element.querySelector(".sdk-object-list-table")?.parentElement?.classList.contains("sdk-object-list-table-wrap")).toBe(true);
+  expect(source!.className).toBe("");
+  expect(long!.classList.contains("sdk-object-list-col-shrink")).toBe(true);
+  expect(long!.title).toBe(question);
+  expect(answer!.classList.contains("sdk-object-list-col-wrap")).toBe(true);
+  expect([...element.querySelectorAll<HTMLElement>("thead th")].map((th) => th.className)).toEqual(["", "sdk-object-list-col-shrink", "sdk-object-list-col-wrap"]);
+});
