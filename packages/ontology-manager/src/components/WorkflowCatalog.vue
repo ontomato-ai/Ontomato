@@ -14,7 +14,7 @@ import {
   ElTag,
   vLoading,
 } from "element-plus";
-import { ArrowDownUp, Pause, Play, Plus, RefreshCw, Trash2 } from "lucide-vue-next";
+import { Eye, Pause, Play, Plus, RefreshCw, Trash2 } from "lucide-vue-next";
 import ManagerIconButton from "./ManagerIconButton.vue";
 import { PlatformPageHeader } from "@ontomato/platform-shell";
 import type {
@@ -42,7 +42,8 @@ const {
 
 const scopeKinds = ["all", "self_organization", "self_subtree", "self_descendants", "initiated_by_self", "assigned_to_self"] as const;
 const actorPolicyModes = ["none", "rule", "agent"] as const;
-const invocationModes = ["manual", "automatic"] as const;
+const invocationModes = ["manual", "automatic", "fixed"] as const;
+type WorkflowInvocationMode = (typeof invocationModes)[number];
 const contractFields = ["className", "idField", "stepField", "statusField", "orgField", "initiatorField", "assigneeField", "workflowRefField"] as const;
 const workflows = ref<WorkflowRecord[]>([]);
 const actions = ref<SmartAsset[]>([]);
@@ -62,6 +63,7 @@ const loading = ref(false);
 const saving = ref(false);
 const editing = ref(false);
 const form = reactive<WorkflowRecord>({ name: "", description: "", steps: [] });
+const readOnly = computed(() => form.id != null);
 
 /**
  * Status is only a projection of the newest event, so the wording names what the process may do now:
@@ -159,7 +161,7 @@ async function openGrants(workflow: WorkflowRecord) {
   await refreshGrants();
 }
 
-function openEdit(workflow: WorkflowRecord) {
+function openView(workflow: WorkflowRecord) {
   Object.assign(form, {
     id: workflow.id,
     name: workflow.name,
@@ -174,6 +176,7 @@ function openEdit(workflow: WorkflowRecord) {
 }
 
 type EditableStep = WorkflowStepRecord & {
+  invocationChoice?: WorkflowInvocationMode;
   parametersJson?: string;
   parameterBindingsJson?: string;
   valueMapJson?: string;
@@ -184,6 +187,8 @@ function editableStep(step: WorkflowStepRecord): EditableStep {
   return {
     ...step,
     invocationMode: step.invocationMode ?? "manual",
+    invocationChoice: stepInvocationMode(step),
+    caseScoped: step.caseScoped === true,
     actorPolicy: { ...policy, mode: policy.mode ?? "none" },
     parametersJson: JSON.stringify(policy.parameters ?? {}, null, 2),
     parameterBindingsJson: JSON.stringify(policy.parameterBindings ?? {}, null, 2),
@@ -200,11 +205,28 @@ function blankStep(no: number): EditableStep {
     actionType: "approve",
     scope: "all",
     invocationMode: "manual",
+    invocationChoice: "manual",
+    caseScoped: false,
     actorPolicy: { mode: "none" },
     parametersJson: "{}",
     parameterBindingsJson: "{}",
     valueMapJson: "{}",
   };
+}
+
+function stepInvocationMode(step: WorkflowStepRecord): WorkflowInvocationMode {
+  const editable = step as EditableStep;
+  if (editable.invocationChoice) return editable.invocationChoice;
+  if (step.actionType === "execute") return "fixed";
+  return step.invocationMode ?? "manual";
+}
+
+function setStepInvocationMode(step: WorkflowStepRecord, mode: WorkflowInvocationMode) {
+  // The persisted model keeps decider details separate from human invocation. "fixed" is a
+  // user-facing choice that maps onto the existing execute step representation.
+  (step as EditableStep).invocationChoice = mode;
+  step.actionType = mode === "fixed" ? "execute" : "approve";
+  step.invocationMode = mode === "fixed" ? "manual" : mode;
 }
 
 function stepParametersJson(step: WorkflowStepRecord) {
@@ -321,6 +343,7 @@ async function save() {
 function savedStep(step: WorkflowStepRecord): WorkflowStepRecord {
   const editable = step as EditableStep;
   const mode = editable.actorPolicy?.mode ?? "none";
+  const invocation = stepInvocationMode(step);
   const actorPolicy =
     mode === "rule"
       ? {
@@ -349,10 +372,11 @@ function savedStep(step: WorkflowStepRecord): WorkflowStepRecord {
     name: step.name,
     roleCode: step.roleCode,
     actionId: step.actionId,
-    actionType: step.actionType ?? "approve",
+    actionType: invocation === "fixed" ? "execute" : "approve",
     scope: step.scope,
     description: step.description,
-    invocationMode: step.invocationMode ?? "manual",
+    invocationMode: invocation === "fixed" ? "manual" : invocation,
+    caseScoped: step.caseScoped === true,
     actorPolicy,
   };
 }
@@ -417,9 +441,12 @@ function stepSummary(workflow: WorkflowRecord) {
   return steps
     .map((step) => {
       const actor = step.actorPolicy?.mode ?? "none";
-      const invocation = step.invocationMode ?? "manual";
-      const principal = actor === "none" ? "" : ` · ${policyPrincipalLabel(step)}`;
-      return `${step.name || step.actionId || "-"} [${actor}/${invocation}${principal}]`;
+      const invocation = ot(`invocation_${stepInvocationMode(step)}`);
+      const policy = actor === "none"
+        ? ""
+        : ` · ${ot(`actorPolicy_${actor}`)} · ${policyPrincipalLabel(step)}`;
+      const scoped = step.caseScoped ? ` · ${ot("workflowCaseScopedShort")}` : "";
+      return `${step.name || step.actionId || "-"} [${invocation}${policy}${scoped}]`;
     })
     .join(" → ");
 }
@@ -436,6 +463,7 @@ function workflowGrants(workflow: WorkflowRecord) {
   return {
     inForce: rows.filter((grant) => grant.inForce),
     superseded: rows.filter((grant) => !grant.inForce),
+    caseScopedSteps: (workflow.steps ?? []).filter((step) => step.caseScoped === true),
   };
 }
 
@@ -444,12 +472,16 @@ const directGrants = computed(() => grants.value.filter((grant) => !grant.workfl
 
 /** The open dialog's split, recomputed from the latest read rather than captured on open. */
 const grantPanel = computed(() =>
-  grantsFor.value ? workflowGrants(grantsFor.value) : { inForce: [], superseded: [] }
+  grantsFor.value ? workflowGrants(grantsFor.value) : { inForce: [], superseded: [], caseScopedSteps: [] }
 );
 
 /** Capability ids resolve to the business name of the action, so the panel reads in business words. */
 function capabilityName(grant: CapabilityGrantRecord) {
-  const id = grant.capabilityId ?? "";
+  return capabilityNameById(grant.capabilityId);
+}
+
+function capabilityNameById(capabilityId: string | null | undefined) {
+  const id = capabilityId ?? "";
   const named = actions.value.find((action) => action.id === id)?.name;
   return named || id || "-";
 }
@@ -469,10 +501,17 @@ function grantsByRole(rows: CapabilityGrantRecord[]) {
 
 /** The column summary: how wide this revision's authority is, or that it conveys none. */
 function grantSummary(workflow: WorkflowRecord) {
-  const { inForce } = workflowGrants(workflow);
-  if (inForce.length === 0) return ot("workflowNoGrants");
+  const { inForce, caseScopedSteps } = workflowGrants(workflow);
+  const caseSummary = caseScopedSteps.length > 0
+    ? ot("workflowCaseScopedGrantsSummary", { steps: caseScopedSteps.length })
+    : "";
+  const stepCount = workflow.steps?.length ?? 0;
+  if (inForce.length === 0 && caseScopedSteps.length === stepCount) return caseSummary;
+  if (inForce.length === 0 && !caseSummary) return ot("workflowNoGrants");
+  if (inForce.length === 0) return caseSummary;
   const roles = new Set(inForce.map((grant) => grant.roleCode || grant.roleId));
-  return ot("workflowGrantsSummary", { roles: roles.size, capabilities: inForce.length });
+  const roleSummary = ot("workflowGrantsSummary", { roles: roles.size, capabilities: inForce.length });
+  return caseSummary ? `${roleSummary} · ${caseSummary}` : roleSummary;
 }
 </script>
 
@@ -536,9 +575,9 @@ function grantSummary(workflow: WorkflowRecord) {
         <el-table-column :label="ot('workflowColumnOps')" min-width="308" fixed="right">
           <template #default="{ row }">
             <div class="workflow-operations">
-              <el-button link type="primary" @click="openEdit(row)">
-                <ArrowDownUp :size="14" />
-                <span>{{ ot("workflowEdit") }}</span>
+              <el-button link type="primary" @click="openView(row)">
+                <Eye :size="14" />
+                <span>{{ ot("workflowView") }}</span>
               </el-button>
               <el-button v-if="row.status !== 'ACTIVE' || row.hasDraft" link type="success" @click="activate(row)">
                 <Play :size="14" />
@@ -558,16 +597,16 @@ function grantSummary(workflow: WorkflowRecord) {
       </el-table>
     </div>
 
-    <el-dialog v-model="editing" :lock-scroll="false" :title="form.id ? ot('workflowEdit') : ot('workflowCreate')" width="min(860px, 94cqw)">
-      <el-form label-position="top" class="workflow-form">
+    <el-dialog v-model="editing" :lock-scroll="false" :title="form.id ? ot('workflowView') : ot('workflowCreate')" width="min(860px, 94cqw)">
+      <el-form label-position="top" class="workflow-form" :disabled="readOnly">
         <el-form-item :label="ot('workflowColumnName')">
           <el-input v-model="form.name" :placeholder="ot('workflowNamePlaceholder')" />
         </el-form-item>
         <el-form-item :label="ot('workflowColumnDesc')">
           <el-input v-model="form.description" type="textarea" :rows="2" />
         </el-form-item>
-        <el-button v-if="!form.runContract" @click="form.runContract = { className: form.runClassName ?? '', statusOpen: [] }">{{ ot("workflowContractAdd") }}</el-button>
-        <template v-else>
+        <el-button v-if="!readOnly && !form.runContract" @click="form.runContract = { className: form.runClassName ?? '', statusOpen: [] }">{{ ot("workflowContractAdd") }}</el-button>
+        <template v-else-if="form.runContract">
           <h4>{{ ot("workflowContract") }}</h4>
           <el-form-item v-for="field in contractFields" :key="field" :label="ot(`contract_${field}`)">
             <el-input v-model="form.runContract[field]" />
@@ -575,13 +614,13 @@ function grantSummary(workflow: WorkflowRecord) {
           <el-form-item :label="ot('contract_statusOpen')">
             <el-select v-model="form.runContract.statusOpen" multiple filterable allow-create default-first-option />
           </el-form-item>
-          <el-button link @click="form.runContract = null">{{ ot("workflowContractRemove") }}</el-button>
+          <el-button v-if="!readOnly" link @click="form.runContract = null">{{ ot("workflowContractRemove") }}</el-button>
         </template>
 
         <div class="workflow-steps-editor">
           <div class="workflow-steps-editor__header">
             <span>{{ ot("workflowColumnSteps") }}</span>
-            <el-button link type="primary" @click="addStep">
+            <el-button v-if="!readOnly" link type="primary" @click="addStep">
               <Plus :size="14" />
               <span>{{ ot("workflowAddStep") }}</span>
             </el-button>
@@ -606,7 +645,10 @@ function grantSummary(workflow: WorkflowRecord) {
                 </el-select>
               </el-form-item>
               <el-form-item :label="ot('workflowStepInvocation')">
-                <el-select v-model="step.invocationMode">
+                <el-select
+                  :model-value="stepInvocationMode(step)"
+                  @update:model-value="setStepInvocationMode(step, $event)"
+                >
                   <el-option
                     v-for="mode in invocationModes"
                     :key="mode"
@@ -733,11 +775,11 @@ function grantSummary(workflow: WorkflowRecord) {
                 </el-form-item>
               </div>
 
-              <div v-if="step.invocationMode === 'automatic'" class="workflow-policy-warning">
+              <div v-if="stepInvocationMode(step) === 'automatic'" class="workflow-policy-warning">
                 {{ ot("workflowAutomaticReserved") }}
               </div>
             </div>
-            <el-button link type="danger" :aria-label="ot('workflowDelete')" @click="removeStep(index)">
+            <el-button v-if="!readOnly" link type="danger" :aria-label="ot('workflowDelete')" @click="removeStep(index)">
               <Trash2 :size="14" />
             </el-button>
           </div>
@@ -745,8 +787,8 @@ function grantSummary(workflow: WorkflowRecord) {
       </el-form>
 
       <template #footer>
-        <el-button @click="editing = false">{{ ot("workflowCancel") }}</el-button>
-        <el-button type="primary" :loading="saving" @click="save">{{ ot("workflowSave") }}</el-button>
+        <el-button @click="editing = false">{{ ot(readOnly ? "workflowClose" : "workflowCancel") }}</el-button>
+        <el-button v-if="!readOnly" type="primary" :loading="saving" @click="save">{{ ot("workflowSave") }}</el-button>
       </template>
     </el-dialog>
 
@@ -767,11 +809,30 @@ function grantSummary(workflow: WorkflowRecord) {
 
       <el-empty v-if="grantsUnavailable" :description="ot('workflowGrantsUnavailable')" :image-size="60" />
       <el-empty
-        v-else-if="grantPanel.inForce.length === 0 && grantPanel.superseded.length === 0"
+        v-else-if="
+          grantPanel.inForce.length === 0 &&
+          grantPanel.superseded.length === 0 &&
+          grantPanel.caseScopedSteps.length === 0
+        "
         :description="ot('workflowGrantsEmpty')"
         :image-size="60"
       />
       <template v-else>
+        <div v-if="grantPanel.caseScopedSteps.length > 0" class="workflow-grants-group">
+          <h4>{{ ot("workflowGrantsCaseScoped") }}</h4>
+          <p class="workflow-grants-hint">{{ ot("workflowGrantsCaseScopedHint") }}</p>
+          <el-table :data="grantPanel.caseScopedSteps" row-key="stepNo" size="small">
+            <el-table-column :label="ot('workflowStepRole')" width="200">
+              <template #default="{ row }"><span class="workflow-grant-role">{{ row.roleCode || "-" }}</span></template>
+            </el-table-column>
+            <el-table-column :label="ot('workflowStepName')">
+              <template #default="{ row }">{{ row.name || `s${row.stepNo}` }}</template>
+            </el-table-column>
+            <el-table-column :label="ot('workflowStepAction')">
+              <template #default="{ row }">{{ capabilityNameById(row.actionId) }}</template>
+            </el-table-column>
+          </el-table>
+        </div>
         <div v-if="grantPanel.inForce.length > 0" class="workflow-grants-group">
           <h4>{{ ot("workflowGrantsInForce", { version: grantPanel.inForce[0].activatedByWorkflowVersion ?? "" }) }}</h4>
           <el-table :data="grantsByRole(grantPanel.inForce)" row-key="role" size="small">

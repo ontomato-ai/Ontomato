@@ -69,16 +69,21 @@ Run `node ontomato.mjs <command>` from this directory. JSON accepts `@file`.
 | `run <actionId> [@parameters.json]` | `POST /action/execute`: perform one step your roles are granted; a refusal is reported with its real cause |
 | `knowledge <question> [--limit n]` | `POST /ontology/query/knowledge/search`: relevant business knowledge |
 
-## Standalone agent commands (outside the product)
+## Agent commands (platform and standalone)
 
-In an Ontomato conversation, delegation follows the native `agent` tool and
-`ontomato-analyst-assistant`; the CLI entry below is for standalone use.
+In a platform run (`ONTOMATO_SKILL_SCENARIO=platform`), `agent` CLI commands use the current run's
+runtime channel (`ONTOMATO_AGENT_COMMAND_URL` and `ONTOMATO_AGENT_CALLBACK`), equivalent to the
+native `agent` tool: `read --files` writes directly into the caller's `outputs/agents/` and
+`read --follow` is unsupported (end the turn to wait for delivery or question notifications).
+Outside the product (standalone), `agent` commands use `/platform/agent-channel/commands` with
+`ONTOMATO_TK` or `ONTOMATO_API_KEY`, `read --follow` consumes SSE, and `read --files` downloads
+delivered bytes into `ONTOMATO_OUTPUT_DIR` (`outputs`).
 
 | Command | API and result |
 | --- | --- |
 | `agent list [query]` | List accessible agents and their provider/id references |
 | `agent start --agent <providerId>/<agentId> --message @question.txt [--context @context.json]` | Admit the retriever's task; return taskId and sessionRef immediately |
-| `agent read <taskId> [--follow] [--files]` | Read a snapshot or follow its SSE updates; download delivered files without changing their bytes |
+| `agent read <taskId> [--follow] [--files]` | Read a snapshot (or follow SSE updates outside the platform); deliver files without changing their bytes |
 | `agent send --session <providerId>/<sessionId> --message @answer.txt --reply-to <questionId>` | Answer in the same conversation; steer while running, otherwise start its next round |
 | `agent send --session <providerId>/<sessionId> --message @question.txt [--steer]` | Continue that conversation; ordinary messages fail while busy unless explicitly steered |
 | `agent cancel <taskId>` | Cancel this execution and its delegated descendants; keep accepted results |
@@ -168,7 +173,8 @@ Only report tasks that already have report text can be downloaded; conversation 
 
 
 `ONTOMATO_TK` supplies a current user token; API-key callers use `ONTOMATO_API_KEY`.
-The domain comes from the credential. `agent` commands use `/platform/agent-channel/commands`;
-`read --follow` uses the task's events endpoint. Do not retry an uncertain admission by
-starting a second task; inspect the returned task reference. Hosted agents use the native
-tool so delegation, results and cancellation remain attached to their actual conversation.
+The domain comes from the credential. Inside a platform worker (`ONTOMATO_SKILL_SCENARIO=platform`),
+`agent` commands call the runtime's run-scoped channel URL with `ONTOMATO_AGENT_CALLBACK` so
+delegation, results and cancellation stay attached to the active run. Outside the product, `agent`
+commands use `/platform/agent-channel/commands` and `read --follow` uses the task's events endpoint.
+Do not retry an uncertain admission by starting a second task; inspect the returned task reference.

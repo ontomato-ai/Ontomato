@@ -15,12 +15,17 @@ import { platformRoutes } from "./routes";
  */
 export const ontologyAgentModelPages = [
   // The data retrieval chain of the conversation: the retriever, the check of its questions, the description of a
-  // program the answer runs and the dashboard generated when an answer is added to a board.
-  { app: "agents", path: platformRoutes.agentModels.path, kinds: ["retrieval", "quality", "describe", "dashboard"] },
+  // program the answer runs and the dashboard generated when an answer is added to a board; then the explanation of
+  // an action's code and the generation of a metric view, which stay with the platform's models.
+  {
+    app: "agents",
+    path: platformRoutes.agentModels.path,
+    kinds: ["retrieval", "quality", "describe", "dashboard", "explain", "metric"],
+  },
   {
     app: "ontology",
     path: platformRoutes.ontologyModels.path,
-    kinds: ["actionCreation", "action", "explain", "metric", "function", "instantiate", "name"],
+    kinds: ["actionCreation", "action", "function", "instantiate", "name"],
   },
 ] as const;
 

@@ -60,7 +60,13 @@ import {
   prepareHumanPanelOperation, projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor,
 } from "../operations";
 import { panelOperationStore } from "../operation-store";
-configureI18n({defaultLocale:"en",appTextLocale:"en",languageSwitchEnabled:false,packs:{en:{messages:en,...enLocaleMeta}}});
+configureI18n({
+  defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: true,
+  packs: {
+    en: { ...enLocaleMeta, messages: { ...en, "test.perform": "Perform", "test.batch": "Set status", "test.previewMetric": "Preview the metric results" } },
+    fr: { ...enLocaleMeta, messages: { "test.previewMetric": "Aperçu des résultats" } },
+  },
+});
 const uuid=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,"0")}`;
 const owner={domainId:"d",userId:"U"},credentials={token:"U-token",locale:"en"};
 const operatePanel=(initiator:typeof owner,auth:typeof credentials,runId:string,input:Parameters<typeof realOperatePanel>[3])=>realOperatePanel(initiator,auth,runId,input,"Alice");
@@ -281,7 +287,7 @@ it("rejects an unregistered server handler before any question or dispatch",asyn
 });
 it("dispatches through the registered owner without a resource-specific coordinator branch",async()=>{
  automatic=true;
- const handler={handlerRef:"test.perform",kind:"action" as const,binding:{kind:"PlatformOperation" as const,id:"test.perform"},effect:"write" as const,batch:false as const,targetInput:"task",targetType:"test:Thing",
+ const handler={handlerRef:"test.perform",labelKey:"test.perform",kind:"action" as const,binding:{kind:"PlatformOperation" as const,id:"test.perform"},effect:"write" as const,batch:false as const,targetInput:"task",targetType:"test:Thing",
    targetSchema:z.object({kind:z.literal("object"),objectType:z.literal("test:Thing"),primaryKey:z.string()}),inputSchema:z.object({value:z.number()}),resultSchema:z.object({done:z.boolean()}),
    targetLabel:vi.fn(),execute:vi.fn(async()=>({kind:"success" as const,data:{done:true}}))};
  mockRegisteredOperation(handler);
@@ -447,13 +453,13 @@ it.each([
   expect(mocks.notify).not.toHaveBeenCalled();
 });
 
-it("inspects the actual agent delete using the initiator's definition read", async () => {
+it("uses the agent deletion label and inspects its target as the initiator", async () => {
   const objectType = "platform:AgentDefinition", primaryKey = uuid(9);
   const panel = await mocks.panel();
   panel.manifest.state.task.type.objectType = objectType;
   panel.manifest.members.run.inputs = { agent: { state: "task" } };
   mocks.projection.mockResolvedValue({
-    id: "run", componentId: "run", name: "Delete agent", binding: { kind: "PlatformOperation", id: "agents.delete" },
+    id: "run", componentId: "run", name: "remove", binding: { kind: "PlatformOperation", id: "agents.delete" },
     inputs: { agent: { kind: "object", objectType } },
   });
   const read = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
@@ -475,13 +481,17 @@ it("inspects the actual agent delete using the initiator's definition read", asy
   });
   expect(read).toHaveBeenCalledTimes(1);
   expect(intents.size).toBe(0);
+  const preparation = await prepareHumanPanelOperation(owner, credentials, input);
+  expect(preparation).toMatchObject({ label: "Delete agent", confirmation: { kind: "impact" } });
+  expect(await projectPanelOperationIntent(owner, preparation.intentId, { applicationId: "A", useId: "tasks" }, credentials))
+    .toMatchObject({ label: "Delete agent" });
 });
 
 function installBatchOwner() {
   const objectType = "platform:ScheduledTask";
   const binding = { kind: "PlatformOperation" as const, id: "test.batch" };
   const handler = {
-    handlerRef: binding.id, kind: "action" as const, binding, effect: "write" as const, batch: true as const,
+    handlerRef: binding.id, labelKey: "test.batch", kind: "action" as const, binding, effect: "write" as const, batch: true as const,
     targetType: objectType, targetInput: "task",
     targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(objectType), primaryKey: z.string() }),
     inputSchema: z.object({ status: z.number() }), resultSchema: z.object({ done: z.boolean() }),
@@ -689,12 +699,20 @@ it("runs a registered read using the reader and preview context without creating
     return { kind: "json" as const, value: [{ amount: 3 }] };
   });
   mockRegisteredOperation({
-    handlerRef: binding.id, effect: "read", kind: "action", batch: false, binding,
-    target: { source: "draft", slot: "form" }, targetSchema: z.object({ kind: z.literal("draft") }).strict(),
+    handlerRef: binding.id, labelKey: "test.previewMetric", effect: "read", kind: "action", batch: false, binding,
+    target: { source: "draft" }, targetSchema: z.object({ kind: z.literal("draft") }).strict(),
     inputSchema: panelReadOperationInputSchema, resultSchema: panelReadOperationResultSchema, execute,
   });
-  const label = "Preview the metric results";
-  mocks.projection.mockResolvedValue({ id: "run", name: label, componentId: "run", binding, inputs: {} });
+  mocks.projection.mockResolvedValue({ id: "run", name: "Metric trial projection", componentId: "run", binding, inputs: {} });
+  await expect(readPanelOperationDescriptor(owner, credentials, input)).rejects.toMatchObject({
+    code: "PANEL_OPERATION_DRAFT_UNBOUND",
+    message: expect.stringContaining("Member 'run', operation 'testExecute'"),
+  });
+  const panel = await mocks.panel();
+  panel.manifest.members.metricEditor = panel.manifest.members.form;
+  panel.manifest.members.run.readOperationInputs = {
+    testExecute: { draft: { slot: "metricEditor" }, parameters: { fields: {} } },
+  };
   const ownerRead = vi.fn(async (url, init) => {
     expect(url).toBe("http://owner.test/metricView/testExecute");
     expect(new Headers(init.headers).get("tk")).toBe("U-token");
@@ -704,7 +722,10 @@ it("runs a registered read using the reader and preview context without creating
   });
   vi.stubGlobal("fetch", ownerRead);
   expect(await readPanelOperationDescriptor(owner, credentials, input)).toMatchObject({
-    label, effect: "read", batch: false, target: { source: "draft", slot: "form" },
+    label: "Preview the metric results", effect: "read", batch: false, target: { source: "draft", slot: "metricEditor" },
+  });
+  expect(await readPanelOperationDescriptor(owner, { ...credentials, locale: "fr" }, input)).toMatchObject({
+    label: "Aperçu des résultats",
   });
   expect(await readPanelOperation(owner, preview, input)).toEqual({ kind: "json", value: [{ amount: 3 }] });
   await expect(prepareHumanPanelOperation(owner, credentials, input)).rejects.toMatchObject({ code: "OPERATION_WRITE_REQUIRED" });

@@ -1,11 +1,13 @@
+import type { ProductPanelCatalogQuery } from "@ontomato/contracts/product-catalog-query";
 import { z } from "zod";
 import type { PoolClient } from "pg";
 import { panelPlacementSchema } from "@ontomato/contracts/panel-manifest";
 import {
   PRODUCT_IN_USE, productCurrentIdParamsSchema, productPanelInputSchema, productProjectionInputSchema, type ProductCatalogQuery,
+  type ProductVisibility,
 } from "@ontomato/contracts/product-panels";
 import {
-  currentProductRecord, currentProductTables, findCurrentProduct, type CurrentProductKind,
+  currentProductRecord, currentProductRows, currentProductTables, findCurrentProduct, type CurrentProductKind,
 } from "../../infrastructure/product-current";
 import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
@@ -13,7 +15,7 @@ import { lockProducts } from "../../infrastructure/product-write-lock";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import {
-  changeProductDomainGrant, changeProductGrant, grantedProductIds, readProductGrantRecords, unregisterProductResource,
+  changeProductDomainGrant, changeProductGrant, grantedProductIds, productGrantAllowed, readProductGrantRecords, unregisterProductResource,
   type ProductOwner,
 } from "../product-governance/grants";
 import { insertCurrentProduct, loadCurrentProduct, requireCurrentProduct, requireOrdinaryProjection } from "./current";
@@ -39,10 +41,10 @@ function readCursor(input: ProductCatalogQuery) {
 
 interface SummaryRow {
   id: string;
-  ownerId: string;
+  ownerId: string | null;
   name: string;
   description: string;
-  visibility: "private" | "domain";
+  visibility: ProductVisibility;
   revision: number;
   updatedAt: Date;
   sortKey: string;
@@ -51,9 +53,11 @@ interface SummaryRow {
 }
 
 export async function listCurrentProducts(owner: ProductOwner, credentials: AssistantCredentials,
-  kind: CurrentProductKind, input: ProductCatalogQuery) {
+  kind: CurrentProductKind, input: ProductPanelCatalogQuery) {
   const cursor = readCursor(input);
   const [usable, editable] = await Promise.all([grantedProductIds("use", credentials), grantedProductIds("edit", credentials)]);
+  const panelCatalog = kind === "panel";
+  const visible = panelCatalog ? [...usable, ...editable] : usable;
   const updated = input.sort === "updated";
   const order = updated ? "updated_at" : "lower(definition->>'name')";
   const direction = updated ? "DESC" : "ASC";
@@ -64,17 +68,20 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
   const { rows } = await getPostgresPool().query<SummaryRow>(
     `SELECT id,owner_id AS "ownerId",definition->>'name' AS name,definition->>'description' AS description,
        definition->>'visibility' AS visibility,revision,updated_at AS "updatedAt",${cursorKey} AS "sortKey"${kindColumn}
-     FROM ${t(currentProductTables[kind])}
-     WHERE domain_id=$1 AND id=ANY($2::text[])
-       AND ($3='all' OR (owner_id=$4)=($3='mine'))
+     FROM ${currentProductRows(kind)} AS definitions
+     WHERE (domain_id IS NULL OR (domain_id=$1 AND (id=ANY($2::text[]) OR ($10::boolean AND owner_id=$4))))
+       AND ($9::boolean IS NULL OR COALESCE(definition->'template', 'false'::jsonb) = to_jsonb($9::boolean))
+       AND ($3='all' OR COALESCE(owner_id=$4,false)=($3='mine'))
        AND (strpos(lower(definition->>'name'),lower($5))>0 OR strpos(lower(definition->>'description'),lower($5))>0)
        AND ($6::${keyType} IS NULL OR (${order},id) ${updated ? "<" : ">"} ($6::${keyType},$7::text))
      ORDER BY ${order} ${direction},id ${direction} LIMIT $8`,
-    [owner.domainId, usable, input.scope, owner.userId, input.q, cursor?.key ?? null, cursor?.id ?? null, input.limit + 1],
+    [owner.domainId, visible, input.scope, owner.userId, input.q, cursor?.key ?? null, cursor?.id ?? null, input.limit + 1,
+      panelCatalog ? input.template ?? null : null, panelCatalog],
   );
   const edited = new Set(editable);
   const items = rows.slice(0, input.limit).map(({ sortKey: _sortKey, updatedAt, template, ...row }) => ({
-    ...row, ...(template == null ? {} : { template }), updatedAt: updatedAt.toISOString(), editable: edited.has(row.id),
+    ...row, ...(template == null ? {} : { template }), updatedAt: updatedAt.toISOString(),
+    editable: row.ownerId !== null && edited.has(row.id),
   }));
   const last = rows[input.limit - 1];
   const nextCursor = rows.length > input.limit
@@ -101,16 +108,18 @@ function panelProjectionIds(definition: unknown) {
   return [...ids];
 }
 
-async function removeCurrentProduct(client: PoolClient, domainId: string, kind: CurrentProductKind, id: string) {
+async function removeCurrentProduct(client: PoolClient, domainId: string, kind: CurrentProductKind, id: string, unregisterGrant = true) {
   await client.query(`DELETE FROM ${t(currentProductTables[kind])} WHERE domain_id=$1 AND id=$2`, [domainId, id]);
-  await unregisterProductResource(domainId, id);
+  if (unregisterGrant) await unregisterProductResource(domainId, id);
 }
 
 export async function deleteCurrentProduct(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string, revision: number) {
   const cleanup = await transaction(async client => {
     await lockProducts(client, owner);
     const { domainId } = owner;
-    const current = await requireCurrentProduct(owner, credentials, kind, id, "edit", client);
+    const panel = kind === "panel" ? await findCurrentProduct(domainId, kind, id, client) : undefined;
+    const authoredPanel = panel?.ownerId === owner.userId ? panel : undefined;
+    const current = authoredPanel ?? await requireCurrentProduct(owner, credentials, kind, id, "edit", client);
     if (current.revision !== revision)
       throw new HttpError(409, "Definition changed; reload before deleting", "PRODUCT_CONFLICT");
     if (kind === "projection") {
@@ -139,7 +148,9 @@ export async function deleteCurrentProduct(owner: ProductOwner, credentials: Ass
         else retainedProjectionIdsWithoutEdit.push(projectionId);
       }
     }
-    await removeCurrentProduct(client, domainId, kind, id);
+    // The stored owner may remove this row. Revoking Java grants for the ID still requires a current edit Grant.
+    const unregisterGrant = !authoredPanel || await productGrantAllowed(id, "edit", credentials);
+    await removeCurrentProduct(client, domainId, kind, id, unregisterGrant);
     for (const projectionId of deletedProjectionIds) await removeCurrentProduct(client, domainId, "projection", projectionId);
     return { deletedProjectionIds, retainedProjectionIdsWithoutEdit };
   });

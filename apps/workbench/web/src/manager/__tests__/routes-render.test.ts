@@ -5,7 +5,9 @@ import { agentHostAgentListSchema, agentHostSessionPageSchema } from "@ontomato/
 import { appBuilderBootstrapSchema } from "@ontomato/contracts/app-builder";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { catalogFixture, catalogPartitionFixture as appPartition } from "../../../../../../packages/platform-web/src/__tests__/fixtures";
+import {
+  builtinApplications, catalogFixture, catalogPartitionFixture as appPartition, nativeEntryConflicts,
+} from "../../../../../../packages/platform-web/src/__tests__/fixtures";
 
 /*
  * What this guards: every address an application owns draws that page into the platform's main area, and the rail
@@ -17,10 +19,6 @@ import { catalogFixture, catalogPartitionFixture as appPartition } from "../../.
 // Nothing here exercises a page's own behaviour: the heavy pages are doubled and the network answers only what a page
 // needs to draw, so a failure means the shell did not mount the page or the page broke while drawing.
 vi.hoisted(() => { window.__APP_CONFIG__ = { API_BASE: "/custom-base/api" }; });
-vi.mock("../../../../../../packages/ontology-manager/src/components/OntologyPlayground.vue", () => ({
-  __esModule: true,
-  default: { name: "GraphDouble", template: '<p class="page-double">graph</p>' },
-}));
 vi.mock("../../../../../../packages/ontology-manager/src/data-browser/DataBrowser.vue", () => ({
   __esModule: true,
   default: { name: "DataBrowserDouble", template: '<p class="page-double">data browser</p>' },
@@ -30,10 +28,6 @@ vi.mock("../../../../../../packages/ontology-manager/src/data-browser/DataBrowse
 vi.mock("../../../../../../packages/ontology-manager/src/visual-modeling/VisualModeling.vue", () => ({
   __esModule: true,
   default: { name: "VisualModelingDouble", template: '<p class="page-double">visual modeling</p>' },
-}));
-vi.mock("../../../../../../packages/ontology-manager/src/knowledge-governance/GovernancePage.vue", () => ({
-  __esModule: true,
-  default: { name: "GovernanceDouble", template: '<p class="page-double">governance</p>' },
 }));
 // The service status draws only from a full status report of the data engine; its own page reads it.
 vi.mock("../../../../../../packages/platform-admin/src/pages/SystemMonitorPage.vue", () => ({
@@ -75,7 +69,11 @@ function answer(input: FetchInput, init?: FetchInit): Response {
   const request = input instanceof Request ? input : null;
   const url = new URL(request ? request.url : String(input), window.location.origin);
   const key = `${init?.method ?? request?.method ?? "GET"} ${url.pathname.replace(/^\/custom-base\/api/, "")}`;
-  const body = url.pathname.endsWith('/product-assets/counts')?{counts:{}}:url.pathname.endsWith("/platform/applications") ? { success: true, data: catalogFixture() }
+  // An application's entries, as Java answers them for a page the panel route opens: the ones its declaration holds.
+  const entriesOf = /\/platform\/applications\/([^/]+)\/panel-uses$/.exec(url.pathname)?.[1];
+  const declared = entriesOf && catalogFixture().find((app) => app.id === decodeURIComponent(entriesOf));
+  const body = declared ? { success: true, data: { applicationId: declared.id, entry: declared.entry, panelUses: declared.panelUses ?? [] } }
+    : url.pathname.endsWith('/product-assets/counts')?{counts:{}}:url.pathname.endsWith("/platform/applications") ? { success: true, data: catalogFixture() }
     : key in NODE_ANSWERS ? NODE_ANSWERS[key]
       : { success: true, data: key in DATA_ENGINE_ANSWERS ? DATA_ENGINE_ANSWERS[key] : [] };
   return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -109,11 +107,19 @@ async function open(path: string) {
   const app = (document.querySelector("#app") as (Element & { __vue_app__?: App }) | null)?.__vue_app__;
   app!.config.errorHandler = (error) => drawErrors.push(error);
   await settle();
+  served = servedNow();
+}
+
+/**
+ * Every address the running router serves at this moment. A route pattern carries parameters (`/browser/data/:className?`);
+ * a rail row opens the address with them absent, so each pattern is recorded up to its first parameter. A built-in
+ * application's panel entries join the routes the first time one of them is opened.
+ */
+function servedNow() {
+  const app = (document.querySelector("#app") as (Element & { __vue_app__?: App }) | null)?.__vue_app__;
   type Router = { getRoutes(): { path: string }[] };
   const router = app?.config.globalProperties.$router as Router | undefined;
-  // A route pattern carries parameters (`/browser/data/:className?`); a rail row opens the address with them absent, so
-  // each pattern is recorded up to its first parameter.
-  served = new Set((router?.getRoutes() ?? []).map((route) => route.path.split("/:")[0]!).filter(Boolean));
+  return new Set((router?.getRoutes() ?? []).map((route) => route.path.split("/:")[0]!).filter(Boolean));
 }
 
 /** The address in the bar, without the query: that is what a rail row navigates to. */
@@ -274,9 +280,25 @@ describe("the open-source platform's rail", () => {
       // and lands on one this edition serves. A row aimed at an address with no route falls through to the catch-all and
       // stays where it was, which is how clicking 智能体平台 and 运维诊断 once did nothing.
       expect(landed, `the rail row ${name} did not leave ${before}`).not.toBe(before);
-      expect(served.has(landed), `the rail row ${name} opened ${landed}, which this edition does not serve`).toBe(true);
+      expect(servedNow().has(landed), `the rail row ${name} opened ${landed}, which this edition does not serve`).toBe(true);
       expect(document.querySelector(".platform-page-body")!.innerHTML.trim(), `empty main area after ${name}`).not.toBe("");
       previous = landed;
     }
+  });
+});
+
+/*
+ * The built-in applications' panel entries against their native menu tables (big main's ruling, 2026-11-21): while a
+ * native application's pages are replaced one by one, its menu table still places them. An entry with a menu name must
+ * have a place in it, and every address the table lists is either a native page this edition serves or a declared
+ * entry — never both, which would leave two pages at one address, and never neither, which would list a page nothing
+ * opens. Checked here, where the edition's own router says which native pages it serves.
+ */
+describe("the built-in applications' panel entries", () => {
+  it("stand where the native menu tables list them, and no listed address is both a native page and an entry, or neither", async () => {
+    await open(platformRoutes.home.path);
+    // As above: the enterprise edition's own pages are its run's to check, this edition registers none of them.
+    const own = (path: string) => path !== platformRoutes.license.path && !path.startsWith("/permissions/");
+    expect(nativeEntryConflicts(served, builtinApplications(), own)).toEqual([]);
   });
 });

@@ -64,7 +64,10 @@ const save = {
 };
 
 type Read = PanelMemberReadRequest;
-function open(answer: (request: Read) => ProductPanelReadResponse | Promise<ProductPanelReadResponse>, initial = {}) {
+function open(
+  answer: (request: Read) => ProductPanelReadResponse | Promise<ProductPanelReadResponse>, initial = {},
+  formListeners: Record<string, (...args: never[]) => void> = {},
+) {
   const reads: Read[] = [];
   const draftErrors: unknown[] = [];
   const prepared: [string, unknown][] = [];
@@ -77,7 +80,7 @@ function open(answer: (request: Read) => ProductPanelReadResponse | Promise<Prod
     pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial,
     text: createPanelText({}, { value: "en" } as never, "en"),
     operations: { ...noOperations.operations, prepare },
-    expandPageComposer: noOperations.expandPageComposer,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
     confirmOperation: async ({ intentId }) => ({ decision: "confirm", response: { kind: "dispatched", intentId, outcome: outcome as never } }),
     recordDraftCreated: async () => {},
     reportDraftError: (reason) => draftErrors.push(reason),
@@ -89,7 +92,7 @@ function open(answer: (request: Read) => ProductPanelReadResponse | Promise<Prod
   });
   const element = document.createElement("div");
   document.body.append(element);
-  const app = createApp({ render: () => h("div", [h(PanelMember, { instance, member: "form" }), h(PanelMember, { instance, member: "run" })]) });
+  const app = createApp({ render: () => h("div", [h(PanelMember, { instance, member: "form", ...formListeners }), h(PanelMember, { instance, member: "run" })]) });
   app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus).mount(element);
   return { instance, element, reads, prepared, draftErrors, setOutcome: (next: unknown) => { outcome = next; }, unmount: () => app.unmount() };
 }
@@ -214,7 +217,7 @@ it("shows the fields the owner does not accept in the form it read, keeping the 
   expect(input(element, "/note").value).toBe("x");
 });
 
-it("refuses a draft whole when the owner's check of it names fields it does not accept", async () => {
+it("refuses a draft whole on its form when the owner's check of it names fields it does not accept, the rest of the panel going on", async () => {
   const { receivePanelDraft } = await import("../../../../../packages/apps-sdk/src/panel/draft");
   const errors = [{ field: "/note", code: "value_too_long", message: "A note is a sentence" }];
   const { instance, element, reads, draftErrors } = open((request) => {
@@ -227,8 +230,12 @@ it("refuses a draft whole when the owner's check of it names fields it does not 
   await receivePanelDraft("tasks", instance.forms, {
     readPageDraft: async () => ({ pageKey: "tasks", operation: `${SCHEDULED_TASK}.save`, target: { id: "t-1" }, form: { name: "t-1", note: "x" } }),
   }, link, instance.receiveDraft);
-  await vi.waitFor(() => expect(draftErrors).toHaveLength(1));
-  expect((draftErrors[0] as Error).message).toBe("A note is a sentence");
+  // The refusal is the form's to say, at its top and beside the field it names; the panel itself has not failed, and its
+  // other member is drawn as it was.
+  await vi.waitFor(() => expect(element.querySelector(".sdk-owner-form-refusal")?.textContent).toBe("A note is a sentence"));
+  await vi.waitFor(() => expect(element.querySelector('[data-field="/note"] .el-form-item__error')?.textContent?.trim()).toBe("A note is a sentence"));
+  expect(draftErrors).toEqual([]);
+  expect(element.querySelector(".sdk-operation-button")).not.toBeNull();
   expect(reads.find((read) => read.inputs.values)?.inputs).toMatchObject({ values: { name: "t-1", note: "x" }, changedField: null });
   // Nothing of the refused draft is shown as the form's.
   expect(instance.dirty()).toBe(false);
@@ -268,4 +275,52 @@ it("keeps what the reader types when the first read of the form is answered afte
   expect(formReads).toBe(before);
   expect(input(element, "/note").value).toBe("Typed while the first read was on its way");
   expect(instance.dirty()).toBe(true);
+});
+
+it("tells the page's code the form was saved, with the object, and that it was discarded", async () => {
+  const saved = vi.fn();
+  const discarded = vi.fn();
+  const { instance, element } = open(owner, { selectedTask: task("t-1") }, { onSaved: saved, onDiscarded: discarded });
+  await vi.waitFor(() => expect(input(element, "/name")?.value).toBe("t-1"));
+  const note = input(element, "/note");
+  note.value = "x";
+  note.dispatchEvent(new Event("input"));
+  await nextTick();
+  await instance.invoke("form.save");
+  expect(saved).toHaveBeenCalledWith({ className: SCHEDULED_TASK, primaryKey: "t-1" });
+
+  note.value = "y";
+  note.dispatchEvent(new Event("input"));
+  await nextTick();
+  [...element.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")].find((button) => button.textContent?.trim() === "Discard")!.click();
+  await vi.waitFor(() => expect(discarded).toHaveBeenCalledTimes(1));
+  expect(saved).toHaveBeenCalledTimes(1);
+});
+
+it("asks before moving the form off unsaved changes, and keeps them or discards them as the reader answers", async () => {
+  const { instance, element, prepared } = open(owner, { selectedTask: task("t-1") });
+  await vi.waitFor(() => expect(input(element, "/name")?.value).toBe("t-1"));
+  const note = input(element, "/note");
+  note.value = "half done";
+  note.dispatchEvent(new Event("input"));
+  await nextTick();
+  const answer = (label: string) => vi.waitFor(() => {
+    const button = [...document.querySelectorAll<HTMLButtonElement>(".el-message-box__btns button")]
+      .find((item) => item.textContent?.trim() === label);
+    if (!button) throw new Error(`No "${label}" in the question yet`);
+    button.click();
+  });
+
+  // The reader picks another task: they are asked, keep editing, and the panel is back on the task they edit.
+  instance.state.set("selectedTask", task("t-2"));
+  await answer("Keep editing");
+  await vi.waitFor(() => expect(instance.state.values.value.selectedTask).toEqual(task("t-1")));
+  expect(input(element, "/note").value).toBe("half done");
+
+  // Asked again, they discard: the other task is shown, and nothing was saved.
+  instance.state.set("selectedTask", task("t-2"));
+  await answer("Discard");
+  await vi.waitFor(() => expect(input(element, "/name")?.value).toBe("t-2"));
+  expect(input(element, "/note").value).toBe("");
+  expect(prepared).toEqual([]);
 });

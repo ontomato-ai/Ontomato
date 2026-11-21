@@ -392,72 +392,72 @@ function statusText(status: PlatformGraphStatus): string {
 .sdk-object-relations {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--spacing-sm);
 }
 .sdk-object-relations-header {
   align-items: center;
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  border-bottom: 1px solid var(--ui-divider);
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  padding-bottom: 6px;
+  gap: var(--spacing-sm);
+  padding-bottom: var(--spacing-xs);
 }
 .sdk-object-relations-subject {
   color: var(--el-text-color-primary);
-  font-size: var(--text-base, 14px);
-  font-weight: 600;
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
 }
 .sdk-object-relations-type,
 .sdk-object-relations-peer-type {
-  background: var(--el-fill-color-light);
-  border-radius: 4px;
+  background: var(--ui-fill-tertiary);
+  border-radius: var(--radius-xs);
   color: var(--el-text-color-secondary);
-  font-size: 11px;
+  font-size: var(--text-xs);
   line-height: 1.4;
-  padding: 1px 6px;
+  padding: 1px var(--spacing-xs);
 }
 .sdk-object-relations-prompt,
 .sdk-object-relations-loading,
 .sdk-object-relations-empty {
   color: var(--el-text-color-secondary);
-  font-size: var(--el-font-size-small, 12px);
+  font-size: var(--text-xs);
   margin: 0;
 }
 .sdk-object-relations-error {
   color: var(--el-color-danger);
-  font-size: var(--el-font-size-small, 12px);
+  font-size: var(--text-xs);
   margin: 0;
 }
 .sdk-object-relations-groups {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--spacing-sm);
 }
 .sdk-object-relations-group {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--radius-md, 6px);
+  border: 1px solid var(--ui-divider);
+  border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-sm);
 }
 .sdk-object-relations-group-head {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--spacing-sm);
 }
 .sdk-object-relations-kind {
   color: var(--el-text-color-primary);
-  font-size: var(--el-font-size-base, 13px);
-  font-weight: 600;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
 }
 .sdk-object-relations-line {
   align-items: center;
   color: var(--el-text-color-secondary);
   display: inline-flex;
-  font-size: 11px;
-  gap: 4px;
+  font-size: var(--text-xs);
+  gap: var(--spacing-xs);
 }
 .sdk-object-relations-swatch,
 .sdk-object-relations-line-mini {
@@ -471,14 +471,14 @@ function statusText(status: PlatformGraphStatus): string {
 }
 .sdk-object-relations-count {
   color: var(--el-text-color-secondary);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
   margin-left: auto;
 }
 .sdk-object-relations-edges {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--spacing-xs);
   list-style: none;
   margin: 0;
   padding: 0;
@@ -486,30 +486,30 @@ function statusText(status: PlatformGraphStatus): string {
 .sdk-object-relations-edge {
   align-items: center;
   display: flex;
-  gap: 6px;
+  gap: var(--spacing-xs);
 }
 .sdk-object-relations-dir {
   color: var(--el-text-color-secondary);
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: var(--text-xs);
   width: 14px;
 }
 .sdk-object-relations-peer {
   align-items: center;
   background: none;
   border: 0;
-  border-radius: 4px;
-  color: var(--el-color-primary);
+  border-radius: var(--radius-xs);
+  color: var(--brand-link);
   cursor: pointer;
   display: inline-flex;
   flex-wrap: wrap;
-  font-size: var(--el-font-size-base, 13px);
-  gap: 6px;
-  padding: 3px 6px;
+  font-size: var(--text-sm);
+  gap: var(--spacing-xs);
+  padding: calc(var(--spacing-xs) / 2) var(--spacing-xs);
   text-align: left;
 }
 .sdk-object-relations-peer:hover {
-  background: var(--el-fill-color-light);
+  background: var(--ui-fill-tertiary);
 }
 .sdk-object-relations-peer-name {
   text-decoration: underline;
@@ -519,8 +519,8 @@ function statusText(status: PlatformGraphStatus): string {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  font-size: var(--el-font-size-small, 12px);
-  gap: 6px;
+  font-size: var(--text-xs);
+  gap: var(--spacing-xs);
   margin: 0;
 }
 .sdk-object-relations-status[data-status="empty"] {

@@ -172,6 +172,22 @@ it("shows a page kept within its application as it was left: its module not run 
   }
 });
 
+it("opens the shown page at its defaults when it is sent to its bare address, as its menu row does", async () => {
+  const { app, element, router } = await openApplication(panelAddress(at("tasks"), deepState));
+  try {
+    const tasks = await shownPanel(element);
+    await vi.waitFor(() => expect(summaryTitle(tasks)).toBe(task.title));
+
+    // The same page, no state: the selection goes, and the address and the page agree — no reload needed.
+    await router.push(at("tasks"));
+    await vi.waitFor(() => expect(summaryTitle(tasks)).toBeUndefined());
+    expect(panels(element)).toEqual([tasks]);
+    expect(router.currentRoute.value.fullPath).toBe(at("tasks"));
+  } finally {
+    app.unmount();
+  }
+});
+
 it("shows the new value of an object changed while its page was kept", async () => {
   const { app, element, router } = await openApplication(panelAddress(at("tasks"), deepState));
   try {
@@ -309,12 +325,13 @@ it("takes a kept author page's targets out of the document's stream, and puts th
   });
   const mode = { kind: "author", definitions: panelAuthorDefinitions() } as const;
   const showing = ref<"p" | "q">("p");
-  const labels = { notStarted: "Not started", failures: { fileUnavailable: "File unavailable", scriptThrew: "Script threw", scriptRejected: "Script rejected" }, content: { styleOutside: "Style outside" } };
+  const language = { locale: "en", fallback: "en" };
+  const labels = { notStarted: "Not started", failures: { fileUnavailable: "File unavailable", scriptThrew: "Script threw", scriptRejected: "Script rejected" }, content: { styleOutside: "Style outside" }, refresh: "Refresh" };
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/", component: { render: () => null } }] });
   await router.push("/");
   const page = mountPlatformPage(() => h("main", [
-    h(PanelHost, { key: "p", port: platformPanelHost(appA, allUses[0]!, ignoreChanges, mode), address: allUses[0]!.path, labels, shown: showing.value === "p" }),
-    h(PanelHost, { key: "q", port: platformPanelHost(appA, allUses[1]!, ignoreChanges, mode), address: allUses[1]!.path, labels, shown: showing.value === "q" }),
+    h(PanelHost, { key: "p", port: platformPanelHost(appA, allUses[0]!, ignoreChanges, mode), address: allUses[0]!.path, labels, language, shown: showing.value === "p" }),
+    h(PanelHost, { key: "q", port: platformPanelHost(appA, allUses[1]!, ignoreChanges, mode), address: allUses[1]!.path, labels, language, shown: showing.value === "q" }),
   ]), router);
   page.app.use(ElementPlus);
   const targetsOf = (panel: typeof p) => [{ kind: "panel", id: panel.id },

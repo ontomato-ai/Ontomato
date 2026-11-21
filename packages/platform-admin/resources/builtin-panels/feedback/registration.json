@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-feedback",
+      "input": {
+        "name": "User feedback",
+        "description": "Review user feedback records with source, rating and keyword filters, record detail and CSV export"
+      }
+    }
+  ]
+}

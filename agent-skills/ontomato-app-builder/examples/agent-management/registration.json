@@ -1,186 +1,22 @@
 {
-  "projections": [
-    {
-      "id": "example-agent-management-list",
-      "mode": "create",
-      "input": {
-        "name": "Agent Definition list",
-        "description": "",
-        "visibility": "domain",
-        "componentId": "@ontomato/sdk:ObjectList",
-        "inputs": {
-          "selected": {
-            "kind": "object",
-            "objectType": "platform:AgentDefinition"
-          }
-        },
-        "outputs": {
-          "selected": {
-            "kind": "object",
-            "objectType": "platform:AgentDefinition"
-          }
-        },
-        "config": {},
-        "data": {
-          "rows": {
-            "source": {
-              "type": {
-                "kind": "PlatformObjectType",
-                "id": "platform:AgentDefinition"
-              }
-            },
-            "read": "list",
-            "params": {}
-          }
-        }
-      }
-    },
-    {
-      "id": "example-agent-management-detail",
-      "mode": "create",
-      "input": {
-        "name": "Agent Definition detail",
-        "description": "",
-        "visibility": "domain",
-        "componentId": "@ontomato/sdk:ObjectSummary",
-        "inputs": {
-          "item": {
-            "kind": "object",
-            "objectType": "platform:AgentDefinition"
-          }
-        },
-        "outputs": {},
-        "config": {},
-        "data": {
-          "record": {
-            "source": {
-              "object": {
-                "input": "item"
-              }
-            },
-            "read": "record",
-            "params": {}
-          }
-        }
-      }
-    },
-    {
-      "id": "example-agent-management-form",
-      "mode": "create",
-      "input": {
-        "name": "Agent Definition form",
-        "description": "",
-        "visibility": "domain",
-        "componentId": "@ontomato/sdk:ObjectForm",
-        "inputs": {
-          "item": {
-            "kind": "object",
-            "objectType": "platform:AgentDefinition"
-          }
-        },
-        "outputs": {},
-        "config": {},
-        "data": {
-          "form": {
-            "source": {
-              "object": {
-                "input": "item"
-              }
-            },
-            "read": "form",
-            "params": {}
-          },
-          "createForm": {
-            "source": {
-              "type": {
-                "kind": "PlatformObjectType",
-                "id": "platform:AgentDefinition"
-              }
-            },
-            "read": "createForm",
-            "params": {}
-          }
-        },
-        "operations": {
-          "save": {
-            "operation": {
-              "kind": "PlatformOperation",
-              "id": "platform:AgentDefinition.save"
-            },
-            "target": {
-              "input": "item"
-            }
-          }
-        }
-      }
-    }
-  ],
   "panels": [
     {
-      "id": "example-agent-management",
+      "id": "app-example-agent-management",
       "mode": "create",
       "input": {
         "name": "Agent Definition",
         "description": "",
-        "visibility": "domain",
-        "manifest": {
-          "state": {
-            "selected": {
-              "type": {
-                "kind": "object",
-                "objectType": "platform:AgentDefinition"
-              },
-              "deepLink": true
-            }
-          },
-          "members": {
-            "list": {
-              "target": {
-                "projectionId": "example-agent-management-list"
-              },
-              "inputs": {
-                "selected": {
-                  "state": "selected"
-                }
-              }
-            },
-            "detail": {
-              "target": {
-                "projectionId": "example-agent-management-detail"
-              },
-              "inputs": {
-                "item": {
-                  "state": "selected"
-                }
-              }
-            },
-            "form": {
-              "target": {
-                "projectionId": "example-agent-management-form"
-              },
-              "inputs": {
-                "item": {
-                  "state": "selected"
-                }
-              }
-            }
-          },
-          "events": {}
-        },
-        "content": {
-          "html": "<style>\n  .management { display: grid; gap: 1rem; }\n  .management-toolbar { display: flex; flex-wrap: wrap; gap: .75rem; }\n  .management-body { display: grid; gap: 1rem; }\n  .management-columns { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }\n  .management-detail { display: grid; gap: 1rem; align-content: start; }\n  @media (max-width: 36rem) { .management-columns { grid-template-columns: minmax(0, 1fr); } }\n</style>\n<div id=\"app\">\n  <section class=\"management\">\n    <div class=\"management-toolbar\">\n      <button type=\"button\" @click=\"newRecord\">New</button>\n    </div>\n    <div class=\"management-body management-columns\">\n      <projection slot=\"list\" @update:selected=\"stopCreating\"></projection>\n      <div class=\"management-detail\">\n        <projection slot=\"detail\" v-if=\"selected\"></projection>\n        <projection slot=\"form\" v-if=\"selected || creating\"></projection>\n      </div>\n    </div>\n  </section>\n</div>\n",
-          "module": "import { computed, ref } from \"vue\";\nimport { mountPanel, usePanelContext } from \"@ontomato/sdk/panel\";\n\nawait mountPanel({\n  setup() {\n    const { instance } = usePanelContext();\n    const selected = computed(() => instance.state.values.value.selected);\n    const creating = ref(false);\n    function newRecord() {\n      creating.value = true;\n      instance.state.set(\"selected\", null);\n    }\n    function stopCreating() {\n      creating.value = false;\n    }\n    return { selected, creating, newRecord, stopCreating };\n  },\n});\n"
-        }
+        "visibility": "domain"
       }
     }
   ],
   "applications": [
     {
-      "id": "example-agent-management",
+      "id": "app-example-agent-management",
       "mode": "create",
       "input": {
         "entry": {
-          "path": "/applications/example-agent-management",
+          "path": "/applications/app-example-agent-management",
           "renderer": "panels"
         },
         "entryAccess": [
@@ -199,10 +35,10 @@
         },
         "panelUses": [
           {
-            "id": "example-agent-management-use",
-            "pageKey": "example-agent-management",
-            "panelId": "example-agent-management",
-            "path": "/applications/example-agent-management/manage",
+            "id": "app-example-agent-management-use",
+            "pageKey": "app-example-agent-management",
+            "panelId": "app-example-agent-management",
+            "path": "/applications/app-example-agent-management/manage",
             "access": {
               "kind": "domain-member"
             },

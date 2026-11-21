@@ -19,7 +19,6 @@ export { schedulesHost } from "./utils/schedules-host";
 export { installErrorPunctuation, type ErrorPunctuation } from "./utils/error-punctuation";
 export { useLocale } from "./composables/useLocale";
 export {
-  AGENT_PAGE_PERMISSIONS,
   OPS_DIAGNOSIS_PERMISSION,
   anyPermission,
   workbenchPermissionGroups,

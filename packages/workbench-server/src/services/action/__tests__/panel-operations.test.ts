@@ -81,6 +81,17 @@ describe("action panel server operations", () => {
     });
   });
 
+  it("passes the fields a partial save submitted to the owner, which changes only those", async () => {
+    const operation = write(`${ACTION}.save`);
+    const { host, sent } = hostWith(() => Response.json({ success: true, data: { id: "a1", name: "Approve open order" } }));
+
+    await operation.execute(host, actionTarget, { values: { name: "Approve open order" }, submittedFields: ["/name"] });
+
+    expect(JSON.parse(String(sent[0]?.init.body))).toEqual({
+      name: "Approve open order", id: "a1", submittedFields: ["/name"],
+    });
+  });
+
   it("keeps an explicit owner code as the save refusal and an unclassified save as a failure", async () => {
     const operation = write(`${ACTION}.save`);
     const refused = hostWith(() =>
@@ -110,7 +121,7 @@ describe("action panel server operations", () => {
     const { host, sent } = hostWith(() => Response.json({ success: true, data: { name: "Approve order" } }));
 
     expect(await operation.inspectImpact!.inspect({ ...host, locale: "en" }, [{ target: actionTarget, input: {} }])).toEqual({
-      summary: "This deletes the selected action; the owner refuses a system action or one referenced by a scheduled task.",
+      summary: "This deletes the selected action with its definition and code explanation; the write function it uses stays. The owner refuses a system action or one a scheduled task runs.",
       objects: [{ target: { objectType: ACTION, primaryKey: "a1" }, label: "Approve order" }],
       total: 1,
     });

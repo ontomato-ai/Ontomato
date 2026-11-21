@@ -9,17 +9,26 @@ import {
   type ProductDefinitionRevision, type ProductDefinitionTarget,
 } from "@ontomato/contracts/product-subscriptions";
 import {
-  candidatePanelSourceSchema, productPanelReadResponseSchema,
+  candidatePanelSourceSchema, PANEL_NESTED_READ_PATH, productPanelNestedReadResponseSchema, productPanelReadResponseSchema,
+  type ProductPanelNestedReadRequest,
   type CandidatePanelSource, type DirectPanelHostSource, type PanelHostSource, type PanelAuthorDefinitions, type PanelDefinitionMode,
   type ProductPanelReadRequest, type ProductPanelReadResponse,
 } from "@ontomato/contracts/panel-host";
 import { buildExecutionContext } from "@ontomato/contracts/build-tests";
 import { pageSkillContextSchema, type PageSkillContext } from "@ontomato/contracts/page-skills";
+import { panelModuleSpecifiers } from "@ontomato/contracts/panel-module";
 import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
-import { confirmPanelIntent, expandDeclaredComposer, registerCandidateFrame, registerPanelFrame } from "./app-host";
-import type { CodedPanelTarget, DirectPanelMount, DirectPanelRun, PanelHostPort, PanelSdkRelease } from "@ontomato/platform-shell";
-import { panelModuleFor, type DirectPanelMountOptions, type PlatformRequests } from "@ontomato/apps-sdk/direct";
+import { confirmPanelIntent, expandDeclaredComposer, platformRouter, registerCandidateFrame, registerPanelFrame } from "./app-host";
+import { panelNavigator } from "./panel-navigate";
+import {
+  adoptPanelStyle, codedPanelTarget, newPanelInstanceName, scopedPanelStyle,
+  type CodedPanelTarget, type DirectPanelMount, type DirectPanelRun, type PanelHostPort, type PanelSdkRelease,
+} from "@ontomato/platform-shell";
+import type { PanelMemberPath } from "@ontomato/contracts/panel-manifest";
+import {
+  panelModuleFor, PanelMemberUnavailable, type DirectPanelMount as PanelRunMount, type DirectPanelMountOptions, type PlatformRequests,
+} from "@ontomato/apps-sdk/direct";
 import { workbenchI18n, workbenchLanguage } from "@ontomato/workbench-ui/i18n";
 import * as Vue from "vue";
 import { provideGlobalConfig } from "element-plus";
@@ -110,6 +119,8 @@ export function platformPanelHost(
   relations?: Promise<readonly ApplicationPanelUse[]>,
   /** Hears which page skill a message written beside this page reaches, as Node answers it with the panel. */
   pageSkill?: (context: PageSkillContext) => void,
+  /** Beside a conversation, the conversation's display, which opens an address the panel asks for; at full page, none. */
+  beside?: (address: string) => void,
 ): PanelHostPort<Extract<PanelHostSource | DirectPanelHostSource, { kind: "registered" }>> {
   const shown: PanelUseRef = { applicationId, useId: use.id };
   const names = (records: readonly ApplicationPanelUse[]) =>
@@ -140,13 +151,15 @@ export function platformPanelHost(
     frame: (frame, source, open) => registerPanelFrame(frame, shown, { pageKey: use.pageKey, manifest: source.panel.manifest }, open, changed),
     // The panel runs in this document, as the same application's page: its members read through the platform as the
     // reader, within this use, and a person's write is confirmed and dispatched here.
-    coded: (source, run, target) => mountCoded(directOptions(source, run, shown, changed), target, source.panel.content.module!),
+    coded: (source, run, target) =>
+      mountCoded(withNested(directOptions(source, run, shown, changed, beside), { kind: "registered", ...shown }), target, source.panel.content.module),
     // The relation this page opens is still the application's, bound to the same panel: a kept page shown again is
     // checked against Java's current relations before its frame may ask for anything.
     async current() {
       return names(await panelUsesOf(applicationId));
     },
-    ...(relations ? { admitted: relations.then(names) } : {}),
+    // Java's answer not coming is not admitting the page: the route that asked for it says why where the page would be.
+    ...(relations ? { admitted: relations.then(names, () => false) } : {}),
     // The page's check of its definitions, when it is shown again or comes back to the foreground, is read for this page
     // too: the page skill it reaches is confirmed again with it, since what it may reach can have changed meanwhile.
     async snapshot(panelId) {
@@ -181,7 +194,7 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
     // runs no operation, and its members read as the candidate's workspace.
     coded: (source, run, target) => {
       const { global } = workbenchI18n();
-      return mountCoded({
+      return mountCoded(withNested({
         manifest: source.panel.manifest,
         run,
         requests: platformRequests,
@@ -189,11 +202,12 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
         read: request => readPanelData({ source: { kind: "candidate", workspace: source.workspace }, ...request }),
         confirmOperation: () => Promise.reject(new Error("A panel preview runs no operations; they run in the panel's application")),
         expandPageComposer: expandDeclaredComposer,
+        navigate: panelNavigator(platformRouter()),
         messages: source.panel.content.messages ?? {},
         locale: global.locale,
         defaultLocale: String(global.fallbackLocale.value),
         translate: key => global.t(key),
-      }, target, source.panel.content.module!);
+      }, { kind: "candidate", workspace: source.workspace }), target, source.panel.content.module);
     },
     snapshot,
     mode: { kind: "author", definitions: panelAuthorDefinitions() },
@@ -209,7 +223,9 @@ const platformRequests: PlatformRequests = {
 };
 
 /** What a panel of an application use runs on in this document: the SDK's instance with this platform's reads, requests and words. */
-function directOptions(source: DirectPanelHostSource, run: DirectPanelRun, use: PanelUseRef, changed: (change: PanelObjectChange) => void): DirectPanelMountOptions {
+function directOptions(
+  source: DirectPanelHostSource, run: DirectPanelRun, use: PanelUseRef, changed: (change: PanelObjectChange) => void, beside?: (address: string) => void,
+): OwnPanelOptions {
   const { global } = workbenchI18n();
   return {
     manifest: source.panel.manifest,
@@ -219,6 +235,7 @@ function directOptions(source: DirectPanelHostSource, run: DirectPanelRun, use: 
     read: request => readPanelData({ source: { kind: "registered", ...use }, ...request }),
     confirmOperation: preparation => confirmPanelIntent(use, preparation.intentId, changed),
     expandPageComposer: expandDeclaredComposer,
+    navigate: panelNavigator(platformRouter(), beside),
     messages: source.panel.content.messages ?? {},
     locale: global.locale,
     defaultLocale: String(global.fallbackLocale.value),
@@ -226,19 +243,75 @@ function directOptions(source: DirectPanelHostSource, run: DirectPanelRun, use: 
   };
 }
 
+/** Where a panel's reads come from: its application use, or an author's candidate. */
+type PanelReadSource = ProductPanelReadRequest["source"];
+
+/** A panel's options in this document before the panels its state places inside it can be mounted. */
+type OwnPanelOptions = Omit<DirectPanelMountOptions, "nested">;
+
+/** A panel's options in this document, with which the panels its state places inside it are mounted too. */
+function withNested(options: OwnPanelOptions, source: PanelReadSource): DirectPanelMountOptions {
+  return { ...options, nested: (memberPath, run) => mountNested(options, source, memberPath, run) };
+}
+
+/**
+ * A panel placed inside another where the outer one's state puts it (standard: a panel in a panel is its own instance;
+ * big main's ruling, 2026-11-21). Node resolves its definition along the full member path from the outer panel's
+ * source, checking the placement, its candidates and the reader's use of it; its module runs on the outer panel's
+ * options with its own declaration, words and run, at that member path, in an element of its own whose CSS reaches only
+ * it. A panel whose CSS reaches outside it does not mount here: the block it was placed in says why.
+ */
+async function mountNested(
+  outer: OwnPanelOptions, source: PanelReadSource, memberPath: ProductPanelNestedReadRequest["memberPath"], run: DirectPanelRun,
+): Promise<{ element: HTMLElement; mount: PanelRunMount }> {
+  const path: ProductPanelNestedReadRequest["memberPath"] = [...(outer.memberPath ?? []), ...memberPath] as ProductPanelNestedReadRequest["memberPath"];
+  // A placement the reader may not use, or one whose record is gone or not among its candidates, is that block's own
+  // state, said where the panel would be; any other failure is said as it is.
+  const answer = await json(`/api${PANEL_NESTED_READ_PATH}`, { method: "POST", body: JSON.stringify({ source, memberPath: path }) })
+    .catch((failure: unknown) => {
+      if (failure instanceof ApiRequestError && (failure.status === 403 || failure.status === 404))
+        throw new PanelMemberUnavailable(failure.status, failure.message);
+      throw failure;
+    });
+  const { panel } = productPanelNestedReadResponseSchema.parse(answer);
+  // An object's detail panel is Node's to name: the placement asked by the object alone, and the panel Node answered
+  // with completes it, so the placed panel's own reads and operations name the panel they were admitted for.
+  const placedAt: PanelMemberPath = [...path.slice(0, -1) as PanelMemberPath, resolvedSegment(path.at(-1)!, panel.id)];
+  const instance = newPanelInstanceName();
+  const { element, template, css } = codedPanelTarget(panel.content.html);
+  element.dataset.panelInstance = instance;
+  const dropStyle = css ? adoptPanelStyle(scopedPanelStyle(css, instance)) : undefined;
+  try {
+    const inner = withNested({ ...outer, manifest: panel.manifest, messages: panel.content.messages ?? {}, run, memberPath: placedAt }, source);
+    const mount = await mountCoded(inner, { element, template }, panel.content.module);
+    return { element, mount: { ...mount, dispose() { mount.dispose(); dropStyle?.(); } } };
+  } catch (failure) {
+    dropStyle?.();
+    throw failure;
+  }
+}
+
+/** A placement's segment, completed with the panel Node answered when it was asked by the selected object alone. */
+function resolvedSegment(segment: ProductPanelNestedReadRequest["memberPath"][number], panelId: string): PanelMemberPath[number] {
+  const { selection } = segment;
+  if (selection && "stateValue" in selection && !("target" in selection))
+    return { ...segment, selection: { stateValue: selection.stateValue, target: { panelId } } };
+  return segment as PanelMemberPath[number];
+}
+
 /**
  * Runs a panel in this document: its module, once for this instance, with `vue` naming the platform's
  * Vue and `@ontomato/sdk/panel` an SDK of this instance's own, whose `mountPanel` mounts the panel's component into the
  * host's element on `options`' instance, with the platform's words and Element Plus's in the reader's language.
  */
-async function mountCoded(options: DirectPanelMountOptions, target: CodedPanelTarget, module: string): Promise<DirectPanelMount> {
+async function mountCoded(options: DirectPanelMountOptions, target: CodedPanelTarget, module: string): Promise<PanelRunMount> {
   const { global } = workbenchI18n();
   const language = workbenchLanguage();
   await useTemplateCompiler();
-  let mounted: DirectPanelMount | undefined;
+  let mounted: PanelRunMount | undefined;
   await runPanelModule(module, {
-    vue: Vue as unknown as Record<string, unknown>,
-    "@ontomato/sdk/panel": panelModuleFor({
+    [panelModuleSpecifiers.vue]: Vue as unknown as Record<string, unknown>,
+    [panelModuleSpecifiers.sdk]: panelModuleFor({
       ...options,
       element: target.element,
       template: target.template,

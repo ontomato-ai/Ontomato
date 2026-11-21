@@ -11,34 +11,30 @@
     },
     "members": {
       "list": {
-        "target": {
-          "projectionId": "example-agent-management-list"
+        "component": "ObjectList",
+        "type": "platform:AgentDefinition",
+        "data": {
+          "rows": "list"
         },
-        "inputs": {
-          "selected": {
-            "state": "selected"
-          }
+        "state": {
+          "selected": "selected"
         }
       },
       "detail": {
-        "target": {
-          "projectionId": "example-agent-management-detail"
-        },
-        "inputs": {
-          "item": {
-            "state": "selected"
-          }
+        "component": "ObjectSummary",
+        "target": "selected",
+        "data": {
+          "record": "record"
         }
       },
       "form": {
-        "target": {
-          "projectionId": "example-agent-management-form"
+        "component": "ObjectForm",
+        "target": "selected",
+        "data": {
+          "form": "form",
+          "createForm": "createForm"
         },
-        "inputs": {
-          "item": {
-            "state": "selected"
-          }
-        }
+        "operation": "platform:AgentDefinition.save"
       }
     },
     "events": {}

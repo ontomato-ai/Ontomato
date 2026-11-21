@@ -69,7 +69,7 @@ it("keeps what the reader types into a clean form as the page comes back, its de
       },
     },
     use: { applicationId: "app-tasks", useId: "tasks" }, messages: {}, locale: ref("en"), defaultLocale: "en",
-    expandPageComposer: noOperations.expandPageComposer,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
     confirmOperation: async () => { throw new Error("Nothing is saved here"); },
     read: async (request): Promise<ProductPanelReadResponse> => {
       if (request.operations) return admitted;

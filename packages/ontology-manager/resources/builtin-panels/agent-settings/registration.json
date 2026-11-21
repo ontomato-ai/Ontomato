@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-agent-settings",
+      "input": {
+        "name": "智能体设置",
+        "description": "列出并编辑域内的智能体定义"
+      }
+    }
+  ]
+}

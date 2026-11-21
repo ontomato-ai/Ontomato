@@ -1,3 +1,4 @@
+import type { SkillInfo } from "@ontomato/contracts/skills";
 import { afterEach, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import ElementPlus from "element-plus";
@@ -10,7 +11,7 @@ import { skillsApi } from "../api";
 vi.mock("@ontomato/foundation-ui/code", () => ({ CodeEditor: { props: ["modelValue"], template: '<pre class="code-double">{{ modelValue }}</pre>' } }));
 vi.mock("@ontomato/foundation-ui/markdown", () => ({ MarkdownView: { props: ["content"], template: '<div class="markdown-double">{{ content }}</div>' } }));
 
-const skill = (isPublic: boolean) => ({ id: "growth", title: "Growth", description: "", isPublic, skill: { name: "growth" }, writeRestriction: isPublic ? { kind: "public" } : null });
+const skill = (isPublic: boolean): SkillInfo => ({ id: "growth", title: "Growth", description: "", isPublic, skill: { namespace: isPublic ? { kind: "provider", provider: "workbench" } : { kind: "domain", domainId: "test" }, name: "growth" }, writeRestriction: isPublic ? { kind: "public" } : null });
 
 afterEach(() => { vi.restoreAllMocks(); });
 

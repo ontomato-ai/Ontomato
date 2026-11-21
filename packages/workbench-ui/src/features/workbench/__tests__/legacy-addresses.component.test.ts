@@ -1,5 +1,6 @@
 import type { ConversationDisplay } from "@ontomato/agent-shell-ui";
-import { platformRoutes } from "@ontomato/platform-shell/routes";
+import { panelAddressState } from "@ontomato/contracts/panel-host";
+import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemoryHistory, createRouter, type Router } from "vue-router";
 import { mount } from "@vue/test-utils";
@@ -9,6 +10,7 @@ import { ontologyServiceAccessKey, openOntologyServiceAccess } from "../../../ap
 import { platformPageAccessKey } from "@ontomato/platform-shell";
 import BusinessWorkbench from "../components/BusinessWorkbench.vue";
 import { legacyAdminRoutes, workbenchPages } from "@ontomato/platform-web";
+import { DETAIL_SELECTIONS, detailSelectionGuard } from "../../../../../platform-web/src/detail-selection";
 
 /*
  * The old console addresses open the place the page moved to: the agents' settings are the agent platform's own page (and
@@ -64,17 +66,19 @@ afterEach(() => {
 /** The platform's own route table, with the workbench on its own addresses and every page needing no real component. */
 function platformRouter(): Router {
   const page = { render: () => null };
-  return createRouter({
+  const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       ...workbenchPages(page, { component: page, props: { account: null } }),
-      // The ontology manager's settings page and the pages the old addresses name, so a redirect is followed for real.
-      ...["/ontology/agents", "/ontology/agents/new", "/ontology/agents/:agentId", "/ontology/skills"].map((path) => ({
+      // Stand-ins for the canonical entries the reader's catalogue admits.
+      ...["/agents/settings", "/ontology/agents", "/ontology/skills", "/:unknown(.*)*"].map((path) => ({
         path, component: page,
       })),
       ...Object.values(legacyAdminRoutes),
     ],
   });
+  router.beforeEach(detailSelectionGuard(DETAIL_SELECTIONS));
+  return router;
 }
 
 async function openAddress(
@@ -101,37 +105,23 @@ async function openAddress(
 }
 
 describe("the agent platform's settings addresses", () => {
-  it("turns the standalone builder's old addresses to the agent platform's settings and keeps the object id", async () => {
-    for (const [path, target] of [
-      ["/agent-builder", "/agents/settings"],
-      ["/agent-builder/new", "/agents/settings/new"],
-      ["/agent-builder/agent-42", "/agents/settings/agent-42"],
-    ]) {
-      const { router } = await openAddress(`${path}?draftSessionId=session`);
-      expect(router.currentRoute.value.path).toBe(target);
-      expect(router.currentRoute.value.query.draftSessionId).toBe("session");
-      if (path.endsWith("agent-42")) expect(router.currentRoute.value.params.agentId).toBe("agent-42");
-    }
+  const selected = { className: AGENT_DEFINITION, primaryKey: "agent-42" };
+
+  it.each([
+    ["/agent-builder/new", { mode: "create" }],
+    ["/agent-builder/agent-42", { mode: "edit", selected }],
+    ["/agents/settings/new", { mode: "create" }],
+    ["/agents/settings/agent-42", { mode: "edit", selected }],
+  ])("opens %s on the settings panel with its state and draft", async (path, state) => {
+    const { router } = await openAddress(`${path}?draftSessionId=session`);
+    expect(router.currentRoute.value.path).toBe("/agents/settings");
+    expect(router.currentRoute.value.query.draftSessionId).toBe("session");
+    expect(panelAddressState(router.currentRoute.value.fullPath)).toEqual(state);
   });
 
-  /*
-   * `/agents/settings/new` is an address of its own, not an agent id: it must be the new-agent screen, not an agent whose
-   * id happens to be "new". The check runs through the real route table, because the fixed address must come first.
-   */
-  it("keeps the new-agent address as the new agent", async () => {
-    const { router } = await openAddress("/agents/settings/new");
-    expect(router.currentRoute.value.name).toBe(platformRoutes.agentSettingsNew.name);
-  });
-
-  it("keeps the agent an address names, in the agent platform", async () => {
-    const { router } = await openAddress("/agents/settings/agent-42");
-    expect(router.currentRoute.value.name).toBe(platformRoutes.agentSettings.name);
-    expect(router.currentRoute.value.params.agentId).toBe("agent-42");
-  });
-
-  it("keeps the settings' own prefix", async () => {
-    const { router } = await openAddress("/agents/settings");
-    expect(router.currentRoute.value.name).toBe(platformRoutes.agents.name);
+  it("opens the settings' own address from the standalone builder", async () => {
+    const { router } = await openAddress("/agent-builder");
+    expect(router.currentRoute.value.path).toBe("/agents/settings");
   });
 });
 

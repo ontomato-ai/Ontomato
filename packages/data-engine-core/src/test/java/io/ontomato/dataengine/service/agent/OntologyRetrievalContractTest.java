@@ -224,7 +224,7 @@ class OntologyRetrievalContractTest {
         MockMvcBuilders.standaloneSetup(
                 new OntologyAgentController(host, authorization, runtime, retrieval),
                 new OntologyRetrievalController(retrieval, store, authorization, tasks), channelController)
-            .setControllerAdvice(new OntologyAgentErrors())
+            .setControllerAdvice(new OntologyAgentErrors((language, key) -> key))
             .setMessageConverters(new MappingJackson2HttpMessageConverter())
             .addFilters(grantFilter)
             .build();
@@ -882,7 +882,7 @@ class OntologyRetrievalContractTest {
     var filter = new QueryGrantFilter(grants);
     org.springframework.test.util.ReflectionTestUtils.setField(filter, "executions", executions);
     http = MockMvcBuilders.standaloneSetup(new OntologyRetrievalController(retrieval, store, authorization, tasks))
-        .setControllerAdvice(new OntologyAgentErrors())
+        .setControllerAdvice(new OntologyAgentErrors((language, key) -> key))
         .setMessageConverters(new org.springframework.http.converter.json.MappingJackson2HttpMessageConverter())
         .addFilters(filter).build();
 

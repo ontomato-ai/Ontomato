@@ -18,7 +18,6 @@ export const components: readonly ComponentMetadata[] = [
       "Reads one published MetricView and hands its result to the page's own template; the loading state and a failed read reach it as values, and it draws nothing itself.",
     effects: "Reads the MetricView through the data engine as the reader; it computes no metric of its own.",
     bindsElement: ["MetricView:*"],
-    outputs: ["data", "loading", "error", "reload"],
   }),
   defineComponentMeta({
     componentId: "ProductAsset",
@@ -27,7 +26,6 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     meaning:
       "Embeds an existing product asset as the application's pinned release draws it; an unavailable asset or an unsupported host is reported instead of drawing another page.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "EChart",
@@ -35,7 +33,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "EChart",
     role: "presentation",
     meaning:
-      "Draws one ECharts option in the platform's chart theme, following its light and dark modes; it computes no value and reads nothing itself.",
+      "Draws one ECharts option in the platform's chart theme, following its light and dark modes; it computes no value and reads nothing itself. In a panel, write `<e-chart>` in the template, without an import; the import is for an application page outside a panel.",
     bindsElement: ["MetricView:*", "Definition:*"],
   }),
   defineComponentMeta({
@@ -44,38 +42,36 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "FormFields",
     role: "control",
     meaning:
-      "Draws a form exactly as its owner declares it — a choice as a select whose unavailable options stay listed with the reason, a text as an input or a large text box — in the owner's order and limits.",
+      "Draws a form exactly as its owner declares it — a choice as a select whose unavailable options stay listed with the reason, a text as an input or a large text box — in the owner's order and limits. In a panel, write `<form-fields>` in the template, without an import; the import is for an application page outside a panel.",
     bindsElement: ["Action:*"],
-    outputs: ["input", "choose"],
   }),
   defineComponentMeta({
     componentId: "CodeEditor",
     module: "@ontomato/sdk/code",
     exportName: "CodeEditor",
     role: "control",
-    meaning: "Edits code or structured text such as JSON, in the page's light or dark theme; it validates nothing.",
-    outputs: ["modelValue"],
+    meaning: "Edits code or structured text such as JSON, in the page's light or dark theme; it validates nothing. In a panel, write `<code-editor>` in the template, without an import; the import is for an application page outside a panel.",
   }),
   defineComponentMeta({
     componentId: "MarkdownView",
     module: "@ontomato/sdk/markdown",
     exportName: "MarkdownView",
     role: "presentation",
-    meaning: "Draws a text as the platform reads Markdown, in the page's light or dark theme.",
+    meaning: "Draws a text as the platform reads Markdown, in the page's light or dark theme. In a panel, write `<markdown-view>` in the template, without an import; the import is for an application page outside a panel.",
   }),
   defineComponentMeta({
     componentId: "TablePreview",
     module: "@ontomato/sdk/preview",
     exportName: "TablePreview",
     role: "presentation",
-    meaning: "Draws text cells as a table with paging; it reads no business meaning out of them.",
+    meaning: "Draws text cells as a table with paging; it reads no business meaning out of them. In a panel, write `<table-preview>` in the template, without an import; the import is for an application page outside a panel.",
   }),
   defineComponentMeta({
     componentId: "HtmlPreview",
     module: "@ontomato/sdk/preview",
     exportName: "HtmlPreview",
     role: "presentation",
-    meaning: "Draws a whole HTML document in a sandboxed frame; the document runs nothing outside that frame.",
+    meaning: "Draws a whole HTML document in a sandboxed frame; the document runs nothing outside that frame. In a panel, write `<html-preview>` in the template, without an import; the import is for an application page outside a panel.",
   }),
   defineComponentMeta({
     componentId: "AgentChatPanel",
@@ -85,7 +81,6 @@ export const components: readonly ComponentMetadata[] = [
     meaning:
       "Holds one conversation with one of the platform's agents and reports its session; the agent's own skills decide what it can do.",
     effects: "Sends the reader's messages to the agent service as the signed-in user and shows the run as it streams.",
-    outputs: ["sessionId", "error"],
   }),
   defineComponentMeta({
     componentId: "AgentShell",
@@ -95,7 +90,6 @@ export const components: readonly ComponentMetadata[] = [
     meaning:
       "The whole conversation surface of one agent: its column, the conversation and the page beside it. A panel that talks to an agent composes it rather than drawing a conversation of its own.",
     effects: "Sends the reader's messages to the agent service as the signed-in user.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "ShellComposer",
@@ -103,7 +97,6 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ShellComposer",
     role: "control",
     meaning: "The input a reader types a message into, with what the message would carry; it sends nothing itself.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "PageComposer",
@@ -111,7 +104,6 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "PageComposer",
     role: "control",
     meaning: "The composer of a page shown full beside the conversation, with the page the message will carry.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "ShellColumn",
@@ -119,7 +111,6 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ShellColumn",
     role: "presentation",
     meaning: "The conversation's own column: its agents and sessions, as the host lists them.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "ShellNavBody",
@@ -127,7 +118,6 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ShellNavBody",
     role: "presentation",
     meaning: "The rows of the conversation column, with their counts and their state.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "ShellDockRoom",
@@ -135,7 +125,6 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ShellDockRoom",
     role: "presentation",
     meaning: "The room the shell's own controls cover at the foot of a page, so the page's end scrolls clear.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "AgentPicker",
@@ -143,7 +132,6 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "AgentPicker",
     role: "control",
     meaning: "Chooses one of the agents the host serves; it grants nothing: the server decides what the reader may use.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "AgentAvatar",
@@ -151,7 +139,6 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "AgentAvatar",
     role: "presentation",
     meaning: "An agent's avatar, from its stored image or colour and its initial.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "DatasetSelectionButton",
@@ -159,7 +146,6 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "DatasetSelectionButton",
     role: "control",
     meaning: "Chooses a dataset to name in the conversation; it reads nothing and writes nothing.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "ToolStep",
@@ -167,7 +153,6 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ToolStep",
     role: "presentation",
     meaning: "One tool call of a run: what was called, what it answered, and whether it failed.",
-    outputs: [],
   }),
   defineComponentMeta({
     componentId: "Projection",
@@ -184,7 +169,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectList",
     role: "control",
     meaning:
-      "Lists or tabulates platform objects of the bound type from its member's `rows` or `objects` datum, inferring search, pagination and explicit multi-selection from the owner's read signature and the member's bindings, with safe highlight rendering, single viewing selection and clickable reference navigation.",
+      "Lists the owner's records of the projection's type, compact or as a table (`columns`), from its `rows` datum (an owner's list or query read) or `objects` (ontology objects of a chosen type). What it offers follows the read and the placement: a search box when the read takes `search`, paging when it pages, checkboxes when the placement binds `checked`, and the status filter when it binds `status`; each is the list's own value unless the placement binds it to the panel's state. Clicking an item selects it (`selected`); search matches are highlighted, and a reference field is a link the page hears as `navigate`. A successful read with zero rows shows the empty message (`emptyText` can supply its message key). Missing required inputs show the waiting state.",
     effects: "Reads the bound type's list, query or ontology objects datum as the reader; it writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*"],
     // Either list shape draws the table, and an ontology type lists its declared objects instead: no single one of these
@@ -194,7 +179,11 @@ export const components: readonly ComponentMetadata[] = [
       rows: { results: ["panelRecordList", "panelRecordQuery"], required: false, runtimeParams: ["search", "cursor", "size", "page"] },
       objects: { results: ["panelOntologyObjects"], required: false, runtimeParams: ["search", "page"] },
     },
-    outputs: ["selected", "checked", "navigate", "search"],
+    outputs: {
+      selected: { kind: "object", objectType: "@binding" },
+      checked: { kind: "list", items: { kind: "object", objectType: "@binding" } },
+      search: { kind: "scalar", type: "string" },
+    },
   }),
   defineComponentMeta({
     componentId: "ObjectSummary",
@@ -206,7 +195,6 @@ export const components: readonly ComponentMetadata[] = [
     effects: "Reads one object of the type the projection binds, as the reader.",
     bindsElement: ["PlatformObjectType:*"],
     data: { record: { results: ["panelRecord"], required: true } },
-    outputs: ["navigate"],
   }),
   defineComponentMeta({
     componentId: "ObjectForm",
@@ -214,7 +202,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectForm",
     role: "control",
     meaning:
-      "Draws one platform object's form exactly as its owner declares it, asks the owner again when a field the form depends on changes, and keeps the reader's draft until it is saved.",
+      "Draws one object's form exactly as its owner declares it (fields, values, read-only rules, defaults), from its `form` datum for the object its edited input holds, or, with nothing chosen and a `createForm` datum, a new object's. It asks the owner again when a field the form depends on changes, saves through the owner's form save its projection names (only the fields the reader set), marks the fields the owner refuses, and takes an agent's draft for its object. Hidden owner fields have no control. Link a reference picker to its owner field through `formField`; a reference without a picker is shown as unavailable to edit. A page that opens it under a parent fixes the fields the parent decides with `fixedFields` (each from a panel state field or a literal): they show read-only and every save submits them. It tells the page `saved` (with the object) and `discarded`, and asks the reader before the panel moves it off unsaved changes.",
     effects: "Reads the owner's form and saves through the owner's own interface; it saves through the owner's form save its projection names.",
     bindsElement: ["PlatformObjectType:*", "Action:*"],
     // A form edits an existing record or creates a new one; which of the two a placement shows is its own choice.
@@ -242,7 +230,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ReferencePicker",
     role: "control",
     meaning:
-      "Chooses the value of one reference field of a form in the same panel from the catalogue of the type the projection binds, writing the owner's own value (a skill's whole reference, a model's key) into that form, so the choice is saved, discarded and drafted with it. A value the form holds that the catalogue no longer offers stays listed, unavailable, with the owner's reason.",
+      "Chooses the value of one reference field of a form in the same panel from the catalogue of the type the projection binds, writing the owner's own value (a skill's whole reference, a model's key) into that form, so the choice is saved, discarded and drafted with it. Place the picker with `target.projectionId` and `formField: { slot, path }`, where `slot` is the form member and `path` is the owner's JSON Pointer. An optional `itemPath` binds the field in each row of the array at `path`. The field controls single or multiple selection. `options` finds choices and `selected` resolves the values already in the form. A value the catalogue no longer offers stays listed, unavailable, with the owner's reason.",
     effects: "Reads the bound type's choices as the reader; it writes only the form field its slot's field port names.",
     bindsElement: ["PlatformObjectType:*"],
     // The catalogue it offers, and the held values it lists beside it: both are the member's own reads.
@@ -288,7 +276,6 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     meaning:
       "Draws the nodes and edges it is given as a light SVG graph, each node in the tone its caller gives it and marked when its ID is among the selected ones, and hands back the selection a reader's choice results in and the part of the graph in view. What the nodes are, which may be chosen and what a choice implies are its caller's: it reads nothing and decides nothing about them.",
-    outputs: ["selected", "viewport"],
   }),
   defineComponentMeta({
     componentId: "G6GraphCanvas",
@@ -297,7 +284,6 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     meaning:
       "Draws the nodes and edges it is given with G6, for graphs a reader pans, zooms and drags: the graph canvas's interface, plus each node coloured by its category from the edition's palette, edges labelled, dashed or weighted as given, and invisible anchors for aggregated edges. It hands back the selection a reader's choice results in, the part of the graph in view, a double-click, a dragged node's new place and a click on empty canvas, and gives its caller the current positions and an image of the view. What the nodes are, what a choice means, and where positions and images are kept are its caller's: it reads and stores nothing.",
-    outputs: ["selected", "viewport", "blank", "activate", "move", "progress"],
   }),
   defineComponentMeta({
     componentId: "OntologyGraph",
@@ -316,7 +302,21 @@ export const components: readonly ComponentMetadata[] = [
       // The node the reader expands, and the layers and relation kinds the graph shows now.
       neighbors: { results: ["panelGraphNeighbors"], required: true, runtimeParams: ["node", "layers", "relationKinds"] },
     },
-    outputs: ["selectedNode", "selected", "selectedType"],
+    // What a placement hands the graph: how it draws, where instance mode starts, what is selected and what to highlight.
+    inputs: {
+      mode: { kind: "scalar", type: "string" },
+      start: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
+      selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
+      selectedType: { kind: "scalar", type: "string" },
+      query: { kind: "scalar", type: "string" },
+    },
+    outputs: {
+      selectedNode: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
+      selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
+      selectedType: { kind: "scalar", type: "string" },
+      // The relation kinds drawn, read as well as written: a page's own kind filter and the graph follow one choice.
+      visibleRelationKinds: { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } },
+    },
   }),
   defineComponentMeta({
     componentId: "ObjectRelations",
@@ -329,7 +329,7 @@ export const components: readonly ComponentMetadata[] = [
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     // The node a reader moved to, when no state the author bound holds it.
     data: { neighbors: { results: ["panelGraphNeighbors", "panelRelationNeighbors"], required: true, runtimeParams: ["node"] } },
-    outputs: ["selected"],
+    outputs: { selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] } },
   }),
   defineComponentMeta({
     componentId: "SegmentedControl",
@@ -339,7 +339,7 @@ export const components: readonly ComponentMetadata[] = [
     meaning:
       "Switches one declared scalar panel state between mutually exclusive options supplied by the owner's `counts` datum (`[{key, label, count}]`) or static configuration. It binds no ontology element.",
     data: { counts: { results: ["panelGroupCounts"], required: false } },
-    outputs: ["value"],
+    outputs: { value: { kind: "scalar", type: "string" } },
   }),
   defineComponentMeta({
     componentId: "TwoPaneLayout",
@@ -364,18 +364,6 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     meaning:
       "Arranges a flat list of slash-separated paths into a folder-first, name-sorted, default-expanded tree; clicking a folder only collapses or expands it, while clicking a file emits its key and highlights the active row. It reads nothing and carries no business rules.",
-    outputs: ["selectedKey"],
-  }),
-  defineComponentMeta({
-    componentId: "ObjectTree",
-    module: "@ontomato/sdk/base",
-    exportName: "ObjectTree",
-    role: "control",
-    meaning:
-      "Displays path-bearing objects of the bound type (optionally scoped by a parent object input) as a folder/file tree and writes the selected file's full identity to the slot's output state, honoring an owner-supplied default key when configured.",
-    effects: "Reads the bound type's list or parent-scoped query as the reader; it writes only the panel's own state.",
-    bindsElement: ["PlatformObjectType:*"],
-    outputs: ["selected"],
   }),
   defineComponentMeta({
     componentId: "SegmentedTextReader",
@@ -384,28 +372,38 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     meaning:
       "Displays offset-paged plain-text segments for a selected source with a close control and a More button when another offset exists, coordinating shared activeAnchor state so multiple placements on one page expand only one reader at a time.",
-    outputs: ["activeAnchor", "activeSourceId"],
+  }),
+  defineComponentMeta({
+    componentId: "ObjectTree",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectTree",
+    role: "control",
+    meaning:
+      "Shows one object's files — a skill package's, say — as a folder/file tree, from its `files` datum (an owner's records, one per file, at the path `pathField` gives, else the record's own key). Clicking a file selects it: `selected` is the file's key, which the placement can bind to the panel's state so another member (an ObjectTextReader's `record`) reads that file. Folders open and close; they are not selected.",
+    effects: "Reads the owner's files as the reader; it writes only the panel's own state.",
+    bindsElement: ["PlatformObjectType:*"],
+    data: { files: { results: ["panelRecordList"], required: true } },
+    outputs: { selected: { kind: "scalar", type: "string" } },
   }),
   defineComponentMeta({
     componentId: "ObjectTextReader",
     module: "@ontomato/sdk/base",
     exportName: "ObjectTextReader",
-    role: "control",
+    role: "presentation",
     meaning:
-      "Reads offset-paged text segments for sources of the bound type through its resource adapter's readSegment port (optionally scoped by a parent object input), showing More while another offset exists and coordinating single-open across placements.",
-    effects: "Reads source metadata and text segments through the bound adapter as the reader; it changes nothing itself.",
+      "Shows an object's text read only, through its owner's reads. Sources read page by page: `sources` lists them as chips (one owner record per source), and `page` reads the chosen source's text one page at a time (an owner's query whose rows are the text's segments, `fields.text`, with `nextCursor` for the next page); the reader opens one source at a time and \"More\" reads the next page. One object's whole text: `record` reads it and the field `textField` names (`content` by default) is shown with its line breaks. Its outputs `activeSourceId` and `activeAnchor`, bound to the panel's state, are read as well as written: the page opens a source by writing it (and, for a reader with an `anchor`, that anchor), and readers sharing them on one page have only one open. Which sources it lists is the `sources` read's: an owner read of one issue's cited sources lists only those.",
+    effects: "Reads the owner's sources, pages and records as the reader; it writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*"],
-    outputs: ["activeAnchor", "activeSourceId"],
-  }),
-  defineComponentMeta({
-    componentId: "FileUploadControl",
-    module: "@ontomato/sdk/base",
-    exportName: "FileUploadControl",
-    role: "control",
-    meaning:
-      "Uploads a reader-chosen file through the declared PlatformOperation handler (optionally showing format rules first, checking file extensions and confirming overwrite when the owner reports a conflict). It sends nothing outside the bound operation's declared requests.",
-    effects: "Runs the projection's upload operation with the chosen file as the reader and refreshes panel objects on success.",
-    bindsElement: ["PlatformOperation:*"],
+    data: {
+      sources: { results: ["panelRecordList"], required: false },
+      // The chosen source and the page's cursor are the reader's own, unless the placement binds them.
+      page: { results: ["panelRecordQuery"], required: false, runtimeParams: ["source", "cursor"] },
+      record: { results: ["panelRecord"], required: false },
+    },
+    outputs: {
+      activeSourceId: { kind: "scalar", type: "string" },
+      activeAnchor: { kind: "scalar", type: "string" },
+    },
   }),
   defineComponentMeta({
     componentId: "ConversationEntry",
@@ -433,13 +431,19 @@ export const components: readonly ComponentMetadata[] = [
         results: [
           "panelRecordList", "panelRecord", "panelRecordQuery", "panelGroupCounts", "panelApplicationMenu",
           "productProjectionList", "productPanelList", "productProjectionRecord", "productPanelRecord", "productProjectionUsedBy",
-          "productPanelUsedBy", "productPanelMembers", "applicationCatalogue", "applicationRecord", "applicationEntries",
+          "productPanelUsedBy", "productPanelMembers", "productCatalogueGrants", "applicationCatalogue", "applicationRecord", "applicationEntries",
           "panelFormDescription", "panelOperationDescriptor", "panelOptionList", "panelGraphSchema", "panelGraphCounts",
           "panelGraphStart", "panelGraphNeighbors", "panelOntologyObjects", "panelRelationNeighbors", "chartTemplate", "metricOutput",
           "sdkComponentDefinition", "actionDefinition", "actionExplanation",
+          "scheduledTaskRunPage", "scheduledTaskRun",
         ],
         required: false,
-        runtimeParams: ["changedField", "cursor", "keyword", "layers", "node", "page", "relationKinds", "search", "size", "values"],
+        // What another component gives itself, and every parameter an owner's read declares in a fixed signature: the
+        // page's own code may give any of them (a datum read for a class takes `className`).
+        runtimeParams: [
+          "by", "changedField", "className", "cursor", "keyword", "layers", "limit", "node", "page", "path", "rating", "relationKinds",
+          "runId", "scope", "search", "section", "size", "sort", "source", "sourceType", "status", "template", "type", "values",
+        ],
       },
     },
   }),

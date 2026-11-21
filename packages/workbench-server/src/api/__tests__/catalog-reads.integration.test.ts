@@ -8,22 +8,25 @@ import type { AddressInfo } from "node:net";
 import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { APPLICATION, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
+import { APPLICATION, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
+import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
+import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { HttpError } from "../../utils/errors";
 import { installContentLayout } from "../../content/layout";
 import { config } from "../../config/application";
-import { createProductPanelReadAdapter } from "../../services/product-panels/catalog-reads";
+import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "../../services/product-panels/catalog-reads";
 
 const state = vi.hoisted(() => ({
   pool: undefined as pg.Pool | undefined,
   schema: "",
   use: ["one", "two", "catalogue-panel", "catalogue-data"],
+  edit: ["one", "catalogue-data"],
 }));
 vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
@@ -31,9 +34,9 @@ vi.mock("../../infrastructure/postgres", () => ({
 }));
 vi.mock("../../services/product-governance/grants", async original => ({
   ...await original<typeof import("../../services/product-governance/grants")>(),
-  grantedProductIds: async (verb: "use" | "edit") => verb === "use" ? state.use : ["one"],
+  grantedProductIds: async (verb: "use" | "edit") => verb === "use" ? state.use : state.edit,
   requireProductGrant: async (id: string, verb: "use" | "edit") => {
-    if (!(verb === "use" ? state.use : ["one"]).includes(id))
+    if (!(verb === "use" ? state.use : state.edit).includes(id))
       throw new HttpError(403, "Denied", "PRODUCT_FORBIDDEN");
   },
 }));
@@ -62,7 +65,10 @@ const declaration = { names: { en: "Application" }, descriptions: {}, icon: "pag
 const draftValues = { declaration, entry: { ...entry, path: `/applications/${draftId}` },
   entryAccess: ["domain-member"], panelUses: [] };
 const entryValues = { entry, panelUses: [publicUse, hiddenUse], framePanelId: "catalogue-panel" };
+const identityValues = { names: { en: "Application", fr: "Application française" }, descriptions: { en: "Kept description" }, icon: "pages" };
 const writes: { path: string; actor?: string; body: unknown }[] = [];
+const formReads: unknown[] = [];
+const createdApplications = new Set([applicationId]);
 const content = {
   html: '<div id="app"><p>Test panel</p></div>',
   module: 'import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});',
@@ -79,40 +85,65 @@ beforeAll(async () => {
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
   await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
+  await ensurePanelOperationsSchema(state.pool);
   for (const [id, name, ownerId] of [["one", "Alpha directory", "viewer"], ["two", "Beta directory", "author"], ["hidden", "Hidden directory", "author"]]) {
     await state.pool.query(`INSERT INTO "${state.schema}".product_panels (domain_id,id,owner_id,definition)
-      VALUES ($1,$2,$3,$4)`, [owner.domainId, id, ownerId, { name, content, manifest, description: "", visibility: "private" }]);
+      VALUES ($1,$2,$3,$4)`, [owner.domainId, id, ownerId, {
+        name, content, manifest, description: "", visibility: "private", ...(id !== "hidden" && { template: true }),
+      }]);
   }
 
   await state.pool.query(`INSERT INTO "${state.schema}".product_panels (domain_id,id,owner_id,definition)
     VALUES ($1,'catalogue-panel',$2,$3)`, [owner.domainId, owner.userId, {
-    name: "Catalogue host", description: "", visibility: "domain",
+    name: "Aardvark catalogue host", description: "", visibility: "domain",
     content: { ...content, html: '<div id="app"><projection slot="list"></projection></div>' },
-    manifest: { ...manifest, members: { list: { target: { projectionId: "catalogue-data" } } } },
+    manifest: {
+      ...manifest,
+      state: { application: { type: { kind: "object", objectType: APPLICATION },
+        deepLink: false, external: false, personal: false, default: null } },
+      members: { list: { target: { projectionId: "catalogue-data" }, inputs: { application: { state: "application" } } } },
+    },
   }]);
   await state.pool.query(`INSERT INTO "${state.schema}".product_projections (domain_id,id,owner_id,definition)
     VALUES ($1,'catalogue-data',$2,$3)`, [owner.domainId, owner.userId, {
     name: "Catalogue data", description: "", visibility: "domain", componentId: "@ontomato/sdk:PanelData",
-    inputs: {}, outputs: {}, config: {},
+    inputs: {
+      application: { kind: "object", objectType: APPLICATION },
+      panel: { kind: "object", objectType: PRODUCT_PANEL },
+      projection: { kind: "object", objectType: PRODUCT_PROJECTION },
+      cursor: { kind: "scalar", type: "string" },
+      section: { kind: "scalar", type: "string" },
+      values: { kind: "json" },
+      changedField: { kind: "scalar", type: "string" },
+    },
+    operations: { save: { operation: { kind: "PlatformOperation", id: `${APPLICATION}.save` }, target: { input: "application" } } },
+    outputs: {}, config: { drawing: { color: "blue", width: 400 } },
     data: {
       listing: { source: { type: { kind: "PlatformObjectType", id: PRODUCT_PANEL } }, read: "query",
         params: { search: { literal: "directory" }, sort: { literal: "name" }, size: { literal: 1 } } },
+      templates: { source: { type: { kind: "PlatformObjectType", id: PRODUCT_PANEL } }, read: "query",
+        params: { sort: { literal: "name" }, size: { literal: 1 }, cursor: { input: "cursor" } } },
+      panelGrants: { source: { object: { input: "panel" } }, read: "grants", params: {} },
+      projectionGrants: { source: { object: { input: "projection" } }, read: "grants", params: {} },
       apps: { source: { type: { kind: "PlatformObjectType", id: APPLICATION } }, read: "query",
         params: { search: { literal: "App" }, scope: { literal: "visible" }, size: { literal: 4 } } },
       appRecord: { source: { object: { literal: { className: APPLICATION, primaryKey: applicationId } } }, read: "record", params: {} },
       appEntries: { source: { object: { literal: { className: APPLICATION, primaryKey: applicationId } } }, read: "entries", params: {} },
-      appDraft: { source: { type: { kind: "PlatformObjectType", id: APPLICATION } }, read: "form",
-        params: { section: { literal: "create" }, target: { literal: { kind: "draft" } } } },
+      appDraft: { source: { type: { kind: "PlatformObjectType", id: APPLICATION } }, read: "createForm",
+        params: { values: { input: "values" }, changedField: { input: "changedField" } } },
+      appForm: { source: { object: { input: "application" } }, read: "form",
+        params: { section: { input: "section" }, values: { input: "values" }, changedField: { input: "changedField" } } },
     },
   }]);
 
   root = await mkdtemp(join(tmpdir(), "m2-catalogue-"));
+  await writeBundledAppSdkFixture(root);
   installContentLayout({ runtimeRoot: root, publicSkillsRoot: root, prompts: [], runtimeResources: [] });
-  const { productPanelsRouter } = await import("../routes/product-panels");
+  const { productPanelsRouter, panelOperationsRouter } = await import("../routes/product-panels");
   const app = express();
   app.use(express.json());
   app.get("/java/platform/applications/resolve-entry", (req, res) => {
-    expect(req.header("tk")).toBe(viewer.token);
+    expect([viewer.token, "executor"]).toContain(req.header("tk"));
     expect(req.query).toMatchObject({ applicationId, useId: publicUse.id });
     res.json({ success: true, data: { applicationId, use: publicUse, menu: { groups: [], panelUses: [] } } });
   });
@@ -127,24 +158,46 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe(viewer.token);
     res.json({ success: true, data: { ...summary, entry, panelUses: [publicUse], groups: [] } });
   });
+  app.post("/java/product-governance/grants", (req, res) => {
+    expect(req.header("tk")).toBe(viewer.token);
+    if (!state.edit.includes(req.body.id)) {
+      res.status(403).json({ success: false, message: "Edit Grant required" });
+      return;
+    }
+    const grants = [{ principalKind: "principal", principalId: owner.userId, verb: "edit" }];
+    if (req.body.id === "one") grants.push({ principalKind: "domain", principalId: "*", verb: "use" });
+    res.json({ grants });
+  });
   app.post("/java/platform/applications/catalogue/form", (req, res) => {
     const draft = req.body.section === "create";
+    const identity = req.body.section === "identity";
     expect(req.header("tk")).toBe(draft ? viewer.token : "executor");
     expect(req.body.target.kind).toBe(draft ? "draft" : "object");
+    formReads.push(req.body);
     res.json({ success: true, data: {
-      fields: [], values: draft ? draftValues : entryValues, errors: [],
-      save: { method: "PUT", path: `/platform/applications/${draft ? draftId : applicationId}/panel-uses${draft ? "?create=true" : ""}`,
-        bodySchema: {}, draftOperation: draft ? "create" : "saveEntries" },
+      fields: [], values: req.body.values ?? (draft ? draftValues : identity ? identityValues : entryValues), errors: [],
+      save: { method: "PUT",
+        path: `/platform/applications/${draft ? draftId : applicationId}/${identity ? "identity" : "panel-uses"}${draft ? "?create=true" : ""}`,
+        bodySchema: {}, draftOperation: draft ? "create" : identity ? "saveIdentity" : "saveEntries" },
     } });
   });
-  app.put("/java/platform/applications/:id/panel-uses", (req, res) => {
+  app.put(["/java/platform/applications/:id/panel-uses", "/java/platform/applications/:id/identity"], (req, res) => {
+    if (req.query.create === "true") {
+      if (createdApplications.has(req.params.id)) {
+        res.status(409).json({ success: false, message: "Application already exists" });
+        return;
+      }
+      createdApplications.add(req.params.id);
+    }
     writes.push({ path: req.originalUrl, actor: req.header("tk"), body: req.body });
     res.json({ success: true });
   });
-  app.use("/api/product-panels", (req, _res, next) => {
-    Object.assign(req, owner, viewer);
+  app.use("/api", (req, _res, next) => {
+    Object.assign(req, owner, { token: req.header("tk") ?? viewer.token });
     next();
-  }, productPanelsRouter);
+  });
+  app.use("/api/product-panels", productPanelsRouter);
+  app.use("/api", panelOperationsRouter);
   server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -192,26 +245,40 @@ it("uses the registered save operation to write the current panel and refuses a 
   const save = panelServerOperation(`${PRODUCT_PANEL}.save`);
   if (save.effect !== "write") throw new Error("Expected a write operation");
   const target = { kind: "object" as const, objectType: PRODUCT_PANEL, primaryKey: "one" };
-  const input = { values: { ...form.values, name: "Alpha revised directory" }, revision: form.revision };
+  const input = {
+    values: { ...form.values, name: "Alpha revised directory", description: "An unsubmitted stale description" },
+    submittedFields: ["/name"], revision: form.revision,
+  };
 
   expect(await save.execute(host, target, input, "first-save")).toMatchObject({
     kind: "success", data: { id: "one" }, affected: { objects: [{ objectType: PRODUCT_PANEL, primaryKey: "one" }] },
   });
   expect(await save.execute(host, target, { ...input, values: { ...input.values, name: "Stale edit" } }, "stale-save"))
     .toMatchObject({ kind: "refusal", code: "PRODUCT_CONFLICT" });
+  expect(await adapter.record("one")).toMatchObject({
+    name: "Alpha revised directory", description: "", content, manifest, revision: 2,
+  });
+  expect(await save.execute(host, target, { values: { name: "Unused" }, submittedFields: [], revision: 2 }, "no-edit"))
+    .toMatchObject({ kind: "success" });
   expect(await adapter.record("one")).toMatchObject({ name: "Alpha revised directory", revision: 2 });
 });
 
-async function readCatalogue(dataName: string) {
-  const response = await fetch(base + "/api/product-panels/read", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      source: { kind: "registered", applicationId, useId: publicUse.id },
-      memberPath: [{ member: "list" }], inputs: {}, dataName,
-    }),
-  });
+function post(path: string, body: unknown, token = viewer.token) {
+  return fetch(base + "/api/" + path, { method: "POST",
+    headers: { "Content-Type": "application/json", tk: token }, body: JSON.stringify(body) });
+}
+
+async function readCatalogueResult(dataName: string, inputs: Record<string, unknown>, token?: string, runtimeParams?: Record<string, unknown>) {
+  const response = await post("product-panels/read", {
+    source: { kind: "registered", applicationId, useId: publicUse.id },
+    memberPath: [{ member: "list" }], inputs, dataName, runtimeParams,
+  }, token);
   expect(response.status).toBe(200);
-  const result = productPanelReadResponseSchema.parse(await response.json());
+  return productPanelReadResponseSchema.parse(await response.json());
+}
+
+async function readCatalogue(dataName: string, inputs: Record<string, unknown> = {}, token?: string, runtimeParams?: Record<string, unknown>) {
+  const result = await readCatalogueResult(dataName, inputs, token, runtimeParams);
   if (result.status !== "ready") throw new Error(JSON.stringify(result));
   return result.value;
 }
@@ -231,8 +298,7 @@ it("dispatches application reads from current PostgreSQL records and preserves t
   const host = { initiator: actor, executor, request: unusedRequest, requestWorkbench: unusedRequest };
   const { panelServerOperation } = await import("../../services/product-panels/server-operations");
   const add = panelServerOperation("applications.addEntry");
-  const save = panelServerOperation(`${APPLICATION}.save`);
-  if (add.effect !== "write" || save.effect !== "write") throw new Error("Expected write operations");
+  if (add.effect !== "write") throw new Error("Expected a write operation");
   const added = { ...publicUse, id: "added", pageKey: "added", path: `${entry.path}/added` };
   await expect(add.execute(host, { kind: "object", objectType: APPLICATION, primaryKey: applicationId }, { entry: added }, "add"))
     .resolves.toMatchObject({ kind: "success" });
@@ -240,11 +306,159 @@ it("dispatches application reads from current PostgreSQL records and preserves t
     path: `/java/platform/applications/${applicationId}/panel-uses`, actor: "executor",
     body: { ...entryValues, panelUses: [publicUse, hiddenUse, added] },
   });
+});
 
-  const draft = panelReadResultSchemas.panelFormDescription.parse(await readCatalogue("appDraft"));
-  await expect(save.execute(host, { kind: "draft" }, { values: draft.values }, "create"))
-    .resolves.toMatchObject({ kind: "success", data: { id: draftId } });
-  expect(writes.at(-1)).toEqual({
-    path: `/java/platform/applications/${draftId}/panel-uses?create=true`, actor: "executor", body: draftValues,
+it("updates only the submitted projection configuration field in PostgreSQL", async () => {
+  const adapter = createProductProjectionReadAdapter(owner, viewer);
+  const before = await adapter.record("catalogue-data");
+  const actor = { owner, credentials: viewer };
+  const unusedRequest = async () => { throw new Error("The Node owner should write through its own store"); };
+  const host = { initiator: actor, executor: actor, request: unusedRequest, requestWorkbench: unusedRequest };
+  const { panelServerOperation } = await import("../../services/product-panels/server-operations");
+  const save = panelServerOperation(`${PRODUCT_PROJECTION}.save`);
+  if (save.effect !== "write") throw new Error("Expected a write operation");
+  const target = { kind: "object" as const, objectType: PRODUCT_PROJECTION, primaryKey: before.id };
+
+  await expect(save.execute(host, target, {
+    values: { config: { drawing: { color: "orange", width: 1 } } },
+    submittedFields: ["/config/drawing/color"], revision: before.revision,
+  }, "projection-save")).resolves.toMatchObject({ kind: "success" });
+  expect(await adapter.record(before.id)).toMatchObject({
+    name: before.name, data: before.data, componentId: before.componentId,
+    config: { drawing: { color: "orange", width: 400 } },
   });
+});
+
+it.each(["identity", "entries"] as const)("submits only the changed application %s field without losing owner values", async section => {
+  const actor = { owner, credentials: viewer };
+  const executor = { owner, credentials: { token: "executor" } };
+  const unusedRequest = async () => { throw new Error("The application owner has its own HTTP client"); };
+  const host = { initiator: actor, executor, request: unusedRequest, requestWorkbench: unusedRequest };
+  const { panelServerOperation } = await import("../../services/product-panels/server-operations");
+  const save = panelServerOperation(`${APPLICATION}.save`);
+  if (save.effect !== "write") throw new Error("Expected a write operation");
+  const target = { kind: "object" as const, objectType: APPLICATION, primaryKey: applicationId };
+  const path = `${entry.path}/renamed`;
+  const input = section === "identity"
+    ? { values: { names: { en: "Renamed", fr: "Stale name" } }, submittedFields: ["/names/en"] }
+    : { values: { panelUses: [{ path }] }, submittedFields: ["/panelUses/0/path"] };
+
+  await expect(save.execute(host, target, input, `partial-${section}`)).resolves.toMatchObject({ kind: "success" });
+  expect(writes.at(-1)).toEqual({
+    path: `/java/platform/applications/${applicationId}/${section === "identity" ? "identity" : "panel-uses"}`, actor: "executor",
+    body: section === "identity"
+      ? { ...identityValues, names: { ...identityValues.names, en: "Renamed" } }
+      : { ...entryValues, panelUses: [{ ...publicUse, path }, hiddenUse] },
+  });
+});
+
+async function submitApplicationForm(target: { kind: "draft" } | { kind: "object"; objectType: string; primaryKey: string },
+  input: { values: unknown; submittedFields: string[] }, token?: string,
+) {
+  const prepared = await post("panel-operations/intents", {
+    applicationId, useId: publicUse.id, operationId: "list.save", call: { target, input },
+  }, token);
+  expect(prepared.status, await prepared.clone().text()).toBe(200);
+  const { intentId } = await prepared.json();
+  const dispatched = await post(`panel-operations/intents/${intentId}/dispatch`, {}, token);
+  expect(dispatched.status, await dispatched.clone().text()).toBe(200);
+  return dispatched.json();
+}
+
+it("reuses the allocated draft ID and dispatches a create-only application save through the panel", async () => {
+  const initial = panelReadResultSchemas.panelFormDescription.parse(await readCatalogue("appDraft"));
+  expect(formReads.at(-1)).toMatchObject({ section: "create", target: { kind: "draft" } });
+  expect(formReads.at(-1)).not.toHaveProperty("target.id");
+  expect(initial.values.id).toBe(draftId);
+
+  const values = { ...initial.values, entry: { ...draftValues.entry, path: `${entry.path}/edited` } };
+  const refreshed = panelReadResultSchemas.panelFormDescription.parse(
+    await readCatalogue("appDraft", { values, changedField: "/entry/path" }),
+  );
+  expect(formReads.at(-1)).toMatchObject({ section: "create", target: { kind: "draft", id: draftId }, changedField: "/entry/path" });
+  expect(formReads.at(-1)).not.toHaveProperty("values.id");
+  expect(refreshed).toMatchObject({ values, save: { path: initial.save.path } });
+
+  const args = { values: initial.values, submittedFields: ["/declaration/names"] };
+  expect(await submitApplicationForm({ kind: "draft" }, args))
+    .toMatchObject({ kind: "dispatched", outcome: { kind: "success", data: { id: draftId } } });
+  expect(writes.at(-1)).toEqual({
+    path: `/java/platform/applications/${draftId}/panel-uses?create=true`, actor: viewer.token, body: draftValues,
+  });
+  const writesAfterCreation = writes.length;
+  expect(await submitApplicationForm({ kind: "draft" }, args)).toMatchObject({ outcome: { kind: "refusal" } });
+  expect(writes).toHaveLength(writesAfterCreation);
+});
+
+it("reads both edit forms for the selected application and accepts only the submitted field", async () => {
+  const application = { className: APPLICATION, primaryKey: applicationId };
+  const target = { kind: "object" as const, objectType: APPLICATION, primaryKey: applicationId };
+  const identity = panelReadResultSchemas.panelFormDescription.parse(
+    await readCatalogue("appForm", { application, section: "identity" }, "executor"),
+  );
+  expect(formReads.at(-1)).toMatchObject({ section: "identity", target });
+  expect(identity.values).toEqual(identityValues);
+  expect(await submitApplicationForm(target, {
+    values: { names: { en: "Renamed", fr: "Stale form name" } }, submittedFields: ["/names/en"],
+  }, "executor")).toMatchObject({ outcome: { kind: "success" } });
+  expect(writes.at(-1)).toEqual({
+    path: `/java/platform/applications/${applicationId}/identity`, actor: "executor",
+    body: { ...identityValues, names: { ...identityValues.names, en: "Renamed" } },
+  });
+
+  const entries = panelReadResultSchemas.panelFormDescription.parse(
+    await readCatalogue("appForm", { application, section: "entries" }, "executor"),
+  );
+  expect(formReads.at(-1)).toMatchObject({ section: "entries", target });
+  expect(entries.values).toEqual(entryValues);
+  const path = `${entry.path}/new-entry-path`;
+  expect(await submitApplicationForm(target, {
+    values: { panelUses: [{ path }] }, submittedFields: ["/panelUses/0/path"],
+  }, "executor")).toMatchObject({ outcome: { kind: "success" } });
+  expect(writes.at(-1)).toEqual({
+    path: `/java/platform/applications/${applicationId}/panel-uses`, actor: "executor",
+    body: { ...entryValues, panelUses: [{ ...publicUse, path }, hiddenUse] },
+  });
+
+  const reads = formReads.length;
+  expect(await readCatalogueResult("appForm", { application, section: "create" }, "executor"))
+    .toMatchObject({ status: "error" });
+  expect(formReads).toHaveLength(reads);
+});
+
+it("checks partial application drafts against Java's current identity and entry table without writing", async () => {
+  const application = { className: APPLICATION, primaryKey: applicationId };
+  const writesBefore = writes.length;
+  const cases = [
+    { section: "identity", values: { icon: "folder" }, expected: { ...identityValues, icon: "folder" } },
+    { section: "entries", values: { panelUses: [hiddenUse] }, expected: { ...entryValues, panelUses: [hiddenUse] } },
+  ];
+  for (const { section, values, expected } of cases) {
+    const checked = await readCatalogue("appForm", { application, section, values }, "executor");
+    expect(formReads.at(-1)).toMatchObject({ section, values: expected });
+    expect(checked).toMatchObject({ values: expected, errors: [] });
+  }
+  expect(writes).toHaveLength(writesBefore);
+});
+
+it("requires edit for grant reads and derives domain sharing from the owner Grants", async () => {
+  expect(await readCatalogueResult("panelGrants", { panel: { className: PRODUCT_PANEL, primaryKey: "two" } }))
+    .toEqual({ status: "forbidden" });
+  expect(await readCatalogue("panelGrants", { panel: { className: PRODUCT_PANEL, primaryKey: "one" } })).toEqual({
+    grants: [{ principalKind: "principal", principalId: owner.userId, verb: "edit" },
+      { principalKind: "domain", principalId: "*", verb: "use" }],
+    shared: true,
+  });
+  expect(await readCatalogue("projectionGrants", {
+    projection: { className: PRODUCT_PROJECTION, primaryKey: "catalogue-data" },
+  })).toEqual({ grants: [{ principalKind: "principal", principalId: owner.userId, verb: "edit" }], shared: false });
+});
+
+it("filters panel templates in PostgreSQL before scanning cursor pages", async () => {
+  const first = panelReadResultSchemas.productPanelList.parse(await readCatalogue("templates", {}, undefined, { template: true }));
+  expect(first.items.map(item => ({ id: item.id, template: item.template }))).toEqual([{ id: "one", template: true }]);
+  expect(first.nextCursor).toEqual(expect.any(String));
+  const second = panelReadResultSchemas.productPanelList.parse(await readCatalogue("templates", { cursor: first.nextCursor }, undefined, { template: true }));
+  expect(second.items.map(item => ({ id: item.id, template: item.template }))).toEqual([{ id: "two", template: true }]);
+  expect(second.nextCursor).toBeNull();
 });

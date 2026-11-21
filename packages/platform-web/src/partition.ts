@@ -31,6 +31,11 @@ export interface AppPartition extends Omit<PlatformAppDeclaration, "groups" | "l
     | { key: string; pages: readonly PlatformPanelPage[] })[];
   /** The page at the foot of the application's column (its models), listed apart from the groups. */
   foot?: string;
+  /**
+   * A native application's panel entries the reader may open, by address, named by their use relations: where its menu
+   * table lists one of these addresses, the entry stands there instead of a native page (big main's ruling, 2026-11-21).
+   */
+  entries?: ReadonlyMap<string, PlatformPanelPage>;
 }
 
 /**
@@ -51,6 +56,7 @@ export function appDeclarations(
   // also the address the router serves the page at.
   const base = (path: string) => path.split("/:")[0]!;
   const byPath = new Map(pages.map((page) => [base(page.path), page]));
+  const entryRows = new Map((navigation.entries ?? []).map((row) => [row.path, row]));
   const panelPage = (page: PlatformPage): PlatformPanelPage => ({
     id: base(page.path),
     label: t(page.titleKey),
@@ -64,9 +70,16 @@ export function appDeclarations(
         key: section.key,
         label: section.titleKey ? t(section.titleKey) : undefined,
         pages: section.paths
-          .map((path) => byPath.get(base(path)))
-          .filter((page): page is NonNullable<typeof page> => page !== undefined)
-          .map(panelPage),
+          .map((path) => {
+            const entry = app.entries?.get(path);
+            const listed = byPath.get(base(path));
+            if (!entry) return listed ? panelPage(listed) : undefined;
+            // The entry stands where a native page stood: its row keeps that page's icon and count, from the page the
+            // navigation still lists there or the row it declares for an entry whose page is gone.
+            const row = listed ?? entryRows.get(path);
+            return { ...entry, icon: row?.icon ?? "pages", count: row?.count?.() ?? null };
+          })
+          .filter((page): page is PlatformPanelPage => page !== undefined),
       }))
       // A group the account may open nothing of is not shown: no empty heading.
       .filter((group) => group.pages.length > 0);

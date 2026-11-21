@@ -40,15 +40,15 @@ directory for the registered definitions and wiring.
    with `RUNTIME_TEST_DATABASE_URL` set to a disposable PostgreSQL database. The agent confirmation cases are in
    `packages/workbench-server/src/services/product-panels/__tests__/operations.test.ts`.
 
-The task-list projection uses `data.rows = { source: { type: { kind: "PlatformObjectType", id: "platform:ScheduledTask" } }, read: "list", params: {} }`.
-The summary uses `data.record = { source: { object: { input: "task" } }, read: "record", params: {} }`. The form
-supplies `values` and `changedField` at runtime through its component declaration.
-The list's `selected` output and the summary, form and button inputs share a panel state of type
-`{ kind: "object", objectType: "platform:ScheduledTask" }`. The member wiring maps the values through `{ state: "selectedTask" }`.
-The button declares `operations.runNow = { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } }`
-and `config.operation = "runNow"`. Its owner description names the write effect. The placed operation ID is the
-member key and the local name, here `run.runNow`. One object target runs a single operation.
-A list of object targets runs a batch when the owner declares batch support.
+The task list declares `component: "ObjectList"`, `type: "platform:ScheduledTask"`, `data: {rows: "list"}`
+and `state: {selected: "selectedTask"}`. The summary declares `component: "ObjectSummary"`,
+`target: "selectedTask"` and `data: {record: "record"}`. The form supplies `values` and `changedField` at
+runtime through its component declaration. The selected state is typed once as
+`{kind: "object", objectType: "platform:ScheduledTask"}`.
+
+The button member `run` declares `component: "OperationButton"`, `operation: "schedules.runNow"` and
+`target: "selectedTask"`. A single object target runs once. A list target runs a batch when the owner
+declares batch support. The HTTP examples below use the formal inputs and operation IDs produced by registration.
 
 Use a real selected task UUID for `<taskId>` in the following summary read. The reader's authentication and the
 registered use determine whether this request can read the task.
@@ -98,9 +98,9 @@ For Business Knowledge at `/ontology/knowledge`, the owner supplies these rules.
 6. Use the Business Knowledge page for creating, editing, reviewing and deleting records. Use the existing
    `knowledge-governance` agent for extracting or organizing knowledge from conversations and documents.
 
-For Business Knowledge search, give the list, status counts and detail the same panel state as their `search` input.
-The same-named parameter uses that binding in `query`, `counts` and `record`. The counts read also takes
-`params.by: { literal: "status" }`. Bind the list member's `inputs.status` to the status state.
+For Business Knowledge search, connect `state.search` on the list, status counts and detail to the same
+public state. The binding supplies the `search` parameter to `query`, `counts` and `record`. The counts read
+also takes `{read: "counts", params: {by: {literal: "status"}}}`. Connect the list's `state.status` to the status state.
 The detail receives the selected knowledge record. Use `ObjectSummary` to show
 the full body as text with its original line breaks. The owner returns highlight ranges in the record for the current search.
 

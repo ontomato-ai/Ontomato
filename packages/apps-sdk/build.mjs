@@ -70,13 +70,40 @@ const CHECK_EXPORTS = [
   "panelManifestSchema", "panelDefinitionContentSchema", "productProjectionInputSchema",
   "registerProductPanelRequestSchema", "registerProductProjectionRequestSchema", "directReadDeclaration", "platformObjectTypes",
   "panelReadParameterSchemas", "panelReadResultSchemas", "appsSdkComponentCatalogSchema",
+  "panelAuthoringManifestSchema", "panelAuthoringMemberSchema", "expandPanelAuthoringMember", "bindPanelAuthoringChart",
+  "CHART_PROJECTION_SOURCES_PATH", "chartProjectionLookupResponseSchema", "registerChartProjectionResponseSchema",
+  "productProjectionResponseSchema",
+  "productProjectionUsedBySchema", "PROJECTION_REUSE_PANEL_HEADER",
+  "BUILTIN_PRODUCT_ID_PREFIX", "builtinProductIdSchema", "domainProductIdSchema", "isBuiltinProductId",
+  "builtinApplicationPanelUseSchema", "builtinProductPanelInputSchema", "builtinProductProjectionInputSchema",
+  "panelModuleImports", "applicationIconKeys", "applicationCatalogueRecordSchema", "applicationIdentityUpdateSchema", "draftReadOperationIds",
 ];
+
+/** Only the draft requirement of registered platform operations is needed by the offline checker. */
+async function draftReadOperationIds() {
+  const workbench = join(HERE, "../../apps/workbench");
+  const workbenchRequire = createRequire(join(workbench, "package.json"));
+  const { register } = await import(pathToFileURL(workbenchRequire.resolve("tsx/esm/api")).href);
+  const unregister = register();
+  try {
+    // Loading the registry initializes the skill registry, which expects the Workbench content layout.
+    const { installContentLayout } = await import("../workbench-server/src/content/layout.ts");
+    const { ossContentLayout } = await import("../../apps/workbench/src/content.ts");
+    installContentLayout(ossContentLayout(join(workbench, "../..")));
+    const { platformTypeEntries } = await import("../workbench-server/src/services/product-panels/type-table.ts");
+    return [...platformTypeEntries().values()].flatMap(({ operations = [] }) =>
+      operations.filter(({ effect, target }) => effect === "read" && target.source === "draft").map(({ id }) => id));
+  } finally {
+    unregister();
+  }
+}
 
 /**
  * The contracts' panel check as one Node module with its dependencies inside, so a command line runs the release's own
  * parsers and declarations without the platform's sources. It is loaded once here, as a command line loads it.
  */
 async function buildCheck(outDir) {
+  const drafts = await draftReadOperationIds();
   await build({
     configFile: false,
     root: HERE,
@@ -89,7 +116,12 @@ async function buildCheck(outDir) {
       target: "node22",
       minify: false,
       reportCompressedSize: false,
-      rollupOptions: { output: { format: "es", entryFileNames: CHECK.slice(dirname(CHECK).length + 1), inlineDynamicImports: true } },
+      rollupOptions: {
+        output: {
+          format: "es", entryFileNames: CHECK.slice(dirname(CHECK).length + 1), inlineDynamicImports: true,
+          footer: `export const draftReadOperationIds = ${JSON.stringify(drafts)};`,
+        },
+      },
     },
   });
   const check = await import(pathToFileURL(join(outDir, CHECK)).href);
@@ -169,7 +201,8 @@ async function main() {
     }),
   });
   writeFileSync(join(outDir, "components.json"), `${JSON.stringify(catalogue, null, 2)}\n`);
-  writeFileSync(join(outDir, "docs/components.md"), render(catalogueMarkdown(version, components), version));
+  // The document reads the catalogue as it ships: each component's data, configuration and events beside its meaning.
+  writeFileSync(join(outDir, "docs/components.md"), render(catalogueMarkdown(version, catalogue.components), version));
   writeFileSync(join(outDir, "docs/reference.md"), [
     `# @ontomato/sdk ${version}: reference`,
     "",

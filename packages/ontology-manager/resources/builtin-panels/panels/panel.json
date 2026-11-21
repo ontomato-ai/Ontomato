@@ -1,0 +1,417 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductPanel"
+        },
+        "deepLink": true,
+        "default": null
+      },
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": ""
+      },
+      "scope": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "all"
+      },
+      "sort": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "updated"
+      },
+      "memberProjection": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        },
+        "deepLink": false,
+        "default": null
+      }
+    },
+    "members": {
+      "listRows": {
+        "component": "PanelData",
+        "type": "platform:ProductPanel",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {
+              "scope": {
+                "state": "scope"
+              },
+              "sort": {
+                "state": "sort"
+              }
+            }
+          }
+        },
+        "id": "builtin-product-3a186b09-737a-47fd-b2cc-bfecb9c0e7ae"
+      },
+      "owners": {
+        "component": "PanelData",
+        "type": "platform:User",
+        "data": {
+          "options": "resolve"
+        },
+        "id": "builtin-product-0a2ad516-f6f7-4dc8-ae46-d93c19a4ef63"
+      },
+      "detail": {
+        "component": "PanelData",
+        "target": "selected",
+        "data": {
+          "record": "record",
+          "usedBy": "usedBy",
+          "members": "members"
+        },
+        "id": "builtin-product-672a2015-c276-47e9-bb81-b12811872dd1"
+      },
+      "projectionRecord": {
+        "component": "PanelData",
+        "target": "memberProjection",
+        "data": {
+          "record": "record"
+        },
+        "id": "builtin-product-feb92ab2-ada1-47ba-a95f-10ff08962be8"
+      },
+      "form": {
+        "component": "ObjectForm",
+        "target": "selected",
+        "data": {
+          "form": "form",
+          "createForm": "createForm"
+        },
+        "operation": "platform:ProductPanel.save",
+        "id": "builtin-product-6a2d8f95-30eb-4395-978a-ecf72ffa5b0b"
+      },
+      "copyOp": {
+        "component": "PanelData",
+        "operation": "productPanels.copy",
+        "target": "selected",
+        "id": "builtin-product-8aeb3c46-f3f4-402b-a203-3cbe8931be3c"
+      },
+      "deleteOp": {
+        "component": "PanelData",
+        "operation": "productPanels.delete",
+        "target": "selected",
+        "id": "builtin-product-0df2c184-2139-4637-abb0-ca91839ef259"
+      },
+      "grantOp": {
+        "component": "PanelData",
+        "operation": "productPanels.grant",
+        "target": "selected",
+        "id": "builtin-product-e6e91cb4-2798-44f4-8fe7-7bfa43f7e63f"
+      },
+      "revokeOp": {
+        "component": "PanelData",
+        "operation": "productPanels.revoke",
+        "target": "selected",
+        "id": "builtin-product-30c9764a-cdc0-4b91-bf72-8ff381c0b456"
+      },
+      "shareOp": {
+        "component": "PanelData",
+        "operation": "productPanels.share",
+        "target": "selected",
+        "id": "builtin-product-a595e264-b41f-41ab-8f7a-e80834f30356"
+      },
+      "grants": {
+        "component": "PanelData",
+        "target": "selected",
+        "data": {
+          "grants": "grants"
+        },
+        "id": "builtin-product-6cce46ee-c637-4740-9684-bdd791ecd52a"
+      },
+      "preview": {
+        "target": {
+          "fromState": "selected",
+          "candidates": {
+            "rule": "usable"
+          }
+        }
+      }
+    },
+    "events": {}
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "list.search": "Search name or description",
+        "list.scope": "Sharing scope",
+        "list.sort": "Order",
+        "list.onlyTemplates": "Templates only",
+        "list.onlyTemplatesHint": "Filters the rows loaded so far; the owner's list read has no template filter.",
+        "list.name": "Name",
+        "list.owner": "Owner",
+        "list.visibility": "Scope",
+        "list.template": "Template use",
+        "list.updated": "Updated",
+        "list.empty": "No panel is available to you here.",
+        "list.filteredEmpty": "No panels match these filters. Change the search or filters.",
+        "list.retry": "Read again",
+        "list.count": "{count} panels",
+        "list.paging": "Page {page}",
+        "list.prev": "Previous page",
+        "list.next": "Next page",
+        "list.size": "Rows per page",
+        "scope.all": "All I may use",
+        "scope.mine": "Mine",
+        "scope.shared": "Shared with me",
+        "sort.updated": "Recently updated",
+        "sort.name": "By name",
+        "visibility.private": "Private",
+        "visibility.domain": "Shared in the domain",
+        "template.yes": "Template",
+        "template.no": "Ordinary panel",
+        "action.create": "New panel",
+        "action.edit": "Edit",
+        "action.cancel": "Cancel",
+        "action.copy": "Copy",
+        "action.saveAsTemplate": "Save as template",
+        "action.fromTemplate": "Create from template",
+        "action.delete": "Delete",
+        "action.preview": "Preview",
+        "action.viewProjection": "Inspect projection",
+        "action.grant": "Grant",
+        "action.revoke": "Revoke",
+        "action.shareOn": "Share in the domain",
+        "action.shareOff": "Stop sharing in the domain",
+        "action.allApplications": "All applications",
+        "action.refresh": "Read again",
+        "action.inspect": "Open",
+        "detail.empty": "Choose a panel on the left, or create one.",
+        "detail.readonly": "You have no edit grant on this panel: it opens read-only.",
+        "detail.missing": "The panel is no longer available.",
+        "detail.forbidden": "You cannot read this panel.",
+        "tab.overview": "Overview",
+        "tab.source": "Source",
+        "tab.members": "Members",
+        "tab.usage": "Usage",
+        "tab.grants": "Grants",
+        "tab.preview": "Preview",
+        "field.id": "Panel ID",
+        "field.name": "Name",
+        "field.description": "Description",
+        "field.owner": "Owner",
+        "field.visibility": "Public state",
+        "field.template": "Template use",
+        "field.revision": "Revision",
+        "field.created": "Created",
+        "field.updated": "Updated",
+        "field.class": "Class",
+        "field.editable": "Your grant",
+        "editable.yes": "May edit",
+        "editable.no": "Read only",
+        "class.hint": "The platform class that owns panels in the platform class catalogue.",
+        "source.html": "Vue page source",
+        "source.module": "Script module",
+        "source.style": "Style",
+        "source.recipes": "Common practice (recipes)",
+        "source.messages": "Copy (messages)",
+        "source.none": "None declared",
+        "members.member": "Member",
+        "members.target": "Reference",
+        "members.inputs": "Values passed in",
+        "members.outputs": "Values passed out",
+        "members.empty": "This panel declares no member.",
+        "members.projection": "Projection",
+        "members.panel": "Panel",
+        "members.candidate": "Candidate panels by state",
+        "members.entry": "The current application entry",
+        "members.projectionRecord": "Projection record",
+        "members.projectionEmpty": "Choose a projection member to read its record.",
+        "members.directoryHint": "The projection directory is not published yet; the record is read here through its owner.",
+        "usage.entries": "Application entries using it",
+        "usage.panels": "Panels using it",
+        "usage.classes": "Class details using it",
+        "usage.skills": "Derived page skills",
+        "usage.hidden": "{count} more users you may not read",
+        "usage.none": "Nothing uses this panel.",
+        "usage.skill": "Entry {pageKey} derives this panel's page skill: its reads, drafts and declared operations.",
+        "grants.state": "Sharing scope",
+        "grants.grant": "Grant a use or edit right",
+        "grants.kind": "Grantee kind",
+        "grants.role": "Role",
+        "grants.principal": "Member",
+        "grants.principalId": "Grantee ID",
+        "grants.verb": "Right",
+        "grants.use": "Use",
+        "grants.edit": "Edit",
+        "grants.receipt": "Last result",
+        "grants.none": "No grant is recorded.",
+        "grants.shareNote": "Sharing in the domain also grants the projections this panel uses that you may grant.",
+        "grants.skipped": "Not granted along: {ids}",
+        "grants.granted": "Done.",
+        "copy.newId": "New panel ID",
+        "copy.newName": "New panel name",
+        "copy.note": "A copy keeps referring to the projections the original uses.",
+        "template.note": "A new panel is created from this template's source and members, referring to the same projections.",
+        "delete.confirm": "Delete this panel?",
+        "delete.usage": "Used by: {users}",
+        "delete.done": "Deleted. Projections only it used were removed: {deleted}",
+        "delete.retained": "Kept because you have no edit grant: {ids}",
+        "delete.none": "None",
+        "preview.live": "Live preview",
+        "form.new": "New panel",
+        "form.edit": "Edit panel",
+        "form.fromTemplate": "New panel from template {name}",
+        "busy": "Working…",
+        "error": "The owner reported: {message}",
+        "template.all": "Any template use",
+        "template.only": "Templates only",
+        "template.ordinary": "Not a template",
+        "grants.existing": "Grants on this panel",
+        "grants.domainMembers": "Domain members",
+        "grants.shared": "Shared in the domain",
+        "grants.notShared": "Not shared",
+        "grants.empty": "Read the grants again to see who may use or edit this panel.",
+        "visibility.platform": "Built in"
+      },
+      "zh-CN": {
+        "list.search": "搜索名称或说明",
+        "list.scope": "共享范围",
+        "list.sort": "排序",
+        "list.onlyTemplates": "仅模板",
+        "list.onlyTemplatesHint": "只筛掉已加载的行；所有者没有声明模板筛选参数。",
+        "list.name": "名称",
+        "list.owner": "所属人",
+        "list.visibility": "共享范围",
+        "list.template": "模板用途",
+        "list.updated": "更新时间",
+        "list.empty": "这里没有你可用的面板。",
+        "list.filteredEmpty": "没有符合当前筛选的面板。请调整搜索词或筛选条件。",
+        "list.retry": "重新读取",
+        "list.count": "共 {count} 个面板",
+        "list.paging": "第 {page} 页",
+        "list.prev": "上一页",
+        "list.next": "下一页",
+        "list.size": "每页条数",
+        "scope.all": "全部可用",
+        "scope.mine": "我的",
+        "scope.shared": "共享给我",
+        "sort.updated": "最近更新",
+        "sort.name": "按名称",
+        "visibility.private": "私有",
+        "visibility.domain": "域内共享",
+        "template.yes": "模板",
+        "template.no": "普通面板",
+        "action.create": "新建面板",
+        "action.edit": "编辑",
+        "action.cancel": "取消",
+        "action.copy": "复制",
+        "action.saveAsTemplate": "另存为模板",
+        "action.fromTemplate": "从模板创建",
+        "action.delete": "删除",
+        "action.preview": "预览",
+        "action.viewProjection": "查看投影",
+        "action.grant": "授予",
+        "action.revoke": "撤销",
+        "action.shareOn": "开启域内共享",
+        "action.shareOff": "关闭域内共享",
+        "action.allApplications": "全部应用",
+        "action.refresh": "重新读取",
+        "action.inspect": "打开",
+        "detail.empty": "在左侧选择一个面板，或新建一个。",
+        "detail.readonly": "你没有这个面板的编辑权，按只读显示。",
+        "detail.missing": "这个面板已不可用。",
+        "detail.forbidden": "你无权读取这个面板。",
+        "tab.overview": "概览",
+        "tab.source": "源码",
+        "tab.members": "成员引用",
+        "tab.usage": "使用",
+        "tab.grants": "授权",
+        "tab.preview": "预览",
+        "field.id": "面板 ID",
+        "field.name": "名称",
+        "field.description": "说明",
+        "field.owner": "所属人",
+        "field.visibility": "公开状态",
+        "field.template": "模板用途",
+        "field.revision": "修订号",
+        "field.created": "创建时间",
+        "field.updated": "更新时间",
+        "field.class": "所属类",
+        "field.editable": "你的权限",
+        "editable.yes": "可编辑",
+        "editable.no": "只读",
+        "class.hint": "平台类目录中“面板”这一类。",
+        "source.html": "Vue 页面源码",
+        "source.module": "脚本模块",
+        "source.style": "样式",
+        "source.recipes": "常见做法（recipes）",
+        "source.messages": "文案（messages）",
+        "source.none": "未声明",
+        "members.member": "成员",
+        "members.target": "引用",
+        "members.inputs": "传入的值",
+        "members.outputs": "传出的值",
+        "members.empty": "这个面板没有声明成员。",
+        "members.projection": "投影",
+        "members.panel": "面板",
+        "members.candidate": "按状态选的面板",
+        "members.entry": "当前应用入口",
+        "members.projectionRecord": "投影记录",
+        "members.projectionEmpty": "选择一个投影成员，读取它的记录。",
+        "members.directoryHint": "投影目录尚未上线；这里通过它的所有者直接读出记录。",
+        "usage.entries": "在用的应用入口",
+        "usage.panels": "在用的面板",
+        "usage.classes": "在用的类详情",
+        "usage.skills": "派生的页面技能",
+        "usage.hidden": "另有 {count} 个无权读取的使用方",
+        "usage.none": "没有别处用这个面板。",
+        "usage.skill": "入口 {pageKey} 派生这个面板的页面技能：它的读取、草稿与已声明操作。",
+        "grants.state": "共享范围",
+        "grants.grant": "授予使用或编辑权",
+        "grants.kind": "被授予方类型",
+        "grants.role": "角色",
+        "grants.principal": "成员",
+        "grants.principalId": "被授予方 ID",
+        "grants.verb": "权限",
+        "grants.use": "使用",
+        "grants.edit": "编辑",
+        "grants.receipt": "最近一次结果",
+        "grants.none": "还没有记录授权。",
+        "grants.shareNote": "域内共享时，连同这个面板用到、且你有权授出的投影一起授出。",
+        "grants.skipped": "未能连带授出：{ids}",
+        "grants.granted": "已完成。",
+        "copy.newId": "新面板 ID",
+        "copy.newName": "新面板名称",
+        "copy.note": "复制的面板仍引用原面板用到的投影。",
+        "template.note": "按这个模板的源码与成员新建面板，仍引用同一批投影。",
+        "delete.confirm": "删除这个面板？",
+        "delete.usage": "使用方：{users}",
+        "delete.done": "已删除。一并清掉了只由它使用的投影：{deleted}",
+        "delete.retained": "因你没有编辑权而保留：{ids}",
+        "delete.none": "无",
+        "preview.live": "原位预览",
+        "form.new": "新建面板",
+        "form.edit": "编辑面板",
+        "form.fromTemplate": "从模板 {name} 新建面板",
+        "busy": "处理中…",
+        "error": "所有者回答：{message}",
+        "template.all": "全部模板用途",
+        "template.only": "仅模板",
+        "template.ordinary": "非模板",
+        "grants.existing": "已有的授权",
+        "grants.domainMembers": "域内成员",
+        "grants.shared": "域内共享",
+        "grants.notShared": "未共享",
+        "grants.empty": "重新读取授权后，这里列出谁可以使用或编辑这个面板。",
+        "visibility.platform": "平台自带"
+      }
+    }
+  }
+}

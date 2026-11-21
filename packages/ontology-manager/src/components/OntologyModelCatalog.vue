@@ -2,10 +2,9 @@
 import { computed, onMounted, ref } from "vue";
 import { ElButton, ElEmpty, ElInput, ElOption, ElSelect, vLoading } from "element-plus";
 import { ChevronDown, ChevronRight, ChevronUp, Plus, Search } from "lucide-vue-next";
-import type { OntologyAttribute, OntologyObject, OntologyRelation } from "../api";
+import type { OntologyAttribute, OntologyObject } from "../api";
 import OntologyAttributeCreateDialog from "./OntologyAttributeCreateDialog.vue";
 import OntologyAttributeEditor from "./OntologyAttributeEditor.vue";
-import OntologyRelationCreateDialog from "./OntologyRelationCreateDialog.vue";
 import type { ModelResource } from "../workspace";
 import { useManagerClient, useOntologyText } from "../context";
 import { PlatformPageHeader } from "@ontomato/platform-shell";
@@ -18,7 +17,6 @@ const props = defineProps<{ resource: ModelResource }>();
 const emit = defineEmits<{
   createObject: [];
   editObject: [className: string];
-  editRelation: [relationship: string];
 }>();
 
 const query = ref("");
@@ -26,9 +24,7 @@ const ownerFilter = ref("");
 const expandedAttributeKey = ref("");
 const loading = ref(false);
 const objects = ref<OntologyObject[]>([]);
-const relations = ref<OntologyRelation[]>([]);
 const attributeCreateVisible = ref(false);
-const relationCreateVisible = ref(false);
 
 const labelKeys: Record<
   ModelResource,
@@ -47,11 +43,6 @@ const labelKeys: Record<
     title: "attributesTitle",
     description: "attributesDesc",
     search: "filterAttributes",
-  },
-  relations: {
-    title: "relationTypesTitle",
-    description: "relationTypesDesc",
-    search: "filterRelationTypes",
   },
 };
 
@@ -79,18 +70,6 @@ const attributeRows = computed(() =>
     })
 );
 
-const relationRows = computed(() =>
-  relations.value.filter((relation) => {
-    const text =
-      `${relation.relationship} ${relation.fromclass} ${relation.toclass} ${relation.desc}`.toLowerCase();
-    return !normalizedQuery.value || text.includes(normalizedQuery.value);
-  })
-);
-
-function objectLabel(className: string) {
-  return objects.value.find((object) => object.className === className)?.showName || className;
-}
-
 function businessKeyCount(object: OntologyObject) {
   return object.attrs.filter((attribute) => attribute.bizzkeyBool).length;
 }
@@ -117,10 +96,8 @@ async function loadCatalog() {
   try {
     const ontology = await loadOntology();
     objects.value = ontology.objects;
-    relations.value = ontology.relations;
   } catch {
     objects.value = [];
-    relations.value = [];
   } finally {
     loading.value = false;
   }
@@ -129,11 +106,6 @@ async function loadCatalog() {
 async function handleAttributeCreated(className: string, attributeName: string) {
   await loadCatalog();
   expandedAttributeKey.value = attributeKey(className, attributeName);
-}
-
-async function handleRelationCreated(relationship: string) {
-  await loadCatalog();
-  emit("editRelation", relationship);
 }
 
 onMounted(() => {
@@ -154,16 +126,8 @@ onMounted(() => {
         >
           {{ ot("createObjectType") }}
         </el-button>
-        <el-button
-          v-else-if="resource === 'attributes'"
-          type="primary"
-          :icon="Plus"
-          @click="attributeCreateVisible = true"
-        >
+        <el-button v-else type="primary" :icon="Plus" @click="attributeCreateVisible = true">
           {{ ot("createAttribute") }}
-        </el-button>
-        <el-button v-else type="primary" :icon="Plus" @click="relationCreateVisible = true">
-          {{ ot("createRelationType") }}
         </el-button>
       </template>
     </PlatformPageHeader>
@@ -187,13 +151,7 @@ onMounted(() => {
           />
         </el-select>
         <span class="resource-count">
-          {{
-            resource === "objects"
-              ? objectRows.length
-              : resource === "attributes"
-                ? attributeRows.length
-                : relationRows.length
-          }}
+          {{ resource === "objects" ? objectRows.length : attributeRows.length }}
           {{ ot("items") }}
         </span>
       </div>
@@ -230,7 +188,7 @@ onMounted(() => {
           />
         </template>
 
-        <template v-else-if="resource === 'attributes'">
+        <template v-else>
           <div class="resource-table-head attribute-grid">
             <span>{{ ot("attributes") }}</span>
             <span>{{ ot("ownerObjectType") }}</span>
@@ -287,47 +245,12 @@ onMounted(() => {
           />
         </template>
 
-        <template v-else>
-          <div class="resource-table-head relation-grid">
-            <span>{{ ot("relationTypesTitle") }}</span>
-            <span>{{ ot("sourceObject") }}</span>
-            <span>{{ ot("targetObject") }}</span>
-            <span>{{ ot("description") }}</span>
-            <span></span>
-          </div>
-          <button
-            v-for="relation in relationRows"
-            :key="relation.relationship"
-            class="resource-table-row relation-grid"
-            @click="emit('editRelation', relation.relationship)"
-          >
-            <span class="resource-name">
-              <span>
-                <strong>{{ relation.desc || relation.relationship }}</strong>
-              </span>
-            </span>
-            <span>{{ objectLabel(relation.fromclass) }}</span>
-            <span>{{ objectLabel(relation.toclass) }}</span>
-            <span class="resource-description">{{ relation.desc || "-" }}</span>
-            <ChevronRight :size="16" class="row-chevron" />
-          </button>
-          <el-empty
-            v-if="!loading && relationRows.length === 0"
-            :description="ot('notFoundRelationTypes')"
-          />
-        </template>
       </div>
     </div>
     <OntologyAttributeCreateDialog
       v-model="attributeCreateVisible"
       :objects="objects"
       @created="handleAttributeCreated"
-    />
-    <OntologyRelationCreateDialog
-      v-model="relationCreateVisible"
-      :objects="objects"
-      :relations="relations.map((relation) => relation.relationship)"
-      @created="handleRelationCreated"
     />
   </section>
 </template>
@@ -424,11 +347,6 @@ onMounted(() => {
 .attribute-grid {
   grid-template-columns: minmax(220px, 1.4fr) minmax(160px, 1fr) minmax(120px, 1fr) 88px 88px 20px;
 }
-.relation-grid {
-  grid-template-columns:
-    minmax(220px, 1.35fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(180px, 1.6fr)
-    20px;
-}
 .resource-name {
   display: flex;
   min-width: 0;
@@ -487,15 +405,10 @@ onMounted(() => {
   .attribute-grid {
     grid-template-columns: minmax(150px, 1.4fr) minmax(100px, 1fr) minmax(80px, 0.8fr) 20px;
   }
-  .relation-grid {
-    grid-template-columns: minmax(190px, 1fr) minmax(100px, 1fr) 20px;
-  }
   .object-grid > :nth-child(2),
   .object-grid > :nth-child(4),
   .attribute-grid > :nth-child(4),
-  .attribute-grid > :nth-child(5),
-  .relation-grid > :nth-child(2),
-  .relation-grid > :nth-child(4) {
+  .attribute-grid > :nth-child(5) {
     display: none;
   }
 }

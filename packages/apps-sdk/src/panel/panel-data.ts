@@ -1,4 +1,4 @@
-import { computed, effectScope, getCurrentScope, inject, shallowRef, toValue, watch, type ComputedRef, type EffectScope, type MaybeRefOrGetter } from "vue";
+import { computed, effectScope, getCurrentInstance, getCurrentScope, inject, shallowRef, toValue, watch, type ComputedRef, type EffectScope, type MaybeRefOrGetter } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { MemberDataState } from "./direct";
 import { directMountKey } from "./direct-projection";
@@ -15,7 +15,21 @@ import { directMountKey } from "./direct-projection";
  */
 
 /**
- * One datum of one member, kept current while the calling component is mounted.
+ * One datum of one member, kept current while the calling component is mounted. Call it in a component's setup,
+ * before any `await`.
+ *
+ * - `member` is a member the panel declares; `name` is a datum its projection names under `data.<name>`. The read, its
+ *   mappings and the object it needs are the projection's: nothing about the read is written in the page.
+ * - The member's inputs come from the panel state its placement binds; the datum is read again whenever that state
+ *   changes. A datum whose object or required parameter has no value is `awaiting`, and nothing is read.
+ * - `runtimeParams` are the page's own run-time values for the member (a page, a cursor, a keyword), as an object, a
+ *   ref or a getter: set, they reach every read of the member that takes them, and a change reads again. The platform
+ *   checks each against the component catalogue and the owner's read.
+ * - When an operation the panel runs reports what it changed (the owner's `affected`), a datum read from an object is
+ *   read again when that object is among the affected objects, and one read from a type when that type is among the
+ *   affected types; nothing is to be refreshed by hand.
+ * - It answers `loading`, `awaiting`, `ready` with `value` (the owner's result, checked against the result its read
+ *   declares), `empty`, `forbidden`, or `error` with `message` (the read failed, or the platform could not answer it).
  *
  * ```js
  * const rows = usePanelData("list", "rows", () => ({ page: { number: page.value, size: 20 } }));
@@ -27,8 +41,11 @@ export function usePanelData(
   name: string,
   runtimeParams?: MaybeRefOrGetter<Readonly<Record<string, RuntimeJsonValue | null>>>,
 ): ComputedRef<MemberDataState> {
+  // Where it is called comes first: outside a component's setup, or after an await in it, nothing it needs can be found.
+  if (!getCurrentInstance())
+    throw new Error("Call usePanelData in a component's setup, before any await: it reads the member through the component that calls it");
   const mount = inject(directMountKey, null);
-  if (!mount) throw new Error("usePanelData reads in a panel the platform runs, from the panel's own code");
+  if (!mount) throw new Error("usePanelData reads in a panel the platform runs in its own page; this component is not drawn by one");
   const { instance } = mount;
   if (!Object.hasOwn(instance.direct.members, member)) throw new Error(`The panel declares no member '${member}'`);
   const scope = getCurrentScope();

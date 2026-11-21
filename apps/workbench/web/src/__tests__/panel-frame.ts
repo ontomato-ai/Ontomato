@@ -2,7 +2,7 @@ import { vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createApp, defineComponent, h, ref, resolveComponent } from "vue";
+import { createApp, defineComponent, h, ref, resolveComponent, type App } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { definePanel, type PanelManifest, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
@@ -27,7 +27,9 @@ import publicEn from "@ontomato/workbench-ui/locales/en";
 import ElementPlus from "element-plus";
 import type { Router } from "vue-router";
 import elementEn from "element-plus/es/locale/lang/en";
-import { installAppHost, installProductEmbedding } from "../../../../../packages/platform-web/src/app-host";
+import { installAppHost, installProductEmbedding, servePageComposer } from "../../../../../packages/platform-web/src/app-host";
+import { pageCounterKey, type PageCounter } from "../../../../../packages/agent-shell-ui/src/page-counter";
+import { servePageComposerKey } from "../../../../../packages/agent-shell-ui/src/page-composer-entry";
 
 import type { ConfirmPanelOperation, PanelHumanOperations } from "../../../../../packages/apps-sdk/src/panel/human-operations";
 import { randomId } from "@ontomato/contracts/random-id";
@@ -303,7 +305,8 @@ export interface Sent {
  * Installs the platform as the shell starts it — the reader's identity, the app host and the message bridge — with the
  * network answering through `answer`. Returns what was sent, in order.
  */
-export function installPlatform(answer: (request: Sent) => Response | Promise<Response>) {
+/** `router` is the platform's, as its app host is installed with it: where a panel's own navigation goes at full page. */
+export function installPlatform(answer: (request: Sent) => Response | Promise<Response>, router: Router = createRouter({ history: createMemoryHistory(), routes: [] })) {
   const sent: Sent[] = [];
   installAuthHost({
     getToken: () => READER,
@@ -325,7 +328,7 @@ export function installPlatform(answer: (request: Sent) => Response | Promise<Re
   installAppHost({
     credential: { type: "token", token: READER },
     preferences: { locale: ref("en"), theme: ref("light") } as PlatformPreferences,
-    router: createRouter({ history: createMemoryHistory(), routes: [] }),
+    router,
     onAuthFailure: vi.fn(),
   });
   installProductEmbedding(createApp({}));
@@ -419,8 +422,24 @@ export function hostMessageOf(frameDocument: string): PanelHostMessage {
  * Mounts a page of the platform as the shell does — its router, its language and Element Plus — into the platform's
  * document, and gives back the element it is drawn in and the app.
  */
-export function mountPlatformPage(render: () => ReturnType<typeof h>, router: Router) {
-  const app = createApp({ render }).use(router).use(workbenchI18n()).use(ElementPlus);
+/** A page counter offering no agents: the page's own composer stays away unless a test gives it agents. */
+const noAgents: PageCounter = {
+  agents: async () => [],
+  pageAgents: async () => ({ agents: [] }),
+  preferredAgentId: ref(null),
+  ask: () => { throw new Error("This test sends nothing from a page's composer"); },
+};
+
+/** What the platform gives every page: the composer registry it installs and the page counter its layout provides. */
+export function providePlatform(app: App, counter: PageCounter = noAgents) {
+  app.provide(servePageComposerKey, servePageComposer);
+  app.provide(pageCounterKey, counter);
+  return app;
+}
+
+/** Mounts a page as the platform does (`providePlatform`), with `counter` for its own composer, or one offering no agents. */
+export function mountPlatformPage(render: () => ReturnType<typeof h>, router: Router, counter: PageCounter = noAgents) {
+  const app = providePlatform(createApp({ render }).use(router).use(workbenchI18n()).use(ElementPlus), counter);
   const element = document.createElement("div");
   document.body.append(element);
   app.mount(element);
@@ -550,11 +569,14 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
 /** The coordinator of an instance a test builds by hand and runs no operation of: any call to it fails the test. */
 const unused = () => Promise.reject(new Error("This test runs no operation of the panel"));
 export const noOperations: {
-  operations: PanelHumanOperations; confirmOperation: ConfirmPanelOperation; expandPageComposer: () => never;
+  operations: PanelHumanOperations; confirmOperation: ConfirmPanelOperation; expandPageComposer: () => never; navigate: () => never;
+  nested: () => never;
 } = {
   operations: { describe: unused, read: unused, prepare: unused }, confirmOperation: unused,
   // A test that opens the page's composer gives its own; any other call to it fails the test.
   expandPageComposer: () => { throw new Error("This test opens no composer"); },
+  navigate: () => { throw new Error("This test opens no address"); },
+  nested: () => { throw new Error("This test places no panel from the panel's state"); },
 };
 
 /** The form save calls that reached the coordinator. */

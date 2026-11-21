@@ -7,6 +7,11 @@
  */
 export const platformRoutes = {
   layout: { name: "PlatformLayout", path: "/" },
+  /**
+   * Any address the edition has no page for — none exists, or the reader's edition does not register it. It lands where
+   * the root does; a panel asked to go there is told so instead.
+   */
+  unknown: { name: "PlatformUnknownAddress", path: "/:unknown(.*)*" },
   personalWorkspace: { name: "PersonalWorkspace", path: "/workspace" },
   /** The platform's home: everyone's starting point, with their favourites, dashboards and every application. */
   home: { name: "Home", path: "/home" },
@@ -47,8 +52,6 @@ export const platformRoutes = {
   caseDetail: { name: "ObserveAutoTestCaseDetail", path: "/ops/autotest/runs/:runId/cases/:caseId" },
   dsl: { name: "ObserveDsl", path: "/ops/dsl" },
   opsModel: { name: "ObserveModel", path: "/ops/model" },
-  /** One governance record's report and the sources it cites; the conversation that produced it lives in the agent platform. */
-  governance: { name: "KnowledgeGovernance", path: "/governance/reports/:recordId" },
   /** 应用构建: the workspace in the address, the open conversation as `?sessionId=`. */
   appBuilder: { name: "AppBuilder", path: "/app-builder/:workspaceId?" },
   feedback: { name: "Feedback", path: "/governance/feedback" },

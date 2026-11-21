@@ -122,14 +122,18 @@ export function assembleAppStage({
     );
   const { plan, copies } = stagePlan(graph, members, index);
   for (const copy of copies) copyMember(copy.from, join(stageRoot, copy.to));
-  if (record.web !== false)
+  if (record.web !== false) {
     for (const output of ["dist/web", "dist/apps-sdk"])
       cpSync(join(root, output), join(stageRoot, output), { recursive: true });
+    const builtinPanels = "dist/builtin-panels";
+    if (existsSync(join(root, builtinPanels)))
+      cpSync(join(root, builtinPanels), join(stageRoot, builtinPanels), { recursive: true });
+  }
   writeStage(stageRoot, storeRoot, plan);
   return { graph, plan, copies };
 }
 
-function main() {
+async function main() {
   const targetPlatform = process.env.TARGETPLATFORM;
   if (!targetPlatform) throw new Error("TARGETPLATFORM environment variable is required");
   const record = JSON.parse(readFileSync(INPUTS, "utf8"));
@@ -137,8 +141,12 @@ function main() {
   process.chdir(root);
   const members = projects(root);
   if (record.web !== false) {
+    const { prepareBuiltinPanels } = await import("./builtin-panels.mjs");
     const shared = members.find(member => member.name === "@ontomato/workbench-server");
-    cpSync(resolve(shared.absolute, "../../agent-skills/ontomato-app-builder"), join(STAGE, "agent-skills/ontomato-app-builder"), { recursive: true });
+    const sharedRoot = resolve(shared.absolute, "../..");
+    const javaApplications = JSON.parse(readFileSync(new URL("java-applications.json", import.meta.url), "utf8"));
+    await prepareBuiltinPanels(root, sharedRoot, members, javaApplications);
+    cpSync(join(sharedRoot, "agent-skills/ontomato-app-builder"), join(STAGE, "agent-skills/ontomato-app-builder"), { recursive: true });
   }
   const provider = record.yamlProvider || "@ontomato/workbench-server";
   const server = members.find((member) => member.name === provider);
@@ -166,5 +174,8 @@ function main() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main();
+  main().catch(error => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
 }

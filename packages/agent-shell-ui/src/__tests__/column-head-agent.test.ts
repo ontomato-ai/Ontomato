@@ -4,6 +4,7 @@ import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import AgentShell from "../components/AgentShell.vue";
 import { testDisplay } from "./display";
 import { useAgentNav } from "../useAgentNav";
+import { servePageComposerKey, type PageComposerExpand } from "../page-composer-entry";
 import { createAgentHostClient, type AgentHostClient } from "../host";
 import type { ShellFeatureDeclaration, ShellLabels, ShellWorkbenchDeclaration } from "../types";
 
@@ -103,6 +104,11 @@ function render(options: { page: string | null; agentPicker?: boolean; title?: s
 }
 
 /** What the column's head shows, and the agents its chooser lists when opened. */
+/** The page skill member a candidates request carried, decoded from its single parameter. */
+function memberOf(url: string): unknown {
+  return JSON.parse(new URL(url, "http://host.test").searchParams.get("member") ?? "null");
+}
+
 async function head(root: HTMLElement) {
   const trigger = root.querySelector<HTMLButtonElement>(".shell-nav-body .switch-trigger");
   if (!trigger) return { chooser: false, title: root.querySelector(".shell-nav-body .column-head")?.textContent ?? "", shown: "", listed: [] };
@@ -264,7 +270,8 @@ it("narrows candidates from display-skill, re-queries on member switch, skips re
   await settle();
   expect((await head(root)).listed).toEqual(["Assistant"]);
   expect(agentId.value).toBe(assistant);
-  expect(requests.some((url) => decodeURIComponent(url).includes('"name":"pvt-home-panel"'))).toBe(true);
+  // The candidates request carries the member exactly as the shown page's snapshot named it: source, path and ref.
+  expect(requests.map(memberOf)).toContainEqual(homeSkill.mode === "member" ? homeSkill.member : null);
   expect(leftConversation).not.toHaveBeenCalled();
 
   // Switching to an object drawer re-emits display-skill with the drawer member and re-queries.
@@ -272,7 +279,7 @@ it("narrows candidates from display-skill, re-queries on member switch, skips re
   await settle();
   expect((await head(root)).listed).toEqual(["Knowledge governance"]);
   expect(agentId.value).toBe(governance);
-  expect(requests.some((url) => decodeURIComponent(url).includes('"name":"pvt-drawer-panel"'))).toBe(true);
+  expect(requests.map(memberOf)).toContainEqual(drawerSkill.mode === "member" ? drawerSkill.member : null);
   expect(leftConversation).not.toHaveBeenCalled();
 
   // Reporting member: null sends no /agents request, clears candidates, and keeps the panel open.
@@ -513,4 +520,110 @@ it("keeps an active conversation on its own agent when new page candidates exclu
   expect(display.page.value).toBeNull();
   expect(currentNav.currentAgent.value?.id).toBe(analyst);
   expect((await head(root)).shown).toBe("Analyst");
+});
+
+/*
+ * A panel's conversation entry on the page beside the conversation (design U18): the agent it names is this
+ * conversation's, so its sentence is filled here; another of the page's candidates starts a new conversation with that
+ * agent, the page staying open and the old conversation keeping its agent; an agent the page does not offer only opens.
+ */
+it("fills a panel's entry into this conversation, or starts one with the agent it names, keeping the page beside it", async () => {
+  const existingSessionId = "dddddddd-dddd-4ddd-8ddd-ddddddddddd1";
+  const drawerSkill: PageSkillContext = {
+    mode: "member",
+    locator: { pageKey: "home", access: "domain-member" },
+    member: {
+      source: { kind: "object-detail", useId: "use-1", object: { className: "Order", primaryKey: "1" } },
+      memberPath: [],
+      ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-drawer-panel" },
+    },
+  };
+  const session = {
+    id: existingSessionId, agentId: assistant, title: "Existing chat", origin: "user",
+    createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString(), latestRun: null,
+  };
+  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+  const wire = (items: typeof every) => items.map((item) => ({ ...item, effectiveSkills: [] }));
+  const request = vi.fn(async (path: string) => {
+    const url = new URL(path, "http://host.test");
+    if (url.pathname.endsWith("/history"))
+      return json({ session, messages: [], runs: [], latestRun: null, pendingQuestions: [], page: { messageSeq: 0, olderCursor: null } });
+    if (url.pathname.endsWith("/sessions")) return json({ sessions: [session], nextCursor: null });
+    const member = JSON.parse(url.searchParams.get("member") ?? "null") as { ref: { name: string } } | null;
+    if (member?.ref.name === "pvt-drawer-panel")
+      return json({ agents: wire([every[0]!, every[2]!]), defaultAgentId: governance, presetAgentIds: { regular: assistant, "knowledge-governance": governance } });
+    return json({ agents: wire(every) });
+  });
+  const host = createAgentHostClient({ request });
+  const display = testDisplay(workbench, {
+    resolve: (address) => (address.startsWith("/applications/") ? { featureId: "panel-application", address, instance: address.split("?")[0]! } : null),
+    context: (page, reported) => ({ url: page.address, label: reported?.label ?? "Home", selection: reported?.selection ?? [] }),
+    initial: { page: { featureId: "panel-application", address: "/applications/app/home", instance: "/applications/app/home" }, view: "side" },
+  });
+  const agentId = ref<string | null>(assistant);
+  const sessionId = ref<string | null>(existingSessionId);
+  const leftConversation = vi.fn(() => void display.close());
+  const served: PageComposerExpand[] = [];
+  const Host = defineComponent({
+    setup() {
+      const nav = useAgentNav({
+        client: () => host,
+        agentId: () => agentId.value,
+        setAgentId: (id) => (agentId.value = id),
+        sessionId: () => sessionId.value,
+        setSessionId: (id) => (sessionId.value = id),
+        onLeaveConversation: leftConversation,
+      });
+      void nav.loadAgents();
+      return () =>
+        h(AgentShell, {
+          workbench, client: host, labels, nav, agentPicker: true, title: workbench.label, display,
+          agentId: agentId.value, "onUpdate:agentId": (id: string | null) => (agentId.value = id),
+          sessionId: sessionId.value, "onUpdate:sessionId": (id: string | null) => (sessionId.value = id),
+        });
+    },
+  });
+  app = createApp(Host);
+  app.provide(servePageComposerKey, (expand: PageComposerExpand) => {
+    served.push(expand);
+    return () => void served.splice(served.indexOf(expand), 1);
+  });
+  const root = document.createElement("div");
+  document.body.append(root);
+  app.mount(root);
+  await settle();
+  display.skill(drawerSkill);
+  await nextTick();
+  const written = () => [...root.querySelectorAll<HTMLTextAreaElement>("textarea")].map((box) => box.value);
+  expect(served).toHaveLength(1);
+
+  // Made while the page's own agents are still being read, the entry waits for them: the preset it names is known only
+  // from the page's answer. It is this conversation's agent: the sentence waits here, and nothing else moves.
+  served.at(-1)!({ target: { kind: "preset", agentKind: "regular" }, prefill: "About this order" });
+  await settle();
+  expect(written()).toContain("About this order");
+  expect(sessionId.value).toBe(existingSessionId);
+  expect(agentId.value).toBe(assistant);
+
+  // Another candidate (the page's default here): a new conversation with it, the page still beside it.
+  served.at(-1)!({ target: { kind: "page-default" }, prefill: "Review the pending knowledge" });
+  await settle();
+  expect(agentId.value).toBe(governance);
+  expect(sessionId.value).toBeNull();
+  expect(display.page.value?.address).toBe("/applications/app/home");
+  expect(leftConversation).not.toHaveBeenCalled();
+  expect(written()).toContain("Review the pending knowledge");
+
+  // An agent the page does not offer: the composer only opens, on the agent it has.
+  served.at(-1)!({ target: { kind: "id", id: analyst }, prefill: "Not for this page" });
+  await settle();
+  expect(agentId.value).toBe(governance);
+  expect(written()).not.toContain("Not for this page");
+
+  // A preset the page offers, named by the server's answer: a new conversation with that candidate takes the sentence.
+  served.at(-1)!({ target: { kind: "preset", agentKind: "regular" }, prefill: "Back to the assistant" });
+  await settle();
+  expect(agentId.value).toBe(assistant);
+  expect(written()).toContain("Back to the assistant");
+  expect(request.mock.calls.some(([path]) => String(path).includes("/runs"))).toBe(false);
 });

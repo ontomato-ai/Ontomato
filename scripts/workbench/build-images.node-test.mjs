@@ -15,9 +15,11 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { checkBuiltinPanelSource } from "../../agent-skills/ontomato-app-builder/panel-check.mjs";
 import { buildStamp, sampleSources } from "../build-support.mjs";
 import { buildWorkbenchImage, isFormalSdkRelease } from "./build-images.mjs";
 import { assembleAppStage, stageDirectory } from "./stage-app.mjs";
+import { javaBuiltinApplications, stageBuiltinPanels } from "./builtin-panels.mjs";
 
 const VERSION = "9.9.9-test";
 
@@ -263,6 +265,8 @@ test("buildWorkbenchImage builds the final image and tags deploy alias for publi
     "tools/workbench/install-runtime.mjs",
     "tools/workbench/runtime-layout.mjs",
     "tools/workbench/stage-app.mjs",
+    "tools/workbench/builtin-panels.mjs",
+    "tools/workbench/java-applications.json",
     "tools/build-support.mjs",
     "runtime-requirements.txt",
     "launch.sh",
@@ -419,6 +423,9 @@ test("assemble writes own packages, resources, links and web without pairing met
   writeFileSync(join(ent, "dist/web/index.html"), "<html>\n");
   mkdirSync(join(ent, "dist/apps-sdk/1.0.0"), { recursive: true });
   writeFileSync(join(ent, "dist/apps-sdk/1.0.0/sdk.json"), "{}\n");
+  mkdirSync(join(ent, "dist/builtin-panels", "catalogue"), { recursive: true });
+  writeFileSync(join(ent, "dist/builtin-panels", "index.json"), '["catalogue"]\n');
+  writeFileSync(join(ent, "dist/builtin-panels", "catalogue", "panel.json"), "{}\n");
 
   const store = ent;
   const expressDir = join(store, "node_modules/.pnpm/express@4.22.1/node_modules/express");
@@ -467,6 +474,8 @@ test("assemble writes own packages, resources, links and web without pairing met
   assert.equal(existsSync(join(armStage, ".image-meta.json")), false);
   assert.equal(existsSync(join(armStage, "dist/web/index.html")), true);
   assert.equal(existsSync(join(armStage, "dist/apps-sdk/1.0.0/sdk.json")), true);
+  assert.equal(readFileSync(join(armStage, "dist/builtin-panels/index.json"), "utf8"), '["catalogue"]\n');
+  assert.equal(existsSync(join(armStage, "dist/builtin-panels/catalogue/panel.json")), true);
   assert.equal(
     realpathSync(join(armStage, "apps/workbench/node_modules/express")),
     realpathSync(expressDir),
@@ -495,4 +504,64 @@ test("only formal CI tags select the base SDK version", () => {
     { ...github, GITHUB_REF_TYPE: "branch" }, { ...github, GITHUB_WORKFLOW: "Checks" },
     { ...gitlab, CI_COMMIT_TAG: "" }, { ...gitlab, CI_COMMIT_TAG: "skills-v1.0.0" },
     { ...gitlab, PUBLISH_VERSION: "4.1.3" }]) assert.equal(isFormalSdkRelease(env), false);
+});
+
+test("the panel bundle contains the panels referenced by the built-in entry declarations", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "builtin-panel-bundle-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const owner = join(root, "packages/page-owner");
+  const panelFolder = join(owner, "resources/builtin-panels/catalogue");
+  const javaDirectory = join(root, "packages/data-engine-core/src/main/resources/applications");
+  mkdirSync(panelFolder, { recursive: true });
+  mkdirSync(javaDirectory, { recursive: true });
+  const panelId = "builtin-product-catalogue";
+  const registration = { panels: [{ id: panelId }] };
+  writeFileSync(join(panelFolder, "registration.json"), JSON.stringify(registration));
+  writeFileSync(join(panelFolder, "panel.json"), '{"manifest":{"state":{},"members":{}}}');
+  writeFileSync(join(panelFolder, "panel.html"), '<div id="app"></div>');
+  writeFileSync(join(panelFolder, "panel.mjs"), 'import { mountPanel } from "@ontomato/sdk/panel";');
+  writeFileSync(join(panelFolder, "recipes.md"), "Open the [capability map](/ontology/assets/capability-map).");
+  const java = { id: "ontology", declaration: { panelUses: [
+    { id: "catalogue", path: "/ontology/catalogue", panelId },
+  ] } };
+  writeFileSync(join(javaDirectory, "ontology.json"), JSON.stringify(java));
+  const applications = javaBuiltinApplications([{ root }]);
+  assert.deepEqual(applications, [java]);
+
+  const options = {
+    directory: join(root, "dist/builtin-panels"),
+    members: [{ name: "@ontomato/page-owner", absolute: owner }],
+    applications,
+    checks: {
+      builtinApplicationPanelUseSchema: { safeParse: () => ({ success: true }) },
+      builtinProductIdSchema: { safeParse: data => ({ success: true, data }) },
+      panelAuthoringManifestSchema: { safeParse: data => ({ success: true, data }) },
+    },
+    checkSource: checkBuiltinPanelSource,
+  };
+  await stageBuiltinPanels(options);
+  const [relative] = JSON.parse(readFileSync(join(options.directory, "index.json"), "utf8"));
+  assert.equal(relative, "@ontomato/page-owner/catalogue");
+  for (const file of ["registration.json", "panel.json", "panel.html", "panel.mjs", "recipes.md"]) {
+    assert.equal(readFileSync(join(options.directory, relative, file), "utf8"), readFileSync(join(panelFolder, file), "utf8"));
+  }
+  const trialAddress = "/applications/app-e2e-capability-map/map";
+  for (const [name, source, column] of [
+    ["panel.html", `<!-- navigation -->\n<a href="#${trialAddress}">Map</a>`, 11],
+    ["panel.mjs", `// Navigation\nnavigate("${trialAddress}");`, 11],
+    ["recipes.md", `See below.\r\n[Map](${trialAddress})`, 7],
+  ]) {
+    const file = join(panelFolder, name);
+    const valid = readFileSync(file, "utf8");
+    writeFileSync(file, source);
+    await assert.rejects(stageBuiltinPanels(options), error =>
+      error.message.startsWith(`${file}:2:${column}: `) && error.message.includes("/applications/app-"));
+    writeFileSync(file, valid);
+  }
+
+  await assert.rejects(stageBuiltinPanels({
+    ...options, applications: [...applications, { id: "agents", declaration: {
+      panelUses: [{ id: "teams", path: "/agents/teams", panelId: "builtin-product-teams" }],
+    } }],
+  }), /Built-in application agents, entry teams \(\/agents\/teams\), panel builtin-product-teams: panel is missing from the release/u);
 });

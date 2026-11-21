@@ -361,20 +361,6 @@ public class KnowledgeGovernanceService {
     return JSONObject.of("saved",true,"reviewed",saved.getJSONArray("reviewedKnowledgeIds").size(),"issues",saved.getJSONArray("issues").size());
   }
 
-  public Object readSource(String id,String sourceId,int offset,Owner owner) throws Exception {
-    if (offset<0) throw AgentHttpException.invalid("Invalid source offset");
-    JSONObject source=null;
-    for (var value:work(id,owner).getJSONObject("work").getJSONArray("sources")) {
-      var item=JSONObject.from(value);if (sourceId.equals(item.getString("id"))) source=item;
-    }
-    if (source==null) throw AgentHttpException.missing();
-    String kind=source.getString("kind");
-    if(kind.equals("input")){var row=store.one("SELECT input_message FROM ontology_governance_windows WHERE record_id=? AND run_id=?",uuid(id),uuid(source.getString("target")));return JSONObject.of("source",source,"page",page(List.of(material(sourceId,source.getString("title"),row.getString("input_message"))),JSONObject.of("offset",offset)));}
-    if (kind.equals("artifact")) return JSONObject.of("source",source,"page",null);
-    String target=source.getString("target");
-    var values=kind.equals("history")?List.of(material(target,source.getString("title"),history(JSON.parseObject(target),owner))):originals(kind,owner.domainId());
-    return JSONObject.of("source",source,"page",page(values,JSONObject.of("id",target,"offset",offset)));
-  }
   private Object importKnowledge(String id,String run,JSONObject input,Owner owner,Owner executor) {
     requireAccess(executor);
     var identity=new io.ontomato.dataengine.core.bean.User(){

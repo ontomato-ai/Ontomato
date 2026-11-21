@@ -16,14 +16,13 @@ export {default as ApplicationIconPicker} from './ApplicationIconPicker.vue';
 export { platformPath, platformRoutes } from "./routes";
 export { openApplicationKey } from './application-opening';
 export {
-  pageActionRow,
   providePageActions,
   usePageActions,
-  type PanelOperationAction,
   type PlatformPageAction,
   type PlatformPageActions,
   type PlatformPageDraft,
 } from "./page-actions";
+export { providePageHeading, usePageHeading, type PlatformPageHeading } from "./page-heading";
 export {
   agentModelLabelsKey,
   useAgentModelLabels,
@@ -39,6 +38,8 @@ export {
 export { platformApplicationNameKey, platformPageAccessKey, useApplicationName, usePageAccess } from "./page-access";
 export { pilotPageKey, usePilotPage, type PilotPage, type PilotPageResolver } from "./pilot-pages";
 export {
+  codedPanelTarget,
+  newPanelInstanceName,
   panelHostKey,
   panelFrameDocument,
   panelUnavailable,
@@ -57,6 +58,7 @@ export {
   type PanelInstanceOptions,
   type PanelInstanceView,
 } from "./panel-host";
+export { adoptPanelStyle, scopedPanelStyle } from "./panel-content";
 export {
   provideUnsavedChanges,
   useLeaveConfirmation,

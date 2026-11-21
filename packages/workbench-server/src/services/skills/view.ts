@@ -6,13 +6,19 @@ import {
 } from "@ontomato/contracts/page-skills";
 import { config } from "../../config/application";
 import type { PanelUseRef } from "@ontomato/contracts/product-panels";
-import { isProtectedSkillName, protectedSkillRef, type ProtectedSkillOffering } from "../../core/skills";
-import { skillRegistryManager, type ListedProtectedSkill } from "../../core/skills/registry/manager";
+import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
+import type { SkillCatalogDiagnostics } from "@ontomato/contracts/skills";
+import {
+  isProtectedSkillName, protectedSourceSkillRef, SkillSourceRecordError,
+  type ProtectedSkillOffering, type SkillSourceFailure,
+} from "../../core/skills/providers";
+import { skillRegistryManager, type ListedProtectedSkill, type ListedSourceFailure } from "../../core/skills/registry/manager";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendResponseError, backendGet, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import { requirePanelEntry } from "../product-panels/application-use";
-import { grantedProductIds } from "../product-governance/grants";
+import { PANEL_SKILL_PROVIDER_ID } from "../product-panels/skill-identity";
+import { grantedProductIds, productGrantAllowed } from "../product-governance/grants";
 
 const javaPageSkills = z.object({
   success: z.literal(true),
@@ -92,11 +98,32 @@ async function currentApplicationPanel(caller: PageSkillViewCaller, entrance: Pa
 }
 
 export function isStoredProtectedSkillRef(ref: RuntimeSkillRef) {
-  return ref.namespace.kind === "domain" && (isProtectedSkillName(ref.name) || LEGACY_AGGREGATE_NAME.test(ref.name));
+  return isProtectedSkillName(ref.name) || (ref.namespace.kind === "domain" && LEGACY_AGGREGATE_NAME.test(ref.name));
 }
 
-function pageAuthorization(domainId: string, java: Awaited<ReturnType<typeof javaPageSkillProjection>>,
-  sources: readonly ListedProtectedSkill[], grants: ReadonlySet<string>,
+type ListedPageSkill = ListedProtectedSkill | ListedSourceFailure;
+
+function requiredResources(source: ListedPageSkill) {
+  return "resourceIds" in source ? source.resourceIds : source.knownRequiredResourceIds;
+}
+
+async function grantedSkillResources(sources: readonly ListedPageSkill[], credentials: AssistantCredentials) {
+  const required = new Set(sources.flatMap(requiredResources));
+  const platformIds = [...required].filter(isBuiltinProductId);
+  // Java lists recorded domain Grants and checks platform product use for each requested ID.
+  const [domainIds, platformGrants] = await Promise.all([
+    required.size > platformIds.length ? grantedProductIds("use", credentials) : [],
+    Promise.all(platformIds.map(async id => ({ id, allowed: await productGrantAllowed(id, "use", credentials) }))),
+  ]);
+  return new Set([...domainIds, ...platformGrants.filter(({ allowed }) => allowed).map(({ id }) => id)]);
+}
+
+function sourceIdentityKey({ providerId, sourceKey }: SkillSourceIdentity) {
+  return JSON.stringify([providerId, sourceKey]);
+}
+
+function pageAuthorization(java: Awaited<ReturnType<typeof javaPageSkillProjection>>,
+  sources: readonly ListedPageSkill[], grants: ReadonlySet<string>,
   associations: readonly { entrance: PageSkillEntrance; identity: SkillSourceIdentity }[],
 ) {
   const registered = new Set(java.registeredSkills.map(runtimeSkillKey));
@@ -112,35 +139,53 @@ function pageAuthorization(domainId: string, java: Awaited<ReturnType<typeof jav
     }
     groups.set(key, { locator, skills: mapping.skill ? [mapping.skill] : [], defaults: mapping.defaults ?? [] });
   }
-  const admitted = new Set<string>();
+  const admitted = new Map<string, { source: SkillSourceIdentity; entrances: PageSkillEntrance[] }>();
   const admittedEntrances = new Set(java.admittedEntrances?.map(entranceKey));
   const current = new Set<string>();
-  const byEntrance = new Map<string, ListedProtectedSkill[]>();
+  const byEntrance = new Map<string, Set<string>>();
+  const uncertain = new Set<string>();
+  const refsBySource = new Map<string, RuntimeSkillRef>();
   const ownedEntrances = new Map<string, PageSkillEntrance[]>();
-  for (const { entrance, identity: { providerId, sourceKey } } of associations) {
-    const key = runtimeSkillKey(protectedSkillRef(providerId, domainId, sourceKey));
+  for (const { entrance, identity } of associations) {
+    const key = sourceIdentityKey(identity);
     const entrances = ownedEntrances.get(key) ?? [];
     entrances.push(entrance);
     ownedEntrances.set(key, entrances);
   }
   for (const source of sources) {
     const key = runtimeSkillKey(source.skill);
+    const identityKey = sourceIdentityKey(source);
+    refsBySource.set(identityKey, source.skill);
     current.add(key);
-    if (!source.resourceIds.every(id => grants.has(id))) continue;
+    if (!requiredResources(source).every(id => grants.has(id))) continue;
     const staticEntrances = source.entrances.filter(entrance => admittedEntrances.has(entranceKey(entrance)));
-    for (const entrance of [...staticEntrances, ...(ownedEntrances.get(key) ?? [])]) {
+    for (const entrance of [...staticEntrances, ...(ownedEntrances.get(identityKey) ?? [])]) {
       const group = groups.get(locatorKey(entrance));
       if (!group) continue;
-      if (!group.skills.some(skill => runtimeSkillKey(skill) === key)) group.skills.push(source.skill);
-      admitted.add(key);
-      allowedPageKeys.add(key);
       const actualKey = entranceKey(entrance);
-      const members = byEntrance.get(actualKey) ?? [];
-      if (!members.includes(source)) members.push(source);
+      const members = byEntrance.get(actualKey) ?? new Set<string>();
+      members.add(key);
       byEntrance.set(actualKey, members);
+      if ("knownRequiredResourceIds" in source) {
+        uncertain.add(key);
+        continue;
+      }
+      if (!group.skills.some(skill => runtimeSkillKey(skill) === key)) group.skills.push(source.skill);
+      const visible = admitted.get(key);
+      if (visible) visible.entrances.push(entrance);
+      else admitted.set(key, { source, entrances: [entrance] });
+      allowedPageKeys.add(key);
     }
   }
-  return { groups, publicSkills, registered, allowedPageKeys, admitted, current, byEntrance };
+  return { groups, publicSkills, registered, allowedPageKeys, admitted, current, byEntrance, uncertain, refsBySource };
+}
+
+function anonymousFailure() {
+  return new HttpError(502, "A skill source is unavailable", "SKILL_SOURCE_UNAVAILABLE");
+}
+
+function unreadableManifest(item: SkillCatalogDiagnostics["items"][number]) {
+  return new HttpError(502, "The selected skill source is unavailable", "SKILL_SOURCE_UNAVAILABLE", item);
 }
 
 /** Resolve the skill of this registered entry without loading the domain's skill catalogue. */
@@ -149,24 +194,38 @@ export async function readRegisteredPanelPageSkillContext(
   entrance: PageSkillEntrance,
   source: ApplicationUseSkillSource,
   loadedPanel: { id: string },
-  provider: { id: string; findByUse(domainId: string, use: PanelUseRef): Promise<ProtectedSkillOffering | null> },
+  provider: { id: string; findByUse(domainId: string, use: PanelUseRef, reader: AssistantCredentials):
+    Promise<ProtectedSkillOffering | SkillSourceFailure | null> },
 ): Promise<PageSkillContext> {
   const absent = { mode: "member" as const, locator: entrance, member: null };
   const actual = await currentApplicationPanel(caller, entrance, source);
   if (!actual || actual.use.panelId !== loadedPanel.id) return absent;
   const use = { applicationId: actual.applicationId, useId: actual.use.id };
-  const offering = await provider.findByUse(caller.domainId, use);
-  if (!offering || offering.sourceKey !== loadedPanel.id) return absent;
+  const sourceFact = await provider.findByUse(caller.domainId, use, caller.initiatorCredentials);
+  if (!sourceFact || sourceFact.sourceKey !== loadedPanel.id) return absent;
 
-  const ref = protectedSkillRef(provider.id, caller.domainId, offering.sourceKey);
-  const listed: ListedProtectedSkill = { ...offering, providerId: provider.id, skill: ref };
+  const ref = protectedSourceSkillRef(provider.id, caller.domainId, sourceFact);
+  const listed = { ...sourceFact, providerId: provider.id, skill: ref };
   const [java, grants] = await Promise.all([
     javaPageSkillProjection(caller.initiatorCredentials),
-    grantedProductIds("use", caller.initiatorCredentials),
+    grantedSkillResources([listed], caller.initiatorCredentials),
   ]);
-  const pages = pageAuthorization(caller.domainId, java, [listed], new Set(grants), []);
-  if (!pages.byEntrance.get(entranceKey(actual.entrance))?.includes(listed)) return absent;
-  await offering.readManifest(ref);
+  const pages = pageAuthorization(java, [listed], grants, []);
+  if (!pages.byEntrance.get(entranceKey(actual.entrance))?.has(runtimeSkillKey(ref))) return absent;
+  // Only admitted offerings and unresolved sources with an eligible entrance reach this point.
+  if ("knownRequiredResourceIds" in sourceFact) throw anonymousFailure();
+  try {
+    await sourceFact.readManifest(ref);
+  } catch (error) {
+    if (!(error instanceof SkillSourceRecordError)) throw error;
+    const { resourceId, field, reason } = error.detail;
+    // The direct host checks each member against the current release and can still render the other members.
+    if (reason === "component_missing") return absent;
+    const resource = resourceId === loadedPanel.id ? "panel" : "projection";
+    const location = `${resource} '${resourceId}'${field ? `, field '${field}'` : ""}`;
+    throw new HttpError(502, `Panel '${loadedPanel.id}' skill is unavailable: ${location}: ${reason.replaceAll("_", " ")}`,
+      "SKILL_SOURCE_UNAVAILABLE");
+  }
   return {
     mode: "member", locator: actual.entrance,
     member: { source: { kind: "application-use", ...use }, memberPath: [], ref },
@@ -178,20 +237,57 @@ export async function readSkillView(domainId: string, initiatorCredentials: Assi
   const caller = { domainId, initiatorCredentials };
   const java = await javaPageSkillProjection(initiatorCredentials);
   let pages!: ReturnType<typeof pageAuthorization>;
-  const registry = await skillRegistryManager.forDomain(domainId, async sources => {
+  const registry = await skillRegistryManager.forDomain(domainId, async (sources, failures) => {
+    const listed = [...sources, ...failures];
     const [grants, associations] = await Promise.all([
-      sources.length ? grantedProductIds("use", initiatorCredentials) : [],
+      grantedSkillResources(listed, initiatorCredentials),
       Promise.all([...new Set(sourceOwners.values())].map(owner => owner.listAssociations(caller))),
     ]);
-    pages = pageAuthorization(domainId, java, sources, new Set(grants), associations.flat());
+    pages = pageAuthorization(java, listed, grants, associations.flat());
     return {
       public: skill => !pages.registered.has(runtimeSkillKey(skill)) || pages.allowedPageKeys.has(runtimeSkillKey(skill)),
       protected: skill => pages.admitted.has(runtimeSkillKey(skill)),
     };
-  });
+  }, initiatorCredentials);
+  const items = [...registry.failedManifests.values()];
+  const sourceUnavailable = pages.uncertain.size > 0;
+  const diagnostics: SkillCatalogDiagnostics | undefined = items.length || sourceUnavailable ? { items, sourceUnavailable } : undefined;
+  function requireReadableManifest(ref: RuntimeSkillRef) {
+    const item = registry.failedManifests.get(runtimeSkillKey(ref));
+    if (item) throw unreadableManifest(item);
+  }
+  function requireCertainStoredSkill(ref: RuntimeSkillRef) {
+    if (pages.uncertain.has(runtimeSkillKey(ref))) throw anonymousFailure();
+  }
+  function checkUnresolvedInput(ref: RuntimeSkillRef) {
+    requireReadableManifest(ref);
+    if (sourceUnavailable && isProtectedSkillName(ref.name) && (ref.namespace.kind === "provider" || ref.namespace.domainId === domainId))
+      throw anonymousFailure();
+  }
   const view = {
     registry,
+    diagnostics,
+    requireReadableManifest,
+    requireCertainStoredSkill,
+    checkUnresolvedInput,
+    requireSkillById(id: string) {
+      const entry = registry.getSkillById(id);
+      if (entry) return entry;
+      const failure = items.find(item => item.skill.name === id);
+      if (failure) throw unreadableManifest(failure);
+      if (sourceUnavailable && isProtectedSkillName(id)) throw anonymousFailure();
+      throw new HttpError(404, "Skill not found", "SKILL_NOT_FOUND");
+    },
     pageSkills: [...pages.groups.values()],
+    admittedPageSkill(ref: RuntimeSkillRef) {
+      const visible = pages.admitted.get(runtimeSkillKey(ref));
+      if (!visible) return undefined;
+      const { source, entrances } = visible;
+      return {
+        ...(source.providerId === PANEL_SKILL_PROVIDER_ID && { panelId: source.sourceKey }),
+        entrances,
+      };
+    },
     publicPageSkill(locator: PageSkillLocator) {
       return pages.publicSkills.get(locatorKey(locator)) ?? null;
     },
@@ -205,26 +301,34 @@ export async function readSkillView(domainId: string, initiatorCredentials: Assi
     },
     hiddenStoredSkill(ref: RuntimeSkillRef) {
       const key = runtimeSkillKey(ref);
-      return (pages.registered.has(key) || pages.current.has(key)) && !pages.allowedPageKeys.has(key);
+      return (pages.registered.has(key) || pages.current.has(key)) && !pages.allowedPageKeys.has(key) && !pages.uncertain.has(key);
     },
     async resolvePlacement(entrance: PageSkillEntrance, source: PageSkillSource, memberPath: PageSkillMember["memberPath"],
-      loadedPanel?: { id: string },
+      loadedPanel?: { id: string }, expectedRef?: RuntimeSkillRef,
     ): Promise<AuthorizedPageSkillMember | null> {
       // Only root placements have a source owner in this release.
-      const members = pages.byEntrance.get(entranceKey(entrance));
-      if (memberPath.length || !members) return null;
+      if (memberPath.length) return null;
+      let identity: SkillSourceIdentity;
+      let path: string | undefined;
       if (source.kind === "application-use") {
         const actual = await currentApplicationPanel(caller, entrance, source);
         if (!actual || (loadedPanel && loadedPanel.id !== actual.use.panelId)) return null;
-        const offered = members.find(member => member.providerId === "product-panels" && member.sourceKey === actual.use.panelId);
-        if (!offered) return null;
-        const currentSource = { kind: source.kind, applicationId: actual.applicationId, useId: actual.use.id };
-        return { entrance: actual.entrance, member: { source: currentSource, memberPath: [], ref: offered.skill }, path: actual.use.path };
+        identity = { providerId: PANEL_SKILL_PROVIDER_ID, sourceKey: actual.use.panelId };
+        source = { kind: source.kind, applicationId: actual.applicationId, useId: actual.use.id };
+        path = actual.use.path;
+      } else {
+        const resolved = await sourceOwners.get(source.kind)?.resolve({ ...caller, entrance, source });
+        if (!resolved) return null;
+        identity = resolved;
       }
-      const identity = await sourceOwners.get(source.kind)?.resolve({ ...caller, entrance, source });
-      if (!identity) return null;
-      const offered = members.find(member => member.providerId === identity.providerId && member.sourceKey === identity.sourceKey);
-      return offered ? { entrance, member: { source, memberPath: [], ref: offered.skill } } : null;
+      const ref = pages.refsBySource.get(sourceIdentityKey(identity));
+      if (!ref) return null;
+      const key = runtimeSkillKey(ref);
+      if (expectedRef && runtimeSkillKey(expectedRef) !== key) return null;
+      if (!pages.byEntrance.get(entranceKey(entrance))?.has(key)) return null;
+      requireCertainStoredSkill(ref);
+      requireReadableManifest(ref);
+      return { entrance, member: { source, memberPath: [], ref }, ...(path === undefined ? {} : { path }) };
     },
   };
   return view;
@@ -248,8 +352,7 @@ export async function resolveCurrentPageSkillMember(view: SkillView, entrance: P
   member: PageSkillMember | null,
 ): Promise<AuthorizedPageSkillMember | null> {
   if (!member) return null;
-  const actual = await view.resolvePlacement(entrance, member.source, member.memberPath);
-  return actual && runtimeSkillKey(actual.member.ref) === runtimeSkillKey(member.ref) ? actual : null;
+  return view.resolvePlacement(entrance, member.source, member.memberPath, undefined, member.ref);
 }
 
 /** Bind the response to the Java use and to the panel returned in this snapshot. */

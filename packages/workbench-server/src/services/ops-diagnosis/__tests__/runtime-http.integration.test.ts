@@ -1,5 +1,5 @@
 import { removeWorkerFiles } from "../../../../../agent-runtime/src/worker";
-import { beforeAll, afterAll, describe, expect, it } from "vitest";
+import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createRequire } from "node:module";
@@ -29,6 +29,7 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
   const callers = new Map<string, { userId: string; domainId: string; expiresAt: number }>();
   const pool = new pg.Pool({ connectionString: database });
   let logs = "", modelCalls = 0;
+  let blockNextReadOnlyRestore: (() => void) | undefined;
   async function freePort() { const s = createServer(); await new Promise<void>((r) => s.listen(0, "127.0.0.1", r)); const port = (s.address() as { port: number }).port; await new Promise<void>((r) => s.close(() => r())); return port; }
   async function launch(kind: "host" | "runtime") {
     const port = Number(new URL(kind === "host" ? hostUrl : runtimeUrl).port);
@@ -55,7 +56,10 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
     });
     return child;
   }
-  async function stop(child: ChildProcess) { if (child.exitCode !== null) return; await new Promise<void>((resolve) => { child.once("exit", () => resolve()); child.kill("SIGTERM"); }); }
+  async function stop(child: ChildProcess, signal: "SIGTERM" | "SIGKILL" = "SIGTERM") {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    await new Promise<void>((resolve) => { child.once("exit", () => resolve()); child.kill(signal); });
+  }
   async function api(route: string, body?: unknown, token = "alice:a", key?: string, method = body === undefined ? "GET" : "POST") {
     const response = await fetch(hostUrl + route, { method, headers: { tk: token, "Content-Type": "application/json", ...(key ? { "Idempotency-Key": key } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     const text = await response.text(); let value: any; try { value = text ? JSON.parse(text) : null; } catch { value = text; }
@@ -133,6 +137,12 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
           return json(404, { error: { code: "NOT_FOUND", message: "Caller not found" } });
         if (!readOnly && (req.headers.tk !== `${caller.userId}:${caller.domainId}` || caller.expiresAt <= Date.now()))
           return json(401, { error: { code: "CALLER_CREDENTIAL_INVALID", message: "Initiating credential is missing or expired" } });
+        if (readOnly && blockNextReadOnlyRestore) {
+          const onBlocked = blockNextReadOnlyRestore;
+          blockNextReadOnlyRestore = undefined;
+          onBlocked();
+          return;
+        }
         return json(200, caller);
       }
       if (req.method === "GET" && req.url === "/platform/page-skills")
@@ -172,6 +182,8 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
     expect((await api(`/api/observe/agent/sessions/${session}`, undefined, "bob:a")).status).toBe(404);
     expect((await api(`/api/observe/agent/sessions/${session}`, undefined, "alice:b")).status).toBe(404);
     expect((await api("/api/observe/agent/agents", undefined, "denied:a")).status).toBe(403);
+    // Block the first read-only caller restore, inside the host's settle callback.
+    const settling = new Promise<void>((resolve) => { blockNextReadOnlyRestore = resolve; });
     const started = await api(`/api/observe/agent/sessions/${session}/runs`, { message: "inspect logs" }, "alice:a", run); expect(started.status, JSON.stringify(started.body) + logs.split("\n").filter((line) => line.includes("ERROR")).join("\n").slice(-6000)).toBe(202);
     const final = await stopped(session, run); expect(final.run.stopReason, final.run.errorMessage ?? "").toBe("stop");
     const toolText = final.messages.filter((m) => m.message.role === "toolResult").map((m) => JSON.stringify(m.message.content)).join("\n");
@@ -180,8 +192,20 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
     expect(final.messages.some((m) => m.message.role === "system")).toBe(false);
     expect(JSON.stringify(final)).not.toContain("ops-runtime-fixture"); expect(final.run.resolvedSkills.map((s) => s.skill.name)).toContain("ops-diagnosis");
     expect((await api(`/api/observe/agent/sessions/${session}/runs`, { message: "changed" }, "alice:a", run)).status).toBe(409);
-    const count = modelCalls; await stop(host); host = await launch("host");
-    expect((await api(`/api/observe/agent/sessions/${session}/runs`, { message: "inspect logs" }, "alice:a", run)).body.replayed).toBe(true); expect(modelCalls).toBe(count);
+    const count = modelCalls;
+    await settling;
+    await stop(host, "SIGKILL");
+    // Exercise replay after the interrupted callback has failed and the failure is persisted.
+    await vi.waitFor(async () => {
+      const { rows } = await pool.query(`SELECT intent->>'status' AS status FROM "${schema}_runtime".admissions WHERE key=$1`, [run]);
+      expect(rows[0]?.status).toBe("failed");
+    }, { timeout: 5000 });
+    host = await launch("host");
+    const replay = await api(`/api/observe/agent/sessions/${session}/runs`, { message: "inspect logs" }, "alice:a", run);
+    expect(replay.status, JSON.stringify(replay.body)).toBe(202);
+    expect(replay.body.replayed).toBe(true);
+    expect(replay.body.snapshot.run).toMatchObject({ id: run, status: "stopped", stopReason: "stop" });
+    expect(modelCalls).toBe(count);
     const other = randomUUID(); await api("/api/observe/agent/sessions", { agentId: DIAGNOSIS_AGENT_ID }, "alice:a", other);
     expect((await api(`/api/observe/agent/sessions/${other}/runs/${run}/cancel`, {}, "alice:a")).status).toBe(404);
     // A second surface cannot claim this diagnosis UUID even with the same domain.

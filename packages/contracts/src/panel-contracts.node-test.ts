@@ -1,8 +1,9 @@
 import { formOptionSchema } from "./form-fields";
 import { appsSdkBuildSchema, appsSdkCurrentSchema } from "./apps-sdk";
+import { panelModuleImports } from "./panel-module";
 import {
   APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL, EXPORT_FEEDBACK, EXPORT_SKILL,
-  FEEDBACK_RECORD, IMPORT_SKILL, KNOWLEDGE_GOVERNANCE_RECORD, SKILL,
+  FEEDBACK_RECORD, IMPORT_SKILL, SKILL,
 } from "./panel-client-requests";
 import {
   createPanelHumanOperationIntentRequestSchema, createPanelOperationIntentRequestSchema,
@@ -21,6 +22,7 @@ import { defaultAgentSchema } from "./default-agent";
 import { pageSkillSchema } from "./page-skills";
 import assert from "node:assert/strict";
 import test from "node:test";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import { dashboardCardPrimaryKey } from "./dashboard";
 import { DASHBOARD_CARD } from "./platform-object-types";
 import {
@@ -96,21 +98,28 @@ test("current SDK describes the browser files and Node check from the same relea
 });
 
 test("the SDK catalogue separates supply, configuration and run inputs", async () => {
-  const { appsSdkComponentCatalogSchema } = await import("./apps-sdk");
+  const { appsSdkComponentCatalogSchema } = await import("./panel-check");
   const component = {
-    componentId: "ObjectSummary", module: "@ontomato/sdk/base", exportName: "ObjectSummary",
-    role: "presentation", meaning: "Show the selected object as its owner describes it.",
-    data: { record: { results: ["panelRecord"], required: true, runtimeParams: ["search"] } },
+    componentId: "ObjectList", module: "@ontomato/sdk/base", exportName: "ObjectList",
+    role: "presentation", meaning: "Show and select the rows supplied by the owner.",
+    data: { rows: { results: ["panelRecordList"], required: true, runtimeParams: ["search"] } },
     config: [{ name: "fields", type: "string[]", description: "Visible fields", required: false }],
-    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
-    outputs: [],
-    ports: { props: [], events: [], slots: [] },
+    inputs: { selected: { kind: "object", objectType: "@binding" } },
+    outputs: {
+      selected: { kind: "object", objectType: "@binding" },
+      checked: { kind: "list", items: { kind: "object", objectType: "@binding" } },
+      search: { kind: "scalar", type: "string" },
+    },
+    ports: { props: [], events: [{ name: "navigate", type: "PanelObjectRef", description: "A navigation event" }], slots: [] },
   };
   const catalogue = { version: "1.1.2", components: [component] };
   assert.deepEqual(appsSdkComponentCatalogSchema.parse(catalogue), catalogue);
+  assert.equal(appsSdkComponentCatalogSchema.safeParse({
+    ...catalogue, components: [{ ...component, outputs: ["selected"] }],
+  }).success, false);
   for (const datum of [{ results: [], required: true }, { results: ["notRegistered"], required: true }, { results: ["panelRecord"] }]) {
     assert.equal(appsSdkComponentCatalogSchema.safeParse({
-      ...catalogue, components: [{ ...component, data: { record: datum } }],
+      ...catalogue, components: [{ ...component, data: { rows: datum } }],
     }).success, false);
   }
   const { data: _data, ...displayOnly } = component;
@@ -138,6 +147,96 @@ test("the SDK catalogue permits a wildcard for author-named data", async () => {
     assert.equal(appsSdkComponentCatalogSchema.safeParse({
       ...catalogue, components: [{ ...component, data }],
     }).success, false);
+  }
+});
+
+test("the checker accepts short data and operation members with reusable projection identities", async () => {
+  const { panelAuthoringManifestSchema } = await import("./panel-check");
+  const list = {
+    id: "9da36511-7755-4b61-b526-3be2694c1f2f",
+    component: "ObjectList", type: BUSINESS_KNOWLEDGE,
+    data: { rows: "query" }, state: { selected: "selected", search: "search" },
+  };
+  const approve = { component: "OperationButton", operation: APPROVE_KNOWLEDGE, target: "selected", config: { type: "primary" } };
+  const state = {
+    selected: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+    search: { type: { kind: "scalar", type: "string" } },
+  };
+  const reused = { target: { projectionId: "registered-summary" } };
+  const manifest = { state, members: { list, approve, reused }, events: {} };
+  const parsed = panelAuthoringManifestSchema.parse(manifest);
+  assert.deepEqual(parsed.members, manifest.members);
+  assert.equal(panelAuthoringManifestSchema.safeParse({
+    ...manifest, members: { list: {
+      ...list, data: { rows: { read: "query", params: { search: { state: "search" }, status: { literal: "pending" } } } },
+    } },
+  }).success, true);
+  assert.equal(panelAuthoringManifestSchema.safeParse({
+    ...manifest, members: { list: { ...list, id: "previously-registered-list" } },
+  }).success, true);
+  for (const member of [{ ...list, inputs: {} }, { ...list, id: "" }, { component: "ObjectList" }]) {
+    assert.equal(panelAuthoringManifestSchema.safeParse({ ...manifest, members: { list: member } }).success, false);
+  }
+});
+
+test("short panel members can open the page composer with an explicit agent and prefill", async () => {
+  const { panelAuthoringMemberSchema } = await import("./panel-check");
+  const member = { component: "ConversationEntry", agent: "page-default", prefill: "Review this domain's knowledge." };
+  assert.deepEqual(panelAuthoringMemberSchema.parse(member), member);
+  for (const agent of [{ kind: "id", id: "governance-agent" }, { kind: "preset", agentKind: "knowledge-governance" }]) {
+    const qualified = { ...member, component: "@ontomato/sdk:ConversationEntry", agent };
+    assert.deepEqual(panelAuthoringMemberSchema.parse(qualified), qualified);
+  }
+  for (const invalid of [
+    { component: member.component, prefill: member.prefill },
+    { ...member, agent: "governance-agent" },
+    { ...member, data: { rows: "query" } },
+    { ...member, component: "OperationButton", operation: APPROVE_KNOWLEDGE },
+  ]) {
+    assert.equal(panelAuthoringMemberSchema.safeParse(invalid).success, false);
+  }
+});
+
+test("short members can name distinct data owners but need a read or operation", async () => {
+  const { panelAuthoringMemberSchema } = await import("./panel-check");
+  const graph = {
+    component: "ObjectGraph", type: "platform:ObjectType",
+    data: { nodes: "list", edges: { type: "platform:Relationship", read: "list" } },
+  };
+  assert.deepEqual(panelAuthoringMemberSchema.parse(graph), graph);
+  assert.equal(panelAuthoringMemberSchema.safeParse({ ...graph, type: undefined }).success, false);
+  assert.equal(panelAuthoringMemberSchema.safeParse({
+    ...graph, type: undefined,
+    data: { ...graph.data, nodes: { type: "platform:ObjectType", read: "list" } },
+  }).success, true);
+  const mode = {
+    component: "SegmentedControl", config: { options: [{ value: "instance", label: "Instance" }] },
+    state: { value: "mode" },
+  };
+  assert.equal(panelAuthoringMemberSchema.safeParse(mode).success, false);
+  const counts = {
+    ...mode, type: BUSINESS_KNOWLEDGE,
+    data: { counts: { read: "counts", params: { by: { literal: "status" } } } },
+  };
+  assert.deepEqual(panelAuthoringMemberSchema.parse(counts), counts);
+});
+
+test("a short metric chart names its source card and takes the projection from that owner", async () => {
+  const { panelAuthoringMemberSchema } = await import("./panel-check");
+  const chart = {
+    component: "MetricChart", sourceCard: { dashboardId: "operations", cardId: "daily" },
+    state: { term: "selectedTerm" },
+  };
+  for (const component of [chart.component, "@ontomato/sdk:MetricChart"]) {
+    assert.deepEqual(panelAuthoringMemberSchema.parse({ ...chart, component }), { ...chart, component });
+  }
+  for (const invalid of [
+    { component: chart.component },
+    { ...chart, id: "9da36511-7755-4b61-b526-3be2694c1f2f" },
+    { ...chart, sourceCard: { ...chart.sourceCard, metricId: "override" } },
+    { ...chart, component: "ObjectList", type: BUSINESS_KNOWLEDGE, data: { rows: "query" } },
+  ]) {
+    assert.equal(panelAuthoringMemberSchema.safeParse(invalid).success, false);
   }
 });
 
@@ -228,6 +327,37 @@ test("fixed owner signatures and per-definition read parameters are distinct", a
   assert.equal(productProjectionInputSchema.safeParse({
     ...projected, data: { operation: { ...projected.data.operation, params: { target: { input: "unknown" } } } },
   }).success, false);
+});
+
+test("owner rows may give a status tone and a field's values as tags", async () => {
+  const { panelRecordSchema } = await import("./panel-projection");
+  const row = { primaryKey: "k-1", label: "Order rule", fields: { status: "Approved", knowledgeTags: "Business, Tech" } };
+  const toned = { ...row, tones: { status: "success" }, tags: { knowledgeTags: ["Business", "Tech"] } };
+  assert.deepEqual(panelRecordSchema.parse(toned), toned);
+  assert.equal(panelRecordSchema.safeParse({ ...row, tones: { status: "green" } }).success, false);
+  assert.equal(panelRecordSchema.safeParse({ ...row, tags: { knowledgeTags: "Business" } }).success, false);
+});
+
+test("skill catalogues expose authorized diagnostics and panel reads carry only display text", async () => {
+  const { assistantSkillCatalogSchema } = await import("./assistant-chat");
+  const { panelOptionListSchema, panelRecordQuerySchema } = await import("./panel-projection");
+  const diagnostic = {
+    skill: { namespace: { kind: "domain", domainId: "domain-a" }, name: "pvt-panel-skill" },
+    resourceId: "knowledge-panel",
+    reason: "record_missing",
+  };
+  const diagnostics = { items: [diagnostic], sourceUnavailable: true };
+  assert.deepEqual(assistantSkillCatalogSchema.parse({ skills: [], diagnostics }), { skills: [], diagnostics });
+  assert.deepEqual(assistantSkillCatalogSchema.parse({ skills: [] }), { skills: [] });
+  assert.equal(assistantSkillCatalogSchema.safeParse({
+    skills: [], diagnostics: { ...diagnostics, items: [{ ...diagnostic, reason: "raw error message" }] },
+  }).success, false);
+
+  const messages = ["Some skill sources could not be read."];
+  assert.deepEqual(panelOptionListSchema.parse({ options: [], diagnostics: messages }), { options: [], diagnostics: messages });
+  assert.deepEqual(panelRecordQuerySchema.parse({ rows: [], diagnostics: messages }), { rows: [], diagnostics: messages });
+  assert.equal(panelOptionListSchema.safeParse({ options: [], diagnostics }).success, false);
+  assert.equal(panelRecordQuerySchema.safeParse({ rows: [], diagnostics: diagnostics.items }).success, false);
 });
 
 test("owner query rows carry only actual highlight ranges on their display text", async () => {
@@ -327,15 +457,6 @@ test("feedback, governance records and the skill library read through their owne
   }).success, false);
 
   assert.deepEqual(result({
-    record: { source: object(KNOWLEDGE_GOVERNANCE_RECORD), read: "record", params: {} },
-    issues: { source: object(KNOWLEDGE_GOVERNANCE_RECORD), read: "issues", params: {} },
-    sources: { source: object(KNOWLEDGE_GOVERNANCE_RECORD), read: "sources", params: {} },
-    passages: {
-      source: object(KNOWLEDGE_GOVERNANCE_RECORD), read: "sourcePage", params: { source: { literal: "source-1" }, cursor: { literal: "c" } },
-    },
-  }), { record: "panelRecord", issues: "panelRecordList", sources: "panelRecordList", passages: "panelRecordQuery" });
-
-  assert.deepEqual(result({
     rows: { source: { type: platformType(SKILL) }, read: "query", params: { search: { literal: "report" } } },
     record: { source: object(SKILL), read: "record", params: {} },
     files: { source: object(SKILL), read: "files", params: {} },
@@ -347,9 +468,9 @@ test("feedback, governance records and the skill library read through their owne
     return declaration?.parameterMode === "fixed" ? declaration.requiredParams : undefined;
   };
   assert.deepEqual(required(FEEDBACK_RECORD, "counts"), ["by"]);
-  assert.deepEqual(required(KNOWLEDGE_GOVERNANCE_RECORD, "sourcePage"), ["source"]);
   assert.deepEqual(required(SKILL, "file"), ["path"]);
-  assert.deepEqual(platformObjectTypes[SKILL].operations, [DELETE_SKILL]);
+  assert.deepEqual(platformObjectTypes[SKILL].operations, [DELETE_SKILL, EXPORT_SKILL]);
+  assert.deepEqual(platformObjectTypes[FEEDBACK_RECORD].operations, [EXPORT_FEEDBACK]);
 });
 
 test("model reads and operations use their owner's fixed signatures", async () => {
@@ -416,7 +537,7 @@ test("a panel manifest validates events, state and placements", () => {
       agents: { type: { kind: "list", items: agent }, personal: true, default: [] },
       agent: { type: agent, default: null, deepLink: true, external: true },
       mode: { type: { kind: "scalar", type: "string" } },
-      preview: { type: { kind: "placement", candidates: { rule: "catalogSelection" } } },
+      preview: { type: { kind: "placement", candidates: { rule: "usable" } } },
     },
     members: {
       row: { target: { panelId: "agent-detail" }, inputs: { agent: { item: true } } },
@@ -447,6 +568,31 @@ test("a panel manifest validates events, state and placements", () => {
   }).success, false);
 });
 
+test("one named header event can be primary in saved and authoring manifests", async () => {
+  const { panelAuthoringManifestSchema } = await import("./panel-authoring");
+  const manifest = {
+    state: { editing: { type: { kind: "scalar", type: "boolean" }, deepLink: true } },
+    members: { row: { target: { projectionId: "row" } } },
+  };
+  const create = { labelKey: "create", primary: true, do: { set: { fields: { editing: { literal: true } } } } };
+  const close = { labelKey: "close", do: { set: { fields: { editing: { literal: false } } } } };
+  const valid = { ...manifest, events: { create, close } };
+
+  for (const schema of [panelManifestSchema, panelAuthoringManifestSchema]) {
+    assert.deepEqual(schema.parse(valid).events, valid.events);
+    for (const [events, path] of [
+      [{ create, close: { ...close, primary: true } }, ["events", "close", "primary"]],
+      [{ create: { ...create, on: { member: "row", output: "activated" } } }, ["events", "create", "primary"]],
+      [{ create: { ...create, labelKey: undefined } }, ["events", "create", "primary"]],
+      [{ create: { ...create, primary: false } }, ["events", "create", "primary"]],
+    ] as const) {
+      const result = schema.safeParse({ ...manifest, events });
+      assert.equal(result.success, false);
+      if (!result.success) assert.deepEqual(result.error.issues[0]?.path, path);
+    }
+  }
+});
+
 test("entry resolution and personal-state scope use the actual use and nested path", async () => {
   const { applicationEntryResolutionSchema, applicationPanelReferencesRequestSchema } = await import("./product-panels");
   const { panelPersonalStateWriteRequestSchema } = await import("./panel-host");
@@ -461,10 +607,15 @@ test("entry resolution and personal-state scope use the actual use and nested pa
     menu: { groups: [{ key: "plan", names: { en: "Plan" }, sort: 0 }], panelUses: [use] },
   };
   assert.deepEqual(applicationEntryResolutionSchema.parse(response), response);
-  assert.equal(applicationPanelReferencesRequestSchema.safeParse({
-    domainId: "domain", framePanelId: "site-frame", uses: [{ id: use.id, panelId: use.panelId, inputs: use.inputs }],
+  const references = {
+    domainId: "domain", framePanelId: "site-frame",
+    uses: [
+      { id: use.id, panelId: use.panelId, inputs: use.inputs },
+      { id: "configured", panelId: use.panelId, defaultAgent: { kind: "preset", agentKind: "regular" } },
+    ],
     delivery: { panels: [use.panelId], projections: ["projection-tasks"] },
-  }).success, true);
+  };
+  assert.deepEqual(applicationPanelReferencesRequestSchema.parse(references), references);
   const memberPath = [{ member: "frame" }, {
     member: "preview", selection: { placement: { id: "current", target: { panelId: use.panelId } } },
   }];
@@ -685,23 +836,28 @@ test("an explicit batch operation can bind a checked object list", () => {
   assert.equal(projectionOperationTargetMatches(projection, projection.operations!.remove, { ...declaration, batch: false }, BUSINESS_KNOWLEDGE), false);
 });
 
-test("read operation inputs can take parameter values and a binding from this panel instance", () => {
+test("read operations can bind a draft, parameters and a binding ID in this panel instance", () => {
   const bindingId = { state: "bindingId" };
+  const draft = { slot: "metricEditor" };
   const parameters = { formField: { slot: "execution", path: "/parameters" } };
   const manifest = {
     state: { bindingId: { type: { kind: "scalar", type: "string" } } },
     members: {
+      metricEditor: { target: { projectionId: "metric-form" } },
       execution: { target: { projectionId: "runtime-form" } },
-      trial: { target: { projectionId: "trial" }, readOperationInputs: { testExecute: { parameters, bindingId } } },
+      trial: { target: { projectionId: "trial" }, readOperationInputs: { testExecute: { draft, parameters, bindingId } } },
     },
     events: {},
   };
-  assert.deepEqual(panelManifestSchema.parse(manifest).members.trial?.readOperationInputs?.testExecute, { parameters, bindingId });
+  assert.deepEqual(panelManifestSchema.parse(manifest).members.trial?.readOperationInputs?.testExecute, { draft, parameters, bindingId });
   assert.equal(panelManifestSchema.safeParse({ ...manifest, state: {} }).success, false);
-  const named = { parameters: { fields: { amount: { formField: { slot: "execution", path: "/amount" } }, binding: bindingId } } };
+  const named = { draft, parameters: { fields: { amount: { formField: { slot: "execution", path: "/amount" } }, binding: bindingId } } };
   const trial = { ...manifest.members.trial, readOperationInputs: { testExecute: named } };
   assert.deepEqual(panelManifestSchema.parse({ ...manifest, members: { ...manifest.members, trial } }).members.trial?.readOperationInputs?.testExecute, named);
-  assert.equal(panelManifestSchema.safeParse({ ...manifest, members: { trial } }).success, false);
+  const missingDraft = panelManifestSchema.safeParse({ ...manifest, members: { execution: manifest.members.execution, trial } });
+  assert.equal(missingDraft.success, false);
+  if (!missingDraft.success) assert.deepEqual(missingDraft.error.issues[0].path,
+    ["members", "trial", "readOperationInputs", "testExecute", "draft", "slot"]);
 });
 
 test("declared delete operations can read a named impact with the total count", () => {
@@ -1249,6 +1405,38 @@ test("MetricView and Function management reads do not grant operation or concret
   }
 });
 
+test("an export uses the read endpoint without a draft or a write intent", () => {
+  const feedback = {
+    applicationId: "ontology", useId: "feedback", operationId: "list.export",
+    call: { input: { search: "status", rating: "like" } },
+  };
+  assert.deepEqual(readPanelOperationRequestSchema.parse(feedback), feedback);
+  const skill = {
+    applicationId: "ontology", useId: "skills", operationId: "details.export",
+    call: { target: { kind: "object", objectType: SKILL, primaryKey: "skill-1" }, input: {} },
+  };
+  assert.deepEqual(readPanelOperationRequestSchema.parse(skill), skill);
+  assert.equal(readPanelOperationRequestSchema.safeParse({ ...feedback, call: { ...feedback.call, draft: {} } }).success, false);
+});
+
+test("a panel download validates the same basename and media type for the file and its receipt", async () => {
+  const { panelDownloadFileSchema } = await import("./panel-download");
+  const bytes = new Uint8Array([1, 2]);
+  const file = { bytes, mime: "text/csv", suggestedName: "反馈.csv" };
+  assert.deepEqual(panelDownloadFileSchema.parse(file), file);
+  for (const invalid of [
+    { suggestedName: "../feedback.csv" }, { suggestedName: ".feedback.csv" },
+    { suggestedName: "feedback\u0000.csv" }, { suggestedName: "feedback.zip" },
+    { mime: "text/html" }, { bytes: "encoded" },
+  ]) {
+    assert.equal(panelDownloadFileSchema.safeParse({ ...file, ...invalid }).success, false);
+  }
+  const receipt = { kind: "file", name: file.suggestedName, mime: file.mime };
+  assert.deepEqual(panelReadOperationResultSchema.parse(receipt), receipt);
+  assert.equal(panelReadOperationResultSchema.safeParse({ ...receipt, name: "feedback.zip" }).success, false);
+  assert.equal(readPanelOperationResponseSchema.safeParse(receipt).success, false);
+});
+
 test("a read-only trial carries the current draft and parameters without a write intent", () => {
   const input = { draft: { query: { select: ["name"] } }, parameters: { limit: 3 } };
   const request = {
@@ -1270,7 +1458,7 @@ test("a read-only trial carries the current draft and parameters without a write
 });
 
 test("the author type table and live descriptions share operation declarations", async () => {
-  const { panelOperationDeclarationSchema, describePanelOperationFromDeclaration } = await import("./panel-operations");
+  const { panelOperationDeclarationSchema, describePanelOperationFromDeclaration, panelReadResultSchemas } = await import("./panel-operations");
   const { platformTypeTableResponseSchema } = await import("./platform-type-table");
   const run = panelOperationDeclarationSchema.parse({
     id: RUN_NOW, kind: "action", effect: "write", batch: false, target: { source: "input", input: "task" }, inputSchema: { type: "object" },
@@ -1278,10 +1466,13 @@ test("the author type table and live descriptions share operation declarations",
   const save = panelOperationDeclarationSchema.parse({
     id: SCHEDULED_TASK + ".save", kind: "form.save", effect: "write", batch: false, target: { source: "draft" }, inputSchema: { type: "object" },
   });
-  const table = {
-    objectTypes: { [SCHEDULED_TASK]: { reads: platformObjectTypes[SCHEDULED_TASK].reads, operations: [run, save] } },
-  };
+  const reads = platformObjectTypes[SCHEDULED_TASK].reads!;
+  const resultIds = new Set(Object.values(reads).map(read => read.result));
+  const resultSchemas = Object.fromEntries([...resultIds].map(id => [id, zodToJsonSchema(panelReadResultSchemas[id])]));
+  const table = { objectTypes: { [SCHEDULED_TASK]: { reads, operations: [run, save] } }, resultSchemas };
   assert.deepEqual(platformTypeTableResponseSchema.parse(table), table);
+  const { panelFormDescription: _form, ...incomplete } = resultSchemas;
+  assert.equal(platformTypeTableResponseSchema.safeParse({ ...table, resultSchemas: incomplete }).success, false);
   assert.equal(panelOperationDeclarationSchema.safeParse({ ...run, label: "Run now" }).success, false);
 
   const { id, ...staticFields } = run;
@@ -1314,12 +1505,10 @@ test("owner select options preserve integer status and customizable string tags"
   assert.equal(formOptionSchema.safeParse({ ...option, value: 0, label: "Pending" }).success, false);
 });
 
-test("knowledge, governance, feedback and skill reads stay at their declared owners", () => {
+test("knowledge, feedback and skill reads stay at their declared owners", () => {
   for (const [resource, method, service, path] of [
     [BUSINESS_KNOWLEDGE, "POST", "/data-query", "/admin/getBussinessKnowledge"],
     [BUSINESS_KNOWLEDGE, "POST", "/data-query", "/admin/bussinessKnowledge/form"],
-    [KNOWLEDGE_GOVERNANCE_RECORD, "GET", "/data-query", "/ontology/ai/knowledge-governance/record/work"],
-    [KNOWLEDGE_GOVERNANCE_RECORD, "GET", "/data-query", "/ontology/ai/knowledge-governance/record/sources/evidence?offset=20"],
     [FEEDBACK_RECORD, "GET", "", "/feedback?rating=like&limit=20"],
     [FEEDBACK_RECORD, "GET", "", "/feedback/12a207b7-e868-45e5-a52d-e15f85447447"],
     [SKILL, "GET", "", "/skills/skill/file?path=references%2Fguide.md"],
@@ -1345,8 +1534,6 @@ test("knowledge, governance, feedback and skill reads stay at their declared own
   assert.ok(!clientSends([binding(SKILL)], "GET", "", "/skills/skill/export"));
   assert.ok(!clientSends([binding(FEEDBACK_RECORD)], "GET", "", "/feedback/export"));
   assert.ok(!clientSends([binding(FEEDBACK_RECORD)], "GET", "", "/feedback/state"));
-  assert.ok(!clientSends([binding(KNOWLEDGE_GOVERNANCE_RECORD)], "POST", "/data-query",
-    "/ontology/ai/knowledge-governance/record/runs/run/actions/approve"));
 });
 
 test("a child key is meaningful with its parent identity", () => {
@@ -1374,17 +1561,6 @@ test("a declared child collection carries its parent-scoped selection across pan
   };
   assert.deepEqual(pageSelectionSchema.parse(selection), selection);
   assert.equal(pageSelectionSchema.safeParse({ kind: selection.kind, id: selection.id, label: selection.label }).success, false);
-});
-
-test("governance issues and sources use separate collection queries under one parent", () => {
-  const parent = { objectType: KNOWLEDGE_GOVERNANCE_RECORD, primaryKey: "report-a" };
-  for (const collection of ["issues", "sources"]) {
-    const query = { parent, collection };
-    assert.deepEqual(panelChildCollectionQuerySchema.parse(query), query);
-  }
-  assert.equal(panelChildCollectionQuerySchema.safeParse({ parent, collection: "files" }).success, false);
-  const unconverted = { className: parent.objectType, primaryKey: parent.primaryKey };
-  assert.equal(panelChildCollectionQuerySchema.safeParse({ parent: unconverted, collection: "sources" }).success, false);
 });
 
 test("checked object collections are typed ports and never become deep-link state", () => {
@@ -1695,7 +1871,112 @@ test("conversation entries declare the exact composer target and can prefill wit
   assert.deepEqual(projection.conversationEntry, conversationEntry);
 });
 
+test("page candidate directories can identify the offered agents by preset", async () => {
+  const { assistantAgentListSchema } = await import("./assistant-chat");
+  const id = "7bec96be-2b73-4fe5-b0e1-9c4e12ed2697";
+  const agents = [{ id, name: "Knowledge governance", description: "", icon: null, enabled: true, effectiveSkills: [] }];
+  const directory = { agents, presetAgentIds: { "knowledge-governance": id } };
+  assert.deepEqual(assistantAgentListSchema.parse(directory), directory);
+  assert.deepEqual(assistantAgentListSchema.parse({ agents }), { agents });
+  assert.equal(assistantAgentListSchema.safeParse({ agents, presetAgentIds: { "": id } }).success, false);
+  assert.equal(assistantAgentListSchema.safeParse({ agents, presetAgentIds: { regular: "not-an-id" } }).success, false);
+});
+
+test("a state placement selects a product's kind and carries the complete nested operation path", async () => {
+  const { panelManifestSchema, panelMemberPathSchema, panelOperationId } = await import("./panel-manifest");
+  const { productPanelNestedReadRequestSchema, productPanelNestedReadResponseSchema } = await import("./panel-host");
+  const { pageContextSchema } = await import("./page-context");
+  const selected = { type: { kind: "object", objectType: "platform:ProductProjection" } };
+  const manifest = (candidates: object, state = selected) => ({
+    state: { selected: state }, members: { detail: { target: { fromState: "selected", candidates } } }, events: {},
+  });
+  assert.equal(panelManifestSchema.safeParse(manifest({ projectionIds: ["approve-card"] })).success, true);
+  assert.equal(panelManifestSchema.safeParse(manifest({ rule: "usable" })).success, true);
+  assert.equal(panelManifestSchema.safeParse(manifest({ panelIds: ["approve-card"] })).success, false);
+  assert.equal(panelManifestSchema.safeParse(manifest({ rule: "catalogSelection" })).success, false);
+  const panelState = { type: { kind: "object", objectType: "platform:ProductPanel" } };
+  assert.equal(panelManifestSchema.safeParse(manifest({ panelIds: ["detail-panel"] }, panelState)).success, true);
+  assert.equal(panelManifestSchema.safeParse(manifest({ rule: "usable" }, panelState)).success, true);
+
+  const memberPath = [
+    { member: "detail", selection: {
+      stateValue: { className: "platform:ProductPanel", primaryKey: "detail-panel" }, target: { panelId: "detail-panel" },
+    } },
+    { member: "approve", selection: {
+      stateValue: { className: "platform:ProductProjection", primaryKey: "approve-card" }, target: { projectionId: "approve-card" },
+    } },
+  ];
+  assert.deepEqual(panelMemberPathSchema.parse(memberPath), memberPath);
+  const operationId = panelOperationId(memberPath.map(({ member }) => member), "run");
+  assert.equal(operationId, "detail.approve.run");
+  const use = { applicationId: "app-example", useId: "home" };
+  assert.deepEqual(panelOperationRefSchema.parse({ ...use, operationId, memberPath }), { ...use, operationId, memberPath });
+  const nestedRequest = { source: { kind: "registered", ...use }, memberPath: [memberPath[0]] };
+  assert.deepEqual(productPanelNestedReadRequestSchema.parse(nestedRequest), nestedRequest);
+  assert.equal(productPanelNestedReadRequestSchema.safeParse({ ...nestedRequest, memberPath: [] }).success, false);
+  const unresolvedDetail = {
+    member: "objectDetails",
+    selection: { stateValue: { className: "platform:ScheduledTask", primaryKey: "task-1" } },
+  };
+  const unresolved = { ...nestedRequest, memberPath: [memberPath[0], unresolvedDetail] };
+  assert.deepEqual(productPanelNestedReadRequestSchema.parse(unresolved), unresolved);
+  for (const invalidPath of [
+    [unresolvedDetail, memberPath[0]],
+    [{ ...unresolvedDetail, selection: { stateValue: "task-1" } }],
+  ]) {
+    assert.equal(productPanelNestedReadRequestSchema.safeParse({ ...nestedRequest, memberPath: invalidPath }).success, false);
+  }
+  const { productPanelReadRequestSchema } = await import("./panel-host");
+  assert.equal(productPanelReadRequestSchema.safeParse({ ...unresolved, dataName: "record", inputs: {} }).success, false);
+  assert.equal(panelOperationRefSchema.safeParse({ ...use, operationId, memberPath: unresolved.memberPath }).success, false);
+  const nested = {
+    panel: {
+      id: "detail-panel", revision: 1, content: { html: "", module: "" },
+      manifest: { state: {}, members: {}, events: {} },
+    },
+  };
+  assert.deepEqual(productPanelNestedReadResponseSchema.parse(nested), nested);
+  const context = {
+    label: "Example", url: "/home", selection: [{
+      kind: "platform:ProductPanel", id: "detail-panel", label: "Selected panel", memberPath: [memberPath[0]],
+    }],
+  };
+  assert.deepEqual(pageContextSchema.parse(context), context);
+});
+
 test("only the host can send frame activity messages", () => {
   assert.deepEqual(panelHostFrameMessageSchema.parse({ kind: "activity", active: false }), { kind: "activity", active: false });
   assert.equal(panelFrameMessageSchema.safeParse({ kind: "activity", active: true }).success, false);
+});
+test("the direct panel import policy accepts only the host's literal module names", async () => {
+  const imports = await panelModuleImports(`
+    import { ref } from "vue";
+    export { mountPanel } from "@ontomato/sdk/panel";
+    await import("vue");
+    import.meta.url;
+  `);
+  assert.deepEqual(imports.map(({ specifier, dynamic }) => [specifier, dynamic]), [
+    ["vue", false], ["@ontomato/sdk/panel", false], ["vue", true],
+  ]);
+  await assert.rejects(panelModuleImports('import { ElButton } from "element-plus";'), /imports element-plus/);
+  await assert.rejects(panelModuleImports('export { mountPanel } from "./panel-tools.mjs";'), /imports \.\/panel-tools\.mjs/);
+  await assert.rejects(panelModuleImports('await import("element-plus");'), /imports element-plus/);
+  await assert.rejects(panelModuleImports('await import(moduleName);'), /imports a computed module/);
+});
+
+test("a conversation entry names its opening sentence by a key of the panel's messages, or writes it out, not both", async () => {
+  const { panelConversationEntrySchema, missingEntryMessageKeys } = await import("./panel-conversation-entry");
+  const target = { kind: "page-default" as const };
+  assert.deepEqual(panelConversationEntrySchema.parse({ target, prefillKey: "actions.create" }), { target, prefillKey: "actions.create" });
+  assert.equal(panelConversationEntrySchema.safeParse({ target, prefill: "Help me", prefillKey: "actions.create" }).success, false);
+  const messages = { en: { "actions.create": "Help me create an action:" }, "zh-CN": {} };
+  assert.deepEqual(missingEntryMessageKeys([{ target, prefillKey: "actions.create" }, { target, prefill: "Written" }, undefined], messages),
+    [{ key: "actions.create", locale: "zh-CN" }]);
+  assert.deepEqual(missingEntryMessageKeys([{ target, prefillKey: "actions.create" }], undefined), [{ key: "actions.create", locale: null }]);
+  // A name every object inherits is no key of the panel's.
+  assert.deepEqual(missingEntryMessageKeys([{ target, prefillKey: "toString" }], { en: {} }), [{ key: "toString", locale: "en" }]);
+  // A frame's request to open the composer carries the sentence written out, as it always did.
+  const { appBridgeExpandPageComposerSchema } = await import("./app-bridge");
+  assert.equal(appBridgeExpandPageComposerSchema.safeParse({ slot: "entry", target, prefill: "Help me" }).success, true);
+  assert.equal(appBridgeExpandPageComposerSchema.safeParse({ slot: "entry", target, prefillKey: "actions.create" }).success, false);
 });

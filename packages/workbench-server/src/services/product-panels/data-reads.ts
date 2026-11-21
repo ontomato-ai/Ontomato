@@ -3,7 +3,7 @@ import { z } from "zod";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import {
-  AGENT_DEFINITION, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, KNOWLEDGE_GOVERNANCE_RECORD, MODEL_OPTION, SCHEDULED_TASK, SKILL, USER,
+  AGENT_DEFINITION, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, MODEL_OPTION, SCHEDULED_TASK, SKILL, USER,
 } from "@ontomato/contracts/panel-client-requests";
 import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
@@ -18,6 +18,7 @@ import { assertPermission } from "../../identity/installed";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
+import { requireFormFieldNames } from "../../utils/form-field-names";
 import type { ProductOwner } from "../product-governance/grants";
 
 import { createDashboardCardReadAdapter } from "../dashboard/chart-sources";
@@ -69,10 +70,14 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   const metrics = createMetricReadAdapter(owner, viewer, callerUserName);
   const functions = createFunctionReadAdapter(owner, viewer, callerUserName);
   const cards = createDashboardCardReadAdapter(owner, viewer);
-  const formParams = (params: Record<string, unknown>) => ({
-    values: panelReadParameterSchemas.panelFormValues.optional().parse(params.values),
-    changedField: panelReadParameterSchemas.changedField.optional().parse(params.changedField) ?? null,
-  });
+  const formParams = (params: Record<string, unknown>) => {
+    const values = panelReadParameterSchemas.panelFormValues.optional().parse(params.values);
+    requireFormFieldNames(values, "values");
+    return {
+      values,
+      changedField: panelReadParameterSchemas.changedField.optional().parse(params.changedField) ?? null,
+    };
+  };
   const modelReads: Record<string, ReadAdapter> = {
     list: (selection, params) => model.list(selection.typeId, {
       className: panelReadParameterSchemas.className.optional().parse(params.className),
@@ -90,6 +95,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     form: (selection, params) => adapter.form(selection.primaryKey!, formParams(params)),
     createForm: (_selection, params) => adapter.createForm(formParams(params)),
     usedBy: selection => adapter.usedBy(selection.primaryKey!),
+    grants: selection => adapter.grants(selection.primaryKey!),
   });
   const definitions = async () => {
     const { createAgentDefinitionReadAdapter } = await import("../assistant/panel-reads");
@@ -111,10 +117,6 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   const feedback = async () => {
     const { createFeedbackReadAdapter } = await import("../admin/feedback-panel-reads");
     return createFeedbackReadAdapter(owner, viewer);
-  };
-  const governance = async () => {
-    const { createKnowledgeGovernanceReadAdapter } = await import("../assistant/governance-panel-reads");
-    return createKnowledgeGovernanceReadAdapter(viewer);
   };
   return {
     [ACTION]: {
@@ -209,11 +211,10 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       query: (_selection, params) => applications.query(params),
       record: selection => applications.record(selection.primaryKey!),
       entries: selection => applications.entries(selection.primaryKey!),
-      form: (_selection, params) => applications.form({
-        ...formParams(params),
-        section: panelReadParameterSchemas.applicationFormSection.parse(params.section),
-        target: panelReadParameterSchemas.applicationFormTarget.parse(params.target),
+      form: (selection, params) => applications.form(selection.primaryKey!, {
+        ...formParams(params), section: panelReadParameterSchemas.applicationFormSection.parse(params.section),
       }),
+      createForm: (_selection, params) => applications.createForm(formParams(params)),
     },
     [ONTOLOGY_TYPE]: {
       schema: async () => (await ontology()).schema(),
@@ -225,10 +226,10 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [SCHEDULED_TASK]: {
       list: () => schedules.list(),
       record: selection => schedules.record(selection.primaryKey!),
-      form: (selection, params) => schedules.form(selection.primaryKey!, {
-        values: panelReadParameterSchemas.formValues.optional().parse(params.values),
-        changedField: panelReadParameterSchemas.changedField.optional().parse(params.changedField),
-      }),
+      runs: (selection, params) => schedules.runs(selection.primaryKey!, panelReadParameterSchemas.cursor.optional().parse(params.cursor)),
+      run: (selection, params) => schedules.run(selection.primaryKey!, panelReadParameterSchemas.scheduledRunId.parse(params.runId)),
+      form: (selection, params) => schedules.form(selection.primaryKey!, formParams(params)),
+      createForm: (_selection, params) => schedules.createForm(formParams(params)),
     },
     [BUSINESS_KNOWLEDGE]: {
       query: (_selection, params) => knowledge.query(params),
@@ -241,12 +242,6 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       query: async (_selection, params) => (await feedback()).query(params),
       counts: async (_selection, params) => (await feedback()).counts(params),
       record: async selection => (await feedback()).record(selection.primaryKey!),
-    },
-    [KNOWLEDGE_GOVERNANCE_RECORD]: {
-      record: async selection => (await governance()).record(selection.primaryKey!),
-      issues: async selection => (await governance()).issues(selection.primaryKey!),
-      sources: async selection => (await governance()).sources(selection.primaryKey!),
-      sourcePage: async (selection, params) => (await governance()).sourcePage(selection.primaryKey!, params),
     },
   };
 }
@@ -343,7 +338,10 @@ export async function readProductPanelData(
         { panel, projection, member, slot: request.memberPath.at(-1)!.member }, inputs);
       return { status: "ready", value };
     }
-    if (!Object.hasOwn(projection.data, request.dataName)) return { status: "forbidden" };
+    if (!Object.hasOwn(projection.data, request.dataName)) return {
+      status: "error",
+      message: `Member ${JSON.stringify(request.memberPath.at(-1)!.member)} does not declare dataName ${JSON.stringify(request.dataName)}. Declared data names: ${JSON.stringify(Object.keys(projection.data))}.`,
+    };
     const data = projection.data[request.dataName];
     const declaration = directReadDeclaration(projection, data)!;
     const params = await readParameters(projection, member, request.dataName, data, declaration, inputs, request.runtimeParams);

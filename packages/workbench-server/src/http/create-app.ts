@@ -149,12 +149,12 @@ export function createWorkbenchApp(): Express {
       res.setHeader("Referrer-Policy", "no-referrer");
       const { token, apiKey } = verification;
       await runWithLogContext({ domainId, token, apiKey }, async () => {
-        const { registry } = await readSkillView(domainId, { token, apiKey });
+        const view = await readSkillView(domainId, { token, apiKey });
         // Saved HTML still has two historical path segments before the skill name.
         const [, , , id, ...segments] = decodeURIComponent(req.path).split("/");
-        const skill = registry.getSkillById(id);
+        const skill = view.requireSkillById(id);
         const relative = normalizeSkillPackagePath(segments.join("/"));
-        if (!skill || !relative) {
+        if (!relative) {
           res.sendStatus(404);
           return;
         }
@@ -278,6 +278,8 @@ export async function startWorkbench(
   await syncRuntimeDefaultResources();
   syncDefaultPrompts();
   await initializeConnection();
+  const { registerBuiltinProducts } = await import("../services/product-panels/builtin-products");
+  await registerBuiltinProducts();
   // Production images carry the apps SDK next to the web pages; development serves neither from a build.
   startModelMigration();
   getWorkbenchLogStore();

@@ -9,6 +9,8 @@ import { ElSwitch } from "element-plus/es/components/switch/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormField } from "@ontomato/contracts/panel-projection";
 import { admitsNull, valueAt } from "../panel/form-values";
+import { agentAvatar, avatarIconOptions, darkAvatarColorOptions, lightAvatarColorOptions, storedAgentAvatar } from "@ontomato/agent-shell-ui/avatar";
+import { useDarkMode } from "@ontomato/foundation-ui/theme";
 import { useFormControls } from "./form-controls";
 import FormCodeField from "./FormCodeField.vue";
 
@@ -61,8 +63,21 @@ const setNumber = (typed: string) => set(typed === "" ? null : Number(typed));
  */
 const setTime = (typed: string) => set(typed === "" && admitsNull(props.field.valueSchema) ? null : typed);
 const setString = (index: number, next: string) => set(rows.value.map((row, at) => (at === index ? next : row)));
-/** A hidden field is the owner's and is drawn by no control; an avatar is drawn by the page that shows it. */
-const drawn = (fields: readonly PanelFormField[]) => fields.filter((child) => child.control.kind !== "hidden" && child.control.kind !== "avatar");
+/**
+ * An avatar, as the platform's avatars are chosen and stored (an agent's `icon`): one of its icons on one of its swatches,
+ * written as `{"key","color"}` text with the swatch's light value; the picker shows the current theme's swatches, which
+ * correspond to the light ones by index.
+ */
+const isDark = useDarkMode();
+const avatar = computed(() => agentAvatar(typeof value.value === "string" ? value.value : null));
+const swatches = computed(() => (isDark.value ? darkAvatarColorOptions : lightAvatarColorOptions));
+const chosenSwatch = computed(() => Math.max(0, lightAvatarColorOptions.indexOf(avatar.value.color)));
+const setAvatar = (next: { key?: string; swatch?: number }) => set(storedAgentAvatar({
+  key: next.key ?? avatar.value.key,
+  color: next.swatch === undefined ? avatar.value.color : lightAvatarColorOptions[next.swatch]!,
+}));
+/** A hidden field is the owner's and is drawn by no control. */
+const drawn = (fields: readonly PanelFormField[]) => fields.filter((child) => child.control.kind !== "hidden");
 const addObject = () => set(control.value.kind === "object" ? control.value.defaultObject ?? {} : {});
 </script>
 
@@ -176,6 +191,38 @@ const addObject = () => set(control.value.kind === "object" ? control.value.defa
       </div>
       <el-button v-if="!off" class="sdk-form-add" @click="addRow">{{ t("platform.formAdd") }}</el-button>
     </div>
+    <div v-else-if="control.kind === 'avatar'" class="sdk-form-avatar">
+      <div class="sdk-form-avatar-choices" role="group" :aria-label="t('platform.formAvatarIcon')">
+        <button
+          v-for="option in avatarIconOptions"
+          :key="option.key"
+          type="button"
+          class="sdk-form-avatar-icon"
+          :class="{ active: avatar.key === option.key }"
+          :title="option.key"
+          :aria-label="option.key"
+          :aria-pressed="avatar.key === option.key"
+          :disabled="off"
+          @click="setAvatar({ key: option.key })"
+        >
+          <component :is="option.icon" :size="18" aria-hidden="true"></component>
+        </button>
+      </div>
+      <div class="sdk-form-avatar-choices" role="group" :aria-label="t('platform.formAvatarColor')">
+        <button
+          v-for="(color, index) in swatches"
+          :key="index"
+          type="button"
+          class="sdk-form-avatar-color"
+          :class="{ active: chosenSwatch === index }"
+          :style="{ background: color }"
+          :aria-label="t('platform.formAvatarColorOption', { index: index + 1 })"
+          :aria-pressed="chosenSwatch === index"
+          :disabled="off"
+          @click="setAvatar({ swatch: index })"
+        ></button>
+      </div>
+    </div>
     <p v-else role="alert" class="sdk-form-field-unavailable">{{ t("platform.formControlUnavailable") }}</p>
     <p v-if="field.readOnly && field.readOnlyReason" class="sdk-form-field-help">{{ field.readOnlyReason }}</p>
     <p v-else-if="field.help" class="sdk-form-field-help">{{ field.help }}</p>
@@ -183,23 +230,58 @@ const addObject = () => set(control.value.kind === "object" ? control.value.defa
 </template>
 
 <style scoped>
+.sdk-form-avatar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.sdk-form-avatar-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+.sdk-form-avatar-icon,
+.sdk-form-avatar-color {
+  align-items: center;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  display: inline-flex;
+  height: var(--control-height);
+  justify-content: center;
+  width: var(--control-height);
+}
+.sdk-form-avatar-icon {
+  background: var(--el-bg-color);
+  color: var(--el-text-color-regular);
+}
+.sdk-form-avatar-icon.active,
+.sdk-form-avatar-color.active {
+  border-color: var(--brand-link);
+  box-shadow: 0 0 0 1px var(--brand-link);
+}
+.sdk-form-avatar-icon:disabled,
+.sdk-form-avatar-color:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
 .sdk-form-field-wide {
   width: 100%;
 }
 .sdk-owner-form-field-changed > :deep(.el-form-item__label) {
-  color: var(--el-color-primary);
+  color: var(--brand-link);
 }
 .sdk-form-field-help {
   color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
   line-height: 1.5;
-  margin: 4px 0 0;
+  margin: var(--spacing-xs) 0 0;
 }
 .sdk-form-field-time {
   width: 160px;
 }
 .sdk-form-field-unavailable {
-  color: var(--el-color-danger);
+  color: var(--el-color-danger-text);
   font-size: var(--text-xs);
   margin: 0;
 }
@@ -207,22 +289,22 @@ const addObject = () => set(control.value.kind === "object" ? control.value.defa
 .sdk-form-object {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--spacing-sm);
   width: 100%;
 }
 .sdk-form-string-row {
   display: flex;
-  gap: 8px;
+  gap: var(--spacing-sm);
 }
 .sdk-form-row {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  padding: 8px 12px;
+  border: 1px solid var(--ui-divider);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
 }
 .sdk-form-row-fields {
   display: flex;
   flex-wrap: wrap;
-  gap: 0 12px;
+  gap: 0 var(--spacing-md);
 }
 .sdk-form-row-fields > .sdk-form-field {
   flex: 1 1 160px;

@@ -109,6 +109,34 @@ class FunctionPanelEndpointTest {
   }
 
   @Test
+  void aSaveThatNamesItsSubmittedFieldsKeepsEveryOtherSavedValue() throws Exception {
+    Function stored = function("f1", "Revenue query", Function.OPERATION_READ);
+    stored.setLogic("Sum the amounts");
+    stored.setDescription("Reads revenue");
+    when(functionService.queryById("f1")).thenReturn(stored);
+    when(functionService.save(any(), eq("en"))).thenReturn(stored);
+
+    JSONObject body = perform("/function/save", """
+        {"id":"f1","logic":"Count the orders","submittedFields":["/logic"]}""");
+
+    assertTrue(body.getBooleanValue("success"), body.toJSONString());
+    org.mockito.ArgumentCaptor<Function> saved = org.mockito.ArgumentCaptor.forClass(Function.class);
+    verify(functionService).save(saved.capture(), eq("en"));
+    assertEquals("f1", saved.getValue().getId());
+    assertEquals("Revenue query", saved.getValue().getName());
+    assertEquals("Reads revenue", saved.getValue().getDescription());
+    assertEquals(Function.OPERATION_READ, saved.getValue().getOperation());
+    assertEquals("Count the orders", saved.getValue().getLogic());
+
+    Function elsewhere = function("f9", "Other", Function.OPERATION_READ);
+    elsewhere.setDomainId("other");
+    when(functionService.queryById("f9")).thenReturn(elsewhere);
+    JSONObject refused = perform("/function/save", """
+        {"id":"f9","logic":"x","submittedFields":["/logic"]}""");
+    assertEquals("FUNCTION_NOT_FOUND", refused.getString("code"));
+  }
+
+  @Test
   void aRefusalIsAnEnvelopeCodeWhileAFailureKeepsAMessageOnly() throws Exception {
     when(functionService.save(any(), eq("en")))
         .thenThrow(new OwnerRefusal("FUNCTION_SYSTEM", "Function.cannotModifySystem"));

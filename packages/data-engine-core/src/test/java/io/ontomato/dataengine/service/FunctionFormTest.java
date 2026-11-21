@@ -175,6 +175,21 @@ class FunctionFormTest {
   }
 
   @Test
+  void aDraftThatGivesOnlySomeFieldsKeepsTheFunctionsOtherValues() {
+    when(functionDao.queryById("f1")).thenReturn(readFunction());
+    JSONObject request = objectTarget("f1");
+    request.put("values", JSONObject.of("description", "Reads weekly revenue"));
+    request.put("changedField", null);
+
+    JSONObject form = form(request);
+
+    assertEquals(List.of(), form.get("errors"));
+    assertEquals("Revenue query", form.getJSONObject("values").getString("name"));
+    assertEquals("Reads weekly revenue", form.getJSONObject("values").getString("description"));
+    assertEquals("OPERATION_READ", form.getJSONObject("values").getString("operation"));
+  }
+
+  @Test
   void aDraftGetsThePageDefaultsAndCreateOperation() {
     JSONObject form = form(JSONObject.of("target", JSONObject.of("kind", "draft")));
 
@@ -182,6 +197,7 @@ class FunctionFormTest {
     assertEquals("OPERATION_READ", values.getString("operation"));
     assertEquals("USER", values.getString("origin"));
     assertEquals("function.create", form.getJSONObject("save").getString("draftOperation"));
+    assertFalse(form.getJSONObject("values").containsKey("id"));
     assertFalse(field(form, "/operation").getBooleanValue("readOnly"));
     assertEquals("code", field(form, "/queryPackage").getJSONObject("control").getString("kind"));
   }
@@ -223,7 +239,7 @@ class FunctionFormTest {
 
     JSONObject form = service.form(request, "en", "domain-a");
 
-    assertSame(values, form.getJSONObject("values"));
+    assertCarries(values, form.getJSONObject("values"));
     assertEquals("object-array", field(form, "/parameters").getJSONObject("control").getString("kind"));
     assertEquals("string-array", field(form, "/returnDef/classNames").getJSONObject("control").getString("kind"));
     assertNull(optionalField(form, "/queryPackage"));
@@ -332,7 +348,7 @@ class FunctionFormTest {
     request.put("values", values);
     request.put("changedField", null);
     JSONObject form = service.form(request, "en", "domain-a");
-    assertSame(values, form.getJSONObject("values"));
+    assertCarries(values, form.getJSONObject("values"));
     return (List<ObjectNode>) form.get("errors");
   }
 
@@ -411,5 +427,14 @@ class FunctionFormTest {
     for (Object item : fields)
       if (path.equals(((JSONObject) item).getString("path"))) return (JSONObject) item;
     throw new AssertionError("No field " + path);
+  }
+
+  /** The form returns every value the request gave, laid over the current definition. */
+  private static void assertCarries(JSONObject given, JSONObject returned) {
+    for (String key : given.keySet()) {
+      Object value = given.get(key);
+      if (value instanceof JSONObject object && returned.get(key) instanceof JSONObject laid) assertCarries(object, laid);
+      else assertEquals(JSON.parse(JSON.toJSONString(value)), JSON.parse(JSON.toJSONString(returned.get(key))), key);
+    }
   }
 }

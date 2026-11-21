@@ -2,6 +2,8 @@
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, provide, ref, shallowRef, toRef, useId, useSlots, watch } from "vue";
 import { PanelLeft, PanelRightOpen, X } from "lucide-vue-next";
 import { conversationQuestions, displayPlacementKey, shellContextKey, type ShellContext } from "../context";
+import { entryAgent, servePageComposerKey, type ComposerEntry, type PageComposerExpand } from "../page-composer-entry";
+import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import {
   CLOSED_TARGET,
   carriedTargetIn,
@@ -307,6 +309,44 @@ function chooseAgent(id: string) {
   agentId.value = id;
 }
 
+/**
+ * A panel's conversation entry on the page beside this conversation (design U18): when the agent it names is this
+ * conversation's, its sentence is filled here; when it is another of the page's candidates, a new conversation starts
+ * with that agent and takes the sentence, the open one keeping its own agent and the page staying open. An agent it
+ * cannot name, or a run still going, only opens the composer. Nothing is sent from here.
+ */
+const entry = shallowRef<ComposerEntry | null>(null);
+function showEntry(text: string | null) {
+  entry.value = { text, seq: (entry.value?.seq ?? 0) + 1 };
+}
+/** An entry that arrived while the page's agents were being read; it waits for them, the latest one counting. */
+let waitingEntry: PanelConversationEntry | null = null;
+const expandEntry: PageComposerExpand = (request) => {
+  if (nav.agentsState.value === "loading") {
+    waitingEntry = request;
+    return;
+  }
+  const named = entryAgent(request.target, nav.agents.value, nav.pageAgents.value?.defaultAgentId, nav.pageAgents.value?.presetAgentIds);
+  if (!named) return showEntry(null);
+  if (named === agentId.value) return showEntry(request.prefill ?? null);
+  if (conversation.busy.value) {
+    emit("error", props.labels.switchWhileRunning);
+    return showEntry(null);
+  }
+  nav.beginWith(named);
+  void nextTick(() => showEntry(request.prefill ?? null));
+};
+watch(() => nav.agentsState.value, (state) => {
+  const asked = waitingEntry;
+  if (state === "loading" || !asked) return;
+  waitingEntry = null;
+  // Read: the entry takes effect among them. Failed: it ends here, the read's error shown where it failed.
+  if (state === "ready") expandEntry(asked);
+});
+const serveEntry = inject(servePageComposerKey, null);
+const withdrawEntry = serveEntry?.(expandEntry);
+onBeforeUnmount(() => withdrawEntry?.());
+
 /** Sending from a full page brings the conversation back beside it, so the reply is visible. */
 function sendFromPage(text: string) {
   void display.setView("side");
@@ -510,6 +550,7 @@ onMounted(() => {
         :pending-input="conversation.pendingInput.value"
         :busy="conversation.busy.value"
         :sending="conversation.sending.value"
+        :entry="entry"
         :feedback="feedback"
         @send="send"
         @stop="conversation.cancel"
@@ -528,6 +569,7 @@ onMounted(() => {
       :view="display.view.value"
       :busy="conversation.busy.value"
       :sending="conversation.sending.value"
+      :entry="entry"
       :disabled="!currentAgent?.enabled"
       @send="sendFromPage"
       @stop="conversation.cancel"
@@ -537,6 +579,9 @@ onMounted(() => {
     >
       <template v-if="slots['page-header']" #header>
         <slot name="page-header" :feature-id="display.page.value.featureId" :view="display.view.value" />
+      </template>
+      <template v-if="slots['page-actions']" #actions>
+        <slot name="page-actions" :view="display.view.value" />
       </template>
       <template v-if="slots['composer-context']" #composer-context>
         <slot name="composer-context" :page-open="true" :inline="true" :unstarted="unstarted" />

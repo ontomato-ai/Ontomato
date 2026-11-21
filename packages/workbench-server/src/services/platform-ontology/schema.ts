@@ -34,8 +34,11 @@ import {
   platformObjectTypes,
   platformOntologyLayers,
   platformRelationKinds,
+  type PlatformReadDeclaration,
   type PlatformRelationKindDeclaration,
 } from "@ontomato/contracts/platform-object-types";
+import { platformTypeDetails } from "@ontomato/contracts/platform-type-details";
+import type { PlatformTypeReadDeclaration } from "@ontomato/contracts/platform-type-table";
 
 export {
   ACTION,
@@ -72,6 +75,69 @@ export const PLATFORM_ONTOLOGY_TYPES: readonly PlatformOntologyType[] = Object.e
 export const PLATFORM_ONTOLOGY_TYPE_MAP: ReadonlyMap<string, PlatformOntologyType> = new Map(
   PLATFORM_ONTOLOGY_TYPES.map((spec) => [spec.id, spec]),
 );
+
+function cloneReadDeclarations(
+  reads: Readonly<Record<string, PlatformReadDeclaration>>,
+): Record<string, PlatformTypeReadDeclaration> {
+  return Object.fromEntries(
+    Object.entries(reads).map(([name, read]) => [
+      name,
+      read.parameterMode === "fixed"
+        ? {
+            source: read.source,
+            parameterMode: "fixed",
+            params: { ...read.params },
+            ...(read.requiredParams ? { requiredParams: [...read.requiredParams] } : {}),
+            result: read.result,
+          }
+        : {
+            source: read.source,
+            parameterMode: "owner",
+            parameter: read.parameter,
+            result: read.result,
+          },
+    ]),
+  );
+}
+
+let cachedSchemaTypes: readonly PlatformOntologyType[] | undefined;
+
+/**
+ * Assembles the full read-only `platform:OntologyType.schema` entries for every layered type:
+ * base identity/layer/labelKey, owner-declared public type details (when present), declared
+ * named reads from `platformObjectTypes`, and registered owner operation signatures.
+ *
+ * `server-operations` is imported lazily so importing `schema.ts` or `create-app.ts` does not
+ * require `installContentLayout` at module load time.
+ */
+export async function assemblePlatformOntologySchemaTypes(): Promise<readonly PlatformOntologyType[]> {
+  if (cachedSchemaTypes) return cachedSchemaTypes;
+  const { registeredPanelOperation } = await import("../product-panels/server-operations");
+  cachedSchemaTypes = Object.entries(platformObjectTypes).flatMap(([id, decl]): PlatformOntologyType[] => {
+    if (!decl.layer) return [];
+    const detail = platformTypeDetails[id];
+    const reads = decl.reads && Object.keys(decl.reads).length > 0 ? cloneReadDeclarations(decl.reads) : undefined;
+    const operations = decl.operations?.flatMap((operationId) => {
+      const registered = registeredPanelOperation(operationId);
+      return registered ? [registered.declaration] : [];
+    });
+    return [{
+      id,
+      layer: decl.layer,
+      labelKey: decl.labelKey ?? id,
+      ...(detail
+        ? {
+            definition: detail.definition,
+            properties: detail.properties.map((prop) => ({ ...prop })),
+            rules: detail.rules,
+          }
+        : {}),
+      ...(reads ? { reads } : {}),
+      ...(operations && operations.length > 0 ? { operations } : {}),
+    }];
+  });
+  return cachedSchemaTypes;
+}
 
 export const PLATFORM_ONTOLOGY_RELATION_KINDS: readonly PlatformRelationKindDeclaration[] =
   platformRelationKinds;

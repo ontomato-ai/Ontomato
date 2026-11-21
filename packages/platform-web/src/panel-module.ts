@@ -1,5 +1,5 @@
 import * as Vue from "vue";
-import { init, parse } from "es-module-lexer";
+import { panelModuleImports, panelModuleSpecifiers, type PanelModuleSpecifier } from "@ontomato/contracts/panel-module";
 import type { CompilerOptions } from "@vue/compiler-dom";
 
 /*
@@ -23,7 +23,7 @@ export function useTemplateCompiler(): Promise<void> {
 }
 
 /** The modules an instance's module may import by name, each one's namespace by its specifier. */
-export type PanelModules = Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+export type PanelModules = Readonly<Record<PanelModuleSpecifier, Readonly<Record<string, unknown>>>>;
 
 /** The namespaces the modules being evaluated read, by a key only their own addresses name. */
 const evaluating = new Map<string, Readonly<Record<string, unknown>>>();
@@ -44,28 +44,26 @@ function namespaceModule(key: string, namespace: Readonly<Record<string, unknown
  * module awaits its `mountPanel` — and refuses one that imports anything the platform does not give it.
  */
 export async function runPanelModule(source: string, modules: PanelModules): Promise<void> {
-  await init;
+  const imports = await panelModuleImports(source);
   const run = `panel-${++instances}`;
-  const addresses = new Map<string, string>();
-  for (const [specifier, namespace] of Object.entries(modules)) {
+  const specifiers = Object.values(panelModuleSpecifiers);
+  const addresses = new Map<PanelModuleSpecifier, string>();
+  for (const specifier of specifiers) {
+    const namespace = modules[specifier];
     const key = `${run}:${specifier}`;
     evaluating.set(key, namespace);
     addresses.set(specifier, namespaceModule(key, namespace));
   }
   try {
-    const [imports] = parse(source);
     let rewritten = "", last = 0;
     for (const entry of imports) {
-      // `import.meta` names no module.
-      if (entry.specifier === null) continue;
-      const address = entry.specifier === undefined ? undefined : addresses.get(entry.specifier);
-      if (!address) throw new Error(`A panel's module imports ${entry.specifier ?? "a computed module"}, which the platform does not give it`);
-      rewritten += source.slice(last, entry.start) + address;
+      const address = addresses.get(entry.specifier)!;
+      rewritten += source.slice(last, entry.start) + (entry.dynamic ? JSON.stringify(address) : address);
       last = entry.end;
     }
     rewritten += source.slice(last);
     await import(/* @vite-ignore */ `data:text/javascript;charset=utf-8,${encodeURIComponent(rewritten)}`);
   } finally {
-    for (const specifier of Object.keys(modules)) evaluating.delete(`${run}:${specifier}`);
+    for (const specifier of specifiers) evaluating.delete(`${run}:${specifier}`);
   }
 }

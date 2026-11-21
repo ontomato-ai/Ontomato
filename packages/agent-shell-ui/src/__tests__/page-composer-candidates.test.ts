@@ -5,6 +5,7 @@ import { assistantAgentsQuerySchema, type PageSkillContext } from "@ontomato/con
 import { createAgentHostClient } from "../host";
 import type { ShellLabels } from "../types";
 import { pageCounterKey, type PageCounter } from "../page-counter";
+import { servePageComposerKey, type PageComposerExpand } from "../page-composer-entry";
 import PageComposer from "../components/PageComposer.vue";
 
 // The composer's own agent control: the test reads who the page offers and who is selected, which is the point.
@@ -70,6 +71,12 @@ function draw(
   const agents = vi.fn(counter.agents ?? (async () => [] as AgentHostAgent[]));
   const ask = vi.fn();
   const errors: string[] = [];
+  // The host's registry of composers on screen, as the platform keeps it: the latest serves.
+  const served: PageComposerExpand[] = [];
+  const serve = (expand: PageComposerExpand) => {
+    served.push(expand);
+    return () => void served.splice(served.indexOf(expand), 1);
+  };
   seen.length = 0;
   const root = document.createElement("div");
   document.body.append(root);
@@ -89,10 +96,11 @@ function draw(
     }),
   });
   app.provide(pageCounterKey as symbol, { pageAgents, agents, ask, preferredAgentId: ref<string | null>("remembered") } satisfies PageCounter);
+  app.provide(servePageComposerKey, serve);
   app.mount(root);
   apps.push(app);
   const shown = () => seen.at(-1)!;
-  return { root, pageAgents, agents, ask, errors, shown, skillRef };
+  return { app, root, pageAgents, agents, ask, errors, shown, skillRef, served };
 }
 
 it("offers only the page's candidates and starts from its registered default", async () => {
@@ -238,4 +246,118 @@ it("encodes public and member queries through the real host client and skips net
   const empty = await host.listPageAgents(unavailableMemberSkill);
   expect(empty).toEqual({ agents: [] });
   expect(requestedUrls).toHaveLength(2);
+});
+
+/*
+ * A panel's conversation entry (design U18) reaches the page's composer through the host's registry: the composer opens,
+ * takes the agent the entry names among this page's candidates, and holds the entry's sentence for the reader to send.
+ */
+const settle = () => new Promise((resolve) => setTimeout(resolve));
+const box = (root: HTMLElement) => root.querySelector<HTMLTextAreaElement>("textarea");
+
+it("opens on a panel's entry, takes the agent it names among the candidates and fills its sentence, without sending", async () => {
+  localStorage.setItem("ontomato.shell.composerCollapsed", "true");
+  const drawn = draw({
+    pageAgents: async () => ({ agents: [agent("assistant", "Assistant"), agent("governance", "Governance")], defaultAgentId: "assistant" }),
+  });
+  await settle();
+  expect(box(drawn.root)).toBeNull();
+  expect(drawn.served).toHaveLength(1);
+
+  drawn.served.at(-1)!({ target: { kind: "id", id: "governance" }, prefill: "Review the pending knowledge" });
+  await settle();
+  expect(drawn.shown().agentId).toBe("governance");
+  expect(box(drawn.root)!.value).toBe("Review the pending knowledge");
+  // Opened for this entry: the reader's remembered fold is untouched, and nothing went out.
+  expect(localStorage.getItem("ontomato.shell.composerCollapsed")).toBe("true");
+  expect(drawn.ask).not.toHaveBeenCalled();
+
+  drawn.served.at(-1)!({ target: { kind: "page-default" }, prefill: "What changed today?" });
+  await settle();
+  expect(drawn.shown().agentId).toBe("assistant");
+  expect(box(drawn.root)!.value).toBe("What changed today?");
+  localStorage.removeItem("ontomato.shell.composerCollapsed");
+});
+
+it("only opens for an entry naming no candidate, keeping its own agent and its text", async () => {
+  const drawn = draw({ pageAgents: async () => ({ agents: [agent("assistant", "Assistant")], defaultAgentId: "assistant" }) });
+  await settle();
+
+  for (const target of [{ kind: "id", id: "stranger" }, { kind: "preset", agentKind: "knowledge-governance" }] as const) {
+    drawn.served.at(-1)!({ target, prefill: "Not for this agent" });
+    await settle();
+    expect(drawn.shown().agentId).toBe("assistant");
+    expect(box(drawn.root)!.value).toBe("");
+  }
+});
+
+it("takes the preset an entry names when the page says which candidate it is, and only opens for one it does not offer", async () => {
+  const drawn = draw({
+    pageAgents: async () => ({
+      agents: [agent("assistant", "Assistant"), agent("governance", "Knowledge governance")],
+      defaultAgentId: "assistant",
+      presetAgentIds: { regular: "assistant", "knowledge-governance": "governance" },
+    }),
+  });
+  await settle();
+
+  drawn.served.at(-1)!({ target: { kind: "preset", agentKind: "knowledge-governance" }, prefill: "Review the pending knowledge" });
+  await settle();
+  expect(drawn.shown().agentId).toBe("governance");
+  expect(box(drawn.root)!.value).toBe("Review the pending knowledge");
+
+  // A preset that is no candidate here: the composer opens on the agent it has, its text untouched.
+  drawn.served.at(-1)!({ target: { kind: "preset", agentKind: "analysis" }, prefill: "Not for this page" });
+  await settle();
+  expect(drawn.shown().agentId).toBe("governance");
+  expect(box(drawn.root)!.value).toBe("Review the pending knowledge");
+  expect(drawn.ask).not.toHaveBeenCalled();
+});
+
+it("holds an entry made while the page's candidates are being read, and applies it once they arrive", async () => {
+  let answer: (value: Awaited<ReturnType<PageCounter["pageAgents"]>>) => void = () => {};
+  const drawn = draw({ pageAgents: () => new Promise((resolve) => { answer = resolve; }) });
+  await settle();
+  // Still reading: the composer is not drawn yet, but it takes the page's entries.
+  expect(box(drawn.root)).toBeNull();
+  expect(drawn.served).toHaveLength(1);
+  drawn.served.at(-1)!({ target: { kind: "preset", agentKind: "knowledge-governance" }, prefill: "Review the pending knowledge" });
+  await settle();
+  expect(box(drawn.root)).toBeNull();
+
+  answer({
+    agents: [agent("assistant", "Assistant"), agent("governance", "Knowledge governance")],
+    defaultAgentId: "assistant",
+    presetAgentIds: { "knowledge-governance": "governance" },
+  });
+  await settle();
+  expect(drawn.shown().agentId).toBe("governance");
+  expect(box(drawn.root)!.value).toBe("Review the pending knowledge");
+  expect(drawn.ask).not.toHaveBeenCalled();
+});
+
+it("drops an entry that waited when the page's candidates could not be read", async () => {
+  let fail: (reason: Error) => void = () => {};
+  const drawn = draw({ pageAgents: () => new Promise((_, reject) => { fail = reject; }) });
+  await settle();
+  drawn.served.at(-1)!({ target: { kind: "page-default" }, prefill: "Not sent anywhere" });
+  fail(new Error("Failed to fetch"));
+  await settle();
+  // The page says why it has no composer; the entry does not come back later.
+  expect(drawn.errors).toEqual(["Failed to fetch"]);
+  expect(box(drawn.root)).toBeNull();
+  expect(drawn.served).toHaveLength(0);
+});
+
+it("serves entries only while it is drawn, and withdraws when the page goes", async () => {
+  const none = draw({ pageSkill: unavailableMemberSkill });
+  await settle();
+  expect(none.served).toHaveLength(0);
+
+  const drawn = draw({ pageAgents: async () => ({ agents: [agent("assistant", "Assistant")], defaultAgentId: "assistant" }) });
+  await settle();
+  expect(drawn.served).toHaveLength(1);
+  drawn.app.unmount();
+  apps.splice(apps.indexOf(drawn.app), 1);
+  expect(drawn.served).toHaveLength(0);
 });

@@ -2,7 +2,7 @@
 import { computed, onMounted, provide, ref } from "vue";
 import { RouterView } from "vue-router";
 import { ID_INJECTION_KEY, useGetDerivedNamespace } from "element-plus";
-import { useManagerContext, useManagerCounts } from "./context";
+import { useManagerContext } from "./context";
 import { provideManagerFeedback } from "./feedback";
 import { nextElementIdPrefix } from "./instance-id";
 import ManagerConfirmDialog from "./ManagerConfirmDialog.vue";
@@ -17,7 +17,6 @@ import "./buttons.css";
  * page opens.
  */
 const context = useManagerContext();
-const counts = useManagerCounts();
 
 /*
  * Dropdowns, selects, tooltips and dialogs of the Manager pages mount in a popper container inside this frame, so they
@@ -37,7 +36,6 @@ provideManagerFeedback(shell);
 const mounted = ref(false);
 onMounted(() => {
   mounted.value = true;
-  counts.ensure();
 });
 </script>
 

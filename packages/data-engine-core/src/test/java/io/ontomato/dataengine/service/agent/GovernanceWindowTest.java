@@ -85,7 +85,7 @@ class GovernanceWindowTest extends PostgresTestDatabase {
     var filter=new io.ontomato.dataengine.controller.QueryGrantFilter(grants);
     ReflectionTestUtils.setField(filter,"executions",executions);
     http=MockMvcBuilders.standaloneSetup(new KnowledgeGovernanceController(governance,access))
-      .addFilters(filter).setControllerAdvice(new OntologyAgentErrors()).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+      .addFilters(filter).setControllerAdvice(new OntologyAgentErrors((language, key) -> key)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
   }
   @AfterEach void stopFixture() {if(server!=null)server.stop(0);}
   private JSONObject binding(String id) {
@@ -152,7 +152,7 @@ class GovernanceWindowTest extends PostgresTestDatabase {
     var work=governance.work(record,owner).getJSONObject("work");
     assertFalse(work.toJSONString().contains("Original user material"));
     assertEquals("history",work.getJSONArray("sources").getJSONObject(0).getString("kind"));
-    assertTrue(governance.readSource(record,input.getString("sourceId"),0,owner).toString().contains("Original user material"));
+    assertEquals(input.getString("sourceId"),work.getJSONArray("sources").getJSONObject(0).getString("id"));
   }
   @Test void chineseRequestRegistersTheCurrentMessageWithAChineseSourceTitle() throws Exception {
     when(language.get("zh-CN","KnowledgeGovernance.source.currentMessage")).thenReturn("当前用户消息");

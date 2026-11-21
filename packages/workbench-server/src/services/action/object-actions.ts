@@ -48,7 +48,8 @@ type OwnerEnvelope = z.infer<typeof ownerEnvelopeSchema>;
 /** The stored fields an object Action is declared and resolved from; the rest of the stored Action is not read. */
 export const storedObjectActionSchema = z.object({
   id: z.string().min(1),
-  name: z.string().min(1),
+  // The name is what a person and an agent call the operation by: a blank one names nothing.
+  name: z.string().regex(/\S/, "The action has no name"),
   codeHash: z.string().min(1),
   target: z.object({ className: z.string().min(1), keyParameter: z.string().min(1) }).passthrough().nullable(),
   function: z.object({

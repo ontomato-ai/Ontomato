@@ -23,7 +23,10 @@ export function installPageGuard(router: Router, navigation: PlatformNavigation,
       }
       return pages.find((page) => page.group === "platform")?.path ?? pages[0]?.path ?? { name: platformRoutes.ontology.name };
     }
-    const page = pageOf(navigation, to);
+    // An address no route serves that the navigation still lists — a page a built-in application's panel entry took over,
+    // for a reader that entry does not admit — is a page this reader lacks, and goes where such a page goes.
+    const page = pageOf(navigation, to)
+      ?? (to.name === platformRoutes.unknown.name ? navigation.pages.find((listed) => listed.path === to.path) : undefined);
     if (!page) return true;
     await access.load();
     // A page that may be entered without its permissions (the license landing) skips the code check.

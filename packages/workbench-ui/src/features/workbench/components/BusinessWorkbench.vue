@@ -9,8 +9,10 @@ import {
   type DisplayHistory, type DisplayPage, type DisplayView, type PageContext, type PageSelection,
   type ShellBottomEntry, type ShellFeatureDeclaration, type ShellWorkbenchDeclaration,
 } from "@ontomato/agent-shell-ui";
-import { useLeaveConfirmation, usePageAccess, usePilotPage } from "@ontomato/platform-shell";
+import { providePageActions, useLeaveConfirmation, usePageAccess, usePilotPage } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
+import { panelAddress } from "@ontomato/contracts/panel-host";
+import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { getWorkbenchAppearance } from "../api";
 import { createAssistantClient, createAssistantFeedback, createPanelOperationSettings } from "../assistant-host";
@@ -21,13 +23,11 @@ import { dashboardSelectionFrom } from "../../dashboard";
 import DatasetActions from "./DatasetActions.vue";
 import ChartFileActions from "./ChartFileActions.vue";
 import DatasetDrilldown from "./DatasetDrilldown.vue";
+import PageCommands from "./PageCommands.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
 import {
-  AGENT_SETTINGS_PAGE_ID,
   DASHBOARDS_PAGE_ID,
-  GOVERNANCE_REPORT_PAGE_ID,
   PANEL_APPLICATION_PAGE_ID,
-  governanceReportPageFeature,
   panelApplicationPageFeature,
   workbenchFeatures,
 } from "../features";
@@ -37,12 +37,8 @@ const artifactRenderers = [
 ];
 
 /**
- * The agent platform: the assistant, its conversation and its settings. Both editions mount it; the edition adds
- * entries only it has and renders those pages through the `feature` slot.
- *
- * Its column is the conversation shell's, from the same navigation state this conversation sends from, so a
- * conversation created while sending appears in the column immediately. In the settings the column is the settings
- * navigation instead, and the main area holds the editor of one agent.
+ * The agent platform's conversation and the pages it opens beside a conversation. Both editions mount it; each
+ * edition may supply entries and render their pages through the `feature` slot.
  */
 const props = withDefaults(
   defineProps<{
@@ -86,13 +82,11 @@ const agentId = ref<string | null>(readRememberedAgent());
  */
 const pilot = usePilotPage()((address) => void display.navigate(address, { history: "replace" }));
 /**
- * The agents' settings at this application's own address: the settings page shown full in this shell, beside its column,
- * with the composer at its foot, as any of its pages is when enlarged. A reload or a link reopens it here.
+ * The commands of the page shown beside the conversation (or full in it): the page hands them over as it would to the
+ * platform's header, and they are drawn where the conversation draws the page's title. Provided here, they stay with
+ * this page and never reach the header of the conversation's own page.
  */
-const atSettings = computed(() =>
-  [routes.agents, routes.agentSettingsNew, routes.agentSettings].some((page) => page.name === route.name),
-);
-
+const pageActions = providePageActions();
 /** An in-app address that names a page this assembly mounts beside a conversation; a host elsewhere is never one. */
 function resolvePage(href: string): DisplayPage | null {
   const address = href.replace(/^#/, "");
@@ -102,18 +96,15 @@ function resolvePage(href: string): DisplayPage | null {
 }
 
 /**
- * Where the reader's navigation is written. Enlarged, a page opens at its own address: the settings in this application,
- * any other page in the application that owns it. Otherwise the page rides as `?page=`, and from the settings' own address
- * that is back in the conversation. A move within the same route replaces the address unless it is a link's.
+ * Enlarging a page opens its own address. A page beside the conversation rides as `?page=`; a move within the same
+ * route replaces the address unless it follows a link.
  */
 async function serialize(page: DisplayPage | null, view: DisplayView, history: DisplayHistory): Promise<boolean> {
   const { page: _page, ...rest } = route.query;
   const to: RouteLocationRaw =
-    page && view === "full" && (atSettings.value || display.view.value === "side")
+    page && view === "full" && display.view.value === "side"
       ? page.address
-      : atSettings.value
-        ? { name: routes.chat.name, query: page ? { page: page.address } : {} }
-        : { query: page ? { ...route.query, page: page.address } : rest };
+      : { query: page ? { ...route.query, page: page.address } : rest };
   const failure = await (history === "push" || router.resolve(to).path !== route.path ? router.push(to) : router.replace(to));
   // The address already saying this is the router's duplicated navigation, however the link that wrote it encoded it.
   return !failure || isNavigationFailure(failure, NavigationFailureType.duplicated);
@@ -129,18 +120,20 @@ const display = useConversationDisplay({
   context: (page, reported) => ({ url: page.address, label: pageLabel(page.featureId, reported), selection: selectionIn(page, reported) }),
   leave: { leaves: (address) => leave.leaves(address?.split("?")[0] ?? ""), confirm: () => leave.confirm() },
 });
-// The address bar is the display's input: the settings' own address shows them full, `?page=` carries a page beside.
+// A native entry becomes resolvable beside the conversation when the reader's application catalog arrives.
 watch(
-  () => route.fullPath,
-  () => display.follow(atSettings.value ? route.fullPath : queryText(route.query.page), atSettings.value ? "full" : undefined),
+  () => {
+    const address = queryText(route.query.page);
+    return address && pilot(address) ? address : null;
+  },
+  (address) => display.follow(address),
   { immediate: true },
 );
 /** The page the display shows, mounted from its address by the assembly's registry. */
 const pilotPage = computed(() => (display.page.value ? pilot(display.page.value.address) : null));
 const pageAddress = computed(() => display.page.value?.address ?? null);
 const inDashboards = computed(() => display.page.value?.featureId === DASHBOARDS_PAGE_ID);
-const inAgentSettings = computed(() => display.page.value?.featureId === AGENT_SETTINGS_PAGE_ID);
-const inGovernanceReport = computed(() => display.page.value?.featureId === GOVERNANCE_REPORT_PAGE_ID);
+const inAgentSettings = computed(() => pageAddress.value?.split("?")[0] === routes.agents.path);
 const inPanelApplication = computed(() => display.page.value?.featureId === PANEL_APPLICATION_PAGE_ID);
 
 /**
@@ -159,9 +152,8 @@ watch(
 const shell = ref<InstanceType<typeof AgentShell> | null>(null);
 
 /**
- * An answer may link a page of the platform (`/governance/reports/<id>`, `/ontology/knowledge?...`); the shell asks here
- * rather than importing another application's routes. The pages the display opens beside the conversation never reach
- * here.
+ * An answer may link a page of the platform (`/ontology/knowledge?...`); the shell asks here rather than importing
+ * another application's routes. The pages the display opens beside the conversation never reach here.
  *
  * Any other page of the platform that the router can resolve opens at its real address, its query kept as it was
  * written, so a draft handoff's parameters travel with it; an address the router does not resolve is no page and stays
@@ -194,21 +186,15 @@ watch(conversationId, (id) => {
  */
 function pageLabel(id: string, reported: PageContext | null): string {
   if (id === DASHBOARDS_PAGE_ID) return t("assistant.featureDashboards");
-  if (id === GOVERNANCE_REPORT_PAGE_ID) return t("assistant.featureGovernanceReport");
-  if (id === AGENT_SETTINGS_PAGE_ID) return t("agents.title");
   return reported?.label ?? "";
 }
 
 /**
- * What the reader has selected in the page. The report page carries the finding its address names; a dashboard's address
- * names the board and the card; a panel reports its own selection once it has one.
+ * What the reader has selected in the page. A dashboard's address names the board and the card; a panel reports its
+ * own selection once it has one.
  */
 function selectionIn(page: DisplayPage, reported: PageContext | null): readonly PageSelection[] {
   const query = new URLSearchParams(page.address.split("?")[1] ?? "");
-  if (page.featureId === GOVERNANCE_REPORT_PAGE_ID) {
-    const issue = query.get("issue");
-    return issue ? [{ kind: "issue", id: issue, label: `${t("assistant.governanceFinding")} ${issue}` }] : [];
-  }
   if (page.featureId === DASHBOARDS_PAGE_ID) return dashboardSelectionFrom(Object.fromEntries(query));
   if (page.featureId === PANEL_APPLICATION_PAGE_ID) return reported?.selection ?? [];
   return [];
@@ -221,14 +207,10 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   label: appearance.value?.brand?.name || props.defaultBrandName,
   features: workbenchFeatures(
     props.features,
-    { agents: t("assistant.featureAgents"), dashboards: t("assistant.featureDashboards") },
     {
-      agents: inAgentSettings.value ? pageAddress.value! : routes.agents.path,
-      dashboards: inDashboards.value ? pageAddress.value! : routes.dashboards.path,
+      label: t("assistant.featureDashboards"),
+      address: inDashboards.value ? pageAddress.value! : routes.dashboards.path,
     },
-    inGovernanceReport.value
-      ? governanceReportPageFeature(t("assistant.featureGovernanceReport"), pageAddress.value!)
-      : null,
     inPanelApplication.value
       ? panelApplicationPageFeature(display.pageContext.value?.label || pageAddress.value!, pageAddress.value!)
       : null,
@@ -275,11 +257,9 @@ const opensModels = computed(() => canOpen(routes.agentModels.path));
  */
 function openSettings() {
   if (!editsAgents.value) return void router.push(routes.systemAgentModels.path);
-  void router.push(
-    agentId.value
-      ? { name: routes.agentSettings.name, params: { agentId: agentId.value } }
-      : { name: routes.agents.name },
-  );
+  void router.push(agentId.value
+    ? panelAddress(routes.agents.path, { selected: { className: AGENT_DEFINITION, primaryKey: agentId.value }, mode: "edit" })
+    : routes.agents.path);
 }
 
 /**
@@ -288,7 +268,7 @@ function openSettings() {
  */
 const bottomEntry = computed<ShellBottomEntry | null>(() =>
   editsAgents.value
-    ? { label: t("assistant.featureAgents"), icon: "agents", page: AGENT_SETTINGS_PAGE_ID }
+    ? { label: t("assistant.featureAgents"), icon: "agents", page: inAgentSettings.value ? PANEL_APPLICATION_PAGE_ID : undefined }
     : opensModels.value
       ? { label: t("assistant.featureAgents"), icon: "agents" }
       : null,
@@ -305,6 +285,31 @@ const bottomEntry = computed<ShellBottomEntry | null>(() =>
  */
 let consumedLink: string | null = null;
 let pendingLink: string | null = null;
+/**
+ * The conversation knows the page beside it: the page has said which skill a message written beside it reaches (a
+ * native page declares it; a panel reports it with its read, before it has loaded), and the agents offered on that page
+ * have been read. Until then the agent list is the one before the page, or empty while the page's own is read.
+ */
+const knowsPage = () =>
+  display.load.value.status !== "loading" && nav.agentsState.value === "ready"
+  && (display.pageSkill.value === null || nav.pageAgents.value !== null);
+/**
+ * Waits for the conversation to know the page beside it. False when the agents could not be read: the read's own error
+ * was shown where it failed, and there is nothing to check a link's agent against or to send it with.
+ */
+async function pageKnown(): Promise<boolean> {
+  const settled = () => knowsPage() || nav.agentsState.value === "error";
+  if (!settled()) {
+    await new Promise<void>((resolve) => {
+      const stop = watch(settled, (now) => {
+        if (!now) return;
+        stop();
+        resolve();
+      });
+    });
+  }
+  return nav.agentsState.value !== "error";
+}
 const linkAddress = () =>
   JSON.stringify([requestedAgent(), queryText(route.query.sessionId), queryText(route.query.prompt), queryText(route.query.page)]);
 
@@ -329,6 +334,13 @@ async function openRequestedAgent() {
   // The link's own parameters go before anything is awaited; the page it was written on stays, carried by the address.
   const { agentId: _agent, sessionId: _session, prompt: _prompt, ...query } = route.query;
   await router.replace({ query: page ? { ...query, page } : query });
+  // The page the message was written on is beside the conversation from the start: the agent is one of those offered on
+  // it, and the message carries its skill, once the conversation knows it. Its agents not read, the message ends here,
+  // unsent; the same address arriving again is the reader trying again.
+  if (page && !(await pageKnown())) {
+    pendingLink = null;
+    return;
+  }
   if (!nav.agents.value.some((agent) => agent.id === id && agent.enabled)) {
     ElMessage.error(t("assistant.agentUnavailable"));
     return;
@@ -350,7 +362,16 @@ async function openRequestedAgent() {
   }
   // Choosing a conversation closes whatever page was open beside the old one; the page this message came from opens
   // beside the conversation it was written for.
-  if (page) await display.navigate(page, { view: "side", history: "replace" });
+  if (page) {
+    await display.navigate(page, { view: "side", history: "replace" });
+    // Opened again, it is another instance of the page: once drawn it says again which skill it reaches, and the message
+    // carries that.
+    await nextTick();
+    if (!(await pageKnown())) {
+      pendingLink = null;
+      return;
+    }
+  }
   if (prompt) {
     await nextTick();
     await shell.value!.send(prompt);
@@ -431,6 +452,9 @@ function appearanceSaved(value: WorkbenchAppearance) {
         @display-skill="display.skill"
       />
       <slot v-else name="feature" :feature-id="page" />
+    </template>
+    <template #page-actions="{ view }">
+      <PageCommands v-if="pageActions?.actions?.length" :actions="pageActions.actions" :view="view" />
     </template>
     <template #dataset-selection-actions="{ artifact, title, selectedRowIndices }">
       <DatasetDrilldown :artifact="artifact" :title="title" :selected-row-indices="selectedRowIndices" />

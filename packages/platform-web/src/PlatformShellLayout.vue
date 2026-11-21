@@ -10,6 +10,7 @@ import {
   pilotPageKey,
   platformPageAccessKey,
   providePageActions,
+  providePageHeading,
   provideUnsavedChanges,
   type AgentModelLabels,
 } from "@ontomato/platform-shell";
@@ -21,14 +22,11 @@ import { appDeclarations } from "./partition";
 import { catalogPartition, type NativeLayout } from "./native-layouts";
 import type { PlatformBrand } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { useApplicationCatalog } from "./catalog";
+import { panelEntryApplication, useApplicationCatalog } from "./catalog";
 import { nodeApiRequest } from "@ontomato/workbench-ui";
 import { appAt } from "./apps";
 import { pilotPageResolver as resolvePilotPages } from "./pilot-pages";
-import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
-import { pageCounterKey, type PageCounter } from "@ontomato/agent-shell-ui";
-import { createAssistantClient } from "@ontomato/workbench-ui/features/workbench/assistant-host";
-import { readRememberedAgent } from "@ontomato/workbench-ui";
+import { providePlatformPageCounter } from "./page-counter";
 import { recentDestination } from "./recent-work";
 import { openApplicationKey, platformApplicationsKey, platformBrandKey, type PlatformAppDeclaration } from "./apps";
 import { useApplicationOpening } from "./application-opening";
@@ -77,7 +75,7 @@ const partition = computed(() => catalogPartition(catalog.applications.value, ho
 const declarations = computed<PlatformAppDeclaration[]>(() =>
   appDeclarations(host.navigation.value, host.access, partition.value, (key) => t(key)),
 );
-const agentBuilder = computed(() => agentBuilderShortcut(declarations.value, host.navigation.value, host.access, t("platform.agentBuilder")));
+const agentBuilder = computed(() => agentBuilderShortcut(declarations.value, panelEntryApplication(platformRoutes.agents.path) === "agents", t("platform.agentBuilder")));
 const railDeclarations = computed(() => agentBuilder.value ? [...declarations.value, agentBuilder.value] : declarations.value);
 
 /** The page the navigation names for this address; a screen of a page (a detail) names the page it belongs to. */
@@ -86,8 +84,19 @@ function pageAt(path: string): PlatformPage | undefined {
     host.navigation.value.pages.find((page) => page.path === path);
 }
 
+/** What a page the navigation does not name says of itself: a panel application's entry, its name and its way back. */
+const heading = providePageHeading();
+
 const shownPage = computed<PlatformShownPage | null>(() => {
   const page = pageAt(route.path);
+  if (heading.value) {
+    return {
+      title: heading.value.title,
+      description: heading.value.description ?? (page?.descriptionKey ? t(page.descriptionKey) : null),
+      named: true,
+      back: heading.value.back,
+    };
+  }
   if (!page) return null;
   return {
     title: t(page.titleKey),
@@ -108,6 +117,7 @@ const preferences = computed(() => ({
 }));
 
 const labels = computed(() => ({
+  back: t("common.back"),
   expandRail: t("platform.expandRail"),
   collapseRail: t("platform.collapseRail"),
   applications: t("platform.apps"),
@@ -162,26 +172,8 @@ const pageActions = providePageActions();
 provide(pilotPageKey, resolvePilotPages);
 
 
-/*
- * The one counter a page at its own address sends to (DESIGN.md "Applications and shells"): its agents, the agent this
- * tab last used, and the address that opens the conversation with the page beside it. The pages themselves only show
- * the platform's composer and hand over the message.
- */
-/** Read when a page shows its composer, once per page load: the platform's own pages do not read agents at startup. */
-let counterAgents: Promise<readonly AgentHostAgent[]> | null = null;
-provide(pageCounterKey, {
-  agents: () =>
-    (counterAgents ??= createAssistantClient()
-      .listAgents()
-      .then((list) => list.filter((agent) => agent.enabled))),
-  // The page's own skill, read from the same directory the conversation's composer reads beside it: a page's refusal
-  // (no mapping for this reader, or a registered default that is gone) goes back to the page as what it is.
-  pageAgents: (page) => createAssistantClient().listPageAgents(page),
-  preferredAgentId: ref(readRememberedAgent()),
-  ask(agentId, text, page) {
-    void router.push({ path: platformRoutes.chat.path, query: { agentId, prompt: text, page } });
-  },
-} satisfies PageCounter);
+/** The one counter a page at its own address sends its message to. */
+providePlatformPageCounter(router);
 
 /**
  * Leaving a draft with unsaved changes asks first: before the address leaves every page that edits it, and before the
@@ -214,6 +206,7 @@ onBeforeUnmount(() => {
  * platform, knowledge governance) list an entry from it, by the same rule the guard and the menus read.
  */
 provide(platformPageAccessKey, (path: string) =>
+  Boolean(panelEntryApplication(path)) ||
   availablePages(host.navigation.value, host.access).some((page) => page.path === path),
 );
 provide(platformApplicationNameKey, (id: string) => declarations.value.find((app) => app.id === id)?.label ?? id);

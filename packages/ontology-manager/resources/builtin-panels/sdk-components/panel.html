@@ -1,0 +1,350 @@
+<style>
+  [v-cloak] { display: none; }
+  .sdk-catalogue {
+    display: flex;
+    flex-direction: column;
+    gap: var(--page-content-gap);
+    min-height: 100%;
+    container-type: inline-size;
+    overflow-wrap: anywhere;
+  }
+  .sdk-catalogue-body {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.25fr);
+    gap: var(--page-content-gap);
+    align-items: start;
+  }
+  .sdk-catalogue-pane {
+    min-width: 0;
+    padding: var(--spacing-md) var(--spacing-md);
+    border: 1px solid var(--ui-divider);
+    border-radius: var(--radius-md);
+    background: var(--el-bg-color);
+  }
+  .sdk-catalogue-list .sdk-object-list-item-sub {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    line-height: var(--leading-xs);
+  }
+  .sdk-catalogue-detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+  .sdk-detail-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm) var(--spacing-md);
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+  .sdk-detail-name {
+    margin: 0;
+    font-size: var(--text-lg);
+    font-weight: var(--font-semibold);
+    word-break: break-word;
+  }
+  .sdk-detail-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: calc(var(--spacing-xs) / 2) var(--spacing-sm);
+    margin: var(--spacing-xs) 0 0;
+    color: var(--el-text-color-secondary);
+    font-size: var(--text-xs);
+    line-height: 1.7;
+    word-break: break-word;
+  }
+  .sdk-detail-meta code {
+    font-family: var(--el-font-family-mono);
+    margin-right: var(--spacing-xs);
+    color: var(--el-text-color-primary);
+  }
+  .sdk-detail-binds {
+    flex: 1 0 100%;
+  }
+  .sdk-jump {
+    height: var(--control-height-sm);
+    padding: 0 var(--spacing-md);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--el-text-color-primary);
+    font-size: var(--text-sm);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .sdk-jump:hover {
+    background: var(--ui-fill-tertiary);
+  }
+  .sdk-note {
+    margin: 0;
+    font-size: var(--text-sm);
+    line-height: 1.7;
+    color: var(--el-text-color-regular);
+  }
+  .sdk-note-muted {
+    color: var(--el-text-color-secondary);
+  }
+  .sdk-alert {
+    margin: 0;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    background: var(--el-color-warning-light-9);
+    color: var(--el-color-warning-dark-2);
+    font-size: var(--text-xs);
+  }
+  .sdk-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+  }
+  .sdk-table th,
+  .sdk-table td {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-bottom: 1px solid var(--ui-divider);
+    text-align: left;
+    vertical-align: top;
+  }
+  .sdk-table th {
+    color: var(--el-text-color-secondary);
+    font-weight: var(--font-medium);
+    font-size: var(--text-xs);
+  }
+  .sdk-table td {
+    color: var(--el-text-color-primary);
+    word-break: break-word;
+  }
+  .sdk-config-table-scroll {
+    min-inline-size: 0;
+    overflow-x: auto;
+    border: 1px solid var(--ui-divider);
+    border-radius: var(--radius-md);
+  }
+  .sdk-config-table thead {
+    background: var(--ui-fill-tertiary);
+  }
+  .sdk-config-table th {
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
+  .sdk-config-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  .sdk-tag {
+    display: inline-block;
+    margin-right: var(--spacing-xs);
+    padding: 0 var(--spacing-xs);
+    border-radius: var(--radius-xs);
+    background: var(--ui-fill-secondary);
+    color: var(--brand-link);
+    font-size: var(--text-xs);
+    line-height: var(--leading-sm);
+    vertical-align: 1px;
+  }
+  .sdk-table td code {
+    margin-right: var(--spacing-xs);
+  }
+  .sdk-table code,
+  .sdk-inline-code {
+    font-family: var(--el-font-family-mono);
+    font-size: var(--text-xs);
+    padding: 0 var(--spacing-xs);
+    border-radius: var(--radius-xs);
+    background: var(--ui-fill-tertiary);
+    color: var(--el-text-color-primary);
+  }
+  .sdk-default {
+    color: var(--el-text-color-regular);
+  }
+  .sdk-muted-cell {
+    color: var(--el-text-color-placeholder);
+  }
+  .sdk-empty {
+    margin: 0;
+    padding: var(--spacing-xs) 0;
+    color: var(--el-text-color-secondary);
+    font-size: var(--text-sm);
+    line-height: 1.7;
+  }
+  @container (max-width: 48rem) {
+    .sdk-catalogue-body { grid-template-columns: minmax(0, 1fr); }
+    .sdk-catalogue-list {
+      max-height: min(45vh, 22rem);
+      overflow-y: auto;
+    }
+  }
+</style>
+
+<div id="app" v-cloak>
+  <section class="sdk-catalogue">
+    <div class="sdk-catalogue-body">
+      <div class="sdk-catalogue-pane sdk-catalogue-list">
+        <projection slot="list"></projection>
+      </div>
+
+      <div class="sdk-catalogue-pane sdk-catalogue-detail">
+        <template v-if="record">
+          <header class="sdk-detail-head">
+            <div>
+              <h3 class="sdk-detail-name">{{ record.componentId }}</h3>
+              <p class="sdk-detail-meta">
+                <span>{{ t('components.meta.package') }} <code>{{ packageName }}</code></span>
+                <span>{{ t('components.meta.module') }} <code>{{ record.module }}</code></span>
+                <span>{{ t('components.meta.export') }} <code>{{ record.exportName }}</code></span>
+                <span>{{ t('components.meta.role') }} {{ roleText }}</span>
+                <span v-if="bindings.length" class="sdk-detail-binds">
+                  {{ t('components.meta.binds') }}
+                  <code v-for="bound in bindings" :key="bound">{{ bound }}</code>
+                </span>
+              </p>
+            </div>
+            <button type="button" class="sdk-jump" data-panel-action="open-component-class" @click="openComponentClass">
+              {{ t('components.viewClass') }}
+            </button>
+          </header>
+          <p v-if="navigateError" class="sdk-alert" role="alert">{{ navigateError }}</p>
+
+          <section-group :title="t('components.section.meaning')">
+            <p class="sdk-note">{{ record.meaning }}</p>
+            <p v-if="record.effects" class="sdk-note sdk-note-muted">{{ t('components.effectsLine', { text: record.effects }) }}</p>
+          </section-group>
+
+          <section-group :title="t('components.section.data')" :description="t('components.section.dataHint')">
+            <table v-if="dataRows.length" class="sdk-table">
+              <thead>
+                <tr>
+                  <th>{{ t('components.table.datum') }}</th>
+                  <th>{{ t('components.table.results') }}</th>
+                  <th>{{ t('components.table.required') }}</th>
+                  <th>{{ t('components.table.runtime') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in dataRows" :key="row.name">
+                  <td><code>{{ row.name }}</code></td>
+                  <td><code v-for="result in row.results" :key="result">{{ result }}</code></td>
+                  <td>{{ row.required ? t('components.yes') : t('components.no') }}</td>
+                  <td>
+                    <template v-if="row.runtimeParams.length"><code v-for="param in row.runtimeParams" :key="param">{{ param }}</code></template>
+                    <span v-else class="sdk-muted-cell">—</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="sdk-empty">{{ t('components.data.uiOnly') }}</p>
+          </section-group>
+
+          <section-group :title="t('components.section.config')" :description="t('components.section.configHint')">
+            <div v-if="configRows.length" class="sdk-config-table-scroll" role="region"
+              :aria-label="t('components.section.config')" tabindex="0">
+              <table class="sdk-table sdk-config-table">
+                <thead>
+                  <tr>
+                    <th>{{ t('components.table.name') }}</th>
+                    <th>{{ t('components.table.type') }}</th>
+                    <th>{{ t('components.table.required') }}</th>
+                    <th>{{ t('components.table.default') }}</th>
+                    <th>{{ t('components.table.description') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in configRows" :key="row.name">
+                    <td><code>{{ row.name }}</code></td>
+                    <td><code>{{ row.type }}</code></td>
+                    <td>{{ row.required ? t('components.yes') : t('components.no') }}</td>
+                    <td class="sdk-default"><code v-if="row.hasDefault">{{ row.default }}</code><span v-else class="sdk-muted-cell">—</span></td>
+                    <td>{{ row.description }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p v-else class="sdk-empty">{{ t('components.config.none') }}</p>
+          </section-group>
+
+          <section-group :title="t('components.section.input')" :description="t('components.section.inputHint')">
+            <table v-if="inputRows.length || slotRows.length" class="sdk-table">
+              <thead>
+                <tr>
+                  <th>{{ t('components.table.name') }}</th>
+                  <th>{{ t('components.table.type') }}</th>
+                  <th>{{ t('components.table.description') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in inputRows" :key="'input:' + row.name">
+                  <td><span class="sdk-tag">{{ t('components.tag.input') }}</span><code>{{ row.name }}</code></td>
+                  <td><code>{{ row.type }}</code></td>
+                  <td>{{ row.description || t('components.input.declared') }}</td>
+                </tr>
+                <tr v-for="row in slotRows" :key="'slot:' + row.name">
+                  <td><span class="sdk-tag">{{ t('components.tag.slot') }}</span><code>{{ row.name }}</code></td>
+                  <td><code>{{ row.type }}</code></td>
+                  <td>{{ row.description || t('components.slot.declared') }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="sdk-empty">{{ t('components.input.none') }}</p>
+          </section-group>
+
+          <section-group :title="t('components.section.output')" :description="t('components.section.outputHint')">
+            <table v-if="outputRows.length || eventRows.length" class="sdk-table">
+              <thead>
+                <tr>
+                  <th>{{ t('components.table.name') }}</th>
+                  <th>{{ t('components.table.type') }}</th>
+                  <th>{{ t('components.table.description') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in outputRows" :key="'output:' + row.name">
+                  <td><span class="sdk-tag">{{ t('components.tag.output') }}</span><code>{{ row.name }}</code></td>
+                  <td><code>{{ row.type }}</code></td>
+                  <td>{{ t('components.output.declared') }}</td>
+                </tr>
+                <tr v-for="row in eventRows" :key="'event:' + row.name">
+                  <td><span class="sdk-tag">{{ t('components.tag.event') }}</span><code>{{ row.name }}</code></td>
+                  <td><code>{{ row.type }}</code></td>
+                  <td>{{ row.description }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="sdk-empty">{{ t('components.output.none') }}</p>
+          </section-group>
+
+          <section-group :title="t('components.section.operations')" :description="t('components.section.operationsHint')">
+            <table v-if="operationRows.length" class="sdk-table">
+              <thead>
+                <tr>
+                  <th>{{ t('components.table.name') }}</th>
+                  <th>{{ t('components.table.signature') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in operationRows" :key="row.name">
+                  <td><code>{{ row.name }}</code></td>
+                  <td><code>{{ row.signature }}</code></td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="sdk-empty">{{ t('components.operations.none') }}</p>
+          </section-group>
+        </template>
+
+        <template v-else-if="detail.status === 'loading'">
+          <p class="sdk-note">{{ t('components.loading') }}</p>
+        </template>
+        <template v-else-if="detail.status === 'forbidden'">
+          <p class="sdk-note">{{ t('components.forbidden') }}</p>
+        </template>
+        <template v-else-if="detail.status === 'error'">
+          <p class="sdk-alert" role="alert">{{ detail.message }}</p>
+        </template>
+        <template v-else>
+          <p class="sdk-empty">{{ t('components.selectPrompt') }}</p>
+        </template>
+      </div>
+    </div>
+  </section>
+</div>

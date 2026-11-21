@@ -1,0 +1,140 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        },
+        "deepLink": true
+      },
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "scope": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "all"
+      },
+      "sort": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "updated"
+      }
+    },
+    "members": {
+      "list": {
+        "component": "PanelData",
+        "type": "platform:ProductProjection",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {
+              "search": {
+                "state": "search"
+              },
+              "scope": {
+                "state": "scope"
+              },
+              "sort": {
+                "state": "sort"
+              }
+            }
+          }
+        },
+        "name": "投影目录 · 列表",
+        "description": "本域内我能使用的投影，按检索词、范围和排序逐页读取。",
+        "id": "builtin-product-38cd4fdd-1a92-4106-adbc-9c752d7b85dc"
+      },
+      "owners": {
+        "component": "PanelData",
+        "type": "platform:User",
+        "data": {
+          "options": "resolve"
+        },
+        "id": "builtin-product-8fd563ec-e384-451d-b7e0-81b2c1bf74b8"
+      },
+      "record": {
+        "component": "PanelData",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "name": "投影目录 · 一条投影",
+        "description": "选中投影的完整定义：组件、数据来处与读法、配置、输入输出与属主登记的操作。",
+        "id": "builtin-product-dc338b37-5a06-4614-a301-3ff6a980cef5"
+      },
+      "usedBy": {
+        "component": "PanelData",
+        "target": "selected",
+        "data": {
+          "usedBy": "usedBy"
+        },
+        "name": "投影目录 · 使用方",
+        "description": "哪些面板把这条投影放在自己的页面里。",
+        "id": "builtin-product-239fbd8b-f00d-4c3f-a6f8-a526a45f50d5"
+      },
+      "form": {
+        "component": "ObjectForm",
+        "target": "selected",
+        "data": {
+          "form": "form",
+          "createForm": "createForm"
+        },
+        "operation": "platform:ProductProjection.save",
+        "name": "投影目录 · 表单",
+        "description": "属主的投影表单：新建一条普通投影，或只改这次提交的字段。",
+        "id": "builtin-product-b86ed6aa-5467-4ef5-a23e-c3f0a3fdae62"
+      },
+      "preview": {
+        "target": {
+          "fromState": "selected",
+          "candidates": {
+            "rule": "usable"
+          }
+        }
+      },
+      "copyOp": {
+        "component": "PanelData",
+        "target": "selected",
+        "operation": "productProjections.copy",
+        "id": "builtin-product-939794c4-a905-45b4-8299-8fa57f867268"
+      },
+      "deleteOp": {
+        "component": "PanelData",
+        "target": "selected",
+        "operation": "productProjections.delete",
+        "id": "builtin-product-3366ba8b-929b-4021-8fd1-95faff2e7db5"
+      },
+      "grantOp": {
+        "component": "PanelData",
+        "target": "selected",
+        "operation": "productProjections.grant",
+        "id": "builtin-product-b96f2b7c-2fd3-42fb-8d27-c464c38406b7"
+      },
+      "revokeOp": {
+        "component": "PanelData",
+        "target": "selected",
+        "operation": "productProjections.revoke",
+        "id": "builtin-product-f2d68504-e5e9-4462-99b6-745b3bc19e99"
+      },
+      "shareOp": {
+        "component": "PanelData",
+        "target": "selected",
+        "operation": "productProjections.share",
+        "id": "builtin-product-26d57225-7954-412d-a58d-329a3702354e"
+      }
+    },
+    "events": {}
+  }
+}

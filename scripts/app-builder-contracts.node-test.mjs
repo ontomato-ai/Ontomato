@@ -24,7 +24,7 @@ for (const [command, option] of [
 
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -121,6 +121,18 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     componentsPath: "/public" + sdkPath + "/components.json",
   };
   const typeTable = {
+    resultSchemas: {
+      panelRecordList: { type: "array" },
+      panelRecord: { type: "object" },
+      panelRecordQuery: { type: "object", required: ["rows"], properties: { rows: { type: "array" } } },
+      panelGroupCounts: { type: "array", items: { type: "object", required: ["key", "label", "count"] } },
+      panelFormDescription: { type: "object", required: ["fields"] },
+    },
+    unavailableActions: [
+      { id: "legacy-action", reason: "Stored function is missing" },
+      { id: "bad-action", objectType: "ReviewQueue", reason: "target: invalid field" },
+    ],
+    customerTypesUnavailable: { reason: "Object type catalogue permission required" },
     objectTypes: {
       "platform:AgentDefinition": {
         reads: {
@@ -134,7 +146,10 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       "platform:ReviewQueue": {
         reads: {
           query: { source: "type", parameterMode: "fixed", params: { search: "keyword", status: "reviewStatus" }, result: "panelRecordQuery" },
-          counts: { source: "type", parameterMode: "fixed", params: { by: "countField", search: "keyword" }, result: "panelGroupCounts" },
+          counts: {
+            source: "type", parameterMode: "fixed", params: { by: "countField", search: "keyword" },
+            requiredParams: ["by"], result: "panelGroupCounts",
+          },
           record: { source: "object", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecord" },
         },
         operations: [{ id: "reviews.approve", kind: "action", effect: "write", target: { source: "input", input: "review" }, inputSchema: {}, batch: true }],
@@ -148,7 +163,8 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     { componentId: "ObjectForm", data: { form: datum("panelFormDescription"), createForm: datum("panelFormDescription") } },
     { componentId: "SegmentedControl", data: { counts: datum("panelGroupCounts") } },
     { componentId: "OperationButton", data: {} },
-    { componentId: "Data", data: { "*": datum("panelRecordList") } },
+    { componentId: "PanelData", data: { "*": datum("panelRecordList") } },
+    { componentId: "MetricChart", data: {} },
   ] };
   const checkModule = `
     const ok = data => ({ success: true, data });
@@ -169,6 +185,59 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       }]),
     };
     export const platformTypeTableResponseSchema = { parse };
+    export const panelAuthoringManifestSchema = { parse, safeParse: ok };
+    export const panelAuthoringMemberSchema = { safeParse: member => member.sourceCard && member.id
+      ? invalid([{ message: "MetricChart takes its projection definition from the source card" }]) : ok(member) };
+    export const BUILTIN_PRODUCT_ID_PREFIX = "builtin-product-";
+    export const domainProductIdSchema = { safeParse: id => id.startsWith(BUILTIN_PRODUCT_ID_PREFIX)
+      ? invalid([{ message: "IDs beginning with builtin-product- are reserved for platform products" }]) : ok(id) };
+    export const builtinProductIdSchema = { safeParse: id => id?.startsWith(BUILTIN_PRODUCT_ID_PREFIX)
+      ? ok(id) : invalid([{ message: "Expected a platform product ID with prefix builtin-product-" }]) };
+    export const appsSdkComponentCatalogSchema = { parse };
+    export const applicationIconKeys = ["settings", "ontology"];
+    export const applicationCatalogueRecordSchema = { parse };
+    export const applicationIdentityUpdateSchema = { parse, partial: () => ({ parse }) };
+    export async function panelModuleImports(source) {
+      if (source.includes("element-plus")) throw new Error("A panel's module imports element-plus, which the platform does not give it");
+    }
+    export const CHART_PROJECTION_SOURCES_PATH = "/product-projections/chart-sources";
+    export const chartProjectionLookupResponseSchema = { parse };
+    export const registerChartProjectionResponseSchema = { parse };
+    export const productProjectionResponseSchema = { parse };
+    export const productProjectionUsedBySchema = { parse };
+    export const PROJECTION_REUSE_PANEL_HEADER = "X-Ontomato-Projection-Reuse-Panel";
+    export function bindPanelAuthoringChart(key, member, { state, projection }) {
+      if (projection.componentId !== "@ontomato/sdk:MetricChart" || !state[member.state.range]) {
+        throw new Error("member " + key + ": cannot connect chart range");
+      }
+      return { target: { projectionId: projection.id }, inputs: { range: { state: member.state.range } } };
+    }
+    export function expandPanelAuthoringMember(key, member, { state, components, typeTable }) {
+      if (!components.some(component => component.componentId === member.component)) throw new Error("member " + key + ": component unavailable");
+      const target = state[member.target]?.type;
+      const type = member.type ?? target?.objectType ?? target?.items?.objectType;
+      const owner = typeTable.objectTypes[type];
+      if (!owner) throw new Error("member " + key + ": invalid target " + member.target);
+      const data = Object.fromEntries(Object.entries(member.data ?? {}).map(([name, datum]) => {
+        const read = typeof datum === "string" ? datum : datum.read;
+        const source = owner.reads[read].source === "type"
+          ? { type: { kind: "PlatformObjectType", id: type } } : { object: { input: "item" } };
+        return [name, { source, read, params: datum.params ?? {} }];
+      }));
+      const projection = { componentId: "@ontomato/sdk:" + member.component, data, inputs: {}, outputs: {}, config: {} };
+      const placement = {};
+      if (member.operation) {
+        const operation = owner.operations.find(operation => operation.id === member.operation);
+        if (!operation) throw new Error("member " + key + ": operation " + member.operation + " is not declared");
+        const name = operation.id.split(".").at(-1);
+        const input = operation.target.input;
+        projection.inputs = { [input]: target };
+        projection.config = { operation: name };
+        projection.operations = { [name]: { operation: { kind: "PlatformOperation", id: operation.id }, target: { input } } };
+        placement.inputs = { [input]: { state: member.target } };
+      }
+      return { projection, placement };
+    }
     export const appsSdkComponentDatum = (data, name) => data[name] ?? data["*"];
     export const directReadDeclaration = (_projection, read) => ({ result: {
       list: "panelRecordList", query: "panelRecordQuery", record: "panelRecord", counts: "panelGroupCounts",
@@ -194,32 +263,68 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
   const candidatePath = `/api/workspaces/${workspaceId}/panel-candidate?ref=${ref}`;
   const panelPath = "/api/product-panels/acceptance-panel";
   const projectionPath = "/api/product-projections/tasks";
-  const usesPath = "/owner/platform/applications/app-acceptance/panel-uses";
+  const applicationPath = "/owner/platform/applications/app-acceptance";
+  const usesPath = applicationPath + "/panel-uses";
+  const applicationRecordPath = "/owner/platform/applications/catalogue/app-acceptance";
+  const identityPath = "/owner/platform/applications/app-acceptance/identity";
+  let identity = { names: { en: "Original" }, descriptions: { en: "Keep the description" }, icon: "settings" };
   const inlinePanelPath = "/api/product-panels/inline-panel";
+  const chartPath = "/api/product-projections/chart-sources";
+  const chartProjection = { id: "source-owned-chart", componentId: "@ontomato/sdk:MetricChart", data: {} };
+  const storedChartPath = "/api/product-projections/" + chartProjection.id;
+  const chartSource = { dashboardId: "dashboard-a", cardId: "card-b" };
+  const chartQuery = chartPath + "?" + new URLSearchParams(chartSource);
+  let registeredChart = false;
   const inlineRecords = new Map();
+  const projectionReuseGuards = [];
+  let projectionUsage = { panels: [{ id: "inline-panel", name: "Inline" }], hiddenCount: 0 };
   let rejectInlinePanel = false;
+  let panelInUse = true;
+  const deletedPanel = {
+    success: true, deletedProjectionIds: ["exclusive-projection"], retainedProjectionIdsWithoutEdit: ["owner-projection"],
+  };
   const server = createServer(async (request, response) => {
     let content = "";
     for await (const chunk of request) content += chunk;
     const body = content ? JSON.parse(content) : undefined;
     requests.push([request.method, request.url, body, request.headers["x-api-key"]]);
+    if (request.headers["x-ontomato-projection-reuse-panel"]) {
+      projectionReuseGuards.push(request.headers["x-ontomato-projection-reuse-panel"]);
+    }
     response.setHeader("content-type", "application/json");
     if (request.url === "/api/apps-sdk/current") response.end(JSON.stringify(release));
     else if (request.url === "/api/app-builder/type-table") response.end(JSON.stringify(typeTable));
     else if (request.url === `${sdkPath}/components.json`) response.end(JSON.stringify(catalogue));
     else if (request.url === `${sdkPath}/node/panel-check.mjs`) response.end(checkModule);
-    else if (request.url === projectionPath) response.end(JSON.stringify({ projection: { componentId: "@ontomato/sdk:ObjectList" } }));
+    else if (request.url === chartQuery && request.method === "GET") {
+      response.end(JSON.stringify({ projectionId: registeredChart ? chartProjection.id : null }));
+    } else if (request.url === chartPath && request.method === "POST") {
+      registeredChart = true;
+      response.end(JSON.stringify({ projection: chartProjection }));
+    } else if (request.url === storedChartPath && request.method === "GET" && registeredChart) {
+      response.end(JSON.stringify({ projection: chartProjection }));
+    } else if ([projectionPath, "/api/product-projections/builtin-product-reusable"].includes(request.url)) {
+      response.end(JSON.stringify({ projection: { componentId: "@ontomato/sdk:ObjectList" } }));
+    }
     else if (request.url === "/api/product-projections/unwritten") {
       response.statusCode = 404;
       response.end(JSON.stringify({ error: { code: "PRODUCT_UNAVAILABLE" } }));
     } else if (request.url === "/api/product-projections/hidden") {
       response.statusCode = 403;
       response.end(JSON.stringify({ error: { message: "Product use Grant required" } }));
+    } else if (request.method === "DELETE" &&
+        request.url === `${inlinePanelPath}?revision=${inlineRecords.get(inlinePanelPath)?.revision}`) {
+      if (panelInUse) {
+        response.statusCode = 409;
+        response.end(JSON.stringify({ error: { code: "PRODUCT_IN_USE", message: "Panel is still in use" } }));
+      } else response.end(JSON.stringify(deletedPanel));
+    } else if (request.url.startsWith("/api/product-projections/") && request.url.endsWith("/used-by")) {
+      response.end(JSON.stringify(projectionUsage));
     } else if (request.url === inlinePanelPath || request.url.startsWith("/api/product-projections/")) {
       const kind = request.url === inlinePanelPath ? "panel" : "projection";
       const existing = inlineRecords.get(request.url);
       if (request.method === "PUT" && !(kind === "panel" && rejectInlinePanel) && body.revision === (existing?.revision ?? 0)) {
-        const record = { ...body, revision: body.revision + 1 };
+        const record = { ...body, revision: body.revision + 1, editable: true };
         inlineRecords.set(request.url, record);
         response.end(JSON.stringify({ [kind]: record }));
       } else if (request.method === "GET" && existing) response.end(JSON.stringify({ [kind]: existing }));
@@ -232,7 +337,14 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       response.statusCode = 409;
       response.end(JSON.stringify({ error: { message: "Revision conflict" } }));
     } else if (request.url === panelPath) response.end(JSON.stringify({ panel: { revision: 8 } }));
-    else if (request.url === usesPath) response.end(JSON.stringify({ success: true, data: { panelUses: [] } }));
+    else if (request.url === applicationRecordPath) response.end(JSON.stringify({ success: true, data: identity }));
+    else if (request.url === applicationPath && request.method === "DELETE") {
+      response.statusCode = 204;
+      response.end();
+    } else if (request.url === identityPath && request.method === "PUT") {
+      identity = body;
+      response.end(JSON.stringify({ success: true, data: identity }));
+    } else if (request.url === usesPath) response.end(JSON.stringify({ success: true, data: { panelUses: [] } }));
     else {
       response.statusCode = 404;
       response.end(JSON.stringify({ error: "Unexpected request" }));
@@ -266,6 +378,24 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       ["PUT", panelPath, { ...input, revision: 7 }, "author-key"],
       ["PUT", usesPath, application, "author-key"],
     ]);
+    await assert.rejects(run("panel", "register", JSON.stringify({
+      panels: [{ id: "acceptance-panel", mode: "update", revision: 7, input }],
+      applications: [{ id: "acceptance", mode: "create", input: application }],
+    })), error => error.stderr.includes("Application ID must start with app-"));
+    assert.deepEqual(requests, []);
+    const identityMaterial = { applications: [{ id: "app-acceptance", mode: "update", input: {
+      ...application, declaration: { names: { en: "Updated" }, icon: "ontology" },
+    } }] };
+    await run("panel", "register", JSON.stringify(identityMaterial));
+    assert.deepEqual(requests.splice(0).slice(2).map(([method, url, body]) => [method, url, body]), [
+      ["GET", applicationRecordPath, undefined],
+      ["PUT", usesPath, application],
+      ["PUT", identityPath, { names: { en: "Updated" }, descriptions: { en: "Keep the description" }, icon: "ontology" }],
+    ]);
+    await run("panel", "register", JSON.stringify(identityMaterial));
+    assert.deepEqual(requests.splice(0).slice(2).map(([method, url]) => [method, url]), [
+      ["GET", applicationRecordPath], ["PUT", usesPath],
+    ]);
     const material = { panels: [{ id: "acceptance-panel", mode: "update", revision: 7, input: { ...input, sdkVersion } }] };
     await assert.rejects(run("panel", "register", JSON.stringify(material)), error => error.stderr.includes("The current SDK refuses sdkVersion"));
     assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), [
@@ -284,20 +414,111 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await writeFile(layout, tasksTemplate);
     const moduleFile = join(directory, "panel.mjs");
     await writeFile(moduleFile, panel.content.module);
+    const offlineSdk = join(directory, "sdk");
+    await mkdir(offlineSdk);
+    await writeFile(join(offlineSdk, "sdk.json"), JSON.stringify({ version: sdkVersion, check: "check.mjs", components: "components.json" }));
+    await writeFile(join(offlineSdk, "check.mjs"), checkModule);
+    await writeFile(join(offlineSdk, "components.json"), JSON.stringify(catalogue));
+    const oldChecker = checkModule.replace("export const domainProductIdSchema", "const domainProductIdSchema");
+    await writeFile(join(offlineSdk, "check.mjs"), oldChecker);
+    assert.deepEqual(JSON.parse((await run("panel", "check", directory, "--sdk-dir", offlineSdk)).stdout).unchecked,
+      [{ kind: "projection", id: "tasks" }]);
+    await writeFile(join(offlineSdk, "check.mjs"), checkModule);
+    const builtin = join(directory, "builtin");
+    await mkdir(builtin);
+    const builtinFile = join(builtin, "panel.json");
+    const builtinRegistration = join(builtin, "registration.json");
+    const registrationBody = { panels: [{ id: "builtin-product-catalogue", mode: "create", input: {} }] };
+    await writeFile(builtinRegistration, JSON.stringify(registrationBody));
+    const builtinManifest = { ...manifest, members: {
+      catalogue: { component: "ObjectList", type: "platform:ReviewQueue", data: { rows: "query" } },
+      reuse: { target: { projectionId: "builtin-product-reusable" } },
+    } };
+    await writeFile(builtinFile, JSON.stringify({ manifest: builtinManifest }));
+    const prepared = JSON.parse((await run("panel", "check", builtin, "--builtin", "--sdk-dir", offlineSdk)).stdout);
+    const builtinId = prepared.assigned.catalogue;
+    assert.match(builtinId, /^builtin-product-[0-9a-f-]{36}$/u);
+    assert.equal(prepared.panelId, registrationBody.panels[0].id);
+    const published = JSON.parse(await readFile(builtinFile, "utf8"));
+    assert.equal(published.manifest.members.catalogue.id, builtinId);
+    assert.deepEqual(published.manifest.members.reuse, builtinManifest.members.reuse);
+    published.manifest.members.renamed = published.manifest.members.catalogue;
+    delete published.manifest.members.catalogue;
+    await writeFile(builtinFile, JSON.stringify(published));
+    const unchanged = JSON.parse((await run("panel", "check", builtin, "--builtin", "--sdk-dir", offlineSdk)).stdout);
+    assert.deepEqual(unchanged.assigned, {});
+    assert.equal(JSON.parse(await readFile(builtinFile, "utf8")).manifest.members.renamed.id, builtinId);
+    const chart = JSON.stringify({ manifest: { ...builtinManifest, members: {
+      chart: { component: "MetricChart", sourceCard: { dashboardId: "domain-dashboard", cardId: "card" } },
+    } } });
+    await writeFile(builtinFile, chart);
+    await assert.rejects(run("panel", "check", builtin, "--builtin", "--sdk-dir", offlineSdk), error =>
+      error.stderr.includes("manifest.members.chart.id") && error.stderr.includes("takes its projection definition from the source card"));
+    assert.equal(await readFile(builtinFile, "utf8"), chart);
+    await writeFile(builtinFile, JSON.stringify(published));
+    await assert.rejects(run("panel", "check", builtin, "--sdk-dir", offlineSdk), error =>
+      error.stderr.includes("builtin-product-catalogue") && error.stderr.includes("reserved for platform products"));
+    const trialMaterial = join(builtin, "trial.json");
+    await writeFile(trialMaterial, JSON.stringify({ panels: [{ ...registrationBody.panels[0], id: "trial-panel" }] }));
+    await assert.rejects(run("panel", "check", builtin, "--material", trialMaterial, "--sdk-dir", offlineSdk), error =>
+      error.stderr.includes("Member renamed") && error.stderr.includes("reserved for platform products"));
+    assert.deepEqual(requests, []);
+    await assert.rejects(run("panel", "register", JSON.stringify(registrationBody)), error =>
+      error.stderr.includes("builtin-product-catalogue") && error.stderr.includes("reserved for platform products"));
+    assert.equal(requests.splice(0).every(([method]) => method === "GET"), true);
+    await writeFile(join(directory, "panel.json"), JSON.stringify({ manifest: { ...manifest, members: { reuse: builtinManifest.members.reuse } } }));
+    await run("panel", "check", directory);
+    assert.equal(requests.splice(0).some(([method, url]) =>
+      method === "GET" && url === "/api/product-projections/builtin-product-reusable"), true);
+    await writeFile(join(directory, "panel.json"), JSON.stringify({ manifest }));
     const checked = await run("panel", "check", directory);
+    assert.equal(checked.stderr,
+      "Action legacy-action is unavailable. Stored function is missing\n" +
+      "Action bad-action (ReviewQueue) is unavailable. target: invalid field\n" +
+      "Customer type catalogue is unavailable. Object type catalogue permission required\n");
     assert.deepEqual(JSON.parse(checked.stdout), { status: "valid", version: sdkVersion, digest: release.digest, unchecked: [] });
     assert.deepEqual(new Map(requests.splice(0).map(([method, url]) => [url, method])), new Map([
       ["/api/apps-sdk/current", "GET"], [`${sdkPath}/node/panel-check.mjs`, "GET"],
       [`${sdkPath}/components.json`, "GET"], ["/api/app-builder/type-table", "GET"], [projectionPath, "GET"],
     ]));
+    const typeId = "platform:ReviewQueue";
+    const { reads, ...metadata } = typeTable.objectTypes[typeId];
+    const type = await run("panel", "type", typeId);
+    assert.deepEqual(JSON.parse(type.stdout), { id: typeId, reads: {
+      query: { ...reads.query, resultSchema: typeTable.resultSchemas.panelRecordQuery },
+      counts: { ...reads.counts, resultSchema: typeTable.resultSchemas.panelGroupCounts },
+      record: { ...reads.record, resultSchema: typeTable.resultSchemas.panelRecord },
+    }, ...metadata });
+    const typeReadRequests = [
+      ["GET", "/api/apps-sdk/current"], ["GET", `${sdkPath}/node/panel-check.mjs`], ["GET", "/api/app-builder/type-table"],
+    ];
+    assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), typeReadRequests);
+    const singleRead = await run("panel", "type", typeId, "--read", "counts");
+    assert.deepEqual(JSON.parse(singleRead.stdout), {
+      id: typeId, read: "counts", ...reads.counts, resultSchema: typeTable.resultSchemas.panelGroupCounts,
+    });
+    assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), typeReadRequests);
+    await writeFile(moduleFile, 'import { ElButton } from "element-plus";');
+    await assert.rejects(run("panel", "check", directory), error =>
+      error.stderr.includes("panel.mjs: A panel's module imports element-plus"));
+    await writeFile(moduleFile, panel.content.module);
+    const badIconFile = join(directory, "bad-icon.json");
+    const badIcon = structuredClone(identityMaterial);
+    badIcon.applications[0].input.declaration.icon = "graph";
+    await writeFile(badIconFile, JSON.stringify(badIcon));
+    await assert.rejects(run("panel", "check", directory, "--material", badIconFile), error =>
+      error.stderr.includes("application app-acceptance: declaration.icon 'graph' is not available"));
+    await assert.rejects(run("panel", "register", JSON.stringify(badIcon)), error =>
+      error.stderr.includes("application app-acceptance: declaration.icon 'graph' is not available"));
+    assert.equal(requests.splice(0).some(([method]) => method !== "GET"), false);
     await rm(moduleFile);
-    await assert.rejects(run("panel", "check", directory), error => error.stderr.includes("panel.json:content.module: Required"));
+    await assert.rejects(run("panel", "check", directory), error => error.stderr.includes("panel.mjs: required Vue module is missing"));
     await writeFile(moduleFile, panel.content.module);
     assert.equal(requests.some(([method, url]) => method !== "GET" || url === projectionPath), false);
     requests.length = 0;
     const draft = join(directory, "manager");
-    const scaffold = await run("panel", "scaffold", "platform:AgentDefinition", draft, "--id", "example-agent-management", "--operation", "platform:AgentDefinition.save");
-    assert.equal(JSON.parse(scaffold.stdout).entry, "/applications/example-agent-management/manage");
+    const scaffold = await run("panel", "scaffold", "platform:AgentDefinition", draft, "--id", "app-example-agent-management", "--operation", "platform:AgentDefinition.save");
+    assert.equal(JSON.parse(scaffold.stdout).entry, "/applications/app-example-agent-management/manage");
     for (const name of ["panel.html", "panel.mjs", "panel.json", "registration.json"]) {
       const sample = await readFile(join("agent-skills/ontomato-app-builder/examples/agent-management", name), "utf8");
       assert.equal(await readFile(join(draft, name), "utf8"), sample);
@@ -308,47 +529,36 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     const review = join(directory, "review");
     await run("panel", "scaffold", "platform:ReviewQueue", review, "--operation", "reviews.approve", "--batch", "reviews.approve");
     const { manifest: reviewManifest } = JSON.parse(await readFile(join(review, "panel.json"), "utf8"));
-    const { projections: reviewProjections } = JSON.parse(await readFile(join(review, "registration.json"), "utf8"));
-    const queries = Object.fromEntries(reviewProjections.flatMap(({ input }) => Object.entries(input.data)));
-    assert.deepEqual(queries.rows.params, {});
-    assert.deepEqual(queries.record.params, {});
-    assert.deepEqual(queries.counts.params, { by: { literal: "status" } });
-    assert.deepEqual(reviewManifest.members.list.inputs, {
-      selected: { state: "selected" }, checked: { state: "checked" }, search: { state: "search" }, status: { state: "status" },
+    const reviewMaterial = join(review, "registration.json");
+    const generatedRegistration = JSON.parse(await readFile(reviewMaterial, "utf8"));
+    assert.equal(generatedRegistration.projections, undefined);
+    assert.equal(generatedRegistration.panels[0].input.content, undefined);
+    assert.deepEqual(reviewManifest.members.list, {
+      component: "ObjectList", type: "platform:ReviewQueue", data: { rows: "query" },
+      state: { selected: "selected", checked: "checked", search: "search", status: "status" },
     });
-    assert.deepEqual(reviewManifest.members.tabs.inputs.value, { state: "status" });
-    assert.deepEqual(reviewManifest.members.detail.inputs.search, { state: "search" });
-    assert.deepEqual(reviewManifest.members.action1.inputs, { review: { state: "selected" } });
-    assert.deepEqual(reviewManifest.members.batch2.inputs, { review: { state: "checked" } });
-    const reviewButton = reviewProjections.find(({ id }) => id.endsWith("-batch2")).input;
-    assert.deepEqual(reviewButton.config, { operation: "approve" });
-    assert.deepEqual(reviewButton.operations, { approve: {
-      operation: { kind: "PlatformOperation", id: "reviews.approve" }, target: { input: "review" },
-    } });
-    assert.deepEqual(reviewButton.data, {});
+    assert.deepEqual(reviewManifest.members.tabs.data.counts, { read: "counts", params: { by: { literal: "status" } } });
+    assert.equal(reviewManifest.members.tabs.state.value, "status");
+    assert.equal(reviewManifest.members.detail.state.search, "search");
+    assert.deepEqual(reviewManifest.members.action1, { component: "OperationButton", operation: "reviews.approve", target: "selected" });
+    assert.deepEqual(reviewManifest.members.batch2, { component: "OperationButton", operation: "reviews.approve", target: "checked" });
     const reviewLayout = await readFile(join(review, "panel.html"), "utf8");
     assert(reviewLayout.indexOf('slot="batch2"') < reviewLayout.indexOf('slot="list"'));
-    const reviewSources = JSON.parse(await readFile(join(review, "registration.json"), "utf8")).panels[0].input.content;
-    assert.deepEqual(reviewSources, { html: reviewLayout, module: await readFile(join(review, "panel.mjs"), "utf8") });
-    const reviewMaterial = join(review, "registration.json");
     await run("panel", "check", review, "--material", reviewMaterial);
     const reviewPanel = join(review, "panel.json");
-    const incorrectPanel = JSON.parse(await readFile(reviewPanel, "utf8"));
-    incorrectPanel.manifest.members.batch2.inputs = { entry: { state: "checked" } };
-    await writeFile(reviewPanel, JSON.stringify(incorrectPanel));
+    const rejected = structuredClone(reviewManifest);
+    rejected.members.batch2.target = "search";
+    await writeFile(reviewPanel, JSON.stringify({ manifest: rejected }));
     await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
-      error.stderr.includes("member batch2 (projection review-queue-manager-batch2): bind operation approve (reviews.approve)'s target input review"));
-    await writeFile(reviewPanel, JSON.stringify({ manifest: reviewManifest }));
-    const incorrect = JSON.parse(await readFile(reviewMaterial, "utf8"));
-    const batch = incorrect.projections.find(({ id }) => id.endsWith("-batch2"));
-    delete batch.input.inputs.review;
-    await writeFile(reviewMaterial, JSON.stringify(incorrect));
+      error.stderr.includes("member batch2: invalid target search"));
+    await assert.rejects(run("panel", "register", review), error =>
+      error.stderr.includes("member batch2: invalid target search"));
+    assert.equal(requests.some(([method]) => method !== "GET"), false);
+    rejected.members.batch2.target = "checked";
+    rejected.members.batch2.operation = "reviews.undeclared";
+    await writeFile(reviewPanel, JSON.stringify({ manifest: rejected }));
     await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
-      error.stderr.includes(`projection ${batch.id}: operation approve (reviews.approve) has an invalid target input review`));
-    batch.input.operations.approve.operation.id = "reviews.undeclared";
-    await writeFile(reviewMaterial, JSON.stringify(incorrect));
-    await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
-      error.stderr.includes(`projection ${batch.id}: operation approve (reviews.undeclared) is not declared in the type table`));
+      error.stderr.includes("member batch2: operation reviews.undeclared is not declared"));
     requests.length = 0;
     await writeFile(layout, tasksTemplate);
     const reference = async id => {
@@ -376,10 +586,8 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await assert.rejects(run("panel", "check", directory), error =>
       error.stderr.includes("projection draft-list: data: required field is missing") && !error.stderr.includes("Expected chart"));
 
-    const authorProjection = { componentId: "@ontomato/sdk:Data", data: { agents: {
-      source: { type: { kind: "PlatformObjectType", id: "platform:AgentDefinition" } }, read: "list", params: {},
-    } } };
-    manifest.members.tasks.target = { projection: authorProjection };
+    const authorProjection = { component: "PanelData", type: "platform:AgentDefinition", data: { agents: "list" } };
+    manifest.members.tasks = authorProjection;
     const descriptor = join(directory, "panel.json");
     await writeFile(descriptor, JSON.stringify({ manifest }));
     const item = { id: "inline-panel", mode: "create", input: { name: "Inline", description: "", visibility: "private" } };
@@ -389,24 +597,27 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.equal(requests.splice(0).some(([method, url]) => method !== "GET" || url.includes("/product-")), false);
     assert.equal(await readFile(descriptor, "utf8"), JSON.stringify({ manifest }));
 
-    const originalRead = authorProjection.data.agents;
-    authorProjection.data.agents = {
-      source: { type: { kind: "PlatformObjectType", id: "platform:ReviewQueue" } }, read: "query", params: {},
-    };
+    authorProjection.type = "platform:ReviewQueue";
+    authorProjection.data.agents = "query";
     await writeFile(descriptor, JSON.stringify({ manifest }));
     await assert.rejects(run("panel", "check", directory), error =>
       error.stderr.includes("data.agents returns 'panelRecordQuery'") && error.stderr.includes("accepts panelRecordList"));
-    authorProjection.data.agents = originalRead;
+    authorProjection.type = "platform:AgentDefinition";
+    authorProjection.data.agents = "list";
     await writeFile(descriptor, JSON.stringify({ manifest }));
 
     rejectInlinePanel = true;
     await assert.rejects(run("panel", "register", directory), error => error.stderr.includes("panel inline-panel: PUT"));
     const savedSource = JSON.parse(await readFile(descriptor, "utf8"));
-    const savedTarget = savedSource.manifest.members.tasks.target;
-    assert.match(savedTarget.projection.id, /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u);
-    const inlineProjectionId = savedTarget.projection.id;
+    const savedMember = savedSource.manifest.members.tasks;
+    assert.match(savedMember.id, /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u);
+    const inlineProjectionId = savedMember.id;
     const inlineProjectionPath = `/api/product-projections/${inlineProjectionId}`;
-    assert.deepEqual(savedTarget.projection, { ...authorProjection, id: inlineProjectionId });
+    assert.deepEqual(savedMember, { ...authorProjection, id: inlineProjectionId });
+    const projection = inlineRecords.get(inlineProjectionPath);
+    assert.deepEqual(projection.data, { agents: {
+      source: { type: { kind: "PlatformObjectType", id: "platform:AgentDefinition" } }, read: "list", params: {},
+    } });
     assert.deepEqual(requests.splice(0).filter(([method]) => method === "PUT").map(([, url, body]) => [url, body.revision]), [
       [inlineProjectionPath, 0], [inlinePanelPath, 0],
     ]);
@@ -432,6 +643,95 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.equal(inlineRecords.get(inlineProjectionPath).name, "Renamed");
     assert.deepEqual(inlineRecords.get(inlinePanelPath).manifest.members.renamedTasks.target, { projectionId: inlineProjectionId });
     assert.equal(inlineRecords.size, 2);
+
+    const member = savedSource.manifest.members.renamedTasks;
+    const forgetId = async () => {
+      delete member.id;
+      await writeFile(descriptor, JSON.stringify(savedSource));
+      await writeFile(registration, JSON.stringify({
+        panels: [{ ...item, mode: "update", revision: inlineRecords.get(inlinePanelPath).revision }],
+      }));
+    };
+    await forgetId();
+    await run("panel", "register", directory);
+    assert.equal(JSON.parse(await readFile(descriptor, "utf8")).manifest.members.renamedTasks.id, inlineProjectionId);
+    assert.deepEqual(requests.splice(0).filter(([method]) => method === "PUT").map(([, url]) => url), [inlinePanelPath]);
+    assert.equal(inlineRecords.get(inlineProjectionPath).revision, 5);
+
+    member.description = "Updated list";
+    await forgetId();
+    const edited = await run("panel", "register", directory);
+    assert.ok(edited.stdout.includes(`Updated projection ${inlineProjectionId}`));
+    assert.equal(JSON.parse(await readFile(descriptor, "utf8")).manifest.members.renamedTasks.id, inlineProjectionId);
+    assert.deepEqual(requests.splice(0).filter(([method]) => method === "PUT").map(([, url, body]) => [url, body.revision]), [
+      [inlineProjectionPath, 5], [inlinePanelPath, 3],
+    ]);
+    assert.deepEqual(projectionReuseGuards, ["inline-panel"]);
+
+    member.description = "Local changes to a shared list";
+    await forgetId();
+    projectionUsage = { panels: [...projectionUsage.panels, { id: "another-panel", name: "Another page" }], hiddenCount: 1 };
+    await assert.rejects(run("panel", "register", directory), error =>
+      error.stderr.includes("renamedTasks") && error.stderr.includes(`shared projection '${inlineProjectionId}'`) &&
+      error.stderr.includes("Another page (another-panel)") && error.stderr.includes("1 panel(s) you cannot view") &&
+      error.stderr.includes(`id: "${inlineProjectionId}"`) && error.stderr.includes("rename"));
+    assert.equal(requests.splice(0).some(([method]) => method === "PUT"), false);
+    assert.equal(JSON.parse(await readFile(descriptor, "utf8")).manifest.members.renamedTasks.id, undefined);
+
+    const editable = inlineRecords.get(inlineProjectionPath);
+    inlineRecords.set(inlineProjectionPath, { ...editable, editable: false });
+    await assert.rejects(run("panel", "register", directory), error =>
+      error.stderr.includes("renamedTasks") && error.stderr.includes(`no edit Grant for projection '${inlineProjectionId}'`) &&
+      error.stderr.includes("Rename the member"));
+    assert.equal(requests.splice(0).some(([method]) => method === "PUT"), false);
+    inlineRecords.set(inlineProjectionPath, editable);
+
+
+    const chartPanel = JSON.stringify({ manifest: {
+      state: { window: { type: { kind: "scalar", type: "string" } } },
+      members: { chart: { component: "MetricChart", sourceCard: chartSource, state: { range: "window" } } },
+      events: {},
+    } });
+    await writeFile(descriptor, chartPanel);
+    await writeFile(layout, '<div id="app"><projection slot="chart"></projection></div>');
+    await writeFile(registration, JSON.stringify({
+      panels: [{ ...item, mode: "update", revision: inlineRecords.get(inlinePanelPath).revision }],
+    }));
+    const unregistered = JSON.parse((await run("panel", "check", directory)).stdout);
+    assert.deepEqual(unregistered.unchecked, [{
+      kind: "chart-source", member: "chart", ...chartSource,
+      reason: "Chart input types can be checked after the owner registers this source card",
+    }]);
+    assert.deepEqual(requests.splice(0).filter(([method, url]) => method !== "GET" || url.includes("/product-"))
+      .map(([method, url]) => [method, url]), [["GET", chartQuery]]);
+
+    await run("panel", "register", directory);
+    assert.deepEqual(requests.splice(0).filter(([method]) => method !== "GET").map(([method, url, body]) =>
+      [method, url, method === "POST" ? body : body.manifest.members.chart]), [
+      ["POST", chartPath, chartSource],
+      ["PUT", inlinePanelPath, { target: { projectionId: chartProjection.id }, inputs: { range: { state: "window" } } }],
+    ]);
+    assert.equal(await readFile(descriptor, "utf8"), chartPanel);
+
+    const registered = JSON.parse((await run("panel", "check", directory)).stdout);
+    assert.deepEqual(registered.unchecked, []);
+    assert.deepEqual(requests.splice(0).filter(([method, url]) => method !== "GET" || url.includes("/product-"))
+      .map(([method, url]) => [method, url]), [["GET", chartQuery], ["GET", storedChartPath]]);
+
+    const deletePath = `${inlinePanelPath}?revision=${inlineRecords.get(inlinePanelPath).revision}`;
+    await assert.rejects(run("panel", "delete", "panel", "inline-panel"),
+      error => error.stderr.includes("PRODUCT_IN_USE") && error.stderr.includes("Panel is still in use"));
+    assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), [
+      ["GET", inlinePanelPath], ["DELETE", deletePath],
+    ]);
+    const applicationDelete = await run("panel", "delete", "application", "app-acceptance");
+    assert.deepEqual(JSON.parse(applicationDelete.stdout), { kind: "application", id: "app-acceptance", success: true });
+    panelInUse = false;
+    const panelDelete = await run("panel", "delete", "panel", "inline-panel");
+    assert.deepEqual(JSON.parse(panelDelete.stdout), { kind: "panel", id: "inline-panel", ...deletedPanel });
+    assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), [
+      ["DELETE", applicationPath], ["GET", inlinePanelPath], ["DELETE", deletePath],
+    ]);
   } finally {
     await rm(directory, { recursive: true });
     await new Promise(resolve => server.close(resolve));

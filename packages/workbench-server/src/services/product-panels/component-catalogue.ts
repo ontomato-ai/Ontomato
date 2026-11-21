@@ -1,6 +1,7 @@
 import { appsSdkComponentCatalogSchema, appsSdkComponentDatum } from "@ontomato/contracts/apps-sdk";
 import { directReadDeclaration, type PanelRecord } from "@ontomato/contracts/panel-projection";
-import type { ProductProjectionInput } from "@ontomato/contracts/product-panels";
+import { panelReadResultIdSchema } from "@ontomato/contracts/panel-operations";
+import type { BuiltinProductProjectionInput, ProductProjectionInput } from "@ontomato/contracts/product-panels";
 import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
 import { readCurrentAppSdkComponents } from "../app-builder/sdk";
@@ -39,8 +40,9 @@ export async function readSdkComponent(componentId: string, locale: string | und
   return component;
 }
 
-export async function validateProjectionComponent(id: string, projection: ProductProjectionInput) {
-  const { components } = await readPanelComponentCatalogue();
+export async function validateProjectionComponent(id: string, projection: ProductProjectionInput | BuiltinProductProjectionInput,
+  readCatalogue = readPanelComponentCatalogue) {
+  const { components } = await readCatalogue();
   const component = components.get(projection.componentId);
   if (!component)
     throw new HttpError(400, `Projection '${id}', componentId '${projection.componentId}' is absent from the current SDK`, "PANEL_COMPONENT_UNAVAILABLE");
@@ -58,6 +60,8 @@ export async function validateProjectionComponent(id: string, projection: Produc
     if (!declaration)
       throw new HttpError(400, `Projection '${id}', field 'data.${name}' is not declared by component '${projection.componentId}'`, "PANEL_COMPONENT_DATA_UNKNOWN");
     const result = directReadDeclaration(projection, read)!.result;
+    if (!panelReadResultIdSchema.safeParse(result).success)
+      throw new HttpError(400, `Projection '${id}', field 'data.${name}' has no declared result schema`, "PANEL_READ_RESULT_UNDECLARED");
     const { results } = declaration;
     if (!results.includes(result))
       throw new HttpError(400, `Projection '${id}', field 'data.${name}' returns '${result}'; component '${projection.componentId}' accepts ${results.join(", ")}`, "PANEL_COMPONENT_DATA_RESULT_MISMATCH");

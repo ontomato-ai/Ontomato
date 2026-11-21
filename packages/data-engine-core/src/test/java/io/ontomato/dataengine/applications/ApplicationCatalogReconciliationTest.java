@@ -10,17 +10,22 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.sun.net.httpserver.HttpServer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.ProductGrantService;
 import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import io.ontomato.dataengine.test.PostgresTestDatabase;
+import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
@@ -96,7 +101,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         var ontology = JSON.parseObject(new ClassPathResource("applications/ontology.json").getContentAsString(StandardCharsets.UTF_8),
             ApplicationCatalog.Builtin.class);
         var metadata = ontology.declaration();
-        var use = new ApplicationPanelUse("knowledge-use", "knowledge", "panel-knowledge", "/ontology/knowledge",
+        var use = new ApplicationPanelUse("knowledge-use", "knowledge", "builtin-product-knowledge", "/ontology/knowledge",
             new ApplicationPanelUse.Access("business-knowledge", null),
             new DefaultAgentTarget("id", "knowledge-agent", null), null);
         var declaration = new ApplicationCatalog.Declaration(metadata.names(), metadata.descriptions(), metadata.icon(),
@@ -109,7 +114,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         when(access.canEnter(any(), eq(viewer))).thenReturn(true);
         when(access.pageSkills(anyList(), eq(viewer))).thenAnswer(call -> call.getArgument(0));
         when(access.panelUses(List.of(use), viewer)).thenReturn(List.of(use));
-        when(grants.allowed("panel-knowledge", "use")).thenReturn(true);
+        when(grants.allowed("builtin-product-knowledge", "use")).thenReturn(true);
 
         http.perform(get(ApplicationController.PANEL_SKILL_SOURCES).param("domainId", "domain")
                 .header(WorkbenchServiceAuthentication.HEADER, "test-service"))
@@ -126,18 +131,258 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         http.perform(get("/platform/page-skills")).andExpect(status().isOk())
             .andExpect(jsonPath("$.data.pageSkills.length()").value(metadata.pageSkills().size()))
             .andExpect(jsonPath("$.data.pageSkills[0].skill.name").value("knowledge-governance"))
-            .andExpect(jsonPath("$.data.pageSkills[0].defaults[0].pageKey").value("governance-report"))
-            .andExpect(jsonPath("$.data.pageSkills[0].defaults[0].defaultAgent.agentKind").value("knowledge-governance"))
-            .andExpect(jsonPath("$.data.pageSkills[0].defaults[1].pageKey").value("knowledge"))
+            .andExpect(jsonPath("$.data.pageSkills[0].defaults.length()").value(1))
+            .andExpect(jsonPath("$.data.pageSkills[0].defaults[0].pageKey").value("knowledge"))
+            .andExpect(jsonPath("$.data.pageSkills[0].defaults[0].defaultAgent.id").value("knowledge-agent"))
             .andExpect(jsonPath("$.data.admittedEntrances[0].pageKey").value("knowledge"))
             .andExpect(jsonPath("$.data.registeredSkills[0].name").value("knowledge-governance"));
+    }
+
+    @Test void aDuplicateKeyNamesTheFileAndTheKey() {
+        var source = new ByteArrayResource("""
+            {"declaration":{"panelUses":[],"panelUses":[]}}
+            """.getBytes(StandardCharsets.UTF_8), "applications/duplicate.json");
+
+        var error = assertThrows(IOException.class, () -> ApplicationCatalogUpgrade.Builtins.readDeclaration(source));
+
+        assertTrue(error.getMessage().contains("applications/duplicate.json"));
+        assertTrue(error.getMessage().contains("panelUses"));
+    }
+
+    @Test void theShippedOntologyDeclarationContainsTheComponentsEntry() throws IOException {
+        var ontology = ApplicationCatalogUpgrade.Builtins.readDeclaration(new ClassPathResource("applications/ontology.json"));
+
+        var components = ontology.declaration().panelUses().stream()
+            .filter(use -> use.path().equals("/ontology/components"))
+            .findFirst().orElseThrow();
+        assertEquals("builtin-product-sdk-components", components.panelId());
+        assertEquals("ontology-modeling", components.access().permissionCode());
+    }
+
+    @Test void builtinDescriptionsRoundTripWithoutAddingANamelessEntryToTheMenu() throws Exception {
+        var source = new ByteArrayResource("""
+            {"id":"descriptions-test","kind":"native","rail":"apps","category":"build","sort":100,
+             "entry":{"path":"/descriptions-test","renderer":"descriptions"},"entryAccess":["domain-member"],
+             "declaration":{"names":{"en":"Descriptions"},"descriptions":{},"icon":"pages","groups":[],"permissions":[],
+               "panelUses":[
+                 {"id":"info","pageKey":"descriptions-info","path":"/descriptions-test/info","panelId":"builtin-product-info",
+                  "access":{"kind":"domain-member"},"descriptions":{"en":"  Keep the original text.  ","zh-CN":"入口说明"}},
+                 {"id":"plain","pageKey":"descriptions-plain","path":"/descriptions-test/plain","panelId":"builtin-product-info",
+                  "access":{"kind":"domain-member"}}]}}
+            """.getBytes(StandardCharsets.UTF_8), "applications/descriptions-test.json");
+        var viewer = new QueryAccessService.GrantUser("viewer", "domain");
+        when(identity.getCurrentUser()).thenReturn(viewer);
+        when(access.canEnter(any(), eq(viewer))).thenReturn(true);
+        when(access.panelUses(anyList(), eq(viewer))).thenAnswer(call -> call.getArgument(0));
+        when(grants.allowed("builtin-product-info", "use")).thenReturn(true);
+
+        catalog.builtins("data-engine", List.of(ApplicationCatalogUpgrade.Builtins.readDeclaration(source)));
+
+        http.perform(get("/platform/applications/resolve-entry").param("path", "/descriptions-test/info"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.use.descriptions.en").value("  Keep the original text.  "))
+            .andExpect(jsonPath("$.data.use.descriptions['zh-CN']").value("入口说明"))
+            .andExpect(jsonPath("$.data.use.names").doesNotHaveJsonPath())
+            .andExpect(jsonPath("$.data.menu.panelUses.length()").value(0));
+        http.perform(get("/platform/applications/catalogue/descriptions-test"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.panelUses[0].descriptions.en").value("  Keep the original text.  "))
+            .andExpect(jsonPath("$.data.panelUses[1].descriptions").doesNotHaveJsonPath());
+    }
+
+    private static String registrationWithEntryDescriptions(String descriptions) {
+        return """
+            {"entry":{"path":"/applications/app-descriptions","renderer":"panels"},
+             "declaration":{"names":{"en":"Descriptions"},"descriptions":{},"icon":"pages","groups":[],"permissions":[]},
+             "entryAccess":["domain-member"],
+             "panelUses":[{"id":"info","pageKey":"app-descriptions-info","path":"/applications/app-descriptions/info",
+               "panelId":"info-panel","access":{"kind":"domain-member"},"descriptions":%s}]}
+            """.formatted(descriptions);
+    }
+
+    @Test void domainEntryDescriptionsRoundTripAndRejectInvalidValues() throws Exception {
+        var viewer = new QueryAccessService.GrantUser("owner", "domain");
+        when(identity.getCurrentUser()).thenReturn(viewer);
+        when(access.canEnter(any(), eq(viewer))).thenReturn(true);
+        when(access.canMaintain(any(), eq(viewer))).thenReturn(true);
+        when(access.panelUses(anyList(), eq(viewer))).thenAnswer(call -> call.getArgument(0));
+        when(grants.allowed("info-panel", "use")).thenReturn(true);
+
+        var writer = "/platform/applications/app-descriptions/panel-uses";
+        http.perform(put(writer).contentType(MediaType.APPLICATION_JSON)
+                .content(registrationWithEntryDescriptions("""
+                    {"en":"Read it here.","fr-CA":"Consultez la fiche."}
+                    """)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.panelUses[0].descriptions['fr-CA']").value("Consultez la fiche."));
+        http.perform(post("/platform/applications/catalogue/form").contentType(MediaType.APPLICATION_JSON).content("""
+            {"section":"entries","target":{"kind":"object","objectType":"platform:Application","primaryKey":"app-descriptions"}}
+            """)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.values.panelUses[0].descriptions.en").value("Read it here."));
+        for (var invalid : List.of("null", "{}", "{\"fr\":\"Explication\"}", "{\"en\":\"   \"}",
+                "{\"en\":\"Read it.\",\"fr\":\"  \"}", "{\"en\":42}", "{\"en\":null}", "{\"en\":\"\u00a0\ufeff\"}"))
+            http.perform(put(writer).contentType(MediaType.APPLICATION_JSON)
+                .content(registrationWithEntryDescriptions(invalid))).andExpect(status().isBadRequest());
+
+        http.perform(get("/platform/applications/resolve-entry").param("applicationId", "app-descriptions").param("useId", "info"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.use.descriptions.en").value("Read it here."));
+    }
+
+    @Test void builtinDeclarationsCannotPointToDomainPanels() {
+        var before = records();
+        var privatePanel = builtInBrowser("domain-panel");
+        var error = assertThrows(org.springframework.web.server.ResponseStatusException.class,
+            () -> catalog.builtins("data-engine", List.of(privatePanel)));
+        assertEquals(400, error.getStatusCode().value());
+        assertEquals(before, records());
+        verifyNoInteractions(panels);
+    }
+
+    @Test void theShippedOntologyCatalogueEntriesKeepTheirModelingPermission() throws Exception {
+        new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
+        var viewer = new QueryAccessService.GrantUser("modeler", "domain");
+        when(identity.getCurrentUser()).thenReturn(viewer);
+        when(access.canEnter(any(), eq(viewer))).thenReturn(true);
+        when(access.panelUses(anyList(), eq(viewer))).thenAnswer(call -> call.getArgument(0));
+
+        for (var name : List.of("projections", "panels", "applications")) {
+            when(grants.allowed("builtin-product-ontology-" + name, "use")).thenReturn(true);
+        }
+        for (var name : List.of("projections", "panels", "applications")) {
+            http.perform(get("/platform/applications/resolve-entry").param("path", "/ontology/" + name))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.applicationId").value("ontology"))
+                .andExpect(jsonPath("$.data.use.panelId").value("builtin-product-ontology-" + name))
+                .andExpect(jsonPath("$.data.use.access.permissionCode").value("ontology-modeling"));
+        }
+        when(access.panelUses(anyList(), eq(viewer))).thenReturn(List.of());
+        http.perform(get("/platform/applications/resolve-entry").param("path", "/ontology/projections"))
+            .andExpect(status().isForbidden());
+    }
+
+    private static String panelsTrialRegistration(String id) {
+        return """
+            {"entry":{"path":"/applications/%1$s","renderer":"panels"},
+             "declaration":{"names":{"en":"Panel trial"},"descriptions":{},"icon":"pages","permissions":[],"groups":[]},
+             "entryAccess":["domain-member"],"panelUses":[
+               {"id":"trial","pageKey":"ontology-panels","panelId":"trial-panel","path":"/applications/%1$s/trial",
+                "access":{"kind":"domain-member"},"names":{"en":"Trial"}},
+               {"id":"other","pageKey":"other-page","panelId":"trial-panel","path":"/applications/%1$s/other",
+                "access":{"kind":"domain-member"},"names":{"en":"Other"}}]}
+            """.formatted(id);
+    }
+
+    @Test void startupKeepsTheBuiltinAndQuarantinesOnlyTheConflictingDomainUse() throws Exception {
+        var operator = new QueryAccessService.GrantUser("operator", "trial-domain");
+        when(identity.getCurrentUser()).thenReturn(operator);
+        when(access.canEnter(any(), eq(operator))).thenReturn(true);
+        when(access.canMaintain(any(), eq(operator))).thenReturn(true);
+        when(access.pageSkills(anyList(), eq(operator))).thenAnswer(call -> call.getArgument(0));
+        when(access.panelUses(anyList(), eq(operator))).thenAnswer(call -> call.getArgument(0));
+        when(grants.allowed(anyString(), eq("use"))).thenReturn(true);
+
+        var id = "app-ontology-panels";
+        var path = "/applications/" + id;
+        http.perform(put("/platform/applications/" + id + "/panel-uses").contentType(MediaType.APPLICATION_JSON)
+                .content(panelsTrialRegistration(id))).andExpect(status().isOk());
+
+        new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
+
+        http.perform(get("/platform/applications/resolve-entry").param("path", "/ontology/panels"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.applicationId").value("ontology"))
+            .andExpect(jsonPath("$.data.use.pageKey").value("ontology-panels"));
+        http.perform(get("/platform/applications/resolve-entry").param("path", path + "/trial"))
+            .andExpect(status().isNotFound());
+        http.perform(get("/platform/applications/resolve-entry").param("applicationId", id).param("useId", "trial"))
+            .andExpect(status().isNotFound());
+        http.perform(get("/platform/applications/resolve-entry").param("path", path + "/other"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.use.id").value("other"));
+        http.perform(get("/platform/applications/" + id + "/panel-uses"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.panelUses[*].id").value(org.hamcrest.Matchers.contains("other")));
+        http.perform(get("/platform/page-skills")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.admittedEntrances[?(@.pageKey == 'ontology-panels')].permissionCode")
+                .value(org.hamcrest.Matchers.contains("ontology-modeling")));
+        http.perform(get(ApplicationController.PANEL_SKILL_SOURCES).param("domainId", "trial-domain")
+                .header(WorkbenchServiceAuthentication.HEADER, "test-service"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data[?(@.applicationId == 'app-ontology-panels')].useId")
+                .value(org.hamcrest.Matchers.contains("other")));
+        http.perform(post("/platform/applications/catalogue/form").contentType(MediaType.APPLICATION_JSON).content("""
+            {"section":"entries","target":{"kind":"object","objectType":"platform:Application","primaryKey":"app-ontology-panels"}}
+            """)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.values.panelUses.length()").value(2))
+            .andExpect(jsonPath("$.data.errors[0].field").value("/panelUses/0/pageKey"))
+            .andExpect(jsonPath("$.data.errors[0].message").value(org.hamcrest.Matchers.allOf(
+                org.hamcrest.Matchers.containsString("ontology-panels"), org.hamcrest.Matchers.containsString("/ontology/panels"),
+                org.hamcrest.Matchers.containsString("trial-domain"), org.hamcrest.Matchers.containsString(id))));
+    }
+
+    @Test void domainRegistrationNamesTheBuiltinEntryThatReservedThePageKey() throws Exception {
+        new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
+        var operator = new QueryAccessService.GrantUser("operator", "trial-domain");
+        when(identity.getCurrentUser()).thenReturn(operator);
+        when(grants.allowed(anyString(), eq("use"))).thenReturn(true);
+
+        var response = http.perform(put("/platform/applications/app-new-trial/panel-uses")
+                .contentType(MediaType.APPLICATION_JSON).content(panelsTrialRegistration("app-new-trial")))
+            .andExpect(status().isBadRequest()).andReturn().getResponse().getContentAsString();
+        assertTrue(response.contains("ontology-panels"));
+        assertTrue(response.contains("/ontology/panels"));
+        assertTrue(response.contains("built-in application 'ontology'"));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM sys_application WHERE id='app-new-trial'", Integer.class));
+    }
+
+    @Test void aBuiltinEntryResolvesTheSamePanelForTwoDomainsWithoutGrantRows() throws Exception {
+        var resourceGrants = new ProductGrantService(jdbc, identity, (userId, domainId) -> java.util.Set.of());
+        resourceGrants.afterPropertiesSet();
+        var actualCatalog = new ApplicationCatalog(jdbc,
+            new TransactionTemplate(new DataSourceTransactionManager(dataSource)), access, "{}", panels, resourceGrants);
+        actualCatalog.builtins("data-engine", List.of(builtInBrowser("builtin-product-browser")));
+        var first = new QueryAccessService.GrantUser("one", "domain-one");
+        var second = new QueryAccessService.GrantUser("two", "domain-two");
+        when(access.canEnter(any(), any())).thenReturn(true);
+        when(access.panelUses(anyList(), any())).thenAnswer(call -> call.getArgument(0));
+        var mvc = MockMvcBuilders.standaloneSetup(new ApplicationController(actualCatalog, identity,
+            new WorkbenchServiceAuthentication("test-service"))).setControllerAdvice(new ApplicationErrors()).build();
+        var request = get("/platform/applications/resolve-entry").param("path", "/browser/data");
+        for (var reader : List.of(first, second)) {
+            when(identity.getCurrentUser()).thenReturn(reader);
+            mvc.perform(request).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.applicationId").value("browser"))
+                .andExpect(jsonPath("$.data.use.panelId").value("builtin-product-browser"))
+                .andExpect(jsonPath("$.data.use.access.permissionCode").value("data-browser"));
+        }
+        when(access.panelUses(anyList(), eq(second))).thenReturn(List.of());
+        mvc.perform(request).andExpect(status().isForbidden());
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM product_grant", Integer.class));
+        verifyNoInteractions(panels);
+
+        var localUse = new ApplicationPanelUse("local", "local", "builtin-product-browser", "/applications/app-local/home",
+            new ApplicationPanelUse.Access(null, "domain-member"), null, null);
+        var registration = new ApplicationController.PanelRegistration(
+            new ApplicationController.PanelEntry("/applications/app-local", "panels"), List.of(localUse),
+            builtin("local", "native").declaration(), List.of("domain-member"));
+        actualCatalog.putPanelUses("app-local", registration, second);
+        assertEquals("builtin-product-browser",
+            actualCatalog.require("app-local").getList("panelUses", ApplicationPanelUse.class).getFirst().panelId());
+        verify(panels).requireCurrent("domain-two", null, List.of(localUse), null);
+    }
+
+    private ApplicationCatalog.Builtin builtInBrowser(String panelId) {
+        var use = new ApplicationPanelUse("browse", "browse", panelId, "/browser/data",
+            new ApplicationPanelUse.Access("data-browser", null), null, null);
+        var metadata = builtin("browser", "native").declaration();
+        var declaration = new ApplicationCatalog.Declaration(metadata.names(), metadata.descriptions(), metadata.icon(),
+            metadata.groups(), metadata.permissions(), List.of(), List.of(use));
+        return new ApplicationCatalog.Builtin("browser", "native", "apps", "build", 1,
+            JSONObject.of("path", "/browser", "renderer", "panels"), List.of("data-browser"), null, declaration);
     }
 
     @Test void aBuiltinCannotBorrowAnotherBuiltinsEntryCode() throws Exception {
         new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
         var before = records();
         var original = builtin("other", "native");
-        var use = new ApplicationPanelUse("detail", "detail", "panel-detail", "/other/detail",
+        var use = new ApplicationPanelUse("detail", "detail", "builtin-product-detail", "/other/detail",
             new ApplicationPanelUse.Access("data-browser", null), null, null);
         var metadata = original.declaration();
         var declaration = new ApplicationCatalog.Declaration(metadata.names(), metadata.descriptions(), metadata.icon(),
@@ -145,8 +390,10 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         var other = new ApplicationCatalog.Builtin(original.id(), original.kind(), original.rail(), original.category(), original.sort(),
             JSONObject.of("renderer", "panels", "path", "/other"), List.of("data-browser"), null, declaration);
 
-        assertEquals(400, assertThrows(org.springframework.web.server.ResponseStatusException.class,
-            () -> catalog.builtins("workbench", List.of(other))).getStatusCode().value());
+        var refusal = assertThrows(org.springframework.web.server.ResponseStatusException.class,
+            () -> catalog.builtins("workbench", List.of(other)));
+        assertEquals(400, refusal.getStatusCode().value());
+        assertTrue(refusal.getReason().contains("data-browser"));
         assertEquals(before, records());
     }
 
@@ -372,6 +619,42 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.errors[0].field").value("/icon"))
             .andExpect(jsonPath("$.data.save.path").value("/platform/applications/" + id + "/identity"));
         assertEquals(before, records());
+    }
+
+    @Test void referencePreflightForwardsConfiguredDefaultsAndOmitsUnsetDefaults() throws Exception {
+        var requests = new AtomicReference<JSONObject>();
+        var serviceHeader = new AtomicReference<String>();
+        var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/internal/product-panels/validate-references", exchange -> {
+            try {
+                serviceHeader.set(exchange.getRequestHeaders().getFirst(WorkbenchServiceAuthentication.HEADER));
+                requests.set(JSON.parseObject(exchange.getRequestBody().readAllBytes()));
+                exchange.sendResponseHeaders(204, -1);
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        try {
+            var remote = new PanelResources("http://127.0.0.1:" + server.getAddress().getPort(), "test-service");
+            var member = new ApplicationPanelUse.Access(null, "domain-member");
+            remote.requireCurrent("domain", null, List.of(
+                new ApplicationPanelUse("report", "report", "panel-report", "/example/report", member,
+                    new DefaultAgentTarget("preset", null, "knowledge-governance"), null),
+                new ApplicationPanelUse("plan", "plan", "panel-plan", "/example/plan", member,
+                    new DefaultAgentTarget("id", "planner", null), null),
+                new ApplicationPanelUse("ordinary", "ordinary", "panel-ordinary", "/example/ordinary", member, null, null)
+            ), null);
+
+            assertEquals("test-service", serviceHeader.get());
+            var uses = requests.get().getJSONArray("uses");
+            assertEquals(JSONObject.of("kind", "preset", "agentKind", "knowledge-governance"),
+                uses.getJSONObject(0).getJSONObject("defaultAgent"));
+            assertEquals(JSONObject.of("kind", "id", "id", "planner"), uses.getJSONObject(1).getJSONObject("defaultAgent"));
+            assertFalse(uses.getJSONObject(2).containsKey("defaultAgent"));
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test void upgradesStoredDefaultAgentTargetsWithoutChangingTheirMeaning() {

@@ -37,7 +37,7 @@ const heading = useId();
   gap: var(--spacing-md);
 }
 .sdk-section-group + .sdk-section-group {
-  border-block-start: 1px solid var(--el-border-color-lighter);
+  border-block-start: 1px solid var(--ui-divider);
   margin-block-start: var(--page-content-gap);
   padding-block-start: var(--page-content-gap);
 }

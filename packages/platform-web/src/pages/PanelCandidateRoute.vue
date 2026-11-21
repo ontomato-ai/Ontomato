@@ -26,7 +26,9 @@ const props = defineProps<{
 
 const route = useRoute();
 const router = useRouter();
-const { t } = useI18n();
+const { t, locale, fallbackLocale } = useI18n();
+/** The language a panel's own name is given in: the reader's, else the deployment's default. */
+const language = computed(() => ({ locale: locale.value, fallback: String(fallbackLocale.value) }));
 
 const port = computed(() => candidatePanelHost({ id: props.workspaceId, ref: props.revision, pageKey: props.pageKey }));
 const key = computed(() => `${props.workspaceId}:${props.revision}:${props.pageKey}`);
@@ -39,6 +41,7 @@ const labels = computed<PanelHostLabels>(() => ({
     scriptRejected: t("platform.panelScriptRejected"),
   },
   content: { styleOutside: t("platform.panelStyleOutside") },
+  refresh: t("common.refresh"),
 }));
 
 /** The preview's address without the panel's own state; a draft's link in the query stays for the panel to read. */
@@ -55,6 +58,7 @@ function reportAddress(input: DisplayPageAddressInput) {
     :key="key"
     :port="port"
     :labels="labels"
+    :language="language"
     :label="t('platform.panelCandidateLabel', { ref: revision })"
     :address="address"
     :initial="requestedState"

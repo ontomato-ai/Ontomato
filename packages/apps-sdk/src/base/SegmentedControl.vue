@@ -22,13 +22,17 @@ interface ResolvedOption {
  */
 const props = withDefaults(
   defineProps<{
-    /** Static mutually exclusive choices when not supplied by `data.counts`. */
+    /**
+     * The choices, each a `value` and its label (`labelKey`): fixed ones, used when the projection reads no `counts` or
+     * while they are read; with `counts` (an owner's group counts, such as by status), the owner's groups are the choices,
+     * each with its count, read again when the panel's other filters change.
+     */
     options?: readonly SegmentedControlOption<ScalarValue>[];
     /** Declared scalar panel state field name when placed directly in a panel template outside a member. */
     state?: string;
     /** Controlled scalar value when used outside a panel state binding. */
     modelValue?: ScalarValue | null;
-    /** Value treated as active when the bound panel state is currently `null`. */
+    /** The choice shown as chosen while the bound panel state holds nothing (such as `all`). */
     defaultValue?: ScalarValue | null;
     /** Accessible label text for the segmented radio group. */
     ariaLabel?: string;
@@ -180,46 +184,46 @@ function onKeydown(event: KeyboardEvent, currentIndex: number) {
 </template>
 
 <style scoped>
+/* A segmented choice on a quiet neutral track; the chosen segment is a stronger neutral fill (DESIGN.md). */
 .sdk-segmented-control {
   align-items: center;
-  background: var(--el-fill-color-light);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--radius-md, 6px);
+  background: var(--ui-fill-tertiary);
+  border-radius: var(--radius-md);
   display: inline-flex;
-  gap: 2px;
-  padding: 2px;
+  gap: calc(var(--spacing-xs) / 2);
+  padding: calc(var(--spacing-xs) / 2);
 }
 .sdk-segmented-option {
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: calc(var(--radius-md, 6px) - 2px);
-  color: var(--el-text-color-regular);
+  border-radius: var(--radius-sm);
+  color: var(--el-text-color-secondary);
   cursor: pointer;
   display: inline-flex;
-  font-size: var(--text-sm, 13px);
-  font-weight: 500;
-  gap: 6px;
-  line-height: 1.4;
-  padding: 4px 12px;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  gap: var(--spacing-xs);
+  height: var(--control-height-sm);
+  padding: 0 var(--spacing-md);
+  transition: background-color var(--transition-fast), color var(--transition-fast);
   white-space: nowrap;
 }
 .sdk-segmented-count {
   color: var(--el-text-color-secondary);
-  font-size: var(--text-xs, 12px);
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
 }
 .sdk-segmented-option:hover:not(:disabled):not(.active) {
+  background: var(--ui-fill-tertiary);
   color: var(--el-text-color-primary);
 }
 .sdk-segmented-option.active {
-  background: var(--el-bg-color);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
-  color: var(--el-color-primary);
+  background: var(--ui-fill-secondary);
+  color: var(--el-text-color-primary);
 }
 .sdk-segmented-option:disabled {
+  color: var(--el-disabled-text-color);
   cursor: not-allowed;
-  opacity: 0.5;
 }
 </style>

@@ -365,6 +365,10 @@ function usage() {
 async function main() {
   const argv = process.argv.slice(2);
   const cmd = argv[0];
+  if (cmd === "agent" && process.env.ONTOMATO_SKILL_SCENARIO === "platform") {
+    await agent({}, argv);
+    return;
+  }
   const cfg = loadConfig();
   if (!cfg.envUrl) die("Set ONTOMATO_URL or envUrl in application.yml");
   if (cmd === "list-datasources") {
@@ -485,4 +489,7 @@ async function main() {
   usage();
 }
 
-main();
+main().catch((error) => {
+  console.error(error.message);
+  process.exitCode = 1;
+});

@@ -1,17 +1,20 @@
+import { missingEntryMessageKeys } from "@ontomato/contracts/panel-conversation-entry";
 import { appsSdkComponentDatum } from "@ontomato/contracts/apps-sdk";
 import {
-  matchesDirectPanelValue, matchesObjectType, panelPlacementSchema, panelPortAccepts, type DirectPanelPortType, type PanelManifest,
+  matchesDirectPanelValue, matchesObjectType, panelPlacementSchema, panelPortAccepts, type PanelManifest, type PanelMember,
   type PanelPlacement,
 } from "@ontomato/contracts/panel-manifest";
 import {
   authoredReadParameterSource, directReadDeclaration, missingRequiredReadParameters, panelReadInputMatches, panelReadParameterId,
 } from "@ontomato/contracts/panel-projection";
 import {
-  productPanelInputSchema, productProjectionInputSchema, type ProductPanelInput, type ProductProjectionInput,
+  builtinProductPanelInputSchema, builtinProductProjectionInputSchema, productPanelInputSchema, productProjectionInputSchema,
+  type BuiltinProductPanelInput, type BuiltinProductProjectionInput, type ProductPanelInput, type ProductProjectionInput,
 } from "@ontomato/contracts/product-panels";
 import type { PoolClient } from "pg";
 import { getPostgresPool, qualifiedTable as table } from "../../infrastructure/postgres";
-import { findCurrentProduct, type CurrentProductKind } from "../../infrastructure/product-current";
+import { currentProductRows, findCurrentProduct, type CurrentProductKind } from "../../infrastructure/product-current";
+import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { assertAppBuilderAccess } from "../app-builder/access";
@@ -22,8 +25,10 @@ import { panelStateDomainPrefix, panelStateKeyNamespace } from "./personal-state
 import type { panelOperationTargetCheck } from "./type-table";
 
 type QueryClient = Pick<PoolClient, "query">;
+type PanelDefinition = ProductPanelInput | BuiltinProductPanelInput;
+type ProjectionDefinition = ProductProjectionInput | BuiltinProductProjectionInput;
 type Target = { kind: CurrentProductKind; id: string };
-type Wiring = Pick<PanelPlacement, "inputs" | "outputs">;
+type Wiring = Pick<PanelMember, "inputs" | "outputs" | "readOperationInputs">;
 type SavedPlacement = { field: string; placement: PanelPlacement };
 type Reference = {
   key: string;
@@ -37,7 +42,7 @@ function fixedTarget(target: PanelPlacement["target"]): Target {
 }
 
 function collectReferences(
-  panel: ProductPanelInput, details: ReadonlyMap<string, string>, saved: readonly SavedPlacement[] = [],
+  panel: Pick<PanelDefinition, "manifest">, details: ReadonlyMap<string, string>, saved: readonly SavedPlacement[] = [],
 ): Reference[] {
   const { state, members } = panel.manifest;
   const references: Reference[] = [];
@@ -51,7 +56,9 @@ function collectReferences(
       const candidates = target.candidates;
       if ("panelIds" in candidates) {
         for (const id of candidates.panelIds) add({ kind: "panel", id });
-      } else {
+      } else if ("projectionIds" in candidates) {
+        for (const id of candidates.projectionIds) add({ kind: "projection", id });
+      } else if (candidates.rule === "objectDetail") {
         const { type } = state[target.fromState];
         if (type.kind === "object" || type.kind === "object-union") {
           for (const [className, id] of details) {
@@ -66,6 +73,9 @@ function collectReferences(
     if ("panelIds" in type.candidates) {
       for (const id of type.candidates.panelIds)
         references.push({ key: `$state.${name}`, target: { kind: "panel", id }, wiring: {} });
+    } else if ("projectionIds" in type.candidates) {
+      for (const id of type.candidates.projectionIds)
+        references.push({ key: `$state.${name}`, target: { kind: "projection", id }, wiring: {} });
     }
     if (value != null) {
       const placement = panelPlacementSchema.parse(value);
@@ -82,9 +92,12 @@ function collectReferences(
 
 async function loadPanels(domainId: string, client: QueryClient) {
   const { rows } = await client.query<{ id: string; definition: unknown }>(
-    `SELECT id,definition FROM ${table("product_panels")} WHERE domain_id=$1 ORDER BY id`, [domainId],
+    `SELECT id,definition FROM ${currentProductRows("panel")} AS definitions
+     WHERE domain_id=$1 OR domain_id IS NULL ORDER BY id`, [domainId],
   );
-  return new Map(rows.map(({ id, definition }) => [id, productPanelInputSchema.parse(definition)]));
+  return new Map(rows.map(({ id, definition }) => [
+    id, (isBuiltinProductId(id) ? builtinProductPanelInputSchema : productPanelInputSchema).parse(definition),
+  ]));
 }
 
 async function loadDetails(domainId: string, client: QueryClient) {
@@ -92,7 +105,7 @@ async function loadDetails(domainId: string, client: QueryClient) {
   return new Map(mappings.map(({ className, panelId }) => [className, panelId]));
 }
 
-async function loadSavedPlacements(domainId: string, panels: ReadonlyMap<string, ProductPanelInput>, client: QueryClient) {
+async function loadSavedPlacements(domainId: string, panels: ReadonlyMap<string, PanelDefinition>, client: QueryClient) {
   const placements = new Map<string, SavedPlacement[]>();
   const hasPersonalPlacements = Array.from(panels.values()).some(({ manifest }) =>
     Object.values(manifest.state).some(field => field.personal && field.type.kind === "placement"));
@@ -121,7 +134,7 @@ export async function findPanelUsers(domainId: string, kind: CurrentProductKind,
 }
 
 function rejectCycles(
-  panels: ReadonlyMap<string, ProductPanelInput>, details: ReadonlyMap<string, string>,
+  panels: ReadonlyMap<string, PanelDefinition>, details: ReadonlyMap<string, string>,
   roots: Iterable<string>, ancestors: Iterable<string> = [],
 ) {
   const checked = new Set<string>();
@@ -147,7 +160,7 @@ function rejectCycles(
   for (const root of roots) visit(root);
 }
 
-function ports(definition: ProductPanelInput | ProductProjectionInput) {
+function ports(definition: PanelDefinition | ProjectionDefinition) {
   if (!("manifest" in definition)) return definition;
   const external = Object.fromEntries(Object.entries(definition.manifest.state)
     .filter(([, field]) => field.external)
@@ -156,7 +169,7 @@ function ports(definition: ProductPanelInput | ProductProjectionInput) {
 }
 
 async function incompatiblePort(
-  source: PanelManifest, { key, wiring }: Reference, definition: ProductPanelInput | ProductProjectionInput,
+  source: PanelManifest, { key, wiring }: Reference, definition: PanelDefinition | ProjectionDefinition,
   readCatalogue = readPanelComponentCatalogue,
 ) {
   const target = ports(definition);
@@ -216,7 +229,11 @@ async function incompatiblePort(
 async function requireProjection(domainId: string, id: string, client: QueryClient) {
   const row = await findCurrentProduct(domainId, "projection", id, client);
   if (!row) throw new HttpError(404, "Current projection definition not found", "PRODUCT_UNAVAILABLE");
-  return productProjectionInputSchema.parse(row.definition);
+  return projectionDefinition(id, row.definition);
+}
+
+function projectionDefinition(id: string, definition: unknown) {
+  return (isBuiltinProductId(id) ? builtinProductProjectionInputSchema : productProjectionInputSchema).parse(definition);
 }
 
 export async function validateCurrentProductReferences(
@@ -232,7 +249,7 @@ export async function validateCurrentProductReferences(
     const issue = await checkOperationTarget(input);
     if (issue) throw new HttpError(400, `Projection '${id}': ${issue}`, "PANEL_OPERATION_TARGET_MISMATCH");
   }
-  const checkMember = async (manifest: PanelManifest, reference: Reference, definition: ProductPanelInput | ProductProjectionInput) => {
+  const checkMember = async (manifest: PanelManifest, reference: Reference, definition: PanelDefinition | ProjectionDefinition) => {
     if ("componentId" in definition && definition.operations) {
       checkOperationTarget ??= (await import("./type-table")).panelOperationTargetCheck(owner, credentials);
       const issue = await checkOperationTarget(definition, reference.wiring);
@@ -245,7 +262,7 @@ export async function validateCurrentProductReferences(
   if ("manifest" in input) {
     rejectCycles(panels, details, [id]);
 
-    const inspected = new Map<string, ProductPanelInput | ProductProjectionInput>();
+    const inspected = new Map<string, PanelDefinition | ProjectionDefinition>();
     const authorized = new Set<string>();
     for (const reference of collectReferences(input, details)) {
       const { target, key } = reference;
@@ -261,7 +278,7 @@ export async function validateCurrentProductReferences(
         await requireProductGrant(target.id, "use", credentials);
         authorized.add(target.id);
       }
-      const definition = known ?? (target.kind === "panel" ? panels.get(target.id)! : productProjectionInputSchema.parse(stored));
+      const definition = known ?? (target.kind === "panel" ? panels.get(target.id)! : projectionDefinition(target.id, stored));
       inspected.set(target.id, definition);
       const issue = await checkMember(input.manifest, reference, definition);
       if (issue) throw new HttpError(400, `Panel '${id}', member '${key}' – ${issue}`, "PANEL_PORT_MISMATCH");
@@ -296,7 +313,7 @@ export async function validateObjectDetailPanelMapping(domainId: string, classNa
 }
 
 export async function validatePersonalPlacement(
-  owner: ProductOwner, viewer: AssistantCredentials, panel: ProductPanelInput, ancestors: ReadonlySet<string>,
+  owner: ProductOwner, viewer: AssistantCredentials, panel: Pick<PanelDefinition, "manifest">, ancestors: ReadonlySet<string>,
   field: string, placement: PanelPlacement, client: PoolClient,
 ) {
   const target = fixedTarget(placement.target);
@@ -309,4 +326,32 @@ export async function validatePersonalPlacement(
   if (issue) throw new HttpError(400, `Personal placement '${field}': ${issue}`, "PANEL_PORT_MISMATCH");
 
   if (target.kind === "panel") rejectCycles(panels, details, [target.id], ancestors);
+}
+
+export async function validateBuiltinProductReferences(
+  panels: ReadonlyMap<string, BuiltinProductPanelInput>, projections: ReadonlyMap<string, BuiltinProductProjectionInput>,
+  readCatalogue: typeof readPanelComponentCatalogue,
+) {
+  const details = new Map<string, string>();
+  rejectCycles(panels, details, panels.keys());
+  const checkOperationTarget = (await import("./type-table")).builtinPanelOperationTargetCheck();
+  for (const [id, projection] of projections) {
+    const issue = await checkOperationTarget(projection);
+    if (issue) throw new Error(`Platform projection '${id}': ${issue}`);
+  }
+  for (const [id, panel] of panels) {
+    for (const reference of collectReferences(panel, details)) {
+      const { target, key } = reference;
+      const definition = target.kind === "panel" ? panels.get(target.id) : projections.get(target.id);
+      if (!definition) throw new Error(`Platform panel '${id}', member '${key}' refers to missing ${target.kind} '${target.id}'`);
+      const issue = "componentId" in definition ? await checkOperationTarget(definition, reference.wiring) : undefined;
+      const incompatible = issue ?? await incompatiblePort(panel.manifest, reference, definition, readCatalogue);
+      if (incompatible) throw new Error(`Platform panel '${id}', member '${key}': ${incompatible}`);
+      // A platform panel ships to every language: the opening sentence its entry names by key is in each one it declares.
+      if ("componentId" in definition) {
+        const [missing] = missingEntryMessageKeys([definition.conversationEntry], panel.content.messages);
+        if (missing) throw new Error(`Platform panel '${id}', member '${key}': prefillKey '${missing.key}' is not in content.messages (${missing.locale ?? "any locale"})`);
+      }
+    }
+  }
 }

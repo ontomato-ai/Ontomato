@@ -6,49 +6,49 @@ list, record, edit form and create form. Its [manifest](../examples/agent-manage
 
 ```sh
 example="$SKILL/examples/agent-management"
-node "$SKILL/ontomato.mjs" panel check "$example" --material "$example/registration.json"
-node "$SKILL/ontomato.mjs" panel register "@$example/registration.json"
+node "$SKILL/ontomato.mjs" panel check "$example"
+node "$SKILL/ontomato.mjs" panel register "$example"
 ```
 
-Open the example's application entry at `/applications/example-agent-management/manage`. Select an agent to edit it.
+Open the example's application entry at `/applications/app-example-agent-management/manage`. Select an agent to edit it.
 The New control clears that selection and the owner supplies the create form. After a successful create, the host
 uses the object returned by the owner as the form's selection.
 
 Start your own page by choosing the registered platform type and your intended application ID.
 
 ```sh
-node "$SKILL/ontomato.mjs" panel scaffold platform:AgentDefinition ./agents-panel --id my-agent-management
+node "$SKILL/ontomato.mjs" panel scaffold platform:AgentDefinition ./agents-panel --id app-my-agent-management
 ```
 
-The starter writes `panel.html`, `panel.mjs`, `panel.json` and `registration.json` into a new directory. It reads owner declarations
-from the platform's type table. The generated material includes an application entry. Review its access before registration.
-When editing the generated source, carry the updated `html`, `module` and `manifest` into the panel's registration
-input. The starter includes the owner save when the type declares a form and a `form.save` operation.
+The starter writes `panel.html`, `panel.mjs`, `panel.json` and `registration.json` into a new directory.
+It reads owner declarations from the platform's type table. Review the generated application entry and access
+before registration. Use `panel type <type-id>` to inspect the same reads and operations.
+
 Use `--operation <owner operation ID>` for a button targeting the selected record and `--batch <owner operation ID>`
-for a button targeting checked records. Repeat either flag to add more buttons. The starter takes the target input
-name and batch support from the type table. For operations with extra required inputs, wire the owner form or
-operation inputs. The starter places these controls above the list. Online `panel check` uses the same type table
-to check targets before registration. Declare a local name in `operations` and use that name in `config.operation`
-on a button. Use the projection's `target.input` name in the member's state binding, for either the selected object
-or the checked list. The placed operation ID is `<member key>.<local name>`.
+for a button targeting checked records. Repeat either flag to add more buttons. When an operation needs additional
+required inputs, connect the form or supply those values in Vue. The starter includes an owner save when the type
+declares both the form read and a `form.save` operation.
 
 ## Effect and wiring
 
 | Effect | What to write |
 | --- | --- |
-| Search this list | Declare `data.rows` using an owner read with a `search` parameter. The list shows the search field and supplies the value at runtime. |
-| Share the search keyword or put it in the address | Bind the list member's `inputs.search` to scalar panel state. Bind other members' `search` inputs to the same state when their reads need it. |
-| Status tabs with counts | Use `SegmentedControl` with `data.counts` and bind its `inputs.value` to scalar status state. The owner supplies the ordered `[{key, label, count}]` options. Bind the list member's `inputs.status` to that state. Counts and rows share the search state. |
-| Pagination | Use an owner read that declares its pagination parameters. The list supplies page or cursor values at runtime. The default page size is 20. Set `config.pageSize` when the page needs a different size. |
-| Select a row and show details | Bind the list's `inputs.selected` and the summary's object input to the same object-reference state. The summary's `data.record.source` is `{object: {input: "<object input name>"}}`. |
-| New and edit in one form | Put `data.form`, `data.createForm` and one owner `form.save` binding on an `ObjectForm` projection. Connect its object input to the selected state. A Vue button clears that selection and shows the owner's create form. |
-| Single operation | In an `OperationButton` projection, set `operations.approve = {operation: {kind: "PlatformOperation", id: "<owner operation ID>"}, target: {input: "record"}}` and `config.operation = "approve"`. Connect the `record` member input to the selected object. |
-| Batch operation | Bind the list's `inputs.checked` and the button's target input to the same list of object references. A list target invokes a batch for an owner operation that declares batch support. |
-| Highlight search hits | Bind the detail's `inputs.search` to the list's search state when the owner record read declares `search`. The owner returns highlight ranges, and ObjectList and ObjectSummary render them. |
-| Carry state in the address | Mark the state fields to restore with `deepLink: true` in the manifest. Keep transient multi-selection in panel state. |
+| Search this list | Set `data.rows` to a read with a `search` parameter. The list shows the search field and supplies the value at runtime. |
+| Share the search keyword or put it in the address | Connect `state.search` to a scalar panel state. Use the same connection on other members whose reads need it. |
+| Status tabs with counts | Use a `SegmentedControl` with `data.counts` and `state.value` connected to status. Connect `state.status` on the list. Counts and rows can share the search state. The owner supplies the ordered `[{key, label, count}]` options. |
+| Pagination | Use an owner read with pagination parameters. The list supplies the values at runtime, with `config.pageSize` for a different page size. |
+| Select a row and show details | Connect the list's `state.selected` and the summary's `target` to the same object state. Set the summary's `data.record` to the owner read. |
+| New and edit in one form | Set `component` to `ObjectForm`, declare `data.form`, `data.createForm` and the owner save in `operation`, and connect `target` to the selected state. A Vue button clears the selection and opens the create form. |
+| Single operation | Set `component` to `OperationButton` and put the owner ID in `operation`. Set `target` to the selected object state. |
+| Batch operation | Connect the list's `state.checked` and the button's `target` to the same list of object references. Use an owner operation that supports batch execution. |
+| Highlight search hits | Connect `state.search` on the detail when its record read declares `search`. The owner returns highlight ranges that ObjectList and ObjectSummary render. |
+| Carry state in the address | Mark the state fields to restore with `deepLink: true` in the manifest. |
 
-Bind the declared member inputs to state. Use `params` for literals or to name a different input. Components declare
-their runtime parameters. ObjectForm supplies `values` and `changedField` to the owner form read.
+For server-side paging, choose a paginated read from `panel type` for the `ObjectList.rows` datum and let
+the list supply the paging inputs. See the [generated paging configuration](panel-authoring/RUNTIME.md#list-paging).
+
+Use a read object `{read, params}` for explicit state or literal bindings. Components supply their own runtime
+parameters. For example, ObjectForm supplies `values` and `changedField` to the owner form read.
 
 Write the Vue template inside `<div id="app">` in `panel.html`, and place each member with `<projection slot="name"></projection>`.
 Use ordinary CSS for layout and Vue directives and events for interaction. In `panel.mjs`, call `mountPanel` and use the

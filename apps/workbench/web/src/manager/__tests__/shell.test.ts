@@ -5,10 +5,6 @@ import { catalogFixture } from "../../../../../../packages/platform-web/src/__te
 // The heavy Manager pages (graph libraries, Markdown) are doubled; the router, layout, catalogs and requests are real.
 vi.hoisted(() => { window.__APP_CONFIG__ = { API_BASE: "/custom-base/api" }; });
 
-vi.mock("../../../../../../packages/ontology-manager/src/components/OntologyPlayground.vue", () => ({
-  __esModule: true,
-  default: defineComponent({ name: "PlaygroundDouble", setup: () => () => h("p", { class: "page-double" }, "graph") }),
-}));
 vi.mock("../../../../../../packages/ontology-manager/src/visual-modeling/VisualModeling.vue", () => ({
   __esModule: true,
   default: defineComponent({
@@ -23,15 +19,6 @@ vi.mock("../../../../../../packages/ontology-manager/src/data-browser/DataBrowse
     name: "DataBrowserDouble",
     props: { initialClass: String },
     setup: (props) => () => h("p", { class: "page-double" }, `data ${props.initialClass}`),
-  }),
-}));
-
-vi.mock("../../../../../../packages/ontology-manager/src/knowledge-governance/GovernancePage.vue", () => ({
-  __esModule: true,
-  default: defineComponent({
-    name: "GovernanceDouble",
-    props: { recordId: String },
-    setup: (props) => () => h("p", { class: "page-double" }, `governance ${props.recordId}`),
   }),
 }));
 
@@ -146,13 +133,6 @@ describe("open-source Ontology Service page", () => {
     expect([...document.querySelectorAll(".knowledge-form .draft-changed")].length).toBeGreaterThan(0);
   });
 
-  it("a governance record's report is a page of the platform, at the record's own address", async () => {
-    await start("/#/governance/reports/record-1");
-    expect(document.querySelector(".page-double")?.textContent).toBe("governance record-1");
-    expect(document.querySelector(".platform-shell")).not.toBeNull();
-    expect(document.querySelector(".rail-row.active")?.getAttribute("aria-label")).toBe(appName("governance"));
-  });
-
   it("requests go anonymously to the configured API root, and an old launch link loses its credential", async () => {
     sessionStorage.setItem("ontology_manager_token", "old-token");
     await start("/?view=data-browser&tk=t1&apiKey=k1&theme=dark#/objects");
@@ -188,10 +168,10 @@ describe("open-source Ontology Service page", () => {
   });
 
   it("a 401 stops the page with its status; a 402 keeps it", async () => {
-    statusFor = (url) => (url.endsWith("/action/queryList") ? 402 : 200);
+    statusFor = (url) => (url.endsWith("/metricView/queryList") ? 402 : 200);
     await start("/#/objects");
     expect(document.querySelector(".platform-shell")).not.toBeNull();
-    statusFor = (url) => (url.endsWith("/function/queryList") ? 401 : 200);
+    statusFor = (url) => (url.endsWith("/metricView/queryList") ? 401 : 200);
     await start("/#/objects");
     expect(document.querySelector(".platform-shell")).toBeNull();
   });

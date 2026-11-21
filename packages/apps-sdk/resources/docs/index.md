@@ -27,6 +27,10 @@ release there: every page and panel runs on the release of the platform that sho
 
 ## Modules
 
+These are the imports of an application page outside a panel. A panel's module imports only `vue` and
+`@ontomato/sdk/panel`; the platform's interface components below are template tags in a panel, written without an
+import (see "Compose a panel").
+
 | Import | Content |
 | --- | --- |
 | `vue` | Vue, the build with the template compiler; the only Vue of the page |
@@ -89,30 +93,51 @@ await mountPanel({
 
 Declare `list` and `details` in `manifest.members` with the actual `target.projectionId`, and give typed inputs for the
 declared owner read, such as the state that selects an object. The panel's own code reads and sets public state with
-`instance.state`, and runs a member's operations with `instance.invoke(id, input?)`. Use the deployed component
+`instance.state`, and runs a member's operations with `usePanelOperation` (below). Use the deployed component
 catalogue to check which fields the component exposes. For translations, use locale tags, flat message keys and named
 placeholders such as `{name}` in `content.messages`; the template reads them with `t(…)`.
+
+A member's component tells the page what happened through its events, which the template listens to on
+`<projection>`; what the page shows next is the page's code to decide. An `ObjectForm` emits `saved` with the object it
+saved or created, and `discarded` when the reader throws away what it held — for example, back to the details:
+
+```html
+<projection slot="form" @saved="mode = 'view'" @discarded="mode = 'view'"></projection>
+```
+
+A form the page opens under a parent — a new attribute in the class it shows, a relationship from its two ends — fixes
+the fields that parent decides. The owner's form does not know which page it is in and may offer them as choices, so
+the page names them in the `ObjectForm` projection's `config.fixedFields`, by the owner's JSON Pointer path, each from a
+field of the panel's state (`{"state": "selected"}`, the value it holds; add `"path"`, a JSON Pointer into that value,
+to take a part of it, such as an object reference's `/primaryKey`) or a value written there (`{"literal": "Device"}`).
+The form shows them read-only, follows the state they come from, and submits them with every save; the owner checks
+them as any other value. While the state holds nothing (no class chosen), the field is the owner's to edit as usual:
+
+```json
+{ "config": { "fixedFields": { "/className": { "state": "selected", "path": "/primaryKey" } } } }
+```
 
 ### Draw a part yourself
 
 When no official component draws a part the way the page needs, the panel draws it itself. Declare a member whose
 projection uses `@ontomato/sdk:PanelData`: it draws nothing and takes any data the projection names, under names of
-your choosing. Read each datum in the page's code with `usePanelData(member, name)`:
+your choosing. Do not place it in the template: the platform holds every member the panel declares from the start,
+placed or not, so its data and operations are there for the page's code. Read each datum in the page's code with
+`usePanelData(member, name)`:
 
 ```js
 import { computed, ref } from "vue";
-import { mountPanel, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
+import { mountPanel, usePanelData, usePanelOperation } from "@ontomato/sdk/panel";
 
 await mountPanel({
   setup() {
-    const { instance } = usePanelContext();
     const cursor = ref(null);
     // The member's `rows` datum (an owner's query), with the cursor and page size as the page's own run-time values.
     const rows = usePanelData("board", "rows", () => ({ cursor: cursor.value, size: 20 }));
     const items = computed(() => (rows.value.status === "ready" ? rows.value.value.rows : []));
     const next = () => { cursor.value = rows.value.value?.nextCursor ?? null; };
     // The operation acts on the object the member's target input is bound to in the panel's state.
-    const approve = () => instance.invoke("board.approve");
+    const approve = usePanelOperation("board", "approve");
     return { rows, items, next, approve };
   },
 });
@@ -125,10 +150,30 @@ member binds changes, when the run-time values you pass change, and when an oper
 changed. Values you pass yourself are run-time parameters, which the platform checks against the catalogue and the
 read.
 
-The member's operations are the ones its projection names under `operations.<name>`. `instance.operations` lists those
-the owners admit now (an action on an object appears once the object is chosen), and `instance.invoke("<member>.<name>",
-input?)` runs one exactly as the page's header and an agent do. Never call the platform's business endpoints from the
-page.
+The member's operations are the ones its projection names under `operations.<name>`. Run one from the page's code
+with `usePanelOperation(member, name)`, called in setup like `usePanelData`: its `operation` is the owner's description
+while the owner admits it now — an action on an object once the object is chosen — and `null` otherwise, and `run(input?)`
+runs it exactly as the page's header and an agent do (a write is confirmed where its owner asks; a read answers what it
+read, or saves the file it sent):
+
+```js
+const approve = usePanelOperation("board", "approve");
+// <el-button :disabled="!approve.operation.value" @click="approve.run()">{{ approve.operation.value?.label }}</el-button>
+```
+
+To open another of the platform's pages, call `usePanelContext().navigate(address)` with an address such as
+`/agents/chat?agentId=…`; when the platform cannot open it, the page says why and the call rejects with that reason.
+Never call the platform's business endpoints from the page.
+
+The platform's interface components are template tags in a panel, with no import (the panel's module imports only
+`vue` and `@ontomato/sdk/panel`): `<markdown-view>`, `<code-editor>`, `<e-chart>`, `<table-preview>`, `<html-preview>`
+and `<form-fields>`, with the attributes their sections below give. Draw a document the page read (a skill's
+`SKILL.md`, a report body) with `<markdown-view :content="text">`, the product Markdown every platform page uses, and a
+file as code with `<code-editor :model-value="text" language="javascript" readonly>` (JSON, Markdown, HTML, Python or
+plain text too; without `readonly` it edits through `v-model`). Never draw either as plain text. To tell the reader how something the page did went ("Exported", why a call failed), call
+`usePanelContext().notify({ kind: "success" | "info" | "warning" | "error", text })`: the platform's own message, which
+fades by itself. A note that stays on the page is `<el-alert>`.
+
 
 Run the App Builder skill's `ontomato panel check` on the workspace directory. It uses the current release's
 declarations. Register the requested projections, panel and application uses through their owners, then open the
@@ -409,6 +454,7 @@ light and dark themes by itself.
 ```
 
 ```js
+// An application page outside a panel imports it; a panel writes the tag alone.
 import { MarkdownView } from "@ontomato/sdk/markdown";
 ```
 
@@ -427,6 +473,7 @@ with Ctrl/Cmd-F and copied. It follows the light and dark themes by itself.
 ```
 
 ```js
+// An application page outside a panel imports it; a panel writes the tag alone.
 import { CodeEditor } from "@ontomato/sdk/code";
 ```
 

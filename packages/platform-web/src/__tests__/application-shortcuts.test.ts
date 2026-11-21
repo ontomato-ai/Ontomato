@@ -4,7 +4,7 @@ import type {PlatformAppDeclaration} from '../apps';
 import {catalogPartition} from '../native-layouts';
 import {appDeclarations} from '../partition';
 import {catalogFixture, closedAccess, generatedNavigation} from './fixtures';
-import {applicationPages} from '../shell';
+import {panelEntryApplication, useApplicationCatalog} from '../catalog';
 import {platformRoutes} from '@ontomato/platform-shell/routes';
 it('bounds personal dynamic shortcuts while preserving the active application and builtins',()=>{
   const app=(id:string):PlatformAppDeclaration=>({id,label:id,icon:'pages',category:'business',prefix:'/'+id});
@@ -21,16 +21,19 @@ it('orders the permitted settings shortcut above App Builder and groups only pub
   const product = { ...built, id: 'app-product', kind: 'product' as const, entry: { path: '/products/app-product?applicationId=app-product' } };
   const panels = { ...product, id: 'app-panel', releaseId: null, entry: { path: '/panel', renderer: 'panels' } };
   const connected = { ...built, id: 'app-connected', kind: 'connected' as const, releaseId: null };
-  const settings = applicationPages.find(page => page.path === platformRoutes.agents.path)!;
-  const fixture = generatedNavigation();
-  const navigation = { ...fixture, pages: [...fixture.pages, settings] };
-  const access = closedAccess([settings.permissions[0]!]);
-  const apps = appDeclarations(navigation, access, catalogPartition([...catalog, built, product, panels, connected], 'en'), key => key);
-  const shortcut = agentBuilderShortcut(apps, navigation, access, 'Agent Builder')!;
-  expect(shortcut.home).toBe('/agents/settings');
-  expect(agentBuilderShortcut(apps, navigation, closedAccess([]), 'Agent Builder')).toBeUndefined();
+  const apps = appDeclarations(generatedNavigation(), closedAccess(['analysis-agent']),
+    catalogPartition([...catalog, built, product, panels, connected], 'en'), key => key);
+  const applications = useApplicationCatalog().applications;
+  const before = applications.value;
+  const shortcut = () => agentBuilderShortcut(apps, panelEntryApplication(platformRoutes.agents.path) === 'agents', 'Agent Builder');
+  applications.value = catalog;
+  const allowed = shortcut()!;
+  expect(allowed.home).toBe('/agents/settings');
+  applications.value = catalog.map(app => app.id === 'agents' ? { ...app, panelUses: [] } : app);
+  expect(shortcut()).toBeUndefined();
+  applications.value = before;
   const ids = [built.id, connected.id];
-  const shown = applicationShortcuts([...apps, shortcut], ids, [connected.id], null);
+  const shown = applicationShortcuts([...apps, allowed], ids, [connected.id], null);
   expect(shown.filter(app => app.rail === 'builders').map(app => app.id)).toEqual(['agent-builder', 'app-builder', built.id, product.id, panels.id]);
   expect(shown.find(app => app.id === built.id)?.built).toBe(true);
   expect(shown.find(app => app.id === connected.id)?.built).toBe(false);

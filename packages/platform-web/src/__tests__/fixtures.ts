@@ -2,7 +2,7 @@ import { applicationCatalogSchema, builtinApplicationSchema, type BuiltinApplica
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { workbenchApplications } from "../../../workbench-server/src/services/applications/builtins";
-import { catalogPartition } from "../native-layouts";
+import { catalogPartition, nativeLayouts } from "../native-layouts";
 import { computed } from "vue";
 import { BookOpen, Network, Table2 } from "lucide-vue-next";
 import type { PlatformAccess, PlatformNavigation } from "@ontomato/platform-admin";
@@ -76,3 +76,35 @@ export function catalogFixture(additional: BuiltinApplication[] = []) {
     .sort((a,b) => ["top","apps","bottom"].indexOf(a.rail) - ["top","apps","bottom"].indexOf(b.rail) || a.sort-b.sort || a.id.localeCompare(b.id)));
 }
 export function catalogPartitionFixture() { return catalogPartition(catalogFixture(), "en"); }
+
+/** The built-in applications this repository ships, as Java declares them. */
+export function builtinApplications(): BuiltinApplication[] {
+  return readApplicationDeclarations(join(__dirname, "../../../data-engine-core/src/main/resources/applications"));
+}
+
+/**
+ * Where the built-in applications' panel entries and their native menu tables disagree, for the native pages an edition
+ * serves (big main's ruling, 2026-11-21): an entry with a menu name has a place in its table, and every address a table
+ * lists is a native page or a declared entry — not both, not neither. `served` is the edition router's addresses; `own`
+ * keeps to the listed addresses the edition is the one to judge (another edition's pages are its own run's).
+ */
+export function nativeEntryConflicts(
+  served: ReadonlySet<string>, applications: readonly BuiltinApplication[], own: (path: string) => boolean = () => true,
+): string[] {
+  const conflicts: string[] = [];
+  for (const application of applications) {
+    const layout = nativeLayouts[application.entry.renderer];
+    if (!layout) continue;
+    const listed = [...layout.sections.flatMap((section) => "paths" in section ? section.paths : []), ...(layout.foot ? [layout.foot] : [])]
+      .filter((path) => !path.includes(":"));
+    const uses = application.declaration.panelUses ?? [];
+    for (const use of uses) {
+      if (use.names && !listed.includes(use.path)) conflicts.push(`${application.id}: ${use.path} has a menu name but no place in its menu table`);
+    }
+    for (const path of listed.filter(own)) {
+      const entry = uses.some((use) => use.path === path);
+      if (served.has(path) === entry) conflicts.push(`${application.id}: ${path} is ${entry ? "both a native page and a panel entry" : "neither a native page nor a panel entry"}`);
+    }
+  }
+  return conflicts;
+}

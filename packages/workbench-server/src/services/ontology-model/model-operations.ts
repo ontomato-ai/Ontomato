@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
+import { formFieldKey } from "@ontomato/contracts/form-fields";
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
 import { panelFormTargetSchema, type PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
@@ -66,12 +67,14 @@ async function refused(response: Response): Promise<SinglePanelOperationOutcome>
     : { kind: "refusal", code: error.code, message: error.message, details };
 }
 
+type Outcome<T> = { ok: true; data: T } | { ok: false; outcome: SinglePanelOperationOutcome };
+
 async function postModelWrite<T>(
   host: PanelOperationHost,
   path: string,
   body: unknown,
   schema: z.ZodType<T>,
-): Promise<{ ok: true; data: T } | { ok: false; outcome: SinglePanelOperationOutcome }> {
+): Promise<Outcome<T>> {
   const response = await host.request(`${modelPath}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -79,6 +82,29 @@ async function postModelWrite<T>(
   });
   if (!response.ok) return { ok: false, outcome: await refused(response) };
   return { ok: true, data: schema.parse(await response.json()) };
+}
+
+/** Reads one stored model view as the reader; the owner's refusal (a vanished object, say) becomes the outcome. */
+async function getModelView<T>(host: PanelOperationHost, path: string, schema: z.ZodType<T>): Promise<Outcome<T>> {
+  const response = await host.request(`${modelPath}${path}`, {});
+  if (!response.ok) return { ok: false, outcome: await refused(response) };
+  return { ok: true, data: schema.parse(await response.json()) };
+}
+
+/**
+ * The editable values an update writes. Java replaces the whole editable form, so a save that names its
+ * `submittedFields` keeps every field it did not submit at the stored value instead of clearing it.
+ */
+async function editedValues(
+  { values, submittedFields }: z.infer<typeof saveInputSchema>,
+  stored: () => Promise<Outcome<Record<string, unknown>>>,
+): Promise<Outcome<Record<string, unknown>>> {
+  if (submittedFields === undefined) return { ok: true, data: values };
+  const current = await stored();
+  if (!current.ok) return current;
+  const submitted = new Set(submittedFields.map(pointer => formFieldKey(pointer, "/")));
+  return { ok: true, data: Object.fromEntries(Object.entries(current.data).map(([key, value]) =>
+    [key, submitted.has(key) ? values[key] : value])) };
 }
 
 /** Reads an existing model record's display name for confirmation, falling back to its key when unreadable. */
@@ -142,12 +168,57 @@ const deleteObjectTypeImpact: PanelImpactInspector = {
 };
 
 /**
+ * The impact of making an attribute the primary key: the attribute itself and the class's current primary key, which
+ * stops being one. Both are named so the confirming human or agent sees which key moves.
+ */
+const setPrimaryKeyImpact: PanelImpactInspector = {
+  handlerRef: `${SET_PRIMARY_KEY}.inspect-impact`,
+  async inspect(host, calls) {
+    const target = calls[0]!.target as PanelRecordTarget;
+    const { className, name } = parseAttributePrimaryKey(target.primaryKey);
+    const response = await host.request(`${modelPath}/attributes?className=${encodeURIComponent(className)}`, {});
+    if (!response.ok) {
+      const { error } = modelErrorSchema.parse(await response.json());
+      throw new HttpError(response.status, error.message, error.code);
+    }
+    const attributes = z.array(attributeViewSchema).parse(await response.json());
+    const moved = attributes.filter(view => view.name === name || view.primaryKey);
+    return {
+      summary: tForLocale(host.locale, "panels.confirmation.setPrimaryKeyImpact"),
+      objects: moved.map(view => ({ target: attributeIdentity(view), label: view.showName || view.name })),
+      total: moved.length,
+    };
+  },
+};
+
+/** The impact a single delete shows its confirming human or agent: the one record, under its owner-read name. */
+function deleteImpact(
+  handlerRef: string,
+  summaryKey: string,
+  objectType: string,
+  label: (host: PanelOperationHost, target: PanelRecordTarget) => Promise<string>,
+): PanelImpactInspector {
+  return {
+    handlerRef: `${handlerRef}.inspect-impact`,
+    async inspect(host, calls) {
+      const target = calls[0]!.target as PanelRecordTarget;
+      return {
+        summary: tForLocale(host.locale, summaryKey),
+        objects: [{ target: { objectType, primaryKey: target.primaryKey }, label: await label(host, target) }],
+        total: 1,
+      };
+    },
+  };
+}
+
+/**
  * The ontology model's three form saves, three delete actions and the set-primary-key action.
  * `affected` names every modified record and every object type whose catalog lists or counts changed.
  */
 export const ontologyModelServerOperations = [
   {
     handlerRef: `${OBJECT_TYPE}.save`,
+    labelKey: "panels.ontologyModel.operations.saveObjectType",
     kind: "form.save",
     binding: { kind: "PlatformObjectType", id: OBJECT_TYPE },
     effect: "write",
@@ -169,10 +240,19 @@ export const ontologyModelServerOperations = [
       input: Record<string, unknown>,
       _intentId: string,
     ): Promise<SinglePanelOperationOutcome> {
-      const values = saveInputSchema.parse(input).values;
-      const body = target.kind === "draft"
-        ? { className: values.className, primaryKeyName: values.primaryKeyName, showName: values.showName, classDesc: values.classDesc }
-        : { className: target.primaryKey, showName: values.showName, classDesc: values.classDesc };
+      const save = saveInputSchema.parse(input);
+      const { values } = save;
+      let body: Record<string, unknown>;
+      if (target.kind === "draft") {
+        body = { className: values.className, primaryKeyName: values.primaryKeyName, showName: values.showName, classDesc: values.classDesc };
+      } else {
+        const edited = await editedValues(save, async () => {
+          const view = await getModelView(host, `/object-type?className=${encodeURIComponent(target.primaryKey)}`, objectTypeViewSchema);
+          return view.ok ? { ok: true, data: { showName: view.data.showName, classDesc: view.data.classDesc } } : view;
+        });
+        if (!edited.ok) return edited.outcome;
+        body = { className: target.primaryKey, showName: edited.data.showName, classDesc: edited.data.classDesc };
+      }
       const result = await postModelWrite(
         host,
         `/object-type/${target.kind === "draft" ? "create" : "update"}`,
@@ -192,6 +272,7 @@ export const ontologyModelServerOperations = [
   },
   {
     handlerRef: `${ATTRIBUTE}.save`,
+    labelKey: "panels.ontologyModel.operations.saveAttribute",
     kind: "form.save",
     binding: { kind: "PlatformObjectType", id: ATTRIBUTE },
     effect: "write",
@@ -213,25 +294,42 @@ export const ontologyModelServerOperations = [
       input: Record<string, unknown>,
       _intentId: string,
     ): Promise<SinglePanelOperationOutcome> {
-      const values = saveInputSchema.parse(input).values;
-      const body = target.kind === "draft"
-        ? {
-            className: values.className,
-            name: values.name,
-            showName: values.showName,
-            type: values.type,
-            attrDesc: values.attrDesc,
-            enable: values.enable,
-            businessKey: values.businessKey,
-            primaryKey: values.primaryKey,
+      const save = saveInputSchema.parse(input);
+      const { values } = save;
+      let body: Record<string, unknown>;
+      if (target.kind === "draft") {
+        body = {
+          className: values.className,
+          name: values.name,
+          showName: values.showName,
+          type: values.type,
+          attrDesc: values.attrDesc,
+          enable: values.enable,
+          businessKey: values.businessKey,
+          primaryKey: values.primaryKey,
+        };
+      } else {
+        const key = parseAttributePrimaryKey(target.primaryKey);
+        const edited = await editedValues(save, async () => {
+          const views = await getModelView(
+            host, `/attributes?className=${encodeURIComponent(key.className)}`, z.array(attributeViewSchema),
+          );
+          if (!views.ok) return views;
+          const view = views.data.find(attribute => attribute.name === key.name);
+          if (view === undefined) {
+            return { ok: false, outcome: { kind: "refusal", code: "ATTRIBUTE_NOT_FOUND", message: `Attribute ${key.name} not found` } };
           }
-        : {
-            ...parseAttributePrimaryKey(target.primaryKey),
-            showName: values.showName,
-            attrDesc: values.attrDesc,
-            enable: values.enable,
-            businessKey: values.businessKey,
-          };
+          return { ok: true, data: { showName: view.showName, attrDesc: view.attrDesc, enable: view.enable, businessKey: view.businessKey } };
+        });
+        if (!edited.ok) return edited.outcome;
+        body = {
+          ...key,
+          showName: edited.data.showName,
+          attrDesc: edited.data.attrDesc,
+          enable: edited.data.enable,
+          businessKey: edited.data.businessKey,
+        };
+      }
       const result = await postModelWrite(
         host,
         `/attribute/${target.kind === "draft" ? "create" : "update"}`,
@@ -251,6 +349,7 @@ export const ontologyModelServerOperations = [
   },
   {
     handlerRef: `${RELATIONSHIP}.save`,
+    labelKey: "panels.ontologyModel.operations.saveRelationship",
     kind: "form.save",
     binding: { kind: "PlatformObjectType", id: RELATIONSHIP },
     effect: "write",
@@ -272,22 +371,28 @@ export const ontologyModelServerOperations = [
       input: Record<string, unknown>,
       _intentId: string,
     ): Promise<SinglePanelOperationOutcome> {
-      const values = saveInputSchema.parse(input).values;
-      const body = target.kind === "draft"
-        ? {
-            relationship: values.relationship,
-            fromclass: values.fromclass,
-            toclass: values.toclass,
-            desc: values.desc,
-            fromField: values.fromField,
-            toField: values.toField,
-          }
-        : {
-            relationship: target.primaryKey,
-            desc: values.desc,
-            fromField: values.fromField,
-            toField: values.toField,
-          };
+      const save = saveInputSchema.parse(input);
+      const { values } = save;
+      let body: Record<string, unknown>;
+      if (target.kind === "draft") {
+        body = {
+          relationship: values.relationship,
+          fromclass: values.fromclass,
+          toclass: values.toclass,
+          desc: values.desc,
+          fromField: values.fromField,
+          toField: values.toField,
+        };
+      } else {
+        const edited = await editedValues(save, async () => {
+          const view = await getModelView(
+            host, `/relationship?relationship=${encodeURIComponent(target.primaryKey)}`, relationshipViewSchema,
+          );
+          return view.ok ? { ok: true, data: { desc: view.data.desc, fromField: view.data.fromField, toField: view.data.toField } } : view;
+        });
+        if (!edited.ok) return edited.outcome;
+        body = { relationship: target.primaryKey, desc: edited.data.desc, fromField: edited.data.fromField, toField: edited.data.toField };
+      }
       const result = await postModelWrite(
         host,
         `/relationship/${target.kind === "draft" ? "create" : "update"}`,
@@ -348,6 +453,7 @@ export const ontologyModelServerOperations = [
     inputSchema: z.object({}).strict(),
     resultSchema: emptyResultSchema,
     targetLabel: attributeTargetLabel,
+    inspectImpact: deleteImpact(DELETE_ATTRIBUTE, "panels.confirmation.deleteAttributeImpact", ATTRIBUTE, attributeTargetLabel),
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const key = parseAttributePrimaryKey(target.primaryKey);
       const result = await postModelWrite(host, "/attribute/delete", key, emptyResultSchema);
@@ -372,6 +478,9 @@ export const ontologyModelServerOperations = [
     inputSchema: z.object({}).strict(),
     resultSchema: emptyResultSchema,
     targetLabel: relationshipTargetLabel,
+    inspectImpact: deleteImpact(
+      DELETE_RELATIONSHIP, "panels.confirmation.deleteRelationshipImpact", RELATIONSHIP, relationshipTargetLabel,
+    ),
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const result = await postModelWrite(
         host,
@@ -402,6 +511,7 @@ export const ontologyModelServerOperations = [
     targetSchema: recordTarget(ATTRIBUTE),
     inputSchema: z.object({}).strict(),
     resultSchema: setPrimaryKeyResultSchema,
+    inspectImpact: setPrimaryKeyImpact,
     targetLabel: attributeTargetLabel,
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const result = await postModelWrite(

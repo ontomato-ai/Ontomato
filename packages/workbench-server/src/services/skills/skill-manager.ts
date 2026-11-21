@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import AdmZip from "adm-zip";
-import type { AnalysisAgentSkillReference, SkillInfo, SkillDeleteResult, SkillFile } from "@ontomato/contracts/skills";
+import type { AnalysisAgentSkillReference, SkillCatalog, SkillInfo, SkillDeleteResult, SkillFile } from "@ontomato/contracts/skills";
 import type { StandardSkillFrontmatter } from "@ontomato/contracts/agent-runtime-skills";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { isProtectedSkillName } from "../../core/skills/providers";
@@ -39,11 +39,6 @@ function requireWritable(skill: SkillEntry) {
   if (skill.source.kind !== "domain") throw new Error(`Skill ${skill.skill.name} has no writable file source`);
   return skill.source;
 }
-function requireSkill(registry: SkillRegistryManager, id: string) {
-  const skill = registry.getSkillById(id);
-  if (!skill) throw new HttpError(404, "Skill not found", "SKILL_NOT_FOUND");
-  return skill;
-}
 class SkillManager {
   private info(skill: SkillEntry, locale?: string): SkillInfo {
     const labelPath = publicSkillLabelsPath();
@@ -58,26 +53,31 @@ class SkillManager {
   skillsInRegistry(registry: SkillRegistryManager, locale?: string): SkillInfo[] {
     return registry.getSkills().map((s) => this.info(s, locale));
   }
-  async getAllSkills(domainId: string, credentials: AssistantCredentials): Promise<SkillInfo[]> {
-    const { registry } = await readSkillView(domainId, credentials);
-    return this.skillsInRegistry(registry, credentials.locale);
+  async getAllSkills(domainId: string, credentials: AssistantCredentials): Promise<SkillCatalog> {
+    const { registry, diagnostics } = await readSkillView(domainId, credentials);
+    return { skills: this.skillsInRegistry(registry, credentials.locale), ...(diagnostics && { diagnostics }) };
   }
-  async searchSkills(domainId: string, query: string, credentials: AssistantCredentials) {
+  async getSkillInfo(domainId: string, id: string, credentials: AssistantCredentials) {
+    const view = await readSkillView(domainId, credentials);
+    return this.info(view.requireSkillById(id), credentials.locale);
+  }
+  async searchSkills(domainId: string, query: string, credentials: AssistantCredentials): Promise<SkillCatalog> {
     const needle = query.trim().toLowerCase();
-    if (!needle) return [];
-    return (await this.getAllSkills(domainId, credentials)).filter((s) =>
-      [s.id, s.title, s.description].some((v) => v.toLowerCase().includes(needle)));
+    if (!needle) return { skills: [] };
+    const catalogue = await this.getAllSkills(domainId, credentials);
+    return { ...catalogue, skills: catalogue.skills.filter(skill =>
+      [skill.id, skill.title, skill.description].some(value => value.toLowerCase().includes(needle))) };
   }
   async getSkillReferences(domainId: string, id: string, access: ReferenceAccess) {
     const view = await readSkillView(domainId, access.credentials);
-    const skill = requireSkill(view.registry, id);
+    const skill = view.requireSkillById(id);
     const references = await listAnalysisAgentSkillReferences(domainId, skill.skill);
     return readableReferences(references, access);
   }
   async deleteSkill(domainId: string, id: string, access: ReferenceAccess): Promise<SkillDeleteResult> {
     return withDomainSkills(domainId, async () => {
       const view = await readSkillView(domainId, access.credentials);
-      const skill = requireSkill(view.registry, id);
+      const skill = view.requireSkillById(id);
       const source = requireWritable(skill);
       const references = await listAnalysisAgentSkillReferences(domainId, skill.skill);
       const affectedAgents = await readableReferences(references, access);
@@ -131,8 +131,8 @@ class SkillManager {
 
   /** The package's files, relative to its root, for a reader to browse. */
   async listSkillFiles(domainId: string, id: string, credentials: AssistantCredentials): Promise<SkillFile[]> {
-    const { registry } = await readSkillView(domainId, credentials);
-    const skill = requireSkill(registry, id);
+    const view = await readSkillView(domainId, credentials);
+    const skill = view.requireSkillById(id);
     return (await skill.provide()).files.map((file) => ({ path: file.path, size: Buffer.byteLength(file.content, "utf8") }))
       .sort((a, b) => (a.path < b.path ? -1 : 1));
   }
@@ -142,8 +142,8 @@ class SkillManager {
    * stays over it.
    */
   async readSkillFile(domainId: string, id: string, requestedPath: string, credentials: AssistantCredentials): Promise<string> {
-    const { registry } = await readSkillView(domainId, credentials);
-    const skill = requireSkill(registry, id);
+    const view = await readSkillView(domainId, credentials);
+    const skill = view.requireSkillById(id);
     const relative = normalizeSkillPackagePath(requestedPath);
     if (!relative) throw new HttpError(400, `Invalid skill file path: ${requestedPath}`, "INVALID_SKILL_FILE_PATH");
     const source = (await skill.provide()).files.find((file) => file.path === relative)?.content;
@@ -156,8 +156,8 @@ class SkillManager {
     return frontmatter + fs.readFileSync(translated, "utf8");
   }
   async exportSkill(domainId: string, id: string, credentials: AssistantCredentials): Promise<Buffer> {
-    const { registry } = await readSkillView(domainId, credentials);
-    const skill = requireSkill(registry, id);
+    const view = await readSkillView(domainId, credentials);
+    const skill = view.requireSkillById(id);
     const zip = new AdmZip();
     for (const file of (await skill.provide()).files) zip.addFile(file.path, Buffer.from(file.content, "utf8"));
     return zip.toBuffer();

@@ -1,26 +1,29 @@
 import type { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
+import type { PanelDownloadFile } from "@ontomato/contracts/panel-download";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import type { PanelFormTarget, PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import {
   describePanelOperationFromDeclaration, panelOperationDeclarationSchema, type PanelOwnerOperationDescriptor,
   type PanelReadOperationResult, type panelBatchInvocationSchema,
-  type panelOperationImpactSchema, type panelReadOperationCallSchema, type panelSingleInvocationSchema,
+  type panelOperationImpactSchema, type panelReadOperationCallSchema, type panelReadOperationJsonResultSchema, type panelSingleInvocationSchema,
 } from "@ontomato/contracts/panel-operations";
 import { runtimeJsonObjectSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { AssistantSkillView } from "../assistant/skills";
 import type { AssistantOwner } from "../assistant/store";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import type { OntologyElementRef } from "@ontomato/contracts/product-panels";
+import { feedbackExportOperation } from "../admin/feedback-panel-reads";
 import { m6ServerOperations } from "../action/panel-operations";
 import { agentDefinitionOperations } from "../assistant/definition-operations";
 import { m7ServerOperations } from "../business-knowledge/panel-operations";
 import { m5ServerOperations } from "../metric-function/panel-operations";
 import { ontologyModelServerOperations } from "../ontology-model/model-operations";
 import { scheduledTaskServerOperations } from "../scheduling/panel-operations";
-import { skillServerOperations } from "../skills/panel-operations";
+import { skillExportOperation, skillServerOperations } from "../skills/panel-operations";
 import { productCatalogServerOperations } from "./catalog-operations";
 import { HttpError } from "../../utils/errors";
+import { tForLocale } from "../../i18n";
 
 export type PanelOperationTarget = PanelFormTarget;
 export type SinglePanelOperationOutcome = Exclude<PanelOperationOutcome, { kind: "batch" }>;
@@ -79,17 +82,22 @@ export type PanelWriteServerOperation = ServerOperation & (
 );
 
 type ReadCall = z.infer<typeof panelReadOperationCallSchema>;
+type ReadTarget = Extract<PanelOwnerOperationDescriptor["target"], { source: "input" | "none" }> | { source: "draft" };
+type ReadResult = z.infer<typeof panelReadOperationJsonResultSchema> | ({ kind: "file" } & PanelDownloadFile);
+
 export interface PanelReadServerOperation {
   handlerRef: string;
   binding: OntologyElementRef;
+  labelKey?: string;
   kind: "action";
   effect: "read";
   batch: false;
-  target: { source: "draft"; slot: string };
+  target: ReadTarget;
+  targetType?: string;
   targetSchema: z.ZodType<ReadCall["target"]>;
   inputSchema: z.ZodType<ReadCall["input"]>;
   resultSchema: z.ZodType<PanelReadOperationResult>;
-  execute(host: PanelOperationHost, call: ReadCall): Promise<PanelReadOperationResult>;
+  execute(host: PanelOperationHost, call: ReadCall): Promise<ReadResult>;
 }
 
 export type PanelServerOperation = PanelWriteServerOperation | PanelReadServerOperation;
@@ -102,10 +110,15 @@ const registrations: readonly PanelServerOperation[] = [
   ...m6ServerOperations,
   ...m7ServerOperations,
   ...skillServerOperations,
+  feedbackExportOperation,
+  skillExportOperation,
   ...ontologyModelServerOperations,
   ...productCatalogServerOperations,
 ];
-const operations = new Map(registrations.map(operation => [operation.handlerRef, operation]));
+const operations = new Map(registrations.map(operation => {
+  requirePanelOperationLabelKey(operation);
+  return [operation.handlerRef, operation];
+}));
 const jsonSchema = (schema: z.ZodTypeAny) => zodToJsonSchema(schema, { effectStrategy: "input" });
 
 export function operationDeclaration(handler: PanelServerOperation) {
@@ -114,22 +127,35 @@ export function operationDeclaration(handler: PanelServerOperation) {
     kind: handler.kind,
     effect: handler.effect,
     batch: handler.batch,
-    target: handler.kind === "action" && handler.effect === "write"
-      ? { source: "input", input: handler.targetInput } : { source: "draft" },
+    target: handler.effect === "read" && handler.target.source !== "draft" ? handler.target
+      : handler.kind === "action" && handler.effect === "write" ? { source: "input", input: handler.targetInput }
+      : { source: "draft" },
     inputSchema: jsonSchema(handler.inputSchema),
   });
 }
 
 export function registeredPanelOperation(id: string) {
   const handler = operations.get(id);
-  if (handler) return { handler, declaration: operationDeclaration(handler), targetType: handler.effect === "write" ? handler.targetType : undefined };
+  if (handler) return { handler, declaration: operationDeclaration(handler), targetType: handler.targetType };
 }
 
-export function describeServerOperation(handler: PanelServerOperation, label: string, slot?: string,
+function requirePanelOperationLabelKey(handler: PanelServerOperation) {
+  if (!handler.labelKey?.trim()) throw new Error(`Owner operation '${handler.handlerRef}' must declare a labelKey`);
+  return handler.labelKey;
+}
+
+export function panelServerOperationLabel(handler: PanelServerOperation, locale?: string): string {
+  const key = requirePanelOperationLabelKey(handler);
+  const label = tForLocale(locale, key);
+  if (!label.trim() || label === key) throw new Error(`Owner operation '${handler.handlerRef}' has no label for '${key}'`);
+  return label;
+}
+
+export function describeServerOperation(handler: PanelServerOperation, locale: string | undefined, slot?: string,
   target?: PanelOwnerOperationDescriptor["target"],
 ) {
   return describePanelOperationFromDeclaration(operationDeclaration(handler), {
-    label, slot, target,
+    label: panelServerOperationLabel(handler, locale), slot, target,
     resultSchema: runtimeJsonObjectSchema.parse(jsonSchema(handler.resultSchema)),
     ...(handler.effect === "write" && handler.inspectImpact && { inspectImpact: { handlerRef: handler.inspectImpact.handlerRef } }),
   });

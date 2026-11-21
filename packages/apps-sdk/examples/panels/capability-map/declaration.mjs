@@ -7,24 +7,18 @@
  * `OntologyGraph` and deliberately stay out of panel state.
  */
 const allLayers = ["fact", "capability", "governance", "product"];
-const anyLayerObject = { kind: "object-union", layers: allLayers };
+const graphNodeObject = { kind: "object-union", layers: allLayers, objectTypes: ["platform:OntologyType"] };
 const text = { kind: "scalar", type: "string" };
 
 export default {
   state: {
     mode: { type: text, deepLink: true, default: "instance" },
-    start: { type: anyLayerObject, deepLink: true },
-    selected: { type: anyLayerObject, deepLink: true },
+    start: { type: graphNodeObject, deepLink: true },
+    selected: { type: graphNodeObject, deepLink: true },
     selectedType: { type: text, deepLink: true },
     query: { type: text, deepLink: false },
   },
   members: {
-    mode: {
-      target: { projectionId: "capability-map-mode" },
-      outputs: {
-        value: { state: "mode" },
-      },
-    },
     graph: {
       target: { projectionId: "capability-map-graph" },
       inputs: {

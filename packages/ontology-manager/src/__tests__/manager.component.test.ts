@@ -7,6 +7,7 @@ import { createManager, type ManagerPresentation, type ManagerTheme } from "../c
 import type { ManagerCredential, ManagerDataFallbacks } from "../api";
 import { englishMessages, managerMessageTree, type ManagerMessages } from "../i18n";
 import { managerRoutes } from "../routes";
+import { managerNavigation } from "../navigation";
 import de from "element-plus/es/locale/lang/de";
 import en from "element-plus/es/locale/lang/en";
 import { graphHandlers, graphRecord } from "./graph-double";
@@ -34,7 +35,6 @@ let held: Map<string, { resolve: (response: Response) => void }[]>;
 let holdPaths: Set<string>;
 let statusFor: (path: string) => number;
 let metasFor: (url: string) => unknown;
-let functions: Record<string, unknown>[];
 let metricDetail: Record<string, unknown>;
 let dataAdapter: string;
 let instanceNodeCount: number;
@@ -189,7 +189,6 @@ function respond(url: string, body?: Record<string, unknown>, method = "POST"): 
   if (path === "/businessConfig/dataAdapters") {
     return json({ success: true, data: { currentType: dataAdapter, adapters: dataAdapters } });
   }
-  if (path === "/function/queryList") return json({ success: true, data: functions });
   if (path.endsWith("/queryList")) return json({ success: true, data: [] });
   return json({ success: true, data: {} });
 }
@@ -215,7 +214,6 @@ beforeEach(() => {
   objectTypeChanges = {};
   statusFor = () => 200;
   metasFor = () => metas(["Order", "Item"]);
-  functions = [];
   metricDetail = { id: "metric-1", name: "Revenue metric", status: "PUBLISHED", origin: "USER",
     function: { name: "Revenue", operation: "OPERATION_READ", parameters: [], returnDef: { classNames: [] } }, bindings: [] };
   dataAdapter = "mysql";
@@ -323,6 +321,8 @@ function mountHost(initial: HostOptions) {
     history,
     routes: [
       { path: "/", component: RouterView, children: managerRoutes() },
+      // The graph address is the host's panel entry now (the graph is a built-in panel); the Manager only links to it.
+      { path: "/ontology/playground", component: defineComponent({ render: () => h("div", { class: "graph-panel-entry" }) }) },
       // The service router sends unknown addresses to its root, which lands on the graph.
       { path: "/:unknown(.*)*", redirect: "/ontology/playground" },
     ],
@@ -352,7 +352,9 @@ function mountHost(initial: HostOptions) {
   document.body.appendChild(element);
   app.mount(element);
   mountedApps.push(app);
-  return { host, views, failures, root: () => element.querySelector(".ontology-manager")! };
+  /** The platform's menu beside the page, showing the Manager's counts: what reads them. */
+  const showMenu = () => managerNavigation(manager.counts).pages.forEach((page) => page.count?.());
+  return { host, views, failures, showMenu, root: () => element.querySelector(".ontology-manager")! };
 }
 
 /** Host-supplied data defaults that differ from the open-source values, so the tests can tell which one was used. */
@@ -367,7 +369,6 @@ function markedMessages(marker: string): ManagerMessages {
     shared: Object.fromEntries(
       Object.entries(englishMessages.shared).map(([group, table]) => [group, mark(table)])
     ),
-    governance: englishMessages.governance,
   } as ManagerMessages;
 }
 
@@ -378,11 +379,10 @@ const german = { locale: "de" };
 /** Test presentation values: only used to recognise that the component reads them from the host; they are not either product's values (those are checked by the app presentation and evidence audit). */
 const presentation: ManagerPresentation = {
   themeProperties: {
-    light: { "--el-color-primary": "#101010", "--manager-relation-icon-color": "#202020" },
-    dark: { "--el-color-primary": "#e0e0e0", "--manager-relation-icon-color": "#d0d0d0" },
+    light: { "--el-color-primary": "#101010", "--manager-filter-drawer-radius": "2px" },
+    dark: { "--el-color-primary": "#e0e0e0", "--manager-filter-drawer-radius": "3px" },
   },
   nodePalette: { light: ["#000001", "#000002", "#000003"], dark: ["#000004", "#000005", "#000006"] },
-  edgeLabel: {},
   maxFitZoom: null,
   dataBrowserDescription: (objectLabel) => `description of ${objectLabel}`,
   compactDialogs: false,
@@ -393,7 +393,7 @@ const base: HostOptions = {
   credential: { type: "apiKey", apiKey: "key-a" },
   ...english,
   theme: "light",
-  view: "/ontology/playground",
+  view: "/ontology/objects",
   dataFallbacks: hostFallbacks,
   presentation,
   knowledgeTagValues: { general: "tag-g", business: "tag-b", tech: "tag-t" },
@@ -702,16 +702,14 @@ describe("Manager pages in the service router", () => {
     expect(requests).toEqual([]);
   });
 
-  it("non-default API entry and API key: real graph and catalog-count requests go to the host entry with x-api-key", async () => {
-    mountHost(base);
+  it("non-default API entry and API key: real catalog and count requests go to the host entry with x-api-key", async () => {
+    mountHost(base).showMenu();
     await settle();
 
     expect(paths()).toEqual(
       expect.arrayContaining([
         "/admin/getMetas",
         "/metricView/queryList",
-        "/action/queryList",
-        "/function/queryList",
       ])
     );
     for (const request of requests) {
@@ -902,8 +900,9 @@ describe("Manager pages in the service router", () => {
 
   it("401/402 only notify the page; after 402 the credential is kept and later requests still carry it", async () => {
     statusFor = (path) =>
-      path === "/action/queryList" ? 402 : path === "/function/queryList" ? 401 : 200;
-    const { host, failures } = mountHost(base);
+      path === "/metricView/queryList" ? 402 : path.endsWith("/product-assets/counts") ? 401 : 200;
+    const { host, failures, showMenu } = mountHost(base);
+    showMenu();
     await settle();
     expect(failures.sort()).toEqual([401, 402]);
 
@@ -1011,87 +1010,23 @@ describe("Manager pages in the service router", () => {
       .toMatchObject({ desc: "contains", fromField: "order_id", toField: "id" });
   });
 
-  it.each([
-    { current: "postgresql", fillFields: true },
-    { current: "m3", fillFields: false },
-    { current: "m3", fillFields: true },
-  ])("relation catalog: $current creation with join fields selected=$fillFields", async ({ current, fillFields }) => {
-    dataAdapter = current;
-    dataAdapters.push({ type: "postgresql", label: "PostgreSQL", requiresJoinFields: true, fields: [], examples: {} });
-    metasFor = () => ({ success: true, data: {
-      classDef: [
-        { className: "Order", showName: "Order", attrs: [{ name: "item_id", showName: "Item link", type: "varchar" }] },
-        { className: "Item", showName: "Item", attrs: [{ name: "id", showName: "Item key", type: "varchar" }] },
-      ],
-      relationship_rule: {},
-    } });
-    mountHost({ ...base, view: "/ontology/relations" });
-    await settle();
-    clickButton("New Relation Type");
-    await settle();
-    const dialog = openDialog("New Relation Type");
-    typeInto(dialog.querySelector("input[maxlength='80']")!, "contains");
-    typeInto(dialog.querySelector("textarea")!, "contains an item");
-    const select = (label: string, optionText: string) => selectOption(dialog, label, optionText);
-    await select("Source Object", "Order (Order)");
-    await select("Target Object", "Item (Item)");
-
-    if (current === "postgresql") {
-      clickButton("Create");
-      await settle();
-      expect(requests.some((request) => request.method === "POST" && request.url.endsWith("/ontology/model/relationship/create"))).toBe(false);
-      await select("Src Field", "Item link (item_id)");
-      await select("Tgt Field", "Item key (id)");
-      await select("Source Object", "Item (Item)");
-      await select("Source Object", "Order (Order)");
-      clickButton("Create");
-      await settle();
-      expect(requests.some((request) => request.method === "POST" && request.url.endsWith("/ontology/model/relationship/create"))).toBe(false);
-      await select("Src Field", "Item link (item_id)");
-    } else {
-      expect(dialog.textContent).toContain("Src Field");
-      expect(dialog.textContent).toContain("Tgt Field");
-      if (fillFields) {
-        await select("Src Field", "Item link (item_id)");
-        await select("Tgt Field", "Item key (id)");
-      }
-    }
-
-    clickButton("Create");
-    await settle();
-    expect(requests.find((request) => request.method === "POST" && request.url.endsWith("/ontology/model/relationship/create"))?.body).toEqual({
-      relationship: "contains",
-      fromclass: "Order",
-      toclass: "Item",
-      desc: "contains an item",
-      fromField: fillFields ? "item_id" : "",
-      toField: fillFields ? "id" : "",
-    });
-  });
-
-  it.each(["detail", "visual modeling"])("relation editing through %s persists missing join fields and displays them after reopening", async (entry) => {
+  it("relation editing through visual modeling persists missing join fields and displays them after reopening", async () => {
     const state = metas(["Order", "Item"]);
     state.data.classDef[0].attrs.push({ name: "item_id", showName: "Item link", type: "varchar" });
     metasFor = () => state;
-    const view = entry === "detail" ? "/ontology/relations/has" : "/ontology/visual-modeling";
-    const { host, root } = mountHost({ ...base, view });
+    const view = "/ontology/visual-modeling";
+    const { host } = mountHost({ ...base, view });
     await settle();
     const openEditor = async () => {
-      if (entry === "detail") return root().querySelector(".relation-detail")!;
       graphHandlers["edge:dblclick"]!({ edge: { id: "has" } });
       await settle();
       return openDialog("Rel Desc");
     };
     const editor = await openEditor();
-    if (entry === "detail") {
-      await selectOption(editor, "Src Field", "Item link (item_id)");
-      await selectOption(editor, "Tgt Field", "ID (id)");
-    } else {
-      typeInto(editor.querySelector("input[placeholder='Enter Src Field']")!, "item_id");
-      typeInto(editor.querySelector("input[placeholder='Enter Tgt Field']")!, "id");
-      await settle();
-    }
-    clickButton(entry === "detail" ? "Save" : "Update");
+    typeInto(editor.querySelector("input[placeholder='Enter Src Field']")!, "item_id");
+    typeInto(editor.querySelector("input[placeholder='Enter Tgt Field']")!, "id");
+    await settle();
+    clickButton("Update");
     await settle();
     expect(requests.find((request) => request.url.endsWith("/ontology/model/relationship/update"))?.body)
       .toEqual({ relationship: "has", desc: "has", fromField: "item_id", toField: "id" });
@@ -1101,13 +1036,8 @@ describe("Manager pages in the service router", () => {
     host.view = view;
     await settle();
     const reopened = await openEditor();
-    if (entry === "detail") {
-      expect(reopened.textContent).toContain("Item link (item_id)");
-      expect(reopened.textContent).toContain("ID (id)");
-    } else {
-      expect((reopened.querySelector("input[placeholder='Enter Src Field']") as HTMLInputElement).value).toBe("item_id");
-      expect((reopened.querySelector("input[placeholder='Enter Tgt Field']") as HTMLInputElement).value).toBe("id");
-    }
+    expect((reopened.querySelector("input[placeholder='Enter Src Field']") as HTMLInputElement).value).toBe("item_id");
+    expect((reopened.querySelector("input[placeholder='Enter Tgt Field']") as HTMLInputElement).value).toBe("id");
   });
 
   it("when only locale/theme change, the open edit dialog and its input are kept without reloading", async () => {
@@ -1202,56 +1132,12 @@ describe("Manager pages in the service router", () => {
     expect(saves.map((request) => request.headers["Accept-Language"])).toEqual(["en", "de"]);
   });
 
-  it("graph and modeling take the node palette, edge label fragment and fit limit from the host", async () => {
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
-      width: 800,
-      height: 600,
-    } as DOMRect);
-    const oss: ManagerPresentation = {
-      ...presentation,
-      edgeLabel: { labelPlacement: "center", labelAutoRotate: false },
-      maxFitZoom: 1,
-    };
-    graphRecord.zoom = 2.5;
-    const host = mountHost({ ...base, presentation: oss });
-    await settle();
-    const graph = graphRecord.options[0];
-    const colors = graph.data.nodes.map((node: any) => node.data.color);
-    expect(colors.length).toBe(2);
-    expect(colors.every((color: string) => presentation.nodePalette.light.includes(color))).toBe(true);
-    expect(graph.edge.style).toMatchObject({ labelPlacement: "center", labelAutoRotate: false });
-    expect(graphRecord.zoomTo).toEqual([[1, false]]);
-
-    // The palette follows the theme: each class moves to the same slot of the dark palette.
-    const slots = graph.data.nodes.map((node: any) => presentation.nodePalette.light.indexOf(node.data.color));
-    host.host.theme = "dark";
-    await settle();
-    const darkColors = graphRecord.nodeUpdates.at(-1).map((node: any) => node.data.color);
-    expect(darkColors).toEqual(slots.map((slot: number) => presentation.nodePalette.dark[slot]));
-    host.host.theme = "light";
-    await settle();
-
-    // The native-size cap applies even when the host does not provide a fit limit.
-    mountedApps.forEach((app) => app.unmount());
-    graphRecord.options = [];
-    graphRecord.zoomTo = [];
-    mountHost(base);
-    await settle();
-    expect(graphRecord.zoomTo).toEqual([[1, false]]);
-    expect(graphRecord.options[0].edge.style).not.toHaveProperty("labelPlacement");
-    expect(graphRecord.options[0].edge.style).not.toHaveProperty("labelAutoRotate");
-
-    // Visual modeling picks the same colour from the same palette for the same class name.
-    const byClass = Object.fromEntries(
-      graphRecord.options[0].data.nodes.map((node: any) => [node.id, node.data.color])
-    );
-    mountedApps.forEach((app) => app.unmount());
+  it("visual modeling takes the node palette from the host", async () => {
     mountHost({ ...base, view: "/ontology/visual-modeling" });
     await settle();
-    const fills = Object.fromEntries(
-      graphRecord.addedNodes.map((node: any) => [node.id, node.attrs.body.fill])
-    );
-    expect(fills).toEqual(byClass);
+    const fills = graphRecord.addedNodes.map((node: any) => node.attrs.body.fill);
+    expect(fills.length).toBe(2);
+    expect(fills.every((fill: string) => presentation.nodePalette.light.includes(fill))).toBe(true);
   });
 
 

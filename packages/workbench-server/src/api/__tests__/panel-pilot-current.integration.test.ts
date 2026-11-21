@@ -12,6 +12,7 @@ import { appsSdkComponentCatalogEntrySchema, appsSdkComponentCatalogSchema } fro
 import { fileURLToPath } from "node:url";
 import { panelFormDescriptionSchema, panelOptionListSchema } from "@ontomato/contracts/panel-projection";
 import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
+import { METRIC_VIEW, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW } from "@ontomato/contracts/platform-object-types";
 import { platformScheduleFormSchema, platformTaskRunSchema, platformTaskSchema } from "@ontomato/contracts/platform-schedules";
 import { scheduledTaskPanelMessages, scheduledTaskPanelTextZhCn } from "@ontomato/platform-schedules/panel-text";
 import examples from "../../../../contracts/examples/platform-schedules.json";
@@ -68,6 +69,7 @@ const taskForm = platformScheduleFormSchema.parse(examples.forms.find(item => it
 const taskRun = platformTaskRunSchema.parse({
   ...examples.runs.find(item => item.name === "agents-running")!.response, taskId: task.id,
 });
+const createdTaskId = "10000000-0000-4000-8000-000000000011";
 const ownerWrites: string[] = [];
 let ownerTasks: typeof task[] = [];
 const taskType = { kind: "object", objectType: "platform:ScheduledTask" };
@@ -95,16 +97,26 @@ const projection = {
   data: { record: { source: { object: { input: "task" } }, read: "record", params: {} } },
   config: { fields: ["state"] },
 };
+const runIdType = { kind: "scalar", type: "string" } as const;
 const panel = {
   name: "Schedules", description: "", visibility: "domain",
-  content: vuePanelContent("summary", "tasks", "form", "run"),
+  content: vuePanelContent("summary", "tasks", "form", "run", "create", "history", "manage"),
   manifest: {
-    state: { selectedTask: { type: taskType, deepLink: true, external: true, personal: false, default: null } },
+    state: {
+      selectedTask: { type: taskType, deepLink: true, external: true, personal: false, default: null },
+      selectedRunId: { type: runIdType },
+    },
     members: {
       summary: { target: { projectionId }, inputs: { task: { state: "selectedTask" } } },
       tasks: { target: { projectionId: "projection-pilot-list" } },
       form: { target: { projectionId: "projection-pilot-form" }, inputs: { task: { state: "selectedTask" } } },
       run: { target: { projectionId: "projection-pilot-run" }, inputs: { task: { state: "selectedTask" } } },
+      create: { target: { projectionId: "projection-pilot-create-task" } },
+      history: {
+        target: { projectionId: "projection-pilot-task-history" },
+        inputs: { task: { state: "selectedTask" }, runId: { state: "selectedRunId" } },
+      },
+      manage: { target: { projectionId: "projection-pilot-manage-task" }, inputs: { task: { state: "selectedTask" } } },
     },
     events: {},
   },
@@ -252,6 +264,10 @@ beforeAll(async () => {
       defaultModelId: "demo/chat", embeddingModelId: "demo/embed",
     } });
   });
+  app.post("/internal/agent-execution/validate-setting", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    res.status(204).end();
+  });
   app.get("/platform/agent-execution/options", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.header("Accept-Language")).toBe("zh-CN");
@@ -378,6 +394,10 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({ tasks: ownerTasks, timeZone: task.timeZone });
   });
+  app.get("/platform/scheduled-tasks/applications", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    res.json(examples.applications.response);
+  });
   app.get("/platform/scheduled-tasks/:taskId", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     if (req.params.taskId === task.id) { res.json(task); return; }
@@ -386,13 +406,48 @@ beforeAll(async () => {
   app.post("/platform/scheduled-tasks/applications/:appId/form", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.params.appId).toBe(task.appId);
-    expect(req.body).toMatchObject({ taskId: task.id, values: task.content, changedField: null });
+    expect(req.body).toMatchObject({ values: task.content, changedField: null });
+    expect([task.id, null]).toContain(req.body.taskId);
     res.json(taskForm);
+  });
+  app.post("/platform/scheduled-tasks", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.header("Idempotency-Key")).toMatch(/^[0-9a-f-]{36}$/);
+    expect(req.body).toMatchObject({ appId: task.appId, content: task.content, title: "New scheduled task" });
+    ownerWrites.push("create");
+    res.status(201).json({ ...task, id: createdTaskId, title: req.body.title });
+  });
+  app.get("/platform/scheduled-tasks/:taskId/runs", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.params.taskId).toBe(task.id);
+    expect(req.query.cursor).toBe("previous-page");
+    res.json({ runs: [taskRun], nextCursor: "next-page" });
+  });
+  app.get("/platform/scheduled-tasks/:taskId/runs/:runId", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.params.taskId).toBe(task.id);
+    expect(req.params.runId).toBe(taskRun.id);
+    res.json(taskRun);
+  });
+  app.put("/platform/scheduled-tasks/:taskId/enabled", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.params.taskId).toBe(createdTaskId);
+    expect(req.body).toEqual({ enabled: false, revision: task.revision });
+    ownerWrites.push("setEnabled");
+    res.json({ ...task, id: createdTaskId, enabled: false, nextRunAt: null, revision: task.revision + 1 });
+  });
+  app.delete("/platform/scheduled-tasks/:taskId", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.params.taskId).toBe(task.id);
+    expect(req.header("If-Match")).toBe(`"${task.revision}"`);
+    ownerWrites.push("delete");
+    res.sendStatus(204);
   });
   app.put("/platform/scheduled-tasks/:taskId", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.params.taskId).toBe(task.id);
     expect(req.body.revision).toBe(task.revision);
+    expect(req.body.content).toEqual(task.content);
     ownerWrites.push("save");
     res.json({ ...task, revision: task.revision + 1 });
   });
@@ -454,6 +509,33 @@ it("reads back stable member keys and named data, and leaves the record intact a
     data: {}, operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
   });
   expect(runWrite.status, await runWrite.text()).toBe(200);
+  const operationRef = (id: string) => ({ kind: "PlatformOperation", id });
+  for (const [id, input] of Object.entries({
+    "projection-pilot-create-task": {
+      ...projection, componentId: "@ontomato/sdk:ObjectForm", inputs: {}, config: {},
+      data: { createForm: {
+        source: { type: { kind: "PlatformObjectType", id: taskType.objectType } }, read: "createForm", params: {},
+      } },
+      operations: { create: { operation: operationRef("platform:ScheduledTask.create") } },
+    },
+    "projection-pilot-task-history": {
+      ...projection, componentId: "@ontomato/sdk:PanelData", config: {}, inputs: { ...projection.inputs, runId: runIdType },
+      data: {
+        runs: { ...projection.data.record, read: "runs", params: { cursor: { literal: "previous-page" } } },
+        run: { ...projection.data.record, read: "run", params: { runId: { input: "runId" } } },
+      },
+    },
+    "projection-pilot-manage-task": {
+      ...projection, componentId: "@ontomato/sdk:PanelData", config: {}, data: {},
+      operations: {
+        setEnabled: { operation: operationRef("platform:ScheduledTask.setEnabled"), target: { input: "task" } },
+        delete: { operation: operationRef("platform:ScheduledTask.delete"), target: { input: "task" } },
+      },
+    },
+  })) {
+    const response = await request("PUT", `product-projections/${id}`, { ...input, revision: 0 });
+    expect(response.status, await response.text()).toBe(200);
+  }
   const panelWrite = await request("PUT", panelPath, { ...panel, revision: 0 });
   expect(panelWrite.status, await panelWrite.text()).toBe(200);
   const original = (await (await request("GET", panelPath)).json()).panel;
@@ -489,8 +571,15 @@ it("reads back stable member keys and named data, and leaves the record intact a
     status: "error", message: "Task no longer exists",
   });
   expect(await (await read("form", "form", { task: taskRef })).json()).toMatchObject({
-    status: "ready", value: { revision: task.revision },
+    status: "ready", value: { revision: task.revision, values: { task: { title: task.title, frequency: task.frequency } } },
   });
+  expect(await (await read("create", "createForm", {})).json()).toMatchObject({
+    status: "ready", value: { values: { task: { appId: "", timeZone: task.timeZone } }, save: { draftOperation: "platform:ScheduledTask.create" } },
+  });
+  expect(await (await read("history", "runs", { task: taskRef })).json()).toEqual({
+    status: "ready", value: { runs: [taskRun], nextCursor: "next-page" },
+  });
+  expect(await (await read("history", "run", { task: taskRef, runId: taskRun.id })).json()).toEqual({ status: "ready", value: taskRun });
   const operation = await (await request("POST", "product-panels/read", {
     source, memberPath: [{ member: "run" }], operations: true, inputs: { task: taskRef },
   })).json();
@@ -500,7 +589,11 @@ it("reads back stable member keys and named data, and leaves the record intact a
   const target = { kind: "object", objectType: taskType.objectType, primaryKey: task.id };
   let runNowReceipt: unknown;
   for (const [operationId, input] of [
-    ["form.save", { values: task.content, revision: task.revision, submittedFields: ["/instruction"] }], ["run.runNow", {}],
+    ["form.save", {
+      values: { ...task.content, unsubmitted: "" },
+      revision: task.revision,
+      submittedFields: ["/instruction"],
+    }], ["run.runNow", {}],
   ] as const) {
     const prepared = await request("POST", "panel-operations/intents", {
       applicationId: source.applicationId, useId: source.useId, operationId, call: { target, input },
@@ -518,6 +611,26 @@ it("reads back stable member keys and named data, and leaves the record intact a
     expect(await (await request("POST", dispatch, {})).json()).toEqual(receipt);
   }
   expect(ownerWrites).toEqual(["save", "runNow"]);
+  const dispatchManagement = async (operationId: string, target: object, input: object, confirmation: string) => {
+    const started = await request("POST", "panel-operations/intents", {
+      applicationId: source.applicationId, useId: source.useId, operationId, call: { target, input },
+    });
+    const intent = await started.json();
+    expect(started.status, JSON.stringify(intent)).toBe(200);
+    expect(intent.confirmation.kind).toBe(confirmation);
+    if (confirmation === "impact") expect(ownerWrites).not.toContain("delete");
+    return (await request("POST", `panel-operations/intents/${intent.intentId}/dispatch`, {})).json();
+  };
+  expect(await dispatchManagement("create.create", { kind: "draft" }, {
+    values: { ...task.content, task: { title: "New scheduled task", appId: task.appId, timeZone: task.timeZone } },
+  }, "none")).toMatchObject({ outcome: { kind: "success", data: { id: createdTaskId } } });
+  expect(await dispatchManagement("manage.setEnabled", { ...target, primaryKey: createdTaskId }, {
+    enabled: false, revision: task.revision,
+  }, "none")).toMatchObject({ outcome: { kind: "success", data: { id: createdTaskId, enabled: false } } });
+  expect(await dispatchManagement("manage.delete", target, { revision: task.revision }, "impact"))
+    .toMatchObject({ outcome: { kind: "success", data: { id: task.id } } });
+  expect(ownerWrites).toEqual(["save", "runNow", "create", "setEnabled", "delete"]);
+
   const evidence = process.env.SCHEDULED_TASK_PANEL_HTTP_EVIDENCE;
   if (evidence) {
     await writeFile(evidence, JSON.stringify({ rows, record, operation, runNowReceipt }, null, 2) + "\n");
@@ -826,6 +939,27 @@ it("reads agent settings and reference options with the panel viewer", async () 
   expect(skills[0]).toMatchObject({ label: "技能不可用", unavailable: { reason: "你无法使用此技能。" } });
   expect(skills[0]).toEqual(skills[2]);
 
+  const partial = await request("POST", "panel-operations/intents", {
+    applicationId: "agent-settings", useId: "settings", operationId: "definition.save",
+    call: {
+      target: { kind: "object", objectType: "platform:AgentDefinition", primaryKey: agentId },
+      input: { values: { name: "Renamed analyst", description: "Stale form text" }, submittedFields: ["/name"] },
+    },
+  });
+  expect(partial.status, await partial.clone().text()).toBe(200);
+  const { intentId } = await partial.json();
+  const dispatched = await request("POST", `panel-operations/intents/${intentId}/dispatch`, {});
+  expect(dispatched.status, await dispatched.clone().text()).toBe(200);
+  expect(await dispatched.json()).toMatchObject({
+    kind: "dispatched", outcome: { kind: "success", data: { name: "Renamed analyst", description: "Inventory summary" } },
+  });
+  const { rows } = await state.pool!.query(
+    `SELECT name, description, enabled, system_prompt, skills FROM "${state.schema}".assistant_agents WHERE id=$1`, [agentId],
+  );
+  expect(rows).toEqual([{
+    name: "Renamed analyst", description: "Inventory summary", enabled: false, system_prompt: "Read inventory", skills: [],
+  }]);
+
   state.allowAgentReads = false;
   expect(await read("definition", "createForm")).toEqual({ status: "forbidden" });
   expect(await read("skills", "selected", { values: [missing] })).toEqual({ status: "forbidden" });
@@ -986,6 +1120,66 @@ it("dispatches the action catalog's reads and both operation descriptions", asyn
   expect(await readOperations("remove")).toMatchObject({
     status: "ready", value: { change: { handlerRef: "actions.delete", inspectImpact: { handlerRef: "actions.delete.inspect-impact" } } },
   });
+});
+
+/*
+ * The metric trials read an unsaved definition. The owner says only that they read a draft; the placing panel names the
+ * form member that holds it, under any key, and a panel that leaves it out is refused when it is saved. The buttons show
+ * the owner's names for the trials, never the name the projection was filed under.
+ */
+it("describes the metric trials by the owner's names and takes their draft from the form member the panel names", async () => {
+  const metric = { kind: "object", objectType: METRIC_VIEW };
+  const projections = {
+    metricEditor: {
+      componentId: "@ontomato/sdk:ObjectForm", inputs: { target: metric },
+      data: {
+        form: { source: { object: { input: "target" } }, read: "form", params: {} },
+        createForm: { source: { type: { kind: "PlatformObjectType", id: METRIC_VIEW } }, read: "createForm", params: {} },
+      },
+    },
+    trials: {
+      name: "Metric trial runner", componentId: "@ontomato/sdk:OperationButton",
+      operations: {
+        test: { operation: { kind: "PlatformOperation", id: TEST_METRIC_VIEW } },
+        testExecute: { operation: { kind: "PlatformOperation", id: TEST_EXECUTE_METRIC_VIEW } },
+      },
+    },
+  };
+  for (const [key, projection] of Object.entries(projections)) {
+    const response = await request("PUT", "product-projections/owner-metric-trials-" + key, {
+      name: key, description: "", visibility: "domain", revision: 0, inputs: {}, outputs: {}, config: {}, data: {}, ...projection,
+    }, "en");
+    expect(response.status, await response.text()).toBe(200);
+  }
+  const panel = (trials: object) => ({
+    name: "Metric trials", description: "", visibility: "domain", revision: 0,
+    content: vuePanelContent("metricEditor", "trials"),
+    manifest: { state: {}, events: {}, members: {
+      metricEditor: { target: { projectionId: "owner-metric-trials-metricEditor" } },
+      trials: { target: { projectionId: "owner-metric-trials-trials" }, ...trials },
+    } },
+  });
+
+  const unbound = await request("PUT", "product-panels/panel-owner-metric-trials", panel({}), "en");
+  const refusal = await unbound.text();
+  expect(unbound.status, refusal).toBe(400);
+  expect(refusal).toContain("trials");
+  expect(refusal).toContain("operation 'test' must declare a form member in readOperationInputs.test.draft.slot");
+
+  const draft = { draft: { slot: "metricEditor" }, parameters: { fields: {} } };
+  const saved = await request("PUT", "product-panels/panel-owner-metric-trials",
+    panel({ readOperationInputs: { test: draft, testExecute: draft } }), "en");
+  expect(saved.status, await saved.text()).toBe(200);
+  const described = await request("POST", "product-panels/read", {
+    source: { kind: "registered", applicationId: "owner-metric-trials", useId: "data" },
+    memberPath: [{ member: "trials" }], operations: true, inputs: {},
+  }, "en");
+  expect(await described.json()).toEqual({ status: "ready", value: {
+    test: expect.objectContaining({ handlerRef: TEST_METRIC_VIEW, label: "Test", target: { source: "draft", slot: "metricEditor" } }),
+    testExecute: expect.objectContaining({
+      handlerRef: TEST_EXECUTE_METRIC_VIEW, label: "Test and return JSON", target: { source: "draft", slot: "metricEditor" },
+    }),
+  } });
 });
 
 /** Reads a MetricView result through a registered projection whose SDK component this fixture declares as its consumer. */

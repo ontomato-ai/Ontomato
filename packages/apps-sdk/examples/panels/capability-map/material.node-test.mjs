@@ -8,9 +8,10 @@ import test from "node:test";
 /*
  * Contract validation for the M3 four-layer capability map registration material under the unified single-release
  * panel/projection contracts:
- * - All five projections (mode switcher, four-layer graph, relations, type objects and user picker) validate against
+ * - All four ontology-backed projections (four-layer graph, relations, type objects and user picker) validate against
  *   `productProjectionInputSchema` and `registerProductProjectionRequestSchema`, using
  *   `{ kind: "PlatformObjectType", id: "platform:OntologyType" }` data reads and runtime-supplied list search/page.
+ *   The static mode switcher renders directly with `<segmented-control>` rather than as a projection.
  * - The panel manifest validates against `panelManifestSchema` (`members` + `events`), carries no `sdkVersion`,
  *   keeps its rendering module (`content.module`), and matches `candidatePanelSourceSchema`.
  * - Every `en` / `zh-CN` message key matches across locales and covers all event and projection config label keys.
@@ -34,7 +35,7 @@ async function runWithContracts(check) {
   return JSON.parse(stdout);
 }
 
-test("all five capability-map projections validate against the unified projection registration contract", async () => {
+test("all four capability-map projections validate against the unified projection registration contract", async () => {
   const result = await runWithContracts(String(({
     productProjectionInputSchema,
     registerProductProjectionRequestSchema,
@@ -55,12 +56,6 @@ test("all five capability-map projections validate against the unified projectio
   }));
 
   assert.deepEqual(result, {
-    "capability-map-mode": {
-      componentId: "@ontomato/sdk:SegmentedControl",
-      data: [],
-      bindings: [],
-      outputs: ["value"],
-    },
     "capability-map-graph": {
       componentId: "@ontomato/sdk:OntologyGraph",
       data: ["schema", "counts", "start", "neighbors"],
@@ -93,6 +88,7 @@ test("capability-map panel input, candidate files, and locale messages validate 
     productPanelInputSchema,
     registerProductPanelRequestSchema,
     candidatePanelSourceSchema,
+    matchesDirectPanelValue,
   }, { PANEL_ID, panelInput, candidateFiles, messages, projections }) => {
     const input = panelInput();
     const parsedPanel = productPanelInputSchema.parse(input);
@@ -146,6 +142,18 @@ test("capability-map panel input, candidate files, and locale messages validate 
       allLabelKeysTranslated: [...eventLabelKeys, ...configLabelKeys].every(
         (key) => Boolean(messages.en[key]) && Boolean(messages["zh-CN"][key]),
       ),
+      selectedAcceptsOntologyType: matchesDirectPanelValue(parsedPanel.manifest.state.selected.type, {
+        className: "platform:OntologyType",
+        primaryKey: "platform:BusinessKnowledge",
+      }),
+      startAcceptsOntologyType: matchesDirectPanelValue(parsedPanel.manifest.state.start.type, {
+        className: "platform:OntologyType",
+        primaryKey: "platform:BusinessKnowledge",
+      }),
+      selectedRejectsUnlayeredOption: !matchesDirectPanelValue(parsedPanel.manifest.state.selected.type, {
+        className: "platform:ModelOption",
+        primaryKey: "m-1",
+      }),
     };
   }));
 
@@ -155,10 +163,13 @@ test("capability-map panel input, candidate files, and locale messages validate 
     candidateHasModule: true,
     rejectsSdkPin: true,
     candidateHasSdkVersion: false,
-    candidateMembers: ["graph", "mode", "relations", "typeObjects", "userPicker"],
+    candidateMembers: ["graph", "relations", "typeObjects", "userPicker"],
     allMembersReferenceDeclaredProjections: true,
     localesMatch: true,
     allLabelKeysTranslated: true,
+    selectedAcceptsOntologyType: true,
+    startAcceptsOntologyType: true,
+    selectedRejectsUnlayeredOption: true,
   });
 });
 

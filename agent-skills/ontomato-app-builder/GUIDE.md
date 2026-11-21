@@ -18,18 +18,21 @@ A workspace is the application source tree. Business definitions remain in Java;
 
 For a management page, start with the [complete example and wiring recipes](references/management-pages.md) or run `panel scaffold`.
 
-1. Use `sdk read components.json` and `sdk read docs/components.md` to see the current release's official components and their inputs and outputs. Inspect the actual ontology resources, projections and application uses. Reuse existing records and ask the owner for any missing business capability or named read.
+1. Use `panel type <type-id>` for the owner's reads and operations. Use `sdk read docs/components.md` for each component's data, configuration, outputs and events in the current SDK. Inspect existing projections and application uses. Reuse existing records and ask the owner for any missing business capability or named read.
 2. Write the Vue panel source. Declare its projections and public typed state in `panel.json` as `{manifest, content?}`. Use `recipes.md` for the assistant's common tasks and optional `content.messages` for translations. Use Vue's own state and events for local interactions.
 3. Run `panel check <workspace directory>` to validate the panel source, declarations and references.
 4. Submit the selected projections, panels and application uses with `panel register`, then open the application's declared entry. Use an application ID and route you control.
 
 When converting a platform page that needs a new owner read, operation or official component, use the [platform development examples](references/platform-development.md).
 
-For instances of customer ontology classes, bind the detail to the owner's `record` read and use a registered Action for changes. For platform resources with owner-declared forms, use the corresponding form and save operation.
+Create short members from the reads listed by `panel type`. For customer ontology views backed by an existing projection, reuse its registered ID. Use the corresponding form and save operation for types that publish those declarations.
 
 | Command | Result |
 | --- | --- |
-| `sdk read components.json` | Official components and ports in the current SDK |
+| `sdk read docs/components.md` | Current SDK component guide with data, configuration, outputs and events |
+| `sdk read components.json` | The same current SDK's machine-readable component catalogue |
+| `panel type <type-id> [--read <name>]` | Read signature with its result schema. With no filter, list the type's reads and operations. |
+| `panel delete application\|panel <id>` | Delete a trial application or panel through its owner |
 | `panel projection <id>`, `panel get <id>` | Authorized current projection or panel, including its revision |
 | `panel applications`, `panel uses <applicationId>` | Java navigation catalog and visible use relations |
 | `panel scaffold <type> <new directory> [--id <application id>] [--operation <id>] [--batch <id>]` | Draft a Vue management panel from the type table. Select single and batch buttons by owner operation ID. |
@@ -39,18 +42,27 @@ For instances of customer ontology classes, bind the detail to the owner's `reco
 
 ### Write projections inside the panel
 
-In `panel.json`, put a new projection in `manifest.members.<key>.target.projection`. Use the same component,
-named data, input and output declarations, operation bindings and config as a separately registered projection. Keep state bindings
-on the member. For example, a member named `agents` can use this target:
+In `panel.json`, define each new projection directly in `manifest.members`. For the chosen official component,
+open its section in `sdk read docs/components.md`. Use `panel type <type-id>` and `--read <name>` for the
+owner's read signatures, result shapes and operations. A member uses the parts that apply to its component.
+
+| What to fill | What registration derives and what to change |
+| --- | --- |
+| **Component.** Set `component` to the name in the SDK catalogue. | `componentId` is the qualified SDK identifier. Picking a different component changes its available data names, settings and ports. |
+| **Data source.** Set `type` or connect the object state via `target`. For each component datum in `data`, choose an owner read with an accepted result and bind its read parameters as needed. | Stored `data` expands to names with `source`, `read` and `params`. The owner type, object target, read and bindings determine those fields. |
+| **Component settings.** Use the component's Configuration section for `config` keys and values. | Stored `config` takes those settings. For a component with an operation setting, the tool derives `config.operation` from the selected owner's operation. |
+| **Operation.** Use the type table's full `operation` ID. Set `target` for an object target and `draft` when the operation reads a form draft. | Stored `operations` identifies the owner operation and target. Where required, the placement gains `readOperationInputs` for its draft and parameters. Changing the operation or its bindings changes these fields. |
+| **State connections.** Map the component ports and named read parameters to declared fields using `state`. | The tool derives projection `inputs` and `outputs` from the state types, selected owner type and component ports. Changing bindings or their types can change those fields and the member's placement connections. |
+
+Run `panel projection <id>` after registration to inspect the resulting projection. Use the
+[member field reference](references/panel-authoring/FIELDS.md) for the short form and its optional fields.
 
 ```json
 {
-  "projection": {
-    "componentId": "@ontomato/sdk:ObjectList",
-    "data": {
-      "rows": {"source": {"type": {"kind": "PlatformObjectType", "id": "platform:AgentDefinition"}}, "read": "list", "params": {}}
-    }
-  }
+  "component": "ObjectList",
+  "type": "platform:AgentDefinition",
+  "data": {"rows": "list"},
+  "state": {"selected": "selected"}
 }
 ```
 
@@ -59,27 +71,76 @@ In `registration.json`, put one item in `panels`, with its `id`, `mode` and `inp
 layout and instructions in the workspace files. Run `panel check <directory>` and `panel register <directory>`
 with the same workspace and registration material.
 
-The first successful projection write saves its ID as `target.projection.id` in `panel.json`. Keep that ID when
-renaming or moving the member. Keep the existing ID in source when editing a projection already registered for this
-panel. On creation, name and description default to the member key and the sharing scope follows the panel.
-Registration uses the existing projection's revision when updating it. Other panels can reference the ID with
-`target.projectionId`, subject to the usual projection permission.
+The first successful domain projection write saves its UUID as `id` on the member in `panel.json`. The tool
+uses it as the registered member's `target.projectionId`. Keep it when renaming or moving that member.
+New projections default `name` and `description` to the member key and take the panel's initial sharing scope.
+Set a member's `name` or `description` explicitly to change those catalogue fields. Later sharing follows the
+projection's grants. To reuse a registered projection, specify `target.projectionId`. Every use of a shared
+projection sees its updates.
 
-Registration material has up to three arrays, `projections`, `panels` and `applications`. Each item is `{id,mode,input}` with `mode` set to `create` or `update`.
+In `registration.json`, each panel or application item is `{id,mode,input}` with `mode` set to `create` or `update`.
+For workspace registration, keep the panel definition in `panel.json`, `panel.html`, `panel.mjs` and optional
+`recipes.md`. The tool sends the expanded projection and panel records.
 
-- For projections, `input` describes the official component, its inputs, outputs, named data and configuration. Build the named reads from the actual owner declarations for the target. Use the editable definition metadata `name`, `description` and `visibility`.
-- For panels, `input` contains the workspace manifest and content, together with `name`, `description` and `visibility`. Use `panel.html` as `content.html`, any `recipes.md` as `content.recipes`, and carry any `content.messages` from the descriptor. The deployment supplies the current SDK.
 - Projection and panel updates carry the owner-returned current `revision` on the item alongside `mode`. Creation omits it. Only the chosen records should appear in the material. Updating a shared definition affects every use of that record.
-- Application `input` contains `entry: {path, renderer: "panels"}` and `panelUses`. Creation includes `declaration` and `entryAccess`. For a domain-member application, use `entryAccess: ["domain-member"]` and `access: {kind: "domain-member"}` on a use open to the domain. Each use has `id`, `pageKey`, `panelId`, `path` and `access`, with optional localized `names` and `defaultAgent`. Domain app paths start with `/applications/<applicationId>/`. Use the application's real `{permissionCode}` for a restricted use. When a use needs a default agent, use `defaultAgent: {kind: "id", id}` with its actual definition ID or `{kind: "preset", agentKind}` for an existing preset. An update replaces the use set, so preserve the uses required by the app. The platform owns built-in paths and derives skills from use access.
+- Application `input` contains `entry: {path, renderer: "panels"}` and `panelUses`. Create with an ID starting with `app-`, plus `declaration` and `entryAccess`. For a domain-member application, use `entryAccess: ["domain-member"]` and `access: {kind: "domain-member"}` on a use open to the domain. Each use has `id`, `pageKey`, `panelId`, `path` and `access`, with optional localized `names` and `defaultAgent`. Domain app paths start with `/applications/<applicationId>/`. Use the application's real `{permissionCode}` for a restricted use. Omit `defaultAgent` to use the general assistant. To choose a default, use `defaultAgent: {kind: "id", id}` or `{kind: "preset", agentKind}` after that agent has selected the panel’s skill. An update replaces the use set, so preserve the uses required by the app. In `mode: "update"`, include `input.declaration` with any changed `names`, `descriptions` or `icon`. Registration reads the existing identity and writes it through the owner only when it differs. Omit identity fields to keep their current values. If you supply a localized map, supply its full set of translations. The platform owns built-in paths and derives skills from use access.
 
 The command submits projections, panels and uses in that order. It prints each completed item and exits nonzero at the first failure. On a stale revision, compare the owner's current definition with the requested change before preparing a new update.
+
+### Replace a built-in page
+
+1. **Move the panel source.** Put `panel.json`, `panel.html`, `panel.mjs` and any `recipes.md` from the tested
+   trial in the original page's owning package under `resources/builtin-panels/<directory>`. Keep one panel
+   item in `registration.json` with a stable `builtin-product-` ID and its `input.name` and
+   `input.description`. Application entries belong in the owning application's declaration.
+   Remove trial projection IDs from inline members in the copied `panel.json` so the checker can allocate
+   platform IDs. For reused projections, use a packaged projection ID or supply an inline definition
+   backed by platform types and owner reads. Pass domain objects through the panel's runtime state.
+   Use formal built-in addresses for internal links in `panel.html`, `panel.mjs` and `recipes.md`. The checker
+   reports the file, line and column of any `/applications/app-…` address.
+2. **Assign the projection IDs.** Point `SDK_RELEASE` to the installed SDK version directory containing
+   `sdk.json`, and run the local check with the copied panel directory as `PANEL_DIR`:
+
+   ```sh
+   node "$SKILL/ontomato.mjs" panel check "$PANEL_DIR" --builtin --sdk-dir "$SDK_RELEASE"
+   ```
+
+   Commit the IDs written to `panel.json`. Preserve those IDs on later edits. The Workbench image build
+   checks the built-in application entries against the bundled panels. Node registers the platform records
+   from the bundle on startup.
+3. **Switch the original entry and remove the old page in one change.** Add the use to
+   `declaration.panelUses` in the owning app's declaration. Find Java-owned apps in the Java package's
+   `src/main/resources/applications/` directory and Workbench-owned apps in
+   `packages/workbench-server/src/services/applications/builtins.ts`. Keep the original `path` and
+   `access.permissionCode`. Give the use its stable `id` and `pageKey`, and set `panelId` to the packaged panel ID.
+   Carry over its menu name and default agent where present. Remove the old route registration, renderer
+   and any page component and imports with no remaining callers. The panel use serves the original address.
+   Keep the owner reads, operations and permissions used by the panel or by other entries.
+4. **Verify and clean up the trial.** On 128 after deployment, open the original address with its existing
+   permission and verify that the panel and its page skill work. With an account lacking the original
+   permission, check that the entry denies access and that the owners deny reads and operations when the
+   panel is used from another entry the account can open. Then delete the exact trial application and its
+   trial panel using the commands below.
+
+### Delete a trial application or panel
+
+Delete a trial application first to remove its entry references. Then delete a panel by its exact registered ID.
+
+```sh
+node "$SKILL/ontomato.mjs" panel delete application <application-id>
+node "$SKILL/ontomato.mjs" panel delete panel <panel-id>
+```
+
+The panel owner also removes editable projections used only by that panel and reports their IDs. A referenced panel
+is protected by the owner's in-use check. Released or shared definitions stay under the owner's normal permissions.
 
 ### Fix panel check and registration errors
 
 Run `panel check <directory>` before registering. It reads `registration.json` in that directory by default.
-Use `--material <file>` to select a different file. An online check looks for each referenced projection in
-the material first, then in the current domain. `--sdk-dir` checks local material and reports any references
-that still need an online check in `unchecked`.
+Use `--material <file>` to select a different file. The online check uses the current component catalogue and
+owner type table to expand new projections. It looks for references in the material first, then in the domain.
+With `--sdk-dir`, complete local material can be checked offline. New short members require the online type
+table, and unresolved registered references appear in `unchecked`.
 
 - **404 `PRODUCT_UNAVAILABLE`** names a panel or projection that is missing in the current domain. When a
   projection is also absent from the material, `panel check` reports its ID before registration. Correct the
@@ -87,8 +148,8 @@ that still need an online check in `unchecked`.
   before saving that panel.
 - **403 `PRODUCT_FORBIDDEN`** on an author lookup means an existing record requires a use Grant. Ask the
   record owner to grant access or choose a projection that the current author can use.
-- **A field error** names the record ID and field and explains what to fix. For example, if `data` is missing
-  from a projection, fill in `data` for that projection and run the check again.
+- **A member error** identifies the declaration to fix. Check the component's catalogue entry, the owner's read
+  or operation signature, and the state named in that member.
 
 ## Discover and save business capabilities
 
@@ -118,6 +179,11 @@ In an App Builder conversation, authoring uses the current run callback and the 
 A definition without an ID creates an asset; with an ID it updates that asset. Use the returned ID, never a same-name search. A MetricView's `bindings` belong to that metric: omit them to preserve existing bindings, use `[]` to remove them. The retired GENERAL/STATIC `type` field is not accepted.
 
 `metric-view execute <id> [<parameter JSON>] [--binding <id>]` reads data. `action execute <id> [<parameter JSON>] [--file <path> ...]` performs the business write; execute only within the authorized scope. Supply parameter values by the names in `function.parameters`. A binding supplies its saved values. Action files use multipart uploads. A vector parameter uses `{className, attrName, text, fileId, uploadFile}` as applicable; `uploadFile` is the zero-based file position. Vector writes use the platform's vector operations, not ordinary object insert/update.
+
+## Agent delegation
+
+In a platform conversation, use the native `agent` tool or `node "$SKILL/ontomato.mjs" agent <command>`.
+The script uses the current run's authority, with the same build-test restrictions as the native tool.
 
 ## Build-test vector operations
 

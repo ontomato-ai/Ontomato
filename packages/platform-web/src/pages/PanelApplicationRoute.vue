@@ -2,12 +2,12 @@
 import { computed, inject, markRaw, ref, toRaw, watch, type Ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { PanelHost, panelUnavailable, useUnsavedChanges, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
+import { PanelHost, panelUnavailable, usePageHeading, useUnsavedChanges, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
 import { panelAddress, panelAddressState, panelUsePath } from "@ontomato/contracts/panel-host";
 import { applicationRootPath } from "@ontomato/contracts/platform-identity";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
-import type { DisplayObjectRefresh } from "@ontomato/agent-shell-ui";
+import { PageComposer, type DisplayObjectRefresh } from "@ontomato/agent-shell-ui";
 import { countedTypesChangedKey } from "@ontomato/ontology-manager";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
@@ -58,7 +58,9 @@ const emit = defineEmits<{
 
 const route = useRoute();
 const router = useRouter();
-const { t, locale } = useI18n();
+const { t, locale, fallbackLocale } = useI18n();
+/** The language a panel's own name is given in: the reader's, else the deployment's default. */
+const language = computed(() => ({ locale: locale.value, fallback: String(fallbackLocale.value) }));
 /** The application's use relations, once Java has answered; until then the page names none and says nothing. */
 const uses = ref<readonly ApplicationPanelUse[] | null>(null);
 /** The shown page's instance, which the conversation's object signal reaches; kept pages are reconciled when shown again. */
@@ -177,6 +179,30 @@ const labels = computed<PanelHostLabels>(() => ({
     scriptRejected: t("platform.panelScriptRejected"),
   },
   content: { styleOutside: t("platform.panelStyleOutside") },
+  refresh: t("common.refresh"),
+}));
+
+/**
+ * The composer at the foot of the page at its own address (big main's ruling, 2026-11-21): what a message written here
+ * asks about is the page above it, and a conversation entry in the panel expands it. Beside a conversation the
+ * conversation's own composer serves instead. Its configuration error is shown where it would be.
+ */
+const composerProblem = ref<string | null>(null);
+/** The page skill a message written on the shown page reaches, once its read or its checks have said which. */
+const shownSkill = ref<PageSkillContext | null>(null);
+/** The shown page's skill is known: a message beside it, and the page's own composer, reach it. */
+function passSkill(context: PageSkillContext) {
+  shownSkill.value = context;
+  emit("display-skill", context);
+}
+const composerLabels = computed(() => ({
+  placeholder: t("assistant.placeholder"),
+  send: t("assistant.send"),
+  stop: t("assistant.stop"),
+  agent: t("assistant.agent"),
+  pageAgentUnavailable: t("assistant.pageAgentUnavailable"),
+  collapseComposer: t("assistant.collapseComposer"),
+  expandComposer: t("assistant.expandComposer"),
 }));
 
 /**
@@ -207,6 +233,8 @@ const requestedState = computed(() => panelAddressState(opened.value));
  * one is named by what its panel reports.
  */
 const pageName = computed(() => use.value?.names?.[locale.value] ?? use.value?.names?.en ?? "");
+/** The line under the page's title, as a native page's header has it: the entry's description in the reader's language. */
+const pageDescription = computed(() => use.value?.descriptions?.[locale.value] ?? use.value?.descriptions?.en);
 
 const shownPage = computed(() => kept.value.find((page) => page.use.id === use.value?.id) ?? null);
 
@@ -224,6 +252,7 @@ watch(use, (next, previous) => {
   // A page left with unsaved changes was left through the unsaved-changes question: its changes go with its instance.
   const left = previous && previous.id !== next?.id ? kept.value.find((page) => page.use.id === previous.id) : undefined;
   if (left?.dirty) kept.value = kept.value.filter((page) => page !== left);
+  shownSkill.value = null;
   if (!next) return;
   performance.mark("ontomato:panel-page-opened", { detail: { applicationId: props.applicationId, useId: next.id } });
   const found = kept.value.find((page) => page.use.id === next.id);
@@ -241,17 +270,49 @@ watch(use, (next, previous) => {
   emit("context", page.context ?? { url: page.reported, label: pageName.value, selection: [] });
 }, { immediate: true });
 
+/*
+ * The shown page sent to its bare address — its menu row clicked while it is open, or the address typed without a state —
+ * opens it at its panel's defaults, as a native page goes back to its start: only a page shown again from another keeps
+ * the state it was left at. A page with unsaved changes is not reset under them: the address goes back to its state.
+ */
+watch([() => use.value?.id, opened], ([id, next], [previousId, previous]) => {
+  const page = shownPage.value;
+  if (!id || id !== previousId || next === previous || next.includes("?") || !page) return;
+  if (page.dirty) reportAddress({ kind: "state", address: page.reported });
+  else page.reported = pageAddress.value;
+});
+
 // Leaving the shown page with unsaved changes asks the platform's question first. Beside a conversation the display
 // controller asks instead, from the page's dirty report.
 if (!props.navigate)
   useUnsavedChanges({ dirty: () => shownPage.value?.dirty ?? false, paths: () => use.value ? [panelUsePath(use.value.path)] : [] });
+
+/**
+ * The page's title, description and way back at its own address (big main's rulings, 2026-11-21): the panel draws none
+ * of them, and the description is the entry's own, under the title as on a native page. The title is
+ * what a message names the page by — the entry's menu name, else its panel's own name — so the two never differ; a page
+ * the application's menu does not reach (an entry with no menu name) also gets the way back to where the reader came
+ * from, or to the application's root when the page was opened directly. Beside a conversation, the conversation draws both.
+ */
+if (!props.navigate) {
+  usePageHeading(() => {
+    const title = shownPage.value?.context?.label || pageName.value;
+    if (!title) return null;
+    const description = pageDescription.value;
+    return { title, ...description ? { description } : {}, ...use.value?.names ? {} : { back: goBack } };
+  });
+}
+function goBack() {
+  if (typeof router.options.history.state.back === "string") router.back();
+  else void router.push(applicationRootPath(props.applicationId));
+}
 
 /** When a kept page shown again may ask for its objects again: the first of the two points its switch is measured at. */
 function markReopened(page: KeptPage) {
   performance.mark("ontomato:panel-page-reopened", { detail: { applicationId: props.applicationId, useId: page.use.id } });
   // Its checks are through: the page skill they confirmed is the one a message beside it reaches now.
   page.rechecking = false;
-  emit("display-skill", page.pageSkill!);
+  passSkill(page.pageSkill!);
 }
 
 /** A new instance for a page of this application. */
@@ -268,6 +329,8 @@ function openPage(use: ApplicationPanelUse): KeptPage {
   };
   page.port = markRaw(platformPanelHost(
     props.applicationId, use, changed, undefined, answered.value ? undefined : relations!, (context) => reportPageSkill(page, context),
+    // Beside a conversation, an address the panel opens goes to the conversation's display; at full page, the router.
+    props.navigate,
   ));
   return page;
 }
@@ -280,7 +343,7 @@ function openPage(use: ApplicationPanelUse): KeptPage {
 function reportPageSkill(page: KeptPage, context: PageSkillContext) {
   const changed = JSON.stringify(context) !== JSON.stringify(page.pageSkill);
   page.pageSkill = context;
-  if (changed && shownPage.value && toRaw(shownPage.value) === page && !page.rechecking) emit("display-skill", context);
+  if (changed && shownPage.value && toRaw(shownPage.value) === page && !page.rechecking) passSkill(context);
 }
 
 /** A kept page shown again whose use relation was withdrawn or bound elsewhere ends; the page opens from the current relations. */
@@ -319,9 +382,11 @@ function reportDirty(page: KeptPage, dirty: boolean) {
       v-for="page in kept"
       v-show="page === shownPage"
       :key="page.use.id"
+      :class="{ 'panel-host-page': !props.navigate }"
       :ref="(instance) => { if (page === shownPage) host = instance as ShownInstance | null; }"
       :port="page.port"
       :labels="labels"
+      :language="language"
       :shown="page === shownPage"
       :address="addressOf(page)"
       :initial="stateOf(page)"
@@ -332,5 +397,31 @@ function reportDirty(page: KeptPage, dirty: boolean) {
       @reopened="markReopened(page)"
       @withdrawn="withdraw(page)"
     />
+    <!-- Offered once the panel's read named the page's skill: the agents are the ones that skill reaches. -->
+    <PageComposer
+      v-if="!props.navigate && shownPage && shownSkill"
+      :page="shownPage.reported"
+      :labels="composerLabels"
+      :page-skill="shownSkill"
+      @error="composerProblem = $event"
+    />
+    <p v-if="!props.navigate && composerProblem" class="page-composer-error" role="alert">{{ composerProblem }}</p>
   </template>
 </template>
+
+<style scoped>
+/*
+ * At full page the platform's page body already holds the gutter the header's title stands on: the panel's content starts
+ * on the same line, with no inset of the host's own (visual acceptance E-01).
+ */
+.panel-host-page :deep(.panel-host-direct) {
+  padding-inline: 0;
+}
+/* The page's own configuration error, where its composer would be: the reader is told, not left guessing. */
+.page-composer-error {
+  width: min(760px, 100%);
+  margin: 0 auto var(--spacing-md);
+  color: var(--el-color-danger);
+  font-size: var(--text-sm);
+}
+</style>

@@ -9,8 +9,22 @@ compatibility: Requires Node.js 18 or newer, an Ontomato ontology-service URL an
 Use `node <this-skill>/scripts/governance.mjs <command> @work/arguments.json`.
 Read [commands](references/commands.md) for arguments and [extraction](references/extraction.md)
 when extracting knowledge. Preserve source IDs, evidence and uncertainty; do not invent business rules.
-The Java work record is the governance report. Read it when resuming or after compaction;
-update the same issue ID for the same disagreement. Confirming meaning does not save a knowledge asset.
+Keep saving governance work in the Java work record (`read-work-record`, `update-work-record`) for
+resuming across turns or after compaction and for deduplicating issues; update the same issue ID for
+the same disagreement. Confirming meaning does not save a knowledge asset.
+
+For the human-facing report, follow the `assistant-report` skill and write an ordinary analysis report
+to `outputs/reports/<name>/report.md`, then link it in your final reply. Include:
+- a summary and the review progress at the time of writing (`reviewed N / total M` when total is known);
+- each finding's category, status, problem, current wording or state, proposed change, and basis;
+- cited sources as short excerpts; link business knowledge entries to `#/ontology/knowledge` and
+  link historical runs to that conversation (`#/agents/chat?sessionId=<sessionId>`).
+The report is a snapshot at the time it is written; write a new report version if subsequent runs change it.
+
+When human decisions are needed (such as which recommendations to adopt or how to revise definitions),
+ask via pending questions (`agent` tool with `op: "send"`, `session: "parent"`, `needsInput: true`,
+options with descriptions and one `isDefault: true`, and `defaultAssumption`). If there are too many
+questions to ask at once, split them by priority across turns; readers may also reply directly in conversation.
 
 In platform runs, the host supplies `ONTOMATO_SKILL_SCENARIO=platform`, a window callback
 and the real run identity. The first command requests a write window from Node; no report
@@ -33,8 +47,9 @@ It reads existing knowledge to select create/update; creates use an empty knowle
 status, while updates keep the existing ID and status. Outside the platform it calls Java import
 with your credential. Report imported knowledge only after that interface confirms it.
 
-In platform replies, keep the link targets in each draft's `link` and saved work's `reportLink`
-verbatim; you may adapt the link text to the reader's language.
-These are ready-to-paste Markdown links with in-app relative addresses: do not add a host
-or construct them with any `ONTOMATO_*_URL`. Do not use image syntax or link to or embed
-the draft file itself.
+In platform replies, keep the link targets in each draft's `link` (`#/ontology/knowledge?draft...`)
+and your `outputs/reports/<name>/report.md` links accurate; you may adapt the link text to the
+reader's language.
+Page links are ready-to-paste Markdown links with in-app relative addresses (`#/...`): do not add a
+host or construct them with any `ONTOMATO_*_URL`. Do not use image syntax or link to or embed
+draft files themselves.

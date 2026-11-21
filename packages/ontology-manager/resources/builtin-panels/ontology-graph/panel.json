@@ -1,0 +1,63 @@
+{
+  "manifest": {
+    "state": {
+      "objectType": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        },
+        "deepLink": true
+      },
+      "relation": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Relationship"
+        },
+        "deepLink": true
+      },
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": ""
+      },
+      "filter": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "all"
+      }
+    },
+    "members": {
+      "objectTypes": {
+        "component": "PanelData",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": "list"
+        },
+        "id": "builtin-product-f7d52c45-7825-4baf-be9f-d324dc2db391"
+      },
+      "relations": {
+        "component": "PanelData",
+        "type": "platform:Relationship",
+        "data": {
+          "rows": "list"
+        },
+        "id": "builtin-product-ae5b932a-65dd-4f3f-b993-d282134b2804"
+      },
+      "attributes": {
+        "component": "PanelData",
+        "type": "platform:Attribute",
+        "data": {
+          "rows": "list"
+        },
+        "id": "builtin-product-461ef10a-8184-431b-8cb7-1f5ef9bf5d5b"
+      }
+    },
+    "events": {}
+  }
+}

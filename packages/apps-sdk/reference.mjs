@@ -249,16 +249,47 @@ export function checkCatalogue(entries, declared, root, tsconfig) {
   }
 }
 
+/** A port's type as the reference names it: `@binding` is the type the projection binds. */
+function portTypeText(type) {
+  if (type.kind === "object") return type.objectType === "@binding" ? "one object of the projection's type" : `one ${type.objectType}`;
+  if (type.kind === "list") return `a list of ${portTypeText(type.items).replace(/^one object/, "objects").replace(/^one /, "")}`;
+  if (type.kind === "object-union") return `one object of ${type.objectTypes ? type.objectTypes.join(" or ") : `the ${type.layers.join(", ")} layers`}`;
+  if (type.kind === "scalar") return type.type;
+  return type.kind;
+}
+
 /** The catalogue's document section: each component's meaning, what it binds and what it takes and hands over. */
-export function catalogueMarkdown(version, entries) {
-  const lines = ["# Components of this SDK version", "", `The components \`${version}\` exports that a projection can bind. Each one names the module a page imports it from, what it means, the ontology elements it may bind, and its inputs. A projection in the panel product chooses one component, one binding and its display, and names the owners' operations it offers; a panel composes projections in slots.`, ""];
-  for (const { metadata } of entries) {
-    lines.push(`## ${metadata.componentId}`, "", `${metadata.role === "control" ? "Control" : "Presentation"}: \`${metadata.exportName}\` from \`${metadata.module}\`.`, "", metadata.meaning, "");
-    if (metadata.effects) lines.push(`Effects: ${metadata.effects}`, "");
-    if (metadata.bindsElement?.length) lines.push(`Binds: ${metadata.bindsElement.map((element) => `\`${element}\``).join(", ")}`, "");
-    if (metadata.inputs && Object.keys(metadata.inputs).length)
-      lines.push("Inputs:", "", ...Object.entries(metadata.inputs).map(([name, type]) => `- \`${name}\`: ${type.kind === "object" ? type.objectType : type.type}`), "");
-    if (metadata.outputs?.length) lines.push(`Hands over: ${metadata.outputs.map((name) => `\`${name}\``).join(", ")}`, "");
+export function catalogueMarkdown(version, components) {
+  const lines = ["# Components of this SDK version", "", `The components \`${version}\` exports that a projection can bind. Each one names the module a page imports it from, what it means, the ontology elements it may bind, the data it reads, the configuration a projection sets on it, the values it hands the panel and the events the page can listen to. A projection chooses one component, the data it reads and its configuration, and names the owners' operations it offers; a panel places members of projections.`, ""];
+  for (const component of components) {
+    lines.push(`## ${component.componentId}`, "", `${component.role === "control" ? "Control" : "Presentation"}: \`${component.exportName}\` from \`${component.module}\`.`, "", component.meaning, "");
+    if (component.effects) lines.push(`Effects: ${component.effects}`, "");
+    if (component.bindsElement?.length) lines.push(`Binds: ${component.bindsElement.map((element) => `\`${element}\``).join(", ")}`, "");
+    if (component.data && Object.keys(component.data).length) {
+      lines.push("Data it reads (the projection's `data.<name>`, each an owner's read; its parameters are the read's signature):", "");
+      for (const [name, datum] of Object.entries(component.data)) {
+        const given = datum.runtimeParams?.length ? `; the component gives \`${datum.runtimeParams.join("`, `")}\` itself unless the placement binds them` : "";
+        lines.push(`- ${name === "*" ? "any name you choose" : `\`${name}\``}: ${datum.results.join(" or ")}${datum.required ? ", required" : ""}${given}`);
+      }
+      lines.push("");
+    }
+    if (component.inputs && Object.keys(component.inputs).length)
+      lines.push("Inputs:", "", ...Object.entries(component.inputs).map(([name, type]) => `- \`${name}\`: ${type.kind === "object" ? type.objectType : type.type ?? type.kind}`), "");
+    if (component.config?.length) {
+      lines.push("Configuration (the projection's `config`):", "");
+      // A projection's config names each property as the component's source does, in camelCase.
+      for (const prop of component.config) {
+        const name = prop.name.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+        const fallback = prop.default !== undefined && prop.default !== "undefined" ? `, default ${prop.default}` : "";
+        lines.push(`- \`${name}\` (${prop.type.replace(/ \| undefined$/, "")}${prop.required ? ", required" : ""}${fallback}): ${prop.description || "—"}`);
+      }
+      lines.push("");
+    }
+    if (component.outputs && Object.keys(component.outputs).length)
+      lines.push("Hands over (bindable to the panel's state):", "", ...Object.entries(component.outputs).map(([name, type]) => `- \`${name}\`: ${portTypeText(type)}`), "");
+    const events = component.ports?.events?.filter(({ name }) => !name.startsWith("update:")) ?? [];
+    if (events.length)
+      lines.push("Events the page can listen to on `<projection>`:", "", ...events.map(({ name, description }) => `- \`${name}\`: ${description || "—"}`), "");
   }
   return lines.join("\n");
 }

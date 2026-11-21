@@ -7,6 +7,7 @@ const allLayers = ["fact", "capability", "governance", "product"];
 const ONTOLOGY_TYPE = { kind: "PlatformObjectType", id: "platform:OntologyType" };
 const USER = "platform:User";
 const anyLayerObject = { kind: "object-union", layers: allLayers };
+const graphNodeObject = { kind: "object-union", layers: allLayers, objectTypes: ["platform:OntologyType"] };
 const text = { kind: "scalar", type: "string" };
 const json = { kind: "json" };
 
@@ -28,25 +29,6 @@ const projection = (id, name, description, component, ports) => ({
 
 export default [
   projection(
-    "capability-map-mode",
-    "Graph mode switcher",
-    "Switches the capability map between type overview and instance exploration modes.",
-    "SegmentedControl",
-    {
-      outputs: {
-        value: text,
-      },
-      data: {},
-      config: {
-        options: [
-          { value: "type", labelKey: "capMap.modeType" },
-          { value: "instance", labelKey: "capMap.modeInstance" },
-        ],
-        ariaLabelKey: "capMap.modeLabel",
-      },
-    },
-  ),
-  projection(
     "capability-map-graph",
     "Four-layer capability graph",
     "Interactive platform ontology graph across fact, capability, governance and product layers in type or instance mode.",
@@ -54,16 +36,16 @@ export default [
     {
       inputs: {
         mode: text,
-        start: anyLayerObject,
-        selected: anyLayerObject,
+        start: graphNodeObject,
+        selected: graphNodeObject,
         selectedType: text,
         query: text,
-        node: anyLayerObject,
+        node: graphNodeObject,
         layers: json,
         relationKinds: json,
       },
       outputs: {
-        selectedNode: anyLayerObject,
+        selectedNode: graphNodeObject,
         selectedType: text,
       },
       data: {
@@ -90,10 +72,10 @@ export default [
     "ObjectRelations",
     {
       inputs: {
-        selected: anyLayerObject,
+        selected: graphNodeObject,
       },
       outputs: {
-        selected: anyLayerObject,
+        selected: graphNodeObject,
       },
       data: {
         neighbors: read("neighbors", {

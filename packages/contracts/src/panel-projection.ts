@@ -1,6 +1,8 @@
-import { applicationCatalogueScopeSchema, applicationFormSectionSchema, productCatalogQuerySchema } from "./product-catalog-query";
+import {
+  applicationCatalogueScopeSchema, applicationFormSectionSchema, productCatalogQuerySchema, productPanelCatalogQuerySchema,
+} from "./product-catalog-query";
 import { z } from "zod";
-import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
+import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema, formValuesSchema, panelFormOptionSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
 import { directPanelPortTypeSchema, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelOperation, type PanelStateOperation, type PanelStateRef } from "./panel-manifest";
@@ -85,9 +87,9 @@ const positiveInteger = z.number().int().positive();
 export const panelReadParameterSchemas = {
   productScope: productCatalogQuerySchema.shape.scope.removeDefault(),
   productSort: productCatalogQuerySchema.shape.sort.removeDefault(),
+  productTemplate: productPanelCatalogQuerySchema.shape.template.unwrap(),
   applicationScope: applicationCatalogueScopeSchema,
-  applicationFormSection: applicationFormSectionSchema,
-  applicationFormTarget: panelFormTargetSchema,
+  applicationFormSection: applicationFormSectionSchema.exclude(["create"]),
   formValues: formValuesSchema,
   panelFormValues: panelFormValuesSchema,
   changedField: fieldPath.nullable(),
@@ -103,13 +105,13 @@ export const panelReadParameterSchemas = {
   ontologyParameter: runtimeJsonValueSchema,
   sort: runtimeJsonValueSchema,
   cursor: z.string(),
+  scheduledRunId: runtimeIdSchema,
   size: positiveInteger,
   knowledgeCountField: z.literal("status"),
   knowledgeStatus: z.enum(["all", "pending", "approved"]),
   feedbackCountField: z.enum(["sourceType", "rating"]),
   feedbackSourceType: z.enum(["all", "qa", "analysis_task"]),
   feedbackRating: z.enum(["all", "like", "dislike"]),
-  governanceSource: z.string().min(1),
   skillFilePath: z.string().min(1),
 };
 
@@ -122,18 +124,20 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "ontologyType":
     case "className":
     case "cursor":
+    case "scheduledRunId":
     case "knowledgeCountField":
     case "knowledgeStatus":
     case "feedbackCountField":
     case "feedbackSourceType":
     case "feedbackRating":
-    case "governanceSource":
     case "skillFilePath":
     case "productScope":
     case "productSort":
     case "applicationScope":
     case "applicationFormSection":
       return input?.kind === "scalar" && input.type === "string";
+    case "productTemplate":
+      return input?.kind === "scalar" && input.type === "boolean";
     case "size":
     case "neighborsLimit":
       return input?.kind === "scalar" && input.type === "number";
@@ -273,6 +277,10 @@ export const panelTextHighlightRangeSchema = z.object({
 });
 export type PanelTextHighlightRange = z.infer<typeof panelTextHighlightRangeSchema>;
 
+/** How a field shown as a status tag reads at a glance. */
+export const panelFieldToneSchema = z.enum(["default", "info", "success", "warning", "danger"]);
+export type PanelFieldTone = z.infer<typeof panelFieldToneSchema>;
+
 export const panelRecordSchema = z.object({
   primaryKey: panelObjectRefSchema.shape.primaryKey,
   label: z.string(),
@@ -280,16 +288,24 @@ export const panelRecordSchema = z.object({
   fields: z.record(z.string()),
   /** Field names supplied by the owner in the reader's locale, keyed by the names in fields. */
   fieldLabels: z.record(z.string()).optional(),
+  /** The tone of a field that shows as a status tag, by field name. */
+  tones: z.record(panelFieldToneSchema).optional(),
+  /** A field's values as separate tags, by field name. */
+  tags: z.record(z.array(z.string())).optional(),
   /** Display field keys (including label and subtitle). Omit this property when nothing matched. */
   highlights: z.record(z.array(panelTextHighlightRangeSchema).min(1))
     .refine(fields => Object.keys(fields).length > 0, "Omit highlights when there are no matches").optional(),
 }).strict();
 export type PanelRecord = z.infer<typeof panelRecordSchema>;
 export const panelRecordListSchema = z.array(panelRecordSchema);
+
+/** Plain-text notices localized by the read owner and displayed alongside the available results. */
+const panelReadDiagnostics = z.array(z.string()).optional();
 export const panelRecordQuerySchema = z.object({
   rows: panelRecordListSchema,
   nextCursor: z.string().optional(),
   total: z.number().int().nonnegative().optional(),
+  diagnostics: panelReadDiagnostics,
 }).strict();
 export type PanelRecordQuery = z.infer<typeof panelRecordQuerySchema>;
 /** Group order and display labels come from the owner. */
@@ -316,6 +332,7 @@ export type PanelOption = z.infer<typeof panelOptionSchema>;
 export const panelOptionListSchema = z.object({
   options: z.array(panelOptionSchema),
   total: z.number().int().nonnegative().optional(),
+  diagnostics: panelReadDiagnostics,
 }).strict();
 export type PanelOptionList = z.infer<typeof panelOptionListSchema>;
 

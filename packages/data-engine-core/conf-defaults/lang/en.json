@@ -896,6 +896,34 @@
     "value": "Other"
   },
   {
+    "key": "Authoring.writeSandboxActionOnly",
+    "value": "Only Action generation has a write sandbox"
+  },
+  {
+    "key": "Authoring.sampleOutsideScope",
+    "value": "Sample class is outside the authoring scope: {className}"
+  },
+  {
+    "key": "Authoring.prepareFirst",
+    "value": "Prepare test data first"
+  },
+  {
+    "key": "Authoring.resetFailed",
+    "value": "Reset failed: {reason}"
+  },
+  {
+    "key": "Authoring.parameterDefsRequired",
+    "value": "parameterDefs are required"
+  },
+  {
+    "key": "Authoring.queryPackageNotTested",
+    "value": "This definition does not test query packages"
+  },
+  {
+    "key": "Authoring.businessTestRequired",
+    "value": "The exact source and parameters must pass a business test"
+  },
+  {
     "key": "Action.functionMissing",
     "value": "This action's function no longer exists, so it cannot run"
   }

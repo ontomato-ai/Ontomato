@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { panelChildObjectIdentitySchema } from "./panel-manifest";
+import { panelChildObjectIdentitySchema, panelMemberPathSchema } from "./panel-manifest";
 import { platformHasChildCollection } from "./platform-object-types";
 
 /*
@@ -32,6 +32,8 @@ const pageSelection = z
     id: z.string().min(1).max(1000),
     label: z.string().min(1).max(500),
     url: z.string().max(2000).optional(),
+    /** The child panel whose public state supplied this selection. */
+    memberPath: z.lazy(() => panelMemberPathSchema.nonempty()).optional(),
   })
   .strict();
 
@@ -152,8 +154,17 @@ function pagePart(page: { label: string; url: string }, prompts: PageLinePrompts
 export function pageContextLine(page: PageContext, prompts: PageLinePrompts, carriesPage: boolean): string {
   return [
     ...(carriesPage ? [pagePart(page, prompts)] : []),
-    ...page.selection.map((item) => prompts.selection(item.label)),
+    ...page.selection.map((item) => prompts.selection(selectionPart(item))),
   ].join(PART_SEPARATOR);
+}
+
+/**
+ * A selection as the line names it. One made in a panel placed inside the page also gives that placement's path, with
+ * the selection that chose it, exactly as the panel's reads and operations take it: the agent can reach the placed
+ * panel only by it, so it is written as given, not described.
+ */
+function selectionPart(item: PageSelection): string {
+  return item.memberPath ? `${item.label} memberPath=${JSON.stringify(item.memberPath)}` : item.label;
 }
 
 /** What the address stands between in the page prompt, once its other two parts are found. */
@@ -244,6 +255,27 @@ export function fileLinePath(text: string, prompt: FileLinePrompt): string | nul
  * What a reopened conversation already carries, read from its messages' last lines: the last page or file they named, or
  * `""` when the last such line said it was closed. A conversation whose messages say none of these carries nothing.
  */
+/**
+ * What the reader wrote in a message sent from beside a page or a file: the message without the line the shell ended it
+ * with — the page and what is selected in it, the file, or that the target was closed. The agent reads that line; the
+ * reader's own message is shown without it. A message whose last paragraph is no such line is the reader's as it is.
+ */
+export function writtenText(text: string, prompts: PageLinePrompts & { file: FileLinePrompt; closed: string }): string {
+  const at = text.lastIndexOf("\n\n");
+  if (at < 0) return text;
+  const line = text.slice(at + 2);
+  const told = line === prompts.closed || fileLinePath(line, prompts.file) !== null || pageLineAddress(line, prompts) !== null
+    || selectionLine(line, prompts.selection);
+  return told ? text.slice(0, at) : text;
+}
+
+/** A line holding only what is selected, for a page the conversation was already told about. */
+function selectionLine(line: string, selection: PageLinePrompts["selection"]): boolean {
+  const template = selection(NAME);
+  const before = template.slice(0, template.indexOf(NAME));
+  return before !== "" && line.startsWith(before);
+}
+
 export function carriedTargetIn(
   texts: readonly string[],
   prompts: PageLinePrompts & { file: FileLinePrompt; closed: string },

@@ -66,8 +66,10 @@ class PanelApplicationsTest {
     }
 
     private static ApplicationCatalog.Builtin builtin(String id, String path, ApplicationPanelUse use) {
+        var platformUse = new ApplicationPanelUse(use.id(), use.pageKey(), "builtin-product-" + use.panelId(),
+            use.path(), use.access(), use.defaultAgent(), use.names(), use.inputs(), use.groupKey());
         var declaration = new ApplicationCatalog.Declaration(Map.of("en", id), Map.of(), "calendar", List.of(),
-            List.of(), List.of(), List.of(use));
+            List.of(), List.of(), List.of(platformUse));
         return new ApplicationCatalog.Builtin(id, "native", "apps", "admin", 1,
             JSONObject.of("renderer", "panels", "path", path), List.of("domain-member"), null, declaration);
     }
@@ -391,7 +393,7 @@ class PanelApplicationsTest {
     @Test void readsPanelUsesThroughTheirOwnMenuAndUseAccessWithoutInventingMappings() {
         var allowed = use("member", null); var denied = use("menu", "menu");
         var application = app("app-panel-a", "panels", List.of(allowed, denied));
-        doReturn(application).when(catalog).require("app-panel-a");
+        doReturn(List.of(application)).when(catalog).all();
         when(access.canEnter(application, user)).thenReturn(true);
         when(access.panelUses(List.of(allowed, denied), user)).thenReturn(List.of(allowed));
         assertEquals(List.of(allowed), catalog.panelUses("app-panel-a", user).getList("panelUses", ApplicationPanelUse.class));

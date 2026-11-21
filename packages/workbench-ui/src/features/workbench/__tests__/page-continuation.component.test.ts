@@ -31,6 +31,8 @@ const opened = vi.hoisted(() => [] as string[]);
 const hosted = vi.hoisted(() => ({ sessions: [] as string[], loads: 0, slowLoads: false }));
 /** What choosing a conversation did: the real navigation closes the page beside the conversation it leaves. */
 const left = vi.hoisted(() => [] as string[]);
+/** Where the column's read of the agents is: read, still out, or failed with its error shown where it failed. */
+const agentsRead = ref<"loading" | "ready" | "error">("ready");
 
 vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => {
   const { defineComponent, h } = await import("vue");
@@ -50,6 +52,9 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => {
       const sessions = ref<{ id: string }[]>([]);
       return {
         agents: { value: agents },
+        agentsState: agentsRead,
+        // The pages here report no skill of their own.
+        pageAgents: { value: null },
         sessions,
         loadAgents: async () => {},
         // The column reads the agent's conversations: the one this tab holds is among them.
@@ -98,6 +103,7 @@ afterEach(() => {
   hosted.sessions = [];
   hosted.loads = 0;
   hosted.slowLoads = false;
+  agentsRead.value = "ready";
   vi.restoreAllMocks();
 });
 
@@ -212,6 +218,26 @@ it("sends once when the same address is entered again while the first message is
   for (let index = 0; index < 8; index += 1) await new Promise((resolve) => setTimeout(resolve, 0));
 
   expect(sent).toEqual(["e2e: only say received"]);
+});
+
+it("ends the page's message unsent when the agents for the page cannot be read, and does not send it once they can", async () => {
+  // The page's agents are still being read when the message arrives: whom it may go to is not known yet.
+  agentsRead.value = "loading";
+  const { router } = await fromPage(assistant!.id);
+  expect(sent).toEqual([]);
+  expect(router.currentRoute.value.query.prompt).toBeUndefined();
+
+  // The read fails (its error is shown where it failed): the message ends there, in no conversation.
+  agentsRead.value = "error";
+  for (let index = 0; index < 8; index += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(started).toEqual([]);
+  expect(opened).toEqual([]);
+  expect(sent).toEqual([]);
+
+  // Read again later, the agents do not bring the old message back.
+  agentsRead.value = "ready";
+  for (let index = 0; index < 8; index += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(sent).toEqual([]);
 });
 
 describe("a message from a page, into the conversation this tab holds", () => {

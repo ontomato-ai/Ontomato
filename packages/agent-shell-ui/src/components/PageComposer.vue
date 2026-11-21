@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, inject, nextTick, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import type { ShellLabels } from "../types";
 import { usePageCounter } from "../page-counter";
+import { entryAgent, servePageComposerKey, type ComposerEntry, type PageComposerExpand } from "../page-composer-entry";
+import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import AgentPicker from "./AgentPicker.vue";
 import ShellComposer from "./ShellComposer.vue";
 
@@ -36,6 +38,12 @@ const counter = usePageCounter()!;
  */
 const agents = ref<readonly AgentHostAgent[]>([]);
 const chosen = ref<string | null>(null);
+/** The page's registered default among its candidates, and which candidate is which preset: what an entry may name. */
+const pageDefault = ref<string | null>(null);
+const presets = shallowRef<Readonly<Record<string, string>> | undefined>(undefined);
+/** Whether the page's candidates are being read; a panel's entry that arrives meanwhile waits for them, the latest one counting. */
+const reading = ref(false);
+let waiting: PanelConversationEntry | null = null;
 let load = 0;
 
 watch(
@@ -45,12 +53,17 @@ watch(
     const seq = ++load;
     agents.value = [];
     chosen.value = null;
+    pageDefault.value = null;
+    presets.value = undefined;
+    waiting = null;
+    reading.value = false;
     if (skill?.mode === "member" && skill.member === null) return;
+    reading.value = true;
     const candidates = skill
       ? counter.pageAgents(skill)
-      : counter.agents().then((list) => ({ agents: list, defaultAgentId: undefined as string | undefined }));
+      : counter.agents().then((list) => ({ agents: list, defaultAgentId: undefined as string | undefined, presetAgentIds: undefined }));
     void candidates
-      .then(({ agents: list, defaultAgentId }) => {
+      .then(({ agents: list, defaultAgentId, presetAgentIds }) => {
         if (seq !== load) return;
         agents.value = list.filter((agent) => agent.enabled);
         const offered = (id: string | null | undefined) => agents.value.some((agent) => agent.id === id);
@@ -58,10 +71,20 @@ watch(
         // The page's registered default (the platform's own agent when it registered none), else the remembered one, else the first.
         const initial = offered(defaultAgentId) ? defaultAgentId : offered(remembered) ? remembered : agents.value[0]?.id;
         chosen.value = initial ?? null;
+        pageDefault.value = defaultAgentId ?? null;
+        presets.value = presetAgentIds;
+        reading.value = false;
+        const asked = waiting;
+        waiting = null;
+        // Applied once the composer is drawn, so it opens with the entry's sentence in it.
+        if (asked && agents.value.length) void nextTick(() => expand(asked));
       })
       // The page's own configuration keeps its own words and the service's reason; anything else is the service's error.
       .catch((reason: unknown) => {
         if (seq !== load) return;
+        // No candidates to open on: an entry that waited ends here, the page showing why.
+        reading.value = false;
+        waiting = null;
         emit("error", candidatesFailureReason(reason, props.labels.pageAgentUnavailable));
       });
   },
@@ -85,11 +108,39 @@ function ask(text: string) {
   if (!agentId.value) return;
   counter.ask(agentId.value, text, props.page);
 }
+
+/**
+ * A panel's conversation entry on this page (design U18): the composer opens, takes the agent the entry names when it is
+ * one of this page's candidates, and fills the entry's sentence for the reader to send. An agent it cannot name leaves
+ * the composer on its own agent and only opens it. Nothing is sent from here.
+ */
+const entry = shallowRef<ComposerEntry | null>(null);
+const expand: PageComposerExpand = (request) => {
+  if (reading.value) {
+    waiting = request;
+    return;
+  }
+  const named = entryAgent(request.target, agents.value, pageDefault.value, presets.value);
+  if (named) chosen.value = named;
+  entry.value = { text: named ? request.prefill ?? null : null, seq: (entry.value?.seq ?? 0) + 1 };
+};
+/** The composer serves the page's entries while it is drawn or about to be: the page offers it an agent, or is being asked. */
+const serve = inject(servePageComposerKey, null);
+let withdraw: (() => void) | null = null;
+watch(
+  () => reading.value || agents.value.length > 0,
+  (drawn) => {
+    withdraw?.();
+    withdraw = drawn && serve ? serve(expand) : null;
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => withdraw?.());
 </script>
 
 <template>
   <div v-if="agents.length" class="page-ask">
-    <ShellComposer floating :busy="false" :labels="labels" @send="ask">
+    <ShellComposer floating :busy="false" :labels="labels" :entry="entry" @send="ask">
       <template #agent>
         <AgentPicker variant="pill" :agents="agents" :agent-id="agentId" :label="labels.agent" @select="chosen = $event" />
       </template>

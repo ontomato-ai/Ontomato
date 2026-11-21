@@ -10,6 +10,7 @@ import { ensureAssistantSchema } from "./20261028-assistant/schema";
 import { ensureAssistantPageDraftCreationsSchema } from "./20261118-assistant-page-draft-creations/schema";
 import { ensureAssistantDefaultPromptSchema } from "./20261105-assistant-default-prompts/schema";
 import { ASSISTANT_CHART_SKILLS_NAME, ASSISTANT_CHART_SKILLS_VERSION, migrateAssistantChartSkills } from "./20261118-assistant-chart-skills/migration";
+import { GOVERNANCE_REPORT_SKILL_NAME, GOVERNANCE_REPORT_SKILL_VERSION, migrateGovernanceReportSkill } from "./20261121-governance-report-skill/migration";
 import {
   ASSISTANT_DEFAULT_PROMPTS_NAME,
   ASSISTANT_DEFAULT_PROMPTS_VERSION,
@@ -160,6 +161,23 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
           return migrated;
         });
         logger.info("Assistant chart defaults migrated", { version: migration.version, ...result });
+      },
+    },
+  },
+  {
+    directory: "20261121-governance-report-skill",
+    ensureSchema: () => Promise.resolve(),
+    migration: {
+      version: GOVERNANCE_REPORT_SKILL_VERSION,
+      name: GOVERNANCE_REPORT_SKILL_NAME,
+      run: async (client, migration) => {
+        if (await isMigrationApplied(client, migration.version)) return;
+        const result = await inMigrationTransaction(client, async () => {
+          const migrated = await migrateGovernanceReportSkill(client);
+          await recordMigration(client, migration.version, migration.name);
+          return migrated;
+        });
+        logger.info("Governance report skill migrated", { version: migration.version, ...result });
       },
     },
   },

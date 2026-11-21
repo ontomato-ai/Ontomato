@@ -1,0 +1,81 @@
+<style>
+  [v-cloak] { display: none; }
+  .agent-settings-aside { display: flex; flex-direction: column; gap: var(--spacing-sm); }
+  .agent-settings-button {
+    min-height: var(--control-height-sm);
+    width: fit-content;
+    padding: 0 var(--spacing-sm);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--el-text-color-secondary);
+    font: inherit;
+    cursor: pointer;
+  }
+  .agent-settings-button:hover { background: var(--ui-fill-tertiary); color: var(--el-text-color-primary); }
+  .agent-settings-button:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+  .agent-settings-button.primary {
+    background: var(--el-color-primary);
+    color: var(--on-primary);
+    font-weight: var(--font-medium);
+  }
+  .agent-settings-button.primary:hover { background: var(--brand-primary-hover); color: var(--on-primary); }
+  .agent-settings-delete .el-button--danger {
+    --el-button-bg-color: transparent;
+    --el-button-border-color: transparent;
+    --el-button-text-color: var(--el-color-danger-text);
+    --el-button-hover-bg-color: var(--el-color-danger-light-9);
+    --el-button-hover-border-color: transparent;
+    --el-button-hover-text-color: var(--el-color-danger-text);
+    --el-button-active-bg-color: var(--el-color-danger-light-8);
+    --el-button-active-border-color: transparent;
+    --el-button-active-text-color: var(--el-color-danger-text);
+  }
+  .agent-settings-empty { color: var(--el-text-color-secondary); margin: 0; }
+  .agent-settings-detail { display: flex; flex-direction: column; gap: var(--page-content-gap); }
+  .agent-settings-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--spacing-lg);
+    flex-wrap: wrap;
+  }
+  .agent-settings-summary { flex: 1 1 auto; min-width: 0; }
+  .agent-settings-actions { display: flex; align-items: center; gap: var(--spacing-sm); flex: 0 0 auto; }
+</style>
+<div id="app" v-cloak>
+  <p v-if="rows.status === 'forbidden'" class="agent-settings-empty" role="alert">{{ t('agents.accessDenied') }}</p>
+  <two-pane-layout v-else-if="rows.status !== 'loading'">
+    <template #aside>
+      <section-group :title="t('agents.title')">
+        <div class="agent-settings-aside">
+          <button type="button" class="agent-settings-button primary" @click="create">{{ t('agents.new') }}</button>
+          <projection slot="list"></projection>
+        </div>
+      </section-group>
+    </template>
+    <p v-if="mode === 'list'" class="agent-settings-empty">{{ t('agents.choose') }}</p>
+    <div v-show="mode !== 'list'" class="agent-settings-detail">
+      <div class="agent-settings-head">
+        <projection v-if="mode === 'edit'" slot="summary" class="agent-settings-summary"></projection>
+        <span v-else class="agent-settings-summary"></span>
+        <div class="agent-settings-actions">
+          <button type="button" class="agent-settings-button" @click="viewType">{{ t('agents.viewType') }}</button>
+          <div v-if="mode === 'edit'" class="agent-settings-delete">
+            <projection slot="remove"></projection>
+          </div>
+        </div>
+      </div>
+      <section-group :title="mode === 'create' ? t('agents.creating') : t('agents.definition')">
+        <projection slot="form"></projection>
+        <template v-if="mode !== 'list'">
+          <projection slot="model"></projection>
+          <projection slot="skills"></projection>
+          <projection slot="tools"></projection>
+          <projection slot="executor"></projection>
+          <projection slot="scope"></projection>
+        </template>
+      </section-group>
+    </div>
+  </two-pane-layout>
+</div>

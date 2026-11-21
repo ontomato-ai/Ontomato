@@ -1,15 +1,20 @@
 import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { applicationCatalogSchema } from "@ontomato/contracts/platform-identity";
 import {
+  builtinProductPanelInputSchema,
+  builtinProductProjectionInputSchema,
   productPanelInputSchema,
   productProjectionInputSchema,
+  type BuiltinProductPanelInput,
+  type BuiltinProductProjectionInput,
   type ProductPanelInput,
   type ProductProjectionInput,
 } from "@ontomato/contracts/product-panels";
 import { config } from "../../config/application";
 import { assertPermission } from "../../identity/installed";
-import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
-import { currentProductTables } from "../../infrastructure/product-current";
+import { getPostgresPool } from "../../infrastructure/postgres";
+import { currentProductRows } from "../../infrastructure/product-current";
+import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import { createLogger } from "../../logging/logger";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { AuthFailedError, BackendResponseError, backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
@@ -155,14 +160,14 @@ export interface RawProductProjection {
   description: string;
   componentId: string;
   metricId?: string;
-  definition: ProductProjectionInput;
+  definition: ProductProjectionInput | BuiltinProductProjectionInput;
 }
 
 export interface RawProductPanel {
   id: string;
   name: string;
   description: string;
-  definition: ProductPanelInput;
+  definition: ProductPanelInput | BuiltinProductPanelInput;
 }
 
 export interface RawApplication {
@@ -640,14 +645,14 @@ export class PlatformOntologyOwnerReaders {
     if (!grantRes.ok) return grantRes;
     return this.memo("node:product-projections", async () => {
       const ids = [...grantRes.data];
-      if (ids.length === 0) return [];
       const { rows } = await getPostgresPool().query<{ id: string; definition: unknown }>(
-        `SELECT id, definition FROM ${t(currentProductTables.projection)} WHERE domain_id = $1 AND id = ANY($2::text[]) ORDER BY id`,
+        `SELECT id, definition FROM ${currentProductRows("projection")} AS definitions
+         WHERE domain_id IS NULL OR (domain_id = $1 AND id = ANY($2::text[])) ORDER BY id`,
         [this.owner.domainId, ids],
       );
       const projections: RawProductProjection[] = [];
       for (const row of rows) {
-        const parsed = productProjectionInputSchema.safeParse(row.definition);
+        const parsed = (isBuiltinProductId(row.id) ? builtinProductProjectionInputSchema : productProjectionInputSchema).safeParse(row.definition);
         if (!parsed.success) {
           logger.warn("skipping invalid product projection definition in platform ontology query", {
             domainId: this.owner.domainId,
@@ -674,14 +679,14 @@ export class PlatformOntologyOwnerReaders {
     if (!grantRes.ok) return grantRes;
     return this.memo("node:product-panels", async () => {
       const ids = [...grantRes.data];
-      if (ids.length === 0) return [];
       const { rows } = await getPostgresPool().query<{ id: string; definition: unknown }>(
-        `SELECT id, definition FROM ${t(currentProductTables.panel)} WHERE domain_id = $1 AND id = ANY($2::text[]) ORDER BY id`,
+        `SELECT id, definition FROM ${currentProductRows("panel")} AS definitions
+         WHERE domain_id IS NULL OR (domain_id = $1 AND id = ANY($2::text[])) ORDER BY id`,
         [this.owner.domainId, ids],
       );
       const panels: RawProductPanel[] = [];
       for (const row of rows) {
-        const parsed = productPanelInputSchema.safeParse(row.definition);
+        const parsed = (isBuiltinProductId(row.id) ? builtinProductPanelInputSchema : productPanelInputSchema).safeParse(row.definition);
         if (!parsed.success) {
           logger.warn("skipping invalid product panel definition in platform ontology query", {
             domainId: this.owner.domainId,

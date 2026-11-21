@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import { createMemoryHistory, createRouter, RouterView, type RouteRecordRaw } from "vue-router";
 import { defineComponent, h } from "vue";
@@ -11,6 +11,7 @@ import { catalogFixture, closedAccess, generatedNavigation, partitionOf } from "
 const labels: PlatformShellLabels = {
   expandRail: "Show application names",
   collapseRail: "Hide application names",
+  back: "Back",
   applications: "Applications",
   brand: "Ontomato",
   account: "Account",
@@ -174,6 +175,40 @@ describe("the platform layout", () => {
     expect(wrapper.find(".platform-app-menu").exists()).toBe(true);
     expect(wrapper.find(".platform-page-body .page-double").exists()).toBe(true);
     expect(mounts).toBe(1);
+  });
+
+  it("heads a page that names itself with its own title, its description and its way back when it has them", async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: "/", component: { render: () => h(RouterView) }, children: [{ path: "/applications/app-a/report", component: { render: () => h("p") } }] }],
+    });
+    await router.push("/applications/app-a/report");
+    const back = vi.fn();
+    const wrapper = mount(PlatformLayout, {
+      props: {
+        apps: [],
+        shownPage: { title: "Governance report", named: true, back },
+        account: null,
+        preferences: { locales: ["en"], locale: "en", setLocale: () => {}, theme: "light", setTheme: () => {} },
+        labels,
+        pageActions: null,
+      },
+      global: { plugins: [router] },
+    });
+    mounted.push(wrapper);
+    await flushPromises();
+    expect(wrapper.find(".platform-page-header .page-title").text()).toBe("Governance report");
+    await wrapper.find(".platform-page-header .page-back").trigger("click");
+    expect(back).toHaveBeenCalledOnce();
+
+    await wrapper.setProps({ shownPage: { title: "Business knowledge", named: true } });
+    expect(wrapper.find(".platform-page-header .page-title").text()).toBe("Business knowledge");
+    expect(wrapper.find(".platform-page-header .page-back").exists()).toBe(false);
+    expect(wrapper.find(".platform-page-header .page-description").exists()).toBe(false);
+
+    // Its entry's description stands under the title, where a native page's does.
+    await wrapper.setProps({ shownPage: { title: "Business knowledge", named: true, description: "Review and maintain knowledge" } });
+    expect(wrapper.find(".platform-page-header .page-description").text()).toBe("Review and maintain knowledge");
   });
 
   it("marks the current application by the address, keeping it marked on a detail address", async () => {

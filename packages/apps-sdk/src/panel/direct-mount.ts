@@ -1,5 +1,6 @@
-import { effectScope, h, ref, watch, type Ref, type VNode } from "vue";
-import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
+import { effectScope, h, ref, watch, type Ref, type VNode, type Slots } from "vue";
+import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
+import type { ProductPanelNestedReadRequest } from "@ontomato/contracts/panel-host";
 import type { DirectPanelMount as HostDirectPanelMount, DirectPanelRun } from "@ontomato/platform-shell";
 import { createDirectPanelInstance, type DirectPanelInstance, type DirectPanelInstanceOptions } from "./direct";
 import { runPanel } from "./lifecycle";
@@ -19,7 +20,7 @@ import PanelMember from "./PanelMember.vue";
  * member's data through the host's one read port.
  */
 
-export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions, "read" | "confirmOperation" | "translate" | "expandPageComposer"> {
+export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions, "read" | "confirmOperation" | "translate" | "expandPageComposer" | "navigate"> {
   manifest: PanelManifest;
   run: DirectPanelRun;
   /** The platform's request path, as the reader: drafts, projection records and the coordinator's operations. */
@@ -30,6 +31,22 @@ export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions
   messages: PanelMessages;
   locale: Readonly<Ref<string>>;
   defaultLocale: string;
+  /**
+   * Where this instance sits in the panel the reader opened: the path of the members that placed it, the last one with
+   * the selection that chose it. The opened panel has none. Every member path, operation ID and intent this instance
+   * sends starts with it.
+   */
+  memberPath?: PanelMemberPath;
+  /**
+   * Runs the panel one of this instance's members places from the panel's state: `memberPath` is that member's segment,
+   * relative to this instance, with the selection the state made; `run` is how the placed panel reports to this one.
+   * The host reads the placed panel's current definition at this instance's path plus `memberPath`, mounts it in an
+   * element of its own with its own scope, and disposes of both with the mount. A member that places the chosen object's
+   * detail panel sends the object alone (`selection: { stateValue }`): the platform answers which panel it is, and the
+   * placed instance's own `memberPath` ends with that segment completed by `target: { panelId }` of the answer, which
+   * every read and operation of it needs.
+   */
+  nested(memberPath: ProductPanelNestedReadRequest["memberPath"], run: DirectPanelRun): Promise<{ element: HTMLElement; mount: DirectPanelMount }>;
 }
 
 /**
@@ -38,8 +55,8 @@ export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions
  */
 export interface DirectPanelMount extends HostDirectPanelMount {
   readonly instance: DirectPanelInstance;
-  /** The member the panel's template places under this key. */
-  member(ref: string): VNode;
+  /** The member the panel's template places under this key, with what the template places in its component's slots. */
+  member(ref: string, slots?: Slots): VNode;
 }
 
 export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelMount {
@@ -52,13 +69,16 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       read: options.read,
       confirmOperation: options.confirmOperation,
       expandPageComposer: options.expandPageComposer,
+      navigate: options.navigate,
+      nested: options.nested,
+      ...(options.memberPath ? { memberPath: options.memberPath } : {}),
       translate: options.translate,
       // A draft the panel cannot take fails it where it would have been, as in a frame.
       reportDraftError: run.failed,
       text: createPanelText(options.messages, options.locale, options.defaultLocale),
       operations: panelHumanOperations(options.use, requests),
       recordDraftCreated: (link, id) => recordDraftCreated(requests, link, id),
-      readProjection: async (id) => directProjectionSchema.parse(await readProjectionRecord(requests, id)),
+      readProjection: async (id) => directProjectionSchema.parse(await readProjectionRecord(requests, id, true)),
       pageKey: run.pageKey,
       url: () => address.value,
       label: run.label,
@@ -84,11 +104,11 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
     // to it, and the panel's own code reads its data, whether or not a layout or a template places it.
     // A member that cannot be read is that member's failure, not the panel's: whoever draws it (`<Projection>`) or reads
     // it (`usePanelData`) shows the reason in its place, from this same hold; the rest of the panel goes on.
-    for (const member of Object.keys(options.manifest.members)) void instance.memberContext(member).then(undefined, () => undefined);
+    for (const member of Object.keys(options.manifest.members)) void instance.placing(member).then(undefined, () => undefined);
     void panelRun.start().catch(run.failed);
     return {
       instance,
-      member: (ref) => h(PanelMember, { instance, member: ref, key: `${ref}:${instance.projectionVersion(ref)}` }),
+      member: (ref, slots) => h(PanelMember, { instance, member: ref, key: `${ref}:${instance.projectionVersion(ref)}` }, slots),
       address: (url) => panelRun.address(url),
       refresh(target, affected) {
         // Unseen, what an operation changed is held as everything; seen, only the data it concerns are read again.

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { nextTick, ref } from "vue";
 import type { AgentHostClient } from "../host";
 import type { AgentHostSession } from "@ontomato/contracts/agent-host";
+import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import { useAgentNav } from "../useAgentNav";
 
 const remembered = "11111111-1111-4111-8111-111111111111";
@@ -131,5 +132,29 @@ describe("promoting a conversation", () => {
       [remembered, "first words", null],
       [served, "Earlier", null],
     ]);
+  });
+});
+
+describe("reading the agents for a page", () => {
+  const dashboard: PageSkillContext = { mode: "public", locator: { pageKey: "dashboard", access: "domain-member" } };
+
+  it("is failed when the page's candidates cannot be read, and ready once a read returns them", async () => {
+    const listPageAgents = vi.fn()
+      .mockRejectedValueOnce(new Error("Forbidden"))
+      .mockResolvedValueOnce({ agents: [{ id: served, name: served, description: "", icon: null, enabled: true }], defaultAgentId: served });
+    const client = { ...port([]), listPageAgents } as unknown as AgentHostClient;
+    const state = useAgentNav({ client: () => client, agentId: () => null, setAgentId: () => {}, sessionId: () => null, setSessionId: () => {} });
+
+    const opening = state.setPage(dashboard);
+    expect(state.agentsState.value).toBe("loading");
+    // The failure goes to whoever asked, and the list is not taken for the page's.
+    await expect(opening).rejects.toThrow("Forbidden");
+    expect(state.agentsState.value).toBe("error");
+    expect(state.pageAgents.value).toBeNull();
+    expect(state.agents.value).toEqual([]);
+
+    await state.loadAgents();
+    expect(state.agentsState.value).toBe("ready");
+    expect(state.agents.value.map((agent) => agent.id)).toEqual([served]);
   });
 });

@@ -99,7 +99,7 @@ describe("a panel's projection", () => {
       takesDrafts: false,
     });
     await first.invoke("run.runNow");
-    expect(prepare).toHaveBeenCalledWith("run.runNow", { call: { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-1" }, input: {} } });
+    expect(prepare).toHaveBeenCalledWith("run.runNow", { call: { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-1" }, input: {} } }, undefined);
   });
 
   it("has no target at all when nothing is selected, so a handler cannot act on the wrong object", () => {
@@ -243,6 +243,8 @@ describe("a panel's module", () => {
       resources: async () => {},
       expandPageComposer: async () => {},
       // A member's operations are read through the platform; its data, here, through this release's modules.
+      navigate: async () => { throw new Error("This test opens no address"); },
+      notify: () => { throw new Error("This test tells the reader nothing"); },
       readPanelData: async (request) => {
         if (request.operations) return { status: "ready", value: {} };
         throw new Error("This test reads no member data through the platform");

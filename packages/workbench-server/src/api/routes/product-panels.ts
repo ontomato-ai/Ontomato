@@ -4,9 +4,13 @@ import {
   panelOperationDescriptorResponseSchema, panelOperationRefSchema, panelUseRefSchema,
   readPanelOperationRequestSchema, readPanelOperationResponseSchema, updatePanelOperationSettingsRequestSchema,
 } from "@ontomato/contracts/panel-agent";
+import { panelDownloadFileSchema } from "@ontomato/contracts/panel-download";
 import { agentSessionRefSchema } from "@ontomato/contracts/agent-channel";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
-import { productPanelReadRequestSchema } from "@ontomato/contracts/panel-host";
+import {
+  PANEL_MEMBER_RENDER_HEADER, PANEL_NESTED_READ_PATH, productPanelNestedReadRequestSchema, productPanelNestedReadResponseSchema,
+  productPanelReadRequestSchema,
+} from "@ontomato/contracts/panel-host";
 import {
   dispatchHumanPanelOperation, inspectPanelOperationImpact, ownPanelSettings, prepareHumanPanelOperation,
   projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor,
@@ -16,6 +20,7 @@ import { Router } from "express";
 import { z } from "zod";
 import {
   applicationPanelReferencesRequestSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema, METRIC_CHART_COMPONENT,
+  PROJECTION_REUSE_PANEL_HEADER,
   productCurrentIdParamsSchema, productPanelReadQuerySchema,
   type ProductPanelReadQuery,
   registerChartProjectionRequestSchema, registerChartProjectionResponseSchema,
@@ -23,9 +28,11 @@ import {
   registerProductProjectionRequestSchema, updateChartProjectionSourceRequestSchema,
 } from "@ontomato/contracts/product-panels";
 import { CHART_PROJECTION_SOURCES_PATH, chartProjectionSourceRead } from "@ontomato/contracts/panel-client-requests";
+import { domainProductIdParamsSchema, domainProductIdSchema } from "@ontomato/contracts/product-record-id";
 import { mountProductCatalog } from "./product-catalog";
 import { mountPanelPersonalState } from "./panel-personal-state";
 import { context, wrap } from "../utils/agent-host";
+import { buildAttachmentContentDisposition } from "../utils/http";
 import { platformService } from "../middleware/platform-service";
 import {
   readCurrentPanelRecord, readCurrentProjectionRecord, saveCurrentPanel, saveCurrentProjection, validateApplicationPanelReferences,
@@ -33,6 +40,8 @@ import {
 import { HttpError } from "../../utils/errors";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { readProductPanelData } from "../../services/product-panels/data-reads";
+import { validateProjectionComponent } from "../../services/product-panels/component-catalogue";
+import { readNestedPanel } from "../../services/product-panels/member-path";
 import { productDefinitionStreamRequestSchema, type ProductDefinitionStreamFrame } from "@ontomato/contracts/product-subscriptions";
 import { authorizeDefinitionStream, requirePanelDefinitions } from "../../services/product-panels/definition-stream";
 import type { createChartProjectionService } from "../../services/product-panels/chart-sources";
@@ -77,6 +86,12 @@ function parseRegistration<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, body:
 export const productPanelsRouter = Router();
 mountProductCatalog(productPanelsRouter, "panel");
 mountPanelPersonalState(productPanelsRouter);
+productPanelsRouter.post(PANEL_NESTED_READ_PATH.slice("/product-panels".length), wrap(async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const { owner, credentials } = context(req);
+  const request = productPanelNestedReadRequestSchema.parse(req.body);
+  res.json(productPanelNestedReadResponseSchema.parse(await readNestedPanel(owner, credentials, request)));
+}));
 productPanelsRouter.post("/read", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
   const request = productPanelReadRequestSchema.parse(req.body);
@@ -86,6 +101,7 @@ productPanelsRouter.post("/read", wrap(async (req, res) => {
   res.json(await readProductPanelData(owner, viewer, request, (req as AuthenticatedRequest).userName));
 }));
 productPanelsRouter.get("/:id/snapshot", wrap(async (req, res) => {
+  res.set("Cache-Control", "no-store");
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
   const query = productPanelReadQuerySchema.parse(req.query);
   const readContext = "applicationId" in query ? (panel: { id: string }) => pageSkillContextFor(query, c, panel) : undefined;
@@ -105,6 +121,7 @@ productPanelsRouter.post("/definition-stream", wrap(async (req, res) => {
   if(!res.destroyed)send({kind:'snapshot',definitions});
 }));
 productPanelsRouter.get("/:id", wrap(async (req, res) => {
+  res.set("Cache-Control", "no-store");
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
   const query = productPanelReadQuerySchema.parse(req.query);
   const panel = await readCurrentPanelRecord(c.owner, c.credentials, id, !("applicationId" in query));
@@ -112,7 +129,7 @@ productPanelsRouter.get("/:id", wrap(async (req, res) => {
   res.json({ panel, ...(pageSkillContext && { pageSkillContext }) });
 }));
 productPanelsRouter.put("/:id", wrap(async (req, res) => {
-  const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
+  const c = context(req), { id } = domainProductIdParamsSchema.parse(req.params);
   const { revision, ...input } = parseRegistration(registerProductPanelRequestSchema, req.body, `Panel '${id}'`);
   const panel = await saveCurrentPanel(c.owner, c.credentials, id, input, revision);
   res.json({ panel });
@@ -152,14 +169,19 @@ export function createChartProjectionsRouter(service: ReturnType<typeof createCh
 }
 
 productProjectionsRouter.get("/:id", wrap(async (req, res) => {
+  res.set("Cache-Control", "no-store");
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
-  res.json({ projection: await readCurrentProjectionRecord(c.owner, c.credentials, id, true) });
+  const rendering = req.header(PANEL_MEMBER_RENDER_HEADER) === "1";
+  const projection = await readCurrentProjectionRecord(c.owner, c.credentials, id, !rendering);
+  if (rendering) await validateProjectionComponent(id, projection);
+  res.json({ projection });
 }));
 productProjectionsRouter.put("/:id", wrap(async (req, res) => {
-  const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
+  const c = context(req), { id } = domainProductIdParamsSchema.parse(req.params);
   const branch = req.body?.componentId === METRIC_CHART_COMPONENT ? 1 : 0;
   const request = parseRegistration(registerProductProjectionRequestSchema, req.body, `Projection '${id}'`, branch);
-  const projection = await saveCurrentProjection(c.owner, c.credentials, id, request);
+  const solePanelId = domainProductIdSchema.optional().parse(req.header(PROJECTION_REUSE_PANEL_HEADER));
+  const projection = await saveCurrentProjection(c.owner, c.credentials, id, request, solePanelId);
   res.json({ projection });
 }));
 export const productPanelsInternalRouter = Router();
@@ -172,7 +194,13 @@ productPanelsInternalRouter.post("/validate-references", wrap(async (req, res) =
 export const panelOperationsRouter = Router();
 panelOperationsRouter.get("/panel-operations/descriptor", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
-  const query = panelOperationRefSchema.parse(req.query);
+  const { memberPath, ...scope } = req.query;
+  let path: unknown = memberPath;
+  if (typeof memberPath === "string") {
+    try { path = JSON.parse(memberPath); }
+    catch { throw new HttpError(400, "Invalid member path JSON", "INVALID_REQUEST"); }
+  }
+  const query = panelOperationRefSchema.parse({ ...scope, memberPath: path });
   res.json(panelOperationDescriptorResponseSchema.parse(await readPanelOperationDescriptor(owner, credentials, query)));
 }));
 panelOperationsRouter.post("/panel-operations/read", wrap(async (req, res) => {
@@ -181,7 +209,23 @@ panelOperationsRouter.post("/panel-operations/read", wrap(async (req, res) => {
   const preview = req.header(BUILD_TEST_HEADER);
   const reader = preview === undefined
     ? credentials : { ...credentials, headers: { ...credentials.headers, [BUILD_TEST_HEADER]: preview } };
-  res.json(readPanelOperationResponseSchema.parse(await readPanelOperation(owner, reader, input)));
+  const result = await readPanelOperation(owner, reader, input);
+  if (result.kind !== "file") {
+    res.json(readPanelOperationResponseSchema.parse(result));
+    return;
+  }
+  const { kind: _kind, ...data } = result;
+  const file = panelDownloadFileSchema.safeParse(data);
+  if (!file.success)
+    throw new HttpError(502, `The operation returned an invalid file: ${file.error.issues[0]!.message}`, "PANEL_OPERATION_FILE_INVALID");
+  const { bytes, mime, suggestedName } = file.data;
+  const body = bytes instanceof Uint8Array ? Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    : Buffer.from(bytes instanceof Blob ? await bytes.arrayBuffer() : bytes);
+  res.set({
+    "Content-Type": mime,
+    "Content-Disposition": buildAttachmentContentDisposition(suggestedName),
+    "Cache-Control": "no-store",
+  }).send(body);
 }));
 
 panelOperationsRouter.post("/panel-operations/inspect-impact", wrap(async (req, res) => {

@@ -20,7 +20,7 @@ import {
 } from "@ontomato/foundation-ui/graph/g6";
 import { usePanelContext } from "../panel/context";
 import type { MemberDataState } from "../panel/direct";
-import { useMember, useMemberRead, type PanelMemberContext } from "../panel/member";
+import { useMember, useMemberParam, useMemberRead, type PanelMemberContext } from "../panel/member";
 import type {
   PlatformGraphEdge,
   PlatformGraphNeighborsResult,
@@ -106,6 +106,20 @@ const { t, te } = useI18n();
 const panel = usePanelContext();
 const member = useMember();
 
+/**
+ * The relation kinds the graph shows: its `visibleRelationKinds`, a list of relation kinds (`platform:OntologyRelationKind`,
+ * keyed by the kind's ID) bound to the panel's state, read as well as written — so a page's own kind filter and the graph
+ * follow one choice. Holding nothing, every kind is shown.
+ */
+const visibleKindsParam = useMemberParam("visibleRelationKinds");
+const shownKinds = computed<ReadonlySet<string> | null>(() => {
+  const held = visibleKindsParam.value.value;
+  if (held === null) return null;
+  if (!Array.isArray(held)) throw new Error("visibleRelationKinds holds a list of relation kinds");
+  return new Set(held.map((kind) => (kind as { primaryKey: string }).primaryKey));
+});
+const kindShown = (relationKind: string) => shownKinds.value === null || shownKinds.value.has(relationKind);
+
 function nameNodes(nodes: readonly PlatformGraphNode[]) {
   const byType = new Map<string, { primaryKey: string; label: string }[]>();
   for (const node of nodes) {
@@ -166,6 +180,11 @@ const relationLabelKeyById = new Map(platformRelationKinds.map((kind) => [kind.i
 
 const rootEl = ref<HTMLElement | null>(null);
 const canvas = ref<InstanceType<typeof G6GraphCanvas> | null>(null);
+// The canvas is there only while something is drawn: one that appears after an empty or loading view (a layer shown
+// again, a start whose read finished first) shows what it draws in the middle, not at the graph's origin in the corner.
+watch(canvas, (shown, before) => {
+  if (shown && !before) void shown.fit({ maxZoom: 1.15, padding: 36 });
+});
 const paletteSize = ref(0);
 
 const loading = ref(false);
@@ -371,7 +390,7 @@ const typeCanvasEdges = computed<GraphCanvasEdge[]>(() => {
     : null;
   const edges: GraphCanvasEdge[] = [];
   for (const relation of schema.relationKinds) {
-    if (!visibleIds.has(relation.from)) continue;
+    if (!visibleIds.has(relation.from) || !kindShown(relation.id)) continue;
     const targets = typeof relation.to === "string" ? [relation.to] : relation.to;
     const label = relationDisplayName(relation.id, relation.label, relation.labelKey);
     for (const target of targets) {
@@ -390,17 +409,33 @@ const typeCanvasEdges = computed<GraphCanvasEdge[]>(() => {
 });
 
 // ---- Instance-mode computed graph ----
-const visibleInstanceNodes = computed<readonly PlatformGraphNode[]>(() =>
+const layerInstanceNodes = computed<readonly PlatformGraphNode[]>(() =>
   [...instanceNodes.value.values()].filter((node) => isLayerVisible(node.layer)),
 );
+const layerInstanceNodeIds = computed(() => new Set(layerInstanceNodes.value.map((node) => encodeGraphNodeId(node))));
 
-const visibleInstanceNodeIds = computed(() => new Set(visibleInstanceNodes.value.map((node) => encodeGraphNodeId(node))));
-
+/** The edges drawn: between nodes of the layers shown, of the relation kinds shown. */
 const visibleInstanceEdges = computed<readonly PlatformGraphEdge[]>(() =>
   [...instanceEdges.value.values()].filter(
-    (edge) => visibleInstanceNodeIds.value.has(encodeGraphNodeId(edge.from)) && visibleInstanceNodeIds.value.has(encodeGraphNodeId(edge.to)),
+    (edge) => kindShown(edge.relationKind)
+      && layerInstanceNodeIds.value.has(encodeGraphNodeId(edge.from)) && layerInstanceNodeIds.value.has(encodeGraphNodeId(edge.to)),
   ),
 );
+
+/**
+ * The nodes drawn: those of the layers shown; with only some relation kinds shown, a neighbor stays only while an edge
+ * of a kind shown reaches it — the start and every node the reader expanded stay regardless.
+ */
+const visibleInstanceNodes = computed<readonly PlatformGraphNode[]>(() => {
+  if (shownKinds.value === null) return layerInstanceNodes.value;
+  const reached = new Set(visibleInstanceEdges.value.flatMap((edge) => [encodeGraphNodeId(edge.from), encodeGraphNodeId(edge.to)]));
+  return layerInstanceNodes.value.filter((node) => {
+    const id = encodeGraphNodeId(node);
+    return reached.has(id) || expandedNodes.value.has(id) || id === rootNodeId.value;
+  });
+});
+
+const visibleInstanceNodeIds = computed(() => new Set(visibleInstanceNodes.value.map((node) => encodeGraphNodeId(node))));
 
 const instanceCategories = computed<readonly string[]>(() => {
   const seen = new Set<string>();
@@ -920,7 +955,7 @@ onMounted(() => {
 .sdk-ontology-graph {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--spacing-sm);
   min-height: 0;
   height: 100%;
 }
@@ -930,62 +965,62 @@ onMounted(() => {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px 12px;
+  gap: var(--spacing-sm) var(--spacing-md);
 }
 
 .sdk-ontology-graph-layers {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--spacing-xs);
 }
 
 .sdk-ontology-graph-layer-pill {
-  padding: 3px 10px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 999px;
+  padding: calc(var(--spacing-xs) / 2) var(--spacing-sm);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-full);
   background: var(--el-bg-color);
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--text-xs);
   line-height: 1.5;
   cursor: pointer;
 }
 
 .sdk-ontology-graph-layer-pill.is-active {
-  border-color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
+  border-color: var(--ui-border);
+  background: var(--ui-fill-secondary);
+  color: var(--el-text-color-primary);
 }
 
 .sdk-ontology-graph-meta {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  font-size: 12px;
+  gap: var(--spacing-sm);
+  font-size: var(--text-xs);
   color: var(--el-text-color-secondary);
 }
 
 .sdk-ontology-graph-matches {
-  color: var(--el-color-primary);
-  font-weight: 500;
+  color: var(--brand-link);
+  font-weight: var(--font-medium);
 }
 
 .sdk-ontology-graph-legend {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 14px;
-  font-size: 12px;
+  gap: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--text-xs);
   color: var(--el-text-color-secondary);
 }
 
 .sdk-ontology-graph-legend-item {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--spacing-xs);
 }
 
 .sdk-ontology-graph-legend-item b {
-  font-weight: 600;
+  font-weight: var(--font-semibold);
   color: var(--el-text-color-regular);
 }
 
@@ -1014,15 +1049,15 @@ onMounted(() => {
 }
 
 .sdk-ontology-graph-notice {
-  padding: 6px 10px;
-  border-radius: 6px;
-  font-size: 12px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
   line-height: 1.5;
-  border: 1px solid var(--el-border-color-lighter);
+  border: 1px solid var(--ui-divider);
 }
 
 .sdk-ontology-graph-notice.is-info {
-  background: var(--el-fill-color-light);
+  background: var(--ui-fill-tertiary);
   color: var(--el-text-color-regular);
 }
 
@@ -1044,7 +1079,7 @@ onMounted(() => {
 }
 
 .sdk-ontology-graph-skeleton {
-  padding: 16px;
+  padding: var(--spacing-lg);
 }
 
 .sdk-ontology-graph-frame {
@@ -1052,8 +1087,8 @@ onMounted(() => {
   flex: 1;
   min-height: 420px;
   overflow: hidden;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
+  border: 1px solid var(--ui-divider);
+  border-radius: var(--radius-md);
   background-color: var(--el-fill-color-blank);
 }
 
@@ -1066,39 +1101,49 @@ onMounted(() => {
 
 .sdk-ontology-graph-tools {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: var(--spacing-sm);
+  right: var(--spacing-sm);
   display: flex;
-  gap: 4px;
+  gap: var(--spacing-xs);
+  padding: calc(var(--spacing-xs) / 2);
+  border: 1px solid var(--ui-divider);
+  border-radius: var(--radius-md);
+  background: var(--el-bg-color-overlay);
 }
 
 .sdk-ontology-graph-tool {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 6px;
-  background: var(--el-bg-color);
-  color: var(--el-text-color-regular);
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--el-text-color-secondary);
   cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
 }
 
+/* Icon tools are borderless: a quiet fill on hover and press, the group's surface behind them (DESIGN.md). */
 .sdk-ontology-graph-tool:hover {
-  border-color: var(--el-color-primary);
-  color: var(--el-color-primary);
+  background: var(--ui-fill-tertiary);
+  color: var(--el-text-color-primary);
+}
+
+.sdk-ontology-graph-tool:active {
+  background: var(--ui-fill-quaternary);
 }
 
 .sdk-ontology-graph-busy {
   position: absolute;
-  bottom: 10px;
-  right: 10px;
-  padding: 2px 8px;
-  border-radius: 4px;
+  bottom: var(--spacing-sm);
+  right: var(--spacing-sm);
+  padding: calc(var(--spacing-xs) / 2) var(--spacing-sm);
+  border-radius: var(--radius-xs);
   background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-  font-size: 12px;
+  border: 1px solid var(--ui-divider);
+  font-size: var(--text-xs);
   color: var(--el-text-color-secondary);
 }
 </style>

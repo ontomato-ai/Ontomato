@@ -4,11 +4,13 @@ import {
 } from "@ontomato/contracts/action-panel";
 import { ACTION, DELETE_ACTION, SET_ACTION_STATUS } from "@ontomato/contracts/panel-client-requests";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
+import type { UnavailableObjectAction } from "@ontomato/contracts/platform-type-table";
 import type { PanelOperationDeclaration } from "@ontomato/contracts/panel-operations";
 import {
   panelFormDescriptionSchema, type PanelFormDescription, type PanelFormValues, type PanelRecord,
 } from "@ontomato/contracts/panel-projection";
 import { config } from "../../config/application";
+import { createLogger } from "../../logging/logger";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
@@ -40,9 +42,17 @@ const actionSchema = z.object({
 }).passthrough();
 type ActionAsset = z.infer<typeof actionSchema>;
 
-/** One object Action for an author's type table: the object type it runs on and its static declaration. */
+const logger = createLogger("action-panel-reads");
+const listedActionSchema = storedObjectActionSchema.pick({ id: true }).extend({
+  target: z.unknown(),
+  function: z.unknown(),
+});
+const listedTargetSchema = storedObjectActionSchema.shape.target.unwrap().pick({ className: true });
+
+/** One object Action for an author's type table: the object type it runs on, its stored name and its static declaration. */
 export interface ObjectActionEntry {
   className: string;
+  name: string;
   declaration: PanelOperationDeclaration;
 }
 
@@ -77,19 +87,75 @@ function actionRecord(action: ActionAsset, fieldLabels: Record<string, string>):
   };
 }
 
-export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string) {
+/** One read from the action owner as the viewer: its envelope's data checked against the schema, or its refusal. */
+function actionOwner(viewer: AssistantCredentials) {
   const options = { headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers) };
   const base = config.dataQuery.baseUrl.replace(/\/$/, "");
+  return async function owner<T>(name: string, path: string, body: unknown, schema: z.ZodType<T>): Promise<T> {
+    const envelope = ownerEnvelopeSchema.parse(JSON.parse((await backendPost(name, base + path, body, options)).text));
+    if (!envelope.success) throw readRefusal(envelope, "ACTION_READ_FAILED", "The owner could not read the actions");
+    return schema.parse(envelope.data);
+  };
+}
+
+/** The object Actions an author's type table declares, and the published ones it cannot, each with the reason. */
+export interface ObjectActionCatalog {
+  actions: ObjectActionEntry[];
+  unavailableActions: UnavailableObjectAction[];
+}
+
+/**
+ * The published Actions of the viewer's domain that run on an object, each with the object type its stored target
+ * names, its stored name and its static declaration; with an object type, only that type's. One owner read serves a
+ * whole type table. It needs only the viewer's verified credentials: the owner reads the domain and judges the grants.
+ */
+export async function readObjectActions(viewer: AssistantCredentials, objectType?: string): Promise<ObjectActionCatalog> {
+  const owner = actionOwner(viewer);
+  const published = await owner("action-object-catalog", "/action/queryList", { status: "PUBLISHED" }, z.array(z.unknown()));
+  const actions: ObjectActionEntry[] = [];
+  const unavailableActions: UnavailableObjectAction[] = [];
+  for (const raw of published) {
+    const listed = listedActionSchema.safeParse(raw);
+    if (!listed.success) {
+      logger.warn("The action owner returned a published record without a usable ID");
+      continue;
+    }
+    const { id, target, function: storedFunction } = listed.data;
+    const classified = listedTargetSchema.safeParse(target);
+    const actualType = classified.success ? classified.data.className : undefined;
+    if (objectType !== undefined && objectType !== actualType) continue;
+    const identity = { id, ...(actualType === undefined ? {} : { objectType: actualType }) };
+
+    if (storedFunction == null) {
+      unavailableActions.push({ ...identity, reason: "The stored function definition is missing." });
+      continue;
+    }
+    // A healthy action with no target is outside the object-action catalogue.
+    if (target === null) continue;
+    const stored = storedObjectActionSchema.safeParse(raw);
+    if (!stored.success) {
+      const issue = stored.error.issues[0]!;
+      const field = issue.path.length ? `field '${issue.path.join(".")}'` : "definition";
+      unavailableActions.push({ ...identity, reason: `Invalid stored action ${field}: ${issue.message}` });
+      continue;
+    }
+    const action = stored.data;
+    if (action.target !== null)
+      actions.push({
+        className: action.target.className, name: action.name,
+        declaration: objectActionDeclaration({ ...action, target: action.target }),
+      });
+  }
+  return { actions, unavailableActions };
+}
+
+export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string) {
+  const owner = actionOwner(viewer);
   const translate = (key: string) => tForLocale(viewer.locale, key);
   const fieldLabels = () => Object.fromEntries(
     ["status", "origin", "createdBy", "reviewedBy", "function", "updatedAt"]
       .map(name => [name, translate(`panels.action.fields.${name}`)]),
   );
-  async function owner<T>(name: string, path: string, body: unknown, schema: z.ZodType<T>): Promise<T> {
-    const envelope = ownerEnvelopeSchema.parse(JSON.parse((await backendPost(name, base + path, body, options)).text));
-    if (!envelope.success) throw readRefusal(envelope, "ACTION_READ_FAILED", "The owner could not read the actions");
-    return schema.parse(envelope.data);
-  }
   function definitionForm(name: string, target: PanelFormTarget, { values, changedField }: ActionFormParams) {
     return owner(name, "/action/definitionForm", {
       target, ...(values !== undefined && { values }), changedField: changedField ?? null,
@@ -127,24 +193,13 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
     async createForm(params: ActionFormParams): Promise<PanelFormDescription> {
       return definitionForm("action-create-form", { kind: "draft" }, params);
     },
-    /**
-     * The published Actions of the viewer's domain that run on an object, each with the object type its stored target
-     * names, as static declarations; with an object type, only that type's. One owner read serves a whole type table.
-     */
-    async objectActions(objectType?: string): Promise<ObjectActionEntry[]> {
-      const published = await owner(
-        "action-object-catalog", "/action/queryList", { status: "PUBLISHED" }, z.array(storedObjectActionSchema),
-      );
-      return published.flatMap(({ target, ...action }) =>
-        target !== null && (objectType === undefined || target.className === objectType)
-          ? [{ className: target.className, declaration: objectActionDeclaration({ ...action, target }) }]
-          : []);
-    },
+    /** The published object Actions for an author's type table: `readObjectActions` as this viewer. */
+    objectActions: (objectType?: string) => readObjectActions(viewer, objectType),
     [`${SET_ACTION_STATUS}.describe`]() {
-      return describeServerOperation(panelServerOperation(SET_ACTION_STATUS), translate("panels.action.operations.setStatus"));
+      return describeServerOperation(panelServerOperation(SET_ACTION_STATUS), viewer.locale);
     },
     [`${DELETE_ACTION}.describe`]() {
-      return describeServerOperation(panelServerOperation(DELETE_ACTION), translate("panels.action.operations.delete"));
+      return describeServerOperation(panelServerOperation(DELETE_ACTION), viewer.locale);
     },
   };
 }

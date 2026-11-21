@@ -1,10 +1,9 @@
 import type {PlatformAppDeclaration} from './apps';
-import { availablePages, type PlatformAccess, type PlatformNavigation } from '@ontomato/platform-admin';
 import { platformRoutes } from '@ontomato/platform-shell/routes';
 
-export function agentBuilderShortcut(apps: readonly PlatformAppDeclaration[], navigation: PlatformNavigation, access: PlatformAccess, label: string): PlatformAppDeclaration | undefined {
+export function agentBuilderShortcut(apps: readonly PlatformAppDeclaration[], opensAgentSettings: boolean, label: string): PlatformAppDeclaration | undefined {
   const path = platformRoutes.agents.path;
-  if (!apps.some(app => app.id === 'agents') || !availablePages(navigation, access).some(page => page.path === path)) return;
+  if (!apps.some(app => app.id === 'agents') || !opensAgentSettings) return;
   return { id: 'agent-builder', label, icon: 'agent-builder', rail: 'builders', category: 'build', prefix: path, home: path };
 }
 

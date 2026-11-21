@@ -76,7 +76,7 @@ function draftPath(value) {
 async function readDraft(argument) {
   const file = draftPath(required(argument, "The draft file, e.g. @outputs/drafts/agent.page-draft.json").replace(/^@/, ""));
   const value = JSON.parse(await readFile(file, "utf8"));
-  if (value.pageKey !== "agent-settings" || !["agent.create", "agent.update"].includes(value.operation)
+  if (value.pageKey !== "agents-agent-settings" || !["agent.create", "agent.update"].includes(value.operation)
     || !value.target || typeof value.target !== "object" || (value.target.id !== undefined && typeof value.target.id !== "string")
     || !value.form || typeof value.form !== "object" || Array.isArray(value.form))
     throw new Error(`${file} is not an agent-settings page draft`);
@@ -92,7 +92,7 @@ async function draftCommand(args) {
     target = { id: required(id, "The agent id for draft update") };
     [formArgument, file] = [next, nextFile];
   } else throw new Error("draft requires create or update");
-  const value = { pageKey: "agent-settings", operation: `agent.${kind}`, target, form: await form(formArgument) };
+  const value = { pageKey: "agents-agent-settings", operation: `agent.${kind}`, target, form: await form(formArgument) };
   file = draftPath(file ?? defaultDraft);
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, `${JSON.stringify(value, null, 2)}\n`);

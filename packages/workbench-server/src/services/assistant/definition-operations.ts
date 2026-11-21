@@ -29,10 +29,11 @@ const affectedDefinition = (id: string) => ({
 
 function draftInput(input: Record<string, unknown>, target: PanelOperationTarget) {
   const { values, submittedFields } = inputSchema.parse(input);
-  if (target.kind === "draft" || submittedFields?.includes("/skills")) return parseAgentDefinitionForm(values);
+  if (target.kind === "draft") return parseAgentDefinitionForm(values);
   if (submittedFields === undefined) return parseAgentDefinitionUpdateForm(values);
+  if (submittedFields.some(field => field === "/skills" || field.startsWith("/skills/"))) return values;
   const { skills: _skills, ...otherValues } = values;
-  return parseAgentDefinitionUpdateForm(otherValues);
+  return otherValues;
 }
 
 async function ownerError(response: Response) {
@@ -72,6 +73,7 @@ const deleteImpact: PanelImpactInspector = {
 export const agentDefinitionOperations = [
   {
     handlerRef: `${AGENT_DEFINITION}.save`,
+    labelKey: "panels.agentDefinition.save",
     kind: "form.save",
     binding: { kind: "PlatformObjectType", id: AGENT_DEFINITION },
     effect: "write",
@@ -82,7 +84,7 @@ export const agentDefinitionOperations = [
     resultSchema: assistantAgentDefinitionSchema,
     draftOperation: (target: PanelOperationTarget) => agentDefinitionSave(target).draftOperation,
     draftInput,
-    formInstructions: "Read the definition form for the intended target. Use its fields and option sources, save.bodySchema for the values, and save.draftOperation for the draft. When editing, omit skills unless the selection is explicitly changing.",
+    formInstructions: "Read the definition form for the intended target. Use its fields and option sources, save.bodySchema for the value shapes, and save.draftOperation for the draft. For an edit draft, put only the changed fields in form, including skills only when changing the selection. For a create draft, include all required fields.",
     projectResult(data: unknown, view: AssistantSkillView) {
       return projectAgentDefinitionSkills(assistantAgentDefinitionSchema.parse(data), view);
     },
@@ -98,9 +100,12 @@ export const agentDefinitionOperations = [
       const selection = { credentials: host.initiator.credentials, view: host.skillView! };
       try {
         await assertPermission(credentials, agentDefinitionPermissions);
+        const { values, submittedFields } = inputSchema.parse(input);
         const saved = target.kind === "draft"
-          ? await createAgentDefinitionSnapshot(intentId, parseAgentDefinitionForm(inputSchema.parse(input).values), owner, credentials, selection)
-          : await saveAgentDefinitionSnapshot(target.primaryKey, draftInput(input, target), owner, credentials, selection);
+          ? await createAgentDefinitionSnapshot(intentId, parseAgentDefinitionForm(values), owner, credentials, selection)
+          : await saveAgentDefinitionSnapshot(target.primaryKey,
+            submittedFields === undefined ? parseAgentDefinitionUpdateForm(values) : { values, submittedFields },
+            owner, credentials, selection);
         return { kind: "success", data: saved.definition, affected: affectedDefinition(saved.definition.id) };
       } catch (error) {
         if (!(error instanceof HttpError) || error.status >= 500) throw error;
@@ -111,6 +116,7 @@ export const agentDefinitionOperations = [
   },
   {
     handlerRef: DELETE_AGENT,
+    labelKey: "panels.agentDefinition.delete",
     kind: "action",
     binding: { kind: "PlatformOperation", id: DELETE_AGENT },
     effect: "write",

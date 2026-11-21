@@ -16,3 +16,24 @@ export type PageComposerExpand = (request: PanelConversationEntry) => void;
 export type ServePageComposer = (expand: PageComposerExpand) => () => void;
 
 export const servePageComposerKey: InjectionKey<ServePageComposer> = Symbol("serve-page-composer");
+
+/**
+ * The agent an entry's target names among the page's current candidates, or null when it names none of them: then the
+ * composer only opens and keeps its agent. `page-default` is the page's registered default; `id` must be offered; a
+ * `preset` is the candidate the server's answer says is that preset in this domain.
+ */
+export function entryAgent(
+  target: PanelConversationEntry["target"],
+  candidates: readonly { id: string; enabled: boolean }[],
+  pageDefault: string | null | undefined,
+  presetAgentIds: Readonly<Record<string, string>> | undefined,
+): string | null {
+  const offered = (id: string | null | undefined) => candidates.some((agent) => agent.enabled && agent.id === id);
+  if (target.kind === "page-default") return offered(pageDefault) ? pageDefault! : null;
+  if (target.kind === "id") return offered(target.id) ? target.id : null;
+  const preset = presetAgentIds?.[target.agentKind];
+  return offered(preset) ? preset! : null;
+}
+
+/** What a composer is asked to show by an entry: opened, with this text when the entry fills one. */
+export type ComposerEntry = { text: string | null; seq: number };

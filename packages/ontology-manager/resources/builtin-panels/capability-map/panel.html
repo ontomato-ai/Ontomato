@@ -1,0 +1,481 @@
+<!--
+  The four-layer capability map panel. Type mode draws the platform's declared types and their relation kinds (graph or
+  layer-grouped list) and reads one type's class detail; instance mode explores one-hop relations from a start object.
+  Every read lives in the bound projections; this template owns layout and the parts drawn by the panel's own code.
+-->
+<style>
+  [v-cloak] { display: none; }
+  .capmap { display: flex; flex-direction: column; gap: var(--page-content-gap); min-height: 100%; }
+  .capmap-toolbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm) var(--spacing-md);
+    padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--ui-divider); border-radius: var(--radius-md);
+    background: var(--el-bg-color);
+  }
+  .capmap-search { flex: 1 1 200px; min-width: 160px; max-width: 320px; }
+  .capmap-search input {
+    width: 100%; height: var(--control-height); padding: 0 var(--spacing-sm); box-sizing: border-box;
+    border: 1px solid var(--ui-border); border-radius: var(--radius-sm);
+    background: var(--el-fill-color-blank); color: var(--el-text-color-primary); font-size: var(--text-sm);
+  }
+  .capmap-search input:focus { border-color: var(--brand-link); box-shadow: var(--focus-ring); outline: none; }
+  .capmap-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); margin-inline-start: auto; }
+  .capmap-btn {
+    height: var(--control-height); padding: 0 var(--spacing-md); border: 1px solid var(--ui-border); border-radius: var(--radius-sm);
+    background: var(--el-fill-color-blank); color: var(--el-text-color-regular); font-size: var(--text-sm); cursor: pointer;
+  }
+  .capmap-btn:hover:not(:disabled) { border-color: var(--el-color-primary); color: var(--brand-link); }
+  .capmap-btn.active { border-color: var(--el-color-primary); color: var(--brand-link); background: var(--ui-fill-secondary); }
+  .capmap-btn:disabled { color: var(--el-disabled-text-color); cursor: not-allowed; }
+  .capmap-hint { margin: 0; color: var(--el-text-color-secondary); font-size: var(--text-xs); line-height: 1.6; }
+  .capmap-notice {
+    display: flex; align-items: flex-start; gap: var(--spacing-sm); padding: var(--spacing-sm) var(--spacing-md); border-radius: var(--radius-md);
+    border: 1px solid var(--el-color-warning-light-7); background: var(--el-color-warning-light-9);
+    color: var(--el-color-warning-dark-2); font-size: var(--text-sm); line-height: 1.6;
+  }
+  .capmap-notice button { border: 0; background: none; color: inherit; cursor: pointer; font-size: var(--text-lg); line-height: 1; }
+  .capmap-body { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: var(--page-content-gap); align-items: start; }
+  .capmap-main { position: relative; min-width: 0; min-height: clamp(560px, calc(100vh - 230px), 880px); }
+  .capmap-canvas {
+    display: flex; flex-direction: column;
+    height: clamp(560px, calc(100vh - 230px), 880px); padding: var(--spacing-md); box-sizing: border-box;
+    border: 1px solid var(--ui-divider); border-radius: var(--radius-md); background: var(--el-bg-color); overflow: hidden;
+  }
+  .capmap-canvas > [data-member] { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+  .capmap-canvas.is-behind { position: absolute; inset: 0; visibility: hidden; }
+  .capmap-types {
+    height: clamp(560px, calc(100vh - 230px), 880px); overflow: auto; padding: var(--spacing-md) var(--spacing-lg); box-sizing: border-box;
+    border: 1px solid var(--ui-divider); border-radius: var(--radius-md); background: var(--el-bg-color);
+  }
+  .capmap-layer + .capmap-layer { margin-top: var(--spacing-md); }
+  .capmap-layer > h3 {
+    margin: 0 0 var(--spacing-sm); font-size: var(--text-sm); font-weight: var(--font-semibold); color: var(--el-text-color-secondary);
+    letter-spacing: var(--tracking-label);
+  }
+  .capmap-layer ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: calc(var(--spacing-xs) / 2); }
+  .capmap-type-row {
+    display: flex; align-items: center; gap: var(--spacing-sm); width: 100%; padding: var(--spacing-xs) var(--spacing-sm); box-sizing: border-box;
+    border: 1px solid transparent; border-radius: var(--radius-sm); background: none; cursor: pointer; text-align: start;
+    color: var(--el-text-color-primary); font-size: var(--text-sm);
+  }
+  .capmap-type-row:hover { background: var(--ui-fill-tertiary); }
+  .capmap-type-row.active { border-color: var(--el-color-primary); background: var(--ui-fill-secondary); }
+  .capmap-type-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .capmap-type-id { color: var(--el-text-color-placeholder); font-size: var(--text-xs); }
+  .capmap-aside {
+    display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0;
+    max-height: clamp(560px, calc(100vh - 230px), 880px); overflow: auto;
+    padding: var(--spacing-md); box-sizing: border-box;
+    border: 1px solid var(--ui-divider); border-radius: var(--radius-md); background: var(--el-bg-color);
+  }
+  .capmap-count {
+    flex: 0 0 auto; min-width: 20px; padding: 0 var(--spacing-xs); box-sizing: border-box; text-align: center;
+    border-radius: var(--radius-full); background: var(--el-fill-color); color: var(--el-text-color-regular); font-size: var(--text-xs); line-height: var(--leading-sm);
+  }
+  .capmap-count[data-status="refused"] { background: var(--el-color-warning-light-9); color: var(--el-color-warning-dark-2); }
+  .capmap-count[data-status="failed"] { background: var(--el-color-danger-light-9); color: var(--el-color-danger-text); }
+  .capmap-count[data-status="unavailable"] { background: var(--ui-fill-tertiary); color: var(--el-text-color-placeholder); }
+  .capmap-detail-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-xs) var(--spacing-sm); }
+  .capmap-detail-head h2 { margin: 0; font-size: var(--text-lg); font-weight: var(--font-semibold); }
+  .capmap-detail-head code { color: var(--el-text-color-secondary); font-size: var(--text-xs); }
+  .capmap-def { margin: var(--spacing-sm) 0 0; font-size: var(--text-sm); line-height: 1.7; color: var(--el-text-color-regular); }
+  .capmap-block { margin-top: var(--spacing-md); }
+  .capmap-block > h4 {
+    margin: 0 0 var(--spacing-xs); font-size: var(--text-xs); font-weight: var(--font-semibold); color: var(--el-text-color-secondary); letter-spacing: var(--tracking-label);
+  }
+  .capmap-table { width: 100%; border-collapse: collapse; font-size: var(--text-xs); }
+  .capmap-table th, .capmap-table td {
+    padding: var(--spacing-xs) var(--spacing-xs); border-bottom: 1px solid var(--ui-divider); text-align: start; vertical-align: top;
+  }
+  .capmap-table th { color: var(--el-text-color-secondary); font-weight: var(--font-medium); white-space: nowrap; }
+  .capmap-table td code { color: var(--el-text-color-regular); }
+  .capmap-rowlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--spacing-xs); font-size: var(--text-xs); }
+  .capmap-rowlist li {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--spacing-xs) var(--spacing-xs); padding: var(--spacing-xs) var(--spacing-xs);
+    border-radius: var(--radius-sm); background: var(--ui-fill-quaternary);
+  }
+  .capmap-rowlist .capmap-muted { color: var(--el-text-color-secondary); }
+  .capmap-status { margin: var(--spacing-xs) 0 0; padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); font-size: var(--text-xs); line-height: 1.6; }
+  .capmap-status[data-status="refused"] { background: var(--el-color-warning-light-9); color: var(--el-color-warning-dark-2); }
+  .capmap-status[data-status="failed"] { background: var(--el-color-danger-light-9); color: var(--el-color-danger-text); }
+  .capmap-status[data-status="unavailable"], .capmap-status[data-status="no-neighbors"] {
+    background: var(--ui-fill-tertiary); color: var(--el-text-color-secondary);
+  }
+  .capmap-pick { display: flex; flex-direction: column; gap: var(--spacing-sm); }
+  .capmap-node-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--spacing-sm); margin-bottom: var(--spacing-xs); font-size: var(--text-sm); }
+  .capmap-node-head code { color: var(--el-text-color-secondary); font-size: var(--text-xs); }
+  .capmap-relgroup { margin-top: var(--spacing-sm); padding-top: var(--spacing-sm); border-top: 1px solid var(--ui-divider); }
+  .capmap-relgroup-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-xs); margin-bottom: var(--spacing-xs); }
+  .capmap-rel-name { font-size: var(--text-sm); font-weight: var(--font-semibold); }
+  .capmap-relgroup ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--spacing-xs); }
+  .capmap-relgroup li { font-size: var(--text-xs); }
+  .capmap-dir {
+    display: inline-block; min-width: 34px; padding: 0 var(--spacing-xs); border-radius: var(--radius-xs); text-align: center;
+    background: var(--el-fill-color); color: var(--el-text-color-secondary); font-size: var(--text-xs); line-height: var(--leading-sm);
+  }
+  .capmap-dir[data-dir="outgoing"] { background: var(--ui-fill-secondary); color: var(--brand-link); }
+  .capmap-peer {
+    border: 0; background: none; padding: 0 calc(var(--spacing-xs) / 2); cursor: pointer; font-size: var(--text-xs);
+    color: var(--brand-link); text-decoration: underline; text-underline-offset: 2px;
+  }
+  .capmap-peer-type { color: var(--el-text-color-placeholder); font-size: var(--text-xs); }
+  .capmap-mini {
+    margin-inline-start: var(--spacing-xs); padding: 0 var(--spacing-xs); border: 1px solid var(--ui-border); border-radius: var(--radius-xs);
+    background: var(--el-fill-color-blank); color: var(--el-text-color-secondary); font-size: var(--text-xs); line-height: var(--leading-sm); cursor: pointer;
+  }
+  .capmap-mini:hover { border-color: var(--el-color-primary); color: var(--brand-link); }
+  .capmap-binding { flex: 1 1 100%; color: var(--el-text-color-secondary); font-size: var(--text-xs); line-height: 1.6; }
+  @media (max-width: 1080px) {
+    .capmap-body { grid-template-columns: minmax(0, 1fr); }
+    .capmap-actions { margin-inline-start: 0; }
+  }
+</style>
+<div id="app" v-cloak>
+  <div class="capmap">
+    <header class="capmap-toolbar">
+      <segmented-control
+        :options="modeOptions"
+        :model-value="mode"
+        aria-label-key="cm.modeLabel"
+        @update:model-value="setMode"
+      ></segmented-control>
+      <segmented-control
+        v-if="mode === 'type'"
+        :options="viewOptions"
+        :model-value="view"
+        aria-label-key="cm.viewLabel"
+        @update:model-value="setView"
+      ></segmented-control>
+      <div class="capmap-search">
+        <input
+          type="search"
+          :value="query"
+          :aria-label="mode === 'type' ? t('cm.searchType') : t('cm.searchInstance')"
+          :placeholder="mode === 'type' ? t('cm.searchType') : t('cm.searchInstance')"
+          @input="onQueryInput"
+        />
+      </div>
+      <button v-if="query" type="button" class="capmap-btn" @click="clearQuery">{{ t('cm.clearSearch') }}</button>
+      <el-select
+        v-if="mode === 'type' && view === 'graph' && allRelationKinds.length"
+        v-model="relationFilter"
+        multiple
+        collapse-tags
+        collapse-tags-tooltip
+        clearable
+        size="small"
+        style="width: 220px"
+        :placeholder="t('cm.allKinds')"
+      >
+        <el-option
+          v-for="kind in allRelationKinds"
+          :key="kind.value"
+          :value="kind.value"
+          :label="$te(kind.labelKey) ? $t(kind.labelKey) : kind.value"
+        ></el-option>
+      </el-select>
+      <span class="capmap-hint">{{ t('cm.edgeLegend') }}</span>
+      <div v-if="mode === 'instance'" class="capmap-actions">
+        <button type="button" class="capmap-btn" :disabled="!canUseSelectedAsStart" @click="useSelectedAsStart">
+          {{ t('cm.useSelectedAsStart') }}
+        </button>
+      </div>
+    </header>
+
+    <div v-if="notice" class="capmap-notice" role="status">
+      <span>{{ t('cm.navUnavailable', { name: notice.name, reason: notice.reason }) }}</span>
+      <button type="button" aria-label="dismiss" @click="notice = null">×</button>
+    </div>
+
+    <div class="capmap-body">
+      <section class="capmap-main">
+        <div class="capmap-canvas" :class="{ 'is-behind': mode === 'type' && view === 'list' }">
+          <projection slot="graph"></projection>
+        </div>
+
+        <div v-if="mode === 'type' && view === 'list'" class="capmap-types">
+          <p class="capmap-hint">{{ t('cm.typeListHint') }}</p>
+          <section v-for="group in layerGroups" :key="group.layer" class="capmap-layer">
+            <h3>{{ $te(group.labelKey) ? $t(group.labelKey) : group.layer }}</h3>
+            <ul>
+              <li v-for="type in group.types" :key="type.id">
+                <button
+                  type="button"
+                  class="capmap-type-row"
+                  :class="{ active: type.id === selectedType }"
+                  @click="selectType(type.id)"
+                >
+                  <span class="capmap-type-name">{{ $te(type.labelKey) ? $t(type.labelKey) : type.id }}</span>
+                  <code class="capmap-type-id">{{ type.id }}</code>
+                  <span class="capmap-count" :data-status="type.count.status">
+                    <template v-if="type.count.status === 'ok'">{{ type.count.count }}</template>
+                    <template v-else-if="type.count.status === 'refused'">{{ t('cm.statusRefused') }}</template>
+                    <template v-else-if="type.count.status === 'failed'">{{ t('cm.statusFailed') }}</template>
+                    <template v-else-if="type.count.status === 'unavailable'">{{ t('cm.statusUnavailable') }}</template>
+                    <template v-else>…</template>
+                  </span>
+                </button>
+              </li>
+            </ul>
+          </section>
+        </div>
+      </section>
+
+      <aside class="capmap-aside">
+        <template v-if="mode === 'type'">
+          <section-group :title="t('cm.classTitle')">
+            <p v-if="schemaFailure" class="capmap-status" :data-status="schemaFailure.status">
+              {{ t('cm.classFailed', { reason: schemaFailure.message || t('cm.relationsForbidden') }) }}
+            </p>
+            <p v-else-if="!schema" class="capmap-hint">{{ t('cm.classLoading') }}</p>
+            <p v-else-if="!detail" class="capmap-hint">{{ t('cm.classEmpty') }}</p>
+            <template v-else>
+              <header class="capmap-detail-head">
+                <h2>{{ $te(detail.labelKey) ? $t(detail.labelKey) : detail.id }}</h2>
+                <code>{{ detail.id }}</code>
+                <el-tag size="small" effect="plain">{{ $te(detail.layerLabelKey) ? $t(detail.layerLabelKey) : detail.layer }}</el-tag>
+                <span class="capmap-count" :data-status="detail.count.status">
+                  <template v-if="detail.count.status === 'ok'">{{ detail.count.count }}</template>
+                  <template v-else-if="detail.count.status === 'refused'">{{ t('cm.statusRefused') }}</template>
+                  <template v-else-if="detail.count.status === 'failed'">{{ t('cm.statusFailed') }}</template>
+                  <template v-else-if="detail.count.status === 'unavailable'">{{ t('cm.statusUnavailable') }}</template>
+                  <template v-else>…</template>
+                </span>
+              </header>
+              <p v-if="detail.definition" class="capmap-def">
+                {{ detail.definitionKey && $te(detail.definitionKey) ? $t(detail.definitionKey) : detail.definition }}
+              </p>
+              <p v-else class="capmap-hint" style="margin-top: 8px">{{ t('cm.noDefinition') }}</p>
+
+              <div class="capmap-actions" style="margin: 10px 0 0; justify-content: flex-start">
+                <el-button v-if="detail.directory" size="small" @click="openInstances(detail)">{{ t('cm.viewInstances') }}</el-button>
+                <el-button size="small" type="primary" plain @click="togglePickingStart">{{ t('cm.pickStart') }}</el-button>
+              </div>
+              <p v-if="pickingStart" class="capmap-hint" style="margin-top: 6px">{{ t('cm.pickHint') }}</p>
+
+              <div class="capmap-block">
+                <h4>{{ t('cm.properties') }}</h4>
+                <table class="capmap-table">
+                  <thead>
+                    <tr>
+                      <th>{{ t('cm.propertyName') }}</th>
+                      <th>{{ t('cm.propertyType') }}</th>
+                      <th>{{ t('cm.propertyOptional') }}</th>
+                      <th>{{ t('cm.propertyDescription') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="property in detail.properties" :key="property.name">
+                      <td><code>{{ property.name }}</code></td>
+                      <td><code>{{ property.type }}</code></td>
+                      <td>{{ property.optional ? t('cm.optionalYes') : t('cm.optionalNo') }}</td>
+                      <td>{{ property.descriptionKey && $te(property.descriptionKey) ? $t(property.descriptionKey) : property.description }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p v-if="!detail.properties.length" class="capmap-hint">{{ t('cm.noProperties') }}</p>
+              </div>
+
+              <div class="capmap-block">
+                <h4>{{ t('cm.relations') }}</h4>
+                <ul class="capmap-rowlist">
+                  <li v-for="relation in detail.outgoing" :key="'out-' + relation.key">
+                    <span class="capmap-dir" data-dir="outgoing">{{ t('cm.outgoing') }}</span>
+                    <span>{{ $te(relation.labelKey) ? $t(relation.labelKey) : relation.relationKind }}</span>
+                    <span class="capmap-muted">→</span>
+                    <span>{{ $te(relation.peerLabelKey) ? $t(relation.peerLabelKey) : relation.peer }}</span>
+                    <el-tag size="small" effect="plain" :type="relation.derived ? 'info' : 'success'">
+                      {{ relation.derived ? t('cm.derived') : t('cm.stored') }}
+                    </el-tag>
+                  </li>
+                  <li v-for="relation in detail.incoming" :key="'in-' + relation.key">
+                    <span class="capmap-dir" data-dir="incoming">{{ t('cm.incoming') }}</span>
+                    <span>{{ $te(relation.labelKey) ? $t(relation.labelKey) : relation.relationKind }}</span>
+                    <span class="capmap-muted">←</span>
+                    <span>{{ $te(relation.peerLabelKey) ? $t(relation.peerLabelKey) : relation.peer }}</span>
+                    <el-tag size="small" effect="plain" :type="relation.derived ? 'info' : 'success'">
+                      {{ relation.derived ? t('cm.derived') : t('cm.stored') }}
+                    </el-tag>
+                  </li>
+                </ul>
+                <p v-if="!detail.outgoing.length && !detail.incoming.length" class="capmap-hint">{{ t('cm.noRelations') }}</p>
+              </div>
+
+              <div class="capmap-block">
+                <h4>{{ t('cm.reads') }}</h4>
+                <ul class="capmap-rowlist">
+                  <li v-for="read in detail.reads" :key="read.name">
+                    <code>{{ read.name }}</code>
+                    <span class="capmap-muted">{{ t('cm.readParameters') }}</span>
+                    <code>{{ read.parameters.join(', ') || '—' }}</code>
+                    <span class="capmap-muted">{{ t('cm.readResult') }}</span>
+                    <code>{{ read.result }}</code>
+                  </li>
+                </ul>
+                <p v-if="!detail.reads.length" class="capmap-hint">{{ t('cm.noReads') }}</p>
+              </div>
+
+              <div class="capmap-block">
+                <h4>{{ t('cm.operations') }}</h4>
+                <ul class="capmap-rowlist">
+                  <li v-for="operation in detail.operations" :key="operation.id">
+                    <code>{{ operation.id }}</code>
+                    <span class="capmap-muted">{{ t('cm.operationKind') }}</span>
+                    <code>{{ operation.kind }}</code>
+                    <span class="capmap-muted">{{ t('cm.operationEffect') }}</span>
+                    <code>{{ operation.effect }}</code>
+                    <span v-if="operation.inputs.length" class="capmap-muted">{{ t('cm.operationInputs') }}</span>
+                    <code v-if="operation.inputs.length">{{ operation.inputs.join(', ') }}</code>
+                  </li>
+                </ul>
+                <p v-if="!detail.operations.length" class="capmap-hint">{{ t('cm.noOperations') }}</p>
+              </div>
+
+              <div class="capmap-block">
+                <h4>{{ t('cm.rules') }}</h4>
+                <p v-if="detail.rules" class="capmap-def">
+                  {{ detail.rulesKey && $te(detail.rulesKey) ? $t(detail.rulesKey) : detail.rules }}
+                </p>
+                <p v-else class="capmap-hint">{{ t('cm.noRules') }}</p>
+              </div>
+            </template>
+          </section-group>
+        </template>
+
+        <template v-else>
+          <section-group :title="t('cm.startTitle')">
+            <p class="capmap-hint">
+              {{ hasCustomStart ? (start.className + ' · ' + start.primaryKey) : t('cm.startCurrentUser') }}
+            </p>
+            <div class="capmap-actions" style="margin: 8px 0 0; justify-content: flex-start">
+              <button
+                type="button"
+                class="capmap-btn"
+                :class="{ active: showUserPicker }"
+                :aria-expanded="showUserPicker"
+                @click="toggleUserPicker"
+              >
+                {{ t('cm.switchUser') }}
+              </button>
+              <button v-if="hasCustomStart" type="button" class="capmap-btn" @click="resetStart">{{ t('cm.resetStart') }}</button>
+            </div>
+          </section-group>
+
+          <section-group v-if="showUserPicker" :title="t('cm.userPickerTitle')" :description="t('cm.userPickerHint')">
+            <projection slot="userPicker"></projection>
+          </section-group>
+        </template>
+
+        <div v-if="mode === 'instance' || pickingStart" ref="pickerSection">
+        <section-group
+          :title="t('cm.pickByTypeTitle')"
+          :description="t('cm.pickByTypeHint')"
+        >
+          <div class="capmap-pick">
+            <el-select v-model="pickType" size="small" filterable :placeholder="t('cm.chooseType')">
+              <el-option-group
+                v-for="group in typeOptions"
+                :key="group.layer"
+                :label="$te(group.labelKey) ? $t(group.labelKey) : group.layer"
+              >
+                <el-option
+                  v-for="option in group.options"
+                  :key="option.value"
+                  :value="option.value"
+                  :label="$te(option.labelKey) ? $t(option.labelKey) : option.value"
+                ></el-option>
+              </el-option-group>
+            </el-select>
+            <projection v-if="selectedType" slot="typeObjects"></projection>
+            <p v-else class="capmap-hint">{{ t('cm.pickChooseType') }}</p>
+          </div>
+        </section-group>
+        </div>
+
+        <section-group
+          v-if="mode === 'instance'"
+          :title="t('cm.relationsTitle')"
+          :description="t('cm.relationsHint')"
+        >
+          <p v-if="!selected" class="capmap-hint">{{ t('cm.relationsPrompt') }}</p>
+          <p v-else-if="relationState.status === 'loading' || relationState.status === 'awaiting'" class="capmap-hint">
+            {{ t('cm.relationsLoading') }}
+          </p>
+          <p v-else-if="relationState.status === 'forbidden'" class="capmap-status" data-status="refused">
+            {{ t('cm.relationsForbidden') }}
+          </p>
+          <p v-else-if="relationState.status === 'error'" class="capmap-status" data-status="failed">
+            {{ t('cm.relationsFailed', { reason: relationState.message }) }}
+          </p>
+          <template v-else-if="relationState.status === 'ready'">
+            <header class="capmap-node-head">
+              <strong>{{ currentNode ? currentNode.label : selected.primaryKey }}</strong>
+              <span class="capmap-peer-type">{{ $te(selectedTypeKey) ? $t(selectedTypeKey) : selected.className }}</span>
+            </header>
+            <p v-if="relationSummary.noNeighbors" class="capmap-status" data-status="no-neighbors">
+              {{ t('cm.noNeighbors') }}
+            </p>
+            <p v-if="relationSummary.refused.length" class="capmap-status" data-status="refused">
+              {{ t('cm.refusedKinds', { names: relationSummary.refused.map((kind) => ($te(kind.labelKey) ? $t(kind.labelKey) : kind.relationKind)).join('、') }) }}
+            </p>
+            <p v-if="relationSummary.failed.length" class="capmap-status" data-status="failed">
+              {{ t('cm.failedKinds', { names: relationSummary.failed.map((kind) => ($te(kind.labelKey) ? $t(kind.labelKey) : kind.relationKind)).join('、') }) }}
+            </p>
+            <p v-if="relationSummary.unavailable.length" class="capmap-status" data-status="unavailable">
+              {{ t('cm.unavailableKinds', { names: relationSummary.unavailable.map((kind) => ($te(kind.labelKey) ? $t(kind.labelKey) : kind.relationKind)).join('、') }) }}
+            </p>
+
+            <el-select
+              v-if="relationKindsAvailable.length > 1 || relationFilter.length > 0"
+              v-model="relationFilter"
+              multiple
+              collapse-tags
+              collapse-tags-tooltip
+              clearable
+              size="small"
+              style="margin-top: 8px"
+              :placeholder="t('cm.allKinds')"
+            >
+              <el-option
+                v-for="kind in relationKindsAvailable"
+                :key="kind.value"
+                :value="kind.value"
+                :label="$te(kind.labelKey) ? $t(kind.labelKey) : kind.value"
+              ></el-option>
+            </el-select>
+
+            <div v-for="group in visibleRelationGroups" :key="group.relationKind" class="capmap-relgroup">
+              <div class="capmap-relgroup-head">
+                <span class="capmap-rel-name">{{ $te(group.labelKey) ? $t(group.labelKey) : group.relationKind }}</span>
+                <el-tag size="small" effect="plain" :type="group.derived ? 'info' : 'success'">
+                  {{ group.derived ? t('cm.derived') : t('cm.stored') }}
+                </el-tag>
+                <span v-if="group.status !== 'ok'" class="capmap-count" :data-status="group.status">
+                  {{ group.status === 'refused' ? t('cm.statusRefused') : (group.status === 'failed' ? t('cm.statusFailed') : t('cm.statusUnavailable')) }}
+                </span>
+              </div>
+              <ul>
+                <li v-for="row in group.rows" :key="row.id">
+                  <span class="capmap-dir" :data-dir="row.direction">
+                    {{ row.direction === 'outgoing' ? t('cm.outgoing') : t('cm.incoming') }}
+                  </span>
+                  <button type="button" class="capmap-peer" @click="selectPeer(row.peer)">{{ row.peerLabel }}</button>
+                  <span class="capmap-peer-type">{{ $te(row.peerTypeLabelKey) ? $t(row.peerTypeLabelKey) : row.peerTypeId }}</span>
+                  <button type="button" class="capmap-mini" @click="startFrom(row.peer)">{{ t('cm.setAsStart') }}</button>
+                  <div v-if="row.binding" class="capmap-binding">
+                    <span v-if="row.binding.reads">{{ t('cm.boundReads', { names: row.binding.reads.join(', ') }) }}</span>
+                    <span v-if="row.binding.operations">{{ t('cm.boundOperations', { names: row.binding.operations.join(', ') }) }}</span>
+                    <span v-if="row.binding.viaInput">{{ t('cm.viaInput') }}</span>
+                  </div>
+                </li>
+              </ul>
+              <p v-if="group.reason" class="capmap-hint">{{ group.reason }}</p>
+            </div>
+            <p v-if="emptyRelationGroups.length" class="capmap-hint" style="margin-top: 8px">
+              {{ t('cm.emptyKinds', { count: emptyRelationGroups.length }) }}
+            </p>
+          </template>
+        </section-group>
+      </aside>
+    </div>
+  </div>
+</div>

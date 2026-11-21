@@ -3,9 +3,7 @@ import type {
 } from "vue-router";
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { observeRoutes } from "./observe-routes";
-import AgentSettingsRoute from "./pages/AgentSettingsRoute.vue";
 import DashboardsPage from "./pages/DashboardsRoute.vue";
-import GovernanceReportRoute from "./pages/GovernanceReportRoute.vue";
 import PlatformSchedulesPage from "./pages/PlatformSchedulesRoute.vue";
 
 type PageComponent = NonNullable<RouteRecordSingleView["component"]>;
@@ -24,19 +22,15 @@ function capabilityTabLink(to: { query: LocationQuery }): RouteLocationRaw | und
 /** The builder's old top-level entry: the agent platform's settings at the agent it named, its query kept. */
 function agentBuilderRedirect(to: { params: RouteParamsGeneric; query: LocationQuery }): RouteLocationRaw {
   const id = to.params.agentId;
-  // A named location inherits the parameters it does not name; the new agent has none.
-  if (id === "new") return { name: routes.agentSettingsNew.name, params: {}, query: to.query };
-  return typeof id === "string" && id
-    ? { name: routes.agentSettings.name, params: { agentId: id }, query: to.query }
-    : { name: routes.agents.name, query: to.query };
+  const base = routes.agents.path;
+  return { path: typeof id === "string" && id ? `${base}/${encodeURIComponent(id)}` : base, query: to.query };
 }
 
-/**
- * The agent platform's pages: the conversation, its agents' settings, the diagnosis app's root, and the pages of its own
- * that the platform assembles. The agents' settings are one page (`AgentSettingsRoute`) that two applications show: the
- * ontology manager's product layer at `/ontology/agents`, and the agent platform at `/agents/settings` inside its own
- * shell, beside its column.
- */
+export function legacyAgentSettingsTab(to: { path: string; query: LocationQuery }): RouteLocationRaw | undefined {
+  return to.path === routes.agents.path ? capabilityTabLink(to) : undefined;
+}
+
+/** Native workbench pages and legacy addresses. Both agent settings entries are mounted by the panel entry guard. */
 export function workbenchPages(
   component: PageComponent,
   observe: { component: PageComponent; meta?: RouteMeta; props?: Record<string, unknown> },
@@ -65,24 +59,6 @@ export function workbenchPages(
       (location) => ({ ...location, redirect: { name: routes.externalMcp.name } }),
     ),
     { ...routes.chat, component, meta: { workbench: true } },
-    /*
-     * The agents' settings in the ontology manager's product layer: the page itself, wrapping the workbench's own editor
-     * with the platform's API, authentication, text and page context.
-     */
-    { ...routes.ontologyAgents, component: AgentSettingsRoute, meta: { service: true, ownHeader: true, page: routes.ontologyAgents.path } },
-    { ...routes.ontologyAgentNew, component: AgentSettingsRoute, meta: { service: true, ownHeader: true, page: routes.ontologyAgents.path } },
-    { ...routes.ontologyAgent, component: AgentSettingsRoute, meta: { service: true, ownHeader: true, page: routes.ontologyAgents.path } },
-    /*
-     * The same page in the agent platform: the platform's shell shows it full beside its column, as it shows any of its
-     * pages enlarged, so the reader stays in the application. The old capability-library link on these addresses still
-     * lands on the skills.
-     */
-    ...[routes.agents, routes.agentSettingsNew, routes.agentSettings].map((location): RouteRecordRaw => ({
-      ...location,
-      component,
-      meta: { workbench: true, page: routes.agents.path },
-      beforeEnter: (to) => capabilityTabLink(to) ?? true,
-    })),
     // The builder's old top-level entry turns to the agent platform's settings.
     ...([{ path: "/agent-builder" }, { path: "/agent-builder/:agentId" }] as const).map(
       (location): RouteRecordRaw => ({ ...location, redirect: (to) => agentBuilderRedirect(to) }),
@@ -91,14 +67,6 @@ export function workbenchPages(
     { path: "/agents", redirect: (to) => capabilityTabLink(to) ?? { name: routes.chat.name, query: to.query } },
     // The models of the platform's ontology service agents: a page of its navigation, so it opens with its permission.
     { ...routes.agentModels, component, meta: { workbench: true, page: routes.agentModels.path } },
-    // One governance record's report: the page the conversation beside it also draws, with the platform's composer at its
-    // foot. It belongs to business knowledge — the page's own menu code — so `meta.page` sits on its parent (the
-    // parameterised address never equals a page address, and the guard reads the tree's).
-    {
-      path: routes.governance.path.replace("/:recordId", ""),
-      meta: { service: true, page: routes.knowledge.path },
-      children: [{ ...routes.governance, component: GovernanceReportRoute }],
-    },
     { ...observeRoutes.root, ...observe, children: observeRoutes.children },
   ];
 }

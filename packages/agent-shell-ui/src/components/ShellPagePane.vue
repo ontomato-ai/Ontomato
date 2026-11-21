@@ -6,6 +6,7 @@ import { pageDockSpaceKey, shellContextKey, useDisplayPlacement } from "../conte
 import type { ShellFeatureDeclaration } from "../types";
 import { usePanelWidth } from "../usePanelWidth";
 import ShellComposer from "./ShellComposer.vue";
+import type { ComposerEntry } from "../page-composer-entry";
 import ShellQuestions from "./ShellQuestions.vue";
 
 /**
@@ -24,6 +25,8 @@ const props = defineProps<{
   feature: ShellFeatureDeclaration | null;
   view: "full" | "side";
   busy: boolean;
+  /** A panel's conversation entry for the composer here; see ShellComposer. */
+  entry?: ComposerEntry | null;
   sending: boolean;
   disabled: boolean;
 }>();
@@ -74,6 +77,8 @@ const paneStyle = computed(() => ({
         <Menu :size="18" />
       </button>
       <slot name="header"><h1 class="pane-title">{{ feature?.label }}</h1></slot>
+      <!-- The page's own commands, where its title is: the host hands them over and draws them for this width. -->
+      <slot name="actions" />
       <ActionTooltip :content="layoutLabel">
         <button type="button" class="pane-button pane-layout" :aria-label="layoutLabel" @click="toggleLayout">
           <Columns2 v-if="view === 'full'" :size="16" aria-hidden="true" />
@@ -87,7 +92,7 @@ const paneStyle = computed(() => ({
     <div class="pane-body"><slot /></div>
     <div v-if="paired && view === 'full'" ref="dock" class="pane-dock">
       <ShellQuestions />
-      <ShellComposer floating :busy="busy" :sending="sending" :disabled="disabled" :labels="labels" @send="emit('send', $event)" @stop="emit('stop')">
+      <ShellComposer floating :busy="busy" :sending="sending" :disabled="disabled" :labels="labels" :entry="entry" @send="emit('send', $event)" @stop="emit('stop')">
         <template v-if="slots['composer-context']" #context><slot name="composer-context" /></template>
       </ShellComposer>
     </div>

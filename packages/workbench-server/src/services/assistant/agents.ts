@@ -51,7 +51,9 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
       const profile = native ? null : await profileIdForAgent(owner, agent.id);
       agents.push({
         id: agent.id, name: assistantName(agent, credentials.locale), description: assistantDescription(agent, credentials.locale),
-        icon: agent.icon, enabled: agent.enabled, effectiveSkills: effectiveAssistantSkills(agent, view, profile !== null),
+        icon: agent.icon, enabled: agent.enabled,
+        // Only what this initiator's view holds: a page skill whose source could not be read is no agent's skill here.
+        effectiveSkills: effectiveAssistantSkills(agent, view, profile !== null).filter(view.hasSkill),
       });
     }
     if (!pageFilter) return assistantAgentListSchema.parse({ agents });
@@ -62,8 +64,15 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
       : candidates.find(agent => definitions.some(row => row.id === agent.id && row.kind === defaultAgent.agentKind));
     if (!selected && defaultAgent.kind === "id")
       throw new HttpError(409, "The page's default agent is unavailable", "PAGE_DEFAULT_AGENT_UNAVAILABLE");
+
+    const candidateIds = new Set(candidates.map(agent => agent.id));
+    // User-created definitions store their own ID as their kind.
+    const presetAgentIds = Object.fromEntries(definitions
+      .filter(agent => agent.kind !== agent.id && candidateIds.has(agent.id))
+      .map(agent => [agent.kind, agent.id]));
     return assistantAgentListSchema.parse({
       agents: candidates,
+      presetAgentIds,
       ...(selected ? { defaultAgentId: selected.id } : {}),
     });
   });

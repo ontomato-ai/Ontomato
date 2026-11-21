@@ -22,11 +22,11 @@ import {
   type PlatformRelationKindDeclaration,
 } from "@ontomato/contracts/platform-object-types";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
-import { protectedSkillRef } from "../../core/skills/providers";
 import { createLogger } from "../../logging/logger";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
+import { panelSkillRef } from "../product-panels/skill-identity";
 import {
   PlatformOntologyOwnerReaders,
   type OwnerReadResult,
@@ -58,6 +58,7 @@ import {
   TRIGGER,
   USER,
   WORKFLOW,
+  assemblePlatformOntologySchemaTypes,
   relationTargets,
   resolveNodeLayer,
 } from "./schema";
@@ -65,8 +66,6 @@ import {
 const logger = createLogger("platform-ontology");
 
 const WORKFLOW_SAVE_API = "/workflow/save";
-/** Matches `panelSkillProvider.id` in `services/product-panels/skill-provider.ts` without triggering skill registry init. */
-const PANEL_SKILL_PROVIDER_ID = "product-panels";
 
 interface RawEdgeCandidate {
   from: PlatformOntologyNodeRef;
@@ -526,10 +525,10 @@ async function readObjectsOfType(
   }
 }
 
-export function readPlatformOntologySchema(): PlatformOntologySchemaResponse {
+export async function readPlatformOntologySchema(): Promise<PlatformOntologySchemaResponse> {
   return {
     layers: PLATFORM_ONTOLOGY_LAYERS,
-    objectTypes: PLATFORM_ONTOLOGY_TYPES,
+    objectTypes: await assemblePlatformOntologySchemaTypes(),
     relationKinds: PLATFORM_ONTOLOGY_RELATION_KINDS,
   };
 }
@@ -1210,9 +1209,7 @@ async function evaluateRelationKind(
       const skillByKey = new Map(skillsRes.data.map((skill) => [skill.primaryKey, skill]));
       const edges: RawEdgeCandidate[] = [];
       for (const panel of panelsRes.data) {
-        const skillKey = runtimeSkillKey(
-          protectedSkillRef(PANEL_SKILL_PROVIDER_ID, readers.owner.domainId, panel.id),
-        );
+        const skillKey = runtimeSkillKey(panelSkillRef(readers.owner.domainId, panel.id));
         const skill = skillByKey.get(skillKey);
         if (!skill) continue;
         if (

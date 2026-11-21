@@ -19,6 +19,9 @@ import { useMemberRead } from "../panel/member";
  *
  * A member's choices are its `options` datum (searched and paged with the reader's words) and its `selected` datum (the
  * held values, as choices), read by the instance: through the platform, or this release's resource module in a frame.
+ * What the owner says of a partial catalogue (`diagnostics` of the `options` read: a source that did not answer) is shown
+ * under the field as the owner wrote it, beside the choices that did come back; a held value the owner no longer offers
+ * says so by its own unavailable reason.
  */
 const props = defineProps<{ formSlot: string; path: string }>();
 const field = formFieldAt(usePanelContext().instance, props.formSlot, () => props.path);
@@ -46,6 +49,8 @@ const offered = shallowRef<readonly PlatformObjectOption[]>([]);
 const held = shallowRef<readonly PlatformObjectOption[]>([]);
 const searching = ref(false);
 const failure = shallowRef<Error | null>(null);
+/** The owner's notes on the catalogue's latest answer. */
+const notes = shallowRef<readonly string[]>([]);
 const multiple = computed(() => field.field.value?.control.kind === "reference" && field.field.value.control.multiple);
 
 function remember(list: readonly PlatformObjectOption[]) {
@@ -54,9 +59,10 @@ function remember(list: readonly PlatformObjectOption[]) {
 
 function search(keyword = "") {
   searching.value = true;
-  void options.list({ keyword, page: { number: 1, size: 50 } }).then(({ options: listed }) => {
+  void options.list({ keyword, page: { number: 1, size: 50 } }).then(({ options: listed, diagnostics }) => {
     remember(listed);
     offered.value = listed;
+    notes.value = diagnostics ?? [];
     searching.value = false;
   }, (reason: unknown) => {
     failure.value = reason instanceof Error ? reason : new Error(String(reason));
@@ -137,6 +143,9 @@ function choose(keys: string | string[] | undefined) {
       {{ field.field.value.readOnlyReason }}
     </p>
     <p v-else-if="field.field.value.help" class="sdk-reference-picker-help">{{ field.field.value.help }}</p>
+    <ul v-if="notes.length" class="sdk-reference-picker-notes" role="status">
+      <li v-for="note in notes" :key="note">{{ note }}</li>
+    </ul>
   </el-form-item>
 </template>
 
@@ -148,12 +157,20 @@ function choose(keys: string | string[] | undefined) {
   width: 100%;
 }
 .sdk-reference-picker-changed :deep(.el-form-item__label) {
-  color: var(--el-color-primary);
+  color: var(--brand-link);
+}
+.sdk-reference-picker-notes {
+  color: var(--el-color-warning-text);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  list-style: none;
+  margin: var(--spacing-xs) 0 0;
+  padding: 0;
 }
 .sdk-reference-picker-help {
   color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
   line-height: 1.5;
-  margin: 4px 0 0;
+  margin: var(--spacing-xs) 0 0;
 }
 </style>

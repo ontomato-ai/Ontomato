@@ -5,8 +5,10 @@ import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import com.alibaba.fastjson2.TypeReference;
 import io.ontomato.dataengine.core.bean.User;
+import io.ontomato.dataengine.service.BuiltinProductIds;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -17,6 +19,7 @@ import org.springframework.http.HttpStatus;
 
 @Service
 public class ApplicationCatalog {
+    private static final org.slf4j.Logger log = LoggerFactory.getLogger(ApplicationCatalog.class);
     public record PanelUseLocation(String applicationId, Map<String, String> names, String useId, String path) {}
     public record EntryMenu(List<Group> groups, List<ApplicationPanelUse> panelUses) {}
     public record ThemeOverrides(Map<String, String> light, Map<String, String> dark) {}
@@ -47,6 +50,48 @@ public class ApplicationCatalog {
     }
     public record Builtin(String id, String kind, String rail, String category, int sort, JSONObject entry,
                           List<String> entryAccess, String scheduleAdapter, Declaration declaration) {}
+    private record BuiltinEntry(String applicationId, ApplicationPanelUse use) {
+        String conflict(String domainId, String domainApplicationId) {
+            return "Domain '" + domainId + "' application '" + domainApplicationId + "' uses page key '" + use.pageKey()
+                + "', reserved by built-in application '" + applicationId + "' entry '" + use.id() + "' (" + use.path() + ")";
+        }
+    }
+
+    private static final class BuiltinPageKeys {
+        private final Map<String, BuiltinEntry> entries = new HashMap<>();
+
+        BuiltinPageKeys(List<JSONObject> applications) {
+            for (var app : applications) {
+                if (app.getString("domainId") != null) continue;
+                for (var use : app.getList("panelUses", ApplicationPanelUse.class))
+                    entries.putIfAbsent(use.pageKey(), new BuiltinEntry(app.getString("id"), use));
+            }
+        }
+
+        List<ApplicationPanelUse> activeUses(JSONObject app) {
+            var uses = app.getList("panelUses", ApplicationPanelUse.class);
+            if (app.getString("domainId") == null) return uses;
+            return uses.stream().filter(use -> !entries.containsKey(use.pageKey())).toList();
+        }
+
+        String conflict(String pageKey, String domainId, String applicationId) {
+            var owner = entries.get(pageKey);
+            return owner == null ? null : owner.conflict(domainId, applicationId);
+        }
+
+        void reportConflicts(List<JSONObject> applications, Set<String> updatedBuiltins) {
+            for (var app : applications) {
+                var domain = app.getString("domainId");
+                if (domain == null) continue;
+                for (var use : app.getList("panelUses", ApplicationPanelUse.class)) {
+                    var owner = entries.get(use.pageKey());
+                    if (owner != null && updatedBuiltins.contains(owner.applicationId()))
+                        log.warn("{}; the domain entry '{}' is unavailable", owner.conflict(domain, app.getString("id")), use.id());
+                }
+            }
+        }
+    }
+
     private final JdbcTemplate db;
     private final TransactionTemplate transactions;
     private final ApplicationAccess access;
@@ -77,12 +122,13 @@ public class ApplicationCatalog {
     public PageSkills.Projection pageSkills(User user) {
         var domainId = user.getDomainId();
         var applications = applicationsInDomain(domainId);
-        validateLocators(applications);
+        var pageKeys = new BuiltinPageKeys(applications);
+        validateLocators(applications, pageKeys);
         var nativeMappings = applications.stream()
             .flatMap(app -> app.getList("pageSkills", PageSkills.Mapping.class).stream()).toList();
         var admittedUses = domainId == null ? List.<ApplicationPanelUse>of() : applications.stream()
             .filter(app -> isPanelSkillApplication(app) && canEnter(app, user))
-            .flatMap(app -> entryAdmittedPanelUses(app, user).stream()).toList();
+            .flatMap(app -> entryAdmittedPanelUses(app, user, pageKeys).stream()).toList();
         var mappings = new LinkedHashMap<String, PageSkills.Mapping>();
         for (var mapping : access.pageSkills(nativeMappings, user)) mappings.put(mapping.locator(), mapping);
         for (var group : PanelSkills.groups(admittedUses))
@@ -92,8 +138,10 @@ public class ApplicationCatalog {
     }
 
     public List<PanelSkills.Use> panelSkillSources(String domainId) {
-        return applicationsInDomain(domainId).stream().filter(ApplicationCatalog::isPanelSkillApplication)
-            .flatMap(app -> app.getList("panelUses", ApplicationPanelUse.class).stream()
+        var apps = applicationsInDomain(domainId);
+        var pageKeys = new BuiltinPageKeys(apps);
+        return apps.stream().filter(ApplicationCatalog::isPanelSkillApplication)
+            .flatMap(app -> pageKeys.activeUses(app).stream()
                 .map(use -> PanelSkills.source(app.getString("id"), use)))
             .toList();
     }
@@ -111,14 +159,20 @@ public class ApplicationCatalog {
             || Objects.equals(app.getString("domainId"), domainId)).toList();
     }
     public JSONObject require(String id) {
-        return all().stream().filter(a -> id.equals(a.getString("id"))).findFirst()
+        return require(all(), id);
+    }
+    private static JSONObject require(List<JSONObject> apps, String id) {
+        return apps.stream().filter(a -> id.equals(a.getString("id"))).findFirst()
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Application not found"));
     }
     public boolean inDomain(JSONObject app, User user) {
         return app.getString("domainId") == null || Objects.equals(app.getString("domainId"), user.getDomainId());
     }
     public List<JSONObject> visible(User user) {
-        return all().stream().filter(app -> canEnter(app, user) && hasAssignedPanelPaths(app)).map(app -> view(app, user)).toList();
+        var apps = applicationsInDomain(user.getDomainId());
+        var pageKeys = new BuiltinPageKeys(apps);
+        return apps.stream().filter(app -> canEnter(app, user) && hasAssignedPanelPaths(app))
+            .map(app -> view(app, user, pageKeys)).toList();
     }
     public JSONObject catalogue(User user, String search, String scope, String cursor, int size) {
         if (!"visible".equals(scope) && !"maintainable".equals(scope))
@@ -129,6 +183,7 @@ public class ApplicationCatalog {
         var rows = new ArrayList<JSONObject>();
         var apps = applicationsInDomain(user.getDomainId()).stream()
             .sorted(Comparator.comparing(app -> app.getString("id"))).toList();
+        var pageKeys = new BuiltinPageKeys(apps);
         for (var app : apps) {
             var id = app.getString("id");
             if ((cursor != null && id.compareTo(cursor) <= 0) || !matchesCatalogue(app, keyword)) continue;
@@ -136,17 +191,18 @@ public class ApplicationCatalog {
             if (!maintain && ("maintainable".equals(scope) || !canEnter(app, user))) continue;
             if (rows.size() == size)
                 return JSONObject.of("rows", rows, "nextCursor", rows.getLast().getString("id"));
-            rows.add(catalogueSummary(app, user, maintain, catalogueEntries(app, user, maintain).size()));
+            rows.add(catalogueSummary(app, user, maintain, catalogueEntries(app, user, maintain, pageKeys).size()));
         }
         return JSONObject.of("rows", rows);
     }
 
     public JSONObject catalogueRecord(String id, User user) {
-        var app = require(id);
+        var apps = all();
+        var app = require(apps, id);
         boolean maintain = canMaintainCatalogue(app, user);
         if (!maintain && !canEnter(app, user))
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Application not found");
-        var uses = catalogueEntries(app, user, maintain);
+        var uses = catalogueEntries(app, user, maintain, new BuiltinPageKeys(apps));
         var result = catalogueSummary(app, user, maintain, uses.size());
         result.put("entry", publicEntry(app));
         result.put("panelUses", uses);
@@ -166,9 +222,9 @@ public class ApplicationCatalog {
         return app.getString("domainId") != null && inDomain(app, user) && access.canMaintain(app, user);
     }
 
-    private List<ApplicationPanelUse> catalogueEntries(JSONObject app, User user, boolean maintain) {
+    private List<ApplicationPanelUse> catalogueEntries(JSONObject app, User user, boolean maintain, BuiltinPageKeys pageKeys) {
         if (maintain) return app.getList("panelUses", ApplicationPanelUse.class);
-        return isPanelSkillApplication(app) ? visiblePanelUses(app, user) : List.of();
+        return isPanelSkillApplication(app) ? visiblePanelUses(app, user, pageKeys) : List.of();
     }
 
     private JSONObject catalogueSummary(JSONObject app, User user, boolean maintain, int entryCount) {
@@ -199,19 +255,23 @@ public class ApplicationCatalog {
             var id = target.id() == null ? "app-" + UUID.randomUUID() : target.id();
             validateId(id);
             if (!id.startsWith("app-")) throw bad("A domain application requires an app- ID");
-            return ApplicationCatalogueForm.create(id, request.values());
+            var pageKeys = new BuiltinPageKeys(all());
+            return ApplicationCatalogueForm.create(id, request.values(), key -> pageKeys.conflict(key, user.getDomainId(), id));
         }
 
         if (!"object".equals(target.kind()) || !"platform:Application".equals(target.objectType()))
             throw bad("An application object target is required");
         validateId(target.primaryKey());
-        var app = require(target.primaryKey());
+        var apps = all();
+        var app = require(apps, target.primaryKey());
         requireDomainMaintainer(app, user);
         return switch (request.section()) {
             case "identity" -> ApplicationCatalogueForm.identity(app, request.values());
             case "entries" -> {
                 if (!panelManaged(app)) throw bad("Only panel applications can edit their entry table");
-                yield ApplicationCatalogueForm.entries(app, request.values());
+                var pageKeys = new BuiltinPageKeys(apps);
+                yield ApplicationCatalogueForm.entries(app, request.values(),
+                    key -> pageKeys.conflict(key, user.getDomainId(), app.getString("id")));
             }
             default -> throw bad("Unknown application catalogue form section");
         };
@@ -244,13 +304,17 @@ public class ApplicationCatalog {
         db.update("UPDATE sys_application SET icon=?,updated_at=now() WHERE id=?",icon,id);
     }
     public JSONObject view(JSONObject app, User user) {
+        return view(app, user, new BuiltinPageKeys(all()));
+    }
+
+    private JSONObject view(JSONObject app, User user, BuiltinPageKeys pageKeys) {
         var result = new JSONObject(app);
         result.put("entry", publicEntry(app));
         result.remove("permissions");
         result.remove("panelSettings");
-        if (panelManaged(app)) result.put("panelUses", visiblePanelUses(app, user));
+        if (panelManaged(app)) result.put("panelUses", visiblePanelUses(app, user, pageKeys));
         else if (hasPanelUseRegistration(app))
-            result.put("panelUses", canEnter(app, user) ? visiblePanelUses(app, user) : List.of());
+            result.put("panelUses", canEnter(app, user) ? visiblePanelUses(app, user, pageKeys) : List.of());
         return result;
     }
     private static JSONObject publicEntry(JSONObject app) {
@@ -286,6 +350,9 @@ public class ApplicationCatalog {
                 var old = all().stream().filter(a -> d.id().equals(a.getString("id"))).findFirst();
                 if (old.isPresent() && (!service.equals(old.get().getString("ownerService")) || old.get().getString("domainId") != null))
                     throw denied();
+                for (var use : declaration.panelUses())
+                    if (!BuiltinProductIds.isValid(use.panelId()))
+                        throw bad("Built-in application entry " + use.pageKey() + " must reference a platform panel: " + use.panelId());
                 var root = builtinPanelRoot(d.entry());
                 if ((root != null && inAssignedSpace(root)) || declaration.panelUses().stream().anyMatch(use -> inAssignedSpace(use.path())))
                     throw bad("Built-in applications cannot occupy the assigned application space");
@@ -310,6 +377,9 @@ public class ApplicationCatalog {
                 save(d.id(), null, service, null, d.kind(), d.rail(), d.category(), d.sort(), d.entry(), d.entryAccess(), d.scheduleAdapter(), null, declaration);
                 access.declare(require(d.id()), declaration, old.isEmpty());
             }
+            var apps = all();
+            new BuiltinPageKeys(apps).reportConflicts(apps,
+                Set.copyOf(declarations.stream().map(Builtin::id).toList()));
         });
     }
     public JSONObject publish(String id, Declaration declaration, String releaseId, User user) {
@@ -427,7 +497,7 @@ public class ApplicationCatalog {
     }
     private record LocatorDefault(String locator, String pageKey) {}
 
-    private static void validateLocators(List<JSONObject> applications) {
+    private static void validateLocators(List<JSONObject> applications, BuiltinPageKeys pageKeys) {
         var nativeOwners = new HashMap<String, String>();
         var panelOwners = new HashMap<String, Set<String>>();
         var panelPages = new HashSet<String>();
@@ -444,7 +514,7 @@ public class ApplicationCatalog {
                         reserveDefault(defaults, locator, entry.pageKey());
             }
 
-            var uses = app.getList("panelUses", ApplicationPanelUse.class);
+            var uses = pageKeys.activeUses(app);
             ApplicationPanelUse.validate(uses);
             for (var use : uses) {
                 if (!panelPages.add(use.pageKey())) throw bad("Panel use page keys must be unique in the domain");
@@ -469,12 +539,19 @@ public class ApplicationCatalog {
         var apps = new ArrayList<>(all().stream().filter(app -> !id.equals(app.getString("id"))).toList());
         apps.add(JSONObject.of("id", id, "domainId", domain, "kind", domain == null ? "native" : "product", "entry", entry,
             "pageSkills", pageSkills, "panelUses", panelUses));
+        var pageKeys = new BuiltinPageKeys(apps);
+        if (domain != null) {
+            for (var use : panelUses) {
+                var conflict = pageKeys.conflict(use.pageKey(), domain, id);
+                if (conflict != null) throw bad(conflict);
+            }
+        }
         var domains = new HashSet<String>(); domains.add(domain);
         for (var app : apps) domains.add(app.getString("domainId"));
         for (var scope : domains) {
             var visible = apps.stream().filter(app -> app.getString("domainId") == null || Objects.equals(scope, app.getString("domainId"))).toList();
-            validateLocators(visible);
-            validatePanelPaths(visible);
+            validateLocators(visible, pageKeys);
+            validatePanelPaths(visible, pageKeys);
         }
     }
     private static String builtinPanelRoot(JSONObject entry) {
@@ -482,7 +559,7 @@ public class ApplicationCatalog {
         return path.startsWith("/") && !path.equals("/") ? ApplicationPanelUse.canonicalPath(path) : null;
     }
 
-    private static void validatePanelPaths(List<JSONObject> applications) {
+    private static void validatePanelPaths(List<JSONObject> applications, BuiltinPageKeys pageKeys) {
         var roots = new HashMap<String, String>();
         for (var app : applications) {
             var kind = app.getString("kind");
@@ -493,7 +570,7 @@ public class ApplicationCatalog {
         var paths = new HashSet<String>();
         for (var app : applications) {
             if (!hasAssignedPanelPaths(app)) continue;
-            for (var use : app.getList("panelUses", ApplicationPanelUse.class)) {
+            for (var use : pageKeys.activeUses(app)) {
                 if (objectDetailClass(use.path()) != null)
                     throw bad("Panel path belongs to the object detail resolver: " + use.path());
                 if (!paths.add(use.path())) throw bad("Duplicate panel path: " + use.path());
@@ -531,13 +608,14 @@ public class ApplicationCatalog {
 
     public JSONObject resolveEntry(String path, User user) {
         var canonical = ApplicationPanelUse.canonicalPath(path);
+        var apps = applicationsInDomain(user.getDomainId());
+        var pageKeys = new BuiltinPageKeys(apps);
         var detailClass = objectDetailClass(canonical);
-        if (detailClass != null) return resolveObjectDetail(canonical, detailClass, user);
-        for (var app : applicationsInDomain(user.getDomainId())) {
+        if (detailClass != null) return resolveObjectDetail(canonical, detailClass, user, apps, pageKeys);
+        for (var app : apps) {
             if (!hasAssignedPanelPaths(app)) continue;
-            var declared = app.getList("panelUses", ApplicationPanelUse.class).stream()
-                .filter(use -> canonical.equals(use.path())).findFirst();
-            if (declared.isPresent()) return resolveDeclaredEntry(app, declared.get().id(), user);
+            var declared = pageKeys.activeUses(app).stream().filter(use -> canonical.equals(use.path())).findFirst();
+            if (declared.isPresent()) return resolveDeclaredEntry(app, declared.get().id(), user, pageKeys);
         }
         throw entryNotFound();
     }
@@ -549,16 +627,18 @@ public class ApplicationCatalog {
             var path = OBJECT_DETAIL_ROOT + UriUtils.encodePathSegment(className, StandardCharsets.UTF_8);
             return resolveEntry(path, user);
         }
-        var app = require(applicationId);
+        var apps = all();
+        var app = require(apps, applicationId);
         if (!inDomain(app, user)) throw denied();
-        if (!hasAssignedPanelPaths(app) || app.getList("panelUses", ApplicationPanelUse.class).stream().noneMatch(use -> useId.equals(use.id())))
+        var pageKeys = new BuiltinPageKeys(apps);
+        if (!hasAssignedPanelPaths(app) || pageKeys.activeUses(app).stream().noneMatch(use -> useId.equals(use.id())))
             throw entryNotFound();
-        return resolveDeclaredEntry(app, useId, user);
+        return resolveDeclaredEntry(app, useId, user, pageKeys);
     }
 
-    private JSONObject resolveDeclaredEntry(JSONObject app, String useId, User user) {
+    private JSONObject resolveDeclaredEntry(JSONObject app, String useId, User user, BuiltinPageKeys pageKeys) {
         if (!access.canEnter(app, user)) throw denied();
-        var allowed = visiblePanelUses(app, user);
+        var allowed = visiblePanelUses(app, user, pageKeys);
         var use = allowed.stream().filter(entry -> useId.equals(entry.id())).findFirst().orElseThrow(ApplicationCatalog::denied);
         return entryResolution(app, use, allowed);
     }
@@ -570,10 +650,10 @@ public class ApplicationCatalog {
         return UriUtils.decode(segment, StandardCharsets.UTF_8);
     }
 
-    private JSONObject resolveObjectDetail(String path, String className, User user) {
+    private JSONObject resolveObjectDetail(String path, String className, User user, List<JSONObject> apps, BuiltinPageKeys pageKeys) {
         if (className.length() > OBJECT_DETAIL_CLASS_MAX_LENGTH)
             throw bad("Object detail class names must be at most " + OBJECT_DETAIL_CLASS_MAX_LENGTH + " UTF-16 code units");
-        var browser = require("browser");
+        var browser = require(apps, "browser");
         if (user.getDomainId() == null || !canEnter(browser, user)) throw denied();
         var panelId = panels.objectDetailPanel(user.getDomainId(), className);
         if (panelId == null) throw entryNotFound();
@@ -581,7 +661,7 @@ public class ApplicationCatalog {
         var key = OBJECT_DETAIL_KEY_PREFIX + className;
         var permission = browser.getList("entryAccess", String.class).getFirst();
         var use = new ApplicationPanelUse(key, key, panelId, path, new ApplicationPanelUse.Access(permission, null), null, null);
-        return entryResolution(browser, use, visiblePanelUses(browser, user));
+        return entryResolution(browser, use, visiblePanelUses(browser, user, pageKeys));
     }
 
     private static JSONObject entryResolution(JSONObject app, ApplicationPanelUse use, List<ApplicationPanelUse> allowed) {
@@ -601,10 +681,12 @@ public class ApplicationCatalog {
     }
 
     public JSONObject panelUses(String id, User user) {
-        var app = require(id);
+        var apps = all();
+        var app = require(apps, id);
         if (!hasPanelUseRegistration(app)) throw bad("Application has no panel use registration");
         if (!inDomain(app, user) || !access.canEnter(app, user)) throw denied();
-        return JSONObject.of("applicationId", id, "entry", app.getJSONObject("entry"), "panelUses", visiblePanelUses(app, user));
+        return JSONObject.of("applicationId", id, "entry", app.getJSONObject("entry"),
+            "panelUses", visiblePanelUses(app, user, new BuiltinPageKeys(apps)));
     }
     public JSONObject managePanelUses(String id, User user) {
         var app = require(id);
@@ -629,16 +711,16 @@ public class ApplicationCatalog {
             throw bad("Delivery requires panels, projections, packages, agents and skills");
     }
 
-    private List<ApplicationPanelUse> visiblePanelUses(JSONObject app, User user) {
+    private List<ApplicationPanelUse> visiblePanelUses(JSONObject app, User user, BuiltinPageKeys pageKeys) {
         if (!hasAssignedPanelPaths(app))
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "Panel application " + app.getString("id") + " must be re-registered with complete canonical paths");
-        return entryAdmittedPanelUses(app, user).stream()
+        return entryAdmittedPanelUses(app, user, pageKeys).stream()
             .filter(use -> grants.allowed(use.panelId(), "use")).toList();
     }
 
-    private List<ApplicationPanelUse> entryAdmittedPanelUses(JSONObject app, User user) {
-        return access.panelUses(app.getList("panelUses", ApplicationPanelUse.class), user);
+    private List<ApplicationPanelUse> entryAdmittedPanelUses(JSONObject app, User user, BuiltinPageKeys pageKeys) {
+        return access.panelUses(pageKeys.activeUses(app), user);
     }
 
     public JSONObject putPanelUses(String id, ApplicationController.PanelRegistration body, User user) {

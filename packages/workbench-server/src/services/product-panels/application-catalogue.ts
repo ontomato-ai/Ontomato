@@ -5,14 +5,20 @@ import {
   type ApplicationCatalogueFormRequest,
 } from "@ontomato/contracts/application-catalogue";
 import { panelFormDescriptionSchema } from "@ontomato/contracts/panel-projection";
+import { APPLICATION } from "@ontomato/contracts/platform-object-types";
 import { applicationCatalogueScopeSchema } from "@ontomato/contracts/product-catalog-query";
 import { config } from "../../config/application";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendDelete, backendGet, backendPost, backendPut, buildBackendHeaders } from "../../utils/backend-client";
+import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
 
 const applicationPath = "/platform/applications";
 const cataloguePath = `${applicationPath}/catalogue`;
+export const applicationDraftIdSchema = z.string().regex(/^app-[a-z0-9-]+$/);
+const createPath = /^\/platform\/applications\/(app-[a-z0-9-]+)\/panel-uses\?create=true$/;
+type FormParams = Partial<Pick<ApplicationCatalogueFormRequest, "values" | "changedField">>;
+type EditFormParams = FormParams & { section: Exclude<ApplicationCatalogueFormRequest["section"], "create"> };
 const ownerSuccessSchema = z.object({ success: z.literal(true) });
 const ownerData = <T>(text: string, schema: z.ZodType<T>) =>
   schema.parse(ownerSuccessSchema.extend({ data: z.unknown() }).parse(JSON.parse(text)).data);
@@ -71,7 +77,28 @@ export function applicationCatalogueClient(viewer: AssistantCredentials) {
 export function createApplicationReadAdapter(_owner: ProductOwner, viewer: AssistantCredentials) {
   const { query, record, form } = applicationCatalogueClient(viewer);
   return {
-    query, record, form,
+    query, record,
+    async form(primaryKey: string, { section, values, changedField = null }: EditFormParams) {
+      const target = { kind: "object", objectType: APPLICATION, primaryKey } as const;
+      const schema = section === "identity" ? applicationIdentityUpdateSchema : applicationEntriesUpdateSchema;
+      if (values !== undefined && !schema.safeParse(values).success) {
+        const current = await form({ section, target, changedField: null });
+        values = { ...current.values, ...values };
+      }
+      return form({ section, target, values, changedField });
+    },
+    async createForm({ values, changedField = null }: FormParams) {
+      const { id, ...formValues } = values ?? {};
+      const draftId = applicationDraftIdSchema.optional().parse(id);
+      const draft = await form({
+        section: "create", target: { kind: "draft", id: draftId },
+        values: values === undefined ? undefined : formValues, changedField,
+      });
+      const allocatedId = createPath.exec(draft.save.path)?.[1];
+      if (!allocatedId || (draftId !== undefined && draftId !== allocatedId))
+        throw new HttpError(502, "The application owner returned an invalid draft save path", "APPLICATION_DRAFT_INVALID");
+      return { ...draft, values: { ...draft.values, id: allocatedId } };
+    },
     async entries(primaryKey: string) {
       const { id, entry, panelUses } = await record(primaryKey);
       return { applicationId: id, entry, panelUses };

@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { AGENT_DEFINITION, DELETE_SKILL, SKILL } from "@ontomato/contracts/panel-client-requests";
+import { panelDownloadReceiptSchema } from "@ontomato/contracts/panel-download";
+import { AGENT_DEFINITION, DELETE_SKILL, EXPORT_SKILL, SKILL } from "@ontomato/contracts/panel-client-requests";
 import { tForLocale } from "../../i18n";
 import { assertPermission } from "../../identity/installed";
 import { HttpError } from "../../utils/errors";
@@ -9,6 +10,7 @@ import type {
   PanelOperationHost,
   PanelOperationTarget,
   PanelRecordTarget,
+  PanelReadServerOperation,
   PanelServerOperation,
   SinglePanelOperationOutcome,
 } from "../product-panels/server-operations";
@@ -42,10 +44,7 @@ async function referenceAccess({ owner, credentials }: PanelOperationActor) {
 
 async function skillTitle(host: PanelOperationHost, target: PanelRecordTarget): Promise<string> {
   const skillManager = await loadSkillManager();
-  const found = (await skillManager.getAllSkills(host.initiator.owner.domainId, host.initiator.credentials))
-    .find(skill => skill.id === target.primaryKey);
-  if (!found) throw new HttpError(404, "Skill not found", "SKILL_NOT_FOUND");
-  return found.title;
+  return (await skillManager.getSkillInfo(host.initiator.owner.domainId, target.primaryKey, host.initiator.credentials)).title;
 }
 
 const deleteSkillImpact: PanelImpactInspector = {
@@ -120,3 +119,23 @@ export const skillServerOperations = [
     },
   },
 ] satisfies readonly PanelServerOperation[];
+
+export const skillExportOperation = {
+  handlerRef: EXPORT_SKILL,
+  labelKey: "panels.skill.export",
+  kind: "action",
+  binding: { kind: "PlatformOperation", id: EXPORT_SKILL },
+  effect: "read",
+  batch: false,
+  targetType: SKILL,
+  target: { source: "input", input: "skill" },
+  targetSchema: skillObjectTarget,
+  inputSchema: deleteInputSchema,
+  resultSchema: panelDownloadReceiptSchema,
+  async execute({ executor: { owner, credentials } }, call) {
+    const { primaryKey } = skillObjectTarget.parse(call.target);
+    const skillManager = await loadSkillManager();
+    const bytes = await skillManager.exportSkill(owner.domainId, primaryKey, credentials);
+    return { kind: "file", bytes: new Uint8Array(bytes), suggestedName: `${primaryKey}.zip`, mime: "application/zip" };
+  },
+} satisfies PanelReadServerOperation & { labelKey: string };

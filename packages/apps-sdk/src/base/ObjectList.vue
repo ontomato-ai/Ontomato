@@ -30,6 +30,8 @@ interface ParsedListData {
   readonly total: number;
   readonly hasTotal: boolean;
   readonly nextCursor?: string;
+  /** What the owner says of a partial answer, in the reader's language, shown beside the rows. */
+  readonly diagnostics: readonly string[];
   readonly status: PlatformGraphStatus;
   readonly reason?: string;
 }
@@ -42,19 +44,34 @@ interface ParsedListData {
  */
 const props = withDefaults(
   defineProps<{
-    /** Multi-column table definition; when absent, renders a compact selectable list. */
+    /**
+     * The table's columns, each a field of the owner's records (`key`, its header `labelKey`, and how it is drawn); absent,
+     * the list is compact: each item shows its label, then `statusField`, `subtitleField` and `tagsField` as configured.
+     */
     columns?: readonly ObjectListColumn[];
-    /** Field key rendered as a status tag on each item in compact list mode. */
+    /**
+     * The field shown as a status tag at the end of each compact item. Its colour is the owner's tone for that field on the
+     * record (`tones`): an owner that gives none has it shown as plain text, and the colour is the owner's to give.
+     */
     statusField?: string;
-    /** Key in `record.tags` rendered as tags on each item in compact list mode. */
+    /** The key in the owner's record `tags` whose values are shown as small tags beneath each compact item. */
     tagsField?: string;
-    /** Page size for cursor or page pagination when the read supports paging (defaults to 20). */
+    /**
+     * Field key whose value is each item's summary line in compact list mode, beneath its label (such as a description);
+     * absent, the owner's own subtitle for the record is shown, if it gives one.
+     */
+    subtitleField?: string;
+    /** How many items a page holds when the owner's read pages (a query's cursor, or page numbers); 20 by default. */
     pageSize?: number;
-    /** Move single selection to the first visible item when the current selection disappears (never after cleared to null). */
+    /**
+     * Keeps something selected: when nothing is selected (on first showing, too) or the selected item is no longer listed
+     * (deleted, or filtered out), the first listed item is selected; an empty list clears the selection. A selection the
+     * reader cleared on purpose is left cleared.
+     */
     fallbackToFirst?: boolean;
-    /** Whether clicking an already-selected item clears the single selection. */
+    /** Whether clicking the selected item again clears the selection; off, a click always selects. */
     toggleable?: boolean;
-    /** Optional empty-state message key resolved via `panel.t`. */
+    /** The panel's message key for what an empty list says, in place of the platform's own words. */
     emptyText?: string;
   }>(),
   {
@@ -192,7 +209,7 @@ const datumState = useMemberData(datumName);
 
 const parsedData = computed<ParsedListData>(() => {
   if (datumState.value.status !== "ready") {
-    return { rows: [], total: 0, hasTotal: false, status: "ok" };
+    return { rows: [], total: 0, hasTotal: false, diagnostics: [], status: "ok" };
   }
   const value = datumState.value.value;
   if (datumName === "objects") {
@@ -202,6 +219,7 @@ const parsedData = computed<ParsedListData>(() => {
         rows: [],
         total: 0,
         hasTotal: false,
+        diagnostics: [],
         status: response.status,
         reason: response.reason,
       };
@@ -216,11 +234,11 @@ const parsedData = computed<ParsedListData>(() => {
         fields,
       };
     });
-    return { rows: items, total: response.total, hasTotal: true, status: "ok" };
+    return { rows: items, total: response.total, hasTotal: true, diagnostics: [], status: "ok" };
   }
   if (Array.isArray(value)) {
     const items = value as unknown as readonly PlatformObjectRecord[];
-    return { rows: items, total: items.length, hasTotal: true, status: "ok" };
+    return { rows: items, total: items.length, hasTotal: true, diagnostics: [], status: "ok" };
   }
   const queryResult = value as unknown as PanelRecordQuery;
   const items = queryResult.rows as unknown as readonly PlatformObjectRecord[];
@@ -230,6 +248,7 @@ const parsedData = computed<ParsedListData>(() => {
     total: queryResult.total ?? items.length,
     hasTotal,
     nextCursor: queryResult.nextCursor,
+    diagnostics: queryResult.diagnostics ?? [],
     status: "ok",
   };
 });
@@ -238,6 +257,7 @@ const rows = computed<readonly PlatformObjectRecord[]>(() => parsedData.value.ro
 const total = computed(() => parsedData.value.total);
 const nextCursor = computed(() => parsedData.value.nextCursor);
 const queryStatus = computed(() => parsedData.value.status);
+const diagnostics = computed(() => parsedData.value.diagnostics);
 const queryReason = computed(() => parsedData.value.reason);
 
 function rowClassName(row: PlatformObjectRecord): string {
@@ -470,6 +490,9 @@ function navigateTo(reference: PlatformFieldReference, columnKey: string) {
   emit("navigate", reference, columnKey);
 }
 
+/** The field each compact item's summary line shows: the one configured, else the owner's own subtitle. */
+const summaryKey = computed(() => props.subtitleField ?? "subtitle");
+
 function fieldValue(row: PlatformObjectRecord, key: string): string {
   if (key === "label") return row.label;
   if (key === "subtitle") return row.subtitle ?? "";
@@ -532,6 +555,9 @@ watch(someVisibleChecked, () => {
       </div>
     </div>
 
+    <ul v-if="diagnostics.length" class="sdk-object-list-diagnostics" role="status">
+      <li v-for="note in diagnostics" :key="note">{{ note }}</li>
+    </ul>
     <p
       v-if="datumState.status === 'ready' && queryStatus !== 'ok'"
       class="sdk-object-list-status"
@@ -658,8 +684,8 @@ watch(someVisibleChecked, () => {
                 :data-tone="row.tones?.[statusField] ?? 'default'"
               >{{ row.fields[statusField] }}</span>
             </span>
-            <span v-if="row.subtitle" class="sdk-object-list-item-sub">
-              <template v-for="(part, index) in textHighlightSegments(row.subtitle, row.highlights?.subtitle)" :key="index">
+            <span v-if="fieldValue(row, summaryKey)" class="sdk-object-list-item-sub">
+              <template v-for="(part, index) in textHighlightSegments(fieldValue(row, summaryKey), row.highlights?.[summaryKey])" :key="index">
                 <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
               </template>
             </span>
@@ -701,80 +727,99 @@ watch(someVisibleChecked, () => {
 </template>
 
 <style scoped>
+/* The platform's design roles only (DESIGN.md): neutral fills for hover and selection, link colour for links, the
+   shared spacing, type, radius and control scales. No value is written here. */
 .sdk-object-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--spacing-sm);
 }
 .sdk-object-list-toolbar {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--spacing-sm);
 }
 .sdk-object-list-search {
   background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color);
-  border-radius: 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px var(--ui-divider) inset;
+  box-sizing: border-box;
   color: var(--el-text-color-primary);
   flex: 1 1 160px;
-  font-size: var(--el-font-size-base, 13px);
-  min-height: 30px;
+  font-size: var(--text-sm);
+  height: var(--control-height);
   min-width: 120px;
-  padding: 4px 8px;
+  padding: 0 var(--spacing-md);
+  transition: box-shadow var(--transition-fast);
 }
+.sdk-object-list-search::placeholder {
+  color: var(--el-text-color-placeholder);
+}
+.sdk-object-list-search:hover {
+  box-shadow: 0 0 0 1px var(--ui-border) inset;
+}
+.sdk-object-list-search:focus-visible {
+  box-shadow: 0 0 0 1px var(--brand-link) inset, var(--focus-ring);
+  outline: none;
+}
+/* Paging is a secondary command: neutral outline, quiet fill on hover and press. */
 .sdk-object-list-btn {
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color);
-  border-radius: 4px;
+  background: transparent;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
   color: var(--el-text-color-primary);
   cursor: pointer;
-  font-size: var(--el-font-size-small, 12px);
-  min-height: 30px;
-  padding: 4px 10px;
+  font-size: var(--text-sm);
+  height: var(--control-height-sm);
+  padding: 0 var(--spacing-md);
+  transition: background-color var(--transition-fast);
 }
 .sdk-object-list-btn:hover:not(:disabled) {
-  border-color: var(--el-color-primary);
-  color: var(--el-color-primary);
+  background: var(--ui-fill-tertiary);
+}
+.sdk-object-list-btn:active:not(:disabled) {
+  background: var(--ui-fill-quaternary);
 }
 .sdk-object-list-btn:disabled {
+  color: var(--el-disabled-text-color);
   cursor: not-allowed;
-  opacity: 0.5;
 }
 .sdk-object-list-count,
 .sdk-object-list-selected-count,
 .sdk-object-list-page-info {
   color: var(--el-text-color-secondary);
-  font-size: var(--el-font-size-small, 12px);
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
 }
 .sdk-object-list-selection-bar {
   align-items: center;
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  border-bottom: 1px solid var(--ui-divider);
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 4px 2px 6px;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) 0 var(--spacing-sm);
 }
 .sdk-object-list-select-all {
   align-items: center;
   cursor: pointer;
   display: inline-flex;
-  font-size: var(--el-font-size-small, 12px);
-  gap: 6px;
+  font-size: var(--text-xs);
+  gap: var(--spacing-xs);
 }
 .sdk-object-list-batch-actions {
   align-items: center;
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--spacing-xs);
   margin-left: auto;
 }
 .sdk-object-list-link-btn,
 .sdk-object-ref-link {
   background: none;
   border: 0;
-  color: var(--el-color-primary);
+  color: var(--brand-link);
   cursor: pointer;
   font-size: inherit;
   padding: 0;
@@ -789,47 +834,53 @@ watch(someVisibleChecked, () => {
 }
 .sdk-object-list-table {
   border-collapse: collapse;
-  font-size: var(--el-font-size-base, 13px);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
   width: 100%;
 }
 .sdk-object-list-table th,
 .sdk-object-list-table td {
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  padding: 8px 10px;
+  border-bottom: 1px solid var(--ui-divider);
+  padding: var(--spacing-sm) var(--spacing-md);
   text-align: left;
   vertical-align: middle;
 }
 .sdk-object-list-table th {
   color: var(--el-text-color-secondary);
-  font-size: var(--el-font-size-small, 12px);
-  font-weight: 500;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  height: var(--table-head-height);
+}
+.sdk-object-list-table td {
+  height: var(--table-row-height);
 }
 .sdk-object-list-table tbody tr {
   cursor: pointer;
+  transition: background-color var(--transition-fast);
 }
 .sdk-object-list-table tbody tr:hover {
-  background: var(--el-fill-color-light);
+  background: var(--ui-fill-tertiary);
 }
 .sdk-object-list-table tbody tr.chosen {
-  background: var(--el-color-primary-light-9);
+  background: var(--ui-fill-secondary);
 }
 .sdk-object-list-check-col {
-  width: 32px;
+  width: var(--control-height);
 }
 .sdk-object-list-cell {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: calc(var(--spacing-xs) / 2);
 }
 .sdk-object-list-cell-sub,
 .sdk-object-list-item-sub {
   color: var(--el-text-color-secondary);
-  font-size: var(--el-font-size-small, 12px);
+  font-size: var(--text-xs);
 }
 .sdk-object-list-items {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: calc(var(--spacing-xs) / 2);
   list-style: none;
   margin: 0;
   padding: 0;
@@ -837,100 +888,111 @@ watch(someVisibleChecked, () => {
 .sdk-object-list-row {
   align-items: flex-start;
   display: flex;
-  gap: 6px;
+  gap: var(--spacing-xs);
 }
 .sdk-object-list-row-check {
-  margin-top: 9px;
+  margin-top: var(--spacing-sm);
 }
 .sdk-object-list-item-btn {
   background: none;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--el-text-color-primary);
   cursor: pointer;
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px 8px;
+  font-size: var(--text-sm);
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
   text-align: left;
+  transition: background-color var(--transition-fast);
   width: 100%;
 }
 .sdk-object-list-item-btn:hover {
-  background: var(--el-fill-color-light);
+  background: var(--ui-fill-tertiary);
 }
 .sdk-object-list-item-btn.chosen {
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
+  background: var(--ui-fill-secondary);
+  font-weight: var(--font-medium);
 }
 .sdk-object-list-item-head {
   align-items: center;
   display: flex;
-  gap: 8px;
+  gap: var(--spacing-sm);
   justify-content: space-between;
   width: 100%;
 }
 .sdk-object-list-item-tags {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--spacing-xs);
 }
+/* Tags are light fills: neutral, or a status's soft fill with its readable text colour. */
 .sdk-object-list-tag {
-  background: var(--el-fill-color-light);
-  border-radius: 4px;
+  background: var(--ui-fill-tertiary);
+  border-radius: var(--radius-xs);
   color: var(--el-text-color-regular);
   display: inline-block;
-  font-size: 11px;
-  line-height: 1.4;
-  padding: 1px 6px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  padding: 0 var(--spacing-xs);
   white-space: nowrap;
 }
 .sdk-object-list-tag[data-tone="info"] {
   background: var(--el-color-info-light-9);
-  color: var(--el-color-info);
+  color: var(--el-color-info-text);
 }
 .sdk-object-list-tag[data-tone="success"] {
   background: var(--el-color-success-light-9);
-  color: var(--el-color-success);
+  color: var(--el-color-success-text);
 }
 .sdk-object-list-tag[data-tone="warning"] {
   background: var(--el-color-warning-light-9);
-  color: var(--el-color-warning);
+  color: var(--el-color-warning-text);
 }
 .sdk-object-list-tag[data-tone="danger"] {
   background: var(--el-color-danger-light-9);
-  color: var(--el-color-danger);
+  color: var(--el-color-danger-text);
 }
 .sdk-object-list-pagination {
   align-items: center;
   display: flex;
-  gap: 8px;
+  gap: var(--spacing-sm);
   justify-content: flex-end;
-  padding-top: 4px;
+  padding-top: var(--spacing-xs);
+}
+.sdk-object-list-diagnostics {
+  color: var(--el-color-warning-text);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--spacing-xs);
 }
 .sdk-object-list-status {
   align-items: center;
   color: var(--el-text-color-secondary);
   display: flex;
   flex-wrap: wrap;
-  font-size: var(--el-font-size-small, 12px);
-  gap: 6px;
+  font-size: var(--text-xs);
+  gap: var(--spacing-xs);
   margin: 0;
-  padding: 12px 4px;
+  padding: var(--spacing-md) var(--spacing-xs);
 }
 .sdk-object-list-status[data-status="refused"] {
-  color: var(--el-color-warning);
+  color: var(--el-color-warning-text);
 }
 .sdk-object-list-status[data-status="failed"] {
-  color: var(--el-color-danger);
+  color: var(--el-color-danger-text);
 }
 .sdk-object-list-status-reason {
   color: var(--el-text-color-secondary);
 }
 mark {
-  background: var(--el-color-warning-light-7, #f8e3c5);
-  border-radius: 2px;
+  background: var(--el-color-warning-light-7);
+  border-radius: var(--radius-xs);
   color: inherit;
-  padding: 0 1px;
+  padding: 0 calc(var(--spacing-xs) / 4);
 }
 </style>

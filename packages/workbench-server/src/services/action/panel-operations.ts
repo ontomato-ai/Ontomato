@@ -46,6 +46,12 @@ const actionObjectTarget = z.object({
 }).strict();
 const actionSaveTarget = z.discriminatedUnion("kind", [actionObjectTarget, panelFormTargetSchema.options[1]]);
 const saveInputSchema = panelFormSaveInputSchema.omit({ revision: true }).strict();
+
+/** The save the owner applies: the whole action, or with submittedFields only those fields of it. */
+function saveBody(target: PanelOperationTarget, input: Record<string, unknown>) {
+  const { values, submittedFields } = saveInputSchema.parse(input);
+  return { ...valuesForTarget(target, values), ...(submittedFields && { submittedFields }) };
+}
 const deleteInputSchema = z.object({}).strict();
 
 type StatusGroupOutcome = Extract<SinglePanelOperationOutcome, { kind: "refusal" | "failure" }>;
@@ -98,6 +104,7 @@ const formInstructions = "Read the form for the intended target. Use its fields,
 export const m6ServerOperations = [
   {
     handlerRef: `${ACTION}.save`,
+    labelKey: "panels.action.operations.save",
     kind: "form.save",
     binding: { kind: "PlatformObjectType", id: ACTION },
     effect: "write",
@@ -118,7 +125,7 @@ export const m6ServerOperations = [
       },
     },
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
-      return save(host, "/action/save", valuesForTarget(target, saveInputSchema.parse(input).values),
+      return save(host, "/action/save", saveBody(target, input),
         "ACTION_SAVE_FAILED", ACTION, [ACTION, FUNCTION]);
     },
   },

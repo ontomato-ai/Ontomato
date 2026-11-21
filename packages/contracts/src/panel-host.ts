@@ -4,10 +4,14 @@ import { buildTestContextSchema } from "./build-tests";
 import { pageContextSchema } from "./page-context";
 import { pageDraftLinkSchema } from "./page-draft";
 import { panelUseRefSchema } from "./panel-agent";
-import { panelMemberPathSchema, panelObjectIdentitySchema, panelOpenRequestSchema, panelOperationSchema, type PanelDeepLinkStateValue, type PanelObjectIdentity } from "./panel-manifest";
+import {
+  panelMemberPathSchema, panelMemberPathSegmentSchema, panelObjectIdentitySchema, panelObjectRefSchema,
+  panelOpenRequestSchema, panelOperationSchema, type PanelDeepLinkStateValue, type PanelObjectIdentity,
+} from "./panel-manifest";
 import { panelOwnerOperationDescriptorSchema } from "./panel-operations";
 import { panelLocalOperationNameSchema } from "./panel-projection";
 import { applicationPanelUseSchema, panelDefinitionContentSchema, productPanelSchema } from "./product-panels";
+import { productCurrentIdParamsSchema } from "./product-record-id";
 import { definitionRevisionSchema, type ProductDefinitionRevision, type ProductDefinitionTarget } from "./product-subscriptions";
 import { workspaceDiffSchema, workspaceIdSchema } from "./workspaces";
 
@@ -56,6 +60,46 @@ export type ProductPanelReadSource = z.infer<typeof productPanelReadSourceSchema
 /** Resolve each segment against its parent before reading the named datum at the last member. */
 export const directPanelMemberPathSchema = panelMemberPathSchema.nonempty();
 export type DirectPanelMemberPath = z.infer<typeof directPanelMemberPathSchema>;
+
+/** A projection definition requested for rendering in the deployment's current SDK. */
+export const PANEL_MEMBER_RENDER_HEADER = "X-Ontomato-Panel-Member-Render";
+
+const unresolvedObjectDetailSegmentSchema = panelMemberPathSegmentSchema.extend({
+  selection: z.object({ stateValue: panelObjectRefSchema }).strict(),
+});
+
+const nestedPanelMemberPathSchema = z.array(z.union([
+  panelMemberPathSegmentSchema,
+  unresolvedObjectDetailSegmentSchema,
+])).nonempty().superRefine((path, ctx) => {
+  for (const [index, { selection }] of path.slice(0, -1).entries()) {
+    if (selection && "stateValue" in selection && !("target" in selection)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [index, "selection", "target"],
+        message: "Only the final object detail placement may omit its target",
+      });
+    }
+  }
+});
+
+/** Read the current contents reached through an authorized placement.
+ * The resolver checks the actual member's objectDetail rule before deriving an omitted terminal target.
+ */
+export const PANEL_NESTED_READ_PATH = "/product-panels/nested";
+export const productPanelNestedReadRequestSchema = z.object({
+  source: productPanelReadSourceSchema,
+  memberPath: nestedPanelMemberPathSchema,
+}).strict();
+export type ProductPanelNestedReadRequest = z.infer<typeof productPanelNestedReadRequestSchema>;
+
+export const productPanelNestedReadResponseSchema = z.object({
+  panel: panelDefinitionContentSchema.pick({ content: true, manifest: true }).extend({
+    id: productCurrentIdParamsSchema.shape.id,
+    revision: definitionRevisionSchema.shape.revision,
+  }),
+}).strict();
+export type ProductPanelNestedReadResponse = z.infer<typeof productPanelNestedReadResponseSchema>;
 
 const panelMemberReadRequestSchema = z.object({
   source: productPanelReadSourceSchema,

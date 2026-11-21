@@ -5,8 +5,10 @@ import { usePanelContext, useProjectionSlot } from "../panel/context";
 
 /**
  * Generic conversation entry button (U18): bound to a projection whose `conversationEntry` declares an agent target
- * (`id`, `preset`, or `page-default`) and optional prefill text. Clicking only asks the host to expand the page's
- * composer with that exact declaration; it never sends a message and carries no business copy of its own.
+ * (`id`, `preset`, or `page-default`) and an optional opening sentence — written out (`prefill`), or a key into the
+ * panel's messages (`prefillKey`), read in the reader's language and else the deployment's default. Clicking only asks
+ * the host to expand the page's composer with that declaration; it never sends a message and carries no business copy
+ * of its own.
  */
 const props = withDefaults(
   defineProps<{
@@ -56,10 +58,14 @@ async function openComposer() {
   }
   opening.value = true;
   try {
+    // The panel's text answers the key itself where neither the reader's language nor the default has words for it:
+    // the composer then opens with no sentence, never with the key.
+    const keyed = entry.prefillKey !== undefined ? panel.t(entry.prefillKey) : undefined;
+    const prefill = entry.prefillKey !== undefined ? (keyed === entry.prefillKey ? undefined : keyed) : entry.prefill;
     await panel.expandPageComposer({
       slot: slot.slot,
       target: entry.target,
-      ...(entry.prefill !== undefined ? { prefill: entry.prefill } : {}),
+      ...(prefill !== undefined ? { prefill } : {}),
     });
     emit("expanded");
   } catch (reason: unknown) {
@@ -88,33 +94,51 @@ async function openComposer() {
 </template>
 
 <style scoped>
+/* A primary action is solid; any other is a neutral outline with a quiet fill on hover and press (DESIGN.md). */
 .sdk-conversation-entry {
   display: inline-flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--spacing-xs);
 }
 .sdk-conversation-entry-btn {
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color);
-  border-radius: 4px;
+  background: transparent;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
   color: var(--el-text-color-primary);
   cursor: pointer;
-  font-size: var(--el-font-size-small, 12px);
-  min-height: 30px;
-  padding: 4px 12px;
+  font-size: var(--text-sm);
+  height: var(--control-height);
+  padding: 0 var(--spacing-lg);
+  transition: background-color var(--transition-fast);
+}
+.sdk-conversation-entry-btn:hover:not(:disabled) {
+  background: var(--ui-fill-tertiary);
+}
+.sdk-conversation-entry-btn:active:not(:disabled) {
+  background: var(--ui-fill-quaternary);
 }
 .sdk-conversation-entry-btn.primary {
   background: var(--el-color-primary);
   border-color: var(--el-color-primary);
-  color: var(--el-color-white, #fff);
+  color: var(--on-primary);
+}
+.sdk-conversation-entry-btn.primary:hover:not(:disabled) {
+  background: var(--brand-primary-hover);
+  border-color: var(--brand-primary-hover);
+}
+.sdk-conversation-entry-btn:focus-visible {
+  outline: 2px solid var(--brand-link);
+  outline-offset: 2px;
 }
 .sdk-conversation-entry-btn:disabled {
+  background: var(--el-fill-color-light);
+  border-color: var(--ui-divider);
+  color: var(--el-disabled-text-color);
   cursor: not-allowed;
-  opacity: 0.55;
 }
 .sdk-conversation-entry-error {
-  color: var(--el-color-danger);
-  font-size: var(--el-font-size-small, 12px);
+  color: var(--el-color-danger-text);
+  font-size: var(--text-xs);
   margin: 0;
 }
 </style>

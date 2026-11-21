@@ -12,11 +12,11 @@
   ],
   "applications": [
     {
-      "id": "example-vue-agent-directory",
+      "id": "app-example-vue-agent-directory",
       "mode": "create",
       "input": {
         "entry": {
-          "path": "/applications/example-vue-agent-directory",
+          "path": "/applications/app-example-vue-agent-directory",
           "renderer": "panels"
         },
         "declaration": {
@@ -38,7 +38,7 @@
             "id": "example-vue-agent-directory-use",
             "pageKey": "example-vue-agent-directory-manage",
             "panelId": "example-vue-agent-directory-panel",
-            "path": "/applications/example-vue-agent-directory/manage",
+            "path": "/applications/app-example-vue-agent-directory/manage",
             "names": {
               "en": "Manage agents"
             },

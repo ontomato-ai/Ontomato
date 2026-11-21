@@ -2,7 +2,7 @@ import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema } from "./form-fields";
 import { pageDraftLinkSchema } from "./page-draft";
-import { APPLICATION_PANEL_USE, PRODUCT_PANEL, platformHasChildCollection, platformObjectTypes, platformOntologyLayers } from "./platform-object-types";
+import { APPLICATION_PANEL_USE, PRODUCT_PANEL, PRODUCT_PROJECTION, platformHasChildCollection, platformObjectTypes, platformOntologyLayers } from "./platform-object-types";
 
 /* The registered manifest describes a panel instance's state, placements, ports and events. Resource owners
  * describe their own operations. A frame and a direct instance consume the same registered declaration. */
@@ -145,8 +145,9 @@ const panelOperationInputRefSchema = z.union([
   z.object({ formField: panelFormFieldRefSchema.pick({ slot: true, path: true }) }).strict(),
 ]);
 
-/** Values supplied by this instance. The owner operation's target still supplies the draft. */
+/** Values supplied by the placing panel to a read operation. */
 export const panelReadOperationInputsSchema = z.object({
+  draft: z.object({ slot: key }).strict().optional(),
   parameters: z.union([
     panelOperationInputRefSchema,
     z.object({ fields: z.record(key, panelOperationInputRefSchema) }).strict(),
@@ -179,9 +180,10 @@ export type PanelOperationTarget = z.infer<typeof panelOperationTargetSchema>;
  * never a URL, SQL or function source, so a described operation is one somebody registered (overall design 5.1). The
  * SDK receives the owner's admitted operation description. A state operation comes from the panel's own declaration.
  */
+export const panelOperationIdSchema = z.string().min(1);
 export const panelOperationSchema = z
   .object({
-    id: key,
+    id: panelOperationIdSchema,
     label: z.string().min(1).max(200),
     kind: panelOperationKindSchema,
     /** The parameters the operation takes, by name; a form save's parameters are the owner's form fields, read live. */
@@ -190,6 +192,8 @@ export const panelOperationSchema = z
     target: panelOperationTargetSchema.optional(),
     /** The slot whose projection publishes this operation; absent on a state operation. */
     slot: key.optional(),
+    /** The authorized placement of a nested publisher, relative to the opened panel. */
+    memberPath: z.lazy(() => panelMemberPathSchema.nonempty()).optional(),
     handlerRef: z.string().min(1).max(300),
   })
   .strict()
@@ -225,8 +229,9 @@ export type PanelOperationCall = z.infer<typeof panelOperationCallSchema>;
  * The ID of an operation a projection publishes: the slot it sits in and the operation's own name, so two instances of
  * one panel and two panels using one projection describe the same operation the same way.
  */
-export function panelOperationId(slot: string, operation: string) {
-  return `${slot}.${operation}`;
+export function panelOperationId(member: string | readonly string[], operation: string) {
+  const members = typeof member === "string" ? [member] : member;
+  return [...members, operation].join(".");
 }
 
 /**
@@ -271,13 +276,15 @@ export const panelFixedMemberTargetSchema = z.union([
 export type PanelFixedMemberTarget = z.infer<typeof panelFixedMemberTargetSchema>;
 
 const panelIdCandidates = z.object({ panelIds: z.array(key).nonempty() }).strict();
+const projectionIdCandidates = z.object({ projectionIds: z.array(key).nonempty() }).strict();
 const objectDetailCandidates = z.object({ rule: z.literal("objectDetail") }).strict();
+const usableCandidates = z.object({ rule: z.literal("usable") }).strict();
 export const panelPlacementCandidatesSchema = z.union([
-  panelIdCandidates, objectDetailCandidates, z.object({ rule: z.literal("catalogSelection") }).strict(),
+  panelIdCandidates, projectionIdCandidates, objectDetailCandidates, usableCandidates,
 ]);
 export const panelMemberTargetSchema = z.union([
   panelFixedMemberTargetSchema,
-  z.object({ fromState: key, candidates: z.union([panelIdCandidates, objectDetailCandidates]) }).strict(),
+  z.object({ fromState: key, candidates: panelPlacementCandidatesSchema }).strict(),
   z.object({ fromPlatform: z.literal("currentEntry"), candidates: z.object({ rule: z.literal("applicationEntry") }).strict() }).strict(),
 ]);
 export type PanelMemberTarget = z.infer<typeof panelMemberTargetSchema>;
@@ -302,7 +309,7 @@ export const panelMemberPathSegmentSchema = z.object({
   member: key,
   itemKey: z.union([key, z.number().int().nonnegative(), panelObjectRefSchema]).optional(),
   selection: z.union([
-    z.object({ stateValue: runtimeJsonValueSchema, target: z.object({ panelId: key }).strict() }).strict(),
+    z.object({ stateValue: runtimeJsonValueSchema, target: panelFixedMemberTargetSchema }).strict(),
     z.object({ placement: panelPlacementSchema.pick({ id: true, target: true }) }).strict(),
   ]).optional(),
 }).strict();
@@ -340,7 +347,9 @@ export function matchesDirectPanelValue(type: DirectPanelPortType, value: unknow
       const placement = panelPlacementSchema.safeParse(value);
       if (!placement.success) return false;
       if ("rule" in type.candidates) return true; // Dynamic candidates are resolved by their trusted owner.
-      return "panelId" in placement.data.target && type.candidates.panelIds.includes(placement.data.target.panelId);
+      if ("panelIds" in type.candidates)
+        return "panelId" in placement.data.target && type.candidates.panelIds.includes(placement.data.target.panelId);
+      return "projectionId" in placement.data.target && type.candidates.projectionIds.includes(placement.data.target.projectionId);
     }
     case "scalar":
       if (type.type === "date") return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/u.test(value);
@@ -362,7 +371,8 @@ export function panelPortAccepts(target: DirectPanelPortType, source: DirectPane
   const allowed = target.candidates;
   const offered = source.candidates;
   if ("rule" in allowed) return "rule" in offered && allowed.rule === offered.rule;
-  return "panelIds" in offered && offered.panelIds.every(id => allowed.panelIds.includes(id));
+  if ("panelIds" in allowed) return "panelIds" in offered && offered.panelIds.every(id => allowed.panelIds.includes(id));
+  return "projectionIds" in offered && offered.projectionIds.every(id => allowed.projectionIds.includes(id));
 }
 
 export const panelStateFieldSchema = z.object({
@@ -412,6 +422,8 @@ const openEntry = z.object({
 export const panelEventSchema = z.object({
   on: z.object({ member: key, output: key }).strict().optional(),
   labelKey: panelMessageKeySchema.optional(),
+  /** The primary button among this panel's named header events. */
+  primary: z.literal(true).optional(),
   do: z.union([
     z.object({ set: z.object({ fields: eventInputs.refine(fields => Object.keys(fields).length > 0, "Set at least one state field") }).strict() }).strict(),
     z.object({ invoke: z.object({ member: key, operation: key, inputs: eventInputs }).strict() }).strict(),
@@ -420,10 +432,25 @@ export const panelEventSchema = z.object({
 }).strict();
 export type PanelEvent = z.infer<typeof panelEventSchema>;
 
+const panelEventsSchema = z.record(key, panelEventSchema).superRefine((events, ctx) => {
+  let primary: string | undefined;
+  for (const [name, event] of Object.entries(events)) {
+    if (!event.primary) continue;
+    const path = [name, "primary"];
+    if (event.on || !event.labelKey) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: "Only a named header event without an output trigger can be primary" });
+    } else if (primary !== undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: `Event '${primary}' is already primary` });
+    } else {
+      primary = name;
+    }
+  }
+});
+
 export const panelManifestSchema = z.object({
   state: panelStateSchema,
   members: z.record(key, panelMemberSchema),
-  events: z.record(key, panelEventSchema),
+  events: panelEventsSchema,
 }).strict().superRefine(({ state, members, events }, ctx) => {
   function issue(path: string[], message: string) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
@@ -439,9 +466,15 @@ export const panelManifestSchema = z.object({
       if (!Object.hasOwn(state, fromState)) requireName(state, fromState, sourcePath);
       else {
         const type = state[fromState].type;
-        if ("rule" in candidates ? type.kind !== "object" && type.kind !== "object-union"
-          : type.kind !== "object" || type.objectType !== PRODUCT_PANEL)
-          issue(sourcePath, "The state type does not match this placement's candidates");
+        const objectDetail = "rule" in candidates && candidates.rule === "objectDetail";
+        const valid = objectDetail
+          ? type.kind === "object" || type.kind === "object-union"
+          : type.kind === "object" && (
+            "panelIds" in candidates ? type.objectType === PRODUCT_PANEL
+              : "projectionIds" in candidates ? type.objectType === PRODUCT_PROJECTION
+                : type.objectType === PRODUCT_PANEL || type.objectType === PRODUCT_PROJECTION
+          );
+        if (!valid) issue(sourcePath, "The state type does not match this placement's candidates");
       }
     }
     for (const [name, input] of Object.entries(declaration.inputs ?? {}))
@@ -453,7 +486,8 @@ export const panelManifestSchema = z.object({
       if (slot === member) issue([...path, "formField", "slot"], "A field port must reference another member");
       else requireName(members, slot, [...path, "formField", "slot"]);
     }
-    for (const [operation, { parameters, bindingId }] of Object.entries(declaration.readOperationInputs ?? {})) {
+    for (const [operation, { draft, parameters, bindingId }] of Object.entries(declaration.readOperationInputs ?? {})) {
+      if (draft) requireName(members, draft.slot, [...path, "readOperationInputs", operation, "draft", "slot"]);
       const refs = "fields" in parameters
         ? Object.entries(parameters.fields).map(([name, ref]) => ({ path: ["parameters", "fields", name], ref }))
         : [{ path: ["parameters"], ref: parameters }];

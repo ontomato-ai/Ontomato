@@ -57,7 +57,8 @@ export const workbenchApplications: BuiltinApplication[] = [
       "home": "/agents/chat"
     },
     "entryAccess": [
-      "domain-member"
+      "domain-member",
+      "analysis-agent"
     ],
     "scheduleAdapter": "java:agents",
     "declaration": {
@@ -71,7 +72,14 @@ export const workbenchApplications: BuiltinApplication[] = [
       },
       "icon": "agents",
       "groups": [],
-      "permissions": []
+      "permissions": [],
+      "panelUses": [{
+        "id": "agents-agent-settings",
+        "pageKey": "agents-agent-settings",
+        "panelId": "builtin-product-agent-settings",
+        "path": "/agents/settings",
+        "access": { "permissionCode": "analysis-agent" },
+      }],
     }
   },
   {

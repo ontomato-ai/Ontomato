@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { createApp, h } from "vue";
+import { createApp, h, reactive, toRaw } from "vue";
 import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
@@ -59,7 +59,7 @@ it("draws the owner's field names, button name and run message in a directly ren
       ...noOperations.operations,
       prepare: async (operationId) => ({ intentId: ownerAnswered.runNowReceipt.intentId, operationId, label: operationId, confirmation: { kind: "none" } }),
     },
-    expandPageComposer: noOperations.expandPageComposer,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
     confirmOperation: async () => ({ decision: "confirm", response: ownerAnswered.runNowReceipt as never }),
     recordDraftCreated: async () => {},
     readProjection: async (id) => (id === summary.id ? summary : run),
@@ -106,4 +106,16 @@ it("names a task's fields in a code panel's frame by the owner's words, in the r
   await mountPanel(panelOf("summary"));
   await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary-title")?.textContent).toBe(task.title));
   expect(shownNames(document)).toEqual(["Application", "Settings", "Status", "Next run"]);
+});
+
+it("reads a panel's own words without changing its messages, which the host still reads by their flat keys", () => {
+  const messages = { en: { "panel.name": "Governance report" }, "zh-CN": { "panel.name": "治理报告" } };
+  const registered = structuredClone(messages);
+  const t = createPanelText(messages, { value: "en" } as never, "en");
+  expect(t("panel.name")).toBe("Governance report");
+  expect(messages).toEqual(registered);
+  // A record the host holds reactively.
+  const held = reactive(structuredClone(registered));
+  expect(createPanelText(held, { value: "zh-CN" } as never, "en")("panel.name")).toBe("治理报告");
+  expect(toRaw(held)).toEqual(registered);
 });

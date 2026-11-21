@@ -2,6 +2,17 @@ import platformSchedules from "@ontomato/platform-schedules/locales/en";
 
 // Generated from the original frontend messages using the keys the migrated pages actually use; extended as more pages are migrated.
 export default {
+  skills: {
+    diagnostics: {
+      record_missing: "The source record is missing.",
+      invalid_definition: "The source definition is invalid.",
+      component_missing: "The referenced component is missing.",
+      operation_unregistered: "The referenced operation is not registered.",
+      sourceUnavailable: "Some skill sources could not be read.",
+      item: "{skill} — {resource}: {reason}",
+      itemField: "{skill} — {resource} ({field}): {reason}",
+    },
+  },
   ops: {"title": "Operations", "turns": "Turn evidence", "logs": "Live logs", "tests": "Automatic tests", "results": "Test results", "cases": "Test cases", "dsl": "DSL execution", "knowledge": "Operations knowledge", "back": "Back to chat", "references": "Evidence references", "referenceHint": "This package contains references, not archived logs. Source authorization and retention still apply.", "legacy": "This older workspace has no runtime references. Refresh it to resolve current evidence.", "diagnose": "Diagnose", "refresh": "Refresh references", "greeting": "What should we diagnose?", "placeholder": "Describe what went wrong, or paste a Turn key…", "context": "(Current page: {page})", "contextTurn": "Turn {key}", "contextRun": "test run {run}", "contextCase": "case {case} of test run {run}"},
   "admin": {
     "agentEditorEnabledHint": "Allow this agent to be selected and used in the workspace.",
@@ -157,6 +168,8 @@ export default {
     "save": "Save",
     "discard": "Discard",
     "unsavedChanges": "Unsaved changes",
+    "formLeaveUnsaved": "This form has changes you have not saved. Discard them and open the other item?",
+    "keepEditing": "Keep editing",
     "openInNewTab": "Opens in a new tab",
     "pages": "Pages",
     "agentPlatform": "Agent platform",
@@ -174,6 +187,7 @@ export default {
     "panelScriptThrew": "The panel's script failed while it ran",
     "panelScriptRejected": "The panel's script failed",
     "panelStyleOutside": "This panel's CSS reaches outside the panel, so none of it applies. A panel's CSS styles only its own panel.",
+    "panelAddressUnavailable": "{address} is not a page you can open: it does not exist, or you may not open it.",
     "panelDraftUnclaimed": "This draft belongs to no form of this panel",
     "panelDraftChanged": "Changed: {fields}",
     "graphIncludeAdjacent": "Include adjacent ({count})",
@@ -227,13 +241,18 @@ export default {
     "formInvalidJson": "Not valid JSON: {message}",
     "formFixInvalid": "Correct the marked fields before saving",
     "formControlUnavailable": "This field cannot be edited here yet",
+    "formAvatarIcon": "Avatar icon",
+    "formAvatarColor": "Avatar colour",
+    "formAvatarColorOption": "Colour {index}",
     "operationDone": "Done",
     "operationUnknown": "Whether it was done is not known. {message}",
     "operationBatchDone": "{done} of {total} done",
     "operationChecked": "{label} ({count} checked)",
+    "operationDownloaded": "Downloaded {name}",
     "dataEmpty": "Nothing to show",
     "dataForbidden": "You do not have access to this",
-    "dataAwaiting": "Select an item first"
+    "dataAwaiting": "Select an item first",
+    "memberUnavailable": "This is not available here"
   },
   "nav": {
     "agentsAndSkills": "Agents and Skills",
@@ -650,8 +669,6 @@ export default {
     "chartUndated": "Undated",
     "noChartRows": "No rows to draw.",
     "featureDashboards": "Dashboards",
-    "featureGovernanceReport": "Governance report",
-    "governanceFinding": "Finding",
     "featureAgents": "Agent settings",
     "featureOpsDiagnosis": "Operations diagnosis",
     "featureSchedule": "Scheduled tasks",
@@ -1113,7 +1130,6 @@ export default {
       "agentDefinition": "Agent",
       "ontologyType": "Ontology type",
       "ontologyRelationKind": "Relation kind",
-      "knowledgeGovernanceRecord": "Governance record",
       "feedbackRecord": "Feedback"
     },
     "relations": {
@@ -1173,6 +1189,91 @@ export default {
       "agent": {
         "uses-skill": "Uses skill",
         "executes-as-user": "Executes as user"
+      }
+    },
+    "typeDetails": {
+      "agentDefinition": {
+        "definition": "A reusable agent configuration that defines its instructions, model, skills, tools, data scope, and execution identity.",
+        "rules": "Reading, creating, or maintaining definitions in the current domain requires the analysis-agent permission. The definition service exposes only skill references the reader may use, and the execution identity service validates changes to the execution user.",
+        "properties": {
+          "id": "The stable identifier of the agent definition.",
+          "name": "The name shown in agent lists and selectors.",
+          "description": "A short description of what the agent is for.",
+          "icon": "The agent's icon reference, when one is configured.",
+          "enabled": "Whether the agent is enabled for use.",
+          "systemPrompt": "The instructions supplied to the agent as its system prompt.",
+          "modelSelection": "The selected model, with a null model ID using the domain default.",
+          "skills": "The skill references selected for the agent.",
+          "classNames": "The ontology class names in the agent's configured data scope.",
+          "enabledMcpServiceIds": "The IDs of MCP services enabled for the agent.",
+          "executionUserId": "The specified execution user's ID, or null to run as the initiating user.",
+          "sortOrder": "The position used to order the definition in agent lists."
+        }
+      },
+      "application": {
+        "definition": "A published unit that makes content available through application entries.",
+        "rules": "The platform maintains built-in applications, and Java checks domain identity, assigned paths, and permission to use referenced panels during domain registration. Java checks application and entry admission and panel use before opening an entry, requires maintenance authority for edits and deletion, and requires a product edit grant to manage access.",
+        "properties": {
+          "id": "The stable identifier of the application.",
+          "names": "Display names keyed by language code.",
+          "descriptions": "Application descriptions keyed by language code.",
+          "icon": "The icon identifier used to display the application.",
+          "source": "Whether the application is declared by the platform or registered in a domain.",
+          "canMaintain": "Whether the current caller may edit the identity or delete this domain application.",
+          "canEditEntries": "Whether the current caller has maintenance authority to edit this domain panel application's entry table.",
+          "canGrant": "Whether the current caller may manage the application's sharing and grants under product edit authority.",
+          "entry": "The application's landing path with an optional renderer and home path.",
+          "panelUses": "Entries in their declared order, including paths, panel references, inputs, menu metadata, admission rules, and default agents.",
+          "groups": "Menu group keys, translated names, and sort order.",
+          "entryAccess": "Application-level admission rules visible to the application's maintainers.",
+          "framePanelId": "The ID of the application's configured frame panel, visible to maintainers.",
+          "theme": "The application's light and dark theme overrides, visible to maintainers.",
+          "delivery": "Declared references to panels, projections, packages, agents, and skills, visible to maintainers."
+        }
+      },
+      "productProjection": {
+        "definition": "A record that binds an SDK component to ontology data and to operations it can initiate.",
+        "rules": "Domain registrants create projections. A projection's use Grant governs use and its edit Grant governs editing, sharing, and deletion; the data or operation owner authorizes the underlying business reads and writes.",
+        "properties": {
+          "id": "The stable identifier of the projection.",
+          "name": "The name shown in projection lists and selectors.",
+          "description": "A short description of the projection's purpose.",
+          "componentId": "The package-qualified ID of the SDK component used by the projection.",
+          "data": "Named data reads, each with its source, read method, and declared parameter bindings.",
+          "operations": "Named operations the projection binds explicitly, with their owner operation and any declared target.",
+          "config": "The configuration values supplied to the SDK component.",
+          "inputs": "The types of named values supplied by a placement.",
+          "outputs": "The types of named values the projection exposes to its host.",
+          "conversationEntry": "The declared conversation entry for opening a composer from this projection.",
+          "metricId": "The ID of the registered MetricView on a source-card chart projection.",
+          "visibility": "The initial sharing scope recorded for the projection.",
+          "domainId": "The ID of the domain that owns the record.",
+          "ownerId": "The ID of the projection's registered owner.",
+          "revision": "The current revision used to check for concurrent edits at save time.",
+          "createdAt": "The creation time in ISO 8601 format.",
+          "updatedAt": "The most recent update time in ISO 8601 format.",
+          "editable": "Whether the current reader has the edit Grant for this projection."
+        }
+      },
+      "productPanel": {
+        "definition": "A reusable unit of content composed of Vue page code and a panel declaration.",
+        "rules": "Domain registrants create panels. The actual application entry has its own admission check, each panel or member resource requires its own use Grant with denied members withheld individually, and editing, sharing, or deleting a panel requires its edit Grant; the data or operation owner authorizes business reads and writes.",
+        "properties": {
+          "id": "The stable identifier of the panel.",
+          "name": "The name shown in panel lists and selectors.",
+          "description": "A short description of the panel's purpose.",
+          "content": "The HTML template and Vue module, with optional styles, usage notes, and localized messages.",
+          "manifest": "The declaration of state fields, member references and their connections, and event wiring.",
+          "theme": "The panel's light and dark theme overrides.",
+          "template": "Whether this panel is designated for reuse as a template.",
+          "visibility": "The initial sharing scope recorded for the panel.",
+          "domainId": "The ID of the domain that owns the record.",
+          "ownerId": "The ID of the panel's registered owner.",
+          "revision": "The current revision used to check for concurrent edits at save time.",
+          "createdAt": "The creation time in ISO 8601 format.",
+          "updatedAt": "The most recent update time in ISO 8601 format.",
+          "editable": "Whether the current reader has the edit Grant for this panel."
+        }
       }
     }
   },

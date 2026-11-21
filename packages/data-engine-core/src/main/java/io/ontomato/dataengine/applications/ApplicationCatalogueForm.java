@@ -8,6 +8,7 @@ import io.ontomato.dataengine.service.PanelFormErrors;
 import io.ontomato.dataengine.service.PanelFormFields;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -38,7 +39,7 @@ final class ApplicationCatalogueForm {
         "path", STRING, "renderer", JSONObject.of("const", "panels")), List.of("path", "renderer"));
     private static final JSONObject USE_SCHEMA = objectSchema(JSONObject.of(
         "id", STRING, "pageKey", STRING, "panelId", STRING, "path", STRING, "access", ACCESS,
-        "names", STRING_MAP, "groupKey", STRING, "inputs", INPUTS, "defaultAgent", DEFAULT_AGENT),
+        "names", STRING_MAP, "descriptions", STRING_MAP, "groupKey", STRING, "inputs", INPUTS, "defaultAgent", DEFAULT_AGENT),
         List.of("id", "pageKey", "panelId", "path", "access"));
 
     private ApplicationCatalogueForm() {}
@@ -50,18 +51,25 @@ final class ApplicationCatalogueForm {
             APPLICATIONS + app.getString("id") + "/identity", "saveIdentity", IDENTITY_SCHEMA);
     }
 
-    static JSONObject entries(JSONObject app, JSONObject draft) {
+    static JSONObject entries(JSONObject app, JSONObject draft, Function<String, String> conflicts) {
         var id = app.getString("id");
         var values = draft;
+        List<ObjectNode> errors;
         if (values == null) {
-            values = JSONObject.of("entry", app.getJSONObject("entry"), "panelUses", app.getList("panelUses", ApplicationPanelUse.class));
+            var uses = app.getList("panelUses", ApplicationPanelUse.class);
+            values = JSONObject.of("entry", app.getJSONObject("entry"), "panelUses", uses);
             values.putAll(app.getJSONObject("panelSettings"));
+            var savedErrors = new PanelFormErrors();
+            for (int i = 0; i < uses.size(); i++)
+                validatePageKey(uses.get(i).pageKey(), "/panelUses/" + i + "/pageKey", conflicts, savedErrors);
+            errors = savedErrors.list();
+        } else {
+            errors = entryErrors(id, draft, app, conflicts);
         }
-        var errors = draft == null ? List.<ObjectNode>of() : entryErrors(id, draft, app);
         return describe(entryFields(id), values, errors, APPLICATIONS + id + "/panel-uses", "saveEntries", registrationSchema(false));
     }
 
-    static JSONObject create(String id, JSONObject draft) {
+    static JSONObject create(String id, JSONObject draft, Function<String, String> conflicts) {
         var values = draft == null ? JSONObject.of(
             "declaration", JSONObject.of("names", JSONObject.of("en", ""), "descriptions", new JSONObject(),
                 "icon", "pages", "groups", List.of(), "permissions", List.of()),
@@ -73,7 +81,7 @@ final class ApplicationCatalogueForm {
         metadata.add(field("/permissions", "Menu permissions", PanelFormFields.code("json"), OBJECT_ARRAY, true));
         fields.addFirst(field("/declaration", "Application identity", PanelFormFields.object(metadata, null), DECLARATION_SCHEMA, true));
         fields.add(field("/entryAccess", "Application access", PanelFormFields.stringArray(), STRING_ARRAY, true));
-        return describe(fields, values, draft == null ? List.of() : entryErrors(id, draft, null),
+        return describe(fields, values, draft == null ? List.of() : entryErrors(id, draft, null, conflicts),
             APPLICATIONS + id + "/panel-uses?create=true", "create", registrationSchema(true));
     }
 
@@ -93,6 +101,7 @@ final class ApplicationCatalogueForm {
             field("/panelId", "Panel ID", PanelFormFields.text(false), STRING, true),
             field("/inputs", "Inputs", PanelFormFields.code("json"), INPUTS, false),
             field("/names", "Menu names by language", PanelFormFields.code("json"), STRING_MAP, false),
+            field("/descriptions", "Entry descriptions by language", PanelFormFields.code("json"), STRING_MAP, false),
             field("/groupKey", "Menu group", PanelFormFields.text(false), STRING, false),
             field("/access", "Entry access", PanelFormFields.code("json"), ACCESS, true),
             field("/defaultAgent", "Default agent", PanelFormFields.code("json"), DEFAULT_AGENT, false));
@@ -153,7 +162,8 @@ final class ApplicationCatalogueForm {
         }
     }
 
-    private static List<ObjectNode> entryErrors(String id, JSONObject values, JSONObject existing) {
+    private static List<ObjectNode> entryErrors(String id, JSONObject values, JSONObject existing,
+            Function<String, String> conflicts) {
         var errors = new PanelFormErrors();
         var root = ApplicationCatalog.assignedPanelRoot(id);
         var entry = errors.requiredObject(values, "entry", "/entry");
@@ -176,12 +186,12 @@ final class ApplicationCatalogueForm {
                     || !(DOMAIN_MEMBER.equals(code) || ApplicationCatalog.ownsPermissionCode(id, code)))
                 errors.invalidOption("/entryAccess", "Use domain-member or one permission of this application");
         }
-        validateUses(id, values, root, declaration, existing == null, errors);
+        validateUses(id, values, root, declaration, existing == null, conflicts, errors);
         return errors.list();
     }
 
     private static void validateUses(String id, JSONObject values, String root, JSONObject declaration,
-            boolean create, PanelFormErrors errors) {
+            boolean create, Function<String, String> conflicts, PanelFormErrors errors) {
         if (!(values.get("panelUses") instanceof List<?> uses)) {
             errors.invalidArray("/panelUses", "Expected the complete entry array");
             return;
@@ -193,8 +203,21 @@ final class ApplicationCatalogueForm {
                 continue;
             }
             var use = values.getJSONArray("panelUses").getJSONObject(i);
-            for (var key : List.of("id", "pageKey", "panelId"))
+            for (var key : List.of("id", "panelId"))
                 errors.requiredString(use, key, path + "/" + key);
+            var pageKey = errors.requiredString(use, "pageKey", path + "/pageKey");
+            if (pageKey != null) validatePageKey(pageKey, path + "/pageKey", conflicts, errors);
+            if (use.containsKey("descriptions")) {
+                var pointer = path + "/descriptions";
+                var descriptions = errors.requiredObject(use, "descriptions", pointer);
+                if (descriptions != null) {
+                    if (!descriptions.containsKey("en")) errors.required(pointer + "/en", "English description is required");
+                    for (var description : descriptions.entrySet()) {
+                        if (!(description.getValue() instanceof String text) || ApplicationPanelUse.blankDescription(text))
+                            errors.invalidObject(pointer + "/" + PanelFormFields.pointer(description.getKey()), "Expected a nonblank description");
+                    }
+                }
+            }
             validatePath(use, path + "/path", root, errors);
             var access = errors.requiredObject(use, "access", path + "/access");
             if (access != null && (access.size() != 1 || !(DOMAIN_MEMBER.equals(access.get("kind"))
@@ -219,6 +242,11 @@ final class ApplicationCatalogueForm {
         } catch (ResponseStatusException | JSONException error) {
             errors.invalidObject("/panelUses", error);
         }
+    }
+
+    private static void validatePageKey(String pageKey, String field, Function<String, String> conflicts, PanelFormErrors errors) {
+        var conflict = conflicts.apply(pageKey);
+        if (conflict != null) errors.invalidOption(field, conflict);
     }
 
     private static void validatePath(JSONObject values, String field, String root, PanelFormErrors errors) {

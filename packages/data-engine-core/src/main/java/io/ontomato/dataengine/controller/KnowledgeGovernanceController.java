@@ -31,15 +31,6 @@ public class KnowledgeGovernanceController {
   public void closePlatform(@PathVariable String run,HttpServletRequest request) {
     governance.closePlatform(AgentJson.id(run),access.serviceDomain(request));
   }
-  @GetMapping("/{id}/work")
-  public Object work(@PathVariable String id,HttpServletRequest request) {
-    return governance.work(AgentJson.id(id),access.governance(request).owner());
-  }
-  @GetMapping("/{id}/sources/{source}")
-  public Object source(@PathVariable String id,@PathVariable String source,
-      @RequestParam(defaultValue="0") int offset,HttpServletRequest request) throws Exception {
-    return governance.readSource(AgentJson.id(id),source,offset,access.governance(request).owner());
-  }
   @PostMapping("/skill-runs")
   @ResponseStatus(HttpStatus.CREATED)
   public Object begin(@RequestHeader("Idempotency-Key") String key,@RequestBody JSONObject input,

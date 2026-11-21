@@ -285,6 +285,26 @@ it("validates the fixed operation entrance and never accepts an approval or ques
  expect(mocks.operate).not.toHaveBeenCalled();
 });
 
+it.each(["call", "calls"])("explains the operation target shape for a page state reference in %s", async field => {
+  const target = { className: "platform:Attribute", primaryKey: '["warehouse","code"]' };
+  const call = { target, input: {} };
+  const response = await nativeFetch(base + `/api/assistant/executions/${run}/panels/operate`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Ontomato-Callback-Credential": credential(), "X-Ontomato-Run-Id": run },
+    body: JSON.stringify({
+      intentId: other, applicationId: "A", useId: "model", operationId: "remove.delete",
+      ...(field === "call" ? { call } : { calls: [call] }),
+    }),
+  });
+  expect(response.status).toBe(400);
+  const { error } = await response.json();
+  expect(error).toMatchObject({ code: "INVALID_REQUEST" });
+  expect(error.message).toContain(field === "call" ? "call.target" : "calls[0].target");
+  expect(error.message).toContain('{kind:"object", objectType, primaryKey}');
+  expect(error.message).toContain(JSON.stringify(target));
+  expect(mocks.operate).not.toHaveBeenCalled();
+});
+
 it("accepts author parameters only through the registered method and the run's callback", async () => {
  const context={ontology:[],knowledge:[],helpers:{markdown:""}};
  mocks.authoring.mockResolvedValue(context);

@@ -16,6 +16,7 @@ import {
   stagingDirectory,
 } from "../build-support.mjs";
 import { collectMetadataContext, copyWorkspace } from "../pnpm-workspace-context.mjs";
+import { javaBuiltinApplications } from "./builtin-panels.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPTS = dirname(HERE);
@@ -27,6 +28,7 @@ const TOOLS = [
   "workbench/runtime-layout.mjs",
   "workbench/production-graph.mjs",
   "workbench/stage-app.mjs",
+  "workbench/builtin-panels.mjs",
   "build-support.mjs",
   "third_party_notices.py",
 ];
@@ -100,6 +102,7 @@ export async function buildWorkbenchImage(app, args) {
     { recursive: true },
   );
   await copyTools(app, context);
+  writeFileSync(join(context, "tools/workbench/java-applications.json"), JSON.stringify(javaBuiltinApplications(app.sources)));
   copyLicenses(app, context);
   writeFileSync(
     join(context, "runtime-requirements.txt"),

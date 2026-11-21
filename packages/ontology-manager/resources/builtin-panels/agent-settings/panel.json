@@ -1,0 +1,177 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:AgentDefinition"
+        },
+        "deepLink": true
+      },
+      "mode": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      }
+    },
+    "members": {
+      "list": {
+        "component": "ObjectList",
+        "type": "platform:AgentDefinition",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "selected"
+        },
+        "config": {
+          "subtitleField": "description",
+          "statusField": "enabled",
+          "emptyText": "agents.empty"
+        },
+        "id": "builtin-product-06a3a7cc-6f27-4edf-9095-a01e34861c57"
+      },
+      "summary": {
+        "component": "ObjectSummary",
+        "type": "platform:AgentDefinition",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "fields": [
+            "description",
+            "enabled"
+          ]
+        },
+        "id": "builtin-product-0a349e62-965d-485b-b72a-86005fc4d0dc"
+      },
+      "form": {
+        "component": "ObjectForm",
+        "type": "platform:AgentDefinition",
+        "target": "selected",
+        "data": {
+          "form": "form",
+          "createForm": "createForm"
+        },
+        "operation": "platform:AgentDefinition.save",
+        "id": "builtin-product-798632e2-0ae8-4b4b-9dfe-602940dd6ef5"
+      },
+      "remove": {
+        "component": "OperationButton",
+        "type": "platform:AgentDefinition",
+        "target": "selected",
+        "operation": "agents.delete",
+        "config": {
+          "type": "danger"
+        },
+        "id": "builtin-product-8a1b2e98-239b-4c0b-878a-5cfa141eeed1"
+      },
+      "model": {
+        "component": "ReferencePicker",
+        "type": "platform:ModelOption",
+        "data": {
+          "options": "options",
+          "selected": "resolve"
+        },
+        "formField": {
+          "slot": "form",
+          "path": "/modelSelection/modelId"
+        },
+        "id": "builtin-product-cc37f7cd-0a61-4b15-a2a1-64b2d571dc08"
+      },
+      "skills": {
+        "component": "ReferencePicker",
+        "type": "platform:Skill",
+        "data": {
+          "options": "options",
+          "selected": "resolve"
+        },
+        "formField": {
+          "slot": "form",
+          "path": "/skills"
+        },
+        "id": "builtin-product-b79c7ca3-8287-4fd7-97d5-94c27a818455"
+      },
+      "tools": {
+        "component": "ReferencePicker",
+        "type": "platform:McpServiceOption",
+        "data": {
+          "options": "options",
+          "selected": "resolve"
+        },
+        "formField": {
+          "slot": "form",
+          "path": "/enabledMcpServiceIds"
+        },
+        "id": "builtin-product-733252d6-8534-4654-944a-a1f5f8ce0a27"
+      },
+      "executor": {
+        "component": "ReferencePicker",
+        "type": "platform:User",
+        "data": {
+          "options": "options",
+          "selected": "resolve"
+        },
+        "formField": {
+          "slot": "form",
+          "path": "/executionUserId"
+        },
+        "id": "builtin-product-cddb5180-ef56-46cc-a1b1-f933d08f904a"
+      },
+      "scope": {
+        "component": "ObjectGraph",
+        "data": {
+          "nodes": {
+            "type": "platform:ObjectType",
+            "read": "list"
+          },
+          "edges": {
+            "type": "platform:Relationship",
+            "read": "list"
+          }
+        },
+        "config": {
+          "edgeEnds": {
+            "source": "/fromclass",
+            "target": "/toclass"
+          }
+        },
+        "formField": {
+          "slot": "form",
+          "path": "/classNames"
+        },
+        "id": "builtin-product-4476e525-bcc6-47a8-9cfa-ae78ecabb8d6"
+      }
+    },
+    "events": {}
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Agent settings",
+        "agents.title": "Agents",
+        "agents.new": "New agent",
+        "agents.choose": "Select an agent on the left, or create one.",
+        "agents.empty": "No agents yet.",
+        "agents.creating": "New agent",
+        "agents.definition": "Agent definition",
+        "agents.viewType": "View class",
+        "agents.accessDenied": "Reading and changing agent definitions requires the analysis-agent permission."
+      },
+      "zh-CN": {
+        "panel.name": "智能体设置",
+        "agents.title": "智能体",
+        "agents.new": "新建智能体",
+        "agents.choose": "在左侧选择一个智能体，或新建一个。",
+        "agents.empty": "还没有智能体。",
+        "agents.creating": "新建智能体",
+        "agents.definition": "智能体定义",
+        "agents.viewType": "查看所属类",
+        "agents.accessDenied": "读取和修改智能体定义需要 analysis-agent（业务智能体）权限。"
+      }
+    }
+  }
+}

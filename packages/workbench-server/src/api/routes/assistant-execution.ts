@@ -1,6 +1,14 @@
 import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { createPanelOperationIntentRequestSchema, dispatchPanelOperationIntentRequestSchema } from "@ontomato/contracts/panel-agent";
-import { operatePanel, dispatchPanel } from "../../services/product-panels/operations";
+import { panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
+import { operatePanel, dispatchPanel, requirePanelSkillForRun } from "../../services/product-panels/operations";
+import {
+  directPanelMemberPathSchema, productPanelNestedReadRequestSchema, productPanelNestedReadResponseSchema, productPanelReadRequestSchema,
+  type DirectPanelMemberPath, type ProductPanelReadSource,
+} from "@ontomato/contracts/panel-host";
+import { readProductPanelData } from "../../services/product-panels/data-reads";
+import { readNestedPanel, resolvePanelMemberPath } from "../../services/product-panels/member-path";
+import { readCurrentPanelRecord } from "../../services/product-panels/current";
 import { Router, type Request } from "express";
 import { AGENT_DEFINITION, SKILL, MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE, ONTOLOGY_TYPE, bindingKey, chartProjectionLookupRead, chartProjectionSourceRead, panelClientReads, scheduledTaskReads } from "@ontomato/contracts/panel-client-requests";
 import type {AssistantCredentials} from "../../platform/agent-runtime/runtime";
@@ -60,11 +68,10 @@ const assetReadPaths = [
 ];
 const queryOutput = /^\/ontology\/query\/outputs\/[0-9a-f-]+$/u;
 const queryOutputCancel = /^\/ontology\/query\/outputs\/[0-9a-f-]+\/cancel$/u;
-const governanceRead = /^\/ontology\/ai\/knowledge-governance\/[^/]+\/(?:work|sources\/[^/]+)$/u;
 const governanceAction = /^\/ontology\/ai\/knowledge-governance\/[^/]+\/runs\/[^/]+\/actions\/[^/]+$/u;
 const governanceClose = /^\/ontology\/ai\/knowledge-governance\/[^/]+\/skill-runs\/[^/]+\/close$/u;
 function ontologyAllowed(method: string, path: string) {
-  if (method === "GET") return ontologyReads.includes(path) || queryOutput.test(path) || governanceRead.test(path);
+  if (method === "GET") return ontologyReads.includes(path) || queryOutput.test(path);
   if (method === "POST") {
     return ontologyPosts.includes(path) ||
       queryOutputCancel.test(path) ||
@@ -86,10 +93,28 @@ const executorPanelReads = [
   chartProjectionSourceRead,
 ];
 
+function requireOperationRequest(body: unknown) {
+  const parsed = createPanelOperationIntentRequestSchema.safeParse(body);
+  if (parsed.success) return parsed.data;
+  if (body !== null && typeof body === "object") {
+    const { call, calls } = body as { call?: { target?: unknown }; calls?: { target?: unknown }[] };
+    const explainReference = (path: string, target: unknown) => {
+      const received = panelObjectRefSchema.safeParse(target);
+      if (!received.success) return;
+      throw new HttpError(400,
+        `Expected ${path} to be {kind:"object", objectType, primaryKey}. Received ${JSON.stringify(received.data)}. Use objectType for the className value.`,
+        "INVALID_REQUEST");
+    };
+    explainReference("call.target", call?.target);
+    if (Array.isArray(calls)) calls.forEach((item, index) => explainReference(`calls[${index}].target`, item?.target));
+  }
+  throw parsed.error;
+}
+
 assistantExecutionRouter.post("/:runId/panels/operate",wrap(async(req,res)=>{
   const runId = callbackRun(req, res.locals.runtimeCallback);
   const {owner,credentials}=context(req);
-  res.json(await operatePanel(owner,credentials,runId,createPanelOperationIntentRequestSchema.parse(req.body),(req as AuthenticatedRequest).userName));
+  res.json(await operatePanel(owner,credentials,runId,requireOperationRequest(req.body),(req as AuthenticatedRequest).userName));
 }));
 assistantExecutionRouter.post("/:runId/panels/intents/:intentId/dispatch",wrap(async(req,res)=>{
   const runId = callbackRun(req, res.locals.runtimeCallback);
@@ -97,6 +122,44 @@ assistantExecutionRouter.post("/:runId/panels/intents/:intentId/dispatch",wrap(a
   dispatchPanelOperationIntentRequestSchema.parse(req.body);
   const {owner,credentials}=context(req);
   res.json(await dispatchPanel(owner,credentials,runId,intentId));
+}));
+
+async function panelReader(req: Request, runId: string, source: ProductPanelReadSource, memberPath: DirectPanelMemberPath) {
+  if (source.kind !== "registered")
+    throw new HttpError(400, "A page skill reads a registered application entry", "INVALID_REQUEST");
+  const { owner, credentials } = context(req);
+  const run = await runForOwner(owner, runId);
+  if (!run.channel || run.status !== "running")
+    throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
+  if (run.channel.authority.executionKind !== "live")
+    throw new HttpError(422, "Page skill reads do not support test data", "BUILD_TEST_UNSUPPORTED");
+  const { use } = await requirePanelSkillForRun(owner, credentials, run, source);
+  const executor = await credentialsForRun(owner, runId, credentials, run.sessionId);
+  if (executor.executionUserId !== null) {
+    // The execution account may read owner data only through a placement the initiator could actually open.
+    const panel = await readCurrentPanelRecord(owner, credentials, use.panelId);
+    await resolvePanelMemberPath(owner, credentials, panel, memberPath, use);
+  }
+  const reader = { ...owner, userId: executor.executionUserId ?? owner.userId };
+  const userName = executor.executionUserId === null ? (req as AuthenticatedRequest).userName : undefined;
+  return { reader, credentials: executor.credentials, userName };
+}
+
+assistantExecutionRouter.post("/:runId/panels/read", wrap(async (req, res) => {
+  const runId = callbackRun(req, res.locals.runtimeCallback);
+  const input = productPanelReadRequestSchema.parse(req.body);
+  const { reader, credentials, userName } = await panelReader(req, runId, input.source, input.memberPath);
+  res.json(await readProductPanelData(reader, credentials, input, userName));
+}));
+
+const assistantNestedPanelReadRequestSchema = productPanelNestedReadRequestSchema.extend({
+  memberPath: directPanelMemberPathSchema,
+});
+assistantExecutionRouter.post("/:runId/panels/nested", wrap(async (req, res) => {
+  const runId = callbackRun(req, res.locals.runtimeCallback);
+  const input = assistantNestedPanelReadRequestSchema.parse(req.body);
+  const { reader, credentials } = await panelReader(req, runId, input.source, input.memberPath);
+  res.json(productPanelNestedReadResponseSchema.parse(await readNestedPanel(reader, credentials, input)));
 }));
 
 assistantExecutionRouter.post("/:runId/retrieval",wrap(async(req,res)=>{
