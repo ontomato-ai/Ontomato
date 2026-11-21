@@ -40,6 +40,7 @@
     }, {
       "id": "ontology-relations", "pageKey": "ontology-relations", "panelId": "builtin-product-ontology-relations",
       "path": "/ontology/relations", "access": {"permissionCode": "ontology-modeling"},
+      "descriptions": {"en": "Define relationships and their endpoints between object types", "zh-CN": "定义对象类型之间的关系及其关联端点"},
       "names": {"en": "Relation types", "zh-CN": "关系类型"}
     }, {
       "id": "ontology-actions", "pageKey": "actions", "panelId": "builtin-product-ontology-actions",
@@ -49,6 +50,7 @@
     }, {
       "id": "capability-map", "pageKey": "capability-map", "panelId": "builtin-product-capability-map",
       "path": "/ontology/assets/capability-map", "access": {"permissionCode": "action-management"},
+      "descriptions": {"en": "Explore how roles, processes, and capabilities relate", "zh-CN": "治理层与能力层涉及的全部对象画成一张图：主体拥有角色，角色可执行动作、可编写流程，流程指定动作，触发启动一次执行。颜色区分类别；选择节点查看它的关系。指标视图、函数与 Skill 画在流程对象一侧，因为模型中它们还没有与流程相连。"},
       "names": {"en": "Capability map", "zh-CN": "能力图谱"}
     }, {
       "id": "ontology-components", "pageKey": "ontology-components", "panelId": "builtin-product-sdk-components",
@@ -73,6 +75,7 @@
     }, {
       "id": "ontology-agent-settings", "pageKey": "agent-settings", "panelId": "builtin-product-agent-settings",
       "path": "/ontology/agents", "access": {"permissionCode": "ontology-modeling"},
+      "descriptions": {"en": "The agents of this domain: choose one to read or change its name, avatar, instructions, model and skills, or create one.", "zh-CN": "本域的智能体：选中一个查看或修改它的名称、头像、提示词、模型和技能，也可以新建一个。"},
       "names": {"en": "Agent settings", "zh-CN": "智能体设置"}, "groupKey": "products"
     }, {
       "id": "ontology-functions", "pageKey": "ontology-functions", "panelId": "builtin-product-ontology-functions",

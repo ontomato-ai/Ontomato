@@ -5,6 +5,22 @@ import { mountPanel, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
 const POSITIONS_KEY = "ontology-graph-layout-v1";
 const EDGE_PREFIX = "relation:";
 
+/** Lucide shapes (24px grid, stroked) for the canvas's icon tools. */
+const MAGNIFIER = ["M19 11a8 8 0 1 1-16 0a8 8 0 1 1 16 0", "M21 21l-4.35-4.35"];
+const TOOLS = [
+  { key: "zoomIn", label: "放大", paths: [...MAGNIFIER, "M11 8v6", "M8 11h6"] },
+  { key: "zoomOut", label: "缩小", paths: [...MAGNIFIER, "M8 11h6"] },
+  { key: "fit", label: "适应画布", paths: ["M3 7V5a2 2 0 0 1 2-2h2", "M17 3h2a2 2 0 0 1 2 2v2", "M21 17v2a2 2 0 0 1-2 2h-2", "M7 21H5a2 2 0 0 1-2-2v-2"] },
+  {
+    key: "relayout",
+    label: "重新布局",
+    paths: [3, 14].flatMap((y) => [3, 14].map((x) => `M${x + 1} ${y}h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z`)),
+  },
+  { key: "export", label: "导出 PNG", paths: ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "M7 10l5 5 5-5", "M12 15V3"] },
+  { key: "path", label: "路径查找", paths: ["M9 19a3 3 0 1 1-6 0a3 3 0 1 1 6 0", "M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15", "M21 5a3 3 0 1 1-6 0a3 3 0 1 1 6 0"] },
+];
+const CLOSE_PATHS = ["M18 6 6 18", "M6 6l12 12"];
+
 function readPositions() {
   try {
     const saved = JSON.parse(localStorage.getItem(POSITIONS_KEY) ?? "{}");
@@ -43,8 +59,17 @@ await mountPanel({
     const pathFound = ref(false);
     const navigationError = ref("");
     const storedPositions = ref(readPositions());
+    // Where the inspector does not fit beside the canvas it opens on demand: for a selection, or the path finder.
+    const pathOpen = ref(false);
 
     const loading = computed(() => [objectRows, relationRows, attributeRows].some((rows) => rows.value.status === "loading"));
+    // A count or an empty list is only said once the owner has answered: before that the reads are still running.
+    const countOf = (rows) => (rows.value.status === "ready" ? rows.value.value.length : null);
+    const counts = computed(() => ({ objects: countOf(objectRows), attributes: countOf(attributeRows), relations: countOf(relationRows) }));
+    const catalogueReady = computed(() => objectRows.value.status === "ready" && relationRows.value.status === "ready");
+    const catalogueFailed = computed(() =>
+      [objectRows, relationRows].some((rows) => rows.value.status === "error" || rows.value.status === "forbidden"),
+    );
     const readErrors = computed(() =>
       [
         ["对象类型", objectRows],
@@ -329,6 +354,22 @@ await mountPanel({
       pathMessage.value = `找不到从「${classNameLabel(from)}」到「${classNameLabel(to)}」的路径`;
     }
 
+    const inspectorOpen = computed(() => Boolean(selectedObject.value || selectedRelation.value || pathOpen.value || pathFound.value));
+
+    function closeInspector() {
+      pathOpen.value = false;
+      clearSelection();
+    }
+
+    function runTool(key) {
+      if (key === "zoomIn") zoomIn();
+      else if (key === "zoomOut") zoomOut();
+      else if (key === "fit") fitGraph();
+      else if (key === "relayout") void relayout();
+      else if (key === "export") void exportPng();
+      else if (key === "path") pathOpen.value = !pathOpen.value;
+    }
+
     function zoomIn() {
       canvas.value?.zoomBy(1.2);
     }
@@ -408,6 +449,15 @@ await mountPanel({
       canvas,
       loading,
       readErrors,
+      counts,
+      catalogueReady,
+      catalogueFailed,
+      tools: TOOLS,
+      closePaths: CLOSE_PATHS,
+      pathOpen,
+      inspectorOpen,
+      closeInspector,
+      runTool,
       objects,
       relations,
       attributes,

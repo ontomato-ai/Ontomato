@@ -4,6 +4,7 @@
     flex-direction: column;
     gap: var(--spacing-md);
     min-width: 0;
+    container-type: inline-size;
   }
   .ontology-graph-actions {
     display: flex;
@@ -21,8 +22,9 @@
     font-weight: var(--font-semibold);
   }
   .ontology-graph-body {
+    position: relative;
     display: grid;
-    grid-template-columns: 260px minmax(320px, 1fr) 320px;
+    grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
     border: 1px solid var(--ui-border);
     border-radius: var(--radius-sm);
     overflow: hidden;
@@ -131,21 +133,64 @@
   }
   .graph-toolbar {
     position: absolute;
-    bottom: var(--spacing-md);
-    left: var(--spacing-md);
+    top: var(--spacing-sm);
+    left: var(--spacing-sm);
     display: flex;
     gap: var(--spacing-xs);
-    padding: var(--spacing-xs);
+    padding: 2px;
     border-radius: var(--radius-sm);
     background: var(--el-bg-color-overlay);
     box-shadow: var(--el-box-shadow-light);
   }
+  .graph-tool {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--control-height-sm);
+    height: var(--control-height-sm);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: transparent;
+    color: var(--el-text-color-regular);
+    cursor: pointer;
+  }
+  .graph-tool:hover {
+    background: var(--ui-fill-tertiary);
+    color: var(--el-text-color-primary);
+  }
+  .graph-tool[aria-pressed="true"] {
+    background: var(--ui-fill-secondary);
+    color: var(--el-text-color-primary);
+  }
+  .graph-tool:focus-visible {
+    outline: 2px solid var(--el-color-primary);
+    outline-offset: 1px;
+  }
+  .graph-tool:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+  .graph-tool svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
   .graph-hint {
     position: absolute;
-    right: var(--spacing-md);
-    bottom: var(--spacing-lg);
+    right: var(--spacing-sm);
+    bottom: var(--spacing-sm);
+    left: var(--spacing-sm);
+    overflow: hidden;
     color: var(--el-text-color-tertiary);
     font-size: var(--text-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events: none;
   }
   .graph-empty {
     position: absolute;
@@ -163,16 +208,31 @@
     font-size: var(--text-base);
   }
   .ontology-graph-inspector {
-    display: flex;
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2;
+    display: none;
     flex-direction: column;
+    width: min(300px, 85%);
     min-width: 0;
     border-left: 1px solid var(--ui-border);
+    background: var(--el-bg-color);
+    box-shadow: var(--el-box-shadow-light);
     overflow: auto;
-    max-height: 640px;
+  }
+  .ontology-graph-inspector.open {
+    display: flex;
+  }
+  .inspector-close {
+    flex: none;
+    width: var(--control-height-inline);
+    height: var(--control-height-inline);
   }
   .inspector-heading {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: var(--spacing-sm);
     padding: var(--spacing-sm) var(--spacing-md);
@@ -183,6 +243,7 @@
     font-size: var(--text-sm);
   }
   .inspector-heading small {
+    margin-left: auto;
     color: var(--el-text-color-tertiary);
     font-size: var(--text-xs);
   }
@@ -344,18 +405,32 @@
     color: var(--el-text-color-tertiary);
     font-size: var(--text-xs);
   }
-  @media (max-width: 1180px) {
+  @container (min-width: 62rem) {
     .ontology-graph-body {
-      grid-template-columns: 220px minmax(280px, 1fr) 280px;
+      grid-template-columns: 220px minmax(0, 1fr) 280px;
+    }
+    .ontology-graph-inspector {
+      position: static;
+      display: flex;
+      width: auto;
+      max-height: 640px;
+      box-shadow: none;
+    }
+    .inspector-close {
+      display: none;
     }
   }
-  @media (max-width: 960px) {
+  @container (min-width: 80rem) {
+    .ontology-graph-body {
+      grid-template-columns: 260px minmax(0, 1fr) 320px;
+    }
+  }
+  @container (max-width: 40rem) {
     .ontology-graph-body {
       grid-template-columns: minmax(0, 1fr);
     }
-    .ontology-graph-explorer,
-    .ontology-graph-inspector {
-      border: 0;
+    .ontology-graph-explorer {
+      border-right: 0;
       border-bottom: 1px solid var(--ui-border);
     }
     .ontology-graph-canvas {
@@ -366,9 +441,9 @@
 <div id="app">
   <section class="ontology-graph">
     <div class="ontology-graph-actions">
-      <span><strong>{{ objects.length }}</strong> 对象类型</span>
-      <span><strong>{{ attributes.length }}</strong> 属性</span>
-      <span><strong>{{ relations.length }}</strong> 关系类型</span>
+      <span :aria-busy="counts.objects === null"><strong>{{ counts.objects ?? "–" }}</strong> 对象类型</span>
+      <span :aria-busy="counts.attributes === null"><strong>{{ counts.attributes ?? "–" }}</strong> 属性</span>
+      <span :aria-busy="counts.relations === null"><strong>{{ counts.relations ?? "–" }}</strong> 关系类型</span>
       <el-button :loading="loading" @click="refresh">刷新</el-button>
     </div>
 
@@ -419,10 +494,11 @@
             </button>
           </section>
           <el-empty
-            v-if="!filteredObjects.length && !filteredRelations.length"
+            v-if="catalogueReady && !filteredObjects.length && !filteredRelations.length"
             :description="hasResources ? '没有匹配的对象类型或关系类型' : '还没有对象类型'"
             :image-size="54"
           ></el-empty>
+          <p v-else-if="!catalogueReady && !catalogueFailed" class="muted-note list-reading">正在读取对象类型和关系类型…</p>
         </div>
       </aside>
 
@@ -444,26 +520,36 @@
             @blank="clearSelection"
             @move="onNodeMoved"
           ></g6-graph-canvas>
-          <div class="graph-toolbar">
-            <el-button size="small" @click="zoomIn">放大</el-button>
-            <el-button size="small" @click="zoomOut">缩小</el-button>
-            <el-button size="small" @click="fitGraph">适应画布</el-button>
-            <el-button size="small" :loading="layingOut" @click="relayout">重新布局</el-button>
-            <el-button size="small" @click="exportPng">导出 PNG</el-button>
+          <div class="graph-toolbar" role="toolbar" aria-label="画布工具">
+            <el-tooltip v-for="tool in tools" :key="tool.key" :content="tool.label" placement="bottom">
+              <button
+                type="button"
+                class="graph-tool"
+                :aria-label="tool.label"
+                :aria-pressed="tool.key === 'path' ? String(pathOpen) : undefined"
+                :disabled="tool.key === 'relayout' && layingOut"
+                @click="runTool(tool.key)"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path v-for="d in tool.paths" :key="d" :d="d"></path></svg>
+              </button>
+            </el-tooltip>
           </div>
           <div class="graph-hint">拖动节点可移动，滚轮缩放，点击空白取消选中</div>
         </div>
-        <div v-else-if="!loading" class="graph-empty">
+        <div v-else-if="catalogueReady" class="graph-empty">
           <strong>还没有对象类型</strong>
           <span>先在可视化建模里建一个对象类型，图谱会用它和关系画出来。</span>
         </div>
       </main>
 
-      <aside class="ontology-graph-inspector">
+      <aside :class="['ontology-graph-inspector', { open: inspectorOpen }]">
         <section class="path-panel">
           <div class="inspector-heading">
             <strong>路径查找</strong>
             <small>按关系方向找最短路径</small>
+            <button type="button" class="graph-tool inspector-close" aria-label="关闭检查器" @click="closeInspector">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path v-for="d in closePaths" :key="d" :d="d"></path></svg>
+            </button>
           </div>
           <div class="path-controls">
             <el-select v-model="pathFrom" filterable clearable placeholder="起点对象类型">
