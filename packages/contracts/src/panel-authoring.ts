@@ -6,6 +6,7 @@ import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import { panelManifestSchema, panelMemberSchema, panelObjectRefSchema, panelStateRefSchema } from "./panel-manifest";
 import { panelOperationDeclarationSchema } from "./panel-operations";
 import { directProjectionDataSchema, directProjectionPortsSchema } from "./panel-projection";
+import { builtinProductIdSchema } from "./product-record-id";
 
 const stateKey = panelStateRefSchema.shape.state;
 const memberKey = panelManifestSchema.innerType().shape.members.keySchema;
@@ -30,7 +31,7 @@ function isOfficialComponent(component: string, name: string) {
 }
 
 const inlineMemberSchema = z.object({
-  id: runtimeIdSchema.optional().describe("Projection UUID written by registration. Keep it when renaming or moving the member."),
+  id: z.union([runtimeIdSchema, builtinProductIdSchema]).optional().describe("Stable projection ID written by registration or by the offline check for a packaged panel. Keep it when renaming or moving the member."),
   component: z.union([
     z.string().regex(/^[^@\s/:]+$/u, "Expected an SDK component name"),
     directProjectionPortsSchema.shape.componentId,
