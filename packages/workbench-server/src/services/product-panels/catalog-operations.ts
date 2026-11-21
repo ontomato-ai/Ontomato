@@ -19,6 +19,7 @@ import { APPLICATION, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contra
 import { HttpError } from "../../utils/errors";
 import { BackendResponseError } from "../../utils/backend-client";
 import { createLogger } from "../../logging/logger";
+import { tForLocale } from "../../i18n";
 import { changeProductGrant } from "../product-governance/grants";
 import { defaultAgentSchema } from "@ontomato/contracts/default-agent";
 import { applicationCatalogueClient, applicationDraftIdSchema } from "./application-catalogue";
@@ -48,31 +49,32 @@ const logger = createLogger("product-catalog-operations");
  * A Java owner's refusal keeps the fields it names, at the panel form's own paths. A refusal body that cannot be read as
  * the owner's refusal is reported as such, with the raw body logged, rather than passing for an ordinary refusal.
  */
-function ownerRefusal(error: BackendResponseError): Extract<SinglePanelOperationOutcome, { kind: "refusal" }> {
+function ownerRefusal(error: BackendResponseError, locale?: string): Extract<SinglePanelOperationOutcome, { kind: "refusal" }> {
   const plain = { kind: "refusal" as const, code: error.code ?? "PRODUCT_WRITE_REFUSED", message: error.message };
   let body: unknown;
-  try { body = JSON.parse(error.detail); } catch { return unreadable(error); }
-  if (typeof body !== "object" || body === null) return unreadable(error);
+  try { body = JSON.parse(error.detail); } catch { return unreadable(error, locale); }
+  if (typeof body !== "object" || body === null) return unreadable(error, locale);
   if (!("errors" in body)) return plain;
   const envelope = ownerEnvelopeSchema.safeParse({ ...body, success: false });
-  if (!envelope.success) return unreadable(error);
+  if (!envelope.success) return unreadable(error, locale);
   try {
     const outcome = ownerWriteFailure(envelope.data, "PRODUCT_WRITE_REFUSED", error.message);
-    if (outcome.kind !== "refusal") return unreadable(error);
+    if (outcome.kind !== "refusal") return unreadable(error, locale);
     if (!outcome.errors) return outcome;
     // The owner names a field under its form values (/values/...); the panel form addresses the field itself.
     const errors = outcome.errors.map(item => ({ ...item, field: item.field.replace(/^\/values(?=\/)/, "") }));
     return { ...outcome, errors };
   } catch {
-    return unreadable(error);
+    return unreadable(error, locale);
   }
 }
 
-function unreadable(error: BackendResponseError): Extract<SinglePanelOperationOutcome, { kind: "refusal" }> {
+function unreadable(error: BackendResponseError, locale?: string): Extract<SinglePanelOperationOutcome, { kind: "refusal" }> {
   logger.warn("An application owner refused a write with a body that is not its refusal", {
-    status: error.status, code: error.code, body: error.detail.slice(0, 4096),
+    status: error.status, code: error.code, message: error.message, body: error.detail.slice(0, 4096),
   });
-  return { kind: "refusal", code: "OWNER_REFUSAL_UNREADABLE", message: error.message };
+  // The reader is told in their language; what the owner sent stays in the log.
+  return { kind: "refusal", code: "OWNER_REFUSAL_UNREADABLE", message: tForLocale(locale, "panels.productCatalog.ownerRefusalUnreadable") };
 }
 
 /** A refusal decided before the owner is called, already naming its fields. */
@@ -97,13 +99,15 @@ function checkDefaultAgentShapes(values: Record<string, unknown>) {
   if (errors.length) throw new FieldRefusal({ kind: "refusal", code: "APPLICATION_ENTRY_INVALID", message: errors[0]!.message, errors });
 }
 
-async function write(type: string, run: () => Promise<{ primaryKey: string; data: OutcomeData }>): Promise<SinglePanelOperationOutcome> {
+async function write(
+  type: string, run: () => Promise<{ primaryKey: string; data: OutcomeData }>, locale?: string,
+): Promise<SinglePanelOperationOutcome> {
   try {
     const { primaryKey, data } = await run();
     return { kind: "success", data, affected: { objects: [{ objectType: type, primaryKey }], objectTypes: [type] } };
   } catch (error) {
     if (error instanceof FieldRefusal) return error.outcome;
-    if (error instanceof BackendResponseError && error.status >= 400 && error.status < 500) return ownerRefusal(error);
+    if (error instanceof BackendResponseError && error.status >= 400 && error.status < 500) return ownerRefusal(error, locale);
     if (error instanceof HttpError && error.status >= 400 && error.status < 500)
       return { kind: "refusal", code: error.code ?? "PRODUCT_WRITE_REFUSED", message: error.message };
     throw error;
@@ -234,7 +238,7 @@ const applicationSave: PanelWriteServerOperation = {
     draftValues: values => panelFormValuesSchema.parse(values),
     createdObject: data => ({ objectType: APPLICATION, primaryKey: savedId.parse(data).id }),
   },
-  async execute({ executor: { credentials } }, target, input) {
+  async execute({ locale, executor: { credentials } }, target, input) {
     return write(APPLICATION, async () => {
       const { values, submittedFields } = writeInput(panelFormSaveInputSchema, input);
       const java = applicationCatalogueClient(credentials);
@@ -261,7 +265,7 @@ const applicationSave: PanelWriteServerOperation = {
         await java.saveEntries(id, writeInput(applicationEntriesUpdateSchema, body));
       } else await java.saveIdentity(id, writeInput(applicationIdentityUpdateSchema, body));
       return { primaryKey: id, data: { id } };
-    });
+    }, locale ?? credentials.locale);
   },
 };
 
@@ -287,12 +291,12 @@ function applicationAction<Input extends Record<string, unknown>>(
       const record = await applicationCatalogueClient(host.initiator.credentials).record(primaryKey);
       return record.names[host.locale ?? "en"] ?? record.names.en;
     },
-    async execute({ executor }, target, input) {
+    async execute({ locale, executor }, target, input) {
       return write(APPLICATION, async () => {
         const { primaryKey } = writeInput(applicationTarget, target);
         await run(executor, primaryKey, writeInput(inputSchema, input));
         return { primaryKey, data: {} };
-      });
+      }, locale ?? executor.credentials.locale);
     },
   };
 }

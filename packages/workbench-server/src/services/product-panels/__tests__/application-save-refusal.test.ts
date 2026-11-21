@@ -49,5 +49,6 @@ it.each([
   ["field errors it cannot read", JSON.stringify({ message: "Refused", code: "APPLICATION_ENTRY_INVALID", errors: [{ field: "icon" }] })],
 ])("says so when the owner's refusal is %s, rather than passing it for an ordinary one", async (_case, body) => {
   java.saveIdentity.mockRejectedValue(new BackendResponseError(409, body));
-  expect(await run()).toMatchObject({ kind: "refusal", code: "OWNER_REFUSAL_UNREADABLE" });
+  expect(await run()).toEqual({ kind: "refusal", code: "OWNER_REFUSAL_UNREADABLE",
+    message: "The owner refused this, but the reason it gave could not be read." });
 });

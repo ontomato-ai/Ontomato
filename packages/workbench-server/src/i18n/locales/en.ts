@@ -58,6 +58,7 @@ export const en = {
   "panels.productCatalog.members": "Members",
   "panels.productCatalog.commands": "Header commands",
   "panels.productCatalog.save": "Save",
+  "panels.productCatalog.ownerRefusalUnreadable": "The owner refused this, but the reason it gave could not be read.",
   "panels.productCatalog.copy": "Copy",
   "panels.productCatalog.delete": "Delete",
   "panels.productCatalog.grant": "Grant access",
