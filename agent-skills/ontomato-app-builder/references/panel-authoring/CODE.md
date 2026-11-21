@@ -14,6 +14,12 @@ The platform runs panels directly. Read [runtime imports and setup](RUNTIME.md#i
 and the current SDK guide with `node "$SKILL/ontomato.mjs" sdk read docs/index.md`. The repository's
 `packages/apps-sdk/src/panel/mount.ts` implements the legacy iframe runtime.
 
+Use the platform’s interface components directly in the template: `<markdown-view>`, `<code-editor readonly>`
+for code viewing, `<e-chart>`, `<table-preview>`, `<html-preview>` and `<form-fields>`. Import only `vue` and
+`@ontomato/sdk/panel` in the module. For feedback after an operation, call
+`usePanelContext().notify({ kind, text })` via the context captured in setup. For a message that stays on the page,
+use `<el-alert>`.
+
 For translations, put flat message keys under locale tags in `panel.json`'s `content.messages`. For example,
 `{"en":{"panel.greeting":"Hello, {name}"}}` is a message table. Use `t("panel.greeting", { name })` in the
 template and `usePanelContext().t` in `setup()`. The direct runtime supplies the template function.
@@ -28,10 +34,10 @@ Give `URLSearchParams` raw JSON once. For a browser link in the workbench shell,
 
 ## Read declared data
 
-Before designing the view, run `node "$SKILL/ontomato.mjs" panel type <type-id>`. For the component catalogue,
-run `panel type platform:SDKComponent`. Its `reads.definition.result` is `sdkComponentDefinition`, so
-`resultSchemas.sdkComponentDefinition` shows the value shape. Use `params` and `requiredParams` for input
-names, and the operation declaration for its effect, target, batch support and input schema.
+Before designing a view, inspect its read with `panel type <type-id> --read <name>`. For example, run
+`node "$SKILL/ontomato.mjs" panel type platform:Action --read definition` for `actionDefinition`. Read its
+`resultSchema` next to `result`, and use `params` and `requiredParams` for inputs. Omit `--read` to list the
+type's reads and the operations with their effect, target, batch support and input schema.
 
 Use the [generated member fields](FIELDS.md) to connect each component's named datum to an owner read and
 its parameters. Bind an output by its port name in the short member's `state` map, with the declared panel
@@ -55,8 +61,8 @@ returns the report's questions, so the selected child's key identifies the row t
 Use the owner's full operation ID in the member declaration. Bind the target to the selected object or to a
 checked list for an operation that supports batches. The official button uses the owner's label. For a custom
 control, call the [SDK operation hook](RUNTIME.md#usepaneloperation) in synchronous setup and supply the fields from its admitted
-`inputSchema`. The operation result and any confirmation come through the same platform flow as the page
-header and assistant.
+`inputSchema`. The operation result comes through the same platform flow as the page header and assistant. For writes such
+as save or delete, use only the platform's confirmation and impact details required by the owner.
 
 ## Save a form or hand off a draft
 
