@@ -169,6 +169,7 @@ function setFrequency(next: FrequencyDraft) {
       :locale="locale"
       :disabled="off"
       :heading="false"
+      class="sdk-form-field-wide"
       @update:model-value="set($event)"
     ></application-icon-picker>
     <schedule-frequency
