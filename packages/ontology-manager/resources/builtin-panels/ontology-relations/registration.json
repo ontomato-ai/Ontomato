@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ontology-relations",
+      "input": {
+        "name": "关系类型",
+        "description": "关系类型的目录、一条关系的详情与两端对象，新建、修改和删除"
+      }
+    }
+  ]
+}

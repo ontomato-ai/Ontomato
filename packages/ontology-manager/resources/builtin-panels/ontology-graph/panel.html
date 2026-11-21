@@ -1,0 +1,586 @@
+<style>
+  .ontology-graph {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+  }
+  .ontology-graph-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .ontology-graph-head h1 {
+    margin: 0;
+    color: var(--el-text-color-primary);
+    font-size: 18px;
+    line-height: 26px;
+  }
+  .ontology-graph-head p {
+    margin: 2px 0 0;
+    color: var(--el-text-color-secondary);
+    font-size: 13px;
+  }
+  .ontology-graph-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    color: var(--el-text-color-secondary);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .ontology-graph-actions strong {
+    color: var(--el-text-color-primary);
+    font-weight: 600;
+  }
+  .ontology-graph-body {
+    display: grid;
+    grid-template-columns: 260px minmax(320px, 1fr) 320px;
+    border: 1px solid var(--el-border-color);
+    border-radius: 6px;
+    overflow: hidden;
+    min-height: 0;
+  }
+  .ontology-graph-explorer {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    border-right: 1px solid var(--el-border-color);
+  }
+  .ontology-graph-search {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border-bottom: 1px solid var(--el-border-color-light);
+  }
+  .ontology-graph-search .el-segmented {
+    width: 100%;
+  }
+  .ontology-graph-list {
+    flex: 1;
+    overflow: auto;
+    padding: 8px;
+    max-height: 560px;
+  }
+  .ontology-graph-list > section + section {
+    margin-top: 12px;
+  }
+  .ontology-graph-list > section > p {
+    margin: 0 6px 5px;
+    color: var(--el-text-color-tertiary);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .resource-row {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--el-text-color-secondary);
+    text-align: left;
+    cursor: pointer;
+  }
+  .resource-row:hover {
+    background: var(--el-fill-color-light);
+  }
+  .resource-row.active {
+    background: var(--el-color-primary-light-9);
+  }
+  .resource-row.active strong {
+    color: var(--el-color-primary);
+  }
+  .resource-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+  }
+  .resource-copy strong,
+  .resource-copy small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .resource-copy strong {
+    color: var(--el-text-color-primary);
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .resource-copy small {
+    color: var(--el-text-color-tertiary);
+    font-size: 11px;
+  }
+  .resource-icon {
+    display: grid;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    place-items: center;
+    border-radius: 4px;
+    background: var(--el-color-primary-light-9);
+    color: var(--el-color-primary);
+    font-size: 11px;
+  }
+  .resource-icon.relation {
+    background: var(--el-fill-color);
+    color: var(--el-color-warning);
+  }
+  .ontology-graph-canvas {
+    position: relative;
+    min-width: 0;
+    height: 100%;
+    min-height: 420px;
+    background-color: var(--el-bg-color-page);
+    background-image: radial-gradient(var(--el-border-color) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+  .ontology-graph-stage {
+    position: absolute;
+    inset: 0;
+  }
+  .graph-toolbar {
+    position: absolute;
+    bottom: 14px;
+    left: 14px;
+    display: flex;
+    gap: 6px;
+    padding: 6px;
+    border-radius: 6px;
+    background: var(--el-bg-color-overlay);
+    box-shadow: var(--el-box-shadow-light);
+  }
+  .graph-hint {
+    position: absolute;
+    right: 14px;
+    bottom: 18px;
+    color: var(--el-text-color-tertiary);
+    font-size: 12px;
+  }
+  .graph-empty {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 6px;
+    color: var(--el-text-color-secondary);
+    font-size: 13px;
+    text-align: center;
+  }
+  .graph-empty strong {
+    color: var(--el-text-color-primary);
+    font-size: 14px;
+  }
+  .ontology-graph-inspector {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    border-left: 1px solid var(--el-border-color);
+    overflow: auto;
+    max-height: 640px;
+  }
+  .inspector-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--el-border-color-light);
+  }
+  .inspector-heading strong {
+    color: var(--el-text-color-primary);
+    font-size: 13px;
+  }
+  .inspector-heading small {
+    color: var(--el-text-color-tertiary);
+    font-size: 11px;
+  }
+  .path-panel {
+    border-bottom: 1px solid var(--el-border-color);
+  }
+  .path-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+    padding: 12px;
+  }
+  .path-arrow {
+    color: var(--el-text-color-tertiary);
+  }
+  .path-panel .el-button {
+    width: calc(100% - 24px);
+    margin: 0 12px 12px;
+  }
+  .path-message {
+    margin: 0 12px 12px;
+    color: var(--el-text-color-regular);
+    font-size: 12px;
+  }
+  .path-message.miss {
+    color: var(--el-color-warning);
+  }
+  .detail-content {
+    padding: 12px;
+  }
+  .detail-title {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--el-border-color-light);
+  }
+  .detail-title h2 {
+    margin: 0;
+    overflow: hidden;
+    color: var(--el-text-color-primary);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .detail-title code,
+  .attribute-row code {
+    display: block;
+    overflow: hidden;
+    color: var(--el-text-color-tertiary);
+    font-family: var(--el-font-family-mono, ui-monospace, monospace);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .detail-description {
+    margin: 8px 0 0;
+    color: var(--el-text-color-secondary);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .detail-section {
+    margin-top: 12px;
+  }
+  .section-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--el-border-color-light);
+    color: var(--el-text-color-primary);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .section-label small {
+    color: var(--el-text-color-tertiary);
+    font-weight: 400;
+  }
+  .attribute-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--el-border-color-extra-light);
+  }
+  .attribute-row strong {
+    color: var(--el-text-color-regular);
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .connection-row {
+    display: grid;
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+    padding: 7px 0;
+    border: 0;
+    border-bottom: 1px solid var(--el-border-color-extra-light);
+    background: transparent;
+    color: var(--el-text-color-regular);
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .connection-row span:last-child {
+    text-align: right;
+  }
+  .connection-name {
+    max-width: 96px;
+    overflow: hidden;
+    color: var(--el-color-primary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .relation-flow {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+  }
+  .relation-flow button {
+    min-height: 40px;
+    border: 1px solid var(--el-border-color);
+    border-radius: 4px;
+    background: var(--el-fill-color-light);
+    color: var(--el-text-color-primary);
+    cursor: pointer;
+  }
+  .relation-flow .flow-name {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: var(--el-color-primary);
+    font-size: 12px;
+  }
+  .inspector-empty {
+    display: grid;
+    flex: 1;
+    place-content: center;
+    justify-items: center;
+    gap: 6px;
+    padding: 28px 18px;
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+    text-align: center;
+  }
+  .inspector-empty strong {
+    color: var(--el-text-color-primary);
+    font-size: 13px;
+  }
+  .muted-note {
+    margin: 8px 0 0;
+    color: var(--el-text-color-tertiary);
+    font-size: 12px;
+  }
+  @media (max-width: 1180px) {
+    .ontology-graph-body {
+      grid-template-columns: 220px minmax(280px, 1fr) 280px;
+    }
+  }
+  @media (max-width: 960px) {
+    .ontology-graph-body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .ontology-graph-explorer,
+    .ontology-graph-inspector {
+      border: 0;
+      border-bottom: 1px solid var(--el-border-color);
+    }
+    .ontology-graph-canvas {
+      min-height: 460px;
+    }
+  }
+</style>
+<div id="app">
+  <section class="ontology-graph">
+    <header class="ontology-graph-head">
+      <div>
+        <h1>本体图谱</h1>
+        <p>用属主的对象类型和关系画图，浏览、选择并进入建模。</p>
+      </div>
+      <div class="ontology-graph-actions">
+        <span><strong>{{ objects.length }}</strong> 对象类型</span>
+        <span><strong>{{ attributes.length }}</strong> 属性</span>
+        <span><strong>{{ relations.length }}</strong> 关系类型</span>
+        <el-button :loading="loading" @click="refresh">刷新</el-button>
+      </div>
+    </header>
+
+    <el-alert
+      v-for="message in readErrors"
+      :key="message"
+      :title="message"
+      type="error"
+      :closable="false"
+      show-icon
+    ></el-alert>
+
+    <div v-loading="loading" class="ontology-graph-body">
+      <aside class="ontology-graph-explorer">
+        <div class="ontology-graph-search">
+          <el-input v-model="search" clearable placeholder="搜索对象类型、属性和关系"></el-input>
+          <el-segmented v-model="filter" :options="filterOptions" size="small"></el-segmented>
+        </div>
+        <div class="ontology-graph-list">
+          <section v-if="filteredObjects.length">
+            <p>对象类型 · {{ filteredObjects.length }}</p>
+            <button
+              v-for="object in filteredObjects"
+              :key="object.className"
+              :class="['resource-row', { active: selectedObject && selectedObject.className === object.className }]"
+              @click="selectObject(object.className)"
+            >
+              <span class="resource-icon">类</span>
+              <span class="resource-copy">
+                <strong>{{ object.showName }}</strong>
+                <small>{{ object.className }}</small>
+              </span>
+            </button>
+          </section>
+          <section v-if="filteredRelations.length">
+            <p>关系类型 · {{ filteredRelations.length }}</p>
+            <button
+              v-for="relation in filteredRelations"
+              :key="relation.relationship"
+              :class="['resource-row', { active: selectedRelation && selectedRelation.relationship === relation.relationship }]"
+              @click="selectRelation(relation.relationship)"
+            >
+              <span class="resource-icon relation">关</span>
+              <span class="resource-copy">
+                <strong>{{ relation.name }}</strong>
+                <small>{{ relation.relationship }}</small>
+              </span>
+            </button>
+          </section>
+          <el-empty
+            v-if="!filteredObjects.length && !filteredRelations.length"
+            :description="hasResources ? '没有匹配的对象类型或关系类型' : '还没有对象类型'"
+            :image-size="54"
+          ></el-empty>
+        </div>
+      </aside>
+
+      <main class="ontology-graph-canvas">
+        <div v-if="objects.length" class="ontology-graph-stage">
+          <g6-graph-canvas
+            ref="canvas"
+            label="本体图谱"
+            :nodes="nodes"
+            :edges="edges"
+            :selected="selectedNodeIds"
+            :selected-edges="selectedEdgeIds"
+            selection="single"
+            :layout="{ type: 'preset' }"
+            :categories="['对象类型']"
+            :label-width="140"
+            @update:selected="onCanvasSelection"
+            @update:selected-edges="onCanvasEdgeSelection"
+            @blank="clearSelection"
+            @move="onNodeMoved"
+          ></g6-graph-canvas>
+          <div class="graph-toolbar">
+            <el-button size="small" @click="zoomIn">放大</el-button>
+            <el-button size="small" @click="zoomOut">缩小</el-button>
+            <el-button size="small" @click="fitGraph">适应画布</el-button>
+            <el-button size="small" :loading="layingOut" @click="relayout">重新布局</el-button>
+            <el-button size="small" @click="exportPng">导出 PNG</el-button>
+          </div>
+          <div class="graph-hint">拖动节点可移动，滚轮缩放，点击空白取消选中</div>
+        </div>
+        <div v-else-if="!loading" class="graph-empty">
+          <strong>还没有对象类型</strong>
+          <span>先在可视化建模里建一个对象类型，图谱会用它和关系画出来。</span>
+        </div>
+      </main>
+
+      <aside class="ontology-graph-inspector">
+        <section class="path-panel">
+          <div class="inspector-heading">
+            <strong>路径查找</strong>
+            <small>按关系方向找最短路径</small>
+          </div>
+          <div class="path-controls">
+            <el-select v-model="pathFrom" filterable clearable placeholder="起点对象类型">
+              <el-option
+                v-for="object in objects"
+                :key="object.className"
+                :label="object.showName"
+                :value="object.className"
+              ></el-option>
+            </el-select>
+            <span class="path-arrow">→</span>
+            <el-select v-model="pathTo" filterable clearable placeholder="终点对象类型">
+              <el-option
+                v-for="object in objects"
+                :key="object.className"
+                :label="object.showName"
+                :value="object.className"
+              ></el-option>
+            </el-select>
+          </div>
+          <el-button type="primary" plain :disabled="!pathFrom || !pathTo" @click="findPath">查找路径</el-button>
+          <p v-if="pathMessage" :class="['path-message', { miss: !pathFound }]">{{ pathMessage }}</p>
+        </section>
+
+        <div v-if="selectedObject" class="detail-content">
+          <div class="detail-title">
+            <div style="min-width: 0">
+              <h2>{{ selectedObject.showName }}</h2>
+              <code>{{ selectedObject.className }}</code>
+            </div>
+            <el-button size="small" @click="openModeling">去建模</el-button>
+          </div>
+          <p v-if="selectedObject.classDesc" class="detail-description">{{ selectedObject.classDesc }}</p>
+          <div class="detail-section">
+            <div class="section-label">
+              <span>属性</span>
+              <small>{{ selectedAttributes.length }}</small>
+            </div>
+            <div v-if="selectedAttributes.length">
+              <div v-for="attribute in selectedAttributes" :key="attribute.name" class="attribute-row">
+                <span style="min-width: 0">
+                  <strong>{{ attribute.showName }}</strong>
+                  <code>{{ attribute.name }}</code>
+                </span>
+                <el-tag size="small" effect="plain">{{ attribute.type }}</el-tag>
+              </div>
+            </div>
+            <el-empty v-else description="暂无属性" :image-size="42"></el-empty>
+          </div>
+          <div class="detail-section">
+            <div class="section-label">
+              <span>相关关系</span>
+              <small>{{ connectedRelations.length }}</small>
+            </div>
+            <button
+              v-for="relation in connectedRelations"
+              :key="relation.relationship"
+              class="connection-row"
+              @click="selectRelation(relation.relationship)"
+            >
+              <span>{{ classNameLabel(relation.fromclass) }}</span>
+              <span class="connection-name">{{ relation.name }}</span>
+              <span>{{ classNameLabel(relation.toclass) }}</span>
+            </button>
+            <p v-if="!connectedRelations.length" class="muted-note">这个对象类型还没有关系</p>
+          </div>
+          <p v-if="navigationError" class="path-message miss">{{ navigationError }}</p>
+        </div>
+
+        <div v-else-if="selectedRelation" class="detail-content">
+          <div class="detail-title">
+            <div style="min-width: 0">
+              <h2>{{ selectedRelation.name }}</h2>
+              <code>{{ selectedRelation.relationship }}</code>
+            </div>
+            <el-button size="small" @click="openModeling">去建模</el-button>
+          </div>
+          <p v-if="selectedRelation.desc" class="detail-description">{{ selectedRelation.desc }}</p>
+          <div class="relation-flow">
+            <button @click="selectObject(selectedRelation.fromclass)">
+              {{ classNameLabel(selectedRelation.fromclass) }}
+            </button>
+            <span class="flow-name">↓ {{ selectedRelation.name }}</span>
+            <button @click="selectObject(selectedRelation.toclass)">
+              {{ classNameLabel(selectedRelation.toclass) }}
+            </button>
+          </div>
+          <p v-if="navigationError" class="path-message miss">{{ navigationError }}</p>
+        </div>
+
+        <div v-else class="inspector-empty">
+          <strong>选择对象类型或关系类型</strong>
+          <span>点画布上的节点或边，或者用左栏的列表，就能看它的属性和关系。</span>
+        </div>
+      </aside>
+    </div>
+  </section>
+</div>
