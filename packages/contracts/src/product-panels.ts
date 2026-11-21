@@ -384,6 +384,7 @@ export const productPanelReadQuerySchema = z.union([
   panelUseRefSchema.merge(domainMemberEntrance),
   applicationFrameReadQuerySchema,
 ]);
+export const productPanelSnapshotQuerySchema = productPanelReadQuerySchema;
 export type ProductPanelReadQuery = z.infer<typeof productPanelReadQuerySchema>;
 
 /** The source card owner creates chart projections; ordinary updates may only edit chart metadata. */

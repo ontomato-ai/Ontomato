@@ -62,6 +62,7 @@ import {
 import {
   applicationPanelUseSchema, applicationPanelUsePathSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema,
   chartSourceInUseErrorSchema, ontologyElementRefSchema, productPanelContentSchema, productPanelReadQuerySchema, productPanelResponseSchema,
+  productPanelSnapshotQuerySchema,
   productProjectionInputSchema, productProjectionResponseSchema,
   registerChartProjectionRequestSchema, registerChartProjectionResponseSchema, registerProductProjectionRequestSchema,
   updateChartProjectionSourceRequestSchema,
@@ -1205,6 +1206,7 @@ test("list column headers come from owner fields or from panel message keys", ()
 });
 
 test("panel records and snapshots share the content and frame query", () => {
+  assert.equal(productPanelSnapshotQuerySchema, productPanelReadQuerySchema);
   const use = { applicationId: "ontology", useId: "ontology-agent-settings" };
   const pageKey = "agent-settings";
   const menu = { ...use, pageKey, permissionCode: "analysis-agent" };
