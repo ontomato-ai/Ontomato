@@ -191,10 +191,12 @@ A raw `draftPath` of `/outputs/drafts/edit.page-draft.json` starts with a slash 
 The encoded query value `draftPath=%2Foutputs%2Fdrafts%2Fedit.page-draft.json` still starts with that slash after decoding.
 
 The SDK reads the artifact, verifies it was written for the entry's `pageKey`, and offers it to the mounted forms.
-A form asks its owner for the target's description, matches `save.draftOperation`, then gives the owner's form read
-the proposed field values to check. If the owner accepts changed fields, the SDK fills the form and sets `instance.draft`.
+The target identifies the object type and, for an edit, the owner's object ID. A form of that type matches
+`save.draftOperation` and gives the owner's form read the proposed field values to check. If the owner accepts
+changed fields, the SDK fills the form and sets `instance.draft`.
 Keep the form projection mounted with `v-show` so it can receive the draft before the editor is visible.
 Watch `instance.draft` to reveal the editor. It is null while waiting or when the draft changes nothing.
+Use [`draftTarget(draft)`](CODE.md#save-a-form-or-hand-off-a-draft) to get the accepted draft's effective create or update target.
 The reader saves or discards the proposed change in the form.
 
 ## List paging

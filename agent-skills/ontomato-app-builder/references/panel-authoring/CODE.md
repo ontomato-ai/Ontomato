@@ -132,19 +132,40 @@ Keep the form mounted with `v-show` so it can receive drafts while the detail is
   @saved="mode = 'view'" @discarded="mode = 'view'"></projection>
 ```
 
-For an assistant draft, first read the owner form and copy `save.draftOperation` into the artifact's `operation`.
-Use the application's `pageKey`, the owner's object ID and only the changed field values in `form`:
+For an assistant draft, read the owner form first and copy `save.draftOperation` into the artifact's `operation`.
+Use the entry's `pageKey` and the owner's object type. For an edit, include the opaque ID returned by the owner.
+Put only the changed field values in `form`.
 
 ```json
 {
   "pageKey": "example-vue-agent-directory-manage",
   "operation": "platform:AgentDefinition.save",
-  "target": {"id": "<selected agent ID>"},
+  "target": {"objectType": "platform:AgentDefinition", "id": "<selected agent ID>"},
   "form": {"name": "Review assistant"}
 }
 ```
 
-Use an empty `target` for creation. Publish the draft as a run artifact, such as `outputs/drafts/edit.page-draft.json`.
+For creation, read the owner's create form and set `target` to `{"objectType": "platform:AgentDefinition"}` for this example.
+Omit `id`. The target always needs a nonempty `objectType`, and a supplied `id` must be a nonempty string.
+
+If the Vue page needs the effective target of an accepted draft, call the SDK helper with the draft itself.
+
+```js
+import { draftTarget, usePanelContext } from "@ontomato/sdk/panel";
+import { computed } from "vue";
+
+// In setup
+const { instance } = usePanelContext();
+const draftMode = computed(() => {
+  const draft = instance.draft.value;
+  return draft ? draftTarget(draft).kind : null;
+});
+```
+
+The helper returns `{kind: "create", objectType}` before creation and `{kind: "update", objectType, id}` for an edit.
+Reopening a saved creation draft also returns `update` with the ID the first save created.
+
+Publish the draft as a run artifact, such as `outputs/drafts/edit.page-draft.json`.
 Keep the registered entry path's initial slash in the `#/...` route. Pass only the run-relative artifact path
 to `draftPath`, starting at `outputs/drafts/` with no leading slash.
 
@@ -214,8 +235,9 @@ error for a Vue or module failure. Keep the browser's storage and cookies intact
   data access. If it returns rows, check the slot and the component's accepted result shape.
 - **Draft does not fill or shows `Required`.** Inspect `GET /api/assistant/sessions/<session-id>/runs/<run-id>/page-draft?path=…`,
   then the form's `POST /api/product-panels/read`. Match the producing run and artifact, the entry's
-  `pageKey`, and the target owner's `save.draftOperation`. A successful draft read confirms that the artifact
-  loaded. Follow the form read's response to see whether the owner accepted the proposal. Keep the form
+  `pageKey`, the target's `objectType` and optional owner ID, and the owner's `save.draftOperation`.
+  A successful draft read confirms that the artifact loaded. Follow the form read's response to see whether
+  the owner accepted the proposal. Keep the form
   mounted while waiting for `instance.draft`.
 
 A field or path named by `panel check` points to the material to fix. For a rejected request, use its response
