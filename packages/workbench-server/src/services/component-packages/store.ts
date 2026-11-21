@@ -61,6 +61,24 @@ async function activateRelease(release: ComponentPackageResponse, files: Readonl
   }
 }
 
+export async function requireCompatibleComponentPackage(
+  previous: ComponentPackageResponse | null, release: ComponentPackageResponse,
+  caller: Parameters<CheckComponentPackageUpgrade>[2], checkUpgrade?: CheckComponentPackageUpgrade,
+) {
+  if (!previous || previous.digest === release.digest) return;
+  if (!checkUpgrade)
+    throw new HttpError(503, "Component package upgrade requires current usage of the installed declarations", "COMPONENT_PACKAGE_USAGE_UNAVAILABLE");
+  const changes = await checkUpgrade(previous, release, caller);
+  if (!changes.length) return;
+  const rejected = componentPackageUpgradeErrorSchema.parse({
+    success: false,
+    code: COMPONENT_PACKAGE_INCOMPATIBLE,
+    error: `Package '${release.name}' is incompatible with existing uses`,
+    details: { package: release.name, changes },
+  });
+  throw new HttpError(409, rejected.error, rejected.code, rejected.details);
+}
+
 /** Check the installed version that this activation actually replaces. */
 export async function installComponentPackage(
   release: ComponentPackageResponse, files: ReadonlyMap<string, Uint8Array>,
@@ -75,20 +93,7 @@ export async function installComponentPackage(
   try {
     const previous = await readComponentPackage(release.name);
     if (previous?.digest === release.digest) return previous;
-    if (previous) {
-      if (!checkUpgrade)
-        throw new HttpError(503, "Component package upgrade requires current usage of the installed declarations", "COMPONENT_PACKAGE_USAGE_UNAVAILABLE");
-      const changes = await checkUpgrade(previous, release, caller);
-      if (changes.length) {
-        const rejected = componentPackageUpgradeErrorSchema.parse({
-          success: false,
-          code: COMPONENT_PACKAGE_INCOMPATIBLE,
-          error: `Package '${release.name}' is incompatible with existing uses`,
-          details: { package: release.name, changes },
-        });
-        throw new HttpError(409, rejected.error, rejected.code, rejected.details);
-      }
-    }
+    await requireCompatibleComponentPackage(previous, release, caller, checkUpgrade);
     await activateRelease(release, files);
     return release;
   } finally {
