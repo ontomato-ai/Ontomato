@@ -31,7 +31,7 @@ import type { SkillResolveRequest } from "../skills/panel-reads";
 import { createApplicationReadAdapter } from "./application-catalogue";
 import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "./catalog-reads";
 import { requireChartReadRegistration } from "./chart-sources";
-import { listSdkComponents, readPanelComponentCatalogue, readSdkComponent } from "./component-catalogue";
+import { listSdkComponents, readProjectionComponent, readSdkComponent } from "./component-catalogue";
 import { requireRegisteredPanelRoot, resolvePanelMemberPath } from "./member-path";
 
 type ReadInputs = ProductPanelReadRequest["inputs"];
@@ -296,8 +296,8 @@ async function readParameters(
   const resolved = new Map<string, unknown>();
   const runtime = Object.entries(runtimeParams ?? {});
   if (runtime.length) {
-    const { components } = await readPanelComponentCatalogue();
-    const names = appsSdkComponentDatum(components.get(projection.componentId)?.data, dataName)?.runtimeParams ?? [];
+    const component = await readProjectionComponent(projection.componentId);
+    const names = appsSdkComponentDatum(component?.data, dataName)?.runtimeParams ?? [];
     for (const [name, value] of runtime) {
       const parameter = panelReadParameterId(declaration, name);
       if (!parameter || !names.includes(name))

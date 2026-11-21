@@ -40,7 +40,12 @@ const props = withDefaults(defineProps<{
    * header, asks the platform for nothing new and is reconciled when shown again. Absent means shown.
    */
   shown?: boolean;
-}>(), { shown: true });
+  /**
+   * The state fields the entry this page is opened at gives the panel (a fixed value, or later a frame's shared state):
+   * the panel's commands that set one of them do nothing here, so the header does not offer them at this entry.
+   */
+  wired?: readonly string[];
+}>(), { shown: true, wired: () => [] });
 const emit = defineEmits<{
   /** What a message from this instance carries now. */
   context: [context: import("@ontomato/contracts/page-context").PageContext];
@@ -108,8 +113,13 @@ const commands = computed<PlatformPageAction[]>(() => {
   const refresh: PlatformPageAction[] = Object.keys(shown.panel.manifest.members).length
     ? [{ id: "refresh", label: props.labels.refresh, icon: RefreshCw, iconOnly: true, onClick: () => view.refresh(null) }]
     : [];
+  // A command setting a field this entry gives the panel would be undone at once: the entry's value stands.
+  const setsWired = (id: string) => {
+    const action = shown.panel.manifest.commands[id]?.do;
+    return Boolean(action && "set" in action && Object.keys(action.set.fields).some((field) => props.wired.includes(field)));
+  };
   const shortcuts = view.operations.value
-    .filter((operation) => operation.kind === "state" && !operation.memberPath)
+    .filter((operation) => operation.kind === "state" && !operation.memberPath && !setsWired(operation.id))
     .map((operation): PlatformPageAction => ({
       id: operation.id,
       label: operation.label,

@@ -23,13 +23,29 @@
         "deepLink": true,
         "default": ""
       },
-      "filter": {
+      "positions": {
         "type": {
-          "kind": "scalar",
-          "type": "string"
+          "kind": "node-positions"
         },
-        "deepLink": true,
-        "default": "all"
+        "personal": true
+      },
+      "highlightedNodes": {
+        "type": {
+          "kind": "list",
+          "items": {
+            "kind": "object",
+            "objectType": "platform:ObjectType"
+          }
+        }
+      },
+      "highlightedEdges": {
+        "type": {
+          "kind": "list",
+          "items": {
+            "kind": "object",
+            "objectType": "platform:Relationship"
+          }
+        }
       }
     },
     "members": {
@@ -39,7 +55,7 @@
         "data": {
           "rows": "list"
         },
-        "id": "builtin-product-f7d52c45-7825-4baf-be9f-d324dc2db391"
+        "id": "builtin-product-5b62b06c-8063-4692-bb5c-9483a593cda9"
       },
       "relations": {
         "component": "PanelData",
@@ -47,7 +63,7 @@
         "data": {
           "rows": "list"
         },
-        "id": "builtin-product-ae5b932a-65dd-4f3f-b993-d282134b2804"
+        "id": "builtin-product-c94f4166-6043-4ba2-bc01-36cf0736ee2d"
       },
       "attributes": {
         "component": "PanelData",
@@ -55,9 +71,39 @@
         "data": {
           "rows": "list"
         },
-        "id": "builtin-product-461ef10a-8184-431b-8cb7-1f5ef9bf5d5b"
+        "id": "builtin-product-aeef6b97-7fa9-4527-ad62-94ba087c06fb"
+      },
+      "graph": {
+        "component": "ObjectGraph",
+        "data": {
+          "nodes": {
+            "type": "platform:ObjectType",
+            "read": "list"
+          },
+          "edges": {
+            "type": "platform:Relationship",
+            "read": "list"
+          }
+        },
+        "state": {
+          "selectedNode": "objectType",
+          "selectedEdge": "relation",
+          "positions": "positions",
+          "highlightedNodes": "highlightedNodes",
+          "highlightedEdges": "highlightedEdges"
+        },
+        "config": {
+          "edgeEnds": {
+            "source": "/fromclass",
+            "target": "/toclass"
+          }
+        },
+        "id": "builtin-product-b24e84c6-ca27-4ed9-8479-79b076b0f378"
       }
     },
     "commands": {}
+  },
+  "content": {
+    "messages": {}
   }
 }

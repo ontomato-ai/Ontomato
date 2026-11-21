@@ -51,6 +51,8 @@ export interface WorkbenchIdentity {
   requirePermission(keys: readonly string[]): RequestHandler;
   /** Service-level menu permission check matching `requirePermission`. OSS allows all; enterprise checks upstream menu permissions. */
   assertPermission(identity: { token?: string; apiKey?: string }, keys: readonly string[]): Promise<void>;
+  /** Authorize mutations of deployment-wide component packages. */
+  requireDeploymentMaintenance: RequestHandler;
   /** MCP service management routes. Their error copy differs from menu permissions, so they cannot merge into requirePermission. */
   guardMcpServiceManagement: RequestHandler;
   /** Diagnosis routes. Enterprise requires the domain first, then observer; OSS allows all. */

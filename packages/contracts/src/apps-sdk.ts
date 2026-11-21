@@ -11,6 +11,9 @@ export const appsSdkBuildSchema = z.object({
   digest: z.string().regex(/^[0-9a-f]{64}$/u),
 }).strict();
 
+/** The component authoring tool is downloaded from the same release as the checker. */
+export const APPS_SDK_PACKAGE_COMPONENTS_PATH = "node/package-components.mjs";
+
 /** Files in sdk.json are relative to the root of the release which contains it. */
 export const appsSdkReleaseManifestSchema = z.object({
   version: appsSdkBuildSchema.shape.version,
@@ -22,6 +25,7 @@ export const appsSdkReleaseManifestSchema = z.object({
   stylesheet: workspacePathSchema,
   components: workspacePathSchema,
   check: workspacePathSchema,
+  packageComponents: z.literal(APPS_SDK_PACKAGE_COMPONENTS_PATH),
   libraries: z.record(z.string()),
   docs: workspacePathSchema,
 }).strict();

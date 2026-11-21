@@ -444,6 +444,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
       :labels="labels"
       :language="language"
       :shown="page === shownPage"
+      :wired="Object.keys(page.use.inputs ?? {})"
       :address="addressOf(page)"
       :initial="stateOf(page)"
       @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"

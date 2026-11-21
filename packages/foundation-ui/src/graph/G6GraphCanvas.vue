@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Graph, type EdgeData, type NodeData } from "@antv/g6";
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { G6_LABEL_WIDTH, g6Edges, g6Node, g6NodeStyle, readG6Colors, type G6Colors } from "./g6-elements";
+import { G6_LABEL_WIDTH, G6_NODE_SIZE, g6Edges, g6Node, g6NodeStyle, readG6Colors, type G6Colors } from "./g6-elements";
 import { MARGIN, NODE_HEIGHT, NODE_WIDTH, placeNodes } from "./layout";
 import type {
   GraphCanvasEdge,
@@ -49,12 +49,17 @@ const props = withDefaults(
     /** The widest a node's name is drawn, in graph units; a longer one ends in an ellipsis. 160 when absent. */
     labelWidth?: number;
     /**
+     * Keeps names readable however far the reader zooms out: a node's and an edge's name stay their size on screen, and
+     * a name that would then overlap another is hidden until there is room for it again.
+     */
+    readableLabels?: boolean;
+    /**
      * Lets a reader ask for a new edge: dragging from a node to a node with Shift held hands back `connect`, while a
      * plain drag still moves the node. The canvas draws no edge of its own: the caller adds one if its owner creates it.
      */
     editable?: boolean;
   }>(),
-  { edges: () => [], selected: () => [], selectedEdges: () => [], selection: "single", layout: () => ({ type: "grid" }), maxHeight: undefined, categories: () => [], labelWidth: G6_LABEL_WIDTH, editable: false },
+  { edges: () => [], selected: () => [], selectedEdges: () => [], selection: "single", layout: () => ({ type: "grid" }), maxHeight: undefined, categories: () => [], labelWidth: G6_LABEL_WIDTH, readableLabels: false, editable: false },
 );
 const emit = defineEmits<{
   /** The selection a reader's choice results in: every chosen ID, in the order they were chosen. */
@@ -73,6 +78,8 @@ const emit = defineEmits<{
   move: [id: string, position: GraphCanvasPoint];
   /** How many of the elements being added are drawn so far, while a change is drawn in batches; ends with drawn = total. */
   progress: [drawn: number, total: number];
+  /** The canvas took a new size (its container grew or shrank), once G6 has been resized to it. */
+  resized: [width: number, height: number];
 }>();
 
 const BATCH = 200;
@@ -235,6 +242,13 @@ async function create(width: number, height: number) {
       "drag-canvas",
       "zoom-canvas",
       { type: "drag-element", enable: (event: any) => !(props.editable && event.shiftKey) },
+      ...(props.readableLabels ? [
+        {
+          type: "fix-element-size", key: "readable-labels", state: "", enable: (event: any) => event.data.scale < 1,
+          node: [{ shape: "label", fields: ["fontSize", "lineHeight"] }], edge: [{ shape: "label", fields: ["fontSize", "lineHeight"] }],
+        },
+        { type: "auto-adapt-label", key: "label-room", throttle: 100, padding: 2 },
+      ] : []),
       {
         type: "create-edge",
         trigger: "drag",
@@ -322,6 +336,7 @@ onMounted(() => {
     void enqueue(async (target) => {
       target.resize(Math.round(width), Math.round(height));
       reportViewport(target);
+      emit("resized", width, height);
     });
   });
   resized.observe(frame.value!);
@@ -331,6 +346,38 @@ onBeforeUnmount(() => {
   graph?.destroy();
   graph = null;
 });
+
+/** How far a drawn node reaches from its centre: half its name's width across, its size above, and its name below. */
+const REACH = { x: () => props.labelWidth / 2, top: G6_NODE_SIZE / 2, bottom: G6_NODE_SIZE / 2 + 6 + 18 };
+
+/**
+ * At a zoom the whole graph does not fit at, the part around `around` (the graph's middle when absent), moved no further
+ * than the graph's own edges: an axis the graph spans less than the view is centred on the graph, the other keeps the
+ * view inside the graph, so a reader never looks at empty canvas beside a graph that runs on the other way.
+ */
+async function showAround(target: Graph, zoom: number, around: string | undefined, padding: number | [number, number, number, number] = 0) {
+  const points = target.getNodeData().filter((node) => !node.data?.anchor).map((node) => ({ x: Number(node.style!.x), y: Number(node.style!.y) }));
+  if (!points.length) return;
+  const [top, right, bottom, left] = typeof padding === "number" ? [padding, padding, padding, padding] : padding;
+  const { width, height } = frame.value!.getBoundingClientRect();
+  const bounds = {
+    minX: Math.min(...points.map(({ x }) => x)) - REACH.x(), maxX: Math.max(...points.map(({ x }) => x)) + REACH.x(),
+    minY: Math.min(...points.map(({ y }) => y)) - REACH.top, maxY: Math.max(...points.map(({ y }) => y)) + REACH.bottom,
+  };
+  const focus = around === undefined ? undefined : target.getNodeData().find((node) => String(node.id) === around);
+  const wanted = focus
+    ? { x: Number(focus.style!.x), y: Number(focus.style!.y) }
+    : { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
+  // Each axis: the centre that keeps the view within the graph's edges, or the graph's own centre where it is narrower.
+  const along = (value: number, min: number, max: number, before: number, after: number, size: number) => {
+    const low = min + (size / 2 - before) / zoom;
+    const high = max - (size / 2 - after) / zoom;
+    return low > high ? (min + max) / 2 : Math.min(Math.max(value, low), high);
+  };
+  const centre = [along(wanted.x, bounds.minX, bounds.maxX, left, right, width), along(wanted.y, bounds.minY, bounds.maxY, top, bottom, height)] as const;
+  const [x, y] = target.getViewportByCanvas([centre[0], centre[1]]);
+  await target.translateBy([width / 2 - x, height / 2 - y], false);
+}
 
 /** Runs after the props of this tick are applied, so a caller can change the data and then fit or focus it. */
 async function afterChanges(task: (target: Graph) => Promise<void>) {
@@ -342,7 +389,8 @@ defineExpose({
   /**
    * Shows the whole graph, no larger than `maxZoom`, keeping `padding` pixels clear (one value, or top, right, bottom,
    * left). With `minZoom` it is never shown smaller: a graph that would be is shown at `minZoom` around the node
-   * `around` (its middle when absent), and the reader pans to the rest — names stay readable rather than all in view.
+   * `around` (its middle when absent) as far as the graph's own edges allow, and the reader pans to the rest — names
+   * stay readable rather than all in view.
    */
   fit: (options: { maxZoom?: number; minZoom?: number; around?: string; padding?: number | [number, number, number, number] } = {}) =>
     afterChanges(async (target) => {
@@ -352,12 +400,14 @@ defineExpose({
       if (options.maxZoom !== undefined && zoom > options.maxZoom) await target.zoomTo(options.maxZoom, false);
       else if (options.minZoom !== undefined && zoom < options.minZoom) {
         await target.zoomTo(options.minZoom, false);
-        if (options.around !== undefined) return target.focusElement(options.around, false);
+        return showAround(target, options.minZoom, options.around, options.padding);
       }
       await target.fitCenter(false);
     }),
   /** Zooms by `ratio` about the middle of the view. */
   zoomBy: (ratio: number) => afterChanges((target) => target.zoomBy(ratio, false)),
+  /** Zooms to `zoom` about the middle of the view. */
+  zoomTo: (zoom: number) => afterChanges((target) => target.zoomTo(zoom, false)),
   /** Brings a node to the middle of the view. */
   focus: (id: string) => afterChanges((target) => target.focusElement(id, false)),
   /** Shows the graph at `zoom` with the graph point `x`/`y` at the view's top-left corner. */

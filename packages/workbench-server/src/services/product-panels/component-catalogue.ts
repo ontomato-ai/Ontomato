@@ -5,6 +5,7 @@ import type { BuiltinProductProjectionInput, ProductProjectionInput } from "@ont
 import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
 import { readCurrentAppSdkComponents } from "../app-builder/sdk";
+import { readComponentPackage } from "../component-packages/store";
 
 export async function readPanelComponentCatalogue() {
   const { version, digest, catalogue: raw } = await readCurrentAppSdkComponents();
@@ -40,10 +41,20 @@ export async function readSdkComponent(componentId: string, locale: string | und
   return component;
 }
 
+/** Resolve a projection's component from the SDK or the package's enabled release. */
+export async function readProjectionComponent(componentId: string, readCatalogue = readPanelComponentCatalogue) {
+  const { components } = await readCatalogue();
+  const official = components.get(componentId);
+  if (official) return official;
+  const separator = componentId.lastIndexOf(":");
+  if (separator < 1) return undefined;
+  const release = await readComponentPackage(componentId.slice(0, separator));
+  return release?.components.find(component => component.componentId === componentId);
+}
+
 export async function validateProjectionComponent(id: string, projection: ProductProjectionInput | BuiltinProductProjectionInput,
   readCatalogue = readPanelComponentCatalogue) {
-  const { components } = await readCatalogue();
-  const component = components.get(projection.componentId);
+  const component = await readProjectionComponent(projection.componentId, readCatalogue);
   if (!component)
     throw new HttpError(400, `Projection '${id}', componentId '${projection.componentId}' is absent from the current SDK`, "PANEL_COMPONENT_UNAVAILABLE");
   const { data } = component;
