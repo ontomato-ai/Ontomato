@@ -318,20 +318,22 @@ it("supports table columns, inferred checkboxes from outputs.checked and fallbac
   expect(element.querySelector(".sdk-object-list-selected-count")?.textContent).toContain("1");
 });
 
-it("shows the configured field as each compact item's summary line, and the owner's subtitle without one", async () => {
+it("shows the configured compact summary and only clamps it when asked", async () => {
   const row = (primaryKey: string, description: string) =>
     ({ primaryKey, label: `Task ${primaryKey}`, subtitle: "owner line", fields: { description } });
   const configured: Record<string, DirectProjection> = {
     ...baseProjections,
-    "schedules-tasks": { ...baseProjections["schedules-tasks"]!, config: { subtitleField: "description" } },
+    "schedules-tasks": { ...baseProjections["schedules-tasks"]!, config: { subtitleField: "description", subtitleLines: 2 } },
   };
   const { element } = mountDirect(
     (request) => (request.dataName === "rows" ? ready([row("t-1", "Runs every night")]) : { status: "empty" }),
     { projections: configured },
   );
   await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-item-sub")?.textContent?.trim()).toBe("Runs every night"));
+  expect(element.querySelector(".sdk-object-list-item-sub")?.classList.contains("sdk-object-list-item-sub-clamped")).toBe(true);
   document.body.innerHTML = "";
 
   const plain = mountDirect((request) => (request.dataName === "rows" ? ready([row("t-1", "Runs every night")]) : { status: "empty" }), {});
   await vi.waitFor(() => expect(plain.element.querySelector(".sdk-object-list-item-sub")?.textContent?.trim()).toBe("owner line"));
+  expect(plain.element.querySelector(".sdk-object-list-item-sub")?.classList.contains("sdk-object-list-item-sub-clamped")).toBe(false);
 });

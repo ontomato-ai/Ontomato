@@ -29,6 +29,7 @@
         },
         "config": {
           "subtitleField": "meaning",
+          "subtitleLines": 2,
           "fallbackToFirst": false
         },
         "name": "组件目录",
