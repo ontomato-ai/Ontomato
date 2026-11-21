@@ -96,10 +96,16 @@ test("current SDK describes the browser files and Node check from the same relea
   const manifest = {
     version: "1.1.2", product: "workbench", executionContext: 1, hostTransport: 1, messageBridge: 2,
     entries: { "@ontomato/sdk/panel": "panel.js" }, stylesheet: "sdk.css", components: "components.json",
-    check: "node/panel-check.mjs", libraries: { vue: "3.5.0" }, docs: "docs/index.md",
+    check: "node/panel-check.mjs",
+    packageComponents: "node/package-components.mjs", libraries: { vue: "3.5.0" }, docs: "docs/index.md",
   };
   assert.deepEqual(appsSdkReleaseManifestSchema.parse(manifest), manifest);
   assert.equal(appsSdkReleaseManifestSchema.safeParse({ ...manifest, check: "/node/panel-check.mjs" }).success, false);
+  const { packageComponents: _missing, ...legacy } = manifest;
+  assert.equal(appsSdkReleaseManifestSchema.safeParse(legacy).success, false);
+  assert.equal(appsSdkReleaseManifestSchema.safeParse({
+    ...manifest, packageComponents: "../node/package-components.mjs",
+  }).success, false);
 });
 
 test("the SDK catalogue separates supply, configuration and run inputs", async () => {

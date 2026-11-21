@@ -18,6 +18,7 @@ export async function writeBundledAppSdkFixture(runtimeRoot: string): Promise<st
     stylesheet: "styles/sdk.css",
     components: "components.json",
     check: "node/panel-check.mjs",
+    packageComponents: "node/package-components.mjs",
     libraries: {},
     docs: "docs/index.md",
   });
