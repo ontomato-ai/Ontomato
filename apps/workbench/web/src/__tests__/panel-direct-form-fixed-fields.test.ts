@@ -75,7 +75,7 @@ function open(initial: Record<string, RuntimeJsonValue>) {
     pageKey: "classes", url: () => "/classes", label: () => "Classes", initial,
     text: createPanelText({}, { value: "en" } as never, "en"),
     operations: { ...noOperations.operations, prepare },
-    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, placement: noOperations.placement,
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate,
     confirmOperation: async ({ intentId }) => ({ decision: "confirm", response: { kind: "dispatched", intentId, outcome: {
       kind: "success", data: {}, affected: { objects: [{ objectType: ATTRIBUTE, primaryKey: "Device.site_id" }], objectTypes: [ATTRIBUTE] },
     } as never } }),
