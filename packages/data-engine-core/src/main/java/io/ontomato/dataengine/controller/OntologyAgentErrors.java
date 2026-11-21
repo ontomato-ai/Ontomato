@@ -1,6 +1,8 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.config.ControllerConst;
 import io.ontomato.dataengine.dataAdapter.DslContractViolationException;
+import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.agent.AgentHttpException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.*;
@@ -25,6 +27,11 @@ import org.springframework.web.server.ResponseStatusException;
 public class OntologyAgentErrors {
   private static final org.slf4j.Logger LOG =
       org.slf4j.LoggerFactory.getLogger(OntologyAgentErrors.class);
+  private final LangService messages;
+
+  public OntologyAgentErrors(LangService messages) {
+    this.messages = messages;
+  }
 
   /**
    * Callers get the reason for errors they can correct. Anything unexpected is logged here and
@@ -59,7 +66,7 @@ public class OntologyAgentErrors {
                         : status == 404 ? "NOT_FOUND" : "INTERNAL_ERROR";
     String message =
         error instanceof AgentHttpException e
-            ? e.getMessage()
+            ? e.message(messages, request.getHeader(ControllerConst.LANG_HEADER_KEY))
             : error instanceof ResponseStatusException e
                 ? e.getReason()
                 : correctable

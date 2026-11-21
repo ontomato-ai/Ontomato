@@ -121,7 +121,7 @@ describe("action panel server operations", () => {
     const { host, sent } = hostWith(() => Response.json({ success: true, data: { name: "Approve order" } }));
 
     expect(await operation.inspectImpact!.inspect({ ...host, locale: "en" }, [{ target: actionTarget, input: {} }])).toEqual({
-      summary: "This deletes the selected action; the owner refuses a system action or one referenced by a scheduled task.",
+      summary: "This deletes the selected action with its definition and code explanation; the write function it uses stays. The owner refuses a system action or one a scheduled task runs.",
       objects: [{ target: { objectType: ACTION, primaryKey: "a1" }, label: "Approve order" }],
       total: 1,
     });

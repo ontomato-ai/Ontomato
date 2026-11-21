@@ -59,7 +59,7 @@ class OssGovernanceWindowAssemblyTest {
       OntologyAgentAccess.class,KnowledgeGovernanceController.class);
     context.refresh();
     http=MockMvcBuilders.standaloneSetup(context.getBean(KnowledgeGovernanceController.class))
-      .setControllerAdvice(new OntologyAgentErrors()).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+      .setControllerAdvice(new OntologyAgentErrors((language, key) -> key)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
   }
   @AfterEach void cleanup() {
     if(context!=null)context.close();

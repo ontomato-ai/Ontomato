@@ -32,7 +32,7 @@ export const en = {
   "panels.agentDefinition.delete": "Delete agent",
   "panels.confirmation.deleteMetricViewImpact": "This deletes the selected metric, together with its bindings ({bindings} in total).",
   "panels.confirmation.deleteFunctionImpact": "This deletes the selected function; the owner refuses one referenced by a metric, an action or a write task.",
-  "panels.confirmation.deleteActionImpact": "This deletes the selected action; the owner refuses a system action or one referenced by a scheduled task.",
+  "panels.confirmation.deleteActionImpact": "This deletes the selected action with its definition and code explanation; the write function it uses stays. The owner refuses a system action or one a scheduled task runs.",
   "panels.confirmation.deleteKnowledgeImpact": "This deletes the selected business knowledge ({count} in total).",
   "panels.productCatalog.name": "Name",
   "panels.productCatalog.description": "Description",

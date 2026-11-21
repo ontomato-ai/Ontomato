@@ -13,7 +13,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.server.ResponseStatusException;
 
 class OntologyAgentErrorsTest {
-  private final OntologyAgentErrors errors = new OntologyAgentErrors();
+  private final OntologyAgentErrors errors = new OntologyAgentErrors((language, key) -> key);
 
   @Test
   void correctableErrorsKeepTheirReason() {
@@ -43,6 +43,27 @@ class OntologyAgentErrorsTest {
     var unavailable = new AgentHttpException(503, "DEPENDENCY_UNAVAILABLE", "Agent runtime is unavailable");
     assertEquals(503, respond(unavailable).getStatusCode().value());
     assertEquals("DEPENDENCY_UNAVAILABLE", error(unavailable).get("code"));
+  }
+
+  @Test
+  void aLocalizedRefusalIsAnsweredInTheReadersLanguageAndInEnglishWithoutATranslation() {
+    var translated = new OntologyAgentErrors((language, key) ->
+        "zh-CN".equals(language) && key.equals("Authoring.sampleOutsideScope") ? "样本类 {className} 不在本轮创作范围内" : key);
+    var refusal = new AgentHttpException(403, "FORBIDDEN", "Sample class is outside the authoring scope: e2e_expense")
+        .localized("Authoring.sampleOutsideScope", Map.of("className", "e2e_expense"));
+    var reader = new MockHttpServletRequest();
+    reader.addHeader("Accept-Language", "zh-CN");
+
+    var answer = translated.failure(refusal, reader);
+    assertEquals(403, answer.getStatusCode().value());
+    assertEquals(Map.of("code", "FORBIDDEN", "message", "样本类 e2e_expense 不在本轮创作范围内"), body(answer));
+    assertEquals("Sample class is outside the authoring scope: e2e_expense",
+        body(translated.failure(refusal, new MockHttpServletRequest())).get("message"));
+  }
+
+  @SuppressWarnings("unchecked")
+  private static Map<String, String> body(ResponseEntity<?> answer) {
+    return (Map<String, String>) ((Map<String, Object>) answer.getBody()).get("error");
   }
 
   private ResponseEntity<?> respond(Exception failure) {
