@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ontology-actions",
+      "input": {
+        "name": "Actions",
+        "description": "List the domain's actions, edit their definitions and status, read their derived definition and code explanation, and delete the ones no longer needed."
+      }
+    }
+  ]
+}
