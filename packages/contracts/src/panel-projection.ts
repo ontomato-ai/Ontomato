@@ -26,6 +26,7 @@ export const panelObjectListColumnSchema = z.object({
   kind: z.enum(["text", "tag", "tags", "reference"]).optional(),
   subtitleKey: z.string().min(1).optional(),
   emptyKey: panelMessageKeySchema.optional(),
+  wrap: z.boolean().optional().describe("Allow text in this column to wrap onto multiple lines. Defaults to false."),
 }).strict();
 export type PanelObjectListColumn = z.infer<typeof panelObjectListColumnSchema>;
 

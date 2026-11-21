@@ -10,7 +10,7 @@ import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import type { PanelFormDescription, PanelFormField, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import { slotState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
 import { PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
-import { changedPaths, fieldAt, movedPath, valueAt, withValueAt } from "../panel/form-values";
+import { changedPaths, fieldAt, movedPath, valueAt, withValueAt, withoutValueAt } from "../panel/form-values";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMember } from "../panel/member";
 import { editedInput, memberFormSource, MemberDataUnavailable, type FormSource } from "../panel/member-forms";
@@ -306,11 +306,18 @@ watch(fixedValues, (next, previous) => {
 
 /** One field changed: the form holds the value; a field the owner's form depends on has the owner asked again. */
 function set(path: string, value: RuntimeJsonValue) {
+  edit(path, withValueAt(values.value, path, value));
+}
+function remove(path: string) {
+  edit(path, withoutValueAt(values.value, path));
+}
+/** The reader's edit of one field, as the values it leaves: submitted, and the owner asked again where it says so. */
+function edit(path: string, next: PanelFormValues) {
   if (isFixed(path)) throw new Error(`The page fixes the field ${path}; it is not edited in the form`);
   // The described field the edit is in: a row's or an object's field submits the array or object it belongs to.
   const described = fields.value.find((item) => path === item.path || path.startsWith(`${item.path}/`));
   if (described) submitted.value = new Set([...submitted.value, described.path]);
-  values.value = withValueAt(values.value, path, value);
+  values.value = next;
   const field = fieldAt(fields.value, path);
   if (!field?.refreshOnChange) return;
   const asked = target.value!;
@@ -370,6 +377,7 @@ provide(formControlsKey, {
   busy: saving,
   sharedReadOnlyReasons,
   set,
+  remove,
   reorder,
   invalid: markInvalid,
   rowControl(path, itemPath) {

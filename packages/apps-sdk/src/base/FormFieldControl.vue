@@ -8,6 +8,7 @@ import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import { ElSwitch } from "element-plus/es/components/switch/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormField } from "@ontomato/contracts/panel-projection";
+import { findPanelFormOption } from "@ontomato/contracts/form-fields";
 import { admitsNull, valueAt } from "../panel/form-values";
 import { agentAvatar, avatarIconOptions, darkAvatarColorOptions, lightAvatarColorOptions, storedAgentAvatar } from "@ontomato/agent-shell-ui/avatar";
 import { useDarkMode } from "@ontomato/foundation-ui/theme";
@@ -35,6 +36,34 @@ const value = computed(() => valueAt(controls.values.value, props.path));
 const off = computed(() => props.disabled || props.field.readOnly || controls.busy.value);
 const control = computed(() => props.field.control);
 const set = (next: RuntimeJsonValue) => controls.set(props.path, next);
+const isObject = (held: RuntimeJsonValue | undefined) => held !== null && typeof held === "object" && !Array.isArray(held);
+/**
+ * A choice whose values are objects (A's contract): its options are objects — the same options never mix them with plain
+ * values — or it has none left and holds an object still.
+ */
+const objectOptions = computed(() => control.value.kind === "select"
+  && (control.value.options.some((option) => typeof option.value === "object")
+    || (control.value.multiple ? rows.value.some(isObject) : isObject(value.value))));
+/** The place of an object the options no longer offer: shown as such, and kept until the reader clears it. */
+const RETIRED = -1;
+/** The declared option a value is, by its place among the options, whatever order its keys come in; none, or no longer offered. */
+function optionIndex(held: RuntimeJsonValue | undefined): number | "" {
+  if (control.value.kind !== "select" || held === undefined || held === null) return "";
+  const found = findPanelFormOption(control.value.options, held);
+  return found ? control.value.options.indexOf(found) : RETIRED;
+}
+const holdsRetired = computed(() => (control.value.kind === "select" && control.value.multiple ? rows.value.map(optionIndex) : [optionIndex(value.value)]).includes(RETIRED));
+/** Writes the chosen options' own values (an object no longer offered stays as it was); a choice cleared leaves the field out. */
+function chooseObject(chosen: number | "" | number[] | undefined) {
+  if (control.value.kind !== "select") return;
+  const { options } = control.value;
+  if (Array.isArray(chosen)) {
+    const retired = rows.value.filter((held) => optionIndex(held) === RETIRED);
+    const offered: RuntimeJsonValue[] = chosen.flatMap((index) => (index === RETIRED ? [] : [options[index]!.value as RuntimeJsonValue]));
+    set([...offered, ...(chosen.includes(RETIRED) ? retired : [])]);
+  } else if (chosen === "" || chosen === undefined) controls.remove(props.path);
+  else if (chosen !== RETIRED) set(options[chosen]!.value);
+}
 
 const text = computed(() => (typeof value.value === "string" ? value.value : ""));
 const rows = computed<RuntimeJsonValue[]>(() => (Array.isArray(value.value) ? value.value : []));
@@ -120,6 +149,26 @@ function setFrequency(next: FrequencyDraft) {
       :disabled="off"
       @update:model-value="set($event)"
     ></el-input>
+    <!-- Options whose values are objects: chosen by place, shown as the declared option the value is, written whole. -->
+    <el-select
+      v-else-if="control.kind === 'select' && objectOptions"
+      :model-value="control.multiple ? rows.map(optionIndex) : optionIndex(value)"
+      :multiple="control.multiple"
+      :clearable="!field.required"
+      :disabled="off"
+      class="sdk-form-field-wide"
+      @update:model-value="chooseObject"
+    >
+      <el-option
+        v-for="(option, index) in control.options"
+        :key="index"
+        :value="index"
+        :label="option.label"
+        :disabled="option.disabled"
+        :title="option.disabledReason ?? option.description ?? undefined"
+      ></el-option>
+      <el-option v-if="holdsRetired" :value="RETIRED" :label="t('platform.formOptionNoLonger')" disabled></el-option>
+    </el-select>
     <el-select
       v-else-if="control.kind === 'select'"
       :model-value="control.multiple ? rows : value ?? ''"
@@ -132,8 +181,8 @@ function setFrequency(next: FrequencyDraft) {
       @update:model-value="set($event)"
     >
       <el-option
-        v-for="option in control.options"
-        :key="option.value"
+        v-for="(option, index) in control.options"
+        :key="index"
         :value="option.value"
         :label="option.label"
         :disabled="option.disabled"

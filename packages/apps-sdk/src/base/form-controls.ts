@@ -16,6 +16,8 @@ export interface FormControls {
   /** Read-only reasons the form says once for itself, because its owner gives them to several fields; a field skips them. */
   readonly sharedReadOnlyReasons: Readonly<Ref<ReadonlySet<string>>>;
   set(path: string, value: RuntimeJsonValue): void;
+  /** Leaves the field at `path` out of the values: a choice cleared, which the owner then does not receive. */
+  remove(path: string): void;
   /**
    * Rearranges the rows of the array at `path`, `order[next] = previous`; a row left out is removed. Messages and marks
    * inside a row move with it.
