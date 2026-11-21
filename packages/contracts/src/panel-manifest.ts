@@ -443,11 +443,33 @@ const panelCommandsSchema = z.record(key, panelCommandSchema).superRefine((comma
   }
 });
 
+/** Header state changes must be reproducible by opening the panel's address. */
+export function validatePanelCommandAddresses(
+  { state, commands }: { state: PanelState; commands: Record<string, PanelCommand> },
+  ctx: z.RefinementCtx,
+) {
+  for (const [name, command] of Object.entries(commands)) {
+    if (!("set" in command.do)) continue;
+    for (const field of Object.keys(command.do.set.fields)) {
+      const path = ["commands", name, "do", "set", "fields", field];
+      if (!Object.hasOwn(state, field)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: `Undeclared reference '${field}'` });
+      } else if (!state[field].deepLink) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom, path,
+          message: `Header command '${name}' changes state '${field}', which the assistant cannot set by address. Mark it deepLink.`,
+        });
+      }
+    }
+  }
+}
+
 export const panelManifestSchema = z.object({
   state: panelStateSchema,
   members: z.record(key, panelMemberSchema),
   commands: panelCommandsSchema,
 }).strict().superRefine(({ state, members, commands }, ctx) => {
+  validatePanelCommandAddresses({ state, commands }, ctx);
   function issue(path: string[], message: string) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
   }
@@ -509,7 +531,6 @@ export const panelManifestSchema = z.object({
     }
     for (const [field, value] of Object.entries(values)) {
       const valuePath = [...path, "do", operation, operation === "set" ? "fields" : "inputs", field];
-      if (operation === "set") requireName(state, field, valuePath);
       if ("state" in value) requireName(state, value.state, [...valuePath, "state"]);
       if (operation === "set" && Object.hasOwn(state, field)) {
         const target = state[field].type;
