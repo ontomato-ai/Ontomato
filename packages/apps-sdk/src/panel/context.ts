@@ -87,6 +87,12 @@ export interface PanelContext {
    */
   navigate(address: string): Promise<void>;
   /**
+   * Tells the reader briefly how something the page did went — "Exported", "Deleted", why a call failed — in the
+   * platform's own message at the top of the window, as its pages do; it fades by itself. A note that belongs on the
+   * page and stays is `<el-alert>` in the template. A panel the platform runs has it; a frame has none.
+   */
+  notify(message: { kind: "success" | "info" | "warning" | "error"; text: string }): void;
+  /**
    * Where the platform shows this panel, read-only: `"conversation"` beside a conversation (shown full-size from the
    * conversation too), where the conversation already draws the page's title and its way back; `"page"` at the panel's
    * own address, a candidate's preview included. It holds for the instance's whole run.

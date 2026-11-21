@@ -99,7 +99,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         var ontology = JSON.parseObject(new ClassPathResource("applications/ontology.json").getContentAsString(StandardCharsets.UTF_8),
             ApplicationCatalog.Builtin.class);
         var metadata = ontology.declaration();
-        var use = new ApplicationPanelUse("knowledge-use", "knowledge", "panel-knowledge", "/ontology/knowledge",
+        var use = new ApplicationPanelUse("knowledge-use", "knowledge", "builtin-product-knowledge", "/ontology/knowledge",
             new ApplicationPanelUse.Access("business-knowledge", null),
             new DefaultAgentTarget("id", "knowledge-agent", null), null);
         var declaration = new ApplicationCatalog.Declaration(metadata.names(), metadata.descriptions(), metadata.icon(),
@@ -112,7 +112,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         when(access.canEnter(any(), eq(viewer))).thenReturn(true);
         when(access.pageSkills(anyList(), eq(viewer))).thenAnswer(call -> call.getArgument(0));
         when(access.panelUses(List.of(use), viewer)).thenReturn(List.of(use));
-        when(grants.allowed("panel-knowledge", "use")).thenReturn(true);
+        when(grants.allowed("builtin-product-knowledge", "use")).thenReturn(true);
 
         http.perform(get(ApplicationController.PANEL_SKILL_SOURCES).param("domainId", "domain")
                 .header(WorkbenchServiceAuthentication.HEADER, "test-service"))
@@ -136,11 +136,67 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.registeredSkills[0].name").value("knowledge-governance"));
     }
 
+    @Test void builtinDeclarationsCannotPointToDomainPanels() {
+        var before = records();
+        var privatePanel = builtInBrowser("domain-panel");
+        var error = assertThrows(org.springframework.web.server.ResponseStatusException.class,
+            () -> catalog.builtins("data-engine", List.of(privatePanel)));
+        assertEquals(400, error.getStatusCode().value());
+        assertEquals(before, records());
+        verifyNoInteractions(panels);
+    }
+
+    @Test void aBuiltinEntryResolvesTheSamePanelForTwoDomainsWithoutGrantRows() throws Exception {
+        var resourceGrants = new ProductGrantService(jdbc, identity, (userId, domainId) -> java.util.Set.of());
+        resourceGrants.afterPropertiesSet();
+        var actualCatalog = new ApplicationCatalog(jdbc,
+            new TransactionTemplate(new DataSourceTransactionManager(dataSource)), access, "{}", panels, resourceGrants);
+        actualCatalog.builtins("data-engine", List.of(builtInBrowser("builtin-product-browser")));
+        var first = new QueryAccessService.GrantUser("one", "domain-one");
+        var second = new QueryAccessService.GrantUser("two", "domain-two");
+        when(access.canEnter(any(), any())).thenReturn(true);
+        when(access.panelUses(anyList(), any())).thenAnswer(call -> call.getArgument(0));
+        var mvc = MockMvcBuilders.standaloneSetup(new ApplicationController(actualCatalog, identity,
+            new WorkbenchServiceAuthentication("test-service"))).setControllerAdvice(new ApplicationErrors()).build();
+        var request = get("/platform/applications/resolve-entry").param("path", "/browser/data");
+        for (var reader : List.of(first, second)) {
+            when(identity.getCurrentUser()).thenReturn(reader);
+            mvc.perform(request).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.applicationId").value("browser"))
+                .andExpect(jsonPath("$.data.use.panelId").value("builtin-product-browser"))
+                .andExpect(jsonPath("$.data.use.access.permissionCode").value("data-browser"));
+        }
+        when(access.panelUses(anyList(), eq(second))).thenReturn(List.of());
+        mvc.perform(request).andExpect(status().isForbidden());
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM product_grant", Integer.class));
+        verifyNoInteractions(panels);
+
+        var localUse = new ApplicationPanelUse("local", "local", "builtin-product-browser", "/applications/app-local/home",
+            new ApplicationPanelUse.Access(null, "domain-member"), null, null);
+        var registration = new ApplicationController.PanelRegistration(
+            new ApplicationController.PanelEntry("/applications/app-local", "panels"), List.of(localUse),
+            builtin("local", "native").declaration(), List.of("domain-member"));
+        actualCatalog.putPanelUses("app-local", registration, second);
+        assertEquals("builtin-product-browser",
+            actualCatalog.require("app-local").getList("panelUses", ApplicationPanelUse.class).getFirst().panelId());
+        verify(panels).requireCurrent("domain-two", null, List.of(localUse), null);
+    }
+
+    private ApplicationCatalog.Builtin builtInBrowser(String panelId) {
+        var use = new ApplicationPanelUse("browse", "browse", panelId, "/browser/data",
+            new ApplicationPanelUse.Access("data-browser", null), null, null);
+        var metadata = builtin("browser", "native").declaration();
+        var declaration = new ApplicationCatalog.Declaration(metadata.names(), metadata.descriptions(), metadata.icon(),
+            metadata.groups(), metadata.permissions(), List.of(), List.of(use));
+        return new ApplicationCatalog.Builtin("browser", "native", "apps", "build", 1,
+            JSONObject.of("path", "/browser", "renderer", "panels"), List.of("data-browser"), null, declaration);
+    }
+
     @Test void aBuiltinCannotBorrowAnotherBuiltinsEntryCode() throws Exception {
         new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
         var before = records();
         var original = builtin("other", "native");
-        var use = new ApplicationPanelUse("detail", "detail", "panel-detail", "/other/detail",
+        var use = new ApplicationPanelUse("detail", "detail", "builtin-product-detail", "/other/detail",
             new ApplicationPanelUse.Access("data-browser", null), null, null);
         var metadata = original.declaration();
         var declaration = new ApplicationCatalog.Declaration(metadata.names(), metadata.descriptions(), metadata.icon(),
@@ -148,8 +204,10 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         var other = new ApplicationCatalog.Builtin(original.id(), original.kind(), original.rail(), original.category(), original.sort(),
             JSONObject.of("renderer", "panels", "path", "/other"), List.of("data-browser"), null, declaration);
 
-        assertEquals(400, assertThrows(org.springframework.web.server.ResponseStatusException.class,
-            () -> catalog.builtins("workbench", List.of(other))).getStatusCode().value());
+        var refusal = assertThrows(org.springframework.web.server.ResponseStatusException.class,
+            () -> catalog.builtins("workbench", List.of(other)));
+        assertEquals(400, refusal.getStatusCode().value());
+        assertTrue(refusal.getReason().contains("data-browser"));
         assertEquals(before, records());
     }
 
