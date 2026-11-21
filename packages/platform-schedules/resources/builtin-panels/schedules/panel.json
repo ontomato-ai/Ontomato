@@ -39,8 +39,7 @@
         "type": {
           "kind": "object",
           "objectType": "platform:Application"
-        },
-        "external": true
+        }
       }
     },
     "members": {

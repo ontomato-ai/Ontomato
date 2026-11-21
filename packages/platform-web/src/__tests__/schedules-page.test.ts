@@ -10,7 +10,6 @@ it("publishes the scheduled task panel at the same native address and admission"
   expect(declaration.panelUses).toMatchObject([{
     path: "/schedules", pageKey: "schedules", panelId: "builtin-product-scheduled-tasks",
     access: { kind: "domain-member" },
-    inputs: { schedulesApplication: { literal: { className: "platform:Application", primaryKey: "schedules" } } },
   }]);
   expect(schedulePages().some(route => route.path === entry.path)).toBe(false);
 

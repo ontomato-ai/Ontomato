@@ -145,7 +145,6 @@ export const workbenchApplications: BuiltinApplication[] = [
         "panelId": "builtin-product-scheduled-tasks",
         "path": "/schedules",
         "access": { "kind": "domain-member" },
-        "inputs": { "schedulesApplication": { "literal": { "className": "platform:Application", "primaryKey": "schedules" } } },
         "descriptions": {
           "en": "Schedule application tasks and review their execution history",
           "zh-CN": "配置各应用的定时任务，查看执行记录与结果"

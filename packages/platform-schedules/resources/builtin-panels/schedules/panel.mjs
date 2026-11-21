@@ -7,6 +7,7 @@ const DAY = 86_400_000;
 await mountPanel({
   setup() {
     const { instance, t, notify, navigate } = usePanelContext();
+    instance.state.set("schedulesApplication", { className: "platform:Application", primaryKey: "schedules" });
     const values = instance.state.values;
     const app = computed(() => values.value.app ?? null);
     const selected = computed(() => values.value.selectedTask ?? null);
@@ -279,8 +280,12 @@ await mountPanel({
       return response?.outcome ?? receipt.outcome ?? { kind: "unknown" };
     }
     async function renewCredential() {
-      const outcome = outcomeOf(await opRenew.run());
-      if (outcome.kind !== "success") renewalProblem.value = refusalText(outcome);
+      try {
+        const outcome = outcomeOf(await opRenew.run());
+        if (outcome.kind !== "success") renewalProblem.value = refusalText(outcome);
+      } catch (failure) {
+        renewalProblem.value = failure.message;
+      }
     }
     onMounted(() => {
       if (opRenew.operation.value) return renewCredential();
