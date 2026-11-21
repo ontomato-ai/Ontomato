@@ -35,6 +35,7 @@
     "panelUses": [{
       "id": "ontology-playground", "pageKey": "ontology-playground", "panelId": "builtin-product-ontology-graph",
       "path": "/ontology/playground", "access": {"permissionCode": "ontology-modeling"},
+      "descriptions": {"en": "A graph of the owners' object types and relations: browse, select and go into modeling.", "zh-CN": "用属主的对象类型和关系画图，浏览、选择并进入建模。"},
       "names": {"en": "Ontology graph", "zh-CN": "本体图谱"}
     }, {
       "id": "ontology-relations", "pageKey": "ontology-relations", "panelId": "builtin-product-ontology-relations",
@@ -43,6 +44,7 @@
     }, {
       "id": "ontology-actions", "pageKey": "actions", "panelId": "builtin-product-ontology-actions",
       "path": "/ontology/assets/actions", "access": {"permissionCode": "action-management"},
+      "descriptions": {"en": "Every action of this domain: its definition, the definition its code derives, the explanation of that code, status and deletion.", "zh-CN": "本域的全部动作：定义、由代码推导的定义、代码解释，以及状态和删除。"},
       "names": {"en": "Actions", "zh-CN": "动作"}
     }, {
       "id": "capability-map", "pageKey": "capability-map", "panelId": "builtin-product-capability-map",
@@ -51,18 +53,22 @@
     }, {
       "id": "ontology-components", "pageKey": "ontology-components", "panelId": "builtin-product-sdk-components",
       "path": "/ontology/components", "access": {"permissionCode": "ontology-modeling"},
+      "descriptions": {"zh-CN": "当前部署的 SDK 发行声明的组件。组件随发行增改，这一页只读：可以搜索和查看声明，不能新增、修改或删除。", "zh-TW": "目前部署的 SDK 發行聲明的組件。組件隨發行增改，這一頁唯讀：可以搜尋和查看聲明，不能新增、修改或刪除。", "en": "The components the deployed SDK release declares. Components change with a release, so this page is read-only: search and read declarations; nothing is created, changed or deleted here."},
       "names": {"zh-CN": "基础组件", "zh-TW": "基礎組件", "en": "Base components"}
     }, {
       "id": "use-ontology-projections", "pageKey": "ontology-projections", "panelId": "builtin-product-ontology-projections",
       "path": "/ontology/projections", "access": {"permissionCode": "ontology-modeling"},
+      "descriptions": {"en": "The projections of this domain you can use. Select one to see what it reads, how it is configured, which operations its owner registered, and which panels use it.", "zh-CN": "本域里我能使用的投影。选中一条，看它读什么、怎么配置、属主登记了哪些操作，以及哪些面板在用它。"},
       "names": {"en": "Projections","zh-CN": "投影"}, "groupKey": "products"
     }, {
       "id": "use-ontology-panels", "pageKey": "ontology-panels", "panelId": "builtin-product-ontology-panels",
       "path": "/ontology/panels", "access": {"permissionCode": "ontology-modeling"},
+      "descriptions": {"en": "The panels this domain grants you: name, owner, sharing scope and template use; each panel's source, style, members, usage and grants.", "zh-CN": "本域授予你使用的面板：名称、所属人、共享范围与模板用途，以及每个面板的源码、样式、成员、引用与授权。"},
       "names": {"en": "Panels","zh-CN": "面板"}, "groupKey": "products"
     }, {
       "id": "use-ontology-applications", "pageKey": "ontology-applications", "panelId": "builtin-product-ontology-applications",
       "path": "/ontology/applications", "access": {"permissionCode": "ontology-modeling"},
+      "descriptions": {"en": "Every application visible in this domain, built-in and domain-built alike. Open one to see its identity, entries and the panels it uses.", "zh-CN": "本域可见的全部应用：内置的与域内建的同列。展开一行看它的身份、入口和用到的面板。"},
       "names": {"en": "Applications","zh-CN": "应用"}, "groupKey": "products"
     }, {
       "id": "ontology-agent-settings", "pageKey": "agent-settings", "panelId": "builtin-product-agent-settings",
@@ -71,6 +77,7 @@
     }, {
       "id": "ontology-functions", "pageKey": "ontology-functions", "panelId": "builtin-product-ontology-functions",
       "path": "/ontology/assets/functions", "access": {"permissionCode": "ontology-modeling"},
+      "descriptions": {"en": "Read functions keep a query package and column labels; write functions keep parameters and Python code. A name is edited once, here.", "zh-CN": "读函数维护查询逻辑包和列标签，写函数维护参数和 Python 代码；名称只在这里编辑一次。"},
       "names": {"en": "Functions", "zh-CN": "函数"}
     }]
   }
