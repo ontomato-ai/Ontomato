@@ -353,7 +353,7 @@ const base: HostOptions = {
   credential: { type: "apiKey", apiKey: "key-a" },
   ...english,
   theme: "light",
-  view: "/ontology/objects",
+  view: "/ontology/assets/metrics",
   dataFallbacks: hostFallbacks,
   presentation,
 };
@@ -756,14 +756,12 @@ describe("Manager pages in the service router", () => {
     await settle();
     expect(row.classList.contains("current-row")).toBe(true);
 
-    host.view = "/ontology/objects/Order";
-    await settle();
-    clickButton("Browse Data");
-    await settle();
-    expect(views.at(-1)).toBe("/browser/data/Order");
-
     // The navigation entry (a bare /data) returns to the object type last on show.
-    host.view = "/ontology/objects";
+    host.view = "/ontology/assets/metrics";
+    await settle();
+    host.view = "/browser/data/Order";
+    await settle();
+    host.view = "/ontology/assets/metrics";
     await settle();
     host.view = "/browser/data";
     await settle();
@@ -851,7 +849,7 @@ describe("Manager pages in the service router", () => {
     expect(root().textContent).not.toContain("[de] ");
     expect(requests).toEqual([]);
 
-    host.view = "/ontology/objects";
+    host.view = "/ontology/assets/metrics";
     await settle();
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.every((request) => request.headers["Accept-Language"] === "en")).toBe(true);
@@ -860,14 +858,14 @@ describe("Manager pages in the service router", () => {
   it("401/402 only notify the page; after 402 the credential is kept and later requests still carry it", async () => {
     statusFor = (path) =>
       path === "/metricView/queryList" ? 402 : path.endsWith("/product-assets/counts") ? 401 : 200;
-    const { host, failures, showMenu } = mountHost(base);
+    const { host, failures, showMenu } = mountHost({ ...base, view: "/ontology/assets/functions" });
     showMenu();
     await settle();
     expect(failures.sort()).toEqual([401, 402]);
 
     requests = [];
     statusFor = () => 200;
-    host.view = "/browser/data/Order";
+    host.view = "/ontology/assets/metrics";
     await settle();
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.every((request) => request.headers["x-api-key"] === "key-a")).toBe(true);
@@ -1053,7 +1051,7 @@ describe("Manager pages in the service router", () => {
     expect(metaRequests.every((request) => request.headers["Accept-Language"] === "en")).toBe(true);
 
     requests = [];
-    host.view = "/ontology/objects";
+    host.view = "/ontology/assets/metrics";
     await settle();
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.every((request) => request.headers["Accept-Language"] === "de")).toBe(true);
@@ -1101,38 +1099,7 @@ describe("Manager pages in the service router", () => {
 
 
 
-  it("the description fallback pre-fills the form with the host value, is unchanged by locale/theme switches, and is submitted in the original field after editing", async () => {
-    metasFor = () => ({
-      success: true,
-      data: { classDef: [{ className: "Order", showName: "Order", classDesc: "", attrs: [] }] },
-    });
-    const { host, root } = mountHost({ ...base, view: "/ontology/objects/Order" });
-    await settle();
-    const textarea = () => root().querySelector<HTMLTextAreaElement>("textarea")!;
-    expect(textarea().value).toBe("Host: no description");
-
-    Object.assign(host, german);
-    host.theme = "dark";
-    await settle();
-    Object.assign(host, english);
-    await settle();
-    expect(textarea().value).toBe("Host: no description");
-
-    textarea().value = "Host: no description (amended)";
-    textarea().dispatchEvent(new Event("input"));
-    await settle();
-    requests = [];
-    clickButton("Save Changes");
-    await settle();
-    expect(requests.find((r) => r.url.endsWith("/ontology/model/object-type/update"))?.body).toEqual({
-      className: "Order",
-      showName: "Order",
-      classDesc: "Host: no description (amended)",
-    });
-  });
-
   it.each([
-    ["object model catalog", "/ontology/objects", "New Object Type", ".object-create-dialog", "Create"],
     ["visual modeling", "/ontology/visual-modeling", "Add Class", ".el-dialog", "Add"],
   ])("%s creating a class: without a primary key nothing is submitted; after submitting with one, the primary key saved by the backend is shown", async (_name, view, open, selector, submit) => {
     // Only the metadata re-read after creation contains the new class and its primary key: the page must show the backend's saved result, not locally assembled empty attributes.
@@ -1183,42 +1150,9 @@ describe("Manager pages in the service router", () => {
       showName: "Pump-label",
       classDesc: "Pump desc",
     });
-    if (view === "/ontology/objects") {
-      expect(root().textContent).toContain("pump_no");
-    } else {
-      const panel = root().querySelector(".attr-item")!;
-      expect(panel.textContent).toContain("pump_no");
-      expect(panel.textContent).toContain("Primary Key");
-    }
-  });
-
-  it("edit dialogs mount in a themed viewport overlay; opening and closing leave body unchanged", async () => {
-    const { root } = mountHost({ ...base, view: "/ontology/objects/Order" });
-    await settle();
-    const bodyBefore = [
-      document.body.className,
-      document.body.getAttribute("style"),
-      document.body.children.length,
-    ];
-    clickButton("New Property");
-    await settle();
-    const dialog = openDialog("Create");
-    const overlay = dialog.closest(".manager-overlay-host");
-    expect(overlay?.parentElement).toBe(document.body);
-    expect(overlay?.classList.contains("ontology-manager")).toBe(true);
-    expect(root().contains(dialog)).toBe(false);
-    expect([
-      document.body.className,
-      document.body.getAttribute("style"),
-      document.body.children.length,
-    ]).toEqual(bodyBefore);
-    clickButton("Cancel");
-    await settle();
-    expect([
-      document.body.className,
-      document.body.getAttribute("style"),
-      document.body.children.length,
-    ]).toEqual(bodyBefore);
+    const panel = root().querySelector(".attr-item")!;
+    expect(panel.textContent).toContain("pump_no");
+    expect(panel.textContent).toContain("Primary Key");
   });
 });
 

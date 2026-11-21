@@ -1,0 +1,261 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        },
+        "deepLink": true
+      },
+      "className": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "selectedAttribute": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Attribute"
+        },
+        "deepLink": true
+      },
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "creating": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "deepLink": true
+      }
+    },
+    "members": {
+      "catalog": {
+        "component": "PanelData",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": "list"
+        },
+        "id": "builtin-product-5e582009-1791-467f-894c-31768838477b"
+      },
+      "detail": {
+        "component": "PanelData",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "id": "builtin-product-5f0ef5f9-6912-449b-9971-a2af2cf14364"
+      },
+      "objectForm": {
+        "component": "ObjectForm",
+        "type": "platform:ObjectType",
+        "target": "selected",
+        "data": {
+          "form": "form",
+          "createForm": "createForm"
+        },
+        "operation": "platform:ObjectType.save",
+        "id": "builtin-product-7da65587-a6cd-4b74-a438-597258f350a2"
+      },
+      "attributeForm": {
+        "component": "ObjectForm",
+        "type": "platform:Attribute",
+        "target": "selectedAttribute",
+        "data": {
+          "form": "form",
+          "createForm": "createForm"
+        },
+        "operation": "platform:Attribute.save",
+        "config": {
+          "fixedFields": {
+            "/className": {
+              "state": "selected",
+              "path": "/primaryKey"
+            }
+          }
+        },
+        "id": "builtin-product-a57820c9-42df-4b85-8799-ec5b22efc6a6"
+      },
+      "deleteObject": {
+        "component": "OperationButton",
+        "operation": "objectTypes.delete",
+        "target": "selected",
+        "config": {
+          "type": "danger"
+        },
+        "id": "builtin-product-a9fe30c6-15d7-427c-8e40-caa60f40a1b0"
+      },
+      "attributes": {
+        "component": "PanelData",
+        "type": "platform:Attribute",
+        "data": {
+          "rows": {
+            "read": "list",
+            "params": {
+              "className": {
+                "state": "className"
+              }
+            }
+          }
+        },
+        "id": "builtin-product-10dcbc3b-8d8f-4281-9637-59e97f7378cb"
+      },
+      "setPrimaryKey": {
+        "component": "OperationButton",
+        "operation": "attributes.setPrimaryKey",
+        "target": "selectedAttribute",
+        "id": "builtin-product-1dc01063-12ce-479d-a442-27b886cc48cb"
+      },
+      "deleteAttribute": {
+        "component": "OperationButton",
+        "operation": "attributes.delete",
+        "target": "selectedAttribute",
+        "config": {
+          "type": "danger"
+        },
+        "id": "builtin-product-e348de4d-b0d6-4042-89b7-1f55b12cfd78"
+      },
+      "relations": {
+        "component": "PanelData",
+        "type": "platform:Relationship",
+        "data": {
+          "rows": {
+            "read": "list",
+            "params": {
+              "className": {
+                "state": "className"
+              }
+            }
+          }
+        },
+        "id": "builtin-product-f3b27777-738b-4413-a40f-d80fb86c9ba1"
+      }
+    },
+    "commands": {
+      "create": {
+        "labelKey": "ot.command.create",
+        "primary": true,
+        "do": {
+          "set": {
+            "fields": {
+              "creating": {
+                "literal": true
+              },
+              "selected": {
+                "literal": null
+              },
+              "selectedAttribute": {
+                "literal": null
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "zh-CN": {
+        "panel.name": "对象类型",
+        "ot.search": "筛选对象类型",
+        "ot.items": "{count} 项",
+        "ot.colType": "对象类型",
+        "ot.colDescription": "业务说明",
+        "ot.colAttributes": "属性",
+        "ot.colBusinessKeys": "业务键",
+        "ot.empty": "没有找到对象类型",
+        "ot.loading": "正在读取…",
+        "ot.forbidden": "你无权查看这些内容",
+        "ot.back": "返回对象类型",
+        "ot.configureView": "配置对象呈现",
+        "ot.browseData": "浏览数据",
+        "ot.basicInfo": "基本信息",
+        "ot.attributeCount": "属性数",
+        "ot.businessKeyCount": "业务键数",
+        "ot.relationCount": "关系数",
+        "ot.pkMissing": "这个对象类型还没有主键属性",
+        "ot.pkMultiple": "这个对象类型有多个主键属性",
+        "ot.pkDisabled": "当前主键属性已停用",
+        "ot.pkOk": "主键属性：{name}",
+        "ot.pkUnknown": "主键状态：{status}",
+        "ot.attributes": "属性",
+        "ot.createAttribute": "新建属性",
+        "ot.colAttribute": "属性",
+        "ot.colDataType": "类型",
+        "ot.colBusinessKey": "业务键",
+        "ot.colPrimaryKey": "主键",
+        "ot.colAttrDescription": "描述",
+        "ot.yes": "是",
+        "ot.noAttributes": "这个对象类型还没有属性",
+        "ot.attributeEditor": "编辑属性：{name}",
+        "ot.attributeCreator": "新建属性",
+        "ot.closeEditor": "收起",
+        "ot.relations": "关系",
+        "ot.colRelation": "关系类型",
+        "ot.colSource": "源对象",
+        "ot.colTarget": "目标对象",
+        "ot.noRelations": "这个对象类型还没有关系",
+        "ot.missing": "找不到这个对象类型，它可能已被删除",
+        "ot.deleted": "已删除",
+        "ot.done": "已完成",
+        "ot.deleteFailed": "操作没有完成",
+        "ot.closeAttributeToEdit": "收起属性编辑后可修改基本信息",
+        "ot.command.create": "新建对象类型"
+      },
+      "en": {
+        "panel.name": "Object types",
+        "ot.search": "Filter object types",
+        "ot.items": "{count} items",
+        "ot.colType": "Object type",
+        "ot.colDescription": "Business description",
+        "ot.colAttributes": "Attributes",
+        "ot.colBusinessKeys": "Business keys",
+        "ot.empty": "No object types found",
+        "ot.loading": "Loading…",
+        "ot.forbidden": "You cannot view this content",
+        "ot.back": "Back to object types",
+        "ot.configureView": "Configure object view",
+        "ot.browseData": "Browse data",
+        "ot.basicInfo": "Basic information",
+        "ot.attributeCount": "Attributes",
+        "ot.businessKeyCount": "Business keys",
+        "ot.relationCount": "Relationships",
+        "ot.pkMissing": "This object type does not have a primary key property yet",
+        "ot.pkMultiple": "This object type has multiple primary key properties",
+        "ot.pkDisabled": "The current primary key property is disabled",
+        "ot.pkOk": "Primary key property: {name}",
+        "ot.pkUnknown": "Primary key status: {status}",
+        "ot.attributes": "Attributes",
+        "ot.createAttribute": "New attribute",
+        "ot.colAttribute": "Attribute",
+        "ot.colDataType": "Type",
+        "ot.colBusinessKey": "Business key",
+        "ot.colPrimaryKey": "Primary key",
+        "ot.colAttrDescription": "Description",
+        "ot.yes": "Yes",
+        "ot.noAttributes": "This object type has no attributes yet",
+        "ot.attributeEditor": "Edit attribute: {name}",
+        "ot.attributeCreator": "New attribute",
+        "ot.closeEditor": "Close",
+        "ot.relations": "Relationships",
+        "ot.colRelation": "Relationship type",
+        "ot.colSource": "Source",
+        "ot.colTarget": "Target",
+        "ot.noRelations": "This object type has no relationships yet",
+        "ot.missing": "This object type was not found; it may have been deleted",
+        "ot.deleted": "Deleted",
+        "ot.done": "Done",
+        "ot.deleteFailed": "The operation did not complete",
+        "ot.closeAttributeToEdit": "Close the attribute editor to edit the basic information",
+        "ot.command.create": "New object type"
+      }
+    }
+  }
+}

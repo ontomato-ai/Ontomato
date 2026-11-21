@@ -1,5 +1,4 @@
 export type AssetTab = "metrics";
-export type ModelResource = "objects" | "attributes";
 
 export interface OntologyResourceCounts {
   objects: number | null;

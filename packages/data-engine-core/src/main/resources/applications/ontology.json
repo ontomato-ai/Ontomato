@@ -35,6 +35,16 @@
       "descriptions": {"en": "A graph of the owners' object types and relations: browse, select and go into modeling.", "zh-CN": "用属主的对象类型和关系画图，浏览、选择并进入建模。"},
       "names": {"en": "Ontology graph", "zh-CN": "本体图谱"}
     }, {
+      "id": "ontology-objects", "pageKey": "ontology-objects", "panelId": "builtin-product-ontology-objects",
+      "path": "/ontology/objects", "access": {"permissionCode": "ontology-modeling"},
+      "descriptions": {"en": "Object types: the catalogue, a new type, and one type's details with its attributes and relations.", "zh-CN": "对象类型的目录、新建，以及一个类的详情：基本信息、属性与关系。"},
+      "names": {"en": "Object types", "zh-CN": "对象类型"}
+    }, {
+      "id": "ontology-attributes", "pageKey": "ontology-attributes", "panelId": "builtin-product-ontology-attributes",
+      "path": "/ontology/attributes", "access": {"permissionCode": "ontology-modeling"},
+      "descriptions": {"en": "Every object type's attributes: filter by type, then create, edit, set the primary key or delete one.", "zh-CN": "各对象类型的属性：按类筛选，新建、修改、设为主键和删除。"},
+      "names": {"en": "Attributes", "zh-CN": "属性"}
+    }, {
       "id": "ontology-relations", "pageKey": "ontology-relations", "panelId": "builtin-product-ontology-relations",
       "path": "/ontology/relations", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "Define relationships and their endpoints between object types", "zh-CN": "定义对象类型之间的关系及其关联端点"},
