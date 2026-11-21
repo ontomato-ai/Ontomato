@@ -1,10 +1,15 @@
 package io.ontomato.dataengine.applications;
 
-import com.alibaba.fastjson2.JSON;
-import java.nio.charset.StandardCharsets;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.StreamReadFeature;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectReader;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import java.io.IOException;
 import java.util.ArrayList;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.annotation.DependsOn;
+import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -64,13 +69,27 @@ public class ApplicationCatalogUpgrade implements InitializingBean {
     @Component("applicationBuiltins")
     @DependsOn("applicationCatalogUpgrade")
     public static class Builtins implements InitializingBean {
+        private static final ObjectReader DECLARATIONS = JsonMapper.builder()
+            .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+            .build().readerFor(ApplicationCatalog.Builtin.class);
+
         private final ApplicationCatalog catalog;
         public Builtins(ApplicationCatalog catalog) { this.catalog = catalog; }
         public void afterPropertiesSet() throws Exception {
             var declarations = new ArrayList<ApplicationCatalog.Builtin>();
             for (var resource : new PathMatchingResourcePatternResolver().getResources("classpath*:applications/*.json"))
-                declarations.add(JSON.parseObject(resource.getContentAsString(StandardCharsets.UTF_8), ApplicationCatalog.Builtin.class));
+                declarations.add(readDeclaration(resource));
             catalog.builtins("data-engine", declarations);
+        }
+
+        static ApplicationCatalog.Builtin readDeclaration(Resource resource) throws IOException {
+            try {
+                return DECLARATIONS.readValue(resource.getInputStream());
+            } catch (JsonProcessingException error) {
+                throw new IOException(resource.getDescription() + ": " + error.getOriginalMessage(), error);
+            }
         }
     }
 }
