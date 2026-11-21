@@ -83,8 +83,10 @@ export default [
     languageOptions: { globals: globals.node },
   },
   {
+    // A built-in panel's module is the same author module a registered panel ships: it runs in the
+    // browser, inside the panel frame.
     files: ["packages/*/resources/builtin-panels/**/*.mjs"],
-    languageOptions: { globals: globals.browser },
+    languageOptions: { globals: { ...globals.browser, ...globals.es2021 } },
   },
   {
     // Vue single-file components; rules match the source repository (without the prettier
