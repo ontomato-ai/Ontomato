@@ -1,6 +1,6 @@
 ---
 name: ontomato-analyst-assistant
-description: "Answer business data questions: start the data retriever through the native agent tool, reuse a published metric when one fits, and explain the dataset the answer relies on."
+description: "Answer business data questions: run start-retrieval once to start the data retriever and recall published metrics concurrently, reuse a published metric when one fits, and explain the dataset the answer relies on."
 ---
 
 # Ontomato assistant analyst
@@ -28,28 +28,29 @@ When the user asks about definitions themselves:
 
 ## A data question
 
-1. Find the data retriever once with the native `agent` tool, `op: "list"`, and keep its returned
-   `ref`. Write one complete question in the user's words, adding only references, time and scope
-   established in this conversation. Keep one calculation together, numerator and denominator included.
-2. In the same step, start the retriever with `op: "start"`, that `agent` reference and the complete
-   question as `message`, and then run `recall-metrics "<complete question>"`. Start returns at once
-   with `taskId` and `sessionRef`; the retriever works while you read the candidates.
+1. Write one complete question in the user's words, adding only references, time and scope
+   established in this conversation. Keep one calculation together, numerator and denominator
+   included.
+2. Run `start-retrieval "<complete question>"` once with the complete question. It starts the
+   retriever and recalls published metrics concurrently, returning `retriever` (`taskId`,
+   `sessionRef`, `status`) and `recall` (`items`).
 3. If one candidate's meaning, grain, time range and parameters answer the question, run it:
    `run-metric <id> --revision <revision> --question "<complete question>"`, adding
    `--binding <preset id>` to use its preset unchanged or `--params @values.json` with every value
    when you change one (never both). Read the values from the returned file, check its scope,
-   row count and truncation, then cancel the retriever with `op: "cancel"` and its taskId, and
-   answer. Zero rows can be the result. If the run fails, read the error; the retriever keeps
-   working on the same question, so do not start it again.
-4. If no candidate fits, end this turn. Do not read, poll or sleep to wait: the retriever's result
-   arrives as a notification and wakes you. If it arrives while you are still working, handle it then.
-5. On the result notification, take the files with `op: "read"`, `files: true` (add
+   row count and truncation, then cancel the retriever with native `agent`, `op: "cancel"` and its
+   `taskId`, and answer. Zero rows can be the result. If the run fails or the delivered file does
+   not answer the question, end this turn and let the retriever keep working; do not start it again.
+4. If no candidate fits, or if `recall` returned an error while `retriever` has a `taskId`, end
+   this turn. Do not read, poll or sleep to wait: the retriever's result arrives as a notification
+   and wakes you. If it arrives while you are still working, handle it then.
+5. On the result notification, take the files with native `agent`, `op: "read"`, `files: true` (add
    `view: "messages"` when you need its full answer). Cite the returned `downloaded[].path`;
    paths inside the retriever's own answer belong to its workspace.
 
 | Command | Input and result |
 | --- | --- |
-| `recall-metrics "<complete question>"` | Published metrics close to the question: `{items:[{id,revision,name,description,logic,parameterDefs,preset}]}`. `preset` is the closest preset `{id,name,description,parameters}`, or null. No rows; an empty list is no match. |
+| `start-retrieval "<complete question>"` | Starts the retriever and recalls published metrics concurrently: `{retriever:{taskId,sessionRef,status},recall:{items:[{id,revision,name,description,logic,parameterDefs,preset}]}}`. `preset` is the closest preset `{id,name,description,parameters}`, or null. No rows; an empty `items` list is no match. |
 | `run-metric <id> --revision <rev> --question "<complete question>" [--binding <id> \| --params @values.json]` | Runs that published metric once as a formal delivery and writes `outputs/metrics/<id>.dataset.json`; prints `{path,title,rowCount,columns,truncation,receiptId}`. Read values from the file. |
 
 ## Questions from the retriever

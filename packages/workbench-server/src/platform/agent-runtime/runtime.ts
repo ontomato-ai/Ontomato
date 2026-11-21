@@ -19,11 +19,6 @@ import {
 import { HttpError } from "../../utils/errors";
 import type { AssistantCredentials } from "../../utils/assistant-credentials";
 export type { AssistantCredentials } from "../../utils/assistant-credentials";
-/**
- * The scenario a skill script runs in. Inside the platform a page's own save is the only writer of that page's data;
- * declared panel operations instead go through the server coordinator. Outside the platform, skills keep their own caller path.
- */
-const SKILL_SCENARIO = "platform";
 
 /**
  * A change a page skill covers is a draft the reader saves, not a write of the agent's: the page's own form is what the
@@ -45,7 +40,6 @@ export function userSkillEnvironment(credentials: AssistantCredentials): Runtime
     values: {
       ONTOMATO_WORKBENCH_URL: environment.agentRuntime().callbackUrl.replace(/\/$/, ""),
       ONTOMATO_ONTOLOGY_URL: getApiConfig().baseUrl!.replace(/\/$/, ""),
-      ONTOMATO_SKILL_SCENARIO: SKILL_SCENARIO,
     },
     secrets: {
       ...(credentials.apiKey ? { ONTOMATO_API_KEY: credentials.apiKey }

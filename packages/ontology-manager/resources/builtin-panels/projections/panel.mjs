@@ -103,9 +103,9 @@ const operationTargetText = (target) => {
 };
 
 const formatTime = (value) => {
-  if (!value) return "—";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+  return new Date(value).toLocaleString(document.documentElement.lang, {
+    year: "2-digit", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit",
+  });
 };
 
 const jsonText = (value) => JSON.stringify(value ?? {}, null, 2);

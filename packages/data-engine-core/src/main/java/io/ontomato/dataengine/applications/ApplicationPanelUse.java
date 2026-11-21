@@ -1,6 +1,12 @@
 package io.ontomato.dataengine.applications;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.JsonDeserializer;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
@@ -10,12 +16,45 @@ import org.springframework.web.util.UriUtils;
 /** Java owns entry facts; panels retain only their shared content and manifest. */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ApplicationPanelUse(String id, String pageKey, String panelId, String path,
-                                  Access access, DefaultAgentTarget defaultAgent, Map<String,String> names,
+                                  Access access, DefaultAgentTarget defaultAgent, Map<String, String> names,
+                                  @JsonDeserialize(using = DescriptionsDeserializer.class) Map<String, String> descriptions,
                                   Map<String, Map<String, Object>> inputs, String groupKey) {
     public ApplicationPanelUse(String id, String pageKey, String panelId, String path, Access access,
                                DefaultAgentTarget defaultAgent, Map<String, String> names) {
-        this(id, pageKey, panelId, path, access, defaultAgent, names, null, null);
+        this(id, pageKey, panelId, path, access, defaultAgent, names, null, null, null);
     }
+    public ApplicationPanelUse(String id, String pageKey, String panelId, String path, Access access,
+                               DefaultAgentTarget defaultAgent, Map<String, String> names,
+                               Map<String, Map<String, Object>> inputs, String groupKey) {
+        this(id, pageKey, panelId, path, access, defaultAgent, names, null, inputs, groupKey);
+    }
+
+    private static final class DescriptionsDeserializer extends JsonDeserializer<Map<String, String>> {
+        @Override
+        public Map<String, String> deserialize(JsonParser parser, DeserializationContext context) throws IOException {
+            var values = context.readTree(parser);
+            if (!values.isObject())
+                return context.reportInputMismatch(Map.class, "Panel entry descriptions must be an object");
+            var descriptions = new LinkedHashMap<String, String>();
+            for (var entry : values.properties()) {
+                if (!entry.getValue().isTextual())
+                    return context.reportInputMismatch(Map.class, "Description for %s must be a string", entry.getKey());
+                descriptions.put(entry.getKey(), entry.getValue().textValue());
+            }
+            return descriptions;
+        }
+
+        @Override
+        public Map<String, String> getNullValue(DeserializationContext context) throws JsonMappingException {
+            return context.reportInputMismatch(Map.class, "Panel entry descriptions must be an object");
+        }
+
+        @Override
+        public Map<String, String> getAbsentValue(DeserializationContext context) {
+            return null;
+        }
+    }
+
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Access(String permissionCode, String kind) {}
 
@@ -23,7 +62,7 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
 
     static List<ApplicationPanelUse> canonical(List<ApplicationPanelUse> uses) {
         var normalized = uses.stream().map(use -> new ApplicationPanelUse(use.id, use.pageKey, use.panelId,
-            canonicalPath(use.path), use.access, use.defaultAgent, use.names, use.inputs, use.groupKey)).toList();
+            canonicalPath(use.path), use.access, use.defaultAgent, use.names, use.descriptions, use.inputs, use.groupKey)).toList();
         validate(normalized);
         return normalized;
     }
@@ -51,6 +90,11 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
         return path.equals(root) || path.startsWith(root.equals("/") ? root : root + "/");
     }
 
+    // Match the shared contract's String.trim() without changing the text we store.
+    static boolean blankDescription(String text) {
+        return text.codePoints().allMatch(code -> code >= '\t' && code <= '\r' || Character.isSpaceChar(code) || code == 0xfeff);
+    }
+
     public static void validate(List<ApplicationPanelUse> uses) {
         var ids = new HashSet<String>();
         var pages = new HashSet<String>();
@@ -67,6 +111,9 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
             if (use.names() != null && (use.names().get("en") == null || use.names().get("en").isBlank()
                 || use.names().values().stream().anyMatch(name -> name == null || name.isEmpty())))
                 throw ApplicationCatalog.bad("A panel use's names require a nonblank English name and nonempty translations");
+            if (use.descriptions() != null && (!use.descriptions().containsKey("en")
+                || use.descriptions().values().stream().anyMatch(text -> text == null || blankDescription(text))))
+                throw ApplicationCatalog.bad("Panel entry " + use.pageKey() + " descriptions require nonblank English text and translations");
             if (use.inputs() != null) {
                 for (var input : use.inputs().entrySet()) {
                     var source = input.getValue();

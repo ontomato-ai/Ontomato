@@ -338,7 +338,7 @@ public class OntologyRetrievalService {
     store.transaction(() -> store.gate(id,runId,context.owner()));
     return JSONObject.of("language",context.language(),"input",message,"definition",definition,
       "authority", JSONObject.of("classNames", classes, "executionKind", "live"),
-      "environment",JSONObject.of("values",JSONObject.of("ONTOMATO_SKILL_SCENARIO","platform","ONTOMATO_ONTOLOGY_URL",runtime.ontologyUrl(),"ONTOMATO_RETRIEVAL_ID",id),"secrets",JSONObject.of("ONTOMATO_TK",grant)));
+      "environment",JSONObject.of("values",JSONObject.of("ONTOMATO_ONTOLOGY_URL",runtime.ontologyUrl(),"ONTOMATO_RETRIEVAL_ID",id),"secrets",JSONObject.of("ONTOMATO_TK",grant)));
   }
 
   private Object scopedOverview(QueryAccessService.Access access, List<String> classNames) {
