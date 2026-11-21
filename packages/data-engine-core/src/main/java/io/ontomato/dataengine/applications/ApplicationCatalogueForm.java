@@ -121,14 +121,19 @@ final class ApplicationCatalogueForm {
     }
 
     private JSONObject permissionsField(String id) {
-        var fields = JSONArray.of(
-            field("/code", "permissionCode", PanelFormFields.text(false), STRING, true),
-            field("/names", "name", localizedText(List.of("en"), false), STRING_MAP, true),
+        var code = field("/code", "permissionCode", PanelFormFields.text(false), STRING, true);
+        var names = field("/names", "name", localizedText(List.of("en"), false), STRING_MAP, true);
+        // Edited permissions supply the entry access choices in the same draft.
+        code.put("refreshOnChange", true);
+        names.put("refreshOnChange", true);
+        var fields = JSONArray.of(code, names,
             field("/groupKey", "groupKey", PanelFormFields.text(false), STRING, true),
             field("/sort", "groupSort", JSONObject.of("kind", "number"), INTEGER, true));
         var empty = JSONObject.of("code", ApplicationCatalog.permissionPrefix(id), "names", JSONObject.of("en", ""),
             "groupKey", "", "sort", 0);
-        return field("/permissions", "permissions", PanelFormFields.objectArray(fields, empty, null), PERMISSIONS_SCHEMA, true);
+        var permissions = field("/permissions", "permissions", PanelFormFields.objectArray(fields, empty, null), PERMISSIONS_SCHEMA, true);
+        permissions.put("refreshOnChange", true);
+        return permissions;
     }
 
     private JSONObject localizedText(List<String> requiredLocales, boolean multiline) {
