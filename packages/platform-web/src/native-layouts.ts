@@ -27,6 +27,8 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
           managerPaths.relations,
           managerPaths.visualModeling,
           managerPaths.knowledge,
+          // User feedback sits with the business knowledge it was given on (big main's ruling, 2026-11-21).
+          "/ontology/feedback",
         ],
       },
       {
@@ -89,20 +91,6 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
           platformRoutes.dsl.path,
           platformRoutes.opsKnowledge.path,
         ],
-      },
-    ],
-  },
-  {
-    renderer: "governance",
-    // The application opens on business knowledge; a report has an address of its own and is opened from the task or
-    // conversation that produced it.
-    home: platformRoutes.governanceKnowledge.path,
-    sections: [
-      {
-        key: "governance:pages",
-        titleKey: "platform.governance",
-        // User feedback sits with the business knowledge it was given on.
-        paths: [platformRoutes.governanceKnowledge.path,platformRoutes.feedback.path],
       },
     ],
   },
