@@ -17,21 +17,18 @@
 
 1. 先读选中属性的属主表单：`form` 成员的 `form`。可改的只有显示名 `showName`、说明 `attrDesc`、启用 `enable`、业务键
    `businessKey`；所属对象类型、属性名、数据类型只读，主键不在表单里改。
-2. 草稿的 `operation` 用表单 `save.draftOperation`（修改是 `attribute.update`），`target.id` 用属性主键，`form` 只放要改的字段，
-   `pageKey` 是 `ontology-attributes`。
-3. 链接要带上这条属性的选中状态，读者打开时编辑表单才对准它：
-   `#/ontology/attributes?state=<{"selected":{"className":"platform:Attribute","primaryKey":"<主键>"}}>&draftSessionId=…&draftRunId=…&draftPath=…`
-   （`state` 的 JSON 和三个草稿参数都交给 `URLSearchParams` 编码一次）。`draftPath` 写产物的相对路径，例如
-   `outputs/drafts/attr-edit.page-draft.json`，不要写成 `/data/...` 这样的绝对路径，否则页面打不开草稿。
-   草稿不写入，读者在页面上保存才写入。
+2. 草稿的 `operation` 用表单 `save.draftOperation`（修改是 `attribute.update`），`form` 只放要改的字段。草稿怎么写（草稿信封、链接参数）
+   见本页生成的技能。
+3. 链接要带上这条属性的选中状态（`state` 里 `selected` 指向它），读者打开时编辑表单才对准它；草稿链接怎么拼、产物放哪，
+   见本页生成的技能。草稿不写入，读者在页面上保存才写入。
 
 ## 起草新建
 
 1. 读 `form` 成员的 `createForm`，数据类型的选项以属主表单给的为准。
-2. 草稿 `operation` 是 `attribute.create`，`target` 为空对象，`form` 填 `className`、`name`、`type`、`showName`，按需填
+2. 草稿 `operation` 是 `attribute.create`，`form` 填 `className`、`name`、`type`、`showName`，按需填
    `attrDesc`、`enable`、`businessKey`、`primaryKey`。
-3. 所属对象类型由草稿里的 `className` 决定。链接的 `state` 里放 `{"className":"<要建在的类>"}`，让列表停在那个类，不要带
-   `selected`；`draftPath` 同样写相对路径。属性名格式、重名由属主在读者保存时判定，原因显示在字段旁；读者保存后页面选中新属性。
+3. 所属对象类型由草稿里的 `className` 决定。链接的 `state` 里放 `className`（要建在的类），让列表停在那个类，不要带 `selected`；
+   草稿链接怎么拼见本页生成的技能。属性名格式、重名由属主在读者保存时判定，原因显示在字段旁；读者保存后页面选中新属性。
 
 ## 设主键、删除
 

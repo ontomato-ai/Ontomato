@@ -17,7 +17,7 @@
    - `fromField` 的选项是源对象的属性，`toField` 的选项是目标对象的属性。换了 `fromclass`/`toclass` 后要再问一次表单（带 `values` 和 `changedField: "/fromclass"` 或 `"/toclass"`）拿新选项，不要自己拼选项。
    - `fromField`/`toField` 是否必填由属主按当前数据源决定（看字段的 `required`），不要自己判断。
    - 关系名格式、重名等由属主判：提交时属主拒绝会在 `errors` 里给出字段和原因，照它说，不要自己编规则。
-2. 起草：写一份页面草稿 `{pageKey: "ontology-relations", operation, target, form}`，`operation` 用表单的 `save.draftOperation`（新建是 `relationship.create`，修改是 `relationship.update`），修改时 `target` 是 `{"id": "<关系名>"}`，新建时 `target` 是 `{}`；`form` 只放要改的字段值。发布成运行产物（如 `outputs/drafts/relation.page-draft.json`），把链接交给发起人，由人在表单里保存。不要替人直接保存。
+2. 起草：`operation` 用表单的 `save.draftOperation`（新建是 `relationship.create`，修改是 `relationship.update`），`form` 只放要改的字段值。草稿怎么写（草稿信封、发布产物、链接参数）见本页生成的技能。把链接交给发起人，由人在表单里保存。不要替人直接保存。
 3. 人保存后，页面进入新建或修改的那条关系的详情。
 
 ## 删除：先问人，再执行
