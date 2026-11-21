@@ -83,6 +83,10 @@ export default [
     languageOptions: { globals: globals.node },
   },
   {
+    files: ["packages/*/resources/builtin-panels/**/*.mjs"],
+    languageOptions: { globals: globals.browser },
+  },
+  {
     // Vue single-file components; rules match the source repository (without the prettier
     // plugin, formatting is checked separately).
     files: ["**/*.vue"],
