@@ -1,0 +1,82 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { h } from "vue";
+import { createMemoryHistory, createRouter, RouterView } from "vue-router";
+import { definePanel } from "@ontomato/contracts/panel-manifest";
+import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
+import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
+import { panelEntryGuard } from "../../../../../packages/platform-web/src/panel-entries";
+import { catalogFixture } from "../../../../../packages/platform-web/src/__tests__/fixtures";
+import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot, type Sent } from "./panel-frame";
+
+/*
+ * A native built-in application's panel entry at its original address (big main's ruling, 2026-11-21: one panel route
+ * serves every declared entry, whatever its prefix): `/ontology/components`, declared by the ontology manager with its
+ * own permission code, opens its panel through the panel route, inside the platform's layout; a reader the catalog does
+ * not list the entry for — it lacks the code — goes where any address no page serves goes.
+ *
+ * Real guard, route, panel host and SDK; the catalog and the network are stand-ins.
+ *
+ * What this rules out: a built-in application's entry that no route opens because only `/applications/…` addresses reach
+ * the panel route, and an entry opened for a reader its access does not admit.
+ */
+
+const panel = panelRecord("builtin-components", "Base components", definePanel({ state: {}, members: {}, events: {} }));
+const components: ApplicationPanelUse = {
+  id: "use-components", pageKey: "ontology-components", panelId: panel.id, path: "/ontology/components",
+  access: { permissionCode: "ontology-modeling" }, names: { en: "Base components" },
+};
+
+/** The ontology manager in the catalog, with the entries this reader may open. */
+function catalogWith(panelUses: ApplicationPanelUse[]) {
+  return catalogFixture().map((app) => app.id === "ontology" ? { ...app, panelUses } : app);
+}
+
+function answer(request: Sent) {
+  if (request.path === "/api/data-query/platform/applications/ontology/panel-uses")
+    return Response.json({ data: { applicationId: "ontology", entry: { path: "/ontology", renderer: "ontology" }, panelUses: [components] } });
+  if (request.path === `/api/product-panels/${panel.id}`) return panelAnswer(panel, request);
+  if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel, {}, request);
+  return nothingAt(request);
+}
+
+/** The platform's router as far as entries go: its layout, a page of its own, and the catch-all. */
+async function open(address: string) {
+  const router = createRouter({ history: createMemoryHistory(), routes: [
+    { ...platformRoutes.layout, component: RouterView, children: [{ path: "/home", component: { render: () => h("p", { class: "home" }, "Home") } }] },
+    { ...platformRoutes.unknown, redirect: "/home" },
+  ] });
+  router.beforeEach(panelEntryGuard(router));
+  await router.push(address);
+  return { router, ...mountPlatformPage(() => h(RouterView), router) };
+}
+
+afterEach(() => {
+  leaveFrame();
+  useApplicationCatalog().applications.value = [];
+});
+
+it("opens a built-in application's entry at its original address, through the panel route", async () => {
+  installPlatform(answer);
+  useApplicationCatalog().applications.value = catalogWith([components]);
+  const { router, app, element } = await open("/ontology/components");
+  try {
+    expect(router.currentRoute.value.path).toBe("/ontology/components");
+    await vi.waitFor(() => expect(element.querySelector(".panel-host-coded")).not.toBeNull());
+  } finally {
+    app.unmount();
+  }
+});
+
+it("goes where an address no page serves goes for a reader the entry does not admit", async () => {
+  installPlatform(answer);
+  // The catalog lists only the entries the reader may open: without the code, this one is not there.
+  useApplicationCatalog().applications.value = catalogWith([]);
+  const { router, app, element } = await open("/ontology/components");
+  try {
+    expect(router.currentRoute.value.path).toBe("/home");
+    expect(element.querySelector(".home")).not.toBeNull();
+  } finally {
+    app.unmount();
+  }
+});

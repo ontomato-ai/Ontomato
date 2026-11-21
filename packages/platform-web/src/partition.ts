@@ -31,6 +31,11 @@ export interface AppPartition extends Omit<PlatformAppDeclaration, "groups" | "l
     | { key: string; pages: readonly PlatformPanelPage[] })[];
   /** The page at the foot of the application's column (its models), listed apart from the groups. */
   foot?: string;
+  /**
+   * A native application's panel entries the reader may open, by address, named by their use relations: where its menu
+   * table lists one of these addresses, the entry stands there instead of a native page (big main's ruling, 2026-11-21).
+   */
+  entries?: ReadonlyMap<string, PlatformPanelPage>;
 }
 
 /**
@@ -64,9 +69,8 @@ export function appDeclarations(
         key: section.key,
         label: section.titleKey ? t(section.titleKey) : undefined,
         pages: section.paths
-          .map((path) => byPath.get(base(path)))
-          .filter((page): page is NonNullable<typeof page> => page !== undefined)
-          .map(panelPage),
+          .map((path) => app.entries?.get(path) ?? (byPath.has(base(path)) ? panelPage(byPath.get(base(path))!) : undefined))
+          .filter((page): page is PlatformPanelPage => page !== undefined),
       }))
       // A group the account may open nothing of is not shown: no empty heading.
       .filter((group) => group.pages.length > 0);

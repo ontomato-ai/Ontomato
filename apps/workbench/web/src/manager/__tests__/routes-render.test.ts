@@ -5,7 +5,9 @@ import { agentHostAgentListSchema, agentHostSessionPageSchema } from "@ontomato/
 import { appBuilderBootstrapSchema } from "@ontomato/contracts/app-builder";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { catalogFixture, catalogPartitionFixture as appPartition } from "../../../../../../packages/platform-web/src/__tests__/fixtures";
+import {
+  builtinApplications, catalogFixture, catalogPartitionFixture as appPartition, nativeEntryConflicts,
+} from "../../../../../../packages/platform-web/src/__tests__/fixtures";
 
 /*
  * What this guards: every address an application owns draws that page into the platform's main area, and the rail
@@ -278,5 +280,21 @@ describe("the open-source platform's rail", () => {
       expect(document.querySelector(".platform-page-body")!.innerHTML.trim(), `empty main area after ${name}`).not.toBe("");
       previous = landed;
     }
+  });
+});
+
+/*
+ * The built-in applications' panel entries against their native menu tables (big main's ruling, 2026-11-21): while a
+ * native application's pages are replaced one by one, its menu table still places them. An entry with a menu name must
+ * have a place in it, and every address the table lists is either a native page this edition serves or a declared
+ * entry — never both, which would leave two pages at one address, and never neither, which would list a page nothing
+ * opens. Checked here, where the edition's own router says which native pages it serves.
+ */
+describe("the built-in applications' panel entries", () => {
+  it("stand where the native menu tables list them, and no listed address is both a native page and an entry, or neither", async () => {
+    await open(platformRoutes.home.path);
+    // As above: the enterprise edition's own pages are its run's to check, this edition registers none of them.
+    const own = (path: string) => path !== platformRoutes.license.path && !path.startsWith("/permissions/");
+    expect(nativeEntryConflicts(served, builtinApplications(), own)).toEqual([]);
   });
 });
