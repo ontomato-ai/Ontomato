@@ -165,3 +165,23 @@ it("declares again in the area every root rule that is worked out from a colour 
     style.remove();
   }
 });
+
+// The deployment's stylesheet holds selectors with commas inside a function (Element Plus's colour picker,
+// `:not(:is(.is-disabled, .is-focused))`), 2026-11-22 on 128: a list is matched as the browser parses it, never cut at
+// every comma, so such a rule neither stops the theme nor counts as the root's.
+it("reads root rules past selectors whose functions hold commas, and still assigns the theme", async () => {
+  const style = document.createElement("style");
+  style.textContent = [
+    ".picker:hover:not(:is(.is-disabled, .is-focused)) .trigger { color: red; }",
+    ":root, .elsewhere:not(:is(.a, .b)) { --control-focus-ring: 0 0 0 2px var(--brand-primary-tint); }",
+  ].join("\n");
+  document.head.append(style);
+  try {
+    const area = mountArea(ref<ThemeMode>("light"), ref<PanelThemeOverrides | null>(theme));
+    await nextTick();
+    expect(area().style.getPropertyValue("--el-color-primary")).toBe("#0f7b6c");
+    expect(area().style.getPropertyValue("--control-focus-ring")).toBe("0 0 0 2px var(--brand-primary-tint)");
+  } finally {
+    style.remove();
+  }
+});
