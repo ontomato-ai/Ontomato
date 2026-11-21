@@ -146,6 +146,28 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         verifyNoInteractions(panels);
     }
 
+    @Test void theShippedOntologyCatalogueEntriesKeepTheirModelingPermission() throws Exception {
+        new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
+        var viewer = new QueryAccessService.GrantUser("modeler", "domain");
+        when(identity.getCurrentUser()).thenReturn(viewer);
+        when(access.canEnter(any(), eq(viewer))).thenReturn(true);
+        when(access.panelUses(anyList(), eq(viewer))).thenAnswer(call -> call.getArgument(0));
+
+        for (var name : List.of("projections", "panels", "applications")) {
+            when(grants.allowed("builtin-product-ontology-" + name, "use")).thenReturn(true);
+        }
+        for (var name : List.of("projections", "panels", "applications")) {
+            http.perform(get("/platform/applications/resolve-entry").param("path", "/ontology/" + name))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.applicationId").value("ontology"))
+                .andExpect(jsonPath("$.data.use.panelId").value("builtin-product-ontology-" + name))
+                .andExpect(jsonPath("$.data.use.access.permissionCode").value("ontology-modeling"));
+        }
+        when(access.panelUses(anyList(), eq(viewer))).thenReturn(List.of());
+        http.perform(get("/platform/applications/resolve-entry").param("path", "/ontology/projections"))
+            .andExpect(status().isForbidden());
+    }
+
     @Test void aBuiltinEntryResolvesTheSamePanelForTwoDomainsWithoutGrantRows() throws Exception {
         var resourceGrants = new ProductGrantService(jdbc, identity, (userId, domainId) -> java.util.Set.of());
         resourceGrants.afterPropertiesSet();

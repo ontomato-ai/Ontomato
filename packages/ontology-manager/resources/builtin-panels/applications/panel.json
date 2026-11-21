@@ -1,0 +1,160 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Application"
+        },
+        "deepLink": true
+      },
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "scope": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "visible"
+      },
+      "cursor": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "size": {
+        "type": {
+          "kind": "scalar",
+          "type": "number"
+        },
+        "default": 20
+      },
+      "inspectedPanel": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductPanel"
+        }
+      }
+    },
+    "members": {
+      "catalogue": {
+        "component": "PanelData",
+        "type": "platform:Application",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {
+              "search": {
+                "state": "search"
+              },
+              "scope": {
+                "state": "scope"
+              },
+              "cursor": {
+                "state": "cursor"
+              },
+              "size": {
+                "state": "size"
+              }
+            }
+          }
+        },
+        "id": "builtin-product-2fb20dd5-c6b9-4cfa-aeaf-c3b22c01765e"
+      },
+      "record": {
+        "component": "PanelData",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "id": "builtin-product-039ac450-89cc-43df-a347-bf6862881a6e"
+      },
+      "save": {
+        "component": "ObjectForm",
+        "type": "platform:Application",
+        "target": "selected",
+        "data": {
+          "createForm": "createForm",
+          "form": {
+            "read": "form",
+            "params": {
+              "section": {
+                "literal": "identity"
+              }
+            }
+          }
+        },
+        "operation": "platform:Application.save",
+        "id": "builtin-product-c5de0138-e117-4696-835d-13050a683311"
+      },
+      "deleteApp": {
+        "component": "PanelData",
+        "type": "platform:Application",
+        "target": "selected",
+        "operation": "applications.delete",
+        "id": "builtin-product-6391d99c-9f5a-4f5e-8958-efc070e8c5f2"
+      },
+      "grant": {
+        "component": "PanelData",
+        "type": "platform:Application",
+        "target": "selected",
+        "operation": "applications.grant",
+        "id": "builtin-product-2362357b-12bb-4ccd-9928-818095da486a"
+      },
+      "addEntry": {
+        "component": "PanelData",
+        "type": "platform:Application",
+        "target": "selected",
+        "operation": "applications.addEntry",
+        "id": "builtin-product-6b646748-9218-471d-ba82-dc76482db2a3"
+      },
+      "updateEntry": {
+        "component": "PanelData",
+        "type": "platform:Application",
+        "target": "selected",
+        "operation": "applications.updateEntry",
+        "id": "builtin-product-3d246f06-1055-4756-9aa9-0dcf19218827"
+      },
+      "deleteEntry": {
+        "component": "PanelData",
+        "type": "platform:Application",
+        "target": "selected",
+        "operation": "applications.deleteEntry",
+        "id": "builtin-product-79bc66a4-3d18-4901-81eb-2a028f1402e2"
+      },
+      "panelInfo": {
+        "component": "PanelData",
+        "type": "platform:ProductPanel",
+        "target": "inspectedPanel",
+        "data": {
+          "panel": "record"
+        },
+        "id": "builtin-product-dff28ce4-6907-4c05-b65b-1ca9ca25c7cd"
+      },
+      "entriesForm": {
+        "component": "ObjectForm",
+        "target": "selected",
+        "data": {
+          "form": {
+            "read": "form",
+            "params": {
+              "section": {
+                "literal": "entries"
+              }
+            }
+          }
+        },
+        "operation": "platform:Application.save",
+        "id": "builtin-product-fe66a20c-a476-4988-ac4d-d42dfaa1908a"
+      }
+    },
+    "events": {}
+  }
+}
