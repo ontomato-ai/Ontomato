@@ -387,6 +387,20 @@ describe("metric and function panel server operations", () => {
       .toEqual({ kind: "refusal", code: "FUNCTION_REFERENCED", message: "Function referenced by Action cannot be modified or deleted" });
   });
 
+  it("says why the function delete is unavailable in the owner's words, and nothing when the owner would allow it", async () => {
+    const remove = action(DELETE_FUNCTION);
+    const referenced = hostWith(() => Response.json({ success: true, data: { reason: "Function referenced by MetricView cannot be modified or deleted" } }));
+    expect(await remove.unavailable!(referenced.host, functionTarget))
+      .toEqual({ reason: "Function referenced by MetricView cannot be modified or deleted" });
+    expect(referenced.sent[0]?.path).toBe("/api/data-query/function/deleteRefusal");
+    expect(JSON.parse(String(referenced.sent[0]?.init.body))).toEqual({ id: "f1" });
+
+    const free = hostWith(() => Response.json({ success: true, data: { reason: null } }));
+    expect(await remove.unavailable!(free.host, functionTarget)).toBeUndefined();
+    const missing = hostWith(() => Response.json({ success: false, code: "FUNCTION_NOT_FOUND", message: "Function not found" }));
+    await expect(remove.unavailable!(missing.host, functionTarget)).rejects.toMatchObject({ code: "FUNCTION_NOT_FOUND" });
+  });
+
   it("describes the function delete impact with the owner's reference rule", async () => {
     const operation = action(DELETE_FUNCTION);
     const labelled = hostWith(path => path.endsWith("/function/queryById")
