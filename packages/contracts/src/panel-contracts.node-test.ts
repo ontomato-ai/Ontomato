@@ -170,7 +170,10 @@ test("the checker accepts short data and operation members with reusable project
       ...list, data: { rows: { read: "query", params: { search: { state: "search" }, status: { literal: "pending" } } } },
     } },
   }).success, true);
-  for (const member of [{ ...list, inputs: {} }, { ...list, id: "not-a-uuid" }, { component: "ObjectList" }]) {
+  assert.equal(panelAuthoringManifestSchema.safeParse({
+    ...manifest, members: { list: { ...list, id: "registered-list" } },
+  }).success, true);
+  for (const member of [{ ...list, inputs: {} }, { ...list, id: "" }, { component: "ObjectList" }]) {
     assert.equal(panelAuthoringManifestSchema.safeParse({ ...manifest, members: { list: member } }).success, false);
   }
 });
@@ -1447,6 +1450,9 @@ test("the author type table and live descriptions share operation declarations",
     resultSchemas: { panelRecordList: { type: "array" }, panelRecord: { type: "object" }, panelFormDescription: { type: "object" } },
   };
   assert.deepEqual(platformTypeTableResponseSchema.parse(table), table);
+  assert.equal(platformTypeTableResponseSchema.safeParse({ ...table, resultSchemas: {
+    panelRecordList: { type: "array" }, panelRecord: { type: "object" },
+  } }).success, false);
   assert.equal(panelOperationDeclarationSchema.safeParse({ ...run, label: "Run now" }).success, false);
 
   const { id, ...staticFields } = run;

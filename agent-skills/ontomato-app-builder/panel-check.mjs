@@ -151,9 +151,16 @@ async function workspaceRegistration({ panel, inline, material, definition }, cu
   if (currentRecord && panel.mode === "update" && previous?.revision !== panel.revision) throw new Error(`Panel ${panel.id}: revision conflict`);
   if (panel.mode === "create" && previous) throw new Error(`Panel ${panel.id}: already exists`);
   const projections = [...(material.projections ?? [])];
-  for (const { member, id, needsId, input: projection } of inline) {
+  for (const entry of inline) {
+    const { member, needsId, input: projection } = entry;
+    const savedId = needsId ? previous?.manifest?.members?.[member]?.target?.projectionId : undefined;
+    const id = savedId ?? entry.id;
+    if (savedId !== undefined) {
+      entry.id = savedId;
+      definition.manifest.members[member].target = { projectionId: savedId };
+    }
     if (projections.some(record => record.id === id)) throw new Error(`Member ${member}: projection ${id} already has a definition in this registration`);
-    const record = needsId ? undefined : await currentRecord?.("projection", id);
+    const record = needsId && savedId === undefined ? undefined : await currentRecord?.("projection", id);
     projections.push({
       id, ...(record ? { mode: "update", revision: record.revision } : { mode: "create" }),
       input: { ...projection, name: projection.name ?? record?.name ?? member,

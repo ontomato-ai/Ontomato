@@ -550,6 +550,16 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.deepEqual(inlineRecords.get(inlinePanelPath).manifest.members.renamedTasks.target, { projectionId: inlineProjectionId });
     assert.equal(inlineRecords.size, 2);
 
+    delete savedSource.manifest.members.renamedTasks.id;
+    await writeFile(descriptor, JSON.stringify(savedSource));
+    await writeFile(registration, JSON.stringify({ panels: [{ ...item, mode: "update", revision: 2 }] }));
+    await run("panel", "register", directory);
+    assert.deepEqual(requests.splice(0).filter(([method]) => method === "PUT").map(([, url, body]) => [url, body.revision]), [
+      [inlineProjectionPath, 5], [inlinePanelPath, 2],
+    ]);
+    assert.equal(JSON.parse(await readFile(descriptor, "utf8")).manifest.members.renamedTasks.id, inlineProjectionId);
+    assert.equal(inlineRecords.size, 2);
+
     const chartPanel = JSON.stringify({ manifest: {
       state: { window: { type: { kind: "scalar", type: "string" } } },
       members: { chart: { component: "MetricChart", sourceCard: chartSource, state: { range: "window" } } },
