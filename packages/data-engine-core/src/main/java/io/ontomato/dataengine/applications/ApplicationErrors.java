@@ -1,4 +1,6 @@
 package io.ontomato.dataengine.applications;
+import io.ontomato.dataengine.service.FormFields;
+import java.util.List;
 import java.util.Map;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.annotation.Order;
@@ -11,6 +13,10 @@ import org.springframework.web.server.ResponseStatusException;
 public class ApplicationErrors {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<?> error(Exception error) {
+        if (error instanceof PanelResources.DefaultAgentRefusal refusal)
+            return ResponseEntity.status(refusal.getStatusCode()).body(Map.of(
+                "success", false, "code", PanelResources.DEFAULT_AGENT_UNAVAILABLE, "message", refusal.getReason(),
+                "errors", List.of(FormFields.error(refusal.field(), "target_unavailable", refusal.getReason()))));
         if (error instanceof ResponseStatusException refusal)
             return ResponseEntity.status(refusal.getStatusCode()).body(Map.of("message",String.valueOf(refusal.getReason())));
         if (error instanceof org.springframework.http.converter.HttpMessageNotReadableException || error instanceof IllegalArgumentException)
