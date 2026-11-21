@@ -49,6 +49,7 @@ export function expandPanelAuthoringMember(
   const conversationEntry = member.agent === undefined ? undefined : panelConversationEntrySchema.parse({
     target: member.agent === "page-default" ? { kind: "page-default" } : member.agent,
     ...(member.prefill !== undefined && { prefill: member.prefill }),
+    ...(member.prefillKey !== undefined && { prefillKey: member.prefillKey }),
   });
 
   const stateType = (name: string, field: string): DirectPanelPortType =>

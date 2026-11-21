@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { createApp, h } from "vue";
+import { createApp, h, ref } from "vue";
 import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
@@ -59,4 +59,44 @@ it("opens the page's composer with the member's declared agent and sentence, onc
   await vi.waitFor(() => expect(expanded).toEqual([governance]));
   expect(element.querySelector("[role=alert]")).toBeNull();
   app.unmount();
+});
+
+/*
+ * A platform panel ships to every language, so its opening sentence is a key of the panel's own messages (M6's actions
+ * page, 2026-11-21): the composer opens with the sentence in the reader's language, else the deployment's default.
+ */
+it("opens the composer with the opening sentence its key names, in the reader's language or else the default", async () => {
+  const keyed: ProductProjection = { ...projection, conversationEntry: { target: governance.target, prefillKey: "actions.create" } };
+  const messages = { en: { "actions.create": "Help me create an action:" }, "zh-CN": { "actions.create": "帮我新建一个动作：" } };
+  async function opened(locale: string, words: Record<string, Record<string, string>> = messages) {
+    const expanded: PanelConversationEntry[] = [];
+    const instance = createDirectPanelInstance(definePanel({
+      state: {}, members: { governance: { target: { projectionId: keyed.id } } }, events: {},
+    }), {
+      pageKey: "actions", url: () => "/actions", label: () => "Actions", initial: {},
+      text: createPanelText(words, ref(locale), "en"), ...noOperations, recordDraftCreated: async () => {},
+      expandPageComposer: (entry) => { expanded.push(entry); },
+      readProjection: async () => keyed,
+      read: async () => { throw new Error("A conversation entry reads nothing"); },
+    });
+    const element = document.createElement("div");
+    document.body.append(element);
+    const app = createApp({ render: () => h(PanelMember, { instance, member: "governance" }) });
+    app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus).mount(element);
+    const button = await vi.waitFor(() => {
+      const found = element.querySelector<HTMLButtonElement>("button");
+      if (!found) throw new Error("The entry is not drawn yet");
+      return found;
+    });
+    button.click();
+    await vi.waitFor(() => expect(expanded).toHaveLength(1));
+    app.unmount();
+    return expanded[0];
+  }
+  expect(await opened("zh-CN")).toEqual({ target: governance.target, prefill: "帮我新建一个动作：" });
+  expect(await opened("en")).toEqual({ target: governance.target, prefill: "Help me create an action:" });
+  // A language the panel has no words in reads the deployment's default.
+  expect(await opened("fr")).toEqual({ target: governance.target, prefill: "Help me create an action:" });
+  // Words in neither the reader's language nor the default: the composer opens with no sentence, never with the key.
+  expect(await opened("fr", { "zh-CN": { "actions.create": "帮我新建一个动作：" } })).toEqual({ target: governance.target });
 });

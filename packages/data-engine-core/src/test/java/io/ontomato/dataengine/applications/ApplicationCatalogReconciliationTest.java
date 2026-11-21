@@ -17,6 +17,7 @@ import io.ontomato.dataengine.service.ProductGrantService;
 import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import io.ontomato.dataengine.test.PostgresTestDatabase;
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -24,6 +25,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
@@ -134,6 +136,27 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.pageSkills[0].defaults[1].pageKey").value("knowledge"))
             .andExpect(jsonPath("$.data.admittedEntrances[0].pageKey").value("knowledge"))
             .andExpect(jsonPath("$.data.registeredSkills[0].name").value("knowledge-governance"));
+    }
+
+    @Test void aDuplicateKeyNamesTheFileAndTheKey() {
+        var source = new ByteArrayResource("""
+            {"declaration":{"panelUses":[],"panelUses":[]}}
+            """.getBytes(StandardCharsets.UTF_8), "applications/duplicate.json");
+
+        var error = assertThrows(IOException.class, () -> ApplicationCatalogUpgrade.Builtins.readDeclaration(source));
+
+        assertTrue(error.getMessage().contains("applications/duplicate.json"));
+        assertTrue(error.getMessage().contains("panelUses"));
+    }
+
+    @Test void theShippedOntologyDeclarationContainsTheComponentsEntry() throws IOException {
+        var ontology = ApplicationCatalogUpgrade.Builtins.readDeclaration(new ClassPathResource("applications/ontology.json"));
+
+        var components = ontology.declaration().panelUses().stream()
+            .filter(use -> use.path().equals("/ontology/components"))
+            .findFirst().orElseThrow();
+        assertEquals("builtin-product-sdk-components", components.panelId());
+        assertEquals("ontology-modeling", components.access().permissionCode());
     }
 
     @Test void builtinDeclarationsCannotPointToDomainPanels() {
