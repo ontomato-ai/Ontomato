@@ -56,7 +56,7 @@
     <template v-if="view === 'catalog'">
       <div class="ot-toolbar">
         <el-input v-model="search" :placeholder="t('ot.search')" clearable></el-input>
-        <span class="ot-count">{{ t("ot.items", { count: filteredRows.length }) }}</span>
+        <span v-if="catalogCount !== null" class="ot-count">{{ t("ot.items", { count: catalogCount }) }}</span>
         <span class="ot-spacer"></span>
       </div>
       <div class="ot-table">
@@ -170,7 +170,7 @@
           <section class="ot-card">
             <div class="ot-card-title">
               <h3>{{ t("ot.relations") }}</h3>
-              <span class="ot-count">{{ t("ot.items", { count: relationRows.length }) }}</span>
+              <span v-if="relationCount !== null" class="ot-count">{{ t("ot.items", { count: relationCount }) }}</span>
             </div>
             <div v-if="relationRows.length" class="ot-table">
               <div class="ot-row ot-head ot-rel-grid">
