@@ -102,7 +102,7 @@ function owner(request: Sent, held: PanelFormValues): Response | undefined {
 async function open(draft?: PanelFormValues, shown: PanelFormValues = stored) {
   const intents = humanIntents(() => ({ kind: "success", data: {} }), { source: "input", input: "agent" });
   const sent = installPlatform((request) => {
-    if (draft && request.path === draftAt) return Response.json({ pageKey: use.pageKey, operation: "agent.update", target: { id: AGENT }, form: draft });
+    if (draft && request.path === draftAt) return Response.json({ pageKey: use.pageKey, operation: "agent.update", target: { objectType: AGENT_DEFINITION, id: AGENT }, form: draft });
     return intents(request) ?? owner(request, shown) ?? nothingAt(request);
   });
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");

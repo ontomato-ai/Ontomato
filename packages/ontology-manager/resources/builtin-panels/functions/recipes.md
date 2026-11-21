@@ -21,24 +21,6 @@
 
 ## 起草改动
 
-读者确认之前什么都不会写。先按目标读属主的表单（已有的一条用 `form`，新建用 `createForm`），把 `save.draftOperation`
-抄进草稿的 `operation`，写到 `outputs/drafts/<名字>.page-draft.json`。
-
-`form` 里只放要改的字段；没写的字段保持现值。比如只改描述：
-
-```json
-{
-  "pageKey": "ontology-functions",
-  "operation": "function.update",
-  "target": {"id": "<选中函数的 id>"},
-  "form": { "description": "按单位类别统计在职教职工人数" }
-}
-```
-
-新建时 `operation` 用 `function.create`、`target` 留空（`{}`）。把草稿路径和当前会话、运行一起放进页面链接
-（`draftSessionId`、`draftRunId`、`draftPath`）交给读者；打开链接后表单会被填好并标出改过的字段，由读者保存。
-属主不收的草稿会整份退回来，并指出是哪个字段、为什么。
-
 读函数的 `queryPackage` 要写整份查询逻辑包（含 `manifest` 和 `files`）；写函数的 `parameters` 是
 `[{name, type, description, sample, classNames}]` 的数组，`type` 只能是 `TYPE_STRING`、`TYPE_NUMBER`、`TYPE_TIME`、
 `TYPE_STRING_ARRAY`、`TYPE_NUMBER_ARRAY`、`TYPE_TIME_ARRAY`。`returnDef` 里读函数用 `columnLabels`，写函数用

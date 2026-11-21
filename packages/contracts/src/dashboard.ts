@@ -109,6 +109,8 @@ export const dashboardRenameSchema = z.object({id:text,name:authoringName}).stri
 export const dashboardChartRenameSchema = z.object({id:text,chartId:text,resultSetName:authoringName}).strict();
 export const dashboardMetricRenameSchema = z.object({id:text,metricId:text,metricName:authoringName}).strict();
 export const dashboardGroupRenameSchema = z.object({id:text,groupId:text,dimensionName:z.string().trim()}).strict();
+/** The object type a dashboard's page drafts name: every dashboard operation saves one dashboard, by its `id`. */
+export const DASHBOARD_OBJECT_TYPE = "platform:Dashboard";
 /** Forms are the existing save bodies; paths are relative to /api/dashboards. */
 export const dashboardAuthoring = {
   "dashboard.layout": {schema:dashboardReplaceLayoutSchema,path:"/modifyLayout"},

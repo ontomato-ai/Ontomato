@@ -207,7 +207,7 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
         messages: source.panel.content.messages ?? {},
         locale: global.locale,
         defaultLocale: String(global.fallbackLocale.value),
-        translate: key => global.t(key),
+        translate: (key, params) => global.t(key, params ?? {}),
       }, { kind: "candidate", workspace: source.workspace }), target, source.panel.content.module);
     },
     snapshot,
@@ -240,7 +240,7 @@ function directOptions(
     messages: source.panel.content.messages ?? {},
     locale: global.locale,
     defaultLocale: String(global.fallbackLocale.value),
-    translate: key => global.t(key),
+    translate: (key, params) => global.t(key, params ?? {}),
   };
 }
 

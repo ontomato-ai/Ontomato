@@ -153,16 +153,16 @@ describe("a panel's instance", () => {
       discard: () => {},
     };
     const ports = { binding: `PlatformObjectType:${SCHEDULED_TASK}`, inputs: {} };
-    panelInstance.forms.hold({ pageKey: "schedules", operation: "agent.update", target: { id: "a-1" }, form: {} }, { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/drafts/a.page-draft.json" }, () => {});
+    panelInstance.forms.hold({ pageKey: "schedules", operation: "agent.update", target: { objectType: SCHEDULED_TASK, id: "a-1" }, form: {} }, { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/drafts/a.page-draft.json" }, () => {});
     panelInstance.forms.register("taskForm", declining);
-    await vi.waitFor(() => expect(panelInstance.forms.unclaimed(["taskForm"])).toBe(true));
+    await vi.waitFor(() => expect(panelInstance.forms.unclaimed(["taskForm"])).toBe(SCHEDULED_TASK));
     // A declared slot still to register may be the form that takes it.
     // The form's member reads the owner's form, so a draft is offered to it; the others read none.
     panelInstance.register({ slot: "taskForm", projectionId: "projection-task-form", ports, operations: {}, takesDrafts: true });
     panelInstance.register({ slot: "tasks", projectionId: "projection-x", ports, operations: {}, takesDrafts: false });
-    expect(panelInstance.unclaimedDraft.value).toBe(false);
+    expect(panelInstance.unclaimedDraft.value).toBeNull();
     panelInstance.register({ slot: "runTask", projectionId: "projection-run-task", ports, operations: {}, takesDrafts: false });
-    expect(panelInstance.unclaimedDraft.value).toBe(true);
+    expect(panelInstance.unclaimedDraft.value).toBe(SCHEDULED_TASK);
   });
 
   it("names a state operation by the panel's own word for it, in the current language", () => {

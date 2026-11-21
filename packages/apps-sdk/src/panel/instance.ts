@@ -43,7 +43,7 @@ export interface PanelInstanceOptions {
   /** Records, as the reader, the object a create draft's save created, so the draft addresses it from then on. */
   recordDraftCreated: (link: PageDraftLink, id: string) => Promise<void>;
   /** Translates platform message keys (such as object-union type display names) in the current locale. */
-  translate?: (key: string) => string;
+  translate?: (key: string, params?: Readonly<Record<string, string>>) => string;
   /** The panel's own words (its content's messages) in the current language: what a state operation is called. */
   text: PanelText;
   /** The platform's coordinator, which runs this panel's operations as the reader. */
@@ -102,12 +102,11 @@ export interface PanelInstance {
   /** Hears each draft that ended, by its link; the returned function stops it. */
   onDraftSettled(listener: (link: PageDraftLink) => void): () => void;
   /**
-   * Whether the draft this instance holds is one none of its forms performs: every slot its declaration names has
-   * registered its projection, and every form among them was offered the draft and found that its owner's form for the
-   * draft's target performs another operation. While a slot is still to register it is false, since that may be the form
-   * that takes the draft.
+   * The type of the object a draft this instance holds is for, when none of its forms binds that type: every slot its
+   * declaration names has registered its projection, and every form among them declined the draft. Null otherwise, and
+   * while a slot is still to register, since that may be the form that takes the draft.
    */
-  readonly unclaimedDraft: Readonly<Ref<boolean>>;
+  readonly unclaimedDraft: Readonly<Ref<string | null>>;
   register(registration: PanelProjectionRegistration): () => void;
   /** Runs one described operation here, with the reader's own credential. */
   invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
@@ -261,7 +260,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     },
     unclaimedDraft: computed(() => {
       const registered = registrations.value;
-      if (!Object.keys(manifest.members).every((member) => registered.some((registration) => registration.slot === member))) return false;
+      if (!Object.keys(manifest.members).every((member) => registered.some((registration) => registration.slot === member))) return null;
       const formSlots = registered.filter((registration) => registration.takesDrafts).map((registration) => registration.slot);
       return forms.unclaimed(formSlots);
     }),

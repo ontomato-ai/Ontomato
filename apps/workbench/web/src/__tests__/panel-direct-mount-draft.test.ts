@@ -72,7 +72,7 @@ it("says the owner's refusal of a draft on its form, and does not fail the panel
 
   const link = { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/drafts/task.page-draft.json" };
   await receivePanelDraft("tasks", mount.instance.forms, {
-    readPageDraft: async () => ({ pageKey: "tasks", operation: `${SCHEDULED_TASK}.save`, target: { id: "t-1" }, form: { name: "t-1", note: "x" } }),
+    readPageDraft: async () => ({ pageKey: "tasks", operation: `${SCHEDULED_TASK}.save`, target: { objectType: SCHEDULED_TASK, id: "t-1" }, form: { name: "t-1", note: "x" } }),
   }, link, mount.instance.receiveDraft);
   await vi.waitFor(() => expect(element.querySelector(".sdk-owner-form-refusal")?.textContent).toBe("A note is a sentence"));
   expect(failed).toEqual([]);

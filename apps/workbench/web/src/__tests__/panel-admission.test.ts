@@ -43,7 +43,7 @@ const tasks = "/api/data-query/platform/scheduled-tasks";
 const draftOf = (pageKey: string) => ({
   pageKey,
   operation: "platform:ScheduledTask.save",
-  target: { id: task.id },
+  target: { objectType: SCHEDULED_TASK, id: task.id },
   form: { ...task.content, caseSetId: "set-regression" },
 });
 
@@ -70,7 +70,7 @@ function answer(request: Sent) {
   if (request.path === "/api/assistant/sessions/session-1/runs/run-1/page-draft") return Response.json(draftOf(useOfP.pageKey));
   if (request.path === "/api/assistant/sessions/session-1/runs/run-2/page-draft") return Response.json(draftOf("dashboard"));
   if (request.path === "/api/assistant/sessions/session-1/runs/run-3/page-draft")
-    return Response.json({ ...draftOf(useOfP.pageKey), target: {} });
+    return Response.json({ ...draftOf(useOfP.pageKey), target: { objectType: SCHEDULED_TASK } });
   if (request.path === "/api/assistant/sessions/session-1/runs/run-3/page-draft/created") return new Response(null, { status: 204 });
   return nothingAt(request);
 }
