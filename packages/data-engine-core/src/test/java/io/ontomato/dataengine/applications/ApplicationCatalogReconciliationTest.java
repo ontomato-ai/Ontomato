@@ -97,16 +97,29 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         assertEquals("browser", catalog.require("browser").getString("id"));
     }
 
+    @Test void startupBuiltinsReconciliationRemovesRetiredDataEngineApplications() throws Exception {
+        catalog.builtins("data-engine", List.of(builtin("governance", "native")));
+        catalog.builtins("workbench", List.of(builtin("agents", "native")));
+
+        new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
+
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM sys_application WHERE id='governance'", Integer.class));
+        assertEquals("ontology", catalog.require("ontology").getString("id"));
+        assertEquals("agents", catalog.require("agents").getString("id"));
+    }
+
     @Test void aNativeKnowledgeGroupKeepsItsGovernanceSkillAndPresetWithAnAdmittedPanelMember() throws Exception {
         new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
         var ontology = JSON.parseObject(new ClassPathResource("applications/ontology.json").getContentAsString(StandardCharsets.UTF_8),
             ApplicationCatalog.Builtin.class);
         var metadata = ontology.declaration();
+        var mapping = new PageSkills.Mapping("business-knowledge", null, null,
+            new PageSkills.Skill(new PageSkills.Namespace("provider", "ontology", null), "knowledge-governance"), List.of());
         var use = new ApplicationPanelUse("knowledge-use", "knowledge", "builtin-product-knowledge", "/ontology/knowledge",
             new ApplicationPanelUse.Access("business-knowledge", null),
             new DefaultAgentTarget("id", "knowledge-agent", null), null);
         var declaration = new ApplicationCatalog.Declaration(metadata.names(), metadata.descriptions(), metadata.icon(),
-            metadata.groups(), metadata.permissions(), metadata.pageSkills(), List.of(use));
+            metadata.groups(), metadata.permissions(), List.of(mapping), List.of(use));
         catalog.builtins("data-engine", List.of(new ApplicationCatalog.Builtin(ontology.id(), ontology.kind(), ontology.rail(),
             ontology.category(), ontology.sort(), ontology.entry(), ontology.entryAccess(), ontology.scheduleAdapter(), declaration)));
 
@@ -130,7 +143,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.use.id").value("knowledge-use"));
         http.perform(get("/platform/page-skills")).andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.pageSkills.length()").value(metadata.pageSkills().size()))
+            .andExpect(jsonPath("$.data.pageSkills.length()").value(1))
             .andExpect(jsonPath("$.data.pageSkills[0].skill.name").value("knowledge-governance"))
             .andExpect(jsonPath("$.data.pageSkills[0].defaults.length()").value(1))
             .andExpect(jsonPath("$.data.pageSkills[0].defaults[0].pageKey").value("knowledge"))

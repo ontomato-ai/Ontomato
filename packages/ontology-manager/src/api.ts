@@ -189,15 +189,6 @@ export interface CreateOntologyRelationInput {
   toField?: string;
 }
 
-/** A business knowledge entry (the data engine KnowledgeEntity fields this page reads and writes); status 0 is pending review, 1 approved. */
-export interface BusinessKnowledge {
-  knowledgeID: string;
-  knowledgeTitle: string;
-  knowledgeText: string;
-  knowledgeTags: string[];
-  status: number;
-}
-
 export interface SmartAsset {
   id?: string;
   name: string;
@@ -718,38 +709,6 @@ export function createManagerClient(
     return (await send("/businessConfig/dataAdapters", { method: "GET" })).data;
   }
 
-  /** Business knowledge list: the data engine returns an object keyed by knowledgeID; older entries may have no tags. */
-  async function listKnowledge(): Promise<BusinessKnowledge[]> {
-    const response = await post("/admin/getBussinessKnowledge", {});
-    const entries = response.data as Record<
-      string,
-      Omit<BusinessKnowledge, "knowledgeTags"> & { knowledgeTags?: string[] }
-    >;
-    return Object.values(entries).map((item) => ({
-      knowledgeID: item.knowledgeID,
-      knowledgeTitle: item.knowledgeTitle,
-      knowledgeText: item.knowledgeText,
-      knowledgeTags: item.knowledgeTags ?? [],
-      status: item.status,
-    }));
-  }
-
-  /**
-   * Create (empty knowledgeID) or edit a business knowledge entry; answers the entry's id. A create's id is the store's
-   * own — the page that filled a draft of it records that object for the draft — and an edit answers the id it saved.
-   */
-  async function saveKnowledge(knowledge: BusinessKnowledge): Promise<string> {
-    const response = await post(
-      knowledge.knowledgeID ? "/admin/editBussinessKnowledge" : "/admin/addBussinessKnowledge",
-      { ...knowledge }
-    );
-    return knowledge.knowledgeID || (response.data as { id: string }).id;
-  }
-
-  function deleteKnowledge(knowledgeID: string) {
-    return post("/admin/delBussinessKnowledge", { knowledgeID });
-  }
-
   /** The domain's workflows; a workflow is a published unit of authority, not a running process. */
   async function loadWorkflows(): Promise<WorkflowRecord[]> {
     const response = await post("/workflow/query", {});
@@ -885,9 +844,6 @@ export function createManagerClient(
     loadInstanceNeighborhood,
     queryInstanceInfo,
     listDataAdapters,
-    listKnowledge,
-    saveKnowledge,
-    deleteKnowledge,
     loadWorkflows,
     saveWorkflow,
     activateWorkflow,

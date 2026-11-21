@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { BookOpen, MessageSquareText } from "lucide-vue-next";
 import { appDeclarations } from "../partition";
 import { catalogPartitionFixture as appPartition } from "./fixtures";
 import { closedAccess, generatedNavigation } from "./fixtures";
@@ -30,25 +29,6 @@ describe("the platform's applications", () => {
       "later-renderer": { sections: [], home: "/edition-app/home" },
     });
     expect(appDeclarations(generatedNavigation(), closedAccess([]), registered, t)[0]?.home).toBe("/edition-app/home");
-  });
-  it("opens knowledge governance on business knowledge, which is the first page it still has", () => {
-    // The feedback records are a page of the platform's administration, beside business knowledge in this application.
-    const governancePages = [
-      { path: "/governance/knowledge", titleKey: "nav.businessKnowledge", icon: BookOpen,
-        permissions: ["business-knowledge"], group: "knowledge", ownHeader: true },
-      { path: "/governance/feedback", titleKey: "nav.userFeedback", icon: MessageSquareText,
-        permissions: ["business-knowledge"], group: "knowledge", ownHeader: true },
-    ];
-    const navigation = generatedNavigation();
-    const opened = appDeclarations(
-      { ...navigation, pages: [...navigation.pages, ...governancePages] },
-      closedAccess(["business-knowledge"]), appPartition(), t,
-    );
-    const governance = opened.find(app => app.id === "governance")!;
-    expect(governance.home).toBe("/governance/knowledge");
-    expect(governance.foot).toBeNull();
-    expect(governance.groups!.flatMap(section => section.pages.map(page => page.id)))
-      .toEqual(["/governance/knowledge", "/governance/feedback"]);
   });
   it("provides a distinct gallery entry beside the personal home", () => {
     const gallery=declarations.find(app=>app.id==='application-gallery')!;

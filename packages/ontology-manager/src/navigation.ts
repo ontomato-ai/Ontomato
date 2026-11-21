@@ -10,6 +10,7 @@ import {
   Component as ComponentIcon,
   Layers,
   Link2,
+  MessageSquareText,
   MousePointerClick,
   Network,
   PanelsTopLeft,
@@ -111,7 +112,6 @@ const pages = [
   { ...page(managerPaths.dataBrowser, "nav.dataBrowser", Table2, "ontology", ["data-browser"]), ownHeader: false },
   page(managerPaths.metrics, "nav.metrics", ChartColumn, "assets", MODELING, "metrics"),
   page(managerPaths.products, "platform.productAssets", Shapes, "assets", MODELING, "products"),
-  page(managerPaths.knowledge, "nav.businessKnowledge", BookOpen, "knowledge", ["business-knowledge"]),
 ];
 
 /**
@@ -120,6 +120,8 @@ const pages = [
  * graph, the relation types) takes that page's icon and count.
  */
 const entries: readonly { path: string; icon: Component; count?: keyof OntologyResourceCounts }[] = [
+  { path: managerPaths.knowledge, icon: BookOpen },
+  { path: routes.feedback.path, icon: MessageSquareText },
   { path: managerPaths.functions, icon: SquareFunction },
   { path: managerPaths.actions, icon: MousePointerClick },
   { path: managerPaths.capabilityMap, icon: Share2 },

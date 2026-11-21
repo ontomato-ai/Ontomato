@@ -325,7 +325,7 @@ public class ApplicationCatalog {
         return entry;
     }
 
-    /** Reconcile a service's complete builtin collection; per-file Java declarations remain incremental. */
+    /** Reconcile a service's complete builtin collection; retired builtins of that service are removed. */
     public void reconcileBuiltins(String service, List<Builtin> declarations) {
         transactions.executeWithoutResult(tx -> {
             db.update("""

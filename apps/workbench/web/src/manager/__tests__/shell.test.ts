@@ -108,31 +108,6 @@ describe("open-source Ontology Service page", () => {
     expect(document.querySelector(".rail-row.active")?.getAttribute("aria-label")).toBe(appName("ontology"));
   });
 
-  it("opens a business knowledge draft's address with the form filled from the agent's draft", async () => {
-    // 128 验收：这条地址只画出了普通列表。页面读草稿要落在智能体平台上（`/assistant/...`），
-    // 差这一段就只会拿到数据引擎的空回答。
-    const draftPath = "outputs/drafts/knowledge-1.page-draft.json";
-    const draft = {
-      pageKey: "business-knowledge", operation: "knowledge.create", target: {},
-      form: { knowledgeID: "", knowledgeTitle: "e2e 测试口径", knowledgeText: "只统计在职人员", knowledgeTags: ["e2e"], status: 0 },
-    };
-    const stub = globalThis.fetch;
-    vi.stubGlobal("fetch", async (url: string, init?: { headers?: unknown }) => {
-      const parsed = new URL(url, window.location.origin);
-      if (/\/api\/assistant\/sessions\/session-1\/runs\/run-1\/page-draft$/.test(parsed.pathname)) {
-        requests.push({ url, headers: (init?.headers ?? {}) as Record<string, string> });
-        return new Response(JSON.stringify(draft), { status: 200 });
-      }
-      return stub(url, init as never);
-    });
-
-    await start(`/#/ontology/knowledge?draftSessionId=session-1&draftRunId=run-1&draftPath=${encodeURIComponent(draftPath)}`);
-
-    expect(requests.some((request) => request.url.includes("/assistant/sessions/session-1/runs/run-1/page-draft"))).toBe(true);
-    expect(document.querySelector<HTMLInputElement>(".knowledge-form .el-input__inner")?.value).toBe("e2e 测试口径");
-    expect([...document.querySelectorAll(".knowledge-form .draft-changed")].length).toBeGreaterThan(0);
-  });
-
   it("requests go anonymously to the configured API root, and an old launch link loses its credential", async () => {
     sessionStorage.setItem("ontology_manager_token", "old-token");
     await start("/?view=data-browser&tk=t1&apiKey=k1&theme=dark#/objects");

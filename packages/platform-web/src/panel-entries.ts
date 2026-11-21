@@ -64,10 +64,21 @@ export function panelEntryGuard(router: Router): NavigationGuard {
  * address again, nothing serves it for them: the home.
  */
 export function addressLandingGuard(router: Router): NavigationGuard {
+  const catalog = useApplicationCatalog();
   const unknown = (address: string) => router.resolve(address).name === platformRoutes.unknown.name;
   /** The address last sent to the landing because nothing served it for this reader. */
   let sentToLanding: string | null = null;
-  return (to) => {
+  let read: Promise<void> | null = null;
+  return async (to) => {
+    if (to.name === platformRoutes.ontology.name) {
+      // Every page guard left this reader at `/ontology` because they have no native page in the navigation:
+      // land on the first panel entry the ontology application admits for them (for example business knowledge or feedback).
+      await (read ??= catalog.refresh());
+      const ontology = catalog.applications.value.find((app) => app.id === "ontology" && !isPanelApplication(app));
+      const first = ontology?.panelUses?.[0];
+      if (first) return panelUsePath(first.path);
+      return true;
+    }
     if (to.name !== platformRoutes.unknown.name) {
       sentToLanding = null;
       return true;

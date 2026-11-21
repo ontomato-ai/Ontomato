@@ -12,6 +12,7 @@
     "ontology-modeling",
     "action-management",
     "business-knowledge",
+    "user-feedback",
     "skill-management",
     "system-config"
   ],
@@ -28,10 +29,6 @@
     "icon": "ontology",
     "groups": [{"key": "products","names": {"en": "Products","zh-CN": "产品层"},"sort": 0}],
     "permissions": [],
-    "pageSkills": [{
-      "permissionCode": "business-knowledge",
-      "skill": {"namespace": {"kind": "provider", "provider": "ontology"}, "name": "knowledge-governance"}
-    }],
     "panelUses": [{
       "id": "ontology-playground", "pageKey": "ontology-playground", "panelId": "builtin-product-ontology-graph",
       "path": "/ontology/playground", "access": {"permissionCode": "ontology-modeling"},
@@ -82,6 +79,16 @@
       "path": "/ontology/assets/functions", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "Read functions keep a query package and column labels; write functions keep parameters and Python code. A name is edited once, here.", "zh-CN": "读函数维护查询逻辑包和列标签，写函数维护参数和 Python 代码；名称只在这里编辑一次。"},
       "names": {"en": "Functions", "zh-CN": "函数"}
+    }, {
+      "id": "business-knowledge", "pageKey": "business-knowledge", "panelId": "builtin-product-business-knowledge",
+      "path": "/ontology/knowledge", "access": {"permissionCode": "business-knowledge"},
+      "descriptions": {"en": "Maintain business rules and terminology, and review pending knowledge", "zh-CN": "维护业务规则与术语，审核待确认的知识"},
+      "names": {"en": "Business knowledge", "zh-CN": "业务知识"}
+    }, {
+      "id": "user-feedback", "pageKey": "user-feedback", "panelId": "builtin-product-feedback",
+      "path": "/ontology/feedback", "access": {"permissionCode": "user-feedback"},
+      "descriptions": {"en": "Ratings and comments users give on query and analysis results", "zh-CN": "用户对问答与分析结果的评价和留言"},
+      "names": {"en": "User feedback", "zh-CN": "用户反馈"}
     }]
   }
 }

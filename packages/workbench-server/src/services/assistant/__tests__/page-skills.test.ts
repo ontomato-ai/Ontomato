@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import type { PageSkillsProjection } from "@ontomato/contracts/page-skills";
@@ -172,12 +171,4 @@ it("offers the registered dashboard page skill to the default agent for the dash
   const result=await listAssistantAgents(owner,credentials,query);
   expect(result.defaultAgentId).toBe(ids[0]);
   expect(result.agents.find(agent=>agent.id===ids[0])?.effectiveSkills).toContainEqual({namespace:{kind:"provider",provider:"workbench"},name:"dashboard-pages"});
-});
-it("leaves the business-knowledge page on the ordinary default while listing the governance preset",async()=>{
-  const declaration=JSON.parse(readFileSync(new URL("../../../../../data-engine-core/src/main/resources/applications/ontology.json",import.meta.url),"utf8"));
-  current.pageSkills=declaration.declaration.pageSkills;
-  mocks.agents.mockResolvedValue([definition(0,"regular",[report]),definition(1,"knowledge-governance",[page])]);
-  const result=await listAssistantAgents(owner,credentials,{pageKey:"business-knowledge",permissionCode:"business-knowledge"});
-  expect(result.defaultAgentId).toBe(ids[0]);
-  expect(result.presetAgentIds?.["knowledge-governance"]).toBe(ids[1]);
 });

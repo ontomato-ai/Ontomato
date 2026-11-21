@@ -8,7 +8,6 @@ await mountPanel({
     const exporting = ref(false);
     const exportError = ref("");
     const exportCsv = usePanelOperation("exportCsv", "export");
-    const refresh = () => instance.refreshObjects();
     const runExport = async () => {
       exporting.value = true;
       exportError.value = "";
@@ -26,6 +25,6 @@ await mountPanel({
         exporting.value = false;
       }
     };
-    return { selected, exporting, exportError, refresh, runExport };
+    return { selected, exporting, exportError, runExport };
   },
 });

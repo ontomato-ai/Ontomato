@@ -43,7 +43,7 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
       defaultAgent: group?.defaults.find(entry => entry.pageKey === query.pageKey)?.defaultAgent ?? { kind: "preset", agentKind: "regular" },
     };
   }
-  const definitions = await assistantStore.agents(owner.domainId);
+  const definitions = await assistantStore.agents(owner.domainId, { skillView: view });
   return withProductGrants(owner, async () => {
     const agents = [];
     for (const agent of definitions) {

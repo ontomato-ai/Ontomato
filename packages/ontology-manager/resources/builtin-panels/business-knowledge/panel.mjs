@@ -12,9 +12,12 @@ await mountPanel({
 
     const selected = computed(() => instance.state.values.value.selected ?? null);
     const formTarget = computed(() => instance.state.values.value.formTarget ?? null);
-    const checked = computed(() => instance.state.values.value.checked ?? []);
-    const mode = ref("view");
-    const detailOpen = ref(false);
+    const mode = computed(() => {
+      const value = instance.state.values.value.mode;
+      return value === "edit" || value === "create" ? value : "view";
+    });
+    const editing = computed(() => mode.value !== "view");
+    const detailOpen = ref(mode.value !== "view");
     const narrow = ref(false);
     const root = ref(null);
     const formProj = ref(null);
@@ -55,24 +58,35 @@ await mountPanel({
       discardForm();
     }
 
-    const confirmDiscard = () => !dirty() || window.confirm(t("panel.discardConfirm"));
-
     let prevSelected = null;
     watch(selected, (_value, old) => {
       prevSelected = old ?? null;
     });
 
-    function newRecord() {
-      if (!confirmDiscard()) return;
-      requestDiscard();
-      instance.state.set("formTarget", null);
-      mode.value = "edit";
-      detailOpen.value = true;
-    }
+    watch(
+      mode,
+      (next, prev) => {
+        if (next === "create") {
+          if (prev === "edit" && !(instance.draft?.value ?? instance.draft)) {
+            if (dirty() && !window.confirm(t("panel.discardConfirm"))) {
+              instance.state.set("mode", "edit");
+              return;
+            }
+            requestDiscard();
+          }
+          if (formTarget.value !== null) instance.state.set("formTarget", null);
+          detailOpen.value = true;
+        } else if (next === "edit") {
+          if (!formTarget.value && selected.value) instance.state.set("formTarget", selected.value);
+          detailOpen.value = true;
+        }
+      },
+      { immediate: true },
+    );
 
     function onUserSelect() {
       detailOpen.value = true;
-      if (mode.value !== "edit") return;
+      if (!editing.value) return;
       const target = formTarget.value;
       const previousMissing = prevSelected != null && !visibleKeys.value.has(prevSelected.primaryKey);
       if (previousMissing) {
@@ -83,35 +97,30 @@ await mountPanel({
         return;
       }
       if (!dirty()) {
-        mode.value = "view";
-        instance.state.set("formTarget", selected.value);
+        instance.state.setState({ mode: "view", formTarget: selected.value });
         return;
       }
       if (window.confirm(t("panel.discardConfirm"))) {
         requestDiscard();
-        mode.value = "view";
-        instance.state.set("formTarget", selected.value);
+        instance.state.setState({ mode: "view", formTarget: selected.value });
       } else {
         instance.state.set("selected", target ?? prevSelected);
       }
     }
 
-    function clearChecked() {
-      instance.state.set("checked", []);
-    }
-
     function openEdit() {
       if (!selected.value) return;
-      instance.state.set("formTarget", selected.value);
-      mode.value = "edit";
+      instance.state.setState({ formTarget: selected.value, mode: "edit" });
     }
 
     function cancelEdit() {
       if (dirty() && !window.confirm(t("panel.discardConfirm"))) return;
       requestDiscard();
-      mode.value = "view";
-      if (formTarget.value) instance.state.set("selected", formTarget.value);
-      instance.state.set("formTarget", selected.value);
+      instance.state.setState({
+        mode: "view",
+        ...(formTarget.value ? { selected: formTarget.value } : {}),
+        formTarget: formTarget.value ?? selected.value,
+      });
     }
 
     function saveForm() {
@@ -128,8 +137,7 @@ await mountPanel({
         silentDiscard = false;
         return;
       }
-      mode.value = "view";
-      instance.state.setState({ formTarget: selected.value });
+      instance.state.setState({ mode: "view", formTarget: selected.value });
     }
 
     function onSaved(object) {
@@ -138,8 +146,7 @@ await mountPanel({
         typeof key === "string" && key.length > 0
           ? { className: object?.className ?? TYPE, primaryKey: key }
           : (object?.className ? object : selected.value);
-      if (ref) instance.state.setState({ selected: ref, formTarget: ref });
-      mode.value = "view";
+      instance.state.setState({ ...(ref ? { selected: ref, formTarget: ref } : {}), mode: "view" });
       detailOpen.value = true;
     }
 
@@ -147,13 +154,12 @@ await mountPanel({
       () => instance.draft?.value ?? instance.draft,
       (draft) => {
         if (!draft) return;
-        mode.value = "edit";
         detailOpen.value = true;
         if (draft.target?.id) {
           const ref = { className: TYPE, primaryKey: draft.target.id };
-          instance.state.setState({ selected: ref, formTarget: ref });
+          instance.state.setState({ selected: ref, formTarget: ref, mode: "edit" });
         } else {
-          instance.state.set("formTarget", null);
+          instance.state.setState({ formTarget: null, mode: "create" });
         }
       },
     );
@@ -179,17 +185,15 @@ await mountPanel({
 
     return {
       selected,
-      checked,
       mode,
+      editing,
       detailOpen,
       narrow,
       root,
       formProj,
       formBusy,
       t,
-      newRecord,
       onUserSelect,
-      clearChecked,
       openEdit,
       cancelEdit,
       saveForm,

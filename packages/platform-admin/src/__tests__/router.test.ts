@@ -6,7 +6,7 @@ import { createMemoryHistory, createRouter } from "vue-router";
 import { managerDestination } from "../legacy-manager";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { availableGroups, availablePages, openAccess, type PlatformAccess, type PlatformNavigation } from "../navigation";
-import { formerParentRoutes, ossPlatformPages, pageRoutes, platformPages, sharedPageRoutes } from "../pages";
+import { formerParentRoutes, ossPlatformPages, pageRoutes, sharedPageRoutes } from "../pages";
 
 /** The enterprise edition's licence page, as it declares it: the landing of a failed licence check. */
 const licence = {
@@ -20,7 +20,6 @@ const licence = {
 const navigation: PlatformNavigation = {
   groups: [
     { key: "ontology", titleKey: "nav.ontology" },
-    { key: "knowledge", titleKey: "nav.knowledge" },
     { key: "platform", titleKey: "nav.platform" },
   ],
   pages: [
@@ -28,14 +27,13 @@ const navigation: PlatformNavigation = {
     { path: "/objects", titleKey: "o", permissions: ["ontology-modeling"], group: "ontology", ownHeader: true },
     { path: "/data", titleKey: "d", permissions: ["data-browser"], group: "ontology", ownHeader: true },
     { path: "/permissions", titleKey: "p", permissions: ["user-management", "role-management"], group: "platform" },
-    platformPages.userFeedback,
     ...ossPlatformPages,
     licence,
   ],
 };
 
 const page = defineComponent({ render: () => null });
-const adminPages = navigation.pages.filter(({ path }) => path.startsWith("/settings/") || path === "/permissions" || path === platformPages.userFeedback.path);
+const adminPages = navigation.pages.filter(({ path }) => path.startsWith("/settings/") || path === "/permissions");
 const components = Object.fromEntries(adminPages.map(({ path }) => [path, async () => page]));
 // The host's routes: a frame route without a path of its own holding Manager-style pages, plus the platform pages.
 const routes: RouteRecordRaw[] = [
@@ -100,19 +98,6 @@ describe("one navigation filtered by permission codes", () => {
 });
 
 describe("the service router", () => {
-  it("separates feedback from audit navigation and direct URLs", async () => {
-    const feedback = access(["user-feedback"]);
-    const audit = access(["audit-logs"]);
-    expect(availablePages(navigation, feedback).map(({ path }) => path)).toEqual(["/governance/feedback"]);
-    expect(availableGroups(navigation, feedback).map(({ key }) => key)).toEqual(["knowledge"]);
-    expect(availablePages(navigation, audit).map(({ path }) => path)).toEqual(["/settings/records/audit-log"]);
-    expect(await land("/governance/feedback", feedback)).toBe("/governance/feedback");
-    expect(await land("/settings/records/audit-log", feedback)).toBe("/governance/feedback");
-    expect(await land("/governance/feedback", audit)).toBe("/settings/records/audit-log");
-    expect(await land("/governance/feedback", openAccess)).toBe("/governance/feedback");
-    expect(await land("/settings/records/audit-log", openAccess)).toBe("/settings/records/audit-log");
-  });
-
   it("waits for the permissions before deciding and enters a granted page, its detail pages included", async () => {
     const account = access(["audit-logs", "ontology-modeling"]);
     expect(await land("/settings/records/audit-log", account)).toBe("/settings/records/audit-log");

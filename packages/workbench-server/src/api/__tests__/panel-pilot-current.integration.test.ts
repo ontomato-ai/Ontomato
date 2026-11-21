@@ -29,6 +29,7 @@ import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/
 import { ensureAgentExecutionSchema } from "../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
 import { HttpError } from "../../utils/errors";
 import { ensureAssistantDefaultPromptSchema } from "../../infrastructure/postgres-migrations/20261105-assistant-default-prompts/schema";
+import { ensureAssistantPresetUpgradesSchema } from "../../infrastructure/postgres-migrations/20261121-assistant-preset-upgrades/schema";
 
 const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "", allowAgentReads: true }));
 vi.mock("../../infrastructure/postgres", () => ({
@@ -152,6 +153,7 @@ beforeAll(async () => {
   await ensureProductPanelsSchema(state.pool);
   await ensureAssistantSchema(state.pool);
   await ensureAssistantDefaultPromptSchema(state.pool);
+  await ensureAssistantPresetUpgradesSchema(state.pool);
   await ensureAgentExecutionSchema(state.pool);
   await state.pool.query(
     `INSERT INTO "${state.schema}".assistant_agents (id,domain_id,kind,name,description,system_prompt,enabled)

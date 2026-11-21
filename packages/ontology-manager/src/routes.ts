@@ -1,11 +1,10 @@
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { AgentModelsPage, ontologyAgentModelPages, ontologyAgentModelSource } from "@ontomato/platform-shell";
-import { defineAsyncComponent, defineComponent, h, ref, type Component, type PropType } from "vue";
+import { defineAsyncComponent, defineComponent, h, ref, type PropType } from "vue";
 import { useRoute, useRouter, type RouteRecordRaw } from "vue-router";
 import type { ObjectReference } from "@ontomato/contracts/object-views";
 import { useManagerClient, useManagerCounts } from "./context";
 import ManagerFrame from "./ManagerFrame.vue";
-import BusinessKnowledge from "./components/BusinessKnowledge.vue";
 import OntologyAssetCatalog from "./components/OntologyAssetCatalog.vue";
 import OntologyModelCatalog from "./components/OntologyModelCatalog.vue";
 import OntologyObjectCreateDialog from "./components/OntologyObjectCreateDialog.vue";
@@ -229,60 +228,6 @@ const OntologyModelsPage = defineComponent({
   },
 });
 
-/** The draft an address names: the originating run and the draft's path inside it, when all three are there. */
-function draftOf(query: Record<string, unknown>) {
-  const sessionId = query.draftSessionId, runId = query.draftRunId, path = query.draftPath;
-  return typeof sessionId === "string" && typeof runId === "string" && typeof path === "string"
-    ? { sessionId, runId, path }
-    : null;
-}
-
-/**
- * Business knowledge, and the draft an agent wrote for it: a page link carries the originating run and the draft's path
- * (`draftSessionId/draftRunId/draftPath`), and the page reads the draft through that run's own artifacts. A saved draft
- * leaves the address, so a reload does not fill it again.
- */
-const KnowledgePage = defineComponent({
-  name: "ManagerKnowledgePage",
-  setup() {
-    const router = useRouter();
-    const route = useRoute();
-    return () =>
-      h("section", { class: "knowledge-surface" }, [
-        h(BusinessKnowledge, {
-          pageDraft: draftOf(route.query),
-          // The saved draft's parameters leave the address, so a reload does not fill the form again.
-          onDraftApplied: () => {
-            const { draftSessionId: _session, draftRunId: _run, draftPath: _path, ...query } = route.query;
-            void router.replace({ query });
-          },
-          // The governance conversation is the agent platform's page: this page only names the agent it maps to.
-          onGovernance: (agentId: string) =>
-            void router.push({ path: routes.chat.path, query: { agentId } }),
-        }),
-      ]);
-  },
-});
-
-/**
- * The knowledge governance app's pages that another package ships. The feedback records belong to the platform's pages
- * (they read the workbench's records through the platform host), so the edition that assembles both registers the
- * screen here instead of this package importing another application's module (DESIGN.md "Applications and shells").
- */
-const governanceScreens: { feedback?: Component } = {};
-
-/** Registers a page of the governance application the edition supplies; called once, before the routes mount. */
-export function registerGovernanceScreen(id: "feedback", screen: Component) {
-  governanceScreens[id] = screen;
-}
-
-
-/** The feedback records: a page of this application, its screen supplied by the edition that holds both. */
-const FeedbackPage = defineComponent({
-  name: "ManagerGovernanceFeedbackPage",
-  setup: () => () => h(governanceScreens.feedback!),
-});
-
 const stringParam = (name: string) => (route: { params: Record<string, unknown> }) => {
   const value = route.params[name];
   return { [name]: typeof value === "string" ? value : "" };
@@ -339,37 +284,15 @@ export function managerRoutes(): RouteRecordRaw[] {
         { ...routes.workflows, component: WorkflowPage, meta: { page: managerPaths.workflows } },
         { ...routes.triggers, component: TriggerPage, meta: { page: managerPaths.triggers } },
         { ...routes.modeling, component: VisualModelingPage, meta: { page: managerPaths.visualModeling } },
-        { ...routes.knowledge, component: KnowledgePage, meta: { page: managerPaths.knowledge } },
         { ...routes.ontologyModels, component: OntologyModelsPage, meta: { page: routes.ontologyModels.path } },
       ],
     },
   ];
 }
 
-/**
- * The Manager pages that fill the window, outside the service layout and its sidebar: one governance record's report,
- * entered from the task or conversation that produced it and left through its back link. It is still a page of the
- * business knowledge entry (`meta.page`), so the same permission opens it. The feedback records and business knowledge
- * open at their own addresses, so a link to either lands on that page.
- */
+/** Manager routes that redirect old standalone paths. */
 export function managerStandaloneRoutes(): RouteRecordRaw[] {
   return [
-    {path:'/ontology/models',redirect:{name:routes.ontologyModels.name}},
-    {
-      path: routes.governanceKnowledge.path,
-      meta: { service: true },
-      component: ManagerFrame,
-      children: [
-        { ...routes.governanceKnowledge, component: KnowledgePage, meta: { page: managerPaths.knowledge } },
-      ],
-    },
-    {
-      path: routes.feedback.path,
-      meta: { service: true },
-      component: ManagerFrame,
-      children: [
-        { ...routes.feedback, component: FeedbackPage, meta: { page: routes.feedback.path } },
-      ],
-    },
+    { path: "/ontology/models", redirect: { name: routes.ontologyModels.name } },
   ];
 }

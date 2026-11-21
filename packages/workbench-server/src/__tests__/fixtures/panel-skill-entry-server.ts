@@ -26,6 +26,7 @@ import type { WorkbenchIdentity } from "../../identity/types";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { ensureOpsDiagnosisSchema } from "../../infrastructure/postgres-migrations/20261029-ops-diagnosis/schema";
 import { ensureAssistantDefaultPromptSchema } from "../../infrastructure/postgres-migrations/20261105-assistant-default-prompts/schema";
+import { ensureAssistantPresetUpgradesSchema } from "../../infrastructure/postgres-migrations/20261121-assistant-preset-upgrades/schema";
 import { ensureWorkspacesSchema } from "../../infrastructure/postgres-migrations/20261109-workspaces/schema";
 import { ensureAgentExecutionSchema } from "../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
@@ -95,6 +96,7 @@ export async function startPanelSkillEntryServer(options: {
   const pool = store.pool;
   await ensureAssistantSchema(pool);
   await ensureAssistantDefaultPromptSchema(pool);
+  await ensureAssistantPresetUpgradesSchema(pool);
   await ensureAgentExecutionSchema(pool);
   await ensureOpsDiagnosisSchema(pool);
   await ensureWorkspacesSchema(pool);
