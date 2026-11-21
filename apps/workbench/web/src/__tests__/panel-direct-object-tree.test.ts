@@ -26,21 +26,23 @@ const tree: DirectProjection = {
   data: { files: { source: { object: { input: "skill" } }, read: "files", params: {} } },
 };
 const file = (path: string) => ({ primaryKey: path, label: path, fields: { size: "12" } });
+/** Each skill's package, by the skill's key. */
+const packages: Record<string, string[]> = { "sk-1": ["SKILL.md", "references/a.md", "references/b.md"], "sk-2": ["scripts/client.mjs", "SKILL.md"] };
 
-function mount(config: Record<string, RuntimeJsonValue>) {
+function mount(config: Record<string, RuntimeJsonValue>, initial: Record<string, RuntimeJsonValue> = {}) {
   const reads: PanelMemberReadRequest[] = [];
   const instance = createDirectPanelInstance(definePanel({
-    state: { file: { type: { kind: "scalar", type: "string" } } },
-    members: { tree: { target: { projectionId: tree.id }, inputs: { skill: { literal: skill } }, outputs: { selected: { state: "file" } } } },
+    state: { skill: { type: { kind: "object", objectType: SKILL } }, file: { type: { kind: "scalar", type: "string" } } },
+    members: { tree: { target: { projectionId: tree.id }, inputs: { skill: { state: "skill" } }, outputs: { selected: { state: "file" } } } },
     events: {},
   }), {
-    pageKey: "p", url: () => "/p", label: () => "P", initial: {},
+    pageKey: "p", url: () => "/p", label: () => "P", initial: { skill, ...initial },
     text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
     readProjection: async () => ({ ...tree, config }),
     read: async (request) => {
       reads.push(request);
       return request.operations ? { status: "ready", value: {} as never }
-        : { status: "ready", value: [file("SKILL.md"), file("references/a.md"), file("references/b.md")] as never };
+        : { status: "ready", value: packages[(request.inputs.skill as { primaryKey: string }).primaryKey]!.map(file) as never };
     },
   });
   const element = document.createElement("div");
@@ -71,4 +73,26 @@ it("selects the first file in tree order when asked to and nothing is selected",
   const { instance } = mount({ fallbackToFirst: true });
   await vi.waitFor(() => expect(instance.state.values.value.file).not.toBeNull());
   expect(["SKILL.md", "references/a.md"]).toContain(instance.state.values.value.file);
+});
+
+it("falls to the new package's first file when another skill is chosen and its package lacks the file selected", async () => {
+  const { instance } = mount({ fallbackToFirst: true }, { file: "references/a.md" });
+  await vi.waitFor(() => expect(instance.state.values.value.file).toBe("references/a.md"));
+  instance.state.set("skill", { className: SKILL, primaryKey: "sk-2" });
+  // The first in tree order, folders first.
+  await vi.waitFor(() => expect(instance.state.values.value.file).toBe("scripts/client.mjs"));
+});
+
+it("keeps the file selected when the new package has it too, and clears it when there is nothing to fall to", async () => {
+  const kept = mount({ fallbackToFirst: true }, { file: "SKILL.md" });
+  await vi.waitFor(() => expect(kept.reads.filter((read) => read.dataName)).toHaveLength(1));
+  kept.instance.state.set("skill", { className: SKILL, primaryKey: "sk-2" });
+  await vi.waitFor(() => expect(kept.reads.filter((read) => read.dataName)).toHaveLength(2));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(kept.instance.state.values.value.file).toBe("SKILL.md");
+
+  const cleared = mount({}, { file: "references/a.md" });
+  await vi.waitFor(() => expect(cleared.reads.filter((read) => read.dataName)).toHaveLength(1));
+  cleared.instance.state.set("skill", { className: SKILL, primaryKey: "sk-2" });
+  await vi.waitFor(() => expect(cleared.instance.state.values.value.file).toBeNull());
 });
