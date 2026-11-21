@@ -3,7 +3,7 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { panelUsePath } from "@ontomato/contracts/panel-host";
 import { applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
 import type { AppPartition } from "./partition";
-export type NativeLayout = Pick<AppPartition, "sections" | "foot" | "frame" | "home" | "homePage" | "open" | "descriptionKey">;
+export type NativeLayout = Pick<AppPartition, "sections" | "foot" | "frame" | "home" | "homePage" | "entryHome" | "open" | "descriptionKey">;
 const layouts: readonly (NativeLayout & { renderer: string })[] = [
   { renderer: "personal-workspace", sections: [] },
   // The platform's home draws its own page: no column, no header of the shell's.
@@ -27,8 +27,6 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
           managerPaths.relations,
           managerPaths.visualModeling,
           managerPaths.knowledge,
-          // User feedback sits with the business knowledge it was given on (big main's ruling, 2026-11-21).
-          "/ontology/feedback",
         ],
       },
       {
@@ -80,6 +78,8 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
   },
   {
     renderer: "operations",
+    // A reader with user feedback alone opens on it; it is an entry with no menu name, so the menu does not list it.
+    entryHome: platformRoutes.feedback.path,
     sections: [
       {
         key: "operations:pages",
@@ -150,7 +150,9 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
       ...nativeLayouts[app.entry.renderer!], ...renderers[app.entry.renderer!],
       sections: renderers[app.entry.renderer!]?.sections ?? nativeLayouts[app.entry.renderer!]?.sections ?? [],
     };
-    return { ...layout, entries, id: app.id, label: app.names[locale] ?? app.names.en!, description: app.descriptions[locale] ?? ("descriptionKey" in layout && layout.descriptionKey ? undefined : app.descriptions.en ?? null), icon: app.icon, rail: app.rail, category: app.category,
+    const entryHome = layout.entryHome && app.panelUses?.some(use => panelUsePath(use.path) === layout.entryHome)
+      ? layout.entryHome : undefined;
+    return { ...layout, entryHome, entries, id: app.id, label: app.names[locale] ?? app.names.en!, description: app.descriptions[locale] ?? ("descriptionKey" in layout && layout.descriptionKey ? undefined : app.descriptions.en ?? null), icon: app.icon, rail: app.rail, category: app.category,
       built: (app.kind === "hosted" || app.kind === "product") && (!!app.releaseId || panels),
       prefix: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?`/products/${app.id}`:app.entry.path,
       home: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?app.entry.path:app.entry.home ?? layout.home };
