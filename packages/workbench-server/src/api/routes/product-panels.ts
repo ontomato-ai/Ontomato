@@ -187,7 +187,8 @@ productProjectionsRouter.put("/:id", wrap(async (req, res) => {
 export const productPanelsInternalRouter = Router();
 productPanelsInternalRouter.use(platformService);
 productPanelsInternalRouter.post("/validate-references", wrap(async (req, res) => {
-  await validateApplicationPanelReferences(applicationPanelReferencesRequestSchema.parse(req.body));
+  const request = parseRegistration(applicationPanelReferencesRequestSchema, req.body, "Application registration");
+  await validateApplicationPanelReferences(request);
   res.sendStatus(204);
 }));
 

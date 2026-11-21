@@ -9,6 +9,7 @@ import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { appsSdkComponentCatalogSchema } from "@ontomato/contracts/apps-sdk";
+import { domainApplicationIconKeys } from "@ontomato/contracts/application-icons";
 import {
   APPLICATION_PANEL_REFERENCES_PATH, productPanelResponseSchema, productProjectionResponseSchema,
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
@@ -191,6 +192,26 @@ beforeAll(async () => {
     const started = app.listen(0, "127.0.0.1", () => resolve(started));
   });
   state.base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+});
+
+it("reports the allowed icons when the domain application registration preflight rejects a choice", async () => {
+  const request = { domainId: "pilot", uses: [], delivery: { panels: [], projections: [] } };
+  const validate = (body: object) => fetch(state.base + APPLICATION_PANEL_REFERENCES_PATH, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Ontomato-Query-Service-Token": "fixture-service" },
+    body: JSON.stringify(body),
+  });
+  for (const icon of ["settings", "not-an-icon"]) {
+    const response = await validate({ ...request, icon });
+    expect(response.status).toBe(400);
+    const { error } = await response.json();
+    expect(error.code).toBe("INVALID_REQUEST");
+    expect(error.message).toContain("field 'icon'");
+    expect(error.message).toContain(`Icon '${icon}'`);
+    expect(error.message).toContain(`Choose one of ${domainApplicationIconKeys.join(", ")}`);
+  }
+  expect((await validate({ ...request, icon: domainApplicationIconKeys[0] })).status).toBe(204);
+  expect((await validate(request)).status).toBe(204);
 });
 
 it("refuses a platform panel whose entry names an opening sentence one of its languages lacks", async () => {
