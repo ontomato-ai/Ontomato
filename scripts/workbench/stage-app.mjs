@@ -14,7 +14,6 @@ import {
 import { createRequire } from "node:module";
 import { join, posix, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { prepareBuiltinPanels } from "./builtin-panels.mjs";
 import { output } from "../build-support.mjs";
 import { productionClosure } from "./production-graph.mjs";
 import { bindingIndex, linkPlan, writeStage } from "./runtime-layout.mjs";
@@ -142,6 +141,7 @@ async function main() {
   process.chdir(root);
   const members = projects(root);
   if (record.web !== false) {
+    const { prepareBuiltinPanels } = await import("./builtin-panels.mjs");
     const shared = members.find(member => member.name === "@ontomato/workbench-server");
     const sharedRoot = resolve(shared.absolute, "../..");
     const javaApplications = JSON.parse(readFileSync(new URL("java-applications.json", import.meta.url), "utf8"));
