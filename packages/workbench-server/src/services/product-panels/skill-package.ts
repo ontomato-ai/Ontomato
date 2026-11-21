@@ -5,9 +5,8 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { type RuntimeSkillRef, type StandardSkillFrontmatter } from "@ontomato/contracts/agent-runtime-skills";
 import { panelManifestSchema, panelOperationId } from "@ontomato/contracts/panel-manifest";
 import { PAGE_DRAFT_QUERY_KEYS } from "@ontomato/contracts/page-draft";
-import { panelClientReads } from "@ontomato/contracts/panel-client-requests";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
-import { directReadDeclaration, projectionBindingKeys } from "@ontomato/contracts/panel-projection";
+import { directReadDeclaration } from "@ontomato/contracts/panel-projection";
 import { productPanelInputSchema, productProjectionInputSchema, type PanelSkillSource, type ProductPanelInput, type ProductProjectionInput } from "@ontomato/contracts/product-panels";
 import { SkillSourceRecordError, type ProtectedSkillOffering, type SkillSourceFailure } from "../../core/skills/providers";
 import { getDefaultLocale } from "../../i18n";
@@ -161,7 +160,7 @@ function describePanel(
     }));
     return [{
       text: `- ${member} — ${projection.name} (${projectionId}), ${projection.componentId}. ${projection.description} ${component.meaning} Inputs: ${JSON.stringify(declaration.inputs ?? {})}. Named data: ${JSON.stringify(data)}. Configuration: ${JSON.stringify(projection.config)}.`,
-      bindings: projectionBindingKeys(projection),
+      reads: Object.entries(data).map(([dataName, { read, result }]) => ({ member, dataName, read, result })),
       operations: boundProjectionOperations(projection).map(bound => {
         if (!bound.owner && bound.binding.operation.kind === "PlatformOperation") {
           const field = safeField(["operations", bound.name]);
@@ -184,7 +183,7 @@ function describePanel(
     projections,
     operations,
     forms: operations.filter(operation => operation.owner?.handler.kind === "form.save"),
-    reads: describeReads(new Set(projections.flatMap(projection => projection.bindings))),
+    reads: describeReads(projections.flatMap(projection => projection.reads)),
   };
 }
 
@@ -230,7 +229,7 @@ function describeSkill({ name, description, content, state, events, projections,
 
 function describeOperation({ id, label, binding, owner, draft }: OperationDescription): string {
   const target = JSON.stringify(binding.target ?? null);
-  if (!owner) return `- ${label} (${id}), Action ${binding.operation.id}, target ${target}. Read the admitted description for the actual selected object with operations:true on /api/product-panels/read before invoking it.`;
+  if (!owner) return `- ${label} (${id}), Action ${binding.operation.id}, target ${target}. Read the admitted description for the actual selected object with operations:true on \`$ONTOMATO_PANEL_OPERATIONS_URL/read\` before invoking it.`;
   const { handler, declaration } = owner;
   const summary = `- ${label} (${id}), kind ${handler.kind}, handlerRef ${handler.handlerRef}, target ${target}.`;
   if (handler.kind !== "form.save") {
@@ -241,31 +240,15 @@ function describeOperation({ id, label, binding, owner, draft }: OperationDescri
   return `${summary} Call target schema ${schema(handler.targetSchema)}. Call input schema ${schema(handler.inputSchema)}. ${handler.formInstructions}${created}`;
 }
 
-function describeReads(bindings: ReadonlySet<string>): string {
-  const requests = new Map<string, { read: ReturnType<typeof panelClientReads>[number]; owners: string[] }>();
-  for (const binding of bindings) {
-    for (const read of panelClientReads(binding)) {
-      const key = `${read.method} ${read.service} ${read.template}`;
-      const registered = requests.get(key);
-      if (registered) registered.owners.push(binding);
-      else requests.set(key, { read, owners: [binding] });
-    }
-  }
-  const endpoints = [...requests.values()].map(({ read: { method, service, template, instructions }, owners }) => {
-    const url = service === "" ? "ONTOMATO_WORKBENCH_URL" : "ONTOMATO_ONTOLOGY_URL";
-    const path = service === "" ? "/api" + template : template;
-    const resources = verbs.format(owners.map(binding => `\`${binding}\``));
-    return `- \`${method} ${path}\` on \`${url}\` for ${resources}.${instructions ? ` ${instructions}` : ""}`;
-  });
-  if (!endpoints.length) return "";
+function describeReads(reads: readonly { member: string; dataName: string; read: string; result: string }[]): string {
+  if (!reads.length) return "";
   return [
     "### Read current data",
-    ...endpoints,
-    "Append each endpoint path to the indicated base URL. Choose authentication in this order:",
-    "- If `ONTOMATO_TK` is set, send `tk: $ONTOMATO_TK`.",
-    "- Otherwise, if `ONTOMATO_API_KEY` is set, send `X-API-Key: $ONTOMATO_API_KEY`.",
-    "- If neither is set and the base URL ends in `/api/assistant/executions/<runId>/ontology` or `/api/assistant/executions/<runId>/workbench`, send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. The host forwards the read with this run's executor credential.",
-    "- An anonymous direct Java URL needs no authentication header. Never send callback headers to a direct Java URL, even when a callback is present for panel operations.",
+    "POST to `$ONTOMATO_PANEL_OPERATIONS_URL/read` with `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. This calls the same named read as the panel.",
+    "Send JSON `{source:{kind:\"registered\",applicationId,useId},memberPath:[{member}],dataName,inputs}`. Use the registered application and use from the page context. Supply the projection's declared inputs from that context or the requested selection. Use an empty object when no inputs are needed.",
+    "A ready result carries the current owner data in `value`. Respect forbidden and error results.",
+    ...reads.map(({ member, dataName, read, result }) =>
+      `- \`${member}.${dataName}\` — ${read} returns \`${result}\`.`),
   ].join("\n");
 }
 
