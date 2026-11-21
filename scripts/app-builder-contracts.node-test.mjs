@@ -186,6 +186,8 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     };
     export const platformTypeTableResponseSchema = { parse };
     export const panelAuthoringManifestSchema = { parse, safeParse: ok };
+    export const panelAuthoringMemberSchema = { safeParse: member => member.sourceCard && member.id
+      ? invalid([{ message: "MetricChart takes its projection definition from the source card" }]) : ok(member) };
     export const BUILTIN_PRODUCT_ID_PREFIX = "builtin-product-";
     export const domainProductIdSchema = { safeParse: id => id.startsWith(BUILTIN_PRODUCT_ID_PREFIX)
       ? invalid([{ message: "IDs beginning with builtin-product- are reserved for platform products" }]) : ok(id) };
@@ -408,6 +410,11 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await writeFile(join(offlineSdk, "sdk.json"), JSON.stringify({ version: sdkVersion, check: "check.mjs", components: "components.json" }));
     await writeFile(join(offlineSdk, "check.mjs"), checkModule);
     await writeFile(join(offlineSdk, "components.json"), JSON.stringify(catalogue));
+    const oldChecker = checkModule.replace("export const domainProductIdSchema", "const domainProductIdSchema");
+    await writeFile(join(offlineSdk, "check.mjs"), oldChecker);
+    assert.deepEqual(JSON.parse((await run("panel", "check", directory, "--sdk-dir", offlineSdk)).stdout).unchecked,
+      [{ kind: "projection", id: "tasks" }]);
+    await writeFile(join(offlineSdk, "check.mjs"), checkModule);
     const builtin = join(directory, "builtin");
     await mkdir(builtin);
     const builtinFile = join(builtin, "panel.json");
@@ -432,6 +439,14 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     const unchanged = JSON.parse((await run("panel", "check", builtin, "--builtin", "--sdk-dir", offlineSdk)).stdout);
     assert.deepEqual(unchanged.assigned, {});
     assert.equal(JSON.parse(await readFile(builtinFile, "utf8")).manifest.members.renamed.id, builtinId);
+    const chart = JSON.stringify({ manifest: { ...builtinManifest, members: {
+      chart: { component: "MetricChart", sourceCard: { dashboardId: "domain-dashboard", cardId: "card" } },
+    } } });
+    await writeFile(builtinFile, chart);
+    await assert.rejects(run("panel", "check", builtin, "--builtin", "--sdk-dir", offlineSdk), error =>
+      error.stderr.includes("manifest.members.chart.id") && error.stderr.includes("takes its projection definition from the source card"));
+    assert.equal(await readFile(builtinFile, "utf8"), chart);
+    await writeFile(builtinFile, JSON.stringify(published));
     await assert.rejects(run("panel", "check", builtin, "--sdk-dir", offlineSdk), error =>
       error.stderr.includes("builtin-product-catalogue") && error.stderr.includes("reserved for platform products"));
     const trialMaterial = join(builtin, "trial.json");

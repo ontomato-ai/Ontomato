@@ -19,8 +19,9 @@ export function requireApplicationId(id) {
 }
 
 export function requireDomainProductId(label, id, checks) {
-  const result = checks.domainProductIdSchema.safeParse(id);
-  if (!result.success) throw new Error(`${label}: ${result.error.issues[0].message}`);
+  // Older installed SDK releases predate platform-owned records.
+  const result = checks.domainProductIdSchema?.safeParse(id);
+  if (result?.success === false) throw new Error(`${label}: ${result.error.issues[0].message}`);
 }
 
 function requireMode(mode) {

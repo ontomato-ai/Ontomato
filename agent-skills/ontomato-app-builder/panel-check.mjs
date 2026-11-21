@@ -22,6 +22,7 @@ function writePanelDescriptor(file, document, source) {
 }
 
 export async function checkBuiltinPanelSource(directory, checks, { assignIds = false } = {}) {
+  if (!checks.builtinProductIdSchema) throw new Error("Use an SDK release that supports platform product IDs");
   const registrationFile = resolve(directory, "registration.json");
   const { panels } = await readJson(registrationFile);
   if (!Array.isArray(panels) || panels.length !== 1) throw new Error(`${registrationFile}: expected exactly one platform panel`);
@@ -42,6 +43,8 @@ export async function checkBuiltinPanelSource(directory, checks, { assignIds = f
     if (!("component" in declaration)) continue;
     if (declaration.id === undefined && assignIds) {
       const id = checks.BUILTIN_PRODUCT_ID_PREFIX + randomUUID();
+      const withId = checks.panelAuthoringMemberSchema.safeParse({ ...declaration, id });
+      if (!withId.success) throw new Error(`${file}: manifest.members.${member}.id: ${withId.error.issues[0].message}`);
       document.manifest.members[member].id = id;
       assigned.set(member, id);
     } else {
@@ -176,7 +179,10 @@ async function readPanelWorkspace(directory, checks, materialPath, loadAuthoring
   const path = materialPath ?? (files.includes("registration.json") ? resolve(directory, "registration.json") : undefined);
   const material = path === undefined ? {} : await readJson(path);
   const panel = material.panels?.length === 1 ? material.panels[0] : undefined;
-  if (panel) requireDomainProductId(`${path}: panel ID ${panel.id ?? "(missing)"}`, panel.id, checks);
+  if (panel) {
+    if (typeof panel.id !== "string" || panel.id.length === 0) throw new Error(`${path}: panel ID is required`);
+    requireDomainProductId(`${path}: panel ID ${panel.id}`, panel.id, checks);
+  }
   return { material, panel, ...await workspaceDefinition(directory, files, checks, panel, loadAuthoring) };
 }
 
