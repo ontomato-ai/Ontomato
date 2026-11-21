@@ -1,0 +1,278 @@
+<style>
+  [v-cloak] { display: none; }
+  .projections { display: flex; flex-direction: column; gap: 12px; min-height: 0; padding-block-end: 5rem; }
+  .projections-head { display: flex; gap: 12px; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
+  .projections-head h1 { margin: 0; font-size: var(--el-font-size-large); font-weight: var(--font-semibold, 600); }
+  .projections-head p { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: var(--el-font-size-small); }
+  .projections-head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .projections-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .projections-search { width: 240px; }
+  .projections-sort { width: 132px; }
+  .projections-count { margin-inline-start: auto; color: var(--el-text-color-secondary); font-size: var(--el-font-size-small); }
+  .projections-body { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+  @media (max-width: 62rem) { .projections-body { grid-template-columns: minmax(0, 1fr); } }
+  .projections-list { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .projections-pager { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+  .projections-pager .page-size { width: 104px; }
+  .cell-name { font-weight: var(--font-semibold, 600); }
+  .cell-desc { color: var(--el-text-color-secondary); font-size: var(--el-font-size-extra-small); line-height: 1.35; }
+  .projections-detail { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .detail-view { display: flex; flex-direction: column; gap: 12px; }
+  .detail-head { display: flex; gap: 12px; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
+  .detail-head h2 { margin: 0; font-size: var(--el-font-size-medium); }
+  .detail-desc { margin: 4px 0 0; color: var(--el-text-color-regular); font-size: var(--el-font-size-small); }
+  .detail-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .detail-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .detail-section { border-top: 1px solid var(--el-border-color-lighter); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .detail-section > h3 { margin: 0; font-size: var(--el-font-size-small); font-weight: var(--font-semibold, 600); }
+  .detail-section > h3 small { color: var(--el-text-color-secondary); font-weight: 400; margin-inline-start: 8px; font-size: var(--el-font-size-extra-small); }
+  .io { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+  .io h4 { margin: 0 0 4px; font-size: var(--el-font-size-extra-small); color: var(--el-text-color-secondary); font-weight: var(--font-semibold, 600); }
+  .io ul { margin: 0; padding-inline-start: 16px; font-size: var(--el-font-size-small); }
+  .io li span { color: var(--el-text-color-secondary); }
+  .list-link { padding: 0; height: auto; justify-content: flex-start; }
+  .hint { margin: 0; color: var(--el-text-color-secondary); font-size: var(--el-font-size-small); }
+  .grant-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .grant-row .principal-id { flex: 1 1 12rem; min-width: 8rem; }
+  .grant-row .verb { width: 104px; }
+  .grant-row .kind { width: 96px; }
+  .panel-list { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--el-font-size-small); }
+  .json { margin: 0; max-height: 16rem; overflow: auto; padding: 8px 10px; border: 1px solid var(--el-border-color-lighter);
+    border-radius: 4px; background: var(--el-fill-color-light); font-size: var(--el-font-size-extra-small); line-height: 1.5;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
+</style>
+<div id="app" v-cloak>
+  <section class="projections">
+    <header class="projections-head">
+      <div>
+        <h1>投影</h1>
+        <p>本域里我能使用的投影。选中一条，看它读什么、怎么配置、属主登记了哪些操作，以及哪些面板在用它。</p>
+      </div>
+      <div class="projections-head-actions">
+        <el-button type="primary" @click="startCreate">新建投影</el-button>
+        <el-button @click="refreshAll">刷新</el-button>
+      </div>
+    </header>
+
+    <div class="projections-toolbar">
+      <el-input v-model="searchDraft" class="projections-search" clearable placeholder="搜索名称或说明" />
+      <el-radio-group :model-value="scope" @change="setScope">
+        <el-radio-button value="all" label="all">全部</el-radio-button>
+        <el-radio-button value="mine" label="mine">我的</el-radio-button>
+        <el-radio-button value="shared" label="shared">共享</el-radio-button>
+      </el-radio-group>
+      <el-select :model-value="sort" class="projections-sort" @change="setSort">
+        <el-option label="最近更新" value="updated" />
+        <el-option label="名称" value="name" />
+      </el-select>
+      <span class="projections-count" role="status">{{ listStatusText }}</span>
+    </div>
+
+    <el-alert v-if="notice" :title="notice.text" :type="notice.type || notice.tone" show-icon :closable="true"
+      @close="notice = null" />
+
+    <div class="projections-body">
+      <div class="projections-list">
+        <el-table :data="rows" size="small" highlight-current-row border :current-row-key="selectedKey" row-key="id"
+          @row-click="choose" empty-text="没有符合条件的投影">
+          <el-table-column label="名称" min-width="180">
+            <template #default="scope">
+              <div class="cell-name">{{ scope.row.name }}</div>
+              <div class="cell-desc" v-if="scope.row.description">{{ scope.row.description }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="所用组件" width="126">
+            <template #default="scope">{{ componentLabel(scope.row.componentId) }}</template>
+          </el-table-column>
+          <el-table-column label="所属人" width="88" prop="ownerId" />
+          <el-table-column label="共享范围" width="100">
+            <template #default="scope">{{ scopeLabel(scope.row.visibility) }}</template>
+          </el-table-column>
+          <el-table-column label="更新时间" width="132">
+            <template #default="scope">{{ formatTime(scope.row.updatedAt) }}</template>
+          </el-table-column>
+        </el-table>
+        <div class="projections-pager">
+          <span class="hint">第 {{ pageNumber }} 页</span>
+          <el-select :model-value="pageSize" class="page-size" size="small" @change="setPageSize">
+            <el-option label="10 条/页" :value="10" />
+            <el-option label="20 条/页" :value="20" />
+            <el-option label="50 条/页" :value="50" />
+          </el-select>
+          <el-button size="small" :disabled="pageNumber <= 1" @click="previousPage">上一页</el-button>
+          <el-button size="small" :disabled="!nextCursor" @click="nextPage">下一页</el-button>
+        </div>
+      </div>
+
+      <div class="projections-detail">
+        <section v-show="mode === 'edit'" class="detail-section">
+          <h3>{{ selected ? '编辑投影' : '新建投影' }}<small>只改这次提交的字段</small></h3>
+          <projection slot="form" @saved="onSaved" @discarded="onDiscarded"></projection>
+        </section>
+
+        <div v-if="mode !== 'edit'" class="detail-view">
+          <el-empty v-if="!selected" description="请先选择一条投影，或新建一条" />
+
+          <template v-else-if="record.status === 'ready'">
+            <header class="detail-head">
+              <div>
+                <h2>{{ record.value.name }}</h2>
+                <p class="detail-desc" v-if="record.value.description">{{ record.value.description }}</p>
+                <div class="detail-tags">
+                  <el-tag size="small" type="info">{{ componentLabel(record.value.componentId) }}</el-tag>
+                  <el-tag size="small">{{ scopeLabel(record.value.visibility) }}</el-tag>
+                  <el-tag size="small" :type="record.value.editable ? 'success' : 'info'">
+                    {{ record.value.editable ? '可编辑' : '只读' }}
+                  </el-tag>
+                  <el-tag v-if="isChart(record.value)" size="small" type="warning">图投影</el-tag>
+                  <el-tag size="small" type="info">修订 {{ record.value.revision }}</el-tag>
+                </div>
+              </div>
+              <div class="detail-actions">
+                <el-button size="small" @click="openClass">查看所属类</el-button>
+                <el-button size="small" :disabled="!record.value.editable" @click="startEdit">编辑</el-button>
+                <el-button size="small" :disabled="!record.value.editable || isChart(record.value)" @click="openCopy">
+                  复制
+                </el-button>
+                <el-button size="small" type="danger" plain :disabled="!record.value.editable" @click="openDelete">
+                  删除
+                </el-button>
+              </div>
+            </header>
+
+            <p class="hint" v-if="isChart(record.value)">
+              图投影由看板源卡登记，沿用原图的规则：不能复制、不能改绑组件与指标；编辑只改名称、说明与初始范围，删除在这里做。
+            </p>
+
+            <section class="detail-section">
+              <h3>原位预览</h3>
+              <projection slot="preview"></projection>
+            </section>
+
+            <section class="detail-section">
+              <h3>来处、读法</h3>
+              <el-table :data="dataRows" size="small" border empty-text="这条投影不读数据">
+                <el-table-column prop="name" label="数据" width="96" />
+                <el-table-column prop="source" label="来处" min-width="150" />
+                <el-table-column prop="read" label="读法" width="104" />
+                <el-table-column prop="params" label="参数从哪来" min-width="160" />
+              </el-table>
+            </section>
+
+            <section class="detail-section">
+              <h3>配置</h3>
+              <pre class="json">{{ jsonText(record.value.config) }}</pre>
+            </section>
+
+            <section class="detail-section">
+              <h3>输入和输出</h3>
+              <div class="io">
+                <div>
+                  <h4>输入</h4>
+                  <ul v-if="inputRows.length">
+                    <li v-for="row in inputRows" :key="row.name">{{ row.name }} <span>{{ row.text }}</span></li>
+                  </ul>
+                  <p class="hint" v-else>没有输入</p>
+                </div>
+                <div>
+                  <h4>输出</h4>
+                  <ul v-if="outputRows.length">
+                    <li v-for="row in outputRows" :key="row.name">{{ row.name }} <span>{{ row.text }}</span></li>
+                  </ul>
+                  <p class="hint" v-else>没有输出</p>
+                </div>
+              </div>
+            </section>
+
+            <section class="detail-section">
+              <h3>属主登记的操作</h3>
+              <el-table :data="operationRows" size="small" border empty-text="这条投影不登记操作">
+                <el-table-column prop="name" label="名字" width="96" />
+                <el-table-column prop="operation" label="操作" min-width="180" />
+                <el-table-column prop="target" label="目标" min-width="120" />
+              </el-table>
+            </section>
+
+            <section class="detail-section">
+              <h3>使用与编辑授权<small>业务读写由属主按真实身份裁决</small></h3>
+              <div class="grant-row">
+                <el-select v-model="grantForm.principalKind" class="kind" size="small">
+                  <el-option label="成员" value="principal" />
+                  <el-option label="角色" value="role" />
+                </el-select>
+                <el-input v-model="grantForm.principalId" class="principal-id" size="small"
+                  :placeholder="grantForm.principalKind === 'role' ? '角色或成员 ID' : '成员 ID'" />
+                <el-select v-model="grantForm.verb" class="verb" size="small">
+                  <el-option label="使用" value="use" />
+                  <el-option label="编辑" value="edit" />
+                </el-select>
+                <el-button size="small" :disabled="!canGrant || !grantForm.principalId" @click="submitGrant(false)">授予</el-button>
+                <el-button size="small" :disabled="!canGrant || !grantForm.principalId" @click="submitGrant(true)">撤销</el-button>
+              </div>
+              <div class="grant-row">
+                <el-button size="small" :disabled="!canGrant" @click="submitShare(true)">开启域内共享</el-button>
+                <el-button size="small" :disabled="!canGrant" @click="submitShare(false)">关闭域内共享</el-button>
+                <span class="hint">授权按种类、ID 与动作直接提交；属主只回答成功或拒绝。</span>
+              </div>
+            </section>
+
+            <section class="detail-section">
+              <h3>被哪些面板使用<small>{{ usedByCountText }}</small></h3>
+              <ul class="panel-list" v-if="usedPanels.length">
+                <li v-for="panel in usedPanels" :key="panel.id">
+                  <el-button link class="list-link" @click="openPanel(panel.id)">{{ panel.name }}</el-button>
+                  <span class="hint"> · {{ panel.id }}</span>
+                </li>
+              </ul>
+              <p class="hint" v-else>没有面板在用它，删除不会被拦。</p>
+              <p class="hint" v-if="hiddenCount > 0">另有 {{ hiddenCount }} 个面板用它，你没有这些面板的使用授权。</p>
+            </section>
+          </template>
+
+          <el-alert v-else-if="record.status === 'loading'" type="info" :closable="false" title="正在读取这条投影…" />
+          <el-alert v-else-if="record.status === 'forbidden'" type="warning" :closable="false"
+            title="你没有这条投影的使用授权。" />
+          <el-alert v-else-if="record.status === 'error'" type="error" :closable="false" :title="record.message" />
+          <el-alert v-else-if="record.status === 'empty'" type="warning" :closable="false" title="这条投影已不可用。" />
+        </div>
+      </div>
+    </div>
+
+    <projection slot="list"></projection>
+    <projection slot="record"></projection>
+    <projection slot="usedBy"></projection>
+    <projection slot="copyOp"></projection>
+    <projection slot="deleteOp"></projection>
+    <projection slot="grantOp"></projection>
+    <projection slot="revokeOp"></projection>
+    <projection slot="shareOp"></projection>
+
+    <el-dialog v-model="copyDialog" title="复制投影" width="420px">
+      <el-form label-position="top">
+        <el-form-item label="新名称">
+          <el-input v-model="copyForm.name" />
+        </el-form-item>
+        <el-form-item label="新标识">
+          <el-input v-model="copyForm.id" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="copyDialog = false">取消</el-button>
+        <el-button type="primary" :disabled="!copyForm.name || !copyForm.id" @click="submitCopy">复制</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="deleteDialog" title="删除投影" width="460px">
+      <p v-if="current" class="hint">
+        删除「{{ current.name }}」？此操作不可撤销。
+      </p>
+      <p v-if="usedPanels.length || hiddenCount > 0" class="hint">
+        它正被 {{ usedPanels.length + hiddenCount }} 个面板使用<template v-if="usedPanels.length">（{{ usedPanels.map((panel) => panel.name).join('、') }}）</template>，属主会拒绝删除。
+      </p>
+      <template #footer>
+        <el-button @click="deleteDialog = false">取消</el-button>
+        <el-button type="danger" @click="submitDelete">删除</el-button>
+      </template>
+    </el-dialog>
+  </section>
+</div>

@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-sdk-components",
+      "input": {
+        "name": "基础组件",
+        "description": "当前 SDK 发行声明的基础组件只读目录：按名称和用途搜索，查看每个组件声明的含义、数据、配置、输入、输出和操作签名。"
+      }
+    }
+  ]
+}

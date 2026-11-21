@@ -26,8 +26,24 @@
       "zh-CN": "建模本体，管理指标、函数、动作、流程与技能"
     },
     "icon": "ontology",
-    "groups": [],
+    "groups": [{"key": "products","names": {"en": "Products","zh-CN": "产品层"},"sort": 0}],
     "permissions": [],
+    "panelUses": [
+      {
+        "id": "ontology-components",
+        "pageKey": "ontology-components",
+        "panelId": "builtin-product-sdk-components",
+        "path": "/ontology/components",
+        "access": {
+          "permissionCode": "ontology-modeling"
+        },
+        "names": {
+          "zh-CN": "基础组件",
+          "zh-TW": "基礎組件",
+          "en": "Base components"
+        }
+      }
+    ],
     "pageSkills": [{
       "permissionCode": "business-knowledge",
       "skill": {"namespace": {"kind": "provider", "provider": "ontology"}, "name": "knowledge-governance"},
@@ -52,6 +68,18 @@
       "id": "capability-map", "pageKey": "capability-map", "panelId": "builtin-product-capability-map",
       "path": "/ontology/assets/capability-map", "access": {"permissionCode": "action-management"},
       "names": {"en": "Capability map", "zh-CN": "能力图谱"}
+    }, {
+      "id": "use-ontology-projections", "pageKey": "ontology-projections", "panelId": "builtin-product-ontology-projections",
+      "path": "/ontology/projections", "access": {"permissionCode": "ontology-modeling"},
+      "names": {"en": "Projections","zh-CN": "投影"}, "groupKey": "products"
+    }, {
+      "id": "use-ontology-panels", "pageKey": "ontology-panels", "panelId": "builtin-product-ontology-panels",
+      "path": "/ontology/panels", "access": {"permissionCode": "ontology-modeling"},
+      "names": {"en": "Panels","zh-CN": "面板"}, "groupKey": "products"
+    }, {
+      "id": "use-ontology-applications", "pageKey": "ontology-applications", "panelId": "builtin-product-ontology-applications",
+      "path": "/ontology/applications", "access": {"permissionCode": "ontology-modeling"},
+      "names": {"en": "Applications","zh-CN": "应用"}, "groupKey": "products"
     }, {
       "id": "ontology-functions", "pageKey": "ontology-functions", "panelId": "builtin-product-ontology-functions",
       "path": "/ontology/assets/functions", "access": {"permissionCode": "ontology-modeling"},
