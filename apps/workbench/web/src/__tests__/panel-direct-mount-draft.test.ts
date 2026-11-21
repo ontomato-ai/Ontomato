@@ -9,7 +9,7 @@ import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import { mountDirectPanel } from "../../../../../packages/apps-sdk/src/panel/direct-mount";
 import { receivePanelDraft } from "../../../../../packages/apps-sdk/src/panel/draft";
-import { noOperations } from "./panel-frame";
+import { noOperations, directRun } from "./panel-frame";
 
 /*
  * A draft a directly run panel's owner refuses is said where it was meant to go: on its form, with the owner's reason at
@@ -52,11 +52,10 @@ it("says the owner's refusal of a draft on its form, and does not fail the panel
   const failed: unknown[] = [];
   const mount = mountDirectPanel({
     manifest,
-    run: {
+    run: directRun({
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => failed.push(reason),
-    },
+    }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({ projection: taskForm }) },
     use: { applicationId: "app-tasks", useId: "tasks" },
@@ -88,11 +87,10 @@ it("says on its form an owner's failure to check a draft's values, and does not 
   const failed: unknown[] = [];
   const mount = mountDirectPanel({
     manifest,
-    run: {
+    run: directRun({
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => failed.push(reason),
-    },
+    }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({ projection: taskForm }) },
     use: { applicationId: "app-tasks", useId: "tasks" },
@@ -134,11 +132,10 @@ it("opens the panel as it is when its draft cannot be read, and says why in the 
   const query = new URLSearchParams({ draftSessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", draftRunId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", draftPath });
   const mount = mountDirectPanel({
     manifest,
-    run: {
+    run: directRun({
       pageKey: "tasks", url: () => `/tasks?${query}`, label: () => "Tasks", initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
-      failed: (reason) => failed.push(reason), draftRefused: (text) => refused.push(text), draftOpened: () => {},
-    },
+      failed: (reason) => failed.push(reason), draftRefused: (text) => refused.push(text),
+    }),
     messages: {}, locale: ref("en"), defaultLocale: "en", translate: (key, params) => i18n.global.t(key, params ?? {}),
     requests: {
       request: async (path) => {

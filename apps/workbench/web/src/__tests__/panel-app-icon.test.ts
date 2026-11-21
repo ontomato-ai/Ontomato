@@ -4,7 +4,7 @@ import { createI18n } from "vue-i18n";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import { panelModuleFor, type DirectPanelMount } from "../../../../../packages/apps-sdk/src/direct";
-import { noOperations } from "./panel-frame";
+import { noOperations, directRun } from "./panel-frame";
 
 /*
  * An application's icon in a panel (2026-11-21 acceptance L-01): a panel names an application by its icon key, as the
@@ -28,11 +28,10 @@ it("draws the platform's application icon for a key from the panel's own module"
     template: `<p><component v-for="key in keys" :key="key" :is="appIcon(key)" :data-icon="key" :size="16"></component></p>`,
     install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
     manifest,
-    run: {
+    run: directRun({
       pageKey: "apps", url: () => "/apps", label: () => "Apps", initial: {},
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => { throw reason; },
-    },
+    }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({}) },
     use: { applicationId: "app-apps", useId: "apps" },

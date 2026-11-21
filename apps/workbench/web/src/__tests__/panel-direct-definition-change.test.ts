@@ -1,4 +1,4 @@
-import { noOperations } from "./panel-frame";
+import { noOperations, directRun } from "./panel-frame";
 import { afterEach, expect, it, vi } from "vitest";
 import { createApp, h, nextTick, ref } from "vue";
 import { createI18n } from "vue-i18n";
@@ -69,10 +69,9 @@ it("keeps the reader's unsaved input when the member's definition changes, and d
   };
   const mount = mountDirectPanel({
     manifest,
-    run: {
-      pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: task },
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {}, failed: (reason) => { throw reason; },
-    },
+    run: directRun({
+      pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: task }, failed: (reason) => { throw reason; },
+    }),
     requests, use: { applicationId: "app-tasks", useId: "tasks" }, messages: {}, locale: ref("en"), defaultLocale: "en",
     expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
     confirmOperation: async ({ intentId }) => ({ decision: "confirm", response: { kind: "dispatched", intentId, outcome: { kind: "success", data: {} } } }),
