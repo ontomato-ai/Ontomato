@@ -258,6 +258,9 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
         found = options.readProjection(memberProjectionId(direct, member)).then((projection) => {
           readRevisions.set(member, projection.revision);
           return projection;
+        }).catch((reason: unknown) => {
+          const message = reason instanceof Error ? reason.message : String(reason);
+          throw new Error(`Member '${member}': ${message}`, { cause: reason });
         });
         projections.set(member, found);
       }
@@ -347,7 +350,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
         if (!held) continue;
         held.scope.stop();
         members.delete(member);
-        void directInstance.memberContext(member);
+        void directInstance.memberContext(member).catch(() => undefined);
       }
     },
     projectionVersion: (member: string) => versions.get(member) ?? 0,

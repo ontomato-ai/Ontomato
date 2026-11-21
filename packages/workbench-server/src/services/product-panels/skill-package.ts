@@ -244,6 +244,7 @@ function describeReads(reads: readonly { member: string; dataName: string; read:
   if (!reads.length) return "";
   return [
     "### Read current data",
+    "Before answering what is on this page or what is selected, read the relevant named data below and answer from the result. Use the page context to identify the entry and selected object, then read its current data.",
     "POST to `$ONTOMATO_PANEL_OPERATIONS_URL/read` with `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. This calls the same named read as the panel.",
     "Send JSON `{source:{kind:\"registered\",applicationId,useId},memberPath:[{member}],dataName,inputs}`. Use the registered application and use from the page context. Supply the projection's declared inputs from that context or the requested selection. Use an empty object when no inputs are needed.",
     "A ready result carries the current owner data in `value`. Respect forbidden and error results.",
