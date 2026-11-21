@@ -125,11 +125,10 @@ export interface DirectPanelRun {
   /** The reader saved or discarded the draft the address links. */
   draftSettled(draft: PageDraftLink): void;
   /**
-   * The draft the address links is one this panel cannot take — the owner refused it, it could not be read, no form takes
-   * it — and why. The panel goes on as it is; the host says so above it, and the reader can leave the draft or hand the
-   * reason back to the agent (the rule that no owner's refusal ever fails the whole panel).
+   * The draft the address names cannot be used here, in one sentence in the reader's words: the panel goes on as it is,
+   * and the host shows the sentence above it for the reader to dismiss, to leave the draft or to hand back to the agent.
    */
-  draftRefused(reason: unknown): void;
+  draftRefused(text: string): void;
   /** The panel cannot run, and why. */
   failed(reason: unknown): void;
   /**
@@ -240,10 +239,10 @@ export interface PanelHostLabels {
   /** What a panel tells its author: its CSS reached outside it. */
   content: { styleOutside: string };
   /**
-   * The notice above a panel whose linked draft it cannot take: its title, the way back to the page without the draft,
-   * handing the reason to the agent, and the sentence the composer is filled with (`{reason}` stands for the reason).
+   * The notice above a panel whose linked draft it cannot take: the way back to the page without the draft, handing the
+   * reason to the agent, and the sentence the composer is filled with (`{reason}` stands for the panel's sentence).
    */
-  draft: { refused: string; leave: string; toAgent: string; toAgentText: string };
+  draft: { leave: string; toAgent: string; toAgentText: string };
   /** The page command that reads the panel's shown data again. */
   refresh: string;
 }
@@ -516,7 +515,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       operations: offered => (operations.value = offered),
       dirty: reportDirty,
       draftSettled: settleDraft,
-      draftRefused: reason => (draftRefusal.value = failureText(reason)),
+      draftRefused: text => (draftRefusal.value = text),
       failed: reason => reportFrameFailure({ code: PANEL_LOAD_ERROR_CODES.scriptThrew, message: failureText(reason) }),
       ...(options.currentEntry ? { currentEntry: options.currentEntry } : {}),
     };

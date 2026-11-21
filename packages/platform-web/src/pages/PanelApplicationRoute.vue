@@ -267,7 +267,6 @@ const labels = computed<PanelHostLabels>(() => ({
   },
   content: { styleOutside: t("platform.panelStyleOutside") },
   draft: {
-    refused: t("platform.panelDraftRefused"),
     leave: t("platform.panelDraftLeave"),
     toAgent: t("platform.panelDraftToAgent"),
     // The host puts the reason where `{reason}` stands.

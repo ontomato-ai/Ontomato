@@ -31,7 +31,7 @@ const labels: PanelHostLabels = {
   notStarted: "Not started",
   failures: { fileUnavailable: "Could not load {file}", scriptThrew: "Script failed", scriptRejected: "Script rejected" },
     content: { styleOutside: "Style outside" },
-    draft: { refused: "Draft unusable", leave: "Back", toAgent: "To agent", toAgentText: "Unused: {reason}" },
+    draft: { leave: "Back", toAgent: "To agent", toAgentText: "Unused: {reason}" },
     refresh: "Refresh",
 };
 
@@ -514,7 +514,7 @@ describe("the panel host", () => {
     const instance = port.started("use-a");
 
     // An old-shape draft the panel could not read: the panel stays, and the reason is said above it.
-    instance.run.draftRefused(new Error("The draft is in an old shape"));
+    instance.run.draftRefused("The draft is in an old shape");
     expect(a.error.value).toBe("");
     expect(a.direct.value).not.toBeNull();
     expect(a.draftRefusal.value).toBe("The draft is in an old shape");

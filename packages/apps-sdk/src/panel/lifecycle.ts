@@ -6,6 +6,7 @@ import type { PanelDeepLinkStateValue, PanelObjectIdentity, PanelOperation, Pane
 import type { DefinitionRevision } from "@ontomato/contracts/product-subscriptions";
 import { panelOperationSchema } from "@ontomato/contracts/panel-manifest";
 import { receivePanelDraft, type PanelDraftSource } from "./draft";
+import { PanelDraftUnusable, unreadableDraft } from "./draft-refusal";
 import { pageDraftLinkOf, type PanelInstance } from "./instance";
 
 /*
@@ -26,6 +27,11 @@ export interface PanelRunReports {
   /** The operations the header draws and an agent lists, as data. */
   operations(operations: PanelOperation[]): void;
   draftSettled(link: PageDraftLink): void;
+  /**
+   * The draft the address names cannot be used here (it could not be read, was written for another page, or no form
+   * takes it): the panel goes on as it is, and the host tells the reader why.
+   */
+  draftRefused(refusal: PanelDraftUnusable): void;
   /** The panel cannot run, and why; the host shows it where the panel would have been. */
   failed(reason: unknown): void;
 }
@@ -63,9 +69,11 @@ export function runPanel(options: PanelRunOptions): PanelRun {
     const key = link ? JSON.stringify(link) : "";
     if (key === currentDraft) return;
     currentDraft = key;
-    if (link)
-      await receivePanelDraft(options.pageKey, instance.forms, { readPageDraft: options.readPageDraft },
-        link, instance.receiveDraft, () => currentDraft === key);
+    if (!link) return;
+    // A draft that cannot be used is that draft's problem: the panel goes on without it.
+    await receivePanelDraft(options.pageKey, instance.forms, { readPageDraft: options.readPageDraft },
+      link, instance.receiveDraft, () => currentDraft === key)
+      .catch((reason: unknown) => reports.draftRefused(reason instanceof PanelDraftUnusable ? reason : unreadableDraft(link.path, reason)));
   }
   async function followAddress(next: string) {
     const desired = panelAddressState(next);

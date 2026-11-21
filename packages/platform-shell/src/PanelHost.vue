@@ -153,16 +153,15 @@ defineExpose({ ...view, operations, commands });
   <section class="panel-host">
     <header v-if="title" class="panel-host-title">{{ title }}</header>
     <p v-if="view.error.value" role="alert" class="panel-host-error">{{ view.error.value }}</p>
-    <!-- A draft the panel cannot take never fails it (owner refused, unreadable, no form takes it): said here, above it. -->
+    <!-- A draft the panel cannot take never fails it (owner refused, unreadable, no form takes it): its sentence, above it. -->
     <ElAlert
       v-else-if="view.draftRefusal.value && view.admitted.value"
       class="panel-host-draft"
       type="warning"
       show-icon
-      :title="labels.draft.refused"
+      :title="view.draftRefusal.value"
       @close="view.dismissDraftRefusal()"
     >
-      <p class="panel-host-draft-reason">{{ view.draftRefusal.value }}</p>
       <div class="panel-host-draft-actions">
         <ElButton size="small" @click="view.leaveDraft()">{{ labels.draft.leave }}</ElButton>
         <ElButton v-if="draftToAgent" size="small" @click="toAgent">{{ labels.draft.toAgent }}</ElButton>
@@ -216,8 +215,7 @@ defineExpose({ ...view, operations, commands });
   margin: var(--spacing-md, 12px) var(--spacing-md, 12px) 0;
   width: auto;
 }
-.panel-host-draft-reason {
-  margin: 0;
+.panel-host-draft :deep(.el-alert__title) {
   overflow-wrap: anywhere;
 }
 .panel-host-draft-actions {
