@@ -308,7 +308,6 @@ final class ApplicationCatalogueForm {
                 errors.requiredString(use, key, path + "/" + key);
             var pageKey = errors.requiredString(use, "pageKey", path + "/pageKey");
             if (pageKey != null) validatePageKey(pageKey, path + "/pageKey", conflicts, errors);
-            if (use.containsKey("names")) validateNames(use, path + "/names", errors);
             if (use.containsKey("descriptions")) {
                 var pointer = path + "/descriptions";
                 var descriptions = errors.requiredObject(use, "descriptions", pointer);
