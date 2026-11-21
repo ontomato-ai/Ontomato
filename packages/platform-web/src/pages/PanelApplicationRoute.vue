@@ -2,7 +2,7 @@
 import { computed, inject, markRaw, ref, toRaw, watch, type Ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { PanelHost, panelUnavailable, useUnsavedChanges, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
+import { PanelHost, panelUnavailable, usePageHeading, useUnsavedChanges, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
 import { panelAddress, panelAddressState, panelUsePath } from "@ontomato/contracts/panel-host";
 import { applicationRootPath } from "@ontomato/contracts/platform-identity";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
@@ -58,7 +58,9 @@ const emit = defineEmits<{
 
 const route = useRoute();
 const router = useRouter();
-const { t, locale } = useI18n();
+const { t, locale, fallbackLocale } = useI18n();
+/** The language a panel's own name is given in: the reader's, else the deployment's default. */
+const language = computed(() => ({ locale: locale.value, fallback: String(fallbackLocale.value) }));
 /** The application's use relations, once Java has answered; until then the page names none and says nothing. */
 const uses = ref<readonly ApplicationPanelUse[] | null>(null);
 /** The shown page's instance, which the conversation's object signal reaches; kept pages are reconciled when shown again. */
@@ -270,6 +272,24 @@ watch(use, (next, previous) => {
 if (!props.navigate)
   useUnsavedChanges({ dirty: () => shownPage.value?.dirty ?? false, paths: () => use.value ? [panelUsePath(use.value.path)] : [] });
 
+/**
+ * The page's title and way back at its own address (big main's ruling, 2026-11-21): the panel draws neither. The title is
+ * what a message names the page by — the entry's menu name, else its panel's own name — so the two never differ; a page
+ * the application's menu does not reach (an entry with no menu name) also gets the way back to where the reader came
+ * from, or to the application's root when the page was opened directly. Beside a conversation, the conversation draws both.
+ */
+if (!props.navigate) {
+  usePageHeading(() => {
+    const title = shownPage.value?.context?.label || pageName.value;
+    if (!title) return null;
+    return use.value?.names ? { title } : { title, back: goBack };
+  });
+}
+function goBack() {
+  if (typeof router.options.history.state.back === "string") router.back();
+  else void router.push(applicationRootPath(props.applicationId));
+}
+
 /** When a kept page shown again may ask for its objects again: the first of the two points its switch is measured at. */
 function markReopened(page: KeptPage) {
   performance.mark("ontomato:panel-page-reopened", { detail: { applicationId: props.applicationId, useId: page.use.id } });
@@ -348,6 +368,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
       :ref="(instance) => { if (page === shownPage) host = instance as ShownInstance | null; }"
       :port="page.port"
       :labels="labels"
+      :language="language"
       :shown="page === shownPage"
       :address="addressOf(page)"
       :initial="stateOf(page)"

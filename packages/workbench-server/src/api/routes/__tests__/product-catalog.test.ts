@@ -184,7 +184,7 @@ beforeEach(() => {
       const row = collection.get(id);
       return { rows: row?.domainId === values[0] ? [row] : [] };
     }
-    if (sql.startsWith("SELECT id,definition FROM product_panels")) {
+    if (table === "product_panels" && sql.startsWith("SELECT id,definition FROM")) {
       return { rows: [...records.product_panels.values()]
         .filter(row => row.domainId === values[0])
         .sort((a, b) => a.id.localeCompare(b.id))

@@ -6,7 +6,7 @@ import publicEn from "@ontomato/workbench-ui/locales/en";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
-import { noOperations, pagePlacement } from "./panel-frame";
+import { noOperations } from "./panel-frame";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 
@@ -91,7 +91,7 @@ it("draws a declared projection in a frame from this version's task module, and 
         projection: (id: string) => instance.projection(id),
         invoke: (handlerRef: string, call) => instance.runHandler(handlerRef, call),
         projectionsChanged: () => () => {}, draft: instance.draft, holdUnsaved: () => () => {},
-        t: (key: string) => key, resources: async () => {}, expandPageComposer: async () => {}, readPanelData, navigate: async () => {}, placement: pagePlacement,
+        t: (key: string) => key, resources: async () => {}, expandPageComposer: async () => {}, readPanelData, navigate: async () => {}, notify: () => {},
       });
       return () => h("div", [h(Projection, { slot: "form" }), h(Projection, { slot: "run" })]);
     },

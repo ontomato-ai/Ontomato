@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -8,7 +8,8 @@ import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { panelOptionListSchema, panelRecordQuerySchema } from "@ontomato/contracts/panel-projection";
-import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
+import { PANEL_MEMBER_RENDER_HEADER, productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
+import { appsSdkComponentCatalogSchema } from "@ontomato/contracts/apps-sdk";
 import { SDK_COMPONENT, SKILL } from "@ontomato/contracts/platform-object-types";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { protectedSkillRef } from "../../core/skills/providers";
@@ -67,6 +68,7 @@ let listSources = async () => entries;
 let denied: string | undefined;
 let executorDenied: string | undefined;
 let root: string;
+let cataloguePath: string;
 let server: Server;
 
 async function register(collection: string, id: string, definition: object) {
@@ -81,7 +83,7 @@ beforeAll(async () => {
   configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
     packs: { en: { messages: en, ...enLocaleMeta } } });
   root = await mkdtemp(path.join(tmpdir(), "panel-skill-isolation-"));
-  await writeBundledAppSdkFixture(root);
+  cataloguePath = await writeBundledAppSdkFixture(root);
   installContentLayout({ runtimeRoot: root, publicSkillsRoot: path.resolve("skills"), prompts: [], runtimeResources: [] });
   state.schema = `panel_skill_isolation_${randomUUID().replaceAll("-", "")}`;
   state.pool = new pg.Pool({ connectionString: database });
@@ -213,6 +215,73 @@ function read(entry: typeof good, route: string) {
   const query = new URLSearchParams({ applicationId, useId, ...entrance });
   return fetch(`${state.base}/api/product-panels/${panelId}${route}?${query}`);
 }
+
+it("keeps a registered panel across SDK releases and refuses only an incompatible rendered projection", async () => {
+  const entry = page("release-change");
+  entries = [...entries, entry];
+  await register("product-panels", entry.panelId, {
+    name: "SDK release check", description: "", visibility: "domain", content: vuePanelContent("list", "healthy"),
+    manifest: { state: {}, members: {
+      list: { target: { projectionId: "projection-good" } },
+      healthy: { target: { projectionId: "projection-skill-library" } },
+    }, events: {} },
+  });
+  const oldDirectory = path.dirname(cataloguePath);
+  const sdkRoot = path.dirname(oldDirectory);
+  const currentPath = path.join(sdkRoot, "current.json");
+  const oldCurrent = await readFile(currentPath, "utf8");
+  const catalogue = appsSdkComponentCatalogSchema.parse(JSON.parse(await readFile(cataloguePath, "utf8")));
+  const manifest = JSON.parse(await readFile(path.join(oldDirectory, "sdk.json"), "utf8"));
+  const version = "sdk-test-after-release";
+  const directory = path.join(sdkRoot, version);
+  const publishCatalogue = (components: typeof catalogue.components) =>
+    writeFile(path.join(directory, "components.json"), JSON.stringify({ version, components }));
+  const projection = (id: string, rendering = true) => fetch(`${state.base}/api/product-projections/${id}`, {
+    headers: rendering ? { [PANEL_MEMBER_RENDER_HEADER]: "1" } : undefined,
+  });
+
+  try {
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(directory, "sdk.json"), JSON.stringify({ ...manifest, version }));
+    await publishCatalogue(catalogue.components);
+    await writeFile(currentPath, JSON.stringify({ version, digest: "b".repeat(64) }));
+    for (const route of ["", "/snapshot"]) {
+      const current = await read(entry, route);
+      expect(current.status).toBe(200);
+      expect(await current.json()).toMatchObject({
+        panel: { revision: 1 }, pageSkillContext: { member: { ref: skillRef(entry) } },
+      });
+    }
+    expect((await projection("projection-good")).status).toBe(200);
+    expect((await projection("projection-skill-library")).status).toBe(200);
+
+    await publishCatalogue(catalogue.components.map(component => component.componentId === "ObjectList"
+      ? { ...component, data: { ...component.data, rows: { results: ["panelRecordQuery"], required: false } } }
+      : component));
+    const changedResult = await projection("projection-good");
+    expect(changedResult.status).toBe(400);
+    expect(await changedResult.json()).toMatchObject({ error: {
+      code: "PANEL_COMPONENT_DATA_RESULT_MISMATCH", message: expect.stringContaining("data.rows"),
+    } });
+    expect((await projection("projection-skill-library")).status).toBe(200);
+
+    await publishCatalogue(catalogue.components.filter(component => component.componentId !== "ObjectList"));
+    for (const route of ["", "/snapshot"]) {
+      const current = await read(entry, route);
+      expect(current.status).toBe(200);
+      expect(await current.json()).toMatchObject({ panel: { revision: 1 }, pageSkillContext: { member: null } });
+    }
+    const removedComponent = await projection("projection-good");
+    expect(removedComponent.status).toBe(400);
+    expect(await removedComponent.json()).toMatchObject({ error: {
+      code: "PANEL_COMPONENT_UNAVAILABLE", message: expect.stringContaining("componentId"),
+    } });
+    expect((await projection("projection-good", false)).status).toBe(200);
+    expect((await projection("projection-skill-library")).status).toBe(200);
+  } finally {
+    await writeFile(currentPath, oldCurrent);
+  }
+});
 
 async function readLibrary(dataName: string, inputs: Record<string, string> = {}) {
   const response = await fetch(`${state.base}/api/product-panels/read`, {

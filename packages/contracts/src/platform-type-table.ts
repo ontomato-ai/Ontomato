@@ -54,5 +54,14 @@ export const platformTypeTableResponseSchema = z.object({
   unavailableActions: z.array(unavailableObjectActionSchema).optional(),
   /** The owner refused the class catalogue without returning class identities. */
   customerTypesUnavailable: z.object({ reason: z.string().min(1) }).strict().optional(),
-}).strict();
+}).strict().superRefine(({ objectTypes, resultSchemas }, ctx) => {
+  for (const [typeId, entry] of Object.entries(objectTypes)) {
+    for (const [name, { result }] of Object.entries(entry.reads ?? {})) {
+      if (!Object.hasOwn(resultSchemas, result)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["objectTypes", typeId, "reads", name, "result"],
+          message: `Read result '${result}' has no declared schema` });
+      }
+    }
+  }
+});
 export type PlatformTypeTableResponse = z.infer<typeof platformTypeTableResponseSchema>;

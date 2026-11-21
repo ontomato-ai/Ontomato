@@ -22,6 +22,7 @@ import { defaultAgentSchema } from "./default-agent";
 import { pageSkillSchema } from "./page-skills";
 import assert from "node:assert/strict";
 import test from "node:test";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import { dashboardCardPrimaryKey } from "./dashboard";
 import { DASHBOARD_CARD } from "./platform-object-types";
 import {
@@ -1434,7 +1435,7 @@ test("a read-only trial carries the current draft and parameters without a write
 });
 
 test("the author type table and live descriptions share operation declarations", async () => {
-  const { panelOperationDeclarationSchema, describePanelOperationFromDeclaration } = await import("./panel-operations");
+  const { panelOperationDeclarationSchema, describePanelOperationFromDeclaration, panelReadResultSchemas } = await import("./panel-operations");
   const { platformTypeTableResponseSchema } = await import("./platform-type-table");
   const run = panelOperationDeclarationSchema.parse({
     id: RUN_NOW, kind: "action", effect: "write", batch: false, target: { source: "input", input: "task" }, inputSchema: { type: "object" },
@@ -1442,11 +1443,13 @@ test("the author type table and live descriptions share operation declarations",
   const save = panelOperationDeclarationSchema.parse({
     id: SCHEDULED_TASK + ".save", kind: "form.save", effect: "write", batch: false, target: { source: "draft" }, inputSchema: { type: "object" },
   });
-  const table = {
-    objectTypes: { [SCHEDULED_TASK]: { reads: platformObjectTypes[SCHEDULED_TASK].reads, operations: [run, save] } },
-    resultSchemas: { panelRecordList: { type: "array" }, panelRecord: { type: "object" }, panelFormDescription: { type: "object" } },
-  };
+  const reads = platformObjectTypes[SCHEDULED_TASK].reads!;
+  const resultIds = new Set(Object.values(reads).map(read => read.result));
+  const resultSchemas = Object.fromEntries([...resultIds].map(id => [id, zodToJsonSchema(panelReadResultSchemas[id])]));
+  const table = { objectTypes: { [SCHEDULED_TASK]: { reads, operations: [run, save] } }, resultSchemas };
   assert.deepEqual(platformTypeTableResponseSchema.parse(table), table);
+  const { panelFormDescription: _form, ...incomplete } = resultSchemas;
+  assert.equal(platformTypeTableResponseSchema.safeParse({ ...table, resultSchemas: incomplete }).success, false);
   assert.equal(panelOperationDeclarationSchema.safeParse({ ...run, label: "Run now" }).success, false);
 
   const { id, ...staticFields } = run;

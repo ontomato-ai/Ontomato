@@ -17,7 +17,7 @@ import {
 } from "./platform-objects";
 import { fieldAt, valueAt } from "./form-values";
 import { projectionElement } from "./projection-element";
-import type { PanelPlacement, PanelReadPort } from "./direct";
+import type { PanelReadPort } from "./direct";
 import type { PanelText } from "./text";
 
 /*
@@ -87,16 +87,11 @@ export interface PanelContext {
    */
   navigate(address: string): Promise<void>;
   /**
-   * Where the platform shows this panel, read-only: `"conversation"` beside a conversation (shown full-size from the
-   * conversation too), where the conversation already draws the page's title and its way back; `"page"` at the panel's
-   * own address, a candidate's preview included. It holds for the instance's whole run.
-   *
-   * It decides one thing: whether the panel draws what the platform already draws for it there — its own title and
-   * way back (`v-if="placement === 'page'"`). Lay the page out by its container's width, not by this; what it reads,
-   * what it can do and what it selects first are the same in both. Do not invent an address parameter for it. A panel
-   * the platform runs has it; a frame has none.
+   * Tells the reader briefly how something the page did went — "Exported", "Deleted", why a call failed — in the
+   * platform's own message at the top of the window, as its pages do; it fades by itself. A note that belongs on the
+   * page and stays is `<el-alert>` in the template. A panel the platform runs has it; a frame has none.
    */
-  readonly placement: Readonly<Ref<PanelPlacement>>;
+  notify(message: { kind: "success" | "info" | "warning" | "error"; text: string }): void;
   /**
    * The platform's read entry for this panel's members' data, as the reader: a member, a datum and its values in, the
    * owner's answer out. In a frame it goes over the frame's request path; the host fills in which panel it is.

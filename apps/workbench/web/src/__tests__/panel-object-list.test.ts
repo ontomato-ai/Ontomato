@@ -20,7 +20,7 @@ import {
 import { createDirectPanelInstance } from "../../../../../packages/apps-sdk/src/panel/direct";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
-import { noOperations, pagePlacement } from "./panel-frame";
+import { noOperations } from "./panel-frame";
 import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 
 /*
@@ -1006,7 +1006,7 @@ it("draws a declared ObjectList with data.objects in a frame via <Projection> an
         t: (key: string) => key,
         resources: async () => {},
         expandPageComposer: async () => {},
-        placement: pagePlacement, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); },
+        notify: () => { throw new Error("This test tells the reader nothing"); }, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); },
       });
       return () => h(Projection, { slot: "picker" });
     },
