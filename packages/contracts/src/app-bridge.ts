@@ -31,7 +31,8 @@ export const appBridgeInvalidationSchema=z.object({actionId:z.string(),objectTyp
  * A current conversation keeps its existing agent.
  * Expanding for this action leaves the user's saved collapse preference alone.
  */
-export const appBridgeExpandPageComposerSchema = panelConversationEntryFields.extend({
+// A frame gets no new features: its request carries the sentence written out, as it always did.
+export const appBridgeExpandPageComposerSchema = panelConversationEntryFields.omit({ prefillKey: true }).extend({
   slot: z.string().min(1).max(200),
 });
 export type AppBridgeExpandPageComposer = z.infer<typeof appBridgeExpandPageComposerSchema>;

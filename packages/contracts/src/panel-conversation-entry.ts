@@ -34,6 +34,6 @@ export function missingEntryMessageKeys(
     const key = entry?.prefillKey;
     if (key === undefined) return [];
     if (!locales.length) return [{ key, locale: null }];
-    return locales.filter(([, held]) => held[key] === undefined).map(([locale]) => ({ key, locale }));
+    return locales.filter(([, held]) => !Object.hasOwn(held, key)).map(([locale]) => ({ key, locale }));
   });
 }

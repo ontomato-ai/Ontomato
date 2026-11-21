@@ -1972,4 +1972,10 @@ test("a conversation entry names its opening sentence by a key of the panel's me
   assert.deepEqual(missingEntryMessageKeys([{ target, prefillKey: "actions.create" }, { target, prefill: "Written" }, undefined], messages),
     [{ key: "actions.create", locale: "zh-CN" }]);
   assert.deepEqual(missingEntryMessageKeys([{ target, prefillKey: "actions.create" }], undefined), [{ key: "actions.create", locale: null }]);
+  // A name every object inherits is no key of the panel's.
+  assert.deepEqual(missingEntryMessageKeys([{ target, prefillKey: "toString" }], { en: {} }), [{ key: "toString", locale: "en" }]);
+  // A frame's request to open the composer carries the sentence written out, as it always did.
+  const { appBridgeExpandPageComposerSchema } = await import("./app-bridge");
+  assert.equal(appBridgeExpandPageComposerSchema.safeParse({ slot: "entry", target, prefill: "Help me" }).success, true);
+  assert.equal(appBridgeExpandPageComposerSchema.safeParse({ slot: "entry", target, prefillKey: "actions.create" }).success, false);
 });

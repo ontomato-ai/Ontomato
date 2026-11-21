@@ -119,15 +119,7 @@ async function workspaceDefinition(directory, files, checks, panel, loadAuthorin
     } catch (error) {
       throw new Error(`${resolve(directory, "panel.mjs")}: ${error.message}`, { cause: error });
     }
-    // A conversation entry's opening sentence named by key is the panel's own words, in each language it declares.
-    const keyed = expanded.inline.filter(({ input }) => input.conversationEntry?.prefillKey !== undefined);
-    for (const { member, input } of keyed) {
-      const missing = checks.missingEntryMessageKeys([input.conversationEntry], result.data.content.messages);
-      if (missing.length) {
-        const where = missing.map(({ locale }) => locale ?? "any locale").join(", ");
-        throw new Error(`${descriptorFile}: member ${member} prefillKey '${missing[0].key}' is not in content.messages (${where})`);
-      }
-    }
+
     return { definition: result.data, inline: expanded.inline, charts: expanded.charts, descriptorFile, document, source };
   }
 
@@ -340,6 +332,16 @@ export async function checkPanelWorkspace(directory, { checks, catalogue, versio
       }
       checkProjectionData(id, record, component, checks);
       if (typeTable) checkOperations(id, record, typeTable, placements.get(id), manifest.state, checks);
+      // A conversation entry's opening sentence named by key is the placing panel's own words, in each language it
+      // declares: a reused projection's key counts as much as a new one's.
+      if (record.conversationEntry?.prefillKey !== undefined) {
+        const missing = checks.missingEntryMessageKeys([record.conversationEntry], workspace.definition.content.messages);
+        if (missing.length) {
+          const members = placements.get(id).map(([member]) => member).join(", ");
+          const where = missing.map(({ locale }) => locale ?? "any locale").join(", ");
+          throw new Error(`${resolve(directory, "panel.json")}: member ${members} (projection ${id}) prefillKey '${missing[0].key}' is not in content.messages (${where})`);
+        }
+      }
     }
   }
   return { status: "valid", version, ...(digest && { digest }), unchecked };

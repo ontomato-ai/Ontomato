@@ -68,13 +68,13 @@ it("opens the page's composer with the member's declared agent and sentence, onc
 it("opens the composer with the opening sentence its key names, in the reader's language or else the default", async () => {
   const keyed: ProductProjection = { ...projection, conversationEntry: { target: governance.target, prefillKey: "actions.create" } };
   const messages = { en: { "actions.create": "Help me create an action:" }, "zh-CN": { "actions.create": "帮我新建一个动作：" } };
-  async function opened(locale: string) {
+  async function opened(locale: string, words: Record<string, Record<string, string>> = messages) {
     const expanded: PanelConversationEntry[] = [];
     const instance = createDirectPanelInstance(definePanel({
       state: {}, members: { governance: { target: { projectionId: keyed.id } } }, events: {},
     }), {
       pageKey: "actions", url: () => "/actions", label: () => "Actions", initial: {},
-      text: createPanelText(messages, ref(locale), "en"), ...noOperations, recordDraftCreated: async () => {},
+      text: createPanelText(words, ref(locale), "en"), ...noOperations, recordDraftCreated: async () => {},
       expandPageComposer: (entry) => { expanded.push(entry); },
       readProjection: async () => keyed,
       read: async () => { throw new Error("A conversation entry reads nothing"); },
@@ -97,4 +97,6 @@ it("opens the composer with the opening sentence its key names, in the reader's 
   expect(await opened("en")).toEqual({ target: governance.target, prefill: "Help me create an action:" });
   // A language the panel has no words in reads the deployment's default.
   expect(await opened("fr")).toEqual({ target: governance.target, prefill: "Help me create an action:" });
+  // Words in neither the reader's language nor the default: the composer opens with no sentence, never with the key.
+  expect(await opened("fr", { "zh-CN": { "actions.create": "帮我新建一个动作：" } })).toEqual({ target: governance.target });
 });
