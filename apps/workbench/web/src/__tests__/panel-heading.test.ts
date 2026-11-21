@@ -66,7 +66,7 @@ afterEach(leaveFrame);
 it("titles a menu entry by its menu name, with no way back", async () => {
   const { app } = await open(listed.path);
   try {
-    expect(await named()).toEqual({ title: "Business knowledge" });
+    expect(await named()).toEqual({ title: "Business knowledge", externalLink: listed.path });
   } finally {
     app.unmount();
   }

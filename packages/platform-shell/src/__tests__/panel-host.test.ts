@@ -13,6 +13,7 @@ import {
   type DirectPanelRun,
   type PanelHostLabels,
   type PanelHostPort,
+  type PanelSdkRelease,
 } from "../panel-host";
 
 /*
@@ -180,7 +181,7 @@ function fromFrame(frame: Window, message: Record<string, unknown>): void {
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** The deployment's current SDK release, as Node and its manifest name it. */
-const release = {
+const release: PanelSdkRelease = {
   base: "/apps-sdk/current",
   manifest: {
     version: "1.1.0", product: "workbench", executionContext: 1, hostTransport: 1, messageBridge: 2,

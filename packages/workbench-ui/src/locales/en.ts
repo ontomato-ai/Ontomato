@@ -152,6 +152,8 @@ export default {
     "level": "Level",
   },
   "platform": {
+    "copyExternalLink": "Copy external link",
+    "externalLinkCopied": "External link copied",
     "serviceName": "Ontomato",
     "confirmOperationTotal": "{total} affected in total",
     "noPages": "No page is available to this account",

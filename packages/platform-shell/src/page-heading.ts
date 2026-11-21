@@ -11,6 +11,11 @@ export interface PlatformPageHeading {
   description?: string;
   /** Present for a page the application's menu does not reach. */
   back?: () => void;
+  /**
+   * The entry's external link: its address with the state it is at, opened without the platform's rail. The header
+   * offers to copy it; absent for a page that is no entry of an application.
+   */
+  externalLink?: string;
 }
 
 const pageHeadingKey: InjectionKey<Ref<PlatformPageHeading | null>> = Symbol("platform-page-heading");

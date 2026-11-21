@@ -23,6 +23,9 @@ const labels: PlatformShellLabels = {
   save: "Save",
   discard: "Discard",
   unsavedChanges: "Unsaved changes",
+  more: "More",
+  copyExternalLink: "Copy external link",
+  externalLinkCopied: "External link copied",
 };
 
 /** The column's words are message keys here; the layout translates them in production, the test reads them raw. */
@@ -38,6 +41,8 @@ const routes: RouteRecordRaw[] = [
 
 const mounted: ReturnType<typeof mount>[] = [];
 afterEach(() => {
+  // An external link's tab is remembered for the tab: each test starts in the platform.
+  sessionStorage.clear();
   mounted.splice(0).forEach((wrapper) => wrapper.unmount());
   document.body.innerHTML = "";
 });
@@ -95,30 +100,28 @@ describe("the platform layout", () => {
     const labels = groups[1]!.findAll(".rail-row").map(row => row.attributes("aria-label") ?? row.text().trim());
     expect(labels).toEqual([
       applications.find(app => app.id === "app-builder")!.label,
-      "Report · App Builder · Opens in a new tab",
-      "Operations panel · App Builder · Opens in a new tab",
+      "Report · App Builder",
+      "Operations panel · App Builder",
     ]);
-    const links = groups[1]!.findAll("a[target='_blank']");
-    const [reportHref, panelHref] = links.map(link => link.attributes("href")!);
-    expect(reportHref).toBe("/products/app-report?applicationId=app-report&standalone=1");
-    expect(panelHref).toBe("/applications/app-panel?standalone=1");
+    // An application the reader opens from the rail opens in the platform (big main's ruling, 2026-11-21): no new tab.
+    expect(groups[1]!.findAll("a[target='_blank']")).toHaveLength(0);
 
-    await router.push(reportHref!);
+    // Its external link: the entry's address with the flag. Opened, the platform's rail is not drawn; the application's
+    // menu and the page header are, and the header offers the entry's external link.
+    await wrapper.setProps({ shownPage: { title: "tasks", named: true, externalLink: "/applications/app-panel/tasks" } });
+    await router.push("/applications/app-panel/tasks?standalone=1");
     await flushPromises();
     expect(wrapper.find(".platform-rail").exists()).toBe(false);
-    expect(wrapper.get("h1").text()).toBe("Report");
-    expect(wrapper.get(".workspace-return").attributes("href")).toBe("/home");
-    await router.push(panelHref!);
+    expect(wrapper.find(".platform-app-menu").exists()).toBe(true);
+    expect(wrapper.get(".platform-page-header .page-title").text()).toBe("tasks");
+    expect(wrapper.find(".platform-page-header .page-more").exists()).toBe(true);
+    expect(wrapper.find(".standalone-header").exists()).toBe(false);
+    expect(wrapper.find(".published-page-nav").exists()).toBe(false);
+    // The tab stays an external link's as the reader goes on, with no flag in the address.
+    await router.push("/applications/app-panel/summary");
     await flushPromises();
-    expect(wrapper.find(".platform-app-menu").exists()).toBe(false);
-    expect(wrapper.get(".published-page-nav [aria-current=page]").text()).toBe("tasks");
-    await router.push(wrapper.get('.published-page-nav a[href*="/summary"]').attributes("href")!);
-    await flushPromises();
-    expect(wrapper.get(".published-page-nav [aria-current=page]").text()).toBe("summary");
     expect(wrapper.find(".platform-rail").exists()).toBe(false);
-    await router.push("/home");
-    await flushPromises();
-    expect(wrapper.find(".platform-rail").exists()).toBe(true);
+    expect(wrapper.find(".platform-app-menu").exists()).toBe(true);
   });
 
   it('preserves the ontology menu for linked administration pages and restores native navigation on direct entry',async()=>{
