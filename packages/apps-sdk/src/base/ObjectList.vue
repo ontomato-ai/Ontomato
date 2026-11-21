@@ -308,6 +308,22 @@ const searchText = computed<string>(() => {
 });
 
 const isTable = computed(() => Boolean(props.columns?.length));
+
+/** From this many characters a text column shrinks to the table's room and ends in an ellipsis rather than set its width. */
+const LONG_TEXT = 24;
+/** A column's text in a row, as the cell shows it. */
+function columnText(row: PlatformObjectRecord, column: ObjectListColumn): string {
+  return row.references?.[column.key]?.label ?? fieldValue(row, column.key);
+}
+/**
+ * How a column is laid out, with no width of its own: one line at its own width by default, so a short value never
+ * breaks; a text column whose values run long shrinks to the room left and ends in an ellipsis; a column the panel marks
+ * `wrap` runs onto several lines. A table wider than its frame scrolls inside it.
+ */
+const columnFit = computed(() => new Map((props.columns ?? []).map((column) => [column.key,
+  column.wrap ? "sdk-object-list-col-wrap"
+    : (column.kind === undefined || column.kind === "text" || column.kind === "reference") && rows.value.some((row) => columnText(row, column).length > LONG_TEXT)
+      ? "sdk-object-list-col-shrink" : ""])));
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / effectivePageSize.value)));
 
 const showCount = computed(
@@ -582,7 +598,7 @@ watch(someVisibleChecked, () => {
                   @change="toggleAllVisible(($event.target as HTMLInputElement).checked)"
                 />
               </th>
-              <th v-for="column in columns" :key="column.key">{{ columnLabel(column) }}</th>
+              <th v-for="column in columns" :key="column.key" :class="columnFit.get(column.key)">{{ columnLabel(column) }}</th>
             </tr>
           </thead>
           <tbody>
@@ -601,7 +617,12 @@ watch(someVisibleChecked, () => {
                   @change="toggleChecked(row, ($event.target as HTMLInputElement).checked)"
                 />
               </td>
-              <td v-for="column in columns" :key="column.key">
+              <td
+                v-for="column in columns"
+                :key="column.key"
+                :class="columnFit.get(column.key)"
+                :title="columnFit.get(column.key) === 'sdk-object-list-col-shrink' ? columnText(row, column) : undefined"
+              >
                 <button
                   v-if="(column.kind === 'reference' || row.references?.[column.key]) && row.references?.[column.key]"
                   type="button"
@@ -848,6 +869,23 @@ watch(someVisibleChecked, () => {
   padding: var(--spacing-sm) var(--spacing-md);
   text-align: left;
   vertical-align: middle;
+  /* A value stays on its line: a short column is as wide as its text, never two characters over two lines. */
+  white-space: nowrap;
+}
+/* A long text column takes the room the others leave, down to a readable minimum, and ends in an ellipsis. */
+.sdk-object-list-table .sdk-object-list-col-shrink {
+  width: 100%;
+  max-width: 0;
+  min-width: 12em;
+}
+.sdk-object-list-col-shrink :is(.sdk-object-list-cell-main, .sdk-object-list-cell-sub, .sdk-object-ref-link) {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sdk-object-list-table .sdk-object-list-col-wrap {
+  white-space: normal;
+  min-width: 12em;
 }
 .sdk-object-list-table th {
   color: var(--el-text-color-secondary);
