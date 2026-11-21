@@ -1,4 +1,4 @@
-import { computed, effectScope, onScopeDispose, shallowReactive, shallowRef, watch, type ComputedRef, type EffectScope } from "vue";
+import { computed, effectScope, onScopeDispose, readonly, ref, shallowReactive, shallowRef, watch, type ComputedRef, type EffectScope } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
@@ -53,7 +53,16 @@ export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "
    * guard that stopped it), the host says why on the page and rejects with the same reason.
    */
   navigate(address: string): Promise<void>;
+  /**
+   * Where the platform shows this instance: beside a conversation ("conversation") — the conversation draws the page's
+   * title and its way back — or at the panel's own address ("page"). It does not change while the instance runs: the
+   * page beside a conversation and the page at its own address are two instances.
+   */
+  placement: PanelPlacement;
 }
+
+/** Where the platform shows a panel: beside a conversation, or at the panel's own address. */
+export type PanelPlacement = "conversation" | "page";
 
 /** One member's data: the shown data by name, and a read the component asks for with run inputs of its own. */
 export interface MemberData {
@@ -79,6 +88,8 @@ export interface DirectPanelInstance extends PanelInstance {
   expandPageComposer(entry: PanelConversationEntry): void;
   /** Opens one of the platform's addresses, or says on the page why it cannot (see the options). */
   navigate(address: string): Promise<void>;
+  /** Where the platform shows this instance (see the options). */
+  readonly placement: PanelPlacement;
   /** The member's projection, read once for this instance. */
   projectionOf(member: string): Promise<DirectProjection>;
   /**
@@ -240,6 +251,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     text: options.text,
     expandPageComposer: options.expandPageComposer,
     navigate: options.navigate,
+    placement: options.placement,
     projectionOf(member: string) {
       let found = projections.get(member);
       if (!found) {
@@ -364,6 +376,7 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     // The member's projection is the platform's own record here: its declared entry goes to the page's composer as it is.
     expandPageComposer: async ({ slot: _member, ...entry }) => instance.expandPageComposer(entry),
     navigate: (address) => instance.navigate(address),
+    placement: readonly(ref(instance.placement)),
     // A member here reads through the instance's own port; nothing asks the context for it.
     readPanelData: frameOnly("Reading a member's data over the frame's request path"),
   };
