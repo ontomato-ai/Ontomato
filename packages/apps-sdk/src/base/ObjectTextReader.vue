@@ -7,6 +7,7 @@ import type { PanelRecordQuery } from "@ontomato/contracts/panel-projection";
 import { usePanelContext } from "../panel/context";
 import { useMember, useMemberData, useMemberParam } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
+import { useDataStateLabels } from "./data-state-labels";
 
 /**
  * An object's text, read only, through its owner's reads (the platform's one read entry). Two shapes, by the data its
@@ -130,7 +131,7 @@ const shownPage = computed(() => page.value && {
 /** One object's whole text, as the `record` datum holds it. */
 const wholeText = computed(() =>
   recordData?.value.status === "ready" ? (recordData.value.value as unknown as PlatformObjectRecord).fields[props.textField] ?? "" : null);
-const labels = computed(() => ({ empty: t("platform.dataEmpty"), forbidden: t("platform.dataForbidden"), awaiting: t("platform.dataAwaiting") }));
+const labels = useDataStateLabels();
 </script>
 
 <template>

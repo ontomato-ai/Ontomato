@@ -31,8 +31,15 @@ import { slotInputValues } from "./ports";
 /** The objects and types an operation reports it changed. */
 export type PanelOperationAffected = ReturnType<typeof panelOperationAffectedSchema.parse>;
 
-/** One named datum of a member as a component shows it: the host's answer, still loading, or awaiting a selection. */
-export type MemberDataState = PanelDataState | { status: "awaiting" };
+/**
+ * One named datum of a member as a component shows it: the host's answer, still loading, or awaiting a selection. A
+ * failure carries `retry`, which reads it again; one the platform never answered (the page reached nothing) is
+ * `unreachable`, and is worded in the reader's language where it is shown, not with the browser's own words.
+ */
+export type MemberDataState =
+  | Exclude<PanelDataState, { status: "error" }>
+  | { status: "error"; message: string; unreachable?: true; retry?: () => void }
+  | { status: "awaiting" };
 
 /** A projection input's value: a JSON value as the member and the run supply it; absent while nothing is supplied. */
 export type MemberInputs = Readonly<Record<string, RuntimeJsonValue>>;
@@ -249,12 +256,18 @@ export async function readMemberDatum(read: PanelReadPort, projection: DirectPro
   if (awaitsInputs(projection, data, placement, values, own)) return { status: "awaiting" };
   // What the member's component set itself goes apart from the author's inputs, and is checked as such.
   const { runtime, authored } = readParams(projection, data, placement, values, own);
-  // A read the platform could not answer (unavailable, refused before the owner) is this datum's failure, with the
-  // platform's reason: the member shows it where its data would be.
-  const result = await read({
+  // A read the platform answered with a failure (unavailable, refused before the owner) is this datum's failure, with the
+  // platform's reason; one it never answered (the request reached nothing) is unreachable. The member shows either where
+  // its data would be.
+  const result: MemberDataState = await read({
     memberPath, dataName: name, inputs: authored,
     ...(Object.keys(runtime).length ? { runtimeParams: runtime } : {}),
-  }).catch((reason: unknown) => ({ status: "error" as const, message: reason instanceof Error ? reason.message : String(reason) }));
+  }).catch((reason: unknown) => ({
+    status: "error" as const, message: reason instanceof Error ? reason.message : String(reason),
+    // No answer at all: the request reached nothing (the browser's network failure) or what came back was no answer of
+    // the platform's (a gateway's page while a service is replaced). A failure the platform states keeps its words.
+    ...(reason instanceof TypeError || reason instanceof SyntaxError ? { unreachable: true as const } : {}),
+  }));
   if (result.status !== "ready") return result;
   // The host's answer is checked against the result the owner registered for this read.
   const declaration = directReadDeclaration(projection, data);
@@ -438,7 +451,11 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
             // the component drawing it. Only a first read (or one after an empty, refused or failed answer) shows loading.
             if (state.value.status !== "ready") state.value = { status: "loading" };
             // An answer for an earlier read (an earlier selection) is dropped once a later read was asked for.
-            void answer(name, inputs()).then((result) => { if (reading === sequence) state.value = result; });
+            void answer(name, inputs()).then((result) => {
+              if (reading !== sequence) return;
+              // A failure is read again on request, as a refresh reads it.
+              state.value = result.status === "error" ? { ...result, retry: () => { state.value = { status: "loading" }; reread(); } } : result;
+            });
           };
           const entry = { data: projection.data[name]!, inputs, reread };
           shown.add(entry);
