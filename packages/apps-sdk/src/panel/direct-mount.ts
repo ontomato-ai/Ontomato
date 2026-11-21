@@ -4,9 +4,8 @@ import type { ProductPanelNestedReadRequest } from "@ontomato/contracts/panel-ho
 import type { DirectPanelMount as HostDirectPanelMount, DirectPanelRun } from "@ontomato/platform-shell";
 import { createDirectPanelInstance, type DirectPanelInstance, type DirectPanelInstanceOptions } from "./direct";
 import { runPanel } from "./lifecycle";
-import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
 import { directProjectionSchema, type PanelMessages } from "@ontomato/contracts/product-panels";
-import { panelHumanOperations } from "./human-operations";
+import { panelHumanOperations, type PanelOperationUse } from "./human-operations";
 import type { PlatformRequests } from "./platform-objects";
 import { readPageDraft, readProjectionRecord, recordDraftCreated } from "./platform-requests";
 import { createPanelText } from "./text";
@@ -25,8 +24,8 @@ export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions
   run: DirectPanelRun;
   /** The platform's request path, as the reader: drafts, projection records and the coordinator's operations. */
   requests: PlatformRequests;
-  /** The application use the panel runs as; a candidate preview runs as none and runs no operation. */
-  use: PanelUseRef | null;
+  /** The application use the panel runs as (with `root: "frame"` for the frame); a preview runs as none and runs no operation. */
+  use: PanelOperationUse | null;
   /** The panel's own words (its content's messages), in the platform's language with the deployment's default behind. */
   messages: PanelMessages;
   locale: Readonly<Ref<string>>;
