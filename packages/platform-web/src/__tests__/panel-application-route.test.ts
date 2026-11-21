@@ -26,8 +26,15 @@ const uses: ApplicationPanelUse[] = [
 /** Every panel instance the route mounted, and the address each last reported. */
 const mountedInstances: { useId: string; address: ReturnType<typeof ref<string>>; initial: Record<string, unknown> }[] = [];
 
+import { useApplicationCatalog } from "../catalog";
+
 vi.mock("../panel-host", () => ({
-  panelUsesOf: async () => uses,
+  // Java's resolve-entry, answered from the test's use relations: the one at the asked address, with the menu.
+  resolveApplicationEntry: async ({ path }: { path: string }) => {
+    const use = uses.find((candidate) => candidate.path.replace(/^#/, "") === path || candidate.path === path);
+    if (!use) throw new Error(`No entry at ${path}`);
+    return { applicationId: path.split("/")[2], use, menu: { groups: [], panelUses: uses } };
+  },
   // The host the route builds is the one for the use relation its address names.
   platformPanelHost: (_applicationId: string, use: ApplicationPanelUse) => ({ use }),
 }));
@@ -104,7 +111,10 @@ describe("a panel application's page", () => {
   });
 
   it("opens the application's first use at the application's own address", async () => {
+    // The shell's navigation catalogue lists the reader's entries: the application's own address opens the first.
+    useApplicationCatalog().applications.value = [{ id: "app-a", panelUses: uses } as never];
     await mountAt("/applications/app-a");
+    useApplicationCatalog().applications.value = [];
     expect(mountedInstances.map((one) => one.useId)).toEqual(["use-tasks"]);
   });
 

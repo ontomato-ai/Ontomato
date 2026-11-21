@@ -153,7 +153,8 @@ it("shows a page kept within its application as it was left: its module not run 
       expect(router.currentRoute.value.path).toBe(at("tasks"));
       expect(panelAddressState(router.currentRoute.value.fullPath)).toEqual(deepState);
     });
-    await vi.waitFor(() => expect(sent.filter(request => request.path.endsWith("/panel-uses"))).toHaveLength(2));
+    // Its relation is asked of Java again, by the use relation it was opened for.
+    await vi.waitFor(() => expect(sent.filter(request => request.path.endsWith("/resolve-entry") && request.search.includes("useId="))).toHaveLength(1));
     expect(recordReads()).toBe(readsBefore);
     expect(reopened()).toBe(0);
 

@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.applications;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.fasterxml.jackson.databind.JsonNode;
 import io.ontomato.dataengine.core.bean.R;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.IdentityService;
@@ -36,7 +37,7 @@ public class ApplicationController {
     public record PanelEntry(String path, String renderer) {}
     public record PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
                                     ApplicationCatalog.Declaration declaration, List<String> entryAccess,
-                                    String framePanelId, ApplicationCatalog.ThemeOverrides theme, ApplicationCatalog.Delivery delivery) {
+                                    String framePanelId, JsonNode theme, ApplicationCatalog.Delivery delivery) {
         public PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
                                  ApplicationCatalog.Declaration declaration, List<String> entryAccess) {
             this(entry, panelUses, declaration, entryAccess, null, null, null);

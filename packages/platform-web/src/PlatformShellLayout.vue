@@ -9,6 +9,7 @@ import {
   platformApplicationNameKey,
   pilotPageKey,
   platformPageAccessKey,
+  provideApplicationTheme,
   providePageActions,
   providePageHeading,
   provideUnsavedChanges,
@@ -164,6 +165,8 @@ const localeNames = computed(() =>
 
 /** What the shown page hands to its header: the frame reads it, the header presents it. */
 const pageActions = providePageActions();
+/** What the shown entry's application assigns in its area, written by the application's page. */
+const appTheme = provideApplicationTheme();
 
 /**
  * The pages the platform's assembly can mount beside a conversation: the conversation application asks for one by
@@ -261,6 +264,7 @@ const blocked = computed(() => {
     :labels="labels"
     :brand="shellBrand"
     :page-actions="pageActions"
+    :app-theme="appTheme"
     :blocked="catalog.error.value ? { reason: 'no-pages', message: catalog.error.value } : blocked"
     @select-app="selectRailApp"
   />

@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import com.alibaba.fastjson2.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.BuiltinProductIds;
 import java.nio.charset.StandardCharsets;
@@ -22,14 +23,13 @@ public class ApplicationCatalog {
     private static final org.slf4j.Logger log = LoggerFactory.getLogger(ApplicationCatalog.class);
     public record PanelUseLocation(String applicationId, Map<String, String> names, String useId, String path) {}
     public record EntryMenu(List<Group> groups, List<ApplicationPanelUse> panelUses) {}
-    public record ThemeOverrides(Map<String, String> light, Map<String, String> dark) {}
     public record Delivery(List<String> panels, List<String> projections, List<String> packages, List<String> agents,
                            List<PageSkills.Skill> skills) {}
-    private record PanelSettings(String framePanelId, ThemeOverrides theme, Delivery delivery) {
+    private record PanelSettings(String framePanelId, JsonNode theme, Delivery delivery) {
         JSONObject json() {
             var result = new JSONObject();
             if (framePanelId != null) result.put("framePanelId", framePanelId);
-            if (theme != null) result.put("theme", theme);
+            if (theme != null) result.put("theme", JSON.parseObject(theme.toString()));
             if (delivery != null) result.put("delivery", delivery);
             return result;
         }
@@ -666,11 +666,15 @@ public class ApplicationCatalog {
     }
 
     private static JSONObject entryResolution(JSONObject app, ApplicationPanelUse use, List<ApplicationPanelUse> allowed) {
-        var named = allowed.stream().filter(entry -> entry.names() != null).toList();
+        boolean panels = panelManaged(app);
+        var named = allowed.stream().filter(entry -> entry.names() != null)
+            .map(entry -> panels ? entry : entry.withoutInputs()).toList();
         var groupKeys = new HashSet<>(named.stream().map(ApplicationPanelUse::groupKey).toList());
         var groups = app.getList("groups", Group.class).stream().filter(group -> groupKeys.contains(group.key()))
             .sorted(Comparator.comparingInt(Group::sort)).toList();
-        var result = JSONObject.of("applicationId", app.getString("id"), "use", use, "menu", new EntryMenu(groups, named));
+        var result = JSONObject.of("applicationId", app.getString("id"), "use", panels ? use : use.withoutInputs(),
+            "menu", new EntryMenu(groups, named));
+        if (!panels) return result;
         var settings = app.getJSONObject("panelSettings");
         if (settings.containsKey("framePanelId")) result.put("framePanelId", settings.getString("framePanelId"));
         if (settings.containsKey("theme")) result.put("theme", settings.getJSONObject("theme"));
@@ -760,7 +764,7 @@ public class ApplicationCatalog {
         var ids = new HashSet<>(uses.stream().map(ApplicationPanelUse::panelId).toList());
         if (settings.framePanelId() != null) ids.add(settings.framePanelId());
         for (var panelId : ids) if (!grants.allowed(panelId, "use")) throw denied();
-        panels.requireCurrent(user.getDomainId(), settings.framePanelId(), uses, settings.delivery());
+        panels.requireCurrent(user.getDomainId(), settings.framePanelId(), uses, settings.delivery(), settings.theme());
         return transactions.execute(tx -> {
             lockCatalog();
             var current = all().stream().filter(app -> id.equals(app.getString("id"))).findFirst();

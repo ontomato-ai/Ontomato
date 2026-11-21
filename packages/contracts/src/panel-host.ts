@@ -5,12 +5,12 @@ import { pageContextSchema } from "./page-context";
 import { pageDraftLinkSchema } from "./page-draft";
 import { panelUseRefSchema } from "./panel-agent";
 import {
-  panelMemberPathSchema, panelMemberPathSegmentSchema, panelObjectIdentitySchema, panelObjectRefSchema,
-  panelOpenRequestSchema, panelOperationSchema, type PanelDeepLinkStateValue, type PanelObjectIdentity,
+  matchesDirectPanelValue, panelMemberPathSchema, panelMemberPathSegmentSchema, panelObjectIdentitySchema, panelObjectRefSchema,
+  panelOpenRequestSchema, panelOperationSchema, type PanelDeepLinkStateValue, type PanelManifest, type PanelObjectIdentity,
 } from "./panel-manifest";
 import { panelOwnerOperationDescriptorSchema } from "./panel-operations";
 import { panelLocalOperationNameSchema } from "./panel-projection";
-import { applicationPanelUseSchema, panelDefinitionContentSchema, productPanelSchema } from "./product-panels";
+import { applicationPanelUsePathSchema, applicationPanelUseSchema, panelDefinitionContentSchema, productPanelSchema } from "./product-panels";
 import { productCurrentIdParamsSchema } from "./product-record-id";
 import { definitionRevisionSchema, type ProductDefinitionRevision, type ProductDefinitionTarget } from "./product-subscriptions";
 import { workspaceDiffSchema, workspaceIdSchema } from "./workspaces";
@@ -94,7 +94,7 @@ export const productPanelNestedReadRequestSchema = z.object({
 export type ProductPanelNestedReadRequest = z.infer<typeof productPanelNestedReadRequestSchema>;
 
 export const productPanelNestedReadResponseSchema = z.object({
-  panel: panelDefinitionContentSchema.pick({ content: true, manifest: true }).extend({
+  panel: panelDefinitionContentSchema.pick({ content: true, manifest: true, theme: true }).extend({
     id: productCurrentIdParamsSchema.shape.id,
     revision: definitionRevisionSchema.shape.revision,
   }),
@@ -240,6 +240,63 @@ export function panelMessageOf<T>(schema: { safeParse(value: unknown): { success
   const { channel: _channel, ...message } = data as Record<string, unknown>;
   const parsed = schema.safeParse(message);
   return parsed.success ? parsed.data : null;
+}
+
+type PanelAddressState = Record<string, PanelDeepLinkStateValue>;
+const addressStateSchema = panelOpenRequestSchema.shape.state;
+const addressSections = z.object({ frame: addressStateSchema, state: addressStateSchema }).strict();
+
+/** Split a canonical site route, as supplied by the router, into its two state sections and other query parameters. */
+export function parseApplicationPanelAddress(address: string) {
+  const separator = address.indexOf("?");
+  const path = applicationPanelUsePathSchema.parse(separator < 0 ? address : address.slice(0, separator));
+  const query = new URLSearchParams(separator < 0 ? "" : address.slice(separator + 1));
+  function read(section: "frame" | "state"): unknown {
+    const values = query.getAll(section);
+    if (values.length === 0) return {};
+    if (values.length > 1) throw new Error(`The panel address supplies '${section}' more than once`);
+    query.delete(section);
+    try {
+      return JSON.parse(values[0]!);
+    } catch {
+      throw new Error(`Invalid JSON in the panel address's '${section}' section`);
+    }
+  }
+  return { path, ...addressSections.parse({ frame: read("frame"), state: read("state") }), query };
+}
+
+/** Encode the resolved frame and content state once, preserving other query parameters such as a draft link. */
+export function applicationPanelAddress(path: string, {
+  frame = {}, state = {}, query,
+}: { frame?: PanelAddressState; state?: PanelAddressState; query?: URLSearchParams } = {}): string {
+  const route = applicationPanelUsePathSchema.parse(path);
+  const values = addressSections.parse({ frame, state });
+  const params = new URLSearchParams(query);
+  for (const section of ["frame", "state"] as const) {
+    params.delete(section);
+    if (Object.keys(values[section]).length > 0) params.set(section, JSON.stringify(values[section]));
+  }
+  const search = params.toString();
+  return search ? `${route}?${search}` : route;
+}
+
+/** Verify address inputs after resolving the definitions, and remove keys owned by the entry's declared wiring. */
+export function validateApplicationPanelAddressState(
+  section: "frame" | "state",
+  values: PanelAddressState,
+  manifest: Pick<PanelManifest, "state"> | undefined,
+  controlled: readonly string[] = [],
+): PanelAddressState {
+  return Object.fromEntries(Object.entries(values).filter(([name, value]) => {
+    if (controlled.includes(name)) return false;
+    const fields = manifest?.state;
+    const field = fields && Object.hasOwn(fields, name) ? fields[name] : undefined;
+    if (!field?.deepLink) throw new Error(`Panel address field '${section}.${name}' is not declared for deep linking`);
+    if (!matchesDirectPanelValue(field.type, value)) {
+      throw new Error(`Panel address field '${section}.${name}' does not match its declared type`);
+    }
+    return true;
+  }));
 }
 
 /** The route owned by the application use. */

@@ -16,7 +16,7 @@ import {
   type PanelHostMessage,
   type PanelRefreshPort,
 } from "@ontomato/contracts/panel-host";
-import type { PanelObjectIdentity, PanelOperation } from "@ontomato/contracts/panel-manifest";
+import type { PanelObjectIdentity, PanelOperation, PanelThemeOverrides } from "@ontomato/contracts/panel-manifest";
 import type { PanelOperationAffected } from "@ontomato/contracts/panel-operations";
 import { adoptPanelStyle, PanelStyleOutsideError, scopedPanelStyle, splitCodedPanelHtml } from "./panel-content";
 import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
@@ -125,6 +125,11 @@ export interface DirectPanelRun {
   draftSettled(draft: PageDraftLink): void;
   /** The panel cannot run (a draft no form takes, a draft that could not be read), and why. */
   failed(reason: unknown): void;
+  /**
+   * The placement's theme, for a panel another panel places: the host lays it over the placed panel's own theme on the
+   * placed panel's element, so this placement's values win over the panel's.
+   */
+  theme?: PanelThemeOverrides;
 }
 
 /** A started panel instance, as its host drives it. */
