@@ -45,6 +45,14 @@
       "path": "/ontology/relations", "access": {"permissionCode": "ontology-modeling"},
       "names": {"en": "Relation types", "zh-CN": "关系类型"}
     }, {
+      "id": "ontology-actions", "pageKey": "actions", "panelId": "builtin-product-ontology-actions",
+      "path": "/ontology/assets/actions", "access": {"permissionCode": "action-management"},
+      "names": {"en": "Actions", "zh-CN": "动作"}
+    }, {
+      "id": "capability-map", "pageKey": "capability-map", "panelId": "builtin-product-capability-map",
+      "path": "/ontology/assets/capability-map", "access": {"permissionCode": "action-management"},
+      "names": {"en": "Capability map", "zh-CN": "能力图谱"}
+    }, {
       "id": "ontology-functions", "pageKey": "ontology-functions", "panelId": "builtin-product-ontology-functions",
       "path": "/ontology/assets/functions", "access": {"permissionCode": "ontology-modeling"},
       "names": {"en": "Functions", "zh-CN": "函数"}

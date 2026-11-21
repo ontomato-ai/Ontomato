@@ -1,0 +1,323 @@
+<!--
+  Actions: the catalog on the left or above, the selected action's details on the right.
+
+  Every part reads platform:Action: the catalog from the list read, the selected action's facts from the record read,
+  the definition form from the form and createForm reads drawn by the ObjectForm (saved by platform:Action.save),
+  the derived definition and code explanation from the definition and explanation reads; the status change is a batch
+  setStatus operation and delete is the delete operation.
+  There is no blank manual creation: the new-action button opens this page's agent input; once the owner adopts the
+  agent's definition it becomes a page draft the reader checks and saves.
+-->
+<style>
+  [v-cloak] { display: none; }
+  .ac { display: flex; flex-direction: column; gap: var(--spacing-md, 12px); min-width: 0; }
+  .ac-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--spacing-sm, 8px); }
+  .ac-title { margin: 0; color: var(--el-text-color-primary); font-size: 18px; font-weight: 600; line-height: 1.5; }
+  .ac-subtitle { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: 13px; line-height: 1.6; }
+  .ac-filter { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm, 8px); }
+  .ac-filter-input { max-width: 20rem; }
+  .ac-count { color: var(--el-text-color-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .ac-batch {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm, 8px);
+    padding: var(--spacing-sm, 8px); border: 1px solid var(--el-border-color-lighter); border-radius: 4px;
+    background: var(--el-fill-color-light, transparent);
+  }
+  .ac-results { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+  .ac-results li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 12px; line-height: 1.6; }
+  .ac-results li[data-outcome="success"] { color: var(--el-text-color-secondary); }
+  .ac-results li[data-outcome="failed"] { color: var(--el-color-danger); }
+  .ac-table-wrap { overflow-x: auto; }
+  .ac-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .ac-table th, .ac-table td {
+    padding: 6px 8px; text-align: left; vertical-align: top;
+    border-bottom: 1px solid var(--el-border-color-lighter);
+  }
+  .ac-table th { color: var(--el-text-color-secondary); font-weight: 500; white-space: nowrap; }
+  .ac-table tbody tr { cursor: pointer; }
+  .ac-table tbody tr:hover { background: var(--el-fill-color-light, rgba(0, 0, 0, .03)); }
+  .ac-table tbody tr[data-selected="true"] { background: var(--el-color-primary-light-9); }
+  .ac-table td.ac-check { width: 2rem; cursor: default; }
+  .ac-name { color: var(--el-text-color-primary); font-weight: 500; }
+  .ac-sub { color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.6; word-break: break-word; }
+  .ac-nowrap { white-space: nowrap; }
+  .ac-hint { margin: 0; color: var(--el-text-color-secondary); font-size: 13px; line-height: 1.6; }
+  .ac-error { margin: 0; color: var(--el-color-danger); font-size: 13px; line-height: 1.6; }
+  .ac-detail { display: flex; flex-direction: column; gap: var(--spacing-md, 12px); min-width: 0; }
+  .ac-detail-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm, 8px); }
+  .ac-detail-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm, 8px); min-width: 0; }
+  .ac-detail-title h2 { margin: 0; color: var(--el-text-color-primary); font-size: 16px; font-weight: 600; }
+  .ac-detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm, 8px); margin-left: auto; }
+  .ac-tabs { display: flex; flex-wrap: wrap; gap: var(--spacing-xs, 4px); border-bottom: 1px solid var(--el-border-color-lighter); }
+  .ac-tab {
+    padding: 6px 10px; border: none; border-bottom: 2px solid transparent; background: none; cursor: pointer;
+    color: var(--el-text-color-regular); font: inherit; font-size: 13px;
+  }
+  .ac-tab[aria-selected="true"] { border-bottom-color: var(--el-color-primary); color: var(--el-color-primary); font-weight: 600; }
+  .ac-section { display: flex; flex-direction: column; gap: var(--spacing-sm, 8px); min-width: 0; }
+  .ac-section h3 { margin: 0; color: var(--el-text-color-primary); font-size: 13px; font-weight: 600; }
+  .ac-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 13px; line-height: 1.7; }
+  .ac-label { color: var(--el-text-color-secondary); font-size: 12px; }
+  .ac-value { color: var(--el-text-color-regular); word-break: break-word; }
+  .ac-code-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--spacing-sm, 8px); }
+  @media (max-width: 48rem) { .ac-code-body { grid-template-columns: minmax(0, 1fr); } }
+  .ac-code-lines {
+    max-height: 30rem; overflow: auto; border: 1px solid var(--el-border-color-lighter); border-radius: 4px;
+    background: var(--el-fill-color-blank, transparent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  }
+  .ac-line { display: flex; gap: 8px; padding: 0 6px; line-height: 18px; cursor: pointer; white-space: pre; }
+  .ac-line:hover { background: var(--el-fill-color-light, rgba(0, 0, 0, .04)); }
+  .ac-line[data-hit="true"] { background: var(--el-color-primary-light-9); }
+  .ac-line-no { flex: none; width: 2.5rem; color: var(--el-text-color-placeholder); text-align: right; user-select: none; }
+  .ac-line-text { flex: 1 1 auto; color: var(--el-text-color-regular); }
+  .ac-segments { display: flex; flex-direction: column; gap: 4px; max-height: 30rem; overflow: auto; }
+  .ac-seg {
+    display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; border: 1px solid var(--el-border-color-lighter);
+    border-radius: 4px; background: none; text-align: left; cursor: pointer; font: inherit; font-size: 12px;
+  }
+  .ac-seg[aria-current="true"] { border-color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
+  .ac-seg[data-depth="1"] { margin-left: 12px; }
+  .ac-seg[data-depth="2"] { margin-left: 24px; }
+  .ac-seg[data-depth="3"] { margin-left: 36px; }
+  .ac-seg-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+  .ac-seg-kind { color: var(--el-color-primary); }
+  .ac-seg-title { color: var(--el-text-color-primary); font-weight: 500; }
+  .ac-seg-range, .ac-seg-note { color: var(--el-text-color-secondary); }
+  .ac-list { margin: 0; padding-left: 1.1rem; color: var(--el-text-color-regular); font-size: 13px; line-height: 1.7; }
+  .ac-effect { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; border-left: 2px solid var(--el-border-color); }
+  .ac-effect-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 13px; }
+  .ac-effect-kind { color: var(--el-color-primary); }
+  .ac-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; word-break: break-word; }
+</style>
+<div id="app" v-cloak>
+  <section class="ac">
+    <header class="ac-head">
+      <div>
+        <h1 class="ac-title">{{ t("title") }}</h1>
+        <p class="ac-subtitle">{{ t("subtitle") }}</p>
+      </div>
+      <div>
+        <!-- The one way to create: open this page's agent input; nothing is sent until the reader sends it. -->
+        <projection slot="newAction"></projection>
+      </div>
+    </header>
+
+    <!-- Catalog: all actions of the domain, filtered by name or description; checked ones change status together. -->
+    <section class="ac-section" v-show="!detailVisible">
+      <div class="ac-filter">
+        <el-input class="ac-filter-input" size="small" clearable v-model="keywordModel"
+          :placeholder="t('keywordPlaceholder')" :aria-label="t('keyword')"></el-input>
+        <span class="ac-count">{{ t("count", { n: visibleRows.length }) }}</span>
+      </div>
+
+      <div class="ac-batch" v-show="checked.length > 0">
+        <span class="ac-count">{{ t("checked", { n: checked.length }) }}</span>
+        <el-select size="small" style="width: 10rem" v-model="statusToSet" :placeholder="t('chooseStatus')">
+          <el-option v-for="option in statusOptions" :key="option.value" :value="option.value" :label="option.label"></el-option>
+        </el-select>
+        <el-button size="small" type="primary" :loading="statusRunning" :disabled="!statusToSet || !statusAdmitted" @click="applyStatus">
+          {{ statusLabel }}
+        </el-button>
+        <el-button size="small" text @click="clearChecked">{{ t("clearChecked") }}</el-button>
+      </div>
+
+      <ul class="ac-results" v-show="statusResults.length > 0" role="status">
+        <li v-for="result in statusResults" :key="result.key" :data-outcome="result.ok ? 'success' : 'failed'">
+          <strong v-if="result.name">{{ result.name }}</strong>
+          <span>{{ result.message }}</span>
+        </li>
+      </ul>
+
+      <p class="ac-hint" v-if="rowsRead.status === 'loading'">{{ t("loading") }}</p>
+      <p class="ac-hint" v-else-if="rowsRead.status === 'empty'">{{ t("empty") }}</p>
+      <p class="ac-error" v-else-if="rowsRead.status === 'forbidden'">{{ t("forbidden") }}</p>
+      <p class="ac-error" v-else-if="rowsRead.status === 'error'" role="alert">{{ rowsRead.message }}</p>
+      <template v-else-if="rowsRead.status === 'ready'">
+        <p class="ac-hint" v-if="visibleRows.length === 0">{{ t("noMatch") }}</p>
+        <div class="ac-table-wrap" v-else>
+          <table class="ac-table">
+            <thead>
+              <tr>
+                <th class="ac-check"><input type="checkbox" :checked="allChecked" :aria-label="t('checked', { n: visibleRows.length })" @change="toggleAll"></th>
+                <th>{{ t("name") }}</th>
+                <th>{{ columnLabel("function") }}</th>
+                <th>{{ columnLabel("origin") }}</th>
+                <th>{{ columnLabel("status") }}</th>
+                <th>{{ columnLabel("createdBy") }}</th>
+                <th>{{ columnLabel("reviewedBy") }}</th>
+                <th>{{ columnLabel("updatedAt") }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in visibleRows" :key="row.primaryKey" :data-selected="row.primaryKey === selectedKey" @click="selectRow(row)">
+                <td class="ac-check" @click.stop>
+                  <input type="checkbox" :checked="isChecked(row)" :aria-label="row.label" @change="toggleChecked(row)">
+                </td>
+                <td>
+                  <div class="ac-name">{{ row.label }}</div>
+                  <div class="ac-sub">{{ row.subtitle }}</div>
+                </td>
+                <td class="ac-nowrap">{{ row.fields.function }}</td>
+                <td class="ac-nowrap">{{ row.fields.origin }}</td>
+                <td class="ac-nowrap"><el-tag v-if="row.fields.status" size="small" :type="statusTagType(row)">{{ row.fields.status }}</el-tag></td>
+                <td class="ac-nowrap">{{ row.fields.createdBy }}</td>
+                <td class="ac-nowrap">{{ row.fields.reviewedBy }}</td>
+                <td class="ac-nowrap">{{ formatTime(row.fields.updatedAt) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
+      <p class="ac-hint" v-else>{{ t("awaiting") }}</p>
+    </section>
+
+    <!-- Details: one action's definition, derived definition, code explanation, and delete. -->
+    <section class="ac-detail" v-show="detailVisible">
+      <div class="ac-detail-head">
+        <el-button size="small" text @click="back">{{ t("back") }}</el-button>
+        <div class="ac-detail-title">
+          <h2>{{ recordLabel }}</h2>
+          <el-tag v-if="recordStatus" size="small" :type="statusTagType(record)">{{ recordStatus }}</el-tag>
+          <el-tag v-if="recordOrigin" size="small" type="info">{{ recordOrigin }}</el-tag>
+        </div>
+        <div class="ac-detail-actions" v-if="selected && !systemAction">
+          <span class="ac-hint">{{ t("deleteHint") }}</span>
+          <projection slot="remove"></projection>
+        </div>
+      </div>
+
+      <div class="ac-tabs" role="tablist">
+        <button type="button" class="ac-tab" role="tab" v-for="tab in tabs" :key="tab.key"
+          :aria-selected="activeTab === tab.key" @click="activeTab = tab.key">{{ t(tab.label) }}</button>
+      </div>
+
+      <!-- Definition: drawn as the owner declares it; the owner makes a system action read-only and a published action's code read-only. -->
+      <projection slot="form" v-show="activeTab === 'definition'"></projection>
+
+      <!-- Derived definition: the effects, parameters and submission conditions the owner derives from the code. -->
+      <section class="ac-section" v-show="activeTab === 'derived'">
+        <p class="ac-hint">{{ t("derivedHint") }}</p>
+        <p class="ac-hint" v-if="definitionRead.status === 'loading' || definitionRead.status === 'awaiting'">{{ t("loading") }}</p>
+        <p class="ac-error" v-else-if="definitionRead.status === 'forbidden'">{{ t("forbidden") }}</p>
+        <p class="ac-error" v-else-if="definitionRead.status === 'error'" role="alert">{{ definitionRead.message }}</p>
+        <template v-else-if="definitionRead.status === 'ready'">
+          <div class="ac-row" v-if="declaredTarget">
+            <span class="ac-label">{{ t("declaredTarget") }}</span>
+            <span class="ac-value ac-mono">{{ declaredTarget.className }} ← {{ declaredTarget.keyParameter }}</span>
+          </div>
+          <p class="ac-hint" v-else>{{ t("noTarget") }}</p>
+          <div class="ac-row" v-if="affects.length > 0">
+            <span class="ac-label">{{ t("affects") }}</span>
+            <el-tag v-for="className in affects" :key="className" size="small" type="info">{{ className }}</el-tag>
+          </div>
+
+          <h3>{{ t("effects") }}</h3>
+          <p class="ac-hint" v-if="effectGroups.length === 0">{{ t("noEffects") }}</p>
+          <div class="ac-section" v-for="group in effectGroups" :key="group.key">
+            <h3>{{ t(group.label) }} <span class="ac-count">{{ group.items.length }}</span></h3>
+            <div class="ac-effect" v-for="(effect, index) in group.items" :key="group.key + '-' + index">
+              <div class="ac-effect-head">
+                <span class="ac-effect-kind">{{ effect.kindLabel }}</span>
+                <span class="ac-value" v-if="effect.title">{{ effect.title }}</span>
+                <span class="ac-mono" v-if="effect.className">{{ effect.className }}</span>
+                <span class="ac-mono" v-if="effect.relation">{{ effect.relation }}</span>
+              </div>
+              <div class="ac-row" v-if="effectLine(effect)">
+                <span class="ac-value ac-mono">{{ effectLine(effect) }}</span>
+              </div>
+              <div class="ac-row" v-if="effectFields(effect)">
+                <span class="ac-label">{{ t("fields") }}</span>
+                <span class="ac-value ac-mono">{{ effectFields(effect) }}</span>
+              </div>
+              <div class="ac-row" v-if="effectChecks(effect)">
+                <span class="ac-label">{{ t("checks") }}</span>
+                <span class="ac-value ac-mono">{{ effectChecks(effect) }}</span>
+              </div>
+              <p class="ac-hint" v-if="effect.narrative">{{ effect.narrative }}</p>
+            </div>
+          </div>
+
+          <h3>{{ t("parameters") }}</h3>
+          <p class="ac-hint" v-if="parameters.length === 0">{{ t("noParameters") }}</p>
+          <div class="ac-table-wrap" v-else>
+            <table class="ac-table">
+              <thead>
+                <tr>
+                  <th>{{ t("name") }}</th>
+                  <th>{{ t("kind") }}</th>
+                  <th>{{ t("description") }}</th>
+                  <th>{{ t("object") }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="parameter in parameters" :key="parameter.name">
+                  <td class="ac-name ac-mono">{{ parameter.name }}</td>
+                  <td class="ac-mono">{{ parameter.type }}</td>
+                  <td>{{ parameter.description }}</td>
+                  <td class="ac-mono">{{ (parameter.objectTypes || []).join(", ") }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>{{ t("conditions") }}</h3>
+          <p class="ac-hint" v-if="conditions.length === 0">{{ t("noConditions") }}</p>
+          <ul class="ac-list" v-else>
+            <li v-for="(condition, index) in conditions" :key="'condition-' + index">
+              <span class="ac-mono">{{ conditionText(condition) }}</span>
+              <span v-if="condition.message || condition.failureMessage"> — {{ condition.message || condition.failureMessage }}</span>
+            </li>
+          </ul>
+        </template>
+      </section>
+
+      <!-- Code explanation: code lines on the left, explained segments on the right; either side locates the other. -->
+      <section class="ac-section" v-show="activeTab === 'code'">
+        <div class="ac-row">
+          <span class="ac-label">{{ t("segments") }}</span>
+          <el-tag v-if="explanationStale" size="small" type="warning">{{ t("codeStale") }}</el-tag>
+        </div>
+        <p class="ac-hint" v-if="explanationStale">{{ t("codeStaleHint") }}</p>
+        <p class="ac-hint" v-if="explanationRead.status === 'loading' || explanationRead.status === 'awaiting'">{{ t("loading") }}</p>
+        <p class="ac-error" v-else-if="explanationRead.status === 'forbidden'">{{ t("forbidden") }}</p>
+        <p class="ac-error" v-else-if="explanationRead.status === 'error'" role="alert">{{ explanationRead.message }}</p>
+        <p class="ac-hint" v-else-if="!hasExplanation">{{ t("noExplanation") }}</p>
+        <template v-else>
+          <div class="ac-code-body">
+            <div class="ac-code-lines" ref="codeBox">
+              <div class="ac-line" v-for="line in codeLines" :key="line.number" :data-line="line.number"
+                :data-hit="activeRange ? line.number >= activeRange.start && line.number <= activeRange.end : false"
+                @click="pickLine(line.number)">
+                <span class="ac-line-no">{{ line.number }}</span>
+                <span class="ac-line-text">{{ line.text }}</span>
+              </div>
+            </div>
+            <div class="ac-segments">
+              <button type="button" class="ac-seg" v-for="segment in segments" :key="segment.id" :data-depth="segment.depth"
+                :aria-current="activeSegmentId === segment.id" @click="pickSegment(segment)">
+                <span class="ac-seg-head">
+                  <span class="ac-seg-kind">{{ segment.kindLabel }}</span>
+                  <span class="ac-seg-title">{{ segment.title }}</span>
+                  <span class="ac-seg-range">{{ t("segLine", { start: segment.codeRange.start, end: segment.codeRange.end }) }}</span>
+                </span>
+                <span class="ac-seg-note" v-if="segment.note">{{ segment.note }}</span>
+              </button>
+            </div>
+          </div>
+
+          <h3>{{ t("businessMeaning") }}</h3>
+          <p class="ac-hint" v-if="!meaning">{{ t("noMeaning") }}</p>
+          <template v-else>
+            <div class="ac-row">
+              <span class="ac-label">{{ t("operations") }}</span>
+            </div>
+            <ul class="ac-list"><li v-for="(operation, index) in meaning.operations" :key="'operation-' + index">{{ operation }}</li></ul>
+            <div class="ac-row" v-if="meaning.negativeEffect">
+              <span class="ac-label">{{ t("negativeEffect") }}</span>
+              <span class="ac-value">{{ meaning.negativeEffect }}</span>
+            </div>
+          </template>
+        </template>
+      </section>
+    </section>
+  </section>
+</div>

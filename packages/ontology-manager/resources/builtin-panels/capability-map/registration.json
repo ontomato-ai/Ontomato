@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-capability-map",
+      "input": {
+        "name": "Capability map",
+        "description": "Four-layer platform capability map: type mode with the read-only class catalogue and details, and instance mode for one-hop relation exploration."
+      }
+    }
+  ]
+}
