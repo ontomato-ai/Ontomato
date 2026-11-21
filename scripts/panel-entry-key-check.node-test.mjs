@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -24,8 +24,9 @@ const entryProjection = {
   domainId: "d", ownerId: "o", revision: 1, createdAt: "", updatedAt: "", editable: false, visibility: "domain",
 };
 
-async function workspace(messages) {
+async function workspace(t, messages) {
   const directory = await mkdtemp(join(tmpdir(), "ontomato-entry-key-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
   await writeFile(join(directory, "panel.json"), JSON.stringify({
     manifest: { state: {}, members: { create: { target: { projectionId: entryProjection.id } } }, events: {} },
     content: { messages },
@@ -36,12 +37,14 @@ async function workspace(messages) {
 }
 
 /** Runs the check in a Node that reads the contracts' TypeScript, with the registered projection found by lookup. */
-async function check(directory) {
+async function check(directory, prefillKey = entryProjection.conversationEntry.prefillKey) {
   const program = `
     import * as checks from ${JSON.stringify(pathToFileURL(join(ROOT, "packages/contracts/src/panel-check.ts")).href)};
     import { checkPanelWorkspace } from ${JSON.stringify(pathToFileURL(join(ROOT, "agent-skills/ontomato-app-builder/panel-check.mjs")).href)};
     const catalogue = { version: ${JSON.stringify(version)}, components: [{ componentId: "ConversationEntry", data: {} }] };
-    const projection = ${JSON.stringify(entryProjection)};
+    const projection = ${JSON.stringify({
+      ...entryProjection, conversationEntry: { ...entryProjection.conversationEntry, prefillKey },
+    })};
     const result = await checkPanelWorkspace(${JSON.stringify(directory)}, {
       checks, catalogue, version: ${JSON.stringify(version)}, lookup: async (kind, id) => (kind === "projection" && id === projection.id ? projection : null),
     });
@@ -49,16 +52,17 @@ async function check(directory) {
   return run(process.execPath, ["--import", "./packages/contracts/node_modules/tsx/dist/loader.mjs", "--input-type=module", "-e", program], { cwd: ROOT });
 }
 
-test("a reused projection's opening-sentence key must be in each language the placing panel declares", async () => {
-  const missing = await workspace({ en: { "actions.create": "Help me create an action:" }, "zh-CN": {} });
+test("a reused projection's opening-sentence key must be in each language the placing panel declares", async (t) => {
+  const missing = await workspace(t, { en: { "actions.create": "Help me create an action:" }, "zh-CN": {} });
   await assert.rejects(check(missing), (error) =>
     error.stderr.includes("member create (projection entry-proj) prefillKey 'actions.create' is not in content.messages (zh-CN)"));
 
   // An inherited name is no key of the panel's.
-  const inherited = await workspace({ en: { "actions.create": "Help me create an action:" }, "zh-CN": { "toString": "x" } });
-  await assert.rejects(check(inherited), (error) => error.stderr.includes("(zh-CN)"));
+  const inherited = await workspace(t, { en: { toString: "Help me create an action:" }, "zh-CN": {} });
+  await assert.rejects(check(inherited, "toString"), (error) =>
+    error.stderr.includes("prefillKey 'toString' is not in content.messages (zh-CN)"));
 
-  const held = await workspace({ en: { "actions.create": "Help me create an action:" }, "zh-CN": { "actions.create": "帮我新建一个动作：" } });
+  const held = await workspace(t, { en: { "actions.create": "Help me create an action:" }, "zh-CN": { "actions.create": "帮我新建一个动作：" } });
   const { stdout } = await check(held);
   assert.equal(JSON.parse(stdout).status, "valid");
 });
