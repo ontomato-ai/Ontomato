@@ -545,6 +545,25 @@ describe("ontology model server operations", () => {
       .toEqual(["attributes.delete.inspect-impact", "relationships.delete.inspect-impact"]);
   });
 
+  it("names the attribute that becomes the primary key and the one that stops being it", async () => {
+    const { host } = owner(() => ({
+      status: 200,
+      body: [
+        { ...attributeView, name: "id", showName: "ID", primaryKey: true },
+        attributeView,
+        { ...attributeView, name: "note", showName: "Note" },
+      ],
+    }));
+    expect(await setPrimaryKey.inspectImpact!.inspect(host, [{ target: attributeTarget, input: {} }])).toEqual({
+      summary: "This makes the selected attribute the primary key of its object type; the current primary key stops being one.",
+      objects: [
+        { target: { objectType: ATTRIBUTE, primaryKey: '["Device","id"]' }, label: "ID" },
+        { target: { objectType: ATTRIBUTE, primaryKey: '["Device","size"]' }, label: "Size" },
+      ],
+      total: 2,
+    });
+  });
+
   it("inspects object type deletion impact and propagates 404 errors", async () => {
     const impact = {
       relationships: [
