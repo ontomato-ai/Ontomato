@@ -62,21 +62,12 @@ that can load this page's skill, whose class scope includes that class and whose
 2. When the change touches the code or the parameters, run the changed definition in the owner's sandbox (above)
    before drafting. A change to the name, description, status or target alone needs no run: the owner compares the
    code and parameters with the saved ones.
-3. Write the page draft `outputs/drafts/<name>.page-draft.json`:
-
-```json
-{
-  "pageKey": "<the pageKey in the current page context>",
-  "operation": "action.update",
-  "target": { "id": "<the selected action id>" },
-  "form": { "description": "…" }
-}
-```
-
+3. Write the page draft. How a draft is written and linked is in this page's generated skill; this page adds only
+   that an edit takes the selected action as its target.
 4. Put only the changed fields in the draft's `form`, plus `explanationRef` when you ran the code. The owner checks the
    whole form and shows a refusal beside the field it concerns.
-5. Hand the reader the draft link with the draft path and the current `sessionId` and `runId` (`draftSessionId`,
-   `draftRunId`, `draftPath`). Opening it fills the form and marks the changed fields; the reader saves. You never save.
+5. Hand the reader the draft link: opening it fills the form and marks the changed fields, and the reader saves. You
+   never save.
 
 When a draft changes `function/code`, say so: on save the owner explains the new code, and the derived definition and
 code explanation follow it. A
@@ -85,22 +76,20 @@ instead.
 
 ## Creating an action: the only way
 
-The page has no blank manual creation. The new-action button above the catalog only opens this page's input with an
+The page has no blank manual creation. The new-action button on this page only opens this page's input with an
 opening line; the reader sends the message. The action starts with you:
 
 1. Write the action: its target object type and key parameter (a `TYPE_STRING` parameter carrying the object's primary
    key), and `function` with `operation: "OPERATION_WRITE"`, a `name`, typed `parameters`, `returnDef`, `logic` and
    the Python `code` by the owner's protocol.
 2. Run it in the owner's sandbox (above) until the owner accepts the run.
-3. Read `createForm` once for the new action form's fields and defaults (the draft operation is `action.create` and the
-   status defaults to `PENDING_REVIEW`).
+3. Read `createForm` once for the new action form's fields and defaults (the status defaults to `PENDING_REVIEW`).
 4. Put the definition that passed into the form as it is: `name`, `description`, `target` (`className` and
    `keyParameter`, omitted when there is no target), `function` (`name`, `operation`, `parameters`, `returnDef`,
    `logic`, `code`) and `explanationRef`. Do not rewrite a parameter or a line of code after the run.
-5. Write it as the page draft with `"operation": "action.create"` and an empty `"target": {}`, and hand the reader the
-   link. The reader checks and saves it, and the action appears in the catalog. If you call this page's form save
-   through `/operate` instead, its call target for a new action is `{"kind": "draft"}`, never `{}`; it answers with the
-   same draft envelope to write.
+5. Write it as the page draft — how, and how to link it, is in this page's generated skill; a new action's draft
+   carries no existing object. Hand the reader the link; the reader checks and saves it, and the action appears in the
+   catalog.
 6. Never write `codeSegments` or the business meaning yourself; they come from the owner's explanation.
 
 ## Changing status (batch)
