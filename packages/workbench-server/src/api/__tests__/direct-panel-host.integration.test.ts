@@ -348,6 +348,35 @@ it("registers the shipped ontology catalogues and expands their previews and app
     visibility: "platform", data: { form: { read: "form" }, createForm: { read: "createForm" } },
     operations: { save: { operation: { id: "platform:AgentDefinition.save" } } },
   });
+  for (const [slot, field, ownerType] of [
+    ["model", "/modelSelection/modelId", "platform:ModelOption"],
+    ["skills", "/skills", "platform:Skill"],
+    ["tools", "/enabledMcpServiceIds", "platform:McpServiceOption"],
+    ["executor", "/executionUserId", "platform:User"],
+  ]) {
+    const member = settings.manifest.members[slot];
+    expect(member).toMatchObject({ formField: { slot: "form", path: field } });
+    if (!member || !("projectionId" in member.target)) throw new Error(`Expected a projection for ${slot}`);
+    const response = await request("GET", `product-projections/${member.target.projectionId}`);
+    expect(productProjectionResponseSchema.parse(await response.json()).projection).toMatchObject({
+      componentId: "@ontomato/sdk:ReferencePicker",
+      data: {
+        options: { source: { type: { id: ownerType } }, read: "options" },
+        selected: { source: { type: { id: ownerType } }, read: "resolve" },
+      },
+    });
+  }
+  const scope = settings.manifest.members.scope;
+  expect(scope).toMatchObject({ formField: { slot: "form", path: "/classNames" } });
+  if (!scope || !("projectionId" in scope.target)) throw new Error("Expected a data-scope projection");
+  const scopeResponse = await request("GET", `product-projections/${scope.target.projectionId}`);
+  expect(productProjectionResponseSchema.parse(await scopeResponse.json()).projection).toMatchObject({
+    componentId: "@ontomato/sdk:ObjectGraph",
+    data: {
+      nodes: { source: { type: { id: "platform:ObjectType" } }, read: "list" },
+      edges: { source: { type: { id: "platform:Relationship" } }, read: "list" },
+    },
+  });
   const definitions = new Map<string, PanelManifest["members"]>();
   for (const catalogue of catalogues) {
     const response = await request("GET", `product-panels/builtin-product-ontology-${catalogue}`);
