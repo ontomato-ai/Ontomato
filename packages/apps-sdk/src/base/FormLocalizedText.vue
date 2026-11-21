@@ -12,7 +12,7 @@ import { useFormControls } from "./form-controls";
  * A text the owner keeps in several languages, edited as the owner stores it: `{language: text}`. The owner's primary
  * language (the reader's) comes first; every language that must have a text, has one, or holds the owner's message is
  * shown; the rest are added on demand. An optional language cleared or removed is no longer in the value; a required one
- * cleared is the empty text, for the owner to refuse. A language the owner stores but no longer offers is shown by its
+ * cleared is the empty text, for the owner to refuse. An optional text with no language holding a text is left out. A language the owner stores but no longer offers is shown by its
  * code, so nothing it holds is hidden.
  */
 const props = defineProps<{ field: PanelFormField; path: string; disabled: boolean }>();
@@ -45,8 +45,9 @@ function write(code: string, text: string) {
   const next = { ...texts.value };
   if (text === "" && !required.value.has(code)) delete next[code];
   else next[code] = text;
-  // An optional text with no language left is not given at all, as an optional choice cleared.
-  if (!Object.keys(next).length && !props.field.required) controls.remove(props.path);
+  // An optional text with no language holding a text is not given at all, as an optional choice cleared — a language
+  // it requires once given included, which is left as the empty text only while another language has one.
+  if (!props.field.required && Object.values(next).every((kept) => kept === "")) controls.remove(props.path);
   else controls.set(props.path, next);
 }
 function add(code: string) {
