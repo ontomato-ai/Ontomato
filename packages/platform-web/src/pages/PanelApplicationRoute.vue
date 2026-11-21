@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineComponent, inject, markRaw, ref, shallowRef, toRaw, watch, watchEffect, type Ref } from "vue";
+import { computed, inject, markRaw, ref, shallowRef, toRaw, watch, watchEffect, type Ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { PanelHost, panelUnavailable, useApplicationFrame, useApplicationTheme, useAppTheme, usePageHeading, useUnsavedChanges, type DirectPanelRun, type PanelHostLabels, type PanelHostPort, type PanelInstanceView, type PlatformPageHeading } from "@ontomato/platform-shell";
@@ -252,8 +252,6 @@ function reportFrameAddress(input: DisplayPageAddressInput) {
   const next = applicationPanelAddress(path, { frame: reported as never, state, query });
   if (next !== opened.value) void router.replace(next);
 }
-/** Without a frame the content's own pages are listed as they are; with one, the same list is the unit's. */
-const Passthrough = defineComponent({ inheritAttrs: false, setup: (_, { slots }) => () => slots.default?.() });
 const headerLabels = computed(() => ({ save: t("platform.save"), discard: t("platform.discard"), unsavedChanges: t("platform.unsavedChanges") }));
 
 /** What the panel host says to the reader, in the platform's language. */
@@ -508,8 +506,8 @@ function reportDirty(page: KeptPage, dirty: boolean) {
       :current-entry="currentEntry"
       @display-address="reportFrameAddress"
     />
-    <div ref="holder" class="panel-entry-holder" :class="{ 'is-holding': framePort }">
-    <component :is="framePort ? EntryUnit : Passthrough" ref="unit" :heading="heading" :labels="headerLabels" :back-label="t('common.back')">
+    <div v-if="framePort" ref="holder" class="panel-entry-holder">
+      <EntryUnit ref="unit" :heading="heading" :labels="headerLabels" :back-label="t('common.back')">
     <PanelHost
       v-for="page in kept"
       v-show="page === shownPage"
@@ -530,8 +528,30 @@ function reportDirty(page: KeptPage, dirty: boolean) {
       @reopened="markReopened(page)"
       @withdrawn="withdraw(page)"
     />
-    </component>
+      </EntryUnit>
     </div>
+    <template v-else>
+    <PanelHost
+      v-for="page in kept"
+      v-show="page === shownPage"
+      :key="page.use.id"
+      :class="{ 'panel-host-page': !props.navigate }"
+      :ref="(instance) => { if (page === shownPage) host = instance as ShownInstance | null; }"
+      :port="page.port"
+      :labels="labels"
+      :language="language"
+      :shown="page === shownPage"
+      :wired="Object.keys(page.use.inputs ?? {})"
+      :address="addressOf(page)"
+      :initial="stateOf(page)"
+      @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"
+      @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
+      @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"
+      @context="(context: PageContext) => reportContext(page, context)"
+      @reopened="markReopened(page)"
+      @withdrawn="withdraw(page)"
+    />
+    </template>
     <!-- Offered once the panel's read named the page's skill: the agents are the ones that skill reaches. -->
     <PageComposer
       v-if="!props.navigate && shownPage && shownSkill"
@@ -546,11 +566,8 @@ function reportDirty(page: KeptPage, dirty: boolean) {
 </template>
 
 <style scoped>
-/* Without a frame the entry's page lays out as before; with one the unit is in the frame and this holds nothing. */
+/* Where the entry's page waits until the frame places it; once placed, it is in the frame and this holds nothing. */
 .panel-entry-holder {
-  display: contents;
-}
-.panel-entry-holder.is-holding {
   display: none;
 }
 .panel-application-frame {

@@ -964,6 +964,8 @@ it("freezes the frame of a human operation and rechecks it before dispatch", asy
   expect(completed.status, await completed.clone().text()).toBe(200);
   expect(await completed.json()).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
   expect(frameDispatches).toEqual([newIntent]);
+});
+
 it("refuses package upgrades that remove a persisted input and identifies its panel users", async () => {
   const value = { kind: "scalar", type: "string" };
   const packageFiles = (version: string, inputs: Record<string, object>) => {

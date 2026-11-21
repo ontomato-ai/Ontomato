@@ -11,7 +11,7 @@ import { panelHumanOperations } from "../../../../../packages/apps-sdk/src/panel
 function through() {
   const sent: { path: string; body?: unknown }[] = [];
   const requests = {
-    request: async (path: string, init?: RequestInit) => {
+    request: async (path: string, init?: Parameters<typeof fetch>[1]) => {
       sent.push({ path, ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}) });
       if (path.startsWith("/panel-operations/descriptor")) throw new Error("described");
       return new Response("{}", { headers: { "Content-Type": "application/json" } });
