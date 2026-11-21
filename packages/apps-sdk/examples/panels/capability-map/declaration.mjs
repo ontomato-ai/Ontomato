@@ -19,12 +19,6 @@ export default {
     query: { type: text, deepLink: false },
   },
   members: {
-    mode: {
-      target: { projectionId: "capability-map-mode" },
-      outputs: {
-        value: { state: "mode" },
-      },
-    },
     graph: {
       target: { projectionId: "capability-map-graph" },
       inputs: {
