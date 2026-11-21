@@ -13,6 +13,7 @@ import { g6Edges, type G6Colors } from "../g6-elements";
 const calls: Array<[string, unknown]> = [];
 const handlers: Record<string, (event: any) => void> = {};
 const nodeData = new Map<string, any>();
+const edgeData = new Map<string, any>();
 /** The zoom G6 reports, and the zoom its fitView would choose for the whole graph. */
 const view = { zoom: 1, fitted: 1, options: null as any };
 
@@ -38,6 +39,7 @@ vi.mock("@antv/g6", () => ({
     addData(data: { nodes?: any[]; edges?: any[] }) {
       calls.push(["add", data]);
       for (const node of data.nodes ?? []) nodeData.set(node.id, node);
+      for (const edge of data.edges ?? []) edgeData.set(edge.id, edge);
     }
     updateNodeData(nodes: any[]) {
       calls.push(["updateNodes", nodes]);
@@ -56,6 +58,9 @@ vi.mock("@antv/g6", () => ({
     }
     getNodeData() {
       return [...nodeData.values()];
+    }
+    getEdgeData() {
+      return [...edgeData.values()];
     }
     getElementPosition(id: string) {
       return [nodeData.get(id).style.x + 5, nodeData.get(id).style.y + 7];
@@ -95,6 +100,7 @@ beforeEach(() => {
   Object.assign(view, { zoom: 1, fitted: 1 });
   calls.length = 0;
   nodeData.clear();
+  edgeData.clear();
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
 });
 afterEach(() => {
@@ -203,19 +209,20 @@ it("fans parallel edges into arcs, loops a self-relation round its anchor's grou
 it("fits a graph no smaller than names stay readable at, and then shows the part around the node it is given", async () => {
   const wrapper = mount(G6GraphCanvas, { props: { label: "Graph", nodes: placed(3), layout: { type: "preset" } } });
   await flushPromises();
-  const fit = (options: object) => (wrapper.vm as unknown as { fit(options: object): Promise<void> }).fit(options);
+  const fit = (options: object) => (wrapper.vm as unknown as { fit(options: object): Promise<boolean> }).fit(options);
   const steps = () => calls.filter(([name]) => ["fitView", "zoomTo", "fitCenter", "focus"].includes(name));
 
   // A graph that fits at a readable size is shown whole.
   view.fitted = 0.9;
   calls.length = 0;
-  await fit({ minZoom: 0.85, around: "n1" });
+  // It says whether the whole graph is in view, for its caller to tell the reader when it is not.
+  expect(await fit({ minZoom: 0.85, around: "n1" })).toBe(true);
   expect(steps()).toEqual([["fitView", 0.9], ["fitCenter", null]]);
 
   // One that would shrink below it is shown at that size, around the node given.
   view.fitted = 0.3;
   calls.length = 0;
-  await fit({ minZoom: 0.85, around: "n1" });
+  expect(await fit({ minZoom: 0.85, around: "n1" })).toBe(false);
   expect(steps()).toEqual([["fitView", 0.3], ["zoomTo", 0.85]]);
   expect(of("translate")).toHaveLength(1);
 
@@ -268,5 +275,18 @@ it("zooms by a step as a zoom to the level it reaches, so what reads the zoom se
   calls.length = 0;
   await (wrapper.vm as unknown as { zoomBy(ratio: number): Promise<void> }).zoomBy(0.8);
   expect(of("zoomTo")).toEqual([expect.closeTo(0.64)]);
+  wrapper.unmount();
+});
+
+it("keeps a node's loop inside the view it shows from the graph's edge, not cut at the top", async () => {
+  // As above, with a loop over "a": the graph reaches the loop's height above "a", so the view stops that much higher.
+  const nodes = [{ id: "a", label: "A", x: 0, y: 0 }, { id: "b", label: "B", x: 2000, y: 1000 }];
+  const wrapper = mount(G6GraphCanvas, { props: { label: "Graph", nodes, edges: [{ id: "self", source: "a", target: "a" }], layout: { type: "preset" } } });
+  await flushPromises();
+  view.fitted = 0.2;
+  calls.length = 0;
+  await (wrapper.vm as unknown as { fit(options: object): Promise<boolean> }).fit({ minZoom: 1, around: "a", padding: 0 });
+  // The node's half size and the loop's reach above it (60), so a ends up 224 down of centre rather than 284.
+  expect(of("translate")[0]).toEqual([-320, -224]);
   wrapper.unmount();
 });

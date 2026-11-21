@@ -17,6 +17,7 @@ import {
 } from "@ontomato/contracts/product-panels";
 import { APPLICATION, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import { HttpError } from "../../utils/errors";
+import { BackendResponseError } from "../../utils/backend-client";
 import { changeProductGrant } from "../product-governance/grants";
 import { applicationCatalogueClient, applicationDraftIdSchema } from "./application-catalogue";
 import {
@@ -24,6 +25,7 @@ import {
 } from "./catalog";
 import { readCurrentPanel, readCurrentPanelLabel, readCurrentProjection, requireCurrentProduct, saveCurrentPanel, saveCurrentProjection } from "./current";
 import { applySubmittedFields } from "./submitted-form-values";
+import { ownerEnvelopeSchema, ownerWriteFailure } from "./data-query-operations";
 import type { PanelOperationHost, PanelWriteServerOperation, SinglePanelOperationOutcome } from "./server-operations";
 
 const savedId = productCurrentIdParamsSchema;
@@ -38,13 +40,30 @@ function writeInput<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, input: unkno
   return result.data;
 }
 
+/** A Java owner's refusal that names form fields keeps them, as every other owner write does. */
+function ownerFieldRefusal(error: BackendResponseError) {
+  let body: unknown;
+  try { body = JSON.parse(error.detail); } catch { return undefined; }
+  if (typeof body !== "object" || body === null || !("errors" in body)) return undefined;
+  const envelope = ownerEnvelopeSchema.safeParse({ ...body, success: false });
+  if (!envelope.success) return undefined;
+  try {
+    const outcome = ownerWriteFailure(envelope.data, "PRODUCT_WRITE_REFUSED", error.message);
+    return outcome.kind === "refusal" && outcome.errors ? outcome : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function write(type: string, run: () => Promise<{ primaryKey: string; data: OutcomeData }>): Promise<SinglePanelOperationOutcome> {
   try {
     const { primaryKey, data } = await run();
     return { kind: "success", data, affected: { objects: [{ objectType: type, primaryKey }], objectTypes: [type] } };
   } catch (error) {
-    if (error instanceof HttpError && error.status >= 400 && error.status < 500)
-      return { kind: "refusal", code: error.code ?? "PRODUCT_WRITE_REFUSED", message: error.message };
+    if (error instanceof HttpError && error.status >= 400 && error.status < 500) {
+      const fields = error instanceof BackendResponseError ? ownerFieldRefusal(error) : undefined;
+      return fields ?? { kind: "refusal", code: error.code ?? "PRODUCT_WRITE_REFUSED", message: error.message };
+    }
     throw error;
   }
 }

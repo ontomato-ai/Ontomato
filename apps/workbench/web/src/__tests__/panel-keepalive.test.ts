@@ -327,7 +327,7 @@ it("takes a kept author page's targets out of the document's stream, and puts th
   const mode = { kind: "author", definitions: panelAuthorDefinitions() } as const;
   const showing = ref<"p" | "q">("p");
   const language = { locale: "en", fallback: "en" };
-  const labels = { notStarted: "Not started", failures: { fileUnavailable: "File unavailable", scriptThrew: "Script threw", scriptRejected: "Script rejected" }, content: { styleOutside: "Style outside" }, draft: { toAgent: "To agent", toAgentText: "Unused: {reason}" }, refresh: "Refresh" };
+  const labels = { notStarted: "Not started", failures: { fileUnavailable: "File unavailable", scriptThrew: "Script threw", scriptRejected: "Script rejected" }, content: { styleOutside: "Style outside" }, draft: { opening: "Opening the draft", toAgent: "To agent", toAgentText: "Unused: {reason}" }, refresh: "Refresh" };
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/", component: { render: () => null } }] });
   await router.push("/");
   const page = mountPlatformPage(() => h("main", [

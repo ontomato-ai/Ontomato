@@ -7,7 +7,7 @@ import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
 import { panelModuleFor, type DirectPanelMount } from "../../../../../packages/apps-sdk/src/direct";
-import { noOperations } from "./panel-frame";
+import { noOperations, directRun } from "./panel-frame";
 
 /*
  * A theme given where a panel places a projection (product-layer standard, theme: default → deployment → application →
@@ -46,11 +46,10 @@ it("sets a placement's theme on the member's place, in the reader's mode, and on
     template: `<projection slot="themed"></projection><projection slot="plain"></projection>`,
     install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
     manifest,
-    run: {
+    run: directRun({
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
       failed: (reason) => { throw reason; },
-    },
+    }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests: { request: async () => Response.json({ projection: summary }) },
     use: { applicationId: "app-tasks", useId: "tasks" },

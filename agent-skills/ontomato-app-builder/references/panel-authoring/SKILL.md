@@ -33,6 +33,10 @@ node "$SKILL/ontomato.mjs" panel check "$WORKSPACE"
 node "$SKILL/ontomato.mjs" panel register "$WORKSPACE"
 ```
 
+For a development handoff, give the registered entry's site-relative path, for example
+`/applications/app-my-management-page/manage`. Reserve the `standalone=1` marker for
+external sharing. Get that link from **More → Copy external link** in the page header.
+
 To ship a tested trial at the original platform address, follow [Replace a built-in page](../../GUIDE.md#replace-a-built-in-page).
 
 For a trial application, use a fresh ID starting with `app-` and a path under `/applications/<application-id>/`. In `registration.json`, provide
@@ -65,7 +69,7 @@ the page declares.
 
 1. **Read.** “What page and record are selected? Read the current [field] on this record.” Compare the selected
    identity and the field value with the page.
-2. **Draft.** “Draft a change to [field] on this record. Give me the draft link and leave it for me to save.”
+2. **Draft.** “Draft a change to [field] on this record. Give me a site-relative draft link and leave it for me to save.”
    Open the link and inspect the proposed change. Save as the reader, then verify the value.
 3. **Execute.** “Run [declared operation] on this test record, with confirmation when required.” Use the
    confirmation in the conversation and verify the outcome on the page.

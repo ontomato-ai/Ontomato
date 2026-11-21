@@ -32,6 +32,8 @@ export interface PanelRunReports {
    * takes it): the panel goes on as it is, and the host tells the reader why.
    */
   draftRefused(refusal: PanelDraftUnusable): void;
+  /** The draft the address names is in its form, or changes nothing there: the page is now what it opens. */
+  draftOpened(): void;
   /** The panel cannot run, and why; the host shows it where the panel would have been. */
   failed(reason: unknown): void;
 }
@@ -72,7 +74,7 @@ export function runPanel(options: PanelRunOptions): PanelRun {
     if (!link) return;
     // A draft that cannot be used is that draft's problem: the panel goes on without it.
     await receivePanelDraft(options.pageKey, instance.forms, { readPageDraft: options.readPageDraft },
-      link, instance.receiveDraft, () => currentDraft === key)
+      link, instance.receiveDraft, () => currentDraft === key, () => { if (currentDraft === key) reports.draftOpened(); })
       .catch((reason: unknown) => reports.draftRefused(reason instanceof PanelDraftUnusable ? reason : unreadableDraft(link.path, reason)));
   }
   async function followAddress(next: string) {

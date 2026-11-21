@@ -496,7 +496,10 @@ it("keeps the package and recipes for a panel independent of its entrance", asyn
     expect(draftSection).toContain("It starts with `outputs/drafts/` and has no leading `/`.");
     expect(draftSection).toContain("URL-encode that value exactly once");
     expect(draftSection).toContain("?draftSessionId=SESSION_ID&draftRunId=RUN_ID&draftPath=outputs%2Fdrafts%2Fedit.page-draft.json");
-    expect(draftSection).toContain("In your reply, give the reader a Markdown link to the page address you just built");
+    expect(draftSection).toContain("In your final reply, the draft link must be a Markdown link with a destination that starts with a single slash");
+    expect(draftSection).toContain("Never put a scheme, hostname, port, or `localhost` in the draft link.");
+    expect(draftSection).toContain("[Open the draft](/ontology/applications?draftSessionId=SESSION_ID&draftRunId=RUN_ID&draftPath=outputs%2Fdrafts%2Fedit.page-draft.json)");
+    expect(markdown).toContain("Never put a scheme, hostname, or port in a platform page link.");
     expect(draftSection).toContain("Use the draft file path only inside `draftPath`. A standalone file link opens a JSON file card.");
     expect(markdown).not.toContain("fixture-platform-service");
     expect(markdown).not.toContain("fixture-owner");

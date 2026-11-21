@@ -1,3 +1,4 @@
+import type { DirectPanelRun } from "@ontomato/platform-shell";
 import { vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -669,5 +670,19 @@ export function humanIntents(
       return Response.json({ kind: "dispatched", intentId, outcome: outcome(operationId, call) });
     }
     return undefined;
+  };
+}
+
+/**
+ * A direct panel's run as a test hands it to the SDK: every report the host takes is a no-op and a failure is thrown,
+ * unless the test gives its own. A report added to the run later gets its default here, and no test that does not
+ * listen for it changes (the run gained `draftRefused` and `draftOpened` in one day, 2026-11-22, and each time a dozen
+ * hand-built runs stopped compiling).
+ */
+export function directRun(given: Pick<DirectPanelRun, "pageKey" | "url" | "label" | "initial"> & Partial<DirectPanelRun>): DirectPanelRun {
+  return {
+    state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
+    draftOpened: () => {}, failed: (reason) => { throw reason; },
+    ...given,
   };
 }

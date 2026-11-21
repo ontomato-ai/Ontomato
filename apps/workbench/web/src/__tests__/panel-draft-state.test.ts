@@ -28,7 +28,7 @@ await mountPanel({
 
 afterEach(leaveFrame);
 
-it("moves the panel where the draft is edited, over the state its address carried", { timeout: 20000 }, async () => {
+it("opens the draft before showing the page, then moves the panel where the draft is edited, over the state its address carried", { timeout: 20000 }, async () => {
   const scenario = draftScenario();
   const manifest = definePanel({
     state: { ...scenario.panel.manifest.state, mode: { type: { kind: "scalar", type: "string" }, deepLink: true, default: "view" } },
@@ -47,7 +47,12 @@ it("moves the panel where the draft is edited, over the state its address carrie
   await router.isReady();
   const { app, element } = mountPlatformPage(() => h(RouterView), router);
   try {
+    // While the draft is read, the reader is told so and never sees the page at the state it is about to leave.
+    await vi.waitFor(() => expect(element.querySelector(".panel-host-draft-opening")).not.toBeNull(), { timeout: 8000 });
+    expect((element.querySelector(".panel-host-direct") as HTMLElement | null)?.style.display).toBe("none");
     await vi.waitFor(() => expect(element.querySelector(".mode")?.textContent).toBe("edit"), { timeout: 8000 });
+    await vi.waitFor(() => expect(element.querySelector(".panel-host-draft-opening")).toBeNull());
+    expect((element.querySelector(".panel-host-direct") as HTMLElement).style.display).toBe("");
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(element.querySelector(".mode")?.textContent).toBe("edit");
     expect(JSON.parse(String(router.currentRoute.value.query.state))).toMatchObject({ mode: "edit" });

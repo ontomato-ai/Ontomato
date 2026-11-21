@@ -20,6 +20,7 @@ import { assertAppBuilderAccess } from "../app-builder/access";
 import { notifyProductDefinitionChanged } from "./definition-stream";
 import { assistantStore } from "../assistant/store";
 import { configuredAssistantSkills } from "../assistant/skill-selection";
+import { resolveDefaultAgent } from "../assistant/default-agents";
 import { panelSkillRef } from "./skill-identity";
 import { findPanelUsers, validateCurrentProductReferences } from "./references";
 import { validateProjectionComponent } from "./component-catalogue";
@@ -206,14 +207,12 @@ export async function validateApplicationPanelReferences(request: ApplicationPan
     const selection = defaultAgent.kind === "id" ? `'${defaultAgent.id}'` : `preset '${defaultAgent.agentKind}'`;
     const unavailable = (reason: string) =>
       new HttpError(409, `Entry '${use.id}' default agent ${selection} ${reason}`, "PAGE_DEFAULT_AGENT_UNAVAILABLE");
-    const definition = definitions.find(agent => defaultAgent.kind === "id"
-      ? agent.id === defaultAgent.id : agent.kind === defaultAgent.agentKind);
-    if (!definition) throw unavailable("does not exist in this domain.");
-    if (!definition.enabled) throw unavailable("is disabled.");
+    const choice = resolveDefaultAgent(definitions, defaultAgent);
+    if ("reason" in choice) throw unavailable(choice.reason);
 
     const ref = panelSkillRef(domainId, use.panelId);
     const key = runtimeSkillKey(ref);
-    if (!configuredAssistantSkills(definition, [ref]).some(skill => runtimeSkillKey(skill) === key))
+    if (!configuredAssistantSkills(choice.agent, [ref]).some(skill => runtimeSkillKey(skill) === key))
       throw unavailable(`does not select the skill for panel '${use.panelId}'.`);
   }
   for (const id of delivery.panels)
