@@ -114,3 +114,22 @@ test("accepts a legacy hosted application entry without widening the panel regis
   assert.deepEqual(applicationCatalogueEntriesSchema.parse(entries), entries);
   assert.equal(applicationPanelUsesResponseSchema.safeParse(entries).success, false);
 });
+
+test("declares application creation and editing forms from their actual sources", async () => {
+  const { APPLICATION } = await import("./platform-object-types");
+  const { productProjectionInputSchema } = await import("./product-panels");
+  const projection = {
+    name: "Application forms", description: "", visibility: "private", componentId: "@ontomato/sdk:PanelData",
+    inputs: { application: { kind: "object", objectType: APPLICATION } }, outputs: {}, config: {},
+  };
+  const draft = { source: { type: { kind: "PlatformObjectType", id: APPLICATION } }, read: "createForm", params: {} };
+  const edit = (section: string) => ({
+    source: { object: { input: "application" } }, read: "form", params: { section: { literal: section } },
+  });
+
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...projection, data: { draft, identity: edit("identity"), entries: edit("entries") },
+  }).success, true);
+  assert.equal(productProjectionInputSchema.safeParse({ ...projection, data: { wrong: edit("create") } }).success, false);
+  assert.equal(productProjectionInputSchema.safeParse({ ...projection, data: { wrong: { ...edit("identity"), params: {} } } }).success, false);
+});
