@@ -306,6 +306,8 @@ export const components: readonly ComponentMetadata[] = [
       selectedNode: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
       selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
       selectedType: { kind: "scalar", type: "string" },
+      // The relation kinds drawn, read as well as written: a page's own kind filter and the graph follow one choice.
+      visibleRelationKinds: { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } },
     },
   }),
   defineComponentMeta({
