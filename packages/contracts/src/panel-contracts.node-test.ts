@@ -536,7 +536,7 @@ test("a panel manifest validates commands, state and placements", () => {
     state: {
       agents: { type: { kind: "list", items: agent }, personal: true, default: [] },
       agent: { type: agent, default: null, deepLink: true, external: true },
-      mode: { type: { kind: "scalar", type: "string" } },
+      mode: { type: { kind: "scalar", type: "string" }, deepLink: true },
       preview: { type: { kind: "placement", candidates: { rule: "usable" } } },
     },
     members: {
@@ -584,6 +584,12 @@ test("one named header command can be primary in saved and authoring manifests",
   for (const schema of [panelManifestSchema, panelAuthoringManifestSchema]) {
     assert.deepEqual(schema.parse(valid).commands, valid.commands);
     assert.equal(schema.safeParse({ ...manifest, events: valid.commands }).success, false);
+    const localState = schema.safeParse({ ...valid, state: { editing: { ...manifest.state.editing, deepLink: false } } });
+    assert.equal(localState.success, false);
+    if (!localState.success) {
+      assert.deepEqual(localState.error.issues[0]?.path, ["commands", "create", "do", "set", "fields", "editing"]);
+      assert.match(localState.error.issues[0]!.message, /command 'create'.*state 'editing'.*deepLink/);
+    }
     for (const [commands, path] of [
       [{ create, close: { ...close, primary: true } }, ["commands", "close", "primary"]],
       [{ create: { ...create, on: { member: "row", output: "activated" } } }, ["commands", "create"]],
