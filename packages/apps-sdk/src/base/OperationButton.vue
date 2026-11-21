@@ -12,6 +12,7 @@ import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-st
 import { useMemberOperations } from "../panel/member";
 import { stateObject, stateObjects } from "../panel/state";
 import type { PanelWriteResult } from "../panel/instance";
+import { useDataStateLabels } from "./data-state-labels";
 
 /**
  * The button of one operation a projection names, run as the reader the way an agent's call runs: the platform's
@@ -141,7 +142,7 @@ function keepUnchanged(response: PanelHumanOperationDispatchResponse) {
     !changed.has(JSON.stringify([className, primaryKey]))));
 }
 
-const labels = computed(() => ({ empty: t("platform.dataEmpty"), forbidden: t("platform.dataForbidden"), awaiting: t("platform.dataAwaiting") }));
+const labels = useDataStateLabels();
 
 type Outcome = NonNullable<Extract<PanelHumanOperationDispatchResponse, { kind: "dispatched" }>["outcome"]>;
 type Single = Exclude<Outcome, { kind: "batch" }>;

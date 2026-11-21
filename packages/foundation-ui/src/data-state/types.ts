@@ -7,7 +7,8 @@
 export type DataStateResult<T = unknown> =
   | { status: "ready"; value: T }
   | { status: "empty" }
-  | { status: "error"; message: string }
+  /** `retry`, when given, reads the datum again (a read the platform never answered, say). */
+  | { status: "error"; message: string; retry?: () => void }
   | { status: "forbidden" }
   | { status: "loading" }
   | { status: "awaiting" };
@@ -18,4 +19,6 @@ export interface DataStateLabels {
   forbidden: string;
   /** A selection the datum needs is missing: say what to do, not that nothing was found. */
   awaiting: string;
+  /** The button that reads a failed datum again. */
+  retry: string;
 }

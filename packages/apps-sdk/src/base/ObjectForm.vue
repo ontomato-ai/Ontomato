@@ -16,6 +16,7 @@ import { useMember } from "../panel/member";
 import { editedInput, memberFormSource, MemberDataUnavailable, type FormSource } from "../panel/member-forms";
 import { formControlsKey, rowControlKey, rowControlsOf } from "./form-controls";
 import FormFieldControl from "./FormFieldControl.vue";
+import { useDataStateLabels } from "./data-state-labels";
 
 /**
  * One object's form, exactly as its owner describes it: the owner's fields at their JSON Pointer paths, its values in
@@ -477,7 +478,7 @@ const shown = computed<DataStateResult<PanelFormDescription>>(() => {
   if (loading.value) return { status: "loading" };
   return description.value ? { status: "ready", value: description.value } : { status: "awaiting" };
 });
-const labels = computed(() => ({ empty: t("platform.dataEmpty"), forbidden: t("platform.dataForbidden"), awaiting: t("platform.dataAwaiting") }));
+const labels = useDataStateLabels();
 
 /** The fields a received draft changed, by the owner's labels, in the form's order — those other slots draw included. */
 const changedLabels = computed(() => fields.value.filter((field) => changed.value.has(field.path)).map((field) => field.label).join(", "));
