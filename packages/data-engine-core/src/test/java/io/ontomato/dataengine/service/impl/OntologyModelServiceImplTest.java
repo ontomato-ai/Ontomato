@@ -227,6 +227,15 @@ class OntologyModelServiceImplTest {
 	}
 
 	@Test
+	void aClassNameThatIsNotAnIdentifierIsRefusedBeforeAnySave() {
+		var failure = assertThrows(OntologyModelException.class,
+				() -> service.createObjectType(new ObjectTypeCreate("Bad class!", "id", "Bad", ""), user, "en"));
+
+		assertValidation(failure, List.of("/values/className"), List.of("invalid_format"));
+		verify(jsonRuleDao, never()).save(any(), any());
+	}
+
+	@Test
 	void theAdapterCanRefuseTheClassNameOrPrimaryKeyName() throws Exception {
 		doThrow(new Exception("bad class name")).when(adapter).validateClassNameFormat("Pump");
 		var classFailure = assertThrows(OntologyModelException.class,
