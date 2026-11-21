@@ -217,7 +217,7 @@ it("shows the fields the owner does not accept in the form it read, keeping the 
   expect(input(element, "/note").value).toBe("x");
 });
 
-it("refuses a draft whole when the owner's check of it names fields it does not accept", async () => {
+it("refuses a draft whole on its form when the owner's check of it names fields it does not accept, the rest of the panel going on", async () => {
   const { receivePanelDraft } = await import("../../../../../packages/apps-sdk/src/panel/draft");
   const errors = [{ field: "/note", code: "value_too_long", message: "A note is a sentence" }];
   const { instance, element, reads, draftErrors } = open((request) => {
@@ -230,8 +230,12 @@ it("refuses a draft whole when the owner's check of it names fields it does not 
   await receivePanelDraft("tasks", instance.forms, {
     readPageDraft: async () => ({ pageKey: "tasks", operation: `${SCHEDULED_TASK}.save`, target: { id: "t-1" }, form: { name: "t-1", note: "x" } }),
   }, link, instance.receiveDraft);
-  await vi.waitFor(() => expect(draftErrors).toHaveLength(1));
-  expect((draftErrors[0] as Error).message).toBe("A note is a sentence");
+  // The refusal is the form's to say, at its top and beside the field it names; the panel itself has not failed, and its
+  // other member is drawn as it was.
+  await vi.waitFor(() => expect(element.querySelector(".sdk-owner-form-refusal")?.textContent).toBe("A note is a sentence"));
+  await vi.waitFor(() => expect(element.querySelector('[data-field="/note"] .el-form-item__error')?.textContent?.trim()).toBe("A note is a sentence"));
+  expect(draftErrors).toEqual([]);
+  expect(element.querySelector(".sdk-operation-button")).not.toBeNull();
   expect(reads.find((read) => read.inputs.values)?.inputs).toMatchObject({ values: { name: "t-1", note: "x" }, changedField: null });
   // Nothing of the refused draft is shown as the form's.
   expect(instance.dirty()).toBe(false);

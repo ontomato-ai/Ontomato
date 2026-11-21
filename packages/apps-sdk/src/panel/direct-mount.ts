@@ -1,4 +1,4 @@
-import { effectScope, h, ref, watch, type Ref, type VNode } from "vue";
+import { effectScope, h, ref, watch, type Ref, type VNode, type Slots } from "vue";
 import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import type { ProductPanelNestedReadRequest } from "@ontomato/contracts/panel-host";
 import type { DirectPanelMount as HostDirectPanelMount, DirectPanelRun } from "@ontomato/platform-shell";
@@ -55,8 +55,8 @@ export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions
  */
 export interface DirectPanelMount extends HostDirectPanelMount {
   readonly instance: DirectPanelInstance;
-  /** The member the panel's template places under this key. */
-  member(ref: string): VNode;
+  /** The member the panel's template places under this key, with what the template places in its component's slots. */
+  member(ref: string, slots?: Slots): VNode;
 }
 
 export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelMount {
@@ -108,7 +108,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
     void panelRun.start().catch(run.failed);
     return {
       instance,
-      member: (ref) => h(PanelMember, { instance, member: ref, key: `${ref}:${instance.projectionVersion(ref)}` }),
+      member: (ref, slots) => h(PanelMember, { instance, member: ref, key: `${ref}:${instance.projectionVersion(ref)}` }, slots),
       address: (url) => panelRun.address(url),
       refresh(target, affected) {
         // Unseen, what an operation changed is held as everything; seen, only the data it concerns are read again.
