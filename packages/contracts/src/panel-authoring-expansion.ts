@@ -4,7 +4,7 @@ import type { PanelAuthoringMember } from "./panel-authoring";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import { panelPortAccepts, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelStateRef } from "./panel-manifest";
 import {
-  missingRequiredReadParameters, panelLocalOperationNameSchema, panelReadInputMatches, panelReadParameterId, panelReadParameterSchemas,
+  directProjectionInputAccepts, missingRequiredReadParameters, panelLocalOperationNameSchema, panelReadInputMatches, panelReadParameterId, panelReadParameterSchemas,
   projectionOperationTargetMatches, type DirectProjectionData, type DirectProjectionPorts, type ProjectionOperationBinding,
 } from "./panel-projection";
 import { DASHBOARD_CARD, platformOntologyLayers } from "./platform-object-types";
@@ -101,7 +101,7 @@ export function expandPanelAuthoringMember(
     return { input: name };
   }
 
-  const dataTypes = new Set<string>();
+  const dataTypes = new Map<string, string>();
   let readsOntologyObjects = false;
   const data: DirectProjectionPorts["data"] = Object.fromEntries(Object.entries(member.data ?? {}).map(([name, shorthand]) => {
     const path = `data.${name}`;
@@ -112,7 +112,7 @@ export function expandPanelAuthoringMember(
     const reads = objectTypes[readType].reads;
     const declaration = reads && Object.hasOwn(reads, read) ? reads[read]
       : fail(`${path}.read`, `'${read}' is not registered on type '${readType}'`);
-    dataTypes.add(readType);
+    dataTypes.set(name, readType);
     readsOntologyObjects ||= declaration.result === "panelOntologyObjects";
     const datum = appsSdkComponentDatum(component.data, name) ?? fail(path, "The component does not declare this datum");
     if (!datum.results.includes(declaration.result))
@@ -154,16 +154,25 @@ export function expandPanelAuthoringMember(
   for (const [name, datum] of Object.entries(component.data))
     if (datum.required && !Object.hasOwn(data, name)) fail(`data.${name}`, "The component requires this datum");
 
-  const bindingType = typeId ?? (dataTypes.size === 1 ? [...dataTypes][0] : undefined);
+  const owners = new Set(dataTypes.values());
+  const bindingType = typeId ?? (owners.size === 1 ? [...owners][0] : undefined);
   const ontologyNode: DirectPanelPortType = {
     kind: "object-union", layers: [...platformOntologyLayers],
   };
 
+  function concreteObjectType(objectType: string, path: string): string {
+    if (objectType === "@binding") return bindingType ?? fail(path, "This port needs a declared object type");
+    if (objectType.startsWith("@data:")) {
+      const datum = objectType.slice("@data:".length);
+      return dataTypes.get(datum) ?? fail(path, `This port requires data '${datum}'`);
+    }
+    return objectType;
+  }
+
   function concretePort<Port extends DirectProjectionPorts["inputs"][string]>(port: Port, path: string): Port {
-    if (port.kind === "object" && port.objectType === "@binding")
-      return { ...port, objectType: bindingType ?? fail(path, "This port needs a declared object type") };
-    if (port.kind === "list" && port.items.kind === "object" && port.items.objectType === "@binding")
-      return { ...port, items: { ...port.items, objectType: bindingType ?? fail(path, "This port needs a declared object type") } };
+    if (port.kind === "object") return { ...port, objectType: concreteObjectType(port.objectType, path) };
+    if (port.kind === "list" && port.items.kind === "object")
+      return { ...port, items: { ...port.items, objectType: concreteObjectType(port.items.objectType, path) } };
     return port;
   }
 
@@ -174,7 +183,7 @@ export function expandPanelAuthoringMember(
     const output = component.outputs && Object.hasOwn(component.outputs, port) ? component.outputs[port] : undefined;
     if (input) {
       const expected = concretePort(input, path);
-      if (expected.kind !== "json" && !panelPortAccepts(expected, actual))
+      if (!directProjectionInputAccepts(expected, actual))
         fail(path, `State '${fieldName}' has an incompatible type for component input '${port}'`);
       bindInput(port, fieldName, path);
     }
@@ -260,7 +269,7 @@ export function bindPanelAuthoringChart(
     if (!Object.hasOwn(saved.inputs, parameter)) return fail(field, "The source card does not expose this input");
     if (!Object.hasOwn(state, stateName)) return fail(field, `State '${stateName}' is not declared`);
     const expected = saved.inputs[parameter];
-    if (expected.kind !== "json" && !panelPortAccepts(expected, state[stateName].type))
+    if (!directProjectionInputAccepts(expected, state[stateName].type))
       return fail(field, `State '${stateName}' has an incompatible type for source card input '${parameter}'`);
     return [parameter, { state: stateName }];
   }));

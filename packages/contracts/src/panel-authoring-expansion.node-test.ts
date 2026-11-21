@@ -226,29 +226,63 @@ test("a short conversation entry stores its target and prefill on an ordinary pr
   }
 });
 
-test("per-datum owners expand to distinct formal type sources", () => {
+test("short graph ports resolve their individual datum owners and bind personal positions", () => {
   const nodeType = "platform:ObjectType";
   const edgeType = "platform:Relationship";
+  const object = (objectType: string) => ({ kind: "object", objectType });
+  const positions = { kind: "node-positions" };
   const graph = buildComponent("ObjectGraph", {
     data: {
       nodes: { results: ["panelRecordList"], required: true },
-      edges: { results: ["panelRecordList"], required: true },
+      edges: { results: ["panelRecordList"], required: false },
+    },
+    inputs: { positions },
+    outputs: {
+      positions,
+      selectedNode: object("@data:nodes"),
+      selectedEdge: object("@data:edges"),
+      checked: { kind: "list", items: object("@data:nodes") },
     },
   });
   const table = { objectTypes: Object.fromEntries([nodeType, edgeType].map(id => [
     id, platformTypeTableEntrySchema.parse({ reads: platformObjectTypes[id].reads }),
   ])) };
   const member = panelAuthoringMemberSchema.parse({
-    component: "ObjectGraph", type: nodeType,
-    data: { nodes: "list", edges: { type: edgeType, read: "list" } },
+    component: "ObjectGraph",
+    data: { nodes: { type: nodeType, read: "list" }, edges: { type: edgeType, read: "list" } },
+    state: { selectedNode: "node", selectedEdge: "edge", checked: "checked", positions: "positions" },
   });
   assert("component" in member);
-  const { projection } = expandPanelAuthoringMember("scope", member, { state, components: [graph], typeTable: table });
+  const graphState = panelManifestSchema.parse({
+    state: {
+      node: { type: object(nodeType) }, edge: { type: object(edgeType) },
+      checked: { type: { kind: "list", items: object(nodeType) } },
+      positions: { type: positions, personal: true },
+    },
+    members: {}, commands: {},
+  }).state;
+  const context = { state: graphState, components: [graph], typeTable: table };
+  const { projection, placement } = expandPanelAuthoringMember("scope", member, context);
   assert.deepEqual(projection.data.nodes.source, { type: { kind: "PlatformObjectType", id: nodeType } });
   assert.deepEqual(projection.data.edges.source, { type: { kind: "PlatformObjectType", id: edgeType } });
+  assert.deepEqual(projection.inputs, { positions });
+  assert.deepEqual(projection.outputs, {
+    positions,
+    selectedNode: object(nodeType),
+    selectedEdge: object(edgeType),
+    checked: { kind: "list", items: object(nodeType) },
+  });
+  assert.deepEqual(placement.inputs, { positions: { state: "positions" } });
+  assert.deepEqual(placement.outputs?.positions, { state: "positions" });
   assert.doesNotThrow(() => productProjectionInputSchema.parse({
     ...projection, name: "Scope", description: "", visibility: "domain",
   }));
+  assert.throws(() => expandPanelAuthoringMember("scope", {
+    ...member, data: { nodes: member.data!.nodes },
+  }, context), /Member 'scope', field 'state.selectedEdge'.*requires data 'edges'/);
+  assert.throws(() => expandPanelAuthoringMember("scope", {
+    ...member, state: { selectedEdge: "node" },
+  }, context), /Member 'scope', field 'state.selectedEdge'.*cannot receive component output/);
 });
 
 test("a datum's object owner cannot replace the target state's type", () => {
