@@ -11,7 +11,7 @@ export class PanelDraftUnusable extends Error {
     readonly file: string,
     readonly cause:
       | { kind: "fields"; fields: readonly string[] }
-      | { kind: "read"; message: string }
+      | { kind: "read"; reason: DraftReadReason | null; message: string }
       | { kind: "otherPage"; pageKey: string },
   ) {
     super(cause.kind === "fields" ? `${file}: ${cause.fields.join(", ")}` : cause.kind === "read" ? `${file}: ${cause.message}` : `${file}: page ${cause.pageKey}`);
@@ -19,13 +19,35 @@ export class PanelDraftUnusable extends Error {
   }
 }
 
-/** The platform's answer when it could not read a draft: the fields its check names, when the payload carries them. */
+/** Why the platform could not read a draft, by the code it answered with: its run is gone, its file is not there, or the reader may not read it. */
+type DraftReadReason = "run" | "file" | "forbidden";
+const READ_REASONS: Readonly<Record<string, DraftReadReason>> = {
+  NOT_FOUND: "run",
+  PAGE_DRAFT_NOT_FOUND: "file",
+  FORBIDDEN: "forbidden",
+};
+
+/**
+ * The platform's answer when it could not read a draft: the fields its check names, when the payload carries them, else
+ * the reason its code gives, with its own text for a code the page does not know.
+ */
 export function unreadableDraft(file: string, failure: unknown): PanelDraftUnusable {
-  const issues = (failure as { payload?: { details?: { issues?: { path?: readonly (string | number)[] }[] } } } | null)?.payload?.details?.issues;
-  const fields = (issues ?? []).map(({ path }) => (path ?? []).join(".")).filter(Boolean);
+  const payload = (failure as { payload?: { error?: { code?: string }; details?: { issues?: { path?: readonly (string | number)[] }[] } } } | null)?.payload;
+  const fields = (payload?.details?.issues ?? []).map(({ path }) => (path ?? []).join(".")).filter(Boolean);
   if (fields.length) return new PanelDraftUnusable(file, { kind: "fields", fields: [...new Set(fields)] });
-  return new PanelDraftUnusable(file, { kind: "read", message: failure instanceof Error ? failure.message : String(failure) });
+  const code = payload?.error?.code;
+  return new PanelDraftUnusable(file, {
+    kind: "read",
+    reason: code === undefined ? null : READ_REASONS[code] ?? null,
+    message: failure instanceof Error ? failure.message : String(failure),
+  });
 }
+
+const READ_WORDS: Readonly<Record<DraftReadReason, string>> = {
+  run: "platform.draftRunMissing",
+  file: "platform.draftFileMissing",
+  forbidden: "platform.draftForbidden",
+};
 
 type Translate = (key: string, params?: Readonly<Record<string, string>>) => string;
 
@@ -42,7 +64,7 @@ const FIELD_WORDS: Readonly<Record<string, string>> = {
 export function draftRefusalText(refusal: PanelDraftUnusable, t: Translate): string {
   const { file, cause } = refusal;
   if (cause.kind === "otherPage") return t("platform.draftOtherPage", { file });
-  if (cause.kind === "read") return t("platform.draftUnreadable", { file, reason: cause.message });
+  if (cause.kind === "read") return cause.reason ? t(READ_WORDS[cause.reason], { file }) : t("platform.draftUnreadable", { file, reason: cause.message });
   const fields = cause.fields.map((field) => (FIELD_WORDS[field] ? `${t(FIELD_WORDS[field])} (${field})` : field)).join(", ");
   return t("platform.draftUnusableFields", { file, fields });
 }
