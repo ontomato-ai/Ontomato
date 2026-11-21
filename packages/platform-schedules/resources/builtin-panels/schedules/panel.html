@@ -98,7 +98,7 @@
                   </template>
                   <span v-else class="muted">{{ t("card.neverRun") }}</span>
                 </p>
-                <p v-if="row.fields.lastRunSummary" class="card-summary" :title="row.fields.lastRunSummary">{{ row.fields.lastRunSummary }}</p>
+                <p v-if="row.fields.lastRunSummary" class="card-summary" :title="resultPreview(row.fields.lastRunSummary)">{{ resultPreview(row.fields.lastRunSummary) }}</p>
               </div>
               <div class="card-foot" @click.stop>
                 <el-button v-if="row.fields.latestResultPath" link type="primary" size="small" @click="openResult({ path: row.fields.latestResultPath })">{{ t("action.viewResult") }}</el-button>

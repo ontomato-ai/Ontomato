@@ -930,5 +930,9 @@
   {
     "key": "Action.functionMissing",
     "value": "This action's function no longer exists, so it cannot run"
+  },
+  {
+    "key": "Admin.class.formatError",
+    "value": "An object class name starts with a letter or underscore and holds only letters, digits and underscores"
   }
 ]
