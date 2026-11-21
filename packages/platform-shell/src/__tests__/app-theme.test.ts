@@ -1,7 +1,20 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick, ref, type Ref } from "vue";
 import type { PanelThemeOverrides } from "@ontomato/contracts/panel-manifest";
 import { applyTheme, composeThemes, useAppTheme, type ThemeMode } from "../app-theme";
+
+/** Whether reading the page's root rules fails, as it can on a stylesheet with a selector it cannot read. */
+const composites = vi.hoisted(() => ({ fail: false }));
+vi.mock("@ontomato/design-tokens", async (original) => {
+  const actual = await original<typeof import("@ontomato/design-tokens")>();
+  return {
+    ...actual,
+    rootComposites: (...args: Parameters<typeof actual.rootComposites>) => {
+      if (composites.fail) throw new SyntaxError("':-webkit-any(a' is not a valid selector");
+      return actual.rootComposites(...args);
+    },
+  };
+});
 
 /*
  * An application's theme assigned in its area only (product-layer standard; design §六): the area takes the values in the
@@ -183,5 +196,23 @@ it("reads root rules past selectors whose functions hold commas, and still assig
     expect(area().style.getPropertyValue("--control-focus-ring")).toBe("0 0 0 2px var(--brand-primary-tint)");
   } finally {
     style.remove();
+  }
+});
+
+it("still assigns the theme when the page's root rules cannot be read, and says so once", async () => {
+  composites.fail = true;
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    const mode = ref<ThemeMode>("light");
+    const area = mountArea(mode, ref(theme));
+    await nextTick();
+    expect(area().style.getPropertyValue("--el-color-primary")).toBe("#0f7b6c");
+    mode.value = "dark";
+    await nextTick();
+    expect(area().style.getPropertyValue("--el-color-primary")).toBe("#3cc4ad");
+    expect(warn).toHaveBeenCalledTimes(1);
+  } finally {
+    composites.fail = false;
+    warn.mockRestore();
   }
 });

@@ -32,7 +32,25 @@ export function themeProperties(theme: PanelThemeOverrides | null | undefined, m
  */
 function areaProperties(theme: PanelThemeOverrides | null | undefined, mode: ThemeMode): Record<string, string> {
   const properties = themeProperties(theme, mode);
-  return Object.keys(properties).length ? { ...rootComposites(Object.keys(properties)), ...properties } : properties;
+  return Object.keys(properties).length ? { ...composedFrom(Object.keys(properties)), ...properties } : properties;
+}
+
+let compositesFailed = false;
+
+/**
+ * The root's rules composed from the recoloured properties. Reading them is a pass over the page's stylesheets; if it
+ * fails (a selector it cannot read), the area still takes what the theme assigns, and the failure is named once.
+ */
+function composedFrom(recoloured: string[]): Record<string, string> {
+  try {
+    return rootComposites(recoloured);
+  } catch (error) {
+    if (!compositesFailed) {
+      compositesFailed = true;
+      console.warn("The application theme is assigned without the page's composed root rules, which could not be read:", error);
+    }
+    return {};
+  }
 }
 
 /** The themed areas shown now, by their element: what a pop-up opened inside one of them takes. */
