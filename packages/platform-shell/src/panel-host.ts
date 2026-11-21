@@ -225,6 +225,20 @@ export interface CodedPanelTarget {
 
 /** Each instance's own name for its element, so its panel's CSS reaches it and no other. */
 let instances = 0;
+export function newPanelInstanceName(): string {
+  return `panel-${++instances}`;
+}
+
+/**
+ * Where a panel's component mounts in this document: an element carrying its `#app`'s own attributes, the template
+ * `#app` holds, and the panel's CSS, which its host scopes to the instance.
+ */
+export function codedPanelTarget(html: string): CodedPanelTarget & { css: string } {
+  const { template, rootAttributes, css } = splitCodedPanelHtml(html);
+  const element = globalThis.document.createElement("div");
+  for (const [name, value] of Object.entries(rootAttributes)) element.setAttribute(name, value);
+  return { element, template, css };
+}
 
 export interface PanelInstanceOptions {
   /** The words the host shows the reader. */
@@ -280,7 +294,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const source = shallowRef<HostedPanelSource | null>(null);
   const admitted = shallowRef(!port.admitted);
   const direct = shallowRef<DirectInstance | null>(null);
-  const instance = `panel-${++instances}`;
+  const instance = newPanelInstanceName();
   const notice = shallowRef("");
   /** Takes the drawn panel's CSS away again. */
   let dropStyle: (() => void) | undefined;
@@ -408,9 +422,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
    */
   async function adoptCoded(next: HostedPanelSource, requested: PanelHostState, requestedAddress: string) {
     if (!replaceDirect(next, requested, requestedAddress)) return;
-    const { template, rootAttributes, css } = splitCodedPanelHtml(next.panel.content.html);
-    const element = globalThis.document.createElement("div");
-    for (const [name, value] of Object.entries(rootAttributes)) element.setAttribute(name, value);
+    const { element, template, css } = codedPanelTarget(next.panel.content.html);
     adoptStyle(css);
     const mount = await port.coded(next, directRun(next, requested), { element, template });
     if (!active || source.value !== next) {

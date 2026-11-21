@@ -40,6 +40,8 @@ export {
 export { platformApplicationNameKey, platformPageAccessKey, useApplicationName, usePageAccess } from "./page-access";
 export { pilotPageKey, usePilotPage, type PilotPage, type PilotPageResolver } from "./pilot-pages";
 export {
+  codedPanelTarget,
+  newPanelInstanceName,
   panelHostKey,
   panelFrameDocument,
   panelUnavailable,
@@ -58,6 +60,7 @@ export {
   type PanelInstanceOptions,
   type PanelInstanceView,
 } from "./panel-host";
+export { adoptPanelStyle, scopedPanelStyle } from "./panel-content";
 export {
   provideUnsavedChanges,
   useLeaveConfirmation,
