@@ -148,17 +148,17 @@ Use an empty `target` for creation. Publish the draft as a run artifact, such as
 Append these query values to the panel's use path in the `#/...` portion of its address:
 
 ```js
-const query = new URLSearchParams({
-  draftSessionId: sessionId,
-  draftRunId: runId,
-  draftPath: "outputs/drafts/edit.page-draft.json",
-});
-const draftRoute = `#${usePath}?${query}`;
+const entry = new URL(usePath, window.location.origin);
+entry.searchParams.set("draftSessionId", sessionId);
+entry.searchParams.set("draftRunId", runId);
+entry.searchParams.set("draftPath", "outputs/drafts/edit.page-draft.json");
+const draftRoute = `#${entry.pathname}${entry.search}`;
 ```
 
 Use the session and run that wrote the draft. For each newly generated draft, set `draftRunId` to the run ID of
-the turn that wrote it. Pass the raw artifact path once to `URLSearchParams`.
-See [draft links and instance state](RUNTIME.md#draft-links-and-instance-state) for when a form takes the draft.
+the turn that wrote it. Pass the raw run-relative artifact path, starting with `outputs/drafts/` and without a
+leading slash, to `searchParams.set` for one encoding pass. Preserve any entry parameters already in the address.
+See [the complete draft query and when the form takes the draft](RUNTIME.md#draft-links-and-instance-state).
 
 For a chart from a dashboard card, declare `component: "MetricChart"` and `sourceCard: {dashboardId, cardId}`.
 Connect the chart inputs in `state`. If the owner has not registered that card, `panel check` lists its inputs as
