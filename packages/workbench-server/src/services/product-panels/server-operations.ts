@@ -23,6 +23,7 @@ import { scheduledTaskServerOperations } from "../scheduling/panel-operations";
 import { skillExportOperation, skillServerOperations } from "../skills/panel-operations";
 import { productCatalogServerOperations } from "./catalog-operations";
 import { HttpError } from "../../utils/errors";
+import { tForLocale } from "../../i18n";
 
 export type PanelOperationTarget = PanelFormTarget;
 export type SinglePanelOperationOutcome = Exclude<PanelOperationOutcome, { kind: "batch" }>;
@@ -81,12 +82,13 @@ export type PanelWriteServerOperation = ServerOperation & (
 );
 
 type ReadCall = z.infer<typeof panelReadOperationCallSchema>;
-type ReadTarget = Extract<PanelOwnerOperationDescriptor["target"], { source: "draft" | "input" | "none" }>;
+type ReadTarget = Extract<PanelOwnerOperationDescriptor["target"], { source: "input" | "none" }> | { source: "draft" };
 type ReadResult = z.infer<typeof panelReadOperationJsonResultSchema> | ({ kind: "file" } & PanelDownloadFile);
 
 export interface PanelReadServerOperation {
   handlerRef: string;
   binding: OntologyElementRef;
+  labelKey?: string;
   kind: "action";
   effect: "read";
   batch: false;
@@ -113,7 +115,10 @@ const registrations: readonly PanelServerOperation[] = [
   ...ontologyModelServerOperations,
   ...productCatalogServerOperations,
 ];
-const operations = new Map(registrations.map(operation => [operation.handlerRef, operation]));
+const operations = new Map(registrations.map(operation => {
+  requirePanelOperationLabelKey(operation);
+  return [operation.handlerRef, operation];
+}));
 const jsonSchema = (schema: z.ZodTypeAny) => zodToJsonSchema(schema, { effectStrategy: "input" });
 
 export function operationDeclaration(handler: PanelServerOperation) {
@@ -134,11 +139,23 @@ export function registeredPanelOperation(id: string) {
   if (handler) return { handler, declaration: operationDeclaration(handler), targetType: handler.targetType };
 }
 
-export function describeServerOperation(handler: PanelServerOperation, label: string, slot?: string,
+function requirePanelOperationLabelKey(handler: PanelServerOperation) {
+  if (!handler.labelKey?.trim()) throw new Error(`Owner operation '${handler.handlerRef}' must declare a labelKey`);
+  return handler.labelKey;
+}
+
+export function panelServerOperationLabel(handler: PanelServerOperation, locale?: string): string {
+  const key = requirePanelOperationLabelKey(handler);
+  const label = tForLocale(locale, key);
+  if (!label.trim() || label === key) throw new Error(`Owner operation '${handler.handlerRef}' has no label for '${key}'`);
+  return label;
+}
+
+export function describeServerOperation(handler: PanelServerOperation, locale: string | undefined, slot?: string,
   target?: PanelOwnerOperationDescriptor["target"],
 ) {
   return describePanelOperationFromDeclaration(operationDeclaration(handler), {
-    label, slot, target,
+    label: panelServerOperationLabel(handler, locale), slot, target,
     resultSchema: runtimeJsonObjectSchema.parse(jsonSchema(handler.resultSchema)),
     ...(handler.effect === "write" && handler.inspectImpact && { inspectImpact: { handlerRef: handler.inspectImpact.handlerRef } }),
   });

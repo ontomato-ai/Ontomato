@@ -300,7 +300,7 @@ it("derives SDK catalogue reads from the page and serves them through the run's 
   entries = [...entries, library];
   const ref = skillRef(library);
   const { panelSkillProvider } = await import("../../services/product-panels/skill-provider");
-  const offering = await panelSkillProvider.findByUse(domainId, library);
+  const offering = await panelSkillProvider.findByUse(domainId, library, { token: "reader" });
   if (!offering || !("kind" in offering)) throw new Error("Expected a registered catalogue panel");
   const skill = (await offering.provide(ref)).files[0]!.content;
   expect(skill).toContain("POST to `$ONTOMATO_PANEL_OPERATIONS_URL/read`");

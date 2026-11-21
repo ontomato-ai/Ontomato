@@ -3,7 +3,7 @@ import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime
 import { dashboardCardRequestSchema } from "./dashboard";
 import { defaultAgentSchema } from "./default-agent";
 import { panelConversationEntryFields } from "./panel-conversation-entry";
-import { panelManifestSchema, panelMemberSchema, panelObjectRefSchema, panelStateRefSchema } from "./panel-manifest";
+import { panelManifestSchema, panelMemberSchema, panelObjectRefSchema, panelReadOperationInputsSchema, panelStateRefSchema } from "./panel-manifest";
 import { panelOperationDeclarationSchema } from "./panel-operations";
 import { directProjectionDataSchema, directProjectionPortsSchema } from "./panel-projection";
 import { productCurrentIdParamsSchema } from "./product-record-id";
@@ -40,6 +40,12 @@ const inlineMemberSchema = z.object({
   target: stateKey.optional().describe("Panel state field holding the object for an object read or the object or object list targeted by an operation."),
   data: z.record(readName, authoringDataSchema).optional().describe("Map the component's datum names to owner reads. Use a read name or {read, type?, params?}. Each params value is {state: fieldName} or {literal: value}."),
   operation: panelOperationDeclarationSchema.shape.id.optional().describe("Operation ID from the owner's entry in the type table."),
+  draft: panelReadOperationInputsSchema.shape.draft.unwrap().shape.slot.optional()
+    .describe("Form member key in this panel. Required when the declared read operation takes a draft."),
+  parameters: panelReadOperationInputsSchema.shape.parameters.optional()
+    .describe("Parameters for a draft read operation. Use {state: fieldName}, {formField: {slot, path}}, or {fields: {parameterName: source}}. Defaults to an empty object."),
+  bindingId: panelReadOperationInputsSchema.shape.bindingId
+    .describe("Optional binding ID for a draft read operation, from {state: fieldName} or {formField: {slot, path}}."),
   state: z.record(stateKey, stateKey).optional().describe("Map typed component port names or owner read parameter names to panel state fields."),
   config: runtimeJsonObjectSchema.optional().describe("Component configuration from the released SDK catalogue."),
   agent: z.union([z.literal("page-default"), defaultAgentSchema]).optional().describe('Required for ConversationEntry. Use "page-default", {kind:"id", id}, or {kind:"preset", agentKind}.'),
@@ -52,7 +58,7 @@ const inlineMemberSchema = z.object({
   const issue = (field: string[], message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path: field, message });
   if (isOfficialComponent(member.component, "MetricChart")) {
     if (member.sourceCard === undefined) issue(["sourceCard"], "MetricChart needs a source card");
-    for (const field of ["id", "type", "target", "data", "operation", "config", "agent", "prefill", "prefillKey", "name", "description"] as const) {
+    for (const field of ["id", "type", "target", "data", "operation", "draft", "parameters", "bindingId", "config", "agent", "prefill", "prefillKey", "name", "description"] as const) {
       if (member[field] !== undefined) issue([field], "MetricChart takes its projection definition from the source card");
     }
     return;
@@ -62,7 +68,7 @@ const inlineMemberSchema = z.object({
   if (isOfficialComponent(member.component, "ConversationEntry")) {
     if (member.agent === undefined) issue(["agent"], "ConversationEntry needs an agent target");
     if (member.prefill !== undefined && member.prefillKey !== undefined) issue(["prefillKey"], "Write the opening sentence out or name its message key, not both");
-    for (const field of ["type", "target", "data", "operation", "state"] as const) {
+    for (const field of ["type", "target", "data", "operation", "draft", "parameters", "bindingId", "state"] as const) {
       if (member[field] !== undefined) issue([field], "ConversationEntry uses only its declared agent and optional prefill");
     }
     return;

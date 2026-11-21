@@ -12,6 +12,7 @@ import { appsSdkComponentCatalogEntrySchema, appsSdkComponentCatalogSchema } fro
 import { fileURLToPath } from "node:url";
 import { panelFormDescriptionSchema, panelOptionListSchema } from "@ontomato/contracts/panel-projection";
 import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
+import { METRIC_VIEW, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW } from "@ontomato/contracts/platform-object-types";
 import { platformScheduleFormSchema, platformTaskRunSchema, platformTaskSchema } from "@ontomato/contracts/platform-schedules";
 import { scheduledTaskPanelMessages, scheduledTaskPanelTextZhCn } from "@ontomato/platform-schedules/panel-text";
 import examples from "../../../../contracts/examples/platform-schedules.json";
@@ -1119,6 +1120,66 @@ it("dispatches the action catalog's reads and both operation descriptions", asyn
   expect(await readOperations("remove")).toMatchObject({
     status: "ready", value: { change: { handlerRef: "actions.delete", inspectImpact: { handlerRef: "actions.delete.inspect-impact" } } },
   });
+});
+
+/*
+ * The metric trials read an unsaved definition. The owner says only that they read a draft; the placing panel names the
+ * form member that holds it, under any key, and a panel that leaves it out is refused when it is saved. The buttons show
+ * the owner's names for the trials, never the name the projection was filed under.
+ */
+it("describes the metric trials by the owner's names and takes their draft from the form member the panel names", async () => {
+  const metric = { kind: "object", objectType: METRIC_VIEW };
+  const projections = {
+    metricEditor: {
+      componentId: "@ontomato/sdk:ObjectForm", inputs: { target: metric },
+      data: {
+        form: { source: { object: { input: "target" } }, read: "form", params: {} },
+        createForm: { source: { type: { kind: "PlatformObjectType", id: METRIC_VIEW } }, read: "createForm", params: {} },
+      },
+    },
+    trials: {
+      name: "Metric trial runner", componentId: "@ontomato/sdk:OperationButton",
+      operations: {
+        test: { operation: { kind: "PlatformOperation", id: TEST_METRIC_VIEW } },
+        testExecute: { operation: { kind: "PlatformOperation", id: TEST_EXECUTE_METRIC_VIEW } },
+      },
+    },
+  };
+  for (const [key, projection] of Object.entries(projections)) {
+    const response = await request("PUT", "product-projections/owner-metric-trials-" + key, {
+      name: key, description: "", visibility: "domain", revision: 0, inputs: {}, outputs: {}, config: {}, data: {}, ...projection,
+    }, "en");
+    expect(response.status, await response.text()).toBe(200);
+  }
+  const panel = (trials: object) => ({
+    name: "Metric trials", description: "", visibility: "domain", revision: 0,
+    content: vuePanelContent("metricEditor", "trials"),
+    manifest: { state: {}, events: {}, members: {
+      metricEditor: { target: { projectionId: "owner-metric-trials-metricEditor" } },
+      trials: { target: { projectionId: "owner-metric-trials-trials" }, ...trials },
+    } },
+  });
+
+  const unbound = await request("PUT", "product-panels/panel-owner-metric-trials", panel({}), "en");
+  const refusal = await unbound.text();
+  expect(unbound.status, refusal).toBe(400);
+  expect(refusal).toContain("trials");
+  expect(refusal).toContain("operation 'test' must declare a form member in readOperationInputs.test.draft.slot");
+
+  const draft = { draft: { slot: "metricEditor" }, parameters: { fields: {} } };
+  const saved = await request("PUT", "product-panels/panel-owner-metric-trials",
+    panel({ readOperationInputs: { test: draft, testExecute: draft } }), "en");
+  expect(saved.status, await saved.text()).toBe(200);
+  const described = await request("POST", "product-panels/read", {
+    source: { kind: "registered", applicationId: "owner-metric-trials", useId: "data" },
+    memberPath: [{ member: "trials" }], operations: true, inputs: {},
+  }, "en");
+  expect(await described.json()).toEqual({ status: "ready", value: {
+    test: expect.objectContaining({ handlerRef: TEST_METRIC_VIEW, label: "Test", target: { source: "draft", slot: "metricEditor" } }),
+    testExecute: expect.objectContaining({
+      handlerRef: TEST_EXECUTE_METRIC_VIEW, label: "Test and return JSON", target: { source: "draft", slot: "metricEditor" },
+    }),
+  } });
 });
 
 /** Reads a MetricView result through a registered projection whose SDK component this fixture declares as its consumer. */

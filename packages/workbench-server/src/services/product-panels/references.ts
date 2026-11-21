@@ -1,7 +1,7 @@
 import { missingEntryMessageKeys } from "@ontomato/contracts/panel-conversation-entry";
 import { appsSdkComponentDatum } from "@ontomato/contracts/apps-sdk";
 import {
-  matchesDirectPanelValue, matchesObjectType, panelPlacementSchema, panelPortAccepts, type PanelManifest,
+  matchesDirectPanelValue, matchesObjectType, panelPlacementSchema, panelPortAccepts, type PanelManifest, type PanelMember,
   type PanelPlacement,
 } from "@ontomato/contracts/panel-manifest";
 import {
@@ -28,7 +28,7 @@ type QueryClient = Pick<PoolClient, "query">;
 type PanelDefinition = ProductPanelInput | BuiltinProductPanelInput;
 type ProjectionDefinition = ProductProjectionInput | BuiltinProductProjectionInput;
 type Target = { kind: CurrentProductKind; id: string };
-type Wiring = Pick<PanelPlacement, "inputs" | "outputs">;
+type Wiring = Pick<PanelMember, "inputs" | "outputs" | "readOperationInputs">;
 type SavedPlacement = { field: string; placement: PanelPlacement };
 type Reference = {
   key: string;

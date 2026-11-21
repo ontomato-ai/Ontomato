@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { SkillCatalogDiagnostics } from "@ontomato/contracts/skills";
+import type { AssistantCredentials } from "../../../utils/assistant-credentials";
 import {
   runtimeSkillKey,
   standardSkillFrontmatterSchema,
@@ -37,7 +38,8 @@ export class SkillRegistryManager {
   private names = new Set<string>();
   readonly failedManifests = new Map<string, SkillCatalogDiagnostics["items"][number]>();
   constructor(private readonly root: string, private readonly publicScanner: SkillScanner,
-    private readonly domainId: string, private readonly providers: readonly RegisteredSkillProvider[]) {}
+    private readonly domainId: string, private readonly providers: readonly RegisteredSkillProvider[],
+    private readonly reader: AssistantCredentials) {}
 
   private fileEntry(meta: SkillMeta, source: { kind: "public" | "domain"; path: string }): SkillEntry {
     const skill: RuntimeSkillRef = source.kind === "public"
@@ -47,7 +49,7 @@ export class SkillRegistryManager {
   }
 
   private async listProvider(provider: RegisteredSkillProvider, reportSourceFailure: (failure: SkillSourceFailure) => void) {
-    try { return await provider.list({ domainId: this.domainId, reportSourceFailure }); }
+    try { return await provider.list({ domainId: this.domainId, reader: this.reader, reportSourceFailure }); }
     catch (error) { throw providerFailure(provider, "list skills", error, false); }
   }
 
@@ -185,10 +187,10 @@ export class DomainSkillRegistryManager {
     return path.join(this.domainsRoot, encodeURIComponent(domainId).replace(/\./g, "%2E"));
   }
   async publicSkills() { return this.publicScanner.scan(); }
-  async forDomain(domainId: string, admit?: AdmitSkills) {
+  async forDomain(domainId: string, admit: AdmitSkills | undefined, reader: AssistantCredentials) {
     const root = this.getDomainSkillsRoot(domainId);
     await fs.promises.mkdir(root, { recursive: true });
-    const registry = new SkillRegistryManager(root, this.publicScanner, domainId, registeredSkillProviders());
+    const registry = new SkillRegistryManager(root, this.publicScanner, domainId, registeredSkillProviders(), reader);
     await registry.initialize(admit);
     return registry;
   }

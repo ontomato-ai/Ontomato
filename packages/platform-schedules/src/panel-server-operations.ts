@@ -76,6 +76,7 @@ export const scheduledTaskRunNowOperation = {
 
 const scheduledTaskSaveOperation = {
   handlerRef: `${SCHEDULED_TASK}.save`,
+  labelKey: "platformSchedules.panelManagement.save",
   kind: "form.save",
   binding: { kind: "PlatformObjectType", id: SCHEDULED_TASK },
   effect: "write",

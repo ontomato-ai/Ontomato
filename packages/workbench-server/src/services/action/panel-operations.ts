@@ -104,6 +104,7 @@ const formInstructions = "Read the form for the intended target. Use its fields,
 export const m6ServerOperations = [
   {
     handlerRef: `${ACTION}.save`,
+    labelKey: "panels.action.operations.save",
     kind: "form.save",
     binding: { kind: "PlatformObjectType", id: ACTION },
     effect: "write",

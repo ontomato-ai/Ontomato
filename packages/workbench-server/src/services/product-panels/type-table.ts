@@ -1,5 +1,5 @@
 import { zodToJsonSchema } from "zod-to-json-schema";
-import type { PanelPlacement } from "@ontomato/contracts/panel-manifest";
+import type { PanelMember } from "@ontomato/contracts/panel-manifest";
 import { projectionOperationTargetMatches } from "@ontomato/contracts/panel-projection";
 import { customerOntologyReads, platformObjectTypes } from "@ontomato/contracts/platform-object-types";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
@@ -61,7 +61,7 @@ export async function readPanelTypeTable(owner: ProductOwner, viewer: AssistantC
 
 function operationTargetCheck(loadActions?: () => ReturnType<ReturnType<typeof createActionReadAdapter>["objectActions"]>) {
   let objectActions: ReturnType<ReturnType<typeof createActionReadAdapter>["objectActions"]> | undefined;
-  return async (projection: Pick<ProductProjectionInput, "inputs" | "operations" | "data">, wiring?: Pick<PanelPlacement, "inputs">) => {
+  return async (projection: Pick<ProductProjectionInput, "inputs" | "operations" | "data">, wiring?: Pick<PanelMember, "inputs" | "readOperationInputs">) => {
     for (const { name, binding, owner: platform } of boundProjectionOperations(projection)) {
       const ref = binding.operation;
       if (ref.kind === "Action" && !loadActions) return `operation '${name}' requires a domain action`;
@@ -80,6 +80,9 @@ function operationTargetCheck(loadActions?: () => ReturnType<ReturnType<typeof c
         return `operation '${name}' needs an edit target or the owner's create form`;
       if (wiring && target && "input" in target && !Object.hasOwn(wiring.inputs ?? {}, target.input))
         return `operation '${name}' expects input '${target.input}', but it is not connected`;
+      if (wiring && platform?.handler.effect === "read" && platform.handler.target.source === "draft" &&
+        !wiring.readOperationInputs?.[name]?.draft)
+        return `operation '${name}' must declare a form member in readOperationInputs.${name}.draft.slot`;
     }
   };
 }

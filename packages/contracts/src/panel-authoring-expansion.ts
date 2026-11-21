@@ -31,7 +31,7 @@ export function expandPanelAuthoringMember(
     components: readonly AppsSdkComponentCatalogEntry[];
     typeTable: Pick<PlatformTypeTableResponse, "objectTypes" | "unavailableActions">;
   },
-): { projection: DirectProjectionPorts; placement: Pick<PanelMember, "inputs" | "outputs"> } {
+): { projection: DirectProjectionPorts; placement: Pick<PanelMember, "inputs" | "outputs" | "readOperationInputs"> } {
   const fail = (field: string, message: string): never => {
     throw new Error(`Member '${key}', field '${field}': ${message}`);
   };
@@ -77,6 +77,12 @@ export function expandPanelAuthoringMember(
     }
     return matches[0];
   })();
+  const readsDraft = ownerOperation?.operation.effect === "read" && ownerOperation.operation.target.source === "draft";
+  if (!readsDraft) {
+    for (const field of ["draft", "parameters", "bindingId"] as const) {
+      if (member[field] !== undefined) fail(field, "This field requires an operation that reads a form draft");
+    }
+  }
   typeId ??= ownerOperation?.type;
   const targetPort = ownerOperation?.operation.target.source === "input" ? ownerOperation.operation.target.input : "target";
   const inputTypes = new Map<string, DirectProjectionPorts["inputs"][string]>();
@@ -187,6 +193,7 @@ export function expandPanelAuthoringMember(
 
   const config = { ...member.config };
   let operations: DirectProjectionPorts["operations"];
+  let readOperationInputs: PanelMember["readOperationInputs"];
   if (ownerOperation) {
     const { type: ownerType, operation } = ownerOperation;
     const target = operation.target.source === "none" || member.target === undefined
@@ -201,6 +208,14 @@ export function expandPanelAuthoringMember(
     if (!localName.success) return fail("operation", `'${operation.id}' has no usable local operation name`);
     const name = localName.data;
     operations = { [name]: binding };
+    if (readsDraft) {
+      const slot = member.draft ?? fail("draft", `Operation '${operation.id}' requires the key of the form member whose draft it reads`);
+      readOperationInputs = { [name]: {
+        draft: { slot },
+        parameters: member.parameters ?? { fields: {} },
+        ...(member.bindingId && { bindingId: member.bindingId }),
+      } };
+    }
     if (component.config?.some(field => field.name === "operation")) {
       if (Object.hasOwn(config, "operation") && config.operation !== name)
         fail("config.operation", `Expected '${name}' for operation '${operation.id}'`);
@@ -216,6 +231,7 @@ export function expandPanelAuthoringMember(
     placement: {
       ...(inputBindings.size && { inputs: Object.fromEntries(inputBindings) }),
       ...(outputBindings.size && { outputs: Object.fromEntries(outputBindings) }),
+      ...(readOperationInputs && { readOperationInputs }),
     },
   };
 }

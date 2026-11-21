@@ -94,19 +94,20 @@ async function admitBoundOperation(actor: PanelOperationActor, placement: Placem
   }
   if (!owner) return unavailable(id);
   const { handler } = owner;
-  const label = handler.effect === "write" && handler.labelKey
-    ? tForLocale(actor.credentials.locale, handler.labelKey) : projection.name;
+  const locale = actor.credentials.locale;
   if (handler.effect === "read") {
     if (handler.target.source === "draft") {
-      if (!Object.hasOwn(placement.panel.manifest.members, handler.target.slot)) return unavailable(id);
-      return { effect: "read" as const, handler, descriptor: describeServerOperation(handler, label, handler.target.slot), fixedTarget: undefined };
+      const draftSlot = placement.member.readOperationInputs?.[bound.name]?.draft?.slot;
+      if (!draftSlot || !Object.hasOwn(placement.panel.manifest.members, draftSlot))
+        throw new HttpError(422, `Member '${slot}', operation '${bound.name}' must declare a form member in readOperationInputs.${bound.name}.draft.slot`, "PANEL_OPERATION_DRAFT_UNBOUND");
+      return { effect: "read" as const, handler, descriptor: describeServerOperation(handler, locale, slot, { source: "draft", slot: draftSlot }), fixedTarget: undefined };
     }
     if (handler.target.source === "input" && selected?.kind !== "object") return undefined;
-    return { effect: "read" as const, handler, descriptor: describeServerOperation(handler, label, slot, descriptor), fixedTarget: fixed };
+    return { effect: "read" as const, handler, descriptor: describeServerOperation(handler, locale, slot, descriptor), fixedTarget: fixed };
   }
   const draft = handler.kind === "form.save" && selected?.kind !== "object";
   if (draft && !allowsOperationDraft(projection, handler)) return undefined;
-  const described = describeServerOperation(handler, label, slot, draft ? { source: "draft", slot } : descriptor);
+  const described = describeServerOperation(handler, locale, slot, draft ? { source: "draft", slot } : descriptor);
   const operation = panelWriteOperationSnapshotSchema.parse({ ...described, ...placement.nested, id, slot });
   return { effect: "write" as const, handler, operation, descriptor: described,
     fixedTarget: draft ? { kind: "draft" as const } : fixed };
@@ -125,7 +126,7 @@ export async function readAdmittedProjectionOperations(actor: PanelOperationActo
       });
       if (result) descriptions.push([bound.name, result.descriptor]);
     } catch (error) {
-      if (!(error instanceof HttpError)) throw error;
+      if (!(error instanceof HttpError) || error.code === "PANEL_OPERATION_DRAFT_UNBOUND") throw error;
     }
   }
   return Object.fromEntries(descriptions);
