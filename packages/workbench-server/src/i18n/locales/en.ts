@@ -9,6 +9,8 @@ export const en = {
   "panels.agentForm.description": "Description",
   "panels.agentForm.icon": "Avatar",
   "panels.agentForm.enabled": "Enabled",
+  "panels.agentForm.enabledOn": "Enabled",
+  "panels.agentForm.enabledOff": "Disabled",
   "panels.agentForm.systemPrompt": "System prompt",
   "panels.agentForm.modelSelection": "Model",
   "panels.agentForm.skills": "Skills",
