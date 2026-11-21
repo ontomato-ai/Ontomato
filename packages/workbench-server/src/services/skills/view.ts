@@ -194,13 +194,14 @@ export async function readRegisteredPanelPageSkillContext(
   entrance: PageSkillEntrance,
   source: ApplicationUseSkillSource,
   loadedPanel: { id: string },
-  provider: { id: string; findByUse(domainId: string, use: PanelUseRef): Promise<ProtectedSkillOffering | SkillSourceFailure | null> },
+  provider: { id: string; findByUse(domainId: string, use: PanelUseRef, reader: AssistantCredentials):
+    Promise<ProtectedSkillOffering | SkillSourceFailure | null> },
 ): Promise<PageSkillContext> {
   const absent = { mode: "member" as const, locator: entrance, member: null };
   const actual = await currentApplicationPanel(caller, entrance, source);
   if (!actual || actual.use.panelId !== loadedPanel.id) return absent;
   const use = { applicationId: actual.applicationId, useId: actual.use.id };
-  const sourceFact = await provider.findByUse(caller.domainId, use);
+  const sourceFact = await provider.findByUse(caller.domainId, use, caller.initiatorCredentials);
   if (!sourceFact || sourceFact.sourceKey !== loadedPanel.id) return absent;
 
   const ref = protectedSourceSkillRef(provider.id, caller.domainId, sourceFact);
@@ -247,7 +248,7 @@ export async function readSkillView(domainId: string, initiatorCredentials: Assi
       public: skill => !pages.registered.has(runtimeSkillKey(skill)) || pages.allowedPageKeys.has(runtimeSkillKey(skill)),
       protected: skill => pages.admitted.has(runtimeSkillKey(skill)),
     };
-  });
+  }, initiatorCredentials);
   const items = [...registry.failedManifests.values()];
   const sourceUnavailable = pages.uncertain.size > 0;
   const diagnostics: SkillCatalogDiagnostics | undefined = items.length || sourceUnavailable ? { items, sourceUnavailable } : undefined;
