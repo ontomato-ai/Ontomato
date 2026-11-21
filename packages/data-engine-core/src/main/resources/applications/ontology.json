@@ -28,6 +28,22 @@
     "icon": "ontology",
     "groups": [],
     "permissions": [],
+    "panelUses": [
+      {
+        "id": "ontology-components",
+        "pageKey": "ontology-components",
+        "panelId": "builtin-product-sdk-components",
+        "path": "/ontology/components",
+        "access": {
+          "permissionCode": "ontology-modeling"
+        },
+        "names": {
+          "zh-CN": "基础组件",
+          "zh-TW": "基礎組件",
+          "en": "Base components"
+        }
+      }
+    ],
     "pageSkills": [{
       "permissionCode": "business-knowledge",
       "skill": {"namespace": {"kind": "provider", "provider": "ontology"}, "name": "knowledge-governance"},
