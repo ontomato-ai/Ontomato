@@ -21,6 +21,8 @@ import { createDirectPanelInstance } from "../../../../../packages/apps-sdk/src/
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 import { noOperations } from "./panel-frame";
+import { installWorkbenchI18n } from "@ontomato/workbench-ui/i18n";
+import elementEn from "element-plus/es/locale/lang/en";
 import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 
 /*
@@ -1038,4 +1040,45 @@ it("keeps short columns on one line, ends long text in an ellipsis, and wraps on
   expect(long!.title).toBe(question);
   expect(answer!.classList.contains("sdk-object-list-col-wrap")).toBe(true);
   expect([...element.querySelectorAll<HTMLElement>("thead th")].map((th) => th.className)).toEqual(["", "sdk-object-list-col-shrink", "sdk-object-list-col-wrap"]);
+});
+
+// A time column (the feedback page, 2026-11-22, A's contract): the owner gives an ISO time; the list shows it in the
+// reader's language and time zone as the platform shows a time — a recent one as how long ago — with the whole time as
+// the cell's title, on one line. A value that is no time is shown as it is, an empty one as the column's empty text.
+it("shows a time column in the reader's words and time zone, the whole time in its title", async () => {
+  installWorkbenchI18n({
+    supported: ["en"], defaultLocale: "en", initialLocale: "en", switchEnabled: false, save: null, messages: { en: publicEn }, elementLocale: () => elementEn,
+  });
+  const projections: Record<string, DirectProjection> = {
+    "feedback-list": {
+      ...meta,
+      id: "feedback-list",
+      name: "Feedback",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK } },
+      config: { columns: [{ key: "createdAt", kind: "time" }] },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
+    members: { list: { target: { projectionId: "feedback-list" }, outputs: { selected: { state: "selectedTask" } } } },
+    commands: {},
+  });
+  const recent = new Date(Date.now() - 2 * 3600_000 - 60_000).toISOString();
+  const old = "2025-03-04T05:06:07.000Z";
+  const rows = [recent, old, "not a time", ""].map((createdAt, index) => ({ primaryKey: `f-${index}`, label: `Feedback ${index}`, fields: { createdAt } }));
+  const { element } = mountDirect(manifest, projections, () => ready(rows));
+  await vi.waitFor(() => expect(element.querySelectorAll("tbody td")).toHaveLength(4));
+  const cells = [...element.querySelectorAll<HTMLElement>("tbody td")];
+  expect(cells.map((cell) => cell.textContent?.trim())).toEqual([
+    "2 hours ago",
+    new Date(old).toLocaleString("en", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }),
+    "not a time",
+    "—",
+  ]);
+  expect(cells[0]!.title).toBe(new Date(recent).toLocaleString("en"));
+  expect(cells[1]!.title).toBe(new Date(old).toLocaleString("en"));
+  expect(cells.map((cell) => cell.className)).toEqual(["", "", "", ""]);
 });
