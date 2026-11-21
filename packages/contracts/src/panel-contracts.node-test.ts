@@ -45,8 +45,9 @@ import {
 } from "./panel-manifest";
 import { pageSelectionSchema } from "./page-context";
 import { pageDraftSchema } from "./page-draft";
+import { findPanelFormOption, panelFormObjectSelectError } from "./form-fields";
 import {
-  panelFormDescriptionSchema, panelFormFrequencyValueSchema, panelFormRequestSchema, panelFormSaveInputSchema, panelFormTimeValueSchema,
+  panelFormDescriptionSchema, panelFormFieldSchema, panelFormFrequencyValueSchema, panelFormRequestSchema, panelFormSaveInputSchema, panelFormTimeValueSchema,
   panelObjectListColumnSchema, panelStateOperation, projectionBindingKeys, projectionOperation, projectionOperationTargetMatches, projectionPorts,
 } from "./panel-projection";
 import { platformTaskFrequencySchema } from "./platform-schedules";
@@ -1069,6 +1070,43 @@ test("code, number, time and line array controls retain the owner's JSON values 
   assert.deepEqual(panelFormDescriptionSchema.parse({ fields, values, errors: [], save: ownerSave }), {
     fields, values, errors: [], save: ownerSave,
   });
+});
+
+const defaultAgentOption = {
+  value: { kind: "preset", agentKind: "knowledge-governance" },
+  label: "Knowledge governance", description: null, disabled: false, disabledReason: null,
+};
+
+test("object select values round-trip and match the declared option regardless of object key order", () => {
+  const field = {
+    ...editableField, required: false, path: "/defaultAgent", label: "Default agent", valueSchema: { type: "object" },
+    control: { kind: "select", options: [defaultAgentOption] },
+  };
+  const selection = { agentKind: "knowledge-governance", kind: "preset" };
+  const input = panelFormSaveInputSchema.parse({ values: { defaultAgent: selection } });
+  const form = panelFormDescriptionSchema.parse({ fields: [field], values: input.values, errors: [], save: ownerSave });
+  const { control } = form.fields[0];
+  assert.equal(control.kind, "select");
+  assert.deepEqual(findPanelFormOption(control.options, form.values.defaultAgent), defaultAgentOption);
+  assert.equal(panelFormObjectSelectError(field.path, input.values.defaultAgent, { ...field, options: control.options }), undefined);
+  assert.equal(panelFormObjectSelectError(field.path, undefined, { ...field, options: [] }), undefined);
+});
+
+test("object select rejects undeclared values and points to the invalid field and value", () => {
+  const field = "/panelUses/1/defaultAgent";
+  const choices = { required: false, options: [defaultAgentOption] };
+  const unknown = { kind: "preset", agentKind: "elsewhere" };
+  assert.deepEqual(panelFormObjectSelectError(field, unknown, choices), {
+    field, code: "invalid_option", message: `Field '${field}' has no declared option for ${JSON.stringify(unknown)}`,
+  });
+  assert.deepEqual(panelFormObjectSelectError(field, "elsewhere", choices), {
+    field, code: "invalid_object", message: `Field '${field}' expects an object option, received "elsewhere"`,
+  });
+  assert.equal(panelFormObjectSelectError(field, defaultAgentOption.value, { ...choices, options: [] })?.code, "invalid_option");
+  assert.equal(panelFormFieldSchema.safeParse({
+    ...editableField, path: field, label: "Default agent", valueSchema: { type: "object" },
+    control: { kind: "select", options: choices.options, allowCreate: true },
+  }).success, false);
 });
 
 test("localized text keeps the owner's language map and language-level field pointers", () => {
