@@ -77,6 +77,8 @@ const paneStyle = computed(() => ({
         <Menu :size="18" />
       </button>
       <slot name="header"><h1 class="pane-title">{{ feature?.label }}</h1></slot>
+      <!-- The page's own commands, where its title is: the host hands them over and draws them for this width. -->
+      <slot name="actions" />
       <ActionTooltip :content="layoutLabel">
         <button type="button" class="pane-button pane-layout" :aria-label="layoutLabel" @click="toggleLayout">
           <Columns2 v-if="view === 'full'" :size="16" aria-hidden="true" />
