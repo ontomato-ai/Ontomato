@@ -36,7 +36,10 @@ const props = withDefaults(
      * the operation names, and a target bound to the panel's checked list makes it one batch over every checked item.
      */
     operation: string;
-    /** How the button looks: `primary` for the page's main action, `danger` for one that removes; it changes nothing else. */
+    /**
+     * How the button looks: `primary` for the page's main action, `danger` for one that removes (drawn as a quiet text
+     * button in the danger colour); it changes nothing else.
+     */
     type?: "primary" | "danger" | "default";
   }>(),
   { type: "default" },
@@ -158,7 +161,9 @@ const done = computed(() => items.value.filter((item) => item.outcome.kind === "
 <template>
   <div class="sdk-operation-button">
     <data-state v-if="pending" :result="pending" :labels="labels"></data-state>
-    <el-button v-else :type="type" :loading="running" :disabled="!ready" @click="run">{{ label }}</el-button>
+    <!-- A removal is drawn quiet, as the platform's header draws one: danger in its colour, not a solid block; off, it
+         is plainly off. The owner still decides what it does and confirms it. -->
+    <el-button v-else :type="type" :text="type === 'danger'" :loading="running" :disabled="!ready" @click="run">{{ label }}</el-button>
     <p v-if="failure" role="alert">{{ failure.message }}</p>
     <operation-result v-if="read" :result="read"></operation-result>
     <template v-if="receipt">
