@@ -40,3 +40,19 @@ it("stands a built-in application's named entry where its menu table lists the a
   expect(after[knowledgeAt]).toEqual({ id: "/ontology/knowledge", label: "Business knowledge" });
   expect(after.filter((_, index) => index !== knowledgeAt)).toEqual(before.filter((_, index) => index !== knowledgeAt));
 });
+
+it("lists another application's entry where a native menu table names its address, as that use relation shows it", () => {
+  // The ontology manager's facts layer, listing knowledge governance's business knowledge (big main's ruling, 2026-11-21).
+  const renderers = { ontology: { sections: [{ key: "ontology:facts", titleKey: "platform.layers.facts", paths: ["/governance/knowledge"] }] } };
+  const knowledge = {
+    id: "use-governance-knowledge", pageKey: "governance-knowledge", panelId: "builtin-knowledge", path: "/governance/knowledge",
+    access: { permissionCode: "business-knowledge" }, names: { en: "Business knowledge" },
+  };
+  const pagesFor = (catalog: ReturnType<typeof catalogFixture>) => appDeclarations(generatedNavigation(), access, catalogPartition(catalog, "en", renderers), t)
+    .find((app) => app.id === "ontology")!.groups!.flatMap((group) => group.pages.map((page) => ({ id: page.id, label: page.label })));
+
+  const granted = catalogFixture().map((app) => app.id === "governance" ? { ...app, panelUses: [...app.panelUses ?? [], knowledge] } : app);
+  expect(pagesFor(granted)).toEqual([{ id: "/governance/knowledge", label: "Business knowledge" }]);
+  // A reader the governance entry does not admit has no such item: the catalog does not list it for them.
+  expect(pagesFor(catalogFixture())).toEqual([]);
+});

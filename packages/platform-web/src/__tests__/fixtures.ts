@@ -84,14 +84,16 @@ export function builtinApplications(): BuiltinApplication[] {
 
 /**
  * Where the built-in applications' panel entries and their native menu tables disagree, for the native pages an edition
- * serves (big main's ruling, 2026-11-21): an entry with a menu name has a place in its table, and every address a table
- * lists is a native page or a declared entry — not both, not neither. `served` is the edition router's addresses; `own`
+ * serves (big main's ruling, 2026-11-21): an entry with a menu name has a place in its own application's table, and every
+ * address a table lists is a native page or an entry some built-in application declares — not both, not neither. A table
+ * may list another application's entry (the ontology manager's business knowledge, which knowledge governance owns). `served` is the edition router's addresses; `own`
  * keeps to the listed addresses the edition is the one to judge (another edition's pages are its own run's).
  */
 export function nativeEntryConflicts(
   served: ReadonlySet<string>, applications: readonly BuiltinApplication[], own: (path: string) => boolean = () => true,
 ): string[] {
   const conflicts: string[] = [];
+  const declared = new Set(applications.flatMap((application) => (application.declaration.panelUses ?? []).map((use) => use.path)));
   for (const application of applications) {
     const layout = nativeLayouts[application.entry.renderer];
     if (!layout) continue;
@@ -102,7 +104,7 @@ export function nativeEntryConflicts(
       if (use.names && !listed.includes(use.path)) conflicts.push(`${application.id}: ${use.path} has a menu name but no place in its menu table`);
     }
     for (const path of listed.filter(own)) {
-      const entry = uses.some((use) => use.path === path);
+      const entry = declared.has(path);
       if (served.has(path) === entry) conflicts.push(`${application.id}: ${path} is ${entry ? "both a native page and a panel entry" : "neither a native page nor a panel entry"}`);
     }
   }

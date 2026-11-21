@@ -141,6 +141,16 @@ export const nativeLayouts: Record<string, NativeLayout> = Object.fromEntries(la
 
 export function catalogPartition(applications: import("@ontomato/contracts/platform-identity").CatalogApplication[], locale: string,
   renderers: Record<string, NativeLayout> = {}): AppPartition[] {
+  // The built-in applications' named panel entries this reader may open, by address. A native menu table may list any of
+  // them: its own, or another application's (the ontology manager's facts layer lists the knowledge governance's
+  // business knowledge) — named and shown as that use relation says, and opened in the application that declares it.
+  const entries = new Map(applications.filter(app => !isPanelApplication(app) && app.kind !== "hosted" && app.kind !== "connected")
+    .flatMap(app => app.panelUses?.flatMap(use => use.names ? [[panelUsePath(use.path), {
+      id: panelUsePath(use.path),
+      label: use.names[locale] ?? use.names.en!,
+      icon: "pages" as const,
+      count: null,
+    }] as const] : []) ?? []));
   return applications.filter(app => app.kind === "hosted" || app.kind === "connected"||app.kind==='product'
     || Boolean(nativeLayouts[app.entry.renderer!] || renderers[app.entry.renderer!])).map((app) => {
     const embedded = app.kind === "hosted" || app.kind === "connected";
@@ -151,20 +161,13 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
       id: panelUsePath(use.path),
       label: use.names[locale] ?? use.names.en!,
     }] : []) ?? [] : [];
-    // A native application's panel entries stand where its menu table lists their addresses.
-    const entries = !panels && !embedded ? new Map(app.panelUses?.flatMap(use => use.names ? [[panelUsePath(use.path), {
-      id: panelUsePath(use.path),
-      label: use.names[locale] ?? use.names.en!,
-      icon: "pages",
-      count: null,
-    }] as const] : []) ?? []) : undefined;
     const layout: NativeLayout = panelPages.length > 1
       ? { frame: "menu", sections: [{ key: app.id, pages: panelPages }] }
       : applicationRoute || app.kind === "product" ? { sections: [] } : {
       ...nativeLayouts[app.entry.renderer!], ...renderers[app.entry.renderer!],
       sections: renderers[app.entry.renderer!]?.sections ?? nativeLayouts[app.entry.renderer!]?.sections ?? [],
     };
-    return { ...layout, entries, id: app.id, label: app.names[locale] ?? app.names.en!, description: app.descriptions[locale] ?? ("descriptionKey" in layout && layout.descriptionKey ? undefined : app.descriptions.en ?? null), icon: app.icon, rail: app.rail, category: app.category,
+    return { ...layout, entries: !panels && !embedded ? entries : undefined, id: app.id, label: app.names[locale] ?? app.names.en!, description: app.descriptions[locale] ?? ("descriptionKey" in layout && layout.descriptionKey ? undefined : app.descriptions.en ?? null), icon: app.icon, rail: app.rail, category: app.category,
       built: (app.kind === "hosted" || app.kind === "product") && (!!app.releaseId || panels),
       prefix: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?`/products/${app.id}`:app.entry.path,
       home: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?app.entry.path:app.entry.home ?? layout.home };
