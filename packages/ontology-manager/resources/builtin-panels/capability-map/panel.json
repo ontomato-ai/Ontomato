@@ -174,86 +174,7 @@
         "id": "builtin-product-4dd589de-911e-45de-8ee0-06bb03127a26"
       }
     },
-    "commands": {
-      "showTypeMode": {
-        "labelKey": "cm.eventShowTypeMode",
-        "do": {
-          "set": {
-            "fields": {
-              "mode": {
-                "literal": "type"
-              }
-            }
-          }
-        }
-      },
-      "showInstanceMode": {
-        "labelKey": "cm.eventShowInstanceMode",
-        "do": {
-          "set": {
-            "fields": {
-              "mode": {
-                "literal": "instance"
-              }
-            }
-          }
-        }
-      },
-      "showGraphView": {
-        "labelKey": "cm.eventShowGraphView",
-        "do": {
-          "set": {
-            "fields": {
-              "view": {
-                "literal": "graph"
-              }
-            }
-          }
-        }
-      },
-      "showListView": {
-        "labelKey": "cm.eventShowListView",
-        "do": {
-          "set": {
-            "fields": {
-              "view": {
-                "literal": "list"
-              }
-            }
-          }
-        }
-      },
-      "clearSelection": {
-        "labelKey": "cm.eventClearSelection",
-        "do": {
-          "set": {
-            "fields": {
-              "selected": {
-                "literal": null
-              }
-            }
-          }
-        }
-      },
-      "resetToCurrentUser": {
-        "labelKey": "cm.eventResetToCurrentUser",
-        "do": {
-          "set": {
-            "fields": {
-              "mode": {
-                "literal": "instance"
-              },
-              "start": {
-                "literal": null
-              },
-              "selected": {
-                "literal": null
-              }
-            }
-          }
-        }
-      }
-    }
+    "commands": {}
   },
   "content": {
     "messages": {
@@ -340,12 +261,6 @@
         "cm.dirPanels": "Panels",
         "cm.dirApplications": "Applications",
         "cm.dirAgents": "Agents",
-        "cm.eventShowTypeMode": "Show type mode",
-        "cm.eventShowInstanceMode": "Show instance mode",
-        "cm.eventShowGraphView": "Show the graph view",
-        "cm.eventShowListView": "Show the layer list view",
-        "cm.eventClearSelection": "Clear the selected node",
-        "cm.eventResetToCurrentUser": "Reset the start to the current user",
         "cm.layerFact": "Fact",
         "cm.layerCapability": "Capability",
         "cm.layerGovernance": "Governance",
@@ -443,12 +358,6 @@
         "cm.dirPanels": "面板",
         "cm.dirApplications": "应用",
         "cm.dirAgents": "智能体",
-        "cm.eventShowTypeMode": "切到类型模式",
-        "cm.eventShowInstanceMode": "切到实例模式",
-        "cm.eventShowGraphView": "切到图形视图",
-        "cm.eventShowListView": "切到按层列表视图",
-        "cm.eventClearSelection": "清除选中节点",
-        "cm.eventResetToCurrentUser": "起点回到当前用户",
         "cm.layerFact": "事实层",
         "cm.layerCapability": "能力层",
         "cm.layerGovernance": "治理层",
