@@ -67,6 +67,12 @@ const grants = new Set<string>();
 const codePanelId = "panel-schedules-mixed";
 const builtinPanelId = "builtin-product-host-fixture";
 const builtinProjectionId = "builtin-product-components-fixture";
+const builtinUse = {
+  applicationId: "app-builtin-fixture", useId: "catalogue", panelId: builtinPanelId,
+  path: "/applications/app-builtin-fixture/catalogue",
+  entrance: { access: "domain-member" as const, pageKey: "catalogue" },
+};
+let builtinUses: (typeof builtinUse)[] = [];
 
 beforeAll(async () => {
   configureI18n({
@@ -86,6 +92,8 @@ beforeAll(async () => {
 
   const { panelOperationsRouter, productPanelsInternalRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const { appBuilderRouter } = await import("../routes/app-builder");
+  const { registerPanelSkillProvider } = await import("../../services/product-panels/skill-provider");
+  registerPanelSkillProvider();
   const app = express();
   app.use(express.json());
   app.post("/product-governance/register", (req, res) => {
@@ -94,8 +102,11 @@ beforeAll(async () => {
     res.json({ success: true });
   });
   app.post("/product-governance/check", (req, res) => {
-    res.json({ allowed: req.header("tk") === "host-reader" &&
-      (isBuiltinProductId(req.body.id) ? req.body.verb === "use" : grants.has(req.body.id)) });
+    const token = req.header("tk");
+    const allowed = isBuiltinProductId(req.body.id)
+      ? (token === "host-reader" || token === "host-no-entry") && req.body.verb === "use"
+      : token === "host-reader" && grants.has(req.body.id);
+    res.json({ allowed });
   });
   app.post("/product-governance/resources", (req, res) => {
     expect(req.header("tk")).toBe("host-reader");
@@ -137,8 +148,17 @@ beforeAll(async () => {
       },
     ] });
   });
+  app.get("/platform/applications/panel-skill-sources", (req, res) => {
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
+    res.json({ success: true, data: builtinUses });
+  });
+  app.get("/platform/page-skills", (req, res) => {
+    const entrances = req.header("tk") === "host-reader" ? builtinUses.map(use => use.entrance) : [];
+    res.json({ success: true, data: { pageSkills: entrances, admittedEntrances: entrances, registeredSkills: [] } });
+  });
   app.get("/platform/applications/resolve-entry", (req, res, next) => {
     if (req.query.applicationId === "app-builtin-fixture") {
+      if (req.header("tk") === "host-no-entry") { res.sendStatus(403); return; }
       expect(req.header("tk")).toBe("host-reader");
       res.json({ success: true, data: {
         applicationId: "app-builtin-fixture", menu: { groups: [], panelUses: [] },
@@ -193,6 +213,13 @@ it("reconciles the released built-in authoring sources and exposes the same read
 
   await registerBuiltinProducts(bundle);
   await registerBuiltinProducts(bundle);
+  builtinUses = [builtinUse];
+  const { readSkillView } = await import("../../services/skills/view");
+  const skill = protectedSkillRef("product-panels", null, builtinPanelId);
+  const useQuery = new URLSearchParams({
+    applicationId: builtinUse.applicationId, useId: builtinUse.useId, ...builtinUse.entrance,
+  });
+  const packages = [];
   for (const domainId of ["pilot", "another-domain"]) {
     const headers = { "X-Test-Domain": domainId };
     const read = (resource: string) => fetch(`${state.base}/api/${resource}`, { headers });
@@ -218,7 +245,29 @@ it("reconciles the released built-in authoring sources and exposes the same read
     expect(await response.json()).toMatchObject({ status: "ready", value: expect.arrayContaining([
       expect.objectContaining({ primaryKey: "@ontomato/sdk:ObjectList" }),
     ]) });
+    const context = await read(`product-panels/${builtinPanelId}/snapshot?${useQuery}`);
+    expect(context.status).toBe(200);
+    expect(panelDefinitionSnapshotSchema.parse(await context.json()).pageSkillContext).toMatchObject({
+      mode: "member", member: { ref: skill },
+    });
+    const view = await readSkillView(domainId, { token: "host-reader" });
+    const entry = view.requireSkillById(skill.name);
+    expect(entry.skill).toEqual(skill);
+    expect(entry.source.kind).toBe("provider");
+    packages.push(await entry.provide());
   }
+  expect(packages[0]).toEqual(packages[1]);
+  expect(packages[0]?.files[0]?.content).toContain(builtinProjectionId);
+  const noEntry = await readSkillView("pilot", { token: "host-no-entry" });
+  expect(noEntry.registry.getSkillByRef(skill)).toBeNull();
+  const inaccessible = await fetch(`${state.base}/api/product-panels/${builtinPanelId}/snapshot?${useQuery}`, {
+    headers: { "X-Test-Token": "host-no-entry" },
+  });
+  expect(inaccessible.status).toBe(200);
+  expect(panelDefinitionSnapshotSchema.parse(await inaccessible.json()).pageSkillContext).toMatchObject({
+    mode: "member", member: null,
+  });
+  builtinUses = [];
   const blockedSave = await request("PUT", "product-panels/" + builtinPanelId, {
     name: "Shadow", description: "", visibility: "domain", revision: 0, content: { html, module }, manifest,
   });

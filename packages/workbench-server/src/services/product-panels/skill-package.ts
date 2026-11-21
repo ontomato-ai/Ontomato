@@ -7,14 +7,22 @@ import { panelManifestSchema, panelOperationId } from "@ontomato/contracts/panel
 import { PAGE_DRAFT_QUERY_KEYS } from "@ontomato/contracts/page-draft";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
 import { directReadDeclaration } from "@ontomato/contracts/panel-projection";
-import { productPanelInputSchema, productProjectionInputSchema, type PanelSkillSource, type ProductPanelInput, type ProductProjectionInput } from "@ontomato/contracts/product-panels";
+import {
+  builtinProductPanelInputSchema, builtinProductProjectionInputSchema, productPanelInputSchema, productProjectionInputSchema,
+  type BuiltinProductPanelInput, type BuiltinProductProjectionInput, type PanelSkillSource,
+  type ProductPanelInput, type ProductProjectionInput,
+} from "@ontomato/contracts/product-panels";
+import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import { SkillSourceRecordError, type ProtectedSkillOffering, type SkillSourceFailure } from "../../core/skills/providers";
 import { getDefaultLocale } from "../../i18n";
 import { findCurrentProduct, type CurrentProductRow } from "../../infrastructure/product-current";
 import { readPanelComponentCatalogue } from "./component-catalogue";
 import { allowsOperationDraft, boundProjectionOperations, type BoundProjectionOperation } from "./operation-bindings";
+import { panelSkillScope } from "./skill-identity";
 
 type ComponentCatalogue = Awaited<ReturnType<typeof readPanelComponentCatalogue>>["components"];
+type PanelDefinition = BuiltinProductPanelInput | ProductPanelInput;
+type ProjectionDefinition = BuiltinProductProjectionInput | ProductProjectionInput;
 const verbs = new Intl.ListFormat("en", { type: "conjunction" });
 
 function fingerprint(value: unknown): string {
@@ -88,6 +96,7 @@ export async function panelSkillSources(
   }
   let release: ReturnType<typeof readPanelComponentCatalogue> | undefined;
   return Promise.all([...panels].map(async ([id, byEntrance]): Promise<ProtectedSkillOffering | SkillSourceFailure> => {
+    const scope = panelSkillScope(id);
     const row = await findCurrentProduct(domainId, "panel", id);
     const entrances = [...byEntrance.values()];
     let dependencies: z.infer<typeof panelDependencies>;
@@ -96,20 +105,22 @@ export async function panelSkillSources(
     } catch (error) {
       if (!(error instanceof SkillSourceRecordError)) throw error;
       const { field, reason } = error.detail;
-      return { sourceKey: id, entrances, knownRequiredResourceIds: [id], ...(field ? { field } : {}), reason };
+      return { sourceKey: id, scope, entrances, knownRequiredResourceIds: [id], ...(field ? { field } : {}), reason };
     }
     const projectionIds = [...new Set(Object.values(dependencies.manifest.members)
       .flatMap(({ target }) => "projectionId" in target ? [target.projectionId] : []))];
     async function buildSnapshot() {
-      const panel = parseDefinition(productPanelInputSchema, row, id);
+      const panel = parseDefinition<PanelDefinition>(scope === "platform" ? builtinProductPanelInputSchema : productPanelInputSchema, row, id);
       const [sdk, rows] = await Promise.all([
         release ??= readPanelComponentCatalogue().catch(cause => {
           throw new Error("Unable to read the current SDK component catalogue", { cause });
         }),
         Promise.all(projectionIds.map(projectionRow)),
       ]);
-      const entries = projectionIds.map((projectionId, index) =>
-        [projectionId, parseDefinition(productProjectionInputSchema, rows[index], projectionId)] as const);
+      const entries = projectionIds.map((projectionId, index) => {
+        const schema = isBuiltinProductId(projectionId) ? builtinProductProjectionInputSchema : productProjectionInputSchema;
+        return [projectionId, parseDefinition<ProjectionDefinition>(schema, rows[index], projectionId)] as const;
+      });
       const description = describePanel(panel, new Map(entries), sdk.components);
       return {
         description, markdown: describeSkill(description),
@@ -121,6 +132,7 @@ export async function panelSkillSources(
     return {
       kind: "protected",
       sourceKey: id,
+      scope,
       entrances,
       resourceIds: [id, ...projectionIds],
       async readManifest(skill) {
@@ -140,7 +152,7 @@ type PanelDescription = ReturnType<typeof describePanel>;
 type OperationDescription = BoundProjectionOperation & { id: string; label: string; draft: boolean };
 
 function describePanel(
-  panel: ProductPanelInput, records: ReadonlyMap<string, ProductProjectionInput>, components: ComponentCatalogue,
+  panel: PanelDefinition, records: ReadonlyMap<string, ProjectionDefinition>, components: ComponentCatalogue,
 ) {
   const { manifest } = panel;
   const projections = Object.entries(manifest.members).flatMap(([member, declaration]) => {

@@ -24,9 +24,12 @@ export async function registerProductResource(owner:ProductOwner,id:string,share
   const response=await backendPost('product-grant-registration',config.dataQuery.baseUrl+'/product-governance/register',{domainId:owner.domainId,ownerId:owner.userId,id,shared},{headers:serviceHeaders(),retries:1});
   if(JSON.parse(response.text).success!==true)throw new HttpError(503,'Product resource registration failed','PRODUCT_GOVERNANCE_UNAVAILABLE');
 }
-export async function requireProductGrant(id:string,verb:'use'|'edit',credentials:AssistantCredentials){
+export async function productGrantAllowed(id:string,verb:'use'|'edit',credentials:AssistantCredentials){
   const response=await backendPost('product-grant-check',config.dataQuery.baseUrl+'/product-governance/check',{id,verb},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});
-  if(JSON.parse(response.text).allowed!==true)throw new HttpError(403,`Product ${verb} Grant required`,'PRODUCT_FORBIDDEN');
+  return JSON.parse(response.text).allowed===true;
+}
+export async function requireProductGrant(id:string,verb:'use'|'edit',credentials:AssistantCredentials){
+  if(!await productGrantAllowed(id,verb,credentials))throw new HttpError(403,`Product ${verb} Grant required`,'PRODUCT_FORBIDDEN');
 }
 export async function grantedProductIds(verb:'use'|'edit',credentials:AssistantCredentials):Promise<string[]>{
   const response=await backendPost('product-grant-resources',config.dataQuery.baseUrl+'/product-governance/resources',{verb},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});

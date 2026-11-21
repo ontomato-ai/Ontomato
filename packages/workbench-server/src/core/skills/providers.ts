@@ -21,6 +21,7 @@ export interface SkillSourceContext {
 /** A registered source whose complete package dependencies could not be enumerated. */
 export interface SkillSourceFailure {
   sourceKey: string;
+  scope?: "platform";
   entrances: readonly PageSkillEntrance[];
   knownRequiredResourceIds: readonly string[];
   field?: string;
@@ -45,6 +46,7 @@ export interface SkillOffering {
 export interface ProtectedSkillOffering {
   kind: "protected";
   sourceKey: string;
+  scope?: "platform";
   entrances: readonly PageSkillEntrance[];
   resourceIds: readonly string[];
   readManifest(skill: RuntimeSkillRef): Promise<StandardSkillFrontmatter>;
@@ -57,9 +59,18 @@ export function isProtectedSkillName(name: string): boolean {
   return PROTECTED_SKILL_NAME.test(name);
 }
 
-export function protectedSkillRef(providerId: string, domainId: string, sourceKey: string): RuntimeSkillRef {
+export function protectedSkillRef(providerId: string, domainId: string | null, sourceKey: string): RuntimeSkillRef {
   const hash = createHash("sha256").update(JSON.stringify([providerId, domainId, sourceKey])).digest("hex");
-  return { namespace: { kind: "domain", domainId }, name: `pvt-${hash.slice(0, 48)}` };
+  const namespace: RuntimeSkillRef["namespace"] = domainId === null
+    ? { kind: "provider", provider: providerId }
+    : { kind: "domain", domainId };
+  return { namespace, name: `pvt-${hash.slice(0, 48)}` };
+}
+
+export function protectedSourceSkillRef(
+  providerId: string, domainId: string, source: Pick<ProtectedSkillOffering, "scope" | "sourceKey">,
+): RuntimeSkillRef {
+  return protectedSkillRef(providerId, source.scope === "platform" ? null : domainId, source.sourceKey);
 }
 
 /**

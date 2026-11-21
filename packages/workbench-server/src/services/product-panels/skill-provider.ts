@@ -4,6 +4,7 @@ import { environment } from "../../config/environment";
 import { config } from "../../config/application";
 import { registerSkillProvider, type ProtectedSkillOffering, type SkillProvider, type SkillSourceFailure } from "../../core/skills/providers";
 import { backendGet } from "../../utils/backend-client";
+import { PANEL_SKILL_PROVIDER_ID } from "./skill-identity";
 
 const sourceResponse = z.object({ success: z.literal(true), data: panelSkillSourcesResponseSchema });
 
@@ -22,7 +23,7 @@ async function readSources(domainId: string) {
 export const panelSkillProvider: SkillProvider<ProtectedSkillOffering> & {
   findByUse(domainId: string, use: PanelUseRef): Promise<ProtectedSkillOffering | SkillSourceFailure | null>;
 } = {
-  id: "product-panels",
+  id: PANEL_SKILL_PROVIDER_ID,
   name: "Panels",
   async list({ domainId, reportSourceFailure }) {
     const { panelSkillSources } = await import("./skill-package");

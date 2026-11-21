@@ -12,7 +12,7 @@ import { SkillScanner } from "../discovery/scanner";
 import { InvalidSkillPackageError } from "../manifest";
 import { parseSkillPackage, readSkillPackage } from "../package";
 import {
-  isProtectedSkillName, protectedSkillRef, registeredSkillProviders, SkillSourceRecordError, type SkillSourceFailure,
+  isProtectedSkillName, protectedSourceSkillRef, registeredSkillProviders, SkillSourceRecordError, type SkillSourceFailure,
   type ProtectedSkillOffering, type SkillOffering, type SkillPackage, type RegisteredSkillProvider,
 } from "../providers";
 import type { SkillEntry, SkillMeta, SkillSource } from "../types";
@@ -114,13 +114,13 @@ export class SkillRegistryManager {
     for (const provider of this.providers) {
       const source = { kind: "provider" as const, providerId: provider.id, providerName: provider.name };
       const offerings = await this.listProvider(provider, failure => {
-        const skill = protectedSkillRef(provider.id, this.domainId, failure.sourceKey);
+        const skill = protectedSourceSkillRef(provider.id, this.domainId, failure);
         reserveName(skill, source, true);
-        failures.push({ ...failure, skill });
+        failures.push({ ...failure, providerId: provider.id, skill });
       });
       for (const offering of offerings) {
         if ("kind" in offering) {
-          const skill = protectedSkillRef(provider.id, this.domainId, offering.sourceKey);
+          const skill = protectedSourceSkillRef(provider.id, this.domainId, offering);
           reserveName(skill, source, true);
           protectedOfferings.push({ provider, offering, skill });
         } else {
@@ -169,7 +169,7 @@ export type ListedProtectedSkill = Pick<ProtectedSkillOffering, "sourceKey" | "r
   providerId: string;
   skill: RuntimeSkillRef;
 };
-export type ListedSourceFailure = SkillSourceFailure & { skill: RuntimeSkillRef };
+export type ListedSourceFailure = SkillSourceFailure & { providerId: string; skill: RuntimeSkillRef };
 type AdmitSkills = (sources: readonly ListedProtectedSkill[], failures: readonly ListedSourceFailure[]) => Promise<{
   public(skill: RuntimeSkillRef): boolean;
   protected(skill: RuntimeSkillRef): boolean;

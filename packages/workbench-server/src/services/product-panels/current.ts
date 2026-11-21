@@ -17,10 +17,9 @@ import type { ProductOwner } from "../product-governance/grants";
 import { grantedProductIds, registerProductResource, requireProductGrant } from "../product-governance/grants";
 import { assertAppBuilderAccess } from "../app-builder/access";
 import { notifyProductDefinitionChanged } from "./definition-stream";
-import { protectedSkillRef } from "../../core/skills/providers";
 import { assistantStore } from "../assistant/store";
 import { configuredAssistantSkills } from "../assistant/skill-selection";
-import { panelSkillProvider } from "./skill-provider";
+import { panelSkillRef } from "./skill-identity";
 import { validateCurrentProductReferences } from "./references";
 import { validateProjectionComponent } from "./component-catalogue";
 
@@ -185,7 +184,7 @@ export async function validateApplicationPanelReferences(request: ApplicationPan
     if (!definition) throw unavailable("does not exist in this domain.");
     if (!definition.enabled) throw unavailable("is disabled.");
 
-    const ref = protectedSkillRef(panelSkillProvider.id, domainId, use.panelId);
+    const ref = panelSkillRef(domainId, use.panelId);
     const key = runtimeSkillKey(ref);
     if (!configuredAssistantSkills(definition, [ref]).some(skill => runtimeSkillKey(skill) === key))
       throw unavailable(`does not select the skill for panel '${use.panelId}'.`);
