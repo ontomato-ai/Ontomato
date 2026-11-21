@@ -45,7 +45,7 @@ describe("a draft no form of the panel performs", () => {
     // The slot registers, and it performs another operation: the platform's page shows the reason instead of the panel.
     release();
     await vi.waitFor(
-      () => expect(host.querySelector(".panel-host-error")?.textContent).toBe("This draft belongs to no form of this panel"),
+      () => expect(host.querySelector(".panel-host-error")?.textContent).toBe("This page has no form that takes this draft for platform:ScheduledTask"),
       { timeout: 5000 },
     );
     expect(host.querySelector("iframe")).toBeNull();

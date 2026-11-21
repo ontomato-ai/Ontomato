@@ -555,7 +555,7 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
     ),
   });
   // What the agent wrote: the task's own form, with the other case set.
-  const draft = { pageKey: use.pageKey, operation, target: { id: task.id }, form: { ...task.content, caseSetId: "set-smoke" } };
+  const draft = { pageKey: use.pageKey, operation, target: { objectType: SCHEDULED_TASK, id: task.id }, form: { ...task.content, caseSetId: "set-smoke" } };
   const link = new URLSearchParams({ draftSessionId: "session-1", draftRunId: "run-1", draftPath: "outputs/drafts/task.page-draft.json" });
   const address = `/applications/app-panels-trial-a/form?${link}`;
   // The form's projection is answered only after the draft: the draft reaches the panel before the form that takes it

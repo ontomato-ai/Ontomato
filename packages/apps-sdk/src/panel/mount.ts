@@ -117,8 +117,8 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
       // takes it, the frame fails with that, where the panel would have been, rather than waiting for a form that will
       // never come.
       const { t } = useI18n();
-      watch(instance.unclaimedDraft, (unclaimed) => {
-        if (unclaimed) failed(t("platform.panelDraftUnclaimed"));
+      watch(instance.unclaimedDraft, (objectType) => {
+        if (objectType !== null) failed(t("platform.panelDraftUnclaimed", { objectType }));
       });
       return () => h(panelComponent);
     },

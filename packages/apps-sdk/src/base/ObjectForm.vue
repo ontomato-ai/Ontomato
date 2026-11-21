@@ -376,10 +376,12 @@ provide(formControlsKey, {
 useProjectionForm({
   handle: { fields, values, errors, changed, busy: saving, set },
   async receive(draft) {
+    // A draft for an object of another type is another form's: its owner is never asked about an object it does not hold.
+    if (draft.target.objectType !== objectType) return null;
     const create = draft.target.id === undefined;
-    // A create draft for a form that creates nothing is refused as such, before any owner is asked about it — unless an
-    // earlier save already created its object, which it then addresses.
-    if (create && !creates && !draft.created) throw new Error("This panel's form does not create objects");
+    // A create draft is the form's of this type that creates (a page may keep a separate form for new objects) — unless
+    // an earlier save already created its object, which it then addresses.
+    if (create && !creates && !draft.created) return null;
     // The target whose owner form names the draft's operation: the create target of a form that creates, otherwise the
     // object the draft (or its earlier save) addresses.
     const named: PanelFormTarget = create && creates

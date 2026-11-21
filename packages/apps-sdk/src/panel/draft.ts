@@ -1,7 +1,7 @@
 import { shallowReactive, shallowRef, type Ref } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormField, PanelFormValues } from "@ontomato/contracts/panel-projection";
-import type { PageDraft } from "@ontomato/contracts/page-draft";
+import type { PageDraft, PageDraftObjectRef } from "@ontomato/contracts/page-draft";
 import { pageDraftLink, withoutPageDraftQuery, type PageDraftLink } from "@ontomato/contracts/page-draft";
 
 /*
@@ -44,10 +44,11 @@ export interface PanelFormHandle {
 export interface PanelFormAdapter {
   readonly handle: PanelFormHandle;
   /**
-   * Offers this form a draft. Resolves null when the owner's form for the draft's target performs another operation;
-   * otherwise the form takes it — checked whole by the owner, shown without writing — and resolves the paths it changed,
-   * empty when it changes nothing (the object then opens as it is). An owner's refusal rejects, and the whole draft is
-   * refused.
+   * Offers this form a draft. Resolves null when it is another form's: for an object of another type than the form
+   * binds, or one of its type the form does not perform (a create on a form that only edits, another operation). The
+   * owner is never asked about an object of another type. Otherwise the form takes it — checked whole by its owner,
+   * shown without writing — and resolves the paths it changed, empty when it changes nothing or the owner refuses it
+   * (the refusal is then said on the form). Only a failure to ask rejects.
    */
   receive(draft: PageDraft<Record<string, unknown>>): Promise<ReadonlySet<string> | null>;
   /** Saves what the form holds now, through the owner, at the revision it was read at where the owner has one. */
@@ -62,13 +63,20 @@ export interface PanelFormAdapter {
 export interface ReceivedPanelDraft<Form extends object> {
   slot: string;
   operation: string;
-  target: { id?: string };
+  /** The object the draft is for: its type, and its id once it names one (an update, or a create its save created). */
+  target: PageDraftObjectRef;
   /** The object a create draft's earlier save created; absent for an update draft and an unsaved create. */
   created?: { id: string };
   form: Form;
   changed: ReadonlySet<string>;
   /** The draft artifact the address named: what a save or a discard settles. */
   link: PageDraftLink;
+}
+
+/** The object a draft addresses: a create draft saved once addresses the object it created from then on. */
+function addressed(draft: PageDraft<Record<string, unknown>>): PageDraftObjectRef {
+  const id = draft.target.id ?? draft.created?.id;
+  return id === undefined ? { objectType: draft.target.objectType } : { objectType: draft.target.objectType, id };
 }
 
 /** What a held draft is handed to once its form takes it: the draft as that form shows it. */
@@ -109,11 +117,11 @@ export class PanelFormAdapters {
     this.#offerNext();
   }
 
-  /** Whether a held draft has been declined by every one of these form slots: it is no form's of this panel. */
-  unclaimed(formSlots: readonly string[]): boolean {
+  /** The type of the object a held draft is for, once every one of these form slots declined it: no form here binds it. */
+  unclaimed(formSlots: readonly string[]): string | null {
     void this.#declines.value;
     const held = this.#held.value;
-    return held !== null && formSlots.every((slot) => held.declined.has(slot));
+    return held !== null && formSlots.every((slot) => held.declined.has(slot)) ? held.draft.target.objectType : null;
   }
 
   #offerNext() {
@@ -136,8 +144,7 @@ export class PanelFormAdapters {
       this.#held.value = null;
       if (changed.size)
         // A create draft saved once addresses the object it created from then on.
-        held.taken({ slot: next, operation: draft.operation, target: { id: draft.target.id ?? draft.created?.id },
-          created: draft.created, form: draft.form, changed, link: held.link });
+        held.taken({ slot: next, operation: draft.operation, target: addressed(draft), created: draft.created, form: draft.form, changed, link: held.link });
     }, (reason: unknown) => {
       held.offering = false;
       if (this.#held.value === held) this.#held.value = null;

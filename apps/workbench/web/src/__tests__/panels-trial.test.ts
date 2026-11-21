@@ -185,7 +185,7 @@ describe("a panel instance", () => {
           readPageDraft: async () => ({
             pageKey: "panels-trial-a-tasks",
             operation: "platform:ScheduledTask.save",
-            target: { id: "task-1" },
+            target: { objectType: SCHEDULED_TASK, id: "task-1" },
             form: { operation: "inspection", instruction: "look at tonight's failures" },
           }),
         },
@@ -196,7 +196,7 @@ describe("a panel instance", () => {
     // The draft is unsaved: it is what the form now holds, and the fields it changed are marked.
     expect(received.slot).toBe("form");
     expect([...received.changed].sort()).toEqual(["/instruction", "/operation"]);
-    expect(adapters.unclaimed(["other", "form"])).toBe(false);
+    expect(adapters.unclaimed(["other", "form"])).toBeNull();
   });
 });
 
