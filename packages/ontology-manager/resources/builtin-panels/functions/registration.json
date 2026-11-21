@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ontology-functions",
+      "input": {
+        "name": "函数",
+        "description": "维护读函数的查询逻辑包与列标签，或写函数的参数与代码"
+      }
+    }
+  ]
+}

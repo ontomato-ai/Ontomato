@@ -28,6 +28,11 @@
     "icon": "ontology",
     "groups": [],
     "permissions": [],
+    "panelUses": [{
+      "id": "ontology-functions", "pageKey": "functions", "panelId": "builtin-product-ontology-functions",
+      "path": "/ontology/assets/functions", "access": {"permissionCode": "ontology-modeling"},
+      "names": {"en": "Functions", "zh-CN": "\u51fd\u6570"}
+    }],
     "pageSkills": [{
       "permissionCode": "business-knowledge",
       "skill": {"namespace": {"kind": "provider", "provider": "ontology"}, "name": "knowledge-governance"},

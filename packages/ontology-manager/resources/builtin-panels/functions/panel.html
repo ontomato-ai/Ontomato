@@ -1,0 +1,43 @@
+<!--
+  函数页：左边是函数目录（名称、说明、操作类型，可按名称和说明搜索），右边是选中那一条的详情与编辑；
+  新建、保存、删除都走属主自己的接口，页面不另写业务规则。
+
+  - list：platform:Function 的 query 读，搜索词和选中的那一条都是本面板声明的状态。
+  - form：platform:Function 的 form / createForm 读，保存用属主声明的 platform:Function.save。
+    属主按操作类型（读/写）给出不同的字段，读函数给查询逻辑包与列标签，写函数给参数、返回类和代码；
+    名称只有一个字段。只读的函数由属主在每个字段上说明原因，保存被拒时属主按字段给出原因。
+  - remove：functions.delete，平台先向读者确认，属主拒绝删除时把原因显示在按钮下面。
+
+  表单始终挂着（只是隐藏），智能体写来的草稿随时能落进表单，读者确认后才保存。
+-->
+<style>
+  [v-cloak] { display: none; }
+  .fn { display: flex; flex-direction: column; gap: var(--spacing-md, 12px); }
+  .fn-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--spacing-sm, 8px); }
+  .fn-hint { margin: 0; color: var(--el-text-color-secondary); font-size: 13px; line-height: 1.6; }
+  .fn-detail { display: flex; flex-direction: column; gap: var(--spacing-md, 12px); min-width: 0; }
+  .fn-detail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--spacing-sm, 8px); }
+</style>
+<div id="app" v-cloak>
+  <section class="fn">
+    <div class="fn-toolbar">
+      <p class="fn-hint">{{ t("hint") }}</p>
+      <el-button type="primary" @click="newFunction">{{ t("newFunction") }}</el-button>
+    </div>
+
+    <two-pane-layout>
+      <template #aside>
+        <projection slot="list" @update:selected="showFunction"></projection>
+      </template>
+
+      <div class="fn-detail">
+        <p class="fn-hint" v-if="!selected && !creating">{{ t("choose") }}</p>
+        <div class="fn-detail-head" v-if="selected">
+          <projection slot="remove"></projection>
+        </div>
+        <!-- 表单一直挂着（只是隐藏），草稿才有地方落；读者保存或放弃后回到查看。 -->
+        <projection slot="form" v-show="selected || creating" @saved="saved" @discarded="discard"></projection>
+      </div>
+    </two-pane-layout>
+  </section>
+</div>
