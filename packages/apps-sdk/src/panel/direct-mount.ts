@@ -71,6 +71,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       expandPageComposer: options.expandPageComposer,
       navigate: options.navigate,
       nested: options.nested,
+      ...(run.currentEntry ? { currentEntry: run.currentEntry } : {}),
       ...(options.memberPath ? { memberPath: options.memberPath } : {}),
       translate: options.translate,
       // A draft the panel cannot take fails it where it would have been, as in a frame.

@@ -253,6 +253,7 @@ export default {
     "dataForbidden": "You do not have access to this",
     "dataAwaiting": "Select an item first",
     "dataUnreachable": "The data could not be read. Try again.",
+    "currentEntryOutsideFrame": "The entry you open is shown here when this panel is an application's frame.",
     "memberUnavailable": "This is not available here"
   },
   "nav": {

@@ -121,7 +121,7 @@ const contents = [
   "",
   sdkSection("usePanelContext"),
   "",
-  sdkFields("PanelContext", ["instance", "t", "navigate", "notify"]),
+  sdkFields("PanelContext", ["instance", "t", "navigate", "notify", "currentEntry", "entryMenu"]),
   "",
   sdkFields("PanelInstance", ["state", "pageContext", "draft", "onObjectChanged", "refreshObjects"]),
   "",

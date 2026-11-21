@@ -137,7 +137,7 @@ function mounted(save: (input: PanelFormSaveInput) => Promise<PanelOperationOutc
           t: (key: string) => key,
           resources: async () => {},
           expandPageComposer: async () => {},
-          notify: () => { throw new Error("This test tells the reader nothing"); }, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); },
+          notify: () => { throw new Error("This test tells the reader nothing"); }, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); }, currentEntry: computed(() => null), entryMenu: computed(() => null),
         });
         provide(projectionKey, slot);
         provide(panelMemberKey, () => member);

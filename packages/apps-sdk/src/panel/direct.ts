@@ -7,7 +7,7 @@ import type { DirectPanelRun } from "@ontomato/platform-shell";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import { panelOperationAffectedSchema, panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
-import type { DirectProjection } from "@ontomato/contracts/product-panels";
+import type { ApplicationEntryMenu, CurrentApplicationEntry, DirectProjection } from "@ontomato/contracts/product-panels";
 import type { PanelDataState, ProductPanelNestedReadRequest, ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { createPanelInstance, type PanelInstance, type PanelInstanceOptions, type PublisherPath } from "./instance";
 import { stateObject, type PanelFieldValue } from "./state";
@@ -48,6 +48,8 @@ export type MemberInputs = Readonly<Record<string, RuntimeJsonValue>>;
 export type MemberPlacement = Pick<PanelManifest["members"][string], "inputs" | "outputs">;
 
 export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "readProjection"> {
+  /** Only for an application's frame: the entry the platform resolved, its menu, and where its content goes. */
+  currentEntry?: DirectPanelRun["currentEntry"];
   /** Reads one named datum of one member, as the platform's read entry answers it for this panel's source. */
   read: PanelReadPort;
   /** Reads a member's current projection by ID, as the reader. */
@@ -96,7 +98,9 @@ export class PanelMemberUnavailable extends Error {
 export type MemberPlacing =
   | { kind: "projection"; context: PanelMemberContext }
   | { kind: "panel"; element: HTMLElement; failure: Readonly<Ref<Error | null>> }
-  | { kind: "awaiting" };
+  | { kind: "awaiting" }
+  /** The platform's current entry is placed only in an application's frame; this panel is not running as one. */
+  | { kind: "outsideFrame" };
 
 /**
  * The target a state value chooses for a member placed from it: the panel or projection it names. A member that places
@@ -130,6 +134,10 @@ export interface MemberData {
 
 export interface DirectPanelInstance extends PanelInstance {
   readonly direct: PanelManifest;
+  /** In an application's frame, the entry shown now; null elsewhere. It follows the reader to another entry. */
+  readonly currentEntry: ComputedRef<CurrentApplicationEntry | null>;
+  /** In an application's frame, the menu the same resolution gave; null elsewhere. */
+  readonly entryMenu: ComputedRef<ApplicationEntryMenu | null>;
   /** The panel's own words, in the current language. */
   readonly text: PanelText;
   /** The page's composer, expanded with a member's declared conversation entry. */
@@ -360,6 +368,19 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     })!;
     return { kind: "projection", context };
   }
+  /**
+   * The entry the reader opened, in its frame: the content the host admitted and runs is placed in an element of this
+   * member's, never started again here, and taken out when the member lets it go. Outside a frame there is none.
+   */
+  function placeCurrentEntry(scope: EffectScope): MemberPlacing {
+    const current = options.currentEntry;
+    if (!current) return { kind: "outsideFrame" };
+    const element = document.createElement("div");
+    element.className = "sdk-current-entry";
+    const placed = current.place(element);
+    scope.run(() => onScopeDispose(() => placed.dispose()));
+    return { kind: "panel", element, failure: shallowRef(null) };
+  }
   /** Runs the panel a member places, publishing into this instance and following it until the member is placed anew. */
   async function placePanel(member: string, scope: EffectScope): Promise<MemberPlacing> {
     const failure = shallowRef<Error | null>(null);
@@ -369,6 +390,8 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       // The placed panel's state stays its own; what this one takes of it is its declared outputs, read below.
       state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
       failed: (reason) => { failure.value = reason instanceof Error ? reason : new Error(String(reason)); },
+      // The theme this panel gives where it places the other: the host lays it over that panel's own.
+      ...(direct.members[member]!.theme ? { theme: direct.members[member]!.theme } : {}),
     };
     const { element, mount } = await options.nested([nestedSegment(member)], run);
     scope.run(() => {
@@ -390,6 +413,8 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   }
 
   const directInstance: DirectPanelInstance = Object.assign(instance, {
+    currentEntry: computed(() => options.currentEntry?.entry.value ?? null),
+    entryMenu: computed(() => options.currentEntry?.menu.value ?? null),
     direct,
     text: options.text,
     expandPageComposer: options.expandPageComposer,
@@ -424,6 +449,11 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       if (!Object.hasOwn(direct.members, member)) throw new Error(`The panel declares no member '${member}'`);
       const scope = membersScope.run(() => effectScope())!;
       const { target } = direct.members[member]!;
+      if ("fromPlatform" in target) {
+        const placing = Promise.resolve(placeCurrentEntry(scope));
+        members.set(member, { scope, placing });
+        return placing;
+      }
       const chosen = "fromState" in target ? chosenTarget(direct, member, instance.state.values.value[target.fromState] ?? null) : undefined;
       const placing: Promise<MemberPlacing> = chosen === null
         ? Promise.resolve({ kind: "awaiting" })
@@ -534,6 +564,8 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     get panel(): never { return frameOnly("The handed-over definition")(); },
     manifest: instance.manifest,
     instance,
+    currentEntry: instance.currentEntry,
+    entryMenu: instance.entryMenu,
     projection: frameOnly("Reading a projection record"),
     invoke: frameOnly("Running a frame operation"),
     projectionsChanged: () => () => {},

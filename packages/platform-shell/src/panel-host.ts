@@ -3,6 +3,7 @@ import type { PanelDefinitionSnapshot, ProductDefinitionRevision, ProductDefinit
 import { inject, onScopeDispose, shallowRef, watch, type InjectionKey, type Ref, type ShallowRef } from "vue";
 import { onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import type { PageContext } from "@ontomato/contracts/page-context";
+import type { ApplicationEntryMenu, CurrentApplicationEntry } from "@ontomato/contracts/product-panels";
 import { PAGE_DRAFT_QUERY_KEYS, pageDraftLink, type PageDraftLink } from "@ontomato/contracts/page-draft";
 import {
   PANEL_HOST_CHANNEL,
@@ -130,6 +131,18 @@ export interface DirectPanelRun {
    * placed panel's element, so this placement's values win over the panel's.
    */
   theme?: PanelThemeOverrides;
+  /**
+   * Only for an application's frame panel: the entry the platform resolved for this address, the menu the same answer
+   * gave, and where the entry's content goes. Absent, the panel is not running as a frame.
+   */
+  currentEntry?: {
+    /** The entry shown now; it changes when the reader opens another entry of the application, the frame staying. */
+    readonly entry: Readonly<Ref<CurrentApplicationEntry>>;
+    /** The resolution's menu (its groups and the reader's visible entries), the same answer that admitted the entry. */
+    readonly menu: Readonly<Ref<ApplicationEntryMenu>>;
+    /** Puts the content instance the host admitted and runs into `element`; never a new one. */
+    place(element: HTMLElement): { dispose(): void };
+  };
 }
 
 /** A started panel instance, as its host drives it. */
