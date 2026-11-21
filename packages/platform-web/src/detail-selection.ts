@@ -55,9 +55,11 @@ export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
   {
     path: platformRoutes.modeling.path,
     use: platformRoutes.modeling.path,
-    state: (_params, query): Record<string, PanelStateValue> => {
+    // The use path is the model's own too, so an address without a selection converts to nothing: the panel's own
+    // address (and its already converted form) would otherwise redirect to itself.
+    state: (_params, query): Record<string, PanelStateValue> | null => {
       const id = query.get("id");
-      if (!id) return {};
+      if (!id) return null;
       return query.get("focus") === "relation"
         ? { selectedEdge: { className: RELATIONSHIP, primaryKey: id } }
         : { selectedNode: { className: OBJECT_TYPE, primaryKey: id } };
