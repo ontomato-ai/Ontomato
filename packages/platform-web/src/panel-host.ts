@@ -141,11 +141,10 @@ export function platformPanelHost(
     // drawn as soon as its record is here, and only the page's composer and conversation wait for the skill (a read of
     // the record that also worked out the skill took 2.3 s on 128, the record alone 0.5 s).
     async source() {
-      void json(`${panelHostPaths.pageSkillContext(use.panelId)}?${page}`).then(
-        (answer) => pageSkill?.(productPanelPageSkillContextResponseSchema.parse(answer).pageSkillContext),
+      void json(`${panelHostPaths.pageSkillContext(use.panelId)}?${page}`)
+        .then((answer) => pageSkill?.(productPanelPageSkillContextResponseSchema.parse(answer).pageSkillContext))
         // Without it the page's composer stays closed, as for a page that reaches no skill; the panel is unaffected.
-        () => undefined,
-      );
+        .catch(() => undefined);
       const answer = productPanelResponseSchema.parse(await json(panelHostPaths.panel(use.panelId)));
       return { kind: "registered", applicationId, use, panel: answer.panel };
     },
