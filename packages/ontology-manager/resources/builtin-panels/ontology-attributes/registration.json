@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ontology-attributes",
+      "input": {
+        "name": "属性",
+        "description": "按对象类型查看、筛选、新建、编辑、设主键和删除属性"
+      }
+    }
+  ]
+}
