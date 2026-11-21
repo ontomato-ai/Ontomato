@@ -56,6 +56,15 @@ Bind owner reads and operations from the type table as with official components.
 version and digest. The deployment selects one release of each package, and the component ID uses the package
 name and component name.
 
+#### Generate a package's component declaration
+
+Declare the components with `defineComponentMeta` in your package source and list the public module entries in
+`package.json` under `ontomato.entries`. From your Vue repository, run the single generator file named by
+`packageComponents` in the SDK release's `sdk.json`. The release's SDK guide documents its arguments.
+The generator reads Vue props, events and slots, adds the package prefix to component IDs and writes the
+`components.json` declared by `ontomato.components`. Read the result back with the same SDK release using
+`panel check --sdk-dir … --component-package …`. A successful check reports `status: "valid"`.
+
 For an offline check, provide the matching SDK release and a local package release directory with its root
 `package.json` and the JSON declaration at `ontomato.components`. Use one release directory for each package.
 Save the target deployment's visible type table while connected if the panel has new short members:
