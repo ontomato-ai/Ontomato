@@ -3,7 +3,7 @@ import { defaultAgentSchema } from "./default-agent";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
 import {
-  panelChildObjectIdentitySchema, panelFormTargetSchema, panelManifestSchema, panelMessageKeySchema,
+  panelChildObjectIdentitySchema, panelFormTargetSchema, panelManifestForRegistrationSchema, panelManifestSchema, panelMessageKeySchema,
   panelObjectRefSchema, panelThemeOverridesSchema,
 } from "./panel-manifest";
 import {
@@ -203,6 +203,10 @@ export const panelDefinitionContentSchema = z.object({
   template: z.boolean().optional(),
 }).strict();
 
+export const panelDefinitionForRegistrationSchema = panelDefinitionContentSchema.extend({
+  manifest: panelManifestForRegistrationSchema,
+});
+
 export type PanelDefinitionContent = z.infer<typeof panelDefinitionContentSchema>;
 export const productPanelInputSchema = panelDefinitionContentSchema.extend(editableDefinitionFields);
 export type ProductPanelInput = z.infer<typeof productPanelInputSchema>;
@@ -233,7 +237,8 @@ function validateBuiltinPanel(panel: PanelDefinitionContent, ctx: z.RefinementCt
 }
 
 const builtinPanelDefinition = productPanelInputSchema.extend({ visibility: builtinVisibility });
-export const builtinProductPanelInputSchema = builtinPanelDefinition.superRefine(validateBuiltinPanel);
+export const builtinProductPanelInputSchema = builtinPanelDefinition
+  .extend({ manifest: panelManifestForRegistrationSchema }).superRefine(validateBuiltinPanel);
 export type BuiltinProductPanelInput = z.infer<typeof builtinProductPanelInputSchema>;
 
 export const productPanelSchema = z.discriminatedUnion("visibility", [
@@ -389,6 +394,7 @@ export const chartSourceInUseErrorSchema = z.object({
 }).strict();
 
 export const registerProductPanelRequestSchema = productPanelInputSchema.extend({
+  manifest: panelManifestForRegistrationSchema,
   revision: z.number().int().nonnegative(),
 });
 export type RegisterProductPanelRequest = z.infer<typeof registerProductPanelRequestSchema>;

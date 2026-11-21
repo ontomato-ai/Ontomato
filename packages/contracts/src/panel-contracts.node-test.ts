@@ -536,13 +536,13 @@ test("panel registration and current reads require a module", async () => {
   }
 });
 
-test("a panel manifest validates events, state and placements", () => {
+test("a panel manifest validates events, state and placements", async () => {
   const agent = { kind: "object", objectType: AGENT_DEFINITION };
   const input = {
     state: {
       agents: { type: { kind: "list", items: agent }, personal: true, default: [] },
       agent: { type: agent, default: null, deepLink: true, external: true },
-      mode: { type: { kind: "scalar", type: "string" } },
+      mode: { type: { kind: "scalar", type: "string" }, deepLink: true },
       preview: { type: { kind: "placement", candidates: { rule: "catalogSelection" } } },
     },
     members: {
@@ -555,6 +555,19 @@ test("a panel manifest validates events, state and placements", () => {
   };
   const manifest = panelManifestSchema.parse(input);
   assert.deepEqual(manifest.events.create, input.events.create);
+  const localMode = { ...input.state.mode, deepLink: false };
+  const localState = { ...input.state, mode: localMode };
+  const { panelDefinitionContentSchema: checkDefinition, registerProductPanelRequestSchema: registerPanel } = await import("./panel-check");
+  const content = { html: "", module: "" };
+  const definition = { content, manifest: { ...input, state: localState } };
+  assert.equal(panelManifestSchema.safeParse(definition.manifest).success, true);
+  const header = checkDefinition.safeParse(definition);
+  assert.equal(header.success, false);
+  assert.deepEqual(header.error?.issues[0]?.path, ["manifest", "events", "create", "do", "set", "fields", "mode"]);
+  assert.equal(registerPanel.safeParse({ ...definition, revision: 0, name: "Example", description: "", visibility: "domain" }).success, false);
+  const outputOnly = { on: { member: "row", output: "selected" }, do: input.events.create.do };
+  assert.deepEqual(checkDefinition.parse({ content, manifest: { ...input, state: localState, events: { outputOnly } } })
+    .manifest.events.outputOnly, outputOnly);
   assert.equal(panelManifestSchema.safeParse({
     ...input, events: { bad: { do: { set: { fields: { agent: { literal: null } } } } } },
   }).success, false);

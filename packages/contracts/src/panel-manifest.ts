@@ -500,6 +500,22 @@ export const panelManifestSchema = z.object({
 });
 export type PanelManifest = z.infer<typeof panelManifestSchema>;
 
+/** Validate header shortcuts when checking or saving an authored definition. */
+export const panelManifestForRegistrationSchema = panelManifestSchema.superRefine(({ state, events }, ctx) => {
+  for (const [name, event] of Object.entries(events)) {
+    if (event.labelKey === undefined || !("set" in event.do)) continue;
+    for (const field of Object.keys(event.do.set.fields)) {
+      if (!Object.hasOwn(state, field) || state[field].deepLink) continue;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["events", name, "do", "set", "fields", field],
+        message: `Header event '${name}' changes state '${field}', which the assistant cannot set by address. Mark it deepLink.`,
+        params: { reason: "header_event_state_not_deep_linked", event: name, field },
+      });
+    }
+  }
+});
+
 export const directPanelManifestSchema = panelManifestSchema;
 export type DirectPanelManifest = PanelManifest;
 
