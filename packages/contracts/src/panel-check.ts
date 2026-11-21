@@ -7,7 +7,7 @@ export { bindPanelAuthoringChart, expandPanelAuthoringMember } from "./panel-aut
 export { panelManifestSchema, panelPortAccepts } from "./panel-manifest";
 export { panelModuleImports } from "./panel-module";
 export {
-  chartProjectionLookupResponseSchema, panelDefinitionContentSchema, productProjectionInputSchema,
+  chartProjectionLookupResponseSchema, panelDefinitionForRegistrationSchema as panelDefinitionContentSchema, productProjectionInputSchema,
   productProjectionResponseSchema, registerChartProjectionResponseSchema,
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
 } from "./product-panels";
