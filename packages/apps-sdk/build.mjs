@@ -13,6 +13,7 @@ import { finalizeSdk, VERSION_PLACEHOLDER } from "./content-version.mjs";
 import { CHECK, ENTRIES, STYLESHEET } from "./release-entries.mjs";
 import { elementComponents } from "./element-components.mjs";
 import { panelAppearance } from "./panel-appearance.mjs";
+import { writePackageComponentsRelease } from "./package-components-release.mjs";
 import { sdkChunks } from "./sdk-chunks.mjs";
 import { catalogueMarkdown, checkCatalogue, componentMetadata, componentPorts, referenceMarkdown } from "./reference.mjs";
 
@@ -79,6 +80,7 @@ const CHECK_EXPORTS = [
   "panelModuleImports", "applicationIconKeys", "applicationCatalogueRecordSchema", "applicationIdentityUpdateSchema", "draftReadOperationIds",
   "COMPONENT_PACKAGES_PATH", "componentPackageNameSchema", "componentPackageManifestSchema",
   "componentPackageDeclarationSchema", "componentPackageResponseSchema",
+  "componentPackageComponentsSchema", "appsSdkReleaseManifestSchema", "APPS_SDK_PACKAGE_COMPONENTS_PATH",
 ];
 
 /** Only the draft requirement of registered platform operations is needed by the offline checker. */
@@ -184,6 +186,8 @@ async function main() {
   });
 
   const check = await buildCheck(outDir);
+  const packageComponents = check.APPS_SDK_PACKAGE_COMPONENTS_PATH;
+  writePackageComponentsRelease(outDir, packageComponents, CHECK);
   mkdirSync(join(outDir, "docs"), { recursive: true });
   writeFileSync(join(outDir, "docs/index.md"), render(readFileSync(join(HERE, "resources/docs/index.md"), "utf8"), version));
   const components = componentMetadata({ tsconfig: join(HERE, "tsconfig.json"), source: join(HERE, "src/catalogue.ts") });
@@ -218,7 +222,7 @@ async function main() {
   for (const name of readdirSync(join(HERE, "resources/examples")))
     writeFileSync(join(outDir, "examples", name), render(readFileSync(join(HERE, "resources/examples", name), "utf8"), version));
 
-  writeFileSync(join(outDir, "sdk.json"), `${JSON.stringify({
+  writeFileSync(join(outDir, "sdk.json"), `${JSON.stringify(check.appsSdkReleaseManifestSchema.parse({
     version,
     product: facts.product,
     executionContext: BUILD_TEST_SDK_CAPABILITY,
@@ -228,9 +232,10 @@ async function main() {
     stylesheet: STYLESHEET,
     components: "components.json",
     check: CHECK,
+    packageComponents,
     libraries: Object.fromEntries(LIBRARIES.map((name) => [name, libraryVersion(name)])),
     docs: "docs/index.md",
-  }, null, 2)}\n`);
+  }), null, 2)}\n`);
   const finalVersion = finalizeSdk(outRoot, base, facts.release);
   console.log(`[apps-sdk] ${facts.product} ${finalVersion} -> ${outRoot}`);
 }
