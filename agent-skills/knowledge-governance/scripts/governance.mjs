@@ -62,7 +62,6 @@ if (platform && command === "import-knowledge") {
       operation: previous ? "knowledge.update" : "knowledge.create",
       target: { objectType: "platform:BusinessKnowledge", ...(previous ? { id: previous.knowledgeID } : {}) },
       form: {
-        ...(previous ? { knowledgeID: previous.knowledgeID } : {}),
         knowledgeTitle: item.title, knowledgeText: item.text,
         knowledgeTags: item.tags ?? previous?.knowledgeTags ?? [],
         status: previous ? previous.status : 0,

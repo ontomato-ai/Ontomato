@@ -60,7 +60,7 @@ it("platform knowledge import emits separate original-page forms and never calls
   }));
   expect(drafts).toEqual([
     {pageKey:"business-knowledge",operation:"knowledge.create",target:{objectType:"platform:BusinessKnowledge"},form:{knowledgeTitle:"New",knowledgeText:"New text",knowledgeTags:["new-tag"],status:0}},
-    {pageKey:"business-knowledge",operation:"knowledge.update",target:{objectType:"platform:BusinessKnowledge",id:"existing"},form:{knowledgeID:"existing",knowledgeTitle:"Changed",knowledgeText:"Changed text",knowledgeTags:["retained"],status:1}},
+    {pageKey:"business-knowledge",operation:"knowledge.update",target:{objectType:"platform:BusinessKnowledge",id:"existing"},form:{knowledgeTitle:"Changed",knowledgeText:"Changed text",knowledgeTags:["retained"],status:1}},
   ]);
   expect(new Set(result.drafts.map((entry:{path:string})=>entry.path)).size).toBe(2);
   // The draft decides create or update before it exists; its own operation and target must agree with what a page
