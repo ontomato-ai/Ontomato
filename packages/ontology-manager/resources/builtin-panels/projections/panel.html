@@ -43,10 +43,6 @@
 </style>
 <div id="app" v-cloak>
   <section class="projections">
-    <div class="projections-head-actions">
-      <el-button type="primary" @click="startCreate">新建投影</el-button>
-      <el-button @click="refreshAll">刷新</el-button>
-    </div>
 
     <div class="projections-toolbar">
       <el-input v-model="searchDraft" class="projections-search" clearable placeholder="搜索名称或说明" />
@@ -60,6 +56,10 @@
         <el-option label="名称" value="name" />
       </el-select>
       <span class="projections-count" role="status">{{ listStatusText }}</span>
+      <div class="projections-head-actions">
+        <el-button type="primary" @click="startCreate">新建投影</el-button>
+        <el-button @click="refreshAll">刷新</el-button>
+      </div>
     </div>
 
     <el-alert v-if="notice" :title="notice.text" :type="notice.type || notice.tone" show-icon :closable="true"
