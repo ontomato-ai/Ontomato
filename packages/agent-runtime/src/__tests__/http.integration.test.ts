@@ -7,6 +7,7 @@ import {
 import { removeWorkerFiles } from "../worker";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
+import { createServer as createNetServer, type AddressInfo } from "node:net";
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, mkdir } from "node:fs/promises";
@@ -92,6 +93,13 @@ describe("standard runtime real HTTP/PG/processes", () => {
       secrets: { ONTOMATO_TK: "fixture-tk" },
     },
   });
+  async function freePort() {
+    const probe = createNetServer();
+    await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
+    const { port } = probe.address() as AddressInfo;
+    await new Promise((resolve) => probe.close(resolve));
+    return port;
+  }
   async function startProcess() {
     logs = "";
     child = spawn(
@@ -114,7 +122,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
           AGENT_RUNTIME_SCHEMA: schema,
           AGENT_RUNTIME_ROOT: root,
           ONTOMATO_MODEL_RUNTIME_TOKEN: "fixture-runtime-token",
-          AGENT_RUNTIME_PORT: "0",
+          AGENT_RUNTIME_PORT: String(await freePort()),
           AGENT_RUNTIME_EVENT_BUFFER_SIZE: "4",
           AGENT_RUNTIME_HOSTS: JSON.stringify([
             {

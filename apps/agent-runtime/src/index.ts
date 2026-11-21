@@ -1,6 +1,5 @@
 import { runtimeLogger } from "@ontomato/agent-runtime/logging";
 import "dotenv/config";
-import { createServer, type AddressInfo } from "node:net";
 import path from "node:path";
 import { databaseUrl } from "./database.js";
 import { z } from "zod";
@@ -38,15 +37,7 @@ const store = new RuntimeStore(
   process.env.AGENT_RUNTIME_SCHEMA || "agent_runtime",
 );
 const listenHost = process.env.AGENT_RUNTIME_HOST || "127.0.0.1";
-const listenPort = Number(process.env.AGENT_RUNTIME_PORT || 3001);
-const port = listenPort || await new Promise<number>((resolve, reject) => {
-  const probe = createServer();
-  probe.once("error", reject);
-  probe.listen(0, listenHost, () => {
-    const assigned = (probe.address() as AddressInfo).port;
-    probe.close((error) => (error ? reject(error) : resolve(assigned)));
-  });
-});
+const port = Number(process.env.AGENT_RUNTIME_PORT || 3001);
 const commandHost =
   listenHost === "0.0.0.0" || listenHost === ""
     ? "127.0.0.1"
