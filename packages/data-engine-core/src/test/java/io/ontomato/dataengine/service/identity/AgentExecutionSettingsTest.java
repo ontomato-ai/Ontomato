@@ -45,7 +45,7 @@ class AgentExecutionSettingsTest extends PostgresTestDatabase {
     when(keys.issueKey(target)).thenReturn("shared-key");
     when(keys.accepts("shared-key", "domain", "target")).thenReturn(true);
     http = MockMvcBuilders.standaloneSetup(new AgentExecutionController(new WorkbenchServiceAuthentication("service"), settings))
-      .setControllerAdvice(new OntologyAgentErrors()).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+      .setControllerAdvice(new OntologyAgentErrors((language, key) -> key)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
   }
   private int count() { return jdbc.queryForObject("SELECT count(*) FROM platform_task_credential", Integer.class); }
   private String setting(String old, String next) {
