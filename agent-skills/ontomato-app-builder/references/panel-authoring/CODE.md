@@ -4,7 +4,11 @@ Write the Vue template and scoped panel styles in `panel.html`. Put the template
 declared member with `<projection slot="detail"></projection>`. The slot names the key in `manifest.members`.
 Use Vue attributes, events, `v-if` and `v-for` for
 interactions. Adapt the layout to the container width. The host draws the page title and back control.
-Panel CSS positions member containers. Design variables style components inside them.
+Panel CSS positions member containers. Set colors, font sizes, spacing and corner radii with the platform's
+design variables. Run `node "$SKILL/ontomato.mjs" sdk read styles/sdk.css` to find the released
+`--text-*`, `--spacing-*` and `--radius-*` variables. In the browser, inspect the page's computed styles for
+the active brand colors, such as `--el-bg-color` and `--el-text-color-primary`. The product design guide
+in `docs/design/DESIGN.md` explains which roles to use.
 
 Declare projections using the [member fields](FIELDS.md) and declare public typed state in `panel.json`.
 Keep page-local state in Vue. An object state
@@ -132,7 +136,8 @@ const query = new URLSearchParams({
 const draftRoute = `#${usePath}?${query}`;
 ```
 
-Use the session and run that wrote the draft, and pass the raw artifact path once to `URLSearchParams`.
+Use the session and run that wrote the draft. For each newly generated draft, set `draftRunId` to the run ID of
+the turn that wrote it. Pass the raw artifact path once to `URLSearchParams`.
 See [draft links and instance state](RUNTIME.md#draft-links-and-instance-state) for when a form takes the draft.
 
 For a chart from a dashboard card, declare `component: "MetricChart"` and `sourceCard: {dashboardId, cardId}`.
@@ -142,7 +147,7 @@ unchecked. `panel register` asks the card owner to register the chart and uses t
 ## Open the page composer
 
 Add a `ConversationEntry` member when the page needs a named assistant or opening line. Use the generated
-[`agent` and `prefill` fields](FIELDS.md) and place the member with `<projection>`. The reader sends the message
+[`agent` and opening-line fields](FIELDS.md) and place the member with `<projection>`. The reader sends the message
 from the opened composer.
 
 ## Register and open
@@ -152,7 +157,7 @@ Write each new projection directly in `manifest.members`. Run `panel check <dire
 as the member's `id` in `panel.json`. Keep it when rearranging or renaming the member. Use `target.projectionId`
 to reuse an existing projection.
 
-Start new application IDs with `app-`. Give every application use a `pageKey` unique within its domain.
+Register trial pages under an application ID starting with `app-`. Give every application use a `pageKey` unique within its domain.
 For a trial app open to its domain, set `entryAccess: ["domain-member"]` and each public use's
 `access: {kind: "domain-member"}`. For a restricted trial, declare a permission owned by that app, such as
 `app:app-my-management-page:view`, and use it in `entryAccess` and `access.permissionCode`.

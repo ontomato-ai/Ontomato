@@ -42,9 +42,20 @@ Create short members from the reads listed by `panel type`. For customer ontolog
 
 ### Write projections inside the panel
 
-In `panel.json`, define each new projection directly in `manifest.members`. Give the member a component name,
-the owner type or target state, its named reads, any owner operation, component settings and state connections.
-The tool derives the projection's port types. Declare public state types once in the manifest.
+In `panel.json`, define each new projection directly in `manifest.members`. For the chosen official component,
+open its section in `sdk read docs/components.md`. Use `panel type <type-id>` and `--read <name>` for the
+owner's read signatures, result shapes and operations. A member uses the parts that apply to its component.
+
+| What to fill | What registration derives and what to change |
+| --- | --- |
+| **Component.** Set `component` to the name in the SDK catalogue. | `componentId` is the qualified SDK identifier. Picking a different component changes its available data names, settings and ports. |
+| **Data source.** Set `type` or connect the object state via `target`. For each component datum in `data`, choose an owner read with an accepted result and bind its read parameters as needed. | Stored `data` expands to names with `source`, `read` and `params`. The owner type, object target, read and bindings determine those fields. |
+| **Component settings.** Use the component's Configuration section for `config` keys and values. | Stored `config` takes those settings. For a component with an operation setting, the tool derives `config.operation` from the selected owner's operation. |
+| **Operation.** Use the type table's full `operation` ID. Set `target` for an object target and `draft` when the operation reads a form draft. | Stored `operations` identifies the owner operation and target. Where required, the placement gains `readOperationInputs` for its draft and parameters. Changing the operation or its bindings changes these fields. |
+| **State connections.** Map the component ports and named read parameters to declared fields using `state`. | The tool derives projection `inputs` and `outputs` from the state types, selected owner type and component ports. Changing bindings or their types can change those fields and the member's placement connections. |
+
+Run `panel projection <id>` after registration to inspect the resulting projection. Use the
+[member field reference](references/panel-authoring/FIELDS.md) for the short form and its optional fields.
 
 ```json
 {
@@ -60,10 +71,12 @@ In `registration.json`, put one item in `panels`, with its `id`, `mode` and `inp
 layout and instructions in the workspace files. Run `panel check <directory>` and `panel register <directory>`
 with the same workspace and registration material.
 
-The first successful projection write saves its UUID as `id` on the member in `panel.json`. Keep it when
-renaming or moving that member. On creation, name and description default to the member key and the sharing
-scope follows the panel. When reusing a previously registered projection, use `target.projectionId`. Every use
-of a shared projection sees its updates.
+The first successful domain projection write saves its UUID as `id` on the member in `panel.json`. The tool
+uses it as the registered member's `target.projectionId`. Keep it when renaming or moving that member.
+New projections default `name` and `description` to the member key and take the panel's initial sharing scope.
+Set a member's `name` or `description` explicitly to change those catalogue fields. Later sharing follows the
+projection's grants. To reuse a registered projection, specify `target.projectionId`. Every use of a shared
+projection sees its updates.
 
 In `registration.json`, each panel or application item is `{id,mode,input}` with `mode` set to `create` or `update`.
 For workspace registration, keep the panel definition in `panel.json`, `panel.html`, `panel.mjs` and optional
