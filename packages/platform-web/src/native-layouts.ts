@@ -27,8 +27,6 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
           managerPaths.relations,
           managerPaths.visualModeling,
           managerPaths.knowledge,
-          // User feedback sits with the business knowledge it was given on (big main's ruling, 2026-11-21).
-          "/ontology/feedback",
         ],
       },
       {
