@@ -87,7 +87,7 @@ const addObject = () => set(control.value.kind === "object" ? control.value.defa
     :label="field.label"
     :required="field.required"
     :error="controls.errors.value[path]"
-    :class="{ 'sdk-owner-form-field-changed': controls.changed.value.has(path) }"
+    :class="{ 'sdk-owner-form-field-changed': controls.changed.value.has(path), 'is-readonly': field.readOnly }"
     :data-field="path"
   >
     <el-input
@@ -224,12 +224,18 @@ const addObject = () => set(control.value.kind === "object" ? control.value.defa
       </div>
     </div>
     <p v-else role="alert" class="sdk-form-field-unavailable">{{ t("platform.formControlUnavailable") }}</p>
-    <p v-if="field.readOnly && field.readOnlyReason" class="sdk-form-field-help">{{ field.readOnlyReason }}</p>
+    <p v-if="field.readOnly && field.readOnlyReason && !controls.sharedReadOnlyReasons.value.has(field.readOnlyReason)" class="sdk-form-field-help">{{ field.readOnlyReason }}</p>
     <p v-else-if="field.help" class="sdk-form-field-help">{{ field.help }}</p>
   </el-form-item>
 </template>
 
 <style scoped>
+/* A value the owner keeps read-only is still the reader's to read: Element Plus's disabled grey is for a control that is
+   off, not for a value that is shown. */
+.sdk-form-field.is-readonly :deep(:is(.el-input__inner, .el-textarea__inner, .el-select__selected-item)) {
+  color: var(--el-text-color-regular);
+  -webkit-text-fill-color: var(--el-text-color-regular);
+}
 .sdk-form-avatar {
   display: flex;
   flex-direction: column;

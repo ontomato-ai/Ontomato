@@ -126,7 +126,7 @@ it("returns the server descriptor only for a current use of the authenticated re
  const member = { target: { projectionId: "run" }, inputs: { task: { state: "task" } } };
  vi.mocked(readCurrentPanelRecord).mockResolvedValue({
    ...record, id: "panel-tasks", name: "Tasks", content: { html: "", module: "" },
-   manifest: { state: { task: { type: task, personal: false, deepLink: false, external: false } }, members: { run: member }, events: {} },
+   manifest: { state: { task: { type: task, personal: false, deepLink: false, external: false } }, members: { run: member }, commands: {} },
  });
  vi.mocked(requireDirectPanelMember).mockResolvedValue({
    member,

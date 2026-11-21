@@ -20,17 +20,6 @@
     font-weight: var(--font-medium);
   }
   .agent-settings-button.primary:hover { background: var(--brand-primary-hover); color: var(--on-primary); }
-  .agent-settings-delete .el-button--danger {
-    --el-button-bg-color: transparent;
-    --el-button-border-color: transparent;
-    --el-button-text-color: var(--el-color-danger-text);
-    --el-button-hover-bg-color: var(--el-color-danger-light-9);
-    --el-button-hover-border-color: transparent;
-    --el-button-hover-text-color: var(--el-color-danger-text);
-    --el-button-active-bg-color: var(--el-color-danger-light-8);
-    --el-button-active-border-color: transparent;
-    --el-button-active-text-color: var(--el-color-danger-text);
-  }
   .agent-settings-empty { color: var(--el-text-color-secondary); margin: 0; }
   .agent-settings-detail { display: flex; flex-direction: column; gap: var(--page-content-gap); }
   .agent-settings-head {
@@ -61,9 +50,7 @@
         <span v-else class="agent-settings-summary"></span>
         <div class="agent-settings-actions">
           <button type="button" class="agent-settings-button" @click="viewType">{{ t('agents.viewType') }}</button>
-          <div v-if="mode === 'edit'" class="agent-settings-delete">
-            <projection slot="remove"></projection>
-          </div>
+          <projection v-if="mode === 'edit'" slot="remove"></projection>
         </div>
       </div>
       <section-group :title="mode === 'create' ? t('agents.creating') : t('agents.definition')">

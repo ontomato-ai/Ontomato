@@ -3,7 +3,8 @@ import { z } from "zod";
 import type { PoolClient } from "pg";
 import { panelPlacementSchema } from "@ontomato/contracts/panel-manifest";
 import {
-  PRODUCT_IN_USE, productCurrentIdParamsSchema, productPanelInputSchema, productProjectionInputSchema, type ProductCatalogQuery,
+  BUILTIN_PRODUCT_ID_PREFIX, PRODUCT_IN_USE, builtinProductPanelInputSchema, productCurrentIdParamsSchema,
+  productPanelInputSchema, productPanelSummarySchema, productProjectionInputSchema, type ProductCatalogQuery,
   type ProductVisibility,
 } from "@ontomato/contracts/product-panels";
 import {
@@ -20,7 +21,7 @@ import {
 } from "../product-governance/grants";
 import { insertCurrentProduct, loadCurrentProduct, requireCurrentProduct, requireOrdinaryProjection } from "./current";
 import { closeDeletedDefinitionStreams, notifyProductDefinitionChanged } from "./definition-stream";
-import { findPanelUsers } from "./references";
+import { findPanelUsers, panelReferenceDefinitionSchema } from "./references";
 import { panelsUsingProjection, panelUsers } from "./used-by";
 
 const cursorSchema = z.discriminatedUnion("sort", [
@@ -50,6 +51,7 @@ interface SummaryRow {
   sortKey: string;
   componentId?: string;
   template?: boolean | null;
+  definition?: unknown;
 }
 
 export async function listCurrentProducts(owner: ProductOwner, credentials: AssistantCredentials,
@@ -64,7 +66,7 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
   const keyType = updated ? "timestamptz" : "text";
   // PostgreSQL provides the exact timestamp key, including sub-millisecond precision.
   const cursorKey = updated ? "to_jsonb(updated_at)#>>'{}'" : order;
-  const kindColumn = kind === "projection" ? `,definition->>'componentId' AS "componentId"` : `,definition->'template' AS template`;
+  const kindColumn = kind === "projection" ? `,definition->>'componentId' AS "componentId"` : `,definition,definition->'template' AS template`;
   const { rows } = await getPostgresPool().query<SummaryRow>(
     `SELECT id,owner_id AS "ownerId",definition->>'name' AS name,definition->>'description' AS description,
        definition->>'visibility' AS visibility,revision,updated_at AS "updatedAt",${cursorKey} AS "sortKey"${kindColumn}
@@ -79,14 +81,28 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
       panelCatalog ? input.template ?? null : null, panelCatalog],
   );
   const edited = new Set(editable);
-  const items = rows.slice(0, input.limit).map(({ sortKey: _sortKey, updatedAt, template, ...row }) => ({
-    ...row, ...(template == null ? {} : { template }), updatedAt: updatedAt.toISOString(),
-    editable: row.ownerId !== null && edited.has(row.id),
-  }));
+  const unavailableItems: { id: string; reason: string }[] = [];
+  const items = rows.slice(0, input.limit).flatMap(({ sortKey: _sortKey, definition, updatedAt, template, ...row }) => {
+    const summary = {
+      ...row, ...(template == null ? {} : { template }), updatedAt: updatedAt.toISOString(),
+      editable: row.ownerId !== null && edited.has(row.id),
+    };
+    if (!panelCatalog) return [summary];
+    const schema = row.id.startsWith(BUILTIN_PRODUCT_ID_PREFIX) ? builtinProductPanelInputSchema : productPanelInputSchema;
+    const parsed = schema.safeParse(definition);
+    const result = parsed.success ? productPanelSummarySchema.safeParse(summary) : parsed;
+    if (result.success) return [summary];
+    const issue = result.error.issues[0]!;
+    const field = issue.path.length ? `Field '${issue.path.join(".")}'` : "Panel definition";
+    const reason = issue.code === "invalid_type" && issue.received === "undefined"
+      ? `${field} is required.` : `${field} does not match the current panel contract.`;
+    unavailableItems.push({ id: row.id, reason });
+    return [];
+  });
   const last = rows[input.limit - 1];
   const nextCursor = rows.length > input.limit
     ? Buffer.from(JSON.stringify({ sort: input.sort, key: last.sortKey, id: last.id })).toString("base64url") : null;
-  return { items, nextCursor };
+  return { items, nextCursor, ...(unavailableItems.length > 0 && { unavailableItems }) };
 }
 
 export async function currentProductUsedBy(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string) {
@@ -97,7 +113,7 @@ export async function currentProductUsedBy(owner: ProductOwner, credentials: Ass
 }
 
 function panelProjectionIds(definition: unknown) {
-  const { manifest } = productPanelInputSchema.parse(definition);
+  const { manifest } = panelReferenceDefinitionSchema.parse(definition);
   const ids = new Set(Object.values(manifest.members).flatMap(({ target }) =>
     "projectionId" in target ? [target.projectionId] : []));
   for (const { type, default: value } of Object.values(manifest.state)) {

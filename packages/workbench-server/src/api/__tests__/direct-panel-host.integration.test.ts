@@ -204,7 +204,7 @@ it("refuses a platform panel whose entry names an opening sentence one of its la
   }));
   const member = { id: "builtin-product-entry-key-entry", component: "ConversationEntry", agent: "page-default", prefillKey: "actions.newPrefill" };
   const descriptor = (messages: Record<string, Record<string, string>>) => JSON.stringify({
-    manifest: { state: {}, members: { create: member }, events: {} }, content: { messages },
+    manifest: { state: {}, members: { create: member }, commands: {} }, content: { messages },
   });
   const { html, module } = vuePanelContent("create");
   await writeFile(path.join(directory, "panel.html"), html);
@@ -224,7 +224,7 @@ it("reconciles the released built-in authoring sources and exposes the same read
     panels: [{ id: builtinPanelId, mode: "create", input: { name, description: "", visibility: "domain" } }],
   }));
   const member = { id: builtinProjectionId, component: "PanelData", type: "platform:SDKComponent", data: { rows: "catalogue" } };
-  const manifest = { state: {}, members: { components: member }, events: {} };
+  const manifest = { state: {}, members: { components: member }, commands: {} };
   const descriptor = path.join(directory, "panel.json");
   await writeFile(index, JSON.stringify(["catalogue"]));
   await writeIdentity("Components");
@@ -476,7 +476,7 @@ it("identifies malformed registrations and missing author references without byp
   const panel = {
     name: "Author panel", description: "", visibility: "private", revision: 0,
     content: vuePanelContent("summary"),
-    manifest: { state: {}, members: { summary: { target: { projectionId: "author-missing" } } }, events: {} },
+    manifest: { state: {}, members: { summary: { target: { projectionId: "author-missing" } } }, commands: {} },
   };
   const extraField = await request("PUT", "product-panels/author-panel", { ...panel, typo: true });
   expect(extraField.status).toBe(400);
@@ -686,7 +686,7 @@ it("preserves a code panel's ID and revision rules and describes its member oper
   const { state: panelState, members } = panelManifestSchema.parse(directTrial.manifest);
   const replacement = {
     name: trialPanel.name, description: trialPanel.description, visibility: "domain", content,
-    manifest: { state: panelState, events: {}, members: {
+    manifest: { state: panelState, commands: {}, members: {
       summary: { ...members.summary, target: { projectionId: summaryId } },
       run: { ...members.run, target: { projectionId: runId } },
     } },
@@ -753,7 +753,7 @@ it("preserves a code panel's ID and revision rules and describes its member oper
   const framePanelId = "panel-app-frame";
   const frameSaved = await request("PUT", "product-panels/" + framePanelId, {
     name: "Application frame", description: "", visibility: "domain", revision: 0, content: vuePanelContent(),
-    manifest: { state: { choice: panelState.selectedTask }, members: {}, events: {} },
+    manifest: { state: { choice: panelState.selectedTask }, members: {}, commands: {} },
   });
   expect(frameSaved.status, await frameSaved.text()).toBe(200);
   const framed = { ...application, framePanelId, uses: [{
@@ -775,7 +775,7 @@ it("rejects an unavailable default agent before accepting a proposed application
   const panelId = "default-agent-panel";
   const saved = await request("PUT", "product-panels/" + panelId, {
     name: "Panel with a default", description: "", visibility: "domain", revision: 0,
-    content: vuePanelContent(), manifest: { state: {}, members: {}, events: {} },
+    content: vuePanelContent(), manifest: { state: {}, members: {}, commands: {} },
   });
   expect(saved.status, await saved.text()).toBe(200);
 

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { type RuntimeSkillRef, type StandardSkillFrontmatter } from "@ontomato/contracts/agent-runtime-skills";
 import {
-  panelManifestSchema, panelOperationId, type PanelEvent, type PanelManifest, type panelEventValueSchema,
+  panelManifestSchema, panelOperationId, type PanelCommand, type PanelManifest, type PanelMemberInput,
 } from "@ontomato/contracts/panel-manifest";
 import { PAGE_DRAFT_QUERY_KEYS } from "@ontomato/contracts/page-draft";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
@@ -39,7 +39,7 @@ function panelSkillManifest(skill: RuntimeSkillRef, panel: PanelDescription, sou
     ...(panel.reads ? ["read current data"] : []),
     "open the panel",
     ...(panel.forms.length ? ["draft changes"] : []),
-    ...(panel.operations.length || Object.keys(panel.events).length ? ["review declared operations"] : []),
+    ...(panel.operations.length || Object.keys(panel.commands).length ? ["review declared operations"] : []),
   ];
   const actionText = verbs.format(actions);
   return {
@@ -211,7 +211,7 @@ function describePanel(
     description: panel.description,
     state: manifest.state,
     members: manifest.members,
-    events: manifest.events,
+    commands: manifest.commands,
     content: panel.content,
     projections,
     operations,
@@ -221,29 +221,18 @@ function describePanel(
   };
 }
 
-type EventValue = z.infer<typeof panelEventValueSchema>;
-
-function describePanelEvent(event: PanelEvent, state: PanelManifest["state"], members: PanelManifest["members"]): string {
-  const { do: action, on } = event;
-  const value = (source: EventValue) => {
+function describePanelCommand(command: PanelCommand, members: PanelManifest["members"]): string {
+  const action = command.do;
+  const value = (source: PanelMemberInput) => {
     if ("literal" in source) return `\`${JSON.stringify(source.literal)}\``;
     if ("state" in source) return `the current value of state field \`${source.state}\``;
-    if ("item" in source) return on ? "the item from the triggering member" : "the item selected in the current page context";
-    return `the output value of \`${on!.member}.${on!.output}\``;
+    return "the item selected in the current page context";
   };
-  const assignments = (values: Record<string, EventValue>) =>
+  const assignments = (values: Record<string, PanelMemberInput>) =>
     Object.entries(values).map(([field, source]) => `\`${field}\` = ${value(source)}`).join(", ");
 
   if ("set" in action) {
-    const { fields } = action.set;
-    const linked = Object.fromEntries(Object.entries(fields).filter(([field]) => state[field].deepLink));
-    const local = Object.keys(fields).filter(field => !state[field].deepLink);
-    return [
-      Object.keys(linked).length
-        ? `Open the current panel's canonical address. Set ${assignments(linked)} in the URL-encoded JSON \`state\` query parameter. Keep the existing values of other deep-linkable fields and other query parameters.`
-        : "",
-      local.length ? `Instance-only fields ${local.map(field => `\`${field}\``).join(", ")} are changed by the panel's event on the page.` : "",
-    ].filter(Boolean).join(" ");
+    return `Open the current panel's canonical address. Set ${assignments(action.set.fields)} in the URL-encoded JSON \`state\` query parameter. Keep the existing values of other deep-linkable fields and other query parameters.`;
   }
   if ("invoke" in action) {
     const { member, operation, inputs } = action.invoke;
@@ -265,13 +254,11 @@ function describePanelEvent(event: PanelEvent, state: PanelManifest["state"], me
   return `Find the admitted entry for ${panel} in \`GET /api/data-query/platform/applications/<current applicationId>/panel-uses\`. Open that entry's \`path\` when available. Use the current panel's canonical address for embedded content.${carryState}`;
 }
 
-function describeSkill({ name, description, content, state, members, events, projections, operations, forms, reads, hasPlacedMembers }: PanelDescription): string {
+function describeSkill({ name, description, content, state, members, commands, projections, operations, forms, reads, hasPlacedMembers }: PanelDescription): string {
   const { recipes, messages } = content;
   const resolveLabel = (key: string) => messages?.[getDefaultLocale()]?.[key] ?? key;
-  const declaredEvents = Object.entries(events).map(([id, event]) => {
-    const label = event.labelKey ? resolveLabel(event.labelKey) : id;
-    return `- ${label} (${id}). ${describePanelEvent(event, state, members)}`;
-  });
+  const declaredCommands = Object.entries(commands).map(([id, command]) =>
+    `- ${resolveLabel(command.labelKey)} (${id}). ${describePanelCommand(command, members)}`);
   return [
     `## ${name}`,
     description,
@@ -287,10 +274,10 @@ function describeSkill({ name, description, content, state, members, events, pro
       "Use the canonical path from the current page context. To restore a selection, set the `state` query parameter to URL-encoded JSON containing only fields marked deepLink. Object references carry className and primaryKey.",
     ].join("\n"),
     describeDraft(forms),
-    ...(declaredEvents.length ? [[
-      "### Panel events",
-      "The names below identify panel events. The `/operate` endpoint accepts only IDs from Declared operations. Follow the address or operation given for each event.",
-      ...declaredEvents,
+    ...(declaredCommands.length ? [[
+      "### Panel commands",
+      "Follow the address or operation given for each command. The `/operate` endpoint accepts only IDs from Declared operations.",
+      ...declaredCommands,
     ].join("\n")] : []),
     [
       "### Declared operations",

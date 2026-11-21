@@ -118,7 +118,7 @@ const panel = {
       },
       manage: { target: { projectionId: "projection-pilot-manage-task" }, inputs: { task: { state: "selectedTask" } } },
     },
-    events: {},
+    commands: {},
   },
 };
 
@@ -692,7 +692,7 @@ it("reads the seven named ontology data items with the panel viewer", async () =
   const saveGraph = (placements: Record<string, typeof placement>, revision: number) => request("PUT", "product-panels/" + graphPanelId, {
     name: "Ontology", description: "", visibility: "domain", revision,
     content: vuePanelContent(...Object.keys(placements)),
-    manifest: { state, members: placements, events: {} },
+    manifest: { state, members: placements, commands: {} },
   });
   const unbound = await saveGraph({ runtime: placement }, 0);
   expect(unbound.status).toBe(400);
@@ -805,7 +805,7 @@ it("registers and reads an author-named datum through the SDK catalogue wildcard
     const savedPanel = await request("PUT", "product-panels/" + dataPanelId, {
       name: "Warehouse data", description: "", visibility: "domain", revision: 0,
       content: vuePanelContent("data"),
-      manifest: { state: {}, members: { data: { target: { projectionId: "data-port-pilot" } } }, events: {} },
+      manifest: { state: {}, members: { data: { target: { projectionId: "data-port-pilot" } } }, commands: {} },
     });
     expect(savedPanel.status, await savedPanel.text()).toBe(200);
 
@@ -870,7 +870,7 @@ it("reads agent settings and reference options with the panel viewer", async () 
   const saved = await request("PUT", "product-panels/" + agentPanelId, {
     name: "Agent settings", description: "", visibility: "domain", revision: 0,
     content: vuePanelContent(...Object.keys(members)),
-    manifest: { state: { selectedAgent: { type: agentType.agent, default: null } }, members, events: {} },
+    manifest: { state: { selectedAgent: { type: agentType.agent, default: null } }, members, commands: {} },
   });
   expect(saved.status, await saved.text()).toBe(200);
   const read = async (member: string, dataName: string, inputs: object = {}) => {
@@ -901,11 +901,23 @@ it("reads agent settings and reference options with the panel viewer", async () 
   expect(await describeSave({ agent: null })).toMatchObject({
     status: "ready", value: { save: { kind: "form.save", target: { source: "draft", slot: "definition" } } },
   });
-  expect(await ready("agents", "rows")).toContainEqual(expect.objectContaining({ primaryKey: agentId, label: "Inventory analyst" }));
+  const disabled = { primaryKey: agentId, label: "Inventory analyst",
+    fields: { name: "Inventory analyst", description: "Inventory summary", enabled: "Disabled" }, tones: { enabled: "default" } };
+  expect(await ready("agents", "rows")).toContainEqual(expect.objectContaining(disabled));
   expect(await ready("summary", "record", { agent })).toMatchObject({
-    primaryKey: agentId, fields: { description: "Inventory summary", enabled: "false" },
-    fieldLabels: { description: "Description", enabled: "Enabled" },
+    ...disabled, fieldLabels: { description: "Description", enabled: "Enabled" },
   });
+  const setEnabled = (enabled: boolean) => state.pool!.query(
+    `UPDATE "${state.schema}".assistant_agents SET enabled=$2 WHERE id=$1`, [agentId, enabled],
+  );
+  await setEnabled(true);
+  try {
+    const enabled = { ...disabled, fields: { ...disabled.fields, enabled: "Enabled" }, tones: { enabled: "success" } };
+    expect(await ready("agents", "rows")).toContainEqual(expect.objectContaining(enabled));
+    expect(await ready("summary", "record", { agent })).toMatchObject(enabled);
+  } finally {
+    await setEnabled(false);
+  }
   const form = panelFormDescriptionSchema.parse(await ready("definition", "form", { agent }));
   expect(form.values).toMatchObject({ name: "Inventory analyst", enabled: false, skills: [] });
   expect(form.fields.find(field => field.path === "/executionUserId")?.readOnly).toBe(true);
@@ -981,7 +993,7 @@ async function ownerReadPanel(
   const response = await request("PUT", "product-panels/panel-" + family, {
     name: family, description: "", visibility: "domain", revision: 0,
     content: vuePanelContent(...Object.keys(members)),
-    manifest: { state, members, events: {} },
+    manifest: { state, members, commands: {} },
   });
   expect(response.status, await response.text()).toBe(200);
   return async (member: string, dataName: string, inputs: object = {}) => {
@@ -1154,7 +1166,7 @@ it("describes the metric trials by the owner's names and takes their draft from 
   const panel = (trials: object) => ({
     name: "Metric trials", description: "", visibility: "domain", revision: 0,
     content: vuePanelContent("metricEditor", "trials"),
-    manifest: { state: {}, events: {}, members: {
+    manifest: { state: {}, commands: {}, members: {
       metricEditor: { target: { projectionId: "owner-metric-trials-metricEditor" } },
       trials: { target: { projectionId: "owner-metric-trials-trials" }, ...trials },
     } },

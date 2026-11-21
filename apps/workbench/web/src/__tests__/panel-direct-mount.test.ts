@@ -35,7 +35,7 @@ const projections: Record<string, () => DirectProjection> = {
 const manifest: DirectPanelManifest = {
   state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false } },
   members: { run: { target: { projectionId: "task-run" }, inputs: { task: { state: "selectedTask" } } } },
-  events: {},
+  commands: {},
 };
 const runNow = { kind: "action", handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
 

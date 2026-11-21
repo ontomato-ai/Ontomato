@@ -7,7 +7,7 @@ import { ElForm } from "element-plus/es/components/form/index";
 import { ElMessageBox } from "element-plus/es/components/message-box/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
-import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/panel-projection";
+import type { PanelFormDescription, PanelFormField, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import { slotState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
 import { PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
 import { changedPaths, fieldAt, movedPath, valueAt, withValueAt } from "../panel/form-values";
@@ -334,11 +334,29 @@ function markInvalid(path: string, message: string | null) {
   invalid.value = message === null ? rest : { ...rest, [path]: message };
 }
 
+/**
+ * A read-only reason the owner gives more than one field (a function an action uses: every field) is the form's to say,
+ * once above its fields; a field says only a reason of its own.
+ */
+const sharedReadOnlyReasons = computed<ReadonlySet<string>>(() => {
+  const counts = new Map<string, number>();
+  const visit = (fields: readonly PanelFormField[]) => {
+    for (const field of fields) {
+      if (field.readOnly && field.readOnlyReason) counts.set(field.readOnlyReason, (counts.get(field.readOnlyReason) ?? 0) + 1);
+      if (field.control.kind === "object") visit(field.control.fields);
+      if (field.control.kind === "object-array") visit(field.control.itemFields);
+    }
+  };
+  visit(fields.value);
+  return new Set([...counts].filter(([, count]) => count > 1).map(([reason]) => reason));
+});
+
 provide(formControlsKey, {
   values,
   errors: computed(() => ({ ...errors.value, ...invalid.value })),
   changed,
   busy: saving,
+  sharedReadOnlyReasons,
   set,
   reorder,
   invalid: markInvalid,
@@ -471,6 +489,7 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
     <!-- The panel frame is sandboxed without allow-forms, so the browser drops a native form submission before any
          submit handler runs: the reader's save is the button's own click. -->
     <el-form label-position="top">
+      <p v-for="reason in sharedReadOnlyReasons" :key="reason" class="sdk-owner-form-readonly" role="note">{{ reason }}</p>
       <form-field-control v-for="field in drawn" :key="field.path" :field="field" :path="field.path"></form-field-control>
       <p v-if="changed.size" class="sdk-owner-form-changed" role="status">
         {{ t("platform.panelDraftChanged", { fields: changedLabels }) }}
@@ -490,6 +509,14 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
   display: flex;
   justify-content: flex-end;
   margin-block-start: var(--spacing-md);
+}
+.sdk-owner-form-readonly {
+  margin: 0 0 var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
+  background: var(--ui-fill-tertiary);
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-sm);
 }
 .sdk-owner-form-changed {
   color: var(--brand-link);

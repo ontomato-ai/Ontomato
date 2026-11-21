@@ -57,7 +57,7 @@ function panelDefinition(projectionId?: string) {
   return {
     name: "Overview", description: "", visibility: "private",
     content: { html: "<main></main>", module: "export {}" },
-    manifest: { state: {}, members: projectionId ? { kpi: { target: { projectionId }, inputs: {} } } : {}, events: {} },
+    manifest: { state: {}, members: projectionId ? { kpi: { target: { projectionId }, inputs: {} } } : {}, commands: {} },
   };
 }
 let records: Record<Table, Map<string, CurrentProductRow>>;
@@ -202,6 +202,8 @@ beforeEach(() => {
           name: String(row.definition.name), description: String(row.definition.description), visibility: row.definition.visibility,
           ...(sql.includes('AS "componentId"') ? { componentId: row.definition.componentId } : {}),
           ...(sql.includes("AS binding") ? { binding: row.definition.binding ?? null } : {}),
+          // The panel catalogue reads each record's definition to set an unreadable one apart.
+          ...(sql.includes(",definition,") ? { definition: row.definition } : {}),
           sortKey: sortByName ? String(row.definition.name).toLowerCase() : row.updatedAt.toISOString(),
         }))
         .filter(row => [row.name, row.description].some(text => text.toLowerCase().includes(query.toLowerCase())));

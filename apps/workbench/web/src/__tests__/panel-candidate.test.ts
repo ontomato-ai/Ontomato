@@ -58,7 +58,7 @@ const candidateOf = (html: string): CandidatePanelSource => ({
     manifest: definePanel({
       state: {},
       members: { definition: { target: { projectionId: agentForm.id }, inputs: {} }, summary: { target: { projectionId: summary.id }, inputs: {} } },
-      events: {},
+      commands: {},
     }),
   },
   previewContext: { kind: "build-test", test: null },
