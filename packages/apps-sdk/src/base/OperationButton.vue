@@ -2,7 +2,7 @@
 import { computed, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
-import { panelOperationId, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import { panelOperationId, type PanelObjectIdentity, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
 import type { PanelOwnerOperationDescriptor, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import { slotInputState, usePanelContext, useProjectionSlot } from "../panel/context";
@@ -11,6 +11,7 @@ import OperationResult from "./OperationResult.vue";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMemberOperations } from "../panel/member";
 import { stateObject, stateObjects } from "../panel/state";
+import type { PanelWriteResult } from "../panel/instance";
 
 /**
  * The button of one operation a projection names, run as the reader the way an agent's call runs: the platform's
@@ -60,6 +61,8 @@ const pending = computed<DataStateResult | null>(() => {
 });
 const read = shallowRef<PanelReadOperationResult | null>(null);
 const receipt = shallowRef<PanelHumanOperationDispatchResponse | null>(null);
+/** The targets the owner named when it prepared the last write. */
+const named = shallowRef<PanelWriteResult["named"]>([]);
 const operationId = computed(() => panelOperationId(slot.slot, props.operation));
 /**
  * The button shows only once its description is read, so the owner's name, in the reader's language, is there. A batch
@@ -117,6 +120,7 @@ async function run() {
     );
     if (answer.decision === "cancel") return;
     receipt.value = answer.response;
+    named.value = answer.named;
     keepUnchanged(answer.response);
   } catch (reason) {
     fail(reason);
@@ -145,6 +149,9 @@ const said = (outcome: Single) =>
       : outcome.message;
 const outcome = computed(() => (receipt.value?.kind === "dispatched" ? receipt.value.outcome : null));
 const items = computed(() => (outcome.value?.kind === "batch" ? outcome.value.items : []));
+/** A batch item by the name its owner gave it when the batch was confirmed, else by its key. */
+const nameOf = (target: PanelObjectIdentity) => named.value.find(({ target: known }) =>
+  known.objectType === target.objectType && known.primaryKey === target.primaryKey)?.label ?? target.primaryKey;
 const done = computed(() => items.value.filter((item) => item.outcome.kind === "success").length);
 </script>
 
@@ -164,7 +171,7 @@ const done = computed(() => items.value.filter((item) => item.outcome.kind === "
             v-for="item in items"
             :key="item.target.objectType + ':' + item.target.primaryKey"
             :data-outcome="item.outcome.kind"
-          >{{ item.target.primaryKey }}: {{ said(item.outcome) }}</li>
+          >{{ nameOf(item.target) }}: {{ said(item.outcome) }}</li>
         </ul>
       </div>
       <p v-else :role="outcome.kind === 'success' ? 'status' : 'alert'" :data-outcome="outcome.kind">{{ said(outcome) }}</p>
