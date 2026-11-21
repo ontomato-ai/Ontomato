@@ -73,6 +73,8 @@ const member = (use: ApplicationPanelUse, locator: PageSkillContext["locator"]):
   member: { source: { kind: "application-use", applicationId: app, useId: use.id }, memberPath: [], ref: memberRefOf(use.panelId) },
 });
 const panelReads = (sent: Sent[], panelId: string) => sent.filter(request => request.path === `/api/product-panels/${panelId}`);
+/** The page skill context reads, made for the page beside the panel's record. */
+const skillReads = (sent: Sent[], panelId: string) => sent.filter(request => request.path === `/api/product-panels/${panelId}/page-skill-context`);
 
 afterEach(() => {
   hold = null;
@@ -82,18 +84,20 @@ afterEach(() => {
   vi.resetModules();
 });
 
-it("reads the shown page's panel with its use relation and entrance, and passes on the context Node answers", async () => {
+it("reads the shown page's panel, and beside it the page skill with its use relation and entrance, passing on what Node answers", async () => {
   const { app: page, router, sent, skills } = await openApplication(tasks.path);
   try {
     await vi.waitFor(() => expect(skills).toEqual([member(tasks, { permissionCode: "analysis-agent", pageKey: tasks.pageKey })]));
-    expect(Object.fromEntries(new URLSearchParams(panelReads(sent, p.id)[0]!.search))).toEqual({
+    // The record is the panel's alone; the page it is shown for asks for its skill on its own.
+    expect(panelReads(sent, p.id)[0]!.search).toBe("");
+    expect(Object.fromEntries(new URLSearchParams(skillReads(sent, p.id)[0]!.search))).toEqual({
       applicationId: app, useId: tasks.id, pageKey: tasks.pageKey, permissionCode: "analysis-agent",
     });
 
     // A page reached by domain membership names that entrance instead.
     await router.push(summary.path);
     await vi.waitFor(() => expect(skills.at(-1)).toEqual(member(summary, { access: "domain-member", pageKey: summary.pageKey })));
-    expect(Object.fromEntries(new URLSearchParams(panelReads(sent, q.id)[0]!.search))).toEqual({
+    expect(Object.fromEntries(new URLSearchParams(skillReads(sent, q.id)[0]!.search))).toEqual({
       applicationId: app, useId: summary.id, pageKey: summary.pageKey, access: "domain-member",
     });
 

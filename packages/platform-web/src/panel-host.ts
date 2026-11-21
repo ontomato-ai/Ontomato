@@ -1,6 +1,6 @@
 import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
 import {
-  applicationEntryResolutionQuerySchema, applicationEntryResolutionSchema, productPanelResponseSchema, productPanelSchema,
+  applicationEntryResolutionQuerySchema, applicationEntryResolutionSchema, productPanelPageSkillContextResponseSchema, productPanelResponseSchema, productPanelSchema,
   type ApplicationEntryResolution, type ApplicationEntryResolutionQuery, type ApplicationPanelUse,
   type ProductPanelReadQuery,
 } from "@ontomato/contracts/product-panels";
@@ -63,6 +63,8 @@ export const panelHostPaths = {
     `/api/data-query/platform/applications/${encodeURIComponent(applicationId)}/panel-uses`,
   panel: (panelId: string) => `/api/product-panels/${encodeURIComponent(panelId)}`,
   snapshot: (panelId: string) => `/api/product-panels/${encodeURIComponent(panelId)}/snapshot`,
+  /** Which page skill a message written beside a page reaches: read on its own, beside the panel's record. */
+  pageSkillContext: (panelId: string) => `/api/product-panels/${encodeURIComponent(panelId)}/page-skill-context`,
   definitionStream: "/api/product-panels/definition-stream",
   /** What a panel's member shows: one named datum, read by the platform as the reader. */
   read: "/api/product-panels/read",
@@ -135,11 +137,16 @@ export function platformPanelHost(
     : { ...shown, pageKey: use.pageKey, access: "domain-member" };
   const page = new URLSearchParams(read);
   return {
-    // Opening reads the panel for this page.
+    // Opening reads the panel's record, and — beside it, not before it — which page skill this page reaches: the panel is
+    // drawn as soon as its record is here, and only the page's composer and conversation wait for the skill (a read of
+    // the record that also worked out the skill took 2.3 s on 128, the record alone 0.5 s).
     async source() {
-      const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(use.panelId)}?${page}`));
-      // A read that names its page is answered with the page skill context; the host passes on what Node answered.
-      pageSkill?.(pageSkillContextSchema.parse(answer.pageSkillContext));
+      void json(`${panelHostPaths.pageSkillContext(use.panelId)}?${page}`).then(
+        (answer) => pageSkill?.(productPanelPageSkillContextResponseSchema.parse(answer).pageSkillContext),
+        // Without it the page's composer stays closed, as for a page that reaches no skill; the panel is unaffected.
+        () => undefined,
+      );
+      const answer = productPanelResponseSchema.parse(await json(panelHostPaths.panel(use.panelId)));
       return { kind: "registered", applicationId, use, panel: answer.panel };
     },
     pageKey: use.pageKey,
