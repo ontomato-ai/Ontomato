@@ -34,8 +34,8 @@ run `panel type platform:SDKComponent`. Its `reads.definition.result` is `sdkCom
 names, and the operation declaration for its effect, target, batch support and input schema.
 
 Use the [generated member fields](FIELDS.md) to connect each component's named datum to an owner read and
-its parameters. Bind component outputs through the short member's `state` map. Its keys are output port names
-and its values are declared panel state field names. Place an official component when it fits the view. For a custom Vue view, choose `PanelData`
+its parameters. Bind an output by its port name in the short member's `state` map, with the declared panel
+state field as its value. Place an official component when it fits the view. For a custom Vue view, choose `PanelData`
 and consume each datum with [the SDK read hooks](RUNTIME.md#reads-and-operations) in synchronous setup,
 before any `await`. Use the return states
 to show loading, missing inputs, empty data, denied access or an error in the view. Read each ready value
