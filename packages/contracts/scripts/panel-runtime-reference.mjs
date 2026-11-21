@@ -73,7 +73,7 @@ const child = zodToJsonSchema(panelChildObjectIdentitySchema);
 const deepLink = zodToJsonSchema(panelStateFieldSchema).properties.deepLink;
 
 const graphState = {
-  mode: capabilityMap.events.showTypeMode.do.set.fields.mode.literal,
+  mode: "type",
   selectedType: SDK_COMPONENT,
 };
 assert.ok(Object.keys(graphState).every(name => capabilityMap.state[name].deepLink));
@@ -86,16 +86,13 @@ const inline = values => values.map(asCode).join(", ");
 
 const directCode = await readFile(new URL("../../apps-sdk/src/panel/direct.ts", import.meta.url), "utf8");
 const directSource = ts.createSourceFile("direct.ts", directCode, ts.ScriptTarget.ESNext, true);
-const memberState = directSource.statements.find(statement =>
-  ts.isTypeAliasDeclaration(statement) && statement.name.text === "MemberDataState");
-assert.ok(memberState);
+const sdkTypes = new Map(directSource.statements.filter(ts.isTypeAliasDeclaration)
+  .map(statement => [statement.name.text, statement.getText(directSource).replace(/^export /u, "")]));
+assert.ok(sdkTypes.has("MemberDataState") && sdkTypes.has("PanelPlacement"));
 const outputRows = panelDataStateSchema.options.map(variant => [
   asCode(variant.shape.status.value),
   Object.keys(variant.shape).filter(name => name !== "status").map(asCode).join(", "),
 ]);
-const sdkGuide = await readFile(new URL("../../apps-sdk/resources/docs/index.md", import.meta.url), "utf8");
-const dataBehavior = sdkGuide.split("\n\n").find(paragraph => paragraph.startsWith("`usePanelData` reads the way"));
-assert.ok(dataBehavior, "The SDK guide is missing the runtime read behavior");
 const contents = [
   "<!-- Generated from SDK declarations and panel contracts by pnpm --filter @ontomato/contracts generate:panel-runtime-reference. -->",
   "# Panel runtime reference",
@@ -112,6 +109,8 @@ const contents = [
   "",
   sdkFields("PanelContext", ["instance", "t", "navigate", "placement"]),
   "",
+  asCode(sdkTypes.get("PanelPlacement")),
+  "",
   sdkFields("PanelInstance", ["state", "pageContext", "onObjectChanged", "refreshObjects"]),
   "",
   sdkSection("PanelStateStore"),
@@ -120,9 +119,7 @@ const contents = [
   "",
   sdkSection("usePanelData"),
   "",
-  dataBehavior,
-  "",
-  `The result type is ${asCode(memberState.getText(directSource).replace(/^export /u, ""))}.`,
+  `The result type is ${asCode(sdkTypes.get("MemberDataState"))}.`,
   "",
   "| Status in PanelDataState | Additional fields |",
   "| --- | --- |",

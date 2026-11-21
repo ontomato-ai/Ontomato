@@ -33,8 +33,21 @@ interface PanelContext {
    * address, a page the reader may not open — the platform says why on the page, and this rejects with that reason.
    */
   navigate(address: string): Promise<void>;
+  /**
+   * Where the platform shows this panel, read-only: `"conversation"` beside a conversation (shown full-size from the
+   * conversation too), where the conversation already draws the page's title and its way back; `"page"` at the panel's
+   * own address, a candidate's preview included. It holds for the instance's whole run.
+   *
+   * It decides one thing: whether the panel draws what the platform already draws for it there — its own title and
+   * way back (`v-if="placement === 'page'"`). Lay the page out by its container's width, not by this; what it reads,
+   * what it can do and what it selects first are the same in both. Do not invent an address parameter for it. A panel
+   * the platform runs has it; a frame has none.
+   */
+  readonly placement: Readonly<Ref<PanelPlacement>>;
 }
 ```
+
+`type PanelPlacement = "conversation" | "page";`
 
 ### PanelInstance
 
@@ -72,18 +85,25 @@ interface PanelStateStore {
 
 ### usePanelData
 
-One datum of one member, kept current while the calling component is mounted.
+One datum of one member, kept current while the calling component is mounted. Call it in a component's setup,
+before any `await`.
+
+- `member` is a member the panel declares; `name` is a datum its projection names under `data.<name>`. The read, its
+  mappings and the object it needs are the projection's: nothing about the read is written in the page.
+- The member's inputs come from the panel state its placement binds; the datum is read again whenever that state
+  changes. A datum whose object or required parameter has no value is `awaiting`, and nothing is read.
+- `runtimeParams` are the page's own run-time values for the member (a page, a cursor, a keyword), as an object, a
+  ref or a getter: set, they reach every read of the member that takes them, and a change reads again. The platform
+  checks each against the component catalogue and the owner's read.
+- When an operation the panel runs reports what it changed (the owner's `affected`), a datum read from an object is
+  read again when that object is among the affected objects, and one read from a type when that type is among the
+  affected types; nothing is to be refreshed by hand.
+- It answers `loading`, `awaiting`, `ready` with `value` (the owner's result, checked against the result its read
+  declares), `empty`, `forbidden`, or `error` with `message` (the read failed, or the platform could not answer it).
 
 ```ts
 function usePanelData(member: string, name: string, runtimeParams?: MaybeRefOrGetter<Readonly<Record<string, RuntimeJsonValue>>> | undefined): ComputedRef<MemberDataState>
 ```
-
-`usePanelData` reads the way every member's data is read: by the projection's read and its mappings, through the
-platform, as the reader. It answers `loading`, `awaiting` (an object or a required parameter has no value yet; nothing
-is read), `ready` with `value`, `empty`, `forbidden` or `error` with `message`. It reads again when the panel state the
-member binds changes, when the run-time values you pass change, and when an operation reports that what it shows
-changed. Values you pass yourself are run-time parameters, which the platform checks against the catalogue and the
-read.
 
 The result type is `type MemberDataState = PanelDataState | { status: "awaiting" };`.
 

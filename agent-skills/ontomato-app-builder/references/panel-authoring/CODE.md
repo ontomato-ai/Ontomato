@@ -111,21 +111,9 @@ unchecked. `panel register` asks the card owner to register the chart and uses t
 
 ## Open the page composer
 
-Add a `ConversationEntry` member in `manifest.members` when a named assistant or opening line belongs on the page.
-
-```json
-{
-  "reviewHelp": {
-    "component": "ConversationEntry",
-    "agent": "page-default",
-    "prefill": "Review the selected record with me.",
-    "name": "Review with the assistant"
-  }
-}
-```
-
-Place it with `<projection slot="reviewHelp"></projection>`. The button opens the composer and fills the
-optional opening line. The reader sends the message.
+Add a `ConversationEntry` member when the page needs a named assistant or opening line. Use the generated
+[`agent` and `prefill` fields](FIELDS.md) and place the member with `<projection>`. The reader sends the message
+from the opened composer.
 
 ## Register and open
 
@@ -154,6 +142,9 @@ form wiring. Give your own panel and use their own IDs. The example opens at `/a
 Exercise the page and run the [assistant check](SKILL.md#check-the-assistant-from-the-page).
 
 ## What the assistant receives
+
+Use the host's read-only `placement` only to hide a title or back control the host already drew.
+Keep layout responsive to container width and keep data, operations and default selection the same in either placement.
 
 The platform builds page context from the registered entry's title and address and the current object and
 child-object selections in declared panel state. A selection supplies the type and ID, including a child's
