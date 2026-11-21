@@ -27,6 +27,8 @@
   .apps-field dd code { font-size: var(--text-xs); background: var(--ui-fill-tertiary); padding: 0 var(--spacing-xs); border-radius: var(--radius-xs); }
   .apps-locales { display: flex; flex-direction: column; gap: calc(var(--spacing-xs) / 2); }
   .apps-locales span { color: var(--el-text-color-regular); font-size: var(--text-sm); word-break: break-word; }
+  .apps-other-languages { border-block-start: 1px solid var(--ui-divider); padding-block-start: var(--spacing-sm); }
+  .apps-other-languages summary { color: var(--brand-link); cursor: pointer; font-size: var(--text-sm); }
   .apps-mono { font-family: var(--font-mono); font-size: var(--text-xs); word-break: break-all; }
   .apps-inline-actions { display: flex; flex-wrap: wrap; gap: var(--spacing-xs); }
   .apps-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--spacing-sm); }
@@ -68,7 +70,7 @@
         <el-table-column label="名称" min-width="110">
           <template #default="{ row }">
             <span class="apps-name-text">
-              <strong>{{ primaryName(row.names) }}</strong>
+              <strong>{{ localizedText(row.names) }}</strong>
               <small v-if="secondaryName(row.names)">{{ secondaryName(row.names) }}</small>
             </span>
           </template>
@@ -100,8 +102,7 @@
     <template v-else-if="mode === 'detail'">
       <header class="apps-head">
         <div>
-          <h1 class="apps-title">{{ app ? primaryName(app.names) : '一张应用' }}</h1>
-          <p class="apps-sub" v-if="app">{{ app.source === 'builtin' ? '内置应用，随平台维护' : '域内应用' }} · <code>{{ app.id }}</code></p>
+          <h1 class="apps-title">{{ app ? localizedText(app.names) : '一张应用' }}</h1>
         </div>
         <div class="apps-actions">
           <el-button @click="backToList">返回列表</el-button>
@@ -130,36 +131,45 @@
           </div>
           <dl class="apps-grid">
             <div class="apps-field">
-              <dt>名称</dt>
-              <dd class="apps-locales">
-                <span v-for="item in localeRows(app.names)" :key="'n-' + item.key">{{ item.key }}：{{ item.value }}</span>
-                <span v-if="!localeRows(app.names).length">—</span>
-              </dd>
-            </div>
-            <div class="apps-field">
-              <dt>说明</dt>
-              <dd class="apps-locales">
-                <span v-for="item in localeRows(app.descriptions)" :key="'d-' + item.key">{{ item.key }}：{{ item.value || '—' }}</span>
-                <span v-if="!localeRows(app.descriptions).length">—</span>
-              </dd>
-            </div>
-            <div class="apps-field">
-              <dt>图标</dt>
-              <dd><code>{{ app.icon }}</code></dd>
-            </div>
-            <div class="apps-field">
               <dt>来源</dt>
               <dd>{{ app.source === 'builtin' ? '内置' : '域内' }}</dd>
             </div>
             <div class="apps-field">
-              <dt>我能做的</dt>
+              <dt>维护权限</dt>
               <dd>{{ permissionSummary(app) }}</dd>
             </div>
             <div class="apps-field">
               <dt>入口</dt>
-              <dd><code>{{ app.entry.path }}</code>{{ app.entry.renderer ? ' · ' + app.entry.renderer : '' }}{{ app.entry.home ? ' · 首页 ' + app.entry.home : '' }}</dd>
+              <dd><code>{{ app.entry.path }}</code>{{ app.entry.home ? ' · 首页 ' + app.entry.home : '' }}</dd>
             </div>
           </dl>
+          <p class="apps-hint" v-if="localizedText(app.descriptions)">{{ localizedText(app.descriptions) }}</p>
+          <details class="apps-other-languages">
+            <summary>其他语言与技术信息</summary>
+            <dl class="apps-grid">
+              <div class="apps-field" v-if="localeRows(app.names).length > 1">
+                <dt>其他语言名称</dt>
+                <dd class="apps-locales">
+                  <span v-for="item in localeRows(app.names).slice(1)" :key="item.key">{{ item.key }}：{{ item.value }}</span>
+                </dd>
+              </div>
+              <div class="apps-field" v-if="localeRows(app.descriptions).length > 1">
+                <dt>其他语言说明</dt>
+                <dd class="apps-locales">
+                  <span v-for="item in localeRows(app.descriptions).slice(1)" :key="item.key">{{ item.key }}：{{ item.value }}</span>
+                </dd>
+              </div>
+              <div class="apps-field">
+                <dt>应用 ID</dt><dd><code>{{ app.id }}</code></dd>
+              </div>
+              <div class="apps-field">
+                <dt>图标键</dt><dd><code>{{ app.icon }}</code></dd>
+              </div>
+              <div class="apps-field" v-if="app.entry.renderer">
+                <dt>渲染器</dt><dd><code>{{ app.entry.renderer }}</code></dd>
+              </div>
+            </dl>
+          </details>
           <div class="apps-inline-actions">
             <el-button size="small" text @click="openClassCatalogue">查看所属类</el-button>
             <span class="apps-hint" v-if="classLinkNote">{{ classLinkNote }}</span>
@@ -180,7 +190,7 @@
           <p class="apps-hint" v-if="!app.canMaintain">你只能看到自己有权限进的入口，属主已经把其余的裁掉了。</p>
           <el-table :data="app.panelUses" row-key="id" size="small">
             <el-table-column label="菜单名" min-width="160">
-              <template #default="{ row }">{{ primaryName(row.names) || row.pageKey }}</template>
+              <template #default="{ row }">{{ localizedText(row.names) || row.pageKey }}</template>
             </el-table-column>
             <el-table-column label="地址" min-width="220">
               <template #default="{ row }"><span class="apps-mono">{{ row.path }}</span></template>

@@ -228,11 +228,21 @@ await mountPanel({
     const share = usePanelOperation("shareOp", "share");
 
     const mode = ref("view");
+    const showDetail = computed(() => selected.value !== null || mode.value === "edit");
     watch(instance.draft, (draft) => {
       if (draft) mode.value = "edit";
     }, { immediate: true });
 
     const current = computed(() => (record.value.status === "ready" ? record.value.value : null));
+    const ownerIds = computed(() => [...new Set([
+      ...rows.value.map(row => row.ownerId), current.value?.ownerId,
+    ].filter(Boolean))]);
+    const ownersState = usePanelData("owners", "options", () => ({ values: ownerIds.value }));
+    const ownerLabels = computed(() => Object.fromEntries(
+      (ownersState.value.status === "ready" ? ownersState.value.value.options : [])
+        .map(option => [option.primaryKey, option.label]),
+    ));
+    const ownerName = id => ownerLabels.value[id] ?? "—";
 
     const dataRows = computed(() =>
       Object.entries(current.value?.data ?? {}).map(([name, datum]) => ({
@@ -370,7 +380,7 @@ await mountPanel({
 
     return {
       selected, selectedKey, searchDraft, scope, sort, pageNumber, pageSize, nextCursor,
-      list, rows, listStatusText, record, usedBy, usedPanels, hiddenCount, usedByCountText, current,
+      list, rows, listStatusText, record, usedBy, usedPanels, hiddenCount, usedByCountText, current, ownerName, showDetail,
       dataRows, operationRows, inputRows, outputRows,
       copy, remove, grant, revoke, share, canGrant,
       mode, choose, startCreate, startEdit, onSaved, onDiscarded, nextPage, previousPage,
