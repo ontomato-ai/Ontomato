@@ -45,7 +45,9 @@ const props = withDefaults(defineProps<{
    * the panel's commands that set one of them do nothing here, so the header does not offer them at this entry.
    */
   wired?: readonly string[];
-}>(), { shown: true, wired: () => [] });
+  /** When this is an application's frame: the entry it shows, its menu and where that entry's page goes. */
+  currentEntry?: import("./panel-host").DirectPanelRun["currentEntry"];
+}>(), { shown: true, wired: () => [], currentEntry: undefined });
 const emit = defineEmits<{
   /** What a message from this instance carries now. */
   context: [context: import("@ontomato/contracts/page-context").PageContext];
@@ -71,6 +73,7 @@ const view = usePanelInstance(props.port, {
   shown: () => props.shown,
   reopened: () => emit("reopened"),
   withdrawn: () => emit("withdrawn"),
+  currentEntry: props.currentEntry,
 });
 const frame = ref<HTMLIFrameElement | null>(null);
 /** Where the panel goes in the page: the element its own component is mounted in, placed once. */

@@ -23,6 +23,7 @@ export {
   type PlatformPageDraft,
 } from "./page-actions";
 export { providePageHeading, usePageHeading, type PlatformPageHeading } from "./page-heading";
+export { provideApplicationFrame, useApplicationFrame } from "./app-frame";
 export {
   applyTheme, composeThemes, provideApplicationTheme, themeProperties, useApplicationTheme, useAppTheme, type ThemeMode,
 } from "./app-theme";

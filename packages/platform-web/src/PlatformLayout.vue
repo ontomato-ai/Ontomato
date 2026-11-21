@@ -54,6 +54,8 @@ const props = defineProps<{
   pageActions: PlatformPageActions | null;
   /** The shown entry's application theme, assigned on the application's area: its menu and its page, never the rail. */
   appTheme?: PanelThemeOverrides | null;
+  /** The shown application draws its own frame in its area: no menu column, header or gutter of the platform's. */
+  appFramed?: boolean;
   /** The host shows no application at all (its licence is not in force, or the account holds no page). */
   blocked?: { reason: "licence" | "no-pages"; message: string } | null;
 }>();
@@ -107,7 +109,7 @@ const browserWorkspace = computed(() => route.path === "/browser/data" || route.
  * menu in its column, headed by the application's name, with its own entry at the foot (DESIGN.md "Platform shell and
  * layout"). The current row is the page the address shows: a screen of a page (a detail) marks that page.
  */
-const menu = computed(() => (activeApp.value?.frame === "menu" ? activeApp.value : null));
+const menu = computed(() => (activeApp.value?.frame === "menu" && !props.appFramed ? activeApp.value : null));
 const activePageId = computed(() => (route.meta.page as string | undefined) ?? route.path);
 function selectMenuPage(path:string){
   const external=activeApp.value?.id==='ontology'&&!path.startsWith('/ontology/');
@@ -126,7 +128,7 @@ const headerDescription = computed(() =>
   (menu.value || (props.shownPage?.named && props.shownPage.description) ? props.shownPage?.description : activeApp.value?.description)
     ?? props.shownPage?.description ?? null,
 );
-const headerShown = computed(() => !props.blocked && props.shownPage !== null && !props.shownPage.ownHeader);
+const headerShown = computed(() => !props.blocked && props.shownPage !== null && !props.shownPage.ownHeader && !props.appFramed);
 const headerLabels = computed(() => ({
   save: props.labels.save,
   discard: props.labels.discard,
@@ -201,7 +203,7 @@ const headerLabels = computed(() => ({
         <div
           v-else
           class="platform-page-body platform-page-gutter"
-          :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': standalone || shownPage === null, 'browser-workspace': browserWorkspace }"
+          :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': standalone || shownPage === null || appFramed, 'browser-workspace': browserWorkspace }"
         >
           <RouterView />
         </div>

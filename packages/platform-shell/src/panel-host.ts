@@ -283,6 +283,8 @@ export interface PanelInstanceOptions {
   reopened?: () => void;
   /** A kept page shown again is no longer the application's: its use relation was withdrawn or bound elsewhere. */
   withdrawn?: () => void;
+  /** For an application's frame panel: the entry shown in it, the menu and where the entry's page goes. */
+  currentEntry?: DirectPanelRun["currentEntry"];
 }
 
 /** What a failure is called in the panel's error place: its own message, or what it was, verbatim. */
@@ -497,6 +499,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       dirty: reportDirty,
       draftSettled: settleDraft,
       failed: reason => reportFrameFailure({ code: PANEL_LOAD_ERROR_CODES.scriptThrew, message: failureText(reason) }),
+      ...(options.currentEntry ? { currentEntry: options.currentEntry } : {}),
     };
   }
 
