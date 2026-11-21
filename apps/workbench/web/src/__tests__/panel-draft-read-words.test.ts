@@ -17,17 +17,17 @@ const words = (failure: unknown) => draftRefusalText(unreadableDraft(FILE, failu
 
 it("says a draft whose run is gone in words", () => {
   expect(words(answered("NOT_FOUND", "Run not found")))
-    .toBe(`The draft ${FILE} cannot be used: the conversation run that wrote it cannot be found. The page opens without it.`);
+    .toBe(`The draft ${FILE} cannot be used: the conversation that wrote this draft cannot be found. The page opens without it.`);
 });
 
 it("says a draft whose file is not there in words", () => {
   expect(words(answered("PAGE_DRAFT_NOT_FOUND", "Page draft not found")))
-    .toBe(`The draft ${FILE} cannot be used: the run that wrote it has no such file. The page opens without it.`);
+    .toBe(`The draft ${FILE} cannot be used: the conversation that wrote this draft has no such file. The page opens without it.`);
 });
 
 it("says a draft the reader may not read in words", () => {
   expect(words(answered("FORBIDDEN", "Forbidden")))
-    .toBe(`The draft ${FILE} cannot be used: you are not allowed to read it. The page opens without it.`);
+    .toBe(`The draft ${FILE} cannot be used: you are not allowed to read this draft. The page opens without it.`);
 });
 
 it("keeps the platform's own text beside the sentence when it gives no code the page knows", () => {
