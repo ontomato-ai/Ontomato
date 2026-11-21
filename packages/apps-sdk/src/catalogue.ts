@@ -246,12 +246,19 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectGraph",
     role: "control",
     meaning:
-      "Draws the objects of the bound type as a graph joined by the objects of its graph's edge type, and chooses on it the list of node keys one form field of the same panel holds: a choice adds or removes a node, the nodes one edge away from a chosen one are marked, and one action adds them all. It decides nothing about what the nodes stand for or who may read them.",
-    effects: "Reads the node and edge types' lists as the reader; it writes only the form field its slot's field port names.",
+      "Draws the records its `nodes` datum reads as a graph joined by the records its `edges` datum reads, each edge between the node keys its fields name at `edgeEnds`. Bound to a form field through `formField`, it chooses that field's list of node keys: a choice adds or removes a node, the nodes one edge away from a chosen one are marked, and one action adds them all. Otherwise it is the page's graph canvas on the platform's G6 canvas, shared by the ontology graph and visual modeling: a chosen node or edge is the panel's state of the type its datum reads (`selectedNode`, `selectedEdge`), a click on empty canvas lets both go, where the reader puts the nodes is kept per person (`positions`, a personal `node-positions` state) and drawn again from there, and with `editable` a line drawn with Shift from one node to another hands the panel its two ends (`connectFrom`, `connectTo`) for the owner's new-edge form. Fit, relayout (which lets the reader's places go) and a PNG of the view are on the canvas. It decides nothing about what the nodes stand for or who may read them.",
+    effects: "Reads the node and edge types' lists as the reader; it writes the form field its slot's field port names, or the panel state its outputs bind, never the owner.",
     bindsElement: ["PlatformObjectType:*"],
     data: {
       nodes: { results: ["panelRecordList"], required: true },
       edges: { results: ["panelRecordList"], required: true },
+    },
+    outputs: {
+      selectedNode: { kind: "object", objectType: "@data:nodes" },
+      selectedEdge: { kind: "object", objectType: "@data:edges" },
+      connectFrom: { kind: "scalar", type: "string" },
+      connectTo: { kind: "scalar", type: "string" },
+      positions: { kind: "node-positions" },
     },
   }),
   defineComponentMeta({
@@ -441,7 +448,7 @@ export const components: readonly ComponentMetadata[] = [
         // What another component gives itself, and every parameter an owner's read declares in a fixed signature: the
         // page's own code may give any of them (a datum read for a class takes `className`).
         runtimeParams: [
-          "by", "changedField", "className", "cursor", "keyword", "layers", "limit", "node", "page", "path", "rating", "relationKinds",
+          "by", "changedField", "className", "cursor", "defaultAppId", "keyword", "layers", "limit", "node", "page", "path", "rating", "relationKinds",
           "runId", "scope", "search", "section", "size", "sort", "source", "sourceType", "status", "template", "type", "values",
         ],
       },

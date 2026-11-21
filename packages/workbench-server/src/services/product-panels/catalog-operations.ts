@@ -22,7 +22,7 @@ import { applicationCatalogueClient, applicationDraftIdSchema } from "./applicat
 import {
   changeCurrentProductDomainGrant, changeCurrentProductGrant, copyCurrentProduct, deleteCurrentProduct,
 } from "./catalog";
-import { readCurrentPanel, readCurrentProjection, requireCurrentProduct, saveCurrentPanel, saveCurrentProjection } from "./current";
+import { readCurrentPanel, readCurrentPanelLabel, readCurrentProjection, requireCurrentProduct, saveCurrentPanel, saveCurrentProjection } from "./current";
 import { applySubmittedFields } from "./submitted-form-values";
 import type { PanelOperationHost, PanelWriteServerOperation, SinglePanelOperationOutcome } from "./server-operations";
 
@@ -118,6 +118,7 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
       inputSchema: inputSchema as z.ZodType<Input>,
       resultSchema,
       async targetLabel({ initiator: { owner, credentials } }, target) {
+        if (kind === "panel" && name === "delete") return readCurrentPanelLabel(owner, credentials, target.primaryKey);
         const read = kind === "panel" ? readCurrentPanel : readCurrentProjection;
         return (await read(owner, credentials, target.primaryKey)).name;
       },

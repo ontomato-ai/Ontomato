@@ -340,6 +340,9 @@ it("registers the shipped ontology catalogues with addressable creation, preview
   const settingsResponse = await request("GET", "product-panels/builtin-product-agent-settings");
   expect(settingsResponse.status).toBe(200);
   const { panel: settings } = productPanelResponseSchema.parse(await settingsResponse.json());
+  expect(settings.manifest.commands.newAgent).toMatchObject({
+    primary: true, do: { set: { fields: { selected: { literal: null }, mode: { literal: "create" } } } },
+  });
   const formTarget = settings.manifest.members.form!.target;
   expect(formTarget).toHaveProperty("projectionId");
   if (!("projectionId" in formTarget)) throw new Error("Agent settings must publish its form projection");

@@ -120,7 +120,13 @@ export type PanelDeepLinkStateValue = z.infer<typeof panelDeepLinkStateValueSche
 
 /** Checked identities belong to the instance. The declared field supplies the object type of every member. */
 export const panelObjectCollectionValueSchema = z.array(panelObjectRefSchema);
-export const panelStateValueSchema = z.union([panelDeepLinkStateValueSchema, panelObjectCollectionValueSchema]);
+/** The reader's coordinates, stored by node key. Null clears a saved layout. */
+export const panelNodePositionsValueSchema = z.record(z.string().min(1), z.object({
+  x: z.number().finite(), y: z.number().finite(),
+}).strict()).nullable();
+export type PanelNodePositionsValue = z.infer<typeof panelNodePositionsValueSchema>;
+
+export const panelStateValueSchema = z.union([panelDeepLinkStateValueSchema, panelObjectCollectionValueSchema, panelNodePositionsValueSchema]);
 export type PanelStateValue = z.infer<typeof panelStateValueSchema>;
 
 /**
@@ -181,11 +187,17 @@ export type PanelOperationTarget = z.infer<typeof panelOperationTargetSchema>;
  * SDK receives the owner's admitted operation description. A state operation comes from the panel's own declaration.
  */
 export const panelOperationIdSchema = z.string().min(1);
+
+/** The owner's reason, in the reader's language, that this operation would currently be refused. */
+export const panelOperationUnavailableSchema = z.object({
+  reason: z.string().min(1).max(500),
+}).strict();
 export const panelOperationSchema = z
   .object({
     id: panelOperationIdSchema,
     label: z.string().min(1).max(200),
     kind: panelOperationKindSchema,
+    unavailable: panelOperationUnavailableSchema.optional(),
     /** The parameters the operation takes, by name; a form save's parameters are the owner's form fields, read live. */
     inputSchema: runtimeJsonObjectSchema.default({}),
     /** Absent on a state operation: what it changes is the panel's own state, not an object. */
@@ -320,7 +332,11 @@ export const panelPlacementTypeSchema = z.object({
   kind: z.literal("placement"), candidates: panelPlacementCandidatesSchema,
 }).strict();
 
-export const directPanelPortTypeSchema = z.union([ontologyParameterTypeSchema, panelPlacementTypeSchema]);
+export const panelNodePositionsTypeSchema = z.object({ kind: z.literal("node-positions") }).strict();
+
+export const directPanelPortTypeSchema = z.union([
+  ontologyParameterTypeSchema, panelPlacementTypeSchema, panelNodePositionsTypeSchema,
+]);
 export type DirectPanelPortType = z.infer<typeof directPanelPortTypeSchema>;
 
 /** Shapes reserved for the owners of a sub-object position and a live query selection. */
@@ -343,6 +359,8 @@ export function matchesDirectPanelValue(type: DirectPanelPortType, value: unknow
     }
     case "list":
       return Array.isArray(value) && value.every(item => item !== null && matchesDirectPanelValue(type.items, item));
+    case "node-positions":
+      return panelNodePositionsValueSchema.safeParse(value).success;
     case "placement": {
       const placement = panelPlacementSchema.safeParse(value);
       if (!placement.success) return false;
@@ -367,6 +385,7 @@ export function panelPortAccepts(target: DirectPanelPortType, source: DirectPane
   if (target.kind === "child-object")
     return source.kind === "child-object" && target.parentType === source.parentType && target.collection === source.collection;
   if (target.kind === "list") return source.kind === "list" && panelPortAccepts(target.items, source.items);
+  if (target.kind === "node-positions") return source.kind === "node-positions";
   if (source.kind !== "placement") return false;
   const allowed = target.candidates;
   const offered = source.candidates;
@@ -384,6 +403,10 @@ export const panelStateFieldSchema = z.object({
 }).strict().superRefine((field, ctx) => {
   if (field.type.kind === "list" && field.deepLink)
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["deepLink"], message: "Object lists are instance state" });
+  if (field.type.kind === "node-positions") {
+    if (!field.personal) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["personal"], message: "Node positions must be personal state" });
+    if (field.deepLink) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["deepLink"], message: "Node positions cannot be carried in an address" });
+  }
   if (field.default !== undefined && (!matchesDirectPanelValue(field.type, field.default)
     || field.default !== null && ["object", "object-union", "child-object"].includes(field.type.kind))) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["default"], message: "Invalid default value for the declared state type" });

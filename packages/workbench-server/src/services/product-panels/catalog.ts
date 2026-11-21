@@ -19,7 +19,7 @@ import {
   changeProductDomainGrant, changeProductGrant, grantedProductIds, productGrantAllowed, readProductGrantRecords, unregisterProductResource,
   type ProductOwner,
 } from "../product-governance/grants";
-import { insertCurrentProduct, loadCurrentProduct, requireCurrentProduct, requireOrdinaryProjection } from "./current";
+import { insertCurrentProduct, loadCurrentProduct, panelDefinitionProblem, requireCurrentProduct, requireOrdinaryProjection } from "./current";
 import { closeDeletedDefinitionStreams, notifyProductDefinitionChanged } from "./definition-stream";
 import { findPanelUsers, panelReferenceDefinitionSchema } from "./references";
 import { panelsUsingProjection, panelUsers } from "./used-by";
@@ -81,7 +81,7 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
       panelCatalog ? input.template ?? null : null, panelCatalog],
   );
   const edited = new Set(editable);
-  const unavailableItems: { id: string; reason: string }[] = [];
+  const unavailableItems: { id: string; reason: string; revision?: number }[] = [];
   const items = rows.slice(0, input.limit).flatMap(({ sortKey: _sortKey, definition, updatedAt, template, ...row }) => {
     const summary = {
       ...row, ...(template == null ? {} : { template }), updatedAt: updatedAt.toISOString(),
@@ -92,11 +92,8 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
     const parsed = schema.safeParse(definition);
     const result = parsed.success ? productPanelSummarySchema.safeParse(summary) : parsed;
     if (result.success) return [summary];
-    const issue = result.error.issues[0]!;
-    const field = issue.path.length ? `Field '${issue.path.join(".")}'` : "Panel definition";
-    const reason = issue.code === "invalid_type" && issue.received === "undefined"
-      ? `${field} is required.` : `${field} does not match the current panel contract.`;
-    unavailableItems.push({ id: row.id, reason });
+    const removable = row.ownerId === owner.userId || summary.editable;
+    unavailableItems.push({ id: row.id, reason: panelDefinitionProblem(result.error), ...(removable && { revision: row.revision }) });
     return [];
   });
   const last = rows[input.limit - 1];
@@ -113,7 +110,10 @@ export async function currentProductUsedBy(owner: ProductOwner, credentials: Ass
 }
 
 function panelProjectionIds(definition: unknown) {
-  const { manifest } = panelReferenceDefinitionSchema.parse(definition);
+  const parsed = panelReferenceDefinitionSchema.safeParse(definition);
+  // An unreadable outbound binding is insufficient evidence to delete its projection.
+  if (!parsed.success) return [];
+  const { manifest } = parsed.data;
   const ids = new Set(Object.values(manifest.members).flatMap(({ target }) =>
     "projectionId" in target ? [target.projectionId] : []));
   for (const { type, default: value } of Object.values(manifest.state)) {
@@ -129,14 +129,14 @@ async function removeCurrentProduct(client: PoolClient, domainId: string, kind: 
   if (unregisterGrant) await unregisterProductResource(domainId, id);
 }
 
-export async function deleteCurrentProduct(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string, revision: number) {
+export async function deleteCurrentProduct(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string, revision: number | undefined) {
   const cleanup = await transaction(async client => {
     await lockProducts(client, owner);
     const { domainId } = owner;
     const panel = kind === "panel" ? await findCurrentProduct(domainId, kind, id, client) : undefined;
     const authoredPanel = panel?.ownerId === owner.userId ? panel : undefined;
     const current = authoredPanel ?? await requireCurrentProduct(owner, credentials, kind, id, "edit", client);
-    if (current.revision !== revision)
+    if (revision !== undefined && current.revision !== revision)
       throw new HttpError(409, "Definition changed; reload before deleting", "PRODUCT_CONFLICT");
     if (kind === "projection") {
       const usage = await panelsUsingProjection(domainId, id, credentials, client);
@@ -145,7 +145,7 @@ export async function deleteCurrentProduct(owner: ProductOwner, credentials: Ass
       await removeCurrentProduct(client, domainId, kind, id);
       return;
     }
-    const usage = await panelUsers(domainId, id, credentials, client);
+    const usage = await panelUsers(domainId, id, credentials, client, id);
     if (usage.applicationEntries.length || usage.panels.length || usage.hiddenCount || usage.classNames.length)
       throw new HttpError(409, "Panel is in use", PRODUCT_IN_USE, usage);
 
@@ -158,8 +158,8 @@ export async function deleteCurrentProduct(owner: ProductOwner, credentials: Ass
     if (candidates.length) {
       const editable = new Set(await grantedProductIds("edit", credentials));
       for (const { id: projectionId } of candidates) {
-        const users = await findPanelUsers(domainId, "projection", projectionId, client);
-        if (users.some(panel => panel.id !== id)) continue;
+        const users = await findPanelUsers(domainId, "projection", projectionId, client, id);
+        if (users.length) continue;
         if (editable.has(projectionId)) deletedProjectionIds.push(projectionId);
         else retainedProjectionIdsWithoutEdit.push(projectionId);
       }

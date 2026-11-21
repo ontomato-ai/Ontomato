@@ -442,7 +442,7 @@ it("lists healthy skills and only admitted diagnostics through the panel's real 
   const picker = panelOptionListSchema.parse(options.value);
   expect(picker.options).toContainEqual(expect.objectContaining({ value: skillRef(good) }));
   expect(picker.options).not.toContainEqual(expect.objectContaining({ value: skillRef(broken) }));
-  const diagnostic = expect.stringMatching(/projection-broken.*data\.operation\.source.*stored definition is invalid/u);
+  const diagnostic = expect.stringMatching(/^broken · data\.operation\.source · .*stored definition is invalid/u);
   expect(picker.diagnostics).toEqual([diagnostic]);
 
   const query = await readLibrary("rows", { search: skillRef(good).name });

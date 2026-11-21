@@ -81,6 +81,10 @@ assert.ok(Object.keys(graphState).every(name => capabilityMap.state[name].deepLi
 const graphSelection = panelStateFieldSchema.parse(capabilityMap.state.selected);
 const graphAddress = panelAddress("/destination", graphState);
 const graphQuery = new URL(graphAddress, "http://runtime-reference.invalid").search;
+const agentDirectory = JSON.parse(await readFile(new URL(
+  "../../../agent-skills/ontomato-app-builder/examples/vue-agent-directory/registration.json", import.meta.url,
+), "utf8"));
+const draftEntryExample = agentDirectory.applications[0].input.panelUses[0].path;
 const [draftSessionKey, draftRunKey, draftPathKey] = PAGE_DRAFT_QUERY_KEYS;
 const draftQueryExample = new URLSearchParams({
   [draftSessionKey]: "SESSION_ID",
@@ -133,6 +137,10 @@ const contents = [
   "| --- | --- |",
   ...outputRows.map(row => `| ${row.join(" | ")} |`),
   "",
+  "A datum in `error` also carries `retry()`, which reads it again: offer it beside the message. When the platform never",
+  "answered (the request reached nothing), `unreachable` is `true` and `message` already says so in the reader's language;",
+  "show `message` as it is.",
+  "",
   sdkSection("usePanelOperation"),
   "",
   sdkSection("PanelOperationHandle"),
@@ -177,11 +185,14 @@ const contents = [
   "",
   "## Draft links and instance state",
   "",
-  "Append the draft query to the destination entry path and keep any existing entry parameters.",
-  "Use the producing session and run IDs. Pass a path relative to that run, starting with `outputs/drafts/` and",
-  "without a leading slash. Encode that raw path once. The complete draft query has this form:",
+  "Copy the registered entry path, including its initial slash, and keep any existing entry parameters.",
+  "Use the producing session and run IDs. Give `draftPath` only the run-relative artifact path",
+  "`outputs/drafts/<name>.page-draft.json`. Encode that value once.",
   "",
-  asCode(`?${draftQueryExample}`),
+  `The agent directory example opens at ${asCode(`#${draftEntryExample}?${draftQueryExample}`)}.`,
+  "",
+  "A raw `draftPath` of `/outputs/drafts/edit.page-draft.json` starts with a slash and is invalid.",
+  "The encoded query value `draftPath=%2Foutputs%2Fdrafts%2Fedit.page-draft.json` still starts with that slash after decoding.",
   "",
   "The SDK reads the artifact, verifies it was written for the entry's `pageKey`, and offers it to the mounted forms.",
   "A form asks its owner for the target's description, matches `save.draftOperation`, then gives the owner's form read",

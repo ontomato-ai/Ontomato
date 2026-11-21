@@ -6,7 +6,7 @@ import {
   type PanelPlacement,
 } from "@ontomato/contracts/panel-manifest";
 import {
-  authoredReadParameterSource, directReadDeclaration, missingRequiredReadParameters, panelReadInputMatches, panelReadParameterId,
+  authoredReadParameterSource, directProjectionInputAccepts, directReadDeclaration, missingRequiredReadParameters, panelReadInputMatches, panelReadParameterId,
 } from "@ontomato/contracts/panel-projection";
 import {
   builtinProductProjectionInputSchema, productPanelInputSchema, productProjectionInputSchema,
@@ -96,12 +96,12 @@ function collectReferences(
   return references;
 }
 
-async function loadPanels(domainId: string, client: QueryClient) {
+async function loadPanels(domainId: string, client: QueryClient, excluding?: string) {
   const { rows } = await client.query<{ id: string; definition: unknown }>(
     `SELECT id,definition FROM ${currentProductRows("panel")} AS definitions
      WHERE domain_id=$1 OR domain_id IS NULL ORDER BY id`, [domainId],
   );
-  return new Map(rows.map(({ id, definition }) => [id, panelReferenceDefinitionSchema.parse(definition)]));
+  return new Map(rows.filter(row => row.id !== excluding).map(({ id, definition }) => [id, panelReferenceDefinitionSchema.parse(definition)]));
 }
 
 async function loadDetails(domainId: string, client: QueryClient) {
@@ -128,8 +128,8 @@ async function loadSavedPlacements(domainId: string, panels: ReadonlyMap<string,
   return placements;
 }
 
-export async function findPanelUsers(domainId: string, kind: CurrentProductKind, id: string, client: QueryClient = getPostgresPool()) {
-  const [panels, details] = await Promise.all([loadPanels(domainId, client), loadDetails(domainId, client)]);
+export async function findPanelUsers(domainId: string, kind: CurrentProductKind, id: string, client: QueryClient = getPostgresPool(), excluding?: string) {
+  const [panels, details] = await Promise.all([loadPanels(domainId, client, excluding), loadDetails(domainId, client)]);
   const saved = await loadSavedPlacements(domainId, panels, client);
   return Array.from(panels, ([parentId, panel]) => ({ id: parentId, panel }))
     .filter(parent => collectReferences(parent.panel, details, saved.get(parent.id)).some(({ target }) => target.kind === kind && target.id === id))
@@ -199,9 +199,8 @@ async function incompatiblePort(
     if ("item" in value) continue;
     const offered = "state" in value ? source.state[value.state]?.type : undefined;
     if (!("literal" in value) && offered === undefined) return `input '${name}' has no declared value source`;
-    if (type.kind === "json") continue;
-    const accepts = "literal" in value ? matchesDirectPanelValue(type, value.literal)
-      : offered !== undefined && panelPortAccepts(type, offered);
+    const accepts = "literal" in value ? type.kind === "json" || matchesDirectPanelValue(type, value.literal)
+      : offered !== undefined && directProjectionInputAccepts(type, offered);
     if (!accepts) return `input '${name}' does not accept its connected value`;
   }
   for (const [name, value] of Object.entries(wiring.outputs ?? {})) {

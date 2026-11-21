@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { stringify } from "yaml";
 import { z } from "zod";
+import { skillCatalogDiagnosticsSchema } from "@ontomato/contracts/skills";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { type RuntimeSkillRef, type StandardSkillFrontmatter } from "@ontomato/contracts/agent-runtime-skills";
 import {
@@ -59,9 +60,9 @@ function safeField(path: (string | number)[]): string | undefined {
 }
 
 function parseDefinition<T>(
-  schema: z.ZodType<T, z.ZodTypeDef, unknown>, row: CurrentProductRow | undefined, resourceId: string,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>, row: CurrentProductRow | undefined, resourceId: string, panelTitle?: string,
 ): T {
-  if (!row) throw new SkillSourceRecordError({ resourceId, reason: "record_missing" });
+  if (!row) throw new SkillSourceRecordError({ resourceId, ...(panelTitle && { title: panelTitle }), reason: "record_missing" });
   const parsed = schema.safeParse(row.definition);
   if (parsed.success) return parsed.data;
   let issue = parsed.error.issues[0]!;
@@ -70,7 +71,10 @@ function parseDefinition<T>(
     issue = choices.reduce((best, choice) => choice.issues.length < best.issues.length ? choice : best).issues[0]!;
   }
   const field = safeField(issue.path);
-  throw new SkillSourceRecordError({ resourceId, ...(field ? { field } : {}), reason: "invalid_definition" });
+  const title = skillCatalogDiagnosticsSchema.shape.items.element.shape.title.safeParse(panelTitle ?? row.definition.name);
+  throw new SkillSourceRecordError({
+    resourceId, ...(title.success && title.data && { title: title.data }), ...(field && { field }), reason: "invalid_definition",
+  });
 }
 
 const declaredMembers = panelManifestSchema.innerType().shape.members;
@@ -125,7 +129,7 @@ export async function panelSkillSources(
       ]);
       const entries = projectionIds.map((projectionId, index) => {
         const schema = isBuiltinProductId(projectionId) ? builtinProductProjectionInputSchema : productProjectionInputSchema;
-        return [projectionId, parseDefinition<ProjectionDefinition>(schema, rows[index], projectionId)] as const;
+        return [projectionId, parseDefinition<ProjectionDefinition>(schema, rows[index], projectionId, panel.name)] as const;
       });
       const locale = reader.locale ? resolveLocale(reader.locale) : getLocale();
       const hasActions = entries.some(([, projection]) =>
@@ -176,12 +180,12 @@ function describePanel(
     const projection = records.get(projectionId)!;
     const component = components.get(projection.componentId);
     if (!component)
-      throw new SkillSourceRecordError({ resourceId: projectionId, field: "componentId", reason: "component_missing" });
+      throw new SkillSourceRecordError({ resourceId: projectionId, title: panel.name, field: "componentId", reason: "component_missing" });
     const data = Object.fromEntries(Object.entries(projection.data).map(([key, read]) => {
       const declaration = directReadDeclaration(projection, read);
       if (!declaration) {
         const field = safeField(["data", key, "read"]);
-        throw new SkillSourceRecordError({ resourceId: projectionId, field, reason: "invalid_definition" });
+        throw new SkillSourceRecordError({ resourceId: projectionId, title: panel.name, field, reason: "invalid_definition" });
       }
       return [key, { ...read, result: declaration.result }];
     }));
@@ -191,7 +195,7 @@ function describePanel(
       operations: boundProjectionOperations(projection).flatMap(bound => {
         if (!bound.owner && bound.binding.operation.kind === "PlatformOperation") {
           const field = safeField(["operations", bound.name]);
-          throw new SkillSourceRecordError({ resourceId: projectionId, field, reason: "operation_unregistered" });
+          throw new SkillSourceRecordError({ resourceId: projectionId, title: panel.name, field, reason: "operation_unregistered" });
         }
         const label = bound.owner
           ? panelServerOperationLabel(bound.owner.handler, locale)
@@ -350,7 +354,9 @@ function describeDraft(forms: readonly OperationDescription[]): string {
     "Put the selected object's ID in `target.id` when editing an existing object.",
     "An owner's revision, when required, is part of the operation input.",
     "Each run has its own artifact area. Use a distinct path for each draft written in the same run.",
-    `Link to the canonical path from the current page context. Set \`${sessionKey}\` to the producing run's \`$ONTOMATO_SESSION_ID\`, \`${runKey}\` to that run's \`$ONTOMATO_RUN_ID\`, and \`${pathKey}\` to the encoded path of its draft file. For a draft written in a later run, build a new link using that run's ID. The panel fills the form for the reader to review and save.`,
+    `Link to the canonical path from the current page context and preserve the entry's existing query parameters. Set \`${sessionKey}\` to the producing run's \`$ONTOMATO_SESSION_ID\` and \`${runKey}\` to that run's \`$ONTOMATO_RUN_ID\`. For a draft written in a later run, build a new link using that run's ID.`,
+    `The raw value of \`${pathKey}\` is the draft file's path relative to the producing run's artifact area. It starts with \`outputs/drafts/\` and has no leading \`/\`. URL-encode that value exactly once when adding it to the query.`,
+    `Use \`?${sessionKey}=SESSION_ID&${runKey}=RUN_ID&${pathKey}=outputs%2Fdrafts%2Fedit.page-draft.json\` for an \`edit.page-draft.json\` draft. Replace \`SESSION_ID\` and \`RUN_ID\` with the producing run's actual session and run IDs. The panel fills the form for the reader to review and save.`,
     "In your reply, give the reader a Markdown link to the page address you just built so they can open the prefilled form. Use the draft file path only inside `draftPath`. A standalone file link opens a JSON file card.",
   ].join("\n");
 }

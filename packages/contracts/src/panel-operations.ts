@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema, runtimeKeySchema } from "./agent-runtime-values";
 import { panelDownloadReceiptSchema } from "./panel-download";
-import { panelFormTargetSchema, panelObjectIdentitySchema, panelObjectRefSchema, panelOperationCallSchema } from "./panel-manifest";
+import { panelFormTargetSchema, panelObjectIdentitySchema, panelObjectRefSchema, panelOperationCallSchema, panelOperationUnavailableSchema } from "./panel-manifest";
 import {
   panelFormDescriptionSchema, panelFormValuesSchema, panelGroupCountsSchema, panelOptionListSchema,
   panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema, panelRelationNeighborsSchema,
@@ -55,6 +55,7 @@ export const panelOwnerOperationDescriptorSchema = panelOperationDeclarationSche
   /** Display text supplied by the owner in the reader's locale. */
   label: z.string().min(1).max(200),
   target: panelOwnerOperationTargetSchema,
+  unavailable: panelOperationUnavailableSchema.optional(),
   resultSchema: runtimeJsonObjectSchema,
   /** The owner handler shared by human and agent confirmation. */
   inspectImpact: z.object({ handlerRef: z.string().min(1).max(300) }).strict().optional(),
@@ -64,7 +65,7 @@ export type PanelOwnerOperationDescriptor = z.infer<typeof panelOwnerOperationDe
 /** Combine the same declaration shown to authors with facts of the admitted runtime operation. */
 export function describePanelOperationFromDeclaration(
   { id, target, ...staticFields }: PanelOperationDeclaration,
-  { handlerRef = id, slot, target: placedTarget, ...runtime }: Pick<PanelOwnerOperationDescriptor, "label" | "resultSchema" | "inspectImpact"> & {
+  { handlerRef = id, slot, target: placedTarget, ...runtime }: Pick<PanelOwnerOperationDescriptor, "label" | "resultSchema" | "inspectImpact" | "unavailable"> & {
     handlerRef?: string;
     slot?: string;
     target?: PanelOwnerOperationDescriptor["target"];

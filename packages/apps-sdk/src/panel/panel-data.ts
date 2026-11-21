@@ -1,6 +1,7 @@
 import { computed, effectScope, getCurrentInstance, getCurrentScope, inject, shallowRef, toValue, watch, type ComputedRef, type EffectScope, type MaybeRefOrGetter } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { MemberDataState } from "./direct";
+import { readerDataState } from "./member";
 import { directMountKey } from "./direct-projection";
 
 /*
@@ -77,8 +78,8 @@ export function usePanelData(
     });
   }, { immediate: true });
 
-  return computed(() => {
+  return readerDataState(computed(() => {
     if (failure.value) return { status: "error", message: failure.value.message };
     return shown.value?.value ?? { status: "loading" };
-  });
+  }));
 }

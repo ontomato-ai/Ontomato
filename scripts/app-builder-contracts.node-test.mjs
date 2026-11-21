@@ -29,6 +29,26 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { analystCommand } from "../agent-skills/ontomato-analyst/client.mjs";
+import { panelRegistrationClient } from "../agent-skills/ontomato-app-builder/panel-registration.mjs";
+
+test("deletes a panel by ID without loading its obsolete definition", async () => {
+  const received = [];
+  const server = createServer((request, response) => {
+    received.push([request.method, request.url]);
+    response.setHeader("content-type", "application/json");
+    response.statusCode = request.method === "DELETE" ? 200 : 422;
+    response.end(JSON.stringify(request.method === "DELETE" ? { success: true } : { error: "Old manifest" }));
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const client = panelRegistrationClient({ workbenchUrl: `http://127.0.0.1:${server.address().port}` });
+    assert.deepEqual(await client.deletePanel("old-panel"), { success: true });
+    assert.deepEqual(received, [["DELETE", "/api/product-panels/old-panel"]]);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
 
 test("shared analyst numeric options reject invalid values before HTTP", async () => {
   for (const command of [["distinct-values", "person", "id"], ["metrics", "question"], ["knowledge", "question"]])
@@ -312,12 +332,14 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     } else if (request.url === "/api/product-projections/hidden") {
       response.statusCode = 403;
       response.end(JSON.stringify({ error: { message: "Product use Grant required" } }));
-    } else if (request.method === "DELETE" &&
-        request.url === `${inlinePanelPath}?revision=${inlineRecords.get(inlinePanelPath)?.revision}`) {
+    } else if (request.method === "DELETE" && request.url === inlinePanelPath) {
       if (panelInUse) {
         response.statusCode = 409;
         response.end(JSON.stringify({ error: { code: "PRODUCT_IN_USE", message: "Panel is still in use" } }));
-      } else response.end(JSON.stringify(deletedPanel));
+      } else {
+        inlineRecords.delete(inlinePanelPath);
+        response.end(JSON.stringify(deletedPanel));
+      }
     } else if (request.url.startsWith("/api/product-projections/") && request.url.endsWith("/used-by")) {
       response.end(JSON.stringify(projectionUsage));
     } else if (request.url === inlinePanelPath || request.url.startsWith("/api/product-projections/")) {
@@ -718,19 +740,19 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.deepEqual(requests.splice(0).filter(([method, url]) => method !== "GET" || url.includes("/product-"))
       .map(([method, url]) => [method, url]), [["GET", chartQuery], ["GET", storedChartPath]]);
 
-    const deletePath = `${inlinePanelPath}?revision=${inlineRecords.get(inlinePanelPath).revision}`;
     await assert.rejects(run("panel", "delete", "panel", "inline-panel"),
       error => error.stderr.includes("PRODUCT_IN_USE") && error.stderr.includes("Panel is still in use"));
     assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), [
-      ["GET", inlinePanelPath], ["DELETE", deletePath],
+      ["DELETE", inlinePanelPath],
     ]);
     const applicationDelete = await run("panel", "delete", "application", "app-acceptance");
     assert.deepEqual(JSON.parse(applicationDelete.stdout), { kind: "application", id: "app-acceptance", success: true });
     panelInUse = false;
     const panelDelete = await run("panel", "delete", "panel", "inline-panel");
     assert.deepEqual(JSON.parse(panelDelete.stdout), { kind: "panel", id: "inline-panel", ...deletedPanel });
+    assert.equal(inlineRecords.has(inlinePanelPath), false);
     assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), [
-      ["DELETE", applicationPath], ["GET", inlinePanelPath], ["DELETE", deletePath],
+      ["DELETE", applicationPath], ["DELETE", inlinePanelPath],
     ]);
   } finally {
     await rm(directory, { recursive: true });

@@ -435,7 +435,7 @@ const productCataloguePageSchema = z.object({
 export const productPanelListResponseSchema = productCataloguePageSchema.extend({
   items: z.array(productPanelSummarySchema),
   /** Only records this catalogue read is authorized to list can appear here. */
-  unavailableItems: z.array(z.object({ id, reason: z.string().min(1) }).strict()).optional(),
+  unavailableItems: z.array(z.object({ id, reason: z.string().min(1), revision: currentRecordFields.revision.optional() }).strict()).optional(),
 });
 export const productProjectionListResponseSchema = productCataloguePageSchema.extend({
   items: z.array(productProjectionSummarySchema),
@@ -446,6 +446,8 @@ export type ProductProjectionListResponse = z.infer<typeof productProjectionList
 export const deleteProductCurrentQuerySchema = z.object({
   revision: z.coerce.number().pipe(currentRecordFields.revision),
 }).strict();
+/** A panel may be removed by ID even when its stored definition cannot supply a revision to the reader. */
+export const deleteProductPanelQuerySchema = deleteProductCurrentQuerySchema.partial();
 export const deleteProductCurrentResponseSchema = z.object({ success: z.literal(true) }).strict();
 export const deleteProductPanelResponseSchema = deleteProductCurrentResponseSchema.extend({
   deletedProjectionIds: z.array(id),

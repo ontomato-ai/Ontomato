@@ -20,19 +20,22 @@
     <div v-else class="agent-settings-detail">
       <projection v-if="mode === 'edit'" slot="summary"></projection>
       <section-group :title="mode === 'create' ? t('agents.creating') : t('agents.definition')">
-        <projection slot="definition"></projection>
-      </section-group>
-      <section-group :title="t('agents.model')" :description="t('agents.modelHint')">
-        <projection slot="model"></projection>
-      </section-group>
-      <section-group :title="t('agents.skills')" :description="t('agents.skillsHint')">
-        <projection slot="skills"></projection>
-      </section-group>
-      <section-group :title="t('agents.executor')" :description="t('agents.executorHint')">
-        <projection slot="executor"></projection>
-      </section-group>
-      <section-group :title="t('agents.scope')" :description="t('agents.scopeHint')">
-        <projection slot="scope"></projection>
+        <projection slot="definition">
+          <template #after-fields>
+            <section-group :title="t('agents.model')" :description="t('agents.modelHint')">
+              <projection slot="model"></projection>
+            </section-group>
+            <section-group :title="t('agents.skills')" :description="t('agents.skillsHint')">
+              <projection slot="skills"></projection>
+            </section-group>
+            <section-group :title="t('agents.executor')" :description="t('agents.executorHint')">
+              <projection slot="executor"></projection>
+            </section-group>
+            <section-group :title="t('agents.scope')" :description="t('agents.scopeHint')">
+              <projection slot="scope"></projection>
+            </section-group>
+          </template>
+        </projection>
       </section-group>
     </div>
   </two-pane-layout>

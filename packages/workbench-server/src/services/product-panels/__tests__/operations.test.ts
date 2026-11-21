@@ -60,6 +60,8 @@ import {
   prepareHumanPanelOperation, projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor,
 } from "../operations";
 import { panelOperationStore } from "../operation-store";
+import { readAdmittedProjectionOperations } from "../direct-operations";
+import { requireDirectPanelMember } from "../current";
 configureI18n({
   defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: true,
   packs: {
@@ -555,6 +557,33 @@ it("reads the registered owner descriptor for an admitted human panel use", asyn
     .rejects.toMatchObject({ code: "FORBIDDEN" });
   expect(mocks.pages).not.toHaveBeenCalled();
   expect(intents.size).toBe(0);
+});
+
+it("adds owner availability only to a live descriptor for the selected record", async () => {
+  const registration = serverOperations.registeredPanelOperation("schedules.runNow");
+  if (registration?.handler.effect !== "write") throw new Error("Expected the runtime task write handler");
+  const reason = { reason: "The task is not available to run." };
+  const unavailable = vi.fn(async () => reason);
+  mockRegisteredOperation({ ...registration.handler, unavailable });
+  const panel = await mocks.panel();
+  const placement = { ...await requireDirectPanelMember(owner, credentials, panel, "run"), panel, slot: "run" };
+  const actor = { owner, credentials };
+  expect((await readAdmittedProjectionOperations(actor, placement, {})).runNow).not.toHaveProperty("unavailable");
+  expect(unavailable).not.toHaveBeenCalled();
+
+  const { call, intentId: _intentId, ...operation } = action();
+  const target = call.target;
+  const read = await readAdmittedProjectionOperations(actor, placement,
+    { task: { className: target.objectType, primaryKey: target.primaryKey } });
+  expect(read.runNow).toMatchObject({ unavailable: reason });
+  expect(unavailable).toHaveBeenCalledWith(expect.objectContaining({
+    locale: "en", executor: actor,
+  }), target);
+  expect(intents.size).toBe(0);
+
+  const prepared = await prepareHumanPanelOperation(owner, credentials, { ...operation, call });
+  expect(intents.get(prepared.intentId)?.operation).not.toHaveProperty("unavailable");
+  expect(unavailable).toHaveBeenCalledTimes(1);
 });
 
 it("dispatches one frozen batch once and merges affected evidence from successful items only", async () => {

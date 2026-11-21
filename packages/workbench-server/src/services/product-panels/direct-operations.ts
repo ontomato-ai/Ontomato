@@ -1,5 +1,5 @@
 import { panelWriteOperationSnapshotSchema } from "@ontomato/contracts/panel-agent";
-import { panelObjectRefSchema, panelOperationId, panelPortAccepts, type PanelMember, type PanelMemberPath } from "@ontomato/contracts/panel-manifest";
+import { panelObjectRefSchema, panelOperationId, panelOperationUnavailableSchema, panelPortAccepts, type PanelMember, type PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import { projectionOperationTargetMatches } from "@ontomato/contracts/panel-projection";
 import type { ApplicationPanelUse, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
@@ -90,7 +90,7 @@ async function admitBoundOperation(actor: PanelOperationActor, placement: Placem
       ...described, ...placement.nested, id, slot,
       action: { actionId: resolved.actionId, codeHash: resolved.codeHash, object: resolved.object },
     });
-    return { effect: "write" as const, handler, operation, descriptor: described, fixedTarget: selected };
+    return { effect: "write" as const, handler, operation, descriptor: described, fixedTarget: selected, selected };
   }
   if (!owner) return unavailable(id);
   const { handler } = owner;
@@ -109,7 +109,7 @@ async function admitBoundOperation(actor: PanelOperationActor, placement: Placem
   if (draft && !allowsOperationDraft(projection, handler)) return undefined;
   const described = describeServerOperation(handler, locale, slot, draft ? { source: "draft", slot } : descriptor);
   const operation = panelWriteOperationSnapshotSchema.parse({ ...described, ...placement.nested, id, slot });
-  return { effect: "write" as const, handler, operation, descriptor: described,
+  return { effect: "write" as const, handler, operation, descriptor: described, selected,
     fixedTarget: draft ? { kind: "draft" as const } : fixed };
 }
 
@@ -118,16 +118,23 @@ export async function readAdmittedProjectionOperations(actor: PanelOperationActo
 ): Promise<Record<string, PanelOwnerOperationDescriptor>> {
   const descriptions: [string, PanelOwnerOperationDescriptor][] = [];
   for (const bound of boundProjectionOperations(placement.projection)) {
+    let result: Awaited<ReturnType<typeof admitBoundOperation>>;
     try {
-      const result = await admitBoundOperation(actor, placement, bound, input => {
+      result = await admitBoundOperation(actor, placement, bound, input => {
         const value = input === undefined ? undefined : inputs[input];
         if (value == null || Array.isArray(value)) return undefined;
         return placedObject(panelObjectRefSchema.parse(value));
       });
-      if (result) descriptions.push([bound.name, result.descriptor]);
     } catch (error) {
       if (!(error instanceof HttpError) || error.code === "PANEL_OPERATION_DRAFT_UNBOUND") throw error;
+      continue;
     }
+    if (!result) continue;
+    const unavailable = result.effect === "write" && result.selected?.kind === "object"
+      ? await result.handler.unavailable?.(operationHost(actor), result.selected) : undefined;
+    const descriptor = unavailable === undefined ? result.descriptor
+      : { ...result.descriptor, unavailable: panelOperationUnavailableSchema.parse(unavailable) };
+    descriptions.push([bound.name, descriptor]);
   }
   return Object.fromEntries(descriptions);
 }

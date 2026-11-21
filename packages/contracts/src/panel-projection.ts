@@ -5,7 +5,7 @@ import { z } from "zod";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema, formValuesSchema, panelFormOptionSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
-import { directPanelPortTypeSchema, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelOperation, type PanelStateOperation, type PanelStateRef } from "./panel-manifest";
+import { directPanelPortTypeSchema, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, panelPortAccepts, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelOperation, type PanelStateOperation, type PanelStateRef } from "./panel-manifest";
 import { ontologyElementRefSchema, type OntologyElementRef } from "./ontology-element-ref";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import {
@@ -117,7 +117,12 @@ export const panelReadParameterSchemas = {
 
 type ReadInput = DirectProjectionPorts["inputs"][string];
 
+export function directProjectionInputAccepts(target: ReadInput, source: DirectPanelPortType): boolean {
+  return target.kind === "json" ? source.kind !== "node-positions" : panelPortAccepts(target, source);
+}
+
 export function panelReadInputMatches(parameter: PanelReadParameterId, input: ReadInput | undefined): boolean {
+  if (input?.kind === "node-positions") return false;
   switch (parameter) {
     case "changedField":
     case "keyword":
@@ -515,7 +520,7 @@ export function projectionOperation(
   name: string,
   descriptor: PanelOwnerOperationDescriptor,
 ): PanelOperation {
-  const { kind, label, handlerRef, inputSchema, target } = descriptor;
+  const { kind, label, handlerRef, inputSchema, target, unavailable } = descriptor;
   let placed: PanelOperation["target"];
   if (kind === "form.save") placed = { source: "draft", slot: member };
   else if (target.source === "literal" || target.source === "none") placed = target;
@@ -524,7 +529,10 @@ export function projectionOperation(
     if (binding && "state" in binding) placed = { source: "state", state: binding.state };
     else if (binding && "literal" in binding) placed = { source: "literal", literal: panelObjectRefSchema.parse(binding.literal) };
   }
-  return { id: panelOperationId(member, name), kind, label, handlerRef, inputSchema, target: placed, slot: member };
+  return {
+    id: panelOperationId(member, name), kind, label, handlerRef, inputSchema, target: placed, slot: member,
+    ...(unavailable !== undefined && { unavailable }),
+  };
 }
 
 /** The wire description is shared by the SDK's header and the generated skill. */

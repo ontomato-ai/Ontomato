@@ -252,6 +252,7 @@ export default {
     "dataEmpty": "Nothing to show",
     "dataForbidden": "You do not have access to this",
     "dataAwaiting": "Select an item first",
+    "dataUnreachable": "The data could not be read. Try again.",
     "memberUnavailable": "This is not available here"
   },
   "nav": {
