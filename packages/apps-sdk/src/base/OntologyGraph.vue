@@ -20,7 +20,7 @@ import {
 } from "@ontomato/foundation-ui/graph/g6";
 import { usePanelContext } from "../panel/context";
 import type { MemberDataState } from "../panel/direct";
-import { useMember, useMemberRead, type PanelMemberContext } from "../panel/member";
+import { useMember, useMemberParam, useMemberRead, type PanelMemberContext } from "../panel/member";
 import type {
   PlatformGraphEdge,
   PlatformGraphNeighborsResult,
@@ -105,6 +105,20 @@ class MemberReadForbiddenError extends Error {
 const { t, te } = useI18n();
 const panel = usePanelContext();
 const member = useMember();
+
+/**
+ * The relation kinds the graph shows: its `visibleRelationKinds`, a list of relation kinds (`platform:OntologyRelationKind`,
+ * keyed by the kind's ID) bound to the panel's state, read as well as written — so a page's own kind filter and the graph
+ * follow one choice. Holding nothing, every kind is shown.
+ */
+const visibleKindsParam = useMemberParam("visibleRelationKinds");
+const shownKinds = computed<ReadonlySet<string> | null>(() => {
+  const held = visibleKindsParam.value.value;
+  if (held === null) return null;
+  if (!Array.isArray(held)) throw new Error("visibleRelationKinds holds a list of relation kinds");
+  return new Set(held.map((kind) => (kind as { primaryKey: string }).primaryKey));
+});
+const kindShown = (relationKind: string) => shownKinds.value === null || shownKinds.value.has(relationKind);
 
 function nameNodes(nodes: readonly PlatformGraphNode[]) {
   const byType = new Map<string, { primaryKey: string; label: string }[]>();
@@ -371,7 +385,7 @@ const typeCanvasEdges = computed<GraphCanvasEdge[]>(() => {
     : null;
   const edges: GraphCanvasEdge[] = [];
   for (const relation of schema.relationKinds) {
-    if (!visibleIds.has(relation.from)) continue;
+    if (!visibleIds.has(relation.from) || !kindShown(relation.id)) continue;
     const targets = typeof relation.to === "string" ? [relation.to] : relation.to;
     const label = relationDisplayName(relation.id, relation.label, relation.labelKey);
     for (const target of targets) {
@@ -390,17 +404,33 @@ const typeCanvasEdges = computed<GraphCanvasEdge[]>(() => {
 });
 
 // ---- Instance-mode computed graph ----
-const visibleInstanceNodes = computed<readonly PlatformGraphNode[]>(() =>
+const layerInstanceNodes = computed<readonly PlatformGraphNode[]>(() =>
   [...instanceNodes.value.values()].filter((node) => isLayerVisible(node.layer)),
 );
+const layerInstanceNodeIds = computed(() => new Set(layerInstanceNodes.value.map((node) => encodeGraphNodeId(node))));
 
-const visibleInstanceNodeIds = computed(() => new Set(visibleInstanceNodes.value.map((node) => encodeGraphNodeId(node))));
-
+/** The edges drawn: between nodes of the layers shown, of the relation kinds shown. */
 const visibleInstanceEdges = computed<readonly PlatformGraphEdge[]>(() =>
   [...instanceEdges.value.values()].filter(
-    (edge) => visibleInstanceNodeIds.value.has(encodeGraphNodeId(edge.from)) && visibleInstanceNodeIds.value.has(encodeGraphNodeId(edge.to)),
+    (edge) => kindShown(edge.relationKind)
+      && layerInstanceNodeIds.value.has(encodeGraphNodeId(edge.from)) && layerInstanceNodeIds.value.has(encodeGraphNodeId(edge.to)),
   ),
 );
+
+/**
+ * The nodes drawn: those of the layers shown; with only some relation kinds shown, a neighbor stays only while an edge
+ * of a kind shown reaches it — the start and every node the reader expanded stay regardless.
+ */
+const visibleInstanceNodes = computed<readonly PlatformGraphNode[]>(() => {
+  if (shownKinds.value === null) return layerInstanceNodes.value;
+  const reached = new Set(visibleInstanceEdges.value.flatMap((edge) => [encodeGraphNodeId(edge.from), encodeGraphNodeId(edge.to)]));
+  return layerInstanceNodes.value.filter((node) => {
+    const id = encodeGraphNodeId(node);
+    return reached.has(id) || expandedNodes.value.has(id) || id === rootNodeId.value;
+  });
+});
+
+const visibleInstanceNodeIds = computed(() => new Set(visibleInstanceNodes.value.map((node) => encodeGraphNodeId(node))));
 
 const instanceCategories = computed<readonly string[]>(() => {
   const seen = new Set<string>();
