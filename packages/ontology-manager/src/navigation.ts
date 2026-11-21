@@ -132,14 +132,17 @@ const entries: readonly { path: string; icon: Component; count?: keyof OntologyR
 
 /**
  * The Manager's navigation entries in display order (ontology, assets, knowledge); the counts come from the page's
- * Manager counts.
+ * Manager counts. A row showing a count is what reads them, once per page load, whatever page is open: a native page or a
+ * panel entry shows the same menu with the same counts.
  */
 export function managerNavigation(counts: ManagerCounts) {
+  const counted = (count: keyof OntologyResourceCounts) => () => {
+    counts.ensure();
+    return counts.values[count];
+  };
   return {
     groups: [managerGroups.ontology, managerGroups.assets, managerGroups.knowledge],
-    pages: pages.map(({ count, ...entry }): ManagerNavigationPage =>
-      count ? { ...entry, count: () => counts.values[count] } : entry
-    ),
-    entries: entries.map(({ count, ...row }): ManagerEntryRow => count ? { ...row, count: () => counts.values[count] } : row),
+    pages: pages.map(({ count, ...entry }): ManagerNavigationPage => count ? { ...entry, count: counted(count) } : entry),
+    entries: entries.map(({ count, ...row }): ManagerEntryRow => count ? { ...row, count: counted(count) } : row),
   };
 }
