@@ -35,6 +35,14 @@
     }, {
       "permissionCode": "analysis-agent",
       "skill": {"namespace": {"kind": "provider", "provider": "workbench"}, "name": "ontomato-agent-builder"}
+    }],
+    "panelUses": [{
+      "id": "ontology-actions",
+      "pageKey": "actions",
+      "path": "/ontology/assets/actions",
+      "panelId": "builtin-product-ontology-actions",
+      "access": {"permissionCode": "action-management"},
+      "names": {"en": "Actions", "zh-CN": "动作"}
     }]
   }
 }
