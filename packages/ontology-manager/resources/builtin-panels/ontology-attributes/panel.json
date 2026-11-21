@@ -1,0 +1,184 @@
+{
+  "manifest": {
+    "state": {
+      "className": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Attribute"
+        },
+        "deepLink": true
+      },
+      "createIn": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "creating": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "deepLink": true
+      }
+    },
+    "members": {
+      "types": {
+        "component": "PanelData",
+        "type": "platform:ObjectType",
+        "data": {
+          "types": "list"
+        },
+        "id": "builtin-product-323cfb62-1b9d-49d8-866e-7fa6aaade80d"
+      },
+      "attributes": {
+        "component": "PanelData",
+        "type": "platform:Attribute",
+        "data": {
+          "rows": {
+            "read": "list",
+            "params": {
+              "className": {
+                "state": "className"
+              }
+            }
+          }
+        },
+        "id": "builtin-product-ca4fdbad-3485-46df-b70d-d33e2a48de36"
+      },
+      "detail": {
+        "component": "PanelData",
+        "target": "selected",
+        "type": "platform:Attribute",
+        "data": {
+          "record": "record"
+        },
+        "id": "builtin-product-83e60864-e754-4960-aaf4-c1be3208e597"
+      },
+      "form": {
+        "component": "ObjectForm",
+        "target": "selected",
+        "type": "platform:Attribute",
+        "data": {
+          "form": "form",
+          "createForm": "createForm"
+        },
+        "operation": "platform:Attribute.save",
+        "config": {
+          "fixedFields": {
+            "/className": {
+              "state": "createIn"
+            }
+          }
+        },
+        "id": "builtin-product-296cb589-24bc-4ea4-b615-6e0e6b111092"
+      },
+      "setPrimaryKey": {
+        "component": "OperationButton",
+        "type": "platform:Attribute",
+        "operation": "attributes.setPrimaryKey",
+        "target": "selected",
+        "config": {
+          "type": "default"
+        },
+        "id": "builtin-product-6711dfc6-7d12-41da-8971-dbef06a14fe0"
+      },
+      "remove": {
+        "component": "OperationButton",
+        "type": "platform:Attribute",
+        "operation": "attributes.delete",
+        "target": "selected",
+        "config": {
+          "type": "danger"
+        },
+        "id": "builtin-product-42563142-b833-4d56-8b84-1715fccd9019"
+      }
+    },
+    "commands": {
+      "create": {
+        "labelKey": "attr.command.create",
+        "primary": true,
+        "do": {
+          "set": {
+            "fields": {
+              "creating": {
+                "literal": true
+              },
+              "selected": {
+                "literal": null
+              },
+              "createIn": {
+                "state": "className"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "zh-CN": {
+        "panel.name": "属性",
+        "attr.description": "统一维护各对象类型的属性、数据类型与键配置",
+        "attr.search": "筛选属性",
+        "attr.allTypes": "全部对象类型",
+        "attr.count": "{count} 项",
+        "attr.colAttribute": "属性",
+        "attr.colOwner": "所属对象类型",
+        "attr.colType": "数据类型",
+        "attr.colBizKey": "业务键",
+        "attr.colPrimaryKey": "主键",
+        "attr.yes": "是",
+        "attr.empty": "没有找到属性",
+        "attr.loading": "正在读取属性…",
+        "attr.forbidden": "你没有读取属性的权限",
+        "attr.pick": "选择一条属性查看和编辑，或新建属性。",
+        "attr.creating": "新建属性",
+        "attr.editing": "编辑属性",
+        "attr.close": "关闭",
+        "attr.setPrimaryKey": "设为主键",
+        "attr.alreadyPrimaryKey": "已是主键",
+        "attr.command.create": "新建属性"
+      },
+      "en": {
+        "panel.name": "Attributes",
+        "attr.description": "Maintain the attributes, data types and keys of every object type",
+        "attr.search": "Filter attributes",
+        "attr.allTypes": "All object types",
+        "attr.count": "{count} items",
+        "attr.colAttribute": "Attribute",
+        "attr.colOwner": "Object type",
+        "attr.colType": "Data type",
+        "attr.colBizKey": "Business key",
+        "attr.colPrimaryKey": "Primary key",
+        "attr.yes": "Yes",
+        "attr.empty": "No attributes found",
+        "attr.loading": "Loading attributes…",
+        "attr.forbidden": "You cannot read attributes",
+        "attr.pick": "Select an attribute to view and edit it, or create one.",
+        "attr.creating": "New attribute",
+        "attr.editing": "Edit attribute",
+        "attr.close": "Close",
+        "attr.setPrimaryKey": "Set as primary key",
+        "attr.alreadyPrimaryKey": "Already the primary key",
+        "attr.command.create": "New attribute"
+      }
+    }
+  }
+}
