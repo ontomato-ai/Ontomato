@@ -5,13 +5,10 @@
     flex-direction: column;
     gap: var(--page-content-gap);
     min-height: 100%;
+    container-type: inline-size;
+    overflow-wrap: anywhere;
   }
-  .sdk-catalogue-head h2 {
-    margin: 0 0 var(--spacing-xs);
-    font-size: var(--text-title);
-    font-weight: var(--font-semibold);
-  }
-  .sdk-catalogue-head p {
+  .sdk-catalogue-hint {
     margin: 0;
     color: var(--el-text-color-secondary);
     font-size: var(--text-sm);
@@ -112,7 +109,6 @@
     color: var(--el-text-color-secondary);
     font-weight: var(--font-medium);
     font-size: var(--text-xs);
-    white-space: nowrap;
   }
   .sdk-table td {
     color: var(--el-text-color-primary);
@@ -131,7 +127,6 @@
   }
   .sdk-table td code {
     margin-right: var(--spacing-xs);
-    white-space: nowrap;
   }
   .sdk-table code,
   .sdk-inline-code {
@@ -155,20 +150,21 @@
     font-size: var(--text-sm);
     line-height: 1.7;
   }
-  @media (max-width: 62rem) {
+  @container (max-width: 48rem) {
     .sdk-catalogue-body { grid-template-columns: minmax(0, 1fr); }
+    .sdk-catalogue-list {
+      max-height: min(45vh, 22rem);
+      overflow-y: auto;
+    }
   }
 </style>
 
 <div id="app" v-cloak>
   <section class="sdk-catalogue">
-    <header class="sdk-catalogue-head">
-      <h2>{{ t('components.title') }}</h2>
-      <p>{{ t('components.hint') }}</p>
-    </header>
+    <p class="sdk-catalogue-hint">{{ t('components.hint') }}</p>
 
     <div class="sdk-catalogue-body">
-      <div class="sdk-catalogue-pane">
+      <div class="sdk-catalogue-pane sdk-catalogue-list">
         <projection slot="list"></projection>
       </div>
 
