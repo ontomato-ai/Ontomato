@@ -36,21 +36,32 @@ const value = computed(() => valueAt(controls.values.value, props.path));
 const off = computed(() => props.disabled || props.field.readOnly || controls.busy.value);
 const control = computed(() => props.field.control);
 const set = (next: RuntimeJsonValue) => controls.set(props.path, next);
-/** A choice whose options' values are objects (A's contract): the same options never mix objects and plain values. */
-const objectOptions = computed(() => control.value.kind === "select" && control.value.options.some((option) => typeof option.value === "object"));
-/** The declared option a value is, by its place among the options, whatever order the value's keys come in; "" for none. */
+const isObject = (held: RuntimeJsonValue | undefined) => held !== null && typeof held === "object" && !Array.isArray(held);
+/**
+ * A choice whose values are objects (A's contract): its options are objects — the same options never mix them with plain
+ * values — or it has none left and holds an object still.
+ */
+const objectOptions = computed(() => control.value.kind === "select"
+  && (control.value.options.some((option) => typeof option.value === "object")
+    || (control.value.multiple ? rows.value.some(isObject) : isObject(value.value))));
+/** The place of an object the options no longer offer: shown as such, and kept until the reader clears it. */
+const RETIRED = -1;
+/** The declared option a value is, by its place among the options, whatever order its keys come in; none, or no longer offered. */
 function optionIndex(held: RuntimeJsonValue | undefined): number | "" {
-  if (control.value.kind !== "select") return "";
+  if (control.value.kind !== "select" || held === undefined || held === null) return "";
   const found = findPanelFormOption(control.value.options, held);
-  return found ? control.value.options.indexOf(found) : "";
+  return found ? control.value.options.indexOf(found) : RETIRED;
 }
-/** Writes the chosen options' own values; a choice cleared leaves the field out of the values. */
+const holdsRetired = computed(() => (control.value.kind === "select" && control.value.multiple ? rows.value.map(optionIndex) : [optionIndex(value.value)]).includes(RETIRED));
+/** Writes the chosen options' own values (an object no longer offered stays as it was); a choice cleared leaves the field out. */
 function chooseObject(chosen: number | "" | number[] | undefined) {
   if (control.value.kind !== "select") return;
   const { options } = control.value;
-  if (Array.isArray(chosen)) set(chosen.map((index) => options[index]!.value));
-  else if (chosen === "" || chosen === undefined) controls.remove(props.path);
-  else set(options[chosen]!.value);
+  if (Array.isArray(chosen)) {
+    const retired = rows.value.filter((held) => optionIndex(held) === RETIRED);
+    set(chosen.flatMap((index) => (index === RETIRED ? [] : [options[index]!.value])).concat(chosen.includes(RETIRED) ? retired : []));
+  } else if (chosen === "" || chosen === undefined) controls.remove(props.path);
+  else if (chosen !== RETIRED) set(options[chosen]!.value);
 }
 
 const text = computed(() => (typeof value.value === "string" ? value.value : ""));
@@ -155,6 +166,7 @@ function setFrequency(next: FrequencyDraft) {
         :disabled="option.disabled"
         :title="option.disabledReason ?? option.description ?? undefined"
       ></el-option>
+      <el-option v-if="holdsRetired" :value="RETIRED" :label="t('platform.formOptionNoLonger')" disabled></el-option>
     </el-select>
     <el-select
       v-else-if="control.kind === 'select'"

@@ -40,7 +40,7 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-it("shows the declared option an object value is, and leaves a cleared choice out of the values", async () => {
+function open(described: typeof field, held: Record<string, unknown>) {
   const mount = mountDirectPanel({
     manifest,
     run: directRun({ pageKey: "entries", url: () => "/entries", label: () => "Entries", initial: { entry: { className: APPLICATION, primaryKey: "app-1" } } }),
@@ -51,8 +51,7 @@ it("shows the declared option an object value is, and leaves a cleared choice ou
     confirmOperation: noOperations.confirmOperation,
     read: async (request): Promise<ProductPanelReadResponse> => request.operations
       ? { status: "ready", value: { save } as never }
-      // The owner answers the value with its keys in another order than the option declares them.
-      : { status: "ready", value: { fields: [field], values: { defaultAgent: { agentKind: "knowledge-governance", kind: "preset" } }, errors: [], revision: 1,
+        : { status: "ready", value: { fields: [described], values: held, errors: [], revision: 1,
         save: { method: "PUT", path: "/entries/:id", bodySchema: {}, draftOperation: "entry.update" } } as never },
   });
   const element = document.createElement("div");
@@ -60,16 +59,32 @@ it("shows the declared option an object value is, and leaves a cleared choice ou
   const app = createApp({ render: () => mount.member("form") });
   app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus).mount(element);
   const shown = () => element.querySelector('[data-field="/defaultAgent"] .el-select__selected-item:not(.is-hidden)')?.textContent?.trim();
-  await vi.waitFor(() => expect(shown()).toBe("Knowledge governance"));
+  async function clear() {
+    const select = element.querySelector<HTMLElement>('[data-field="/defaultAgent"] .el-select__wrapper')!;
+    select.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+    await nextTick();
+    element.querySelector<HTMLElement>('[data-field="/defaultAgent"] .el-select__clear')!.click();
+    await nextTick();
+  }
+  return { mount, app, shown, clear };
+}
 
-  const handle = mount.instance.forms.handle("form")!;
+it("shows the declared option an object value is, and leaves a cleared choice out of the values", async () => {
+  // The owner answers the value with its keys in another order than the option declares them.
+  const { mount, app, shown, clear } = open(field, { defaultAgent: { agentKind: "knowledge-governance", kind: "preset" } });
+  await vi.waitFor(() => expect(shown()).toBe("Knowledge governance"));
   // Cleared: the field is left out, not null and not "".
-  const select = element.querySelector<HTMLElement>('[data-field="/defaultAgent"] .el-select__wrapper')!;
-  select.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
-  await nextTick();
-  element.querySelector<HTMLElement>('[data-field="/defaultAgent"] .el-select__clear')!.click();
-  await nextTick();
-  expect(Object.hasOwn(handle.values.value, "defaultAgent")).toBe(false);
+  await clear();
+  expect(Object.hasOwn(mount.instance.forms.handle("form")!.values.value, "defaultAgent")).toBe(false);
+  app.unmount();
+  mount.dispose();
+});
+
+it("says an object the options no longer offer is so, and still lets the reader clear it", async () => {
+  const { mount, app, shown, clear } = open({ ...field, control: { kind: "select", options: [] } }, { defaultAgent: { kind: "id", id: "retired" } });
+  await vi.waitFor(() => expect(shown()).toBe("No longer offered"));
+  await clear();
+  expect(Object.hasOwn(mount.instance.forms.handle("form")!.values.value, "defaultAgent")).toBe(false);
   app.unmount();
   mount.dispose();
 });

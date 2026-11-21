@@ -259,6 +259,7 @@ export default {
     "formInvalidJson": "Not valid JSON: {message}",
     "formFixInvalid": "Correct the marked fields before saving",
     "formControlUnavailable": "This field cannot be edited here yet",
+    "formOptionNoLonger": "No longer offered",
     "formAvatarIcon": "Avatar icon",
     "formAvatarColor": "Avatar colour",
     "formAvatarColorOption": "Colour {index}",
