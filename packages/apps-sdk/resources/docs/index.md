@@ -121,7 +121,9 @@ them as any other value. While the state holds nothing (no class chosen), the fi
 
 When no official component draws a part the way the page needs, the panel draws it itself. Declare a member whose
 projection uses `@ontomato/sdk:PanelData`: it draws nothing and takes any data the projection names, under names of
-your choosing. Read each datum in the page's code with `usePanelData(member, name)`:
+your choosing. Do not place it in the template: the platform holds every member the panel declares from the start,
+placed or not, so its data and operations are there for the page's code. Read each datum in the page's code with
+`usePanelData(member, name)`:
 
 ```js
 import { computed, ref } from "vue";
