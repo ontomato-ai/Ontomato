@@ -31,7 +31,7 @@ const labels: PanelHostLabels = {
   notStarted: "Not started",
   failures: { fileUnavailable: "Could not load {file}", scriptThrew: "Script failed", scriptRejected: "Script rejected" },
     content: { styleOutside: "Style outside" },
-    draft: { toAgent: "To agent", toAgentText: "Unused: {reason}" },
+    draft: { opening: "Opening the draft", toAgent: "To agent", toAgentText: "Unused: {reason}" },
     refresh: "Refresh",
 };
 
@@ -530,6 +530,40 @@ describe("the panel host", () => {
     expect(a.draftRefusal.value).toBe("");
     expect(a.address.value).toBe(left);
     expect(instance.addresses).toEqual([left]);
+    scope.stop();
+  });
+
+  it("opens a linked draft before the page is shown, and shows the page once the draft is in or refused", async () => {
+    const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
+    const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
+    const link = (runId: string) => new URLSearchParams({ draftSessionId: "6f1c2d3e-4b5a-4c6d-8e7f-a0b1c2d3e4f5", draftRunId: runId, draftPath: "outputs/drafts/task.page-draft.json" });
+    const page = shallowRef(`/applications/app-a/a/schedules?${link("1b2c3d4e-5f6a-4b7c-9d8e-f9a0b1c2d3e4")}`);
+    const scope = effectScope();
+    const a = scope.run(() => usePanelInstance(port.port("use-a"), { labels,
+      label: (source) => source.kind === "registered" ? source.panel.name : "",
+      address: () => page.value,
+      initial: () => ({}),
+    }))!;
+    await a.ready;
+    const instance = port.started("use-a");
+    // The panel runs, out of sight, while its draft is opened.
+    expect(a.direct.value).not.toBeNull();
+    expect(a.draftOpening.value).toBe(true);
+    instance.run.draftOpened();
+    expect(a.draftOpening.value).toBe(false);
+
+    // Another draft linked at the same page is opened first again; one it refuses shows the page with the reason.
+    page.value = `/applications/app-a/a/schedules?${link("2b2c3d4e-5f6a-4b7c-9d8e-f9a0b1c2d3e4")}`;
+    await nextTick();
+    expect(a.draftOpening.value).toBe(true);
+    instance.run.draftRefused("The draft is in an old shape");
+    expect(a.draftOpening.value).toBe(false);
+    expect(a.draftRefusal.value).toBe("The draft is in an old shape");
+
+    // An address with no draft opens nothing first.
+    page.value = "/applications/app-a/a/schedules";
+    await nextTick();
+    expect(a.draftOpening.value).toBe(false);
     scope.stop();
   });
 

@@ -81,7 +81,7 @@ it("hands a panel's own code the same words and a way to read again", async () =
     manifest,
     run: {
       pageKey: "relations", url: () => "/relations", label: () => "Relations", initial: {},
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => { throw reason; },
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",

@@ -54,7 +54,7 @@ function mountForms(forms: readonly FormMember[], initial: Record<string, unknow
     manifest,
     run: {
       pageKey: "page", url: () => "/page", label: () => "Page", initial: initial as never,
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => failed.push(reason),
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",

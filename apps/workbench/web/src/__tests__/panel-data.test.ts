@@ -59,7 +59,7 @@ it("reads a member's datum for the panel's own code, as its projection declares,
     manifest,
     run: {
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => { throw reason; },
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",
@@ -114,7 +114,7 @@ it("says so when the projection declares no such datum", async () => {
     manifest,
     run: {
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: chosen("t-1") },
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => { throw reason; },
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",
@@ -152,7 +152,7 @@ it("keeps a member whose projection cannot be read to itself: the rest of the pa
     manifest: twoMembers,
     run: {
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: chosen("t-1") },
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => failed.push(reason),
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",
@@ -189,7 +189,7 @@ it("says where to call it when it is called outside a component's setup", async 
     manifest,
     run: {
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => { throw reason; },
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",
@@ -224,7 +224,7 @@ it("reads a list and its counts again when an operation reports their type chang
     manifest: definePanel({ state: {}, members: { board: { target: { projectionId: counted.id } } }, commands: {} }),
     run: {
       pageKey: "board", url: () => "/board", label: () => "Board", initial: {},
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => { throw reason; },
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",
@@ -279,7 +279,7 @@ it("runs a member's operation from the panel's own code, found by the member and
     manifest,
     run: {
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => { throw reason; },
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",
@@ -337,7 +337,7 @@ it("opens a platform address from the panel's own code through the host, and hea
     manifest,
     run: {
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => { throw reason; },
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",
@@ -371,7 +371,7 @@ it("draws a document as the product's Markdown, a file as code, and tells the re
     manifest,
     run: {
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => { throw reason; },
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",
@@ -402,7 +402,7 @@ it("shows a read the platform could not answer as the datum's failure, with the 
     manifest,
     run: {
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: chosen("t-1") },
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => { throw reason; },
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",

@@ -54,7 +54,7 @@ it("says the owner's refusal of a draft on its form, and does not fail the panel
     manifest,
     run: {
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => failed.push(reason),
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",
@@ -90,7 +90,7 @@ it("says on its form an owner's failure to check a draft's values, and does not 
     manifest,
     run: {
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => failed.push(reason),
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",
@@ -137,7 +137,7 @@ it("opens the panel as it is when its draft cannot be read, and says why in the 
     run: {
       pageKey: "tasks", url: () => `/tasks?${query}`, label: () => "Tasks", initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
       state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
-      failed: (reason) => failed.push(reason), draftRefused: (text) => refused.push(text),
+      failed: (reason) => failed.push(reason), draftRefused: (text) => refused.push(text), draftOpened: () => {},
     },
     messages: {}, locale: ref("en"), defaultLocale: "en", translate: (key, params) => i18n.global.t(key, params ?? {}),
     requests: {

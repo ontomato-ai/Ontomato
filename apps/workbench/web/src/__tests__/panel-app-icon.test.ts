@@ -30,7 +30,7 @@ it("draws the platform's application icon for a key from the panel's own module"
     manifest,
     run: {
       pageKey: "apps", url: () => "/apps", label: () => "Apps", initial: {},
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => { throw reason; },
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",

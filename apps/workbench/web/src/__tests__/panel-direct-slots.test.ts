@@ -54,7 +54,7 @@ it("draws another member placed in a member's slot, where the component puts tha
     manifest,
     run: {
       pageKey: "knowledge", url: () => "/knowledge", label: () => "Knowledge", initial: { checked: [item("k-1")] } as never,
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {},
       failed: (reason) => { throw reason; },
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",

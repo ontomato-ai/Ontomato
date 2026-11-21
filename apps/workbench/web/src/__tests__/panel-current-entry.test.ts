@@ -41,7 +41,7 @@ async function run(template: string, currentEntry?: DirectPanelRun["currentEntry
     manifest: frame(template),
     run: {
       pageKey: "frame", url: () => "/applications/app-school/orders", label: () => "School", initial: {},
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, failed,
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {}, failed,
       ...(currentEntry ? { currentEntry } : {}),
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",

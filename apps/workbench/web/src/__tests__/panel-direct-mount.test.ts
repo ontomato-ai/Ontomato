@@ -56,7 +56,7 @@ function open() {
     run: {
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
       state: (state) => reports.state.push(state), context: (context) => reports.context.push(context),
-      operations: () => {}, dirty: (dirty) => reports.dirty.push(dirty), draftSettled: () => {}, draftRefused: () => {}, failed: (reason) => { throw reason; },
+      operations: () => {}, dirty: (dirty) => reports.dirty.push(dirty), draftSettled: () => {}, draftRefused: () => {}, draftOpened: () => {}, failed: (reason) => { throw reason; },
     },
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests, use: { applicationId: "app-tasks", useId: "tasks" },

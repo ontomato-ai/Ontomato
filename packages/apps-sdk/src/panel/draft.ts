@@ -98,6 +98,8 @@ export class PanelFormAdapters {
     link: PageDraftLink;
     taken: DraftTaken;
     current: () => boolean;
+    /** The draft is in its form, or changes nothing there: the page is now what it opens. */
+    opened: () => void;
     offered: Set<string>;
     declined: Set<string>;
     offering: boolean;
@@ -117,10 +119,14 @@ export class PanelFormAdapters {
 
   /**
    * Holds a draft and offers it to the registered forms one at a time, in registration order, until one takes it; a
-   * form that registers later is offered it then. `taken` hears the draft as the form shows it.
+   * form that registers later is offered it then. `taken` hears the draft as the form shows it; `opened` hears that a form
+   * took it, whether or not it changed anything there.
    */
-  hold(draft: PageDraft<Record<string, unknown>>, link: PageDraftLink, taken: DraftTaken, current: () => boolean = () => true): void {
-    this.#held.value = { draft, link, taken, current, offered: new Set(), declined: new Set(), offering: false };
+  hold(
+    draft: PageDraft<Record<string, unknown>>, link: PageDraftLink, taken: DraftTaken, current: () => boolean = () => true,
+    opened: () => void = () => {},
+  ): void {
+    this.#held.value = { draft, link, taken, current, opened, offered: new Set(), declined: new Set(), offering: false };
     this.#offerNext();
   }
 
@@ -153,6 +159,7 @@ export class PanelFormAdapters {
       if (changed.size)
         // A create draft saved once addresses the object it created from then on.
         held.taken({ slot: next, operation: draft.operation, target: addressed(draft), created: draft.created, form: draft.form, changed, link: held.link });
+      held.opened();
     }, (reason: unknown) => {
       held.offering = false;
       if (this.#held.value === held) this.#held.value = null;
@@ -189,9 +196,10 @@ export async function receivePanelDraft(
   link: PageDraftLink,
   taken: DraftTaken,
   current: () => boolean = () => true,
+  opened: () => void = () => {},
 ): Promise<void> {
   const draft = await source.readPageDraft(link.sessionId, link.runId, link.path);
   if (!current()) return;
   if (draft.pageKey !== pageKey) throw new PanelDraftUnusable(link.path, { kind: "otherPage", pageKey: draft.pageKey });
-  adapters.hold(draft, link, taken, current);
+  adapters.hold(draft, link, taken, current, opened);
 }
