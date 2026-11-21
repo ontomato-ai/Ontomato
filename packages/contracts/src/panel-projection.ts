@@ -419,6 +419,9 @@ const fieldShape = z.object({
   readOnly: z.boolean(),
   readOnlyReason: z.string().min(1).optional(),
   refreshOnChange: z.boolean().optional(),
+  advanced: z.literal(true).optional().describe(
+    "Group this field with the advanced fields at the end of its form, object, or array row. The group starts collapsed and opens when it contains a field error.",
+  ),
 }).strict();
 
 export type PanelFormField = z.infer<typeof fieldShape> & {
