@@ -22,7 +22,7 @@ public class PanelResources {
 
         DefaultAgentRefusal(int index, String message, RestClientResponseException cause) {
             super(HttpStatus.CONFLICT, message, cause);
-            field = "/panelUses/" + index + "/defaultAgent";
+            field = "/values/panelUses/" + index + "/defaultAgent";
         }
 
         String field() {

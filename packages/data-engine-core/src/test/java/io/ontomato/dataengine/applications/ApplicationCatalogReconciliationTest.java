@@ -832,7 +832,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value("PAGE_DEFAULT_AGENT_UNAVAILABLE"))
                 .andExpect(jsonPath("$.message").value(reason))
-                .andExpect(jsonPath("$.errors[0].field").value("/panelUses/1/defaultAgent"))
+                .andExpect(jsonPath("$.errors[0].field").value("/values/panelUses/1/defaultAgent"))
                 .andExpect(jsonPath("$.errors[0].code").value("target_unavailable"))
                 .andExpect(jsonPath("$.errors[0].message").value(reason));
             assertTrue(records().isEmpty());
