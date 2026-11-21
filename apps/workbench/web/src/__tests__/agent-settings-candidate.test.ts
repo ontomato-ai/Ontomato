@@ -242,6 +242,14 @@ it("opens a new agent with the owner's defaults, and its create is the owner's t
     const name = fieldItem("/name")!.querySelector("input")!;
     name.value = "e2e-new-agent";
     name.dispatchEvent(new Event("input"));
+    // A new agent's model, skills and data scope are chosen as an existing one's are, into the form that creates it.
+    await pick("/modelSelection/modelId", "GPT-4o");
+    await pick("/skills", "SQL");
+    await vi.waitFor(() => expect(node("Invoice")).toBeTruthy(), { timeout: 5000 });
+    node("Invoice").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await vi.waitFor(() => expect(node("Invoice").classList.contains("selected")).toBe(true));
+    expect(fieldItem("/modelSelection/modelId")?.textContent).toContain("GPT-4o");
+    expect(fieldItem("/skills")?.textContent).toContain("SQL");
     await nextTick();
     formSave().click();
     await vi.waitFor(() => expect(document.querySelector(".panel-host-coded .sdk-owner-form")?.textContent).toContain(PREVIEW_REFUSAL));

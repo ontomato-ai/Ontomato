@@ -8,20 +8,46 @@ const RELOAD_BUTTON_LABEL = "刷新页面";
  * Inline head script injected into built and dev entry documents.
  *
  * Covers the whole entry module graph (the entry module script, its static chunk imports,
- * modulepreloads, and entry stylesheets). When any part of that graph fails with 404/502 or fails
- * to mount `#app` before `load` (cases where `vite:preloadError` never fires), this listener
- * fetches the latest index.html once with HTTP cache bypass, reloads once, and otherwise renders
- * a visible refresh prompt instead of leaving a blank screen.
+ * modulepreloads, and entry stylesheets). When any part of that graph fails with 404/502, or the app
+ * has not mounted `#app` within a grace period after `load` (cases where `vite:preloadError` never
+ * fires), this listener fetches the latest index.html once with HTTP cache bypass, reloads once, and
+ * otherwise renders a visible refresh prompt instead of leaving a blank screen.
+ *
+ * The app counts as mounted once Vue marks `#app` (`data-v-app`), even while its root still renders only a placeholder:
+ * a platform that mounts after its router resolves is not a failed one. A prompt shown before the app mounted goes away,
+ * with its button, the moment it does, so a working page never holds the prompt where focus can reach it.
  */
 export const ENTRY_RECOVERY_SCRIPT = `(function () {
   var RELOAD_KEY = ${JSON.stringify(RELOAD_KEY)};
   var UPDATE_MESSAGE = ${JSON.stringify(UPDATE_MESSAGE)};
   var RELOAD_BUTTON_LABEL = ${JSON.stringify(RELOAD_BUTTON_LABEL)};
+  var NOTICE_ID = "ontomato-stale-entry-notice";
+  var MOUNT_GRACE_MS = 10000;
   var handled = false;
 
   function isAppMounted() {
     var root = document.getElementById("app");
-    return Boolean(root && root.childElementCount > 0);
+    if (!root) return false;
+    if (root.hasAttribute("data-v-app")) return true;
+    for (var child = root.firstElementChild; child; child = child.nextElementSibling)
+      if (child.id !== NOTICE_ID) return true;
+    return false;
+  }
+
+  /** Calls \`mounted\` once the app has mounted \`#app\` (now, or when it does). */
+  function whenAppMounts(mounted) {
+    var root = document.getElementById("app");
+    if (isAppMounted()) {
+      mounted();
+      return;
+    }
+    if (!root || typeof MutationObserver !== "function") return;
+    var observer = new MutationObserver(function () {
+      if (!isAppMounted()) return;
+      observer.disconnect();
+      mounted();
+    });
+    observer.observe(root, { attributes: true, childList: true });
   }
 
   function failedEntryResource(target) {
@@ -71,12 +97,12 @@ export const ENTRY_RECOVERY_SCRIPT = `(function () {
   function showUpdatePrompt() {
     var render = function () {
       if (isAppMounted()) return;
-      if (document.getElementById("ontomato-stale-entry-notice")) return;
+      if (document.getElementById(NOTICE_ID)) return;
       var target = document.getElementById("app") || document.body;
       if (!target) return;
       var isDark = document.documentElement.classList.contains("dark");
       var wrap = document.createElement("div");
-      wrap.id = "ontomato-stale-entry-notice";
+      wrap.id = NOTICE_ID;
       wrap.setAttribute("role", "alert");
       wrap.style.cssText =
         "min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif;" +
@@ -102,6 +128,11 @@ export const ENTRY_RECOVERY_SCRIPT = `(function () {
       card.appendChild(button);
       wrap.appendChild(card);
       target.appendChild(wrap);
+      // The app mounted after all: the prompt and its button go, and the next failure may recover again.
+      whenAppMounts(function () {
+        if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+        clearReloadMark();
+      });
     };
     if (document.body) {
       render();
@@ -150,13 +181,17 @@ export const ENTRY_RECOVERY_SCRIPT = `(function () {
 
   window.addEventListener("load", function () {
     if (handled) return;
-    if (isAppMounted()) {
+    if (!document.getElementById("app")) return;
+    // A platform may mount after \`load\` (it reads its configuration first): it has the grace period to do so.
+    var settled = false;
+    whenAppMounts(function () {
+      settled = true;
       clearReloadMark();
-      return;
-    }
-    if (document.getElementById("app")) {
-      triggerRecovery();
-    }
+    });
+    if (settled) return;
+    setTimeout(function () {
+      if (!settled && !isAppMounted()) triggerRecovery();
+    }, MOUNT_GRACE_MS);
   });
 })();`;
 

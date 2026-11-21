@@ -6,28 +6,17 @@ import { mountPanel, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
 const APPLICATION = "platform:Application";
 const PANEL = "platform:ProductPanel";
 
-const LOCALE_ORDER = ["zh-CN", "en"];
-
-function localeKeys(map) {
-  const keys = Object.keys(map ?? {});
-  const ordered = LOCALE_ORDER.filter((key) => keys.includes(key));
-  return [...ordered, ...keys.filter((key) => !ordered.includes(key))];
-}
-
 function localeRows(map) {
-  return localeKeys(map).map((key) => ({ key, value: map[key] }));
+  const locales = [...new Set([document.documentElement.lang, "en", ...Object.keys(map ?? {})])];
+  return locales.filter(key => map?.[key]).map(key => ({ key, value: map[key] }));
 }
 
-function primaryName(names) {
-  for (const key of LOCALE_ORDER) if (names?.[key]) return names[key];
-  const first = Object.values(names ?? {})[0];
-  return first ?? "";
+function localizedText(text) {
+  return localeRows(text)[0]?.value ?? "";
 }
 
 function secondaryName(names) {
-  const rest = localeKeys(names).filter((key) => names[key] !== primaryName(names));
-  const other = rest.map((key) => names[key]).find(Boolean);
-  return other ?? "";
+  return localeRows(names).find((item, index, rows) => index > 0 && item.value !== rows[0].value)?.value ?? "";
 }
 
 function accessText(access) {
@@ -92,7 +81,7 @@ const Applications = {
     const isFirstPage = computed(() => cursors.value.length === 0);
 
     watch(rows, (list) => {
-      instance.nameObjects(APPLICATION, list.map((row) => ({ primaryKey: row.id, label: primaryName(row.names) || row.id })));
+      instance.nameObjects(APPLICATION, list.map((row) => ({ primaryKey: row.id, label: localizedText(row.names) || row.id })));
     }, { immediate: true });
 
     watch(() => values.value.search, (value) => {
@@ -245,7 +234,7 @@ const Applications = {
     function groupText(groupKey) {
       if (!groupKey) return "—";
       const group = (app.value?.groups ?? []).find((item) => item.key === groupKey);
-      return group ? `${primaryName(group.names) || group.key} · ${group.sort}` : groupKey;
+      return group ? `${localizedText(group.names) || group.key} · ${group.sort}` : groupKey;
     }
 
     function permissionSummary(current) {
@@ -287,7 +276,7 @@ const Applications = {
     });
 
     const groupChoices = computed(() => (app.value?.groups ?? []).map((group) => ({
-      key: group.key, label: `${primaryName(group.names) || group.key} · ${group.sort}`,
+      key: group.key, label: `${localizedText(group.names) || group.key} · ${group.sort}`,
     })));
 
     function fillEntry(use) {
@@ -383,7 +372,7 @@ const Applications = {
 
     async function removeApplication() {
       if (!app.value) return;
-      askConfirm(`删除应用「${primaryName(app.value.names) || app.value.id}」？删除后它的入口一起消失，不能撤回。`, doRemoveApplication);
+      askConfirm(`删除应用「${localizedText(app.value.names) || app.value.id}」？删除后它的入口一起消失，不能撤回。`, doRemoveApplication);
     }
 
     async function doRemoveApplication() {
@@ -460,7 +449,7 @@ const Applications = {
       searchText, scope, pageSize, pageIndex, isFirstPage, listError, actionError, actionNote, classLinkNote,
       scheduleSearch, setScope, setSize, nextPage, firstPage, openRow, backToList, startCreate, createdApplication,
       openApplication, openClassCatalogue, openPanelCatalogue, usedPanels, inspectedPanelId, inspectedProjections,
-      inspectPanel, groupText, permissionSummary, localeRows, primaryName, secondaryName,
+      inspectPanel, groupText, permissionSummary, localeRows, localizedText, secondaryName,
       accessText, agentText, inputsText, themeText,
       formSection, closeForm, discardForm, finishForm,
       entryOpen, entryEditing, entryError, entry, groupChoices, startAddEntry, startEditEntry, submitEntry, removeEntry,
