@@ -42,8 +42,6 @@ interface PanelContext {
 }
 ```
 
-`type PanelPlacement = "conversation" | "page";`
-
 ### PanelInstance
 
 ```ts

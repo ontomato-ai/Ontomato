@@ -88,7 +88,7 @@ const directCode = await readFile(new URL("../../apps-sdk/src/panel/direct.ts", 
 const directSource = ts.createSourceFile("direct.ts", directCode, ts.ScriptTarget.ESNext, true);
 const sdkTypes = new Map(directSource.statements.filter(ts.isTypeAliasDeclaration)
   .map(statement => [statement.name.text, statement.getText(directSource).replace(/^export /u, "")]));
-assert.ok(sdkTypes.has("MemberDataState") && sdkTypes.has("PanelPlacement"));
+assert.ok(sdkTypes.has("MemberDataState"));
 const outputRows = panelDataStateSchema.options.map(variant => [
   asCode(variant.shape.status.value),
   Object.keys(variant.shape).filter(name => name !== "status").map(asCode).join(", "),
@@ -108,8 +108,6 @@ const contents = [
   sdkSection("usePanelContext"),
   "",
   sdkFields("PanelContext", ["instance", "t", "navigate", "notify"]),
-  "",
-  asCode(sdkTypes.get("PanelPlacement")),
   "",
   sdkFields("PanelInstance", ["state", "pageContext", "onObjectChanged", "refreshObjects"]),
   "",
