@@ -544,6 +544,8 @@ describe("the panel host", () => {
       address: () => page.value,
       initial: () => ({}),
     }))!;
+    // Said at once, while the panel is still being read.
+    expect(a.draftOpening.value).toBe(true);
     await a.ready;
     const instance = port.started("use-a");
     // The panel runs, out of sight, while its draft is opened.
