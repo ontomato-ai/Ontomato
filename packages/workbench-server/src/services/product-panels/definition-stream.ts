@@ -1,5 +1,5 @@
 import type {PanelDefinitionSnapshot,PanelMemberSnapshot,ProductDefinitionTarget,ProductDefinitionRevision,ProductDefinitionStreamFrame} from '@ontomato/contracts/product-subscriptions';
-import {productPanelSchema,type ProductDefinitionChangedEvent} from '@ontomato/contracts/product-panels';
+import {productPanelSchema,type ProductDefinitionChangedEvent,type ProductPanel} from '@ontomato/contracts/product-panels';
 import type {ProductOwner} from '../product-governance/grants';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {HttpError} from '../../utils/errors';
@@ -44,6 +44,13 @@ export async function requirePanelDefinitions(
 ): Promise<PanelDefinitionSnapshot> {
   const row = await requireDefinition(owner, credentials, 'panel', panelId);
   const panel = productPanelSchema.parse(currentProductRecord(row, false));
+  return snapshotPanelDefinitions(owner, credentials, panel, readPageSkillContext);
+}
+
+export async function snapshotPanelDefinitions(
+  owner: ProductOwner, credentials: AssistantCredentials, panel: ProductPanel,
+  readPageSkillContext?: (root: PanelDefinitionSnapshot['panel']) => Promise<PanelDefinitionSnapshot['pageSkillContext']>,
+): Promise<PanelDefinitionSnapshot> {
   const root = { id: panel.id, revision: panel.revision };
   const pageSkillContext = await readPageSkillContext?.(root);
   const fixedMembers = Object.entries(panel.manifest.members).filter(([, { target }]) =>
