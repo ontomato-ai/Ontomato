@@ -75,6 +75,9 @@ const batchOutcome = {
   affected: { objects: [knowledge("a")], objectTypes: [BUSINESS_KNOWLEDGE] },
 };
 
+/** What the owner says of its delete now, when it would refuse it (a function an action uses). */
+let unavailable: { reason: string } | null = null;
+
 /** Node's coordinator, as the frame and its host reach it. */
 function coordinator() {
   const intents = new Map<string, Record<string, unknown>>();
@@ -84,7 +87,8 @@ function coordinator() {
     // A member's operations, as the owner admits them: the delete, by the projection's name for it.
     if (request.method === "POST" && request.path === "/api/product-panels/read") {
       const { memberPath } = request.body as { operations: true; memberPath: { member: string }[] };
-      return Response.json({ status: "ready", value: { delete: descriptions[`${memberPath.at(-1)!.member}.delete`] } });
+      const described = descriptions[`${memberPath.at(-1)!.member}.delete`]!;
+      return Response.json({ status: "ready", value: { delete: unavailable ? { ...described, unavailable } : described } });
     }
     if (request.method === "POST" && request.path === "/api/panel-operations/intents") {
       const body = request.body as { operationId: string; calls?: { target: { primaryKey: string } }[] };
@@ -202,4 +206,18 @@ it("runs one batch over the checked objects, reports each, and keeps checked the
     ["success", "a: Done"], ["refusal", "b: Another entry uses this note"], ["failure", "c: The knowledge service failed"],
   ]);
   expect(context.instance.state.values.value.checkedKnowledge).toEqual(checked.slice(1));
+});
+
+it("shows an operation its owner would refuse now as off, with the owner's reason beside it, and prepares nothing", async () => {
+  unavailable = { reason: "A function an action uses cannot be deleted" };
+  try {
+    const { sent } = await open({ selectedKnowledge: { className: BUSINESS_KNOWLEDGE, primaryKey: "a" } }, "remove");
+    await vi.waitFor(() => expect(buttonOf(0).textContent).toContain("A function an action uses cannot be deleted"));
+    const button = buttonOf(0).querySelector<HTMLButtonElement>("button")!;
+    expect(button.disabled).toBe(true);
+    button.click();
+    expect(writes(sent)).toEqual([]);
+  } finally {
+    unavailable = null;
+  }
 });
