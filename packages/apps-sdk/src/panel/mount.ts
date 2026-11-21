@@ -158,6 +158,8 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
       operations: (operations) => send({ kind: "operations", operations }),
       // A draft the reader saved or discarded: the host takes its link out of the address, if the address still names it.
       draftSettled: (draft) => send({ kind: "draft-settled", draft }),
+      // A panel in a frame has no way to tell its host of a refused draft beside the panel; it fails as it did.
+      draftRefused: (refusal) => failed(refusal),
       failed,
     },
   });

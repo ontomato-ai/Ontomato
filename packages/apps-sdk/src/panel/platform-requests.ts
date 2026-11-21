@@ -3,6 +3,7 @@ import { PanelMemberUnavailable } from "./direct";
 import { pageDraftReadSchema } from "@ontomato/contracts/page-draft";
 import type { PageDraftLink } from "@ontomato/contracts/page-draft";
 import type { PlatformRequests } from "./platform-objects";
+import { unreadableDraft } from "./draft-refusal";
 import { PANEL_MEMBER_RENDER_HEADER, productPanelReadResponseSchema, type ProductPanelReadRequest, type ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 
 /*
@@ -11,15 +12,21 @@ import { PANEL_MEMBER_RENDER_HEADER, productPanelReadResponseSchema, type Produc
  */
 
 /** Reads the draft one run wrote. */
+/** The draft a link names, as the platform reads it; one it cannot read is a draft the page cannot use, saying why. */
 export async function readPageDraft(requests: PlatformRequests, sessionId: string, runId: string, path: string) {
   const query = new URLSearchParams({ path }).toString();
-  const response = await requests.request(
-    `/assistant/sessions/${encodeURIComponent(sessionId)}/runs/${encodeURIComponent(runId)}/page-draft?${query}`,
-    {},
-    "",
-  );
+  let response: Response;
+  try {
+    response = await requests.request(
+      `/assistant/sessions/${encodeURIComponent(sessionId)}/runs/${encodeURIComponent(runId)}/page-draft?${query}`,
+      {},
+      "",
+    );
+  } catch (failure) {
+    throw unreadableDraft(path, failure);
+  }
   const body = await response.json();
-  if (!response.ok) throw new Error(body.error?.message ?? `The draft at ${path} could not be read`);
+  if (!response.ok) throw unreadableDraft(path, Object.assign(new Error(typeof body.error === "string" ? body.error : body.error?.message ?? `HTTP ${response.status}`), { payload: body }));
   return pageDraftReadSchema.parse(body);
 }
 

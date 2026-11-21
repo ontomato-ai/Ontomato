@@ -124,6 +124,11 @@ export interface DirectPanelRun {
   dirty(dirty: boolean): void;
   /** The reader saved or discarded the draft the address links. */
   draftSettled(draft: PageDraftLink): void;
+  /**
+   * The draft the address names cannot be used here, in one sentence in the reader's words: the panel goes on as it is,
+   * and the host shows the sentence above it for the reader to dismiss.
+   */
+  draftRefused(text: string): void;
   /** The panel cannot run (a draft no form takes, a draft that could not be read), and why. */
   failed(reason: unknown): void;
   /**
@@ -498,6 +503,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       operations: offered => (operations.value = offered),
       dirty: reportDirty,
       draftSettled: settleDraft,
+      draftRefused: text => (notice.value = text),
       failed: reason => reportFrameFailure({ code: PANEL_LOAD_ERROR_CODES.scriptThrew, message: failureText(reason) }),
       ...(options.currentEntry ? { currentEntry: options.currentEntry } : {}),
     };
