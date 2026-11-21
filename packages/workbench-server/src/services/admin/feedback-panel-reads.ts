@@ -128,8 +128,9 @@ export function createFeedbackReadAdapter(owner: ProductOwner, viewer: Assistant
 const exportInputSchema = queryInputSchema.pick({ search: true, sourceType: true, rating: true })
   .extend({ timeZone: z.string() });
 
-export const feedbackExportOperation: PanelReadServerOperation = {
+export const feedbackExportOperation = {
   handlerRef: EXPORT_FEEDBACK,
+  labelKey: "panels.feedback.export",
   binding: { kind: "PlatformOperation", id: EXPORT_FEEDBACK },
   kind: "action",
   effect: "read",
@@ -151,4 +152,4 @@ export const feedbackExportOperation: PanelReadServerOperation = {
     });
     return { kind: "file", ...file };
   },
-};
+} satisfies PanelReadServerOperation & { labelKey: string };

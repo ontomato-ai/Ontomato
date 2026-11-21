@@ -195,6 +195,7 @@ const deleteKnowledgeImpact: PanelImpactInspector = {
 export const m7ServerOperations = [
   {
     handlerRef: `${BUSINESS_KNOWLEDGE}.save`,
+    labelKey: "panels.knowledge.save",
     kind: "form.save",
     binding: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE },
     effect: "write",
