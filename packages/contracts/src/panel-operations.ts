@@ -20,6 +20,7 @@ import {
   platformOntologyCountsResponseSchema, platformOntologyNeighborsResponseSchema, platformOntologyObjectsResponseSchema,
   platformOntologyStartResponseSchema,
 } from "./platform-ontology-data";
+import { productCatalogueGrantsSchema } from "./product-governance";
 import type { PanelReadResultId } from "./platform-object-types";
 
 const inputTarget = z.object({ source: z.literal("input"), input: runtimeKeySchema }).strict();
@@ -96,6 +97,7 @@ export const panelReadResultSchemas = {
   productProjectionUsedBy: productProjectionUsedBySchema,
   productPanelUsedBy: productPanelUsedBySchema,
   productPanelMembers: panelManifestSchema.innerType().shape.members,
+  productCatalogueGrants: productCatalogueGrantsSchema,
   applicationCatalogue: applicationCatalogueQueryResultSchema,
   applicationRecord: applicationCatalogueRecordSchema,
   applicationEntries: applicationCatalogueEntriesSchema,
