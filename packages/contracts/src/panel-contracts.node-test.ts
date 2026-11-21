@@ -568,6 +568,31 @@ test("a panel manifest validates events, state and placements", () => {
   }).success, false);
 });
 
+test("one named header event can be primary in saved and authoring manifests", async () => {
+  const { panelAuthoringManifestSchema } = await import("./panel-authoring");
+  const manifest = {
+    state: { editing: { type: { kind: "scalar", type: "boolean" }, deepLink: true } },
+    members: { row: { target: { projectionId: "row" } } },
+  };
+  const create = { labelKey: "create", primary: true, do: { set: { fields: { editing: { literal: true } } } } };
+  const close = { labelKey: "close", do: { set: { fields: { editing: { literal: false } } } } };
+  const valid = { ...manifest, events: { create, close } };
+
+  for (const schema of [panelManifestSchema, panelAuthoringManifestSchema]) {
+    assert.deepEqual(schema.parse(valid).events, valid.events);
+    for (const [events, path] of [
+      [{ create, close: { ...close, primary: true } }, ["events", "close", "primary"]],
+      [{ create: { ...create, on: { member: "row", output: "activated" } } }, ["events", "create", "primary"]],
+      [{ create: { ...create, labelKey: undefined } }, ["events", "create", "primary"]],
+      [{ create: { ...create, primary: false } }, ["events", "create", "primary"]],
+    ] as const) {
+      const result = schema.safeParse({ ...manifest, events });
+      assert.equal(result.success, false);
+      if (!result.success) assert.deepEqual(result.error.issues[0]?.path, path);
+    }
+  }
+});
+
 test("entry resolution and personal-state scope use the actual use and nested path", async () => {
   const { applicationEntryResolutionSchema, applicationPanelReferencesRequestSchema } = await import("./product-panels");
   const { panelPersonalStateWriteRequestSchema } = await import("./panel-host");

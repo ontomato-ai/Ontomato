@@ -85,7 +85,7 @@ class GovernanceWindowTest extends PostgresTestDatabase {
     var filter=new io.ontomato.dataengine.controller.QueryGrantFilter(grants);
     ReflectionTestUtils.setField(filter,"executions",executions);
     http=MockMvcBuilders.standaloneSetup(new KnowledgeGovernanceController(governance,access))
-      .addFilters(filter).setControllerAdvice(new OntologyAgentErrors()).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+      .addFilters(filter).setControllerAdvice(new OntologyAgentErrors((language, key) -> key)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
   }
   @AfterEach void stopFixture() {if(server!=null)server.stop(0);}
   private JSONObject binding(String id) {

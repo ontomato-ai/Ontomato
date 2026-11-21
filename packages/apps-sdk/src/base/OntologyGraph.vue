@@ -180,6 +180,11 @@ const relationLabelKeyById = new Map(platformRelationKinds.map((kind) => [kind.i
 
 const rootEl = ref<HTMLElement | null>(null);
 const canvas = ref<InstanceType<typeof G6GraphCanvas> | null>(null);
+// The canvas is there only while something is drawn: one that appears after an empty or loading view (a layer shown
+// again, a start whose read finished first) shows what it draws in the middle, not at the graph's origin in the corner.
+watch(canvas, (shown, before) => {
+  if (shown && !before) void shown.fit({ maxZoom: 1.15, padding: 36 });
+});
 const paletteSize = ref(0);
 
 const loading = ref(false);

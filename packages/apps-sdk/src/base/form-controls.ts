@@ -13,6 +13,8 @@ export interface FormControls {
   readonly errors: Readonly<Ref<Readonly<Record<string, string>>>>;
   readonly changed: Readonly<Ref<ReadonlySet<string>>>;
   readonly busy: Readonly<Ref<boolean>>;
+  /** Read-only reasons the form says once for itself, because its owner gives them to several fields; a field skips them. */
+  readonly sharedReadOnlyReasons: Readonly<Ref<ReadonlySet<string>>>;
   set(path: string, value: RuntimeJsonValue): void;
   /**
    * Rearranges the rows of the array at `path`, `order[next] = previous`; a row left out is removed. Messages and marks

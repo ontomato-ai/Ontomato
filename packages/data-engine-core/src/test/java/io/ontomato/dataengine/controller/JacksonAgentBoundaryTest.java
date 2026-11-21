@@ -55,7 +55,7 @@ class JacksonAgentBoundaryTest {
     var controller = new MetricSettlementController(mock(WorkbenchServiceAuthentication.class),
         authorization, settlement, sessions);
     var mvc = MockMvcBuilders.standaloneSetup(controller)
-        .setControllerAdvice(new OntologyAgentErrors())
+        .setControllerAdvice(new OntologyAgentErrors((language, key) -> key))
         .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
     var response = mvc.perform(post("/ontology/ai/metrics/settle-from-dataset")
         .contentType(MediaType.APPLICATION_JSON).content("""
@@ -212,7 +212,7 @@ class JacksonAgentBoundaryTest {
     return MockMvcBuilders.standaloneSetup(
             new OntologyAgentController(
                 host, access, mock(AgentRuntimeClient.class), mock(OntologyRetrievalService.class)))
-        .setControllerAdvice(new OntologyAgentErrors())
+        .setControllerAdvice(new OntologyAgentErrors((language, key) -> key))
         .setMessageConverters(new MappingJackson2HttpMessageConverter())
         .build();
   }

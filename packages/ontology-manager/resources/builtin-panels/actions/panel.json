@@ -89,6 +89,9 @@
         "component": "OperationButton",
         "target": "selected",
         "operation": "actions.delete",
+        "config": {
+          "type": "danger"
+        },
         "id": "builtin-product-97a87bd6-78e8-4282-808c-a0972e2cfc2d"
       },
       "newAction": {
@@ -164,7 +167,6 @@
         "negativeEffect": "What can go wrong",
         "noMeaning": "The owner recorded no business meaning for this code.",
         "segments": "Code segments",
-        "deleteHint": "Deleting removes this action, its definition and its code explanation. An action a schedule runs cannot be deleted; the owner says why.",
         "derivedHint": "Derived from the action's explained code, not written by hand; it describes the code and does not constrain it.",
         "segLine": "Lines {start}–{end}",
         "newAction": "New action",
@@ -226,7 +228,6 @@
         "negativeEffect": "可能的负面影响",
         "noMeaning": "属主没有记录这段代码的业务含义。",
         "segments": "代码分段",
-        "deleteHint": "删除会去掉这条动作、它的定义和代码解释。定时任务在用的动作删不掉，属主会说明原因。",
         "derivedHint": "由动作的代码推导出来，不是手写的；它描述代码，不约束代码。",
         "segLine": "第 {start}–{end} 行",
         "newAction": "新建动作",

@@ -136,7 +136,8 @@ public class GenerationOperations {
 
   private String sandbox(JSONObject row) {
     if (!"action".equals(row.getString("kind")) || row.getString("sandbox_id") == null)
-      throw AgentHttpException.invalid("Only Action generation has a write sandbox");
+      throw AgentHttpException.invalid("Only Action generation has a write sandbox")
+          .localized("Authoring.writeSandboxActionOnly", Map.of());
     return row.getString("sandbox_id");
   }
 
@@ -156,7 +157,8 @@ public class GenerationOperations {
       for (var item : data.getJSONArray("objDatas").toJavaList(JSONObject.class)) {
         String name = item.getString("className");
         if (!allowed.contains(name))
-          throw new AgentHttpException(403, "FORBIDDEN", "Sample class is outside the authoring scope: " + name);
+          throw new AgentHttpException(403, "FORBIDDEN", "Sample class is outside the authoring scope: " + name)
+              .localized("Authoring.sampleOutsideScope", Map.of("className", name));
       }
     }
     return data;
@@ -182,14 +184,16 @@ public class GenerationOperations {
           var row = window.gate().get();
           String sandboxId = sandbox(row), domainId = window.owner().domainId();
           JSONObject data = row.getJSONObject("test_data");
-          if (data == null) throw AgentHttpException.invalid("Prepare test data first");
+          if (data == null)
+            throw AgentHttpException.invalid("Prepare test data first").localized("Authoring.prepareFirst", Map.of());
           try {
             sandboxService.truncateNamespace(sandboxId, domainId);
             sandboxService.loadSample(sandboxId, data, Map.of(), domainId);
           } catch (RuntimeException error) {
             throw error;
           } catch (Exception error) {
-            throw AgentHttpException.invalid("Reset failed: " + error.getMessage());
+            throw AgentHttpException.invalid("Reset failed: " + error.getMessage())
+                .localized("Authoring.resetFailed", Map.of("reason", String.valueOf(error.getMessage())));
           }
           return JSONObject.of("reset", true);
         });
@@ -285,14 +289,16 @@ public class GenerationOperations {
 
   @SuppressWarnings("unchecked")
   private List<Parameter> legacyActionParameters(String domainId, JSONArray defs) {
-    if (defs == null) throw AgentHttpException.invalid("parameterDefs are required");
+    if (defs == null)
+      throw AgentHttpException.invalid("parameterDefs are required").localized("Authoring.parameterDefsRequired", Map.of());
     var classes = (List<Map<String, Object>>) schemas.query(domainId).get("classDef");
     return DBSchemaUtil.buildParameters(defs.toList(Map.class), classes);
   }
 
   @SuppressWarnings("unchecked")
   List<Parameter> actionParameters(String domainId, JSONArray defs) {
-    if (defs == null) throw AgentHttpException.invalid("parameterDefs are required");
+    if (defs == null)
+      throw AgentHttpException.invalid("parameterDefs are required").localized("Authoring.parameterDefsRequired", Map.of());
     var classes = (List<Map<String, Object>>) schemas.query(domainId).get("classDef");
     var parameters = Function.fromInput(JSONObject.of("parameters", defs)).getParameters();
     for (var parameter : parameters) {
@@ -353,7 +359,8 @@ public class GenerationOperations {
 
   private Receipt testPackage(Window window, JSONObject body) throws Exception {
     if (!Set.of("metric", "function", "dashboard").contains(window.kind()))
-      throw AgentHttpException.invalid("This definition does not test query packages");
+      throw AgentHttpException.invalid("This definition does not test query packages")
+          .localized("Authoring.queryPackageNotTested", Map.of());
     var bundle = QueryPackage.accept(body.getJSONObject("queryPackage"));
     var parameters = QueryPackage.parameters(bundle, null);
     String digest = packageTestDigest(window.kind(), bundle), execution = UUID.randomUUID().toString();
@@ -413,6 +420,7 @@ public class GenerationOperations {
 
   private static void requirePassed(JSONObject test) {
     if (test == null || (test.getString("error") != null && !test.getString("error").isBlank()))
-      throw AgentHttpException.invalid("The exact source and parameters must pass a business test");
+      throw AgentHttpException.invalid("The exact source and parameters must pass a business test")
+          .localized("Authoring.businessTestRequired", Map.of());
   }
 }

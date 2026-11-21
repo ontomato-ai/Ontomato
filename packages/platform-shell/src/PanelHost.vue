@@ -3,7 +3,8 @@ import { computed, ref, watch } from "vue";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { productPanelDisplayName } from "@ontomato/contracts/product-panels";
 import { usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./panel-host";
-import { usePageActions } from "./page-actions";
+import { RefreshCw } from "lucide-vue-next";
+import { usePageActions, type PlatformPageAction } from "./page-actions";
 
 /**
  * One panel instance, shown full screen, beside a conversation or inside another application, or as an author's candidate
@@ -95,10 +96,33 @@ const operations = computed(() =>
     invoke: (input?: Readonly<Record<string, unknown>>) => view.invoke(operation.id, input),
   })),
 );
-// A form presents its own Save and Discard; other panel operations can still be shown by the enclosing page.
-usePageActions(() => (props.shown && view.source.value ? { operations: operations.value.filter(operation => operation.kind !== "form.save") } : null));
+/**
+ * The page's commands, drawn where its title is (big main's ruling, 2026-11-21): the host's refresh — the panel's shown
+ * data read again, the reader's unsaved edits kept — when the panel has members that read anything, then the panel's
+ * named shortcuts, its events with a label and no trigger, in its declaration's order, the one it marks primary as the
+ * main action. A member's operations (a row's
+ * delete, a form's save) stay where the panel draws them; a placed panel's shortcuts are its own page's, not this one's.
+ */
+const commands = computed<PlatformPageAction[]>(() => {
+  const shown = view.source.value;
+  if (!shown) return [];
+  const refresh: PlatformPageAction[] = Object.keys(shown.panel.manifest.members).length
+    ? [{ id: "refresh", label: props.labels.refresh, icon: RefreshCw, iconOnly: true, onClick: () => view.refresh(null) }]
+    : [];
+  const shortcuts = view.operations.value
+    .filter((operation) => operation.kind === "state" && !operation.memberPath)
+    .map((operation): PlatformPageAction => ({
+      id: operation.id,
+      label: operation.label,
+      // The one event the panel marks primary is the page's main action; a shortcut's ID is its event's key.
+      primary: shown.panel.manifest.events[operation.id]?.primary === true,
+      onClick: () => void view.invoke(operation.id),
+    }));
+  return [...refresh, ...shortcuts];
+});
+usePageActions(() => (props.shown && view.source.value ? { actions: commands.value } : null));
 
-defineExpose({ ...view, operations });
+defineExpose({ ...view, operations, commands });
 </script>
 
 <template>

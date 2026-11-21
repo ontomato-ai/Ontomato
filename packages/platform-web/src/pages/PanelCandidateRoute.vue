@@ -41,6 +41,7 @@ const labels = computed<PanelHostLabels>(() => ({
     scriptRejected: t("platform.panelScriptRejected"),
   },
   content: { styleOutside: t("platform.panelStyleOutside") },
+  refresh: t("common.refresh"),
 }));
 
 /** The preview's address without the panel's own state; a draft's link in the query stays for the panel to read. */
