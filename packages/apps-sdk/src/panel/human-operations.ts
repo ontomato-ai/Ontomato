@@ -58,14 +58,23 @@ async function answer(response: Promise<Response>): Promise<unknown> {
 }
 
 /**
+ * The application use a panel runs as, and for the application's frame `root: "frame"`: the frame's operations are
+ * looked up in the frame (B's frame contract), a content panel's in the content panel.
+ */
+export type PanelOperationUse = PanelUseRef & { root?: "frame" };
+
+/**
  * The operations of the application use this panel runs as. A candidate preview runs as no use: it shows the panel but
  * runs none of its operations.
  */
-export function panelHumanOperations(use: PanelUseRef | null, requests: PlatformRequests): PanelHumanOperations {
+export function panelHumanOperations(use: PanelOperationUse | null, requests: PlatformRequests): PanelHumanOperations {
   // A nested publisher's operation is found through its path in the opened panel, the selections that placed it included.
   const of = (operationId: string, memberPath?: PanelMemberPath) => {
     if (!use) throw new Error("A panel preview runs no operations; they run in the panel's application");
-    return { applicationId: use.applicationId, useId: use.useId, operationId, ...(memberPath ? { memberPath } : {}) };
+    return {
+      applicationId: use.applicationId, useId: use.useId, ...(use.root ? { root: use.root } : {}), operationId,
+      ...(memberPath ? { memberPath } : {}),
+    };
   };
   const post = (path: string, body: unknown) =>
     answer(requests.request(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, ""));
