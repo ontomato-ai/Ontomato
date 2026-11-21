@@ -21,6 +21,7 @@ import {
   panelDefinitionSnapshotSchema, productDefinitionStreamFrameSchema, productDefinitionStreamRequestSchema,
   type ProductDefinitionRevision,
 } from "@ontomato/contracts/product-subscriptions";
+import scheduleExamples from "../../../../contracts/examples/platform-schedules.json";
 import { protectedSkillRef } from "../../core/skills/providers";
 import { installContentLayout } from "../../content/layout";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
@@ -29,11 +30,12 @@ import { ensureAssistantDefaultPromptSchema } from "../../infrastructure/postgre
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
+import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 
-const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "", denyCustomerTypes: false }));
+const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "", denyCustomerTypes: false, operationFrameId: "" }));
 vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
@@ -64,9 +66,12 @@ let server: Server;
 let contentRoot: string;
 let cataloguePath: string;
 const grants = new Set<string>();
+const scheduledRun = scheduleExamples.runs.find(example => example.name === "agents-running")!.response;
+const frameDispatches: string[] = [];
 const codePanelId = "panel-schedules-mixed";
 const frameHostPanelId = "panel-host-frame";
 const frameHostContentId = "panel-host-frame-content";
+const frameOperationContentId = "panel-frame-operation-content";
 const builtinPanelId = "builtin-product-host-fixture";
 const builtinProjectionId = "builtin-product-components-fixture";
 const builtinUse = {
@@ -86,6 +91,7 @@ beforeAll(async () => {
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
   await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
+  await ensurePanelOperationsSchema(state.pool);
   await ensureAssistantSchema(state.pool);
   await ensureAssistantDefaultPromptSchema(state.pool);
   contentRoot = await mkdtemp(path.join(os.tmpdir(), "direct-panel-host-"));
@@ -178,8 +184,9 @@ beforeAll(async () => {
       res.json({ success: true, data: {
         applicationId: "app-frame-host", menu: { groups: [], panelUses: [] },
         use: { id: useId, pageKey: useId, path: `/applications/app-frame-host/${useId}`,
-          panelId: frameHostContentId, access: { kind: "domain-member" } },
+          panelId: useId === "operable" ? frameOperationContentId : frameHostContentId, access: { kind: "domain-member" } },
         ...(useId === "framed" && { framePanelId: frameHostPanelId }),
+        ...(useId === "operable" && { framePanelId: state.operationFrameId }),
       } });
       return;
     }
@@ -190,6 +197,12 @@ beforeAll(async () => {
       use: { id: "mixed", pageKey: "mixed", path: "/applications/app-mixed/mixed",
         panelId: codePanelId, access: { kind: "domain-member" } },
     } });
+  });
+  app.post("/platform/scheduled-tasks/:taskId/runs", (req, res) => {
+    expect(req.header("tk")).toBe("host-reader");
+    expect(req.params.taskId).toBe(scheduledRun.taskId);
+    frameDispatches.push(req.header("Idempotency-Key")!);
+    res.json(scheduledRun);
   });
   app.use("/api", (req, _res, next) => {
     Object.assign(req, { domainId: req.header("X-Test-Domain") ?? "pilot", userId: "reader",
@@ -859,6 +872,68 @@ it("uses the authorized frame root for its record, member reads, nested content 
   grants.delete(frameHostPanelId);
   expect((await getFrame()).status).toBe(403);
   expect(await (await read("components")).json()).toEqual({ status: "forbidden" });
+});
+
+it("freezes the frame of a human operation and rechecks it before dispatch", async () => {
+  const projectionId = "frame-host-run";
+  const oldFrame = "panel-operable-frame";
+  const replacement = "panel-operable-replacement";
+  const run = trial.projections.find(entry => entry.id === "projection-schedules-run")!;
+  const projection = await request("PUT", `product-projections/${projectionId}`, projectionRequest(run.input, 0));
+  expect(projection.status, await projection.text()).toBe(200);
+  for (const id of [frameOperationContentId, oldFrame, replacement]) {
+    const frame = id !== frameOperationContentId;
+    const saved = await request("PUT", `product-panels/${id}`, {
+      name: "Operation host", description: "", visibility: "domain", revision: 0, content: vuePanelContent(),
+      manifest: {
+        state: frame ? { task: { type: { kind: "object", objectType: "platform:ScheduledTask" } } } : {}, commands: {},
+        members: frame ? { run: { target: { projectionId }, inputs: { task: { state: "task" } } } } : {},
+      },
+    });
+    expect(saved.status, await saved.text()).toBe(200);
+  }
+  state.operationFrameId = oldFrame;
+
+  const scope = { applicationId: "app-frame-host", useId: "operable", operationId: "run.runNow" };
+  const descriptor = (query: Record<string, string>) => request("GET", "panel-operations/descriptor?" + new URLSearchParams(query));
+  expect((await descriptor(scope)).status).toBe(403);
+  const described = await descriptor({ ...scope, root: "frame" });
+  expect(described.status, await described.clone().text()).toBe(200);
+  expect(await described.json()).toMatchObject({ handlerRef: "schedules.runNow" });
+
+  const call = { target: { kind: "object", objectType: "platform:ScheduledTask", primaryKey: scheduledRun.taskId }, input: {} };
+  const invoke = { ...scope, root: "frame", call };
+  const read = await request("POST", "panel-operations/read", invoke);
+  expect(await read.json()).toMatchObject({ error: { code: "OPERATION_READ_REQUIRED" } });
+  const impact = await request("POST", "panel-operations/inspect-impact", invoke);
+  expect(await impact.json()).toMatchObject({ error: { code: "OPERATION_IMPACT_UNAVAILABLE" } });
+  async function prepare() {
+    const response = await request("POST", "panel-operations/intents", invoke);
+    expect(response.status, await response.clone().text()).toBe(200);
+    const { intentId } = await response.json() as { intentId: string };
+    return intentId;
+  }
+  const intentId = await prepare();
+  const stored = await state.pool!.query(`SELECT intent FROM "${state.schema}".panel_operation_intents WHERE id=$1`, [intentId]);
+  expect(stored.rows).toMatchObject([{ intent: { panelId: oldFrame, root: "frame", use: {
+    applicationId: scope.applicationId, useId: scope.useId,
+  } } }]);
+  const dispatch = (id: string) => request("POST", `panel-operations/intents/${id}/dispatch`, {});
+  state.operationFrameId = replacement;
+  const changed = await dispatch(intentId);
+  expect(changed.status, await changed.clone().text()).toBe(409);
+  expect(await changed.json()).toMatchObject({ error: { code: "INTENT_CHANGED" } });
+  expect(frameDispatches).toEqual([]);
+
+  const newIntent = await prepare();
+  grants.delete(replacement);
+  expect((await dispatch(newIntent)).status).toBe(403);
+  expect(frameDispatches).toEqual([]);
+  grants.add(replacement);
+  const completed = await dispatch(newIntent);
+  expect(completed.status, await completed.clone().text()).toBe(200);
+  expect(await completed.json()).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
+  expect(frameDispatches).toEqual([newIntent]);
 });
 
 it("rejects an unavailable default agent before accepting a proposed application use", async () => {

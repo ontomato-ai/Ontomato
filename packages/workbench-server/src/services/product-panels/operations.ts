@@ -4,7 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import { pageDraftSchema } from "@ontomato/contracts/page-draft";
 import type { AgentSessionRef } from "@ontomato/contracts/agent-channel";
 import { agentQuestionAnswerReceiptSchema, agentUserQuestionReceiptSchema } from "@ontomato/contracts/agent-user-questions";
-import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
+import type { ApplicationPanelUse, ProductPanel } from "@ontomato/contracts/product-panels";
 import {
   PANEL_CONFIRMATION_EXPIRED, isPanelHumanOperationIntent, panelHumanOperationPreparationSchema, panelOperationOutcomeSchema,
   type inspectPanelOperationImpactRequestSchema,
@@ -28,6 +28,7 @@ import type { AssistantOwner } from "../assistant/store";
 import { restoreAgentCaller, readAgentSessionActor } from "../agent-host/caller";
 import { readCurrentPanelRecord } from "./current";
 import { declaredDirectOperation, type PlacedOperationTarget } from "./direct-operations";
+import { requireRegisteredPanelRoot } from "./member-path";
 import { requirePanelUse } from "./application-use";
 import {
   panelResultProjection, type PanelBatchCalls, type PanelOperationInvocation,
@@ -44,7 +45,9 @@ type AgentRecord = Exclude<StoredPanelOperationIntent, { kind: "current" }> | { 
 type ReadableAgentIntent = Extract<AgentRecord, { intent: unknown }>["intent"];
 
 export async function requirePanelSkillForRun(owner: AssistantOwner, credentials: AssistantCredentials, run: PanelRun,
-  ref: PanelUseRef) {
+  ref: PanelUseRef & Pick<PanelOperationRef, "root">) {
+  if (ref.root === "frame")
+    throw new HttpError(403, "This run does not have the application frame's skill", "PANEL_FRAME_SKILL_REQUIRED");
   const use = await requirePanelUse(credentials, ref);
   const view = await readAssistantSkillView(owner.domainId, credentials);
   const entrance: PageSkillEntrance = "permissionCode" in use.access
@@ -65,12 +68,18 @@ async function admitted(owner: AssistantOwner, credentials: AssistantCredentials
 }
 
 async function declaredOperation(owner: AssistantOwner, credentials: AssistantCredentials, use: ApplicationPanelUse,
-  ref: PanelOperationRef, target?: PanelOperationCall["target"]) {
-  const panel = await readCurrentPanelRecord(owner, credentials, use.panelId);
-  return declaredDirectOperation(owner, credentials, use, panel, ref.operationId, target, ref.memberPath);
+  ref: PanelOperationRef, target?: PanelOperationCall["target"], frame?: ProductPanel) {
+  const panel = frame ?? await readCurrentPanelRecord(owner, credentials, use.panelId);
+  const operation = await declaredDirectOperation(owner, credentials, use, panel, ref.operationId, target, ref.memberPath);
+  return { ...operation, rootPanelId: frame?.id ?? use.panelId };
 }
 
 async function operationForUse(owner: AssistantOwner, credentials: AssistantCredentials, ref: PanelOperationRef, target?: PanelOperationCall["target"]) {
+  if (ref.root === "frame") {
+    const { applicationId, useId } = ref;
+    const { panel, entry } = await requireRegisteredPanelRoot(owner, credentials, { kind: ref.root, applicationId, useId });
+    return declaredOperation(owner, credentials, entry, ref, target, panel);
+  }
   return declaredOperation(owner, credentials, await requirePanelUse(credentials, ref), ref, target);
 }
 
@@ -103,7 +112,7 @@ function requireFrozenOperation(
   intent: Pick<PanelOperationIntent, "panelId" | "projectionId" | "binding" | "operation">,
   current: ReturnType<typeof writeOperation>,
 ) {
-  if (current.use.panelId !== intent.panelId || current.projection.id !== intent.projectionId ||
+  if (current.rootPanelId !== intent.panelId || current.projection.id !== intent.projectionId ||
     !isDeepStrictEqual(current.projection.binding, intent.binding) || !isDeepStrictEqual(current.operation, intent.operation))
     throw new HttpError(409, "Operation definition changed; create a new intent", "INTENT_CHANGED");
 }
@@ -145,6 +154,7 @@ function sourceMatches(intent: ReadableAgentIntent, session: AgentSessionRef) {
 function matchingInvocation(intent: ReadableAgentIntent, request: CreatePanelOperationIntentRequest, session: AgentSessionRef, executionUserId: string | null) {
   sourceMatches(intent, session);
   if (!isDeepStrictEqual(intent.use,{applicationId:request.applicationId,useId:request.useId}) || intent.operation.id !== request.operationId ||
+    intent.root !== request.root ||
     !isDeepStrictEqual(intent.operation.memberPath, request.memberPath) ||
     !isDeepStrictEqual(invocationOf(intent),invocationOf(request)) || intent.executionUserId !== executionUserId)
     throw new HttpError(409,"Changed call or executor requires a new intent","INTENT_CHANGED");
@@ -254,7 +264,8 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
     source: { kind: "human" },
     initiator: owner,
     use: { applicationId: input.applicationId, useId: input.useId },
-    panelId: current.use.panelId,
+    ...(input.root && { root: input.root }),
+    panelId: current.rootPanelId,
     projectionId: current.projection.id,
     binding: current.projection.binding,
     operation: current.operation,
@@ -274,7 +285,7 @@ export async function dispatchHumanPanelOperation(owner: AssistantOwner, credent
   const { intent } = record;
   if (intent.dispatched) return replay(record, owner, credentials);
   const current = writeOperation(await operationForUse(owner, credentials,
-    { ...intent.use, operationId: intent.operation.id, memberPath: intent.operation.memberPath }, invocationTarget(intent)));
+    { ...intent.use, root: intent.root, operationId: intent.operation.id, memberPath: intent.operation.memberPath }, invocationTarget(intent)));
   requireFrozenOperation(intent, current);
   const prepared = validateInvocation(current.handler, intent, current.fixedTarget);
   const view = current.handler.projectResult && await readAssistantSkillView(owner.domainId, credentials);
@@ -327,7 +338,7 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
     const settings = await store.settings(owner,root);
     record = agentRecord(await store.insert(owner,{
       intentId:input.intentId,source,rootSession:root,use:{applicationId:input.applicationId,useId:input.useId},
-      panelId:current.use.panelId,projectionId:current.projection.id,binding:current.projection.binding,
+      panelId:current.rootPanelId,projectionId:current.projection.id,binding:current.projection.binding,
       operation:current.operation,...invocationOf(input),initiator:owner,executionUserId:executor.executionUserId,
       confirmation:settings.confirmBeforeExecute?"required":"automatic",
       questionId:settings.confirmBeforeExecute && current.operation.kind !== "form.save" ? randomUUID() : null,
@@ -381,7 +392,7 @@ export async function dispatchPanel(owner: AssistantOwner, credentials: Assistan
   if (executor.executionUserId !== intent.executionUserId) throw new HttpError(409,"Executor changed; create a new intent","INTENT_CHANGED");
   if (run.channel!.authority.executionKind !== "live") throw new HttpError(422,"Management operations do not support test data","BUILD_TEST_UNSUPPORTED");
   const current = await admitted(owner, credentials, run,
-    { ...intent.use, operationId: intent.operation.id, memberPath: intent.operation.memberPath }, invocationTarget(intent));
+    { ...intent.use, root: intent.root, operationId: intent.operation.id, memberPath: intent.operation.memberPath }, invocationTarget(intent));
   requireFrozenOperation(intent, current);
   const client = new RuntimeClient(owner.domainId,undefined,owner.userId);
   if (intent.confirmation === "required") {
