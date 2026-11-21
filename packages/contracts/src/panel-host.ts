@@ -94,7 +94,7 @@ export const productPanelNestedReadRequestSchema = z.object({
 export type ProductPanelNestedReadRequest = z.infer<typeof productPanelNestedReadRequestSchema>;
 
 export const productPanelNestedReadResponseSchema = z.object({
-  panel: panelDefinitionContentSchema.pick({ content: true, manifest: true }).extend({
+  panel: panelDefinitionContentSchema.pick({ content: true, manifest: true, theme: true }).extend({
     id: productCurrentIdParamsSchema.shape.id,
     revision: definitionRevisionSchema.shape.revision,
   }),

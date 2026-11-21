@@ -242,8 +242,10 @@ it("reads a selected nested panel or projection and freezes its actual publisher
     componentId: "@ontomato/sdk:OperationButton", inputs: { agent: agentPort }, outputs: {}, config: { operation: "remove" },
     data: {}, operations: { remove: { operation: { kind: "PlatformOperation", id: DELETE_AGENT }, target: { input: "agent" } } },
   });
+  const theme = { dark: { "--el-color-primary": "#3758ca" } };
   for (const id of [child, alternate]) {
     await save(`product-panels/${id}`, {
+      ...(id === child && { theme }),
       content: vuePanelContent("components", "approve"), manifest: { state: { agent: { type: agentPort } }, members: {
         components: { target: { projectionId: list } },
         approve: { target: { projectionId: remove }, inputs: { agent: { state: "agent" } } },
@@ -272,7 +274,7 @@ it("reads a selected nested panel or projection and freezes its actual publisher
   const detail = selectedPanel(child);
   const nested = await request("POST", "product-panels/nested", "nested-reader", { source, memberPath: [detail] });
   expect(nested.status).toBe(200);
-  expect(productPanelNestedReadResponseSchema.parse(await nested.json()).panel).toMatchObject({ id: child, revision: 1 });
+  expect(productPanelNestedReadResponseSchema.parse(await nested.json()).panel).toMatchObject({ id: child, revision: 1, theme });
   expect((await request("POST", "product-panels/nested", "nested-reader",
     { source, memberPath: [selectedPanel(alternate)] })).status).toBe(403);
 
