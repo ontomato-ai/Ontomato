@@ -428,6 +428,17 @@ test("knowledge lists accept scalar status and counts preserve the owner's order
   assert.equal(panelGroupCountsSchema.safeParse({ all: 3, pending: 1, approved: 2 }).success, false);
 });
 
+test("audit log queries bind filters to string inputs", () => {
+  const projection = {
+    name: "Audit log", description: "", visibility: "domain", componentId: "@ontomato/sdk:PanelData",
+    inputs: { business: { kind: "scalar", type: "string" }, operation: { kind: "scalar", type: "string" } },
+    outputs: {}, config: {},
+    data: { rows: { source: { type: platformType("platform:AuditLog") }, read: "query",
+      params: { business: { input: "business" }, operation: { input: "operation" } } } },
+  };
+  assert.equal(productProjectionInputSchema.safeParse(projection).success, true);
+});
+
 test("ontology object lists use search while reference options keep keyword", () => {
   const projection = {
     name: "Find an ontology object", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectList",

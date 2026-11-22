@@ -135,6 +135,8 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "className":
     case "cursor":
     case "scheduledRunId":
+    case "auditLogBusiness":
+    case "auditLogOperation":
     case "knowledgeCountField":
     case "knowledgeStatus":
     case "feedbackCountField":
