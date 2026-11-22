@@ -51,6 +51,12 @@ await mountPanel({
     const closeEditor = () => {
       instance.state.setState({ selected: null, createIn: null, creating: false });
     };
+    const createDialog = computed({
+      get: () => creating.value && !selected.value,
+      set: value => {
+        if (!value && creating.value) closeEditor();
+      },
+    });
     // One owner form edits the selected attribute and, with nothing selected, creates one; the host selects what it created.
     const onSaved = () => { setCreating(false); };
     const onDiscarded = () => {
@@ -82,7 +88,7 @@ await mountPanel({
     }, { immediate: true });
 
     return {
-      selected, selectedKey, selectedVisible, isPrimaryKey, className, search, typesData, rowsData, detail, creating, types, rows, visibleRows,
+      selected, selectedKey, selectedVisible, isPrimaryKey, className, search, typesData, rowsData, detail, creating, createDialog, types, rows, visibleRows,
       ownerLabel, countText, setClassName, setSearch, isSelected, selectRow, closeEditor, onSaved, onDiscarded, yes, openOwner,
     };
   },

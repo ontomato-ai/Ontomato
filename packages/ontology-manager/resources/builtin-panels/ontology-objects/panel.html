@@ -44,10 +44,6 @@
   .ot-editor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
   .ot-title { flex: 1; min-width: 8rem; font-weight: var(--font-semibold); color: var(--sdk-text-color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ot-detail-main .ot-table { overflow-x: auto; }
-  .ot-modal { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; background: var(--sdk-overlay-color-lighter); }
-  .ot-modal-card { width: min(32.5rem, calc(100vw - 2rem)); max-height: calc(100vh - 4rem); display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-lg); border-radius: var(--radius-lg); background: var(--sdk-bg-color-overlay, var(--sdk-bg-color)); box-shadow: var(--elevation-overlay); overflow: hidden; }
-  .ot-modal-head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--sdk-text-color-primary); }
-  .ot-modal-body { overflow-y: auto; min-height: 0; }
   /* Keep two columns side by side on both 1440px (~959px container) and 1280px (~799px container) viewports. */
   @container (max-width: 46rem) { .ot-detail { grid-template-columns: minmax(0, 1fr); } }
   @container (max-width: 44rem) {
@@ -212,31 +208,15 @@
       </div>
     </div>
 
-    <!-- Create object type modal (mutually exclusive with detail view since creating clears selected). -->
-    <div v-if="creating && !selected" class="ot-modal" role="dialog" aria-modal="true" @click.self="backToCatalog">
-      <div class="ot-modal-card">
-        <div class="ot-modal-head">
-          <span>{{ t("ot.create") }}</span>
-          <sdk-button text size="small" @click="backToCatalog">{{ t("ot.closeEditor") }}</sdk-button>
-        </div>
-        <div class="ot-modal-body">
-          <projection slot="objectForm" @saved="objectSaved" @discarded="formDiscarded"></projection>
-        </div>
-      </div>
-    </div>
+    <!-- Create object type dialog (mutually exclusive with detail view since creating clears selected). -->
+    <sdk-dialog v-model="createObjectDialog" :title="t('ot.create')" width="520px" append-to-body destroy-on-close>
+      <projection v-if="createObjectDialog" slot="objectForm" @saved="objectSaved" @discarded="formDiscarded"></projection>
+    </sdk-dialog>
 
-    <!-- Create attribute modal inside detail view (mutually exclusive with inline attribute edit). -->
-    <div v-if="selected && attributeMode === 'create'" class="ot-modal" role="dialog" aria-modal="true" @click.self="closeAttribute">
-      <div class="ot-modal-card">
-        <div class="ot-modal-head">
-          <span>{{ t("ot.attributeCreator") }}</span>
-          <sdk-button text size="small" @click="closeAttribute">{{ t("ot.closeEditor") }}</sdk-button>
-        </div>
-        <div class="ot-modal-body">
-          <sdk-alert v-if="attributeError" type="error" :title="attributeError" :closable="false" show-icon></sdk-alert>
-          <projection slot="attributeForm" @saved="attributeSaved" @discarded="closeAttribute"></projection>
-        </div>
-      </div>
-    </div>
+    <!-- Create attribute dialog inside detail view (mutually exclusive with inline attribute edit). -->
+    <sdk-dialog v-model="createAttributeDialog" :title="t('ot.attributeCreator')" width="520px" append-to-body destroy-on-close>
+      <sdk-alert v-if="attributeError" type="error" :title="attributeError" :closable="false" show-icon></sdk-alert>
+      <projection v-if="createAttributeDialog" slot="attributeForm" @saved="attributeSaved" @discarded="closeAttribute"></projection>
+    </sdk-dialog>
   </section>
 </div>

@@ -68,6 +68,28 @@ await mountPanel({
       instance.state.setState({ dialog: null, connectFrom: null, connectTo: null });
     };
     const openDialog = value => instance.state.set("dialog", value);
+    const classDialog = computed({
+      get: () => dialog.value === "class",
+      set: value => {
+        if (!value && dialog.value === "class") closeDialog();
+      },
+    });
+    const relationDialog = computed({
+      get: () => dialog.value === "relation",
+      set: value => {
+        if (!value && dialog.value === "relation") closeDialog();
+      },
+    });
+    // Open the matching create dialog when an assistant draft targets either creation form.
+    watch(
+      instance.draft,
+      draft => {
+        if (!draft) return;
+        if (draft.slot === "classCreate" && dialog.value !== "class") instance.state.set("dialog", "class");
+        else if (draft.slot === "relationCreate" && dialog.value !== "relation") instance.state.set("dialog", "relation");
+      },
+      { immediate: true },
+    );
     const pickAttribute = row => instance.state.set("selectedAttribute", {
       className: "platform:Attribute",
       primaryKey: String(row.primaryKey),
@@ -109,6 +131,8 @@ await mountPanel({
       selectedEdgeLabel,
       selectedAttribute,
       dialog,
+      classDialog,
+      relationDialog,
       attributes,
       openClassDialog,
       openRelationDialog,

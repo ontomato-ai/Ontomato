@@ -70,6 +70,12 @@ await mountPanel({
       setCreating(false);
       instance.state.set("selected", null);
     }
+    const createDialog = computed({
+      get: () => creating.value && !selectedKey.value,
+      set: (value) => {
+        if (!value && creating.value) cancelCreate();
+      },
+    });
     function onSaved(saved) {
       setCreating(false);
       instance.state.set("selected", { className: saved.className || TYPE, primaryKey: saved.primaryKey });
@@ -106,7 +112,7 @@ await mountPanel({
     }, { immediate: true });
 
     return {
-      catalogue, detail, types, allRows, rows, countText, selectedKey, search, creating, editing, title, idleNote,
+      catalogue, detail, types, allRows, rows, countText, selectedKey, search, creating, createDialog, editing, title, idleNote,
       typeLabel, open, backToCatalog, cancelCreate, onSaved, onDiscarded, openType,
     };
   },
