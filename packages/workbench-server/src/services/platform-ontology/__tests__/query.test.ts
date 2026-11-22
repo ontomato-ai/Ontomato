@@ -308,7 +308,7 @@ describe("platform-ontology composite query", () => {
 
     const application = byId.get(APPLICATION);
     expect(application?.definition).toBe(platformTypeDetails[APPLICATION]?.definition);
-    expect(Object.keys(application?.reads ?? {}).sort()).toEqual(["createForm", "entries", "form", "query", "record"]);
+    expect(Object.keys(application?.reads ?? {}).sort()).toEqual(["createForm", "entries", "form", "grants", "query", "record"]);
     expect(application?.operations?.map((op) => op.id)).toContain(`${APPLICATION}.save`);
 
     const projection = byId.get(PRODUCT_PROJECTION);
