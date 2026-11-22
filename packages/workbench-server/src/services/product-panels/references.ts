@@ -34,7 +34,7 @@ type PanelDefinition = z.infer<typeof panelReferenceDefinitionSchema>;
 type ReferenceManifest = PanelDefinition["manifest"];
 type ProjectionDefinition = ProductProjectionInput | BuiltinProductProjectionInput;
 type Target = { kind: CurrentProductKind; id: string };
-type Wiring = Pick<PanelMember, "inputs" | "outputs" | "readOperationInputs">;
+type Wiring = Pick<PanelMember, "inputs" | "outputs" | "readOperationInputs" | "listColumn">;
 type SavedPlacement = { field: string; placement: PanelPlacement };
 type Reference = {
   key: string;
@@ -276,12 +276,15 @@ async function incompatiblePort(
       implicit.add(name);
     }
   }
+  if ("data" in definition && wiring.listColumn !== undefined && Object.keys(definition.data).length > 0) {
+    return "listColumn members cannot declare independent data reads";
+  }
   for (const [name, value] of Object.entries(wiring.inputs ?? {})) {
     const type = target.inputs[name];
     if (!type && "state" in value && implicit.has(name)) continue;
     if (!type) return `input '${name}' was removed or is not exposed`;
-    // The view supplies a repeated row as an input; the read boundary checks its value against this port.
-    if ("item" in value) continue;
+    // The view supplies a repeated row or row field as an input; the read/operation boundary checks its value against this port.
+    if ("item" in value || "itemField" in value) continue;
     const offered = "state" in value ? source.state[value.state]?.type : undefined;
     if (!("literal" in value) && offered === undefined) return `input '${name}' has no declared value source`;
     const accepts = "literal" in value ? type.kind === "json" || matchesDirectPanelValue(type, value.literal)

@@ -147,6 +147,19 @@ export const panelFormFieldRefSchema = z.object({
 }).strict();
 export type PanelFormFieldRef = z.infer<typeof panelFormFieldRefSchema>;
 
+/** A projection rendered inside one column of an ObjectList member in this same panel instance. */
+export const panelListColumnRefSchema = z.object({
+  slot: key,
+  column: key,
+}).strict();
+export type PanelListColumnRef = z.infer<typeof panelListColumnRefSchema>;
+
+/** A projection rendered inside the expandable row detail area of an ObjectList member in this same panel instance. */
+export const panelListRowDetailRefSchema = z.object({
+  slot: key,
+}).strict();
+export type PanelListRowDetailRef = z.infer<typeof panelListRowDetailRefSchema>;
+
 const panelOperationInputRefSchema = z.union([
   panelStateRefSchema,
   z.object({ formField: panelFormFieldRefSchema.pick({ slot: true, path: true }) }).strict(),
@@ -239,6 +252,28 @@ export const panelOperationCallSchema = z
 export type PanelOperationCall = z.infer<typeof panelOperationCallSchema>;
 
 /**
+ * Read-only host list context supplied when invoking a row-scoped operation (`memberPath` carrying `itemKey`).
+ *
+ * Controlled value precedence (highest to lowest):
+ * 1. `entry.inputs` (`literal` and `frameState`, verified by the server from the application entry)
+ * 2. `rowContext.state` (non-controlled state fields of the placement panel owning the host list and column/detail member)
+ * 3. `manifest.state` default values
+ *
+ * `rowContext.state` must never override entry-controlled values (`literal` or `frameState`).
+ * When nested, `state` and `runtimeParams` are scoped to the actual placement panel owning the host list
+ * and column/detail member.
+ */
+export const panelOperationRowContextSchema = z.object({
+  /** Subset of manifest.state for the placement panel owning the host list and column/detail member. */
+  state: z.record(key, runtimeJsonValueSchema).optional(),
+  /** Frame manifest.state values when entry.inputs binds frameState (never substitutable by rowContext.state). */
+  frameState: z.record(key, runtimeJsonValueSchema).optional(),
+  /** Host list datum runtimeParams (e.g. search/cursor/size/page) used to locate the row. */
+  runtimeParams: z.record(key, runtimeJsonValueSchema).optional(),
+}).strict();
+export type PanelOperationRowContext = z.infer<typeof panelOperationRowContextSchema>;
+
+/**
  * The ID of an operation a projection publishes: the slot it sits in and the operation's own name, so two instances of
  * one panel and two panels using one projection describe the same operation the same way.
  */
@@ -309,7 +344,16 @@ export type PanelMemberTarget = z.infer<typeof panelMemberTargetSchema>;
 
 const literalValue = z.object({ literal: runtimeJsonValueSchema }).strict();
 const itemValue = z.object({ item: z.literal(true) }).strict();
-export const panelMemberInputSchema = z.union([literalValue, panelStateRefSchema, itemValue]);
+const rowItemScalarValue = z.object({ item: z.enum(["primaryKey", "label"]) }).strict();
+const rowItemFieldValue = z.object({ itemField: key }).strict();
+const commandInputSchema = z.union([literalValue, panelStateRefSchema, itemValue]);
+export const panelMemberInputSchema = z.union([
+  literalValue,
+  panelStateRefSchema,
+  itemValue,
+  rowItemScalarValue,
+  rowItemFieldValue,
+]);
 export type PanelMemberInput = z.infer<typeof panelMemberInputSchema>;
 const placementPorts = {
   inputs: z.record(key, panelMemberInputSchema).optional(),
@@ -319,13 +363,22 @@ const placementPorts = {
 export const panelPlacementSchema = z.object({
   id: key,
   target: panelFixedMemberTargetSchema,
-  ...placementPorts,
+  inputs: z.record(key, commandInputSchema).optional(),
+  outputs: placementPorts.outputs,
+  theme: placementPorts.theme,
 }).strict();
 export type PanelPlacement = z.infer<typeof panelPlacementSchema>;
 
+/** Stable row identity inside a list: primaryKey for homogeneous lists, or `{className, primaryKey}` for heterogeneous lists. */
+export const panelMemberItemKeySchema = z.union([
+  panelObjectRefSchema.shape.primaryKey,
+  panelObjectRefSchema,
+]);
+export type PanelMemberItemKey = z.infer<typeof panelMemberItemKeySchema>;
+
 export const panelMemberPathSegmentSchema = z.object({
   member: key,
-  itemKey: z.union([key, z.number().int().nonnegative(), panelObjectRefSchema]).optional(),
+  itemKey: panelMemberItemKeySchema.optional(),
   selection: z.union([
     z.object({ stateValue: runtimeJsonValueSchema, target: panelFixedMemberTargetSchema }).strict(),
     z.object({ placement: panelPlacementSchema.pick({ id: true, target: true }) }).strict(),
@@ -428,11 +481,30 @@ export const panelMemberSchema = z.object({
   target: panelMemberTargetSchema,
   ...placementPorts,
   formField: panelFormFieldRefSchema.optional(),
+  listColumn: panelListColumnRefSchema.optional(),
+  listRowDetail: panelListRowDetailRefSchema.optional(),
   readOperationInputs: z.record(key, panelReadOperationInputsSchema).optional(),
 }).strict();
 export type PanelMember = z.infer<typeof panelMemberSchema>;
 
-const commandInputs = z.record(key, panelMemberInputSchema);
+/**
+ * Whether a panel member is mounted by its host component (`ObjectForm` field, `ObjectList` column, or
+ * `ObjectList` row detail) and therefore exempt from placing `<Projection slot="...">` in `panel.html`.
+ */
+export function isHostMountedPanelMember(
+  member: Pick<PanelMember, "formField" | "listColumn" | "listRowDetail">,
+): boolean {
+  return member.formField !== undefined || member.listColumn !== undefined || member.listRowDetail !== undefined;
+}
+
+/** Member keys that belong directly in `panel.html` rather than being mounted by a host form or list member. */
+export function panelTemplatePlacedMemberKeys(manifest: Pick<PanelManifest, "members">): string[] {
+  return Object.entries(manifest.members)
+    .filter(([, member]) => !isHostMountedPanelMember(member))
+    .map(([memberKey]) => memberKey);
+}
+
+const commandInputs = z.record(key, commandInputSchema);
 const openMember = z.object({
   mode: z.enum(["replace", "drawer", "dialog"]),
   member: key,
@@ -505,6 +577,8 @@ export const panelManifestSchema = z.object({
   function requireName(scope: Record<string, unknown>, name: string, path: string[]) {
     if (!Object.hasOwn(scope, name)) issue(path, `Undeclared reference '${name}'`);
   }
+  const seenListColumns = new Map<string, string>();
+  const seenListRowDetails = new Map<string, string>();
   for (const [member, declaration] of Object.entries(members)) {
     const path = ["members", member];
     if ("fromState" in declaration.target) {
@@ -527,14 +601,67 @@ export const panelManifestSchema = z.object({
     if ("fromPlatform" in declaration.target && Object.keys(declaration.inputs ?? {}).length > 0) {
       issue([...path, "inputs"], "The application entry supplies the inputs for this member");
     }
-    for (const [name, input] of Object.entries(declaration.inputs ?? {}))
+    const isListAttached = declaration.listColumn !== undefined || declaration.listRowDetail !== undefined;
+    for (const [name, input] of Object.entries(declaration.inputs ?? {})) {
       if ("state" in input) requireName(state, input.state, [...path, "inputs", name, "state"]);
+      if ((("item" in input && input.item !== true) || "itemField" in input) && !isListAttached) {
+        issue(
+          [...path, "inputs", name],
+          "Row scalar and field inputs ({item: 'primaryKey'|'label'} and {itemField}) are only allowed on listColumn or listRowDetail members",
+        );
+      }
+    }
     for (const [name, output] of Object.entries(declaration.outputs ?? {}))
       requireName(state, output.state, [...path, "outputs", name, "state"]);
+    const attachments = [
+      declaration.formField !== undefined ? "formField" : null,
+      declaration.listColumn !== undefined ? "listColumn" : null,
+      declaration.listRowDetail !== undefined ? "listRowDetail" : null,
+    ].filter((kind): kind is "formField" | "listColumn" | "listRowDetail" => kind !== null);
+    if (attachments.length > 1) {
+      for (const attachment of attachments.slice(1)) {
+        issue([...path, attachment], "A member may declare at most one of formField, listColumn, or listRowDetail");
+      }
+    }
     if (declaration.formField) {
       const { slot } = declaration.formField;
       if (slot === member) issue([...path, "formField", "slot"], "A field port must reference another member");
       else requireName(members, slot, [...path, "formField", "slot"]);
+    }
+    if (declaration.listColumn) {
+      const { slot, column } = declaration.listColumn;
+      if (slot === member) issue([...path, "listColumn", "slot"], "A list column member must reference another member");
+      else if (!Object.hasOwn(members, slot)) requireName(members, slot, [...path, "listColumn", "slot"]);
+      else if (!("projectionId" in members[slot].target))
+        issue([...path, "listColumn", "slot"], "A list column host must be a fixed projection member");
+      if (!("projectionId" in declaration.target))
+        issue([...path, "target"], "A list column member must target a fixed projection");
+      if (Object.keys(declaration.outputs ?? {}).length > 0)
+        issue([...path, "outputs"], "A list column member cannot declare outputs");
+      const columnKey = `${slot}\u0000${column}`;
+      const existing = seenListColumns.get(columnKey);
+      if (existing !== undefined) {
+        issue([...path, "listColumn"], `List '${slot}' column '${column}' already has a column member '${existing}'`);
+      } else {
+        seenListColumns.set(columnKey, member);
+      }
+    }
+    if (declaration.listRowDetail) {
+      const { slot } = declaration.listRowDetail;
+      if (slot === member) issue([...path, "listRowDetail", "slot"], "A list row detail member must reference another member");
+      else if (!Object.hasOwn(members, slot)) requireName(members, slot, [...path, "listRowDetail", "slot"]);
+      else if (!("projectionId" in members[slot].target))
+        issue([...path, "listRowDetail", "slot"], "A list row detail host must be a fixed projection member");
+      if (!("projectionId" in declaration.target))
+        issue([...path, "target"], "A list row detail member must target a fixed projection");
+      if (Object.keys(declaration.outputs ?? {}).length > 0)
+        issue([...path, "outputs"], "A list row detail member cannot declare outputs");
+      const existing = seenListRowDetails.get(slot);
+      if (existing !== undefined) {
+        issue([...path, "listRowDetail"], `List '${slot}' already has a row detail member '${existing}'`);
+      } else {
+        seenListRowDetails.set(slot, member);
+      }
     }
     for (const [operation, { draft, parameters, bindingId }] of Object.entries(declaration.readOperationInputs ?? {})) {
       if (draft) requireName(members, draft.slot, [...path, "readOperationInputs", operation, "draft", "slot"]);

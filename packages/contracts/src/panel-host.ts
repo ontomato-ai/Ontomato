@@ -103,9 +103,13 @@ export const productPanelNestedReadResponseSchema = z.object({
 }).strict();
 export type ProductPanelNestedReadResponse = z.infer<typeof productPanelNestedReadResponseSchema>;
 
+const readPanelMemberPathSegmentSchema = panelMemberPathSegmentSchema.omit({ itemKey: true });
+const readPanelMemberPathSchema = z.array(readPanelMemberPathSegmentSchema).nonempty();
+
 const panelMemberReadRequestSchema = z.object({
   source: productPanelReadSourceSchema,
-  memberPath: directPanelMemberPathSchema,
+  /** Reads never carry `itemKey` or `rowContext`; listRowDetail reads its own data via normal `inputs`. */
+  memberPath: readPanelMemberPathSchema,
   inputs: runtimeJsonObjectSchema,
   /** Component-supplied parameter values for this datum, separate from the projection's bound inputs. */
   runtimeParams: runtimeJsonObjectSchema.optional(),

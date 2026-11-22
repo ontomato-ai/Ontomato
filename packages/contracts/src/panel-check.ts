@@ -7,7 +7,10 @@ export {
 } from "./apps-sdk";
 export { panelAuthoringManifestSchema, panelAuthoringMemberSchema } from "./panel-authoring";
 export { bindPanelAuthoringChart, expandPanelAuthoringMember } from "./panel-authoring-expansion";
-export { panelManifestSchema, panelPortAccepts } from "./panel-manifest";
+export {
+  isHostMountedPanelMember, panelListColumnRefSchema, panelListRowDetailRefSchema, panelManifestSchema,
+  panelMemberItemKeySchema, panelOperationRowContextSchema, panelPortAccepts, panelTemplatePlacedMemberKeys,
+} from "./panel-manifest";
 export {
   checkAuthoringScript, checkAuthoringStyles, checkAuthoringTemplate, checkAuthoringTheme,
   componentModuleImports, componentOfficialSpecifiers, isComponentOfficialSpecifier, panelModuleImports,
@@ -27,8 +30,8 @@ export {
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
 } from "./product-panels";
 export {
-  directReadDeclaration, missingRequiredReadParameters, panelOperationTargetPort, panelReadParameterSchemas,
-  projectionOperationTargetMatches,
+  directReadDeclaration, matchPanelRecordItemKey, missingRequiredReadParameters, objectListDatumName,
+  panelOperationTargetPort, panelReadParameterSchemas, panelRecordItemKey, projectionOperationTargetMatches,
 } from "./panel-projection";
 export { panelReadResultSchemas } from "./panel-operations";
 export { platformObjectTypes } from "./platform-object-types";

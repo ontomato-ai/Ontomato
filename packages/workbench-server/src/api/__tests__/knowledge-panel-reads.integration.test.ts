@@ -741,7 +741,7 @@ it("checks the operation target at registration and when preparing a button", as
   expect(badProjectionTarget.status).toBe(400);
   expect(await badProjectionTarget.json()).toMatchObject({ error: {
     code: "INVALID_REQUEST",
-    message: expect.stringContaining("The operation needs a declared object or list input"),
+    message: expect.stringContaining("The operation needs a declared object, object-union or list input"),
   } });
 
   const wrongProjectionId = "projection-knowledge-approve-task";

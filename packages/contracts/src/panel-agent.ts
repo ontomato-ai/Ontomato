@@ -3,8 +3,10 @@ import { agentExecutionRefSchema, agentSessionRefSchema } from "./agent-channel"
 import { agentQuestionAnswerReceiptSchema, agentUserQuestionReceiptSchema } from "./agent-user-questions";
 import { formFieldErrorSchema } from "./form-fields";
 import {
-  panelMemberPathSchema, panelObjectIdentitySchema, panelOperationCallSchema, panelOperationIdSchema, panelOperationSchema,
+  panelMemberPathSchema, panelObjectIdentitySchema, panelOperationCallSchema, panelOperationIdSchema,
+  panelOperationRowContextSchema, panelOperationSchema,
 } from "./panel-manifest";
+export { panelOperationRowContextSchema, type PanelOperationRowContext } from "./panel-manifest";
 import {
   panelBatchInvocationSchema, panelOperationAffectedSchema, panelOperationImpactSchema, panelOwnerOperationDescriptorSchema,
   panelReadOperationCallSchema, panelSingleInvocationSchema,
@@ -54,13 +56,38 @@ export type ReadPanelOperationRequest = z.infer<typeof readPanelOperationRequest
 export { panelReadOperationJsonResultSchema as readPanelOperationResponseSchema } from "./panel-operations";
 
 export { panelOwnerOperationDescriptorSchema as panelOperationDescriptorResponseSchema } from "./panel-operations";
-const panelIntentRequestScopeSchema = panelOperationRefSchema.extend({ intentId: runtimeIdSchema });
+const panelRequestSingleInvocationSchema = z.object({
+  call: panelOperationCallSchema.extend({ target: panelOperationCallSchema.shape.target.optional() }),
+}).strict();
+const panelHumanSingleInvocationSchema = z.object({ call: panelOperationCallSchema.omit({ draft: true }) }).strict();
+const panelHumanRequestSingleInvocationSchema = z.object({
+  call: panelOperationCallSchema.omit({ draft: true }).extend({ target: panelOperationCallSchema.shape.target.optional() }),
+}).strict();
+
+function validateRowOperationRequest(
+  request: { memberPath?: { itemKey?: unknown }[]; call?: { target?: unknown } },
+  ctx: z.RefinementCtx,
+): void {
+  const hasItemKey = Boolean(request.memberPath?.some(segment => segment.itemKey !== undefined));
+  if (request.call && request.call.target === undefined && !hasItemKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["call", "target"],
+      message: "Only a row operation (memberPath with itemKey) may omit call.target",
+    });
+  }
+}
+
+const panelRowScopedOperationRefSchema = panelOperationRefSchema.extend({
+  rowContext: panelOperationRowContextSchema.optional(),
+});
+const panelIntentRequestScopeSchema = panelRowScopedOperationRefSchema.extend({ intentId: runtimeIdSchema });
 
 /** The host supplies session/run/initiator/executor from authenticated context. */
 export const createPanelOperationIntentRequestSchema = z.union([
-  panelIntentRequestScopeSchema.merge(panelSingleInvocationSchema),
+  panelIntentRequestScopeSchema.merge(panelRequestSingleInvocationSchema),
   panelIntentRequestScopeSchema.merge(panelBatchInvocationSchema),
-]);
+]).superRefine(validateRowOperationRequest);
 export type CreatePanelOperationIntentRequest = z.infer<typeof createPanelOperationIntentRequestSchema>;
 
 /** Both human and agent confirmation inspect the exact calls that will be decided together. */
@@ -72,13 +99,11 @@ export const inspectPanelOperationImpactRequestSchema = z.union([
 /** Dispatch reads the immutable stored call and channel evidence. No questionId, approval or changed call is accepted. */
 export const dispatchPanelOperationIntentRequestSchema = z.object({}).strict();
 
-const panelHumanSingleInvocationSchema = z.object({ call: panelOperationCallSchema.omit({ draft: true }) }).strict();
-
 /** Node supplies the intent ID and the initiator from the authenticated reader. */
 export const createPanelHumanOperationIntentRequestSchema = z.union([
-  panelOperationRefSchema.merge(panelHumanSingleInvocationSchema),
-  panelOperationRefSchema.merge(panelBatchInvocationSchema),
-]);
+  panelRowScopedOperationRefSchema.merge(panelHumanRequestSingleInvocationSchema),
+  panelRowScopedOperationRefSchema.merge(panelBatchInvocationSchema),
+]).superRefine(validateRowOperationRequest);
 export type CreatePanelHumanOperationIntentRequest = z.infer<typeof createPanelHumanOperationIntentRequestSchema>;
 
 /** A multi-target batch names its targets. A single call confirms only when its owner inspects the impact. */
