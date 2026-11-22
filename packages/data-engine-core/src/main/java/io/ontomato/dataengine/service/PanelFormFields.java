@@ -48,6 +48,26 @@ public final class PanelFormFields {
     return control;
   }
 
+  /**
+   * A nested object whose extra child fields depend on the scalar select field at {@code variantBy} inside
+   * {@code fields}; {@code variants} maps each option value to its additional child fields.
+   */
+  public static JSONObject object(
+      JSONArray fields, JSONObject defaultObject, String variantBy, JSONObject variants) {
+    if ((variantBy == null) != (variants == null)) {
+      throw new IllegalArgumentException("variantBy and variants must both be provided or both be null");
+    }
+    JSONObject control = object(fields, defaultObject);
+    if (variantBy != null) {
+      if (!variantBy.startsWith("/")) {
+        throw new IllegalArgumentException("variantBy must be a relative JSON Pointer, got " + variantBy);
+      }
+      control.put("variantBy", variantBy);
+      control.put("variants", variants);
+    }
+    return control;
+  }
+
   public static JSONObject option(Object value, String label) {
     JSONObject option = JSONObject.of("value", value, "label", label);
     option.put("description", null);

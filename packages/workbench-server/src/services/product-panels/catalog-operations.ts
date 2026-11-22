@@ -5,7 +5,10 @@ import {
 } from "@ontomato/contracts/application-catalogue";
 import { runtimeJsonObjectSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { panelFormTargetSchema, panelObjectIdentitySchema } from "@ontomato/contracts/panel-manifest";
-import { panelFormSaveInputSchema, panelFormValuesSchema, type PanelFormDescription, type PanelFormField } from "@ontomato/contracts/panel-projection";
+import {
+  panelFormObjectAllFields, panelFormSaveInputSchema, panelFormValuesSchema,
+  type PanelFormDescription, type PanelFormField,
+} from "@ontomato/contracts/panel-projection";
 import {
   changeProductDomainGrantRequestSchema, changeProductGrantRequestSchema,
   changeProductPanelDomainGrantResponseSchema, productGrantChangeResponseSchema,
@@ -64,12 +67,12 @@ const pointer = (path: readonly (string | number)[]) =>
   path.map(part => "/" + String(part).replaceAll("~", "~0").replaceAll("/", "~1")).join("");
 const segments = (path: string) => path.split("/").slice(1).map(part => part.replaceAll("~1", "/").replaceAll("~0", "~"));
 
-/** Each declared field's path as segments; an array row is "*". */
-function fieldPatterns(fields: readonly PanelFormField[], prefix: string[] = []): string[][] {
+/** Each declared field's path as segments; an array row is "*". Includes every variant branch of object controls. */
+export function fieldPatterns(fields: readonly PanelFormField[], prefix: string[] = []): string[][] {
   return fields.flatMap(field => {
     const path = [...prefix, ...segments(field.path)];
     const { control } = field;
-    if (control.kind === "object") return [path, ...fieldPatterns(control.fields, path)];
+    if (control.kind === "object") return [path, ...fieldPatterns(panelFormObjectAllFields(control), path)];
     if (control.kind === "object-array") return [path, ...fieldPatterns(control.itemFields, [...path, "*"])];
     return [path];
   });
