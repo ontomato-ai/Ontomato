@@ -174,7 +174,17 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
       const pause = element.querySelector<HTMLDetailsElement>(".schedules [data-task] details");
       expect(pause?.open).toBe(false);
       expect(pause?.querySelector("p")?.textContent).toBe("The application form changed.");
-      element.querySelector<HTMLButtonElement>(".schedules [data-task] .pause-review")!.click();
+      const focus = HTMLElement.prototype.focus;
+      const browserFocus = vi.spyOn(HTMLElement.prototype, "focus").mockImplementation(function (this: HTMLElement, options) {
+        if (this.getAttribute("data-form") === "edit" && this.style.display === "none") return;
+        focus.call(this, options);
+      });
+      try {
+        element.querySelector<HTMLButtonElement>(".schedules [data-task] .pause-review")!.click();
+        await vi.waitFor(() => expect(document.activeElement).toBe(element.querySelector('[data-form="edit"]')));
+      } finally {
+        browserFocus.mockRestore();
+      }
       await vi.waitFor(() => expect(element.querySelector<HTMLElement>('[data-form="edit"]')?.style.display).toBe(""));
       await vi.waitFor(() => expect(JSON.parse(String(router.currentRoute.value.query.state))).toMatchObject({
         selectedTask: { className: "platform:ScheduledTask", primaryKey: operationsRow.primaryKey },
