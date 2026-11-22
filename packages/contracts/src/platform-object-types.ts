@@ -258,7 +258,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     reads: {
       query: {
         source: "type", parameterMode: "fixed",
-        params: { search: "keyword", scope: "applicationScope", cursor: "cursor", size: "size" },
+        params: { search: "keyword", scope: "applicationScope", sort: "applicationSort", cursor: "cursor", size: "size" },
         result: "applicationCatalogue",
       },
       record: { ...catalogueRecord, result: "applicationRecord" },

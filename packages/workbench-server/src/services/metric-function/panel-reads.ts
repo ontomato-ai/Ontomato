@@ -66,6 +66,7 @@ const metricSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
   description: z.string().nullish(),
+  status: z.string().nullish(),
   statusLabel: z.string().nullish(),
   originLabel: z.string().nullish(),
   createdByName: z.string().nullish(),
@@ -139,6 +140,8 @@ function metricRecord(metric: z.infer<typeof metricSchema>, fieldLabels: Record<
       reviewedBy: metric.reviewedByName ?? "",
       modified: typeof metric.modifyTimestamp === "number" ? new Date(metric.modifyTimestamp).toISOString() : "",
     },
+    // The page always coloured the status: published green, pending review amber, anything else grey.
+    tones: { status: metric.status === "PUBLISHED" ? "success" : metric.status === "PENDING_REVIEW" ? "warning" : "info" },
   };
 }
 

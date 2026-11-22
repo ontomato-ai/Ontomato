@@ -17,6 +17,7 @@ import io.ontomato.dataengine.bean.function.ReturnDef;
 import io.ontomato.dataengine.bean.metricView.MetricView;
 import io.ontomato.dataengine.bean.metricView.MetricViewBinding;
 import io.ontomato.dataengine.service.MetricViewBindings;
+import io.ontomato.dataengine.service.FunctionForm;
 import io.ontomato.dataengine.service.MetricViewForm;
 import io.ontomato.dataengine.service.OwnerFieldRefusal;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -506,6 +507,7 @@ public class MetricViewServiceImpl implements MetricViewService {
     JSONObject current = PanelFormFields.asset(metric);
     // A new definition has no ID yet; its form must not offer one for the create to carry.
     if (!existing) current.remove("id");
+    FunctionForm.labelColumnsFromAnalysis(current.getJSONObject("function"));
     if (values == null) {
       values = current;
     } else {

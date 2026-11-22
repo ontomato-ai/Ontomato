@@ -423,19 +423,23 @@ export const ontologyModelServerOperations = [
     inputSchema: z.object({}).strict(),
     resultSchema: classDeletionSchema,
     targetLabel: objectTypeTargetLabel,
+    done: (host, name) => tForLocale(host.locale, "panels.ontologyModel.objectTypeDeleted", { name }),
     inspectImpact: deleteObjectTypeImpact,
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const result = await postModelWrite(host, "/object-type/delete", { className: target.primaryKey }, classDeletionSchema);
       if (!result.ok) return result.outcome;
+      // The type goes, and with it the relationships that joined it.
+      const removed = [
+        { objectType: OBJECT_TYPE, primaryKey: target.primaryKey },
+        ...result.data.relationships.map(name => ({ objectType: RELATIONSHIP, primaryKey: name })),
+      ];
       return {
         kind: "success",
         data: runtimeJsonObjectSchema.parse(result.data),
         affected: {
-          objects: [
-            { objectType: OBJECT_TYPE, primaryKey: target.primaryKey },
-            ...result.data.relationships.map(name => ({ objectType: RELATIONSHIP, primaryKey: name })),
-          ],
+          objects: removed,
           objectTypes: result.data.relationships.length ? [OBJECT_TYPE, ATTRIBUTE, RELATIONSHIP] : [OBJECT_TYPE, ATTRIBUTE],
+          removed,
         },
       };
     },
@@ -453,6 +457,7 @@ export const ontologyModelServerOperations = [
     inputSchema: z.object({}).strict(),
     resultSchema: emptyResultSchema,
     targetLabel: attributeTargetLabel,
+    done: (host, name) => tForLocale(host.locale, "panels.ontologyModel.attributeDeleted", { name }),
     inspectImpact: deleteImpact(DELETE_ATTRIBUTE, "panels.confirmation.deleteAttributeImpact", ATTRIBUTE, attributeTargetLabel),
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const key = parseAttributePrimaryKey(target.primaryKey);
@@ -461,7 +466,7 @@ export const ontologyModelServerOperations = [
       return {
         kind: "success",
         data: {},
-        affected: { objects: [attributeIdentity(key)], objectTypes: [ATTRIBUTE, OBJECT_TYPE] },
+        affected: { objects: [attributeIdentity(key)], objectTypes: [ATTRIBUTE, OBJECT_TYPE], removed: [attributeIdentity(key)] },
       };
     },
   },
@@ -478,6 +483,7 @@ export const ontologyModelServerOperations = [
     inputSchema: z.object({}).strict(),
     resultSchema: emptyResultSchema,
     targetLabel: relationshipTargetLabel,
+    done: (host, name) => tForLocale(host.locale, "panels.ontologyModel.relationshipDeleted", { name }),
     inspectImpact: deleteImpact(
       DELETE_RELATIONSHIP, "panels.confirmation.deleteRelationshipImpact", RELATIONSHIP, relationshipTargetLabel,
     ),
@@ -495,6 +501,7 @@ export const ontologyModelServerOperations = [
         affected: {
           objects: [{ objectType: RELATIONSHIP, primaryKey: target.primaryKey }],
           objectTypes: [RELATIONSHIP, OBJECT_TYPE],
+          removed: [{ objectType: RELATIONSHIP, primaryKey: target.primaryKey }],
         },
       };
     },
@@ -513,6 +520,7 @@ export const ontologyModelServerOperations = [
     resultSchema: setPrimaryKeyResultSchema,
     inspectImpact: setPrimaryKeyImpact,
     targetLabel: attributeTargetLabel,
+    done: (host, name) => tForLocale(host.locale, "panels.ontologyModel.primaryKeySet", { name }),
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const result = await postModelWrite(
         host,
