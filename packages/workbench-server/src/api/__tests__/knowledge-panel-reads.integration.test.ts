@@ -692,16 +692,12 @@ it("rejects a forged member path, an undeclared operation and an unauthorized ta
   const preparedForbiddenApprove = await intent("approve.approve", forbiddenTarget);
   expect(preparedForbiddenApprove.status).toBe(200);
   const { intentId } = await preparedForbiddenApprove.json();
+  // The entry's title, for the owner's sentence, is read before anything is claimed: an entry outside the domain is
+  // answered there, as a delete is when it is prepared, and nothing is written.
   const dispatchedForbiddenApprove = await request("POST", `panel-operations/intents/${intentId}/dispatch`, {});
-  expect(dispatchedForbiddenApprove.status).toBe(200);
+  expect(dispatchedForbiddenApprove.status).toBe(404);
   expect(await dispatchedForbiddenApprove.json()).toMatchObject({
-    kind: "dispatched",
-    intentId,
-    outcome: {
-      kind: "refusal",
-      code: "KNOWLEDGE_APPROVE_REFUSED",
-      message: "Business knowledge k-forbidden is not in this domain",
-    },
+    error: { code: "KNOWLEDGE_UNAVAILABLE", message: "Business knowledge k-forbidden is not in this domain" },
   });
   expect(ownerWrites).toEqual([]);
 });
