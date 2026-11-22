@@ -82,12 +82,13 @@ const Applications = {
 
     const searchText = ref(values.value.search ?? "");
     const scope = computed(() => values.value.scope ?? "visible");
+    const sort = computed(() => values.value.sort ?? "id");
     const pageSize = computed(() => values.value.size ?? 20);
     const cursors = ref([]);
     const pageIndex = computed(() => cursors.value.length + 1);
     const isFirstPage = computed(() => cursors.value.length === 0);
     const listRegion = ref(null);
-    const listKey = () => JSON.stringify([values.value.search, scope.value, pageSize.value, values.value.cursor]);
+    const listKey = () => JSON.stringify([values.value.search, scope.value, sort.value, pageSize.value, values.value.cursor]);
     const positions = new Map();
 
     function scrollContainer() {
@@ -120,23 +121,23 @@ const Applications = {
     function scheduleSearch() {
       globalThis.clearTimeout(searchTimer);
       searchTimer = globalThis.setTimeout(() => {
-        instance.state.set("search", searchText.value.trim() || null);
-        instance.state.set("cursor", null);
-        cursors.value = [];
+        updateQuery({ search: searchText.value.trim() || null });
       }, 250);
     }
 
-    function setScope(value) {
-      instance.state.set("scope", value);
-      instance.state.set("cursor", null);
+    function updateQuery(patch) {
       cursors.value = [];
+      instance.state.setState({ ...patch, cursor: null });
     }
 
-    function setSize(value) {
-      instance.state.set("size", value);
-      instance.state.set("cursor", null);
+    watch([() => values.value.search, scope, sort, pageSize], () => {
       cursors.value = [];
-    }
+      if (values.value.cursor != null) instance.state.set("cursor", null);
+    }, { flush: "sync" });
+
+    const setScope = value => updateQuery({ scope: value });
+    const setSort = value => updateQuery({ sort: value });
+    const setSize = value => updateQuery({ size: value });
 
     function nextPage() {
       if (!nextCursor.value) return;
@@ -503,8 +504,8 @@ const Applications = {
 
     return {
       t, APPLICATION, catalogue, record, grants, panelInfo, selected, rows, nextCursor, app, appIcon, mode, creating, busy,
-      searchText, scope, pageSize, pageIndex, isFirstPage, listError, actionError, actionNote, classLinkNote,
-      listRegion, scheduleSearch, setScope, setSize, nextPage, previousPage, firstPage, openRow, backToList, createdApplication,
+      searchText, scope, sort, pageSize, pageIndex, isFirstPage, listError, actionError, actionNote, classLinkNote,
+      listRegion, scheduleSearch, setScope, setSort, setSize, nextPage, previousPage, firstPage, openRow, backToList, createdApplication,
       openApplication, openClassCatalogue, openPanelCatalogue, openMemberCatalogue, usedPanels, inspectedPanelId, inspectedMembers,
       inspectPanel, groupText, permissionSummary, localeRows, localizedText, secondaryName,
       accessText, agentText, inputsText, themeText,

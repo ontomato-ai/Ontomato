@@ -22,6 +22,30 @@ function writePanelDescriptor(file, document, source) {
   return writeFile(file, JSON.stringify(document, null, indent) + newline);
 }
 
+function formatAuthoringViolations(violations) {
+  return violations.map(v => `${v.file}:${v.line}:${v.column}: ${v.message}`).join("\n");
+}
+
+async function checkPanelAuthoringSources({ directory, files, descriptorFile, theme, html, module, checks }) {
+  const violations = [];
+  if (theme && checks.checkAuthoringTheme) {
+    violations.push(...checks.checkAuthoringTheme(theme, descriptorFile));
+  }
+  if (html !== undefined && checks.checkAuthoringTemplate) {
+    violations.push(...checks.checkAuthoringTemplate(html, resolve(directory, "panel.html")));
+  }
+  if (module !== undefined && checks.checkAuthoringScript) {
+    violations.push(...await checks.checkAuthoringScript(module, resolve(directory, "panel.mjs")));
+  }
+  if (checks.checkAuthoringStyles) {
+    for (const name of files.filter(entry => entry.endsWith(".css")).sort()) {
+      const cssFile = resolve(directory, name);
+      violations.push(...checks.checkAuthoringStyles(await readFile(cssFile, "utf8"), cssFile));
+    }
+  }
+  if (violations.length) throw new Error(formatAuthoringViolations(violations));
+}
+
 export async function checkBuiltinPanelSource(directory, checks, { assignIds = false, builtinEntryIds } = {}) {
   if (!checks.builtinProductIdSchema) throw new Error("Use an SDK release that supports platform product IDs");
   const registrationFile = resolve(directory, "registration.json");
@@ -73,16 +97,34 @@ export async function checkBuiltinPanelSource(directory, checks, { assignIds = f
 
   const files = await readdir(directory);
   const trialPath = "/applications/app-";
+  const sourceTexts = {};
   for (const name of ["panel.html", "panel.mjs", "recipes.md"]) {
     if (!files.includes(name)) continue;
     const path = resolve(directory, name);
     const text = await readFile(path, "utf8");
+    sourceTexts[name] = text;
     const offset = text.indexOf(trialPath);
     if (offset === -1) continue;
     const lines = text.slice(0, offset).split(/\r\n|[\r\n]/u);
     const column = lines.at(-1).length + 1;
     throw new Error(`${path}:${lines.length}:${column}: Replace the domain application address (${trialPath}…) with a built-in entry address.`);
   }
+  if (sourceTexts["panel.mjs"] !== undefined && checks.panelModuleImports) {
+    try {
+      await checks.panelModuleImports(sourceTexts["panel.mjs"]);
+    } catch (error) {
+      throw new Error(`${resolve(directory, "panel.mjs")}: ${error.message}`, { cause: error });
+    }
+  }
+  await checkPanelAuthoringSources({
+    directory,
+    files,
+    descriptorFile: file,
+    theme: document.theme,
+    html: sourceTexts["panel.html"],
+    module: sourceTexts["panel.mjs"],
+    checks,
+  });
 
   const assigned = new Map();
   for (const [member, declaration] of Object.entries(parsed.data.members)) {
@@ -173,6 +215,11 @@ async function workspaceDefinition(directory, files, checks, panel, loadAuthorin
   const contents = await Promise.all(sources.map(async ([key, file]) => [
     key, await readFile(resolve(directory, file), "utf8"),
   ]));
+  const themeViolations = document.theme && checks.checkAuthoringTheme
+    ? checks.checkAuthoringTheme(document.theme, descriptorFile)
+    : [];
+  if (themeViolations.length) throw new Error(formatAuthoringViolations(themeViolations));
+
   const result = checks.panelDefinitionContentSchema.safeParse({
     ...descriptor, manifest: expanded.manifest, content: { ...content, ...Object.fromEntries(contents) },
   });
@@ -182,6 +229,14 @@ async function workspaceDefinition(directory, files, checks, panel, loadAuthorin
     } catch (error) {
       throw new Error(`${resolve(directory, "panel.mjs")}: ${error.message}`, { cause: error });
     }
+    await checkPanelAuthoringSources({
+      directory,
+      files,
+      descriptorFile,
+      html: result.data.content.html,
+      module: result.data.content.module,
+      checks,
+    });
 
     return { definition: result.data, inline: expanded.inline, charts: expanded.charts, descriptorFile, document, source };
   }
@@ -217,20 +272,38 @@ function checkOperations(id, projection, typeTable, placements, state, checks) {
       }
     }
     if (input === undefined) continue;
-    const portKind = projection.inputs[input].kind;
+    const expectedPort = projection.inputs[input];
     for (const [member, placement] of placements) {
       const value = placement.inputs?.[input];
-      const bound = value && (!("state" in value) || matched.some(([type, operation]) =>
-        checks.panelOperationTargetPort(state[value.state].type, type, operation.batch)?.kind === portKind));
+      const bound = value && (!("state" in value) || matched.some(([type, operation]) => {
+        const statePort = state[value.state].type;
+        const accepted = checks.panelOperationTargetPort(statePort, type, operation.batch);
+        if (!accepted) return false;
+        return expectedPort.kind === "json" || (checks.panelPortAccepts
+          ? checks.panelPortAccepts(expectedPort, statePort)
+          : accepted.kind === expectedPort.kind);
+      }));
       if (!bound) throw new Error(`member ${member} (projection ${id}): bind ${label}'s target input ${input} to an object or checked list`);
     }
   }
 }
 
-function checkProjectionData(id, projection, component, checks) {
+function checkProjectionData(id, projection, component, checks, placements = []) {
   if (!("data" in projection)) return;
+  for (const [member, placement] of placements) {
+    if (placement.listColumn !== undefined && Object.keys(projection.data).length > 0) {
+      throw new Error(`member ${member} (projection ${id}): listColumn members cannot declare independent data reads`);
+    }
+  }
   const { data } = component;
-  if (data === undefined) throw new Error(`projection ${id}: component ${projection.componentId} does not declare projection data`);
+  const hostMountedOnly = placements.length > 0 && placements.every(([, placement]) =>
+    checks.isHostMountedPanelMember
+      ? checks.isHostMountedPanelMember(placement)
+      : Boolean(placement.formField || placement.listColumn || placement.listRowDetail));
+  if (data === undefined) {
+    if (hostMountedOnly && Object.keys(projection.data).length === 0) return;
+    throw new Error(`projection ${id}: component ${projection.componentId} does not declare projection data`);
+  }
   for (const [name, declaration] of Object.entries(data)) {
     if (declaration.required && !Object.hasOwn(projection.data, name)) {
       throw new Error(`projection ${id}: data.${name} is required by ${projection.componentId}`);
@@ -406,7 +479,7 @@ export async function checkPanelWorkspace(directory, { checks, catalogue, versio
       if (!component) {
         throw new Error(`${resolve(directory, "panel.json")}: projection ${id} uses unavailable component ${record.componentId}`);
       }
-      checkProjectionData(id, record, component, checks);
+      checkProjectionData(id, record, component, checks, placements.get(id));
       if (typeTable) checkOperations(id, record, typeTable, placements.get(id), manifest.state, checks);
       // A conversation entry's opening sentence named by key is the placing panel's own words, in each language it
       // declares: a reused projection's key counts as much as a new one's.

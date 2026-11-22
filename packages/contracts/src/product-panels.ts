@@ -138,6 +138,10 @@ function validateBuiltinProjection(projection: DirectProjectionPorts, ctx: z.Ref
   for (const [name, binding] of Object.entries(projection.operations ?? {})) {
     if (binding.operation.kind === "Action") reject(["operations", name, "operation", "id"]);
     if (binding.target && "literal" in binding.target) reject(["operations", name, "target", "literal"]);
+    for (const [param, value] of Object.entries(binding.params ?? {})) {
+      if ("literal" in value && containsObjectIdentity(value.literal))
+        reject(["operations", name, "params", param, "literal"]);
+    }
   }
   for (const [key, value] of Object.entries(projection.config)) {
     if (containsObjectIdentity(value)) reject(["config", key]);

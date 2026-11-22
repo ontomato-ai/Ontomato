@@ -7,7 +7,7 @@
   .projection-name-button :is(.cell-name, .cell-desc) { display: block; }
   .projection-name-button:focus-visible { box-shadow: var(--focus-ring); }
   .projections-sort { width: 132px; }
-  .projections-count { margin-inline-start: auto; color: var(--el-text-color-secondary); font-size: var(--el-font-size-small); }
+  .projections-count { margin-inline-start: auto; color: var(--sdk-text-color-secondary); font-size: var(--text-sm); }
   .projections-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--spacing-md); align-items: start; }
   @media (min-width: 62rem) {
     .projections-body.with-detail { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
@@ -19,31 +19,31 @@
   .projections-pager { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); justify-content: flex-end; }
   .projections-pager .page-size { width: 104px; }
   .cell-name { font-weight: var(--font-semibold); }
-  .cell-desc { color: var(--el-text-color-secondary); font-size: var(--el-font-size-extra-small); line-height: var(--leading-sm); }
+  .cell-desc { color: var(--sdk-text-color-secondary); font-size: var(--text-xs); line-height: var(--leading-sm); }
   .cell-identity { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .projections-detail { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; }
   .detail-view { display: flex; flex-direction: column; gap: var(--spacing-md); }
   .detail-head { display: flex; gap: var(--spacing-md); justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
-  .detail-head h2 { margin: 0; font-size: var(--el-font-size-medium); }
-  .detail-desc { margin: var(--spacing-xs) 0 0; color: var(--el-text-color-regular); font-size: var(--el-font-size-small); }
+  .detail-head h2 { margin: 0; font-size: var(--text-lg); }
+  .detail-desc { margin: var(--spacing-xs) 0 0; color: var(--sdk-text-color-regular); font-size: var(--text-sm); }
   .detail-tags { display: flex; gap: var(--spacing-xs); flex-wrap: wrap; margin-top: var(--spacing-sm); }
   .detail-actions { display: flex; gap: var(--spacing-xs); flex-wrap: wrap; }
   .detail-section { border-top: 1px solid var(--ui-divider); padding-top: var(--spacing-sm); display: flex; flex-direction: column; gap: var(--spacing-sm); }
-  .detail-section > h3 { margin: 0; font-size: var(--el-font-size-small); font-weight: var(--font-semibold); }
-  .detail-section > h3 small { color: var(--el-text-color-secondary); font-weight: var(--font-normal); margin-inline-start: var(--spacing-sm); font-size: var(--el-font-size-extra-small); }
+  .detail-section > h3 { margin: 0; font-size: var(--text-sm); font-weight: var(--font-semibold); }
+  .detail-section > h3 small { color: var(--sdk-text-color-secondary); font-weight: var(--font-normal); margin-inline-start: var(--spacing-sm); font-size: var(--text-xs); }
   .io { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--spacing-md); }
-  .io h4 { margin: 0 0 var(--spacing-xs); font-size: var(--el-font-size-extra-small); color: var(--el-text-color-secondary); font-weight: var(--font-semibold); }
-  .io ul { margin: 0; padding-inline-start: var(--spacing-lg); font-size: var(--el-font-size-small); }
-  .io li span { color: var(--el-text-color-secondary); }
+  .io h4 { margin: 0 0 var(--spacing-xs); font-size: var(--text-xs); color: var(--sdk-text-color-secondary); font-weight: var(--font-semibold); }
+  .io ul { margin: 0; padding-inline-start: var(--spacing-lg); font-size: var(--text-sm); }
+  .io li span { color: var(--sdk-text-color-secondary); }
   .list-link { padding: 0; height: auto; justify-content: flex-start; }
-  .hint { margin: 0; color: var(--el-text-color-secondary); font-size: var(--el-font-size-small); }
+  .hint { margin: 0; color: var(--sdk-text-color-secondary); font-size: var(--text-sm); }
   .grant-row { display: flex; gap: var(--spacing-sm); flex-wrap: wrap; align-items: center; }
   .grant-row .principal-id { flex: 1 1 12rem; min-width: 8rem; }
   .grant-row .verb { width: 104px; }
   .grant-row .kind { width: 96px; }
-  .panel-list { display: flex; flex-direction: column; gap: var(--spacing-xs); margin: 0; padding: 0; list-style: none; font-size: var(--el-font-size-small); }
+  .panel-list { display: flex; flex-direction: column; gap: var(--spacing-xs); margin: 0; padding: 0; list-style: none; font-size: var(--text-sm); }
   .json { margin: 0; max-height: 16rem; overflow: auto; padding: var(--spacing-sm) var(--spacing-sm); border: 1px solid var(--ui-divider);
-    border-radius: var(--radius-xs); background: var(--ui-fill-tertiary); font-size: var(--el-font-size-extra-small); line-height: 1.5;
+    border-radius: var(--radius-xs); background: var(--ui-fill-tertiary); font-size: var(--text-xs); line-height: 1.5;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
   .projections-list .el-table .el-table__cell { padding-inline: var(--spacing-xs) !important; }
   .projections-list .el-table .cell { padding-inline: var(--spacing-xs); }
@@ -53,63 +53,63 @@
   <section class="projections">
 
     <div class="projections-toolbar">
-      <el-input v-model="searchDraft" class="projections-search" clearable placeholder="搜索名称或说明" />
-      <el-radio-group :model-value="scope" @change="setScope">
-        <el-radio-button value="all" label="all">全部</el-radio-button>
-        <el-radio-button value="mine" label="mine">我的</el-radio-button>
-        <el-radio-button value="shared" label="shared">共享</el-radio-button>
-      </el-radio-group>
-      <el-select :model-value="sort" class="projections-sort" @change="setSort">
-        <el-option label="最近更新" value="updated" />
-        <el-option label="名称" value="name" />
-      </el-select>
+      <sdk-input v-model="searchDraft" class="projections-search" clearable placeholder="搜索名称或说明" />
+      <sdk-radio-group :model-value="scope" @change="setScope">
+        <sdk-radio-button value="all" label="all">全部</sdk-radio-button>
+        <sdk-radio-button value="mine" label="mine">我的</sdk-radio-button>
+        <sdk-radio-button value="shared" label="shared">共享</sdk-radio-button>
+      </sdk-radio-group>
+      <sdk-select :model-value="sort" class="projections-sort" @change="setSort">
+        <sdk-option label="最近更新" value="updated" />
+        <sdk-option label="名称" value="name" />
+      </sdk-select>
       <span class="projections-count" role="status">{{ listStatusText }}</span>
     </div>
 
-    <el-alert v-if="notice" :title="notice.text" :type="notice.type || notice.tone" show-icon :closable="true"
+    <sdk-alert v-if="notice" :title="notice.text" :type="notice.type || notice.tone" show-icon :closable="true"
       @close="notice = null" />
 
     <div class="projections-body" :class="{ 'with-detail': showDetail }">
       <div class="projections-list">
-        <el-empty v-if="!showDetail && rows.length" class="selection-hint" description="选择一条投影查看详情" />
-        <el-table :data="rows" size="small" highlight-current-row border :current-row-key="selectedKey" row-key="id"
+        <sdk-empty v-if="!showDetail && rows.length" class="selection-hint" description="选择一条投影查看详情" />
+        <sdk-table :data="rows" size="small" highlight-current-row border :current-row-key="selectedKey" row-key="id"
           @row-click="choose" empty-text="没有符合条件的投影">
-          <el-table-column label="名称" min-width="98">
+          <sdk-table-column label="名称" min-width="98">
             <template #default="scope">
               <button class="projection-name-button" type="button" @click.stop="choose(scope.row)">
                 <span class="cell-name">{{ scope.row.name }}</span>
                 <span class="cell-desc" v-if="scope.row.description">{{ scope.row.description }}</span>
               </button>
             </template>
-          </el-table-column>
-          <el-table-column label="所用组件" min-width="88">
+          </sdk-table-column>
+          <sdk-table-column label="所用组件" min-width="88">
             <template #default="scope">
               <span class="cell-identity" :title="componentLabel(scope.row.componentId)">{{ componentLabel(scope.row.componentId) }}</span>
             </template>
-          </el-table-column>
-          <el-table-column label="所属人" min-width="64">
+          </sdk-table-column>
+          <sdk-table-column label="所属人" min-width="64">
             <template #default="scope">
               <span class="cell-identity" :title="ownerName(scope.row.ownerId)">{{ ownerName(scope.row.ownerId) }}</span>
             </template>
-          </el-table-column>
-          <el-table-column label="共享范围" min-width="74">
+          </sdk-table-column>
+          <sdk-table-column label="共享范围" min-width="74">
             <template #default="scope"><span class="cell-identity">{{ scopeLabel(scope.row.visibility) }}</span></template>
-          </el-table-column>
-          <el-table-column label="更新时间" min-width="142">
+          </sdk-table-column>
+          <sdk-table-column label="更新时间" min-width="142">
             <template #default="scope">
               <time :datetime="scope.row.updatedAt">{{ formatTimestamp(scope.row.updatedAt) }}</time>
             </template>
-          </el-table-column>
-        </el-table>
+          </sdk-table-column>
+        </sdk-table>
         <div class="projections-pager">
           <span class="hint">第 {{ pageNumber }} 页</span>
-          <el-select :model-value="pageSize" class="page-size" size="small" @change="setPageSize">
-            <el-option label="10 条/页" :value="10" />
-            <el-option label="20 条/页" :value="20" />
-            <el-option label="50 条/页" :value="50" />
-          </el-select>
-          <el-button size="small" :disabled="pageNumber <= 1" @click="previousPage">上一页</el-button>
-          <el-button size="small" :disabled="!nextCursor" @click="nextPage">下一页</el-button>
+          <sdk-select :model-value="pageSize" class="page-size" size="small" @change="setPageSize">
+            <sdk-option label="10 条/页" :value="10" />
+            <sdk-option label="20 条/页" :value="20" />
+            <sdk-option label="50 条/页" :value="50" />
+          </sdk-select>
+          <sdk-button size="small" :disabled="pageNumber <= 1" @click="previousPage">上一页</sdk-button>
+          <sdk-button size="small" :disabled="!nextCursor" @click="nextPage">下一页</sdk-button>
         </div>
       </div>
 
@@ -126,24 +126,24 @@
                 <h2>{{ record.value.name }}</h2>
                 <p class="detail-desc" v-if="record.value.description">{{ record.value.description }}</p>
                 <div class="detail-tags">
-                  <el-tag size="small" type="info">{{ componentLabel(record.value.componentId) }}</el-tag>
-                  <el-tag size="small">{{ scopeLabel(record.value.visibility) }}</el-tag>
-                  <el-tag size="small" :type="record.value.editable ? 'success' : 'info'">
+                  <sdk-tag size="small" type="info">{{ componentLabel(record.value.componentId) }}</sdk-tag>
+                  <sdk-tag size="small">{{ scopeLabel(record.value.visibility) }}</sdk-tag>
+                  <sdk-tag size="small" :type="record.value.editable ? 'success' : 'info'">
                     {{ record.value.editable ? '可编辑' : '只读' }}
-                  </el-tag>
-                  <el-tag v-if="isChart(record.value)" size="small" type="warning">图投影</el-tag>
-                  <el-tag size="small" type="info">修订 {{ record.value.revision }}</el-tag>
+                  </sdk-tag>
+                  <sdk-tag v-if="isChart(record.value)" size="small" type="warning">图投影</sdk-tag>
+                  <sdk-tag size="small" type="info">修订 {{ record.value.revision }}</sdk-tag>
                 </div>
               </div>
               <div class="detail-actions">
-                <el-button size="small" @click="openClass">查看所属类</el-button>
-                <el-button size="small" :disabled="!record.value.editable" @click="startEdit">编辑</el-button>
-                <el-button size="small" :disabled="!record.value.editable || isChart(record.value)" @click="openCopy">
+                <sdk-button size="small" @click="openClass">查看所属类</sdk-button>
+                <sdk-button size="small" :disabled="!record.value.editable" @click="startEdit">编辑</sdk-button>
+                <sdk-button size="small" :disabled="!record.value.editable || isChart(record.value)" @click="openCopy">
                   复制
-                </el-button>
-                <el-button size="small" type="danger" plain :disabled="!record.value.editable" @click="openDelete">
+                </sdk-button>
+                <sdk-button size="small" type="danger" plain :disabled="!record.value.editable" @click="openDelete">
                   删除
-                </el-button>
+                </sdk-button>
               </div>
             </header>
 
@@ -158,17 +158,17 @@
 
             <section class="detail-section">
               <h3>来处、读法</h3>
-              <el-table :data="dataRows" size="small" border empty-text="这条投影不读数据">
-                <el-table-column prop="name" label="数据" width="96" />
-                <el-table-column prop="source" label="来处" min-width="150">
+              <sdk-table :data="dataRows" size="small" border empty-text="这条投影不读数据">
+                <sdk-table-column prop="name" label="数据" width="96" />
+                <sdk-table-column prop="source" label="来处" min-width="150">
                   <template #default="{ row }">
-                    <el-button v-if="row.address" link @click="openOwner(row.address)">{{ row.source }}</el-button>
+                    <sdk-button v-if="row.address" link @click="openOwner(row.address)">{{ row.source }}</sdk-button>
                     <span v-else>{{ row.source }}</span>
                   </template>
-                </el-table-column>
-                <el-table-column prop="read" label="读法" width="104" />
-                <el-table-column prop="params" label="参数从哪来" min-width="160" />
-              </el-table>
+                </sdk-table-column>
+                <sdk-table-column prop="read" label="读法" width="104" />
+                <sdk-table-column prop="params" label="参数从哪来" min-width="160" />
+              </sdk-table>
             </section>
 
             <section class="detail-section">
@@ -202,16 +202,16 @@
 
             <section class="detail-section">
               <h3>属主登记的操作</h3>
-              <el-table :data="operationRows" size="small" border empty-text="这条投影不登记操作">
-                <el-table-column prop="name" label="名字" width="96" />
-                <el-table-column prop="operation" label="操作" min-width="180">
+              <sdk-table :data="operationRows" size="small" border empty-text="这条投影不登记操作">
+                <sdk-table-column prop="name" label="名字" width="96" />
+                <sdk-table-column prop="operation" label="操作" min-width="180">
                   <template #default="{ row }">
-                    <el-button v-if="row.address" link @click="openOwner(row.address)">{{ row.operation }}</el-button>
+                    <sdk-button v-if="row.address" link @click="openOwner(row.address)">{{ row.operation }}</sdk-button>
                     <span v-else>{{ row.operation }}</span>
                   </template>
-                </el-table-column>
-                <el-table-column prop="target" label="目标" min-width="120" />
-              </el-table>
+                </sdk-table-column>
+                <sdk-table-column prop="target" label="目标" min-width="120" />
+              </sdk-table>
             </section>
 
             <section class="detail-section">
@@ -220,38 +220,38 @@
                 <p v-if="grants.status === 'error'" role="alert">{{ grants.message }}</p>
                 <p v-else-if="grants.status === 'forbidden'" role="alert">{{ t('grants.forbidden') }}</p>
                 <p v-else-if="grants.status !== 'ready'" class="hint">{{ t('grants.loading') }}</p>
-                <el-table v-else :data="grants.value.grants" size="small" :empty-text="t('grants.none')">
-                  <el-table-column :label="t('grants.kind')">
+                <sdk-table v-else :data="grants.value.grants" size="small" :empty-text="t('grants.none')">
+                  <sdk-table-column :label="t('grants.kind')">
                     <template #default="{ row }">{{ t('grants.' + row.principalKind) }}</template>
-                  </el-table-column>
-                  <el-table-column prop="principalId" :label="t('grants.id')"></el-table-column>
-                  <el-table-column :label="t('grants.verb')">
+                  </sdk-table-column>
+                  <sdk-table-column prop="principalId" :label="t('grants.id')"></sdk-table-column>
+                  <sdk-table-column :label="t('grants.verb')">
                     <template #default="{ row }">{{ t('grants.' + row.verb) }}</template>
-                  </el-table-column>
-                  <el-table-column :label="t('grants.actions')">
+                  </sdk-table-column>
+                  <sdk-table-column :label="t('grants.actions')">
                     <template #default="{ row }">
-                      <el-button v-if="row.principalKind !== 'domain'" link @click="submitGrant(true, row)">{{ t('grants.revoke') }}</el-button>
+                      <sdk-button v-if="row.principalKind !== 'domain'" link @click="submitGrant(true, row)">{{ t('grants.revoke') }}</sdk-button>
                     </template>
-                  </el-table-column>
-                </el-table>
+                  </sdk-table-column>
+                </sdk-table>
               </template>
               <div class="grant-row">
-                <el-select v-model="grantForm.principalKind" class="kind" size="small">
-                  <el-option label="成员" value="principal" />
-                  <el-option label="角色" value="role" />
-                </el-select>
-                <el-input v-model="grantForm.principalId" class="principal-id" size="small"
+                <sdk-select v-model="grantForm.principalKind" class="kind" size="small">
+                  <sdk-option label="成员" value="principal" />
+                  <sdk-option label="角色" value="role" />
+                </sdk-select>
+                <sdk-input v-model="grantForm.principalId" class="principal-id" size="small"
                   :placeholder="grantForm.principalKind === 'role' ? '角色或成员 ID' : '成员 ID'" />
-                <el-select v-model="grantForm.verb" class="verb" size="small">
-                  <el-option label="使用" value="use" />
-                  <el-option label="编辑" value="edit" />
-                </el-select>
-                <el-button size="small" :disabled="!canGrant || !grantForm.principalId" @click="submitGrant(false)">授予</el-button>
-                <el-button size="small" :disabled="!canGrant || !grantForm.principalId" @click="submitGrant(true)">撤销</el-button>
+                <sdk-select v-model="grantForm.verb" class="verb" size="small">
+                  <sdk-option label="使用" value="use" />
+                  <sdk-option label="编辑" value="edit" />
+                </sdk-select>
+                <sdk-button size="small" :disabled="!canGrant || !grantForm.principalId" @click="submitGrant(false)">授予</sdk-button>
+                <sdk-button size="small" :disabled="!canGrant || !grantForm.principalId" @click="submitGrant(true)">撤销</sdk-button>
               </div>
               <div class="grant-row">
-                <el-button size="small" :disabled="!canGrant" @click="submitShare(true)">开启域内共享</el-button>
-                <el-button size="small" :disabled="!canGrant" @click="submitShare(false)">关闭域内共享</el-button>
+                <sdk-button size="small" :disabled="!canGrant" @click="submitShare(true)">开启域内共享</sdk-button>
+                <sdk-button size="small" :disabled="!canGrant" @click="submitShare(false)">关闭域内共享</sdk-button>
                 <span class="hint">授权按种类、ID 与动作直接提交；属主只回答成功或拒绝。</span>
               </div>
             </section>
@@ -260,7 +260,7 @@
               <h3>被哪些面板使用<small>{{ usedByCountText }}</small></h3>
               <ul class="panel-list" v-if="usedPanels.length">
                 <li v-for="panel in usedPanels" :key="panel.id">
-                  <el-button link class="list-link" @click="openPanel(panel.id)">{{ panel.name }}</el-button>
+                  <sdk-button link class="list-link" @click="openPanel(panel.id)">{{ panel.name }}</sdk-button>
                   <span class="hint"> · {{ panel.id }}</span>
                 </li>
               </ul>
@@ -269,11 +269,11 @@
             </section>
           </template>
 
-          <el-alert v-else-if="record.status === 'loading'" type="info" :closable="false" title="正在读取这条投影…" />
-          <el-alert v-else-if="record.status === 'forbidden'" type="warning" :closable="false"
+          <sdk-alert v-else-if="record.status === 'loading'" type="info" :closable="false" title="正在读取这条投影…" />
+          <sdk-alert v-else-if="record.status === 'forbidden'" type="warning" :closable="false"
             title="你没有这条投影的使用授权。" />
-          <el-alert v-else-if="record.status === 'error'" type="error" :closable="false" :title="record.message" />
-          <el-alert v-else-if="record.status === 'empty'" type="warning" :closable="false" title="这条投影已不可用。" />
+          <sdk-alert v-else-if="record.status === 'error'" type="error" :closable="false" :title="record.message" />
+          <sdk-alert v-else-if="record.status === 'empty'" type="warning" :closable="false" title="这条投影已不可用。" />
         </div>
       </div>
     </div>
@@ -288,22 +288,22 @@
     <projection slot="revokeOp"></projection>
     <projection slot="shareOp"></projection>
 
-    <el-dialog v-model="copyDialog" title="复制投影" width="420px">
-      <el-form label-position="top">
-        <el-form-item label="新名称">
-          <el-input v-model="copyForm.name" />
-        </el-form-item>
-        <el-form-item label="新标识">
-          <el-input v-model="copyForm.id" />
-        </el-form-item>
-      </el-form>
+    <sdk-dialog v-model="copyDialog" title="复制投影" width="420px">
+      <sdk-form label-position="top">
+        <sdk-form-item label="新名称">
+          <sdk-input v-model="copyForm.name" />
+        </sdk-form-item>
+        <sdk-form-item label="新标识">
+          <sdk-input v-model="copyForm.id" />
+        </sdk-form-item>
+      </sdk-form>
       <template #footer>
-        <el-button @click="copyDialog = false">取消</el-button>
-        <el-button type="primary" :disabled="!copyForm.name || !copyForm.id" @click="submitCopy">复制</el-button>
+        <sdk-button @click="copyDialog = false">取消</sdk-button>
+        <sdk-button type="primary" :disabled="!copyForm.name || !copyForm.id" @click="submitCopy">复制</sdk-button>
       </template>
-    </el-dialog>
+    </sdk-dialog>
 
-    <el-dialog v-model="deleteDialog" title="删除投影" width="460px">
+    <sdk-dialog v-model="deleteDialog" title="删除投影" width="460px">
       <p v-if="current" class="hint">
         删除「{{ current.name }}」？此操作不可撤销。
       </p>
@@ -311,9 +311,9 @@
         它正被 {{ usedPanels.length + hiddenCount }} 个面板使用<template v-if="usedPanels.length">（{{ usedPanels.map((panel) => panel.name).join('、') }}）</template>，属主会拒绝删除。
       </p>
       <template #footer>
-        <el-button @click="deleteDialog = false">取消</el-button>
-        <el-button type="danger" @click="submitDelete">删除</el-button>
+        <sdk-button @click="deleteDialog = false">取消</sdk-button>
+        <sdk-button type="danger" @click="submitDelete">删除</sdk-button>
       </template>
-    </el-dialog>
+    </sdk-dialog>
   </section>
 </div>

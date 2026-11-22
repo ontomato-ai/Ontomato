@@ -18,12 +18,14 @@ const auditRecordSchema = z.object({
   operateTime: z.number().nullish(),
 });
 const pageSchema = z.object({ data: z.array(auditRecordSchema), totalRows: z.number().int().nonnegative(), totalPages: z.number().int().nonnegative() });
-const cursorSchema = z.string().regex(/^[1-9][0-9]*$/).transform(Number).pipe(z.number().int().max(2147483647));
+const pageParamSchema = z.object({
+  number: z.number().int().min(1).max(2147483647),
+  size: z.number().int().min(1).max(100),
+}).strict();
 const querySchema = z.object({
   business: panelReadParameterSchemas.auditLogBusiness.optional(),
   operation: panelReadParameterSchemas.auditLogOperation.optional(),
-  cursor: cursorSchema.optional(),
-  size: panelReadParameterSchemas.size.max(100).optional(),
+  page: pageParamSchema.optional(),
 }).strict();
 
 const businessLabelKeys: Record<string, string> = {
@@ -82,13 +84,16 @@ export function createAuditLogPanelReads(viewer: AssistantCredentials) {
   }
   return {
     async query(params: Record<string, unknown>) {
-      const { cursor = 1, size = 20, business, operation } = querySchema.parse(params);
-      const page = pageSchema.parse(await read("queryPage", { pageNum: cursor, pageSize: size, bussiness: business, operation }));
+      const { page = { number: 1, size: 20 }, business, operation } = querySchema.parse(params);
+      let result = pageSchema.parse(await read("queryPage", { pageNum: page.number, pageSize: page.size, bussiness: business, operation }));
+      const maxPage = Math.max(1, result.totalPages);
+      if (page.number > maxPage) {
+        result = pageSchema.parse(await read("queryPage", { pageNum: maxPage, pageSize: page.size, bussiness: business, operation }));
+      }
       const labels = fieldLabels();
       return {
-        rows: page.data.map(entry => record(entry, labels, false)),
-        total: page.totalRows,
-        ...(cursor < page.totalPages && { nextCursor: String(cursor + 1) }),
+        rows: result.data.map(entry => record(entry, labels, false)),
+        total: result.totalRows,
       };
     },
     async record(primaryKey: string) {
