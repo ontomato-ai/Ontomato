@@ -332,6 +332,12 @@ beforeAll(async () => {
       if (endpoint === "queryList") {
         expect(req.body).toEqual({});
         res.json({ success: true, data: [action] });
+      } else if (endpoint === "queryById" && req.body.purpose === "delete-availability") {
+        expect(req.header("Accept-Language")).toBe("zh-CN");
+        expect([action.id, "system-review"]).toContain(req.body.id);
+        res.json({ success: true, data: {
+          reason: req.body.id === "system-review" ? "系统自带动作不能删除" : null,
+        } });
       } else if (endpoint === "queryById") {
         expect(req.body).toEqual({ id: action.id });
         res.json({ success: true, data: action });
@@ -1249,15 +1255,20 @@ it("dispatches the action catalog's reads and both operation descriptions", asyn
       }],
     },
   });
-  const readOperations = async (member: string) => (await request("POST", "product-panels/read", {
+  const readOperations = async (member: string, selectedAction = action) => (await request("POST", "product-panels/read", {
     source: { kind: "registered", applicationId: "owner-actions", useId: "data" },
-    memberPath: [{ member }], operations: true, inputs: { action },
+    memberPath: [{ member }], operations: true, inputs: { action: selectedAction },
   })).json();
   expect(await readOperations("status")).toMatchObject({
     status: "ready", value: { change: { handlerRef: "actions.setStatus", batch: true } },
   });
-  expect(await readOperations("remove")).toMatchObject({
+  const ordinaryDelete = await readOperations("remove");
+  expect(ordinaryDelete).toMatchObject({
     status: "ready", value: { change: { handlerRef: "actions.delete", inspectImpact: { handlerRef: "actions.delete.inspect-impact" } } },
+  });
+  expect(ordinaryDelete.value.change).not.toHaveProperty("unavailable");
+  expect(await readOperations("remove", { ...action, primaryKey: "system-review" })).toMatchObject({
+    status: "ready", value: { change: { handlerRef: "actions.delete", unavailable: { reason: "系统自带动作不能删除" } } },
   });
 });
 
