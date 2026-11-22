@@ -1,17 +1,15 @@
 export type AssetTab = "metrics";
 
+/**
+ * The counts of the Manager's native pages, read the way those pages read their lists. A panel entry's count is its
+ * entry's own declaration (`count`), read as its page reads it; these give way to it as the pages become entries.
+ */
 export interface OntologyResourceCounts {
-  objects: number | null;
-  attributes: number | null;
-  relations: number | null;
   metrics: number | null;
   products: number | null;
 }
 
 export const emptyOntologyResourceCounts = (): OntologyResourceCounts => ({
-  objects: null,
-  attributes: null,
-  relations: null,
   metrics: null,
   products: null,
 });

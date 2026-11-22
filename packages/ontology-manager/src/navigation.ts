@@ -101,9 +101,9 @@ function page(
 
 const pages = [
   page(managerPaths.graph, "nav.ontologyGraph", Network, "ontology", MODELING),
-  page(managerPaths.objects, "nav.objectTypes", Boxes, "ontology", MODELING, "objects"),
-  page(managerPaths.attributes, "nav.ontologyAttributes", Tags, "ontology", MODELING, "attributes"),
-  page(managerPaths.relations, "nav.relationTypes", Link2, "ontology", MODELING, "relations"),
+  page(managerPaths.objects, "nav.objectTypes", Boxes, "ontology", MODELING),
+  page(managerPaths.attributes, "nav.ontologyAttributes", Tags, "ontology", MODELING),
+  page(managerPaths.relations, "nav.relationTypes", Link2, "ontology", MODELING),
   page(managerPaths.workflows, "nav.workflowManagement", GitBranch, "ontology", ["action-management"]),
   page(managerPaths.triggers, "nav.triggerManagement", AlarmClock, "ontology", ["action-management"]),
   page(managerPaths.visualModeling, "nav.visualModeling", WorkflowIcon, "ontology", MODELING),
