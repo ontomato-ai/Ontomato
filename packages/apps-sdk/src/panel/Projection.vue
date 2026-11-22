@@ -9,6 +9,7 @@ import { portsOf, readsOwnerForm } from "./ports-of";
 import { admittedOperations, watchMemberOperations } from "./member-operations";
 import { slotInputValues } from "./ports";
 import { panelContextKey, projectionKey, type ProjectionSlot } from "./context";
+import { isListAttachedPanelMember } from "./row-member";
 import { componentFor } from "../catalogue-components";
 
 /**
@@ -34,6 +35,7 @@ const panel = inject(panelContextKey, null);
 if (!panel) throw new Error("<Projection> runs inside a panel, which provides its context");
 
 const attrs = useAttrs();
+const hostMounted = computed(() => isListAttachedPanelMember(panel.manifest.members[props.slot]));
 /** What the panel's template listens to on the component; an attribute written here configures nothing. */
 const listeners = computed(() => Object.fromEntries(Object.entries(attrs).filter(([name]) => /^on[A-Z]/.test(name))));
 const loading = ref(true);
@@ -55,6 +57,10 @@ onErrorCaptured((reason: unknown) => {
 });
 
 function start(revision = 0) {
+  if (hostMounted.value) {
+    loading.value = false;
+    return;
+  }
   const generation = ++readGeneration;
   requestedRevision = revision;
   const projectionId = memberProjectionId(panel!.manifest, props.slot);
@@ -120,6 +126,7 @@ onBeforeUnmount(() => {
 watch(
   () => panel.instance.state.values.value,
   () => {
+    if (hostMounted.value) return;
     inputs.value = slotInputValues(panel.manifest, props.slot, panel.instance.state.values.value);
   },
   { immediate: true, deep: true },
@@ -138,7 +145,8 @@ provide(panelMemberKey, () => loaded.value!.member);
 </script>
 
 <template>
-  <p v-if="failure" role="alert">{{ failure.message }}</p>
+  <template v-if="hostMounted"></template>
+  <p v-else-if="failure" role="alert">{{ failure.message }}</p>
   <div v-else-if="loading || !loaded" class="sdk-projection-loading"></div>
   <component :is="loaded.component" v-else v-bind="{ ...loaded.projection.config, ...listeners, ...inputs }">
     <template v-for="(_, name) in $slots" :key="name" #[name]="slotProps">

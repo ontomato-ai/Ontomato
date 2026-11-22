@@ -12,6 +12,7 @@ import { readComponentPackage, readPageDraft, readProjectionForRender, recordDra
 import type { ComponentPackageResponse } from "@ontomato/contracts/component-packages";
 import { createPanelText } from "./text";
 import { draftRefusalText } from "./draft-refusal";
+import { isListAttachedPanelMember } from "./row-member";
 import PanelMember from "./PanelMember.vue";
 
 /*
@@ -77,6 +78,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       navigate: options.navigate,
       nested: options.nested,
       ...(run.currentEntry ? { currentEntry: run.currentEntry } : {}),
+      ...(run.frameState ? { frameState: run.frameState } : {}),
       ...(options.memberPath ? { memberPath: options.memberPath } : {}),
       translate: options.translate,
       // A draft a form could not take is the draft's problem: the reader is told, the panel goes on.
@@ -127,7 +129,9 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
     // to it, and the panel's own code reads its data, whether or not a layout or a template places it.
     // A member that cannot be read is that member's failure, not the panel's: whoever draws it (`<Projection>`) or reads
     // it (`usePanelData`) shows the reason in its place, from this same hold; the rest of the panel goes on.
-    const declaredMembers = Object.keys(options.manifest.members);
+    const declaredMembers = Object.entries(options.manifest.members)
+      .filter(([, member]) => !isListAttachedPanelMember(member))
+      .map(([memberKey]) => memberKey);
     if (declaredMembers.length) {
       instance.forms.setUndrawnReady(false);
       void Promise.allSettled(declaredMembers.map((member) => instance.placing(member)))

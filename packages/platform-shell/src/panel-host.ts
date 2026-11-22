@@ -1,3 +1,4 @@
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { displayLoadSchema, PANEL_LOAD_ERROR_CODES, type DisplayLoad } from "@ontomato/contracts/agent-presentation";
 import type { PanelDefinitionSnapshot, ProductDefinitionRevision, ProductDefinitionTarget } from "@ontomato/contracts/product-subscriptions";
 import { inject, onScopeDispose, shallowRef, watch, type InjectionKey, type Ref, type ShallowRef } from "vue";
@@ -153,6 +154,11 @@ export interface DirectPanelRun {
     /** Puts the content instance the host admitted and runs into `element`; never a new one. */
     place(element: HTMLElement): { dispose(): void };
   };
+  /**
+   * Current application frame state for content panels rendered inside a framed application (or beside a conversation
+   * with a `frame` segment in the address). Forwarded in `rowContext.frameState` for row-scoped operations.
+   */
+  frameState?: () => Readonly<Record<string, RuntimeJsonValue>> | undefined;
 }
 
 /** A started panel instance, as its host drives it. */
@@ -311,6 +317,8 @@ export interface PanelInstanceOptions {
   withdrawn?: () => void;
   /** For an application's frame panel: the entry shown in it, the menu and where the entry's page goes. */
   currentEntry?: DirectPanelRun["currentEntry"];
+  /** Current application frame state for content panels inside a framed application entry. */
+  frameState?: DirectPanelRun["frameState"];
 }
 
 /** What a failure is called in the panel's error place: its own message, or what it was, verbatim. */
@@ -536,6 +544,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       draftOpened: () => (draftOpening.value = false),
       failed: reason => reportFrameFailure({ code: PANEL_LOAD_ERROR_CODES.scriptThrew, message: failureText(reason) }),
       ...(options.currentEntry ? { currentEntry: options.currentEntry } : {}),
+      ...(options.frameState ? { frameState: options.frameState } : {}),
     };
   }
 
