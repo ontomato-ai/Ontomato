@@ -27,17 +27,14 @@ function formatAuthoringViolations(violations) {
 }
 
 async function checkPanelAuthoringSources({
-  directory, files, descriptorFile, theme, html, module, checks, strictParadigm = false,
+  directory, files, descriptorFile, theme, html, module, checks,
 }) {
   const violations = [];
-  const authoringOptions = strictParadigm ? { strictParadigm: true } : undefined;
   if (theme && checks.checkAuthoringTheme) {
     violations.push(...checks.checkAuthoringTheme(theme, descriptorFile));
   }
   if (html !== undefined && checks.checkAuthoringTemplate) {
-    violations.push(...(authoringOptions
-      ? checks.checkAuthoringTemplate(html, resolve(directory, "panel.html"), authoringOptions)
-      : checks.checkAuthoringTemplate(html, resolve(directory, "panel.html"))));
+    violations.push(...checks.checkAuthoringTemplate(html, resolve(directory, "panel.html")));
   }
   if (module !== undefined && checks.checkAuthoringScript) {
     violations.push(...await checks.checkAuthoringScript(module, resolve(directory, "panel.mjs")));
@@ -46,9 +43,7 @@ async function checkPanelAuthoringSources({
     for (const name of files.filter(entry => entry.endsWith(".css")).sort()) {
       const cssFile = resolve(directory, name);
       const css = await readFile(cssFile, "utf8");
-      violations.push(...(authoringOptions
-        ? checks.checkAuthoringStyles(css, cssFile, 0, css, authoringOptions)
-        : checks.checkAuthoringStyles(css, cssFile)));
+      violations.push(...checks.checkAuthoringStyles(css, cssFile));
     }
   }
   if (violations.length) throw new Error(formatAuthoringViolations(violations));
@@ -57,7 +52,7 @@ async function checkPanelAuthoringSources({
 export async function checkBuiltinPanelSource(
   directory,
   checks,
-  { assignIds = false, builtinEntryIds, strictParadigm = false } = {},
+  { assignIds = false, builtinEntryIds } = {},
 ) {
   if (!checks.builtinProductIdSchema) throw new Error("Use an SDK release that supports platform product IDs");
   const registrationFile = resolve(directory, "registration.json");
@@ -136,7 +131,6 @@ export async function checkBuiltinPanelSource(
     html: sourceTexts["panel.html"],
     module: sourceTexts["panel.mjs"],
     checks,
-    strictParadigm,
   });
 
   const assigned = new Map();
@@ -232,7 +226,7 @@ async function expandInlineProjections(descriptorFile, manifest, panel, checks, 
 }
 
 async function workspaceDefinition(
-  directory, files, checks, panel, loadAuthoring, loadPackage, loadDomainComponent, strictParadigm = false,
+  directory, files, checks, panel, loadAuthoring, loadPackage, loadDomainComponent,
 ) {
   const descriptorFile = resolve(directory, "panel.json");
   const source = await readFile(descriptorFile, "utf8");
@@ -276,7 +270,6 @@ async function workspaceDefinition(
       html: result.data.content.html,
       module: result.data.content.module,
       checks,
-      strictParadigm,
     });
 
     return { definition: result.data, inline: expanded.inline, charts: expanded.charts, descriptorFile, document, source };
@@ -363,7 +356,7 @@ function checkProjectionData(id, projection, component, checks, placements = [])
 }
 
 async function readPanelWorkspace(
-  directory, checks, materialPath, loadAuthoring, loadPackage, loadDomainComponent, strictParadigm = false,
+  directory, checks, materialPath, loadAuthoring, loadPackage, loadDomainComponent,
 ) {
   const files = await readdir(directory);
   const path = materialPath ?? (files.includes("registration.json") ? resolve(directory, "registration.json") : undefined);
@@ -377,7 +370,7 @@ async function readPanelWorkspace(
     material,
     panel,
     ...await workspaceDefinition(
-      directory, files, checks, panel, loadAuthoring, loadPackage, loadDomainComponent, strictParadigm,
+      directory, files, checks, panel, loadAuthoring, loadPackage, loadDomainComponent,
     ),
   };
 }
@@ -471,14 +464,13 @@ export async function registerPanelWorkspace(directory, materialPath, checks, cl
 
 export async function checkPanelWorkspace(directory, {
   checks, catalogue, version, digest, typeTable, lookup, findChartSource, materialPath, loadPackage, loadDomainComponent,
-  strictParadigm = false,
 }) {
   if (catalogue.version !== version) {
     throw new Error(`Expected SDK catalogue ${version}, found ${catalogue.version}`);
   }
   const loadAuthoring = typeTable && (() => ({ catalogue, typeTable }));
   const workspace = await readPanelWorkspace(
-    directory, checks, materialPath, loadAuthoring, loadPackage, loadDomainComponent, strictParadigm,
+    directory, checks, materialPath, loadAuthoring, loadPackage, loadDomainComponent,
   );
   const { manifest } = workspace.definition;
   const material = workspace.inline.length || workspace.charts.size ? await workspaceRegistration(workspace) : workspace.material;

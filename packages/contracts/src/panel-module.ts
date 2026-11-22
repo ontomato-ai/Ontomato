@@ -126,9 +126,7 @@ export type SdkAuthoringViolationKind =
   | "forbidden-directive"
   | "forbidden-token"
   | "forbidden-export"
-  | "forbidden-viewport-unit"
-  | "forbidden-panel-data-display"
-  | "forbidden-native-control";
+  | "forbidden-viewport-unit";
 
 export interface SdkAuthoringViolation {
   readonly file: string;
@@ -150,27 +148,8 @@ export interface SdkAuthoringViolation {
  */
 export const REJECT_VIEWPORT_UNITS = false;
 
-/**
- * Single switch controlling whether panel authoring checks enforce the three decidable
- * platform paradigm rules:
- * 1. no CSS viewport length units (`vh`, `dvh`, `svh`, `lvh`, `vw`, etc.);
- * 2. no SDK data-display primitives (`<sdk-table>`, `<sdk-pagination>`, `<sdk-descriptions>`,
- *    `<sdk-tree>`, etc.) bound to business data in panel templates;
- * 3. no native HTML interactive controls (`<input>`, `<select>`, `<button>`, `<textarea>`) in
- *    panel templates.
- *
- * Colors, font sizes, dialogs/drawers, and copy wording are intentionally not rejected.
- *
- * Kept `false` while existing built-in panels finish migrating. Pass `{ strictParadigm: true }`
- * (or `--strict-paradigm` in `panel check`) to enforce all three rules immediately, or flip this
- * constant to `true` once migration completes.
- */
-export const REJECT_PARADIGM_VIOLATIONS = false;
-
 export interface CheckAuthoringStylesOptions {
   readonly rejectViewportUnits?: boolean;
-  readonly rejectParadigmViolations?: boolean;
-  readonly strictParadigm?: boolean;
 }
 
 export interface CheckAuthoringTemplateOptions extends CheckAuthoringStylesOptions {
@@ -182,38 +161,6 @@ const CSS_VIEWPORT_UNIT_PATTERN =
 
 const VIEWPORT_UNIT_REPLACEMENT =
   "fill the parent content box with normal CSS and a rem/px min-height, or use <sdk-dialog>/<sdk-drawer> for overlays";
-
-const PANEL_FORBIDDEN_DATA_DISPLAY_REPLACEMENTS: Readonly<Record<string, string>> = {
-  "sdk-table": "ObjectList via <projection>",
-  "sdk-table-v2": "ObjectList via <projection>",
-  "sdk-pagination": "ObjectList pagination via <projection>",
-  "sdk-descriptions": "ObjectSummary via <projection>",
-  "sdk-tree": "ObjectTree via <projection>",
-  "sdk-tree-v2": "ObjectTree via <projection>",
-  "el-table": "ObjectList via <projection>",
-  "el-table-v2": "ObjectList via <projection>",
-  "el-pagination": "ObjectList pagination via <projection>",
-  "el-descriptions": "ObjectSummary via <projection>",
-  "el-tree": "ObjectTree via <projection>",
-  "el-tree-v2": "ObjectTree via <projection>",
-};
-
-const PANEL_NATIVE_INPUT_TYPE_REPLACEMENTS: Readonly<Record<string, string>> = {
-  checkbox: "<sdk-checkbox>",
-  radio: "<sdk-radio>",
-  number: "<sdk-input-number>",
-  date: "<sdk-date-picker>",
-  "datetime-local": "<sdk-date-picker>",
-  month: "<sdk-date-picker>",
-  week: "<sdk-date-picker>",
-  time: "<sdk-time-picker>",
-  range: "<sdk-slider>",
-  color: "<sdk-color-picker>",
-  file: "<sdk-upload>",
-  button: "<sdk-button>",
-  submit: "<sdk-button>",
-  reset: "<sdk-button>",
-};
 
 interface TemplateAttribute {
   readonly name: string;
@@ -228,7 +175,6 @@ interface TemplateOpeningTag {
   readonly tagStart: number;
   readonly tagEnd: number;
   readonly tagText: string;
-  readonly inSvg: boolean;
 }
 
 /** Skip a Vue `{{ ... }}` mustache interpolation while respecting string literals inside it. */
@@ -262,13 +208,12 @@ function findMustacheEnd(source: string, openIndex: number): number {
 
 /**
  * Scan HTML/Vue opening tags from comment/script/style-blanked template text.
- * Skips Vue mustache interpolations and quoted attribute values so `<button>`/`<input>` inside
- * expressions or attribute strings are not mistaken for tags, and tracks `<svg>` nesting.
+ * Skips Vue mustache interpolations and quoted attribute values so tags inside expressions or
+ * attribute strings are not mistaken for template elements.
  */
 function scanTemplateOpeningTags(sanitized: string): TemplateOpeningTag[] {
   const tags: TemplateOpeningTag[] = [];
   const len = sanitized.length;
-  let svgDepth = 0;
   let i = 0;
 
   while (i < len) {
@@ -286,8 +231,6 @@ function scanTemplateOpeningTags(sanitized: string): TemplateOpeningTag[] {
     if (sanitized[i + 1] === "/" && /[A-Za-z]/u.test(sanitized[i + 2] ?? "")) {
       let j = i + 2;
       while (j < len && /[A-Za-z0-9-]/u.test(sanitized[j]!)) j++;
-      const closeName = sanitized.slice(i + 2, j).toLowerCase();
-      if (closeName === "svg" && svgDepth > 0) svgDepth--;
       while (j < len && sanitized[j] !== ">") j++;
       i = j < len ? j + 1 : len;
       continue;
@@ -322,11 +265,7 @@ function scanTemplateOpeningTags(sanitized: string): TemplateOpeningTag[] {
     }
     const tagEnd = j < len ? j + 1 : len;
     const tagText = sanitized.slice(tagStart, tagEnd);
-    const lowerName = tagName.toLowerCase();
-    const selfClosing = tagText.trimEnd().endsWith("/>");
-    const inSvg = svgDepth > 0 || lowerName === "svg";
-    if (lowerName === "svg" && !selfClosing) svgDepth++;
-    tags.push({ tagName, nameOffset, tagStart, tagEnd, tagText, inSvg });
+    tags.push({ tagName, nameOffset, tagStart, tagEnd, tagText });
     i = tagEnd;
   }
   return tags;
@@ -372,45 +311,6 @@ function readTagAttributes(tagText: string): TemplateAttribute[] {
     }
   }
   return attrs;
-}
-
-function nativeControlGuidance(
-  lowerTag: string,
-  attrs?: readonly TemplateAttribute[],
-): { readonly replacement: string; readonly message: string } | null {
-  if (lowerTag === "input") {
-    const rawType = attrs?.find(attr => attr.name.toLowerCase() === "type")?.value?.trim().toLowerCase();
-    const mapped = rawType ? PANEL_NATIVE_INPUT_TYPE_REPLACEMENTS[rawType] : undefined;
-    if (mapped) {
-      return {
-        replacement: mapped,
-        message: `Do not use native <input type="${rawType}"> in a panel template; use ${mapped} instead`,
-      };
-    }
-    return {
-      replacement: "<sdk-input>",
-      message: "Do not use native <input> in a panel template; use <sdk-input> instead",
-    };
-  }
-  if (lowerTag === "select") {
-    return {
-      replacement: "<sdk-select>",
-      message: "Do not use native <select> in a panel template; use <sdk-select> (with <sdk-option>) instead",
-    };
-  }
-  if (lowerTag === "button") {
-    return {
-      replacement: "<sdk-button>",
-      message: "Do not use native <button> in a panel template; use <sdk-button> instead",
-    };
-  }
-  if (lowerTag === "textarea") {
-    return {
-      replacement: '<sdk-input type="textarea">',
-      message: 'Do not use native <textarea> in a panel template; use <sdk-input type="textarea"> instead',
-    };
-  }
-  return null;
 }
 
 /**
@@ -525,8 +425,7 @@ function makeViolation(
 
 /**
  * Check a CSS block or stylesheet for third-party `--el-*` variables and (when enabled via
- * `REJECT_VIEWPORT_UNITS` / `REJECT_PARADIGM_VIOLATIONS` or `options.strictParadigm`) viewport
- * length units.
+ * `REJECT_VIEWPORT_UNITS` or `options.rejectViewportUnits`) viewport length units.
  */
 export function checkAuthoringStyles(
   css: string,
@@ -545,8 +444,7 @@ export function checkAuthoringStyles(
       : `Do not use third-party theme variable '${found}'; use a published --sdk-* or platform design token`;
     violations.push(makeViolation(fullSource, file, baseOffset + match.index!, "forbidden-token", found, replacement, message));
   }
-  const rejectViewport = options.strictParadigm === true
-    || (options.rejectViewportUnits ?? (REJECT_VIEWPORT_UNITS || REJECT_PARADIGM_VIOLATIONS));
+  const rejectViewport = options.rejectViewportUnits ?? REJECT_VIEWPORT_UNITS;
   if (rejectViewport) {
     for (const match of stripped.matchAll(CSS_VIEWPORT_UNIT_PATTERN)) {
       const found = match[0];
@@ -594,11 +492,8 @@ export function checkAuthoringTemplate(
   options: CheckAuthoringTemplateOptions = {},
 ): SdkAuthoringViolation[] {
   const violations: SdkAuthoringViolation[] = [];
-  const rejectParadigm = options.strictParadigm === true || (options.rejectParadigmViolations ?? REJECT_PARADIGM_VIOLATIONS);
   const styleOptions: CheckAuthoringStylesOptions = {
     ...(options.rejectViewportUnits !== undefined && { rejectViewportUnits: options.rejectViewportUnits }),
-    ...(options.rejectParadigmViolations !== undefined && { rejectParadigmViolations: options.rejectParadigmViolations }),
-    ...(options.strictParadigm !== undefined && { strictParadigm: options.strictParadigm }),
   };
   // Preserve offsets by blanking comments and script bodies while scanning <style> bodies separately.
   let sanitized = template.replace(/<!--[\s\S]*?-->/gu, match => match.replace(/[^\r\n]/gu, " "));
@@ -610,46 +505,6 @@ export function checkAuthoringTemplate(
   });
 
   const openingTags = scanTemplateOpeningTags(sanitized);
-
-  const checkParadigmTag = (
-    raw: string,
-    kebab: string,
-    offset: number,
-    inSvg: boolean,
-    attrs?: readonly TemplateAttribute[],
-    checkNativeControl = true,
-  ): boolean => {
-    if (!rejectParadigm) return false;
-    const dataDisplayReplacement = PANEL_FORBIDDEN_DATA_DISPLAY_REPLACEMENTS[kebab];
-    if (dataDisplayReplacement) {
-      violations.push(makeViolation(
-        template,
-        file,
-        offset,
-        "forbidden-panel-data-display",
-        raw,
-        dataDisplayReplacement,
-        `Do not render business data with <${raw}> in a panel; use official component ${dataDisplayReplacement} (ObjectList, ObjectSummary, or ObjectTree via <projection>), or plain HTML for static content`,
-      ));
-      return true;
-    }
-    if (!inSvg && checkNativeControl) {
-      const nativeGuidance = nativeControlGuidance(raw.toLowerCase(), attrs);
-      if (nativeGuidance) {
-        violations.push(makeViolation(
-          template,
-          file,
-          offset,
-          "forbidden-native-control",
-          raw,
-          nativeGuidance.replacement,
-          nativeGuidance.message,
-        ));
-        return true;
-      }
-    }
-    return false;
-  };
 
   for (const tag of openingTags) {
     const attrs = readTagAttributes(tag.tagText);
@@ -665,43 +520,41 @@ export function checkAuthoringTemplate(
       }
     }
 
-    // 2. Check opening tags for paradigm rules, <el-*>, <El*>, unknown <sdk-*>, and renamed exports.
-    if (!checkParadigmTag(rawTag, kebab, tag.nameOffset, tag.inSvg, attrs)) {
-      if (kebab.startsWith("el-")) {
-        const mapped = sdkUiComponentByImplTag(kebab);
-        if (mapped) {
-          violations.push(makeViolation(
-            template, file, tag.nameOffset, "forbidden-tag", rawTag, `<${mapped.sdkTag}>`,
-            `Replace third-party tag <${rawTag}> with <${mapped.sdkTag}>`,
-          ));
-        } else {
-          const forbidden = sdkUiForbiddenByImplTag(kebab);
-          violations.push(makeViolation(
-            template, file, tag.nameOffset, "forbidden-tag", rawTag, forbidden?.replacement ?? null,
-            forbidden
-              ? `Tag <${rawTag}> is not exposed by the SDK: ${forbidden.replacement}`
-              : `Do not use third-party tag <${rawTag}>; use a published <sdk-*> component`,
-          ));
-        }
-      } else if (kebab.startsWith("sdk-")) {
-        const allowed = options.allowedSdkTags ? options.allowedSdkTags.has(kebab) : sdkUiComponentByTag(kebab) !== undefined;
-        if (!allowed) {
-          const forbidden = sdkUiForbiddenByImplTag(`el-${kebab.slice(4)}`);
-          violations.push(makeViolation(
-            template, file, tag.nameOffset, "unknown-sdk-tag", rawTag, forbidden?.replacement ?? null,
-            forbidden
-              ? `Tag <${rawTag}> is not part of the SDK UI list: ${forbidden.replacement}`
-              : `Unknown SDK UI tag <${rawTag}>; choose a tag from the SDK UI catalogue`,
-          ));
-        }
+    // 2. Check opening tags for <el-*>, <El*>, unknown <sdk-*>, and renamed exports.
+    if (kebab.startsWith("el-")) {
+      const mapped = sdkUiComponentByImplTag(kebab);
+      if (mapped) {
+        violations.push(makeViolation(
+          template, file, tag.nameOffset, "forbidden-tag", rawTag, `<${mapped.sdkTag}>`,
+          `Replace third-party tag <${rawTag}> with <${mapped.sdkTag}>`,
+        ));
       } else {
-        const renamed = sdkRenamedExportByImpl(rawTag) ?? sdkRenamedExportByImpl(kebab);
-        if (renamed) {
-          violations.push(makeViolation(
-            template, file, tag.nameOffset, "forbidden-export", rawTag, `<${renamed.sdkTag}>`,
-            `Replace renamed component tag <${rawTag}> with <${renamed.sdkTag}>`,
-          ));
-        }
+        const forbidden = sdkUiForbiddenByImplTag(kebab);
+        violations.push(makeViolation(
+          template, file, tag.nameOffset, "forbidden-tag", rawTag, forbidden?.replacement ?? null,
+          forbidden
+            ? `Tag <${rawTag}> is not exposed by the SDK: ${forbidden.replacement}`
+            : `Do not use third-party tag <${rawTag}>; use a published <sdk-*> component`,
+        ));
+      }
+    } else if (kebab.startsWith("sdk-")) {
+      const allowed = options.allowedSdkTags ? options.allowedSdkTags.has(kebab) : sdkUiComponentByTag(kebab) !== undefined;
+      if (!allowed) {
+        const forbidden = sdkUiForbiddenByImplTag(`el-${kebab.slice(4)}`);
+        violations.push(makeViolation(
+          template, file, tag.nameOffset, "unknown-sdk-tag", rawTag, forbidden?.replacement ?? null,
+          forbidden
+            ? `Tag <${rawTag}> is not part of the SDK UI list: ${forbidden.replacement}`
+            : `Unknown SDK UI tag <${rawTag}>; choose a tag from the SDK UI catalogue`,
+        ));
+      }
+    } else {
+      const renamed = sdkRenamedExportByImpl(rawTag) ?? sdkRenamedExportByImpl(kebab);
+      if (renamed) {
+        violations.push(makeViolation(
+          template, file, tag.nameOffset, "forbidden-export", rawTag, `<${renamed.sdkTag}>`,
+          `Replace renamed component tag <${rawTag}> with <${renamed.sdkTag}>`,
+        ));
       }
     }
 
@@ -709,12 +562,9 @@ export function checkAuthoringTemplate(
     for (const attr of attrs) {
       const lowerAttr = attr.name.toLowerCase();
       if ((lowerAttr === "is" || lowerAttr === ":is" || lowerAttr === "v-bind:is") && attr.value !== undefined) {
-        const trimmed = attr.value.trim();
-        const isLiteralTag = lowerAttr === "is" || /^'[^']*'$|^"[^"]*"$/u.test(trimmed);
-        const raw = trimmed.replace(/^['"]|['"]$/gu, "");
+        const raw = attr.value.trim().replace(/^['"]|['"]$/gu, "");
         const isKebab = toKebabCase(raw);
         const offset = tag.tagStart + attr.nameOffset;
-        if (checkParadigmTag(raw, isKebab, offset, tag.inSvg, attrs, isLiteralTag)) continue;
         if (isKebab.startsWith("el-")) {
           const mapped = sdkUiComponentByImplTag(isKebab);
           const forbidden = mapped ? undefined : sdkUiForbiddenByImplTag(isKebab);

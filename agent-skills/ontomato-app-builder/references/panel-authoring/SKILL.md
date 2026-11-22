@@ -27,10 +27,15 @@ description: Build and register an Ontomato panel from its owner's reads and ope
    Use the [panel descriptor and member field reference](FIELDS.md) and [registration mapping](../../GUIDE.md#write-projections-inside-the-panel)
    to declare projections, and use `target.projectionId` for an existing projection.
    For graphs, see [graph wiring and selection](CODE.md#connect-a-graph-and-its-relations).
-3. Write the template and interactions in Vue. Follow [content-box height and layout](CODE.md#content-box-height-and-layout)
-   (size against the host's definite-height content box with natural stacking or `height: 100%` plus a `rem`/`px`
-   `min-height` and no upper cap — never viewport units like `vh`/`vw`/`dvh`, viewport height subtraction, or
-   hand-drawn modal overlays; keep business counts and summaries in content, never in the page header), use
+3. Pick a matching [page template](../templates/README.md) (such as
+   [catalog-detail-dialog](../templates/catalog-detail-dialog/README.md)) and write layout and interactions in normal
+   HTML, CSS, and Vue (do not use layout components). Follow
+   [content-box height and layout](CODE.md#content-box-height-and-layout) (the host gives a definite-height content box
+   from below the page header to the bottom edge of the page with no host padding or outer card frame, while the bottom
+   composer floats over the page; never use CSS viewport units like `vh`/`vw`/`dvh` or subtract header/composer heights;
+   keep business counts and summaries in content, never in the page header), use `usePanelDetailHeader` for single-bar
+   full-width detail headers, `usePanelBack` for browser Back / Escape / unsaved-changes confirmation, `usePanelNarrow`
+   or CSS `@container` for container-width adaptation,
    [the SDK's `<sdk-*>` interface controls, `v-sdk-*` directives, `--sdk-*` theme tokens and `notify()`](CODE.md#panel-controls-and-platform-behavior),
    follow the [direct runtime](CODE.md#write-a-vue-panel), and declare the
    [state that travels in an address](CODE.md#open-a-panel-at-a-specific-state).
