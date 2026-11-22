@@ -359,6 +359,7 @@ export const en = {
   "api.feedbackExport.columns.input": "Question",
   "api.feedbackExport.columns.output": "Answer",
   "api.feedbackExport.columns.feedback": "Comment",
+  "api.feedbackExport.columns.relatedId": "Related",
   "api.feedback.sources.qa": "Query",
   "api.feedback.sources.analysis_task": "Analysis task",
   "api.feedback.ratings.like": "Like",
